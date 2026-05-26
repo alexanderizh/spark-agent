@@ -312,7 +312,7 @@ function Shell() {
             </button>
           </div>
 
-          {/* User info */}
+          {/* User info + sidebar toggle */}
           <div className="sidebar-bottom">
             <div className="sidebar-user">
               <div className="avatar">U</div>
@@ -320,8 +320,25 @@ function Shell() {
                 <div className="name">User</div>
                 <div className="meta">Local · Desktop</div>
               </div>
-              <Icons.ChevronDown size={12} className="chev faint" />
+              {isExpanded && (
+                <button
+                  className="icon-btn sidebar-toggle-btn"
+                  onClick={() => setTweak('sidebar', 'collapsed')}
+                  title="Collapse sidebar"
+                >
+                  <Icons.ChevronLeft size={14} />
+                </button>
+              )}
             </div>
+            {!isExpanded && (
+              <button
+                className="icon-btn sidebar-toggle-btn collapsed-toggle"
+                onClick={() => setTweak('sidebar', 'expanded')}
+                title="Expand sidebar"
+              >
+                <Icons.PanelLeft size={16} />
+              </button>
+            )}
           </div>
         </div>
 

@@ -388,6 +388,42 @@ button { font-family: inherit; }
 .sidebar.collapsed .sidebar-user-info,
 .sidebar.collapsed .sidebar-user .chev { display: none; }
 
+/* Sidebar toggle button */
+.sidebar-toggle-btn {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, background 0.12s;
+}
+.sidebar-user:hover .sidebar-toggle-btn,
+.sidebar-bottom:hover .sidebar-toggle-btn {
+  opacity: 1;
+}
+.sidebar-toggle-btn:hover {
+  background: var(--hover);
+}
+.sidebar-toggle-btn svg {
+  width: 14px;
+  height: 14px;
+}
+.collapsed-toggle {
+  opacity: 0.6;
+  width: 100%;
+  height: 32px;
+  margin-top: 4px;
+  border-radius: var(--r-md);
+}
+.collapsed-toggle:hover {
+  opacity: 1;
+  background: var(--hover);
+}
+.collapsed-toggle svg {
+  width: 16px;
+  height: 16px;
+}
+
 /* ============================================================
    MAIN CONTENT
    ============================================================ */
