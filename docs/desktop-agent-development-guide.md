@@ -3669,56 +3669,92 @@ AgentsView 当前 100% 硬编码假数据。
 
 ### 24.1 Agent Runtime 实际执行路径
 
-当前 AgentLoop 使用简化的 HTTP 请求方式:
+> 本节基于 2026-05-26 代码审计更新。
+
+**当前实际执行路径**（已真实可用，非 mock）:
 
 ```
 用户消息 → SessionService.sendTurn()
-  → AdapterFactory.createAdapter() (OpenAI-compatible HTTP)
-  → fetch(POST /chat/completions)
-  → 解析 JSON 响应
-  → emit AgentEvent
-```
-
-PRD 设计的执行路径:
-
-```
-用户消息 → SessionService.sendTurn()
-  → RuleEngine.synthesize(sessionId) → 合成规则
-  → ContextGovernor.buildContext(sessionId) → 构建上下文
-  → PermissionEngine.checkPermissions() → 权限检查
+  → 加载 ProviderProfile + 从 Keychain 获取 API key
   → AdapterFactory.createAdapter()
-    → ClaudeAgentSDKAdapter (使用 Claude Agent SDK)
-    → CodexSDKAdapter (使用 @openai/codex-sdk)
-    → GenericLLMAdapter (HTTP 直接调用)
-  → Adapter.sendTurn() → 流式事件
-  → 工具调用 → ToolRegistry.execute() / MCP Gateway
-  → 权限拦截 → PermissionEngine.requestApproval()
-  → UsageLedger.record() → 记录用量
-  → emit AgentEvent → 前端渲染
+    → AnthropicAdapter (使用 @anthropic-ai/sdk, client.messages.stream())
+    → OpenAIAdapter (使用 openai npm 包, client.chat.completions.create({stream:true}))
+  → 初始化 ToolRegistry (4 内置文件工具 + resolveSafe 路径保护)
+  → 加载 Workspace rules → 拼入 system prompt
+  → 创建 AgentLoop
+    → buildSystemPrompt() (workspace info + rules + session summary)
+    → adapter.streamChat() → 真实流式 AI API 调用
+    → 工具调用循环 (最多 20 轮)
+      → 工具匹配 → ToolRegistry.execute()
+      → 权限检查 → approvalCallback → PermissionService.requestApproval()
+        → 若需审批 → IPC push PermissionModal → 用户响应 → Promise resolve
+      → 消息历史累积 (tool_use + tool_result)
+    → emit AgentEvent (text_delta/tool_call/thinking/usage/status/error)
+  → 事件实时持久化到 SQLite agent_events 表
+  → IPC push 到渲染进程 → MessageBuilder → UIMessage/UIBlock → 渲染
 ```
 
-**需要补充的中间层**: RuleEngine → ContextGovernor → PermissionEngine → UsageLedger
+**与 PRD 设计的差距**:
 
-### 24.2 Provider 适配器真实实现缺口
+```
+PRD 设计的完整路径:
+用户消息 → SessionService.sendTurn()
+  → RuleEngine.synthesize(sessionId) → 合成规则         ← 缺失: 无层级合成/冲突检测
+  → ContextGovernor.buildContext(sessionId) → 构建上下文 ← 缺失: 无上下文模式/pin/exclude
+  → PermissionEngine.checkPermissions() → 权限检查      ← 部分: 有审批流程但无中间件链
+  → AdapterFactory.createAdapter()
+    → ClaudeAgentSDKAdapter (Claude Agent SDK)           ← 缺失: 当前用直接 SDK 调用
+    → CodexSDKAdapter (Codex SDK)                       ← 缺失: 未实现
+    → GenericLLMAdapter (HTTP 直接调用)                  ← 已实现: AnthropicAdapter + OpenAIAdapter
+  → 工具调用 → ToolRegistry.execute() / MCP Gateway     ← 部分: 4 工具有, MCP Gateway 缺失
+  → UsageLedger.record() → 记录用量                     ← 缺失: 无用量统计
+  → emit AgentEvent → 前端渲染                          ← 已实现
+```
 
-当前 AnthropicAdapter 和 OpenAIAdapter 构造 HTTP 请求。需要:
+**需要补充的中间件**: RuleEngine → ContextGovernor → UsageLedger (PermissionEngine 已部分实现)
 
-1. **ClaudeAgentSDKAdapter**:
-   - 使用 `@anthropic-ai/agent-sdk` TypeScript SDK
-   - 支持 Claude Code 的内置工具 (Read/Edit/Bash/Glob/Grep)
+### 24.2 Provider 适配器真实实现状态
+
+> 本节基于 2026-05-26 代码审计更新。
+
+**当前已实现的适配器**:
+
+1. **AnthropicAdapter** — `packages/agent-runtime/src/adapters/anthropic.ts`
+   - ✅ 使用 `@anthropic-ai/sdk` 真实流式调用 (`client.messages.stream()`)
+   - ✅ 处理所有事件类型: message_start, content_block_start/delta/stop, message_delta, message_stop
+   - ✅ 支持 extended thinking (thinking content blocks)
+   - ✅ 支持 tool use accumulation
+   - ✅ 支持 abort (AbortController)
+   - ✅ 使用 usage tracking (input/output tokens, cache hits)
+   - ⚠️ 这是直接 SDK 调用，不是 Claude Agent SDK 集成
+
+2. **OpenAIAdapter** — `packages/agent-runtime/src/adapters/openai.ts`
+   - ✅ 使用 `openai` npm 包真实流式调用 (`client.chat.completions.create({stream:true})`)
+   - ✅ 支持 tool calls with streaming argument accumulation
+   - ✅ 支持 reasoning_content (DeepSeek-style reasoning via mapReasoningContent)
+   - ✅ 支持 abort
+   - ✅ Configurable base URL → 兼容 DeepSeek, Ollama, LM Studio 等
+
+3. **Adapter Factory** — `packages/agent-runtime/src/services/adapter-factory.ts`
+   - `anthropic` → AnthropicAdapter
+   - 其他所有 → OpenAIAdapter (DeepSeek/Ollama/自定义均通过此路径)
+
+**需要新增的适配器**:
+
+4. **ClaudeAgentSDKAdapter** (INFRA-01):
+   - 使用 `@anthropic-ai/agent-sdk` TypeScript SDK（注意与当前 `@anthropic-ai/sdk` 不同）
+   - 支持 Claude Code 内置工具: Read, Edit, Bash, Glob, Grep
    - 支持 hooks 对接 Spark Permission Policy
    - 支持 MCP 配置注入
    - 支持 checkpoint
+   - 替换 AnthropicAdapter 成为 Claude 通道的首选适配器
 
-2. **CodexSDKAdapter**:
+5. **CodexSDKAdapter** (INFRA-02):
    - 使用 `@openai/codex-sdk` TypeScript SDK
    - 通过 stdin/stdout JSONL 事件通信
    - 转换 Codex 事件 (item/turn.completed/usage/file change/permission)
    - 支持 thread 继续对话和 resume
-
-3. **GenericLLMAdapter**:
-   - 当前实现，保留为 fallback
-   - 支持 OpenAI-compatible API (DeepSeek, Ollama, LM Studio 等)
+   - 支持 Codex 代码中心模式
 
 ### 24.3 MCP Gateway 真实通信流程
 
@@ -3806,9 +3842,49 @@ type SparkErrorType =
 
 ## 25. 下一步
 
-Phase 0-2 已全部完成，基础设施和 CRUD 层全部就绪。**当前最关键的风险点是 SDK 真实集成**（INFRA-01/02/03），建议集中资源优先完成。
+> 基于 2026-05-26 全量代码审计更新。
 
-建议第一批任务分配:
-- **codex**: INFRA-01 Claude Agent SDK 集成
-- **浩轩**: INFRA-04 Terminal PTY 集成
-- **claude**: P3-04 Usage Ledger + P3-02 规则合成引擎
+### 当前状态总结
+
+**Phase 0-2 已全部完成（41 个任务）**，基础设施和 CRUD 层全部就绪。
+**Phase 3 部分完成（5/12）**，剩余 7 项 + 4 项补充任务。
+**Phase 4-6 未开始**。
+
+### 真实可用的核心功能
+
+以下功能已端到端真实可用（非 mock/非 stub）:
+
+1. ✅ **AI 对话**: 用户可创建 Provider → 创建会话 → 发送消息 → 流式接收 AI 回复 → 工具调用循环
+2. ✅ **双模型支持**: Anthropic (Claude) 和 OpenAI (GPT-4/o1/o3) 真实流式调用
+3. ✅ **文件操作**: Agent 可读取/写入/列出/搜索工作区文件（带路径保护）
+4. ✅ **权限审批**: 工具调用触发审批 → 弹窗 → 用户决策 → 执行/拒绝
+5. ✅ **会话管理**: 创建/搜索/历史/归档/重命名/置顶/删除
+6. ✅ **工作区管理**: 打开项目/文件树浏览/项目类型自动检测
+7. ✅ **Provider 管理**: CRUD + 健康检查 + API 密钥 Keychain 存储
+8. ✅ **设置管理**: Provider/Model/Rules/Permissions/MCP/Skills 7 个 Tab 真实可用
+
+### 最关键的差距
+
+1. **Agent 无法执行命令** — 只有 4 个文件工具，无 bash/grep/git (INFRA-03)
+2. **MCP 从未启动** — 配置可管理但 server 从不运行 (P3-01)
+3. **规则无层级合成** — 多层规则直接拼入 prompt (P3-02)
+4. **无用量统计** — 无法知道花了多少 token/钱 (P3-04)
+5. **无命令系统** — CommandPalette 是空壳 (P3-09)
+6. **Claude Agent SDK 未集成** — 无法使用 Claude Code 的内置工具能力 (INFRA-01)
+7. **Settings 6 个 Tab 是装饰** — General/Shortcuts/Telemetry/Updates/ProfileEditModal 全部不可用 (P3-08)
+
+### 建议下一步任务分配
+
+基于团队成员特长:
+
+| 成员 | 建议任务 | 理由 |
+|------|---------|------|
+| **codex** | INFRA-03 Shell 工具 → INFRA-01 Claude Agent SDK | 后端/基础设施专家，已连续完成 6 个功能任务 |
+| **浩轩** | P3-10 ChatInteractions 组件集成 → P3-08 Settings 持久化 | 前端专家，对 CSS/组件架构最熟悉 |
+| **claude** | P3-01 MCP Gateway → P3-02 规则合成引擎 → P3-04 Usage Ledger | 全栈/系统设计专家 |
+
+### 风险提示
+
+- **SDK 集成风险**: INFRA-01/02 是最大不确定性，Claude Agent SDK 和 Codex SDK 的 API 可能与当前设计不完全匹配，建议先做技术调研再排期
+- **MCP 通信风险**: MCP stdio 子进程管理在 Electron 沙箱环境下可能有权限问题
+- **数据库迁移风险**: 新增 7 个表需要 careful migration，避免影响现有数据
