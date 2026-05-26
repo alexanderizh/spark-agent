@@ -79,16 +79,29 @@ function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
       </div>
       <div className="tree scroll">
         {workspace == null && (
-          <div className="faint" style={{ padding: '12px 8px', lineHeight: 1.5 }}>请先在 Home 或设置中打开一个项目。</div>
+          <div className="empty-compact">
+            <div className="empty-icon"><Icons.Folder size={18} /></div>
+            <div className="empty-title">未打开工作区</div>
+            <div className="empty-desc">请先在 Home 或设置中打开一个项目</div>
+          </div>
         )}
         {workspace != null && loading && entries.length === 0 && (
-          <div className="faint" style={{ padding: '12px 8px' }}>加载文件树...</div>
+          <div className="empty-compact">
+            <div className="empty-icon"><Icons.Spinner size={18} /></div>
+            <div className="empty-title">加载文件树...</div>
+          </div>
         )}
         {workspace != null && error !== '' && (
-          <div className="faint" style={{ padding: '12px 8px', lineHeight: 1.5 }}>{error}</div>
+          <div className="empty-compact">
+            <div className="empty-icon" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}><Icons.X size={18} /></div>
+            <div className="empty-desc" style={{ color: 'var(--danger)' }}>{error}</div>
+          </div>
         )}
         {workspace != null && !loading && error === '' && entries.length === 0 && (
-          <div className="faint" style={{ padding: '12px 8px' }}>该目录为空。</div>
+          <div className="empty-compact">
+            <div className="empty-icon"><Icons.Folder size={18} /></div>
+            <div className="empty-title">该目录为空</div>
+          </div>
         )}
         {workspace != null && error === '' && entries.map((entry) => (
           <TreeRow
@@ -347,9 +360,9 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
 
   return (
     <>
-      <div className="row" style={{ padding: '8px var(--pad-md)', borderBottom: '1px solid var(--border)', background: 'var(--bg-soft)', gap: 8 }}>
-        <Icons.Bot size={14} style={{ color: 'var(--primary)' }} />
-        <span className="strong" style={{ fontSize: 'var(--font-sm)' }}>Spark Agent</span>
+      <div className="agent-pane-head">
+        <Icons.Bot size={14} className="agent-pane-icon" />
+        <span className="strong">Spark Agent</span>
         {agentStatus === 'thinking' && <span className="badge info dot">思考中</span>}
         {agentStatus === 'calling_tool' && <span className="badge warning dot">调用工具</span>}
         {agentStatus === 'waiting_permission' && <span className="badge warning dot">等待权限</span>}
@@ -360,17 +373,26 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
         <div className="flex1" />
         <button className="icon-btn" onClick={handleCancel} disabled={sessionId == null} title="停止"><Icons.Stop size={12} /></button>
       </div>
-      <div ref={scrollRef} className="chat-stream" style={{ flex: 1, padding: '14px 0', background: 'var(--bg)', overflowY: 'auto' }}>
-        <div className="chat-stream-inner" style={{ padding: '0 var(--pad-md)', gap: 14 }}>
-          {loading && <div className="faint" style={{ textAlign: 'center', padding: 20 }}>加载中...</div>}
+      <div ref={scrollRef} className="agent-pane-stream">
+        <div className="agent-pane-stream-inner">
+          {loading && (
+            <div className="empty-state">
+              <div className="empty-icon"><Icons.Spinner size={24} /></div>
+              <div className="empty-title">加载中...</div>
+            </div>
+          )}
           {!loading && notice && (
-            <div className="faint" style={{ textAlign: 'center', padding: 20, lineHeight: 1.6 }}>
-              {notice}
+            <div className="empty-state">
+              <div className="empty-icon"><Icons.AlertTriangle size={24} /></div>
+              <div className="empty-title">无法启动 Agent</div>
+              <div className="empty-desc">{notice}</div>
             </div>
           )}
           {!loading && !notice && messages.length === 0 && (
-            <div className="faint" style={{ textAlign: 'center', padding: 20 }}>
-              在此输入消息开始与 Agent 对话
+            <div className="empty-state">
+              <div className="empty-icon"><Icons.Sparkles size={24} /></div>
+              <div className="empty-title">开始对话</div>
+              <div className="empty-desc">在此输入消息开始与 Agent 对话</div>
             </div>
           )}
           {!loading && messages.map((message) => (
@@ -380,7 +402,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
           ))}
         </div>
       </div>
-      <div className="composer-wrap" style={{ padding: '10px 12px 12px' }}>
+      <div className="agent-pane-composer">
         <div className="composer">
           <textarea
             rows={2}
@@ -415,9 +437,9 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
       )
     case 'thinking':
       return (
-        <details key={index} style={{ margin: '4px 0', fontSize: 11, color: 'var(--text-muted)' }}>
-          <summary style={{ cursor: 'pointer' }}>思考过程{block.isStreaming && '...'}</summary>
-          <pre style={{ whiteSpace: 'pre-wrap', padding: '4px 8px', fontSize: 11 }}>{block.content}</pre>
+        <details key={index} className="block-thinking">
+          <summary>思考过程{block.isStreaming && '...'}</summary>
+          <pre>{block.content}</pre>
         </details>
       )
     case 'tool_call':
@@ -433,24 +455,24 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
       )
     case 'error':
       return (
-        <div key={index} style={{ margin: '4px 0', padding: '6px 8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, fontSize: 11, color: 'var(--danger)' }}>
+        <div key={index} className="block-error">
           {block.message}
         </div>
       )
     case 'file_change':
       return (
-        <div key={index} style={{ margin: '4px 0', padding: '4px 8px', background: 'var(--bg-soft)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}>
-          <span className="badge" style={{ fontSize: 9 }}>{block.changeType}</span>
-          <span className="mono-sm" style={{ fontSize: 11, marginLeft: 6 }}>{block.path}</span>
+        <div key={index} className="block-file-change">
+          <span className="badge block-change-type">{block.changeType}</span>
+          <span className="mono-sm block-change-path">{block.path}</span>
         </div>
       )
     case 'terminal':
       return (
-        <div key={index} style={{ margin: '4px 0', padding: '4px 8px', background: '#0d0d10', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}>
-          {block.stdout && <pre className="mono-sm" style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--text)', margin: 0 }}>{block.stdout}</pre>}
-          {block.stderr && <pre className="mono-sm" style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--danger)', margin: 0 }}>{block.stderr}</pre>}
-          {block.isStreaming && <span className="faint" style={{ fontSize: 10 }}>运行中...</span>}
-          {block.exitCode !== undefined && <span className="faint" style={{ fontSize: 10 }}>退出码: {block.exitCode}</span>}
+        <div key={index} className="block-terminal">
+          {block.stdout && <pre className="mono-sm block-stdout">{block.stdout}</pre>}
+          {block.stderr && <pre className="mono-sm block-stderr">{block.stderr}</pre>}
+          {block.isStreaming && <span className="faint block-term-status">运行中...</span>}
+          {block.exitCode !== undefined && <span className="faint block-term-status">退出码: {block.exitCode}</span>}
         </div>
       )
     default:
@@ -460,20 +482,20 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
 
 function MiniMsg({ user, status, children }: { user?: boolean; status?: 'running' | undefined; children: ReactNode }) {
   return (
-    <div className="msg" style={{ gap: 8 }}>
-      <div className="msg-avatar" style={{ width: 22, height: 22, fontSize: 10 }}>
+    <div className={`msg ${user ? 'user' : 'agent'} mini-msg`}>
+      <div className="msg-avatar">
         {user ? 'U' : <Icons.Sparkles size={11} />}
       </div>
       <div className="msg-body">
-        <div className="msg-name" style={{ fontSize: 11, marginBottom: 4 }}>
+        <div className="msg-name">
           {user ? '你' : 'Agent'}
           {status === 'running' && (
-            <span style={{ color: 'var(--info)', fontWeight: 500, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span className="msg-running">
               <Icons.Spinner size={10} /> 生成中
             </span>
           )}
         </div>
-        <div className="msg-content" style={{ fontSize: 12.5, lineHeight: 1.55 }}>
+        <div className="msg-content">
           {children}
         </div>
       </div>
@@ -502,17 +524,17 @@ function MiniTool({
     Grep: <Icons.Search />,
   }
   return (
-    <div style={{ margin: '6px 0', padding: '5px 8px', background: 'var(--bg-soft)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{icon[name] ?? <Icons.Wrench />}</span>
-        <span className="mono-sm strong" style={{ fontSize: 11 }}>{name}</span>
-        <span className="mono-sm muted truncate" style={{ fontSize: 11 }}>{arg}</span>
-        {(status === 'pending' || status === 'running') && <Icons.Spinner size={11} style={{ color: 'var(--info)', marginLeft: 'auto' }} />}
-        {status === 'success' && <Icons.Check size={11} style={{ color: 'var(--success)', marginLeft: 'auto' }} />}
-        {status === 'error' && <Icons.X size={11} style={{ color: 'var(--danger)', marginLeft: 'auto' }} />}
+    <div className="tool-call mini-tool">
+      <div className="tool-call-head">
+        <span className="tool-icon">{icon[name] ?? <Icons.Wrench />}</span>
+        <span className="tool-name">{name}</span>
+        <span className="tool-arg">{arg}</span>
+        {(status === 'pending' || status === 'running') && <Icons.Spinner size={11} className="tool-status" />}
+        {status === 'success' && <Icons.Check size={11} className="tool-status ok" />}
+        {status === 'error' && <Icons.X size={11} className="tool-status err" />}
       </div>
-      {output && <pre className="mono-sm" style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>{output}</pre>}
-      {error && <div style={{ marginTop: 6, color: 'var(--danger)', fontSize: 11 }}>{error}</div>}
+      {output && <div className="tool-call-body mini-tool-output">{output}</div>}
+      {error && <div className="tool-call-body mini-tool-error">{error}</div>}
     </div>
   )
 }

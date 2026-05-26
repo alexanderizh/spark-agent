@@ -949,6 +949,147 @@
 .project-bottombar .seg { display: flex; align-items: center; gap: 5px; }
 .project-bottombar .seg.right { margin-left: auto; }
 
+/* --- Project Agent Pane --- */
+.agent-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px var(--pad-md);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  font-size: var(--font-sm);
+}
+.agent-pane-icon { color: var(--primary); }
+.agent-pane-stream {
+  flex: 1;
+  padding: 14px 0;
+  background: var(--bg);
+  overflow-y: auto;
+}
+.agent-pane-stream-inner {
+  padding: 0 var(--pad-md);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.agent-pane-composer {
+  padding: 10px 12px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+/* Mini msg (compact, inside agent pane) */
+.mini-msg { gap: 8px; }
+.mini-msg .msg-avatar {
+  width: 22px; height: 22px;
+  font-size: 10px;
+}
+.mini-msg .msg-name {
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+.mini-msg .msg-content {
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.msg-running {
+  color: var(--info);
+  font-weight: 500;
+  font-size: 10px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Mini tool (compact, inside agent pane) */
+.mini-tool {
+  margin: 6px 0;
+  font-size: 11px;
+}
+.mini-tool .tool-call-head {
+  padding: 5px 8px;
+}
+.mini-tool .tool-name {
+  font-size: 11px;
+}
+.mini-tool .tool-arg {
+  font-size: 11px;
+}
+.tool-status {
+  margin-left: auto;
+  color: var(--info);
+}
+.tool-status.ok { color: var(--success); }
+.tool-status.err { color: var(--danger); }
+.mini-tool-output {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  white-space: pre-wrap;
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 8px;
+}
+.mini-tool-error {
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: 11px;
+  padding: 6px 8px;
+}
+
+/* Render block styles (inline within messages) */
+.block-thinking {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.block-thinking summary { cursor: pointer; }
+.block-thinking pre {
+  white-space: pre-wrap;
+  padding: 4px 8px;
+  font-size: 11px;
+}
+.block-error {
+  margin: 4px 0;
+  padding: 6px 8px;
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.2);
+  border-radius: var(--r-md);
+  font-size: 11px;
+  color: var(--danger);
+}
+.block-file-change {
+  margin: 4px 0;
+  padding: 4px 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 11px;
+}
+.block-change-type { font-size: 9px; }
+.block-change-path { font-size: 11px; margin-left: 6px; }
+.block-terminal {
+  margin: 4px 0;
+  padding: 4px 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  font-size: 11px;
+}
+.block-stdout {
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--text);
+  margin: 0;
+}
+.block-stderr {
+  font-size: 11px;
+  white-space: pre-wrap;
+  color: var(--danger);
+  margin: 0;
+}
+.block-term-status { font-size: 10px; }
+
 /* ============================================================
    WORKFLOW VIEW
    ============================================================ */
