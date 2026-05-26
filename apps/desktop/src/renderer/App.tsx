@@ -30,6 +30,72 @@ function SparkLogoMark() {
   )
 }
 
+/* ---------- ViewHeader — per-view title bar (matches design spec) ---------- */
+function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
+  const { setTweak } = useApp()
+
+  const viewMeta: Record<string, { title: string; sub: string }> = {
+    home: { title: 'Home', sub: 'Sessions, projects & running tasks' },
+    chat:
+      chatMode === 'workspace'
+        ? { title: 'Chat', sub: 'Workspace mode' }
+        : { title: 'Chat', sub: 'Vibe mode · Streaming chat & tool calls' },
+    projects: { title: 'Projects', sub: 'Workspace explorer' },
+    workflows: { title: 'Workflows', sub: 'DAG orchestration' },
+    agents: { title: 'Agents', sub: 'Multi-agent collaboration' },
+    skills: { title: 'Skills', sub: 'Reusable agent capabilities' },
+    mcp: { title: 'MCP', sub: 'Tool servers & data sources' },
+    settings: { title: 'Settings', sub: 'App & team configuration' },
+  }
+  const meta = viewMeta[view] ?? { title: view, sub: '' }
+  const isCompact = view === 'chat' || view === 'workflows'
+
+  return (
+    <div
+      className="view-header"
+      style={isCompact ? { minHeight: 46, paddingBlock: 8 } : undefined}
+    >
+      <div>
+        <div className="view-title">{meta!.title}</div>
+        <div className="view-subtitle truncate">{meta!.sub}</div>
+      </div>
+      {view === 'chat' && (
+        <div className="row" style={{ marginLeft: 16, gap: 8 }}>
+          <div className="seg-control">
+            <button
+              className={chatMode === 'vibe' ? 'active' : ''}
+              onClick={() => setTweak('chatMode', 'vibe')}
+            >
+              <span className="row" style={{ gap: 5, alignItems: 'center' }}>
+                <Icons.Sparkles size={11} /> Vibe
+              </span>
+            </button>
+            <button
+              className={chatMode === 'workspace' ? 'active' : ''}
+              onClick={() => setTweak('chatMode', 'workspace')}
+            >
+              <span className="row" style={{ gap: 5, alignItems: 'center' }}>
+                <Icons.Code size={11} /> Workspace
+              </span>
+            </button>
+          </div>
+        </div>
+      )}
+      <div className="view-header-actions">
+        {!isCompact && (
+          <div className="search-input">
+            <Icons.Search />
+            <input placeholder="Search this view..." />
+          </div>
+        )}
+        <button className="btn ghost sm" onClick={() => setTweak('showPalette', true)}>
+          <Icons.Command size={12} /> ⌘K
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function Shell() {
   const { t, setTweak } = useApp()
   const scaleRef = useRef<HTMLDivElement>(null)
@@ -49,18 +115,21 @@ function Shell() {
   }, [])
 
   // Keyboard shortcuts
-  const onKey = useCallback((e: KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-      e.preventDefault()
-      setTweak('showPalette', true)
-    }
-    if (e.key === 'Escape') {
-      setTweak('showPalette', false)
-      setTweak('showPerm', false)
-      setTweak('showProviderEdit', false)
-      setTweak('showProfileEdit', false)
-    }
-  }, [setTweak])
+  const onKey = useCallback(
+    (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setTweak('showPalette', true)
+      }
+      if (e.key === 'Escape') {
+        setTweak('showPalette', false)
+        setTweak('showPerm', false)
+        setTweak('showProviderEdit', false)
+        setTweak('showProfileEdit', false)
+      }
+    },
+    [setTweak],
+  )
 
   useEffect(() => {
     window.addEventListener('keydown', onKey)
@@ -69,16 +138,6 @@ function Shell() {
 
   const primary = t.primary
   const info = PRIMARIES[primary]
-
-  const nav = [
-    { id: 'home' as const, icon: <Icons.Home />, label: 'Home' },
-    { id: 'chat' as const, icon: <Icons.Chat />, label: 'Chat' },
-    { id: 'projects' as const, icon: <Icons.Folder />, label: 'Projects' },
-    { id: 'workflows' as const, icon: <Icons.Workflow />, label: 'Workflows' },
-    { id: 'agents' as const, icon: <Icons.Bot />, label: 'Agents' },
-    { id: 'mcp' as const, icon: <Icons.MCP />, label: 'MCP' },
-    { id: 'skills' as const, icon: <Icons.Skills />, label: 'Skills' },
-  ]
 
   const ViewMap: Record<string, () => React.ReactElement> = {
     home: HomeView,
@@ -92,15 +151,19 @@ function Shell() {
   }
   const View = ViewMap[t.view] ?? HomeView
 
+  const isExpanded = t.sidebar === 'expanded'
+
   return (
     <div
       ref={scaleRef}
       className={`app window theme-${t.theme} density-${t.density}`}
-      style={{
-        '--primary': primary,
-        '--primary-hover': info?.hover ?? primary,
-        '--primary-soft': info?.soft ?? 'rgba(99,102,241,0.12)',
-      } as React.CSSProperties}
+      style={
+        {
+          '--primary': primary,
+          '--primary-hover': info?.hover ?? primary,
+          '--primary-soft': info?.soft ?? 'rgba(99,102,241,0.12)',
+        } as React.CSSProperties
+      }
     >
       {/* Titlebar */}
       <div className="titlebar">
@@ -112,43 +175,152 @@ function Shell() {
         </div>
         <div className="titlebar-spacer" />
         <div className="titlebar-actions">
-          <button className="icon-btn" onClick={() => setTweak('showPalette', true)}><Icons.Search size={14} /></button>
-          <button className="icon-btn" onClick={() => setTweak('showPerm', true)}><Icons.Shield size={14} /></button>
+          <button className="icon-btn" onClick={() => setTweak('showPalette', true)}>
+            <Icons.Search size={14} />
+          </button>
+          <button className="icon-btn" onClick={() => setTweak('showPerm', true)}>
+            <Icons.Shield size={14} />
+          </button>
         </div>
       </div>
 
       {/* Body */}
       <div className="app-body">
         {/* Sidebar */}
-        <div className={`sidebar ${t.sidebar === 'expanded' ? 'expanded' : 'collapsed'}`}>
-          <div className="sidebar-top">
-            {nav.map((item) => (
-              <button
-                key={item.id}
-                className={`nav-item ${t.view === item.id ? 'active' : ''}`}
-                onClick={() => setTweak('view', item.id)}
-                title={item.label}
-              >
-                <span className="nav-icon">{item.icon}</span>
-                {t.sidebar === 'expanded' && <span className="nav-label">{item.label}</span>}
-              </button>
-            ))}
+        <div className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}`}>
+          {/* Search / Command bar */}
+          <div className="sidebar-section" style={{ paddingTop: 10 }}>
+            <button
+              className="nav-item"
+              onClick={() => setTweak('showPalette', true)}
+              style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
+            >
+              <span className="nav-icon">
+                <Icons.Search />
+              </span>
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Search / Command</span>
+                  <span style={{ display: 'flex', gap: 2 }}>
+                    <span className="kbd">⌘</span>
+                    <span className="kbd">K</span>
+                  </span>
+                </>
+              )}
+            </button>
           </div>
-          <div className="sidebar-bottom">
+
+          {/* Primary navigation */}
+          <div className="sidebar-section">
+            <button
+              className={`nav-item ${t.view === 'home' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'home')}
+              title="Home"
+            >
+              <span className="nav-icon">
+                <Icons.Home />
+              </span>
+              {isExpanded && <span className="nav-label">Home</span>}
+            </button>
+            <button
+              className={`nav-item ${t.view === 'chat' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'chat')}
+              title="Chat"
+            >
+              <span className="nav-icon">
+                <Icons.Chat />
+              </span>
+              {isExpanded && <span className="nav-label">Chat</span>}
+            </button>
+            <button
+              className={`nav-item ${t.view === 'projects' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'projects')}
+              title="Projects"
+            >
+              <span className="nav-icon">
+                <Icons.Folder />
+              </span>
+              {isExpanded && <span className="nav-label">Projects</span>}
+            </button>
+            <button
+              className={`nav-item ${t.view === 'workflows' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'workflows')}
+              title="Workflows"
+            >
+              <span className="nav-icon">
+                <Icons.Workflow />
+              </span>
+              {isExpanded && <span className="nav-label">Workflows</span>}
+            </button>
+            <button
+              className={`nav-item ${t.view === 'agents' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'agents')}
+              title="Agents"
+            >
+              <span className="nav-icon">
+                <Icons.Bot />
+              </span>
+              {isExpanded && <span className="nav-label">Agents</span>}
+            </button>
+          </div>
+
+          {/* Secondary navigation */}
+          <div className="sidebar-section">
+            <button
+              className={`nav-item ${t.view === 'skills' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'skills')}
+              title="Skills"
+            >
+              <span className="nav-icon">
+                <Icons.Skills />
+              </span>
+              {isExpanded && <span className="nav-label">Skills</span>}
+            </button>
+            <button
+              className={`nav-item ${t.view === 'mcp' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'mcp')}
+              title="MCP"
+            >
+              <span className="nav-icon">
+                <Icons.MCP />
+              </span>
+              {isExpanded && <span className="nav-label">MCP</span>}
+            </button>
+          </div>
+
+          {/* Settings */}
+          <div className="sidebar-section">
             <button
               className={`nav-item ${t.view === 'settings' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'settings')}
               title="Settings"
             >
-              <span className="nav-icon"><Icons.Settings /></span>
-              {t.sidebar === 'expanded' && <span className="nav-label">Settings</span>}
+              <span className="nav-icon">
+                <Icons.Settings />
+              </span>
+              {isExpanded && <span className="nav-label">Settings</span>}
             </button>
+          </div>
+
+          {/* User info */}
+          <div className="sidebar-bottom">
+            <div className="sidebar-user">
+              <div className="avatar">U</div>
+              <div className="sidebar-user-info">
+                <div className="name">User</div>
+                <div className="meta">Local · Desktop</div>
+              </div>
+              <Icons.ChevronDown size={12} className="chev faint" />
+            </div>
           </div>
         </div>
 
         {/* Main content */}
         <div className="main">
-          <View />
+          <ViewHeader view={t.view} chatMode={t.chatMode} />
+          <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
+            <View />
+          </div>
         </div>
       </div>
 

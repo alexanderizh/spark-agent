@@ -248,6 +248,15 @@ button { font-family: inherit; }
 }
 
 .titlebar-spacer { flex: 1; }
+.titlebar-center {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.titlebar-center strong { color: var(--text-strong); font-weight: 600; }
 .titlebar-actions {
   display: flex;
   gap: 6px;
@@ -390,10 +399,7 @@ button { font-family: inherit; }
   min-height: 0;
   background: var(--bg);
 }
-.main > * {
-  flex: 1 1 auto;
-  min-height: 0;
-}
+/* .main > * removed — ViewHeader + view-body handle their own sizing */
 
 .view-header {
   padding: var(--pad-md) var(--pad-xl);

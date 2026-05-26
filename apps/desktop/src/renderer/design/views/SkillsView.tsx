@@ -37,6 +37,7 @@ export function SkillsView() {
   const enabledCount = skills.filter((s) => s.enabled).length
 
   return (
+    <div className="view-body">
     <div className="page">
       <div className="row" style={{ gap: 12, marginBottom: 18 }}>
         <div className="flex1">
@@ -65,6 +66,7 @@ export function SkillsView() {
           {skills.map((s) => <SkillCard key={s.id} skill={s} />)}
         </div>
       )}
+    </div>
     </div>
   )
 }

@@ -161,6 +161,7 @@ export function McpView() {
   }
 
   return (
+    <div className="view-body">
     <div className="page">
       <div className="row" style={{ gap: 12, marginBottom: 18 }}>
         <div className="flex1">
@@ -253,6 +254,7 @@ export function McpView() {
         })}
       </div>
     </div>
+    </div>
   )
 }
 
@@ -281,7 +283,7 @@ function MCPCard({ server, onToggle, onDelete }: { server: Server; onToggle: () 
       <div className="mcp-card-foot">
         {stat.dot}
         <span className="muted truncate" style={{ fontSize: 11 }}>{stat.label}</span>
-        <span className="badge" style={{ marginLeft: 'auto' }}><Icons.Wrench size={10} /> {server.tools}</span>
+        <span className="badge"><Icons.Wrench size={10} /> {server.tools}</span>
         <button className="icon-btn" title="删除" onClick={onDelete} style={{ width: 22, height: 22 }}>
           <Icons.Trash size={11} />
         </button>
