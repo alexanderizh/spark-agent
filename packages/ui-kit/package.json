@@ -6,7 +6,10 @@
   "type": "module",
   "main": "./src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./styles": "./src/styles/index.css",
+    "./styles/tokens": "./src/styles/tokens.css",
+    "./styles/tailwind": "./src/styles/tailwind.css"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -33,9 +36,16 @@
     "tailwind-merge": "^2.5.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "eslint": "^10.4.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.60.0",
     "vitest": "^2.0.0"
   }
 }

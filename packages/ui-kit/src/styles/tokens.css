@@ -1,0 +1,189 @@
+/**
+ * Spark Agent Design Tokens
+ *
+ * 设计稿参考：Spark-Agent-Standalone.html
+ * 设计风格：工具型、紧凑、专业，面向开发者的桌面工作台
+ * 默认主题：深色（Dark）
+ *
+ * 使用方式：
+ *   所有颜色、字号、间距、圆角等设计变量均通过 CSS 自定义属性定义。
+ *   组件和页面必须引用变量，不得硬编码色值。
+ *   主题切换通过 [data-theme="light"] 选择器覆盖变量值。
+ */
+
+/* ============================================================
+ * Dark Theme（默认）
+ * ============================================================ */
+:root {
+  /* ---- Surface 层级 ---- */
+  --bg: #0d0d10;
+  --bg-soft: #131318;
+  --bg-sunken: #0a0a0d;
+  --panel: #16161b;
+  --panel-elev: #1c1c22;
+
+  /* ---- 边框 & 分割 ---- */
+  --border: #26262d;
+  --border-strong: #34343c;
+  --divider: #202027;
+
+  /* ---- 交互状态 ---- */
+  --hover: rgba(255, 255, 255, 0.04);
+  --active: rgba(255, 255, 255, 0.07);
+  --selected: var(--primary-soft);
+  --focus-ring: rgba(99, 102, 241, 0.5);
+
+  /* ---- 文字层级 ---- */
+  --text-strong: #fafafa;
+  --text: #e4e4e7;
+  --text-muted: #9ca3af;
+  --text-faint: #6b7280;
+  --text-inverse: #09090b;
+
+  /* ---- 品牌色 (Indigo) ---- */
+  --primary: #6366f1;
+  --primary-hover: #4f46e5;
+  --primary-soft: rgba(99, 102, 241, 0.12);
+  --primary-fg: #ffffff;
+
+  /* ---- 语义色 ---- */
+  --success: #22c55e;
+  --success-bg: rgba(34, 197, 94, 0.14);
+  --warning: #f59e0b;
+  --warning-bg: rgba(245, 158, 11, 0.16);
+  --danger: #f87171;
+  --danger-bg: rgba(248, 113, 113, 0.14);
+  --info: #60a5fa;
+  --info-bg: rgba(96, 165, 250, 0.14);
+
+  /* ---- 代码 & 终端 ---- */
+  --code-bg: #1a1a20;
+  --code-fg: #d4d4d8;
+  --term-bg: #08080a;
+  --term-fg: #d4d4d8;
+
+  /* ---- Diff 差异 ---- */
+  --diff-add-bg: rgba(34, 197, 94, 0.1);
+  --diff-add-fg: #4ade80;
+  --diff-del-bg: rgba(248, 113, 113, 0.1);
+  --diff-del-fg: #fca5a5;
+
+  /* ---- 字号系统 ---- */
+  --font-xs: 11px;
+  --font-sm: 12px;
+  --font-base: 13px;
+  --font-lg: 14px;
+  --font-xl: 18px;
+  --font-2xl: 28px;
+
+  /* ---- 字体族 ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* ---- 间距系统 (4px 基准网格) ---- */
+  --pad-0: 0px;
+  --pad-1: 4px;
+  --pad-2: 8px;
+  --pad-3: 12px;
+  --pad-4: 16px;
+  --pad-5: 20px;
+  --pad-6: 24px;
+  --pad-8: 32px;
+
+  /* ---- 圆角系统 ---- */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-full: 9999px;
+
+  /* ---- 阴影系统 ---- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+
+  /* ---- 行高 ---- */
+  --row-h-compact: 28px;
+  --row-h: 32px;
+  --row-h-relaxed: 36px;
+  --nav-row-h: 34px;
+
+  /* ---- 过渡 ---- */
+  --transition-fast: 120ms ease;
+  --transition-normal: 200ms ease;
+  --transition-slow: 300ms ease;
+
+  /* ---- Z-index 层级 ---- */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-toast: 500;
+
+  /* ---- 导航栏尺寸 ---- */
+  --sidebar-width: 56px;
+  --sidebar-expanded-width: 240px;
+  --inspector-width: 280px;
+
+  /* ---- 顶部栏高度 ---- */
+  --topbar-height: 40px;
+}
+
+/* ============================================================
+ * Light Theme
+ * ============================================================ */
+[data-theme='light'] {
+  /* ---- Surface 层级 ---- */
+  --bg: #ffffff;
+  --bg-soft: #f9fafb;
+  --bg-sunken: #f3f4f6;
+  --panel: #ffffff;
+  --panel-elev: #ffffff;
+
+  /* ---- 边框 & 分割 ---- */
+  --border: #e5e7eb;
+  --border-strong: #d1d5db;
+  --divider: #f3f4f6;
+
+  /* ---- 交互状态 ---- */
+  --hover: rgba(0, 0, 0, 0.04);
+  --active: rgba(0, 0, 0, 0.07);
+  --selected: var(--primary-soft);
+  --focus-ring: rgba(99, 102, 241, 0.4);
+
+  /* ---- 文字层级 ---- */
+  --text-strong: #111827;
+  --text: #374151;
+  --text-muted: #6b7280;
+  --text-faint: #9ca3af;
+  --text-inverse: #ffffff;
+
+  /* ---- 品牌色保持不变 ---- */
+
+  /* ---- 语义色 ---- */
+  --success-bg: rgba(34, 197, 94, 0.08);
+  --warning-bg: rgba(245, 158, 11, 0.08);
+  --danger-bg: rgba(248, 113, 113, 0.08);
+  --info-bg: rgba(96, 165, 250, 0.08);
+
+  /* ---- 代码 & 终端 ---- */
+  --code-bg: #f3f4f6;
+  --code-fg: #374151;
+  --term-bg: #1f2937;
+  --term-fg: #e5e7eb;
+
+  /* ---- Diff 差异 ---- */
+  --diff-add-bg: rgba(34, 197, 94, 0.08);
+  --diff-add-fg: #16a34a;
+  --diff-del-bg: rgba(248, 113, 113, 0.08);
+  --diff-del-fg: #dc2626;
+
+  /* ---- 阴影（浅色下更轻柔）---- */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+}
