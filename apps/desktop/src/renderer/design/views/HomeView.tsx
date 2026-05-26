@@ -107,7 +107,7 @@ export function HomeView() {
       </div>
 
       {notice !== null && (
-        <div className="card" style={{ padding: '10px 14px', marginBottom: 14, color: 'var(--warning)' }}>
+        <div className="card home-warning-card">
           {notice}
         </div>
       )}
@@ -163,7 +163,7 @@ export function HomeView() {
             <span className="link" onClick={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}>设置</span>
           </div>
           <div className="card">
-            <div className="card-body" style={{ padding: '4px 16px 12px' }}>
+            <div className="card-body home-card-body-sm">
               {providers.length === 0 ? (
                 <EmptyCompact
                   icon={<Icons.Settings />}
@@ -201,14 +201,14 @@ function Stat({ label, value, color, size }: { label: string; value: string; col
   return (
     <div className="stat">
       <div className="stat-label">{label}</div>
-      <div className="stat-value" style={{ color, fontSize: size }}>{value}</div>
+      <div className="stat-value" style={{ color, fontSize: size }}>{value} {/* dynamic */}</div>
     </div>
   )
 }
 
 function QSCard({ icon, title, desc, onClick }: { icon: ReactNode; title: string; desc: string; onClick?: () => void }) {
   return (
-    <div className="qs-card" onClick={onClick} style={{ cursor: onClick ? 'default' : undefined }}>
+    <div className={`qs-card ${onClick ? 'qs-card-default' : ''}`} onClick={onClick}>
       <div className="qs-icon">{icon}</div>
       <div className="qs-title">{title}</div>
       <div className="qs-desc">{desc}</div>
@@ -230,7 +230,7 @@ function SessionItem({
   onClick: () => void
 }) {
   return (
-    <div className="list-item session-item" onClick={onClick} style={{ cursor: 'default' }}>
+    <div className="list-item session-item session-item-default" onClick={onClick}>
       <div className="session-icon"><Icons.Chat /></div>
       <div className="session-body">
         <div className="session-title truncate">{title}</div>
@@ -247,10 +247,10 @@ function HealthRow({ name, provider, defaultModel, isDefault }: { name: string; 
   const initial = (name[0] ?? provider[0] ?? '?').toUpperCase()
   return (
     <div className="health-row">
-      <div className="provider-logo" style={{ width: 24, height: 24, fontSize: 11 }}>{initial}</div>
+      <div className="provider-logo provider-logo-sm">{initial}</div>
       <div>
         <div className="health-name">{name}</div>
-        <div className="muted" style={{ fontSize: 11 }}>{defaultModel}</div>
+        <div className="muted default-model">{defaultModel}</div>
       </div>
       <div className="health-meta">
         {isDefault && <span className="badge primary dot">默认</span>}

@@ -163,17 +163,17 @@ export function McpView() {
   return (
     <div className="view-body">
     <div className="page">
-      <div className="row" style={{ gap: 12, marginBottom: 18 }}>
+      <div className="row section-header-row">
         <div className="flex1">
-          <div className="strong" style={{ fontSize: 18 }}>MCP 服务器</div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>{servers.length} 个服务器 · {totalTools} 个工具 · 配置保存在本地 SQLite</div>
+          <div className="strong header-title-lg">MCP 服务器</div>
+          <div className="muted header-desc">{servers.length} 个服务器 · {totalTools} 个工具 · 配置保存在本地 SQLite</div>
         </div>
         <div className="search-input"><Icons.Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索服务器或工具..." /></div>
         <button className="btn" onClick={refresh}><Icons.Refresh size={12} /> 刷新</button>
         <button className="btn primary" onClick={() => setShowForm(true)}><Icons.Plus size={12} /> 添加 MCP</button>
       </div>
 
-      <div className="row" style={{ gap: 6, marginBottom: 14 }}>
+      <div className="row row-gap-sm mb-14">
         <span className="badge primary dot">全部 {mappedServers.length}</span>
         <span className="badge success dot">在线 {onlineCount}</span>
         <span className="badge warning dot">需注意 {warnCount}</span>
@@ -191,14 +191,14 @@ export function McpView() {
       </div>
 
       {error && (
-        <div className="card" style={{ marginBottom: 14, padding: '10px 12px', color: 'var(--danger)', fontSize: 12 }}>
+        <div className="card card-error">
           {error}
         </div>
       )}
 
       {showForm && (
-        <div className="card" style={{ marginBottom: 14, padding: 14 }}>
-          <div className="subsec-h" style={{ marginTop: 0 }}>添加 MCP 服务器</div>
+        <div className="card mcp-add-card">
+          <div className="subsec-h subsec-h-no-mt">添加 MCP 服务器</div>
           <div className="form-grid">
             <label>名称</label>
             <input value={draft.name} onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="例：filesystem" />
@@ -226,7 +226,7 @@ export function McpView() {
               placeholder={draft.transport === 'stdio' ? 'npx -y @modelcontextprotocol/server-filesystem .' : 'https://mcp.example.com/sse'}
             />
           </div>
-          <div className="row" style={{ gap: 8, marginTop: 12 }}>
+          <div className="row form-row-mt">
             <button className="btn primary sm" onClick={() => void handleCreate()}><Icons.Plus size={11} /> 添加</button>
             <button className="btn ghost sm" onClick={resetDraft}>取消</button>
           </div>
@@ -234,9 +234,9 @@ export function McpView() {
       )}
 
       <div className="mcp-grid">
-        {loading && <div className="card" style={{ padding: 20, color: 'var(--text-muted)', fontSize: 12 }}>正在加载 MCP 服务器...</div>}
+        {loading && <div className="card loading-card">正在加载 MCP 服务器...</div>}
         {!loading && filteredServers.length === 0 && (
-          <div className="card" style={{ padding: 28, color: 'var(--text-muted)', fontSize: 12, textAlign: 'center' }}>
+          <div className="card empty-state">
             暂无 MCP 服务器
           </div>
         )}
@@ -271,9 +271,9 @@ function MCPCard({ server, onToggle, onDelete }: { server: Server; onToggle: () 
       <div className="mcp-card-h">
         <div className="mcp-card-icon">{server.logo}</div>
         <div className="mcp-card-meta">
-          <div className="row" style={{ gap: 6 }}>
+          <div className="row row-gap-xs">
             <span className="name">{server.name}</span>
-            <span className="badge" style={{ fontSize: 10 }}>{server.scope}</span>
+            <span className="badge badge-font-sm">{server.scope}</span>
           </div>
           <div className="scope">{server.transport} · {server.tools} tools</div>
         </div>
@@ -282,9 +282,9 @@ function MCPCard({ server, onToggle, onDelete }: { server: Server; onToggle: () 
       <div className="mcp-card-desc">{server.desc}</div>
       <div className="mcp-card-foot">
         {stat.dot}
-        <span className="muted truncate" style={{ fontSize: 11 }}>{stat.label}</span>
+        <span className="muted truncate muted-font-sm">{stat.label}</span>
         <span className="badge"><Icons.Wrench size={10} /> {server.tools}</span>
-        <button className="icon-btn" title="删除" onClick={onDelete} style={{ width: 22, height: 22 }}>
+        <button className="icon-btn delete-btn-sm" title="删除" onClick={onDelete}>
           <Icons.Trash size={11} />
         </button>
       </div>

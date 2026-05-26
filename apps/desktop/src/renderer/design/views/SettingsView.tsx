@@ -248,9 +248,7 @@ function AppearanceSection() {
           >
             <span
               className={`color-swatch-circle ${t.primary === color ? 'active' : ''}`}
-              style={{
-                boxShadow: t.primary === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none',
-              }}
+              style={{ boxShadow: t.primary === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none' }} /* dynamic */
             >
               {t.primary === color && <Icons.Check size={16} />}
             </span>
@@ -350,15 +348,15 @@ function ThemePreview({ kind, active, onClick, disabled }: { kind: 'light' | 'da
       disabled={disabled}
       className={`theme-preview ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
     >
-      <div className="theme-preview-body" style={{ background: c.bg }}>
-        <div className="theme-preview-sidebar" style={{ background: c.soft }}>
-          {[1, 2, 3].map((i) => <div key={i} className="theme-preview-line" style={{ background: c.muted }} />)}
+      <div className="theme-preview-body" style={{ background: c.bg }} /* dynamic */>
+        <div className="theme-preview-sidebar" style={{ background: c.soft }} /* dynamic */>
+          {[1, 2, 3].map((i) => <div key={i} className="theme-preview-line" style={{ background: c.muted }} /* dynamic */ />)}
         </div>
         <div className="theme-preview-main">
-          <div className="theme-preview-title" style={{ background: c.text }} />
-          <div className="theme-preview-text" style={{ background: c.muted, width: '90%' }} />
-          <div className="theme-preview-text" style={{ background: c.muted, width: '70%' }} />
-          <div className="theme-preview-accent" style={{ background: c.accent }} />
+          <div className="theme-preview-title" style={{ background: c.text }} /* dynamic */ />
+          <div className="theme-preview-text" style={{ background: c.muted, width: '90%' }} /* dynamic */ />
+          <div className="theme-preview-text" style={{ background: c.muted, width: '70%' }} /* dynamic */ />
+          <div className="theme-preview-accent" style={{ background: c.accent }} /* dynamic */ />
         </div>
       </div>
       <div className="theme-preview-foot">
@@ -814,8 +812,7 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
               {['default', 'planner', 'coder', 'reviewer', 'fast', 'vision', 'long-context'].map((r) => (
                 <span
                   key={r}
-                  className={`badge ${['default', 'coder', 'reviewer'].includes(r) ? 'primary' : ''}`}
-                  style={{ cursor: 'default', fontSize: 11, padding: '2px 8px', height: 22 }}
+                  className={`badge ${['default', 'coder', 'reviewer'].includes(r) ? 'primary' : ''} badge-role-tag`}
                 >
                   {r}
                 </span>
@@ -860,14 +857,14 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             <div className="fallback-list">
               <div className="row fallback-row">
                 <span className="mono-sm faint">1.</span>
-                <Icons.Brain size={13} style={{ color: 'var(--primary)' }} />
+                <Icons.Brain size={13} className="color-primary" />
                 <span className="strong fallback-name">Claude Opus 4</span>
                 <span className="badge fallback-badge">当延迟 &gt; 5s</span>
                 <button className="icon-btn fallback-close"><Icons.X size={11} /></button>
               </div>
               <div className="row fallback-row">
                 <span className="mono-sm faint">2.</span>
-                <Icons.Brain size={13} style={{ color: 'var(--primary)' }} />
+                <Icons.Brain size={13} className="color-primary" />
                 <span className="strong fallback-name">Claude Haiku 4.5</span>
                 <span className="badge fallback-badge">当成本超限</span>
                 <button className="icon-btn fallback-close"><Icons.X size={11} /></button>
@@ -969,7 +966,7 @@ function ModelsSection() {
         <div key={provider.id} className="card model-card">
           <div className="row model-card-header">
             <span className="strong">{provider.name}</span>
-            <span className="badge" style={{ fontSize: 10 }}>{provider.provider}</span>
+            <span className="badge model-provider-badge">{provider.provider}</span>
             <span className="flex1" />
             <button className="btn ghost sm" onClick={() => { setAddingForProvider(provider.id); setNewModelName('') }}>
               <Icons.Plus size={11} /> 添加
@@ -977,10 +974,9 @@ function ModelsSection() {
           </div>
 
           {addingForProvider === provider.id && (
-            <div className="row row-gap-sm" style={{ marginBottom: 8 }}>
+            <div className="row row-gap-sm mb-sm">
               <input
-                className="input"
-                style={{ flex: 1, fontSize: 12 }}
+                className="input flex1 model-name-sm"
                 placeholder="模型名称，如 gpt-4o"
                 value={newModelName}
                 onChange={(e) => setNewModelName(e.target.value)}
@@ -998,11 +994,10 @@ function ModelsSection() {
 
           {pModels.map((m) => (
             <div key={m.id} className="row model-row-border">
-              <span className="mono-sm" style={{ flex: 1, fontSize: 12 }}>{m.name}</span>
+              <span className="mono-sm model-name-sm flex1">{m.name}</span>
               <div
-                className={`switch${m.enabled ? ' on' : ''}`}
+                className={`switch${m.enabled ? ' on' : ''} switch-cursor`}
                 onClick={() => void handleToggle(m)}
-                style={{ cursor: 'pointer' }}
               />
               <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}><Icons.X size={12} /></button>
             </div>
@@ -1095,7 +1090,7 @@ function RulesSection() {
         <div className="lede">多层规则按优先级合成为有效 prompt 注入。下方按层级展示来源，并显示冲突与覆盖。</div>
 
         <div className="row info-banner">
-          <Icons.Brain size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+          <Icons.Brain size={14} className="color-primary flex-shrink-0" />
           <div className="flex1 info-banner-text">
             <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length} 个作用域
           </div>
@@ -1167,7 +1162,7 @@ function RuleLayer({
   return (
     <div className="rule-layer">
       <div className="rule-layer-h">
-        <span className="badge rule-badge" style={{ background: badgeColor + '20', color: badgeColor }}>{badge}</span>
+        <span className="badge rule-badge rule-badge-dynamic" style={{ background: badgeColor + '20', color: badgeColor }} /* dynamic */>{badge}</span>
         <div>
           <span className="name">{scope}</span>
           <span className="desc"> · {desc}</span>
@@ -1191,8 +1186,7 @@ function RuleLayer({
             <span className="marker win">P{rule.priority}</span>
             {!rule.enabled && <span className="marker lose">禁用</span>}
             <div
-              className={`switch ${rule.enabled ? 'on' : ''}`}
-              style={{ width: 28, height: 16, flexShrink: 0 }}
+              className={`switch rule-switch-sm ${rule.enabled ? 'on' : ''}`}
               onClick={() => onToggle(rule.id, !rule.enabled)}
             />
             {!readOnly && (
@@ -1438,8 +1432,8 @@ function McpSection() {
       </div>
 
       {showAddForm ? (
-        <div className="card" style={{ marginTop: 12, padding: 14 }}>
-          <div className="subsec-h" style={{ marginTop: 0 }}>添加 MCP 服务器</div>
+        <div className="card mcp-add-card">
+          <div className="subsec-h wf-template-h2">添加 MCP 服务器</div>
           <div className="form-grid">
             <label>名称</label>
             <input value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
@@ -1742,11 +1736,7 @@ function ProfileChip({ active, onClick, icon, name, desc }: { active: boolean; o
   return (
     <button
       onClick={onClick}
-      className="profile-chip"
-      style={{
-        border: active ? '1.5px solid var(--primary)' : '1px solid var(--border)',
-        background: active ? 'var(--primary-soft)' : 'var(--panel)',
-      }}
+      className={`profile-chip ${active ? 'active' : ''}`}
     >
       <span className={`profile-chip-icon ${active ? 'active' : ''}`}>{icon}</span>
       <div>
@@ -1801,19 +1791,19 @@ function TelemetrySection() {
 
         <label>Trace 采样率</label>
         <div className="control">
-          <input type="range" min="0" max="100" defaultValue="100" style={{ flex: 1 }} />
-          <span className="mono-sm muted" style={{ width: 42, textAlign: 'right' }}>100%</span>
+          <input type="range" min="0" max="100" defaultValue="100" className="flex1" />
+          <span className="mono-sm muted range-value">100%</span>
         </div>
 
         <label>本地保留 trace 天数</label>
-        <input type="number" defaultValue="14" style={{ maxWidth: 80 }} />
+        <input type="number" defaultValue="14" className="input-max-sm" />
       </div>
 
       <div className="subsec-h">最近运行</div>
       <div className="card">
         <SettingsRow title="代码功能开发：搜索优化" desc="Run #4f3a · 5 agent · 4m 38s · $0.92" right={<button className="btn ghost sm"><Icons.Eye size={11} /> 查看 trace</button>} />
         <SettingsRow title="重构 auth 模块为 OAuth 2.1" desc="Run #41b8 · 1 agent · 6m 12s · $1.34" right={<button className="btn ghost sm"><Icons.Eye size={11} /> 查看 trace</button>} />
-        <SettingsRow title="MCP gateway 性能调优" desc="Run #38c0 · 1 agent · 失败" right={<button className="btn ghost sm" style={{ color: 'var(--danger)' }}><Icons.Eye size={11} /> 查看错误</button>} />
+        <SettingsRow title="MCP gateway 性能调优" desc="Run #38c0 · 1 agent · 失败" right={<button className="btn ghost sm danger-btn"><Icons.Eye size={11} /> 查看错误</button>} />
       </div>
 
       <div className="subsec-h">诊断包</div>
@@ -1871,20 +1861,20 @@ function StorageSection() {
       <div className="form-grid">
         <label>数据目录</label>
         <div className="control">
-          <input style={{ flex: 1 }} defaultValue="~/Library/Application Support/Spark Agent" readOnly />
+          <input className="flex1" defaultValue="~/Library/Application Support/Spark Agent" readOnly />
           <button className="btn"><Icons.Folder size={12} /> 打开</button>
         </div>
 
         <label>当前工作区<span className="sub">Agent 文件工具的根目录</span></label>
         <div className="control">
-          <input style={{ flex: 1 }} value={workspace?.rootPath ?? '未打开工作区'} readOnly />
+          <input className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
           <button className="btn" onClick={handleOpenWorkspace}><Icons.Folder size={12} /> 选择</button>
           <button className="btn ghost" onClick={handleCloseWorkspace} disabled={workspace === null}>关闭</button>
         </div>
       </div>
 
       {error !== null && (
-        <div className="card" style={{ padding: '10px 14px', marginTop: 12, color: 'var(--danger)' }}>
+        <div className="card storage-card">
           {error}
         </div>
       )}
@@ -1909,8 +1899,8 @@ function StorageSection() {
       <div className="subsec-h">清理</div>
       <div className="card">
         <SettingsRow title="清理 30 天前的检查点" right={<button className="btn ghost sm">运行</button>} />
-        <SettingsRow title="清空全部缓存与索引" desc="下次启动会重建" right={<button className="btn ghost sm" style={{ color: 'var(--danger)' }}>清空</button>} />
-        <SettingsRow title="重置所有设置" desc="不影响会话与项目数据" right={<button className="btn ghost sm" style={{ color: 'var(--danger)' }}>重置</button>} />
+        <SettingsRow title="清空全部缓存与索引" desc="下次启动会重建" right={<button className="btn ghost sm danger-btn">清空</button>} />
+        <SettingsRow title="重置所有设置" desc="不影响会话与项目数据" right={<button className="btn ghost sm danger-btn">重置</button>} />
       </div>
     </div>
   )
@@ -1918,15 +1908,15 @@ function StorageSection() {
 
 function UsageRow({ label, used, pct }: { label: string; used: string; pct: number }) {
   return (
-    <div className="settings-card-row" style={{ display: 'flex', flexDirection: 'column', alignItems: 'stretch', gap: 6 }}>
+    <div className="settings-card-row usage-row">
       <div className="row">
-        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--text)' }}>{label}</span>
-        <span style={{ flex: 1 }} />
+        <span className="perm-row-hint">{label}</span>
+        <span className="flex1" />
         <span className="mono-sm strong">{used}</span>
-        <span className="mono-sm faint" style={{ width: 42, textAlign: 'right' }}>{pct}%</span>
+        <span className="mono-sm faint range-value">{pct}%</span>
       </div>
-      <div style={{ height: 4, background: 'var(--bg-soft)', borderRadius: 2, overflow: 'hidden' }}>
-        <div style={{ width: `${pct}%`, height: '100%', background: 'var(--primary)' }} />
+      <div className="usage-bar-track">
+        <div className="usage-bar-fill" style={{ width: `${pct}%` }} /* dynamic */ />
       </div>
     </div>
   )
@@ -1939,15 +1929,13 @@ function UpdatesSection() {
       <h2>更新</h2>
       <div className="lede">保持 Spark Agent 最新版本以获得最新模型与安全修复。</div>
 
-      <div className="card" style={{ padding: '20px', display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
-        <div style={{
-          width: 48, height: 48, borderRadius: 12,
-          background: 'var(--success-bg)', color: 'var(--success)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}><Icons.CheckCircle size={26} /></div>
+      <div className="card update-card">
+        <div className="update-icon ok">
+          <Icons.CheckCircle size={26} />
+        </div>
         <div className="flex1">
-          <div className="strong" style={{ fontSize: 15 }}>已是最新版本</div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>Spark Agent 0.2.4 · 上次检查 12 分钟前</div>
+          <div className="strong update-version">已是最新版本</div>
+          <div className="muted update-meta">Spark Agent 0.2.4 · 上次检查 12 分钟前</div>
         </div>
         <button className="btn"><Icons.Refresh size={12} /> 检查更新</button>
       </div>
@@ -1960,7 +1948,7 @@ function UpdatesSection() {
         <SettingsRow
           title="更新通道"
           right={
-            <select style={{ height: 26, padding: '0 8px' }} defaultValue="stable">
+            <select className="select-sm" defaultValue="stable">
               <option value="stable">stable</option>
               <option value="beta">beta</option>
               <option value="nightly">nightly</option>
@@ -1984,7 +1972,7 @@ function UpdatesSection() {
 function SettingsRow({ title, desc, right }: { title: string; desc?: string; right: ReactNode }) {
   return (
     <div className="settings-card-row">
-      <div style={{ flex: 1, minWidth: 0 }}>
+      <div className="flex1 min-w-0">
         <div className="row-title">{title}</div>
         {desc && <div className="row-desc">{desc}</div>}
       </div>
@@ -1996,19 +1984,19 @@ function SettingsRow({ title, desc, right }: { title: string; desc?: string; rig
 function AboutSection() {
   return (
     <div className="settings-section">
-      <div style={{ textAlign: 'center', padding: '32px 0 24px' }}>
-        <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--text)' }}>Spark Agent</div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>AI Agent 工作台</div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>版本 0.1.0 (MVP)</div>
+      <div className="about-header">
+        <div className="about-title">Spark Agent</div>
+        <div className="about-subtitle">AI Agent 工作台</div>
+        <div className="about-version">版本 0.1.0 (MVP)</div>
       </div>
       <div className="card">
-        <SettingsRow title="Electron" desc="桌面应用框架" right={<span className="mono-sm" style={{ fontSize: 11 }}>33.x</span>} />
-        <SettingsRow title="React" desc="UI 框架" right={<span className="mono-sm" style={{ fontSize: 11 }}>19.x</span>} />
-        <SettingsRow title="TypeScript" desc="开发语言" right={<span className="mono-sm" style={{ fontSize: 11 }}>5.x</span>} />
-        <SettingsRow title="数据库" desc="本地存储" right={<span className="mono-sm" style={{ fontSize: 11 }}>SQLite (better-sqlite3)</span>} />
-        <SettingsRow title="AI 引擎" desc="Agent Runtime" right={<span className="mono-sm" style={{ fontSize: 11 }}>Claude / OpenAI / DeepSeek / Ollama</span>} />
+        <SettingsRow title="Electron" desc="桌面应用框架" right={<span className="mono-sm tech-version">33.x</span>} />
+        <SettingsRow title="React" desc="UI 框架" right={<span className="mono-sm tech-version">19.x</span>} />
+        <SettingsRow title="TypeScript" desc="开发语言" right={<span className="mono-sm tech-version">5.x</span>} />
+        <SettingsRow title="数据库" desc="本地存储" right={<span className="mono-sm tech-version">SQLite (better-sqlite3)</span>} />
+        <SettingsRow title="AI 引擎" desc="Agent Runtime" right={<span className="mono-sm tech-version">Claude / OpenAI / DeepSeek / Ollama</span>} />
       </div>
-      <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)', fontSize: 11 }}>
+      <div className="about-footer">
         © 2026 Spark Agent Team. All rights reserved.
       </div>
     </div>
@@ -2017,11 +2005,11 @@ function AboutSection() {
 
 function PlaceholderSection({ name, hint }: { name: string; hint?: string }) {
   return (
-    <div className="settings-section" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 300, color: 'var(--text-muted)' }}>
-      <div className="col" style={{ alignItems: 'center', gap: 8 }}>
+    <div className="settings-section placeholder-section">
+      <div className="col placeholder-inner">
         <Icons.Settings size={32} className="faint" />
         <div className="strong">{name}</div>
-        {hint && <div className="muted" style={{ fontSize: 'var(--font-sm)' }}>{hint}</div>}
+        {hint && <div className="muted perm-row-hint">{hint}</div>}
       </div>
     </div>
   )

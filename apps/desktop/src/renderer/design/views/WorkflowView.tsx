@@ -146,8 +146,8 @@ function WorkflowToolbar() {
       <button className="icon-btn"><Icons.Branch /></button>
       <button className="icon-btn"><Icons.Layers /></button>
       <button className="icon-btn"><Icons.Terminal /></button>
-      <div style={{ flex: 1 }} />
       <button className="icon-btn"><Icons.Beaker /></button>
+      <div className="flex1" />
     </div>
   )
 }
@@ -160,7 +160,7 @@ function WorkflowEditor({ workflow, onBack }: { workflow: WorkflowMeta | null; o
       <WorkflowToolbar />
 
       <div className="wf-canvas">
-        <div style={{ position: 'absolute', left: 18, top: 14, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="wf-canvas-controls">
           <button className="btn ghost sm" onClick={onBack}><Icons.ChevronLeft size={11} /> 返回</button>
           <span className="badge primary dot">{workflow?.name ?? '未命名工作流'}</span>
         </div>
@@ -183,17 +183,17 @@ function WorkflowEditor({ workflow, onBack }: { workflow: WorkflowMeta | null; o
         ))}
 
         <div className="wf-zoom">
-          <button className="icon-btn" style={{ width: 22, height: 22 }}><Icons.Plus size={12} /></button>
-          <span style={{ display: 'inline-flex', alignItems: 'center', padding: '0 6px', fontSize: 11, color: 'var(--text-muted)', fontVariantNumeric: 'tabular-nums' }}>72%</span>
-          <button className="icon-btn" style={{ width: 22, height: 22 }}>
+          <button className="icon-btn wf-zoom-btn"><Icons.Plus size={12} /></button>
+          <span className="wf-zoom-label">72%</span>
+          <button className="icon-btn wf-zoom-btn">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14" /></svg>
           </button>
-          <button className="icon-btn" style={{ width: 22, height: 22 }}><Icons.Map size={12} /></button>
+          <button className="icon-btn wf-zoom-btn"><Icons.Map size={12} /></button>
         </div>
         <div className="wf-mini">
-          <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: 0.06, textTransform: 'uppercase', color: 'var(--text-faint)' }}>缩略图</div>
-          <div style={{ position: 'absolute', inset: '18px 8px 8px 8px', background: 'var(--bg-soft)', borderRadius: 4, border: '1px solid var(--border)' }}>
-            <svg viewBox="0 0 800 400" style={{ width: '100%', height: '100%' }}>
+          <div className="wf-mini-label">缩略图</div>
+          <div className="wf-mini-inner">
+            <svg viewBox="0 0 800 400" className="svg-fill">
               {NODES.map((n) => (
                 <rect key={n.id} x={n.x * 0.5} y={(n.y - 30) * 0.55 + 20} width={120} height={36} rx={4}
                   fill={n.status === 'done' ? '#10b981' : n.status === 'running' ? '#3b82f6' : '#94a3b8'} opacity={0.7} />
@@ -230,15 +230,15 @@ function WFNode({ node, selected, onClick }: { node: WFNodeData; selected: boole
   return (
     <div
       className={`wf-node ${selected ? 'selected' : ''} ${node.status === 'running' ? 'running' : ''}`}
-      style={{ left: node.x, top: node.y }}
+      style={{ left: node.x, top: node.y }} /* dynamic */
       onClick={onClick}
     >
       <span className="wf-port in" />
       <span className="wf-port out" />
       <div className="wf-node-head">
-        <div className="wf-node-icon" style={{ background: `${m.color}1f`, color: m.color }}>{m.icon}</div>
+        <div className="wf-node-icon" style={{ background: `${m.color}1f`, color: m.color }}>{m.icon}</div> {/* dynamic */}
         <div className="wf-node-title">{node.title}</div>
-        <span className={`badge ${s.cls} dot`} style={{ fontSize: 9.5, height: 16, padding: '0 5px' }}>{s.label}</span>
+        <span className={`badge ${s.cls} dot wf-badge-sm`}>{s.label}</span>
       </div>
       <div className="wf-node-meta">
         {node.model && <span>{node.model}</span>}
@@ -249,7 +249,7 @@ function WFNode({ node, selected, onClick }: { node: WFNodeData; selected: boole
         <div className="wf-node-foot">
           {node.tokens && <span>{node.tokens} tokens</span>}
           {node.time && <span>· {node.time}</span>}
-          {node.status === 'running' && <Icons.Spinner size={11} style={{ marginLeft: 'auto', color: 'var(--info)' }} />}
+          {node.status === 'running' && <Icons.Spinner size={11} className="wf-spinner-ml" />}
         </div>
       )}
     </div>
@@ -262,8 +262,8 @@ function WFInspector({ node }: { node: WFNodeData }) {
       <div className="wf-insp-head">
         <div className="wf-insp-icon"><Icons.Bot /></div>
         <div className="flex1">
-          <div className="strong" style={{ fontSize: 'var(--font-base)' }}>{node?.title || '节点'}</div>
-          <div className="muted" style={{ fontSize: 11 }}>Agent 节点 · 角色 Coder</div>
+          <div className="strong">{node?.title || '节点'}</div>
+          <div className="muted wf-insp-role">Agent 节点 · 角色 Coder</div>
         </div>
         <button className="icon-btn"><Icons.More /></button>
       </div>
@@ -287,21 +287,21 @@ function WFInspector({ node }: { node: WFNodeData }) {
         <div className="field">
           <label>模型 Profile</label>
           <div className="control">
-            <span className="control grow" style={{ padding: '0 10px', background: 'var(--panel)', border: '1px solid var(--border)', borderRadius: 'var(--r-md)', height: 32, alignItems: 'center', display: 'flex', gap: 8 }}>
-              <Icons.Sparkles size={12} style={{ color: 'var(--primary)' }} />
-              <span className="strong" style={{ fontSize: 'var(--font-sm)' }}>Codex · GPT-5</span>
+            <span className="control grow wf-insp-model-control">
+              <Icons.Sparkles size={12} className="wf-insp-model-icon" />
+              <span className="strong">Codex · GPT-5</span>
               <span className="faint mono-sm">200K · $5/1M</span>
-              <Icons.ChevronDown size={12} style={{ marginLeft: 'auto', color: 'var(--text-faint)' }} />
+              <Icons.ChevronDown size={12} className="wf-insp-chev" />
             </span>
           </div>
         </div>
 
         <div className="field">
           <label>Fallback</label>
-          <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+          <div className="wf-tools-row">
             <span className="tool-chip">Claude Opus 4</span>
             <span className="tool-chip">GPT-5-mini</span>
-            <span className="tool-chip" style={{ borderStyle: 'dashed' }}>+ 添加</span>
+            <span className="tool-chip wf-tool-add">+ 添加</span>
           </div>
         </div>
 
@@ -312,7 +312,7 @@ function WFInspector({ node }: { node: WFNodeData }) {
 
         <div className="field">
           <label>启用工具</label>
-          <div style={{ margin: '-2px 0' }}>
+          <div className="wf-margin-neg">
             <span className="tool-chip"><Icons.File /> Read</span>
             <span className="tool-chip"><Icons.Edit /> Edit</span>
             <span className="tool-chip"><Icons.Terminal /> Bash</span>
@@ -324,7 +324,7 @@ function WFInspector({ node }: { node: WFNodeData }) {
 
         <div className="field">
           <label>权限策略</label>
-          <div className="seg-control" style={{ width: '100%' }}>
+          <div className="seg-control wf-seg-full">
             <button>询问</button>
             <button>允许</button>
             <button className="active">会话内</button>
@@ -334,7 +334,7 @@ function WFInspector({ node }: { node: WFNodeData }) {
 
         <div className="field">
           <label>失败策略</label>
-          <div className="row" style={{ gap: 8 }}>
+          <div className="wf-gap-row">
             <span className="seg-control">
               <button>停止</button>
               <button className="active">重试 ×3</button>
@@ -345,11 +345,11 @@ function WFInspector({ node }: { node: WFNodeData }) {
 
         <div className="field">
           <label>当前运行</label>
-          <div style={{ padding: '10px 12px', background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <div className="kv-row" style={{ padding: 0 }}><span className="k">Token</span><span className="v mono-sm">48,247 / 200K</span></div>
-            <div className="kv-row" style={{ padding: 0 }}><span className="k">耗时</span><span className="v mono-sm">2m 12s</span></div>
-            <div className="kv-row" style={{ padding: 0 }}><span className="k">工具调用</span><span className="v mono-sm">7</span></div>
-            <div className="kv-row" style={{ padding: 0 }}><span className="k">当前动作</span><span className="v truncate mono-sm" style={{ fontSize: 11, maxWidth: 140 }}>Edit src/auth/token.ts</span></div>
+          <div className="wf-stats-card">
+            <div className="kv-row wf-stats-kv"><span className="k">Token</span><span className="v mono-sm">48,247 / 200K</span></div>
+            <div className="kv-row wf-stats-kv"><span className="k">耗时</span><span className="v mono-sm">2m 12s</span></div>
+            <div className="kv-row wf-stats-kv"><span className="k">工具调用</span><span className="v mono-sm">7</span></div>
+            <div className="kv-row wf-stats-kv"><span className="k">当前动作</span><span className="v truncate mono-sm wf-stats-action">Edit src/auth/token.ts</span></div>
           </div>
         </div>
       </div>

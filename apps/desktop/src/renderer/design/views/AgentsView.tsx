@@ -9,14 +9,14 @@ type AgentStatus = 'running' | 'done' | 'idle' | 'failed'
 export function AgentsView() {
   return (
     <div className="agents-layout">
-      <div className="row" style={{ gap: 12, alignItems: 'center' }}>
+      <div className="row agents-run-header">
         <div className="flex1">
-          <div className="strong" style={{ fontSize: 16 }}>代码功能开发：搜索优化</div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-            Run #4f3a · 启动于 14:22 · <span style={{ color: 'var(--info)' }}>● 运行中</span> · 已耗时 4m 38s · $0.92
+          <div className="strong agents-title-lg">代码功能开发：搜索优化</div>
+          <div className="muted agents-desc">
+            Run #4f3a · 启动于 14:22 · <span className="agents-info">● 运行中</span> · 已耗时 4m 38s · $0.92
           </div>
         </div>
-        <div className="row" style={{ gap: 4 }}>
+        <div className="row agents-actions">
           <button className="btn ghost sm"><Icons.Map size={12} /> 切到工作流视图</button>
           <button className="btn ghost sm"><Icons.Pause size={12} /> 暂停</button>
           <button className="btn sm"><Icons.Stop size={12} /> 中止</button>
@@ -68,7 +68,7 @@ export function AgentsView() {
 
       <div className="timeline">
         <div className="timeline-head">
-          <span className="strong" style={{ fontSize: 'var(--font-base)' }}>协作时间线</span>
+          <span className="strong timeline-title">协作时间线</span>
           <span className="badge">42 事件</span>
           <div className="flex1" />
           <div className="seg-control">
@@ -149,8 +149,8 @@ function AgentCard({ icon, name, role, status, stats, current }: {
         ))}
       </div>
       <div className={`agent-current ${status === 'idle' ? 'idle' : ''}`}>
-        {status === 'running' && <Icons.Spinner size={11} style={{ color: 'var(--info)' }} />}
-        {status === 'done' && <Icons.Check size={11} style={{ color: 'var(--success)' }} />}
+        {status === 'running' && <Icons.Spinner size={11} className="tl-status-running" />}
+        {status === 'done' && <Icons.Check size={11} className="tl-status-done" />}
         {status === 'idle' && <Icons.Clock size={11} />}
         <span className="truncate">{current}</span>
       </div>

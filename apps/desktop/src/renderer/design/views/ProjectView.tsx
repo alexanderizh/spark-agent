@@ -23,11 +23,11 @@ export function ProjectView() {
       <ProjectExplorer workspace={workspace} />
       <div className="project-center">
         <ProjectTabs />
-        <div className="flex1" style={{ display: 'flex', minHeight: 0 }}>
-          <div className="flex1" style={{ display: 'flex', flexDirection: 'column', minWidth: 0, borderRight: '1px solid var(--border)' }}>
+        <div className="project-split">
+          <div className="project-explorer-main">
             <ProjectDiffPane />
           </div>
-          <div style={{ width: 380, display: 'flex', flexDirection: 'column' }}>
+          <div className="project-agent-pane">
             <ProjectAgentPane workspaceId={workspace?.id} />
           </div>
         </div>
@@ -68,14 +68,14 @@ function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
       <div className="explorer-head">
         <Icons.Folder size={14} />
         <span>{workspace?.name ?? '未打开工作区'}</span>
-        <span className="badge dot" style={{ color: 'var(--info)' }}>main</span>
+        <span className="badge dot branch-info">main</span>
       </div>
-      <div className="row" style={{ padding: '6px 10px', gap: 4, borderBottom: '1px solid var(--divider)' }}>
-        <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Plus size={12} /></button>
-        <button className="icon-btn" style={{ width: 24, height: 24 }} onClick={refreshTree} disabled={workspace == null || loading} title="刷新文件树"><Icons.Refresh size={12} /></button>
-        <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.ChevronDown size={12} /></button>
-        <div className="flex1" />
-        <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Search size={12} /></button>
+      <div className="explorer-toolbar">
+        <button className="icon-btn explorer-btn-sm"><Icons.Plus size={12} /></button>
+        <button className="icon-btn explorer-btn-sm" onClick={refreshTree} disabled={workspace == null || loading} title="刷新文件树"><Icons.Refresh size={12} /></button>
+        <button className="icon-btn explorer-btn-sm"><Icons.ChevronDown size={12} /></button>
+        <div className="flex1"></div>
+        <button className="icon-btn explorer-btn-sm"><Icons.Search size={12} /></button>
       </div>
       <div className="tree scroll">
         {workspace == null && (
@@ -93,8 +93,8 @@ function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
         )}
         {workspace != null && error !== '' && (
           <div className="empty-compact">
-            <div className="empty-icon" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}><Icons.X size={18} /></div>
-            <div className="empty-desc" style={{ color: 'var(--danger)' }}>{error}</div>
+            <div className="empty-icon error-icon"><Icons.X size={18} /></div>
+            <div className="empty-desc error-desc">{error}</div>
           </div>
         )}
         {workspace != null && !loading && error === '' && entries.length === 0 && (
@@ -136,17 +136,17 @@ function TreeRow({
   active?: boolean
 }) {
   const fileIco = (ext?: string) => {
-    if (ext === 'ts' || ext === 'tsx') return <span className="ico mono-sm" style={{ color: '#3178c6', fontSize: 9, fontWeight: 700 }}>TS</span>
-    if (ext === 'md') return <span className="ico mono-sm" style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)' }}>MD</span>
-    if (ext === 'json') return <span className="ico mono-sm" style={{ fontSize: 9, fontWeight: 700, color: '#f59e0b' }}>{'{ }'}</span>
+    if (ext === 'ts' || ext === 'tsx') return <span className="ico mono-sm file-ext-ts">TS</span>
+    if (ext === 'md') return <span className="ico mono-sm file-ext-md">MD</span>
+    if (ext === 'json') return <span className="ico mono-sm file-ext-json">{'{ }'}</span>
     return <Icons.File className="ico" size={12} />
   }
   return (
-    <div className={`tree-row ${active ? 'active' : ''}`} style={{ paddingLeft: 6 + depth * 12 }}>
+    <div className={`tree-row ${active ? 'active' : ''}`} style={{ paddingLeft: 6 + depth * 12 }} /* dynamic */>
       {folder
         ? (expanded ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />)
-        : <span style={{ width: 12, display: 'inline-block' }} />}
-      {folder ? <Icons.Folder className="ico" size={13} style={{ color: expanded ? 'var(--warning)' : 'var(--text-muted)' }} /> : fileIco(ext)}
+        : <span className="tree-indent" />}
+      {folder ? <Icons.Folder className="ico" size={13} style={{ color: expanded ? 'var(--warning)' : 'var(--text-muted)' }} /* dynamic */ /> : fileIco(ext)}
       <span className="nm">{name}</span>
       {status && <span className={`git-status git-${status.toLowerCase()}`}>{status}</span>}
     </div>
@@ -161,7 +161,7 @@ function ProjectTabs() {
       <div className="project-tab"><Icons.File className="ico" /> pkce.ts <span className="x"><Icons.X size={10} /></span></div>
       <div className="project-tab"><Icons.Terminal className="ico" /> terminal <span className="x"><Icons.X size={10} /></span></div>
       <div className="project-tab"><Icons.GitBranch className="ico" /> 更改 (5) <span className="x"><Icons.X size={10} /></span></div>
-      <div style={{ flex: 1 }} />
+      <div className="flex1"></div>
       <button className="icon-btn" title="分屏"><Icons.PanelRight /></button>
     </div>
   )
@@ -170,17 +170,17 @@ function ProjectTabs() {
 function ProjectDiffPane() {
   return (
     <>
-      <div className="row" style={{ padding: '8px var(--pad-lg)', borderBottom: '1px solid var(--border)', background: 'var(--bg-soft)' }}>
+      <div className="diff-header">
         <span className="mono-sm strong">src/auth/token.ts</span>
-        <span className="faint mono-sm" style={{ fontSize: 11 }}>· 412 行</span>
-        <span className="badge warning dot" style={{ marginLeft: 8 }}>未保存</span>
-        <div className="flex1" />
+        <span className="faint mono-sm diff-line-count">· 412 行</span>
+        <span className="badge warning dot diff-unsaved-badge">未保存</span>
+        <div className="flex1"></div>
         <span className="badge"><Icons.GitBranch size={10} /> feat/oauth-2.1</span>
         <button className="btn ghost sm"><Icons.Refresh size={11} /> 撤销修改</button>
         <button className="btn sm primary"><Icons.Check size={11} /> 接受全部</button>
       </div>
-      <div className="diff" style={{ border: 'none', borderRadius: 0, margin: 0, flex: 1, display: 'flex', flexDirection: 'column' }}>
-        <div className="diff-body scroll" style={{ maxHeight: 'none', flex: 1 }}>
+      <div className="diff diff-container">
+        <div className="diff-body scroll diff-body-fill">
           <DiffLine type="hunk" text="@@ -1,6 +1,9 @@ src/auth/token.ts" />
           <DiffLine type="ctx" ln="1" text='import { fetch } from "undici";' />
           <DiffLine type="ctx" ln="2" text='import { AuthError } from "./errors";' />
@@ -370,7 +370,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
         {agentStatus === 'completed' && <span className="badge success dot">完成</span>}
         {agentStatus === 'error' && <span className="badge danger dot">错误</span>}
         {agentStatus === 'cancelled' && <span className="badge dot">已停止</span>}
-        <div className="flex1" />
+        <div className="flex1"></div>
         <button className="icon-btn" onClick={handleCancel} disabled={sessionId == null} title="停止"><Icons.Stop size={12} /></button>
       </div>
       <div ref={scrollRef} className="agent-pane-stream">
@@ -415,7 +415,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
           <div className="composer-actions">
             <button className="icon-btn"><Icons.Plus /></button>
             <button className="icon-btn"><Icons.Wrench /></button>
-            <div className="flex1" />
+            <div className="flex1"></div>
             <button className="btn primary sm" onClick={() => void handleSend()} disabled={!input.trim() || sessionId == null}>
               <Icons.Send size={11} />
             </button>

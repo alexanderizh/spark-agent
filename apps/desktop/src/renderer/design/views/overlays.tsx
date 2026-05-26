@@ -36,12 +36,12 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
 
           <div className="palette-group">Skills</div>
           <PItem
-            icon={<span className="ico" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 700, fontSize: 9 }}>C</span>}
+            icon={<span className="ico overlay-badge-icon">C</span>}
             title="code-review"
             hint="按严重度审查代码"
           />
           <PItem
-            icon={<span className="ico" style={{ background: 'var(--primary-soft)', color: 'var(--primary)', fontWeight: 700, fontSize: 9 }}>D</span>}
+            icon={<span className="ico overlay-badge-icon">D</span>}
             title="deck-builder"
             hint="从大纲生成幻灯片"
           />
@@ -100,10 +100,10 @@ export function PermissionModal({ request, onClose }: { request: PermissionAppro
           </div>
         </div>
         <div className="modal-foot">
-          <span className="muted" style={{ fontSize: 11 }}>
+          <span className="muted overlay-muted-sm">
             <span className="kbd">esc</span> 拒绝
           </span>
-          <div className="spacer" style={{ flex: 1 }} />
+          <div className="flex1" />
           <button className="btn" onClick={() => respond('deny')}>拒绝</button>
           <button className="btn" onClick={() => respond('allow-session')}>本会话允许</button>
           <button className="btn primary" onClick={() => respond('allow-once')}>允许一次</button>

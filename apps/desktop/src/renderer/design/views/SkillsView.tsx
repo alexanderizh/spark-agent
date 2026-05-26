@@ -23,12 +23,12 @@ export function SkillsView() {
     <div className="view-body">
       <div className="page">
         {/* ── Header row ── */}
-        <div className="row" style={{ gap: 12, marginBottom: 18 }}>
+        <div className="row section-header-row">
           <div className="flex1">
-            <div className="strong" style={{ fontSize: 18 }}>
+            <div className="strong header-title-lg">
               Skills
             </div>
-            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+            <div className="muted header-desc">
               {total} 个已安装 · {enabledCount} 个已启用
             </div>
           </div>
@@ -42,8 +42,7 @@ export function SkillsView() {
             />
             {search && (
               <button
-                className="icon-btn"
-                style={{ width: 20, height: 20, marginRight: 4 }}
+                className="icon-btn skills-spinner-sm"
                 onClick={() => setSearch('')}
               >
                 <Icons.X size={10} />
@@ -62,13 +61,7 @@ export function SkillsView() {
         {/* ── Error banner ── */}
         {error && (
           <div
-            className="card"
-            style={{
-              marginBottom: 14,
-              padding: '10px 12px',
-              color: 'var(--danger)',
-              fontSize: 12,
-            }}
+            className="card card-error"
           >
             {error}
           </div>
@@ -130,17 +123,16 @@ function SkillCard({
   return (
     <div className="skill-card">
       <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
-      <div className="row" style={{ gap: 6 }}>
+      <div className="row row-gap-xs">
         <span className="name">{skill.name}</span>
-        <span className="badge" style={{ fontSize: 10 }}>
+        <span className="badge badge-font-sm">
           {meta.source}
         </span>
       </div>
       <div className="desc">{meta.desc}</div>
-      <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
+      <div className="row skill-scope-row skill-tools-row">
         <span
-          className={`badge ${skill.enabled ? 'success' : ''}`}
-          style={{ fontSize: 9.5, height: 16, cursor: 'pointer' }}
+          className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}
           onClick={() => onToggle(skill)}
         >
           {skill.enabled ? '已启用' : '已禁用'}
@@ -151,10 +143,10 @@ function SkillCard({
           {meta.source} · {skill.version}
         </span>
         <div className="flex1" />
-        <button className="icon-btn" style={{ width: 22, height: 22 }}>
+        <button className="icon-btn skill-card-detail-btn">
           <Icons.Play size={11} />
         </button>
-        <button className="icon-btn" style={{ width: 22, height: 22 }}>
+        <button className="icon-btn skill-card-toggle">
           <Icons.More size={11} />
         </button>
       </div>
