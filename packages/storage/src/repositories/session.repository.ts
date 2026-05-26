@@ -26,6 +26,7 @@ export interface SessionRow {
   workspace_ids_json: string
   rule_bundle_id: string | null
   permission_profile_id: string | null
+  provider_profile_id: string | null
   created_at: string
   updated_at: string
 }
@@ -40,6 +41,7 @@ export interface CreateSessionParams {
   workspaceIds?: string[]
   ruleBundleId?: string
   permissionProfileId?: string
+  providerProfileId?: string
 }
 
 /** Session 列表查询参数 */
@@ -65,8 +67,8 @@ export class SessionRepository extends BaseRepository {
   create(params: CreateSessionParams): SessionRow {
     const now = new Date().toISOString()
     const stmt = this.raw.prepare(`
-      INSERT INTO sessions (id, kind, title, status, project_id, workspace_ids_json, rule_bundle_id, permission_profile_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, kind, title, status, project_id, workspace_ids_json, rule_bundle_id, permission_profile_id, provider_profile_id, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -78,6 +80,7 @@ export class SessionRepository extends BaseRepository {
       this.toJson(params.workspaceIds ?? []),
       params.ruleBundleId ?? null,
       params.permissionProfileId ?? null,
+      params.providerProfileId ?? null,
       now,
       now,
     )

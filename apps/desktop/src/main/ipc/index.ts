@@ -10,17 +10,12 @@
  *   - 统一错误处理
  */
 
-import { typedIpcHandle } from './typed-ipc.js'
+import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { createLogger } from '@spark/shared'
-import type { SessionId } from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
-import { ProviderService } from '@spark/agent-runtime'
+import { ProviderService, SessionService } from '@spark/agent-runtime'
+import type { SessionEventHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
-
-/** 生成 branded SessionId */
-function newSessionId(): SessionId {
-  return crypto.randomUUID() as SessionId
-}
 
 const log = createLogger('ipc:register')
 
@@ -28,46 +23,45 @@ function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
 }
 
+let _sessionService: SessionService | null = null
+function getSessionService(): SessionService {
+  if (_sessionService == null) {
+    const onEvent: SessionEventHandler = (event) => {
+      pushStreamEvent('stream:session:agent-event', event)
+    }
+    _sessionService = new SessionService(getDatabase(), onEvent)
+  }
+  return _sessionService
+}
+
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
 
   // ─── Session Handlers ──────────────────────────────────────────────────
-  // P1-07 完整实现，当前为骨架
 
   typedIpcHandle('session:create', async (req) => {
-    // TODO: 调用 SessionService.create()
     log.info(`session:create requested, providerProfileId=${req.providerProfileId}`)
-    return {
-      sessionId: newSessionId(),
-      createdAt: new Date().toISOString(),
-    }
+    return getSessionService().createSession(req)
   })
 
   typedIpcHandle('session:send-turn', async (req) => {
-    // TODO: 调用 SessionService.sendTurn()
     log.info(`session:send-turn requested, sessionId=${req.sessionId}`)
-    return {
-      turnId: crypto.randomUUID(),
-      started: true,
-    }
+    return getSessionService().sendTurn({ sessionId: req.sessionId, message: req.message })
   })
 
   typedIpcHandle('session:cancel', async (req) => {
-    // TODO: 调用 SessionService.cancel()
     log.info(`session:cancel requested, sessionId=${req.sessionId}`)
-    return { cancelled: true }
+    return getSessionService().cancelTurn(req.sessionId)
   })
 
   typedIpcHandle('session:get-history', async (req) => {
-    // TODO: 调用 SessionEventStore.query()
     log.info(`session:get-history requested, sessionId=${req.sessionId}`)
-    return { events: [], hasMore: false }
+    return getSessionService().getHistory(req)
   })
 
-  typedIpcHandle('session:list', async (_req) => {
-    // TODO: 调用 SessionService.list()
+  typedIpcHandle('session:list', async (req) => {
     log.info('session:list requested')
-    return { sessions: [], total: 0 }
+    return getSessionService().listSessions(req)
   })
 
   // ─── Provider Handlers ─────────────────────────────────────────────────
