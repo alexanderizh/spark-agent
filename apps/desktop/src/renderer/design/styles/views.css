@@ -197,6 +197,105 @@
   display: flex; gap: 8px; align-items: center;
 }
 
+/* ---------- EMPTY STATE ---------- */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  gap: 16px;
+}
+.empty-state .empty-icon {
+  width: 56px; height: 56px;
+  border-radius: var(--r-lg);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  margin-bottom: 4px;
+}
+.empty-state .empty-icon svg { width: 24px; height: 24px; }
+.empty-state .empty-title {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-state .empty-desc {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  line-height: 1.55;
+  max-width: 280px;
+}
+.empty-state .empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+.empty-state .empty-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: var(--r-md);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  font-family: inherit;
+  cursor: default;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  transition: all 0.15s;
+}
+.empty-state .empty-action-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.empty-state .empty-action-btn svg { width: 14px; height: 14px; }
+
+/* Compact empty state (inline in cards) */
+.empty-compact {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 16px;
+  text-align: center;
+  gap: 10px;
+}
+.empty-compact .empty-icon {
+  width: 40px; height: 40px;
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+.empty-compact .empty-icon svg { width: 18px; height: 18px; }
+.empty-compact .empty-title {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text);
+}
+.empty-compact .empty-desc {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.empty-compact .link {
+  color: var(--primary);
+  font-weight: 500;
+  font-size: var(--font-sm);
+  cursor: default;
+}
+.empty-compact .link:hover { text-decoration: underline; }
+
 /* ---------- CHAT VIEW ---------- */
 .chat-layout {
   display: flex;

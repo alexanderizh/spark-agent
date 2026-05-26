@@ -128,12 +128,17 @@ export function HomeView() {
           </div>
           <div className="card">
             {loading ? (
-              <div className="card-body" style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                正在加载会话…
-              </div>
+              <EmptyCompact icon={<Icons.Chat />} title="正在加载会话…" />
             ) : sessions.length === 0 ? (
-              <div className="card-body" style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                暂无会话 — 点击"新建聊天"开始
+              <div className="empty-state">
+                <div className="empty-icon"><Icons.Chat /></div>
+                <div className="empty-title">暂无会话</div>
+                <div className="empty-desc">开始一次新的 AI 对话，探索研究、写作或问答</div>
+                <div className="empty-actions">
+                  <button className="empty-action-btn" onClick={handleNewChat}>
+                    <Icons.Chat /> 新建聊天
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="list">
@@ -160,12 +165,13 @@ export function HomeView() {
           <div className="card">
             <div className="card-body" style={{ padding: '4px 16px 12px' }}>
               {providers.length === 0 ? (
-                <div style={{ padding: '12px 0', color: 'var(--text-muted)', fontSize: 12 }}>
-                  未配置 Provider —{' '}
-                  <span className="link" style={{ cursor: 'default' }} onClick={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}>
-                    前往设置
-                  </span>
-                </div>
+                <EmptyCompact
+                  icon={<Icons.Settings />}
+                  title="未配置 Provider"
+                  desc="配置至少一个 AI Provider 才能开始使用"
+                  actionLabel="前往设置"
+                  onAction={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}
+                />
               ) : (
                 <div className="health-list">
                   {providers.map(p => (
@@ -250,6 +256,31 @@ function HealthRow({ name, provider, defaultModel, isDefault }: { name: string; 
         {isDefault && <span className="badge primary dot">默认</span>}
         <span className="badge success dot">已配置</span>
       </div>
+    </div>
+  )
+}
+
+function EmptyCompact({
+  icon,
+  title,
+  desc,
+  actionLabel,
+  onAction,
+}: {
+  icon: ReactNode
+  title: string
+  desc?: string
+  actionLabel?: string
+  onAction?: () => void
+}) {
+  return (
+    <div className="empty-compact">
+      <div className="empty-icon">{icon}</div>
+      <div className="empty-title">{title}</div>
+      {desc !== undefined && <div className="empty-desc">{desc}</div>}
+      {actionLabel !== undefined && onAction !== undefined && (
+        <span className="link" onClick={onAction}>{actionLabel}</span>
+      )}
     </div>
   )
 }
