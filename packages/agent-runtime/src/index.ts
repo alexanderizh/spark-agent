@@ -1,4 +1,5 @@
 export { ProviderService } from './services/provider.service.js'
+export { ModelService } from './services/model.service.js'
 export { RulesService } from './services/rules.service.js'
 export { PermissionService } from './services/permission.service.js'
 export type { CreateRuleParams, ListRulesParams, UpdateRuleFields } from './services/rules.service.js'

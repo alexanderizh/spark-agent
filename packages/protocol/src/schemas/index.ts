@@ -143,4 +143,8 @@ export const IpcSchemaRegistry = {
   'permission:delete-profile': z.object({ id: z.string().min(1) }),
   'permission:update-sandbox': z.object({ profileId: z.string().min(1), sandboxLevel: z.number().int().min(0).max(4) }),
   'permission:update-rule': z.object({ profileId: z.string().min(1), action: z.string().min(1), mode: z.enum(['allow', 'ask', 'ask-twice', 'deny']) }),
+  'model:list': z.object({ providerId: z.string().uuid().optional() }),
+  'model:create': z.object({ providerId: z.string().uuid(), name: z.string().min(1).max(200), configJson: z.string().optional() }),
+  'model:update': z.object({ id: z.string().uuid(), name: z.string().min(1).max(200).optional(), configJson: z.string().optional(), enabled: z.boolean().optional() }),
+  'model:delete': z.object({ id: z.string().uuid() }),
 } as const

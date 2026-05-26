@@ -23,6 +23,8 @@ import type { AgentEvent, SessionId } from '../events/index.js'
 export interface SessionCreateRequest {
   /** Provider 配置 Profile ID */
   providerProfileId: string
+  /** Model Profile ID（可选）*/
+  modelProfileId?: string
   /** 会话标题（可选，默认自动生成）*/
   title?: string
   /** 关联的 Workspace ID（可选）*/
@@ -321,6 +323,55 @@ export interface PermissionUpdateRuleResponse {
   rule: PermissionRuleItem
 }
 
+// ─── Model Channels ──────────────────────────────────────────────────────────
+
+export interface ModelProfile {
+  id: string
+  providerId: string
+  name: string
+  configJson: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ModelListRequest {
+  providerId?: string
+}
+
+export interface ModelListResponse {
+  models: ModelProfile[]
+}
+
+export interface ModelCreateRequest {
+  providerId: string
+  name: string
+  configJson?: string
+}
+
+export interface ModelCreateResponse {
+  model: ModelProfile
+}
+
+export interface ModelUpdateRequest {
+  id: string
+  name?: string
+  configJson?: string
+  enabled?: boolean
+}
+
+export interface ModelUpdateResponse {
+  model: ModelProfile
+}
+
+export interface ModelDeleteRequest {
+  id: string
+}
+
+export interface ModelDeleteResponse {
+  deleted: boolean
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -372,6 +423,12 @@ export interface IpcChannelMap {
   'permission:delete-profile': [PermissionDeleteProfileRequest, PermissionDeleteProfileResponse]
   'permission:update-sandbox': [PermissionUpdateSandboxRequest, PermissionUpdateSandboxResponse]
   'permission:update-rule': [PermissionUpdateRuleRequest, PermissionUpdateRuleResponse]
+
+  // Model
+  'model:list': [ModelListRequest, ModelListResponse]
+  'model:create': [ModelCreateRequest, ModelCreateResponse]
+  'model:update': [ModelUpdateRequest, ModelUpdateResponse]
+  'model:delete': [ModelDeleteRequest, ModelDeleteResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

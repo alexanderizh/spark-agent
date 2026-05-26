@@ -13,8 +13,8 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { dialog } from 'electron'
 import { createLogger } from '@spark/shared'
-import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService } from '@spark/agent-runtime'
+import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository } from '@spark/storage'
+import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
@@ -23,6 +23,10 @@ const log = createLogger('ipc:register')
 
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
+}
+
+function getModelService(): ModelService {
+  return new ModelService(new ModelProfileRepository(getDatabase()))
 }
 
 function getRulesService(): RulesService {
@@ -214,6 +218,35 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('permission:update-rule', async (req) => {
     const rule = getPermissionService().updateRule(req.profileId, req.action, req.mode)
     return { rule }
+  })
+
+  // ─── Model Handlers ─────────────────────────────────────────────────────────
+
+  typedIpcHandle('model:list', async (req) => {
+    const svc = getModelService()
+    let models = svc.list(req.providerId !== undefined ? { providerId: req.providerId } : undefined)
+    if (models.length === 0) {
+      const providers = await getProviderService().listProviders()
+      svc.seedDefaultModels(providers.map((p) => ({ id: p.id, provider: p.provider })))
+      models = svc.list(req.providerId !== undefined ? { providerId: req.providerId } : undefined)
+    }
+    return { models }
+  })
+
+  typedIpcHandle('model:create', async (req) => {
+    const model = getModelService().create(req)
+    return { model }
+  })
+
+  typedIpcHandle('model:update', async (req) => {
+    const { id, ...fields } = req
+    const model = getModelService().update(id, fields)
+    return { model }
+  })
+
+  typedIpcHandle('model:delete', async (req) => {
+    const deleted = getModelService().delete(req.id)
+    return { deleted }
   })
 
   log.info('All IPC handlers registered')

@@ -14,6 +14,8 @@ export { ProviderProfileRepository } from './provider.repository.js'
 export { RulesRepository } from './rules.repository.js'
 export { PermissionProfileRepository } from './permission.repository.js'
 export type { PermissionProfileRow, PermissionRuleRow } from './permission.repository.js'
+export { ModelProfileRepository } from './model-profile.repository.js'
+export type { ModelProfileRow } from './model-profile.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

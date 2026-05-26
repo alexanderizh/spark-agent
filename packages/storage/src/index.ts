@@ -29,6 +29,7 @@ export {
   ProviderProfileRepository,
   RulesRepository,
   PermissionProfileRepository,
+  ModelProfileRepository,
 } from './repositories/index.js'
 
 export type {
@@ -48,4 +49,5 @@ export type {
   ListRulesParams,
   PermissionProfileRow,
   PermissionRuleRow,
+  ModelProfileRow,
 } from './repositories/index.js'

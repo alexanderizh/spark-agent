@@ -17,6 +17,7 @@ import type {
   RuleItem,
   RuleScope,
   WorkspaceInfo,
+  ModelProfile,
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai-compatible'
@@ -864,121 +865,125 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 
 /* ───────── MODELS ───────── */
 function ModelsSection() {
-  const [profiles, setProfiles] = useState<ProviderProfile[]>([])
+  const [models, setModels] = useState<ModelProfile[]>([])
+  const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [query, setQuery] = useState('')
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [showEditor, setShowEditor] = useState(false)
+  const [addingForProvider, setAddingForProvider] = useState<string | null>(null)
+  const [newModelName, setNewModelName] = useState('')
+  const { invoke: listModels } = useIpcInvoke('model:list')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
+  const { invoke: createModel } = useIpcInvoke('model:create')
+  const { invoke: updateModel } = useIpcInvoke('model:update')
+  const { invoke: deleteModel } = useIpcInvoke('model:delete')
 
   const refresh = useCallback(() => {
     setLoading(true)
     setError('')
-    listProviders({})
-      .then((res) => setProfiles(res.profiles))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载模型 Profile 失败'))
+    Promise.all([listModels({}), listProviders({})])
+      .then(([mRes, pRes]) => { setModels(mRes.models); setProviders(pRes.profiles) })
+      .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
       .finally(() => setLoading(false))
-  }, [listProviders])
+  }, [listModels, listProviders])
 
   useEffect(() => { refresh() }, [refresh])
 
-  const filteredProfiles = profiles.filter((profile) => {
-    const keyword = query.trim().toLowerCase()
-    if (keyword.length === 0) return true
-    return [profile.name, profile.provider, profile.model, profile.apiEndpoint ?? '']
-      .some((value) => value.toLowerCase().includes(keyword))
-  })
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除该模型 Profile？关联会话将无法继续使用这个 Provider。')) return
-    await deleteProvider({ id })
+  const handleToggle = async (m: ModelProfile) => {
+    await updateModel({ id: m.id, enabled: !m.enabled })
     refresh()
   }
 
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('确认删除该模型？')) return
+    await deleteModel({ id })
+    refresh()
+  }
+
+  const handleAdd = async (providerId: string) => {
+    const name = newModelName.trim()
+    if (!name) return
+    await createModel({ providerId, name })
+    setAddingForProvider(null)
+    setNewModelName('')
+    refresh()
+  }
+
+  // Group models by provider
+  const byProvider = providers.map((p) => ({
+    provider: p,
+    models: models.filter((m) => m.providerId === p.id),
+  }))
+
   return (
-    <>
-      <div className="settings-section">
-        <div className="row" style={{ alignItems: 'flex-end', marginBottom: 14 }}>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0 }}>模型 Profile</h2>
-            <div className="lede" style={{ margin: '4px 0 0' }}>每个 profile 绑定到 provider，并附加角色、参数与 fallback 链。</div>
-          </div>
-          <div className="search-input"><Icons.Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索 profile..." /></div>
-          <button className="btn primary" onClick={() => { setEditingId(null); setShowEditor(true) }}><Icons.Plus size={12} /> 新建 Profile</button>
+    <div className="settings-section">
+      <div className="row" style={{ alignItems: 'flex-end', marginBottom: 14 }}>
+        <div style={{ flex: 1 }}>
+          <h2 style={{ margin: 0 }}>模型管理</h2>
+          <div className="lede" style={{ margin: '4px 0 0' }}>按 Provider 分组管理可用模型，可启用/禁用或添加自定义模型。</div>
         </div>
-
-        <div className="row" style={{ gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-          <span className="badge primary dot">全部 {profiles.length}</span>
-          <span className="badge">default</span>
-          <span className="badge">chat</span>
-          <span className="badge">coder</span>
-        </div>
-
-        {error && (
-          <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>
-            {error}
-          </div>
-        )}
-
-        {loading && (
-          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
-            正在加载模型 Profile...
-          </div>
-        )}
-
-        {!loading && profiles.length === 0 && (
-          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
-            暂无模型 Profile。请先在 Provider 页面添加一个 Provider。
-          </div>
-        )}
-
-        {!loading && profiles.length > 0 && filteredProfiles.length === 0 && (
-          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
-            没有匹配的模型 Profile。
-          </div>
-        )}
-
-        {!loading && filteredProfiles.map((profile) => (
-          <ModelRowFull
-            key={profile.id}
-            profile={profile}
-            onEdit={() => { setEditingId(profile.id); setShowEditor(true) }}
-            onDelete={() => handleDelete(profile.id)}
-          />
-        ))}
+        <span className="badge primary dot">共 {models.length} 个</span>
       </div>
 
-      {showEditor && (
-        <ProviderEditPanel
-          profileId={editingId}
-          onClose={() => { setShowEditor(false); refresh() }}
-        />
+      {error && (
+        <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>
+          {error}
+        </div>
       )}
-    </>
-  )
-}
 
-function ModelRowFull({ profile, onEdit, onDelete }: { profile: ProviderProfile; onEdit: () => void; onDelete: () => void }) {
-  const roles = profile.isDefault ? ['default', 'chat'] : ['chat']
-  const ctx = profile.apiEndpoint ?? '由 Provider 配置'
-  return (
-    <div className="model-row" style={{ padding: '12px 14px' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
-        <div className="row" style={{ gap: 8 }}>
-          <span className="strong" style={{ fontSize: 'var(--font-base)' }}>{profile.name}</span>
-          <span className="mono-sm faint" style={{ fontSize: 11 }}>· {profile.model}</span>
+      {loading && (
+        <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>正在加载...</div>
+      )}
+
+      {!loading && providers.length === 0 && (
+        <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+          暂无 Provider。请先在 Provider 页面添加。
         </div>
-        <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-          <span className="badge" style={{ fontSize: 10 }}>{profile.provider}</span>
-          {roles.map((r) => <span key={r} className="badge primary" style={{ fontSize: 10 }}>{r}</span>)}
-          <span className="mono-sm muted" style={{ fontSize: 11, marginLeft: 6 }}>T=0.7 · {ctx}</span>
+      )}
+
+      {!loading && byProvider.map(({ provider, models: pModels }) => (
+        <div key={provider.id} className="card" style={{ marginBottom: 12, padding: '12px 14px' }}>
+          <div className="row" style={{ marginBottom: 8, gap: 8 }}>
+            <span className="strong">{provider.name}</span>
+            <span className="badge" style={{ fontSize: 10 }}>{provider.provider}</span>
+            <span className="flex1" />
+            <button className="btn ghost sm" onClick={() => { setAddingForProvider(provider.id); setNewModelName('') }}>
+              <Icons.Plus size={11} /> 添加
+            </button>
+          </div>
+
+          {addingForProvider === provider.id && (
+            <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+              <input
+                className="input"
+                style={{ flex: 1, fontSize: 12 }}
+                placeholder="模型名称，如 gpt-4o"
+                value={newModelName}
+                onChange={(e) => setNewModelName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd(provider.id); if (e.key === 'Escape') setAddingForProvider(null) }}
+                autoFocus
+              />
+              <button className="btn primary sm" onClick={() => void handleAdd(provider.id)}>确认</button>
+              <button className="btn ghost sm" onClick={() => setAddingForProvider(null)}>取消</button>
+            </div>
+          )}
+
+          {pModels.length === 0 && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>暂无模型</div>
+          )}
+
+          {pModels.map((m) => (
+            <div key={m.id} className="row" style={{ padding: '6px 0', gap: 8, borderTop: '1px solid var(--border-subtle, rgba(0,0,0,0.06))' }}>
+              <span className="mono-sm" style={{ flex: 1, fontSize: 12 }}>{m.name}</span>
+              <div
+                className={`switch${m.enabled ? ' on' : ''}`}
+                onClick={() => void handleToggle(m)}
+                style={{ cursor: 'pointer' }}
+              />
+              <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}><Icons.X size={12} /></button>
+            </div>
+          ))}
         </div>
-      </div>
-      <div className="switch on" />
-      <button className="btn ghost sm" onClick={onEdit}><Icons.Edit size={11} /> 编辑</button>
-      <button className="icon-btn" title="删除" onClick={onDelete}><Icons.X size={13} /></button>
+      ))}
     </div>
   )
 }
