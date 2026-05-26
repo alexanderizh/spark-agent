@@ -7,6 +7,7 @@ vi.mock('@spark/storage', () => ({
   EventRepository: vi.fn(),
   ProviderProfileRepository: vi.fn(),
   WorkspaceRepository: vi.fn(),
+  RulesRepository: vi.fn(),
 }))
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -26,6 +27,7 @@ import {
   SessionRepository,
   EventRepository,
   ProviderProfileRepository,
+  RulesRepository,
 } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from '../../services/adapter-factory.js'
@@ -69,6 +71,13 @@ function makeLoop(overrides = {}) {
   }
 }
 
+function makeRulesRepo(overrides = {}) {
+  return {
+    list: vi.fn().mockReturnValue([]),
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(ToolRegistry).mockImplementation(() => ({}) as never)
@@ -94,11 +103,13 @@ describe('SessionService.sendTurn', () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
     const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
     const loop = makeLoop()
 
     vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
     vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
     vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
     vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
     vi.mocked(createAdapter).mockReturnValue({} as never)
     vi.mocked(AgentLoop).mockImplementation(() => loop as never)
@@ -125,11 +136,13 @@ describe('SessionService.sendTurn', () => {
         config_json: '{"defaultModel":"gpt-4.1","modelIds":["gpt-4.1","gpt-4o-mini"],"apiEndpoint":"https://api.example.com/v1"}',
       }),
     })
+    const rulesRepo = makeRulesRepo()
     const loop = makeLoop()
 
     vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
     vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
     vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
     vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
     vi.mocked(createAdapter).mockReturnValue({} as never)
     vi.mocked(AgentLoop).mockImplementation(() => loop as never)
@@ -153,6 +166,7 @@ describe('SessionService.sendTurn', () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
     const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
 
     let capturedListener: ((e: unknown) => void) | null = null
     const loop = {
@@ -164,6 +178,7 @@ describe('SessionService.sendTurn', () => {
     vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
     vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
     vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
     vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
     vi.mocked(createAdapter).mockReturnValue({} as never)
     vi.mocked(AgentLoop).mockImplementation(() => loop as never)
@@ -190,11 +205,13 @@ describe('SessionService.cancelTurn', () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
     const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
     const loop = makeLoop()
 
     vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
     vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
     vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
     vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
     vi.mocked(createAdapter).mockReturnValue({} as never)
     vi.mocked(AgentLoop).mockImplementation(() => loop as never)

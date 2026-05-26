@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import {
   EventRepository,
   ProviderProfileRepository,
+  RulesRepository,
   SessionRepository,
   WorkspaceRepository,
 } from '@spark/storage'
@@ -89,12 +90,23 @@ export class SessionService {
 
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
+    let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
     const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
     if (workspaceIds.length > 0) {
       const wsRepo = new WorkspaceRepository(this.db)
       const ws = wsRepo.get(workspaceIds[0] ?? '')
-      if (ws != null) workspaceRootPath = ws.root_path
+      if (ws != null) {
+        workspaceRootPath = ws.root_path
+        workspaceInfo = { name: ws.name, rootPath: ws.root_path, projectKind: ws.project_kind }
+      }
     }
+
+    // Query active rules (system + project scope)
+    const rulesRepo = new RulesRepository(this.db)
+    const activeRules = rulesRepo.list({ scope: 'system' })
+      .concat(rulesRepo.list({ scope: 'project' }))
+      .filter((r) => r.enabled === 1)
+      .map((r) => r.content)
 
     const tools = new ToolRegistry()
     const agentConfig: AgentConfig = {
@@ -104,6 +116,10 @@ export class SessionService {
       ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
       tools,
       toolContext: { workspaceRootPath },
+      context: {
+        ...(workspaceInfo != null ? { workspace: workspaceInfo } : {}),
+        ...(activeRules.length > 0 ? { projectRules: activeRules } : {}),
+      },
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       ...(config.temperature != null ? { temperature: config.temperature } : {}),
       ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),

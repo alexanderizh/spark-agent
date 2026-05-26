@@ -13,6 +13,20 @@ export type ApprovalCallback = (
   toolInput: Record<string, unknown>,
 ) => Promise<boolean>
 
+/** Structured context injected into the system prompt */
+export interface AgentContext {
+  /** Workspace information */
+  workspace?: {
+    name: string
+    rootPath: string
+    projectKind: string
+  }
+  /** Active project rules (content strings) */
+  projectRules?: string[]
+  /** Recent session summary for continuity */
+  sessionSummary?: string
+}
+
 export interface AgentConfig {
   adapter: IModelAdapter
   apiKey: string
@@ -27,6 +41,8 @@ export interface AgentConfig {
   maxTokens?: number
   /** Optional approval callback; if provided, called before each tool execution */
   approvalCallback?: ApprovalCallback
+  /** Optional structured context injected into system prompt */
+  context?: AgentContext
 }
 
 export class AgentLoop {
@@ -52,8 +68,11 @@ export class AgentLoop {
     config: AgentConfig,
     historyMessages: ChatMessage[] = [],
   ): Promise<void> {
-    const { adapter, apiKey, model, apiEndpoint, systemPrompt, tools, toolContext, temperature, maxTokens, approvalCallback } = config
+    const { adapter, apiKey, model, apiEndpoint, tools, toolContext, temperature, maxTokens, approvalCallback, context } = config
     const maxIter = config.maxTurnIterations ?? 20
+
+    // Build system prompt with injected context
+    const systemPrompt = buildSystemPrompt(config.systemPrompt, context)
 
     this.abortController = new AbortController()
     const signal = this.abortController.signal
@@ -217,4 +236,49 @@ export class AgentLoop {
       }
     }
   }
+}
+
+/**
+ * Build the final system prompt by injecting structured context.
+ *
+ * Format:
+ *   [Workspace]
+ *   Name: xxx
+ *   Path: xxx
+ *   Type: xxx
+ *
+ *   [Rules]
+ *   - rule content 1
+ *   - rule content 2
+ *
+ *   [Session Summary]
+ *   summary text...
+ *
+ *   {original system prompt}
+ */
+function buildSystemPrompt(basePrompt: string | undefined, context: AgentContext | undefined): string | undefined {
+  if (context == null) return basePrompt
+
+  const sections: string[] = []
+
+  if (context.workspace != null) {
+    sections.push(
+      `[Workspace]\nName: ${context.workspace.name}\nPath: ${context.workspace.rootPath}\nType: ${context.workspace.projectKind}`,
+    )
+  }
+
+  if (context.projectRules != null && context.projectRules.length > 0) {
+    sections.push(`[Rules]\n${context.projectRules.map((r) => `- ${r}`).join('\n')}`)
+  }
+
+  if (context.sessionSummary != null && context.sessionSummary.length > 0) {
+    sections.push(`[Session Summary]\n${context.sessionSummary}`)
+  }
+
+  if (sections.length === 0) return basePrompt
+
+  const contextBlock = sections.join('\n\n')
+  return basePrompt != null && basePrompt.length > 0
+    ? `${contextBlock}\n\n${basePrompt}`
+    : contextBlock
 }
