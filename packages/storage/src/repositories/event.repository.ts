@@ -39,6 +39,8 @@ export interface QueryEventsParams {
   limit?: number
   /** 分页：游标（取 created_at < cursor 的事件） */
   beforeCreatedAt?: string
+  /** 分页：游标（取 seq < beforeSeq 的事件） */
+  beforeSeq?: number
 }
 
 /** 写入事件的参数 */
@@ -103,7 +105,7 @@ export class EventRepository extends BaseRepository {
 
   /** 按 session 查询事件（支持分页） */
   queryBySession(params: QueryEventsParams): { events: AgentEventRow[]; hasMore: boolean } {
-    const { sessionId, runId, turnId, eventType, limit = 50, beforeCreatedAt } = params
+    const { sessionId, runId, turnId, eventType, limit = 50, beforeCreatedAt, beforeSeq } = params
 
     const conditions: string[] = ['session_id = ?']
     const args: unknown[] = [sessionId]
@@ -123,6 +125,10 @@ export class EventRepository extends BaseRepository {
     if (beforeCreatedAt != null) {
       conditions.push('created_at < ?')
       args.push(beforeCreatedAt)
+    }
+    if (beforeSeq != null) {
+      conditions.push('CAST(json_extract(event_json, \'$.seq\') AS INTEGER) < ?')
+      args.push(beforeSeq)
     }
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`

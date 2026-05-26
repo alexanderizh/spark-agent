@@ -15,7 +15,7 @@ import { createAdapter } from './adapter-factory.js'
 export type SessionEventHandler = (event: AgentEvent) => void
 
 export class SessionService {
-  private activeLoops = new Map<string, AgentLoop>()
+  private activeLoops = new Map<string, AgentLoop>()  // sessionId → AgentLoop
   private seqCounters = new Map<string, number>()
 
   constructor(
@@ -125,7 +125,7 @@ export class SessionService {
       }
     })
 
-    this.activeLoops.set(turnId, loop)
+    this.activeLoops.set(sessionId, loop)
     sessionRepo.updateStatus(sessionId, 'running')
 
     // Fire-and-forget: start the loop without awaiting
@@ -138,27 +138,19 @@ export class SessionService {
         sessionRepo.updateStatus(sessionId, 'error')
       })
       .finally(() => {
-        this.activeLoops.delete(turnId)
+        this.activeLoops.delete(sessionId)
       })
 
     return { turnId, started: true }
   }
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
-    // Find the active loop for this session
+    const loop = this.activeLoops.get(sessionId)
+    if (loop == null) return { cancelled: false }
+    loop.cancel()
     const sessionRepo = new SessionRepository(this.db)
-    let cancelled = false
-    for (const [turnId, loop] of this.activeLoops) {
-      // We don't track sessionId→turnId mapping, so cancel all loops
-      // In practice there's only one active loop per session
-      void turnId
-      loop.cancel()
-      cancelled = true
-    }
-    if (cancelled) {
-      sessionRepo.updateStatus(sessionId, 'idle')
-    }
-    return { cancelled }
+    sessionRepo.updateStatus(sessionId, 'idle')
+    return { cancelled: true }
   }
 
   async getHistory(params: {
@@ -170,6 +162,7 @@ export class SessionService {
     const { events: rows, hasMore } = eventRepo.queryBySession({
       sessionId: params.sessionId,
       limit: params.limit ?? 50,
+      ...(params.beforeSeq != null ? { beforeSeq: params.beforeSeq } : {}),
     })
     const events = rows.map((row) => JSON.parse(row.event_json) as AgentEvent)
     return { events, hasMore }
