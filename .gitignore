@@ -1,0 +1,89 @@
+# ========================================
+# Spark Agent — .gitignore
+# ========================================
+
+# ---- 依赖 --------------------------------
+node_modules/
+.pnpm-store/
+
+# ---- 构建产物 ----------------------------
+dist/
+out/
+build/
+.vite/
+release/
+
+# ---- 测试产物 ----------------------------
+coverage/
+test-results/
+playwright-report/
+.playwright/
+
+# ---- 环境变量（严禁提交任何 secret） -----
+.env
+.env.*
+!.env.example
+
+# ---- Spark Agent 运行时目录 --------------
+# Agent 工作目录（含上下文、checkpoint、临时文件）
+.agent_spark/
+# 项目级 Agent 配置（可包含敏感 prompt/规则）
+.spark/secrets/
+
+# ---- API Key 说明（重要安全策略） ---------
+# Spark Agent 使用系统 Keychain 存储 API Key：
+#   macOS  → macOS Keychain (via keytar)
+#   Windows → Windows Credential Manager (via keytar)
+#   Linux  → libsecret / KWallet (via keytar)
+#
+# SQLite 数据库中只存储 Keychain 引用 ID，永远不存明文 Key。
+# 任何含有 API Key 的文件都必须在此处显式排除。
+# -----------------------------------------------
+*.key
+*.pem
+*.p12
+*.pfx
+api-keys.json
+secrets.json
+
+# ---- SQLite 数据库文件 --------------------
+# 开发数据库不提交（含用户数据）
+*.db
+*.db-shm
+*.db-wal
+# 但 migration SQL 文件需要提交
+!packages/storage/migrations/*.sql
+
+# ---- macOS 系统文件 ----------------------
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# ---- Windows 系统文件 --------------------
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ---- IDE / 编辑器 ------------------------
+.vscode/settings.json
+.vscode/launch.json
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Electron 打包 -----------------------
+# Electron builder 缓存
+.cache/
+electron-builder-cache/
+
+# ---- 日志 --------------------------------
+*.log
+logs/
+npm-debug.log*
+pnpm-debug.log*
+
+# ---- TypeScript 增量编译缓存 -------------
+*.tsbuildinfo

@@ -1,0 +1,98 @@
+/**
+ * @module schemas
+ *
+ * Spark Agent Zod Schema 基础设施
+ *
+ * 为 IPC 层的 payload 校验提供 zod schema
+ * P0-07 中旭阳-高级开发将在 IPC handler 中使用这些 schema 做运行时校验
+ */
+
+import { z } from 'zod'
+
+// ─── 基础 Schema ─────────────────────────────────────────────────────────────
+
+export const SessionIdSchema = z.string().uuid()
+export const TurnIdSchema = z.string().uuid()
+export const ProfileIdSchema = z.string().uuid()
+
+// ─── Session Schema ───────────────────────────────────────────────────────────
+
+export const SessionCreateRequestSchema = z.object({
+  providerProfileId: ProfileIdSchema,
+  title: z.string().max(200).optional(),
+  workspaceId: z.string().uuid().optional(),
+})
+
+export const SessionSendTurnRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  message: z.string().min(1).max(100_000),
+  attachments: z
+    .array(
+      z.object({
+        type: z.enum(['image', 'file']),
+        path: z.string().min(1),
+      }),
+    )
+    .max(20)
+    .optional(),
+})
+
+export const SessionCancelRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
+export const SessionGetHistoryRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  limit: z.number().int().min(1).max(200).optional().default(50),
+  beforeSeq: z.number().int().nonnegative().optional(),
+})
+
+// ─── Provider Schema ──────────────────────────────────────────────────────────
+
+export const ProviderCreateRequestSchema = z.object({
+  name: z.string().min(1).max(100),
+  provider: z.enum(['anthropic', 'openai', 'codex', 'deepseek', 'ollama', 'openai-compatible']),
+  model: z.string().min(1).max(100),
+  apiKey: z.string().min(1).max(500),
+  isDefault: z.boolean().optional().default(false),
+})
+
+export const ProviderUpdateRequestSchema = z.object({
+  id: ProfileIdSchema,
+  name: z.string().min(1).max(100).optional(),
+  model: z.string().min(1).max(100).optional(),
+  apiKey: z.string().min(1).max(500).optional(),
+  isDefault: z.boolean().optional(),
+})
+
+export const ProviderDeleteRequestSchema = z.object({
+  id: ProfileIdSchema,
+})
+
+// ─── Workspace Schema ─────────────────────────────────────────────────────────
+
+export const WorkspaceOpenRequestSchema = z.object({
+  rootPath: z.string().optional(),
+  create: z
+    .object({
+      name: z.string().min(1).max(200),
+      rootPath: z.string().min(1),
+    })
+    .optional(),
+})
+
+/**
+ * IPC Schema 注册表
+ *
+ * P0-07 中的 handle 封装会用此表自动校验每个 channel 的 request payload
+ */
+export const IpcSchemaRegistry = {
+  'session:create': SessionCreateRequestSchema,
+  'session:send-turn': SessionSendTurnRequestSchema,
+  'session:cancel': SessionCancelRequestSchema,
+  'session:get-history': SessionGetHistoryRequestSchema,
+  'provider:create': ProviderCreateRequestSchema,
+  'provider:update': ProviderUpdateRequestSchema,
+  'provider:delete': ProviderDeleteRequestSchema,
+  'workspace:open': WorkspaceOpenRequestSchema,
+} as const
