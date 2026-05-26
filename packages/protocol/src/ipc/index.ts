@@ -97,8 +97,9 @@ export interface ProviderProfile {
   id: string
   name: string
   provider: string
-  model: string
-  /** 自定义 API Endpoint（用于 Ollama / OpenAI-compatible 等） */
+  defaultModel: string
+  modelIds: string[]
+  /** 自定义 API Endpoint */
   apiEndpoint?: string
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
@@ -116,7 +117,8 @@ export interface ProviderListResponse {
 export interface ProviderCreateRequest {
   name: string
   provider: string
-  model: string
+  defaultModel: string
+  modelIds?: string[]
   apiEndpoint?: string
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
@@ -130,7 +132,8 @@ export interface ProviderCreateResponse {
 export interface ProviderUpdateRequest {
   id: string
   name?: string
-  model?: string
+  defaultModel?: string
+  modelIds?: string[]
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
   /** 更新 API Key 时传入，不更新则不传 */
@@ -422,6 +425,63 @@ export interface McpDeleteResponse {
   success: boolean
 }
 
+// ─── Skill Channels ─────────────────────────────────────────────────────────
+
+export interface SkillItem {
+  id: string
+  scope: string
+  name: string
+  version: string
+  rootPath: string
+  manifestJson: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SkillListRequest {
+  scope?: string
+}
+
+export interface SkillListResponse {
+  skills: SkillItem[]
+}
+
+export interface SkillCreateRequest {
+  id: string
+  scope: string
+  name: string
+  version: string
+  rootPath: string
+  manifestJson: string
+  enabled?: boolean
+}
+
+export interface SkillCreateResponse {
+  skill: SkillItem
+}
+
+export interface SkillUpdateRequest {
+  id: string
+  name?: string
+  version?: string
+  rootPath?: string
+  manifestJson?: string
+  enabled?: boolean
+}
+
+export interface SkillUpdateResponse {
+  skill: SkillItem
+}
+
+export interface SkillDeleteRequest {
+  id: string
+}
+
+export interface SkillDeleteResponse {
+  success: boolean
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -485,6 +545,12 @@ export interface IpcChannelMap {
   'mcp:create': [McpCreateRequest, McpCreateResponse]
   'mcp:update': [McpUpdateRequest, McpUpdateResponse]
   'mcp:delete': [McpDeleteRequest, McpDeleteResponse]
+
+  // Skills
+  'skill:list': [SkillListRequest, SkillListResponse]
+  'skill:create': [SkillCreateRequest, SkillCreateResponse]
+  'skill:update': [SkillUpdateRequest, SkillUpdateResponse]
+  'skill:delete': [SkillDeleteRequest, SkillDeleteResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

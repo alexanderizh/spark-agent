@@ -54,8 +54,9 @@ export const SessionGetHistoryRequestSchema = z.object({
 
 export const ProviderCreateRequestSchema = z.object({
   name: z.string().min(1).max(100),
-  provider: z.enum(['anthropic', 'openai', 'codex', 'deepseek', 'ollama', 'openai-compatible']),
-  model: z.string().min(1).max(100),
+  provider: z.enum(['anthropic', 'openai']),
+  defaultModel: z.string().min(1).max(200),
+  modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).optional(),
   apiKey: z.string().min(1).max(500),
   isDefault: z.boolean().optional().default(false),
@@ -64,7 +65,8 @@ export const ProviderCreateRequestSchema = z.object({
 export const ProviderUpdateRequestSchema = z.object({
   id: ProfileIdSchema,
   name: z.string().min(1).max(100).optional(),
-  model: z.string().min(1).max(100).optional(),
+  defaultModel: z.string().min(1).max(200).optional(),
+  modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
@@ -161,4 +163,23 @@ export const IpcSchemaRegistry = {
     enabled: z.boolean().optional(),
   }),
   'mcp:delete': z.object({ id: z.string().uuid() }),
+  'skill:list': z.object({ scope: z.string().min(1).max(80).optional() }),
+  'skill:create': z.object({
+    id: z.string().min(1).max(120),
+    scope: z.string().min(1).max(80),
+    name: z.string().min(1).max(120),
+    version: z.string().min(1).max(80),
+    rootPath: z.string().min(1).max(500),
+    manifestJson: z.string().min(2).max(20_000),
+    enabled: z.boolean().optional(),
+  }),
+  'skill:update': z.object({
+    id: z.string().min(1).max(120),
+    name: z.string().min(1).max(120).optional(),
+    version: z.string().min(1).max(80).optional(),
+    rootPath: z.string().min(1).max(500).optional(),
+    manifestJson: z.string().min(2).max(20_000).optional(),
+    enabled: z.boolean().optional(),
+  }),
+  'skill:delete': z.object({ id: z.string().min(1).max(120) }),
 } as const

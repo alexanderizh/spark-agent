@@ -70,13 +70,20 @@ export class SessionService {
     }
 
     const config = JSON.parse(provider.config_json) as {
-      model: string
+      defaultModel?: string
+      model?: string
+      modelIds?: string[]
       apiEndpoint?: string
       maxTokens?: number
       temperature?: number
     }
 
-    const adapter = createAdapter(provider.provider_type, config.apiEndpoint)
+    const model = config.defaultModel ?? config.model
+    if (model == null || model.length === 0) {
+      throw new Error(`Provider ${provider.id} has no default model configured`)
+    }
+
+    const adapter = createAdapter(provider.provider_type)
 
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
@@ -91,7 +98,7 @@ export class SessionService {
     const agentConfig: AgentConfig = {
       adapter,
       apiKey,
-      model: config.model,
+      model,
       ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
       tools,
       toolContext: { workspaceRootPath },

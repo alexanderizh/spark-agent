@@ -20,11 +20,12 @@ import type {
   ModelProfile,
 } from '@spark/protocol'
 
-type ProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai-compatible'
+type ProviderKind = 'anthropic' | 'openai'
 type ProviderForm = {
   name: string
   provider: ProviderKind
-  model: string
+  defaultModel: string
+  modelIdsText: string
   endpoint: string
   apiKey: string
   isDefault: boolean
@@ -107,7 +108,6 @@ export function SettingsView() {
       group: 'Agent',
       items: [
         { id: 'providers', icon: <Icons.Bot />, label: 'Provider' },
-        { id: 'models', icon: <Icons.Brain />, label: '模型 Profile' },
         { id: 'rules', icon: <Icons.Beaker />, label: '规则' },
         { id: 'permissions', icon: <Icons.Shield />, label: '权限策略' },
       ],
@@ -136,7 +136,6 @@ export function SettingsView() {
     appearance: AppearanceSection,
     shortcuts: ShortcutsSection,
     providers: ProvidersSection,
-    models: ModelsSection,
     rules: RulesSection,
     permissions: PermissionsSection,
     'mcp-settings': McpSection,
@@ -525,7 +524,7 @@ function ProvidersSection() {
         <div className="row" style={{ alignItems: 'flex-end', marginBottom: 18 }}>
           <div style={{ flex: 1 }}>
             <h2 style={{ margin: 0 }}>Provider</h2>
-            <div className="lede" style={{ margin: '4px 0 0' }}>配置 LLM 提供商。每个 provider 包含多个模型 profile，由 agent/workflow/session 按角色绑定。</div>
+            <div className="lede" style={{ margin: '4px 0 0' }}>配置供应商的协议格式、请求地址、鉴权和可用模型列表。每个 Provider 本身就是一份可直接运行的模型配置。</div>
           </div>
           <button className="btn primary" onClick={() => { setEditingId(null); setTweak('showProviderEdit', true) }}>
             <Icons.Plus size={12} /> 添加 Provider
@@ -545,9 +544,9 @@ function ProvidersSection() {
                 key={p.id}
                 logo={(p.name[0] ?? p.provider[0] ?? '?').toUpperCase()}
                 name={p.name}
-                desc={`${p.provider} · ${p.model}`}
+                desc={`${p.provider} · 默认 ${p.defaultModel}`}
                 status={status}
-                detail={h?.latencyMs != null ? `延迟 ${h.latencyMs}ms` : p.isDefault ? '默认 Profile' : ''}
+                detail={h?.latencyMs != null ? `延迟 ${h.latencyMs}ms` : `${p.modelIds.length} 个模型${p.isDefault ? ' · 默认 Provider' : ''}`}
                 onEdit={() => { setEditingId(p.id); setTweak('showProviderEdit', true) }}
                 onDelete={() => handleDelete(p.id)}
                 onHealthCheck={() => handleHealthCheck(p.id)}
@@ -609,7 +608,8 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
   const [form, setForm] = useState<ProviderForm>({
     name: '',
     provider: 'anthropic',
-    model: '',
+    defaultModel: '',
+    modelIdsText: '',
     endpoint: '',
     apiKey: '',
     isDefault: false,
@@ -624,7 +624,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
   // 编辑模式：加载现有 profile
   useEffect(() => {
     if (!profileId) {
-      setForm({ name: '', provider: 'anthropic', model: '', endpoint: '', apiKey: '', isDefault: false })
+      setForm({ name: '', provider: 'anthropic', defaultModel: '', modelIdsText: '', endpoint: '', apiKey: '', isDefault: false })
       return
     }
     listProviders({}).then(r => {
@@ -633,7 +633,8 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
         setForm({
           name: p.name,
           provider: normalizeProviderKind(p.provider),
-          model: p.model,
+          defaultModel: p.defaultModel,
+          modelIdsText: joinModelIds(p.modelIds),
           endpoint: p.apiEndpoint ?? '',
           apiKey: '',
           isDefault: p.isDefault,
@@ -643,17 +644,18 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
   }, [listProviders, profileId])
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.model.trim()) { setError('名称和模型 ID 不能为空'); return }
+    if (!form.name.trim() || !form.defaultModel.trim()) { setError('名称和默认模型 ID 不能为空'); return }
     if (!profileId && !form.apiKey.trim()) { setError('新建 Provider 需要填写 API Key'); return }
     setSaving(true); setError('')
     try {
       const endpoint = form.endpoint.trim()
-      const usesCustomEndpoint = form.provider === 'ollama' || form.provider === 'openai-compatible'
+      const modelIds = parseModelIds(form.modelIdsText, form.defaultModel)
       if (profileId) {
         const req: ProviderUpdateRequest = {
           id: profileId,
           name: form.name.trim(),
-          model: form.model.trim(),
+          defaultModel: form.defaultModel.trim(),
+          modelIds,
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
         }
@@ -663,10 +665,11 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
         await createProvider({
           name: form.name.trim(),
           provider: form.provider,
-          model: form.model.trim(),
+          defaultModel: form.defaultModel.trim(),
+          modelIds,
           apiKey: form.apiKey,
           isDefault: form.isDefault,
-          ...(usesCustomEndpoint && endpoint.length > 0 && { apiEndpoint: endpoint }),
+          ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
         })
       }
       onClose()
@@ -699,31 +702,33 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
             <label>显示名称</label>
             <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="例：Anthropic · Claude" />
 
-            <label>Provider 类型<span className="sub">决定使用哪个 adapter</span></label>
+            <label>协议格式<span className="sub">决定使用 Anthropic 或 OpenAI 适配器</span></label>
             <select value={form.provider} onChange={e => set('provider', normalizeProviderKind(e.target.value))} disabled={!!profileId}>
-              <option value="anthropic">Claude Agent SDK</option>
-              <option value="openai">OpenAI Responses API</option>
-              <option value="deepseek">DeepSeek</option>
-              <option value="ollama">Ollama (本地)</option>
-              <option value="openai-compatible">OpenAI 兼容</option>
+              <option value="anthropic">Anthropic 格式</option>
+              <option value="openai">OpenAI 格式</option>
             </select>
 
-            <label>模型 ID</label>
-            <input value={form.model} onChange={e => set('model', e.target.value)} placeholder="例：claude-sonnet-4-5-20250929" className="mono-sm" />
+            <label>默认模型 ID</label>
+            <input value={form.defaultModel} onChange={e => set('defaultModel', e.target.value)} placeholder="例：claude-sonnet-4-20250514" className="mono-sm" />
 
-            {(form.provider === 'ollama' || form.provider === 'openai-compatible') && (
-              <>
-                <label>Endpoint URL<span className="sub">兼容 OpenAI 的 base URL</span></label>
-                <input
-                  value={form.endpoint}
-                  onChange={e => set('endpoint', e.target.value)}
-                  placeholder={form.provider === 'ollama' ? 'http://localhost:11434/v1' : 'https://api.example.com/v1'}
-                  className="mono-sm"
-                />
-              </>
-            )}
+            <label>可用模型 ID<span className="sub">每行一个，默认模型会自动加入</span></label>
+            <textarea
+              value={form.modelIdsText}
+              onChange={e => set('modelIdsText', e.target.value)}
+              placeholder={`claude-sonnet-4-20250514\nclaude-3-5-haiku-20241022`}
+              className="mono-sm"
+              rows={4}
+            />
 
-            <label>默认 Profile</label>
+            <label>Endpoint URL<span className="sub">可选，自定义请求地址</span></label>
+            <input
+              value={form.endpoint}
+              onChange={e => set('endpoint', e.target.value)}
+              placeholder={form.provider === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'}
+              className="mono-sm"
+            />
+
+            <label>默认 Provider</label>
             <div className={`switch ${form.isDefault ? 'on' : ''}`} onClick={() => set('isDefault', !form.isDefault)} />
           </div>
 
@@ -752,16 +757,18 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
 }
 
 function normalizeProviderKind(value: string): ProviderKind {
-  if (
-    value === 'anthropic' ||
-    value === 'openai' ||
-    value === 'deepseek' ||
-    value === 'ollama' ||
-    value === 'openai-compatible'
-  ) {
-    return value
-  }
-  return 'anthropic'
+  return value === 'anthropic' ? 'anthropic' : 'openai'
+}
+
+function parseModelIds(modelIdsText: string, defaultModel: string): string[] {
+  const values = [defaultModel, ...modelIdsText.split(/[\n,]/)]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0)
+  return [...new Set(values)]
+}
+
+function joinModelIds(modelIds: string[]): string {
+  return modelIds.join('\n')
 }
 
 /* ───────── PROFILE EDIT MODAL ───────── */

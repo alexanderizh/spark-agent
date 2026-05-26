@@ -60,7 +60,8 @@ describe('ProviderService', () => {
     const profile = await service.createProvider({
       name: 'My Anthropic',
       provider: 'anthropic',
-      model: 'claude-opus-4-6',
+      defaultModel: 'claude-opus-4-6',
+      modelIds: ['claude-opus-4-6', 'claude-sonnet-4-20250514'],
       apiKey: 'sk-ant-secret',
     })
 
@@ -68,25 +69,28 @@ describe('ProviderService', () => {
     expect(profile).not.toHaveProperty('apiKey')
     expect(profile.keystoreRef).toContain('anthropic-')
     expect(profile.name).toBe('My Anthropic')
-    expect(profile.model).toBe('claude-opus-4-6')
+    expect(profile.defaultModel).toBe('claude-opus-4-6')
+    expect(profile.modelIds).toEqual(['claude-opus-4-6', 'claude-sonnet-4-20250514'])
   })
 
   it('createProvider stores custom apiEndpoint in config and returned profile', async () => {
     const profile = await service.createProvider({
-      name: 'Local Ollama',
-      provider: 'ollama',
-      model: 'llama3.2',
-      apiEndpoint: 'http://localhost:11434/v1',
-      apiKey: 'ollama-local',
+      name: 'OpenAI Compatible',
+      provider: 'openai',
+      defaultModel: 'gpt-4o-mini',
+      modelIds: ['gpt-4o-mini', 'gpt-4.1'],
+      apiEndpoint: 'https://api.example.com/v1',
+      apiKey: 'sk-openai-local',
     })
 
     expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
       config: {
-        model: 'llama3.2',
-        apiEndpoint: 'http://localhost:11434/v1',
+        defaultModel: 'gpt-4o-mini',
+        modelIds: ['gpt-4o-mini', 'gpt-4.1'],
+        apiEndpoint: 'https://api.example.com/v1',
       },
     }))
-    expect(profile.apiEndpoint).toBe('http://localhost:11434/v1')
+    expect(profile.apiEndpoint).toBe('https://api.example.com/v1')
   })
 
   it('deleteProvider removes from keystore and repo', async () => {
@@ -95,7 +99,7 @@ describe('ProviderService', () => {
       id: 'id-1',
       provider_type: 'openai',
       name: 'Test',
-      config_json: '{"model":"gpt-4"}',
+      config_json: '{"defaultModel":"gpt-4","modelIds":["gpt-4"]}',
       enabled: 1,
       keystore_ref: 'openai-id-1',
       is_default: 0,
@@ -114,7 +118,7 @@ describe('ProviderService', () => {
       id: 'id-2',
       provider_type: 'openai',
       name: 'Old',
-      config_json: '{"model":"gpt-3.5"}',
+      config_json: '{"defaultModel":"gpt-3.5","modelIds":["gpt-3.5"]}',
       enabled: 1,
       keystore_ref: 'openai-id-2',
       is_default: 0,
@@ -132,7 +136,7 @@ describe('ProviderService', () => {
       id: 'id-3',
       provider_type: 'openai',
       name: 'Old',
-      config_json: '{"model":"gpt-3.5"}',
+      config_json: '{"defaultModel":"gpt-3.5","modelIds":["gpt-3.5"]}',
       enabled: 1,
       keystore_ref: 'openai-id-3',
       is_default: 0,
@@ -146,12 +150,12 @@ describe('ProviderService', () => {
     expect(repo.update).toHaveBeenCalledWith('id-3', { name: 'New Name' })
   })
 
-  it('updateProvider merges apiEndpoint into existing config', async () => {
+  it('updateProvider merges apiEndpoint and model IDs into existing config', async () => {
     repo.rows.set('id-5', {
       id: 'id-5',
-      provider_type: 'openai-compatible',
+      provider_type: 'openai',
       name: 'Compat',
-      config_json: '{"model":"mixtral"}',
+      config_json: '{"defaultModel":"mixtral","modelIds":["mixtral"]}',
       enabled: 1,
       keystore_ref: 'compat-id-5',
       is_default: 0,
@@ -159,11 +163,17 @@ describe('ProviderService', () => {
       updated_at: '',
     })
 
-    await service.updateProvider({ id: 'id-5', apiEndpoint: 'https://api.example.com/v1' })
+    await service.updateProvider({
+      id: 'id-5',
+      apiEndpoint: 'https://api.example.com/v1',
+      defaultModel: 'gpt-4.1',
+      modelIds: ['gpt-4.1', 'gpt-4o-mini'],
+    })
 
     expect(repo.update).toHaveBeenCalledWith('id-5', {
       config: {
-        model: 'mixtral',
+        defaultModel: 'gpt-4.1',
+        modelIds: ['gpt-4.1', 'gpt-4o-mini'],
         apiEndpoint: 'https://api.example.com/v1',
       },
     })
@@ -172,11 +182,11 @@ describe('ProviderService', () => {
   it('updateProvider clears apiEndpoint when null is passed', async () => {
     repo.rows.set('id-6', {
       id: 'id-6',
-      provider_type: 'ollama',
-      name: 'Ollama',
-      config_json: '{"model":"llama3.2","apiEndpoint":"http://localhost:11434/v1"}',
+      provider_type: 'openai',
+      name: 'Compat',
+      config_json: '{"defaultModel":"gpt-4o","modelIds":["gpt-4o"],"apiEndpoint":"https://api.example.com/v1"}',
       enabled: 1,
-      keystore_ref: 'ollama-id-6',
+      keystore_ref: 'openai-id-6',
       is_default: 0,
       created_at: '',
       updated_at: '',
@@ -186,7 +196,8 @@ describe('ProviderService', () => {
 
     expect(repo.update).toHaveBeenCalledWith('id-6', {
       config: {
-        model: 'llama3.2',
+        defaultModel: 'gpt-4o',
+        modelIds: ['gpt-4o'],
       },
     })
   })
@@ -195,7 +206,8 @@ describe('ProviderService', () => {
     await service.createProvider({
       name: 'Default Provider',
       provider: 'anthropic',
-      model: 'claude-opus-4-6',
+      defaultModel: 'claude-opus-4-6',
+      modelIds: ['claude-opus-4-6'],
       apiKey: 'sk-ant-key',
       isDefault: true,
     })
@@ -208,7 +220,7 @@ describe('ProviderService', () => {
       id: 'id-4',
       provider_type: 'anthropic',
       name: 'Test',
-      config_json: '{"model":"claude-3"}',
+      config_json: '{"defaultModel":"claude-3","modelIds":["claude-3","claude-3-haiku"]}',
       enabled: 1,
       keystore_ref: 'anthropic-id-4',
       is_default: 0,
@@ -221,5 +233,7 @@ describe('ProviderService', () => {
     expect(profiles).toHaveLength(1)
     expect(profiles[0]).not.toHaveProperty('apiKey')
     expect(profiles[0]!.id).toBe('id-4')
+    expect(profiles[0]!.defaultModel).toBe('claude-3')
+    expect(profiles[0]!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
   })
 })

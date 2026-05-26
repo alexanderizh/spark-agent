@@ -14,12 +14,13 @@ function rowToProfile(row: {
   is_default: number
   created_at: string
 }): ProviderProfile {
-  const config = JSON.parse(row.config_json) as { model?: string; apiEndpoint?: string }
+  const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
   return {
     id: row.id,
     name: row.name,
-    provider: row.provider_type,
-    model: config.model ?? '',
+    provider: normalizeProviderType(row.provider_type),
+    defaultModel: config.defaultModel,
+    modelIds: config.modelIds,
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
@@ -37,15 +38,17 @@ export class ProviderService {
   async createProvider(params: {
     name: string
     provider: string
-    model: string
+    defaultModel: string
+    modelIds?: string[]
     apiEndpoint?: string
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
     const id = crypto.randomUUID()
-    const ref = keystore.makeKeystoreRef(params.provider, id)
+    const providerType = normalizeProviderType(params.provider)
+    const ref = keystore.makeKeystoreRef(providerType, id)
     await keystore.setSecret(ref, params.apiKey)
-    log.info(`Stored API key for provider=${params.provider} id=${id} key=${keystore.maskSecret(params.apiKey)}`)
+    log.info(`Stored API key for provider=${providerType} id=${id} key=${keystore.maskSecret(params.apiKey)}`)
 
     if (params.isDefault) {
       // clear existing defaults first
@@ -56,12 +59,13 @@ export class ProviderService {
 
     const row = this.repo.create({
       id,
-      providerType: params.provider,
+      providerType,
       name: params.name,
-      config: {
-        model: params.model,
+      config: normalizeProviderConfig({
+        defaultModel: params.defaultModel,
+        modelIds: params.modelIds,
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
-      },
+      }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
     })
@@ -76,7 +80,8 @@ export class ProviderService {
   async updateProvider(params: {
     id: string
     name?: string
-    model?: string
+    defaultModel?: string
+    modelIds?: string[]
     apiEndpoint?: string | null
     apiKey?: string
     isDefault?: boolean
@@ -90,14 +95,20 @@ export class ProviderService {
       log.info(`Updated API key for id=${params.id} key=${keystore.maskSecret(params.apiKey)}`)
     }
 
-    const existingConfig = JSON.parse(existing.config_json) as { model?: string; apiEndpoint?: string }
+    const existingConfig = normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
     const newConfig =
-      params.model !== undefined || params.apiEndpoint !== undefined
+      params.defaultModel !== undefined || params.modelIds !== undefined || params.apiEndpoint !== undefined
         ? { ...existingConfig }
         : undefined
 
-    if (newConfig !== undefined && params.model !== undefined) {
-      newConfig.model = params.model
+    if (newConfig !== undefined && params.defaultModel !== undefined) {
+      newConfig.defaultModel = params.defaultModel
+    }
+    if (newConfig !== undefined && params.modelIds !== undefined) {
+      newConfig.modelIds = normalizeModelIds(
+        params.defaultModel ?? newConfig.defaultModel,
+        params.modelIds,
+      )
     }
     if (newConfig !== undefined && params.apiEndpoint !== undefined) {
       if (params.apiEndpoint === null) {
@@ -139,11 +150,11 @@ export class ProviderService {
     const apiKey = await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
     if (!apiKey) return { healthy: false, errorMessage: 'API key not found in keychain' }
 
-    const config = JSON.parse(row.config_json) as { apiEndpoint?: string }
+    const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
     const start = Date.now()
 
     try {
-      const endpoint = getHealthCheckEndpoint(row.provider_type, config.apiEndpoint)
+      const endpoint = getHealthCheckEndpoint(normalizeProviderType(row.provider_type), config.apiEndpoint)
       const res = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(5000),
@@ -161,6 +172,35 @@ export class ProviderService {
   }
 }
 
+interface ProviderConfig {
+  defaultModel?: string
+  model?: string
+  modelIds?: string[]
+  apiEndpoint?: string
+  maxTokens?: number
+  temperature?: number
+}
+
+function normalizeProviderType(providerType: string): 'anthropic' | 'openai' {
+  return providerType === 'anthropic' ? 'anthropic' : 'openai'
+}
+
+function normalizeModelIds(defaultModel: string, modelIds?: string[]): string[] {
+  const normalized = [defaultModel, ...(modelIds ?? [])]
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+  return [...new Set(normalized)]
+}
+
+function normalizeProviderConfig(config: ProviderConfig): Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> & Omit<ProviderConfig, 'defaultModel' | 'modelIds'> {
+  const defaultModel = (config.defaultModel ?? config.model ?? '').trim()
+  return {
+    ...config,
+    defaultModel,
+    modelIds: normalizeModelIds(defaultModel, config.modelIds),
+  }
+}
+
 function getHealthCheckEndpoint(providerType: string, apiEndpoint?: string): string {
   if (apiEndpoint !== undefined) {
     const trimmed = apiEndpoint.replace(/\/+$/, '')
@@ -173,8 +213,6 @@ function getDefaultEndpoint(providerType: string): string {
   switch (providerType) {
     case 'anthropic': return 'https://api.anthropic.com/v1/models'
     case 'openai': return 'https://api.openai.com/v1/models'
-    case 'deepseek': return 'https://api.deepseek.com/v1/models'
-    case 'ollama': return 'http://localhost:11434/v1/models'
     default: return 'https://api.openai.com/v1/models'
   }
 }

@@ -13,8 +13,8 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { dialog } from 'electron'
 import { createLogger } from '@spark/shared'
-import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService } from '@spark/agent-runtime'
+import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
+import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
@@ -31,6 +31,10 @@ function getModelService(): ModelService {
 
 function getMcpService(): McpService {
   return new McpService(new McpServerRepository(getDatabase()))
+}
+
+function getSkillService(): SkillService {
+  return new SkillService(new SkillRepository(getDatabase()))
 }
 
 function getRulesService(): RulesService {
@@ -273,6 +277,31 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('mcp:delete', async (req) => {
     const success = getMcpService().deleteServer(req.id)
+    return { success }
+  })
+
+  // ─── Skill Handlers ─────────────────────────────────────────────────────────
+
+  typedIpcHandle('skill:list', async (req) => {
+    const svc = getSkillService()
+    svc.ensureBuiltInSkills()
+    const skills = svc.listSkills(req.scope !== undefined ? { scope: req.scope } : undefined)
+    return { skills }
+  })
+
+  typedIpcHandle('skill:create', async (req) => {
+    const skill = getSkillService().createSkill(req)
+    return { skill }
+  })
+
+  typedIpcHandle('skill:update', async (req) => {
+    const { id, ...fields } = req
+    const skill = getSkillService().updateSkill(id, fields)
+    return { skill }
+  })
+
+  typedIpcHandle('skill:delete', async (req) => {
+    const success = getSkillService().deleteSkill(req.id)
     return { success }
   })
 

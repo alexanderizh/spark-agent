@@ -169,7 +169,7 @@ export function HomeView() {
               ) : (
                 <div className="health-list">
                   {providers.map(p => (
-                    <HealthRow key={p.id} name={p.name} provider={p.provider} model={p.model} isDefault={p.isDefault} />
+                    <HealthRow key={p.id} name={p.name} provider={p.provider} defaultModel={p.defaultModel} isDefault={p.isDefault} />
                   ))}
                 </div>
               )}
@@ -237,14 +237,14 @@ function SessionItem({
   )
 }
 
-function HealthRow({ name, provider, model, isDefault }: { name: string; provider: string; model: string; isDefault: boolean }) {
+function HealthRow({ name, provider, defaultModel, isDefault }: { name: string; provider: string; defaultModel: string; isDefault: boolean }) {
   const initial = (name[0] ?? provider[0] ?? '?').toUpperCase()
   return (
     <div className="health-row">
       <div className="provider-logo" style={{ width: 24, height: 24, fontSize: 11 }}>{initial}</div>
       <div>
         <div className="health-name">{name}</div>
-        <div className="muted" style={{ fontSize: 11 }}>{model}</div>
+        <div className="muted" style={{ fontSize: 11 }}>{defaultModel}</div>
       </div>
       <div className="health-meta">
         {isDefault && <span className="badge primary dot">默认</span>}

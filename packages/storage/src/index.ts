@@ -31,6 +31,7 @@ export {
   PermissionProfileRepository,
   ModelProfileRepository,
   McpServerRepository,
+  SkillRepository,
 } from './repositories/index.js'
 
 export type {
@@ -52,4 +53,5 @@ export type {
   PermissionRuleRow,
   ModelProfileRow,
   McpServerRow,
+  SkillRow,
 } from './repositories/index.js'

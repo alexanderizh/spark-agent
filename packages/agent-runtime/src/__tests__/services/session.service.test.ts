@@ -55,7 +55,7 @@ function makeEventRepo(overrides = {}) {
 
 function makeProviderRepo(overrides = {}) {
   return {
-    get: vi.fn().mockReturnValue({ id: 'prov-1', provider_type: 'anthropic', keystore_ref: 'ref-1', config_json: '{"model":"claude-3-5-sonnet-20241022"}' }),
+    get: vi.fn().mockReturnValue({ id: 'prov-1', provider_type: 'anthropic', keystore_ref: 'ref-1', config_json: '{"defaultModel":"claude-3-5-sonnet-20241022","modelIds":["claude-3-5-sonnet-20241022"]}' }),
     ...overrides,
   }
 }
@@ -111,6 +111,42 @@ describe('SessionService.sendTurn', () => {
     expect(typeof result.turnId).toBe('string')
     expect(loop.onEvent).toHaveBeenCalled()
     expect(loop.executeTurn).toHaveBeenCalled()
+    expect(createAdapter).toHaveBeenCalledWith('anthropic')
+  })
+
+  it('uses provider defaultModel as the runtime model', async () => {
+    const sessionRepo = makeSessionRepo()
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo({
+      get: vi.fn().mockReturnValue({
+        id: 'prov-1',
+        provider_type: 'openai',
+        keystore_ref: 'ref-1',
+        config_json: '{"defaultModel":"gpt-4.1","modelIds":["gpt-4.1","gpt-4o-mini"],"apiEndpoint":"https://api.example.com/v1"}',
+      }),
+    })
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
+
+    expect(createAdapter).toHaveBeenCalledWith('openai')
+    expect(loop.executeTurn).toHaveBeenCalledWith(
+      'sess-1',
+      expect.any(String),
+      'hello',
+      expect.objectContaining({
+        model: 'gpt-4.1',
+        apiEndpoint: 'https://api.example.com/v1',
+      }),
+    )
   })
 
   it('assigns incrementing seq to events and calls onEvent', async () => {

@@ -16,12 +16,11 @@ vi.mock('openai', () => ({
   }),
 }))
 
-import { DeepSeekAdapter } from '../../adapters/deepseek.js'
 import { OpenAIAdapter } from '../../adapters/openai.js'
 import type { ChatParams } from '../../adapters/types.js'
 
 async function collect(
-  adapter: OpenAIAdapter | DeepSeekAdapter,
+  adapter: OpenAIAdapter,
   params: ChatParams,
   signal?: AbortSignal,
 ) {
@@ -145,14 +144,14 @@ describe('OpenAI-compatible adapters', () => {
     expect(events.at(-1)).toMatchObject({ type: 'assistant_message', mode: 'complete' })
   })
 
-  it('maps DeepSeek reasoning_content and default endpoint', async () => {
+  it('uses custom baseURL when an OpenAI-compatible endpoint is configured', async () => {
     openAICreateMock.mockResolvedValue(
       streamFrom([
         {
           choices: [
             {
               index: 0,
-              delta: { reasoning_content: 'Thinking', content: 'Answer' },
+              delta: { content: 'Answer' },
               finish_reason: 'stop',
             },
           ],
@@ -161,25 +160,21 @@ describe('OpenAI-compatible adapters', () => {
       ]),
     )
 
-    const events = await collect(new DeepSeekAdapter(), {
+    const events = await collect(new OpenAIAdapter(), {
       ...params,
-      model: 'deepseek-reasoner',
+      model: 'gpt-4.1',
+      apiEndpoint: 'https://api.example.com/v1',
     })
 
     expect(openAIConstructorMock).toHaveBeenCalledWith({
       apiKey: 'sk-test',
-      baseURL: 'https://api.deepseek.com/v1',
+      baseURL: 'https://api.example.com/v1',
     })
     expect(events[0]).toMatchObject({
-      type: 'agent_thinking',
-      mode: 'delta',
-      content: 'Thinking',
-    })
-    expect(events[1]).toMatchObject({
       type: 'assistant_message',
       mode: 'delta',
       content: 'Answer',
-      provider: 'deepseek',
+      provider: 'openai',
     })
   })
 

@@ -21,7 +21,6 @@ export function ChatView() {
   const { invoke: listSessions } = useIpcInvoke('session:list')
   const { invoke: createSession } = useIpcInvoke('session:create')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { invoke: listModels } = useIpcInvoke('model:list')
 
   const refreshSessions = () => {
     listSessions({ limit: 100 }).then(res => setSessions(res.sessions)).catch(console.error)
@@ -37,13 +36,7 @@ export function ChatView() {
         alert('请先在设置中配置 Provider')
         return
       }
-      const modelRes = await listModels({})
-      const enabledModel = modelRes.models.find((m) => m.enabled)
-      const req: Parameters<typeof createSession>[0] = { providerProfileId: profile.id }
-      if (enabledModel !== undefined) {
-        req.modelProfileId = enabledModel.id
-      }
-      const res = await createSession(req)
+      const res = await createSession({ providerProfileId: profile.id })
       refreshSessions()
       setActive(res.sessionId)
     } catch (err) {
