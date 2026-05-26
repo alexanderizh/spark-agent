@@ -12,6 +12,8 @@
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { dialog, shell } from 'electron'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
 import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService } from '@spark/agent-runtime'
@@ -20,6 +22,7 @@ import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
+const execFileAsync = promisify(execFile)
 
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
@@ -226,6 +229,23 @@ export function registerAllIpcHandlers(): void {
     return { entries }
   })
 
+  typedIpcHandle('workspace:list-branches', async (req) => {
+    log.info(`workspace:list-branches requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    return getWorkspaceBranches(workspace.root_path)
+  })
+
+  typedIpcHandle('workspace:switch-branch', async (req) => {
+    log.info(`workspace:switch-branch requested, workspaceId=${req.workspaceId}, branch=${req.branch}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    await execFileAsync('git', ['switch', req.branch], { cwd: workspace.root_path })
+    const result = await getWorkspaceBranches(workspace.root_path)
+    if (result.currentBranch == null) {
+      throw new Error('Unable to determine current git branch after switch')
+    }
+    return { currentBranch: result.currentBranch, branches: result.branches }
+  })
+
   // ─── Native Dialog Handlers ─────────────────────────────────────────────
 
   typedIpcHandle('dialog:open-directory', async (req) => {
@@ -400,5 +420,22 @@ function toWorkspaceInfo(workspace: {
     archivedAt: workspace.archived_at,
     createdAt: workspace.created_at,
     updatedAt: workspace.updated_at,
+  }
+}
+
+async function getWorkspaceBranches(rootPath: string): Promise<{ currentBranch: string | null; branches: string[] }> {
+  try {
+    const [current, branches] = await Promise.all([
+      execFileAsync('git', ['branch', '--show-current'], { cwd: rootPath }),
+      execFileAsync('git', ['branch', '--format=%(refname:short)'], { cwd: rootPath }),
+    ])
+    const branchList = branches.stdout
+      .split(/\r?\n/)
+      .map((item) => item.trim())
+      .filter(Boolean)
+    const currentBranch = current.stdout.trim() || branchList[0] || null
+    return { currentBranch, branches: branchList }
+  } catch {
+    return { currentBranch: null, branches: [] }
   }
 }

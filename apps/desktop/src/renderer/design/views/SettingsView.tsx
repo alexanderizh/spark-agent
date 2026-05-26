@@ -6,6 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
+import { SparkInput, SparkSelect } from '../components/FormControls'
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
@@ -161,23 +162,23 @@ function GeneralSection() {
 
       <div className="form-grid">
         <label>语言<span className="sub">界面文案语言</span></label>
-        <select defaultValue="zh-CN">
+        <SparkSelect defaultValue="zh-CN">
           <option value="zh-CN">简体中文</option>
           <option value="en-US">English (US)</option>
           <option value="ja-JP">日本語</option>
-        </select>
+        </SparkSelect>
 
         <label>启动行为<span className="sub">应用启动时的默认动作</span></label>
-        <select defaultValue="last">
+        <SparkSelect defaultValue="last">
           <option value="last">恢复上次会话</option>
           <option value="home">打开 Home</option>
           <option value="last-project">打开上次项目</option>
           <option value="blank">空白会话</option>
-        </select>
+        </SparkSelect>
 
         <label>默认工作区<span className="sub">新建项目会话时的预选根目录</span></label>
         <div className="control">
-          <input className="flex1" defaultValue="/Users/hayden/work" />
+          <SparkInput className="flex1" defaultValue="/Users/hayden/work" />
           <button className="btn"><Icons.Folder size={12} /> 浏览…</button>
         </div>
 
@@ -200,7 +201,7 @@ function GeneralSection() {
 
         <label>检查点保留<span className="sub">每个会话保留多少历史检查点</span></label>
         <div className="control">
-          <input type="number" defaultValue="50" className="input-w-sm" />
+          <SparkInput type="number" defaultValue="50" className="input-w-sm" />
           <span className="muted text-xs-12">个 · 超出后按时间淘汰</span>
         </div>
       </div>
@@ -276,16 +277,16 @@ function AppearanceSection() {
         </div>
 
         <label>字体</label>
-        <select defaultValue="geist">
+        <SparkSelect defaultValue="geist">
           <option value="geist">Geist Sans + Geist Mono（推荐）</option>
           <option value="system">系统默认</option>
           <option value="ibm-plex">IBM Plex</option>
           <option value="jetbrains">JetBrains</option>
-        </select>
+        </SparkSelect>
 
         <label>字号<span className="sub">基础字号，其他字号按比例缩放</span></label>
         <div className="control">
-          <input type="range" min="11" max="16" defaultValue="13" className="flex1" />
+          <SparkInput type="range" min="11" max="16" defaultValue="13" className="flex1" />
           <span className="mono-sm muted range-value">13px</span>
         </div>
 
@@ -324,10 +325,12 @@ function AppearanceSection() {
         <SettingsRow
           title="时间戳格式"
           right={
-            <select className="select-sm" defaultValue="rel">
-              <option value="rel">相对时间</option>
-              <option value="abs">绝对时间</option>
-            </select>
+            <div className="select-sm">
+              <SparkSelect defaultValue="rel">
+                <option value="rel">相对时间</option>
+                <option value="abs">绝对时间</option>
+              </SparkSelect>
+            </div>
           }
         />
       </div>
@@ -424,7 +427,7 @@ function ShortcutsSection() {
       <div className="lede">所有组合可在下方搜索并自定义。Mac 使用 ⌘，其他系统替换为 Ctrl。</div>
 
       <div className="row row-mb-sm">
-        <div className="search-input flex1"><Icons.Search /><input placeholder="搜索动作或按键..." /></div>
+        <div className="search-input flex1"><Icons.Search /><SparkInput placeholder="搜索动作或按键..." /></div>
         <button className="btn"><Icons.Refresh size={12} /> 重置全部</button>
       </div>
 
@@ -690,7 +693,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
           <div className="subsec-h">基础</div>
           <div className="form-grid">
             <label>供应商模板<span className="sub">基于官方公开文档预填，后续仍可修改</span></label>
-            <select
+            <SparkSelect
               value={form.presetId}
               disabled={!!profileId}
               onChange={e => {
@@ -709,23 +712,23 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
                   {preset.name} · {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
                 </option>
               ))}
-            </select>
+            </SparkSelect>
 
             <label>显示名称</label>
-            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="例：Anthropic · Claude" />
+            <SparkInput value={form.name} onChange={e => set('name', e.target.value)} placeholder="例：Anthropic · Claude" />
 
             <label>协议格式<span className="sub">决定使用 Anthropic 或 OpenAI 适配器</span></label>
-            <select
+            <SparkSelect
               value={form.provider}
               onChange={e => setForm(prev => ({ ...prev, presetId: 'custom', provider: normalizeProviderKind(e.target.value) }))}
               disabled={!!profileId}
             >
               <option value="anthropic">Anthropic 格式</option>
               <option value="openai">OpenAI 格式</option>
-            </select>
+            </SparkSelect>
 
             <label>默认模型 ID</label>
-            <input value={form.defaultModel} onChange={e => set('defaultModel', e.target.value)} placeholder="例：claude-sonnet-4-20250514" className="mono-sm" />
+            <SparkInput value={form.defaultModel} onChange={e => set('defaultModel', e.target.value)} placeholder="例：claude-sonnet-4-20250514" className="mono-sm" />
 
             <label>可用模型 ID<span className="sub">每行一个，默认模型会自动加入</span></label>
             <textarea
@@ -737,7 +740,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
             />
 
             <label>Endpoint URL<span className="sub">可选，自定义请求地址</span></label>
-            <input
+            <SparkInput
               value={form.endpoint}
               onChange={e => set('endpoint', e.target.value)}
               placeholder={form.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'}
@@ -751,7 +754,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
           <div className="subsec-h">鉴权</div>
           <div className="form-grid">
             <label>API Key{profileId && <span className="sub">留空则不更新</span>}</label>
-            <input
+            <SparkInput
               type="password"
               value={form.apiKey}
               onChange={e => set('apiKey', e.target.value)}
@@ -802,10 +805,10 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
         <div className="modal-body modal-body-scroll">
           <div className="form-grid">
             <label>显示名称</label>
-            <input defaultValue="Sonnet 4.5 · 默认" />
+            <SparkInput defaultValue="Sonnet 4.5 · 默认" />
 
             <label>模型 ID</label>
-            <input className="mono-sm" defaultValue="claude-sonnet-4-5-20250929" />
+            <SparkInput className="mono-sm" defaultValue="claude-sonnet-4-5-20250929" />
 
             <label>角色<span className="sub">该 profile 适配的角色</span></label>
             <div className="row row-gap-xs">
@@ -821,15 +824,15 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 
             <label>Temperature</label>
             <div className="control">
-              <input type="range" min="0" max="2" step="0.1" defaultValue="0.7" className="flex1" />
+              <SparkInput type="range" min="0" max="2" step="0.1" defaultValue="0.7" className="flex1" />
               <span className="mono-sm muted range-value">0.7</span>
             </div>
 
             <label>最大输入 token</label>
-            <input type="number" defaultValue="180000" />
+            <SparkInput type="number" defaultValue="180000" />
 
             <label>最大输出 token</label>
-            <input type="number" defaultValue="8192" />
+            <SparkInput type="number" defaultValue="8192" />
 
             <label>推理强度<span className="sub">extended thinking 时使用</span></label>
             <div className="seg-control">
@@ -843,13 +846,13 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             <label>单次运行成本上限</label>
             <div className="control">
               <span className="muted">$</span>
-              <input type="number" defaultValue="5.00" step="0.50" className="flex1" />
+              <SparkInput type="number" defaultValue="5.00" step="0.50" className="flex1" />
               <span className="muted text-xs-12">USD · 超出后切换到 fallback</span>
             </div>
 
             <label>超时</label>
             <div className="control">
-              <input type="number" defaultValue="120" className="flex1" />
+              <SparkInput type="number" defaultValue="120" className="flex1" />
               <span className="muted text-xs-12">秒</span>
             </div>
 
@@ -975,8 +978,8 @@ function ModelsSection() {
 
           {addingForProvider === provider.id && (
             <div className="row row-gap-sm mb-sm">
-              <input
-                className="input flex1 model-name-sm"
+              <SparkInput
+                className="flex1 model-name-sm"
                 placeholder="模型名称，如 gpt-4o"
                 value={newModelName}
                 onChange={(e) => setNewModelName(e.target.value)}
@@ -1260,10 +1263,10 @@ function RuleEditPanel({
           <div className="subsec-h">规则</div>
           <div className="form-grid">
             <label>名称</label>
-            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：代码风格" />
+            <SparkInput value={name} onChange={(e) => setName(e.target.value)} placeholder="例：代码风格" />
 
             <label>优先级<span className="sub">数字越大越优先</span></label>
-            <input type="number" value={priority} onChange={(e) => setPriority(Number(e.target.value))} />
+            <SparkInput type="number" value={priority} onChange={(e) => setPriority(Number(e.target.value))} />
 
             <label>内容</label>
             <textarea
@@ -1436,25 +1439,25 @@ function McpSection() {
           <div className="subsec-h wf-template-h2">添加 MCP 服务器</div>
           <div className="form-grid">
             <label>名称</label>
-            <input value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
+            <SparkInput value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
 
             <label>作用域</label>
-            <select value={draft.scope} onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))}>
+            <SparkSelect value={draft.scope} onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))}>
               <option value="system">system</option>
               <option value="user">user</option>
               <option value="team">team</option>
               <option value="project">project</option>
               <option value="session">session</option>
-            </select>
+            </SparkSelect>
 
             <label>类型</label>
-            <select value={draft.type} onChange={(e) => setDraft((prev) => ({ ...prev, type: e.target.value === 'sse' ? 'sse' : 'stdio' }))}>
+            <SparkSelect value={draft.type} onChange={(e) => setDraft((prev) => ({ ...prev, type: e.target.value === 'sse' ? 'sse' : 'stdio' }))}>
               <option value="stdio">stdio</option>
               <option value="sse">sse</option>
-            </select>
+            </SparkSelect>
 
             <label>{draft.type === 'stdio' ? '启动命令' : 'Endpoint'}</label>
-            <input
+            <SparkInput
               className="mono-sm"
               value={draft.type === 'stdio' ? draft.command : draft.endpoint}
               onChange={(e) => {
@@ -1698,8 +1701,9 @@ function PermissionsSection() {
                 title={title}
                 desc={desc}
                 right={
-                  <input
+                  <SparkInput
                     type="radio"
+                    className="spark-radio"
                     name={`sb-${activeProfile.id}`}
                     checked={activeProfile.sandboxLevel === level}
                     onChange={() => handleSandboxChange(level)}
@@ -1719,12 +1723,14 @@ function PermissionsSection() {
         <SettingsRow
           title="审计日志保留"
           right={
-            <select className="select-sm" defaultValue="90">
-              <option value="30">30 天</option>
-              <option value="90">90 天</option>
-              <option value="365">1 年</option>
-              <option value="forever">永久</option>
-            </select>
+            <div className="select-sm">
+              <SparkSelect defaultValue="90">
+                <option value="30">30 天</option>
+                <option value="90">90 天</option>
+                <option value="365">1 年</option>
+                <option value="forever">永久</option>
+              </SparkSelect>
+            </div>
           }
         />
       </div>
@@ -1755,16 +1761,20 @@ function PermRule({ icon, name, hint, scope, mode, onModeChange }: { icon: React
         <div className="name">{name}</div>
         <div className="hint">{hint}</div>
       </div>
-      <select defaultValue={scope} className="select-full">
-        <option>工作区内</option><option>本会话</option><option>本项目</option><option>任意</option>
-        <option>profile 内</option><option>按 server</option><option>域名白名单</option>
-      </select>
-      <select value={mode} onChange={(e) => onModeChange?.(e.target.value as PermissionMode)} className="select-full">
-        <option value="allow">允许</option>
-        <option value="ask">询问</option>
-        <option value="ask-twice">双重确认</option>
-        <option value="deny">拒绝</option>
-      </select>
+      <div className="select-full">
+        <SparkSelect defaultValue={scope}>
+          <option>工作区内</option><option>本会话</option><option>本项目</option><option>任意</option>
+          <option>profile 内</option><option>按 server</option><option>域名白名单</option>
+        </SparkSelect>
+      </div>
+      <div className="select-full">
+        <SparkSelect value={mode} onChange={(e) => onModeChange?.(e.target.value as PermissionMode)}>
+          <option value="allow">允许</option>
+          <option value="ask">询问</option>
+          <option value="ask-twice">双重确认</option>
+          <option value="deny">拒绝</option>
+        </SparkSelect>
+      </div>
     </div>
   )
 }
@@ -1778,25 +1788,25 @@ function TelemetrySection() {
 
       <div className="form-grid">
         <label>本地日志级别</label>
-        <select defaultValue="info">
+        <SparkSelect defaultValue="info">
           <option value="error">error</option>
           <option value="warn">warn</option>
           <option value="info">info</option>
           <option value="debug">debug</option>
           <option value="trace">trace</option>
-        </select>
+        </SparkSelect>
 
         <label>OpenTelemetry endpoint<span className="sub">可选 — 把 trace 转发到 collector</span></label>
-        <input placeholder="https://otlp.example.com:4318 (可选)" />
+        <SparkInput placeholder="https://otlp.example.com:4318 (可选)" />
 
         <label>Trace 采样率</label>
         <div className="control">
-          <input type="range" min="0" max="100" defaultValue="100" className="flex1" />
+          <SparkInput type="range" min="0" max="100" defaultValue="100" className="flex1" />
           <span className="mono-sm muted range-value">100%</span>
         </div>
 
         <label>本地保留 trace 天数</label>
-        <input type="number" defaultValue="14" className="input-max-sm" />
+        <SparkInput type="number" defaultValue="14" className="input-max-sm" />
       </div>
 
       <div className="subsec-h">最近运行</div>
@@ -1861,13 +1871,13 @@ function StorageSection() {
       <div className="form-grid">
         <label>数据目录</label>
         <div className="control">
-          <input className="flex1" defaultValue="~/Library/Application Support/Spark Agent" readOnly />
+          <SparkInput className="flex1" defaultValue="~/Library/Application Support/Spark Agent" readOnly />
           <button className="btn"><Icons.Folder size={12} /> 打开</button>
         </div>
 
         <label>当前工作区<span className="sub">Agent 文件工具的根目录</span></label>
         <div className="control">
-          <input className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
+          <SparkInput className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
           <button className="btn" onClick={handleOpenWorkspace}><Icons.Folder size={12} /> 选择</button>
           <button className="btn ghost" onClick={handleCloseWorkspace} disabled={workspace === null}>关闭</button>
         </div>
@@ -1948,11 +1958,13 @@ function UpdatesSection() {
         <SettingsRow
           title="更新通道"
           right={
-            <select className="select-sm" defaultValue="stable">
-              <option value="stable">stable</option>
-              <option value="beta">beta</option>
-              <option value="nightly">nightly</option>
-            </select>
+            <div className="select-sm">
+              <SparkSelect defaultValue="stable">
+                <option value="stable">stable</option>
+                <option value="beta">beta</option>
+                <option value="nightly">nightly</option>
+              </SparkSelect>
+            </div>
           }
         />
       </div>

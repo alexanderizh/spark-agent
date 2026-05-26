@@ -122,7 +122,7 @@ describe('SessionService.sendTurn', () => {
     expect(typeof result.turnId).toBe('string')
     expect(loop.onEvent).toHaveBeenCalled()
     expect(loop.executeTurn).toHaveBeenCalled()
-    expect(createAdapter).toHaveBeenCalledWith('anthropic')
+    expect(createAdapter).toHaveBeenCalledWith('claude')
   })
 
   it('uses provider defaultModel as the runtime model', async () => {
@@ -150,7 +150,7 @@ describe('SessionService.sendTurn', () => {
     const svc = new SessionService(mockDb, vi.fn())
     await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
 
-    expect(createAdapter).toHaveBeenCalledWith('openai')
+    expect(createAdapter).toHaveBeenCalledWith('codex')
     expect(loop.executeTurn).toHaveBeenCalledWith(
       'sess-1',
       expect.any(String),
@@ -160,6 +160,42 @@ describe('SessionService.sendTurn', () => {
         apiEndpoint: 'https://api.example.com/v1',
       }),
     )
+  })
+
+  it('uses the session agent adapter instead of provider type when present', async () => {
+    const sessionRepo = makeSessionRepo({
+      findByIdOrFail: vi.fn().mockReturnValue({
+        id: 'sess-1',
+        provider_profile_id: 'prov-1',
+        chat_mode: 'claude',
+        status: 'running',
+        workspace_ids_json: '[]',
+      }),
+    })
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo({
+      get: vi.fn().mockReturnValue({
+        id: 'prov-1',
+        provider_type: 'openai',
+        keystore_ref: 'ref-1',
+        config_json: '{"defaultModel":"glm-5","modelIds":["glm-5"]}',
+      }),
+    })
+    const rulesRepo = makeRulesRepo()
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
+
+    expect(createAdapter).toHaveBeenCalledWith('claude')
   })
 
   it('assigns incrementing seq to events and calls onEvent', async () => {

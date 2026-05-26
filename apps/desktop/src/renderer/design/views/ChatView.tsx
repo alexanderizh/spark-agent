@@ -2,14 +2,25 @@
  * ChatView — 真实 IPC 驱动的会话视图
  */
 import { useEffect, useRef, useState, useCallback } from 'react'
-import type { ReactNode } from 'react'
+import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
 import { ErrorCard } from '../ChatInteractions'
+import { SparkInput } from '../components/FormControls'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
 import type { UIMessage, UIBlock } from '../services/event-mapper'
-import type { SessionListResponse, SessionId, SessionSearchResult, WorkspaceInfo } from '@spark/protocol'
+import type {
+  AgentEvent,
+  ProviderProfile,
+  SessionAgentAdapter,
+  SessionChatMode,
+  SessionListResponse,
+  SessionId,
+  SessionReasoningEffort,
+  SessionSearchResult,
+  WorkspaceInfo,
+} from '@spark/protocol'
 
 type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -19,14 +30,31 @@ type ProjectGroup = {
 }
 
 type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
+type BranchState = { currentBranch: string | null; branches: string[] }
+type AgentAdapter = SessionAgentAdapter
+type PermissionModeChoice =
+  | 'claude-ask'
+  | 'claude-auto-edits'
+  | 'claude-plan'
+  | 'claude-auto'
+  | 'claude-bypass'
+  | 'codex-default'
+  | 'codex-auto-review'
+  | 'codex-full-access'
 
 export function ChatView() {
   const [active, setActive] = useState<SessionId | null>(null)
-  const [showInspector, setShowInspector] = useState(true)
+  const [showInspector, setShowInspector] = useState(false)
+  const [inspectorWidth, setInspectorWidth] = useState(360)
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
+  const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [selectedProviderId, setSelectedProviderId] = useState<string>('')
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [agentStatus, setAgentStatus] = useState<string>('')
+  const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  const [contextInputTokens, setContextInputTokens] = useState(0)
+  const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
   const [projectName, setProjectName] = useState('')
   const [projectPath, setProjectPath] = useState('')
@@ -52,18 +80,23 @@ export function ChatView() {
   const { invoke: deleteWorkspace } = useIpcInvoke('workspace:delete')
   const { invoke: openWorkspaceFolder } = useIpcInvoke('workspace:open-folder')
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
+  const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
+  const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
 
   const refreshProjectsAndSessions = useCallback(async () => {
-    const [workspaceRes, sessionRes, currentRes] = await Promise.all([
+    const [workspaceRes, sessionRes, currentRes, providerRes] = await Promise.all([
       listWorkspaces({ limit: 100 }),
       listSessions({ limit: 200 }),
       getCurrentWorkspace({}),
+      listProviders({}),
     ])
     setWorkspaces(workspaceRes.workspaces)
     setSessions(sessionRes.sessions)
+    setProviders(providerRes.profiles)
+    setSelectedProviderId((prev) => prev || providerRes.profiles.find((item) => item.isDefault)?.id || providerRes.profiles[0]?.id || '')
     setActiveWorkspaceId((prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null)
-  }, [getCurrentWorkspace, listSessions, listWorkspaces])
+  }, [getCurrentWorkspace, listProviders, listSessions, listWorkspaces])
 
   const refreshSessions = () => {
     refreshProjectsAndSessions().catch(console.error)
@@ -108,33 +141,54 @@ export function ChatView() {
     }
   }, [])
 
-  const handleNewSession = async (workspaceId = activeWorkspaceId) => {
+  const handleNewSession = async (
+    workspaceId = activeWorkspaceId,
+    options: {
+      providerProfileId?: string
+      modelId?: string
+      agentAdapter?: AgentAdapter
+      chatMode?: SessionChatMode
+      reasoningEffort?: SessionReasoningEffort
+      activate?: boolean
+    } = {},
+  ): Promise<SessionId | null> => {
     try {
       setNotice('')
       if (workspaceId == null) {
         setProjectDialog('create')
         toast.warning('请先创建或打开一个项目，然后再在项目下新建会话。')
-        return
+        return null
       }
-      const provRes = await listProviders({})
-      const profile = provRes.profiles[0]
+      const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
+      if (providers.length === 0) setProviders(knownProviders)
+      const profile = knownProviders.find((item) => item.id === options.providerProfileId)
+        ?? knownProviders.find((item) => item.id === selectedProviderId)
+        ?? knownProviders.find((item) => item.isDefault)
+        ?? knownProviders[0]
       if (!profile) {
         alert('请先在设置中配置 Provider')
-        return
+        return null
       }
       const workspace = workspaces.find((item) => item.id === workspaceId)
       const res = await createSession({
         providerProfileId: profile.id,
+        ...(options.modelId !== undefined ? { modelId: options.modelId } : {}),
+        ...(options.agentAdapter !== undefined ? { agentAdapter: options.agentAdapter } : {}),
+        ...(options.chatMode !== undefined ? { chatMode: options.chatMode } : {}),
+        ...(options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {}),
         workspaceId,
         title: workspace == null ? '新会话' : `${workspace.name} 会话`,
       })
       refreshSessions()
-      setActive(res.sessionId)
+      if (options.activate !== false) setActive(res.sessionId)
+      setSelectedProviderId(profile.id)
       setActiveWorkspaceId(workspaceId)
+      return res.sessionId
     } catch (err) {
       console.error('创建会话失败', err)
       toast.error(err instanceof Error ? err.message : '创建会话失败')
     }
+    return null
   }
 
   const handleOpenExistingProject = async () => {
@@ -309,13 +363,61 @@ export function ChatView() {
   const activeSession = sessions.find(s => s.id === active) ?? null
   const activeWorkspace = activeWorkspaceId == null ? null : workspaces.find((item) => item.id === activeWorkspaceId) ?? null
 
+  useEffect(() => {
+    if (activeSession?.providerProfileId) {
+      setSelectedProviderId(activeSession.providerProfileId)
+    }
+  }, [activeSession?.providerProfileId])
+
+  useEffect(() => {
+    if (activeWorkspace == null) {
+      setBranchState({ currentBranch: null, branches: [] })
+      return
+    }
+
+    let cancelled = false
+    listBranches({ workspaceId: activeWorkspace.id })
+      .then((res) => {
+        if (!cancelled) setBranchState(res)
+      })
+      .catch(() => {
+        if (!cancelled) setBranchState({ currentBranch: null, branches: [] })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [activeWorkspace, listBranches])
+
+  const handleUpdateActiveSession = async (patch: {
+    providerProfileId?: string
+    modelId?: string | null
+    agentAdapter?: AgentAdapter
+    chatMode?: SessionChatMode
+    reasoningEffort?: SessionReasoningEffort
+  }) => {
+    if (active == null) return
+    const res = await updateSession({ sessionId: active, ...patch })
+    setSessions((prev) => prev.map((item) => item.id === active ? res.session : item))
+  }
+
+  const handleSwitchBranch = async (branch: string) => {
+    if (activeWorkspace == null || !branch || branch === branchState.currentBranch) return
+    try {
+      const res = await switchBranch({ workspaceId: activeWorkspace.id, branch })
+      setBranchState(res)
+      toast.success(`已切换到 ${res.currentBranch}`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '切换分支失败，请检查是否存在未提交改动')
+    }
+  }
+
   return (
     <div className="chat-layout">
       <div className="chat-sidebar">
         <div className="chat-sidebar-head">
           <div className="search-input">
             <Icons.Search />
-            <input
+            <SparkInput
               placeholder="搜索会话..."
               value={searchQuery}
               onChange={e => handleSearchChange(e.target.value)}
@@ -331,7 +433,7 @@ export function ChatView() {
             )}
           </div>
           <button className="icon-btn" title="打开已有项目" onClick={handleOpenExistingProject}><Icons.Folder /></button>
-          <button className="icon-btn" title="新建会话" onClick={() => void handleNewSession()}><Icons.Plus /></button>
+          <button className="icon-btn" title="新建项目" onClick={() => setProjectDialog('create')}><Icons.Plus /></button>
         </div>
 
         {showSearchResults ? (
@@ -442,6 +544,8 @@ export function ChatView() {
           <ChatStream
             sessionId={active}
             onStatusChange={setAgentStatus}
+            onUsageChange={setContextInputTokens}
+            onMessagesChange={setActiveMessages}
           />
         ) : (
           <div className="chat-stream chat-stream-empty">
@@ -452,11 +556,29 @@ export function ChatView() {
             </div>
           </div>
         )}
-        <Composer sessionId={active} onSent={() => {}} />
+        <ComposerV2
+          session={activeSession}
+          workspace={activeWorkspace}
+          providers={providers}
+          selectedProviderId={selectedProviderId}
+          setSelectedProviderId={setSelectedProviderId}
+          branchState={branchState}
+          contextInputTokens={contextInputTokens}
+          onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+          onUpdateSession={handleUpdateActiveSession}
+          onSwitchBranch={handleSwitchBranch}
+          onSent={() => {}}
+        />
       </div>
 
       {showInspector && (
-        <ChatInspector session={activeSession} workspace={activeWorkspace} />
+        <ChatInspector
+          session={activeSession}
+          workspace={activeWorkspace}
+          messages={active == null ? [] : activeMessages}
+          width={inspectorWidth}
+          onWidthChange={setInspectorWidth}
+        />
       )}
 
       {projectDialog === 'create' && (
@@ -618,6 +740,16 @@ function ProjectSessionGroup({
         {group.workspace.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
         <span className="proj-count">{group.sessions.length}</span>
+        <button
+          className="icon-btn proj-add-session-btn"
+          title="新建此项目的会话"
+          onClick={(event) => {
+            event.stopPropagation()
+            onNewSession(group.workspace.id)
+          }}
+        >
+          <Icons.Plus size={12} />
+        </button>
         <div className="item-menu-wrap">
           <button
             className="icon-btn item-menu-btn"
@@ -695,16 +827,17 @@ function ChatListItem({
   onOpenFolder?: (session: SessionSummary) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const statusLabel: Record<SessionSummary['status'], ReactNode> = {
-    running: <span className="pulse-dot" />,
-    error: <span className="badge danger dot">错误</span>,
-    idle: null,
-  }
   return (
-    <div className={`chat-item proj-session ${active === s.id ? 'active' : ''}`} onClick={() => onClick(s.id)}>
-      <div className="chat-item-title">
-        {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
-        <span className="truncate flex1">{s.title || '新会话'}</span>
+    <div className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''}`} onClick={() => onClick(s.id)}>
+      <div className="chat-item-row">
+        {/* 左侧：置顶图标 + 状态指示点 + 标题 */}
+        <div className="chat-item-title-compact">
+          {s.pinnedAt != null && <Icons.Pin size={10} className="pinned-icon" />}
+          {s.status === 'running' && <span className="pulse-dot" />}
+          <span className="truncate">{s.title || '新会话'}</span>
+        </div>
+        {/* 右侧：时间 + 更多菜单 */}
+        <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         <div className="item-menu-wrap">
           <button
             className="icon-btn item-menu-btn"
@@ -734,12 +867,6 @@ function ChatListItem({
           )}
         </div>
       </div>
-      <div className="chat-item-snippet">{s.messageCount} 条消息</div>
-      <div className="chat-item-meta">
-        <span className="badge primary">{s.status === 'running' ? 'running' : 'idle'}</span>
-        {statusLabel[s.status]}
-        <span className="chat-item-time">{formatRelativeTime(s.updatedAt)}</span>
-      </div>
     </div>
   )
 }
@@ -751,8 +878,20 @@ function ActionMenu({
   items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
   onClose: () => void
 }) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [onClose])
+
   return (
-    <div className="action-menu" onClick={(event) => event.stopPropagation()}>
+    <div ref={ref} className="action-menu" onClick={(event) => event.stopPropagation()}>
       {items.map((item) => (
         <button
           key={item.label}
@@ -847,7 +986,7 @@ function CreateProjectModal({
           )}
           <label className="field">
             <span>项目名称</span>
-            <input
+            <SparkInput
               value={name}
               placeholder="例如 Spark-Agent"
               onChange={(event) => setName(event.target.value)}
@@ -856,7 +995,7 @@ function CreateProjectModal({
           <label className="field">
             <span>项目文件夹地址</span>
             <div className="path-picker">
-              <input
+              <SparkInput
                 value={path}
                 placeholder="/Users/you/projects/my-agent"
                 onChange={(event) => setPath(event.target.value)}
@@ -875,7 +1014,17 @@ function CreateProjectModal({
   )
 }
 
-function ChatStream({ sessionId, onStatusChange }: { sessionId: SessionId; onStatusChange: (s: string) => void }) {
+function ChatStream({
+  sessionId,
+  onStatusChange,
+  onUsageChange,
+  onMessagesChange,
+}: {
+  sessionId: SessionId
+  onStatusChange: (s: string) => void
+  onUsageChange: (tokens: number) => void
+  onMessagesChange: (messages: UIMessage[]) => void
+}) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
   const builderRef = useRef(new MessageBuilder())
@@ -887,24 +1036,30 @@ function ChatStream({ sessionId, onStatusChange }: { sessionId: SessionId; onSta
     const timer = window.setTimeout(() => {
       builderRef.current = builder
       setMessages([])
+      onMessagesChange([])
       onStatusChange('')
 
       getHistory({ sessionId, limit: 200 })
         .then(res => {
           for (const event of res.events) builder.processEvent(event)
-          setMessages(builder.getAllMessages())
+          const nextMessages = builder.getAllMessages()
+          setMessages(nextMessages)
+          onMessagesChange(nextMessages)
+          onUsageChange(getLatestInputTokens(res.events))
         })
         .catch(console.error)
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [getHistory, onStatusChange, sessionId])
+  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, sessionId])
 
   // 实时监听新事件
   useIpcStream('stream:session:agent-event', (event) => {
     if (event.sessionId !== sessionId) return
     builderRef.current.processEvent(event)
-    setMessages([...builderRef.current.getAllMessages()])
+    const nextMessages = [...builderRef.current.getAllMessages()]
+    setMessages(nextMessages)
+    onMessagesChange(nextMessages)
 
     if (event.type === 'agent_status') {
       const labels: Record<string, string> = {
@@ -916,7 +1071,10 @@ function ChatStream({ sessionId, onStatusChange }: { sessionId: SessionId; onSta
       }
       onStatusChange(labels[event.status] ?? '')
     }
-  }, [sessionId])
+    if (event.type === 'usage_update') {
+      onUsageChange(event.inputTokens)
+    }
+  }, [onMessagesChange, onStatusChange, onUsageChange, sessionId])
 
   // 自动滚动到底部
   useEffect(() => {
@@ -932,9 +1090,9 @@ function ChatStream({ sessionId, onStatusChange }: { sessionId: SessionId; onSta
           msg.role === 'user' ? (
             <UserMsg key={msg.id}>{renderBlocks(msg.blocks)}</UserMsg>
           ) : msg.status === 'streaming' ? (
-            <AgentMsg key={msg.id} status="running">{renderBlocks(msg.blocks)}</AgentMsg>
+            <AgentMsg key={msg.id} status="running" blocks={msg.blocks} />
           ) : (
-            <AgentMsg key={msg.id}>{renderBlocks(msg.blocks)}</AgentMsg>
+            <AgentMsg key={msg.id} blocks={msg.blocks} />
           )
         )}
       </div>
@@ -942,15 +1100,15 @@ function ChatStream({ sessionId, onStatusChange }: { sessionId: SessionId; onSta
   )
 }
 
-function renderBlocks(blocks: UIBlock[]): ReactNode {
+function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspector' } = {}): ReactNode {
+  const surface = options.surface ?? 'main'
   return blocks.map((block, i) => {
     switch (block.kind) {
       case 'text':
         return (
-          <p key={i}>
-            {block.content}
-            {block.isStreaming && <span className="cursor-blink">▋</span>}
-          </p>
+          <div key={i} className="md-surface">
+            <MarkdownText content={block.content} />
+          </div>
         )
       case 'thinking':
         return (
@@ -961,15 +1119,16 @@ function renderBlocks(blocks: UIBlock[]): ReactNode {
         )
       case 'tool_call': {
         const toolStatus = block.status === 'success' ? 'ok' as const : block.status === 'error' ? 'error' as const : null
+        const toolArg = JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
         return toolStatus ? (
-          <ToolCall key={i} name={block.toolName} arg={JSON.stringify(block.toolInput).slice(0, 80)} status={toolStatus}>
-            {block.output && <pre className="tool-output-pre">{block.output}</pre>}
-            {block.error && <span className="tool-error-span">{block.error}</span>}
+          <ToolCall key={i} name={block.toolName} arg={toolArg} status={toolStatus}>
+            {surface !== 'main' && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+            {surface !== 'main' && block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         ) : (
-          <ToolCall key={i} name={block.toolName} arg={JSON.stringify(block.toolInput).slice(0, 80)}>
-            {block.output && <pre className="tool-output-pre">{block.output}</pre>}
-            {block.error && <span className="tool-error-span">{block.error}</span>}
+          <ToolCall key={i} name={block.toolName} arg={toolArg}>
+            {surface !== 'main' && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+            {surface !== 'main' && block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         )
       }
@@ -983,6 +1142,7 @@ function renderBlocks(blocks: UIBlock[]): ReactNode {
           />
         )
       case 'terminal':
+        if (surface === 'main') return null
         return (
           <TerminalBlock key={i}>
             {block.stdout && <span>{block.stdout}</span>}
@@ -1002,33 +1162,370 @@ function renderBlocks(blocks: UIBlock[]): ReactNode {
   })
 }
 
+type MarkdownBlock =
+  | { kind: 'heading'; level: number; text: string }
+  | { kind: 'paragraph'; text: string }
+  | { kind: 'code'; lang: string; code: string }
+  | { kind: 'quote'; text: string }
+  | { kind: 'list'; ordered: boolean; items: Array<{ text: string; checked?: boolean }> }
+  | { kind: 'table'; headers: string[]; rows: string[][] }
+  | { kind: 'hr' }
+
+function MarkdownText({ content }: { content: string }) {
+  const blocks = parseMarkdown(content)
+
+  return (
+    <>
+      {blocks.map((block, index) => {
+        switch (block.kind) {
+          case 'heading': {
+            const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
+            return <Tag key={index}>{renderInlineMarkdown(block.text)}</Tag>
+          }
+          case 'paragraph':
+            return <p key={index}>{renderInlineMarkdown(block.text)}</p>
+          case 'code':
+            return (
+              <pre key={index} className="md-code">
+                <code>{block.code}</code>
+              </pre>
+            )
+          case 'quote':
+            return <blockquote key={index}>{renderInlineMarkdown(block.text)}</blockquote>
+          case 'list': {
+            const ListTag = block.ordered ? 'ol' : 'ul'
+            return (
+              <ListTag key={index}>
+                {block.items.map((item, itemIndex) => (
+                  <li key={itemIndex} className={item.checked !== undefined ? 'md-task' : undefined}>
+                    {item.checked !== undefined && <SparkInput type="checkbox" className="spark-checkbox" checked={item.checked} readOnly />}
+                    <span>{renderInlineMarkdown(item.text)}</span>
+                  </li>
+                ))}
+              </ListTag>
+            )
+          }
+          case 'table':
+            return (
+              <div key={index} className="md-table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      {block.headers.map((header, headerIndex) => <th key={headerIndex}>{renderInlineMarkdown(header)}</th>)}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {block.rows.map((row, rowIndex) => (
+                      <tr key={rowIndex}>
+                        {block.headers.map((_, cellIndex) => <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '')}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          case 'hr':
+            return <hr key={index} />
+          default:
+            return null
+        }
+      })}
+    </>
+  )
+}
+
+function parseMarkdown(content: string): MarkdownBlock[] {
+  const lines = content.replace(/\r\n/g, '\n').split('\n')
+  const blocks: MarkdownBlock[] = []
+  let index = 0
+
+  while (index < lines.length) {
+    const line = lines[index] ?? ''
+    if (!line.trim()) {
+      index += 1
+      continue
+    }
+
+    const fence = line.match(/^```([A-Za-z0-9_-]*)\s*$/)
+    if (fence) {
+      const codeLines: string[] = []
+      index += 1
+      while (index < lines.length && !/^```\s*$/.test(lines[index] ?? '')) {
+        codeLines.push(lines[index] ?? '')
+        index += 1
+      }
+      if (index < lines.length) index += 1
+      blocks.push({ kind: 'code', lang: fence[1] ?? '', code: codeLines.join('\n') })
+      continue
+    }
+
+    const heading = line.match(/^(#{1,6})\s+(.+)$/)
+    if (heading) {
+      blocks.push({ kind: 'heading', level: (heading[1] ?? '').length, text: heading[2] ?? '' })
+      index += 1
+      continue
+    }
+
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      blocks.push({ kind: 'hr' })
+      index += 1
+      continue
+    }
+
+    const quote = line.match(/^>\s?(.*)$/)
+    if (quote) {
+      const quoteLines: string[] = []
+      while (index < lines.length) {
+        const match = (lines[index] ?? '').match(/^>\s?(.*)$/)
+        if (!match) break
+        quoteLines.push(match[1] ?? '')
+        index += 1
+      }
+      blocks.push({ kind: 'quote', text: quoteLines.join('\n') })
+      continue
+    }
+
+    const listMatch = line.match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/)
+    if (listMatch) {
+      const ordered = /\d+[.)]/.test(listMatch[2] ?? '')
+      const items: Array<{ text: string; checked?: boolean }> = []
+      while (index < lines.length) {
+        const match = (lines[index] ?? '').match(/^(\s*)([-*+]|\d+[.)])\s+(.+)$/)
+        if (!match || /\d+[.)]/.test(match[2] ?? '') !== ordered) break
+        const itemText = match[3] ?? ''
+        const task = itemText.match(/^\[([ xX])]\s+(.*)$/)
+        items.push(task ? { text: task[2] ?? '', checked: (task[1] ?? '').toLowerCase() === 'x' } : { text: itemText })
+        index += 1
+      }
+      blocks.push({ kind: 'list', ordered, items })
+      continue
+    }
+
+    if (line.includes('|') && index + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] ?? '')) {
+      const headers = splitTableRow(line)
+      const rows: string[][] = []
+      index += 2
+      while (index < lines.length && (lines[index] ?? '').includes('|') && (lines[index] ?? '').trim()) {
+        rows.push(splitTableRow(lines[index] ?? ''))
+        index += 1
+      }
+      blocks.push({ kind: 'table', headers, rows })
+      continue
+    }
+
+    const paragraphLines = [line]
+    index += 1
+    while (
+      index < lines.length
+      && (lines[index] ?? '').trim()
+      && !/^```/.test(lines[index] ?? '')
+      && !/^(#{1,6})\s+/.test(lines[index] ?? '')
+      && !/^(\s*)([-*+]|\d+[.)])\s+/.test(lines[index] ?? '')
+      && !/^>\s?/.test(lines[index] ?? '')
+      && !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[index] ?? '')
+    ) {
+      paragraphLines.push(lines[index] ?? '')
+      index += 1
+    }
+    blocks.push({ kind: 'paragraph', text: paragraphLines.join('\n') })
+  }
+
+  return blocks
+}
+
+function splitTableRow(line: string): string[] {
+  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim())
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const nodes: ReactNode[] = []
+  const pattern = /(!?\[[^\]]+]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g
+  let cursor = 0
+  let match: RegExpExecArray | null
+
+  while ((match = pattern.exec(text)) != null) {
+    if (match.index > cursor) nodes.push(text.slice(cursor, match.index))
+    const token = match[0]
+    const key = `${match.index}-${token}`
+    const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
+    if (link) {
+      nodes.push(link[1] === '!'
+        ? <img key={key} src={link[3]} alt={link[2]} />
+        : <a key={key} href={link[3]} target="_blank" rel="noreferrer">{link[2]}</a>)
+    } else if (token.startsWith('`')) {
+      nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
+    } else if (token.startsWith('**') || token.startsWith('__')) {
+      nodes.push(<strong key={key}>{token.slice(2, -2)}</strong>)
+    } else if (token.startsWith('~~')) {
+      nodes.push(<del key={key}>{token.slice(2, -2)}</del>)
+    } else {
+      nodes.push(<em key={key}>{token.slice(1, -1)}</em>)
+    }
+    cursor = match.index + token.length
+  }
+
+  if (cursor < text.length) nodes.push(text.slice(cursor))
+  const rendered: ReactNode[] = []
+  nodes.forEach((node, index) => {
+    if (typeof node !== 'string') {
+      rendered.push(node)
+      return
+    }
+    const parts = node.split('\n')
+    parts.forEach((part, partIndex) => {
+      rendered.push(part)
+      if (partIndex < parts.length - 1) rendered.push(<br key={`br-${index}-${partIndex}`} />)
+    })
+  })
+  return rendered
+}
+
 function UserMsg({ children }: { children: ReactNode }) {
   return (
-    <div className="msg user">
-      <div className="msg-avatar">U</div>
-      <div className="msg-body">
-        <div className="msg-name">你</div>
+    <div className="msg msg-user">
+      <div className="msg-bubble msg-bubble-user">
         <div className="msg-content">{children}</div>
       </div>
     </div>
   )
 }
 
-function AgentMsg({ status, children }: { status?: 'running'; children: ReactNode }) {
+function AgentMsg({ status, blocks }: { status?: 'running'; blocks: UIBlock[] }) {
+  const thinkingBlocks = blocks.filter(
+    (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
+  )
+  const contentBlocks = blocks.filter(b => b.kind !== 'thinking')
+  const isStreaming = status === 'running'
+  const hasContent = thinkingBlocks.length > 0 || contentBlocks.length > 0
+
   return (
-    <div className="msg agent">
-      <div className="msg-avatar"><Icons.Sparkles size={14} /></div>
-      <div className="msg-body">
-        <div className="msg-name">
-          Agent
-          {status === 'running' && (
-            <span className="msg-running">
-              <Icons.Spinner size={11} /> 生成中
-            </span>
+    <div className="msg msg-agent">
+      <div className="msg-bubble msg-bubble-agent">
+        {isStreaming && !hasContent && (
+          <div className="msg-streaming-indicator">
+            <Icons.Spinner size={12} />
+            <span>思考中...</span>
+          </div>
+        )}
+        {thinkingBlocks.length > 0 && (
+          <ThinkingSection blocks={thinkingBlocks} streaming={isStreaming} />
+        )}
+        {contentBlocks.length > 0 && (
+          <CollapsibleContent maxHeight={500} streaming={isStreaming}>
+            <div className="msg-content">{renderBlocks(contentBlocks)}</div>
+          </CollapsibleContent>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ThinkingSection({
+  blocks,
+  streaming,
+}: {
+  blocks: Array<Extract<UIBlock, { kind: 'thinking' }>>
+  streaming: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [needsCollapse, setNeedsCollapse] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  const isThinkingActive = blocks.some(b => b.isStreaming)
+
+  useEffect(() => {
+    if (isThinkingActive) {
+      setNeedsCollapse(false)
+      return
+    }
+    const el = contentRef.current
+    if (el) setNeedsCollapse(el.scrollHeight > 200)
+  }, [blocks, isThinkingActive])
+
+  const isCollapsed = needsCollapse && !expanded
+
+  return (
+    <div className={`thinking-section ${open ? 'open' : ''}`}>
+      <button className="thinking-toggle" onClick={() => setOpen(!open)}>
+        <Icons.ChevronRight size={12} className={`chev ${open ? 'chev-open' : ''}`} />
+        <span className="thinking-label">思考过程</span>
+        {isThinkingActive && <Icons.Spinner size={10} className="thinking-spinner" />}
+      </button>
+      {open && (
+        <div className="thinking-body">
+          <div
+            ref={contentRef}
+            className={`thinking-content ${isCollapsed ? 'is-collapsed' : ''}`}
+            style={isCollapsed ? { maxHeight: '200px' } : undefined}
+          >
+            {blocks.map((block, i) => (
+              <pre key={i}>{block.content}</pre>
+            ))}
+          </div>
+          {isCollapsed && (
+            <button className="collapse-toggle" onClick={() => setExpanded(true)}>
+              展开全部
+            </button>
+          )}
+          {needsCollapse && expanded && (
+            <button className="collapse-toggle" onClick={() => setExpanded(false)}>
+              收起
+            </button>
           )}
         </div>
-        <div className="msg-content">{children}</div>
+      )}
+    </div>
+  )
+}
+
+function CollapsibleContent({
+  maxHeight = 500,
+  streaming = false,
+  children,
+}: {
+  maxHeight?: number
+  streaming?: boolean
+  children: ReactNode
+}) {
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [needsCollapse, setNeedsCollapse] = useState(false)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    const el = contentRef.current
+    if (!el) return
+    if (streaming) {
+      setNeedsCollapse(false)
+      setExpanded(false)
+      return
+    }
+    setNeedsCollapse(el.scrollHeight > maxHeight)
+  }, [children, maxHeight, streaming])
+
+  const isCollapsed = needsCollapse && !expanded
+
+  return (
+    <div className="collapsible-wrap">
+      <div
+        ref={contentRef}
+        className={`collapsible-content ${isCollapsed ? 'is-collapsed' : ''}`}
+        style={isCollapsed ? { maxHeight: `${maxHeight}px` } : undefined}
+      >
+        {children}
       </div>
+      {isCollapsed && (
+        <div className="collapse-overlay">
+          <button className="collapse-toggle" onClick={() => setExpanded(true)}>
+            展开全部
+          </button>
+        </div>
+      )}
+      {needsCollapse && expanded && !streaming && (
+        <button className="collapse-toggle collapse-less" onClick={() => setExpanded(false)}>
+          收起
+        </button>
+      )}
     </div>
   )
 }
@@ -1061,6 +1558,465 @@ function TerminalBlock({ children }: { children: ReactNode }) {
   return <div className="terminal mono-sm">{children}</div>
 }
 
+function ComposerV2({
+  session,
+  workspace,
+  providers,
+  selectedProviderId,
+  setSelectedProviderId,
+  branchState,
+  contextInputTokens,
+  onCreateSession,
+  onUpdateSession,
+  onSwitchBranch,
+  onSent,
+}: {
+  session: SessionSummary | null
+  workspace: WorkspaceInfo | null
+  providers: ProviderProfile[]
+  selectedProviderId: string
+  setSelectedProviderId: (providerId: string) => void
+  branchState: BranchState
+  contextInputTokens: number
+  onCreateSession: (options: {
+    providerProfileId?: string
+    modelId?: string
+    agentAdapter?: AgentAdapter
+    chatMode?: SessionChatMode
+    reasoningEffort?: SessionReasoningEffort
+    activate?: boolean
+  }) => Promise<SessionId | null>
+  onUpdateSession: (patch: {
+    providerProfileId?: string
+    modelId?: string | null
+    agentAdapter?: AgentAdapter
+    chatMode?: SessionChatMode
+    reasoningEffort?: SessionReasoningEffort
+  }) => Promise<void>
+  onSwitchBranch: (branch: string) => Promise<void>
+  onSent: () => void
+}) {
+  const { toast } = useToast()
+  const [value, setValue] = useState('')
+  const [sending, setSending] = useState(false)
+  const [manualExpanded, setManualExpanded] = useState(false)
+  const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>('codex')
+  const [draftModelId, setDraftModelId] = useState('')
+  const [draftMode] = useState<SessionChatMode>('agent')
+  const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionModeChoice>('codex-default')
+  const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>('medium')
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+
+  const selectedProvider = providers.find((item) => item.id === (session?.providerProfileId || selectedProviderId))
+    ?? providers.find((item) => item.isDefault)
+    ?? providers[0]
+  const adapter = session?.agentAdapter ?? draftAdapter
+  const modelOptions = selectedProvider?.modelIds.length ? selectedProvider.modelIds : selectedProvider?.defaultModel ? [selectedProvider.defaultModel] : []
+  const effectiveModelId = session?.modelId ?? (draftModelId || selectedProvider?.defaultModel || modelOptions[0] || '')
+  const effectiveMode = session?.chatMode ?? draftMode
+  const effectiveReasoning = session?.reasoningEffort ?? draftReasoning
+  const permissionOptions = getPermissionModeOptions(adapter)
+  const defaultPermissionMode = permissionOptions[0]?.value ?? 'codex-default'
+  const effectivePermissionMode = permissionOptions.some((option) => option.value === draftPermissionMode)
+    ? draftPermissionMode
+    : defaultPermissionMode
+  const contextWindow = estimateContextWindow(effectiveModelId)
+  const contextRatio = Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10)
+  const canSend = value.trim().length > 0 && !sending && selectedProvider != null && (session != null || workspace != null)
+
+  useEffect(() => {
+    if (selectedProvider != null && !draftModelId) {
+      setDraftModelId(selectedProvider.defaultModel || selectedProvider.modelIds[0] || '')
+    }
+  }, [draftModelId, selectedProvider])
+
+  useEffect(() => {
+    const el = textareaRef.current
+    if (!el) return
+    // 高度范围：collapsed=102-168px, expanded=270-320px
+    const minHeight = manualExpanded ? 270 : 102
+    const maxHeight = manualExpanded ? 320 : 168
+
+    // 临时禁用 transition 以准确测量 scrollHeight
+    const transition = el.style.transition
+    el.style.transition = 'none'
+    el.style.height = '0px'
+    // 强制回流以应用 height: 0
+    void el.offsetHeight
+
+    const nextHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight))
+    el.style.height = `${nextHeight}px`
+    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden'
+
+    // 恢复 transition（下一帧生效）
+    requestAnimationFrame(() => {
+      el.style.transition = transition
+    })
+  }, [manualExpanded, value])
+
+  const handleSend = async () => {
+    if (!canSend) return
+    const text = value.trim()
+    setValue('')
+    setSending(true)
+    try {
+      let targetSessionId = session?.id ?? null
+      if (targetSessionId == null) {
+        targetSessionId = await onCreateSession({
+          ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
+          modelId: effectiveModelId,
+          agentAdapter: adapter,
+          chatMode: effectiveMode,
+          reasoningEffort: effectiveReasoning,
+        })
+      }
+      if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
+      await sendTurn({ sessionId: targetSessionId, message: text })
+      onSent()
+    } catch (err) {
+      console.error('发送失败', err)
+      toast.error(err instanceof Error ? err.message : '发送消息失败')
+      setValue(text)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
+      event.preventDefault()
+      void handleSend()
+    }
+  }
+
+  const handleProviderChange = async (providerId: string) => {
+    const provider = providers.find((item) => item.id === providerId)
+    if (provider == null) return
+    setSelectedProviderId(providerId)
+    const nextModel = provider.defaultModel || provider.modelIds[0] || ''
+    setDraftModelId(nextModel)
+    if (session != null) {
+      await onUpdateSession({ providerProfileId: providerId, modelId: nextModel || null })
+    }
+  }
+
+  const handleAdapterChange = async (nextAdapter: AgentAdapter) => {
+    if (nextAdapter === adapter) return
+    setDraftAdapter(nextAdapter)
+    setDraftPermissionMode(getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default')
+    if (session != null) await onUpdateSession({ agentAdapter: nextAdapter })
+  }
+
+  const handleModelChange = async (modelId: string) => {
+    setDraftModelId(modelId)
+    if (session != null) await onUpdateSession({ modelId })
+  }
+
+  const handleReasoningChange = async (reasoningEffort: SessionReasoningEffort) => {
+    setDraftReasoning(reasoningEffort)
+    if (session != null) await onUpdateSession({ reasoningEffort })
+  }
+
+  const branchOptions = (branchState.branches.length > 0 ? branchState.branches : [branchState.currentBranch ?? ''])
+    .filter((branch): branch is string => branch.length > 0)
+    .map((branch) => ({ value: branch, label: branch }))
+  const showBranchSelect = branchOptions.length > 0 && branchState.currentBranch != null
+
+  return (
+    <div className="composer-wrap">
+      <div className="composer-inner">
+        <div className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''}`}>
+          <textarea
+            ref={textareaRef}
+            rows={1}
+            placeholder={workspace ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个项目'}
+            value={value}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={!workspace || sending}
+          />
+          <div className="composer-submit-row">
+            <button
+              className="composer-expand-btn"
+              title={manualExpanded ? '折叠输入框' : '展开输入框'}
+              onClick={() => setManualExpanded((prev) => !prev)}
+            >
+              {manualExpanded ? <Icons.Minimize size={15} /> : <Icons.Maximize size={15} />}
+            </button>
+            <button
+              className={`composer-send-round ${sending ? 'is-sending' : ''}`}
+              title={sending ? '发送中' : '发送'}
+              onClick={() => void handleSend()}
+              disabled={!canSend}
+            >
+              {sending ? <Icons.Spinner size={15} /> : <Icons.ArrowUp size={18} />}
+            </button>
+          </div>
+        </div>
+        <div className="composer-param-bar composer-controls">
+            <button className="icon-btn" title="添加文件"><Icons.Plus /></button>
+            <button className="icon-btn" title="工具"><Icons.Wrench /></button>
+            <ComposerMenuSelect
+              icon={<AdapterIcon adapter={adapter} />}
+              value={adapter}
+              label={adapter === 'claude' ? 'Claude' : 'Codex'}
+              disabled={providers.length === 0}
+              title="适配器"
+              onChange={(value) => handleAdapterChange(value as AgentAdapter)}
+              options={ADAPTER_OPTIONS}
+            />
+            <ProviderModelPicker
+              icon={<Icons.Bot size={13} />}
+              providers={providers}
+              selectedProviderId={selectedProvider?.id ?? ''}
+              selectedModelId={effectiveModelId}
+              disabled={providers.length === 0}
+              onChange={async (providerId, modelId) => {
+                if (providerId !== selectedProvider?.id) await handleProviderChange(providerId)
+                if (modelId !== effectiveModelId) await handleModelChange(modelId)
+              }}
+            />
+            <ComposerMenuSelect
+              icon={<Icons.Shield size={13} />}
+              value={effectivePermissionMode}
+              label={permissionOptions.find((option) => option.value === effectivePermissionMode)?.label ?? '默认权限'}
+              title="权限模式"
+              onChange={(mode) => setDraftPermissionMode(mode as PermissionModeChoice)}
+              options={permissionOptions}
+            />
+            <ComposerMenuSelect
+              icon={<Icons.Brain size={13} />}
+              value={effectiveReasoning}
+              label={getReasoningOptions(adapter).find((option) => option.value === effectiveReasoning)?.label ?? effectiveReasoning}
+              title="推理强度"
+              onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
+              options={getReasoningOptions(adapter)}
+            />
+            <div className="context-meter" title={`上下文使用 ${contextRatio}%`}>
+              <span>{contextRatio}%</span>
+              <span className="context-ring" style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties} />
+            </div>
+            <div className="spacer" />
+            {showBranchSelect && (
+              <ComposerMenuSelect
+                icon={<Icons.GitBranch size={13} />}
+                value={branchState.currentBranch ?? ''}
+                label={branchState.currentBranch ?? ''}
+                title="分支"
+                align="right"
+                onChange={onSwitchBranch}
+                options={branchOptions}
+              />
+            )}
+            <span className="composer-hint">
+              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span><span className="kbd">↵</span> 换行
+            </span>
+            <button
+              className="btn primary sm composer-send-btn"
+              onClick={() => void handleSend()}
+              disabled={!canSend}
+            >
+              {sending ? <Icons.Spinner size={12} /> : <Icons.Send size={12} />}
+              {sending ? '发送中' : '发送'}
+            </button>
+          </div>
+        </div>
+      </div>
+  )
+}
+
+function ComposerMenuSelect({
+  icon,
+  value,
+  label,
+  options,
+  title,
+  disabled = false,
+  align = 'left',
+  onChange,
+}: {
+  icon: ReactNode
+  value: string
+  label: string
+  options: Array<{ value: string; label: string }>
+  title: string
+  disabled?: boolean
+  align?: 'left' | 'right'
+  onChange: (value: string) => void | Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  return (
+    <div ref={rootRef} className={`composer-select composer-menu-select ${align === 'right' ? 'right' : ''}`} title={title}>
+      <span className="composer-select-icon">{icon}</span>
+      <button
+        type="button"
+        className="composer-select-trigger"
+        disabled={disabled || options.length === 0}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span>{label || '未配置'}</span>
+        <Icons.ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className={`composer-menu ${align === 'right' ? 'right' : ''}`}>
+          {options.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`composer-menu-item ${option.value === value ? 'active' : ''}`}
+              onClick={() => {
+                setOpen(false)
+                void onChange(option.value)
+              }}
+            >
+              <span>{option.label}</span>
+              {option.value === value && <Icons.Check size={14} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ProviderModelPicker({
+  icon,
+  providers,
+  selectedProviderId,
+  selectedModelId,
+  disabled,
+  onChange,
+}: {
+  icon: ReactNode
+  providers: ProviderProfile[]
+  selectedProviderId: string
+  selectedModelId: string
+  disabled?: boolean
+  onChange: (providerId: string, modelId: string) => void | Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useCloseOnOutside(rootRef, () => setOpen(false), open)
+  const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
+  const label = selectedModelId || selectedProvider?.defaultModel || selectedProvider?.name || '未配置'
+
+  return (
+    <div ref={rootRef} className="composer-select composer-model-picker" title="供应商模型">
+      <span className="composer-select-icon">{icon}</span>
+      <button
+        type="button"
+        className="composer-select-trigger"
+        disabled={disabled || providers.length === 0}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span>{label}</span>
+        <Icons.ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="composer-menu composer-model-menu">
+          {providers.length === 0 && <div className="composer-menu-empty">未配置</div>}
+          {providers.map((provider) => {
+            const models = provider.modelIds.length ? provider.modelIds : provider.defaultModel ? [provider.defaultModel] : []
+            return (
+              <div key={provider.id} className="composer-model-group">
+                <div className="composer-model-group-title">{provider.name}</div>
+                {models.map((modelId) => {
+                  const active = provider.id === selectedProviderId && modelId === selectedModelId
+                  return (
+                    <button
+                      key={`${provider.id}:${modelId}`}
+                      type="button"
+                      className={`composer-menu-item ${active ? 'active' : ''}`}
+                      onClick={() => {
+                        setOpen(false)
+                        void onChange(provider.id, modelId)
+                      }}
+                    >
+                      <span>{modelId}</span>
+                      {active && <Icons.Check size={14} />}
+                    </button>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function useCloseOnOutside(ref: RefObject<HTMLElement | null>, onClose: () => void, active: boolean) {
+  useEffect(() => {
+    if (!active) return
+    const handlePointerDown = (event: PointerEvent) => {
+      if (ref.current != null && !ref.current.contains(event.target as Node)) onClose()
+    }
+    window.addEventListener('pointerdown', handlePointerDown)
+    return () => window.removeEventListener('pointerdown', handlePointerDown)
+  }, [active, onClose, ref])
+}
+
+function AdapterIcon({ adapter }: { adapter: 'claude' | 'codex' }) {
+  return adapter === 'claude'
+    ? <Icons.Sparkles size={13} />
+    : <Icons.Box size={13} />
+}
+
+const ADAPTER_OPTIONS: Array<{ value: AgentAdapter; label: string }> = [
+  { value: 'claude', label: 'Claude' },
+  { value: 'codex', label: 'Codex' },
+]
+
+const CLAUDE_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label: string }> = [
+  { value: 'claude-ask', label: 'Ask permissions' },
+  { value: 'claude-auto-edits', label: 'Auto accept edits' },
+  { value: 'claude-plan', label: 'Plan mode' },
+  { value: 'claude-auto', label: 'Auto' },
+  { value: 'claude-bypass', label: 'Bypass permissions' },
+]
+
+const CODEX_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label: string }> = [
+  { value: 'codex-default', label: '默认权限' },
+  { value: 'codex-auto-review', label: '自动审查' },
+  { value: 'codex-full-access', label: '完全访问' },
+]
+
+function getPermissionModeOptions(adapter: AgentAdapter): Array<{ value: PermissionModeChoice; label: string }> {
+  return adapter === 'claude' ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
+}
+
+function getReasoningOptions(adapter: 'claude' | 'codex'): Array<{ value: SessionReasoningEffort; label: string }> {
+  if (adapter === 'claude') {
+    return [
+      { value: 'low', label: 'low' },
+      { value: 'medium', label: 'middle' },
+      { value: 'high', label: 'high' },
+      { value: 'xhigh', label: 'xhigh' },
+    ]
+  }
+  return [
+    { value: 'low', label: '低' },
+    { value: 'medium', label: '中' },
+    { value: 'high', label: '高' },
+    { value: 'xhigh', label: '超高' },
+  ]
+}
+
+function estimateContextWindow(modelId: string): number {
+  const lower = modelId.toLowerCase()
+  if (lower.includes('1m') || lower.includes('gemini-1.5-pro')) return 1_000_000
+  if (lower.includes('200k') || lower.includes('claude')) return 200_000
+  if (lower.includes('32k')) return 32_000
+  if (lower.includes('16k')) return 16_000
+  if (lower.includes('8k')) return 8_000
+  return 128_000
+}
+
 function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: () => void }) {
   const { toast } = useToast()
   const [value, setValue] = useState('')
@@ -1085,7 +2041,10 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') handleSend()
+    if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+      e.preventDefault()
+      handleSend()
+    }
   }
 
   return (
@@ -1094,7 +2053,7 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
         <div className="composer">
           <textarea
             rows={2}
-            placeholder={sessionId ? '询问、修改、运行任务…  ⌘↵ 发送' : '请先选择或新建一个会话'}
+            placeholder={sessionId ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个会话'}
             value={value}
             onChange={e => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -1110,7 +2069,7 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
             </div>
             <div className="spacer" />
             <span className="composer-hint">
-              <span className="kbd">⌘</span> <span className="kbd">↵</span> 发送
+              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span><span className="kbd">↵</span> 换行
             </span>
             <button
               className="btn primary sm composer-send-btn"
@@ -1127,9 +2086,51 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
   )
 }
 
-function ChatInspector({ session, workspace }: { session: SessionSummary | null; workspace: WorkspaceInfo | null }) {
+function ChatInspector({
+  session,
+  workspace,
+  messages,
+  width,
+  onWidthChange,
+}: {
+  session: SessionSummary | null
+  workspace: WorkspaceInfo | null
+  messages: UIMessage[]
+  width: number
+  onWidthChange: (width: number) => void
+}) {
+  const plans = extractPlans(messages)
+  const toolLogs = extractToolLogs(messages)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = { startX: event.clientX, startWidth: width }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    document.body.classList.add('inspector-resizing')
+  }
+
+  const handleResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current == null) return
+    const delta = dragRef.current.startX - event.clientX
+    onWidthChange(clamp(dragRef.current.startWidth + delta, 300, 620))
+  }
+
+  const handleResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    document.body.classList.remove('inspector-resizing')
+  }
+
   return (
-    <div className="inspector scroll">
+    <div className="inspector scroll" style={{ '--inspector-width': `${width}px` } as React.CSSProperties}>
+      <div
+        className="inspector-resize-handle"
+        title="拖拽调整侧边栏宽度"
+        onPointerDown={handleResizeStart}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+      />
       <div className="inspector-section">
         <h4>会话信息</h4>
         {session ? (
@@ -1146,6 +2147,14 @@ function ChatInspector({ session, workspace }: { session: SessionSummary | null;
         )}
       </div>
       <div className="inspector-section">
+        <h4>计划</h4>
+        {plans.length > 0 ? (
+          plans.map((plan) => <PlanSummary key={plan.id} plan={plan} />)
+        ) : (
+          <div className="inspector-muted">暂无 Agent 计划</div>
+        )}
+      </div>
+      <div className="inspector-section">
         <h4>可用工具</h4>
         <div className="tool-chip-list">
           {['read_file', 'write_file', 'list_directory', 'search_files'].map(t => (
@@ -1156,8 +2165,162 @@ function ChatInspector({ session, workspace }: { session: SessionSummary | null;
           ))}
         </div>
       </div>
+      <div className="inspector-section inspector-section-fill">
+        <h4>
+          工具日志
+          <span className="inspector-count">{toolLogs.length}</span>
+        </h4>
+        {toolLogs.length > 0 ? (
+          <div className="inspector-log-list">
+            {toolLogs.map((log) => <ToolLogItem key={log.id} log={log} />)}
+          </div>
+        ) : (
+          <div className="inspector-muted">暂无工具调用</div>
+        )}
+      </div>
     </div>
   )
+}
+
+type SidebarPlan = {
+  id: string
+  title: string
+  explanation?: string | undefined
+  items: Array<{ text: string; status: 'done' | 'running' | 'pending' }>
+}
+
+type ToolLog = {
+  id: string
+  name: string
+  input: Record<string, unknown>
+  status: 'pending' | 'running' | 'success' | 'error'
+  output?: string | undefined
+  error?: string | undefined
+  durationMs?: number | undefined
+}
+
+function PlanSummary({ plan }: { plan: SidebarPlan }) {
+  const completed = plan.items.filter((item) => item.status === 'done').length
+  const total = plan.items.length
+  const percent = total === 0 ? 0 : Math.round((completed / total) * 100)
+
+  return (
+    <div className="inspector-plan">
+      <div className="inspector-plan-head">
+        <span className="strong truncate">{plan.title}</span>
+        <span className="mono-sm">{completed}/{total}</span>
+      </div>
+      <div className="inspector-progress"><span style={{ width: `${percent}%` }} /></div>
+      {plan.explanation && <div className="inspector-plan-note md-surface"><MarkdownText content={plan.explanation} /></div>}
+      <div className="inspector-plan-items">
+        {plan.items.map((item, index) => (
+          <div key={`${item.text}-${index}`} className={`inspector-plan-item ${item.status}`}>
+            <span className="inspector-plan-dot">
+              {item.status === 'done' && <Icons.Check size={10} />}
+              {item.status === 'running' && <Icons.Spinner size={10} />}
+            </span>
+            <span className="text">{item.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ToolLogItem({ log }: { log: ToolLog }) {
+  const [open, setOpen] = useState(false)
+  const statusLabel = log.status === 'success' ? 'ok' : log.status === 'error' ? 'error' : log.status
+
+  return (
+    <div className={`inspector-log ${open ? 'open' : ''}`}>
+      <button className="inspector-log-head" onClick={() => setOpen((prev) => !prev)}>
+        <Icons.Wrench size={13} />
+        <span className="tool-name">{log.name}</span>
+        <span className={`badge ${log.status === 'error' ? 'danger' : log.status === 'success' ? 'success' : 'info'}`}>{statusLabel}</span>
+        <Icons.ChevronRight size={12} className="chev" />
+      </button>
+      {open && (
+        <div className="inspector-log-body">
+          <div className="inspector-log-label">参数</div>
+          <pre>{JSON.stringify(log.input, null, 2)}</pre>
+          {log.output && (
+            <>
+              <div className="inspector-log-label">输出</div>
+              <div className="md-surface"><MarkdownText content={log.output} /></div>
+            </>
+          )}
+          {log.error && (
+            <>
+              <div className="inspector-log-label danger">错误</div>
+              <div className="tool-error-span">{log.error}</div>
+            </>
+          )}
+          {log.durationMs != null && <div className="inspector-log-duration">{log.durationMs} ms</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function extractPlans(messages: UIMessage[]): SidebarPlan[] {
+  const plans: SidebarPlan[] = []
+
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== 'tool_call') continue
+      const rawPlan = Array.isArray(block.toolInput.plan) ? block.toolInput.plan : undefined
+      if (rawPlan == null && !isPlanToolName(block.toolName)) continue
+      const items = (rawPlan ?? []).flatMap((item, index) => {
+        if (!isRecord(item)) return []
+        const text = String(item.step ?? item.text ?? item.title ?? `Step ${index + 1}`)
+        return [{ text, status: normalizePlanStatus(item.status) }]
+      })
+      if (items.length === 0) continue
+      plans.push({
+        id: block.toolCallId,
+        title: String(block.toolInput.title ?? 'Agent 计划'),
+        explanation: typeof block.toolInput.explanation === 'string' ? block.toolInput.explanation : undefined,
+        items,
+      })
+    }
+  }
+
+  return plans.slice(-3).reverse()
+}
+
+function extractToolLogs(messages: UIMessage[]): ToolLog[] {
+  return messages.flatMap((message) => message.blocks.flatMap((block) => (
+    block.kind === 'tool_call'
+      ? [{
+        id: block.toolCallId,
+        name: block.toolName,
+        input: block.toolInput,
+        status: block.status,
+        output: block.output,
+        error: block.error,
+        durationMs: block.durationMs,
+      }]
+      : []
+  ))).reverse()
+}
+
+function isPlanToolName(name: string): boolean {
+  const lower = name.toLowerCase()
+  return lower.includes('update_plan') || lower.includes('todo') || lower.includes('plan')
+}
+
+function normalizePlanStatus(value: unknown): 'done' | 'running' | 'pending' {
+  if (value === 'completed' || value === 'complete' || value === 'done') return 'done'
+  if (value === 'in_progress' || value === 'running' || value === 'active') return 'running'
+  return 'pending'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value))
 }
 
 function buildProjectGroups(workspaces: WorkspaceInfo[], sessions: SessionSummary[]): ProjectGroup[] {
@@ -1175,6 +2338,14 @@ function filterSessionsByTime(sessions: SessionSummary[], filter: TimeFilter): S
     const updatedAt = new Date(session.updatedAt).getTime()
     return Number.isFinite(updatedAt) && updatedAt >= cutoff
   })
+}
+
+function getLatestInputTokens(events: AgentEvent[]): number {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index]
+    if (event?.type === 'usage_update') return event.inputTokens
+  }
+  return 0
 }
 
 function getBasename(value: string): string {

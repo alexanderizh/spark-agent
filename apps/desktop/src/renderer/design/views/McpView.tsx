@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { McpServerItem } from '@spark/protocol'
 import { Icons } from '../Icons'
+import { SparkInput, SparkSelect } from '../components/FormControls'
 import { useIpcInvoke } from '../hooks/useIpc'
 
 type ServerStatus = 'ok' | 'warn' | 'err' | 'off'
@@ -168,7 +169,7 @@ export function McpView() {
           <div className="strong header-title-lg">MCP 服务器</div>
           <div className="muted header-desc">{servers.length} 个服务器 · {totalTools} 个工具 · 配置保存在本地 SQLite</div>
         </div>
-        <div className="search-input"><Icons.Search /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索服务器或工具..." /></div>
+        <div className="search-input"><Icons.Search /><SparkInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索服务器或工具..." /></div>
         <button className="btn" onClick={refresh}><Icons.Refresh size={12} /> 刷新</button>
         <button className="btn primary" onClick={() => setShowForm(true)}><Icons.Plus size={12} /> 添加 MCP</button>
       </div>
@@ -201,22 +202,22 @@ export function McpView() {
           <div className="subsec-h subsec-h-no-mt">添加 MCP 服务器</div>
           <div className="form-grid">
             <label>名称</label>
-            <input value={draft.name} onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="例：filesystem" />
+            <SparkInput value={draft.name} onChange={(event) => setDraft((prev) => ({ ...prev, name: event.target.value }))} placeholder="例：filesystem" />
 
             <label>作用域</label>
-            <select value={draft.scope} onChange={(event) => setDraft((prev) => ({ ...prev, scope: event.target.value }))}>
+            <SparkSelect value={draft.scope} onChange={(event) => setDraft((prev) => ({ ...prev, scope: event.target.value }))}>
               {SCOPES.map((scope) => <option key={scope} value={scope}>{scope}</option>)}
-            </select>
+            </SparkSelect>
 
             <label>传输</label>
-            <select value={draft.transport} onChange={(event) => setDraft((prev) => ({ ...prev, transport: event.target.value as McpDraft['transport'] }))}>
+            <SparkSelect value={draft.transport} onChange={(event) => setDraft((prev) => ({ ...prev, transport: event.target.value as McpDraft['transport'] }))}>
               <option value="stdio">stdio</option>
               <option value="http">http</option>
               <option value="sse">sse</option>
-            </select>
+            </SparkSelect>
 
             <label>{draft.transport === 'stdio' ? '启动命令' : 'URL'}</label>
-            <input
+            <SparkInput
               className="mono-sm"
               value={draft.transport === 'stdio' ? draft.command : draft.url}
               onChange={(event) => {

@@ -39,6 +39,7 @@ export interface AgentConfig {
   permissionMode?: PermissionMode
   temperature?: number
   maxTokens?: number
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
   /** Optional approval callback; if provided, called before each tool execution */
   approvalCallback?: ApprovalCallback
   /** Optional structured context injected into system prompt */
@@ -68,7 +69,7 @@ export class AgentLoop {
     config: AgentConfig,
     historyMessages: ChatMessage[] = [],
   ): Promise<void> {
-    const { adapter, apiKey, model, apiEndpoint, tools, toolContext, temperature, maxTokens, approvalCallback, context } = config
+    const { adapter, apiKey, model, apiEndpoint, tools, toolContext, temperature, maxTokens, reasoningEffort, approvalCallback, context } = config
     const maxIter = config.maxTurnIterations ?? 20
 
     // Build system prompt with injected context
@@ -94,6 +95,13 @@ export class AgentLoop {
       { role: 'user', content: userMessage },
     ]
 
+    // Emit user_message event so the renderer can display the user's input
+    this.emitter.emit({
+      ...makeBase(),
+      type: 'user_message',
+      content: userMessage,
+    })
+
     emitStatus('thinking')
 
     try {
@@ -109,6 +117,7 @@ export class AgentLoop {
           ...(systemPrompt !== undefined && { systemPrompt }),
           ...(temperature !== undefined && { temperature }),
           ...(maxTokens !== undefined && { maxTokens }),
+          ...(reasoningEffort !== undefined && { reasoningEffort }),
         }
 
         let pendingToolCall: ToolCallEvent | null = null

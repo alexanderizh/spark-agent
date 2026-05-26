@@ -25,6 +25,7 @@ export interface ChatParams {
   maxTokens?: number
   temperature?: number
   apiEndpoint?: string
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
 }
 
 export interface IModelAdapter {

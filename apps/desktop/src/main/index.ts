@@ -57,6 +57,10 @@ function createWindow(): BrowserWindow {
   // 窗口准备好后再显示，避免白屏闪烁
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
+    // 开发模式下自动打开开发者工具
+    if (is.dev) {
+      mainWindow.webContents.openDevTools()
+    }
   })
 
   // 在系统默认浏览器中打开外部链接，不在 Electron 窗口内导航

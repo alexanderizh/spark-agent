@@ -2703,10 +2703,11 @@ Day 7:
 
 ## 22. 实施进度追踪
 
-> 最后更新: 2026-05-26 (第三次全量审计)
+> 最后更新: 2026-05-26 (第四次更新 — UI 优化第一批)
 > 审计人: Agent产品经理
 > 测试矩阵: agent-runtime 93 passed · desktop 11 passed · storage 21 (better-sqlite3 native 已知问题)
 > 本次审计: 基于 3 个并行代码审查 Agent 对全部源文件的逐行检查
+> 第四次更新: UI 优化第一批（会话卡片紧凑化 + 用户消息显示 Bug + 输入区域悬浮化）
 
 ### 22.1 Phase 完成总览
 
@@ -2714,7 +2715,7 @@ Day 7:
 |-------|------|------|--------|
 | Phase 0 | 项目基础 | ✅ 全部完成 | 10/10 |
 | Phase 1 | 单会话 MVP | ✅ 全部完成 | 9/9 |
-| Phase 2 | 项目工作区与权限 | ✅ 全部完成 | 22/22 |
+| Phase 2 | 项目工作区与权限 | ✅ 全部完成 | 25/25 |
 | Phase 3 | 规则、MCP、Skill | 🔄 部分完成 | 5/12 |
 | Phase 4 | 工作流与多 Agent | ❌ 未开始 | 0/8 |
 | Phase 5 | 团队模式基础 | ❌ 未开始 | 0/6 |
@@ -2775,6 +2776,9 @@ Day 7:
 | P2-20 | ChatView 搜索面板 + 消息流精修 | 浩轩 | cc61326 | 23 处内联样式清除 + CSS 类化 |
 | P2-21 | 项目类型自动检测 | codex | e006ad2 | detectProjectKind() 11 种类型 |
 | P2-22 | Toast 通知系统 | codex | 2fff2b7 | ToastProvider + useToast + 13 处接入 |
+| P2-23 | 用户消息显示 Bug 修复 | 浩轩 | — | agent-loop.ts 新增 user_message 事件发射 |
+| P2-24 | 会话卡片紧凑化 | 旭阳 | — | ChatListItem 改为 Codex 风格单行样式 |
+| P2-25 | 输入区域悬浮化 | 旭阳+小林 | — | Composer 改为 Claude Desktop 风格悬浮卡片 |
 
 ### 22.5 功能实现深度审计
 
@@ -2796,9 +2800,9 @@ Day 7:
 | **文件系统工具** | 🟢 完整 | read_file/write_file/list_directory/search_files 4 个内置工具 + 路径穿越保护（resolveSafe） |
 | **Anthropic Adapter** | 🟢 完整 | 使用 `@anthropic-ai/sdk` 真实流式调用 + extended thinking + tool use + abort + usage tracking |
 | **OpenAI Adapter** | 🟢 完整 | 使用 `openai` npm 包真实流式调用 + tool call accumulation + reasoning content (DeepSeek) + abort |
-| **ChatView 聊天** | 🟢 完整 | 真实 IPC 会话管理 + 15+ IPC 通道 + 流式消息渲染 + 搜索 + 工具调用展示 + 思考块 + 终端输出 |
+| **ChatView 聊天** | 🟢 完整 | 真实 IPC 会话管理 + 15+ IPC 通道 + 流式消息渲染 + 搜索 + 工具调用展示 + 思考块 + 终端输出 + 用户消息显示 + 单行紧凑会话卡片 + 悬浮输入框 |
 | **Keystore** | 🟢 完整 | macOS Keychain / Windows Credential Manager / Linux keyring + API 密钥不接触 SQLite |
-| **AgentLoop** | 🟢 完整 | 真实 AI 调用循环（最多 20 轮工具迭代）+ 消息历史累积 + abort + 权限审批回调 + system prompt 构建 |
+| **AgentLoop** | 🟢 完整 | 真实 AI 调用循环（最多 20 轮工具迭代）+ 消息历史累积 + abort + 权限审批回调 + system prompt 构建 + user_message 事件发射 |
 
 #### 🟡 部分完成（有骨架或 UI 但缺少关键能力）
 
@@ -3843,10 +3847,37 @@ type SparkErrorType =
 ## 25. 下一步
 
 > 基于 2026-05-26 全量代码审计更新。
+> 第四次更新: UI 优化第一批已完成。
+
+### 25.0 UI 优化第一批变更记录（2026-05-26）
+
+本轮完成 3 项 UI 优化，均已通过代码审查和静态测试分析。
+
+| # | 问题 | 类型 | 优先级 | 负责人 | 状态 | 修改文件 |
+|---|------|------|--------|--------|------|----------|
+| 1 | 会话卡片紧凑化 | UI 优化 | P1 | 旭阳-高级开发 | ✅ 已完成 | ChatView.tsx, views.css |
+| 2 | 用户消息不显示 | Bug 修复 | P0 | 浩轩-特级开发 | ✅ 已完成 | agent-loop.ts |
+| 3 | 输入区域悬浮化 | UI 优化 | P1 | 旭阳+小林 | ✅ 已完成 | views.css |
+
+**变更详情：**
+
+**问题 2（P0 Bug 修复）：** `AgentLoop.executeTurn` 在接收用户消息时未发出 `user_message` 事件，导致前端无法渲染用户消息。修复：在 `emitStatus('thinking')` 之前新增 `this.emitter.emit({ type: 'user_message', content: userMessage })`。数据链路完整验证通过（8 个环节全部通过）。
+
+**问题 1（会话卡片紧凑化）：** ChatListItem 从三行布局（标题 + 消息条数 + 状态时间）改为单行紧凑布局（标题 + 时间），参考 Codex 风格。移除消息条数显示，running 状态仅保留小圆点动画，idle 无额外徽标。
+
+**问题 3（输入区域悬浮化）：** Composer 从固定底部分隔线布局改为 Claude Desktop 风格的悬浮卡片。移除 border-top，添加 box-shadow + ::before 渐变遮罩，position: absolute 固定在 chat-main 底部。
+
+**已知遗留问题：**
+
+| ID | 描述 | 严重程度 | 建议处理 |
+|----|------|----------|----------|
+| BUG-#1 | compact 模式下 .item-menu-wrap 未默认隐藏，浪费 22px 水平空间 | P3 低 | 后续优化 |
+| BUG-#2 | 空状态页面因 padding-bottom: 180px 导致垂直偏移 | P3 低 | 后续优化 |
+| 已知限制 | padding-bottom: 180px 硬编码，textarea 增高时可能遮挡内容 | P2 中 | 已记录技术债 |
 
 ### 当前状态总结
 
-**Phase 0-2 已全部完成（41 个任务）**，基础设施和 CRUD 层全部就绪。
+**Phase 0-2 已全部完成（44 个任务，含本轮 3 项 UI 优化）**，基础设施和 CRUD 层全部就绪。
 **Phase 3 部分完成（5/12）**，剩余 7 项 + 4 项补充任务。
 **Phase 4-6 未开始**。
 

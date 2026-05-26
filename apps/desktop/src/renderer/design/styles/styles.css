@@ -28,6 +28,8 @@
   --font-sm: 12px;
   --font-xs: 11px;
   --font-lg: 14px;
+  --font-sans: Inter, "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
 }
 
 /* ---------- THEME: LIGHT (default) ---------- */
@@ -153,14 +155,16 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 body {
-  font-family: 'Geist', ui-sans-serif, system-ui, -apple-system, 'SF Pro', sans-serif;
-  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  font-family: var(--font-sans);
+  font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   background: #fff;
   color: #18181b;
 }
 code, pre, .mono {
-  font-family: 'Geist Mono', ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+  font-family: var(--font-mono);
   font-feature-settings: 'zero', 'ss02';
 }
 button { font-family: inherit; }
@@ -196,7 +200,7 @@ button { font-family: inherit; }
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
-  border-radius: 14px;
+  /* border-radius: 14px; */
   overflow: hidden;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.05),
@@ -606,6 +610,7 @@ button { font-family: inherit; }
   font-size: var(--font-sm);
   min-width: 200px;
 }
+.search-input .spark-input,
 .search-input input {
   background: transparent;
   border: none; outline: none;
@@ -613,7 +618,13 @@ button { font-family: inherit; }
   font-size: var(--font-sm);
   color: var(--text);
   font-family: inherit;
+  height: auto;
+  padding: 0;
+  box-shadow: none;
 }
+.search-input .spark-input:focus,
+.search-input input:focus { box-shadow: none; border-color: transparent; }
+.search-input .spark-input::placeholder,
 .search-input input::placeholder { color: var(--text-faint); }
 .search-input svg { width: 14px; height: 14px; color: var(--text-faint); }
 
@@ -632,18 +643,305 @@ button { font-family: inherit; }
 
 /* Scrollbar */
 .view-body::-webkit-scrollbar,
-.scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.scroll::-webkit-scrollbar,
+pre::-webkit-scrollbar,
+.md-table-wrap::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
 .view-body::-webkit-scrollbar-track,
-.scroll::-webkit-scrollbar-track { background: transparent; }
+.scroll::-webkit-scrollbar-track,
+pre::-webkit-scrollbar-track,
+.md-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
 .view-body::-webkit-scrollbar-thumb,
-.scroll::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 5px;
-  border: 2px solid var(--bg);
+.scroll::-webkit-scrollbar-thumb,
+pre::-webkit-scrollbar-thumb,
+.md-table-wrap::-webkit-scrollbar-thumb {
+  min-height: 36px;
+  background: color-mix(in srgb, var(--text-muted) 32%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
   background-clip: content-box;
 }
 .view-body::-webkit-scrollbar-thumb:hover,
-.scroll::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; }
+.scroll::-webkit-scrollbar-thumb:hover,
+pre::-webkit-scrollbar-thumb:hover,
+.md-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 54%, transparent);
+  background-clip: content-box;
+}
+.view-body::-webkit-scrollbar-corner,
+.scroll::-webkit-scrollbar-corner,
+pre::-webkit-scrollbar-corner,
+.md-table-wrap::-webkit-scrollbar-corner {
+  background: transparent;
+}
+.scroll,
+.view-body,
+pre,
+.md-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 34%, transparent) transparent;
+}
+
+/* ============================================================
+   SPARK INPUT — themed text input
+   ============================================================ */
+.spark-input {
+  height: 32px;
+  padding: 0 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.spark-input::placeholder { color: var(--text-faint); }
+.spark-input:hover { border-color: var(--border-strong); }
+.spark-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.spark-input:disabled {
+  opacity: 0.55;
+  cursor: default;
+  background: var(--bg-soft);
+}
+.spark-input[readonly] {
+  color: var(--text-muted);
+  background: var(--bg-soft);
+}
+.spark-input.mono-sm { font-family: 'Geist Mono', ui-monospace, monospace; font-size: var(--font-sm); }
+
+/* Input wrapper with icon */
+.spark-input-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+}
+.spark-input-wrap .spark-input { width: 100%; }
+.spark-input-icon {
+  position: absolute;
+  left: 9px;
+  display: inline-flex;
+  color: var(--text-faint);
+  pointer-events: none;
+  z-index: 1;
+}
+.spark-input-icon svg { width: 14px; height: 14px; }
+.spark-input-has-icon { padding-left: 30px !important; }
+
+/* Size variants */
+.spark-input.sm, .select-sm .spark-select {
+  height: 26px;
+  padding: 0 7px;
+  font-size: var(--font-xs);
+}
+.input-w-sm { width: 80px; }
+.input-max-sm { max-width: 120px; }
+
+/* Range input */
+.spark-input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: var(--border);
+  cursor: pointer;
+}
+.spark-input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--primary);
+  border: 2px solid var(--panel);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: transform 0.12s;
+}
+.spark-input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+.spark-input[type="range"]:focus {
+  box-shadow: none;
+}
+
+/* Number input */
+.spark-input[type="number"] {
+  -moz-appearance: textfield;
+}
+.spark-input[type="number"]::-webkit-inner-spin-button,
+.spark-input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.spark-input[type="number"]:focus::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+}
+
+/* ============================================================
+   SPARK SELECT — themed dropdown select
+   ============================================================ */
+.spark-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+}
+.spark-select {
+  height: 32px;
+  padding: 0 28px 0 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.spark-select:hover { border-color: var(--border-strong); }
+.spark-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.spark-select:disabled {
+  opacity: 0.55;
+  cursor: default;
+  background: var(--bg-soft);
+}
+.spark-select option {
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px;
+}
+
+/* Custom dropdown arrow */
+.spark-select-arrow {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+  transition: color 0.12s;
+}
+.spark-select-wrap:hover .spark-select-arrow { color: var(--text-muted); }
+.spark-select:focus ~ .spark-select-arrow { color: var(--primary); }
+
+/* Size variants */
+.select-sm .spark-select-wrap,
+.spark-select-wrap.sm {
+  height: 26px;
+}
+.select-sm .spark-select,
+.spark-select.sm {
+  height: 26px;
+  padding: 0 24px 0 7px;
+  font-size: var(--font-xs);
+}
+.select-full .spark-select-wrap,
+.spark-select-wrap.full {
+  width: 100%;
+}
+.select-full .spark-select {
+  width: 100%;
+}
+
+/* Override .form-grid children */
+.form-grid > .spark-input {
+  height: 32px;
+  padding: 0 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  outline: none;
+  width: 100%;
+}
+.form-grid > .spark-input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.form-grid > .spark-select-wrap {
+  width: 100%;
+}
+.form-grid > .spark-select-wrap .spark-select {
+  height: 32px;
+  padding: 0 28px 0 10px;
+  width: 100%;
+}
+
+/* Radio button styling (for sandbox level) */
+.spark-radio {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--border-strong);
+  border-radius: 50%;
+  flex-shrink: 0;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 0.12s;
+}
+.spark-radio:checked {
+  border-color: var(--primary);
+}
+.spark-radio:checked::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+.spark-radio:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.spark-radio:hover:not(:disabled) {
+  border-color: var(--primary);
+}
+
+/* Checkbox styling (for markdown task lists) */
+.spark-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+  flex-shrink: 0;
+  cursor: default;
+  position: relative;
+  margin: 2px 0 0;
+  transition: background 0.12s, border-color 0.12s;
+}
+.spark-checkbox:checked {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.spark-checkbox:checked::after {
+  content: '';
+  position: absolute;
+  left: 3.5px;
+  top: 1px;
+  width: 4px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+}
 
 /* utility */
 .row { display: flex; align-items: center; gap: var(--pad-sm); }

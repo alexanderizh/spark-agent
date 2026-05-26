@@ -15,6 +15,7 @@ import { createAdapter } from './adapter-factory.js'
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
+type AgentAdapterKind = 'claude' | 'codex'
 
 export class SessionService {
   private activeLoops = new Map<string, AgentLoop>()  // sessionId → AgentLoop
@@ -28,6 +29,10 @@ export class SessionService {
 
   async createSession(params: {
     providerProfileId: string
+    modelId?: string
+    agentAdapter?: AgentAdapterKind
+    chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
     title?: string
     workspaceId?: string
   }): Promise<SessionCreateResponse> {
@@ -41,6 +46,9 @@ export class SessionService {
       projectId: params.workspaceId ?? 'default',
       workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
       providerProfileId: params.providerProfileId,
+      ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
+      chatMode: params.agentAdapter ?? params.chatMode ?? 'codex',
+      ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
     })
     return { sessionId: row.id as SessionId, createdAt: row.created_at }
   }
@@ -81,12 +89,13 @@ export class SessionService {
       temperature?: number
     }
 
-    const model = config.defaultModel ?? config.model
+    const model = session.model_id ?? config.defaultModel ?? config.model
     if (model == null || model.length === 0) {
       throw new Error(`Provider ${provider.id} has no default model configured`)
     }
 
-    const adapter = createAdapter(provider.provider_type)
+    const agentAdapter = getAgentAdapterFromSession(session.chat_mode, provider.provider_type)
+    const adapter = createAdapter(agentAdapter)
 
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
@@ -122,6 +131,7 @@ export class SessionService {
       },
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       ...(config.temperature != null ? { temperature: config.temperature } : {}),
+      ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
       ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
     }
 
@@ -210,6 +220,10 @@ export class SessionService {
       projectId: row.project_id,
       workspaceIds: sessionRepo.getWorkspaceIds(row.id),
       providerProfileId: row.provider_profile_id ?? '',
+      modelId: row.model_id,
+      agentAdapter: getAgentAdapterFromSession(row.chat_mode, null),
+      chatMode: getChatModeFromSession(row.chat_mode),
+      reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
       status: row.status as 'idle' | 'running' | 'error',
       pinnedAt: row.pinned_at,
       archivedAt: row.archived_at,
@@ -288,6 +302,11 @@ export class SessionService {
     title?: string
     pinned?: boolean
     archived?: boolean
+    providerProfileId?: string
+    modelId?: string | null
+    agentAdapter?: AgentAdapterKind
+    chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
@@ -303,6 +322,21 @@ export class SessionService {
       })
     }
 
+    if (
+      params.providerProfileId !== undefined
+      || params.modelId !== undefined
+      || params.agentAdapter !== undefined
+      || params.chatMode !== undefined
+      || params.reasoningEffort !== undefined
+    ) {
+      sessionRepo.updateRuntime(params.sessionId, {
+        ...(params.providerProfileId !== undefined ? { providerProfileId: params.providerProfileId } : {}),
+        ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
+        ...(params.agentAdapter !== undefined || params.chatMode !== undefined ? { chatMode: params.agentAdapter ?? params.chatMode } : {}),
+        ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
+      })
+    }
+
     const row = sessionRepo.findByIdOrFail(params.sessionId)
     return {
       session: {
@@ -311,6 +345,10 @@ export class SessionService {
         projectId: row.project_id,
         workspaceIds: sessionRepo.getWorkspaceIds(row.id),
         providerProfileId: row.provider_profile_id ?? '',
+        modelId: row.model_id,
+        agentAdapter: getAgentAdapterFromSession(row.chat_mode, null),
+        chatMode: getChatModeFromSession(row.chat_mode),
+        reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
         status: row.status as 'idle' | 'running' | 'error',
         pinnedAt: row.pinned_at,
         archivedAt: row.archived_at,
@@ -327,4 +365,14 @@ export class SessionService {
     eventRepo.deleteBySession(sessionId)
     return { deleted: sessionRepo.delete(sessionId) }
   }
+}
+
+function getAgentAdapterFromSession(value: string | null | undefined, providerType: string | null): AgentAdapterKind {
+  if (value === 'claude' || value === 'codex') return value
+  return providerType === 'anthropic' ? 'claude' : 'codex'
+}
+
+function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {
+  if (value === 'ask' || value === 'edit' || value === 'review') return value
+  return 'agent'
 }

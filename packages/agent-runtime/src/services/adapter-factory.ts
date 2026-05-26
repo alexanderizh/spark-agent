@@ -3,7 +3,7 @@ import { OpenAIAdapter } from '../adapters/openai.js'
 import type { IModelAdapter } from '../adapters/types.js'
 
 export function createAdapter(provider: string): IModelAdapter {
-  switch (normalizeProviderType(provider)) {
+  switch (normalizeAdapterType(provider)) {
     case 'anthropic':
       return new AnthropicAdapter()
     case 'openai':
@@ -13,6 +13,7 @@ export function createAdapter(provider: string): IModelAdapter {
   }
 }
 
-function normalizeProviderType(provider: string): 'anthropic' | 'openai' {
-  return provider === 'anthropic' ? 'anthropic' : 'openai'
+function normalizeAdapterType(provider: string): 'anthropic' | 'openai' {
+  if (provider === 'anthropic' || provider === 'claude') return 'anthropic'
+  return 'openai'
 }

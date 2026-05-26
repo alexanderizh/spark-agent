@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
+import { SparkInput } from '../components/FormControls'
 import type { PermissionApprovalRequest, PermissionApprovalDecision } from '@spark/protocol'
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
@@ -13,7 +14,7 @@ export function CommandPalette({ onClose }: { onClose: () => void }) {
       <div className="palette" onClick={(e) => e.stopPropagation()}>
         <div className="palette-search">
           <Icons.Search />
-          <input placeholder="搜索或输入命令..." autoFocus />
+          <SparkInput placeholder="搜索或输入命令..." autoFocus />
           <span className="kbd">esc</span>
         </div>
         <div className="palette-results scroll">

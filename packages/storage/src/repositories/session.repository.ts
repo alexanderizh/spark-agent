@@ -27,6 +27,9 @@ export interface SessionRow {
   rule_bundle_id: string | null
   permission_profile_id: string | null
   provider_profile_id: string | null
+  model_id: string | null
+  chat_mode: string
+  reasoning_effort: string
   pinned_at: string | null
   archived_at: string | null
   created_at: string
@@ -44,6 +47,9 @@ export interface CreateSessionParams {
   ruleBundleId?: string
   permissionProfileId?: string
   providerProfileId?: string
+  modelId?: string
+  chatMode?: string
+  reasoningEffort?: string
 }
 
 /** Session 列表查询参数 */
@@ -70,8 +76,8 @@ export class SessionRepository extends BaseRepository {
   create(params: CreateSessionParams): SessionRow {
     const now = new Date().toISOString()
     const stmt = this.raw.prepare(`
-      INSERT INTO sessions (id, kind, title, status, project_id, workspace_ids_json, rule_bundle_id, permission_profile_id, provider_profile_id, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, kind, title, status, project_id, workspace_ids_json, rule_bundle_id, permission_profile_id, provider_profile_id, model_id, chat_mode, reasoning_effort, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -84,6 +90,9 @@ export class SessionRepository extends BaseRepository {
       params.ruleBundleId ?? null,
       params.permissionProfileId ?? null,
       params.providerProfileId ?? null,
+      params.modelId ?? null,
+      params.chatMode ?? 'agent',
+      params.reasoningEffort ?? 'medium',
       now,
       now,
     )
@@ -136,6 +145,49 @@ export class SessionRepository extends BaseRepository {
     if (params.archivedAt !== undefined) {
       fields.push('archived_at = ?')
       values.push(params.archivedAt)
+    }
+
+    if (fields.length === 0) return
+
+    fields.push('updated_at = ?')
+    values.push(new Date().toISOString())
+    values.push(id)
+
+    const stmt = this.raw.prepare(`UPDATE sessions SET ${fields.join(', ')} WHERE id = ?`)
+    stmt.run(...values)
+  }
+
+  /** 更新会话运行配置 */
+  updateRuntime(
+    id: string,
+    params: {
+      providerProfileId?: string
+      modelId?: string | null
+      chatMode?: string
+      reasoningEffort?: string
+    },
+  ): void {
+    const fields: string[] = []
+    const values: unknown[] = []
+
+    if (params.providerProfileId !== undefined) {
+      fields.push('provider_profile_id = ?')
+      values.push(params.providerProfileId)
+    }
+
+    if (params.modelId !== undefined) {
+      fields.push('model_id = ?')
+      values.push(params.modelId)
+    }
+
+    if (params.chatMode !== undefined) {
+      fields.push('chat_mode = ?')
+      values.push(params.chatMode)
+    }
+
+    if (params.reasoningEffort !== undefined) {
+      fields.push('reasoning_effort = ?')
+      values.push(params.reasoningEffort)
     }
 
     if (fields.length === 0) return

@@ -6,6 +6,7 @@
 import { useState } from 'react'
 import type { SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
+import { SparkInput } from '../components/FormControls'
 import {
   useSkills,
   parseSkillManifest,
@@ -35,7 +36,7 @@ export function SkillsView() {
 
           <div className="search-input">
             <Icons.Search />
-            <input
+            <SparkInput
               placeholder="搜索 Skill..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}

@@ -45,19 +45,25 @@ export class MessageBuilder {
           this.currentAssistantId = msg.id
         }
 
+        if (event.mode === 'complete') {
+          msg.blocks = msg.blocks.filter(block => block.kind !== 'text')
+          if (event.content.length > 0) {
+            msg.blocks.push({ kind: 'text', content: event.content, isStreaming: false })
+          }
+          if (event.isFinal) {
+            msg.status = 'completed'
+          }
+          break
+        }
+
         const lastBlock = msg.blocks[msg.blocks.length - 1]
         if (lastBlock?.kind === 'text') {
-          if (event.mode === 'delta') {
-            lastBlock.content += event.content
-          } else {
-            lastBlock.content = event.content
-            lastBlock.isStreaming = false
-          }
+          lastBlock.content += event.content
         } else {
           msg.blocks.push({
             kind: 'text',
             content: event.content,
-            isStreaming: event.mode === 'delta',
+            isStreaming: true,
           })
         }
 
@@ -69,16 +75,19 @@ export class MessageBuilder {
 
       case 'agent_thinking': {
         const msg = this.getOrCreateAssistant(event.id)
+        if (event.mode === 'complete') {
+          msg.blocks = msg.blocks.filter(block => block.kind !== 'thinking')
+          if (event.content.length > 0) {
+            msg.blocks.unshift({ kind: 'thinking', content: event.content, isStreaming: false })
+          }
+          break
+        }
+
         const lastBlock = msg.blocks[msg.blocks.length - 1]
         if (lastBlock?.kind === 'thinking') {
-          if (event.mode === 'delta') {
-            lastBlock.content += event.content
-          } else {
-            lastBlock.content = event.content
-            lastBlock.isStreaming = false
-          }
+          lastBlock.content += event.content
         } else {
-          msg.blocks.push({ kind: 'thinking', content: event.content, isStreaming: event.mode === 'delta' })
+          msg.blocks.push({ kind: 'thinking', content: event.content, isStreaming: true })
         }
         break
       }

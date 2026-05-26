@@ -18,6 +18,10 @@
 
 import type { AgentEvent, SessionId } from '../events/index.js'
 
+export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
+export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
+export type SessionAgentAdapter = 'claude' | 'codex'
+
 // ─── Session Channels ─────────────────────────────────────────────────────────
 
 export interface SessionCreateRequest {
@@ -25,6 +29,12 @@ export interface SessionCreateRequest {
   providerProfileId: string
   /** Model Profile ID（可选）*/
   modelProfileId?: string
+  /** 运行模型 ID（可选，默认取 Provider 默认模型）*/
+  modelId?: string
+  /** SDK/runtime adapter used to execute the task */
+  agentAdapter?: SessionAgentAdapter
+  chatMode?: SessionChatMode
+  reasoningEffort?: SessionReasoningEffort
   /** 会话标题（可选，默认自动生成）*/
   title?: string
   /** 关联的 Workspace ID（可选）*/
@@ -84,6 +94,11 @@ export interface SessionUpdateRequest {
   title?: string
   pinned?: boolean
   archived?: boolean
+  providerProfileId?: string
+  modelId?: string | null
+  agentAdapter?: SessionAgentAdapter
+  chatMode?: SessionChatMode
+  reasoningEffort?: SessionReasoningEffort
 }
 
 export interface SessionUpdateResponse {
@@ -128,6 +143,10 @@ export interface SessionListResponse {
     projectId: string
     workspaceIds: string[]
     providerProfileId: string
+    modelId: string | null
+    agentAdapter: SessionAgentAdapter
+    chatMode: SessionChatMode
+    reasoningEffort: SessionReasoningEffort
     status: 'idle' | 'running' | 'error'
     pinnedAt: string | null
     archivedAt: string | null
@@ -310,6 +329,25 @@ export interface WorkspaceListDirectoryRequest {
 
 export interface WorkspaceListDirectoryResponse {
   entries: WorkspaceTreeEntry[]
+}
+
+export interface WorkspaceListBranchesRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceListBranchesResponse {
+  currentBranch: string | null
+  branches: string[]
+}
+
+export interface WorkspaceSwitchBranchRequest {
+  workspaceId: string
+  branch: string
+}
+
+export interface WorkspaceSwitchBranchResponse {
+  currentBranch: string
+  branches: string[]
 }
 
 // ─── Dialog Channels ────────────────────────────────────────────────────────
@@ -655,6 +693,8 @@ export interface IpcChannelMap {
   'workspace:open-folder': [WorkspaceOpenFolderRequest, WorkspaceOpenFolderResponse]
   'workspace:close': [WorkspaceCloseRequest, WorkspaceCloseResponse]
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
+  'workspace:list-branches': [WorkspaceListBranchesRequest, WorkspaceListBranchesResponse]
+  'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]

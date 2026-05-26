@@ -50,12 +50,14 @@ export class AnthropicAdapter implements IModelAdapter {
     const pendingTools = new Map<number, PendingToolUse>()
 
     try {
+      const maxTokens = getAnthropicMaxTokens(params)
       const stream = client.messages.stream(
         {
           model: params.model,
-          max_tokens: params.maxTokens ?? DEFAULT_MAX_TOKENS,
+          max_tokens: maxTokens,
           messages: toAnthropicMessages(params.messages),
           ...anthropicSystemPrompt(params),
+          ...anthropicThinking(params, maxTokens),
           ...(params.temperature === undefined ? {} : { temperature: params.temperature }),
           ...(params.tools === undefined || params.tools.length === 0
             ? {}
@@ -253,6 +255,31 @@ function anthropicSystemPrompt(params: ChatParams): { system: string } | Record<
     .join('\n\n')
 
   return system.length > 0 ? { system } : {}
+}
+
+function getAnthropicMaxTokens(params: ChatParams): number {
+  const budget = getAnthropicThinkingBudget(params.reasoningEffort)
+  const requested = params.maxTokens ?? DEFAULT_MAX_TOKENS
+  return budget === undefined ? requested : Math.max(requested, budget + 1024)
+}
+
+function anthropicThinking(
+  params: ChatParams,
+  maxTokens: number,
+): { thinking: { type: 'enabled'; budget_tokens: number } } | Record<string, never> {
+  const budget = getAnthropicThinkingBudget(params.reasoningEffort)
+  if (budget === undefined) return {}
+  return { thinking: { type: 'enabled', budget_tokens: Math.min(budget, maxTokens - 1) } }
+}
+
+function getAnthropicThinkingBudget(effort: ChatParams['reasoningEffort']): number | undefined {
+  switch (effort) {
+    case 'low': return 1024
+    case 'medium': return 4096
+    case 'high': return 8192
+    case 'xhigh': return 16384
+    default: return undefined
+  }
 }
 
 function toAnthropicContent(content: ChatMessage['content']): string | ContentBlockParam[] {

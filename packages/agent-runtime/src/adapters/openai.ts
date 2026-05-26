@@ -74,12 +74,13 @@ export async function* streamOpenAICompatible(
         stream_options: { include_usage: true },
         ...(params.maxTokens === undefined ? { max_completion_tokens: DEFAULT_MAX_TOKENS } : { max_completion_tokens: params.maxTokens }),
         ...(params.temperature === undefined ? {} : { temperature: params.temperature }),
+        ...(params.reasoningEffort === undefined ? {} : { reasoning_effort: toOpenAIReasoningEffort(params.reasoningEffort) }),
         ...(params.tools === undefined || params.tools.length === 0 ? {} : { tools: params.tools.map(toOpenAITool) }),
-      },
+      } as Parameters<typeof client.chat.completions.create>[0],
       signal === undefined ? undefined : { signal },
     )
 
-    for await (const chunk of stream) {
+    for await (const chunk of stream as AsyncIterable<ChatCompletionChunk>) {
       if (signal?.aborted) {
         yield agentError(base, 'ABORTED', 'Model stream was aborted', false)
         return
@@ -271,6 +272,11 @@ function getReasoningContent(delta: unknown): string | undefined {
   }
   const value = (delta as { reasoning_content?: unknown }).reasoning_content
   return typeof value === 'string' ? value : undefined
+}
+
+function toOpenAIReasoningEffort(effort: NonNullable<ChatParams['reasoningEffort']>): 'low' | 'medium' | 'high' {
+  if (effort === 'xhigh') return 'high'
+  return effort
 }
 
 function getCachedTokens(usage: ChatCompletionChunk['usage']): number | undefined {

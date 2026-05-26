@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react'
 import { AppProvider, useApp, PRIMARIES } from './design/AppContext'
 import { ToastProvider, ToastContainer } from './design/components/Toast'
+import { SparkInput } from './design/components/FormControls'
 import type { PermissionApprovalRequest } from '@spark/protocol'
 
 import { HomeView } from './design/views/HomeView'
@@ -87,7 +88,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
         {!isCompact && (
           <div className="search-input">
             <Icons.Search />
-            <input placeholder="Search this view..." />
+            <SparkInput placeholder="Search this view..." />
           </div>
         )}
         <button className="btn ghost sm" onClick={() => setTweak('showPalette', true)}>

@@ -17,11 +17,18 @@ export const ProfileIdSchema = z.string().uuid()
 export const RuleIdSchema = z.string().uuid()
 
 export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
+export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
+export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
+export const SessionAgentAdapterSchema = z.enum(['claude', 'codex'])
 
 // ─── Session Schema ───────────────────────────────────────────────────────────
 
 export const SessionCreateRequestSchema = z.object({
   providerProfileId: ProfileIdSchema,
+  modelId: z.string().min(1).max(200).optional(),
+  agentAdapter: SessionAgentAdapterSchema.optional().default('codex'),
+  chatMode: SessionChatModeSchema.optional().default('agent'),
+  reasoningEffort: SessionReasoningEffortSchema.optional().default('medium'),
   title: z.string().max(200).optional(),
   workspaceId: z.string().uuid().optional(),
 })
@@ -68,6 +75,11 @@ export const SessionUpdateRequestSchema = z.object({
   title: z.string().min(1).max(200).optional(),
   pinned: z.boolean().optional(),
   archived: z.boolean().optional(),
+  providerProfileId: ProfileIdSchema.optional(),
+  modelId: z.string().min(1).max(200).nullable().optional(),
+  agentAdapter: SessionAgentAdapterSchema.optional(),
+  chatMode: SessionChatModeSchema.optional(),
+  reasoningEffort: SessionReasoningEffortSchema.optional(),
 })
 
 export const SessionDeleteRequestSchema = z.object({
@@ -127,6 +139,15 @@ export const WorkspaceListDirectoryRequestSchema = z.object({
   workspaceId: z.string().uuid(),
   path: z.string().max(500).optional().default(''),
   maxDepth: z.number().int().min(0).max(5).optional().default(3),
+})
+
+export const WorkspaceListBranchesRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
+export const WorkspaceSwitchBranchRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  branch: z.string().min(1).max(200),
 })
 
 export const WorkspaceListRequestSchema = z.object({
@@ -208,6 +229,8 @@ export const IpcSchemaRegistry = {
   'workspace:open-folder': WorkspaceOpenFolderRequestSchema,
   'workspace:close': z.object({ workspaceId: z.string().uuid() }),
   'workspace:list-directory': WorkspaceListDirectoryRequestSchema,
+  'workspace:list-branches': WorkspaceListBranchesRequestSchema,
+  'workspace:switch-branch': WorkspaceSwitchBranchRequestSchema,
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
   'rules:list': RulesListRequestSchema,
   'rules:create': RulesCreateRequestSchema,

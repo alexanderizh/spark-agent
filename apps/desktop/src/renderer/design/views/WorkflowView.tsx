@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
+import { SparkInput } from '../components/FormControls'
 
 type NodeKind = 'input' | 'agent' | 'approval' | 'review' | 'artifact' | 'tool'
 type NodeStatus = 'done' | 'running' | 'pending' | 'failed'
@@ -271,7 +272,7 @@ function WFInspector({ node }: { node: WFNodeData }) {
       <div className="wf-insp-body scroll">
         <div className="field">
           <label>名称</label>
-          <input defaultValue="Coder Agent" />
+          <SparkInput defaultValue="Coder Agent" />
         </div>
 
         <div className="field">
