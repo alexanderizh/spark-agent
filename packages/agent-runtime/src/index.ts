@@ -9,3 +9,5 @@ export type {
   IModelAdapter,
   ToolDefinition,
 } from './adapters/types.js'
+export { AgentLoop, ToolRegistry, AgentEventEmitter } from './core/index.js'
+export type { AgentConfig, PermissionMode, ToolContext, RegisteredTool, ToolResult, EventListener } from './core/index.js'

@@ -1,0 +1,6 @@
+export { AgentLoop } from './agent-loop.js'
+export type { AgentConfig, PermissionMode } from './agent-loop.js'
+export { ToolRegistry } from './tool-registry.js'
+export type { ToolContext, RegisteredTool, ToolResult } from './tool-registry.js'
+export { AgentEventEmitter } from './event-emitter.js'
+export type { EventListener } from './event-emitter.js'
