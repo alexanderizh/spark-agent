@@ -40,6 +40,19 @@ export const DEFAULT_TWEAKS: Tweaks = {
   showProfileEdit: false,
 }
 
+const SIDEBAR_STORAGE_KEY = 'spark-agent:sidebar'
+
+function readInitialTweaks(): Tweaks {
+  if (typeof window === 'undefined') return DEFAULT_TWEAKS
+
+  const savedSidebar = window.localStorage.getItem(SIDEBAR_STORAGE_KEY)
+  if (savedSidebar === 'collapsed' || savedSidebar === 'expanded') {
+    return { ...DEFAULT_TWEAKS, sidebar: savedSidebar }
+  }
+
+  return DEFAULT_TWEAKS
+}
+
 export const PRIMARIES: Record<string, { name: string; hover: string; soft: string }> = {
   '#6366f1': { name: 'Indigo', hover: '#4f46e5', soft: 'rgba(99,102,241,0.12)' },
   '#3b82f6': { name: 'Blue', hover: '#2563eb', soft: 'rgba(59,130,246,0.12)' },
@@ -58,8 +71,11 @@ type AppCtx = {
 const Ctx = createContext<AppCtx | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const [t, setT] = useState<Tweaks>(DEFAULT_TWEAKS)
+  const [t, setT] = useState<Tweaks>(readInitialTweaks)
   const setTweak = useCallback<AppCtx['setTweak']>((key, val) => {
+    if (key === 'sidebar') {
+      window.localStorage.setItem(SIDEBAR_STORAGE_KEY, val as SidebarState)
+    }
     setT((prev) => ({ ...prev, [key]: val }))
   }, [])
   const value = useMemo<AppCtx>(() => ({ t, setTweak }), [t, setTweak])

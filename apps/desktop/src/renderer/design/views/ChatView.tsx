@@ -356,12 +356,6 @@ export function ChatView() {
           </div>
         ) : (
           <>
-            <div className="chat-sidebar-projbar">
-              <span className="chat-sidebar-label">项目与会话</span>
-              <span className="flex1" />
-              <button className="icon-btn sidebar-btn-sm" title="打开已有项目" onClick={handleOpenExistingProject}><Icons.Folder size={11} /></button>
-              <button className="icon-btn sidebar-btn-sm" title="新建项目" onClick={() => setProjectDialog('create')}><Icons.Plus size={11} /></button>
-            </div>
             <TimeFilterBar value={timeFilter} onChange={setTimeFilter} />
 
             <div className="chat-list scroll">

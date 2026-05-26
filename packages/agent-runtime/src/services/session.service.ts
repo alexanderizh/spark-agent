@@ -38,7 +38,7 @@ export class SessionService {
       kind: 'agent',
       title: params.title ?? 'New Session',
       status: 'idle',
-      projectId: 'default',
+      projectId: params.workspaceId ?? 'default',
       workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
       providerProfileId: params.providerProfileId,
     })
@@ -199,6 +199,7 @@ export class SessionService {
     workspaceId?: string
     limit?: number
     offset?: number
+    includeArchived?: boolean
   }): Promise<SessionListResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
@@ -206,8 +207,12 @@ export class SessionService {
     const sessions = rows.map((row) => ({
       id: row.id as SessionId,
       title: row.title,
+      projectId: row.project_id,
+      workspaceIds: sessionRepo.getWorkspaceIds(row.id),
       providerProfileId: row.provider_profile_id ?? '',
       status: row.status as 'idle' | 'running' | 'error',
+      pinnedAt: row.pinned_at,
+      archivedAt: row.archived_at,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageCount: eventRepo.countBySession(row.id),
@@ -265,6 +270,7 @@ export class SessionService {
       }
       // Get session title
       const session = sessionRepo.get(match.sessionId)
+      if (session?.archived_at != null) continue
       results.push({
         sessionId: match.sessionId as SessionId,
         title: session?.title ?? 'Unknown Session',
@@ -275,5 +281,50 @@ export class SessionService {
     }
 
     return { results }
+  }
+
+  async updateSession(params: {
+    sessionId: string
+    title?: string
+    pinned?: boolean
+    archived?: boolean
+  }): Promise<{ session: SessionListResponse['sessions'][number] }> {
+    const sessionRepo = new SessionRepository(this.db)
+    const eventRepo = new EventRepository(this.db)
+
+    if (params.title !== undefined) {
+      sessionRepo.updateTitle(params.sessionId, params.title)
+    }
+
+    if (params.pinned !== undefined || params.archived !== undefined) {
+      sessionRepo.updateLifecycle(params.sessionId, {
+        ...(params.pinned !== undefined ? { pinnedAt: params.pinned ? new Date().toISOString() : null } : {}),
+        ...(params.archived !== undefined ? { archivedAt: params.archived ? new Date().toISOString() : null } : {}),
+      })
+    }
+
+    const row = sessionRepo.findByIdOrFail(params.sessionId)
+    return {
+      session: {
+        id: row.id as SessionId,
+        title: row.title,
+        projectId: row.project_id,
+        workspaceIds: sessionRepo.getWorkspaceIds(row.id),
+        providerProfileId: row.provider_profile_id ?? '',
+        status: row.status as 'idle' | 'running' | 'error',
+        pinnedAt: row.pinned_at,
+        archivedAt: row.archived_at,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        messageCount: eventRepo.countBySession(row.id),
+      },
+    }
+  }
+
+  async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
+    const eventRepo = new EventRepository(this.db)
+    const sessionRepo = new SessionRepository(this.db)
+    eventRepo.deleteBySession(sessionId)
+    return { deleted: sessionRepo.delete(sessionId) }
   }
 }

@@ -38,14 +38,19 @@ export class ProviderService {
   async createProvider(params: {
     name: string
     provider: string
-    defaultModel: string
+    defaultModel?: string
     modelIds?: string[]
+    model?: string
     apiEndpoint?: string
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
     const id = crypto.randomUUID()
     const providerType = normalizeProviderType(params.provider)
+    const defaultModel = params.defaultModel ?? params.model
+    if (defaultModel == null || defaultModel.trim().length === 0) {
+      throw new Error('Provider defaultModel is required')
+    }
     const ref = keystore.makeKeystoreRef(providerType, id)
     await keystore.setSecret(ref, params.apiKey)
     log.info(`Stored API key for provider=${providerType} id=${id} key=${keystore.maskSecret(params.apiKey)}`)
@@ -62,7 +67,7 @@ export class ProviderService {
       providerType,
       name: params.name,
       config: normalizeProviderConfig({
-        defaultModel: params.defaultModel,
+        defaultModel,
         ...(params.modelIds !== undefined && { modelIds: params.modelIds }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
       }),
@@ -82,6 +87,7 @@ export class ProviderService {
     name?: string
     defaultModel?: string
     modelIds?: string[]
+    model?: string
     apiEndpoint?: string | null
     apiKey?: string
     isDefault?: boolean
@@ -96,17 +102,21 @@ export class ProviderService {
     }
 
     const existingConfig = normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
+    const nextDefaultModel = params.defaultModel ?? params.model
     const newConfig =
-      params.defaultModel !== undefined || params.modelIds !== undefined || params.apiEndpoint !== undefined
+      nextDefaultModel !== undefined || params.modelIds !== undefined || params.apiEndpoint !== undefined
         ? { ...existingConfig }
         : undefined
 
-    if (newConfig !== undefined && params.defaultModel !== undefined) {
-      newConfig.defaultModel = params.defaultModel
+    if (newConfig !== undefined && nextDefaultModel !== undefined) {
+      newConfig.defaultModel = nextDefaultModel
+      if (params.modelIds === undefined) {
+        newConfig.modelIds = normalizeModelIds(nextDefaultModel, newConfig.modelIds)
+      }
     }
     if (newConfig !== undefined && params.modelIds !== undefined) {
       newConfig.modelIds = normalizeModelIds(
-        params.defaultModel ?? newConfig.defaultModel,
+        nextDefaultModel ?? newConfig.defaultModel,
         params.modelIds,
       )
     }

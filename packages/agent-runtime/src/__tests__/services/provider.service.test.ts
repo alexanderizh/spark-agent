@@ -74,6 +74,19 @@ describe('ProviderService', () => {
     expect(profile.modelIds).toEqual(['claude-opus-4-6', 'claude-sonnet-4-20250514'])
   })
 
+  it('createProvider accepts legacy model field for backward compatibility', async () => {
+    const profile = await service.createProvider({
+      name: 'Legacy OpenAI',
+      provider: 'openai-compatible',
+      model: 'gpt-4o-mini',
+      apiKey: 'sk-legacy',
+    })
+
+    expect(profile.provider).toBe('openai')
+    expect(profile.defaultModel).toBe('gpt-4o-mini')
+    expect(profile.modelIds).toEqual(['gpt-4o-mini'])
+  })
+
   it('createProvider stores custom apiEndpoint in config and returned profile', async () => {
     const profile = await service.createProvider({
       name: 'OpenAI Compatible',
@@ -176,6 +189,29 @@ describe('ProviderService', () => {
         defaultModel: 'gpt-4.1',
         modelIds: ['gpt-4.1', 'gpt-4o-mini'],
         apiEndpoint: 'https://api.example.com/v1',
+      },
+    })
+  })
+
+  it('updateProvider accepts legacy model field for backward compatibility', async () => {
+    repo.rows.set('id-legacy', {
+      id: 'id-legacy',
+      provider_type: 'deepseek',
+      name: 'Legacy',
+      config_json: '{"defaultModel":"deepseek-chat","modelIds":["deepseek-chat"]}',
+      enabled: 1,
+      keystore_ref: 'legacy-id',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await service.updateProvider({ id: 'id-legacy', model: 'deepseek-reasoner' })
+
+    expect(repo.update).toHaveBeenCalledWith('id-legacy', {
+      config: {
+        defaultModel: 'deepseek-reasoner',
+        modelIds: ['deepseek-reasoner', 'deepseek-chat'],
       },
     })
   })

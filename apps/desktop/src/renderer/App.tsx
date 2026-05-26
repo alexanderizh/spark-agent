@@ -199,33 +199,8 @@ function Shell() {
       <div className="app-body">
         {/* Sidebar */}
         <div className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}`}>
-          <div className="sidebar-control">
-            {isExpanded ? (
-              <>
-                <span className="sidebar-control-label">Menu</span>
-                <button
-                  className="icon-btn sidebar-control-btn"
-                  onClick={() => setTweak('sidebar', 'collapsed')}
-                  aria-label="Collapse sidebar"
-                  title="Collapse sidebar"
-                >
-                  <Icons.ChevronLeft size={14} />
-                </button>
-              </>
-            ) : (
-              <button
-                className="icon-btn sidebar-control-btn collapsed"
-                onClick={() => setTweak('sidebar', 'expanded')}
-                aria-label="Expand sidebar"
-                title="Expand sidebar"
-              >
-                <Icons.PanelLeft size={16} />
-              </button>
-            )}
-          </div>
-
           {/* Search / Command bar */}
-          <div className="sidebar-section">
+          <div className="sidebar-section" style={{ paddingTop: 10 }}>
             <button
               className="nav-item"
               onClick={() => setTweak('showPalette', true)}
@@ -350,6 +325,7 @@ function Shell() {
                 <button
                   className="icon-btn sidebar-toggle-btn"
                   onClick={() => setTweak('sidebar', 'collapsed')}
+                  aria-label="Collapse sidebar"
                   title="Collapse sidebar"
                 >
                   <Icons.ChevronLeft size={14} />
@@ -360,6 +336,7 @@ function Shell() {
               <button
                 className="icon-btn sidebar-toggle-btn collapsed-toggle"
                 onClick={() => setTweak('sidebar', 'expanded')}
+                aria-label="Expand sidebar"
                 title="Expand sidebar"
               >
                 <Icons.PanelLeft size={16} />

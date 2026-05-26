@@ -56,6 +56,24 @@ export const SessionSearchRequestSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
 })
 
+export const SessionListRequestSchema = z.object({
+  workspaceId: z.string().uuid().optional(),
+  includeArchived: z.boolean().optional().default(false),
+  limit: z.number().int().min(1).max(200).optional().default(50),
+  offset: z.number().int().min(0).optional().default(0),
+})
+
+export const SessionUpdateRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  title: z.string().min(1).max(200).optional(),
+  pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
+})
+
+export const SessionDeleteRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
 // ─── Provider Schema ──────────────────────────────────────────────────────────
 
 const ProviderKindSchema = z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
@@ -111,6 +129,27 @@ export const WorkspaceListDirectoryRequestSchema = z.object({
   maxDepth: z.number().int().min(0).max(5).optional().default(3),
 })
 
+export const WorkspaceListRequestSchema = z.object({
+  includeArchived: z.boolean().optional().default(false),
+  limit: z.number().int().min(1).max(200).optional().default(100),
+  offset: z.number().int().min(0).optional().default(0),
+})
+
+export const WorkspaceUpdateRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  name: z.string().min(1).max(200).optional(),
+  pinned: z.boolean().optional(),
+  archived: z.boolean().optional(),
+})
+
+export const WorkspaceDeleteRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
+export const WorkspaceOpenFolderRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+})
+
 export const DialogOpenDirectoryRequestSchema = z.object({
   title: z.string().max(200).optional(),
   defaultPath: z.string().optional(),
@@ -154,12 +193,19 @@ export const IpcSchemaRegistry = {
   'session:send-turn': SessionSendTurnRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,
+  'session:list': SessionListRequestSchema,
   'session:search': SessionSearchRequestSchema,
+  'session:update': SessionUpdateRequestSchema,
+  'session:delete': SessionDeleteRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'workspace:open': WorkspaceOpenRequestSchema,
   'workspace:get-current': z.object({}),
+  'workspace:list': WorkspaceListRequestSchema,
+  'workspace:update': WorkspaceUpdateRequestSchema,
+  'workspace:delete': WorkspaceDeleteRequestSchema,
+  'workspace:open-folder': WorkspaceOpenFolderRequestSchema,
   'workspace:close': z.object({ workspaceId: z.string().uuid() }),
   'workspace:list-directory': WorkspaceListDirectoryRequestSchema,
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,

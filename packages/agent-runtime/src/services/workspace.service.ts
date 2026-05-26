@@ -67,6 +67,8 @@ export async function detectProjectKind(rootPath: string): Promise<string> {
 export interface UpdateWorkspaceParams {
   name?: string
   projectKind?: string
+  pinnedAt?: string | null
+  archivedAt?: string | null
 }
 
 export interface ListDirectoryTreeParams {
@@ -128,12 +130,12 @@ export class WorkspaceService {
     this.currentWorkspace = null
   }
 
-  listWorkspaces(limit = 50, offset = 0): WorkspaceRow[] {
-    return this.repo.listAll(limit, offset)
+  listWorkspaces(limit = 50, offset = 0, params: { includeArchived?: boolean } = {}): WorkspaceRow[] {
+    return this.repo.listAll(limit, offset, params)
   }
 
-  countWorkspaces(): number {
-    return this.repo.countAll()
+  countWorkspaces(params: { includeArchived?: boolean } = {}): number {
+    return this.repo.countAll(params)
   }
 
   async listDirectoryTree(
@@ -190,22 +192,16 @@ export class WorkspaceService {
     return this.repo.delete(id)
   }
 
-  updateWorkspace(id: string, params: UpdateWorkspaceParams): void {
+  updateWorkspace(id: string, params: UpdateWorkspaceParams): WorkspaceRow {
     this.repo.update(id, params)
+    const updated = this.repo.findByIdOrFail(id)
 
     if (this.currentWorkspace?.id !== id) {
-      return
+      return updated
     }
 
-    if (params.name !== undefined) {
-      this.currentWorkspace.name = params.name
-    }
-
-    if (params.projectKind !== undefined) {
-      this.currentWorkspace.project_kind = params.projectKind
-    }
-
-    this.currentWorkspace.updated_at = new Date().toISOString()
+    this.currentWorkspace = updated
+    return updated
   }
 }
 

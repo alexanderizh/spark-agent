@@ -943,33 +943,31 @@ function ModelsSection() {
 
   return (
     <div className="settings-section">
-      <div className="row" style={{ alignItems: 'flex-end', marginBottom: 14 }}>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0 }}>模型管理</h2>
-          <div className="lede" style={{ margin: '4px 0 0' }}>按 Provider 分组管理可用模型，可启用/禁用或添加自定义模型。</div>
+      <div className="row section-header-row">
+        <div className="flex1">
+          <h2 className="section-h2">模型管理</h2>
+          <div className="lede section-lede">按 Provider 分组管理可用模型，可启用/禁用或添加自定义模型。</div>
         </div>
         <span className="badge primary dot">共 {models.length} 个</span>
       </div>
 
       {error && (
-        <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>
-          {error}
-        </div>
+        <div className="alert-banner">{error}</div>
       )}
 
       {loading && (
-        <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>正在加载...</div>
+        <div className="card loading-card">正在加载...</div>
       )}
 
       {!loading && providers.length === 0 && (
-        <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+        <div className="card loading-card">
           暂无 Provider。请先在 Provider 页面添加。
         </div>
       )}
 
       {!loading && byProvider.map(({ provider, models: pModels }) => (
-        <div key={provider.id} className="card" style={{ marginBottom: 12, padding: '12px 14px' }}>
-          <div className="row" style={{ marginBottom: 8, gap: 8 }}>
+        <div key={provider.id} className="card model-card">
+          <div className="row model-card-header">
             <span className="strong">{provider.name}</span>
             <span className="badge" style={{ fontSize: 10 }}>{provider.provider}</span>
             <span className="flex1" />
@@ -979,7 +977,7 @@ function ModelsSection() {
           </div>
 
           {addingForProvider === provider.id && (
-            <div className="row" style={{ gap: 6, marginBottom: 8 }}>
+            <div className="row row-gap-sm" style={{ marginBottom: 8 }}>
               <input
                 className="input"
                 style={{ flex: 1, fontSize: 12 }}
@@ -995,11 +993,11 @@ function ModelsSection() {
           )}
 
           {pModels.length === 0 && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', padding: '4px 0' }}>暂无模型</div>
+            <div className="model-card-empty">暂无模型</div>
           )}
 
           {pModels.map((m) => (
-            <div key={m.id} className="row" style={{ padding: '6px 0', gap: 8, borderTop: '1px solid var(--border-subtle, rgba(0,0,0,0.06))' }}>
+            <div key={m.id} className="row model-row-border">
               <span className="mono-sm" style={{ flex: 1, fontSize: 12 }}>{m.name}</span>
               <div
                 className={`switch${m.enabled ? ' on' : ''}`}
@@ -1096,22 +1094,20 @@ function RulesSection() {
         <h2>规则</h2>
         <div className="lede">多层规则按优先级合成为有效 prompt 注入。下方按层级展示来源，并显示冲突与覆盖。</div>
 
-        <div className="row" style={{ marginBottom: 16, padding: '10px 12px', background: 'var(--primary-soft)', borderRadius: 'var(--r-md)', gap: 10, border: '1px solid var(--border)' }}>
+        <div className="row info-banner">
           <Icons.Brain size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-          <div className="flex1" style={{ fontSize: 12.5 }}>
+          <div className="flex1 info-banner-text">
             <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length} 个作用域
           </div>
           <button className="btn sm primary" onClick={refresh}><Icons.Refresh size={11} /> 刷新</button>
         </div>
 
         {error && (
-          <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>
-            {error}
-          </div>
+          <div className="alert-banner">{error}</div>
         )}
 
         {loading ? (
-          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+          <div className="card loading-card">
             正在加载规则...
           </div>
         ) : (
@@ -1171,13 +1167,13 @@ function RuleLayer({
   return (
     <div className="rule-layer">
       <div className="rule-layer-h">
-        <span className="badge" style={{ background: badgeColor + '20', color: badgeColor, borderColor: 'transparent' }}>{badge}</span>
+        <span className="badge rule-badge" style={{ background: badgeColor + '20', color: badgeColor }}>{badge}</span>
         <div>
           <span className="name">{scope}</span>
           <span className="desc"> · {desc}</span>
         </div>
-        <div style={{ flex: 1 }} />
-        {readOnly && <span className="badge" style={{ fontSize: 10 }}>只读</span>}
+        <div className="flex1" />
+        {readOnly && <span className="badge rule-readonly-badge">只读</span>}
         {!readOnly && <button className="icon-btn" title="新增规则" onClick={onAdd}><Icons.Plus size={13} /></button>}
         <button className="icon-btn"><Icons.ChevronDown size={13} /></button>
       </div>
@@ -1280,7 +1276,7 @@ function RuleEditPanel({
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="输入要注入到 Agent prompt 的规则内容"
-              style={{ minHeight: 150, resize: 'vertical' }}
+              className="rule-textarea"
             />
           </div>
         </div>
@@ -1398,24 +1394,24 @@ function McpSection() {
 
   return (
     <div className="settings-section">
-      <div className="row" style={{ alignItems: 'flex-end', marginBottom: 18 }}>
+      <div className="row section-header-row">
         <div className="flex1">
-          <h2 style={{ margin: 0 }}>MCP 服务器</h2>
-          <div className="lede" style={{ margin: '4px 0 0' }}>配置 Model Context Protocol 服务器，为 Agent 提供外部工具和数据源。</div>
+          <h2 className="section-h2">MCP 服务器</h2>
+          <div className="lede section-lede">配置 Model Context Protocol 服务器，为 Agent 提供外部工具和数据源。</div>
         </div>
         <span className="badge primary dot">{activeCount} / {servers.length} 已连接</span>
       </div>
 
-      {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+      {error && <div className="alert-banner">{error}</div>}
 
       <div className="card">
         {loading ? (
-          <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 12 }}>正在加载 MCP 服务器...</div>
+          <div className="loading-sm">正在加载 MCP 服务器...</div>
         ) : servers.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+          <div className="mcp-empty-state">
             <Icons.MCP size={24} />
-            <div className="strong" style={{ marginTop: 10, color: 'var(--text)' }}>暂无 MCP 服务器</div>
-            <div style={{ fontSize: 11, marginTop: 4 }}>添加 MCP 服务器以扩展 Agent 的工具能力</div>
+            <div className="strong mcp-empty-title">暂无 MCP 服务器</div>
+            <div className="mcp-empty-desc">添加 MCP 服务器以扩展 Agent 的工具能力</div>
           </div>
         ) : (
           servers.map((server) => (
@@ -1424,7 +1420,7 @@ function McpSection() {
               title={server.name}
               desc={formatMcpServerDesc(server)}
               right={
-                <div className="row" style={{ gap: 4 }}>
+                <div className="row row-gap-xs">
                   <span className={`badge ${server.enabled ? 'success' : 'danger'} dot`}>
                     {server.enabled ? '已启用' : '已禁用'}
                   </span>
@@ -1474,13 +1470,13 @@ function McpSection() {
               placeholder={draft.type === 'stdio' ? 'npx -y @modelcontextprotocol/server-filesystem .' : 'https://mcp.example.com/sse'}
             />
           </div>
-          <div className="row" style={{ gap: 8, marginTop: 12 }}>
+          <div className="row row-gap-sm mt-sm">
             <button className="btn primary sm" onClick={() => void addServer()}><Icons.Plus size={11} /> 添加</button>
             <button className="btn ghost sm" onClick={resetDraft}>取消</button>
           </div>
         </div>
       ) : (
-        <button className="btn ghost sm" style={{ marginTop: 12 }} onClick={() => setShowAddForm(true)}>
+        <button className="btn ghost sm mt-sm" onClick={() => setShowAddForm(true)}>
           <Icons.Plus size={11} /> 添加 MCP 服务器
         </button>
       )}
@@ -1516,11 +1512,11 @@ function SkillsSection() {
       <h2>Skills</h2>
       <div className="lede">管理 Agent 可使用的技能模块。启用或禁用会影响 Agent 在对话中可调用的能力。</div>
 
-      {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+      {error && <div className="alert-banner">{error}</div>}
 
       <div className="card">
         {loading ? (
-          <div style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>正在加载 Skills...</div>
+          <div className="loading-card">正在加载 Skills...</div>
         ) : skills.map((skill) => {
           const meta = parseSkillManifest(skill.manifestJson)
           return (
@@ -1539,7 +1535,7 @@ function SkillsSection() {
         })}
       </div>
 
-      <div style={{ marginTop: 16, color: 'var(--text-muted)', fontSize: 'var(--font-xs)' }}>
+      <div className="skills-hint">
         Skill 配置保存在本地 SQLite。自定义 Skill 安装将在后续版本支持。
       </div>
     </div>
@@ -1557,10 +1553,10 @@ function WorkflowTemplatesSection() {
 
   return (
     <div className="settings-section">
-      <div className="row" style={{ alignItems: 'flex-end', marginBottom: 18 }}>
+      <div className="row section-header-row">
         <div className="flex1">
-          <h2 style={{ margin: 0 }}>工作流模板</h2>
-          <div className="lede" style={{ margin: '4px 0 0' }}>管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。</div>
+          <h2 className="section-h2">工作流模板</h2>
+          <div className="lede section-lede">管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。</div>
         </div>
         <button className="btn ghost sm" onClick={restoreDefaults}><Icons.Refresh size={11} /> 恢复内置</button>
       </div>
@@ -1654,9 +1650,9 @@ function PermissionsSection() {
 
       <div className="subsec-h">权限 Profile</div>
       {loading ? (
-        <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>加载中…</div>
+        <div className="loading-sm">加载中…</div>
       ) : (
-        <div className="row" style={{ gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+        <div className="row perm-profile-row">
           {profiles.map((p) => {
             const meta = PROFILE_META[p.id]
             return (
@@ -1729,7 +1725,7 @@ function PermissionsSection() {
         <SettingsRow
           title="审计日志保留"
           right={
-            <select style={{ height: 26, padding: '0 8px' }} defaultValue="90">
+            <select className="select-sm" defaultValue="90">
               <option value="30">30 天</option>
               <option value="90">90 天</option>
               <option value="365">1 年</option>
@@ -1746,26 +1742,16 @@ function ProfileChip({ active, onClick, icon, name, desc }: { active: boolean; o
   return (
     <button
       onClick={onClick}
+      className="profile-chip"
       style={{
-        display: 'flex', alignItems: 'center', gap: 10,
-        padding: '10px 14px',
         border: active ? '1.5px solid var(--primary)' : '1px solid var(--border)',
-        borderRadius: 'var(--r-md)',
         background: active ? 'var(--primary-soft)' : 'var(--panel)',
-        cursor: 'default',
-        minWidth: 180,
-        textAlign: 'left',
       }}
     >
-      <span style={{
-        width: 28, height: 28, borderRadius: 6,
-        background: active ? 'var(--primary)' : 'var(--bg-soft)',
-        color: active ? '#fff' : 'var(--text-muted)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>{icon}</span>
+      <span className={`profile-chip-icon ${active ? 'active' : ''}`}>{icon}</span>
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: active ? 'var(--primary)' : 'var(--text-strong)' }}>{name}</div>
-        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{desc}</div>
+        <div className={`profile-chip-name ${active ? 'active' : ''}`}>{name}</div>
+        <div className="profile-chip-desc">{desc}</div>
       </div>
     </button>
   )
@@ -1779,11 +1765,11 @@ function PermRule({ icon, name, hint, scope, mode, onModeChange }: { icon: React
         <div className="name">{name}</div>
         <div className="hint">{hint}</div>
       </div>
-      <select defaultValue={scope} style={{ width: '100%' }}>
+      <select defaultValue={scope} className="select-full">
         <option>工作区内</option><option>本会话</option><option>本项目</option><option>任意</option>
         <option>profile 内</option><option>按 server</option><option>域名白名单</option>
       </select>
-      <select value={mode} onChange={(e) => onModeChange?.(e.target.value as PermissionMode)} style={{ width: '100%' }}>
+      <select value={mode} onChange={(e) => onModeChange?.(e.target.value as PermissionMode)} className="select-full">
         <option value="allow">允许</option>
         <option value="ask">询问</option>
         <option value="ask-twice">双重确认</option>

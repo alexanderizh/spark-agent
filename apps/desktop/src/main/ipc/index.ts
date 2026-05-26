@@ -11,9 +11,9 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
-import { dialog } from 'electron'
+import { dialog, shell } from 'electron'
 import { createLogger } from '@spark/shared'
-import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
+import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
 import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
@@ -108,6 +108,16 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().searchSessions(req)
   })
 
+  typedIpcHandle('session:update', async (req) => {
+    log.info(`session:update requested, sessionId=${req.sessionId}`)
+    return getSessionService().updateSession(req)
+  })
+
+  typedIpcHandle('session:delete', async (req) => {
+    log.info(`session:delete requested, sessionId=${req.sessionId}`)
+    return getSessionService().deleteSession(req.sessionId)
+  })
+
   // ─── Provider Handlers ─────────────────────────────────────────────────
   // P1-09 完整实现，当前为骨架
 
@@ -148,7 +158,9 @@ export function registerAllIpcHandlers(): void {
     }
 
     log.info(`workspace:open requested, rootPath=${rootPath}`)
-    const workspace = await getWorkspaceService().openWorkspace(rootPath, req.create?.name)
+    const workspace = await getWorkspaceService().openWorkspace(rootPath, req.create?.name, {
+      create: req.create != null,
+    })
     return {
       workspace: toWorkspaceInfo(workspace),
     }
@@ -158,6 +170,45 @@ export function registerAllIpcHandlers(): void {
     log.info('workspace:get-current requested')
     const workspace = getWorkspaceService().getCurrent()
     return { workspace: workspace == null ? null : toWorkspaceInfo(workspace) }
+  })
+
+  typedIpcHandle('workspace:list', async (req) => {
+    log.info('workspace:list requested')
+    const service = getWorkspaceService()
+    const listParams = req.includeArchived === undefined ? {} : { includeArchived: req.includeArchived }
+    return {
+      workspaces: service.listWorkspaces(req.limit, req.offset, listParams).map(toWorkspaceInfo),
+      total: service.countWorkspaces(listParams),
+    }
+  })
+
+  typedIpcHandle('workspace:update', async (req) => {
+    log.info(`workspace:update requested, workspaceId=${req.workspaceId}`)
+    const workspace = getWorkspaceService().updateWorkspace(req.workspaceId, {
+      ...(req.name !== undefined ? { name: req.name } : {}),
+      ...(req.pinned !== undefined ? { pinnedAt: req.pinned ? new Date().toISOString() : null } : {}),
+      ...(req.archived !== undefined ? { archivedAt: req.archived ? new Date().toISOString() : null } : {}),
+    })
+    return { workspace: toWorkspaceInfo(workspace) }
+  })
+
+  typedIpcHandle('workspace:delete', async (req) => {
+    log.info(`workspace:delete requested, workspaceId=${req.workspaceId}`)
+    const sessionRepo = new SessionRepository(getDatabase())
+    const eventRepo = new EventRepository(getDatabase())
+    const deletedSessionIds = sessionRepo.deleteByWorkspaceId(req.workspaceId)
+    for (const sessionId of deletedSessionIds) {
+      eventRepo.deleteBySession(sessionId)
+    }
+    const deleted = getWorkspaceService().deleteWorkspace(req.workspaceId)
+    return { deleted, deletedSessionIds }
+  })
+
+  typedIpcHandle('workspace:open-folder', async (req) => {
+    log.info(`workspace:open-folder requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    shell.showItemInFolder(workspace.root_path)
+    return { opened: true }
   })
 
   typedIpcHandle('workspace:close', async (req) => {
@@ -338,11 +389,15 @@ function toWorkspaceInfo(workspace: {
   root_path: string
   created_at: string
   updated_at: string
+  pinned_at: string | null
+  archived_at: string | null
 }): WorkspaceInfo {
   return {
     id: workspace.id,
     name: workspace.name,
     rootPath: workspace.root_path,
+    pinnedAt: workspace.pinned_at,
+    archivedAt: workspace.archived_at,
     createdAt: workspace.created_at,
     updatedAt: workspace.updated_at,
   }

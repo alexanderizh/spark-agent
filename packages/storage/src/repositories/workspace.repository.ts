@@ -21,6 +21,8 @@ export interface WorkspaceRow {
   agent_runtime_path: string
   project_kind: string
   relocated_from_json: string | null
+  pinned_at: string | null
+  archived_at: string | null
   created_at: string
   updated_at: string
 }
@@ -95,7 +97,7 @@ export class WorkspaceRepository extends BaseRepository {
   }
 
   /** 更新工作区元数据 */
-  update(id: string, params: { name?: string; projectKind?: string }): void {
+  update(id: string, params: { name?: string; projectKind?: string; pinnedAt?: string | null; archivedAt?: string | null }): void {
     const fields: string[] = []
     const values: unknown[] = []
 
@@ -107,6 +109,16 @@ export class WorkspaceRepository extends BaseRepository {
     if (params.projectKind !== undefined) {
       fields.push('project_kind = ?')
       values.push(params.projectKind)
+    }
+
+    if (params.pinnedAt !== undefined) {
+      fields.push('pinned_at = ?')
+      values.push(params.pinnedAt)
+    }
+
+    if (params.archivedAt !== undefined) {
+      fields.push('archived_at = ?')
+      values.push(params.archivedAt)
     }
 
     if (fields.length === 0) {
@@ -126,11 +138,26 @@ export class WorkspaceRepository extends BaseRepository {
     return this.deleteById(id)
   }
 
-  /** 列出所有工作区（按最近更新排序） */
-  listAll(limit = 50, offset = 0): WorkspaceRow[] {
-    const stmt = this.raw.prepare(
-      'SELECT * FROM workspaces ORDER BY updated_at DESC LIMIT ? OFFSET ?',
-    )
+  /** 列出所有工作区（置顶优先，按最近更新排序） */
+  listAll(limit = 50, offset = 0, params: { includeArchived?: boolean } = {}): WorkspaceRow[] {
+    const whereClause = params.includeArchived === true ? '' : 'WHERE archived_at IS NULL'
+    const stmt = this.raw.prepare(`
+      SELECT * FROM workspaces
+      ${whereClause}
+      ORDER BY pinned_at IS NULL ASC, pinned_at DESC, updated_at DESC
+      LIMIT ? OFFSET ?
+    `)
     return stmt.all(limit, offset) as WorkspaceRow[]
+  }
+
+  /** 统计工作区总数 */
+  countAll(params: { includeArchived?: boolean } = {}): number {
+    if (params.includeArchived === true) {
+      return this.count()
+    }
+
+    const stmt = this.raw.prepare('SELECT COUNT(*) as count FROM workspaces WHERE archived_at IS NULL')
+    const row = stmt.get() as { count: number }
+    return row.count
   }
 }

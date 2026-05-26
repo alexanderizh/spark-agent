@@ -27,6 +27,8 @@ export interface SessionRow {
   rule_bundle_id: string | null
   permission_profile_id: string | null
   provider_profile_id: string | null
+  pinned_at: string | null
+  archived_at: string | null
   created_at: string
   updated_at: string
 }
@@ -49,6 +51,7 @@ export interface ListSessionsParams {
   projectId?: string
   workspaceId?: string
   status?: string
+  includeArchived?: boolean
   limit?: number
   offset?: number
 }
@@ -120,9 +123,34 @@ export class SessionRepository extends BaseRepository {
     stmt.run(title, now, id)
   }
 
+  /** 更新会话生命周期状态 */
+  updateLifecycle(id: string, params: { pinnedAt?: string | null; archivedAt?: string | null }): void {
+    const fields: string[] = []
+    const values: unknown[] = []
+
+    if (params.pinnedAt !== undefined) {
+      fields.push('pinned_at = ?')
+      values.push(params.pinnedAt)
+    }
+
+    if (params.archivedAt !== undefined) {
+      fields.push('archived_at = ?')
+      values.push(params.archivedAt)
+    }
+
+    if (fields.length === 0) return
+
+    fields.push('updated_at = ?')
+    values.push(new Date().toISOString())
+    values.push(id)
+
+    const stmt = this.raw.prepare(`UPDATE sessions SET ${fields.join(', ')} WHERE id = ?`)
+    stmt.run(...values)
+  }
+
   /** 查询会话列表 */
   list(params: ListSessionsParams = {}): { sessions: SessionRow[]; total: number } {
-    const { projectId, workspaceId, status, limit = 50, offset = 0 } = params
+    const { projectId, workspaceId, status, includeArchived = false, limit = 50, offset = 0 } = params
 
     // 动态构建 WHERE 子句（参数化，防止 SQL 注入）
     const conditions: string[] = []
@@ -136,6 +164,9 @@ export class SessionRepository extends BaseRepository {
       conditions.push('status = ?')
       args.push(status)
     }
+    if (!includeArchived) {
+      conditions.push('archived_at IS NULL')
+    }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
 
@@ -145,7 +176,9 @@ export class SessionRepository extends BaseRepository {
 
     // 查列表（按更新时间倒序）
     const listStmt = this.raw.prepare(
-      `SELECT * FROM sessions ${whereClause} ORDER BY updated_at DESC LIMIT ? OFFSET ?`,
+      `SELECT * FROM sessions ${whereClause}
+       ORDER BY pinned_at IS NULL ASC, pinned_at DESC, updated_at DESC
+       LIMIT ? OFFSET ?`,
     )
     const sessions = listStmt.all(...args, limit, offset) as SessionRow[]
 
@@ -171,8 +204,28 @@ export class SessionRepository extends BaseRepository {
   searchByTitle(query: string, limit: number = 20): SessionRow[] {
     const pattern = `%${query}%`
     const stmt = this.raw.prepare(
-      `SELECT * FROM sessions WHERE title LIKE ? ORDER BY updated_at DESC LIMIT ?`,
+      `SELECT * FROM sessions WHERE archived_at IS NULL AND title LIKE ? ORDER BY updated_at DESC LIMIT ?`,
     )
     return stmt.all(pattern, limit) as SessionRow[]
+  }
+
+  /** 删除会话记录 */
+  delete(id: string): boolean {
+    return this.deleteById(id)
+  }
+
+  /** 删除指定 workspace 下的会话记录 */
+  deleteByWorkspaceId(workspaceId: string): string[] {
+    const rows = this.list({ workspaceId, includeArchived: true, limit: 1000 }).sessions
+    const stmt = this.raw.prepare('DELETE FROM sessions WHERE id = ?')
+    const deletedIds: string[] = []
+    const remove = this.raw.transaction(() => {
+      for (const row of rows) {
+        const result = stmt.run(row.id)
+        if (result.changes > 0) deletedIds.push(row.id)
+      }
+    })
+    remove()
+    return deletedIds
   }
 }

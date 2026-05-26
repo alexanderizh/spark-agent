@@ -368,9 +368,19 @@ button { font-family: inherit; }
   padding: var(--pad-sm);
   border-top: 1px solid var(--divider);
 }
+.sidebar.collapsed .sidebar-bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 .sidebar-user {
   display: flex; align-items: center; gap: 10px;
   padding: var(--pad-sm); border-radius: var(--r-md);
+}
+.sidebar.collapsed .sidebar-user {
+  justify-content: center;
+  width: 100%;
+  padding-inline: 0;
 }
 .sidebar-user:hover { background: var(--hover); }
 .avatar {
@@ -410,7 +420,7 @@ button { font-family: inherit; }
 }
 .collapsed-toggle {
   opacity: 0.6;
-  width: 100%;
+  width: 32px;
   height: 32px;
   margin-top: 4px;
   border-radius: var(--r-md);

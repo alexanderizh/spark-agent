@@ -154,6 +154,13 @@ export class EventRepository extends BaseRepository {
     return row.count
   }
 
+  /** 删除指定 session 的所有事件 */
+  deleteBySession(sessionId: string): number {
+    const stmt = this.raw.prepare('DELETE FROM agent_events WHERE session_id = ?')
+    const result = stmt.run(sessionId)
+    return result.changes
+  }
+
   /** 按事件内容模糊搜索，返回匹配的 session ID 列表和内容片段 */
   searchByContent(query: string, limit: number = 20): Array<{ sessionId: string; snippet: string }> {
     const pattern = `%${query}%`

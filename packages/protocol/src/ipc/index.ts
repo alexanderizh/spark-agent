@@ -74,8 +74,28 @@ export interface SessionGetHistoryResponse {
 
 export interface SessionListRequest {
   workspaceId?: string
+  includeArchived?: boolean
   limit?: number
   offset?: number
+}
+
+export interface SessionUpdateRequest {
+  sessionId: SessionId
+  title?: string
+  pinned?: boolean
+  archived?: boolean
+}
+
+export interface SessionUpdateResponse {
+  session: SessionListResponse['sessions'][number]
+}
+
+export interface SessionDeleteRequest {
+  sessionId: SessionId
+}
+
+export interface SessionDeleteResponse {
+  deleted: boolean
 }
 
 export interface SessionSearchRequest {
@@ -105,8 +125,12 @@ export interface SessionListResponse {
   sessions: Array<{
     id: SessionId
     title: string
+    projectId: string
+    workspaceIds: string[]
     providerProfileId: string
     status: 'idle' | 'running' | 'error'
+    pinnedAt: string | null
+    archivedAt: string | null
     createdAt: string
     updatedAt: string
     messageCount: number
@@ -196,6 +220,8 @@ export interface WorkspaceInfo {
   id: string
   name: string
   rootPath: string
+  pinnedAt: string | null
+  archivedAt: string | null
   createdAt: string
   updatedAt: string
 }
@@ -218,6 +244,45 @@ export interface WorkspaceGetCurrentRequest {}
 
 export interface WorkspaceGetCurrentResponse {
   workspace: WorkspaceInfo | null
+}
+
+export interface WorkspaceListRequest {
+  includeArchived?: boolean
+  limit?: number
+  offset?: number
+}
+
+export interface WorkspaceListResponse {
+  workspaces: WorkspaceInfo[]
+  total: number
+}
+
+export interface WorkspaceUpdateRequest {
+  workspaceId: string
+  name?: string
+  pinned?: boolean
+  archived?: boolean
+}
+
+export interface WorkspaceUpdateResponse {
+  workspace: WorkspaceInfo
+}
+
+export interface WorkspaceDeleteRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceDeleteResponse {
+  deleted: boolean
+  deletedSessionIds: string[]
+}
+
+export interface WorkspaceOpenFolderRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceOpenFolderResponse {
+  opened: boolean
 }
 
 export interface WorkspaceCloseRequest {
@@ -571,6 +636,8 @@ export interface IpcChannelMap {
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]
   'session:list': [SessionListRequest, SessionListResponse]
   'session:search': [SessionSearchRequest, SessionSearchResponse]
+  'session:update': [SessionUpdateRequest, SessionUpdateResponse]
+  'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]
@@ -582,6 +649,10 @@ export interface IpcChannelMap {
   // Workspace
   'workspace:open': [WorkspaceOpenRequest, WorkspaceOpenResponse]
   'workspace:get-current': [WorkspaceGetCurrentRequest, WorkspaceGetCurrentResponse]
+  'workspace:list': [WorkspaceListRequest, WorkspaceListResponse]
+  'workspace:update': [WorkspaceUpdateRequest, WorkspaceUpdateResponse]
+  'workspace:delete': [WorkspaceDeleteRequest, WorkspaceDeleteResponse]
+  'workspace:open-folder': [WorkspaceOpenFolderRequest, WorkspaceOpenFolderResponse]
   'workspace:close': [WorkspaceCloseRequest, WorkspaceCloseResponse]
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
 

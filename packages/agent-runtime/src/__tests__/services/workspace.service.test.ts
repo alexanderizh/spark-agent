@@ -17,6 +17,8 @@ function makeWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
     agent_runtime_path: '/tmp/workspace/.agent_spark',
     project_kind: 'unknown',
     relocated_from_json: null,
+    pinned_at: null,
+    archived_at: null,
     created_at: now,
     updated_at: now,
     ...overrides,
@@ -49,6 +51,7 @@ function makeRepo() {
       return row
     }),
     listAll: vi.fn((limit = 50, offset = 0) => [...rows.values()].slice(offset, offset + limit)),
+    countAll: vi.fn(() => rows.size),
     delete: vi.fn((id: string) => rows.delete(id)),
     update: vi.fn((id: string, params: { name?: string; projectKind?: string }) => {
       const row = rows.get(id)
@@ -162,6 +165,7 @@ describe('WorkspaceService', () => {
 
   it('updateWorkspace does not mutate current for another workspace', async () => {
     const workspace = await service.openWorkspace(tempDir)
+    repo.rows.set('other', makeWorkspace({ id: 'other', root_path: path.join(tempDir, 'other') }))
 
     service.updateWorkspace('other', { name: 'Other' })
 
@@ -175,7 +179,7 @@ describe('WorkspaceService', () => {
 
     const result = service.listWorkspaces(10, 5)
 
-    expect(repo.listAll).toHaveBeenCalledWith(10, 5)
+    expect(repo.listAll).toHaveBeenCalledWith(10, 5, {})
     expect(result).toBe(listed)
   })
 
