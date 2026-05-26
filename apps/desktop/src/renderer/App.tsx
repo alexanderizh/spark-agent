@@ -1,5 +1,6 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react'
 import { AppProvider, useApp, PRIMARIES } from './design/AppContext'
+import { ToastProvider, ToastContainer } from './design/components/Toast'
 import type { PermissionApprovalRequest } from '@spark/protocol'
 
 import { HomeView } from './design/views/HomeView'
@@ -198,8 +199,33 @@ function Shell() {
       <div className="app-body">
         {/* Sidebar */}
         <div className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}`}>
+          <div className="sidebar-control">
+            {isExpanded ? (
+              <>
+                <span className="sidebar-control-label">Menu</span>
+                <button
+                  className="icon-btn sidebar-control-btn"
+                  onClick={() => setTweak('sidebar', 'collapsed')}
+                  aria-label="Collapse sidebar"
+                  title="Collapse sidebar"
+                >
+                  <Icons.ChevronLeft size={14} />
+                </button>
+              </>
+            ) : (
+              <button
+                className="icon-btn sidebar-control-btn collapsed"
+                onClick={() => setTweak('sidebar', 'expanded')}
+                aria-label="Expand sidebar"
+                title="Expand sidebar"
+              >
+                <Icons.PanelLeft size={16} />
+              </button>
+            )}
+          </div>
+
           {/* Search / Command bar */}
-          <div className="sidebar-section" style={{ paddingTop: 10 }}>
+          <div className="sidebar-section">
             <button
               className="nav-item"
               onClick={() => setTweak('showPalette', true)}
@@ -357,6 +383,9 @@ function Shell() {
       {approvalRequest && <PermissionModal request={approvalRequest} onClose={() => setApprovalRequest(null)} />}
 
       {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}
+
+      {/* Global toast notifications */}
+      <ToastContainer />
     </div>
   )
 }
@@ -364,7 +393,9 @@ function Shell() {
 export function App() {
   return (
     <AppProvider>
-      <Shell />
+      <ToastProvider>
+        <Shell />
+      </ToastProvider>
     </AppProvider>
   )
 }

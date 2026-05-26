@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
 import type {
   ProviderHealthCheckResponse,
@@ -173,7 +174,7 @@ function GeneralSection() {
 
         <label>默认工作区<span className="sub">新建项目会话时的预选根目录</span></label>
         <div className="control">
-          <input style={{ flex: 1 }} defaultValue="/Users/hayden/work" />
+          <input className="flex1" defaultValue="/Users/hayden/work" />
           <button className="btn"><Icons.Folder size={12} /> 浏览…</button>
         </div>
 
@@ -196,8 +197,8 @@ function GeneralSection() {
 
         <label>检查点保留<span className="sub">每个会话保留多少历史检查点</span></label>
         <div className="control">
-          <input type="number" defaultValue="50" style={{ width: 80 }} />
-          <span className="muted" style={{ fontSize: 12 }}>个 · 超出后按时间淘汰</span>
+          <input type="number" defaultValue="50" className="input-w-sm" />
+          <span className="muted text-xs-12">个 · 超出后按时间淘汰</span>
         </div>
       </div>
 
@@ -228,41 +229,32 @@ function AppearanceSection() {
       <div className="lede">主题、密度、字体、布局。这些设置实时生效。</div>
 
       <div className="subsec-h">主题</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 20 }}>
+      <div className="theme-grid">
         <ThemePreview kind="light" active={t.theme === 'light'} onClick={() => setTweak('theme', 'light')} />
         <ThemePreview kind="dark" active={t.theme === 'dark'} onClick={() => setTweak('theme', 'dark')} />
         <ThemePreview kind="auto" active={false} onClick={() => setTweak('theme', 'light')} disabled />
       </div>
 
       <div className="subsec-h">主色</div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 20 }}>
+      <div className="color-swatch-row">
         {Object.entries(PRIMARIES).map(([color, info]) => (
           <button
             key={color}
             onClick={() => setTweak('primary', color)}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, border: 'none', background: 'transparent', cursor: 'default' }}
+            className="color-swatch"
           >
             <span
+              className={`color-swatch-circle ${t.primary === color ? 'active' : ''}`}
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: 10,
-                background: color,
                 boxShadow: t.primary === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none',
-                transition: 'box-shadow .15s',
-                position: 'relative',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#fff',
               }}
             >
               {t.primary === color && <Icons.Check size={16} />}
             </span>
-            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: t.primary === color ? 600 : 400 }}>{info.name}</span>
+            <span className={`color-swatch-label ${t.primary === color ? 'active' : ''}`}>{info.name}</span>
           </button>
         ))}
-        <button style={{ width: 38, height: 38, borderRadius: 10, border: '1.5px dashed var(--border-strong)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}>
+        <button className="color-add-btn">
           <Icons.Plus size={14} />
         </button>
       </div>
@@ -292,8 +284,8 @@ function AppearanceSection() {
 
         <label>字号<span className="sub">基础字号，其他字号按比例缩放</span></label>
         <div className="control">
-          <input type="range" min="11" max="16" defaultValue="13" style={{ flex: 1 }} />
-          <span className="mono-sm muted" style={{ width: 32, textAlign: 'right' }}>13px</span>
+          <input type="range" min="11" max="16" defaultValue="13" className="flex1" />
+          <span className="mono-sm muted range-value">13px</span>
         </div>
 
         <label>代码字体连字<span className="sub">Geist Mono ligature 例如 =&gt; → ⇒</span></label>
@@ -331,7 +323,7 @@ function AppearanceSection() {
         <SettingsRow
           title="时间戳格式"
           right={
-            <select style={{ height: 26, width: 120, padding: '0 8px' }} defaultValue="rel">
+            <select className="select-sm" defaultValue="rel">
               <option value="rel">相对时间</option>
               <option value="abs">绝对时间</option>
             </select>
@@ -353,30 +345,22 @@ function ThemePreview({ kind, active, onClick, disabled }: { kind: 'light' | 'da
     <button
       onClick={onClick}
       disabled={disabled}
-      style={{
-        border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
-        borderRadius: 'var(--r-lg)',
-        padding: 0,
-        background: 'var(--bg-soft)',
-        cursor: 'default',
-        opacity: disabled ? 0.5 : 1,
-        overflow: 'hidden',
-      }}
+      className={`theme-preview ${active ? 'active' : ''} ${disabled ? 'disabled' : ''}`}
     >
-      <div style={{ height: 88, background: c.bg, padding: 8, display: 'flex', gap: 6 }}>
-        <div style={{ width: 28, background: c.soft, borderRadius: 4, display: 'flex', flexDirection: 'column', gap: 3, padding: 3 }}>
-          {[1, 2, 3].map((i) => <div key={i} style={{ height: 3, background: c.muted, borderRadius: 2, opacity: 0.5 }} />)}
+      <div className="theme-preview-body" style={{ background: c.bg }}>
+        <div className="theme-preview-sidebar" style={{ background: c.soft }}>
+          {[1, 2, 3].map((i) => <div key={i} className="theme-preview-line" style={{ background: c.muted }} />)}
         </div>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <div style={{ height: 5, background: c.text, borderRadius: 2, width: '60%', opacity: 0.9 }} />
-          <div style={{ height: 3, background: c.muted, borderRadius: 2, width: '90%' }} />
-          <div style={{ height: 3, background: c.muted, borderRadius: 2, width: '70%' }} />
-          <div style={{ height: 14, background: c.accent, borderRadius: 3, width: '40%', marginTop: 'auto' }} />
+        <div className="theme-preview-main">
+          <div className="theme-preview-title" style={{ background: c.text }} />
+          <div className="theme-preview-text" style={{ background: c.muted, width: '90%' }} />
+          <div className="theme-preview-text" style={{ background: c.muted, width: '70%' }} />
+          <div className="theme-preview-accent" style={{ background: c.accent }} />
         </div>
       </div>
-      <div style={{ padding: '8px 10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 12, fontWeight: 600, color: 'var(--text-strong)', borderTop: '1px solid var(--border)' }}>
+      <div className="theme-preview-foot">
         <span>{kind === 'light' ? '浅色' : kind === 'dark' ? '深色' : '跟随系统'}</span>
-        {active && <Icons.Check size={13} style={{ color: 'var(--primary)' }} />}
+        {active && <Icons.Check size={13} className="color-primary" />}
       </div>
     </button>
   )
@@ -434,12 +418,12 @@ function ShortcutsSection() {
   ]
 
   return (
-    <div className="settings-section" style={{ maxWidth: 820 }}>
+    <div className="settings-section section-wider">
       <h2>快捷键</h2>
       <div className="lede">所有组合可在下方搜索并自定义。Mac 使用 ⌘，其他系统替换为 Ctrl。</div>
 
-      <div className="row" style={{ marginBottom: 12 }}>
-        <div className="search-input" style={{ flex: 1, minWidth: 0 }}><Icons.Search /><input placeholder="搜索动作或按键..." /></div>
+      <div className="row row-mb-sm">
+        <div className="search-input flex1"><Icons.Search /><input placeholder="搜索动作或按键..." /></div>
         <button className="btn"><Icons.Refresh size={12} /> 重置全部</button>
       </div>
 
@@ -465,6 +449,7 @@ function ShortcutsSection() {
 /* ───────── PROVIDERS ───────── */
 function ProvidersSection() {
   const { setTweak, t } = useApp()
+  const { toast } = useToast()
   const showProviderEdit = t.showProviderEdit
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -482,26 +467,37 @@ function ProvidersSection() {
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('确认删除该 Provider？')) return
-    await deleteProvider({ id })
-    refresh()
+    try {
+      await deleteProvider({ id })
+      toast.success('Provider 已删除')
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除失败')
+    }
   }
 
   const handleHealthCheck = async (id: string) => {
     try {
       const r = await healthCheck({ id })
       setHealthMap(prev => ({ ...prev, [id]: r }))
-    } catch {
+      if (r.healthy) {
+        toast.success(`连接成功${r.latencyMs != null ? ` · 延迟 ${r.latencyMs}ms` : ''}`)
+      } else {
+        toast.error('连接失败：Provider 返回不健康状态')
+      }
+    } catch (err) {
       setHealthMap(prev => ({ ...prev, [id]: { healthy: false } }))
+      toast.error(err instanceof Error ? err.message : '连接测试失败')
     }
   }
 
   return (
     <>
       <div className="settings-section">
-        <div className="row" style={{ alignItems: 'flex-end', marginBottom: 18 }}>
-          <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0 }}>Provider</h2>
-            <div className="lede" style={{ margin: '4px 0 0' }}>配置供应商的协议格式、请求地址、鉴权和可用模型列表。每个 Provider 本身就是一份可直接运行的模型配置。</div>
+        <div className="row section-header-row">
+          <div className="flex1">
+            <h2 className="section-h2">Provider</h2>
+            <div className="lede section-lede">配置供应商的协议格式、请求地址、鉴权和可用模型列表。每个 Provider 本身就是一份可直接运行的模型配置。</div>
           </div>
           <button className="btn primary" onClick={() => { setEditingId(null); setTweak('showProviderEdit', true) }}>
             <Icons.Plus size={12} /> 添加 Provider
@@ -509,7 +505,7 @@ function ProvidersSection() {
         </div>
 
         {profiles.length === 0 ? (
-          <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+          <div className="empty-placeholder-lg">
             尚未配置 Provider — 点击"添加 Provider"开始
           </div>
         ) : (
@@ -558,9 +554,9 @@ function ProviderCardX({
 }) {
   return (
     <div className="provider-card">
-      <div className="provider-logo" style={{ borderColor: 'transparent' }}>{logo}</div>
+      <div className="provider-logo border-transparent">{logo}</div>
       <div className="provider-info">
-        <div className="row" style={{ gap: 8 }}>
+        <div className="row row-gap-sm">
           <span className="name">{name}</span>
           {status === 'ok' && <span className="badge success dot">在线</span>}
           {status === 'warning' && <span className="badge warning dot">需注意</span>}
@@ -569,9 +565,9 @@ function ProviderCardX({
           {status === 'unknown' && <span className="badge dot">未验证</span>}
         </div>
         <div className="desc">{desc}</div>
-        {detail && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{detail}</div>}
+        {detail && <div className="muted detail-sm">{detail}</div>}
       </div>
-      <div className="row" style={{ gap: 4, alignSelf: 'flex-start', marginTop: 6 }}>
+      <div className="row row-gap-xs self-start mt-sm">
         <button className="btn ghost sm" onClick={onEdit}><Icons.Edit size={11} /> 编辑</button>
         <button className="icon-btn" title="健康检查" onClick={onHealthCheck}><Icons.Refresh size={13} /></button>
         <button className="icon-btn" title="删除" onClick={onDelete}><Icons.X size={13} /></button>
@@ -582,6 +578,7 @@ function ProviderCardX({
 
 /* ───────── PROVIDER EDIT slide panel ───────── */
 export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: string | null; onClose: () => void }) {
+  const { toast } = useToast()
   const [form, setForm] = useState<ProviderForm>({
     name: '',
     provider: 'anthropic',
@@ -650,8 +647,10 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
         })
       }
       onClose()
+      toast.success(profileId ? 'Provider 已更新' : 'Provider 已创建')
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存失败')
+      toast.error(e instanceof Error ? e.message : '保存失败')
     } finally {
       setSaving(false)
     }
@@ -672,7 +671,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
         </div>
 
         <div className="slide-panel-body">
-          {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+          {error && <div className="alert-banner">{error}</div>}
 
           <div className="subsec-h">基础</div>
           <div className="form-grid">
@@ -722,7 +721,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
         </div>
 
         <div className="slide-panel-foot">
-          <span style={{ flex: 1 }} />
+          <span className="flex1" />
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" onClick={handleSave} disabled={saving}>
             <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
@@ -752,15 +751,15 @@ function joinModelIds(modelIds: string[]): string {
 export function ProfileEditModal({ onClose }: { onClose: () => void }) {
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal" style={{ width: 580, maxHeight: '85vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
-          <div className="modal-h-icon" style={{ background: 'var(--primary-soft)', color: 'var(--primary)' }}><Icons.Brain size={18} /></div>
+          <div className="modal-h-icon modal-h-icon-primary"><Icons.Brain size={18} /></div>
           <div>
             <div className="modal-title">编辑模型 Profile</div>
             <div className="modal-subtitle">Anthropic · Claude Sonnet 4.5</div>
           </div>
         </div>
-        <div className="modal-body" style={{ overflow: 'auto', flex: 1 }}>
+        <div className="modal-body modal-body-scroll">
           <div className="form-grid">
             <label>显示名称</label>
             <input defaultValue="Sonnet 4.5 · 默认" />
@@ -769,7 +768,7 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             <input className="mono-sm" defaultValue="claude-sonnet-4-5-20250929" />
 
             <label>角色<span className="sub">该 profile 适配的角色</span></label>
-            <div className="row" style={{ flexWrap: 'wrap', gap: 5 }}>
+            <div className="row row-gap-xs">
               {['default', 'planner', 'coder', 'reviewer', 'fast', 'vision', 'long-context'].map((r) => (
                 <span
                   key={r}
@@ -783,8 +782,8 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 
             <label>Temperature</label>
             <div className="control">
-              <input type="range" min="0" max="2" step="0.1" defaultValue="0.7" style={{ flex: 1 }} />
-              <span className="mono-sm muted" style={{ width: 32, textAlign: 'right' }}>0.7</span>
+              <input type="range" min="0" max="2" step="0.1" defaultValue="0.7" className="flex1" />
+              <span className="mono-sm muted range-value">0.7</span>
             </div>
 
             <label>最大输入 token</label>
@@ -804,34 +803,34 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 
             <label>单次运行成本上限</label>
             <div className="control">
-              <span style={{ color: 'var(--text-muted)' }}>$</span>
-              <input type="number" defaultValue="5.00" step="0.50" style={{ flex: 1 }} />
-              <span className="muted" style={{ fontSize: 12 }}>USD · 超出后切换到 fallback</span>
+              <span className="muted">$</span>
+              <input type="number" defaultValue="5.00" step="0.50" className="flex1" />
+              <span className="muted text-xs-12">USD · 超出后切换到 fallback</span>
             </div>
 
             <label>超时</label>
             <div className="control">
-              <input type="number" defaultValue="120" style={{ flex: 1 }} />
-              <span className="muted" style={{ fontSize: 12 }}>秒</span>
+              <input type="number" defaultValue="120" className="flex1" />
+              <span className="muted text-xs-12">秒</span>
             </div>
 
             <label>Fallback 链<span className="sub">主模型失败或超限时按顺序尝试</span></label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div className="row" style={{ padding: '6px 8px', background: 'var(--bg-soft)', borderRadius: 6, border: '1px solid var(--border)', gap: 8 }}>
+            <div className="fallback-list">
+              <div className="row fallback-row">
                 <span className="mono-sm faint">1.</span>
                 <Icons.Brain size={13} style={{ color: 'var(--primary)' }} />
-                <span className="strong" style={{ fontSize: 12 }}>Claude Opus 4</span>
-                <span className="badge" style={{ fontSize: 9.5, marginLeft: 'auto' }}>当延迟 &gt; 5s</span>
-                <button className="icon-btn" style={{ width: 20, height: 20 }}><Icons.X size={11} /></button>
+                <span className="strong fallback-name">Claude Opus 4</span>
+                <span className="badge fallback-badge">当延迟 &gt; 5s</span>
+                <button className="icon-btn fallback-close"><Icons.X size={11} /></button>
               </div>
-              <div className="row" style={{ padding: '6px 8px', background: 'var(--bg-soft)', borderRadius: 6, border: '1px solid var(--border)', gap: 8 }}>
+              <div className="row fallback-row">
                 <span className="mono-sm faint">2.</span>
                 <Icons.Brain size={13} style={{ color: 'var(--primary)' }} />
-                <span className="strong" style={{ fontSize: 12 }}>Claude Haiku 4.5</span>
-                <span className="badge" style={{ fontSize: 9.5, marginLeft: 'auto' }}>当成本超限</span>
-                <button className="icon-btn" style={{ width: 20, height: 20 }}><Icons.X size={11} /></button>
+                <span className="strong fallback-name">Claude Haiku 4.5</span>
+                <span className="badge fallback-badge">当成本超限</span>
+                <button className="icon-btn fallback-close"><Icons.X size={11} /></button>
               </div>
-              <button className="btn ghost sm" style={{ alignSelf: 'flex-start' }}><Icons.Plus size={11} /> 添加 fallback</button>
+              <button className="btn ghost sm add-fallback-btn"><Icons.Plus size={11} /> 添加 fallback</button>
             </div>
 
             <label>启用</label>
@@ -840,7 +839,7 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
         </div>
         <div className="modal-foot">
           <button className="btn danger sm">删除 Profile</button>
-          <div style={{ flex: 1 }} />
+          <div className="flex1" />
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" onClick={onClose}><Icons.Check size={12} /> 保存</button>
         </div>
@@ -1224,7 +1223,7 @@ function RuleEditPanel({
         </div>
 
         <div className="slide-panel-body">
-          {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+          {error && <div className="alert-banner">{error}</div>}
 
           <div className="subsec-h">规则</div>
           <div className="form-grid">
@@ -1245,7 +1244,7 @@ function RuleEditPanel({
         </div>
 
         <div className="slide-panel-foot">
-          <span style={{ flex: 1 }} />
+          <span className="flex1" />
           <button className="btn" onClick={onClose}>取消</button>
           <button className="btn primary" onClick={handleSave} disabled={saving}>
             <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}

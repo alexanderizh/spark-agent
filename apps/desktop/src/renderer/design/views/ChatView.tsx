@@ -7,6 +7,7 @@ import { Icons } from '../Icons'
 import { ErrorCard } from '../ChatInteractions'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
+import { useToast } from '../components/Toast'
 import type { UIMessage, UIBlock } from '../services/event-mapper'
 import type { SessionListResponse, SessionId, SessionSearchResult, WorkspaceInfo } from '@spark/protocol'
 
@@ -16,6 +17,8 @@ type ProjectGroup = {
   workspace: WorkspaceInfo
   sessions: SessionSummary[]
 }
+
+type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
 
 export function ChatView() {
   const [active, setActive] = useState<SessionId | null>(null)
@@ -28,6 +31,8 @@ export function ChatView() {
   const [projectName, setProjectName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [notice, setNotice] = useState('')
+  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
+  const { toast } = useToast()
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -39,8 +44,13 @@ export function ChatView() {
   const { invoke: createSession } = useIpcInvoke('session:create')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: searchSessions } = useIpcInvoke('session:search')
+  const { invoke: updateSession } = useIpcInvoke('session:update')
+  const { invoke: deleteSession } = useIpcInvoke('session:delete')
   const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
+  const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
+  const { invoke: deleteWorkspace } = useIpcInvoke('workspace:delete')
+  const { invoke: openWorkspaceFolder } = useIpcInvoke('workspace:open-folder')
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
 
@@ -103,7 +113,7 @@ export function ChatView() {
       setNotice('')
       if (workspaceId == null) {
         setProjectDialog('create')
-        setNotice('请先创建或打开一个项目，然后再在项目下新建会话。')
+        toast.warning('请先创建或打开一个项目，然后再在项目下新建会话。')
         return
       }
       const provRes = await listProviders({})
@@ -123,7 +133,7 @@ export function ChatView() {
       setActiveWorkspaceId(workspaceId)
     } catch (err) {
       console.error('创建会话失败', err)
-      setNotice(err instanceof Error ? err.message : '创建会话失败')
+      toast.error(err instanceof Error ? err.message : '创建会话失败')
     }
   }
 
@@ -137,7 +147,7 @@ export function ChatView() {
       await refreshProjectsAndSessions()
     } catch (err) {
       console.error('打开项目失败', err)
-      setNotice(err instanceof Error ? err.message : '打开项目失败')
+      toast.error(err instanceof Error ? err.message : '打开项目失败')
     }
   }
 
@@ -148,7 +158,7 @@ export function ChatView() {
       setProjectPath(selected.filePath)
       if (!projectName.trim()) setProjectName(getBasename(selected.filePath))
     } catch (err) {
-      setNotice(err instanceof Error ? err.message : '选择项目路径失败')
+      toast.error(err instanceof Error ? err.message : '选择项目路径失败')
     }
   }
 
@@ -156,7 +166,7 @@ export function ChatView() {
     const rootPath = projectPath.trim()
     const name = projectName.trim() || getBasename(rootPath)
     if (!rootPath) {
-      setNotice('请输入或选择项目文件夹地址。')
+      toast.warning('请输入或选择项目文件夹地址。')
       return
     }
 
@@ -170,7 +180,7 @@ export function ChatView() {
       await refreshProjectsAndSessions()
     } catch (err) {
       console.error('创建项目失败', err)
-      setNotice(err instanceof Error ? err.message : '创建项目失败')
+      toast.error(err instanceof Error ? err.message : '创建项目失败')
     }
   }
 
@@ -180,9 +190,122 @@ export function ChatView() {
     setSearchResults([])
   }
 
+  const handleRenameProject = async (workspace: WorkspaceInfo) => {
+    const name = window.prompt('重命名项目', workspace.name)?.trim()
+    if (!name || name === workspace.name) return
+    try {
+      await updateWorkspace({ workspaceId: workspace.id, name })
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '重命名项目失败')
+    }
+  }
+
+  const handleToggleProjectPinned = async (workspace: WorkspaceInfo) => {
+    try {
+      await updateWorkspace({ workspaceId: workspace.id, pinned: workspace.pinnedAt == null })
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '更新项目置顶失败')
+    }
+  }
+
+  const handleArchiveProject = async (workspace: WorkspaceInfo) => {
+    if (!window.confirm(`归档项目「${workspace.name}」？归档后会从当前列表隐藏。`)) return
+    try {
+      await updateWorkspace({ workspaceId: workspace.id, archived: true })
+      if (activeWorkspaceId === workspace.id) {
+        setActiveWorkspaceId(null)
+        setActive(null)
+      }
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '归档项目失败')
+    }
+  }
+
+  const handleDeleteProject = async (workspace: WorkspaceInfo) => {
+    if (!window.confirm(`删除项目「${workspace.name}」及其会话记录？本地文件夹不会被删除。`)) return
+    try {
+      const res = await deleteWorkspace({ workspaceId: workspace.id })
+      if (activeWorkspaceId === workspace.id || (active != null && res.deletedSessionIds.includes(active))) {
+        setActiveWorkspaceId(null)
+        setActive(null)
+      }
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除项目失败')
+    }
+  }
+
+  const handleOpenProjectFolder = async (workspace: WorkspaceInfo) => {
+    try {
+      await openWorkspaceFolder({ workspaceId: workspace.id })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '打开文件夹失败')
+    }
+  }
+
+  const handleRenameSession = async (session: SessionSummary) => {
+    const title = window.prompt('重命名会话', session.title || '新会话')?.trim()
+    if (!title || title === session.title) return
+    try {
+      await updateSession({ sessionId: session.id, title })
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '重命名会话失败')
+    }
+  }
+
+  const handleToggleSessionPinned = async (session: SessionSummary) => {
+    try {
+      await updateSession({ sessionId: session.id, pinned: session.pinnedAt == null })
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '更新会话置顶失败')
+    }
+  }
+
+  const handleArchiveSession = async (session: SessionSummary) => {
+    if (!window.confirm(`归档会话「${session.title || '新会话'}」？归档后会从当前列表隐藏。`)) return
+    try {
+      await updateSession({ sessionId: session.id, archived: true })
+      if (active === session.id) setActive(null)
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '归档会话失败')
+    }
+  }
+
+  const handleDeleteSession = async (session: SessionSummary) => {
+    if (!window.confirm(`删除会话「${session.title || '新会话'}」？`)) return
+    try {
+      await deleteSession({ sessionId: session.id })
+      if (active === session.id) setActive(null)
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除会话失败')
+    }
+  }
+
+  const handleOpenSessionFolder = async (session: SessionSummary) => {
+    const workspaceId = session.workspaceIds[0]
+    if (workspaceId == null) {
+      toast.warning('该会话未关联项目文件夹。')
+      return
+    }
+
+    try {
+      await openWorkspaceFolder({ workspaceId })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '打开文件夹失败')
+    }
+  }
+
   const showSearchResults = searchQuery.trim().length > 0
-  const projectGroups = buildProjectGroups(workspaces, sessions)
-  const ungroupedSessions = sessions.filter((session) => session.workspaceIds.length === 0)
+  const visibleSessions = filterSessionsByTime(sessions, timeFilter)
+  const projectGroups = buildProjectGroups(workspaces, visibleSessions)
+  const ungroupedSessions = visibleSessions.filter((session) => session.workspaceIds.length === 0)
   const activeSession = sessions.find(s => s.id === active) ?? null
   const activeWorkspace = activeWorkspaceId == null ? null : workspaces.find((item) => item.id === activeWorkspaceId) ?? null
 
@@ -239,6 +362,7 @@ export function ChatView() {
               <button className="icon-btn sidebar-btn-sm" title="打开已有项目" onClick={handleOpenExistingProject}><Icons.Folder size={11} /></button>
               <button className="icon-btn sidebar-btn-sm" title="新建项目" onClick={() => setProjectDialog('create')}><Icons.Plus size={11} /></button>
             </div>
+            <TimeFilterBar value={timeFilter} onChange={setTimeFilter} />
 
             <div className="chat-list scroll">
               {notice && (
@@ -271,13 +395,33 @@ export function ChatView() {
                         setActiveWorkspaceId(group.workspace.id)
                       }}
                       onNewSession={(workspaceId) => void handleNewSession(workspaceId)}
+                      onRenameProject={handleRenameProject}
+                      onToggleProjectPinned={handleToggleProjectPinned}
+                      onArchiveProject={handleArchiveProject}
+                      onDeleteProject={handleDeleteProject}
+                      onOpenProjectFolder={handleOpenProjectFolder}
+                      onRenameSession={handleRenameSession}
+                      onToggleSessionPinned={handleToggleSessionPinned}
+                      onArchiveSession={handleArchiveSession}
+                      onDeleteSession={handleDeleteSession}
+                      onOpenSessionFolder={handleOpenSessionFolder}
                     />
                   ))}
                   {ungroupedSessions.length > 0 && (
                     <div className="proj-group">
                       <div className="chat-list-section-h">未归属会话</div>
                       {ungroupedSessions.map((session) => (
-                        <ChatListItem key={session.id} session={session} active={active} onClick={setActive} />
+                        <ChatListItem
+                          key={session.id}
+                          session={session}
+                          active={active}
+                          onClick={setActive}
+                          onRename={handleRenameSession}
+                          onTogglePinned={handleToggleSessionPinned}
+                          onArchive={handleArchiveSession}
+                          onDelete={handleDeleteSession}
+                          onOpenFolder={handleOpenSessionFolder}
+                        />
                       ))}
                     </div>
                   )}
@@ -400,6 +544,31 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   return <>{parts}</>
 }
 
+function TimeFilterBar({ value, onChange }: { value: TimeFilter; onChange: (value: TimeFilter) => void }) {
+  const options: Array<{ value: TimeFilter; label: string }> = [
+    { value: 'all', label: '全部' },
+    { value: '1d', label: '1d' },
+    { value: '3d', label: '3d' },
+    { value: '7d', label: '7d' },
+    { value: '10d', label: '10d' },
+  ]
+
+  return (
+    <div className="session-filter-bar" aria-label="按最近时间过滤会话">
+      <span>最近</span>
+      {options.map((option) => (
+        <button
+          key={option.value}
+          className={value === option.value ? 'active' : ''}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 function ProjectSessionGroup({
   group,
   activeSessionId,
@@ -407,6 +576,16 @@ function ProjectSessionGroup({
   onSelectWorkspace,
   onSelectSession,
   onNewSession,
+  onRenameProject,
+  onToggleProjectPinned,
+  onArchiveProject,
+  onDeleteProject,
+  onOpenProjectFolder,
+  onRenameSession,
+  onToggleSessionPinned,
+  onArchiveSession,
+  onDeleteSession,
+  onOpenSessionFolder,
 }: {
   group: ProjectGroup
   activeSessionId: SessionId | null
@@ -414,25 +593,66 @@ function ProjectSessionGroup({
   onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   onSelectSession: (session: SessionSummary) => void
   onNewSession: (workspaceId: string) => void
+  onRenameProject: (workspace: WorkspaceInfo) => void
+  onToggleProjectPinned: (workspace: WorkspaceInfo) => void
+  onArchiveProject: (workspace: WorkspaceInfo) => void
+  onDeleteProject: (workspace: WorkspaceInfo) => void
+  onOpenProjectFolder: (workspace: WorkspaceInfo) => void
+  onRenameSession: (session: SessionSummary) => void
+  onToggleSessionPinned: (session: SessionSummary) => void
+  onArchiveSession: (session: SessionSummary) => void
+  onDeleteSession: (session: SessionSummary) => void
+  onOpenSessionFolder: (session: SessionSummary) => void
 }) {
   const [open, setOpen] = useState(true)
+  const [menuOpen, setMenuOpen] = useState(false)
   const isActiveProject = activeWorkspaceId === group.workspace.id
 
   return (
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
-      <button
+      <div
         className="proj-head"
         onClick={() => {
           setOpen((prev) => !prev)
           void onSelectWorkspace(group.workspace)
         }}
       >
-        {open ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />}
+        <span className="proj-toggle">
+          {open ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />}
+        </span>
         <Icons.Folder size={15} className="proj-folder-icon" />
+        {group.workspace.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
         <span className="proj-count">{group.sessions.length}</span>
-      </button>
-      <div className="proj-path truncate" title={group.workspace.rootPath}>{group.workspace.rootPath}</div>
+        <div className="item-menu-wrap">
+          <button
+            className="icon-btn item-menu-btn"
+            title="项目操作"
+            onClick={(event) => {
+              event.stopPropagation()
+              setMenuOpen((prev) => !prev)
+            }}
+          >
+            <Icons.More size={12} />
+          </button>
+          {menuOpen && (
+            <ActionMenu
+              items={[
+                {
+                  icon: <Icons.Pin size={14} />,
+                  label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶',
+                  onClick: () => onToggleProjectPinned(group.workspace),
+                },
+                { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenProjectFolder(group.workspace) },
+                { icon: <Icons.Edit size={14} />, label: '重命名项目', onClick: () => onRenameProject(group.workspace) },
+                { icon: <Icons.Box size={14} />, label: '归档项目', onClick: () => onArchiveProject(group.workspace) },
+                { icon: <Icons.Trash size={14} />, label: '删除项目', danger: true, onClick: () => onDeleteProject(group.workspace) },
+              ]}
+              onClose={() => setMenuOpen(false)}
+            />
+          )}
+        </div>
+      </div>
       {open && (
         <div className="proj-sessions">
           {group.sessions.length === 0 ? (
@@ -447,6 +667,11 @@ function ProjectSessionGroup({
                 session={session}
                 active={activeSessionId}
                 onClick={() => onSelectSession(session)}
+                onRename={onRenameSession}
+                onTogglePinned={onToggleSessionPinned}
+                onArchive={onArchiveSession}
+                onDelete={onDeleteSession}
+                onOpenFolder={onOpenSessionFolder}
               />
             ))
           )}
@@ -456,7 +681,26 @@ function ProjectSessionGroup({
   )
 }
 
-function ChatListItem({ session: s, active, onClick }: { session: SessionSummary; active: SessionId | null; onClick: (id: SessionId) => void }) {
+function ChatListItem({
+  session: s,
+  active,
+  onClick,
+  onRename,
+  onTogglePinned,
+  onArchive,
+  onDelete,
+  onOpenFolder,
+}: {
+  session: SessionSummary
+  active: SessionId | null
+  onClick: (id: SessionId) => void
+  onRename?: (session: SessionSummary) => void
+  onTogglePinned?: (session: SessionSummary) => void
+  onArchive?: (session: SessionSummary) => void
+  onDelete?: (session: SessionSummary) => void
+  onOpenFolder?: (session: SessionSummary) => void
+}) {
+  const [menuOpen, setMenuOpen] = useState(false)
   const statusLabel: Record<SessionSummary['status'], ReactNode> = {
     running: <span className="pulse-dot" />,
     error: <span className="badge danger dot">错误</span>,
@@ -465,7 +709,36 @@ function ChatListItem({ session: s, active, onClick }: { session: SessionSummary
   return (
     <div className={`chat-item proj-session ${active === s.id ? 'active' : ''}`} onClick={() => onClick(s.id)}>
       <div className="chat-item-title">
+        {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
         <span className="truncate flex1">{s.title || '新会话'}</span>
+        <div className="item-menu-wrap">
+          <button
+            className="icon-btn item-menu-btn"
+            title="会话操作"
+            onClick={(event) => {
+              event.stopPropagation()
+              setMenuOpen((prev) => !prev)
+            }}
+          >
+            <Icons.More size={12} />
+          </button>
+          {menuOpen && (
+            <ActionMenu
+              items={[
+                {
+                  icon: <Icons.Pin size={14} />,
+                  label: s.pinnedAt == null ? '置顶会话' : '取消置顶',
+                  onClick: () => onTogglePinned?.(s),
+                },
+                { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenFolder?.(s) },
+                { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
+                { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
+                { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
+              ]}
+              onClose={() => setMenuOpen(false)}
+            />
+          )}
+        </div>
       </div>
       <div className="chat-item-snippet">{s.messageCount} 条消息</div>
       <div className="chat-item-meta">
@@ -473,6 +746,32 @@ function ChatListItem({ session: s, active, onClick }: { session: SessionSummary
         {statusLabel[s.status]}
         <span className="chat-item-time">{formatRelativeTime(s.updatedAt)}</span>
       </div>
+    </div>
+  )
+}
+
+function ActionMenu({
+  items,
+  onClose,
+}: {
+  items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
+  onClose: () => void
+}) {
+  return (
+    <div className="action-menu" onClick={(event) => event.stopPropagation()}>
+      {items.map((item) => (
+        <button
+          key={item.label}
+          className={item.danger ? 'danger' : ''}
+          onClick={() => {
+            onClose()
+            item.onClick()
+          }}
+        >
+          {item.icon}
+          <span>{item.label}</span>
+        </button>
+      ))}
     </div>
   )
 }
@@ -769,6 +1068,7 @@ function TerminalBlock({ children }: { children: ReactNode }) {
 }
 
 function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: () => void }) {
+  const { toast } = useToast()
   const [value, setValue] = useState('')
   const [sending, setSending] = useState(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
@@ -783,6 +1083,7 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
       onSent()
     } catch (err) {
       console.error('发送失败', err)
+      toast.error(err instanceof Error ? err.message : '发送消息失败')
       setValue(text)
     } finally {
       setSending(false)
@@ -870,6 +1171,16 @@ function buildProjectGroups(workspaces: WorkspaceInfo[], sessions: SessionSummar
     workspace,
     sessions: sessions.filter((session) => session.workspaceIds.includes(workspace.id)),
   }))
+}
+
+function filterSessionsByTime(sessions: SessionSummary[], filter: TimeFilter): SessionSummary[] {
+  if (filter === 'all') return sessions
+  const days = Number.parseInt(filter, 10)
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+  return sessions.filter((session) => {
+    const updatedAt = new Date(session.updatedAt).getTime()
+    return Number.isFinite(updatedAt) && updatedAt >= cutoff
+  })
 }
 
 function getBasename(value: string): string {
