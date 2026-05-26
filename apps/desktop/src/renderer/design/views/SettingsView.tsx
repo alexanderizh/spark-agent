@@ -12,6 +12,8 @@ import type {
   ProviderHealthCheckResponse,
   ProviderProfile,
   ProviderUpdateRequest,
+  PermissionMode,
+  PermissionProfileItem,
   RuleItem,
   RuleScope,
   WorkspaceInfo,
@@ -25,6 +27,65 @@ type ProviderForm = {
   endpoint: string
   apiKey: string
   isDefault: boolean
+}
+
+type McpSettingsServer = {
+  id: string
+  name: string
+  type: 'stdio' | 'sse'
+  command?: string
+  endpoint?: string
+  status: 'connected' | 'disconnected'
+  tools?: string[]
+}
+
+type SkillSetting = {
+  id: string
+  name: string
+  desc: string
+  source: string
+  enabled: boolean
+}
+
+type WorkflowTemplate = {
+  id: string
+  name: string
+  desc: string
+  nodes: number
+  updatedAt: string
+}
+
+const MCP_SETTINGS_KEY = 'spark-mcp-servers'
+const SKILLS_SETTINGS_KEY = 'spark-skills'
+const PERM_PROFILE_KEY = 'spark-perm-profile'
+const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
+const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
+const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
+
+const DEFAULT_SKILLS: SkillSetting[] = [
+  { id: 'built-in:search', name: 'Web 搜索', desc: '使用搜索引擎查询信息', source: '内置', enabled: true },
+  { id: 'built-in:calculator', name: '计算器', desc: '精确数学计算', source: '内置', enabled: true },
+  { id: 'built-in:code-exec', name: '代码执行', desc: '在沙箱中运行代码片段', source: '内置', enabled: false },
+]
+
+const DEFAULT_WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
+  { id: 'template:agent-dev', name: 'Agent 开发流程', desc: '需求分析、计划、编码、测试、审查', nodes: 6, updatedAt: '内置模板' },
+  { id: 'template:research', name: '资料研究流程', desc: '检索、摘要、交叉验证、报告生成', nodes: 4, updatedAt: '内置模板' },
+]
+
+function readStoredJson<T>(key: string, fallback: T): T {
+  if (typeof window === 'undefined') return fallback
+  const raw = window.localStorage.getItem(key)
+  if (raw === null) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+function writeStoredJson<T>(key: string, value: T) {
+  window.localStorage.setItem(key, JSON.stringify(value))
 }
 
 export function SettingsView() {
@@ -76,9 +137,9 @@ export function SettingsView() {
     models: ModelsSection,
     rules: RulesSection,
     permissions: PermissionsSection,
-    'mcp-settings': () => <PlaceholderSection name="MCP 配置" hint="服务器与作用域细节在主菜单 MCP 页面管理" />,
-    'skills-settings': () => <PlaceholderSection name="Skills 配置" hint="Skill 安装与作用域在主菜单 Skills 页面管理" />,
-    workflows: () => <PlaceholderSection name="工作流模板" hint="管理共享 DAG 模板与版本" />,
+    'mcp-settings': McpSection,
+    'skills-settings': SkillsSection,
+    workflows: WorkflowTemplatesSection,
     telemetry: TelemetrySection,
     storage: StorageSection,
     updates: UpdatesSection,
@@ -1204,50 +1265,357 @@ function RuleEditPanel({
   )
 }
 
+/* ───────── MCP ───────── */
+function McpSection() {
+  const [servers, setServers] = useState<McpSettingsServer[]>(() => readStoredJson(MCP_SETTINGS_KEY, []))
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [draft, setDraft] = useState<{ name: string; type: 'stdio' | 'sse'; command: string; endpoint: string }>({
+    name: '',
+    type: 'stdio',
+    command: '',
+    endpoint: '',
+  })
+
+  const persistServers = (next: McpSettingsServer[]) => {
+    setServers(next)
+    writeStoredJson(MCP_SETTINGS_KEY, next)
+  }
+
+  const resetDraft = () => {
+    setDraft({ name: '', type: 'stdio', command: '', endpoint: '' })
+    setShowAddForm(false)
+  }
+
+  const addServer = () => {
+    const name = draft.name.trim()
+    const command = draft.command.trim()
+    const endpoint = draft.endpoint.trim()
+    if (name.length === 0) return
+    if (draft.type === 'stdio' && command.length === 0) return
+    if (draft.type === 'sse' && endpoint.length === 0) return
+
+    const server: McpSettingsServer = {
+      id: `mcp:${Date.now()}`,
+      name,
+      type: draft.type,
+      status: 'connected',
+      tools: [],
+      ...(draft.type === 'stdio' ? { command } : { endpoint }),
+    }
+    persistServers([...servers, server])
+    resetDraft()
+  }
+
+  const removeServer = (id: string) => {
+    persistServers(servers.filter((server) => server.id !== id))
+  }
+
+  const toggleServer = (id: string) => {
+    persistServers(servers.map((server) => (
+      server.id === id
+        ? { ...server, status: server.status === 'connected' ? 'disconnected' : 'connected' }
+        : server
+    )))
+  }
+
+  const activeCount = servers.filter((server) => server.status === 'connected').length
+
+  return (
+    <div className="settings-section">
+      <div className="row" style={{ alignItems: 'flex-end', marginBottom: 18 }}>
+        <div className="flex1">
+          <h2 style={{ margin: 0 }}>MCP 服务器</h2>
+          <div className="lede" style={{ margin: '4px 0 0' }}>配置 Model Context Protocol 服务器，为 Agent 提供外部工具和数据源。</div>
+        </div>
+        <span className="badge primary dot">{activeCount} / {servers.length} 已连接</span>
+      </div>
+
+      <div className="card">
+        {servers.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+            <Icons.MCP size={24} />
+            <div className="strong" style={{ marginTop: 10, color: 'var(--text)' }}>暂无 MCP 服务器</div>
+            <div style={{ fontSize: 11, marginTop: 4 }}>添加 MCP 服务器以扩展 Agent 的工具能力</div>
+          </div>
+        ) : (
+          servers.map((server) => (
+            <SettingsRow
+              key={server.id}
+              title={server.name}
+              desc={`${server.type} · ${server.endpoint ?? server.command ?? '未配置'}${server.tools?.length ? ` · ${server.tools.length} tools` : ''}`}
+              right={
+                <div className="row" style={{ gap: 4 }}>
+                  <span className={`badge ${server.status === 'connected' ? 'success' : 'danger'} dot`}>
+                    {server.status === 'connected' ? '已连接' : '断开'}
+                  </span>
+                  <button className="btn ghost sm" onClick={() => toggleServer(server.id)}>
+                    {server.status === 'connected' ? '断开' : '连接'}
+                  </button>
+                  <button className="icon-btn" title="删除" onClick={() => removeServer(server.id)}>
+                    <Icons.Trash size={11} />
+                  </button>
+                </div>
+              }
+            />
+          ))
+        )}
+      </div>
+
+      {showAddForm ? (
+        <div className="card" style={{ marginTop: 12, padding: 14 }}>
+          <div className="subsec-h" style={{ marginTop: 0 }}>添加 MCP 服务器</div>
+          <div className="form-grid">
+            <label>名称</label>
+            <input value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
+
+            <label>类型</label>
+            <select value={draft.type} onChange={(e) => setDraft((prev) => ({ ...prev, type: e.target.value === 'sse' ? 'sse' : 'stdio' }))}>
+              <option value="stdio">stdio</option>
+              <option value="sse">sse</option>
+            </select>
+
+            <label>{draft.type === 'stdio' ? '启动命令' : 'Endpoint'}</label>
+            <input
+              className="mono-sm"
+              value={draft.type === 'stdio' ? draft.command : draft.endpoint}
+              onChange={(e) => {
+                const value = e.target.value
+                setDraft((prev) => draft.type === 'stdio' ? { ...prev, command: value } : { ...prev, endpoint: value })
+              }}
+              placeholder={draft.type === 'stdio' ? 'npx -y @modelcontextprotocol/server-filesystem .' : 'https://mcp.example.com/sse'}
+            />
+          </div>
+          <div className="row" style={{ gap: 8, marginTop: 12 }}>
+            <button className="btn primary sm" onClick={addServer}><Icons.Plus size={11} /> 添加</button>
+            <button className="btn ghost sm" onClick={resetDraft}>取消</button>
+          </div>
+        </div>
+      ) : (
+        <button className="btn ghost sm" style={{ marginTop: 12 }} onClick={() => setShowAddForm(true)}>
+          <Icons.Plus size={11} /> 添加 MCP 服务器
+        </button>
+      )}
+    </div>
+  )
+}
+
+/* ───────── SKILLS ───────── */
+function SkillsSection() {
+  const [skills, setSkills] = useState<SkillSetting[]>(() => readStoredJson(SKILLS_SETTINGS_KEY, DEFAULT_SKILLS))
+
+  const toggleSkill = (id: string) => {
+    const next = skills.map((skill) => skill.id === id ? { ...skill, enabled: !skill.enabled } : skill)
+    setSkills(next)
+    writeStoredJson(SKILLS_SETTINGS_KEY, next)
+  }
+
+  return (
+    <div className="settings-section">
+      <h2>Skills</h2>
+      <div className="lede">管理 Agent 可使用的技能模块。启用或禁用会影响 Agent 在对话中可调用的能力。</div>
+
+      <div className="card">
+        {skills.map((skill) => (
+          <SettingsRow
+            key={skill.id}
+            title={skill.name}
+            desc={`${skill.desc} · ${skill.source}`}
+            right={
+              <div
+                className={`switch ${skill.enabled ? 'on' : ''}`}
+                onClick={() => toggleSkill(skill.id)}
+              />
+            }
+          />
+        ))}
+      </div>
+
+      <div style={{ marginTop: 16, color: 'var(--text-muted)', fontSize: 'var(--font-xs)' }}>
+        自定义 Skill 安装将在后续版本支持。
+      </div>
+    </div>
+  )
+}
+
+/* ───────── WORKFLOW TEMPLATES ───────── */
+function WorkflowTemplatesSection() {
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>(() => readStoredJson(WORKFLOW_TEMPLATES_KEY, DEFAULT_WORKFLOW_TEMPLATES))
+
+  const restoreDefaults = () => {
+    setTemplates(DEFAULT_WORKFLOW_TEMPLATES)
+    writeStoredJson(WORKFLOW_TEMPLATES_KEY, DEFAULT_WORKFLOW_TEMPLATES)
+  }
+
+  return (
+    <div className="settings-section">
+      <div className="row" style={{ alignItems: 'flex-end', marginBottom: 18 }}>
+        <div className="flex1">
+          <h2 style={{ margin: 0 }}>工作流模板</h2>
+          <div className="lede" style={{ margin: '4px 0 0' }}>管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。</div>
+        </div>
+        <button className="btn ghost sm" onClick={restoreDefaults}><Icons.Refresh size={11} /> 恢复内置</button>
+      </div>
+
+      <div className="card">
+        {templates.map((template) => (
+          <SettingsRow
+            key={template.id}
+            title={template.name}
+            desc={`${template.desc} · ${template.nodes} 个节点 · ${template.updatedAt}`}
+            right={<span className="badge">模板</span>}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /* ───────── PERMISSIONS ───────── */
 function PermissionsSection() {
-  const [profile, setProfile] = useState('project-standard')
+  const [profiles, setProfiles] = useState<PermissionProfileItem[]>([])
+  const [activeProfileId, setActiveProfileId] = useState(() => window.localStorage.getItem(PERM_PROFILE_KEY) || 'project-standard')
+  const [loading, setLoading] = useState(true)
+  const [auditEnabled, setAuditEnabled] = useState(() => window.localStorage.getItem(AUDIT_ENABLED_KEY) !== 'false')
+
+  const { invoke: listProfiles } = useIpcInvoke('permission:list-profiles')
+  const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
+  const { invoke: updateRule } = useIpcInvoke('permission:update-rule')
+
+  const refresh = useCallback(() => {
+    setLoading(true)
+    listProfiles({})
+      .then((res) => {
+        setProfiles(res.profiles)
+        const storedProfileId = window.localStorage.getItem(PERM_PROFILE_KEY)
+        setActiveProfileId(storedProfileId !== null && res.profiles.some((p) => p.id === storedProfileId) ? storedProfileId : res.activeProfileId)
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [listProfiles])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
+
+  const handleProfileChange = (profileId: string) => {
+    setActiveProfileId(profileId)
+    window.localStorage.setItem(PERM_PROFILE_KEY, profileId)
+  }
+
+  const handleSandboxChange = (level: number) => {
+    if (!activeProfile) return
+    void updateSandbox({ profileId: activeProfile.id, sandboxLevel: level }).then(refresh)
+  }
+
+  const handleRuleChange = (action: string, mode: PermissionMode) => {
+    if (!activeProfile) return
+    void updateRule({ profileId: activeProfile.id, action, mode }).then(refresh)
+  }
+
+  const toggleAudit = () => {
+    const next = !auditEnabled
+    setAuditEnabled(next)
+    window.localStorage.setItem(AUDIT_ENABLED_KEY, String(next))
+  }
+
+  const RULE_META: Array<{ action: string; icon: ReactNode; name: string; hint: string; scope: string }> = [
+    { action: 'file_read', icon: <Icons.File />, name: '读取工作区文件', hint: '允许 · 不弹窗', scope: '工作区内' },
+    { action: 'file_write', icon: <Icons.Edit />, name: '编辑工作区文件', hint: '自动写入，记录到 checkpoint', scope: '工作区内' },
+    { action: 'file_read_any', icon: <Icons.File />, name: '访问工作区外文件', hint: '读取或写入 ~/ 之外路径', scope: '任意' },
+    { action: 'command_exec', icon: <Icons.Terminal />, name: '执行 shell 命令', hint: '非破坏性命令', scope: '本会话' },
+    { action: 'command_dangerous', icon: <Icons.AlertTriangle />, name: '高风险命令', hint: 'rm -rf、curl | sh、密钥导出', scope: '任意' },
+    { action: 'git_push', icon: <Icons.GitBranch />, name: 'Git 推送', hint: '包含 --force / --force-with-lease', scope: '任意' },
+    { action: 'network_known', icon: <Icons.Globe />, name: '网络访问', hint: 'HTTP/HTTPS 请求', scope: '域名白名单' },
+    { action: 'network_unknown', icon: <Icons.Globe />, name: '访问陌生域名', hint: '未在白名单中的域名', scope: '任意' },
+    { action: 'mcp_tool', icon: <Icons.MCP />, name: '调用 MCP 工具', hint: '按 server allowlist', scope: '按 server' },
+    { action: 'secret_read', icon: <Icons.Lock />, name: '读取 secret', hint: '通过 secret reference 注入', scope: 'profile 内' },
+    { action: 'long_task', icon: <Icons.Clock />, name: '长任务后台运行', hint: '≥ 30s 的任务', scope: '本会话' },
+  ]
+
+  const PROFILE_META: Record<string, { icon: ReactNode; desc: string }> = {
+    strict: { icon: <Icons.Lock />, desc: '一切都问' },
+    'project-standard': { icon: <Icons.Shield />, desc: '工作区写入自动允许' },
+    trusted: { icon: <Icons.CheckCircle />, desc: '自动允许大多数' },
+  }
+
   return (
     <div className="settings-section">
       <h2>权限策略</h2>
       <div className="lede">控制 Agent 能做什么、何时需要审批。沙箱等级配合策略一起决定运行时风险。</div>
 
       <div className="subsec-h">权限 Profile</div>
-      <div className="row" style={{ gap: 8, marginBottom: 18 }}>
-        <ProfileChip active={profile === 'strict'} onClick={() => setProfile('strict')} icon={<Icons.Lock />} name="strict" desc="一切都问" />
-        <ProfileChip active={profile === 'project-standard'} onClick={() => setProfile('project-standard')} icon={<Icons.Shield />} name="project-standard" desc="工作区写入自动允许" />
-        <ProfileChip active={profile === 'trusted'} onClick={() => setProfile('trusted')} icon={<Icons.CheckCircle />} name="trusted" desc="自动允许大多数" />
-        <ProfileChip active={profile === 'team-approved'} onClick={() => setProfile('team-approved')} icon={<Icons.Team />} name="team-approved" desc="团队管理员发布" />
-        <button className="btn ghost sm"><Icons.Plus size={11} /> 新建 Profile</button>
-      </div>
+      {loading ? (
+        <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0' }}>加载中…</div>
+      ) : (
+        <div className="row" style={{ gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
+          {profiles.map((p) => {
+            const meta = PROFILE_META[p.id]
+            return (
+              <ProfileChip
+                key={p.id}
+                active={p.id === activeProfileId}
+                onClick={() => handleProfileChange(p.id)}
+                icon={meta?.icon ?? <Icons.Shield />}
+                name={p.name}
+                desc={meta?.desc ?? `沙箱 L${p.sandboxLevel}`}
+              />
+            )
+          })}
+        </div>
+      )}
 
-      <div className="subsec-h">具体权限 · project-standard</div>
-      <div className="card">
-        <PermRule icon={<Icons.File />} name="读取工作区文件" hint="允许 · 不弹窗" scope="工作区内" mode="allow" />
-        <PermRule icon={<Icons.Edit />} name="编辑工作区文件" hint="自动写入，记录到 checkpoint" scope="工作区内" mode="allow" />
-        <PermRule icon={<Icons.File />} name="访问工作区外文件" hint="读取或写入 ~/ 之外路径" scope="任意" mode="ask" />
-        <PermRule icon={<Icons.Terminal />} name="执行 shell 命令" hint="非破坏性命令" scope="本会话" mode="ask" />
-        <PermRule icon={<Icons.AlertTriangle />} name="高风险命令" hint="rm -rf、curl | sh、密钥导出" scope="任意" mode="ask-twice" />
-        <PermRule icon={<Icons.GitBranch />} name="Git 推送" hint="包含 --force / --force-with-lease" scope="任意" mode="ask" />
-        <PermRule icon={<Icons.Globe />} name="网络访问" hint="HTTP/HTTPS 请求" scope="域名白名单" mode="allow" />
-        <PermRule icon={<Icons.Globe />} name="访问陌生域名" hint="未在白名单中的域名" scope="任意" mode="ask" />
-        <PermRule icon={<Icons.MCP />} name="调用 MCP 工具" hint="按 server allowlist" scope="按 server" mode="allow" />
-        <PermRule icon={<Icons.Lock />} name="读取 secret" hint="通过 secret reference 注入" scope="profile 内" mode="ask" />
-        <PermRule icon={<Icons.Clock />} name="长任务后台运行" hint="≥ 30s 的任务" scope="本会话" mode="allow" />
-      </div>
+      {activeProfile && (
+        <>
+          <div className="subsec-h">具体权限 · {activeProfile.name}</div>
+          <div className="card">
+            {RULE_META.map(({ action, icon, name, hint, scope }) => {
+              const rule = activeProfile.rules.find((r) => r.action === action)
+              const mode = (rule?.mode ?? 'ask') as PermissionMode
+              return (
+                <PermRule
+                  key={action}
+                  icon={icon}
+                  name={name}
+                  hint={hint}
+                  scope={scope}
+                  mode={mode}
+                  onModeChange={(m) => handleRuleChange(action, m)}
+                />
+              )
+            })}
+          </div>
 
-      <div className="subsec-h">沙箱等级</div>
-      <div className="card">
-        <SettingsRow title="L0 · 仅聊天" desc="完全禁用工具调用" right={<input type="radio" name="sb" />} />
-        <SettingsRow title="L1 · 只读工作区" desc="可读文件，不可写、不可执行命令" right={<input type="radio" name="sb" />} />
-        <SettingsRow title="L2 · 受控写入" desc="可写工作区文件，命令需审批 — 推荐" right={<input type="radio" name="sb" defaultChecked />} />
-        <SettingsRow title="L3 · 完全自动化" desc="工作区内大多数操作免审批；高风险仍审批" right={<input type="radio" name="sb" />} />
-        <SettingsRow title="L4 · 隔离沙箱" desc="microVM 内执行 (实验性)" right={<input type="radio" name="sb" disabled />} />
-      </div>
+          <div className="subsec-h">沙箱等级</div>
+          <div className="card">
+            {([
+              [0, 'L0 · 仅聊天', '完全禁用工具调用', false],
+              [1, 'L1 · 只读工作区', '可读文件，不可写、不可执行命令', false],
+              [2, 'L2 · 受控写入', '可写工作区文件，命令需审批 — 推荐', false],
+              [3, 'L3 · 完全自动化', '工作区内大多数操作免审批；高风险仍审批', false],
+              [4, 'L4 · 隔离沙箱', 'microVM 内执行 (实验性)', true],
+            ] as [number, string, string, boolean][]).map(([level, title, desc, disabled]) => (
+              <SettingsRow
+                key={level}
+                title={title}
+                desc={desc}
+                right={
+                  <input
+                    type="radio"
+                    name={`sb-${activeProfile.id}`}
+                    checked={activeProfile.sandboxLevel === level}
+                    onChange={() => handleSandboxChange(level)}
+                    disabled={disabled}
+                  />
+                }
+              />
+            ))}
+          </div>
+        </>
+      )}
 
       <div className="subsec-h">审计</div>
       <div className="card">
-        <SettingsRow title="记录所有权限决策" desc="写入 SQLite · 不可篡改" right={<div className="switch on" />} />
+        <SettingsRow title="记录所有权限决策" desc="写入 SQLite · 不可篡改" right={<div className={`switch ${auditEnabled ? 'on' : ''}`} onClick={toggleAudit} />} />
         <SettingsRow title="导出团队审计报告" desc="按周生成可签发的 JSON 报告" right={<div className="switch" />} />
         <SettingsRow
           title="审计日志保留"
@@ -1294,7 +1662,7 @@ function ProfileChip({ active, onClick, icon, name, desc }: { active: boolean; o
   )
 }
 
-function PermRule({ icon, name, hint, scope, mode }: { icon: ReactNode; name: string; hint: string; scope: string; mode: string }) {
+function PermRule({ icon, name, hint, scope, mode, onModeChange }: { icon: ReactNode; name: string; hint: string; scope: string; mode: PermissionMode; onModeChange?: (m: PermissionMode) => void }) {
   return (
     <div className="perm-rule">
       <span className="ico">{icon}</span>
@@ -1306,12 +1674,10 @@ function PermRule({ icon, name, hint, scope, mode }: { icon: ReactNode; name: st
         <option>工作区内</option><option>本会话</option><option>本项目</option><option>任意</option>
         <option>profile 内</option><option>按 server</option><option>域名白名单</option>
       </select>
-      <select defaultValue={mode} style={{ width: '100%' }}>
+      <select value={mode} onChange={(e) => onModeChange?.(e.target.value as PermissionMode)} style={{ width: '100%' }}>
         <option value="allow">允许</option>
         <option value="ask">询问</option>
         <option value="ask-twice">双重确认</option>
-        <option value="dry-run">仅 dry-run</option>
-        <option value="team">需团队审批</option>
         <option value="deny">拒绝</option>
       </select>
     </div>

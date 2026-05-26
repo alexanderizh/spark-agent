@@ -28,6 +28,7 @@ export {
   EventRepository,
   ProviderProfileRepository,
   RulesRepository,
+  PermissionProfileRepository,
 } from './repositories/index.js'
 
 export type {
@@ -45,4 +46,6 @@ export type {
   CreateRuleParams,
   UpdateRuleParams,
   ListRulesParams,
+  PermissionProfileRow,
+  PermissionRuleRow,
 } from './repositories/index.js'

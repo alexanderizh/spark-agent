@@ -138,4 +138,9 @@ export const IpcSchemaRegistry = {
   'rules:create': RulesCreateRequestSchema,
   'rules:update': RulesUpdateRequestSchema,
   'rules:delete': RulesDeleteRequestSchema,
+  'permission:list-profiles': z.object({}),
+  'permission:create-profile': z.object({ name: z.string().min(1).max(80), sandboxLevel: z.number().int().min(0).max(4).optional() }),
+  'permission:delete-profile': z.object({ id: z.string().min(1) }),
+  'permission:update-sandbox': z.object({ profileId: z.string().min(1), sandboxLevel: z.number().int().min(0).max(4) }),
+  'permission:update-rule': z.object({ profileId: z.string().min(1), action: z.string().min(1), mode: z.enum(['allow', 'ask', 'ask-twice', 'deny']) }),
 } as const

@@ -266,6 +266,61 @@ export interface RulesDeleteResponse {
   success: boolean
 }
 
+// ─── Permission Channels ─────────────────────────────────────────────────────
+
+export type PermissionMode = 'allow' | 'ask' | 'ask-twice' | 'deny'
+
+export interface PermissionProfileItem {
+  id: string
+  name: string
+  sandboxLevel: number
+  isBuiltin: boolean
+  rules: PermissionRuleItem[]
+}
+
+export interface PermissionRuleItem {
+  id: string
+  profileId: string
+  action: string
+  scope: string
+  mode: PermissionMode
+  sortOrder: number
+}
+
+export interface PermissionListProfilesRequest {}
+export interface PermissionListProfilesResponse {
+  profiles: PermissionProfileItem[]
+  activeProfileId: string
+}
+
+export interface PermissionCreateProfileRequest {
+  name: string
+  sandboxLevel?: number
+}
+export interface PermissionCreateProfileResponse {
+  profile: PermissionProfileItem
+}
+
+export interface PermissionDeleteProfileRequest { id: string }
+export interface PermissionDeleteProfileResponse { success: boolean }
+
+export interface PermissionUpdateSandboxRequest {
+  profileId: string
+  sandboxLevel: number
+}
+export interface PermissionUpdateSandboxResponse {
+  profile: PermissionProfileItem
+}
+
+export interface PermissionUpdateRuleRequest {
+  profileId: string
+  action: string
+  mode: PermissionMode
+}
+export interface PermissionUpdateRuleResponse {
+  rule: PermissionRuleItem
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -310,6 +365,13 @@ export interface IpcChannelMap {
   'rules:create': [RulesCreateRequest, RulesCreateResponse]
   'rules:update': [RulesUpdateRequest, RulesUpdateResponse]
   'rules:delete': [RulesDeleteRequest, RulesDeleteResponse]
+
+  // Permissions
+  'permission:list-profiles': [PermissionListProfilesRequest, PermissionListProfilesResponse]
+  'permission:create-profile': [PermissionCreateProfileRequest, PermissionCreateProfileResponse]
+  'permission:delete-profile': [PermissionDeleteProfileRequest, PermissionDeleteProfileResponse]
+  'permission:update-sandbox': [PermissionUpdateSandboxRequest, PermissionUpdateSandboxResponse]
+  'permission:update-rule': [PermissionUpdateRuleRequest, PermissionUpdateRuleResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

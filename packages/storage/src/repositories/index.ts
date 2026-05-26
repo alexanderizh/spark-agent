@@ -12,6 +12,8 @@ export { WorkspaceRepository } from './workspace.repository.js'
 export { EventRepository } from './event.repository.js'
 export { ProviderProfileRepository } from './provider.repository.js'
 export { RulesRepository } from './rules.repository.js'
+export { PermissionProfileRepository } from './permission.repository.js'
+export type { PermissionProfileRow, PermissionRuleRow } from './permission.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

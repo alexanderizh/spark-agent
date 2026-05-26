@@ -13,8 +13,8 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { dialog } from 'electron'
 import { createLogger } from '@spark/shared'
-import { ProviderProfileRepository, RulesRepository, WorkspaceRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService } from '@spark/agent-runtime'
+import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository } from '@spark/storage'
+import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
@@ -27,6 +27,14 @@ function getProviderService(): ProviderService {
 
 function getRulesService(): RulesService {
   return new RulesService(new RulesRepository(getDatabase()))
+}
+
+let _permissionService: PermissionService | null = null
+function getPermissionService(): PermissionService {
+  if (_permissionService == null) {
+    _permissionService = new PermissionService(new PermissionProfileRepository(getDatabase()))
+  }
+  return _permissionService
 }
 
 let _workspaceService: WorkspaceService | null = null
@@ -180,6 +188,32 @@ export function registerAllIpcHandlers(): void {
     log.info(`rules:delete requested, id=${req.id}`)
     const success = getRulesService().delete(req.id)
     return { success }
+  })
+
+  // ─── Permission Handlers ────────────────────────────────────────────────────
+
+  typedIpcHandle('permission:list-profiles', async (_req) => {
+    return getPermissionService().listProfiles()
+  })
+
+  typedIpcHandle('permission:create-profile', async (req) => {
+    const profile = getPermissionService().createProfile(req)
+    return { profile }
+  })
+
+  typedIpcHandle('permission:delete-profile', async (req) => {
+    const success = getPermissionService().deleteProfile(req.id)
+    return { success }
+  })
+
+  typedIpcHandle('permission:update-sandbox', async (req) => {
+    const profile = getPermissionService().updateSandbox(req.profileId, req.sandboxLevel)
+    return { profile }
+  })
+
+  typedIpcHandle('permission:update-rule', async (req) => {
+    const rule = getPermissionService().updateRule(req.profileId, req.action, req.mode)
+    return { rule }
   })
 
   log.info('All IPC handlers registered')
