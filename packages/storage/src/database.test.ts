@@ -9,7 +9,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest'
 import { SparkDatabase } from './database.js'
 import { BaseRepository } from './repository.js'
 import { join } from 'path'
-import { mkdirSync, rmSync } from 'fs'
+import { mkdirSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 
 describe('SparkDatabase', () => {
@@ -103,8 +103,7 @@ describe('SparkDatabase', () => {
     mkdirSync(invalidDir, { recursive: true })
 
     // 创建一个不符合命名规范的 migration 文件
-    const fs = require('fs') as typeof import('fs')
-    fs.writeFileSync(join(invalidDir, 'invalid_no_number.sql'), 'SELECT 1;')
+    writeFileSync(join(invalidDir, 'invalid_no_number.sql'), 'SELECT 1;')
 
     db = new SparkDatabase(dbPath)
 

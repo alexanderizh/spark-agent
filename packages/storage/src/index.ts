@@ -16,6 +16,25 @@
 
 // 数据库核心
 export { SparkDatabase, createDatabase } from './database.js'
+export type { SqliteDatabase } from './database.js'
 
-// Repository 基类
+// Repository（向后兼容）
 export { BaseRepository } from './repository.js'
+
+// 领域 Repository
+export {
+  SessionRepository,
+  WorkspaceRepository,
+  EventRepository,
+} from './repositories/index.js'
+
+export type {
+  SessionRow,
+  CreateSessionParams,
+  ListSessionsParams,
+  WorkspaceRow,
+  CreateWorkspaceParams,
+  AgentEventRow,
+  QueryEventsParams,
+  InsertEventParams,
+} from './repositories/index.js'

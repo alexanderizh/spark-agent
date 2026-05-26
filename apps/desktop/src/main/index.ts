@@ -17,7 +17,7 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { getDatabasePath } from './db.js'
+import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { registerAllIpcHandlers } from './ipc/index.js'
 import { setMainWindow } from './windows/index.js'
 import { createLogger } from '@spark/shared'
@@ -96,11 +96,12 @@ async function initializeApp(): Promise<void> {
   try {
     const { createDatabase } = await import('@spark/storage')
     const db = createDatabase(dbPath)
+    setDatabaseInstance(db)
     log.info('Database initialized successfully')
 
     // 关闭数据库连接在应用退出时
     app.on('before-quit', () => {
-      db.close()
+      closeDatabase()
     })
   } catch (err) {
     log.error(`Database initialization failed: ${String(err)}`)

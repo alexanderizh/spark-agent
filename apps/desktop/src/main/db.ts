@@ -1,17 +1,22 @@
 /**
  * 主进程数据库初始化入口
  *
- * P0-06 完成后，这里会调用 @spark/storage 的 initDatabase()
+ * 职责：
+ *   - 提供数据库文件路径（开发/生产环境分离）
+ *   - 导出单例数据库实例引用
  *
  * 数据库文件路径策略（ADR-002）：
  *   - 生产环境：{app.getPath('userData')}/spark.db
  *   - 开发环境：{app.getPath('userData')}/spark-dev.db
  *   - WAL 模式 + NORMAL 同步 + 外键约束
+ *
+ * 注意：实际的 createDatabase() 调用在 main/index.ts 的 initializeApp() 中完成
  */
 
 import { app } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
+import type { SparkDatabase } from '@spark/storage'
 
 /**
  * 获取数据库文件路径
@@ -24,22 +29,38 @@ export function getDatabasePath(): string {
   return join(userDataPath, filename)
 }
 
-/**
- * 初始化数据库
- *
- * 启动时调用：
- *   1. 打开/创建 SQLite 数据库
- *   2. 启用 WAL 模式和性能优化 pragma
- *   3. 运行待执行的 migration
- *   4. 返回数据库实例
- */
-export async function initDatabase(): Promise<void> {
-  const dbPath = getDatabasePath()
-  console.log(`[Spark Agent] Initializing database at: ${dbPath}`)
+/** 全局数据库实例引用（由 initializeApp() 初始化） */
+let dbInstance: SparkDatabase | null = null
 
-  // TODO: P0-06 — 调用 @spark/storage 的 initDatabase
-  // const { createDatabase } = await import('@spark/storage')
-  // const db = createDatabase(dbPath)
-  // console.log('[Spark Agent] Database initialized, migrations applied')
-  // return db
+/**
+ * 设置全局数据库实例
+ *
+ * 仅在 main/index.ts 的 initializeApp() 中调用一次
+ */
+export function setDatabaseInstance(db: SparkDatabase): void {
+  dbInstance = db
+}
+
+/**
+ * 获取全局数据库实例
+ *
+ * @throws 如果数据库尚未初始化
+ */
+export function getDatabase(): SparkDatabase {
+  if (dbInstance == null) {
+    throw new Error('Database not initialized. Call initializeApp() first.')
+  }
+  return dbInstance
+}
+
+/**
+ * 关闭数据库连接
+ *
+ * 在 app 'before-quit' 事件中调用
+ */
+export function closeDatabase(): void {
+  if (dbInstance != null) {
+    dbInstance.close()
+    dbInstance = null
+  }
 }
