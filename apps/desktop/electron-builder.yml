@@ -4,6 +4,7 @@ directories:
   buildResources: resources
   output: dist
 mac:
+  icon: resources/icon.icns
   category: public.app-category.developer-tools
   target:
     - target: dmg
@@ -11,7 +12,13 @@ mac:
         - universal
   hardenedRuntime: true
   gatekeeperAssess: false
+win:
+  icon: resources/icon.ico
+linux:
+  icon: resources/icon.png
 asar: true
+asarUnpack:
+  - '**/*.node'
 files:
   - out/**/*
   - '!**/.DS_Store'
