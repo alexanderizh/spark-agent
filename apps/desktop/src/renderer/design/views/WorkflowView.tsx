@@ -92,56 +92,42 @@ export function WorkflowView() {
       <div className="workflow-layout">
         <WorkflowToolbar />
 
-        <div
-          className="wf-empty-state"
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--text-muted)',
-            minWidth: 0,
-          }}
-        >
-          <div className="col" style={{ alignItems: 'center', gap: 16, width: 'min(520px, 92%)' }}>
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 14,
-                background: 'var(--primary-soft)',
-                color: 'var(--primary)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Icons.Layers size={34} />
+        <div className="wf-empty-state">
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Icons.Layers size={24} />
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <h3 style={{ margin: 0, color: 'var(--text-strong)' }}>工作流编排</h3>
-              <p style={{ fontSize: 12, margin: '6px 0 0', lineHeight: 1.6 }}>创建多 Agent 协作流程，定义任务依赖和审批节点。</p>
+            <div className="empty-title">工作流编排</div>
+            <div className="empty-desc">创建多 Agent 协作流程，定义任务依赖和审批节点。</div>
+            <div className="empty-actions">
+              <button className="btn primary" onClick={handleCreateWorkflow}>
+                <Icons.Plus size={12} /> 创建工作流
+              </button>
             </div>
-            <button className="btn primary" onClick={handleCreateWorkflow}>
-              <Icons.Plus size={12} /> 创建工作流
-            </button>
+          </div>
 
-            {workflows.length > 0 && (
-              <div className="card" style={{ width: '100%', padding: 0, overflow: 'hidden' }}>
-                {workflows.map((workflow) => (
-                  <div key={workflow.id} className="settings-card-row">
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div className="row-title">{workflow.name}</div>
-                      <div className="row-desc">{workflow.nodes} 个节点 · {workflow.status} · {new Date(workflow.createdAt).toLocaleDateString()}</div>
-                    </div>
-                    <div className="row-action">
-                      <button className="btn ghost sm" onClick={() => setActiveWf(workflow.id)}>打开</button>
+          {workflows.length > 0 && (
+            <div className="wf-list">
+              {workflows.map((workflow) => (
+                <div key={workflow.id} className="wf-list-item">
+                  <div className="wf-list-icon">
+                    <Icons.Layers size={14} />
+                  </div>
+                  <div className="wf-list-body">
+                    <div className="wf-list-name">{workflow.name}</div>
+                    <div className="wf-list-meta">
+                      <span>{workflow.nodes} 个节点</span>
+                      <span className="wf-list-dot" />
+                      <span className={`wf-list-status status-${workflow.status}`}>{workflow.status}</span>
+                      <span className="wf-list-dot" />
+                      <span>{new Date(workflow.createdAt).toLocaleDateString()}</span>
                     </div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  <button className="btn ghost sm" onClick={() => setActiveWf(workflow.id)}>打开</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     )

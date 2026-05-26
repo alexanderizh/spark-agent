@@ -1167,6 +1167,77 @@
   box-shadow: var(--shadow-xs);
 }
 
+/* Workflow empty state & list */
+.wf-empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: var(--pad-xl);
+  min-width: 0;
+}
+.wf-empty-state .empty-state {
+  width: min(400px, 92%);
+}
+.wf-list {
+  width: min(520px, 92%);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  transition: all 0.15s;
+}
+.wf-list-item:hover {
+  border-color: var(--primary);
+}
+.wf-list-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--r-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.wf-list-body {
+  flex: 1;
+  min-width: 0;
+}
+.wf-list-name {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.wf-list-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.wf-list-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.wf-list-status.status-draft { color: var(--text-muted); }
+.wf-list-status.status-active { color: var(--success); }
+.wf-list-status.status-archived { color: var(--text-faint); }
+
 /* ============================================================
    MULTI-AGENT VIEW
    ============================================================ */
