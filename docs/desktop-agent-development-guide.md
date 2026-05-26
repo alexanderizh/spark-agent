@@ -609,155 +609,47 @@ Spark 支持命令后追加自然语言，用于给 agent 提供上下文:
 
 ### 5.3 模型与 Provider 配置
 
-模型配置目标:
+配置目标:
 
-- 用户可配置多个 provider。
-- 每个 provider 可配置多个 model profile。
-- 每个 agent/workflow/session 可指定模型策略。
-- 支持自动路由、成本上限和 fallback。
+- 用户可配置多个 provider profile。
+- provider profile 只分两种协议格式: `anthropic` 和 `openai`。
+- 每个 provider profile 自带 `baseUrl`、`apiKey`、`defaultModel` 和 `modelIds[]`，不再依赖独立 model profile 才能运行。
+- DeepSeek、OpenRouter、Ollama、LM Studio、自建网关等都作为“供应商名称 + endpoint”的具体实例接入，而不是单独的 adapter 类型。
+- agent/workflow/session 绑定 provider profile；需要切模型时，在同一个 provider profile 的 `modelIds[]` 中选择，或切换到另一个 provider profile。
 
-Provider 类型:
+设计约束:
 
-- Claude Agent SDK
-- Codex SDK
-- OpenAI Responses/Agents API
-- Anthropic Messages API
-- OpenRouter 或兼容 OpenAI API 的 provider
-- 本地模型服务，例如 Ollama、LM Studio、vLLM
-- 外部 ACP agent
-
-内置 Provider preset:
-
-Spark 内置的是“连接模板 + 能力探测器”，不是把模型列表写死。每个 preset 负责填写常见 endpoint、鉴权方式、兼容协议、默认 header、模型列表获取方式、token usage 映射和错误码诊断。模型是否可用、价格、上下文长度和多模态能力以用户账号、地域、服务商返回为准。
-
-| Provider preset | 主要用途 | 接入方式 | 备注 |
-| --- | --- | --- | --- |
-| Anthropic | Claude Agent SDK、Claude Messages | SDK/API key、Bedrock、Vertex、Azure 路径 | 默认 planner/reviewer 强模型 |
-| OpenAI Codex | Codex SDK、coding agent | `@openai/codex-sdk` + 本机 CLI | 默认 coder 强模型 |
-| OpenAI API | 通用文本、多模态、工具调用、图片 | Responses/Chat/Image API | 可作为通用 fallback |
-| DeepSeek | 通用推理、代码、低成本长任务 | OpenAI-compatible API key | 适合 coder/reasoner profile |
-| Alibaba Cloud Bailian | 通义千问、千问 coder、多模态 | OpenAI-compatible 或百炼 API | 国内云厂商主力 preset |
-| Tencent Cloud | 混元、代码/企业云模型 | 腾讯云 API key/secret 或兼容接口 | 支持企业账号与地域配置 |
-| MiniMax | 文本、语音、多模态、图像能力 | API key | 适合内容生成和多模态 skill |
-| Zhipu AI | GLM、代码、视觉、智能体能力 | API key | 适合中文任务和视觉理解 |
-| iFlytek Spark | 讯飞星火文本/多模态 | API key/secret/app id | 适合中文办公和语音生态 |
-| Baidu Qianfan | 文心/千帆模型平台 | AK/SK 或兼容接口 | 企业云账号常见 |
-| ByteDance Volcano Ark | 豆包/方舟模型服务 | API key 或云鉴权 | 适合国内云上部署 |
-| Moonshot/Kimi | 长上下文阅读与中文任务 | API key | 适合文档阅读 profile |
-| SiliconFlow | 聚合模型、开源模型托管 | OpenAI-compatible API key | 适合快速接入开源模型 |
-| OpenRouter | 第三方聚合 | OpenAI-compatible API key | 适合国际模型聚合 |
-| AWS Bedrock | 企业模型平台 | AWS credential/profile | 团队版常见 |
-| Google Vertex AI | 企业模型平台 | Google credential | 团队版常见 |
-| Azure OpenAI | 企业模型平台 | Azure endpoint/key | 团队版常见 |
-| Ollama | 本地模型 | localhost | 离线、隐私、低成本 |
-| LM Studio | 本地模型 | OpenAI-compatible localhost | 本地调试友好 |
-| vLLM/SGLang/TGI | 自部署模型服务 | OpenAI-compatible endpoint | 团队私有化部署 |
+- 适配器层只保留 `AnthropicAdapter` 和 `OpenAIAdapter`。
+- 供应商差异通过 endpoint、header、鉴权和模型 ID 体现，不再为每个供应商创建单独 adapter。
+- 历史 `model_profiles` 结构保留为迁移兼容层，不再作为主配置入口。
 
 Provider Profile 字段:
 
 ```ts
 type ProviderProfile = {
   id: string;
-  presetId:
-    | "anthropic"
-    | "openai-codex"
-    | "openai"
-    | "deepseek"
-    | "alibaba-bailian"
-    | "tencent-cloud"
-    | "minimax"
-    | "zhipu"
-    | "iflytek-spark"
-    | "baidu-qianfan"
-    | "volcano-ark"
-    | "moonshot"
-    | "siliconflow"
-    | "openrouter"
-    | "aws-bedrock"
-    | "google-vertex"
-    | "azure-openai"
-    | "ollama"
-    | "lm-studio"
-    | "self-hosted-openai-compatible"
-    | "external-acp";
   displayName: string;
-  authType:
-    | "api-key"
-    | "api-key-secret"
-    | "oauth"
-    | "cloud-profile"
-    | "local"
-    | "cli-login"
-    | "custom-headers";
+  provider: "anthropic" | "openai";
   baseUrl?: string;
-  region?: string;
-  secretRef?: string;
-  defaultHeaders?: Record<string, string>;
-  compatibility: "native" | "openai-compatible" | "anthropic-compatible" | "codex-sdk" | "acp";
-  modelDiscovery: "static" | "api" | "manual";
+  secretRef: string;
+  defaultModel: string;
+  modelIds: string[];
   enabled: boolean;
+  isDefault: boolean;
+  metadata?: {
+    vendorName?: string;
+    notes?: string;
+    defaultHeaders?: Record<string, string>;
+  };
 };
 ```
 
-Model Profile 字段:
+说明:
 
-```ts
-type ModelProfile = {
-  id: string;
-  providerId: string;
-  displayName: string;
-  model: string;
-  role:
-    | "default"
-    | "planner"
-    | "coder"
-    | "reviewer"
-    | "tester"
-    | "researcher"
-    | "fast"
-    | "vision"
-    | "image-generation"
-    | "audio"
-    | "long-context"
-    | "embedding";
-  modalities: {
-    input: Array<"text" | "image" | "audio" | "video" | "file">;
-    output: Array<"text" | "image" | "audio" | "video" | "embedding">;
-  };
-  capabilities: {
-    toolCalling: boolean;
-    structuredOutput: boolean;
-    codeEditing: boolean;
-    computerUse: boolean;
-    visionUnderstanding: boolean;
-    imageGeneration: boolean;
-    imageEditing: boolean;
-    audioTranscription: boolean;
-    speechGeneration: boolean;
-    embeddings: boolean;
-    reasoning: boolean;
-  };
-  contextWindowTokens?: number;
-  maxInputTokens?: number;
-  maxOutputTokens?: number;
-  temperature?: number;
-  reasoningEffort?: "none" | "minimal" | "low" | "medium" | "high";
-  tokenizer: "provider-reported" | "tiktoken" | "anthropic-estimate" | "sentencepiece" | "heuristic";
-  pricing?: {
-    currency: "USD" | "CNY";
-    inputPer1MTokens?: number;
-    outputPer1MTokens?: number;
-    cacheReadPer1MTokens?: number;
-    cacheWritePer1MTokens?: number;
-    imageInputPerUnit?: number;
-    imageOutputPerUnit?: number;
-  };
-  costLimitUsdPerRun?: number;
-  timeoutMs?: number;
-  fallbackProfileIds: string[];
-  enabled: boolean;
-};
-```
+- `provider` 表示请求协议格式，而不是商业供应商枚举。
+- 供应商品牌信息放在 `displayName` 或 `metadata.vendorName`。
+- `defaultModel` 是默认运行模型，必须同时出现在 `modelIds[]` 中。
+- `modelIds[]` 支持用户手动维护更多模型 ID，供会话或工作流覆盖使用。
 
 路由策略:
 
@@ -775,7 +667,7 @@ Spark 必须同时支持 agent 级、模型级、provider 级、session 级、wo
 
 - Global Daily Usage: 今日总 token、成本、运行任务数、沙箱等级。
 - Provider Usage: 按 provider 统计调用次数、成功率、延迟、输入/输出 token、成本。
-- Model Usage: 按具体 model profile 统计 token、成本、平均首 token 延迟、平均完成耗时。
+- Model Usage: 按具体模型 ID 统计 token、成本、平均首 token 延迟、平均完成耗时，并关联其所属 provider profile。
 - Agent Usage: 每个 agent/subagent 统计本次 run token、工具次数、耗时、成本、失败率。
 - Session Usage: 会话内累计输入、输出、工具、缓存、图片、音频等用量。
 - Workflow Usage: 按 workflow run、节点、边、重试次数汇总。
@@ -817,7 +709,7 @@ type UsageLedgerEntry = {
   workflowNodeId?: string;
   agentId?: string;
   providerId: string;
-  modelProfileId: string;
+  modelId: string;
   operation: "chat" | "tool" | "embedding" | "image-generate" | "image-edit" | "vision" | "audio" | "rerank";
   tokenUsage: TokenUsage;
   mediaUsage?: MediaUsage;
@@ -852,12 +744,12 @@ UI 表现:
 - Workflow: 每个节点展示 token、耗时、状态，连线可显示传递 artifact 大小。
 - Chat Inspector: 输入 token、输出 token、工具调用、成本、耗时、上下文窗口进度条。
 - Settings > Provider: provider 健康状态、profile 数、延迟、今日/本月成本。
-- Settings > Model Profile: 单模型上下文长度、价格、能力、近 7 天用量趋势。
+- Settings > Provider: 查看默认模型、模型列表、单模型用量趋势和近 7 天成本。
 - Team Dashboard: 按成员/项目/workflow/provider/model 做预算看板。
 
 预算与限流:
 
-- 每个 model profile 可设置单次 run token/cost 上限。
+- 每个 provider profile 可设置默认模型与可用模型列表，并在运行时叠加 session/workflow 级预算。
 - 每个 agent 可设置单次任务和每日预算。
 - 每个 workflow 可设置总预算和节点预算。
 - 团队可设置成员、项目、provider、模型维度预算。
@@ -883,7 +775,7 @@ Spark 的 agent 不应被绑定为“只能文本”或“只能代码”。模�
 - 如果用户输入包含图片，优先选择 `visionUnderstanding=true` 的模型。
 - 如果当前 agent 是 Coder，但任务需要看 UI 截图，Router 可以临时调用 vision skill，再把结构化结果返回给 Coder。
 - 如果当前 agent 是 Coder，但任务需要生成图标或封面，Router 可以临时调用 image generation skill，产物作为 artifact 挂到会话。
-- 如果当前模型不支持图片输入，系统尝试 fallback 到同 provider 的 vision profile；没有则查找全局 vision profile；仍没有则请求用户配置。
+- 如果当前默认模型不支持图片输入，系统先尝试同一 provider profile 的其他已配置模型；没有则切换到具备视觉能力的 provider profile；仍没有则请求用户补充配置。
 - 多模态产物必须进入 Artifact Store，并带上来源模型、prompt、seed、尺寸、版权/安全标记和成本。
 
 示例: 编码 agent 扩展图片理解能力
@@ -894,7 +786,7 @@ sequenceDiagram
   participant C as Coder Agent
   participant R as Capability Router
   participant V as Vision Skill
-  participant M as Vision Model Profile
+  participant M as Vision Provider Profile
   participant S as Session Artifact Store
 
   U->>C: 这里有张报错截图，修复对应 UI
@@ -1149,7 +1041,7 @@ Skill 功能:
 - MCP Skill: 启动或配置 MCP server。
 - Workflow Skill: 提供可视化节点模板。
 - Capability Skill: 给 agent 增加某类能力，例如图片理解、生图、语音转写、网页浏览。
-- Model-bound Skill: skill 明确要求某类 model profile，例如 vision/image-generation/embedding。
+- Model-bound Skill: skill 明确要求某类模型能力或模型 ID，例如 vision/image-generation/embedding。
 
 Skill 与 Agent 的能力组合:
 
@@ -1158,8 +1050,9 @@ type AgentTemplate = {
   id: string;
   name: string;
   role: "planner" | "coder" | "reviewer" | "tester" | "researcher" | "designer" | "custom";
-  primaryModelProfileId: string;
-  fallbackModelProfileIds: string[];
+  primaryProviderProfileId: string;
+  fallbackProviderProfileIds: string[];
+  modelOverride?: string;
   enabledSkillIds: string[];
   enabledToolIds: string[];
   ruleRefs: string[];
@@ -1180,8 +1073,9 @@ type AgentTemplate = {
   "id": "agent.coder.default",
   "name": "Coder Agent",
   "role": "coder",
-  "primaryModelProfileId": "codex-gpt5-coder",
-  "fallbackModelProfileIds": ["deepseek-coder", "claude-sonnet-coder"],
+  "primaryProviderProfileId": "openai-coder-prod",
+  "fallbackProviderProfileIds": ["openai-compatible-fast", "anthropic-reviewer"],
+  "modelOverride": "gpt-5-codex",
   "enabledSkillIds": [
     "spark.code-review",
     "spark.test-runner",
@@ -1453,7 +1347,8 @@ type AgentRunMetrics = {
   agentId: string;
   runId: string;
   status: "idle" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
-  modelProfileId: string;
+  providerProfileId: string;
+  modelId: string;
   tokenUsage: TokenUsage;
   mediaUsage?: MediaUsage;
   toolCallCount: number;
@@ -1706,6 +1601,7 @@ CREATE TABLE provider_profiles (
   updated_at TEXT NOT NULL
 );
 
+-- 兼容历史版本保留，不再作为主配置入口
 CREATE TABLE model_profiles (
   id TEXT PRIMARY KEY,
   provider_id TEXT NOT NULL,
@@ -2169,7 +2065,6 @@ MCP 页面:
 Settings 页面:
 
 - Providers
-- Model Profiles
 - Rules
 - Permissions
 - MCP
@@ -2183,31 +2078,24 @@ Settings > Providers:
 
 - Provider 列表:
   - 图标/名称。
-  - preset 类型。
+  - 协议格式: anthropic / openai。
   - 在线状态。
-  - profile chips。
+  - 默认模型和模型数量。
   - 设置、更多操作。
 - 添加 Provider:
-  - 从内置 preset 选择。
-  - 选择鉴权方式。
-  - 填写 base URL、region、header。
+  - 选择协议格式。
+  - 填写 base URL。
   - 选择 secret 存储位置。
+  - 填写默认模型。
+  - 手动维护模型 ID 列表。
   - 测试连接。
-  - 拉取或手动添加模型。
 - Provider 健康检查:
   - 鉴权是否有效。
-  - 模型列表是否可拉取。
+  - endpoint 是否可达。
   - 首 token 延迟。
   - usage 字段是否可用。
   - 是否支持工具调用。
   - 是否支持图片输入/输出。
-
-Settings > Model Profiles:
-
-- Profile 列表:
-  - profile 名称。
-  - provider/model。
-  - 角色标签。
   - 上下文窗口。
   - 单价。
   - 支持能力。
@@ -2438,7 +2326,7 @@ Settings > Usage:
 6. 实现 Codex Adapter stream demo。
 7. 实现 SessionService 把事件写入 store。
 8. 实现 Renderer timeline。
-9. 实现 Settings 里的 provider/model profile。
+9. 实现 Settings 里的 provider profile 与模型列表管理。
 10. 实现 Command Runtime 的最小 `/` 命令补全和 `/status`。
 
 随后 5 个切片:

@@ -63,7 +63,7 @@ export class ProviderService {
       name: params.name,
       config: normalizeProviderConfig({
         defaultModel: params.defaultModel,
-        modelIds: params.modelIds,
+        ...(params.modelIds !== undefined && { modelIds: params.modelIds }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
       }),
       keystoreRef: ref,

@@ -1,34 +1,38 @@
 /**
  * SkillsView — Skill 卡片网格
  */
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
+import { useIpcInvoke } from '../hooks/useIpc'
 
-type SkillSetting = {
-  id: string
-  name: string
-  desc: string
-  source: string
-  enabled: boolean
+function parseSkillManifest(manifestJson: string): { desc: string; source: string } {
+  try {
+    const parsed = JSON.parse(manifestJson) as { desc?: string; description?: string; source?: string }
+    return {
+      desc: parsed.desc ?? parsed.description ?? 'Skill 能力模块',
+      source: parsed.source ?? '自定义',
+    }
+  } catch {
+    return { desc: 'Skill 能力模块', source: '自定义' }
+  }
 }
 
-const SKILLS_KEY = 'spark-skills'
-
 export function SkillsView() {
-  const [skills, setSkills] = useState<SkillSetting[]>(() => {
-    const saved = localStorage.getItem(SKILLS_KEY)
-    return saved ? (JSON.parse(saved) as SkillSetting[]) : []
-  })
+  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [error, setError] = useState('')
+  const { invoke: listSkills, loading } = useIpcInvoke('skill:list')
+
+  const refresh = useCallback(() => {
+    setError('')
+    listSkills({})
+      .then((res) => setSkills(res.skills))
+      .catch((err) => setError(err instanceof Error ? err.message : '加载 Skills 失败'))
+  }, [listSkills])
 
   useEffect(() => {
-    const handler = (e: StorageEvent) => {
-      if (e.key === SKILLS_KEY && e.newValue) {
-        setSkills(JSON.parse(e.newValue) as SkillSetting[])
-      }
-    }
-    window.addEventListener('storage', handler)
-    return () => window.removeEventListener('storage', handler)
-  }, [])
+    refresh()
+  }, [refresh])
 
   const enabledCount = skills.filter((s) => s.enabled).length
 
@@ -46,9 +50,15 @@ export function SkillsView() {
         <button className="btn primary"><Icons.Plus size={12} /> 创建 Skill</button>
       </div>
 
-      {skills.length === 0 ? (
+      {error && <div className="card" style={{ marginBottom: 14, padding: '10px 12px', color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
+
+      {loading ? (
         <div className="muted" style={{ textAlign: 'center', padding: '48px 0', fontSize: 13 }}>
-          暂无 Skill，请在设置中管理
+          正在加载 Skills...
+        </div>
+      ) : skills.length === 0 ? (
+        <div className="muted" style={{ textAlign: 'center', padding: '48px 0', fontSize: 13 }}>
+          暂无 Skill
         </div>
       ) : (
         <div className="skill-grid">
@@ -59,22 +69,23 @@ export function SkillsView() {
   )
 }
 
-function SkillCard({ skill }: { skill: SkillSetting }) {
+function SkillCard({ skill }: { skill: SkillItem }) {
+  const meta = parseSkillManifest(skill.manifestJson)
   return (
     <div className="skill-card">
       <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
       <div className="row" style={{ gap: 6 }}>
         <span className="name">{skill.name}</span>
-        <span className="badge" style={{ fontSize: 10 }}>{skill.source}</span>
+        <span className="badge" style={{ fontSize: 10 }}>{meta.source}</span>
       </div>
-      <div className="desc">{skill.desc}</div>
+      <div className="desc">{meta.desc}</div>
       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
         <span className={`badge ${skill.enabled ? 'success' : ''}`} style={{ fontSize: 9.5, height: 16 }}>
           {skill.enabled ? '已启用' : '已禁用'}
         </span>
       </div>
       <div className="foot">
-        <span>{skill.source}</span>
+        <span>{meta.source} · {skill.version}</span>
         <div className="flex1" />
         <button className="icon-btn" style={{ width: 22, height: 22 }}><Icons.Play size={11} /></button>
         <button className="icon-btn" style={{ width: 22, height: 22 }}><Icons.More size={11} /></button>

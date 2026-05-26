@@ -117,7 +117,7 @@ function ChatListItem({ session: s, active, onClick }: { session: SessionSummary
       </div>
       <div className="chat-item-snippet">{s.messageCount} 条消息</div>
       <div className="chat-item-meta">
-        <span className="badge primary">{s.providerProfileId.slice(0, 8)}</span>
+        <span className="badge primary">{s.status === 'running' ? 'running' : 'idle'}</span>
         {statusLabel[s.status]}
         <span className="chat-item-time">{new Date(s.updatedAt).toLocaleDateString()}</span>
       </div>
@@ -385,6 +385,11 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
           <div className="composer-actions">
             <button className="icon-btn" title="添加文件"><Icons.Plus /></button>
             <button className="icon-btn" title="工具"><Icons.Wrench /></button>
+            <div className="model-pill">
+              <Icons.Sparkles size={11} />
+              <span>Agent</span>
+              <Icons.ChevronRight size={10} className="chev" style={{ transform: 'rotate(90deg)' }} />
+            </div>
             <div className="spacer" style={{ flex: 1 }} />
             <span className="faint" style={{ fontSize: 11 }}>
               <span className="kbd">⌘</span> <span className="kbd">↵</span> 发送
@@ -416,10 +421,22 @@ function ChatInspector({ session }: { session: SessionSummary | null }) {
             <div className="kv-row"><span className="k">状态</span><span className="v">{session.status}</span></div>
             <div className="kv-row"><span className="k">消息数</span><span className="v">{session.messageCount}</span></div>
             <div className="kv-row"><span className="k">创建时间</span><span className="v">{new Date(session.createdAt).toLocaleString()}</span></div>
+            <div className="kv-row"><span className="k">更新时间</span><span className="v">{new Date(session.updatedAt).toLocaleString()}</span></div>
           </>
         ) : (
           <div className="muted" style={{ fontSize: 12 }}>未选择会话</div>
         )}
+      </div>
+      <div className="inspector-section">
+        <h4>可用工具</h4>
+        <div style={{ display: 'flex', flexWrap: 'wrap', paddingTop: 4 }}>
+          {['read_file', 'write_file', 'list_directory', 'search_files'].map(t => (
+            <span key={t} className="tool-chip">
+              <Icons.Wrench />
+              {t}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )

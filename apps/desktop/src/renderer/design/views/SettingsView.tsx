@@ -18,6 +18,8 @@ import type {
   RuleScope,
   WorkspaceInfo,
   ModelProfile,
+  McpServerItem,
+  SkillItem,
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -31,24 +33,6 @@ type ProviderForm = {
   isDefault: boolean
 }
 
-type McpSettingsServer = {
-  id: string
-  name: string
-  type: 'stdio' | 'sse'
-  command?: string
-  endpoint?: string
-  status: 'connected' | 'disconnected'
-  tools?: string[]
-}
-
-type SkillSetting = {
-  id: string
-  name: string
-  desc: string
-  source: string
-  enabled: boolean
-}
-
 type WorkflowTemplate = {
   id: string
   name: string
@@ -57,18 +41,10 @@ type WorkflowTemplate = {
   updatedAt: string
 }
 
-const MCP_SETTINGS_KEY = 'spark-mcp-servers'
-const SKILLS_SETTINGS_KEY = 'spark-skills'
 const PERM_PROFILE_KEY = 'spark-perm-profile'
 const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
 const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
-
-const DEFAULT_SKILLS: SkillSetting[] = [
-  { id: 'built-in:search', name: 'Web 搜索', desc: '使用搜索引擎查询信息', source: '内置', enabled: true },
-  { id: 'built-in:calculator', name: '计算器', desc: '精确数学计算', source: '内置', enabled: true },
-  { id: 'built-in:code-exec', name: '代码执行', desc: '在沙箱中运行代码片段', source: '内置', enabled: false },
-]
 
 const DEFAULT_WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   { id: 'template:agent-dev', name: 'Agent 开发流程', desc: '需求分析、计划、编码、测试、审查', nodes: 6, updatedAt: '内置模板' },
@@ -1280,27 +1256,70 @@ function RuleEditPanel({
 }
 
 /* ───────── MCP ───────── */
+type McpSettingsDraft = {
+  name: string
+  scope: string
+  type: 'stdio' | 'sse'
+  command: string
+  endpoint: string
+}
+
+type McpSettingsConfig = {
+  transport?: 'stdio' | 'http' | 'sse'
+  command?: string
+  url?: string
+  tools?: string[]
+}
+
+function parseMcpConfig(configJson: string): McpSettingsConfig {
+  try {
+    return JSON.parse(configJson) as McpSettingsConfig
+  } catch {
+    return {}
+  }
+}
+
+function formatMcpServerDesc(server: McpServerItem): string {
+  const config = parseMcpConfig(server.configJson)
+  const type = config.transport ?? 'stdio'
+  const endpoint = type === 'stdio' ? config.command : config.url
+  const tools = config.tools?.length != null && config.tools.length > 0 ? ` · ${config.tools.length} tools` : ''
+  return `${server.scope} · ${type} · ${endpoint ?? '未配置'}${tools}`
+}
+
 function McpSection() {
-  const [servers, setServers] = useState<McpSettingsServer[]>(() => readStoredJson(MCP_SETTINGS_KEY, []))
+  const [servers, setServers] = useState<McpServerItem[]>([])
   const [showAddForm, setShowAddForm] = useState(false)
-  const [draft, setDraft] = useState<{ name: string; type: 'stdio' | 'sse'; command: string; endpoint: string }>({
+  const [draft, setDraft] = useState<McpSettingsDraft>({
     name: '',
+    scope: 'user',
     type: 'stdio',
     command: '',
     endpoint: '',
   })
+  const [error, setError] = useState('')
+  const { invoke: listMcp, loading } = useIpcInvoke('mcp:list')
+  const { invoke: createMcp } = useIpcInvoke('mcp:create')
+  const { invoke: updateMcp } = useIpcInvoke('mcp:update')
+  const { invoke: deleteMcp } = useIpcInvoke('mcp:delete')
 
-  const persistServers = (next: McpSettingsServer[]) => {
-    setServers(next)
-    writeStoredJson(MCP_SETTINGS_KEY, next)
-  }
+  const refresh = useCallback(() => {
+    setError('')
+    listMcp({})
+      .then((res) => setServers(res.servers))
+      .catch((err) => setError(err instanceof Error ? err.message : '加载 MCP 服务器失败'))
+  }, [listMcp])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const resetDraft = () => {
-    setDraft({ name: '', type: 'stdio', command: '', endpoint: '' })
+    setDraft({ name: '', scope: 'user', type: 'stdio', command: '', endpoint: '' })
     setShowAddForm(false)
   }
 
-  const addServer = () => {
+  const addServer = async () => {
     const name = draft.name.trim()
     const command = draft.command.trim()
     const endpoint = draft.endpoint.trim()
@@ -1308,31 +1327,32 @@ function McpSection() {
     if (draft.type === 'stdio' && command.length === 0) return
     if (draft.type === 'sse' && endpoint.length === 0) return
 
-    const server: McpSettingsServer = {
-      id: `mcp:${Date.now()}`,
-      name,
-      type: draft.type,
-      status: 'connected',
+    const config: McpSettingsConfig = {
+      transport: draft.type,
       tools: [],
       ...(draft.type === 'stdio' ? { command } : { endpoint }),
     }
-    persistServers([...servers, server])
+    await createMcp({
+      name,
+      scope: draft.scope,
+      configJson: JSON.stringify(draft.type === 'stdio' ? config : { transport: draft.type, url: endpoint, tools: [] }),
+      enabled: true,
+    })
     resetDraft()
+    refresh()
   }
 
-  const removeServer = (id: string) => {
-    persistServers(servers.filter((server) => server.id !== id))
+  const removeServer = async (id: string) => {
+    await deleteMcp({ id })
+    refresh()
   }
 
-  const toggleServer = (id: string) => {
-    persistServers(servers.map((server) => (
-      server.id === id
-        ? { ...server, status: server.status === 'connected' ? 'disconnected' : 'connected' }
-        : server
-    )))
+  const toggleServer = async (server: McpServerItem) => {
+    await updateMcp({ id: server.id, enabled: !server.enabled })
+    refresh()
   }
 
-  const activeCount = servers.filter((server) => server.status === 'connected').length
+  const activeCount = servers.filter((server) => server.enabled).length
 
   return (
     <div className="settings-section">
@@ -1344,8 +1364,12 @@ function McpSection() {
         <span className="badge primary dot">{activeCount} / {servers.length} 已连接</span>
       </div>
 
+      {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
       <div className="card">
-        {servers.length === 0 ? (
+        {loading ? (
+          <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)', fontSize: 12 }}>正在加载 MCP 服务器...</div>
+        ) : servers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
             <Icons.MCP size={24} />
             <div className="strong" style={{ marginTop: 10, color: 'var(--text)' }}>暂无 MCP 服务器</div>
@@ -1356,16 +1380,16 @@ function McpSection() {
             <SettingsRow
               key={server.id}
               title={server.name}
-              desc={`${server.type} · ${server.endpoint ?? server.command ?? '未配置'}${server.tools?.length ? ` · ${server.tools.length} tools` : ''}`}
+              desc={formatMcpServerDesc(server)}
               right={
                 <div className="row" style={{ gap: 4 }}>
-                  <span className={`badge ${server.status === 'connected' ? 'success' : 'danger'} dot`}>
-                    {server.status === 'connected' ? '已连接' : '断开'}
+                  <span className={`badge ${server.enabled ? 'success' : 'danger'} dot`}>
+                    {server.enabled ? '已启用' : '已禁用'}
                   </span>
-                  <button className="btn ghost sm" onClick={() => toggleServer(server.id)}>
-                    {server.status === 'connected' ? '断开' : '连接'}
+                  <button className="btn ghost sm" onClick={() => void toggleServer(server)}>
+                    {server.enabled ? '禁用' : '启用'}
                   </button>
-                  <button className="icon-btn" title="删除" onClick={() => removeServer(server.id)}>
+                  <button className="icon-btn" title="删除" onClick={() => void removeServer(server.id)}>
                     <Icons.Trash size={11} />
                   </button>
                 </div>
@@ -1381,6 +1405,15 @@ function McpSection() {
           <div className="form-grid">
             <label>名称</label>
             <input value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
+
+            <label>作用域</label>
+            <select value={draft.scope} onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))}>
+              <option value="system">system</option>
+              <option value="user">user</option>
+              <option value="team">team</option>
+              <option value="project">project</option>
+              <option value="session">session</option>
+            </select>
 
             <label>类型</label>
             <select value={draft.type} onChange={(e) => setDraft((prev) => ({ ...prev, type: e.target.value === 'sse' ? 'sse' : 'stdio' }))}>
@@ -1400,7 +1433,7 @@ function McpSection() {
             />
           </div>
           <div className="row" style={{ gap: 8, marginTop: 12 }}>
-            <button className="btn primary sm" onClick={addServer}><Icons.Plus size={11} /> 添加</button>
+            <button className="btn primary sm" onClick={() => void addServer()}><Icons.Plus size={11} /> 添加</button>
             <button className="btn ghost sm" onClick={resetDraft}>取消</button>
           </div>
         </div>
@@ -1414,13 +1447,38 @@ function McpSection() {
 }
 
 /* ───────── SKILLS ───────── */
-function SkillsSection() {
-  const [skills, setSkills] = useState<SkillSetting[]>(() => readStoredJson(SKILLS_SETTINGS_KEY, DEFAULT_SKILLS))
+function parseSkillManifest(manifestJson: string): { desc: string; source: string } {
+  try {
+    const parsed = JSON.parse(manifestJson) as { desc?: string; description?: string; source?: string }
+    return {
+      desc: parsed.desc ?? parsed.description ?? 'Skill 能力模块',
+      source: parsed.source ?? '自定义',
+    }
+  } catch {
+    return { desc: 'Skill 能力模块', source: '自定义' }
+  }
+}
 
-  const toggleSkill = (id: string) => {
-    const next = skills.map((skill) => skill.id === id ? { ...skill, enabled: !skill.enabled } : skill)
-    setSkills(next)
-    writeStoredJson(SKILLS_SETTINGS_KEY, next)
+function SkillsSection() {
+  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [error, setError] = useState('')
+  const { invoke: listSkills, loading } = useIpcInvoke('skill:list')
+  const { invoke: updateSkill } = useIpcInvoke('skill:update')
+
+  const refresh = useCallback(() => {
+    setError('')
+    listSkills({})
+      .then((res) => setSkills(res.skills))
+      .catch((err) => setError(err instanceof Error ? err.message : '加载 Skills 失败'))
+  }, [listSkills])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const toggleSkill = async (skill: SkillItem) => {
+    await updateSkill({ id: skill.id, enabled: !skill.enabled })
+    refresh()
   }
 
   return (
@@ -1428,24 +1486,31 @@ function SkillsSection() {
       <h2>Skills</h2>
       <div className="lede">管理 Agent 可使用的技能模块。启用或禁用会影响 Agent 在对话中可调用的能力。</div>
 
+      {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
       <div className="card">
-        {skills.map((skill) => (
-          <SettingsRow
-            key={skill.id}
-            title={skill.name}
-            desc={`${skill.desc} · ${skill.source}`}
-            right={
-              <div
-                className={`switch ${skill.enabled ? 'on' : ''}`}
-                onClick={() => toggleSkill(skill.id)}
-              />
-            }
-          />
-        ))}
+        {loading ? (
+          <div style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>正在加载 Skills...</div>
+        ) : skills.map((skill) => {
+          const meta = parseSkillManifest(skill.manifestJson)
+          return (
+            <SettingsRow
+              key={skill.id}
+              title={skill.name}
+              desc={`${meta.desc} · ${meta.source} · ${skill.version}`}
+              right={
+                <div
+                  className={`switch ${skill.enabled ? 'on' : ''}`}
+                  onClick={() => void toggleSkill(skill)}
+                />
+              }
+            />
+          )
+        })}
       </div>
 
       <div style={{ marginTop: 16, color: 'var(--text-muted)', fontSize: 'var(--font-xs)' }}>
-        自定义 Skill 安装将在后续版本支持。
+        Skill 配置保存在本地 SQLite。自定义 Skill 安装将在后续版本支持。
       </div>
     </div>
   )
