@@ -10,7 +10,9 @@ import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
+import { PROVIDER_PRESETS, getProviderPresetById } from '@spark/protocol'
 import type {
+  ProviderPreset,
   ProviderHealthCheckResponse,
   ProviderProfile,
   ProviderUpdateRequest,
@@ -26,6 +28,7 @@ import type {
 
 type ProviderKind = 'anthropic' | 'openai'
 type ProviderForm = {
+  presetId: string
   name: string
   provider: ProviderKind
   defaultModel: string
@@ -580,6 +583,7 @@ function ProviderCardX({
 export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: string | null; onClose: () => void }) {
   const { toast } = useToast()
   const [form, setForm] = useState<ProviderForm>({
+    presetId: 'custom',
     name: '',
     provider: 'anthropic',
     defaultModel: '',
@@ -598,17 +602,18 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
   // 编辑模式：加载现有 profile
   useEffect(() => {
     if (!profileId) {
-      setForm({ name: '', provider: 'anthropic', defaultModel: '', modelIdsText: '', endpoint: '', apiKey: '', isDefault: false })
+      setForm({ presetId: 'custom', name: '', provider: 'anthropic', defaultModel: '', modelIdsText: '', endpoint: '', apiKey: '', isDefault: false })
       return
     }
     listProviders({}).then(r => {
       const p = r.profiles.find(x => x.id === profileId)
       if (p) {
         setForm({
+          presetId: 'custom',
           name: p.name,
           provider: normalizeProviderKind(p.provider),
           defaultModel: p.defaultModel,
-          modelIdsText: joinModelIds(p.modelIds),
+          modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
           endpoint: p.apiEndpoint ?? '',
           apiKey: '',
           isDefault: p.isDefault,
@@ -657,6 +662,17 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
   }
 
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }))
+  const applyPreset = (preset: ProviderPreset) => {
+    setForm(prev => ({
+      ...prev,
+      presetId: preset.id,
+      name: preset.name,
+      provider: preset.provider,
+      defaultModel: preset.defaultModel,
+      modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
+      endpoint: preset.apiEndpoint,
+    }))
+  }
 
   return (
     <div className="slide-panel-backdrop" onClick={onClose}>
@@ -675,11 +691,37 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
 
           <div className="subsec-h">基础</div>
           <div className="form-grid">
+            <label>供应商模板<span className="sub">基于官方公开文档预填，后续仍可修改</span></label>
+            <select
+              value={form.presetId}
+              disabled={!!profileId}
+              onChange={e => {
+                const presetId = e.target.value
+                if (presetId === 'custom') {
+                  set('presetId', 'custom')
+                  return
+                }
+                const preset = getProviderPresetById(presetId)
+                if (preset) applyPreset(preset)
+              }}
+            >
+              <option value="custom">自定义</option>
+              {PROVIDER_PRESETS.map((preset) => (
+                <option key={preset.id} value={preset.id}>
+                  {preset.name} · {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
+                </option>
+              ))}
+            </select>
+
             <label>显示名称</label>
             <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="例：Anthropic · Claude" />
 
             <label>协议格式<span className="sub">决定使用 Anthropic 或 OpenAI 适配器</span></label>
-            <select value={form.provider} onChange={e => set('provider', normalizeProviderKind(e.target.value))} disabled={!!profileId}>
+            <select
+              value={form.provider}
+              onChange={e => setForm(prev => ({ ...prev, presetId: 'custom', provider: normalizeProviderKind(e.target.value) }))}
+              disabled={!!profileId}
+            >
               <option value="anthropic">Anthropic 格式</option>
               <option value="openai">OpenAI 格式</option>
             </select>
@@ -743,8 +785,8 @@ function parseModelIds(modelIdsText: string, defaultModel: string): string[] {
   return [...new Set(values)]
 }
 
-function joinModelIds(modelIds: string[]): string {
-  return modelIds.join('\n')
+function joinModelIds(modelIds: string[], defaultModel?: string): string {
+  return modelIds.filter((modelId) => modelId !== defaultModel).join('\n')
 }
 
 /* ───────── PROFILE EDIT MODAL ───────── */

@@ -616,6 +616,8 @@ Spark 支持命令后追加自然语言，用于给 agent 提供上下文:
 - 每个 provider profile 自带 `baseUrl`、`apiKey`、`defaultModel` 和 `modelIds[]`，不再依赖独立 model profile 才能运行。
 - DeepSeek、OpenRouter、Ollama、LM Studio、自建网关等都作为“供应商名称 + endpoint”的具体实例接入，而不是单独的 adapter 类型。
 - agent/workflow/session 绑定 provider profile；需要切模型时，在同一个 provider profile 的 `modelIds[]` 中选择，或切换到另一个 provider profile。
+- 设置页提供一组内置供应商 preset，preset 只负责预填官方公开可验证的 `baseUrl` 与一组推荐 `modelIds[]`，保存后落库的仍然是普通 provider profile。
+- 内置 preset 首批覆盖腾讯云 Coding Plan、阿里云百炼 Coding Plan、智谱 GLM Coding Plan、DeepSeek API、MiniMax、Kimi、硅基流动、OpenRouter，同时保留完全自定义入口。
 
 设计约束:
 
@@ -650,6 +652,7 @@ type ProviderProfile = {
 - 供应商品牌信息放在 `displayName` 或 `metadata.vendorName`。
 - `defaultModel` 是默认运行模型，必须同时出现在 `modelIds[]` 中。
 - `modelIds[]` 支持用户手动维护更多模型 ID，供会话或工作流覆盖使用。
+- preset 只是创建时的模板来源，不参与运行时路由判定，也不限制用户后续修改 endpoint、默认模型或模型列表。
 
 路由策略:
 
