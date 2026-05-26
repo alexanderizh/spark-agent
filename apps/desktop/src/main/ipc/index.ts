@@ -156,6 +156,15 @@ export function registerAllIpcHandlers(): void {
     return { closed: true }
   })
 
+  typedIpcHandle('workspace:list-directory', async (req) => {
+    log.info(`workspace:list-directory requested, workspaceId=${req.workspaceId}`)
+    const entries = await getWorkspaceService().listDirectoryTree(req.workspaceId, {
+      ...(req.path !== undefined && { path: req.path }),
+      ...(req.maxDepth !== undefined && { maxDepth: req.maxDepth }),
+    })
+    return { entries }
+  })
+
   // ─── Native Dialog Handlers ─────────────────────────────────────────────
 
   typedIpcHandle('dialog:open-directory', async (req) => {

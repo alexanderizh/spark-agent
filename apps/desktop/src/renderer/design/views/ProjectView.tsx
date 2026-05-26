@@ -3,7 +3,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import type { AgentStatusValue, SessionId, WorkspaceInfo } from '@spark/protocol'
+import type { AgentStatusValue, SessionId, WorkspaceInfo, WorkspaceTreeEntry } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-mapper'
@@ -38,48 +38,68 @@ export function ProjectView() {
 }
 
 function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
+  const [entries, setEntries] = useState<WorkspaceTreeEntry[]>([])
+  const [error, setError] = useState('')
+  const { invoke: listDirectory, loading } = useIpcInvoke('workspace:list-directory')
+
+  const refreshTree = useCallback(() => {
+    if (workspace == null) {
+      setEntries([])
+      setError('')
+      return
+    }
+
+    setError('')
+    listDirectory({ workspaceId: workspace.id, maxDepth: 3 })
+      .then((res) => setEntries(res.entries))
+      .catch((err) => {
+        console.error(err)
+        setEntries([])
+        setError(err instanceof Error ? err.message : '加载文件树失败')
+      })
+  }, [workspace, listDirectory])
+
+  useEffect(() => {
+    refreshTree()
+  }, [refreshTree])
+
   return (
     <div className="project-explorer">
       <div className="explorer-head">
         <Icons.Folder size={14} />
-        <span>{workspace?.name ?? 'spark-agent'}</span>
+        <span>{workspace?.name ?? '未打开工作区'}</span>
         <span className="badge dot" style={{ color: 'var(--info)' }}>main</span>
       </div>
       <div className="row" style={{ padding: '6px 10px', gap: 4, borderBottom: '1px solid var(--divider)' }}>
         <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Plus size={12} /></button>
-        <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Refresh size={12} /></button>
+        <button className="icon-btn" style={{ width: 24, height: 24 }} onClick={refreshTree} disabled={workspace == null || loading} title="刷新文件树"><Icons.Refresh size={12} /></button>
         <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.ChevronDown size={12} /></button>
         <div className="flex1" />
         <button className="icon-btn" style={{ width: 24, height: 24 }}><Icons.Search size={12} /></button>
       </div>
       <div className="tree scroll">
-        <TreeRow depth={0} expanded folder name="apps" />
-        <TreeRow depth={1} expanded folder name="desktop" />
-        <TreeRow depth={2} folder name="src" />
-        <TreeRow depth={0} expanded folder name="packages" />
-        <TreeRow depth={1} expanded folder name="agent-runtime" />
-        <TreeRow depth={2} expanded folder name="src" />
-        <TreeRow depth={3} expanded folder name="adapters" />
-        <TreeRow depth={4} ext="ts" name="claude.ts" status="M" />
-        <TreeRow depth={4} ext="ts" name="codex.ts" />
-        <TreeRow depth={3} ext="ts" name="index.ts" />
-        <TreeRow depth={1} folder expanded name="auth" />
-        <TreeRow depth={2} ext="ts" name="index.ts" />
-        <TreeRow depth={2} ext="ts" name="token.ts" status="M" active />
-        <TreeRow depth={2} ext="ts" name="session.ts" status="M" />
-        <TreeRow depth={2} ext="ts" name="pkce.ts" status="A" />
-        <TreeRow depth={2} folder name="providers" />
-        <TreeRow depth={2} folder name="tests" />
-        <TreeRow depth={1} folder name="protocol" />
-        <TreeRow depth={1} folder name="rule-engine" />
-        <TreeRow depth={1} folder name="storage" />
-        <TreeRow depth={0} expanded folder name="docs" />
-        <TreeRow depth={1} ext="md" name="desktop-agent-development-guide.md" />
-        <TreeRow depth={1} ext="md" name="oauth.md" status="M" />
-        <TreeRow depth={0} ext="md" name="README.md" />
-        <TreeRow depth={0} ext="json" name="package.json" />
-        <TreeRow depth={0} ext="md" name="AGENTS.md" />
-        <TreeRow depth={0} folder name=".spark" />
+        {workspace == null && (
+          <div className="faint" style={{ padding: '12px 8px', lineHeight: 1.5 }}>请先在 Home 或设置中打开一个项目。</div>
+        )}
+        {workspace != null && loading && entries.length === 0 && (
+          <div className="faint" style={{ padding: '12px 8px' }}>加载文件树...</div>
+        )}
+        {workspace != null && error !== '' && (
+          <div className="faint" style={{ padding: '12px 8px', lineHeight: 1.5 }}>{error}</div>
+        )}
+        {workspace != null && !loading && error === '' && entries.length === 0 && (
+          <div className="faint" style={{ padding: '12px 8px' }}>该目录为空。</div>
+        )}
+        {workspace != null && error === '' && entries.map((entry) => (
+          <TreeRow
+            key={entry.path}
+            depth={entry.depth}
+            folder={entry.type === 'directory'}
+            expanded={entry.type === 'directory' && entry.depth < 3 && (entry.childrenCount ?? 0) > 0}
+            name={entry.name}
+            {...(entry.extension !== undefined && { ext: entry.extension })}
+          />
+        ))}
       </div>
     </div>
   )

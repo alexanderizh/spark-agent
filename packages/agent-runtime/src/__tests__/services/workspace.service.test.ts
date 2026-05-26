@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
 
@@ -42,6 +42,11 @@ function makeRepo() {
     }),
     findByRootPath: vi.fn((rootPath: string) => {
       return [...rows.values()].find((row) => row.root_path === rootPath) ?? null
+    }),
+    findByIdOrFail: vi.fn((id: string) => {
+      const row = rows.get(id)
+      if (row === undefined) throw new Error(`Workspace not found: ${id}`)
+      return row
     }),
     listAll: vi.fn((limit = 50, offset = 0) => [...rows.values()].slice(offset, offset + limit)),
     delete: vi.fn((id: string) => rows.delete(id)),
@@ -172,5 +177,38 @@ describe('WorkspaceService', () => {
 
     expect(repo.listAll).toHaveBeenCalledWith(10, 5)
     expect(result).toBe(listed)
+  })
+
+  it('lists a bounded workspace directory tree', async () => {
+    const workspace = await service.openWorkspace(tempDir)
+    await mkdir(path.join(tempDir, 'src', 'nested'), { recursive: true })
+    await mkdir(path.join(tempDir, 'node_modules'), { recursive: true })
+    await writeFile(path.join(tempDir, 'package.json'), '{}')
+    await writeFile(path.join(tempDir, 'src', 'index.ts'), 'export {}')
+    await writeFile(path.join(tempDir, 'src', 'nested', 'deep.ts'), 'export {}')
+    await writeFile(path.join(tempDir, 'node_modules', 'ignored.js'), '')
+
+    const entries = await service.listDirectoryTree(workspace.id, { maxDepth: 1 })
+
+    expect(entries.map((entry) => entry.path)).toEqual([
+      'src',
+      'src/nested',
+      'src/index.ts',
+      'package.json',
+    ])
+    expect(entries.find((entry) => entry.path === 'src/index.ts')).toMatchObject({
+      type: 'file',
+      extension: 'ts',
+      depth: 1,
+    })
+    expect(entries.some((entry) => entry.path.startsWith('node_modules'))).toBe(false)
+  })
+
+  it('rejects directory traversal when listing a tree', async () => {
+    const workspace = await service.openWorkspace(tempDir)
+
+    await expect(service.listDirectoryTree(workspace.id, { path: '..' })).rejects.toThrow(
+      'Directory path is outside workspace',
+    )
   })
 })

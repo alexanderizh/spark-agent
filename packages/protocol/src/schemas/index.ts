@@ -88,6 +88,12 @@ export const WorkspaceOpenRequestSchema = z.object({
     .optional(),
 })
 
+export const WorkspaceListDirectoryRequestSchema = z.object({
+  workspaceId: z.string().uuid(),
+  path: z.string().max(500).optional().default(''),
+  maxDepth: z.number().int().min(0).max(5).optional().default(3),
+})
+
 export const DialogOpenDirectoryRequestSchema = z.object({
   title: z.string().max(200).optional(),
   defaultPath: z.string().optional(),
@@ -135,6 +141,9 @@ export const IpcSchemaRegistry = {
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'workspace:open': WorkspaceOpenRequestSchema,
+  'workspace:get-current': z.object({}),
+  'workspace:close': z.object({ workspaceId: z.string().uuid() }),
+  'workspace:list-directory': WorkspaceListDirectoryRequestSchema,
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
   'rules:list': RulesListRequestSchema,
   'rules:create': RulesCreateRequestSchema,

@@ -201,6 +201,25 @@ export interface WorkspaceCloseResponse {
   closed: boolean
 }
 
+export interface WorkspaceTreeEntry {
+  name: string
+  path: string
+  type: 'file' | 'directory' | 'symlink'
+  depth: number
+  extension?: string
+  childrenCount?: number
+}
+
+export interface WorkspaceListDirectoryRequest {
+  workspaceId: string
+  path?: string
+  maxDepth?: number
+}
+
+export interface WorkspaceListDirectoryResponse {
+  entries: WorkspaceTreeEntry[]
+}
+
 // ─── Dialog Channels ────────────────────────────────────────────────────────
 
 export interface DialogOpenDirectoryRequest {
@@ -517,6 +536,7 @@ export interface IpcChannelMap {
   'workspace:open': [WorkspaceOpenRequest, WorkspaceOpenResponse]
   'workspace:get-current': [WorkspaceGetCurrentRequest, WorkspaceGetCurrentResponse]
   'workspace:close': [WorkspaceCloseRequest, WorkspaceCloseResponse]
+  'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
