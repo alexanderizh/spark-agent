@@ -10,6 +10,7 @@ export interface AgentConfig {
   adapter: IModelAdapter
   apiKey: string
   model: string
+  apiEndpoint?: string
   systemPrompt?: string
   tools: ToolRegistry
   toolContext: ToolContext
@@ -42,7 +43,7 @@ export class AgentLoop {
     config: AgentConfig,
     historyMessages: ChatMessage[] = [],
   ): Promise<void> {
-    const { adapter, apiKey, model, systemPrompt, tools, toolContext, temperature, maxTokens } = config
+    const { adapter, apiKey, model, apiEndpoint, systemPrompt, tools, toolContext, temperature, maxTokens } = config
     const maxIter = config.maxTurnIterations ?? 20
 
     this.abortController = new AbortController()
@@ -76,6 +77,7 @@ export class AgentLoop {
           model,
           messages,
           tools: tools.getDefinitions(),
+          ...(apiEndpoint !== undefined && { apiEndpoint }),
           ...(systemPrompt !== undefined && { systemPrompt }),
           ...(temperature !== undefined && { temperature }),
           ...(maxTokens !== undefined && { maxTokens }),

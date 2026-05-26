@@ -8,9 +8,17 @@ import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
-import type { ProviderHealthCheckResponse, ProviderProfile, WorkspaceInfo } from '@spark/protocol'
+import type { ProviderHealthCheckResponse, ProviderProfile, ProviderUpdateRequest, WorkspaceInfo } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai-compatible'
+type ProviderForm = {
+  name: string
+  provider: ProviderKind
+  model: string
+  endpoint: string
+  apiKey: string
+  isDefault: boolean
+}
 
 export function SettingsView() {
   const { t, setTweak } = useApp()
@@ -527,13 +535,14 @@ function ProviderCardX({
 
 /* ───────── PROVIDER EDIT slide panel ───────── */
 export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: string | null; onClose: () => void }) {
-  const [form, setForm] = useState<{
-    name: string
-    provider: ProviderKind
-    model: string
-    apiKey: string
-    isDefault: boolean
-  }>({ name: '', provider: 'anthropic', model: '', apiKey: '', isDefault: false })
+  const [form, setForm] = useState<ProviderForm>({
+    name: '',
+    provider: 'anthropic',
+    model: '',
+    endpoint: '',
+    apiKey: '',
+    isDefault: false,
+  })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -544,7 +553,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
   // 编辑模式：加载现有 profile
   useEffect(() => {
     if (!profileId) {
-      setForm({ name: '', provider: 'anthropic', model: '', apiKey: '', isDefault: false })
+      setForm({ name: '', provider: 'anthropic', model: '', endpoint: '', apiKey: '', isDefault: false })
       return
     }
     listProviders({}).then(r => {
@@ -554,6 +563,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
           name: p.name,
           provider: normalizeProviderKind(p.provider),
           model: p.model,
+          endpoint: p.apiEndpoint ?? '',
           apiKey: '',
           isDefault: p.isDefault,
         })
@@ -566,12 +576,27 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
     if (!profileId && !form.apiKey.trim()) { setError('新建 Provider 需要填写 API Key'); return }
     setSaving(true); setError('')
     try {
+      const endpoint = form.endpoint.trim()
+      const usesCustomEndpoint = form.provider === 'ollama' || form.provider === 'openai-compatible'
       if (profileId) {
-        const req: { id: string; name?: string; model?: string; apiKey?: string; isDefault?: boolean } = { id: profileId, name: form.name, model: form.model, isDefault: form.isDefault }
+        const req: ProviderUpdateRequest = {
+          id: profileId,
+          name: form.name.trim(),
+          model: form.model.trim(),
+          isDefault: form.isDefault,
+          apiEndpoint: endpoint.length > 0 ? endpoint : null,
+        }
         if (form.apiKey.trim()) req.apiKey = form.apiKey
         await updateProvider(req)
       } else {
-        await createProvider({ name: form.name, provider: form.provider, model: form.model, apiKey: form.apiKey, isDefault: form.isDefault })
+        await createProvider({
+          name: form.name.trim(),
+          provider: form.provider,
+          model: form.model.trim(),
+          apiKey: form.apiKey,
+          isDefault: form.isDefault,
+          ...(usesCustomEndpoint && endpoint.length > 0 && { apiEndpoint: endpoint }),
+        })
       }
       onClose()
     } catch (e) {
@@ -614,6 +639,18 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
 
             <label>模型 ID</label>
             <input value={form.model} onChange={e => set('model', e.target.value)} placeholder="例：claude-sonnet-4-5-20250929" className="mono-sm" />
+
+            {(form.provider === 'ollama' || form.provider === 'openai-compatible') && (
+              <>
+                <label>Endpoint URL<span className="sub">兼容 OpenAI 的 base URL</span></label>
+                <input
+                  value={form.endpoint}
+                  onChange={e => set('endpoint', e.target.value)}
+                  placeholder={form.provider === 'ollama' ? 'http://localhost:11434/v1' : 'https://api.example.com/v1'}
+                  className="mono-sm"
+                />
+              </>
+            )}
 
             <label>默认 Profile</label>
             <div className={`switch ${form.isDefault ? 'on' : ''}`} onClick={() => set('isDefault', !form.isDefault)} />
@@ -759,70 +796,121 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 
 /* ───────── MODELS ───────── */
 function ModelsSection() {
-  const { setTweak } = useApp()
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [showEditor, setShowEditor] = useState(false)
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
 
-  useEffect(() => {
-    listProviders({}).then((res) => setProfiles(res.profiles)).catch(console.error)
+  const refresh = useCallback(() => {
+    setLoading(true)
+    setError('')
+    listProviders({})
+      .then((res) => setProfiles(res.profiles))
+      .catch((err) => setError(err instanceof Error ? err.message : '加载模型 Profile 失败'))
+      .finally(() => setLoading(false))
   }, [listProviders])
 
+  useEffect(() => { refresh() }, [refresh])
+
+  const filteredProfiles = profiles.filter((profile) => {
+    const keyword = query.trim().toLowerCase()
+    if (keyword.length === 0) return true
+    return [profile.name, profile.provider, profile.model, profile.apiEndpoint ?? '']
+      .some((value) => value.toLowerCase().includes(keyword))
+  })
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('确认删除该模型 Profile？关联会话将无法继续使用这个 Provider。')) return
+    await deleteProvider({ id })
+    refresh()
+  }
+
   return (
-    <div className="settings-section">
-      <div className="row" style={{ alignItems: 'flex-end', marginBottom: 14 }}>
-        <div style={{ flex: 1 }}>
-          <h2 style={{ margin: 0 }}>模型 Profile</h2>
-          <div className="lede" style={{ margin: '4px 0 0' }}>每个 profile 绑定到 provider，并附加角色、参数与 fallback 链。</div>
+    <>
+      <div className="settings-section">
+        <div className="row" style={{ alignItems: 'flex-end', marginBottom: 14 }}>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0 }}>模型 Profile</h2>
+            <div className="lede" style={{ margin: '4px 0 0' }}>每个 profile 绑定到 provider，并附加角色、参数与 fallback 链。</div>
+          </div>
+          <div className="search-input"><Icons.Search /><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="搜索 profile..." /></div>
+          <button className="btn primary" onClick={() => { setEditingId(null); setShowEditor(true) }}><Icons.Plus size={12} /> 新建 Profile</button>
         </div>
-        <div className="search-input"><Icons.Search /><input placeholder="搜索 profile..." /></div>
-        <button className="btn primary" onClick={() => setTweak('showProfileEdit', true)}><Icons.Plus size={12} /> 新建 Profile</button>
+
+        <div className="row" style={{ gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
+          <span className="badge primary dot">全部 {profiles.length}</span>
+          <span className="badge">default</span>
+          <span className="badge">chat</span>
+          <span className="badge">coder</span>
+        </div>
+
+        {error && (
+          <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>
+            {error}
+          </div>
+        )}
+
+        {loading && (
+          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+            正在加载模型 Profile...
+          </div>
+        )}
+
+        {!loading && profiles.length === 0 && (
+          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+            暂无模型 Profile。请先在 Provider 页面添加一个 Provider。
+          </div>
+        )}
+
+        {!loading && profiles.length > 0 && filteredProfiles.length === 0 && (
+          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+            没有匹配的模型 Profile。
+          </div>
+        )}
+
+        {!loading && filteredProfiles.map((profile) => (
+          <ModelRowFull
+            key={profile.id}
+            profile={profile}
+            onEdit={() => { setEditingId(profile.id); setShowEditor(true) }}
+            onDelete={() => handleDelete(profile.id)}
+          />
+        ))}
       </div>
 
-      <div className="row" style={{ gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        <span className="badge primary dot">全部 {profiles.length}</span>
-        <span className="badge">default</span>
-        <span className="badge">chat</span>
-        <span className="badge">coder</span>
-      </div>
-
-      {profiles.length === 0 && (
-        <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
-          暂无模型 Profile。请先在 Provider 页面添加一个 Provider。
-        </div>
-      )}
-      {profiles.map((profile) => (
-        <ModelRowFull
-          key={profile.id}
-          provider={profile.provider}
-          name={profile.name}
-          model={profile.model}
-          roles={profile.isDefault ? ['default', 'chat'] : ['chat']}
-          temp={0.7}
-          ctx="由 Provider 配置"
-          disabled={false}
+      {showEditor && (
+        <ProviderEditPanel
+          profileId={editingId}
+          onClose={() => { setShowEditor(false); refresh() }}
         />
-      ))}
-    </div>
+      )}
+    </>
   )
 }
 
-function ModelRowFull({ provider, name, model, roles, temp, ctx, reasoning, disabled }: { provider: string; name: string; model: string; roles: string[]; temp: number; ctx: string; reasoning?: string; disabled?: boolean }) {
-  const { setTweak } = useApp()
+function ModelRowFull({ profile, onEdit, onDelete }: { profile: ProviderProfile; onEdit: () => void; onDelete: () => void }) {
+  const roles = profile.isDefault ? ['default', 'chat'] : ['chat']
+  const ctx = profile.apiEndpoint ?? '由 Provider 配置'
   return (
-    <div className="model-row" style={{ padding: '12px 14px', opacity: disabled ? 0.6 : 1 }}>
+    <div className="model-row" style={{ padding: '12px 14px' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 0 }}>
         <div className="row" style={{ gap: 8 }}>
-          <span className="strong" style={{ fontSize: 'var(--font-base)' }}>{name}</span>
-          <span className="mono-sm faint" style={{ fontSize: 11 }}>· {model}</span>
+          <span className="strong" style={{ fontSize: 'var(--font-base)' }}>{profile.name}</span>
+          <span className="mono-sm faint" style={{ fontSize: 11 }}>· {profile.model}</span>
         </div>
         <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-          <span className="badge" style={{ fontSize: 10 }}>{provider}</span>
+          <span className="badge" style={{ fontSize: 10 }}>{profile.provider}</span>
           {roles.map((r) => <span key={r} className="badge primary" style={{ fontSize: 10 }}>{r}</span>)}
-          <span className="mono-sm muted" style={{ fontSize: 11, marginLeft: 6 }}>T={temp} · {ctx}{reasoning && <> · reasoning={reasoning}</>}</span>
+          <span className="mono-sm muted" style={{ fontSize: 11, marginLeft: 6 }}>T=0.7 · {ctx}</span>
         </div>
       </div>
-      <div className={`switch ${disabled ? '' : 'on'}`} />
-      <button className="btn ghost sm" onClick={() => setTweak('showProfileEdit', true)}><Icons.Edit size={11} /> 编辑</button>
+      <div className="switch on" />
+      <button className="btn ghost sm" onClick={onEdit}><Icons.Edit size={11} /> 编辑</button>
+      <button className="icon-btn" title="删除" onClick={onDelete}><Icons.X size={13} /></button>
     </div>
   )
 }

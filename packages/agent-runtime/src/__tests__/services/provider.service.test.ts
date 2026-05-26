@@ -71,6 +71,24 @@ describe('ProviderService', () => {
     expect(profile.model).toBe('claude-opus-4-6')
   })
 
+  it('createProvider stores custom apiEndpoint in config and returned profile', async () => {
+    const profile = await service.createProvider({
+      name: 'Local Ollama',
+      provider: 'ollama',
+      model: 'llama3.2',
+      apiEndpoint: 'http://localhost:11434/v1',
+      apiKey: 'ollama-local',
+    })
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      config: {
+        model: 'llama3.2',
+        apiEndpoint: 'http://localhost:11434/v1',
+      },
+    }))
+    expect(profile.apiEndpoint).toBe('http://localhost:11434/v1')
+  })
+
   it('deleteProvider removes from keystore and repo', async () => {
     // seed a row
     repo.rows.set('id-1', {
@@ -126,6 +144,51 @@ describe('ProviderService', () => {
 
     expect(keystore.setSecret).not.toHaveBeenCalled()
     expect(repo.update).toHaveBeenCalledWith('id-3', { name: 'New Name' })
+  })
+
+  it('updateProvider merges apiEndpoint into existing config', async () => {
+    repo.rows.set('id-5', {
+      id: 'id-5',
+      provider_type: 'openai-compatible',
+      name: 'Compat',
+      config_json: '{"model":"mixtral"}',
+      enabled: 1,
+      keystore_ref: 'compat-id-5',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await service.updateProvider({ id: 'id-5', apiEndpoint: 'https://api.example.com/v1' })
+
+    expect(repo.update).toHaveBeenCalledWith('id-5', {
+      config: {
+        model: 'mixtral',
+        apiEndpoint: 'https://api.example.com/v1',
+      },
+    })
+  })
+
+  it('updateProvider clears apiEndpoint when null is passed', async () => {
+    repo.rows.set('id-6', {
+      id: 'id-6',
+      provider_type: 'ollama',
+      name: 'Ollama',
+      config_json: '{"model":"llama3.2","apiEndpoint":"http://localhost:11434/v1"}',
+      enabled: 1,
+      keystore_ref: 'ollama-id-6',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await service.updateProvider({ id: 'id-6', apiEndpoint: null })
+
+    expect(repo.update).toHaveBeenCalledWith('id-6', {
+      config: {
+        model: 'llama3.2',
+      },
+    })
   })
 
   it('createProvider with isDefault calls setDefault', async () => {

@@ -53,6 +53,7 @@ export const ProviderCreateRequestSchema = z.object({
   name: z.string().min(1).max(100),
   provider: z.enum(['anthropic', 'openai', 'codex', 'deepseek', 'ollama', 'openai-compatible']),
   model: z.string().min(1).max(100),
+  apiEndpoint: z.string().min(1).max(500).optional(),
   apiKey: z.string().min(1).max(500),
   isDefault: z.boolean().optional().default(false),
 })
@@ -61,6 +62,7 @@ export const ProviderUpdateRequestSchema = z.object({
   id: ProfileIdSchema,
   name: z.string().min(1).max(100).optional(),
   model: z.string().min(1).max(100).optional(),
+  apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
 })

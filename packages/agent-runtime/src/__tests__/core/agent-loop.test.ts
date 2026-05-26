@@ -43,6 +43,31 @@ describe('AgentLoop', () => {
     expect(statuses).toContain('completed')
   })
 
+  it('passes apiEndpoint through to the model adapter', async () => {
+    const loop = new AgentLoop()
+    let seenEndpoint: string | undefined
+
+    const adapter: IModelAdapter = {
+      provider: 'mock',
+      async *streamChat(params) {
+        seenEndpoint = params.apiEndpoint
+        yield { ...BASE, type: 'assistant_message' as const, mode: 'complete' as const, content: 'ok', isFinal: true }
+      },
+    }
+
+    const registry = new ToolRegistry()
+    await loop.executeTurn('s1', 't1', 'hi', {
+      adapter,
+      apiKey: 'key',
+      model: 'model',
+      apiEndpoint: 'http://localhost:11434/v1',
+      tools: registry,
+      toolContext: { workspaceRootPath: '/tmp' },
+    })
+
+    expect(seenEndpoint).toBe('http://localhost:11434/v1')
+  })
+
   it('tool call scenario: emits tool_call + tool_result then completes', async () => {
     const loop = new AgentLoop()
     const collected: AgentEvent[] = []

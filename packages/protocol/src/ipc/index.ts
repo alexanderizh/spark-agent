@@ -96,6 +96,8 @@ export interface ProviderProfile {
   name: string
   provider: string
   model: string
+  /** 自定义 API Endpoint（用于 Ollama / OpenAI-compatible 等） */
+  apiEndpoint?: string
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -113,6 +115,7 @@ export interface ProviderCreateRequest {
   name: string
   provider: string
   model: string
+  apiEndpoint?: string
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -126,6 +129,8 @@ export interface ProviderUpdateRequest {
   id: string
   name?: string
   model?: string
+  /** 传入 null 可清除自定义 Endpoint */
+  apiEndpoint?: string | null
   /** 更新 API Key 时传入，不更新则不传 */
   apiKey?: string
   isDefault?: boolean

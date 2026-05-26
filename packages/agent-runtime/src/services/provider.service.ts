@@ -14,12 +14,13 @@ function rowToProfile(row: {
   is_default: number
   created_at: string
 }): ProviderProfile {
-  const config = JSON.parse(row.config_json) as { model?: string }
+  const config = JSON.parse(row.config_json) as { model?: string; apiEndpoint?: string }
   return {
     id: row.id,
     name: row.name,
     provider: row.provider_type,
     model: config.model ?? '',
+    ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -37,6 +38,7 @@ export class ProviderService {
     name: string
     provider: string
     model: string
+    apiEndpoint?: string
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -56,7 +58,10 @@ export class ProviderService {
       id,
       providerType: params.provider,
       name: params.name,
-      config: { model: params.model },
+      config: {
+        model: params.model,
+        ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
+      },
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
     })
@@ -72,6 +77,7 @@ export class ProviderService {
     id: string
     name?: string
     model?: string
+    apiEndpoint?: string | null
     apiKey?: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -84,8 +90,22 @@ export class ProviderService {
       log.info(`Updated API key for id=${params.id} key=${keystore.maskSecret(params.apiKey)}`)
     }
 
-    const existingConfig = JSON.parse(existing.config_json) as { model?: string }
-    const newConfig = params.model !== undefined ? { ...existingConfig, model: params.model } : undefined
+    const existingConfig = JSON.parse(existing.config_json) as { model?: string; apiEndpoint?: string }
+    const newConfig =
+      params.model !== undefined || params.apiEndpoint !== undefined
+        ? { ...existingConfig }
+        : undefined
+
+    if (newConfig !== undefined && params.model !== undefined) {
+      newConfig.model = params.model
+    }
+    if (newConfig !== undefined && params.apiEndpoint !== undefined) {
+      if (params.apiEndpoint === null) {
+        delete newConfig.apiEndpoint
+      } else {
+        newConfig.apiEndpoint = params.apiEndpoint
+      }
+    }
 
     this.repo.update(params.id, {
       ...(params.name !== undefined && { name: params.name }),
@@ -123,7 +143,7 @@ export class ProviderService {
     const start = Date.now()
 
     try {
-      const endpoint = config.apiEndpoint ?? getDefaultEndpoint(row.provider_type)
+      const endpoint = getHealthCheckEndpoint(row.provider_type, config.apiEndpoint)
       const res = await fetch(endpoint, {
         headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(5000),
@@ -141,11 +161,20 @@ export class ProviderService {
   }
 }
 
+function getHealthCheckEndpoint(providerType: string, apiEndpoint?: string): string {
+  if (apiEndpoint !== undefined) {
+    const trimmed = apiEndpoint.replace(/\/+$/, '')
+    return trimmed.endsWith('/models') ? trimmed : `${trimmed}/models`
+  }
+  return getDefaultEndpoint(providerType)
+}
+
 function getDefaultEndpoint(providerType: string): string {
   switch (providerType) {
     case 'anthropic': return 'https://api.anthropic.com/v1/models'
     case 'openai': return 'https://api.openai.com/v1/models'
     case 'deepseek': return 'https://api.deepseek.com/v1/models'
+    case 'ollama': return 'http://localhost:11434/v1/models'
     default: return 'https://api.openai.com/v1/models'
   }
 }

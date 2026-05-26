@@ -92,6 +92,7 @@ export class SessionService {
       adapter,
       apiKey,
       model: config.model,
+      ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
       tools,
       toolContext: { workspaceRootPath },
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
