@@ -87,3 +87,7 @@ pnpm-debug.log*
 
 # ---- TypeScript 增量编译缓存 -------------
 *.tsbuildinfo
+
+# TeamAgentX 输出文件
+.teamagentx-output/
+

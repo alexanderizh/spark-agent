@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Content Security Policy：
+      - default-src 'self'：只允许来自当前 origin 的资源
+      - script-src 'self'：禁止 inline scripts，防止 XSS
+      - style-src 'self' 'unsafe-inline'：允许内联样式（React 组件库需要）
+      - img-src 'self' data:：允许 data URI 图片
+      - connect-src 'self'：IPC 通过 contextBridge，不需要额外的网络权限
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'"
+    />
+    <title>Spark Agent</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

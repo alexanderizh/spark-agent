@@ -1,0 +1,42 @@
+{
+  "name": "@spark/desktop",
+  "version": "0.1.0",
+  "description": "Spark Agent desktop application — Electron + React + TypeScript",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "build:unpack": "electron-vite build && electron-builder --dir",
+    "preview": "electron-vite preview",
+    "postinstall": "electron-rebuild -f -w better-sqlite3 keytar",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "eslint src --ext .ts,.tsx"
+  },
+  "dependencies": {
+    "@spark/protocol": "workspace:*",
+    "@spark/shared": "workspace:*",
+    "@spark/storage": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@electron-toolkit/preload": "^3.0.0",
+    "@electron-toolkit/utils": "^3.0.0",
+    "@playwright/test": "^1.45.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.0",
+    "electron-rebuild": "^3.2.0",
+    "electron-vite": "^2.3.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
