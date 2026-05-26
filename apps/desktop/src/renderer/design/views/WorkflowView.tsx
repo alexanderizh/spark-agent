@@ -1,7 +1,7 @@
 /**
  * WorkflowView — DAG 编辑器（React Flow 风格）
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 
@@ -21,6 +21,16 @@ type WFNodeData = {
   desc?: string
   meta?: string
 }
+
+type WorkflowMeta = {
+  id: string
+  name: string
+  status: 'draft' | 'active' | 'archived'
+  nodes: number
+  createdAt: string
+}
+
+const WORKFLOWS_KEY = 'spark-workflows'
 
 const NODES: WFNodeData[] = [
   { id: 'n1', x: 40, y: 80, kind: 'input', title: '需求输入', status: 'done', desc: '解析用户需求文档' },
@@ -46,23 +56,129 @@ const EDGES = [
 ]
 
 export function WorkflowView() {
+  const [workflows, setWorkflows] = useState<WorkflowMeta[]>([])
+  const [activeWf, setActiveWf] = useState<string | null>(null)
+
+  useEffect(() => {
+    const raw = window.localStorage.getItem(WORKFLOWS_KEY)
+    if (raw === null) return
+    try {
+      const saved = JSON.parse(raw) as WorkflowMeta[]
+      setWorkflows(saved)
+    } catch {
+      setWorkflows([])
+    }
+  }, [])
+
+  const persistWorkflows = (next: WorkflowMeta[]) => {
+    setWorkflows(next)
+    window.localStorage.setItem(WORKFLOWS_KEY, JSON.stringify(next))
+  }
+
+  const handleCreateWorkflow = () => {
+    const workflow: WorkflowMeta = {
+      id: `workflow:${Date.now()}`,
+      name: `工作流 ${workflows.length + 1}`,
+      status: 'draft',
+      nodes: NODES.length,
+      createdAt: new Date().toISOString(),
+    }
+    persistWorkflows([workflow, ...workflows])
+    setActiveWf(workflow.id)
+  }
+
+  if (activeWf === null) {
+    return (
+      <div className="workflow-layout">
+        <WorkflowToolbar />
+
+        <div
+          className="wf-empty-state"
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: 'var(--text-muted)',
+            minWidth: 0,
+          }}
+        >
+          <div className="col" style={{ alignItems: 'center', gap: 16, width: 'min(520px, 92%)' }}>
+            <div
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: 14,
+                background: 'var(--primary-soft)',
+                color: 'var(--primary)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Icons.Layers size={34} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <h3 style={{ margin: 0, color: 'var(--text-strong)' }}>工作流编排</h3>
+              <p style={{ fontSize: 12, margin: '6px 0 0', lineHeight: 1.6 }}>创建多 Agent 协作流程，定义任务依赖和审批节点。</p>
+            </div>
+            <button className="btn primary" onClick={handleCreateWorkflow}>
+              <Icons.Plus size={12} /> 创建工作流
+            </button>
+
+            {workflows.length > 0 && (
+              <div className="card" style={{ width: '100%', padding: 0, overflow: 'hidden' }}>
+                {workflows.map((workflow) => (
+                  <div key={workflow.id} className="settings-card-row">
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="row-title">{workflow.name}</div>
+                      <div className="row-desc">{workflow.nodes} 个节点 · {workflow.status} · {new Date(workflow.createdAt).toLocaleDateString()}</div>
+                    </div>
+                    <div className="row-action">
+                      <button className="btn ghost sm" onClick={() => setActiveWf(workflow.id)}>打开</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return <WorkflowEditor workflow={workflows.find((workflow) => workflow.id === activeWf) ?? null} onBack={() => setActiveWf(null)} />
+}
+
+function WorkflowToolbar() {
+  return (
+    <div className="wf-toolbar-side">
+      <button className="icon-btn active"><Icons.Command /></button>
+      <button className="icon-btn"><Icons.Bot /></button>
+      <button className="icon-btn"><Icons.Wrench /></button>
+      <button className="icon-btn"><Icons.Shield /></button>
+      <button className="icon-btn"><Icons.Branch /></button>
+      <button className="icon-btn"><Icons.Layers /></button>
+      <button className="icon-btn"><Icons.Terminal /></button>
+      <div style={{ flex: 1 }} />
+      <button className="icon-btn"><Icons.Beaker /></button>
+    </div>
+  )
+}
+
+function WorkflowEditor({ workflow, onBack }: { workflow: WorkflowMeta | null; onBack: () => void }) {
   const [selected, setSelected] = useState('n4')
 
   return (
     <div className="workflow-layout">
-      <div className="wf-toolbar-side">
-        <button className="icon-btn active"><Icons.Command /></button>
-        <button className="icon-btn"><Icons.Bot /></button>
-        <button className="icon-btn"><Icons.Wrench /></button>
-        <button className="icon-btn"><Icons.Shield /></button>
-        <button className="icon-btn"><Icons.Branch /></button>
-        <button className="icon-btn"><Icons.Layers /></button>
-        <button className="icon-btn"><Icons.Terminal /></button>
-        <div style={{ flex: 1 }} />
-        <button className="icon-btn"><Icons.Beaker /></button>
-      </div>
+      <WorkflowToolbar />
 
       <div className="wf-canvas">
+        <div style={{ position: 'absolute', left: 18, top: 14, zIndex: 5, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <button className="btn ghost sm" onClick={onBack}><Icons.ChevronLeft size={11} /> 返回</button>
+          <span className="badge primary dot">{workflow?.name ?? '未命名工作流'}</span>
+        </div>
+
         <svg className="wf-edges">
           {EDGES.map((e, i) => {
             const a = NODES.find((n) => n.id === e.from)!
