@@ -6,6 +6,64 @@ import { WorkspaceRepository } from '@spark/storage'
 import type { WorkspaceRow } from '@spark/storage'
 import type { WorkspaceTreeEntry } from '@spark/protocol'
 
+/**
+ * 项目类型检测标识文件列表
+ *
+ * 按优先级排列：排在前的优先匹配。
+ * `files` 支持精确文件名匹配和以 '.' 开头的扩展名匹配。
+ */
+const PROJECT_KIND_INDICATORS: ReadonlyArray<{
+  files: string[]
+  kind: string
+  /** 二次确认文件（可选，精确文件名） */
+  confirmFiles?: string[]
+}> = [
+  { files: ['package.json'], kind: 'typescript', confirmFiles: ['tsconfig.json', 'tsconfig.jsonc'] },
+  { files: ['package.json'], kind: 'javascript' },
+  { files: ['Cargo.toml'], kind: 'rust' },
+  { files: ['go.mod'], kind: 'go' },
+  { files: ['pyproject.toml', 'requirements.txt', 'setup.py', 'Pipfile'], kind: 'python' },
+  { files: ['pom.xml', 'build.gradle', 'build.gradle.kts'], kind: 'java' },
+  { files: ['.csproj', '.sln'], kind: 'csharp' },
+  { files: ['Gemfile'], kind: 'ruby' },
+  { files: ['composer.json'], kind: 'php' },
+  { files: ['mix.exs'], kind: 'elixir' },
+  { files: ['CMakeLists.txt', 'Makefile'], kind: 'cpp' },
+]
+
+/**
+ * 检测项目类型
+ *
+ * 检查根目录下的文件标识符，返回最匹配的 projectKind。
+ * 优先匹配具体类型，未匹配则返回 'unknown'。
+ */
+export async function detectProjectKind(rootPath: string): Promise<string> {
+  try {
+    const dirents = await fs.readdir(rootPath, { withFileTypes: true })
+    const fileNames = new Set(dirents.filter((d) => d.isFile() || d.isSymbolicLink()).map((d) => d.name))
+
+    for (const indicator of PROJECT_KIND_INDICATORS) {
+      const hasMainFile = indicator.files.some((f) =>
+        f.startsWith('.') ? fileNames.has(f) || [...fileNames].some((n) => n.endsWith(f)) : fileNames.has(f),
+      )
+      if (!hasMainFile) continue
+
+      // 有 confirmFiles 时，需要确认文件也存在才能确认具体类型
+      if (indicator.confirmFiles !== undefined) {
+        const hasConfirm = indicator.confirmFiles.some((f) => fileNames.has(f))
+        if (hasConfirm) return indicator.kind
+        continue // 主文件匹配但确认文件不匹配，跳过这个规则
+      }
+
+      return indicator.kind
+    }
+
+    return 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 export interface UpdateWorkspaceParams {
   name?: string
   projectKind?: string
@@ -14,6 +72,10 @@ export interface UpdateWorkspaceParams {
 export interface ListDirectoryTreeParams {
   path?: string
   maxDepth?: number
+}
+
+export interface OpenWorkspaceParams {
+  create?: boolean
 }
 
 const DEFAULT_TREE_DEPTH = 3
@@ -33,8 +95,11 @@ export class WorkspaceService {
 
   constructor(private readonly repo: WorkspaceRepository) {}
 
-  async openWorkspace(rootPath: string, name?: string): Promise<WorkspaceRow> {
+  async openWorkspace(rootPath: string, name?: string, params: OpenWorkspaceParams = {}): Promise<WorkspaceRow> {
     const resolved = path.resolve(rootPath)
+    if (params.create === true) {
+      await fs.mkdir(resolved, { recursive: true })
+    }
     await assertDirectory(resolved)
 
     const existing = this.repo.findByRootPath(resolved)
@@ -43,11 +108,13 @@ export class WorkspaceService {
       return existing
     }
 
+    const detectedKind = await detectProjectKind(resolved)
+
     const workspace = this.repo.create({
       id: randomUUID(),
       name: name ?? path.basename(resolved),
       rootPath: resolved,
-      projectKind: 'unknown',
+      projectKind: detectedKind,
     })
     this.currentWorkspace = workspace
     return workspace
@@ -63,6 +130,10 @@ export class WorkspaceService {
 
   listWorkspaces(limit = 50, offset = 0): WorkspaceRow[] {
     return this.repo.listAll(limit, offset)
+  }
+
+  countWorkspaces(): number {
+    return this.repo.countAll()
   }
 
   async listDirectoryTree(

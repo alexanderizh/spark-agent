@@ -4,7 +4,7 @@ import * as path from 'node:path'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { WorkspaceService } from '../../services/workspace.service.js'
+import { WorkspaceService, detectProjectKind } from '../../services/workspace.service.js'
 import type { WorkspaceRow } from '@spark/storage'
 
 function makeWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
@@ -210,5 +210,124 @@ describe('WorkspaceService', () => {
     await expect(service.listDirectoryTree(workspace.id, { path: '..' })).rejects.toThrow(
       'Directory path is outside workspace',
     )
+  })
+
+  it('openWorkspace auto-detects project kind', async () => {
+    await writeFile(path.join(tempDir, 'go.mod'), 'module example')
+    const workspace = await service.openWorkspace(tempDir, 'GoProject')
+    expect(workspace.project_kind).toBe('go')
+  })
+})
+
+describe('detectProjectKind', () => {
+  let tempDir: string
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(tmpdir(), 'spark-detect-'))
+  })
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it('detects typescript when package.json + tsconfig.json exist', async () => {
+    await writeFile(path.join(tempDir, 'package.json'), '{}')
+    await writeFile(path.join(tempDir, 'tsconfig.json'), '{}')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('typescript')
+  })
+
+  it('detects javascript when only package.json exists', async () => {
+    await writeFile(path.join(tempDir, 'package.json'), '{}')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('javascript')
+  })
+
+  it('detects rust when Cargo.toml exists', async () => {
+    await writeFile(path.join(tempDir, 'Cargo.toml'), '[package]')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('rust')
+  })
+
+  it('detects go when go.mod exists', async () => {
+    await writeFile(path.join(tempDir, 'go.mod'), 'module example')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('go')
+  })
+
+  it('detects python when pyproject.toml exists', async () => {
+    await writeFile(path.join(tempDir, 'pyproject.toml'), '[project]')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('python')
+  })
+
+  it('detects python when requirements.txt exists', async () => {
+    await writeFile(path.join(tempDir, 'requirements.txt'), 'flask')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('python')
+  })
+
+  it('detects python when setup.py exists', async () => {
+    await writeFile(path.join(tempDir, 'setup.py'), 'from setuptools import setup')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('python')
+  })
+
+  it('detects java when pom.xml exists', async () => {
+    await writeFile(path.join(tempDir, 'pom.xml'), '<project></project>')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('java')
+  })
+
+  it('detects java when build.gradle exists', async () => {
+    await writeFile(path.join(tempDir, 'build.gradle'), 'plugins {}')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('java')
+  })
+
+  it('detects java when build.gradle.kts exists', async () => {
+    await writeFile(path.join(tempDir, 'build.gradle.kts'), 'plugins {}')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('java')
+  })
+
+  it('detects csharp when .csproj file exists', async () => {
+    await writeFile(path.join(tempDir, 'App.csproj'), '<Project></Project>')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('csharp')
+  })
+
+  it('detects csharp when .sln file exists', async () => {
+    await writeFile(path.join(tempDir, 'App.sln'), '')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('csharp')
+  })
+
+  it('detects ruby when Gemfile exists', async () => {
+    await writeFile(path.join(tempDir, 'Gemfile'), "source 'https://rubygems.org'")
+    await expect(detectProjectKind(tempDir)).resolves.toBe('ruby')
+  })
+
+  it('detects php when composer.json exists', async () => {
+    await writeFile(path.join(tempDir, 'composer.json'), '{}')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('php')
+  })
+
+  it('detects elixir when mix.exs exists', async () => {
+    await writeFile(path.join(tempDir, 'mix.exs'), 'defmodule do end')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('elixir')
+  })
+
+  it('detects cpp when CMakeLists.txt exists', async () => {
+    await writeFile(path.join(tempDir, 'CMakeLists.txt'), 'cmake_minimum_required(VERSION 3.0)')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('cpp')
+  })
+
+  it('detects cpp when Makefile exists', async () => {
+    await writeFile(path.join(tempDir, 'Makefile'), 'all:')
+    await expect(detectProjectKind(tempDir)).resolves.toBe('cpp')
+  })
+
+  it('returns unknown when no indicator files exist', async () => {
+    await expect(detectProjectKind(tempDir)).resolves.toBe('unknown')
+  })
+
+  it('returns unknown for non-existent directory', async () => {
+    await expect(detectProjectKind('/non/existent/path')).resolves.toBe('unknown')
+  })
+
+  it('prioritizes typescript over javascript when both indicators match', async () => {
+    await writeFile(path.join(tempDir, 'package.json'), '{}')
+    await writeFile(path.join(tempDir, 'tsconfig.json'), '{}')
+    // First rule: package.json + tsconfig.json → 'typescript'
+    await expect(detectProjectKind(tempDir)).resolves.toBe('typescript')
   })
 })
