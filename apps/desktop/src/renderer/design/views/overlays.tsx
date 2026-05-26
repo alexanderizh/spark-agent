@@ -5,6 +5,7 @@
  */
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
+import type { PermissionApprovalRequest, PermissionApprovalDecision } from '@spark/protocol'
 
 export function CommandPalette({ onClose }: { onClose: () => void }) {
   return (
@@ -70,56 +71,42 @@ function PItem({ icon, title, hint, kbds, sel }: { icon: ReactNode; title: strin
   )
 }
 
-export function PermissionModal({ onClose }: { onClose: () => void }) {
+export function PermissionModal({ request, onClose }: { request: PermissionApprovalRequest; onClose: () => void }) {
+  const riskIcon = request.riskLevel === 'high' ? <Icons.AlertTriangle className="ico" /> : <Icons.Shield className="ico" />
+  const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
+
+  async function respond(decision: PermissionApprovalDecision) {
+    try {
+      await window.spark.invoke('permission:approval-respond', { requestId: request.requestId, decision })
+    } catch {
+      // best-effort
+    }
+    onClose()
+  }
+
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" onClick={() => respond('deny')}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
-          <div className="modal-h-icon"><Icons.AlertTriangle size={18} /></div>
+          <div className="modal-h-icon">{riskIcon}</div>
           <div>
-            <div className="modal-title">请求执行 Shell 命令</div>
-            <div className="modal-subtitle">来自 Codex Agent · spark-agent 工作区 · 风险等级 中</div>
+            <div className="modal-title">请求执行工具：{request.toolName}</div>
+            <div className="modal-subtitle">Session {request.sessionId.slice(0, 8)} · 风险等级 {riskLabel}</div>
           </div>
         </div>
         <div className="modal-body">
           <div className="cmd-preview mono-sm">
-{`$ git push origin feat/oauth-2.1 --force-with-lease
-$ gh pr create --title "feat(auth): OAuth 2.1 + PKCE" \\
-    --body-file .spark/scratch/pr-body.md`}
-          </div>
-          <div>
-            <div className="strong" style={{ fontSize: 12, marginBottom: 6 }}>影响分析</div>
-            <div className="risk-list">
-              <div className="risk-row"><Icons.AlertTriangle className="ico" /> <span>使用 <code className="mono-sm">--force-with-lease</code>，远程分支会被覆盖</span></div>
-              <div className="risk-row success"><Icons.Check className="ico" /> 仅影响远程分支 <span className="mono-sm">feat/oauth-2.1</span></div>
-              <div className="risk-row success"><Icons.Check className="ico" /> 本地与远程没有未同步差异</div>
-              <div className="risk-row success"><Icons.Check className="ico" /> 由 Coder Agent 发起，符合任务范围</div>
-            </div>
-          </div>
-
-          <div className="row" style={{ padding: '8px 10px', background: 'var(--bg-soft)', borderRadius: 'var(--r-md)', fontSize: 11.5, color: 'var(--text-muted)', gap: 8 }}>
-            <Icons.Brain size={13} />
-            <span><strong className="strong">Agent 解释:</strong> 本地分支历史比远程旧 1 个 commit，因为之前 rebase 整理过提交。使用 <code className="mono-sm">--force-with-lease</code> 而非 <code className="mono-sm">--force</code> 是为了避免覆盖他人提交。</span>
-          </div>
-
-          <div className="row" style={{ fontSize: 12 }}>
-            <Icons.Lock size={12} style={{ color: 'var(--text-muted)' }} />
-            <span className="muted">下次类似命令的处理：</span>
-            <div className="seg-control" style={{ marginLeft: 'auto' }}>
-              <button className="active">询问</button>
-              <button>本会话允许</button>
-              <button>本项目允许</button>
-            </div>
+            {JSON.stringify(request.toolInput, null, 2)}
           </div>
         </div>
         <div className="modal-foot">
           <span className="muted" style={{ fontSize: 11 }}>
-            <span className="kbd">esc</span> 取消 · <span className="kbd">⌘</span> <span className="kbd">↵</span> 批准
+            <span className="kbd">esc</span> 拒绝
           </span>
           <div className="spacer" style={{ flex: 1 }} />
-          <button className="btn" onClick={onClose}>拒绝</button>
-          <button className="btn">仅 Dry-run</button>
-          <button className="btn primary" onClick={onClose}>批准并执行</button>
+          <button className="btn" onClick={() => respond('deny')}>拒绝</button>
+          <button className="btn" onClick={() => respond('allow-session')}>本会话允许</button>
+          <button className="btn primary" onClick={() => respond('allow-once')}>允许一次</button>
         </div>
       </div>
     </div>

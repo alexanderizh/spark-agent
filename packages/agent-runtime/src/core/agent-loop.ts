@@ -6,6 +6,13 @@ import { AgentEventEmitter } from './event-emitter.js'
 
 export type PermissionMode = 'auto' | 'ask'
 
+/** Called before a tool executes. Return true to allow, false to deny. */
+export type ApprovalCallback = (
+  sessionId: string,
+  toolName: string,
+  toolInput: Record<string, unknown>,
+) => Promise<boolean>
+
 export interface AgentConfig {
   adapter: IModelAdapter
   apiKey: string
@@ -18,6 +25,8 @@ export interface AgentConfig {
   permissionMode?: PermissionMode
   temperature?: number
   maxTokens?: number
+  /** Optional approval callback; if provided, called before each tool execution */
+  approvalCallback?: ApprovalCallback
 }
 
 export class AgentLoop {
@@ -43,7 +52,7 @@ export class AgentLoop {
     config: AgentConfig,
     historyMessages: ChatMessage[] = [],
   ): Promise<void> {
-    const { adapter, apiKey, model, apiEndpoint, systemPrompt, tools, toolContext, temperature, maxTokens } = config
+    const { adapter, apiKey, model, apiEndpoint, systemPrompt, tools, toolContext, temperature, maxTokens, approvalCallback } = config
     const maxIter = config.maxTurnIterations ?? 20
 
     this.abortController = new AbortController()
@@ -96,6 +105,33 @@ export class AgentLoop {
             emitStatus('calling_tool')
 
             const resultBase = makeBase()
+
+            // Permission approval check
+            if (approvalCallback) {
+              const allowed = await approvalCallback(sessionId, pendingToolCall.toolName, pendingToolCall.toolInput)
+              if (!allowed) {
+                this.emitter.emit({
+                  ...resultBase,
+                  type: 'tool_result',
+                  toolCallId: pendingToolCall.toolCallId,
+                  toolName: pendingToolCall.toolName,
+                  status: 'denied',
+                  error: 'User denied tool execution',
+                  durationMs: 0,
+                })
+                emitStatus('thinking')
+                messages.push({
+                  role: 'assistant',
+                  content: [{ type: 'tool_use', id: pendingToolCall.toolCallId, name: pendingToolCall.toolName, input: pendingToolCall.toolInput }],
+                })
+                messages.push({
+                  role: 'user',
+                  content: [{ type: 'tool_result', tool_use_id: pendingToolCall.toolCallId, content: 'Tool execution denied by user' }],
+                })
+                break
+              }
+            }
+
             const toolResult = await tools.execute(toolContext, pendingToolCall, resultBase)
             this.emitter.emit(toolResult)
 

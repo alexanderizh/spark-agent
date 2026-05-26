@@ -294,6 +294,25 @@ export interface RulesDeleteResponse {
 
 export type PermissionMode = 'allow' | 'ask' | 'ask-twice' | 'deny'
 
+// Tool approval flow (main → renderer push, then renderer → main respond)
+export interface PermissionApprovalRequest {
+  requestId: string
+  sessionId: string
+  toolName: string
+  toolInput: Record<string, unknown>
+  riskLevel: 'low' | 'medium' | 'high'
+}
+
+export type PermissionApprovalDecision = 'allow-once' | 'allow-session' | 'deny'
+
+export interface PermissionApprovalRespondRequest {
+  requestId: string
+  decision: PermissionApprovalDecision
+}
+export interface PermissionApprovalRespondResponse {
+  ok: boolean
+}
+
 export interface PermissionProfileItem {
   id: string
   name: string
@@ -553,6 +572,7 @@ export interface IpcChannelMap {
   'permission:delete-profile': [PermissionDeleteProfileRequest, PermissionDeleteProfileResponse]
   'permission:update-sandbox': [PermissionUpdateSandboxRequest, PermissionUpdateSandboxResponse]
   'permission:update-rule': [PermissionUpdateRuleRequest, PermissionUpdateRuleResponse]
+  'permission:approval-respond': [PermissionApprovalRespondRequest, PermissionApprovalRespondResponse]
 
   // Model
   'model:list': [ModelListRequest, ModelListResponse]
@@ -598,6 +618,8 @@ export interface IpcStreamChannelMap {
     status: 'connected' | 'disconnected' | 'error'
     message?: string
   }
+  /** 工具审批请求（主进程推送，渲染进程弹窗）*/
+  'stream:permission:approval-request': PermissionApprovalRequest
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap

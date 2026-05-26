@@ -1,5 +1,6 @@
-import React, { useEffect, useCallback, useRef } from 'react'
+import React, { useEffect, useCallback, useRef, useState } from 'react'
 import { AppProvider, useApp, PRIMARIES } from './design/AppContext'
+import type { PermissionApprovalRequest } from '@spark/protocol'
 
 import { HomeView } from './design/views/HomeView'
 import { ChatView } from './design/views/ChatView'
@@ -99,6 +100,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
 function Shell() {
   const { t, setTweak } = useApp()
   const scaleRef = useRef<HTMLDivElement>(null)
+  const [approvalRequest, setApprovalRequest] = useState<PermissionApprovalRequest | null>(null)
 
   // Auto-scale 1440×900 → viewport
   useEffect(() => {
@@ -126,6 +128,7 @@ function Shell() {
         setTweak('showPerm', false)
         setTweak('showProviderEdit', false)
         setTweak('showProfileEdit', false)
+        setApprovalRequest(null)
       }
     },
     [setTweak],
@@ -135,6 +138,13 @@ function Shell() {
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [onKey])
+
+  // Listen for tool approval requests from main process
+  useEffect(() => {
+    return window.spark.on('stream:permission:approval-request', (req) => {
+      setApprovalRequest(req)
+    })
+  }, [])
 
   const primary = t.primary
   const info = PRIMARIES[primary]
@@ -326,7 +336,8 @@ function Shell() {
 
       {/* Overlays */}
       {t.showPalette && <CommandPalette onClose={() => setTweak('showPalette', false)} />}
-      {t.showPerm && <PermissionModal onClose={() => setTweak('showPerm', false)} />}
+      {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', toolInput: {}, riskLevel: 'medium' }} onClose={() => setTweak('showPerm', false)} />}
+      {approvalRequest && <PermissionModal request={approvalRequest} onClose={() => setApprovalRequest(null)} />}
 
       {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}
     </div>

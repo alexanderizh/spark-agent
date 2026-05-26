@@ -13,6 +13,7 @@ import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 
 export type SessionEventHandler = (event: AgentEvent) => void
+export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
 
 export class SessionService {
   private activeLoops = new Map<string, AgentLoop>()  // sessionId → AgentLoop
@@ -21,6 +22,7 @@ export class SessionService {
   constructor(
     private readonly db: SparkDatabase,
     private readonly onEvent: SessionEventHandler,
+    private readonly onApproval?: ApprovalHandler,
   ) {}
 
   async createSession(params: {
@@ -104,6 +106,7 @@ export class SessionService {
       toolContext: { workspaceRootPath },
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       ...(config.temperature != null ? { temperature: config.temperature } : {}),
+      ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
     }
 
     // Initialize seq counter from existing event count

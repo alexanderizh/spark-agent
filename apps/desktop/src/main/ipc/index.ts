@@ -16,7 +16,7 @@ import { createLogger } from '@spark/shared'
 import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
 import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
-import type { SessionEventHandler } from '@spark/agent-runtime'
+import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
@@ -63,7 +63,12 @@ function getSessionService(): SessionService {
     const onEvent: SessionEventHandler = (event) => {
       pushStreamEvent('stream:session:agent-event', event)
     }
-    _sessionService = new SessionService(getDatabase(), onEvent)
+    const onApproval: ApprovalHandler = (sessionId, toolName, toolInput) => {
+      return getPermissionService().requestApproval(sessionId, toolName, toolInput, (req) => {
+        pushStreamEvent('stream:permission:approval-request', req)
+      })
+    }
+    _sessionService = new SessionService(getDatabase(), onEvent, onApproval)
   }
   return _sessionService
 }
@@ -235,6 +240,11 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('permission:update-rule', async (req) => {
     const rule = getPermissionService().updateRule(req.profileId, req.action, req.mode)
     return { rule }
+  })
+
+  typedIpcHandle('permission:approval-respond', async (req) => {
+    const ok = getPermissionService().resolveApproval(req.requestId, req.decision)
+    return { ok }
   })
 
   // ─── Model Handlers ─────────────────────────────────────────────────────────

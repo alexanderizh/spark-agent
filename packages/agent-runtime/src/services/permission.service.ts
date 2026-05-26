@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { PermissionProfileRepository, PermissionProfileRow, PermissionRuleRow } from '@spark/storage'
-import type { PermissionProfileItem, PermissionRuleItem, PermissionMode } from '@spark/protocol'
+import type { PermissionProfileItem, PermissionRuleItem, PermissionMode, PermissionApprovalRequest, PermissionApprovalDecision } from '@spark/protocol'
 
 const BUILTIN_PROFILES = [
   { id: 'strict', name: 'strict', sandboxLevel: 0 },
@@ -23,6 +23,26 @@ const DEFAULT_RULES: Array<{ action: string; scope: string; mode: PermissionMode
 ]
 
 const ACTIVE_PROFILE_KEY = 'permission:active-profile'
+
+// Maps built-in tool names to permission action keys
+const TOOL_ACTION_MAP: Record<string, string> = {
+  write_file: 'file_write',
+  read_file: 'file_read',
+  list_directory: 'file_read',
+  search_files: 'file_read',
+}
+
+// Risk level per action
+const RISK_LEVEL_MAP: Record<string, 'low' | 'medium' | 'high'> = {
+  file_read: 'low',
+  file_write: 'medium',
+  command_exec: 'high',
+  command_dangerous: 'high',
+  git_push: 'high',
+  network_unknown: 'medium',
+  mcp_tool: 'medium',
+  secret_read: 'high',
+}
 
 export class PermissionService {
   constructor(private readonly repo: PermissionProfileRepository) {
@@ -90,6 +110,56 @@ export class PermissionService {
   }
 
   private static _activeProfileId: string | null = null
+
+  // ─── Tool Approval Flow ───────────────────────────────────────────────────
+
+  /**
+   * 工具执行前的审批检查。
+   * 如果当前 profile 对该工具的 action 设置为 'ask'，则通过 pushFn 推送审批请求，
+   * 并等待用户响应（Promise 由 resolveApproval 解决）。
+   * 返回 true 表示允许执行，false 表示拒绝。
+   */
+  async requestApproval(
+    sessionId: string,
+    toolName: string,
+    toolInput: Record<string, unknown>,
+    pushFn: (req: PermissionApprovalRequest) => void,
+  ): Promise<boolean> {
+    const action = TOOL_ACTION_MAP[toolName] ?? 'file_read'
+    const profileId = this.getActiveProfileId()
+    const rules = this.repo.listRules(profileId)
+    const rule = rules.find((r) => r.action === action)
+    const mode = (rule?.mode ?? 'allow') as PermissionMode
+
+    if (mode === 'allow') return true
+    if (mode === 'deny') return false
+
+    // mode === 'ask' or 'ask-twice': push to renderer and wait
+    const requestId = randomUUID()
+    const riskLevel = RISK_LEVEL_MAP[action] ?? 'low'
+
+    const result = await new Promise<PermissionApprovalDecision>((resolve) => {
+      PermissionService._pendingApprovals.set(requestId, resolve)
+      pushFn({ requestId, sessionId, toolName, toolInput, riskLevel })
+    })
+
+    if (result === 'allow-session') {
+      // Temporarily allow for this session by upgrading the rule
+      this.repo.updateRuleMode(rules.find((r) => r.action === action)?.id ?? '', 'allow')
+    }
+
+    return result !== 'deny'
+  }
+
+  resolveApproval(requestId: string, decision: PermissionApprovalDecision): boolean {
+    const resolve = PermissionService._pendingApprovals.get(requestId)
+    if (!resolve) return false
+    PermissionService._pendingApprovals.delete(requestId)
+    resolve(decision)
+    return true
+  }
+
+  private static _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
 
   private toProfileItem(row: PermissionProfileRow): PermissionProfileItem {
     const rules = this.repo.listRules(row.id).map((r) => this.toRuleItem(r))
