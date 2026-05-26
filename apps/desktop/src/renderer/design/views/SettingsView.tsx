@@ -126,6 +126,7 @@ export function SettingsView() {
         { id: 'telemetry', icon: <Icons.Activity />, label: '遥测与日志' },
         { id: 'storage', icon: <Icons.Database />, label: '存储与备份' },
         { id: 'updates', icon: <Icons.Refresh />, label: '更新' },
+        { id: 'about', icon: <Icons.Sparkles />, label: '关于' },
       ],
     },
   ]
@@ -144,6 +145,7 @@ export function SettingsView() {
     telemetry: TelemetrySection,
     storage: StorageSection,
     updates: UpdatesSection,
+    about: AboutSection,
   }
   const Body = Section[section] || (() => <PlaceholderSection name={section} />)
 
@@ -1899,6 +1901,28 @@ function SettingsRow({ title, desc, right }: { title: string; desc?: string; rig
         {desc && <div className="row-desc">{desc}</div>}
       </div>
       <div className="row-action">{right}</div>
+    </div>
+  )
+}
+
+function AboutSection() {
+  return (
+    <div className="settings-section">
+      <div style={{ textAlign: 'center', padding: '32px 0 24px' }}>
+        <div style={{ fontSize: 32, fontWeight: 700, color: 'var(--text)' }}>Spark Agent</div>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>AI Agent 工作台</div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>版本 0.1.0 (MVP)</div>
+      </div>
+      <div className="card">
+        <SettingsRow title="Electron" desc="桌面应用框架" right={<span className="mono-sm" style={{ fontSize: 11 }}>33.x</span>} />
+        <SettingsRow title="React" desc="UI 框架" right={<span className="mono-sm" style={{ fontSize: 11 }}>19.x</span>} />
+        <SettingsRow title="TypeScript" desc="开发语言" right={<span className="mono-sm" style={{ fontSize: 11 }}>5.x</span>} />
+        <SettingsRow title="数据库" desc="本地存储" right={<span className="mono-sm" style={{ fontSize: 11 }}>SQLite (better-sqlite3)</span>} />
+        <SettingsRow title="AI 引擎" desc="Agent Runtime" right={<span className="mono-sm" style={{ fontSize: 11 }}>Claude / OpenAI / DeepSeek / Ollama</span>} />
+      </div>
+      <div style={{ textAlign: 'center', padding: 16, color: 'var(--text-muted)', fontSize: 11 }}>
+        © 2026 Spark Agent Team. All rights reserved.
+      </div>
     </div>
   )
 }
