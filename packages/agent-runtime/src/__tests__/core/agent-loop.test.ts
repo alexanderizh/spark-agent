@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect } from 'vitest'
 import { AgentLoop } from '../../core/agent-loop.js'
 import { ToolRegistry } from '../../core/tool-registry.js'
 import type { IModelAdapter, ChatParams } from '../../adapters/types.js'
@@ -99,6 +99,9 @@ describe('AgentLoop', () => {
           const t = setTimeout(resolve, 5000)
           signal?.addEventListener('abort', () => { clearTimeout(t); resolve() })
         })
+        if (signal?.aborted) {
+          yield { ...BASE, type: 'agent_status', status: 'cancelled' }
+        }
       },
     }
 

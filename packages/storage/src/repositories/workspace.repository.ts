@@ -94,6 +94,38 @@ export class WorkspaceRepository extends BaseRepository {
     stmt.run(name, now, id)
   }
 
+  /** 更新工作区元数据 */
+  update(id: string, params: { name?: string; projectKind?: string }): void {
+    const fields: string[] = []
+    const values: unknown[] = []
+
+    if (params.name !== undefined) {
+      fields.push('name = ?')
+      values.push(params.name)
+    }
+
+    if (params.projectKind !== undefined) {
+      fields.push('project_kind = ?')
+      values.push(params.projectKind)
+    }
+
+    if (fields.length === 0) {
+      return
+    }
+
+    fields.push('updated_at = ?')
+    values.push(new Date().toISOString())
+    values.push(id)
+
+    const stmt = this.raw.prepare(`UPDATE workspaces SET ${fields.join(', ')} WHERE id = ?`)
+    stmt.run(...values)
+  }
+
+  /** 删除工作区记录 */
+  delete(id: string): boolean {
+    return this.deleteById(id)
+  }
+
   /** 列出所有工作区（按最近更新排序） */
   listAll(limit = 50, offset = 0): WorkspaceRow[] {
     const stmt = this.raw.prepare(

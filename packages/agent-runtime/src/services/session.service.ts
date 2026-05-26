@@ -6,7 +6,7 @@ import {
   WorkspaceRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import type { AgentEvent } from '@spark/protocol'
+import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse } from '@spark/protocol'
 import { AgentLoop, ToolRegistry } from '../core/index.js'
 import type { AgentConfig } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
@@ -27,7 +27,7 @@ export class SessionService {
     providerProfileId: string
     title?: string
     workspaceId?: string
-  }): Promise<{ sessionId: string; createdAt: string }> {
+  }): Promise<SessionCreateResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const id = crypto.randomUUID()
     const row = sessionRepo.create({
@@ -39,7 +39,7 @@ export class SessionService {
       workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
       providerProfileId: params.providerProfileId,
     })
-    return { sessionId: row.id, createdAt: row.created_at }
+    return { sessionId: row.id as SessionId, createdAt: row.created_at }
   }
 
   async sendTurn(params: {
@@ -172,23 +172,12 @@ export class SessionService {
     workspaceId?: string
     limit?: number
     offset?: number
-  }): Promise<{
-    sessions: Array<{
-      id: string
-      title: string
-      providerProfileId: string
-      status: 'idle' | 'running' | 'error'
-      createdAt: string
-      updatedAt: string
-      messageCount: number
-    }>
-    total: number
-  }> {
+  }): Promise<SessionListResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
     const { sessions: rows, total } = sessionRepo.list(params ?? {})
     const sessions = rows.map((row) => ({
-      id: row.id,
+      id: row.id as SessionId,
       title: row.title,
       providerProfileId: row.provider_profile_id ?? '',
       status: row.status as 'idle' | 'running' | 'error',

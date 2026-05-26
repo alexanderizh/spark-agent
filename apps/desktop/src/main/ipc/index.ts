@@ -12,8 +12,9 @@
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { createLogger } from '@spark/shared'
-import { ProviderProfileRepository } from '@spark/storage'
-import { ProviderService, SessionService } from '@spark/agent-runtime'
+import { ProviderProfileRepository, WorkspaceRepository } from '@spark/storage'
+import { ProviderService, SessionService, WorkspaceService } from '@spark/agent-runtime'
+import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
 
@@ -21,6 +22,14 @@ const log = createLogger('ipc:register')
 
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
+}
+
+let _workspaceService: WorkspaceService | null = null
+function getWorkspaceService(): WorkspaceService {
+  if (_workspaceService == null) {
+    _workspaceService = new WorkspaceService(new WorkspaceRepository(getDatabase()))
+  }
+  return _workspaceService
 }
 
 let _sessionService: SessionService | null = null
@@ -96,33 +105,47 @@ export function registerAllIpcHandlers(): void {
   })
 
   // ─── Workspace Handlers ────────────────────────────────────────────────
-  // P2-01 完整实现，当前为骨架
 
   typedIpcHandle('workspace:open', async (req) => {
-    // TODO: 调用 WorkspaceService.open()
-    log.info(`workspace:open requested, rootPath=${req.rootPath ?? 'new'}`)
+    const rootPath = req.rootPath ?? req.create?.rootPath
+    if (rootPath == null) {
+      throw new Error('workspace:open requires rootPath')
+    }
+
+    log.info(`workspace:open requested, rootPath=${rootPath}`)
+    const workspace = await getWorkspaceService().openWorkspace(rootPath, req.create?.name)
     return {
-      workspace: {
-        id: crypto.randomUUID(),
-        name: 'New Workspace',
-        rootPath: req.rootPath ?? '/tmp/workspace',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      },
+      workspace: toWorkspaceInfo(workspace),
     }
   })
 
   typedIpcHandle('workspace:get-current', async (_req) => {
-    // TODO: 调用 WorkspaceService.getCurrent()
     log.info('workspace:get-current requested')
-    return { workspace: null }
+    const workspace = getWorkspaceService().getCurrent()
+    return { workspace: workspace == null ? null : toWorkspaceInfo(workspace) }
   })
 
   typedIpcHandle('workspace:close', async (req) => {
-    // TODO: 调用 WorkspaceService.close()
     log.info(`workspace:close requested, workspaceId=${req.workspaceId}`)
+    getWorkspaceService().closeWorkspace()
     return { closed: true }
   })
 
   log.info('All IPC handlers registered')
+}
+
+function toWorkspaceInfo(workspace: {
+  id: string
+  name: string
+  root_path: string
+  created_at: string
+  updated_at: string
+}): WorkspaceInfo {
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    rootPath: workspace.root_path,
+    createdAt: workspace.created_at,
+    updatedAt: workspace.updated_at,
+  }
 }
