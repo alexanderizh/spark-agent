@@ -2701,6 +2701,743 @@ Day 7:
 
 ---
 
-## 22. 下一步
+## 22. 实施进度追踪
 
-建议下一步不是继续扩大需求，而是创建 Phase 0 的实施计划和项目骨架。Phase 0 完成后，再把 Claude/Codex adapter 作为最高风险点优先验证。
+> 最后更新: 2026-05-26
+> 审计人: Agent产品经理
+> 测试矩阵: agent-runtime 93 passed · desktop 11 passed · storage 21 (better-sqlite3 native 已知问题)
+
+### 22.1 Phase 完成总览
+
+| Phase | 名称 | 状态 | 完成率 |
+|-------|------|------|--------|
+| Phase 0 | 项目基础 | ✅ 全部完成 | 10/10 |
+| Phase 1 | 单会话 MVP | ✅ 全部完成 | 9/9 |
+| Phase 2 | 项目工作区与权限 | ✅ 全部完成 | 22/22 |
+| Phase 3 | 规则、MCP、Skill | 🔄 部分完成 | 5/12 |
+| Phase 4 | 工作流与多 Agent | ❌ 未开始 | 0/8 |
+| Phase 5 | 团队模式基础 | ❌ 未开始 | 0/6 |
+| Phase 6 | 发布与生态 | ❌ 未开始 | 0/7 |
+
+### 22.2 Phase 0 完成明细（全部完成 ✅）
+
+| # | 任务 | 负责人 | Commit | 交付物 |
+|---|------|--------|--------|--------|
+| P0-01 | Monorepo 初始化 | 子涵 | — | pnpm-workspace.yaml, tsconfig.base.json, .gitignore, docs/adr/ |
+| P0-02 | Electron 骨架 | 子涵+旭阳 | — | electron-vite 三层构建, main/preload/renderer, 安全配置 |
+| P0-03 | Tailwind + Design Tokens | 小林 | — | tokens.css (130+ CSS 变量), tailwind.css, 9 个 ui-kit 组件 |
+| P0-04 | packages 目录结构 | 子涵 | — | 5 个 packages 骨架, shared/keystore |
+| P0-05 | ESLint + Vitest + Playwright | 小林 | — | eslint.config.js, vitest.config.ts, playwright.config.ts |
+| P0-06 | SQLite Storage | 旭阳 | — | SparkDatabase (WAL+migration), BaseRepository, Session/Event/Workspace/Provider Repository |
+| P0-07 | Typed IPC | 旭阳 | — | typedIpcHandle (zod 校验), 13 个 IPC handler 骨架, preload IpcResult |
+| P0-08 | Home 页面 | 小林 | — | HomePage, Sidebar, AppLayout |
+| P0-09 | Settings 页面 | 小林 | — | SettingsPage (7 Tab), 7 个子页面 |
+| P0-10 | protocol 骨架 | 子涵 | — | 12 种 AgentEvent, IpcChannelMap (15+ channel), zod Schema |
+
+### 22.3 Phase 1 完成明细（全部完成 ✅）
+
+| # | 任务 | 负责人 | Commit | 交付物 |
+|---|------|--------|--------|--------|
+| P1-01 | Provider 全栈 | claude+codex | e50d3cb | ProviderService + Keystore + IPC + UI |
+| P1-02 | Adapter 工厂 | claude | 3f0d0ac | Anthropic/OpenAI adapter, health check |
+| P1-03 | AgentLoop 核心 | claude | 00e6ab7 | AgentLoop + ToolRegistry (4 内置工具) + AgentEventEmitter |
+| P1-04 | Session 服务 | claude+codex | 155e638 | SessionService 全栈 (create/sendTurn/cancel/getHistory/list/search) |
+| P1-05 | Workspace 服务 | codex | c25ad5e | WorkspaceService 全栈 (open/listDirectoryTree/detectProjectKind) |
+| P1-06 | ChatView 前端 | claude | f1268ed | 会话列表+消息流+Inspector+Composer |
+| P1-07 | HomeView 前端 | claude | 1879737 | 快速操作+最近会话+Provider 状态 |
+| P1-08 | Settings 全栈 | claude+codex | 968df76+08138f3 | Provider/Model/Rules/Permissions/Workspace/MCP/Skills 7 Tab 全栈 |
+| P1-09 | MCP 全栈 | claude | 5af04f2 | McpService + McpView + IPC |
+
+### 22.4 Phase 2 完成明细（全部完成 ✅）
+
+| # | 任务 | 负责人 | Commit | 交付物 |
+|---|------|--------|--------|--------|
+| P2-01 | 集成测试 | claude | 86ae2ac | McpService/ModelService/IPC 注册完整性测试 |
+| P2-02 | better-sqlite3 ABI 修复 + electron-builder | codex | 96b2afb | setuptools 修复, storage 21 tests, electron-builder.yml |
+| P2-03 | Protocol schema 重构 + Skill IPC | claude | 9fc7187 | ProviderProfile 字段优化, skill:* IPC, SkillService |
+| P2-04 | ChatView 视觉对齐 | claude | 37f9d12 | cursor-blink, Composer model-pill, status badge |
+| P2-05 | Settings MCP/Skills 真实 IPC 迁移 | codex | 9fc7187 | mcp:* IPC, skill:* IPC, 3 个内置 Skill |
+| P2-06 | Workflow/Project/MCP/Skills 视觉对齐 | claude | 3abb2be | view-body scroll, 移除内联样式 |
+| P2-07 | 全局框架+Sidebar+ViewHeader 视觉对齐 | 浩轩 | 3abb2be | Sidebar 分区重构, ViewHeader 组件 |
+| P2-08 | Workspace 文件树 IPC 对接 | codex | 5939ce0 | workspace:list-directory, 安全目录树扫描 |
+| P2-09 | Settings 页面视觉对齐 | claude | ae29487 | 7 组缺失 CSS 类补全 |
+| P2-10 | Permission Approval System | claude | 5188add | 完整审批流程 AgentLoop→IPC→Modal→响应 |
+| P2-11 | Sidebar 折叠/展开按钮 | 浩轩 | 97d8a23 | ChevronLeft hover 显隐, transition 动画 |
+| P2-12 | HomeView 空状态设计 | 浩轩 | f8af84a | empty-state CSS 组件系统 |
+| P2-13 | electron-builder 打包验证 + 图标 | codex | 4c61166 | icon.svg/png/icns/ico, DMG 打包成功 |
+| P2-14 | ApprovalHandler 导出修复 | codex | 152114c | 修复 typecheck 失败 |
+| P2-15 | 会话历史搜索功能 | codex | 80d5f1b | session:search IPC + ChatView 搜索面板 |
+| P2-16 | WorkflowView 空状态 + DAG 精修 | 浩轩 | cc7a83f | empty-state + DAG 视觉优化 |
+| P2-17 | Multi-turn 上下文管理优化 | codex | 6bb010a | 会话上下文累积优化 |
+| P2-18 | ProjectView 面板视觉精修 | 浩轩 | bac8555 | ProjectExplorer + ProjectAgentPane 精修 |
+| P2-19 | SkillsView 真实数据对接 | codex | 92cab6b | useSkills() hook + 搜索 + 统计 |
+| P2-20 | ChatView 搜索面板 + 消息流精修 | 浩轩 | cc61326 | 23 处内联样式清除 + CSS 类化 |
+| P2-21 | 项目类型自动检测 | codex | e006ad2 | detectProjectKind() 11 种类型 |
+| P2-22 | Toast 通知系统 | codex | 2fff2b7 | ToastProvider + useToast + 13 处接入 |
+
+### 22.5 功能实现深度审计
+
+以下审计基于对全部源代码的逐文件检查，标识每个 PRD 功能模块的真实实现深度。
+
+#### 🟢 端到端完成（前端 IPC → 后端 Service → DB Repository）
+
+| 功能模块 | 深度 | 说明 |
+|----------|------|------|
+| **Provider 管理** | 🟢 完整 | CRUD + 健康检查 + Keystore 集成 + API 密钥管理 |
+| **Session 管理** | 🟢 完整 | 创建/发送/取消/历史/列表/搜索/删除/归档 |
+| **Workspace 管理** | 🟢 完整 | 打开/关闭/列表/文件树/项目类型检测/删除 |
+| **Model 管理** | 🟢 完整 | CRUD + 种子默认模型 |
+| **Rules 管理** | 🟢 完整 | CRUD + 启用/禁用 + 种子系统规则 |
+| **Permission 管理** | 🟢 完整 | Profile CRUD + 沙箱等级 + 规则管理 + 审批流程 |
+| **MCP Server 管理** | 🟢 完整 | CRUD + 搜索/过滤（但仅 CRUD，无实际 MCP 通信） |
+| **Skills 管理** | 🟢 完整 | CRUD + 启用/禁用 + 种子内置 Skills |
+| **Toast 通知** | 🟢 完整 | 4 种类型 + 自动消失 + 堆叠 + 13 处接入 |
+| **文件系统工具** | 🟢 完整 | read_file/write_file/list_directory/search_files 4 个内置工具 |
+
+#### 🟡 部分完成（有骨架或 UI 但缺少关键能力）
+
+| 功能模块 | 当前深度 | 缺失内容 |
+|----------|----------|----------|
+| **Agent Runtime (AgentLoop)** | 🟡 骨架+基础执行 | 有 executeTurn 但使用简化 HTTP 请求，未集成 Claude Agent SDK / Codex SDK |
+| **Adapter 层** | 🟡 Anthropic/OpenAI 适配器存在 | 但未真正连接 SDK，仅构造 HTTP 请求；缺少 Codex SDK 适配器 |
+| **流式响应 (Streaming)** | 🟡 基础框架 | 有 AgentEventEmitter 和事件流管道，但 SSE 解析和增量渲染不完整 |
+| **Workflow UI** | 🟡 仅 UI | WorkflowView 有列表+DAG 渲染，但无后端执行引擎 |
+| **Permission 审批** | 🟡 有弹窗+IPC | 但 Agent 执行中工具调用的实时拦截和审批流程未完整串联 |
+| **Settings 外观** | 🟡 已修复 | 主题切换/色板/布局控件的 CSS 刚补全，但主题持久化和实际切换逻辑未实现 |
+
+#### 🔴 未实现（仅有 UI 外壳或完全缺失）
+
+| 功能模块 | 当前状态 | PRD 章节 |
+|----------|----------|----------|
+| **Claude Agent SDK 集成** | ❌ 缺失 | §5.5 |
+| **Codex SDK 集成** | ❌ 缺失 | §5.6 |
+| **Context Governor** | ❌ 缺失 | §5.0.1 |
+| **Resource Governor** | ❌ 缺失 | §5.0.2 |
+| **Workflow 执行引擎** | ❌ 缺失 | §5.0.3, §5.11 |
+| **Visual Agent Graph** | ❌ 缺失 | §5.0.4 |
+| **Command Runtime (/命令)** | ❌ 缺失 | §5.0.5, §5.2.1 |
+| **Run Capsule** | ❌ 缺失 | §5.0.6 |
+| **Usage Ledger** | ❌ 缺失 | §5.3.1 |
+| **多模态能力路由** | ❌ 缺失 | §5.3.2 |
+| **ACP 协议层** | ❌ 缺失 | §5.4 |
+| **Skill Runtime 执行** | ❌ 缺失 | §5.7（仅 CRUD） |
+| **MCP Gateway 实际通信** | ❌ 缺失 | §5.8（仅 CRUD） |
+| **多层规则合成引擎** | ❌ 缺失 | §5.9（仅 CRUD） |
+| **多 Agent 编排** | ❌ 缺失 | §5.12（AgentsView 完全假数据） |
+| **团队模式** | ❌ 缺失 | §5.13 |
+| **Artifact Store** | ❌ 缺失 | §5.15 |
+| **Terminal (PTY)** | ❌ 缺失 | — |
+| **文件 Diff 渲染** | ❌ 缺失 | — |
+| **Checkpoint/Branch** | ❌ 缺失 | — |
+| **Provider Catalog Presets** | ❌ 缺失 | §5.3 |
+| **自动更新** | ❌ 缺失 | §16.3 |
+| **插件/Skill Registry** | ❌ 缺失 | §5.7 |
+
+### 22.6 数据库表实现状态
+
+| 表名 | PRD 定义 | 已创建 | 实际使用 |
+|------|---------|--------|----------|
+| workspaces | ✅ | ✅ | ✅ 完整 CRUD |
+| sessions | ✅ | ✅ | ✅ 完整 CRUD |
+| agent_events | ✅ | ✅ | ✅ 完整 CRUD |
+| provider_profiles | ✅ | ✅ | ✅ 完整 CRUD |
+| model_profiles | ✅ | ✅ | ✅ 完整 CRUD |
+| rules | ✅ | ✅ | ✅ 完整 CRUD |
+| mcp_servers | ✅ | ✅ | ✅ 完整 CRUD |
+| skills | ✅ | ✅ | ✅ 完整 CRUD |
+| permission_profiles | ✅ | ✅ | ✅ 完整 CRUD |
+| permission_rules | ✅ | ✅ | ✅ 完整 CRUD |
+| workflows | ✅ | ✅ | ⚠️ 表存在但无 Service/IPC |
+| provider_catalog_presets | ✅ | ❌ 未创建 | ❌ |
+| model_capabilities | ✅ | ❌ 未创建 | ❌ |
+| usage_ledger | ✅ | ❌ 未创建 | ❌ |
+| run_usage_summaries | ✅ | ❌ 未创建 | ❌ |
+| media_artifacts | ✅ | ❌ 未创建 | ❌ |
+| slash_commands | ✅ | ❌ 未创建 | ❌ |
+| resource_samples | ✅ | ❌ 未创建 | ❌ |
+
+### 22.7 IPC 通道实现状态
+
+| 通道 | 协议定义 | Handler 实现 | 前端调用 |
+|------|---------|-------------|----------|
+| session:create/send-turn/cancel/get-history/list/search/update/delete | ✅ | ✅ | ✅ |
+| workspace:open/get-current/list/update/delete/open-folder/close/list-directory | ✅ | ✅ | ✅ |
+| provider:list/create/update/delete/health-check | ✅ | ✅ | ✅ |
+| model:list/create/update/delete | ✅ | ✅ | ✅ |
+| rules:list/create/update/delete | ✅ | ✅ | ✅ |
+| permission:list-profiles/create-profile/delete-profile/update-sandbox/update-rule/approval-respond | ✅ | ✅ | ✅ |
+| mcp:list/create/update/delete | ✅ | ✅ | ✅ |
+| skill:list/create/update/delete | ✅ | ✅ | ✅ |
+| dialog:open-directory | ✅ | ✅ | ✅ |
+| stream:session:agent-event | ✅ | ✅ | ✅ |
+| stream:permission:approval-request | ✅ | ✅ | ✅ |
+| command:suggest/preview/execute | ✅ | ❌ 未实现 | ❌ |
+| mcp:start-server/list-tools/call-tool | ✅ | ❌ 未实现 | ❌ |
+| workflow:run/pause/resume/cancel | ✅ | ❌ 未实现 | ❌ |
+| resource:status/kill-run/kill-workspace | ✅ | ❌ 未实现 | ❌ |
+
+---
+
+## 23. Phase 3-6 详细开发 Todolist
+
+### 23.1 Phase 3: 规则、MCP、Skill（剩余 7 项）
+
+#### P3-01 MCP Gateway 实际通信 🔴
+
+**优先级: P0（核心能力）**
+
+当前 McpService/McpView 只有 CRUD 管理，MCP server 无法实际启动、发现工具、调用工具。
+
+任务范围:
+
+- [ ] MCP stdio 客户端: 启动 MCP server 子进程，通过 stdin/stdout JSON-RPC 通信
+- [ ] MCP HTTP/SSE 客户端: 连接 HTTP 类型 MCP server
+- [ ] 工具发现: 调用 `tools/list` 获取工具 schema，存入数据库
+- [ ] 工具调用: 调用 `tools/call` 执行工具，返回结果
+- [ ] 资源发现: 调用 `resources/list` 和 `resources/read`
+- [ ] MCP 工具注入 AgentLoop: 将 MCP 工具作为可用工具暴露给 agent
+- [ ] 连接生命周期管理: 启动、心跳、重连、关闭
+- [ ] MCP 通信日志: 记录请求/响应/错误
+
+验收标准:
+
+- [ ] 可启动 stdio 类型 MCP server
+- [ ] 可列出 server 提供的工具
+- [ ] 可调用工具并获取结果
+- [ ] Agent 可使用 MCP 工具完成任务
+- [ ] 连接断开时有诊断和重连
+
+#### P3-02 多层规则合成引擎 🔴
+
+**优先级: P0（核心能力）**
+
+当前 RulesService 只有 CRUD，缺少多层规则合成、冲突检测和预览。
+
+任务范围:
+
+- [ ] 规则分层: system > team > user > project > workflow > agent > conversation
+- [ ] 规则合成: 按优先级合并多条规则，生成最终 system prompt 片段
+- [ ] 冲突检测: 更高层 deny 覆盖低层 allow，更高层必需项不可删除
+- [ ] 规则来源追踪: 合成结果标注每条规则的来源层级
+- [ ] 规则预览 UI: 展示当前会话的合成规则包及其来源
+- [ ] 项目级规则读取: 扫描 `.spark/rules/*.md`、`AGENTS.md`、`CLAUDE.md`
+- [ ] 会话级临时规则: 用户可在会话中添加临时规则覆盖
+
+验收标准:
+
+- [ ] 规则按层级正确合成
+- [ ] deny/allow 冲突正确处理
+- [ ] UI 可预览合成结果和来源
+- [ ] 项目 `.spark/rules/` 文件可被读取
+
+#### P3-03 Skill Runtime 执行 🟡
+
+**优先级: P1**
+
+当前 Skill 只有 CRUD 管理，无法实际执行。
+
+任务范围:
+
+- [ ] Skill 类型执行: Prompt Skill (注入说明) / Script Skill (执行脚本) / MCP Skill (启动 server)
+- [ ] Skill 触发: 根据 triggers 关键词自动匹配
+- [ ] Skill 安全检查: 检查权限声明、脚本内容、依赖
+- [ ] Skill 执行沙箱: 限制 Skill 脚本的文件系统和网络访问
+- [ ] Skill 产物管理: Skill 输出可写入 Artifact Store
+- [ ] Skill 详情页: 查看 manifest、权限、能力声明、模型依赖
+
+验收标准:
+
+- [ ] Prompt Skill 可注入上下文
+- [ ] Script Skill 可在受限环境中执行
+- [ ] 高风险 Skill 有安全警告
+- [ ] Skill 详情页展示完整信息
+
+#### P3-04 Usage Ledger (用量统计) 🔴
+
+**优先级: P0（核心能力）**
+
+PRD §5.3.1 定义了完整的用量统计体系，当前完全缺失。
+
+任务范围:
+
+- [ ] 数据库表: `usage_ledger`、`run_usage_summaries`
+- [ ] Repository + Service: UsageLedgerService
+- [ ] 统计采集: 从 Provider 响应中提取 token usage
+- [ ] 统计维度: session/run/provider/model 级别
+- [ ] 估算标记: 无 provider usage 时使用估算并标记
+- [ ] Settings Usage Tab: 今日/本月 token 和成本
+- [ ] Chat Inspector: 输入/输出 token、成本、耗时
+- [ ] Home 今日指标卡: token、成本、运行任务
+
+验收标准:
+
+- [ ] 每次 API 调用后写入 Usage Ledger
+- [ ] Inspector 展示当前会话 token 和成本
+- [ ] Settings 可查看按 provider/model 维度的用量
+- [ ] Home 显示今日指标
+
+#### P3-05 Provider Catalog Presets 🟡
+
+**优先级: P1**
+
+PRD §5.3 定义了内置供应商 preset，当前缺失。
+
+任务范围:
+
+- [ ] 数据库表: `provider_catalog_presets`
+- [ ] 预置供应商: 腾讯云 Coding Plan、阿里云百炼、智谱 GLM、DeepSeek、MiniMax、Kimi、硅基流动、OpenRouter
+- [ ] Preset UI: Settings > Provider > 添加 Provider > 选择预设
+- [ ] 一键创建: 选择 preset → 预填 baseUrl + modelIds → 用户只需填 API key
+- [ ] 自定义入口: 保留手动填写能力
+
+验收标准:
+
+- [ ] 8+ 个国内/国际供应商 preset 可用
+- [ ] 选择 preset 后只需填 API key 即可创建 Provider
+- [ ] 保留自定义入口
+
+#### P3-06 多模态 Artifact Store 基础 🔴
+
+**优先级: P1**
+
+PRD §5.15 定义的 Artifact 系统和 §5.3.2 多模态能力路由的基础。
+
+任务范围:
+
+- [ ] 数据库表: `media_artifacts`
+- [ ] ArtifactRepository + ArtifactService
+- [ ] 文件存储: 图片/文件保存到 `.agent_spark/artifacts/`
+- [ ] 图片输入: 用户可在聊天中粘贴/拖拽图片
+- [ ] 图片显示: 消息流中渲染图片
+- [ ] Artifact 引用: 会话中可引用已有 Artifact
+
+验收标准:
+
+- [ ] 图片可输入并显示在消息中
+- [ ] Artifact 元数据存入数据库
+- [ ] 文件正确保存到磁盘
+
+#### P3-07 Model Capability Registry 🟡
+
+**优先级: P1**
+
+PRD §5.3.2 多模态路由的基础设施。
+
+任务范围:
+
+- [ ] 数据库表: `model_capabilities`
+- [ ] 能力字段: modalities, capabilities, context_window, max_input/output, pricing
+- [ ] 能力探测: Provider health check 时查询模型能力
+- [ ] Settings 展示: 模型能力标签（文本/代码/视觉/图片生成）
+- [ ] Provider 编辑: 能力标记可手动更新
+
+验收标准:
+
+- [ ] 模型能力信息可存储和展示
+- [ ] Settings 中可查看模型支持的能力
+
+### 23.2 Phase 4: 工作流与多 Agent（8 项）
+
+#### P4-01 Workflow 执行引擎 🔴
+
+**优先级: P0（核心能力）**
+
+当前 WorkflowView 只有 UI 外壳，无后端执行。
+
+任务范围:
+
+- [ ] DAG Schema: 定义 workflow graph 的节点和边数据结构
+- [ ] 节点类型: Agent/Tool/Script/Approval/Branch/Parallel/Merge/Artifact
+- [ ] DAG 执行器: 拓扑排序 + 逐节点执行 + 状态机
+- [ ] 节点级配置: 模型/规则/权限/预算
+- [ ] WorkflowService + IPC 通道
+- [ ] 单节点重跑: 从失败节点恢复
+- [ ] 运行状态持久化: workflow run 状态存入数据库
+
+验收标准:
+
+- [ ] 可创建简单线性 workflow 并执行
+- [ ] 节点执行结果可在 UI 中查看
+- [ ] 失败节点可重跑
+
+#### P4-02 Workflow Studio 可视化编辑器 🟡
+
+**优先级: P1**
+
+当前 DAG 是静态渲染，需要交互式编辑。
+
+任务范围:
+
+- [ ] React Flow 集成: 拖拽画布、节点放置、连线
+- [ ] 节点配置抽屉: 点击节点弹出配置面板
+- [ ] 工具栏: 添加不同类型节点
+- [ ] 输入输出 schema: 节点间数据类型校验
+- [ ] 运行时高亮: 正在执行的节点高亮
+- [ ] Mini map + 缩放
+
+验收标准:
+
+- [ ] 可拖拽创建 workflow
+- [ ] 可配置节点参数
+- [ ] 运行时状态可视化
+
+#### P4-03 Multi-Agent 编排基础 🔴
+
+**优先级: P0（核心能力）**
+
+PRD §5.12，AgentsView 完全是假数据。
+
+任务范围:
+
+- [ ] AgentTemplate 数据结构: role/model/skills/tools/rules/permissions/budgets
+- [ ] Subagent 管理: 主 agent 可派生子 agent
+- [ ] Sequential 并行策略: 多 agent 顺序或并行执行
+- [ ] Agent 间消息传递: artifact 和上下文传递
+- [ ] AgentRunMetrics: token/工具数/耗时/成本/状态
+- [ ] AgentsView 真实数据: 替换假数据为真实 agent 列表和状态
+
+验收标准:
+
+- [ ] 可创建和运行多 agent 编排
+- [ ] Agent 状态可在 UI 中查看
+- [ ] Agent 间可传递 artifact
+
+#### P4-04 Visual Agent Graph 🟡
+
+**优先级: P2**
+
+PRD §5.0.4。
+
+任务范围:
+
+- [ ] Agent 拓扑图: 展示 primary/subagent/tool/MCP/human 节点
+- [ ] 状态叠加: idle/running/waiting/failed/completed
+- [ ] 消息边: 展示 agent 间传递的内容
+- [ ] Drilldown: 点击节点查看详情
+- [ ] 控制面板: 暂停/取消/重跑
+
+验收标准:
+
+- [ ] 运行中的多 agent 编排可可视化
+- [ ] 状态实时更新
+
+#### P4-05 Context Governor MVP 🔴
+
+**优先级: P0（核心能力）**
+
+PRD §5.0.1。
+
+任务范围:
+
+- [ ] ContextMode 枚举: minimal/project-smart/deep-research/surgical/review/manual
+- [ ] Context Ledger: 记录每次 run 的上下文来源（规则/文件/历史/工具）
+- [ ] Token Budget Planner: 运行前估算 token 预算
+- [ ] Context Pinning: 用户可 pin 文件/目录/代码片段
+- [ ] Context Exclusion: 用户可排除文件/目录
+- [ ] 上下文窗口进度条: Inspector 中显示占用情况
+- [ ] Inspector Context Tab: 展示当前上下文来源
+
+验收标准:
+
+- [ ] 用户可切换上下文模式
+- [ ] Inspector 展示上下文来源和占用
+- [ ] 可 pin/exclude 文件
+
+#### P4-06 Resource Governor MVP 🟡
+
+**优先级: P1**
+
+PRD §5.0.2。
+
+任务范围:
+
+- [ ] ResourceProfile: eco/balanced/turbo/custom
+- [ ] Run Budget: token/成本/时间/文件写入/命令数上限
+- [ ] 进程监控: 子进程 CPU/内存采样
+- [ ] Kill Switch: 一键停止当前 workspace 所有 agent
+- [ ] 资源状态 UI: 底部状态栏或 Inspector 显示资源占用
+- [ ] `/resource status` 命令（依赖 Command Runtime）
+
+验收标准:
+
+- [ ] 可设置 run 预算
+- [ ] 资源超限时 run 暂停
+- [ ] Kill Switch 可一键停止
+
+#### P4-07 Command Runtime (/命令系统) 🔴
+
+**优先级: P0（核心能力）**
+
+PRD §5.2.1，当前完全缺失。
+
+任务范围:
+
+- [ ] Command Registry: 命令注册接口
+- [ ] 命令解析: 解析 `/command [subcommand] [--flag value] [@target] [free text]`
+- [ ] 命令补全 UI: 输入 `/` 后弹出补全面板
+- [ ] 内置命令: /help /status /model /approval /context /compact /resource /kill-run
+- [ ] 命令预览: 高风险命令执行前预览影响
+- [ ] 命令审计: 所有命令执行写入审计日志
+- [ ] 数据库表: `slash_commands`
+
+验收标准:
+
+- [ ] 输入 `/` 弹出命令补全
+- [ ] `/status` 可执行并显示结果
+- [ ] `/model` 可切换模型
+- [ ] 高风险命令有预览
+
+#### P4-08 Conversation-to-Workflow 提炼 🟡
+
+**优先级: P2**
+
+PRD §5.0.3。
+
+任务范围:
+
+- [ ] 从成功会话中提取步骤: 识别用户消息/agent 操作/工具调用/文件变更
+- [ ] 生成 workflow 草稿: 将步骤映射为 workflow 节点
+- [ ] 用户编辑: 可修改生成的 workflow
+- [ ] 保存为模板
+
+验收标准:
+
+- [ ] 可从会话生成 workflow 草稿
+- [ ] 生成的 workflow 可编辑和保存
+
+### 23.3 Phase 5: 团队模式基础（6 项）
+
+> Phase 5 需要 Spark Server，优先级低于 Phase 3-4。以下为规划参考。
+
+| # | 任务 | 优先级 | 说明 |
+|---|------|--------|------|
+| P5-01 | Local Team Workspace | P2 | 本地模拟团队空间，共享规则/Skill |
+| P5-02 | Team Policy Engine | P2 | 团队规则审批、高风险工具双人审批 |
+| P5-03 | Run Comments + Approval Assignment | P2 | 运行记录评论、审批指派 |
+| P5-04 | Spark Server 原型 | P3 | Auth + Workspace Registry + Event Sync |
+| P5-05 | WebSocket Event Sync | P3 | 实时事件同步 |
+| P5-06 | RBAC 权限模型 | P3 | owner/admin/member/viewer |
+
+### 23.4 Phase 6: 发布与生态（7 项）
+
+| # | 任务 | 优先级 | 说明 |
+|---|------|--------|------|
+| P6-01 | 自动更新 (electron-updater) | P1 | macOS/Windows 自动更新 |
+| P6-02 | 崩溃收集 | P2 | 错误上报和诊断包生成 |
+| P6-03 | 日志导出 | P2 | 导出脱敏后的运行日志 |
+| P6-04 | 安装包签名 | P1 | macOS notarization + Windows 签名 |
+| P6-05 | ACP Server/Client | P2 | 外部编辑器和 agent 连接 |
+| P6-06 | Plugin/Skill Registry | P3 | 远程 Skill 市场 |
+| P6-07 | 文档站 | P2 | 用户文档和 API 文档 |
+
+### 23.5 跨 Phase 基础设施任务
+
+以下任务贯穿多个 Phase，属于基础设施改进。
+
+| # | 任务 | 优先级 | 说明 |
+|---|------|--------|------|
+| INFRA-01 | Claude Agent SDK 真实集成 | P0 | 替换当前 HTTP 直接调用为 SDK 集成 |
+| INFRA-02 | Codex SDK 真实集成 | P0 | 实现 CodexAdapter 连接 @openai/codex-sdk |
+| INFRA-03 | SSE 流式响应完善 | P0 | 完善 executeTurnStream，增量渲染 |
+| INFRA-04 | Terminal (PTY) 集成 | P1 | 使用 node-pty 实现终端面板 |
+| INFRA-05 | 文件 Diff 渲染引擎 | P1 | 集成 Monaco Editor diff 视图 |
+| INFRA-06 | Checkpoint/Branch 系统 | P2 | 会话分支和回滚 |
+| INFRA-07 | SQLite FTS5 全文搜索 | P2 | 替代当前 LIKE 搜索 |
+| INFRA-08 | 虚拟列表渲染优化 | P2 | 大量消息和事件时的性能 |
+| INFRA-09 | 错误恢复与状态重建 | P1 | 应用崩溃后从 event store 恢复 |
+| INFRA-10 | Provider 故障诊断 | P1 | 更详细的错误诊断和修复建议 |
+
+### 23.6 推荐开发顺序
+
+基于核心风险和依赖关系，建议按以下顺序推进:
+
+```
+第一批 (P0 核心 SDK):
+  INFRA-01 Claude Agent SDK 集成
+  INFRA-02 Codex SDK 集成
+  INFRA-03 SSE 流式响应完善
+
+第二批 (P0 核心能力):
+  P3-01 MCP Gateway 实际通信
+  P3-02 多层规则合成引擎
+  P3-04 Usage Ledger
+  P4-07 Command Runtime
+
+第三批 (P1 重要能力):
+  P4-05 Context Governor MVP
+  P4-01 Workflow 执行引擎
+  P4-03 Multi-Agent 编排
+  P3-05 Provider Catalog Presets
+
+第四批 (P1 功能完善):
+  P3-03 Skill Runtime 执行
+  P3-06 多模态 Artifact Store
+  P3-07 Model Capability Registry
+  P4-02 Workflow Studio 可视化编辑器
+  P4-06 Resource Governor MVP
+  INFRA-04 Terminal PTY
+  INFRA-05 文件 Diff 渲染
+
+第五批 (P2 增强):
+  P4-04 Visual Agent Graph
+  P4-08 Conversation-to-Workflow
+  INFRA-06 Checkpoint/Branch
+  INFRA-07 FTS5 搜索
+  INFRA-08 虚拟列表
+  INFRA-09 错误恢复
+  INFRA-10 Provider 故障诊断
+
+第六批 (P2-P3 发布准备):
+  P5-* 团队模式
+  P6-* 发布与生态
+```
+
+---
+
+## 24. 关键架构缺口与设计补充
+
+### 24.1 Agent Runtime 实际执行路径
+
+当前 AgentLoop 使用简化的 HTTP 请求方式:
+
+```
+用户消息 → SessionService.sendTurn()
+  → AdapterFactory.createAdapter() (OpenAI-compatible HTTP)
+  → fetch(POST /chat/completions)
+  → 解析 JSON 响应
+  → emit AgentEvent
+```
+
+PRD 设计的执行路径:
+
+```
+用户消息 → SessionService.sendTurn()
+  → RuleEngine.synthesize(sessionId) → 合成规则
+  → ContextGovernor.buildContext(sessionId) → 构建上下文
+  → PermissionEngine.checkPermissions() → 权限检查
+  → AdapterFactory.createAdapter()
+    → ClaudeAgentSDKAdapter (使用 Claude Agent SDK)
+    → CodexSDKAdapter (使用 @openai/codex-sdk)
+    → GenericLLMAdapter (HTTP 直接调用)
+  → Adapter.sendTurn() → 流式事件
+  → 工具调用 → ToolRegistry.execute() / MCP Gateway
+  → 权限拦截 → PermissionEngine.requestApproval()
+  → UsageLedger.record() → 记录用量
+  → emit AgentEvent → 前端渲染
+```
+
+**需要补充的中间层**: RuleEngine → ContextGovernor → PermissionEngine → UsageLedger
+
+### 24.2 Provider 适配器真实实现缺口
+
+当前 AnthropicAdapter 和 OpenAIAdapter 构造 HTTP 请求。需要:
+
+1. **ClaudeAgentSDKAdapter**:
+   - 使用 `@anthropic-ai/agent-sdk` TypeScript SDK
+   - 支持 Claude Code 的内置工具 (Read/Edit/Bash/Glob/Grep)
+   - 支持 hooks 对接 Spark Permission Policy
+   - 支持 MCP 配置注入
+   - 支持 checkpoint
+
+2. **CodexSDKAdapter**:
+   - 使用 `@openai/codex-sdk` TypeScript SDK
+   - 通过 stdin/stdout JSONL 事件通信
+   - 转换 Codex 事件 (item/turn.completed/usage/file change/permission)
+   - 支持 thread 继续对话和 resume
+
+3. **GenericLLMAdapter**:
+   - 当前实现，保留为 fallback
+   - 支持 OpenAI-compatible API (DeepSeek, Ollama, LM Studio 等)
+
+### 24.3 MCP Gateway 真实通信流程
+
+当前 McpService 仅管理 server 配置。需要:
+
+```
+McpGateway 真实通信流程:
+1. McpService.createServer() → 写入配置
+2. McpGateway.connect(serverId)
+   → stdio: spawn 子进程, 建立 JSON-RPC
+   → http: 创建 SSE/HTTP 连接
+3. McpGateway.discoverTools(serverId)
+   → 发送 tools/list 请求
+   → 解析工具 schema
+   → 存入 mcp_tools 缓存
+4. McpGateway.callTool(serverId, toolName, args)
+   → 发送 tools/call 请求
+   → 返回结果
+   → 记录到审计日志
+5. AgentLoop 中注入 MCP 工具
+   → ToolRegistry.registerMcpTools(tools)
+   → Agent 可调用 MCP 工具
+   → 结果通过 AgentEvent 传递
+6. McpGateway.disconnect(serverId)
+   → 关闭连接/终止子进程
+```
+
+### 24.4 会话内上下文传递设计
+
+当前 SessionService.sendTurn 只传递用户消息。PRD 需要的上下文构建:
+
+```ts
+interface TurnContext {
+  sessionId: string;
+  userMessage: string;
+  // 规则合成
+  ruleBundle: SynthesizedRuleBundle;
+  // 上下文选择
+  contextMode: ContextMode;
+  pinnedFiles: string[];
+  excludedPaths: string[];
+  // 历史消息
+  recentHistory: AgentEvent[];
+  // 可用工具
+  availableTools: ToolDefinition[];
+  mcpTools: McpToolDefinition[];
+  // 权限
+  permissionProfile: PermissionProfile;
+  // 模型
+  providerProfileId: string;
+  modelId: string;
+  // 预算
+  tokenBudget: TokenBudget;
+  resourceProfile: ResourceProfile;
+}
+```
+
+### 24.5 错误恢复机制设计
+
+PRD §14 定义了错误分类和恢复策略，当前缺少实现。
+
+需要的错误类型:
+
+```ts
+type SparkErrorType =
+  | 'provider_unavailable'     // Provider 不可用
+  | 'auth_missing'             // 缺少认证
+  | 'model_unavailable'        // 模型不可用
+  | 'mcp_connection_failed'    // MCP 连接失败
+  | 'permission_denied'        // 权限拒绝
+  | 'context_budget_exceeded'  // 上下文超限
+  | 'resource_limit_exceeded'  // 资源超限
+  | 'tool_execution_failed'    // 工具执行失败
+  | 'workflow_node_failed'     // 工作流节点失败
+  | 'storage_error';           // 存储错误
+```
+
+每种错误类型需要:
+- 用户友好的错误消息
+- 诊断信息（错误原因、影响范围）
+- 修复建议（可执行的操作）
+- 恢复策略（自动重试/手动修复/降级）
+
+---
+
+## 25. 下一步
+
+Phase 0-2 已全部完成，基础设施和 CRUD 层全部就绪。**当前最关键的风险点是 SDK 真实集成**（INFRA-01/02/03），建议集中资源优先完成。
+
+建议第一批任务分配:
+- **codex**: INFRA-01 Claude Agent SDK 集成
+- **浩轩**: INFRA-04 Terminal PTY 集成
+- **claude**: P3-04 Usage Ledger + P3-02 规则合成引擎
