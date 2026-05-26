@@ -14,6 +14,9 @@ import { z } from 'zod'
 export const SessionIdSchema = z.string().uuid()
 export const TurnIdSchema = z.string().uuid()
 export const ProfileIdSchema = z.string().uuid()
+export const RuleIdSchema = z.string().uuid()
+
+export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
 
 // ─── Session Schema ───────────────────────────────────────────────────────────
 
@@ -88,6 +91,34 @@ export const DialogOpenDirectoryRequestSchema = z.object({
   defaultPath: z.string().optional(),
 })
 
+// ─── Rules Schema ────────────────────────────────────────────────────────────
+
+export const RulesListRequestSchema = z.object({
+  scope: RuleScopeSchema.optional(),
+  scopeRef: z.string().min(1).max(200).optional(),
+})
+
+export const RulesCreateRequestSchema = z.object({
+  scope: RuleScopeSchema,
+  scopeRef: z.string().min(1).max(200).optional(),
+  name: z.string().min(1).max(120),
+  content: z.string().min(1).max(20_000),
+  priority: z.number().int().min(-10_000).max(10_000).optional().default(0),
+  enabled: z.boolean().optional().default(true),
+})
+
+export const RulesUpdateRequestSchema = z.object({
+  id: RuleIdSchema,
+  name: z.string().min(1).max(120).optional(),
+  content: z.string().min(1).max(20_000).optional(),
+  priority: z.number().int().min(-10_000).max(10_000).optional(),
+  enabled: z.boolean().optional(),
+})
+
+export const RulesDeleteRequestSchema = z.object({
+  id: RuleIdSchema,
+})
+
 /**
  * IPC Schema 注册表
  *
@@ -103,4 +134,8 @@ export const IpcSchemaRegistry = {
   'provider:delete': ProviderDeleteRequestSchema,
   'workspace:open': WorkspaceOpenRequestSchema,
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
+  'rules:list': RulesListRequestSchema,
+  'rules:create': RulesCreateRequestSchema,
+  'rules:update': RulesUpdateRequestSchema,
+  'rules:delete': RulesDeleteRequestSchema,
 } as const

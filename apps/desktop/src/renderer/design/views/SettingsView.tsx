@@ -8,7 +8,14 @@ import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
-import type { ProviderHealthCheckResponse, ProviderProfile, ProviderUpdateRequest, WorkspaceInfo } from '@spark/protocol'
+import type {
+  ProviderHealthCheckResponse,
+  ProviderProfile,
+  ProviderUpdateRequest,
+  RuleItem,
+  RuleScope,
+  WorkspaceInfo,
+} from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai-compatible'
 type ProviderForm = {
@@ -916,55 +923,158 @@ function ModelRowFull({ profile, onEdit, onDelete }: { profile: ProviderProfile;
 }
 
 /* ───────── RULES ───────── */
-function RulesSection() {
-  return (
-    <div className="settings-section">
-      <h2>规则</h2>
-      <div className="lede">多层规则按优先级合成为有效 prompt 注入。下方按层级展示来源，并显示冲突与覆盖。</div>
+const RULE_LAYER_META: Array<{
+  scope: RuleScope
+  label: string
+  badge: string
+  badgeColor: string
+  desc: string
+}> = [
+  { scope: 'system', label: 'System', badge: 'SYS', badgeColor: '#94a3b8', desc: '应用内置 · 不可删除' },
+  { scope: 'team', label: 'Team', badge: 'TEAM', badgeColor: '#8b5cf6', desc: '团队管理员发布' },
+  { scope: 'user', label: 'User', badge: 'USER', badgeColor: '#10b981', desc: '用户全局偏好' },
+  { scope: 'project', label: 'Project', badge: 'PROJ', badgeColor: '#f97316', desc: '.spark/rules · 当前工作区' },
+  { scope: 'session', label: 'Session', badge: 'SESS', badgeColor: '#f43f5e', desc: '本次会话临时规则' },
+]
 
-      <div className="row" style={{ marginBottom: 16, padding: '10px 12px', background: 'var(--primary-soft)', borderRadius: 'var(--r-md)', gap: 10, border: '1px solid var(--border)' }}>
-        <Icons.Brain size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-        <div className="flex1" style={{ fontSize: 12.5 }}>
-          <strong>当前生效</strong> · 32 条来自 5 个作用域 · 检测到 1 处冲突，已按优先级解析
+function RulesSection() {
+  const [rules, setRules] = useState<RuleItem[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [editing, setEditing] = useState<{ scope: RuleScope; rule: RuleItem | null } | null>(null)
+
+  const { invoke: listRules } = useIpcInvoke('rules:list')
+  const { invoke: createRule } = useIpcInvoke('rules:create')
+  const { invoke: updateRule } = useIpcInvoke('rules:update')
+  const { invoke: deleteRule } = useIpcInvoke('rules:delete')
+
+  const refresh = useCallback(() => {
+    setLoading(true)
+    setError('')
+    listRules({})
+      .then((res) => setRules(res.rules))
+      .catch((err) => setError(err instanceof Error ? err.message : '加载规则失败'))
+      .finally(() => setLoading(false))
+  }, [listRules])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const grouped = RULE_LAYER_META.reduce<Record<RuleScope, RuleItem[]>>((acc, meta) => {
+    acc[meta.scope] = rules.filter((rule) => rule.scope === meta.scope)
+    return acc
+  }, { system: [], team: [], user: [], project: [], session: [] })
+
+  const activeCount = rules.filter((rule) => rule.enabled).length
+
+  const handleToggle = async (id: string, enabled: boolean) => {
+    await updateRule({ id, enabled })
+    refresh()
+  }
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('确认删除该规则？')) return
+    await deleteRule({ id })
+    refresh()
+  }
+
+  const handleSave = async (draft: { scope: RuleScope; id?: string; name: string; content: string; priority: number }) => {
+    if (draft.id !== undefined) {
+      await updateRule({
+        id: draft.id,
+        name: draft.name,
+        content: draft.content,
+        priority: draft.priority,
+      })
+    } else {
+      await createRule({
+        scope: draft.scope,
+        name: draft.name,
+        content: draft.content,
+        priority: draft.priority,
+      })
+    }
+    setEditing(null)
+    refresh()
+  }
+
+  return (
+    <>
+      <div className="settings-section">
+        <h2>规则</h2>
+        <div className="lede">多层规则按优先级合成为有效 prompt 注入。下方按层级展示来源，并显示冲突与覆盖。</div>
+
+        <div className="row" style={{ marginBottom: 16, padding: '10px 12px', background: 'var(--primary-soft)', borderRadius: 'var(--r-md)', gap: 10, border: '1px solid var(--border)' }}>
+          <Icons.Brain size={14} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+          <div className="flex1" style={{ fontSize: 12.5 }}>
+            <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length} 个作用域
+          </div>
+          <button className="btn sm primary" onClick={refresh}><Icons.Refresh size={11} /> 刷新</button>
         </div>
-        <button className="btn sm primary"><Icons.Eye size={11} /> 预览合成结果</button>
+
+        {error && (
+          <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+            正在加载规则...
+          </div>
+        ) : (
+          RULE_LAYER_META.map((meta) => (
+            <RuleLayer
+              key={meta.scope}
+              scope={meta.label}
+              badge={meta.badge}
+              badgeColor={meta.badgeColor}
+              desc={`${meta.desc} · ${grouped[meta.scope].length} 条`}
+              rules={grouped[meta.scope]}
+              readOnly={meta.scope === 'system'}
+              onToggle={handleToggle}
+              onEdit={(rule) => setEditing({ scope: meta.scope, rule })}
+              onDelete={handleDelete}
+              onAdd={() => setEditing({ scope: meta.scope, rule: null })}
+            />
+          ))
+        )}
       </div>
 
-      <RuleLayer scope="System" badge="SYS" badgeColor="#94a3b8" desc="应用内置 · 不可删除" rules={[
-        { src: 'safety.md', txt: '禁止 rm -rf 根路径、~/、.ssh/', marker: 'win' },
-        { src: 'safety.md', txt: '禁止上传完整文件到外部服务，除非用户显式确认' },
-        { src: 'safety.md', txt: '永不在 prompt 中明文显示 secret 引用' },
-      ]} />
-
-      <RuleLayer scope="Team" badge="TEAM" badgeColor="#8b5cf6" desc="团队管理员发布 · 8 条" rules={[
-        { src: 'team/coding-style.md', txt: '所有 TS 文件用 tabWidth=2，使用 import type' },
-        { src: 'team/testing.md', txt: '测试覆盖率 ≥ 80%，新增模块必须包含集成测试' },
-        { src: 'team/security.md', txt: '高风险 git 操作（force push、强制 rebase）需双人审批' },
-      ]} />
-
-      <RuleLayer scope="User" badge="USER" badgeColor="#10b981" desc="用户全局偏好" rules={[
-        { src: '~/.spark/rules/style.md', txt: '回答用简洁中文，代码注释用英文' },
-        { src: '~/.spark/rules/style.md', txt: '优先小步提交，每个 commit 不超过 200 行' },
-        { src: '~/.spark/rules/tools.md', txt: '默认禁用 web fetch；调用前必须解释目的', marker: 'lose', overridden: true },
-      ]} />
-
-      <RuleLayer scope="Project" badge="PROJ" badgeColor="#f97316" desc=".spark/rules/ · spark-agent" rules={[
-        { src: '.spark/rules/project.md', txt: '本仓库使用 pnpm workspace；不要切换到 npm/yarn' },
-        { src: '.spark/rules/project.md', txt: '测试用 vitest，不要引入 jest（仍保留 legacy 目录）' },
-        { src: 'AGENTS.md', txt: 'TypeScript 严格模式，禁用 any 与 enum，使用 const 对象' },
-        { src: '.spark/rules/tools.md', txt: '本项目允许 web fetch，但需要解释目的', marker: 'win' },
-      ]} conflict />
-
-      <RuleLayer scope="Session" badge="SESS" badgeColor="#f43f5e" desc="本次会话临时规则" rules={[
-        { src: '(会话开头)', txt: 'OAuth 2.1 兼容旧 endpoint 至少保留到 v0.3' },
-        { src: '(会话开头)', txt: '本次改造涉及 PKCE，请优先参考 RFC 9700' },
-      ]} />
-    </div>
+      {editing !== null && (
+        <RuleEditPanel
+          scope={editing.scope}
+          rule={editing.rule}
+          onClose={() => setEditing(null)}
+          onSave={handleSave}
+        />
+      )}
+    </>
   )
 }
 
-type Rule = { src: string; txt: string; marker?: 'win' | 'lose'; overridden?: boolean }
-function RuleLayer({ scope, badge, badgeColor, desc, rules, conflict }: { scope: string; badge: string; badgeColor: string; desc: string; rules: Rule[]; conflict?: boolean }) {
+function RuleLayer({
+  scope,
+  badge,
+  badgeColor,
+  desc,
+  rules,
+  readOnly = false,
+  onToggle,
+  onEdit,
+  onDelete,
+  onAdd,
+}: {
+  scope: string
+  badge: string
+  badgeColor: string
+  desc: string
+  rules: RuleItem[]
+  readOnly?: boolean
+  onToggle: (id: string, enabled: boolean) => void
+  onEdit: (rule: RuleItem) => void
+  onDelete: (id: string) => void
+  onAdd: () => void
+}) {
   return (
     <div className="rule-layer">
       <div className="rule-layer-h">
@@ -974,19 +1084,121 @@ function RuleLayer({ scope, badge, badgeColor, desc, rules, conflict }: { scope:
           <span className="desc"> · {desc}</span>
         </div>
         <div style={{ flex: 1 }} />
-        {conflict && <span className="badge warning dot" style={{ fontSize: 10 }}>1 冲突</span>}
-        <button className="icon-btn"><Icons.Edit size={13} /></button>
+        {readOnly && <span className="badge" style={{ fontSize: 10 }}>只读</span>}
+        {!readOnly && <button className="icon-btn" title="新增规则" onClick={onAdd}><Icons.Plus size={13} /></button>}
         <button className="icon-btn"><Icons.ChevronDown size={13} /></button>
       </div>
       <div className="rule-layer-body">
-        {rules.map((r, i) => (
-          <div key={i} className={`rule-line ${r.marker === 'lose' ? 'overridden' : ''} ${r.marker && !r.overridden && conflict ? 'conflict' : ''}`}>
-            <span className="src">{r.src}</span>
-            <span className="txt">{r.txt}</span>
-            {r.marker === 'win' && <span className="marker win">优先</span>}
-            {r.marker === 'lose' && <span className="marker lose">被覆盖</span>}
+        {rules.length === 0 && (
+          <div className="rule-line">
+            <span className="src">empty</span>
+            <span className="txt">暂无规则</span>
+          </div>
+        )}
+        {rules.map((rule) => (
+          <div key={rule.id} className={`rule-line ${rule.enabled ? '' : 'overridden'}`}>
+            <span className="src">{rule.name}</span>
+            <span className="txt">{rule.content}</span>
+            <span className="marker win">P{rule.priority}</span>
+            {!rule.enabled && <span className="marker lose">禁用</span>}
+            <div
+              className={`switch ${rule.enabled ? 'on' : ''}`}
+              style={{ width: 28, height: 16, flexShrink: 0 }}
+              onClick={() => onToggle(rule.id, !rule.enabled)}
+            />
+            {!readOnly && (
+              <>
+                <button className="icon-btn" title="编辑" onClick={() => onEdit(rule)}><Icons.Edit size={12} /></button>
+                <button className="icon-btn" title="删除" onClick={() => onDelete(rule.id)}><Icons.X size={12} /></button>
+              </>
+            )}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function RuleEditPanel({
+  scope,
+  rule,
+  onClose,
+  onSave,
+}: {
+  scope: RuleScope
+  rule: RuleItem | null
+  onClose: () => void
+  onSave: (draft: { scope: RuleScope; id?: string; name: string; content: string; priority: number }) => Promise<void>
+}) {
+  const [name, setName] = useState(rule?.name ?? '')
+  const [content, setContent] = useState(rule?.content ?? '')
+  const [priority, setPriority] = useState(rule?.priority ?? 0)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSave = async () => {
+    if (!name.trim() || !content.trim()) {
+      setError('名称和内容不能为空')
+      return
+    }
+
+    setSaving(true)
+    setError('')
+    try {
+      await onSave({
+        scope,
+        ...(rule !== null && { id: rule.id }),
+        name: name.trim(),
+        content: content.trim(),
+        priority,
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '保存规则失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="slide-panel-backdrop" onClick={onClose}>
+      <div className="slide-panel" onClick={(e) => e.stopPropagation()}>
+        <div className="slide-panel-h">
+          <div className="h-icon">{scope.slice(0, 1).toUpperCase()}</div>
+          <div className="flex1">
+            <div className="h-title">{rule === null ? '新增规则' : '编辑规则'}</div>
+            <div className="h-sub">{scope} scope · prompt 片段</div>
+          </div>
+          <button className="icon-btn" onClick={onClose}><Icons.X /></button>
+        </div>
+
+        <div className="slide-panel-body">
+          {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
+          <div className="subsec-h">规则</div>
+          <div className="form-grid">
+            <label>名称</label>
+            <input value={name} onChange={(e) => setName(e.target.value)} placeholder="例：代码风格" />
+
+            <label>优先级<span className="sub">数字越大越优先</span></label>
+            <input type="number" value={priority} onChange={(e) => setPriority(Number(e.target.value))} />
+
+            <label>内容</label>
+            <textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="输入要注入到 Agent prompt 的规则内容"
+              style={{ minHeight: 150, resize: 'vertical' }}
+            />
+          </div>
+        </div>
+
+        <div className="slide-panel-foot">
+          <span style={{ flex: 1 }} />
+          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn primary" onClick={handleSave} disabled={saving}>
+            <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
       </div>
     </div>
   )

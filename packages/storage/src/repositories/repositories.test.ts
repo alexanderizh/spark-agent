@@ -13,6 +13,7 @@ import { WorkspaceRepository } from '../repositories/workspace.repository.js'
 import type { WorkspaceRow } from '../repositories/workspace.repository.js'
 import { EventRepository } from '../repositories/event.repository.js'
 import type { AgentEventRow } from '../repositories/event.repository.js'
+import { RulesRepository } from '../repositories/rules.repository.js'
 import { join } from 'path'
 import { mkdirSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
@@ -101,6 +102,51 @@ describe('WorkspaceRepository', () => {
 
     const updated = repo.get('ws-1')
     expect(updated!.name).toBe('new-name')
+  })
+})
+
+// ─── RulesRepository ──────────────────────────────────────────────────
+
+describe('RulesRepository', () => {
+  let db: SparkDatabase
+  let repo: RulesRepository
+  let testDir: string
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `spark-test-rules-${Date.now()}`)
+    mkdirSync(testDir, { recursive: true })
+    db = createTestDb(testDir)
+    repo = new RulesRepository(db)
+  })
+
+  afterEach(() => {
+    db.close()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  it('should create, list, update, toggle, and delete rules', () => {
+    const created = repo.create({
+      id: 'rule-1',
+      scope: 'user',
+      name: 'Style',
+      content: 'Use concise Chinese.',
+      priority: 10,
+    })
+
+    expect(created.id).toBe('rule-1')
+    expect(created.enabled).toBe(1)
+
+    expect(repo.list({ scope: 'user' })).toHaveLength(1)
+
+    const updated = repo.update('rule-1', { content: 'Use concise English.', priority: 20 })
+    expect(updated!.content).toBe('Use concise English.')
+    expect(updated!.priority).toBe(20)
+
+    const toggled = repo.toggle('rule-1', false)
+    expect(toggled!.enabled).toBe(0)
+
+    expect(repo.delete('rule-1')).toBe(true)
+    expect(repo.getById('rule-1')).toBeNull()
   })
 })
 

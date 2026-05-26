@@ -13,8 +13,8 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { dialog } from 'electron'
 import { createLogger } from '@spark/shared'
-import { ProviderProfileRepository, WorkspaceRepository } from '@spark/storage'
-import { ProviderService, SessionService, WorkspaceService } from '@spark/agent-runtime'
+import { ProviderProfileRepository, RulesRepository, WorkspaceRepository } from '@spark/storage'
+import { ProviderService, RulesService, SessionService, WorkspaceService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
@@ -23,6 +23,10 @@ const log = createLogger('ipc:register')
 
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
+}
+
+function getRulesService(): RulesService {
+  return new RulesService(new RulesRepository(getDatabase()))
 }
 
 let _workspaceService: WorkspaceService | null = null
@@ -145,6 +149,37 @@ export function registerAllIpcHandlers(): void {
       canceled: result.canceled,
       ...(result.filePaths[0] === undefined ? {} : { filePath: result.filePaths[0] }),
     }
+  })
+
+  // ─── Rules Handlers ─────────────────────────────────────────────────────
+
+  typedIpcHandle('rules:list', async (req) => {
+    log.info(`rules:list requested, scope=${req.scope ?? 'all'}`)
+    const rules = getRulesService().list(req)
+    return { rules }
+  })
+
+  typedIpcHandle('rules:create', async (req) => {
+    log.info(`rules:create requested, scope=${req.scope}, name=${req.name}`)
+    const rule = getRulesService().create(req)
+    return { rule }
+  })
+
+  typedIpcHandle('rules:update', async (req) => {
+    log.info(`rules:update requested, id=${req.id}`)
+    const rule = getRulesService().update(req.id, {
+      ...(req.name !== undefined && { name: req.name }),
+      ...(req.content !== undefined && { content: req.content }),
+      ...(req.priority !== undefined && { priority: req.priority }),
+      ...(req.enabled !== undefined && { enabled: req.enabled }),
+    })
+    return { rule }
+  })
+
+  typedIpcHandle('rules:delete', async (req) => {
+    log.info(`rules:delete requested, id=${req.id}`)
+    const success = getRulesService().delete(req.id)
+    return { success }
   })
 
   log.info('All IPC handlers registered')

@@ -1,4 +1,6 @@
 export { ProviderService } from './services/provider.service.js'
+export { RulesService } from './services/rules.service.js'
+export type { CreateRuleParams, ListRulesParams, UpdateRuleFields } from './services/rules.service.js'
 export { SessionService } from './services/session.service.js'
 export type { SessionEventHandler } from './services/session.service.js'
 export { WorkspaceService } from './services/workspace.service.js'

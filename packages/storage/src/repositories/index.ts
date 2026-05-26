@@ -11,9 +11,11 @@ export { SessionRepository } from './session.repository.js'
 export { WorkspaceRepository } from './workspace.repository.js'
 export { EventRepository } from './event.repository.js'
 export { ProviderProfileRepository } from './provider.repository.js'
+export { RulesRepository } from './rules.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'
 export type { WorkspaceRow, CreateWorkspaceParams } from './workspace.repository.js'
 export type { AgentEventRow, QueryEventsParams, InsertEventParams } from './event.repository.js'
 export type { ProviderProfileRow, CreateProviderParams } from './provider.repository.js'
+export type { RuleRow, CreateRuleParams, UpdateRuleParams, ListRulesParams } from './rules.repository.js'

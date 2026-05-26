@@ -208,6 +208,64 @@ export interface DialogOpenDirectoryResponse {
   filePath?: string
 }
 
+// ─── Rules Channels ─────────────────────────────────────────────────────────
+
+export type RuleScope = 'system' | 'team' | 'user' | 'project' | 'session'
+
+export interface RuleItem {
+  id: string
+  scope: RuleScope
+  scopeRef: string | null
+  name: string
+  content: string
+  priority: number
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface RulesListRequest {
+  scope?: RuleScope
+  scopeRef?: string
+}
+
+export interface RulesListResponse {
+  rules: RuleItem[]
+}
+
+export interface RulesCreateRequest {
+  scope: RuleScope
+  scopeRef?: string
+  name: string
+  content: string
+  priority?: number
+  enabled?: boolean
+}
+
+export interface RulesCreateResponse {
+  rule: RuleItem
+}
+
+export interface RulesUpdateRequest {
+  id: string
+  name?: string
+  content?: string
+  priority?: number
+  enabled?: boolean
+}
+
+export interface RulesUpdateResponse {
+  rule: RuleItem
+}
+
+export interface RulesDeleteRequest {
+  id: string
+}
+
+export interface RulesDeleteResponse {
+  success: boolean
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -246,6 +304,12 @@ export interface IpcChannelMap {
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
+
+  // Rules
+  'rules:list': [RulesListRequest, RulesListResponse]
+  'rules:create': [RulesCreateRequest, RulesCreateResponse]
+  'rules:update': [RulesUpdateRequest, RulesUpdateResponse]
+  'rules:delete': [RulesDeleteRequest, RulesDeleteResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

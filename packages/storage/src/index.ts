@@ -27,6 +27,7 @@ export {
   WorkspaceRepository,
   EventRepository,
   ProviderProfileRepository,
+  RulesRepository,
 } from './repositories/index.js'
 
 export type {
@@ -40,4 +41,8 @@ export type {
   InsertEventParams,
   ProviderProfileRow,
   CreateProviderParams,
+  RuleRow,
+  CreateRuleParams,
+  UpdateRuleParams,
+  ListRulesParams,
 } from './repositories/index.js'
