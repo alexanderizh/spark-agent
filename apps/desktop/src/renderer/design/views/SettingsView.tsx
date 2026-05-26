@@ -701,7 +701,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
             <input
               value={form.endpoint}
               onChange={e => set('endpoint', e.target.value)}
-              placeholder={form.provider === 'anthropic' ? 'https://api.anthropic.com/v1' : 'https://api.openai.com/v1'}
+              placeholder={form.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'}
               className="mono-sm"
             />
 

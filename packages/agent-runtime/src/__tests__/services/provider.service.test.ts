@@ -52,6 +52,7 @@ describe('ProviderService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
     repo = makeRepo()
     service = new ProviderService(repo as never)
   })
@@ -235,5 +236,42 @@ describe('ProviderService', () => {
     expect(profiles[0]!.id).toBe('id-4')
     expect(profiles[0]!.defaultModel).toBe('claude-3')
     expect(profiles[0]!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
+  })
+
+  it('healthCheck validates Anthropic-compatible providers with a minimal messages request', async () => {
+    repo.rows.set('id-anthropic-compatible', {
+      id: 'id-anthropic-compatible',
+      provider_type: 'anthropic',
+      name: 'Tencent Coding Plan',
+      config_json: '{"defaultModel":"glm-5","modelIds":["glm-5"],"apiEndpoint":"https://api.lkeap.cloud.tencent.com/coding/anthropic"}',
+      enabled: 1,
+      keystore_ref: 'anthropic-id-anthropic-compatible',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test' as never)
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await service.healthCheck('id-anthropic-compatible')
+
+    expect(result.healthy).toBe(true)
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.lkeap.cloud.tencent.com/coding/anthropic/v1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-api-key': 'sk-test',
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        }),
+        body: JSON.stringify({
+          model: 'glm-5',
+          max_tokens: 1,
+          messages: [{ role: 'user', content: 'ping' }],
+        }),
+      }),
+    )
   })
 })

@@ -72,6 +72,20 @@ describe('AnthropicAdapter', () => {
     expect(anthropicConstructorMock).toHaveBeenCalledWith({ apiKey: 'sk-ant-test' })
   })
 
+  it('normalizes custom Anthropic base URLs that already include /v1', async () => {
+    anthropicStreamMock.mockReturnValue(streamFrom([{ type: 'message_stop' }]))
+
+    await collect(new AnthropicAdapter(), {
+      ...params,
+      apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic/v1',
+    })
+
+    expect(anthropicConstructorMock).toHaveBeenCalledWith({
+      apiKey: 'sk-ant-test',
+      baseURL: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+    })
+  })
+
   it('maps tool_use content blocks to tool_call events', async () => {
     anthropicStreamMock.mockReturnValue(
       streamFrom([

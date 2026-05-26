@@ -152,13 +152,28 @@ export class ProviderService {
 
     const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
     const start = Date.now()
+    const providerType = normalizeProviderType(row.provider_type)
 
     try {
-      const endpoint = getHealthCheckEndpoint(normalizeProviderType(row.provider_type), config.apiEndpoint)
-      const res = await fetch(endpoint, {
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(5000),
-      })
+      const res = providerType === 'anthropic'
+        ? await fetch(getAnthropicMessagesEndpoint(config.apiEndpoint), {
+          method: 'POST',
+          headers: {
+            'x-api-key': apiKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: config.defaultModel,
+            max_tokens: 1,
+            messages: [{ role: 'user', content: 'ping' }],
+          }),
+          signal: AbortSignal.timeout(5000),
+        })
+        : await fetch(getHealthCheckEndpoint(providerType, config.apiEndpoint), {
+          headers: { Authorization: `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(5000),
+        })
       const latencyMs = Date.now() - start
       if (res.ok || res.status === 401) {
         // 401 means key is wrong but endpoint is reachable
@@ -215,4 +230,11 @@ function getDefaultEndpoint(providerType: string): string {
     case 'openai': return 'https://api.openai.com/v1/models'
     default: return 'https://api.openai.com/v1/models'
   }
+}
+
+function getAnthropicMessagesEndpoint(apiEndpoint?: string): string {
+  const base = (apiEndpoint ?? 'https://api.anthropic.com').replace(/\/+$/, '')
+  if (base.endsWith('/v1/messages')) return base
+  if (base.endsWith('/v1')) return `${base}/messages`
+  return `${base}/v1/messages`
 }

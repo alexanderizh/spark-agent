@@ -42,7 +42,7 @@ export class AnthropicAdapter implements IModelAdapter {
     const providerBase = { ...base, provider: this.provider, model: params.model }
     const client = new Anthropic({
       apiKey: params.apiKey,
-      ...(params.apiEndpoint === undefined ? {} : { baseURL: params.apiEndpoint }),
+      ...(params.apiEndpoint === undefined ? {} : { baseURL: normalizeAnthropicBaseURL(params.apiEndpoint) }),
     })
 
     let completeText = ''
@@ -88,6 +88,13 @@ export class AnthropicAdapter implements IModelAdapter {
       yield errorEventFromUnknown(base, error)
     }
   }
+}
+
+function normalizeAnthropicBaseURL(apiEndpoint: string): string {
+  return apiEndpoint
+    .replace(/\/+$/, '')
+    .replace(/\/v1\/messages$/, '')
+    .replace(/\/v1$/, '')
 }
 
 function mapAnthropicEvent(
