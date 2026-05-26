@@ -13,8 +13,8 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { dialog } from 'electron'
 import { createLogger } from '@spark/shared'
-import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService } from '@spark/agent-runtime'
+import { ProviderProfileRepository, RulesRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository } from '@spark/storage'
+import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
@@ -27,6 +27,10 @@ function getProviderService(): ProviderService {
 
 function getModelService(): ModelService {
   return new ModelService(new ModelProfileRepository(getDatabase()))
+}
+
+function getMcpService(): McpService {
+  return new McpService(new McpServerRepository(getDatabase()))
 }
 
 function getRulesService(): RulesService {
@@ -247,6 +251,29 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('model:delete', async (req) => {
     const deleted = getModelService().delete(req.id)
     return { deleted }
+  })
+
+  // ─── MCP Handlers ───────────────────────────────────────────────────────────
+
+  typedIpcHandle('mcp:list', async (req) => {
+    const servers = getMcpService().listServers(req.scope !== undefined ? { scope: req.scope } : undefined)
+    return { servers }
+  })
+
+  typedIpcHandle('mcp:create', async (req) => {
+    const server = getMcpService().createServer(req)
+    return { server }
+  })
+
+  typedIpcHandle('mcp:update', async (req) => {
+    const { id, ...fields } = req
+    const server = getMcpService().updateServer(id, fields)
+    return { server }
+  })
+
+  typedIpcHandle('mcp:delete', async (req) => {
+    const success = getMcpService().deleteServer(req.id)
+    return { success }
   })
 
   log.info('All IPC handlers registered')

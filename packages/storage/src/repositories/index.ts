@@ -16,6 +16,8 @@ export { PermissionProfileRepository } from './permission.repository.js'
 export type { PermissionProfileRow, PermissionRuleRow } from './permission.repository.js'
 export { ModelProfileRepository } from './model-profile.repository.js'
 export type { ModelProfileRow } from './model-profile.repository.js'
+export { McpServerRepository } from './mcp-server.repository.js'
+export type { McpServerRow } from './mcp-server.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

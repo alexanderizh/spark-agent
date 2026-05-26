@@ -372,6 +372,56 @@ export interface ModelDeleteResponse {
   deleted: boolean
 }
 
+// ─── MCP Channels ───────────────────────────────────────────────────────────
+
+export interface McpServerItem {
+  id: string
+  scope: string
+  name: string
+  configJson: string
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface McpListRequest {
+  scope?: string
+}
+
+export interface McpListResponse {
+  servers: McpServerItem[]
+}
+
+export interface McpCreateRequest {
+  scope: string
+  name: string
+  configJson: string
+  enabled?: boolean
+}
+
+export interface McpCreateResponse {
+  server: McpServerItem
+}
+
+export interface McpUpdateRequest {
+  id: string
+  name?: string
+  configJson?: string
+  enabled?: boolean
+}
+
+export interface McpUpdateResponse {
+  server: McpServerItem
+}
+
+export interface McpDeleteRequest {
+  id: string
+}
+
+export interface McpDeleteResponse {
+  success: boolean
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -429,6 +479,12 @@ export interface IpcChannelMap {
   'model:create': [ModelCreateRequest, ModelCreateResponse]
   'model:update': [ModelUpdateRequest, ModelUpdateResponse]
   'model:delete': [ModelDeleteRequest, ModelDeleteResponse]
+
+  // MCP
+  'mcp:list': [McpListRequest, McpListResponse]
+  'mcp:create': [McpCreateRequest, McpCreateResponse]
+  'mcp:update': [McpUpdateRequest, McpUpdateResponse]
+  'mcp:delete': [McpDeleteRequest, McpDeleteResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

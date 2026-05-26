@@ -147,4 +147,18 @@ export const IpcSchemaRegistry = {
   'model:create': z.object({ providerId: z.string().uuid(), name: z.string().min(1).max(200), configJson: z.string().optional() }),
   'model:update': z.object({ id: z.string().uuid(), name: z.string().min(1).max(200).optional(), configJson: z.string().optional(), enabled: z.boolean().optional() }),
   'model:delete': z.object({ id: z.string().uuid() }),
+  'mcp:list': z.object({ scope: z.string().min(1).max(80).optional() }),
+  'mcp:create': z.object({
+    scope: z.string().min(1).max(80),
+    name: z.string().min(1).max(120),
+    configJson: z.string().min(2).max(20_000),
+    enabled: z.boolean().optional(),
+  }),
+  'mcp:update': z.object({
+    id: z.string().uuid(),
+    name: z.string().min(1).max(120).optional(),
+    configJson: z.string().min(2).max(20_000).optional(),
+    enabled: z.boolean().optional(),
+  }),
+  'mcp:delete': z.object({ id: z.string().uuid() }),
 } as const
