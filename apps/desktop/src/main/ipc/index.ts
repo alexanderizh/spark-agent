@@ -103,6 +103,11 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().listSessions(req)
   })
 
+  typedIpcHandle('session:search', async (req) => {
+    log.info(`session:search requested, query="${req.query}"`)
+    return getSessionService().searchSessions(req)
+  })
+
   // ─── Provider Handlers ─────────────────────────────────────────────────
   // P1-09 完整实现，当前为骨架
 

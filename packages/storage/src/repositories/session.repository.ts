@@ -166,4 +166,13 @@ export class SessionRepository extends BaseRepository {
     if (row == null) return []
     return this.fromJson<string[]>(row.workspace_ids_json, [])
   }
+
+  /** 按标题模糊搜索 */
+  searchByTitle(query: string, limit: number = 20): SessionRow[] {
+    const pattern = `%${query}%`
+    const stmt = this.raw.prepare(
+      `SELECT * FROM sessions WHERE title LIKE ? ORDER BY updated_at DESC LIMIT ?`,
+    )
+    return stmt.all(pattern, limit) as SessionRow[]
+  }
 }

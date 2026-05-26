@@ -1,14 +1,14 @@
 /**
  * ChatView — 真实 IPC 驱动的会话视图
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { ErrorCard } from '../ChatInteractions'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
 import type { UIMessage, UIBlock } from '../services/event-mapper'
-import type { SessionListResponse, SessionId } from '@spark/protocol'
+import type { SessionListResponse, SessionId, SessionSearchResult } from '@spark/protocol'
 
 type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -18,15 +18,54 @@ export function ChatView() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [agentStatus, setAgentStatus] = useState<string>('')
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState<SessionSearchResult[]>([])
+  const [isSearching, setIsSearching] = useState(false)
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
   const { invoke: listSessions } = useIpcInvoke('session:list')
   const { invoke: createSession } = useIpcInvoke('session:create')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: searchSessions } = useIpcInvoke('session:search')
 
   const refreshSessions = () => {
     listSessions({ limit: 100 }).then(res => setSessions(res.sessions)).catch(console.error)
   }
 
   useEffect(() => { refreshSessions() }, [])
+
+  // Debounced search handler
+  const handleSearchChange = useCallback((value: string) => {
+    setSearchQuery(value)
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+
+    if (!value.trim()) {
+      setSearchResults([])
+      setIsSearching(false)
+      return
+    }
+
+    setIsSearching(true)
+    searchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await searchSessions({ query: value.trim(), limit: 20 })
+        setSearchResults(res.results)
+      } catch (err) {
+        console.error('搜索失败', err)
+        setSearchResults([])
+      } finally {
+        setIsSearching(false)
+      }
+    }, 300)
+  }, [searchSessions])
+
+  // Clean up timer on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    }
+  }, [])
 
   const handleNewSession = async () => {
     try {
@@ -44,36 +83,82 @@ export function ChatView() {
     }
   }
 
+  const handleSelectSearchResult = (sessionId: SessionId) => {
+    setActive(sessionId)
+    setSearchQuery('')
+    setSearchResults([])
+  }
+
+  const showSearchResults = searchQuery.trim().length > 0
+
   return (
     <div className="chat-layout">
       <div className="chat-sidebar">
         <div className="chat-sidebar-head">
           <div className="search-input">
             <Icons.Search />
-            <input placeholder="搜索会话..." />
+            <input
+              placeholder="搜索会话..."
+              value={searchQuery}
+              onChange={e => handleSearchChange(e.target.value)}
+            />
+            {isSearching && <Icons.Spinner size={12} style={{ marginRight: 6 }} />}
+            {searchQuery && !isSearching && (
+              <button
+                className="icon-btn"
+                style={{ width: 18, height: 18, minWidth: 18 }}
+                onClick={() => handleSearchChange('')}
+              >
+                <Icons.X size={10} />
+              </button>
+            )}
           </div>
           <button className="icon-btn" title="新建会话" onClick={handleNewSession}><Icons.Plus /></button>
         </div>
 
-        <div className="chat-sidebar-projbar">
-          <span className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>会话列表</span>
-          <span className="flex1" />
-          <button className="icon-btn" style={{ width: 22, height: 22 }} title="新建会话" onClick={handleNewSession}><Icons.Plus size={11} /></button>
-        </div>
-
-        <div className="chat-list scroll">
-          {sessions.length === 0 ? (
-            <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 12 }}>
-              <Icons.Chat size={24} style={{ marginBottom: 8, opacity: 0.4 }} />
-              <div>暂无会话</div>
-              <div style={{ marginTop: 4 }}>点击 + 新建会话</div>
+        {showSearchResults ? (
+          <div className="chat-list scroll">
+            {searchResults.length === 0 && !isSearching ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 12 }}>
+                <Icons.Search size={24} style={{ marginBottom: 8, opacity: 0.4 }} />
+                <div>未找到匹配的会话</div>
+                <div style={{ marginTop: 4 }}>尝试其他关键词</div>
+              </div>
+            ) : (
+              searchResults.map(r => (
+                <SearchResultItem
+                  key={r.sessionId}
+                  result={r}
+                  query={searchQuery.trim()}
+                  active={active}
+                  onClick={handleSelectSearchResult}
+                />
+              ))
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="chat-sidebar-projbar">
+              <span className="muted" style={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', fontWeight: 600 }}>会话列表</span>
+              <span className="flex1" />
+              <button className="icon-btn" style={{ width: 22, height: 22 }} title="新建会话" onClick={handleNewSession}><Icons.Plus size={11} /></button>
             </div>
-          ) : (
-            sessions.map(s => (
-              <ChatListItem key={s.id} session={s} active={active} onClick={setActive} />
-            ))
-          )}
-        </div>
+
+            <div className="chat-list scroll">
+              {sessions.length === 0 ? (
+                <div style={{ padding: '24px 16px', textAlign: 'center', color: 'var(--fg-muted)', fontSize: 12 }}>
+                  <Icons.Chat size={24} style={{ marginBottom: 8, opacity: 0.4 }} />
+                  <div>暂无会话</div>
+                  <div style={{ marginTop: 4 }}>点击 + 新建会话</div>
+                </div>
+              ) : (
+                sessions.map(s => (
+                  <ChatListItem key={s.id} session={s} active={active} onClick={setActive} />
+                ))
+              )}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="chat-main">
@@ -102,6 +187,66 @@ export function ChatView() {
       )}
     </div>
   )
+}
+
+function SearchResultItem({ result, query, active, onClick }: {
+  result: SessionSearchResult
+  query: string
+  active: SessionId | null
+  onClick: (id: SessionId) => void
+}) {
+  return (
+    <div
+      className={`chat-item proj-session ${active === result.sessionId ? 'active' : ''}`}
+      onClick={() => onClick(result.sessionId)}
+    >
+      <div className="chat-item-title">
+        <Icons.Search size={11} style={{ opacity: 0.5, flexShrink: 0 }} />
+        <span className="truncate flex1" style={{ marginLeft: 4 }}>
+          <HighlightText text={result.title} query={query} />
+        </span>
+      </div>
+      {result.snippet && (
+        <div className="chat-item-snippet" style={{ fontSize: 11, lineHeight: 1.4 }}>
+          <HighlightText text={result.snippet.slice(0, 120)} query={query} />
+        </div>
+      )}
+      <div className="chat-item-meta">
+        <span className="badge" style={{ fontSize: 9, background: 'var(--surface-2)' }}>
+          {result.matchType === 'title' ? '标题匹配' : '内容匹配'}
+        </span>
+        <span className="chat-item-time">{new Date(result.updatedAt).toLocaleDateString()}</span>
+      </div>
+    </div>
+  )
+}
+
+function HighlightText({ text, query }: { text: string; query: string }) {
+  if (!query) return <>{text}</>
+  const parts: ReactNode[] = []
+  const lowerText = text.toLowerCase()
+  const lowerQuery = query.toLowerCase()
+  let lastIndex = 0
+  let searchFrom = 0
+
+  while (searchFrom < lowerText.length) {
+    const idx = lowerText.indexOf(lowerQuery, searchFrom)
+    if (idx === -1) break
+    if (idx > lastIndex) {
+      parts.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex, idx)}</span>)
+    }
+    parts.push(
+      <mark key={`h-${idx}`} style={{ background: 'var(--primary-soft)', color: 'var(--primary)', borderRadius: 2, padding: '0 1px' }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>,
+    )
+    lastIndex = idx + query.length
+    searchFrom = lastIndex
+  }
+  if (lastIndex < text.length) {
+    parts.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex)}</span>)
+  }
+  return <>{parts}</>
 }
 
 function ChatListItem({ session: s, active, onClick }: { session: SessionSummary; active: SessionId | null; onClick: (id: SessionId) => void }) {

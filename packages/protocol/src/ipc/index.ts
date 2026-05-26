@@ -78,6 +78,29 @@ export interface SessionListRequest {
   offset?: number
 }
 
+export interface SessionSearchRequest {
+  /** 搜索关键词 */
+  query: string
+  /** 限定工作区 */
+  workspaceId?: string
+  /** 结果数量限制 */
+  limit?: number
+}
+
+export interface SessionSearchResult {
+  sessionId: SessionId
+  title: string
+  /** 匹配的内容片段（用于高亮显示） */
+  snippet: string
+  /** 匹配类型 */
+  matchType: 'title' | 'content'
+  updatedAt: string
+}
+
+export interface SessionSearchResponse {
+  results: SessionSearchResult[]
+}
+
 export interface SessionListResponse {
   sessions: Array<{
     id: SessionId
@@ -119,6 +142,8 @@ export interface ProviderCreateRequest {
   provider: string
   defaultModel: string
   modelIds?: string[]
+  /** 兼容旧版 payload，运行时会映射到 defaultModel */
+  model?: string
   apiEndpoint?: string
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
@@ -134,6 +159,8 @@ export interface ProviderUpdateRequest {
   name?: string
   defaultModel?: string
   modelIds?: string[]
+  /** 兼容旧版 payload，运行时会映射到 defaultModel */
+  model?: string
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
   /** 更新 API Key 时传入，不更新则不传 */
@@ -543,6 +570,7 @@ export interface IpcChannelMap {
   'session:cancel': [SessionCancelRequest, SessionCancelResponse]
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]
   'session:list': [SessionListRequest, SessionListResponse]
+  'session:search': [SessionSearchRequest, SessionSearchResponse]
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]

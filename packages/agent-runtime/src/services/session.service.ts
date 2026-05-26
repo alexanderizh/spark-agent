@@ -6,7 +6,7 @@ import {
   WorkspaceRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse } from '@spark/protocol'
+import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse } from '@spark/protocol'
 import { AgentLoop, ToolRegistry } from '../core/index.js'
 import type { AgentConfig } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
@@ -197,5 +197,67 @@ export class SessionService {
       messageCount: eventRepo.countBySession(row.id),
     }))
     return { sessions, total }
+  }
+
+  /**
+   * 搜索会话 — 按标题和消息内容模糊搜索
+   *
+   * 策略：
+   *   1. 先按标题 LIKE 搜索
+   *   2. 再按事件内容 LIKE 搜索
+   *   3. 去重合并，标题匹配优先
+   */
+  async searchSessions(params: {
+    query: string
+    workspaceId?: string
+    limit?: number
+  }): Promise<SessionSearchResponse> {
+    const { query, workspaceId, limit = 20 } = params
+    const sessionRepo = new SessionRepository(this.db)
+    const eventRepo = new EventRepository(this.db)
+
+    const results: SessionSearchResponse['results'] = []
+    const seenSessionIds = new Set<string>()
+
+    // 1. Search by title
+    const titleMatches = sessionRepo.searchByTitle(query, limit)
+    for (const row of titleMatches) {
+      // Filter by workspace if specified
+      if (workspaceId != null) {
+        const wsIds = sessionRepo.getWorkspaceIds(row.id)
+        if (!wsIds.includes(workspaceId)) continue
+      }
+      seenSessionIds.add(row.id)
+      results.push({
+        sessionId: row.id as SessionId,
+        title: row.title,
+        snippet: '',
+        matchType: 'title',
+        updatedAt: row.updated_at,
+      })
+    }
+
+    // 2. Search by event content
+    const contentMatches = eventRepo.searchByContent(query, limit)
+    for (const match of contentMatches) {
+      if (seenSessionIds.has(match.sessionId)) continue
+      if (results.length >= limit) break
+      // Filter by workspace if specified
+      if (workspaceId != null) {
+        const wsIds = sessionRepo.getWorkspaceIds(match.sessionId)
+        if (!wsIds.includes(workspaceId)) continue
+      }
+      // Get session title
+      const session = sessionRepo.get(match.sessionId)
+      results.push({
+        sessionId: match.sessionId as SessionId,
+        title: session?.title ?? 'Unknown Session',
+        snippet: match.snippet,
+        matchType: 'content',
+        updatedAt: session?.updated_at ?? '',
+      })
+    }
+
+    return { results }
   }
 }

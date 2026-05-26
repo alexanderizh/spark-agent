@@ -153,4 +153,36 @@ export class EventRepository extends BaseRepository {
     const row = stmt.get(sessionId) as { count: number }
     return row.count
   }
+
+  /** 按事件内容模糊搜索，返回匹配的 session ID 列表和内容片段 */
+  searchByContent(query: string, limit: number = 20): Array<{ sessionId: string; snippet: string }> {
+    const pattern = `%${query}%`
+    const stmt = this.raw.prepare(
+      `SELECT DISTINCT session_id, event_json
+       FROM agent_events
+       WHERE event_json LIKE ?
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    )
+    const rows = stmt.all(pattern, limit * 3) as AgentEventRow[]
+
+    // Deduplicate by session_id, keep the first match per session
+    const seen = new Set<string>()
+    const results: Array<{ sessionId: string; snippet: string }> = []
+    for (const row of rows) {
+      if (seen.has(row.session_id)) continue
+      seen.add(row.session_id)
+      // Extract a text snippet from event_json around the match
+      const json = row.event_json
+      const idx = json.toLowerCase().indexOf(query.toLowerCase())
+      const start = Math.max(0, idx - 40)
+      const end = Math.min(json.length, idx + query.length + 60)
+      let snippet = json.slice(start, end)
+      if (start > 0) snippet = '...' + snippet
+      if (end < json.length) snippet = snippet + '...'
+      results.push({ sessionId: row.session_id, snippet })
+      if (results.length >= limit) break
+    }
+    return results
+  }
 }

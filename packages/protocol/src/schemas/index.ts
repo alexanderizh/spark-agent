@@ -50,16 +50,32 @@ export const SessionGetHistoryRequestSchema = z.object({
   beforeSeq: z.number().int().nonnegative().optional(),
 })
 
+export const SessionSearchRequestSchema = z.object({
+  query: z.string().min(1).max(200),
+  workspaceId: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(100).optional().default(20),
+})
+
 // ─── Provider Schema ──────────────────────────────────────────────────────────
+
+const ProviderKindSchema = z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
 
 export const ProviderCreateRequestSchema = z.object({
   name: z.string().min(1).max(100),
-  provider: z.enum(['anthropic', 'openai']),
-  defaultModel: z.string().min(1).max(200),
+  provider: ProviderKindSchema,
+  defaultModel: z.string().min(1).max(200).optional(),
   modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
+  model: z.string().min(1).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).optional(),
   apiKey: z.string().min(1).max(500),
   isDefault: z.boolean().optional().default(false),
+}).superRefine((value, ctx) => {
+  if ((value.defaultModel ?? value.model)?.trim().length) return
+  ctx.addIssue({
+    code: z.ZodIssueCode.custom,
+    message: 'defaultModel is required',
+    path: ['defaultModel'],
+  })
 })
 
 export const ProviderUpdateRequestSchema = z.object({
@@ -67,6 +83,7 @@ export const ProviderUpdateRequestSchema = z.object({
   name: z.string().min(1).max(100).optional(),
   defaultModel: z.string().min(1).max(200).optional(),
   modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
+  model: z.string().min(1).max(200).optional(),
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
@@ -137,6 +154,7 @@ export const IpcSchemaRegistry = {
   'session:send-turn': SessionSendTurnRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,
+  'session:search': SessionSearchRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
