@@ -2372,7 +2372,7 @@
   width: 38px;
   height: 38px;
   border-radius: 10px;
-  background: var(--color);
+  /* background set via inline style: dynamic color value */
   transition: box-shadow 0.15s;
   position: relative;
   display: flex;

@@ -248,7 +248,7 @@ function AppearanceSection() {
           >
             <span
               className={`color-swatch-circle ${t.primary === color ? 'active' : ''}`}
-              style={{ boxShadow: t.primary === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none' }} /* dynamic */
+              style={{ background: color, boxShadow: t.primary === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none' }} /* dynamic */
             >
               {t.primary === color && <Icons.Check size={16} />}
             </span>
