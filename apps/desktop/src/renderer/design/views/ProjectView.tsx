@@ -1,13 +1,26 @@
 /**
  * ProjectView — Workspace 模式（IDE 风格：文件树 + Tab + Diff + 右侧 Agent 对话）
  */
-import type { ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { KeyboardEvent, ReactNode } from 'react'
+import type { AgentStatusValue, SessionId, WorkspaceInfo } from '@spark/protocol'
 import { Icons } from '../Icons'
+import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
+import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-mapper'
 
 export function ProjectView() {
+  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
+  const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
+
+  useEffect(() => {
+    getCurrentWorkspace({})
+      .then((res) => setWorkspace(res.workspace))
+      .catch(console.error)
+  }, [getCurrentWorkspace])
+
   return (
     <div className="project-layout">
-      <ProjectExplorer />
+      <ProjectExplorer workspace={workspace} />
       <div className="project-center">
         <ProjectTabs />
         <div className="flex1" style={{ display: 'flex', minHeight: 0 }}>
@@ -15,21 +28,21 @@ export function ProjectView() {
             <ProjectDiffPane />
           </div>
           <div style={{ width: 380, display: 'flex', flexDirection: 'column' }}>
-            <ProjectAgentPane />
+            <ProjectAgentPane workspaceId={workspace?.id} />
           </div>
         </div>
-        <ProjectBottomBar />
+        <ProjectBottomBar workspace={workspace} />
       </div>
     </div>
   )
 }
 
-function ProjectExplorer() {
+function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
   return (
     <div className="project-explorer">
       <div className="explorer-head">
         <Icons.Folder size={14} />
-        <span>spark-agent</span>
+        <span>{workspace?.name ?? 'spark-agent'}</span>
         <span className="badge dot" style={{ color: 'var(--info)' }}>main</span>
       </div>
       <div className="row" style={{ padding: '6px 10px', gap: 4, borderBottom: '1px solid var(--divider)' }}>
@@ -188,46 +201,182 @@ function DiffLine({ type, ln, text }: { type: string; ln?: string; text: string 
   )
 }
 
-function ProjectAgentPane() {
+function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) {
+  const [sessionId, setSessionId] = useState<SessionId | null>(null)
+  const [messages, setMessages] = useState<UIMessage[]>([])
+  const [agentStatus, setAgentStatus] = useState<AgentStatusValue>('idle')
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [notice, setNotice] = useState('')
+  const builderRef = useRef(new MessageBuilder())
+  const scrollRef = useRef<HTMLDivElement | null>(null)
+
+  const { invoke: listSessions } = useIpcInvoke('session:list')
+  const { invoke: createSession } = useIpcInvoke('session:create')
+  const { invoke: getHistory } = useIpcInvoke('session:get-history')
+  const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
+  const { invoke: listProviders } = useIpcInvoke('provider:list')
+
+  useEffect(() => {
+    const builder = new MessageBuilder()
+    builderRef.current = builder
+    setMessages([])
+    setSessionId(null)
+    setAgentStatus('idle')
+    setNotice('')
+
+    if (workspaceId == null) {
+      setLoading(false)
+      setNotice('未打开工作区。请先在 Home 或设置中打开一个项目。')
+      return
+    }
+
+    let cancelled = false
+    setLoading(true)
+
+    listSessions({ workspaceId, limit: 50 })
+      .then(async (sessionsRes) => {
+        if (cancelled) return null
+        const existing = sessionsRes.sessions.find((session) => session.status !== 'error')
+        if (existing != null) {
+          setSessionId(existing.id)
+          return getHistory({ sessionId: existing.id, limit: 200 })
+        }
+
+        const providersRes = await listProviders({})
+        if (cancelled) return null
+        const provider = providersRes.profiles.find((profile) => profile.isDefault) ?? providersRes.profiles[0]
+        if (provider == null) {
+          setNotice('尚未配置 Provider。请先在设置中添加 Provider 后再使用项目 Agent。')
+          return null
+        }
+
+        const created = await createSession({
+          providerProfileId: provider.id,
+          workspaceId,
+          title: 'Workspace Session',
+        })
+        if (!cancelled) setSessionId(created.sessionId)
+        return null
+      })
+      .then((historyRes) => {
+        if (cancelled || historyRes == null) return
+        const historyBuilder = new MessageBuilder()
+        for (const event of historyRes.events) {
+          historyBuilder.processEvent(event)
+          if (event.type === 'agent_status') setAgentStatus(event.status)
+        }
+        builderRef.current = historyBuilder
+        setMessages(historyBuilder.getAllMessages())
+      })
+      .catch((err) => {
+        console.error(err)
+        if (!cancelled) setNotice(err instanceof Error ? err.message : '加载项目 Agent 失败')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [workspaceId, listSessions, getHistory, listProviders, createSession])
+
+  useIpcStream('stream:session:agent-event', (event) => {
+    if (event.sessionId !== sessionId) return
+    builderRef.current.processEvent(event)
+    setMessages([...builderRef.current.getAllMessages()])
+    if (event.type === 'agent_status') setAgentStatus(event.status)
+  }, [sessionId])
+
+  useEffect(() => {
+    if (scrollRef.current != null) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight
+    }
+  }, [messages])
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim()
+    if (!text || sessionId == null) return
+    setInput('')
+    setNotice('')
+    try {
+      await sendTurn({ sessionId, message: text })
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : '发送失败')
+      setInput(text)
+    }
+  }, [input, sessionId, sendTurn])
+
+  const handleCancel = useCallback(async () => {
+    if (sessionId == null) return
+    try {
+      await cancelTurn({ sessionId })
+    } catch (err) {
+      setNotice(err instanceof Error ? err.message : '取消失败')
+    }
+  }, [sessionId, cancelTurn])
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+      event.preventDefault()
+      void handleSend()
+    }
+  }
+
   return (
     <>
       <div className="row" style={{ padding: '8px var(--pad-md)', borderBottom: '1px solid var(--border)', background: 'var(--bg-soft)', gap: 8 }}>
         <Icons.Bot size={14} style={{ color: 'var(--primary)' }} />
-        <span className="strong" style={{ fontSize: 'var(--font-sm)' }}>Codex Agent</span>
-        <span className="badge info dot">运行中</span>
+        <span className="strong" style={{ fontSize: 'var(--font-sm)' }}>Spark Agent</span>
+        {agentStatus === 'thinking' && <span className="badge info dot">思考中</span>}
+        {agentStatus === 'calling_tool' && <span className="badge warning dot">调用工具</span>}
+        {agentStatus === 'waiting_permission' && <span className="badge warning dot">等待权限</span>}
+        {agentStatus === 'waiting_user' && <span className="badge warning dot">等待用户</span>}
+        {agentStatus === 'completed' && <span className="badge success dot">完成</span>}
+        {agentStatus === 'error' && <span className="badge danger dot">错误</span>}
+        {agentStatus === 'cancelled' && <span className="badge dot">已停止</span>}
         <div className="flex1" />
-        <button className="icon-btn"><Icons.Pause size={12} /></button>
-        <button className="icon-btn"><Icons.Stop size={12} /></button>
+        <button className="icon-btn" onClick={handleCancel} disabled={sessionId == null} title="停止"><Icons.Stop size={12} /></button>
       </div>
-      <div className="chat-stream" style={{ flex: 1, padding: '14px 0', background: 'var(--bg)' }}>
+      <div ref={scrollRef} className="chat-stream" style={{ flex: 1, padding: '14px 0', background: 'var(--bg)', overflowY: 'auto' }}>
         <div className="chat-stream-inner" style={{ padding: '0 var(--pad-md)', gap: 14 }}>
-          <MiniMsg user>
-            把 <code>token.ts</code> 的 refresh 改成 rotating，并加 7 天 grace。
-          </MiniMsg>
-          <MiniMsg>
-            好的。先看 <code>token.ts</code> 的 refresh 实现…
-            <MiniTool name="Read" arg="src/auth/token.ts L100-150" />
-            找到 <code>refresh()</code>。OAuth 2.0 的 refresh token 是长期复用，我会引入轮换：旧 token 在新 token 签发时失效，但保留 7 天 grace 写入到 <code>compat/legacy.ts</code>。
-            <MiniTool name="Edit" arg="src/auth/token.ts" />
-            <MiniTool name="Write" arg="src/auth/compat/oauth2-legacy.ts (new)" />
-            完成。等待你审查 diff。
-          </MiniMsg>
-          <MiniMsg user>
-            还要加测试。
-          </MiniMsg>
-          <MiniMsg status="running">
-            正在添加 <code>token.refresh.test.ts</code>…
-          </MiniMsg>
+          {loading && <div className="faint" style={{ textAlign: 'center', padding: 20 }}>加载中...</div>}
+          {!loading && notice && (
+            <div className="faint" style={{ textAlign: 'center', padding: 20, lineHeight: 1.6 }}>
+              {notice}
+            </div>
+          )}
+          {!loading && !notice && messages.length === 0 && (
+            <div className="faint" style={{ textAlign: 'center', padding: 20 }}>
+              在此输入消息开始与 Agent 对话
+            </div>
+          )}
+          {!loading && messages.map((message) => (
+            <MiniMsg key={message.id} user={message.role === 'user'} status={message.status === 'streaming' ? 'running' : undefined}>
+              {message.blocks.map((block, index) => renderBlock(block, index))}
+            </MiniMsg>
+          ))}
         </div>
       </div>
       <div className="composer-wrap" style={{ padding: '10px 12px 12px' }}>
         <div className="composer">
-          <textarea rows={2} placeholder="给 Agent 发消息…" />
+          <textarea
+            rows={2}
+            placeholder={sessionId != null ? '给 Agent 发消息…  ⌘↵ 发送' : '请先打开工作区并配置 Provider'}
+            value={input}
+            onChange={(event) => setInput(event.target.value)}
+            onKeyDown={handleKeyDown}
+            disabled={sessionId == null}
+          />
           <div className="composer-actions">
             <button className="icon-btn"><Icons.Plus /></button>
             <button className="icon-btn"><Icons.Wrench /></button>
             <div className="flex1" />
-            <button className="btn primary sm"><Icons.Send size={11} /></button>
+            <button className="btn primary sm" onClick={() => void handleSend()} disabled={!input.trim() || sessionId == null}>
+              <Icons.Send size={11} />
+            </button>
           </div>
         </div>
       </div>
@@ -235,15 +384,69 @@ function ProjectAgentPane() {
   )
 }
 
-function MiniMsg({ user, status, children }: { user?: boolean; status?: 'running'; children: ReactNode }) {
+function renderBlock(block: UIBlock, index: number): ReactNode {
+  switch (block.kind) {
+    case 'text':
+      return (
+        <span key={index}>
+          {block.content}
+          {block.isStreaming && <span className="cursor-blink">▋</span>}
+        </span>
+      )
+    case 'thinking':
+      return (
+        <details key={index} style={{ margin: '4px 0', fontSize: 11, color: 'var(--text-muted)' }}>
+          <summary style={{ cursor: 'pointer' }}>思考过程{block.isStreaming && '...'}</summary>
+          <pre style={{ whiteSpace: 'pre-wrap', padding: '4px 8px', fontSize: 11 }}>{block.content}</pre>
+        </details>
+      )
+    case 'tool_call':
+      return (
+        <MiniTool
+          key={index}
+          name={block.toolName}
+          arg={JSON.stringify(block.toolInput).slice(0, 80)}
+          status={block.status}
+          output={block.output}
+          error={block.error}
+        />
+      )
+    case 'error':
+      return (
+        <div key={index} style={{ margin: '4px 0', padding: '6px 8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 6, fontSize: 11, color: 'var(--danger)' }}>
+          {block.message}
+        </div>
+      )
+    case 'file_change':
+      return (
+        <div key={index} style={{ margin: '4px 0', padding: '4px 8px', background: 'var(--bg-soft)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}>
+          <span className="badge" style={{ fontSize: 9 }}>{block.changeType}</span>
+          <span className="mono-sm" style={{ fontSize: 11, marginLeft: 6 }}>{block.path}</span>
+        </div>
+      )
+    case 'terminal':
+      return (
+        <div key={index} style={{ margin: '4px 0', padding: '4px 8px', background: '#0d0d10', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}>
+          {block.stdout && <pre className="mono-sm" style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--text)', margin: 0 }}>{block.stdout}</pre>}
+          {block.stderr && <pre className="mono-sm" style={{ fontSize: 11, whiteSpace: 'pre-wrap', color: 'var(--danger)', margin: 0 }}>{block.stderr}</pre>}
+          {block.isStreaming && <span className="faint" style={{ fontSize: 10 }}>运行中...</span>}
+          {block.exitCode !== undefined && <span className="faint" style={{ fontSize: 10 }}>退出码: {block.exitCode}</span>}
+        </div>
+      )
+    default:
+      return null
+  }
+}
+
+function MiniMsg({ user, status, children }: { user?: boolean; status?: 'running' | undefined; children: ReactNode }) {
   return (
     <div className="msg" style={{ gap: 8 }}>
       <div className="msg-avatar" style={{ width: 22, height: 22, fontSize: 10 }}>
-        {user ? 'H' : <Icons.Sparkles size={11} />}
+        {user ? 'U' : <Icons.Sparkles size={11} />}
       </div>
       <div className="msg-body">
         <div className="msg-name" style={{ fontSize: 11, marginBottom: 4 }}>
-          {user ? '你' : 'Codex'}
+          {user ? '你' : 'Agent'}
           {status === 'running' && (
             <span style={{ color: 'var(--info)', fontWeight: 500, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
               <Icons.Spinner size={10} /> 生成中
@@ -258,7 +461,19 @@ function MiniMsg({ user, status, children }: { user?: boolean; status?: 'running
   )
 }
 
-function MiniTool({ name, arg }: { name: string; arg: string }) {
+function MiniTool({
+  name,
+  arg,
+  status,
+  output,
+  error,
+}: {
+  name: string
+  arg: string
+  status?: 'pending' | 'running' | 'success' | 'error'
+  output?: string | undefined
+  error?: string | undefined
+}) {
   const icon: Record<string, ReactNode> = {
     Read: <Icons.File />,
     Edit: <Icons.Edit />,
@@ -267,21 +482,27 @@ function MiniTool({ name, arg }: { name: string; arg: string }) {
     Grep: <Icons.Search />,
   }
   return (
-    <div style={{ margin: '6px 0', padding: '5px 8px', background: 'var(--bg-soft)', border: '1px solid var(--border)', borderRadius: 6, display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
-      <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{icon[name]}</span>
-      <span className="mono-sm strong" style={{ fontSize: 11 }}>{name}</span>
-      <span className="mono-sm muted truncate" style={{ fontSize: 11 }}>{arg}</span>
-      <Icons.Check size={11} style={{ color: 'var(--success)', marginLeft: 'auto' }} />
+    <div style={{ margin: '6px 0', padding: '5px 8px', background: 'var(--bg-soft)', border: '1px solid var(--border)', borderRadius: 6, fontSize: 11 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <span style={{ color: 'var(--text-muted)', display: 'inline-flex' }}>{icon[name] ?? <Icons.Wrench />}</span>
+        <span className="mono-sm strong" style={{ fontSize: 11 }}>{name}</span>
+        <span className="mono-sm muted truncate" style={{ fontSize: 11 }}>{arg}</span>
+        {(status === 'pending' || status === 'running') && <Icons.Spinner size={11} style={{ color: 'var(--info)', marginLeft: 'auto' }} />}
+        {status === 'success' && <Icons.Check size={11} style={{ color: 'var(--success)', marginLeft: 'auto' }} />}
+        {status === 'error' && <Icons.X size={11} style={{ color: 'var(--danger)', marginLeft: 'auto' }} />}
+      </div>
+      {output && <pre className="mono-sm" style={{ whiteSpace: 'pre-wrap', margin: '6px 0 0', fontSize: 11, color: 'var(--text-muted)' }}>{output}</pre>}
+      {error && <div style={{ marginTop: 6, color: 'var(--danger)', fontSize: 11 }}>{error}</div>}
     </div>
   )
 }
 
-function ProjectBottomBar() {
+function ProjectBottomBar({ workspace }: { workspace: WorkspaceInfo | null }) {
   return (
     <div className="project-bottombar">
-      <div className="seg"><Icons.GitBranch size={11} /> feat/oauth-2.1</div>
+      <div className="seg"><Icons.Folder size={11} /> {workspace?.name ?? '未打开工作区'}</div>
       <div className="seg"><Icons.Edit size={11} /> 5 个文件已修改</div>
-      <div className="seg"><span className="dot-indicator green" /> Claude · Codex 就绪</div>
+      <div className="seg"><span className="dot-indicator green" /> Agent 就绪</div>
       <div className="seg right"><Icons.Cpu size={11} /> 沙箱 L2</div>
       <div className="seg"><Icons.Database size={11} /> 索引 100%</div>
       <div className="seg mono-sm">UTF-8</div>
