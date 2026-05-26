@@ -36,7 +36,10 @@ export class SparkError extends Error {
     super(message)
     this.name = 'SparkError'
     this.code = code
-    this.context = context
+    // exactOptionalPropertyTypes: true requires conditional assignment for optional props
+    if (context !== undefined) {
+      this.context = context
+    }
     // Maintains proper stack trace for where error was thrown
     if (Error.captureStackTrace) {
       Error.captureStackTrace(this, SparkError)
