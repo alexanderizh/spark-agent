@@ -1,77 +1,178 @@
 /**
- * HomeView — 工作台首页
+ * HomeView — 工作台首页（真实 IPC 驱动）
  */
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
+import { useIpcInvoke } from '../hooks/useIpc'
+import type { ProviderProfile, SessionListResponse, WorkspaceInfo } from '@spark/protocol'
+import { useApp } from '../AppContext'
+
+type SessionSummary = SessionListResponse['sessions'][number]
 
 export function HomeView() {
+  const { setTweak } = useApp()
+  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
+  const [notice, setNotice] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  const { invoke: listSessions } = useIpcInvoke('session:list')
+  const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: createSession } = useIpcInvoke('session:create')
+  const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
+  const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
+  const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const [sessionRes, providerRes, workspaceRes] = await Promise.all([
+        listSessions({ limit: 12 }),
+        listProviders({}),
+        getCurrentWorkspace({}),
+      ])
+      setSessions(sessionRes.sessions)
+      setProviders(providerRes.profiles)
+      setWorkspace(workspaceRes.workspace)
+      setNotice(null)
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    } finally {
+      setLoading(false)
+    }
+  }, [getCurrentWorkspace, listProviders, listSessions])
+
+  useEffect(() => {
+    void refresh()
+  }, [refresh])
+
+  const handleOpenProject = useCallback(async () => {
+    try {
+      const selected = await openDirectory({ title: '选择工作区目录' })
+      if (selected.canceled || selected.filePath === undefined) {
+        return
+      }
+      const result = await openWorkspace({ rootPath: selected.filePath })
+      setWorkspace(result.workspace)
+      setNotice(null)
+      setTweak('view', 'projects')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    }
+  }, [openDirectory, openWorkspace, setTweak])
+
+  const handleNewChat = useCallback(async () => {
+    const provider = providers.find((item) => item.isDefault) ?? providers[0]
+    if (provider === undefined) {
+      setNotice('请先在设置中配置 Provider')
+      setTweak('view', 'settings')
+      setTweak('settingsSection', 'providers')
+      return
+    }
+
+    try {
+      await createSession({
+        providerProfileId: provider.id,
+        title: '新会话',
+        ...(workspace == null ? {} : { workspaceId: workspace.id }),
+      })
+      await refresh()
+      setTweak('view', 'chat')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : String(error))
+    }
+  }, [createSession, providers, refresh, setTweak, workspace])
+
+  const runningCount = sessions.filter((session) => session.status === 'running').length
+
   return (
     <div className="home">
       <div className="home-hero">
         <div>
-          <h1>下午好，Hayden</h1>
-          <p>3 个任务正在运行 · 2 个等待审批 · Claude Sonnet 4.5 · Codex GPT-5 已就绪</p>
+          <h1>你好，欢迎使用 Spark Agent</h1>
+          <p>
+            {loading
+              ? '正在同步本地工作台状态…'
+              : `${sessions.length} 个会话 · ${providers.length} 个 Provider · ${workspace == null ? '未打开工作区' : workspace.name}`}
+          </p>
         </div>
         <div className="home-status-card">
-          <Stat label="今日 Token" value="142.8" unit="K" />
-          <Stat label="成本" value="$3.47" />
-          <Stat label="运行任务" value="3" color="var(--info)" />
-          <Stat label="沙箱" value="L2 受控" size={13} />
+          <Stat label="会话数" value={String(sessions.length)} />
+          <Stat label="Provider" value={String(providers.length)} color="var(--info)" />
+          <Stat label="运行中" value={String(runningCount)} color="var(--info)" />
+          <Stat label="工作区" value={workspace == null ? '未打开' : '已打开'} size={11} />
         </div>
       </div>
 
+      {notice !== null && (
+        <div className="card" style={{ padding: '10px 14px', marginBottom: 14, color: 'var(--warning)' }}>
+          {notice}
+        </div>
+      )}
+
       <div className="home-quickstart">
-        <QSCard icon={<Icons.Chat />} title="新建聊天" desc="开始一次通用研究、写作或问答会话" />
-        <QSCard icon={<Icons.Folder />} title="打开项目" desc="加载工作区，启用文件与终端工具" />
-        <QSCard icon={<Icons.Workflow />} title="运行工作流" desc="启动 DAG 编排的多 Agent 任务" />
-        <QSCard icon={<Icons.MCP />} title="连接 MCP" desc="接入新的工具服务或数据源" />
-        <QSCard icon={<Icons.Skills />} title="创建 Skill" desc="封装可复用的 Agent 能力包" />
+        <QSCard icon={<Icons.Chat />} title="新建聊天" desc="开始一次通用研究、写作或问答会话" onClick={handleNewChat} />
+        <QSCard icon={<Icons.Folder />} title="打开项目" desc="加载工作区，启用文件与终端工具" onClick={handleOpenProject} />
+        <QSCard icon={<Icons.Workflow />} title="运行工作流" desc="启动 DAG 编排的多 Agent 任务" onClick={() => setTweak('view', 'workflows')} />
+        <QSCard icon={<Icons.MCP />} title="连接 MCP" desc="接入新的工具服务或数据源" onClick={() => setTweak('view', 'mcp')} />
+        <QSCard icon={<Icons.Skills />} title="创建 Skill" desc="封装可复用的 Agent 能力包" onClick={() => setTweak('view', 'skills')} />
       </div>
 
       <div className="home-grid">
         <div>
           <div className="section-h">
-            最近会话 <span className="count">12</span>
-            <span className="link">全部</span>
+            最近会话 <span className="count">{sessions.length}</span>
+            <span className="link" onClick={() => setTweak('view', 'chat')}>全部</span>
           </div>
           <div className="card">
-            <div className="list">
-              <SessionItem kind="project" title="重构 auth 模块为 OAuth 2.1" project="spark-agent" agent="Codex · GPT-5" time="刚刚" status="running" />
-              <SessionItem kind="chat" title="对比 ACP 与 LSP 的事件模型" agent="Claude · Sonnet 4.5" time="12 分钟前" />
-              <SessionItem kind="workflow" title="代码功能开发流程：搜索优化" agent="Multi-agent · 5 节点" time="1 小时前" status="approval" />
-              <SessionItem kind="project" title="修复 SQLite WAL 写入竞态" project="spark-storage" agent="Codex · GPT-5" time="2 小时前" status="completed" />
-              <SessionItem kind="chat" title="撰写 v0.2 发布说明" agent="Claude · Sonnet 4.5" time="昨天" />
-              <SessionItem kind="project" title="MCP gateway 性能调优" project="mcp-gateway" agent="Claude · Opus 4" time="2 天前" status="failed" />
-            </div>
+            {loading ? (
+              <div className="card-body" style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                正在加载会话…
+              </div>
+            ) : sessions.length === 0 ? (
+              <div className="card-body" style={{ padding: '20px 16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                暂无会话 — 点击"新建聊天"开始
+              </div>
+            ) : (
+              <div className="list">
+                {sessions.map(s => (
+                  <SessionItem
+                    key={s.id}
+                    title={s.title ?? '未命名会话'}
+                    time={formatRelTime(s.updatedAt)}
+                    messageCount={s.messageCount}
+                    status={s.status}
+                    onClick={() => setTweak('view', 'chat')}
+                  />
+                ))}
+              </div>
+            )}
           </div>
         </div>
 
         <div>
           <div className="section-h">
             Provider 状态
-            <span className="link">设置</span>
+            <span className="link" onClick={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}>设置</span>
           </div>
           <div className="card">
             <div className="card-body" style={{ padding: '4px 16px 12px' }}>
-              <div className="health-list">
-                <HealthRow logo="A" name="Anthropic · Claude Agent SDK" status="ok" detail="3 个 profile · 延迟 312ms" />
-                <HealthRow logo="O" name="OpenAI · Codex SDK" status="ok" detail="CLI v0.4.1 · 已登录" />
-                <HealthRow logo="O" name="OpenAI · Responses API" status="ok" detail="GPT-5, GPT-5-mini" />
-                <HealthRow logo="L" name="Ollama Local" status="warning" detail="未启动" />
-                <HealthRow logo="B" name="AWS Bedrock" status="off" detail="未配置" />
-              </div>
-            </div>
-          </div>
-
-          <div className="section-h" style={{ marginTop: 20 }}>
-            正在运行
-            <span className="count">3</span>
-          </div>
-          <div className="card">
-            <div className="card-body" style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <RunningItem name="重构 auth 模块为 OAuth 2.1" step="Coder Agent → 编辑 src/auth/oauth.ts" elapsed="2:34" progress={62} />
-              <RunningItem name="索引大型 monorepo" step="Indexer · 扫描中…" elapsed="0:58" progress={28} />
-              <RunningItem name="API 回归测试套件" step="Test Agent · pytest -q" elapsed="4:11" progress={84} />
+              {providers.length === 0 ? (
+                <div style={{ padding: '12px 0', color: 'var(--text-muted)', fontSize: 12 }}>
+                  未配置 Provider —{' '}
+                  <span className="link" style={{ cursor: 'default' }} onClick={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}>
+                    前往设置
+                  </span>
+                </div>
+              ) : (
+                <div className="health-list">
+                  {providers.map(p => (
+                    <HealthRow key={p.id} name={p.name} provider={p.provider} model={p.model} isDefault={p.isDefault} />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -80,21 +181,28 @@ export function HomeView() {
   )
 }
 
-function Stat({ label, value, unit, color, size }: { label: string; value: string; unit?: string; color?: string; size?: number }) {
+function formatRelTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  const m = Math.floor(diff / 60000)
+  if (m < 1) return '刚刚'
+  if (m < 60) return `${m} 分钟前`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} 小时前`
+  return `${Math.floor(h / 24)} 天前`
+}
+
+function Stat({ label, value, color, size }: { label: string; value: string; color?: string; size?: number }) {
   return (
     <div className="stat">
       <div className="stat-label">{label}</div>
-      <div className="stat-value" style={{ color, fontSize: size }}>
-        {value}
-        {unit && <span className="unit">{unit}</span>}
-      </div>
+      <div className="stat-value" style={{ color, fontSize: size }}>{value}</div>
     </div>
   )
 }
 
-function QSCard({ icon, title, desc }: { icon: ReactNode; title: string; desc: string }) {
+function QSCard({ icon, title, desc, onClick }: { icon: ReactNode; title: string; desc: string; onClick?: () => void }) {
   return (
-    <div className="qs-card">
+    <div className="qs-card" onClick={onClick} style={{ cursor: onClick ? 'default' : undefined }}>
       <div className="qs-icon">{icon}</div>
       <div className="qs-title">{title}</div>
       <div className="qs-desc">{desc}</div>
@@ -103,75 +211,44 @@ function QSCard({ icon, title, desc }: { icon: ReactNode; title: string; desc: s
 }
 
 function SessionItem({
-  kind,
   title,
-  project,
-  agent,
   time,
+  messageCount,
   status,
+  onClick,
 }: {
-  kind: 'chat' | 'project' | 'workflow'
   title: string
-  project?: string
-  agent: string
   time: string
-  status?: 'running' | 'completed' | 'failed' | 'approval'
+  messageCount: number
+  status: 'idle' | 'running' | 'error'
+  onClick: () => void
 }) {
-  const icons: Record<typeof kind, ReactNode> = {
-    chat: <Icons.Chat />,
-    project: <Icons.Folder />,
-    workflow: <Icons.Workflow />,
-  }
-  const statusBadge: Record<NonNullable<typeof status>, ReactNode> = {
-    running: <span className="badge info dot">运行中</span>,
-    completed: <span className="badge success dot">已完成</span>,
-    failed: <span className="badge danger dot">失败</span>,
-    approval: <span className="badge warning dot">待审批</span>,
-  }
   return (
-    <div className="list-item session-item">
-      <div className="session-icon">{icons[kind]}</div>
+    <div className="list-item session-item" onClick={onClick} style={{ cursor: 'default' }}>
+      <div className="session-icon"><Icons.Chat /></div>
       <div className="session-body">
         <div className="session-title truncate">{title}</div>
-        <div className="session-meta">
-          {project && <><span>{project}</span><span className="faint">·</span></>}
-          <span>{agent}</span>
-        </div>
+        <div className="session-meta"><span>{messageCount} 条消息</span></div>
       </div>
-      {status && statusBadge[status]}
+      {status === 'running' && <span className="badge info dot">运行中</span>}
+      {status === 'error' && <span className="badge danger dot">错误</span>}
       <div className="session-time">{time}</div>
     </div>
   )
 }
 
-function HealthRow({ logo, name, status, detail }: { logo: string; name: string; status: 'ok' | 'warning' | 'off'; detail: string }) {
+function HealthRow({ name, provider, model, isDefault }: { name: string; provider: string; model: string; isDefault: boolean }) {
+  const initial = (name[0] ?? provider[0] ?? '?').toUpperCase()
   return (
     <div className="health-row">
-      <div className="provider-logo" style={{ width: 24, height: 24, fontSize: 11 }}>{logo}</div>
+      <div className="provider-logo" style={{ width: 24, height: 24, fontSize: 11 }}>{initial}</div>
       <div>
         <div className="health-name">{name}</div>
+        <div className="muted" style={{ fontSize: 11 }}>{model}</div>
       </div>
       <div className="health-meta">
-        <span className="muted">{detail}</span>
-        {status === 'ok' && <span className="badge success dot">在线</span>}
-        {status === 'warning' && <span className="badge warning dot">需注意</span>}
-        {status === 'off' && <span className="badge dot">未启用</span>}
-      </div>
-    </div>
-  )
-}
-
-function RunningItem({ name, step, elapsed, progress }: { name: string; step: string; elapsed: string; progress: number }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-      <div className="row" style={{ gap: 8 }}>
-        <span className="pulse-dot" />
-        <div className="flex1 truncate" style={{ fontSize: 'var(--font-sm)', fontWeight: 600 }}>{name}</div>
-        <span className="mono-sm faint">{elapsed}</span>
-      </div>
-      <div className="muted" style={{ fontSize: 'var(--font-xs)', paddingLeft: 14 }}>{step}</div>
-      <div style={{ height: 3, background: 'var(--bg-soft)', borderRadius: 2, overflow: 'hidden', marginLeft: 14 }}>
-        <div style={{ width: `${progress}%`, height: '100%', background: 'var(--info)', borderRadius: 2 }} />
+        {isDefault && <span className="badge primary dot">默认</span>}
+        <span className="badge success dot">已配置</span>
       </div>
     </div>
   )

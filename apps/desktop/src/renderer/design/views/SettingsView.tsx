@@ -3,10 +3,12 @@
  *
  * 包含：左侧分组导航 + 右侧多 section 内容。Provider 编辑使用滑入面板，Profile 编辑使用 Modal。
  */
-import React, { useState } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
+import { useIpcInvoke } from '../hooks/useIpc'
+import type { ProviderHealthCheckResponse, ProviderProfile, WorkspaceInfo } from '@spark/protocol'
 
 export function SettingsView() {
   const { t, setTweak } = useApp()
@@ -405,7 +407,37 @@ function ShortcutsSection() {
 
 /* ───────── PROVIDERS ───────── */
 function ProvidersSection() {
-  const { setTweak } = useApp()
+  const { setTweak, t } = useApp()
+  const showProviderEdit = t.showProviderEdit
+  const [profiles, setProfiles] = useState<ProviderProfile[]>([])
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [healthMap, setHealthMap] = useState<Record<string, { healthy: boolean; latencyMs?: number }>>({})
+
+  const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
+  const { invoke: healthCheck } = useIpcInvoke('provider:health-check')
+
+  const refresh = useCallback(() => {
+    listProviders({}).then(r => setProfiles(r.profiles)).catch(console.error)
+  }, [listProviders])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('确认删除该 Provider？')) return
+    await deleteProvider({ id })
+    refresh()
+  }
+
+  const handleHealthCheck = async (id: string) => {
+    try {
+      const r = await healthCheck({ id })
+      setHealthMap(prev => ({ ...prev, [id]: r }))
+    } catch {
+      setHealthMap(prev => ({ ...prev, [id]: { healthy: false } }))
+    }
+  }
+
   return (
     <>
       <div className="settings-section">
@@ -414,220 +446,178 @@ function ProvidersSection() {
             <h2 style={{ margin: 0 }}>Provider</h2>
             <div className="lede" style={{ margin: '4px 0 0' }}>配置 LLM 提供商。每个 provider 包含多个模型 profile，由 agent/workflow/session 按角色绑定。</div>
           </div>
-          <button className="btn primary" onClick={() => setTweak('showProviderEdit', true)}><Icons.Plus size={12} /> 添加 Provider</button>
+          <button className="btn primary" onClick={() => { setEditingId(null); setTweak('showProviderEdit', true) }}>
+            <Icons.Plus size={12} /> 添加 Provider
+          </button>
         </div>
 
-        <ProviderCardX
-          logo="A" logoBg="#D97757"
-          name="Anthropic · Claude Agent SDK" desc="api.anthropic.com · API key" status="ok"
-          detail="3 个 profile · 平均延迟 312ms · 今日 $1.84"
-          models={['Sonnet 4.5', 'Opus 4', 'Haiku 4.5']}
-          onEdit={() => setTweak('showProviderEdit', true)}
-        />
-        <ProviderCardX
-          logo="O" logoBg="#0a0a0a" logoFg="#fff"
-          name="OpenAI · Codex SDK" desc="本地 @openai/codex CLI · v0.4.1" status="ok"
-          detail="2 个 profile · CLI 进程 已登录 · 今日 $1.63"
-          models={['GPT-5', 'GPT-5-mini']}
-          onEdit={() => setTweak('showProviderEdit', true)}
-        />
-        <ProviderCardX
-          logo="O" logoBg="#10a37f" logoFg="#fff"
-          name="OpenAI · Responses API" desc="api.openai.com · API key" status="ok"
-          detail="3 个 profile · 平均延迟 421ms"
-          models={['gpt-5', 'gpt-5-mini', 'o4-mini']}
-          onEdit={() => setTweak('showProviderEdit', true)}
-        />
-        <ProviderCardX
-          logo="L" logoBg="#FF6F00" logoFg="#fff"
-          name="Ollama (Local)" desc="localhost:11434 · 未启动" status="warning"
-          detail="进程未运行 — 启动 ollama serve 后重试"
-          models={['llama-4', 'qwen3-coder']}
-          onEdit={() => setTweak('showProviderEdit', true)}
-        />
-        <ProviderCardX
-          logo="B" logoBg="#232F3E" logoFg="#FF9900"
-          name="AWS Bedrock" desc="未配置 — 添加凭证以启用" status="off"
-          detail="region / role / model 都需要设置"
-          models={[]}
-          onEdit={() => setTweak('showProviderEdit', true)}
-        />
+        {profiles.length === 0 ? (
+          <div style={{ padding: '32px 0', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+            尚未配置 Provider — 点击"添加 Provider"开始
+          </div>
+        ) : (
+          profiles.map(p => {
+            const h = healthMap[p.id]
+            const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
+            return (
+              <ProviderCardX
+                key={p.id}
+                logo={(p.name[0] ?? p.provider[0] ?? '?').toUpperCase()}
+                name={p.name}
+                desc={`${p.provider} · ${p.model}`}
+                status={status}
+                detail={h?.latencyMs != null ? `延迟 ${h.latencyMs}ms` : p.isDefault ? '默认 Profile' : ''}
+                onEdit={() => { setEditingId(p.id); setTweak('showProviderEdit', true) }}
+                onDelete={() => handleDelete(p.id)}
+                onHealthCheck={() => handleHealthCheck(p.id)}
+              />
+            )
+          })
+        )}
       </div>
 
-      <div className="settings-section">
-        <h2>路由策略</h2>
-        <div className="lede">按角色、成本和延迟自动路由模型；可在每个会话/工作流中覆盖。</div>
-        <div className="settings-card">
-          <SettingsRow title="按角色路由" desc="Planner / Reviewer / Coder / Tester 使用不同 profile" right={<div className="switch on" />} />
-          <SettingsRow title="成本感知" desc="超出每次运行 $5 后切换低成本模型" right={<div className="switch on" />} />
-          <SettingsRow title="延迟感知" desc="交互式聊天优先低延迟模型" right={<div className="switch" />} />
-          <SettingsRow title="自动 Fallback" desc="主 provider 不可用时尝试 fallback 链" right={<div className="switch on" />} />
-        </div>
-      </div>
+      {/* Provider 编辑面板 */}
+      {showProviderEdit && (
+        <ProviderEditPanel
+          profileId={editingId}
+          onClose={() => { setTweak('showProviderEdit', false); refresh() }}
+        />
+      )}
     </>
   )
 }
 
 function ProviderCardX({
-  logo, logoBg, logoFg = '#fff', name, desc, status, detail, models, onEdit,
+  logo, name, desc, status, detail, onEdit, onDelete, onHealthCheck,
 }: {
   logo: string
-  logoBg: string
-  logoFg?: string
   name: string
   desc: string
-  status: 'ok' | 'warning' | 'off'
+  status: 'ok' | 'warning' | 'off' | 'error' | 'unknown'
   detail: string
-  models: string[]
   onEdit: () => void
+  onDelete: () => void
+  onHealthCheck: () => void
 }) {
   return (
     <div className="provider-card">
-      <div className="provider-logo" style={{ background: logoBg, color: logoFg, borderColor: 'transparent' }}>{logo}</div>
+      <div className="provider-logo" style={{ borderColor: 'transparent' }}>{logo}</div>
       <div className="provider-info">
         <div className="row" style={{ gap: 8 }}>
           <span className="name">{name}</span>
           {status === 'ok' && <span className="badge success dot">在线</span>}
           {status === 'warning' && <span className="badge warning dot">需注意</span>}
+          {status === 'error' && <span className="badge danger dot">错误</span>}
           {status === 'off' && <span className="badge dot">未启用</span>}
         </div>
         <div className="desc">{desc}</div>
-        <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{detail}</div>
-        {models.length > 0 && (
-          <div className="models">
-            {models.map((m) => <span key={m} className="tool-chip">{m}</span>)}
-            <span className="tool-chip" style={{ borderStyle: 'dashed', color: 'var(--text-faint)' }} onClick={onEdit}>+ 添加模型</span>
-          </div>
-        )}
+        {detail && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{detail}</div>}
       </div>
       <div className="row" style={{ gap: 4, alignSelf: 'flex-start', marginTop: 6 }}>
         <button className="btn ghost sm" onClick={onEdit}><Icons.Edit size={11} /> 编辑</button>
-        <button className="icon-btn"><Icons.Refresh size={13} /></button>
-        <button className="icon-btn"><Icons.More size={13} /></button>
+        <button className="icon-btn" title="健康检查" onClick={onHealthCheck}><Icons.Refresh size={13} /></button>
+        <button className="icon-btn" title="删除" onClick={onDelete}><Icons.X size={13} /></button>
       </div>
     </div>
   )
 }
 
 /* ───────── PROVIDER EDIT slide panel ───────── */
-export function ProviderEditPanel({ onClose }: { onClose: () => void }) {
-  const { setTweak } = useApp()
+export function ProviderEditPanel({ profileId, onClose }: { profileId: string | null; onClose: () => void }) {
+  const [form, setForm] = useState({ name: '', provider: 'anthropic', model: '', apiKey: '', isDefault: false })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const { invoke: createProvider } = useIpcInvoke('provider:create')
+  const { invoke: updateProvider } = useIpcInvoke('provider:update')
+  const { invoke: listProviders } = useIpcInvoke('provider:list')
+
+  // 编辑模式：加载现有 profile
+  useEffect(() => {
+    if (!profileId) return
+    listProviders({}).then(r => {
+      const p = r.profiles.find(x => x.id === profileId)
+      if (p) setForm({ name: p.name, provider: p.provider, model: p.model, apiKey: '', isDefault: p.isDefault })
+    }).catch(console.error)
+  }, [profileId])
+
+  const handleSave = async () => {
+    if (!form.name.trim() || !form.model.trim()) { setError('名称和模型 ID 不能为空'); return }
+    if (!profileId && !form.apiKey.trim()) { setError('新建 Provider 需要填写 API Key'); return }
+    setSaving(true); setError('')
+    try {
+      if (profileId) {
+        const req: { id: string; name?: string; model?: string; apiKey?: string; isDefault?: boolean } = { id: profileId, name: form.name, model: form.model, isDefault: form.isDefault }
+        if (form.apiKey.trim()) req.apiKey = form.apiKey
+        await updateProvider(req)
+      } else {
+        await createProvider({ name: form.name, provider: form.provider, model: form.model, apiKey: form.apiKey, isDefault: form.isDefault })
+      }
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const set = (k: keyof typeof form, v: string | boolean) => setForm(prev => ({ ...prev, [k]: v }))
+
   return (
     <div className="slide-panel-backdrop" onClick={onClose}>
       <div className="slide-panel" onClick={(e) => e.stopPropagation()}>
         <div className="slide-panel-h">
-          <div className="h-icon" style={{ background: '#D97757', color: '#fff' }}>A</div>
+          <div className="h-icon">{(form.name[0] ?? form.provider[0] ?? 'P').toUpperCase()}</div>
           <div className="flex1">
-            <div className="h-title">编辑 Provider · Anthropic</div>
-            <div className="h-sub">Claude Agent SDK · API key 鉴权</div>
+            <div className="h-title">{profileId ? '编辑 Provider' : '添加 Provider'}</div>
+            <div className="h-sub">{form.provider} · API key 鉴权</div>
           </div>
           <button className="icon-btn" onClick={onClose}><Icons.X /></button>
         </div>
 
         <div className="slide-panel-body">
+          {error && <div style={{ padding: '8px 12px', background: 'var(--danger-soft, rgba(239,68,68,0.1))', color: 'var(--danger)', borderRadius: 6, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+
           <div className="subsec-h">基础</div>
           <div className="form-grid">
             <label>显示名称</label>
-            <input defaultValue="Anthropic · Claude Agent SDK" />
+            <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="例：Anthropic · Claude" />
 
             <label>Provider 类型<span className="sub">决定使用哪个 adapter</span></label>
-            <select defaultValue="anthropic-sdk">
-              <option value="anthropic-sdk">Claude Agent SDK</option>
-              <option value="anthropic-api">Anthropic Messages API</option>
-              <option value="codex-sdk">OpenAI Codex SDK</option>
-              <option value="openai-api">OpenAI Responses API</option>
-              <option value="openai-compat">OpenAI 兼容 (OpenRouter / vLLM)</option>
-              <option value="bedrock">AWS Bedrock</option>
-              <option value="vertex">Google Vertex AI</option>
+            <select value={form.provider} onChange={e => set('provider', e.target.value)} disabled={!!profileId}>
+              <option value="anthropic">Claude Agent SDK</option>
+              <option value="openai">OpenAI Responses API</option>
+              <option value="deepseek">DeepSeek</option>
               <option value="ollama">Ollama (本地)</option>
-              <option value="acp">外部 ACP Agent</option>
             </select>
 
-            <label>启用</label>
-            <div className="row" style={{ gap: 10 }}>
-              <div className="switch on" />
-              <span className="muted" style={{ fontSize: 12 }}>禁用后所有绑定到该 provider 的 profile 都不可用</span>
-            </div>
+            <label>模型 ID</label>
+            <input value={form.model} onChange={e => set('model', e.target.value)} placeholder="例：claude-sonnet-4-5-20250929" className="mono-sm" />
+
+            <label>默认 Profile</label>
+            <div className={`switch ${form.isDefault ? 'on' : ''}`} onClick={() => set('isDefault', !form.isDefault)} />
           </div>
 
           <div className="subsec-h">鉴权</div>
           <div className="form-grid">
-            <label>API Key<span className="sub">从 Secret 引用，明文不会进入 prompt</span></label>
-            <div className="control">
-              <input style={{ flex: 1 }} value="sk-ant-•••••••••••••••••••••••3f9c" readOnly />
-              <button className="btn"><Icons.Eye size={12} /></button>
-              <button className="btn"><Icons.Refresh size={12} /></button>
-            </div>
-
-            <label>Base URL<span className="sub">可指向代理或自托管 endpoint</span></label>
-            <input defaultValue="https://api.anthropic.com" />
-
-            <label>组织 ID<span className="sub">可选</span></label>
-            <input placeholder="org_..." />
-
-            <label>验证状态</label>
-            <div className="row" style={{ gap: 10 }}>
-              <span className="badge success dot">已验证 · 14:32:08</span>
-              <button className="btn sm"><Icons.Refresh size={11} /> 重新验证</button>
-            </div>
-          </div>
-
-          <div className="subsec-h">高级</div>
-          <div className="form-grid">
-            <label>超时（ms）</label>
-            <input type="number" defaultValue="60000" style={{ maxWidth: 160 }} />
-
-            <label>请求重试次数</label>
-            <input type="number" defaultValue="3" style={{ maxWidth: 80 }} />
-
-            <label>HTTP 代理</label>
-            <input placeholder="http://localhost:7890 (可选)" />
-
-            <label>OpenTelemetry 导出<span className="sub">把 SDK 内部 trace 导出到 OTel collector</span></label>
-            <div className="switch on" />
-          </div>
-
-          <div className="subsec-h">模型列表 <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400, marginLeft: 8, textTransform: 'none', letterSpacing: 0 }}>3 个 profile 已配置</span></div>
-          <div>
-            <ModelRowX name="Claude Sonnet 4.5" id="claude-sonnet-4-5-20250929" roles={['default', 'coder', 'reviewer']} ctx="200K" input="$3" output="$15" />
-            <ModelRowX name="Claude Opus 4" id="claude-opus-4-20250115" roles={['planner', 'long-context']} ctx="200K" input="$15" output="$75" />
-            <ModelRowX name="Claude Haiku 4.5" id="claude-haiku-4-5-20250416" roles={['fast']} ctx="200K" input="$1" output="$5" />
-            <button className="btn" style={{ marginTop: 4 }} onClick={() => { onClose(); setTweak('showProfileEdit', true) }}>
-              <Icons.Plus size={12} /> 添加 Profile
-            </button>
+            <label>API Key{profileId && <span className="sub">留空则不更新</span>}</label>
+            <input
+              type="password"
+              value={form.apiKey}
+              onChange={e => set('apiKey', e.target.value)}
+              placeholder={profileId ? '••••••••（留空不更新）' : 'sk-ant-...'}
+            />
           </div>
         </div>
 
         <div className="slide-panel-foot">
-          <button className="btn danger sm">删除 Provider</button>
           <span style={{ flex: 1 }} />
           <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" onClick={onClose}><Icons.Check size={12} /> 保存</button>
+          <button className="btn primary" onClick={handleSave} disabled={saving}>
+            <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
+          </button>
         </div>
       </div>
-    </div>
-  )
-}
-
-function ModelRowX({ name, id, roles, ctx, input, output }: { name: string; id: string; roles: string[]; ctx: string; input: string; output: string }) {
-  const { setTweak } = useApp()
-  return (
-    <div className="model-row">
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="row" style={{ gap: 8 }}>
-          <span className="name">{name}</span>
-          <div className="role-badges">
-            {roles.map((r) => <span key={r} className="badge" style={{ fontSize: 9.5 }}>{r}</span>)}
-          </div>
-        </div>
-        <div className="id">{id}</div>
-      </div>
-      <div className="price">
-        <div><strong>{ctx}</strong> ctx</div>
-        <div>{input} / {output} / 1M</div>
-      </div>
-      <button className="btn ghost sm" onClick={() => setTweak('showProfileEdit', true)}><Icons.Edit size={11} /></button>
-      <button className="icon-btn"><Icons.More size={13} /></button>
     </div>
   )
 }

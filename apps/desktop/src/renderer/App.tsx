@@ -155,7 +155,7 @@ function Shell() {
       {/* Overlays */}
       {t.showPalette && <CommandPalette onClose={() => setTweak('showPalette', false)} />}
       {t.showPerm && <PermissionModal onClose={() => setTweak('showPerm', false)} />}
-      {t.showProviderEdit && <ProviderEditPanel onClose={() => setTweak('showProviderEdit', false)} />}
+
       {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}
     </div>
   )
