@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { parseSkillManifest } from '../utils/skills-data'
 import type {
   ProviderHealthCheckResponse,
   ProviderProfile,
@@ -1447,18 +1448,6 @@ function McpSection() {
 }
 
 /* ───────── SKILLS ───────── */
-function parseSkillManifest(manifestJson: string): { desc: string; source: string } {
-  try {
-    const parsed = JSON.parse(manifestJson) as { desc?: string; description?: string; source?: string }
-    return {
-      desc: parsed.desc ?? parsed.description ?? 'Skill 能力模块',
-      source: parsed.source ?? '自定义',
-    }
-  } catch {
-    return { desc: 'Skill 能力模块', source: '自定义' }
-  }
-}
-
 function SkillsSection() {
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [error, setError] = useState('')

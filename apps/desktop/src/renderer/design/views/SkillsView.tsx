@@ -1,96 +1,162 @@
 /**
  * SkillsView — Skill 卡片网格
+ *
+ * Data source: real IPC via shared useSkills hook.
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { useIpcInvoke } from '../hooks/useIpc'
-
-function parseSkillManifest(manifestJson: string): { desc: string; source: string } {
-  try {
-    const parsed = JSON.parse(manifestJson) as { desc?: string; description?: string; source?: string }
-    return {
-      desc: parsed.desc ?? parsed.description ?? 'Skill 能力模块',
-      source: parsed.source ?? '自定义',
-    }
-  } catch {
-    return { desc: 'Skill 能力模块', source: '自定义' }
-  }
-}
+import {
+  useSkills,
+  parseSkillManifest,
+  filterSkills,
+} from '../utils/skills-data'
 
 export function SkillsView() {
-  const [skills, setSkills] = useState<SkillItem[]>([])
-  const [error, setError] = useState('')
-  const { invoke: listSkills, loading } = useIpcInvoke('skill:list')
+  const { skills, loading, error, toggleSkill, total, enabledCount } =
+    useSkills()
+  const [search, setSearch] = useState('')
 
-  const refresh = useCallback(() => {
-    setError('')
-    listSkills({})
-      .then((res) => setSkills(res.skills))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载 Skills 失败'))
-  }, [listSkills])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const enabledCount = skills.filter((s) => s.enabled).length
+  const filtered = filterSkills(skills, search)
 
   return (
     <div className="view-body">
-    <div className="page">
-      <div className="row" style={{ gap: 12, marginBottom: 18 }}>
-        <div className="flex1">
-          <div className="strong" style={{ fontSize: 18 }}>Skills</div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
-            {skills.length} 个已安装 · {enabledCount} 个已启用
+      <div className="page">
+        {/* ── Header row ── */}
+        <div className="row" style={{ gap: 12, marginBottom: 18 }}>
+          <div className="flex1">
+            <div className="strong" style={{ fontSize: 18 }}>
+              Skills
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+              {total} 个已安装 · {enabledCount} 个已启用
+            </div>
           </div>
+
+          <div className="search-input">
+            <Icons.Search />
+            <input
+              placeholder="搜索 Skill..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+            {search && (
+              <button
+                className="icon-btn"
+                style={{ width: 20, height: 20, marginRight: 4 }}
+                onClick={() => setSearch('')}
+              >
+                <Icons.X size={10} />
+              </button>
+            )}
+          </div>
+
+          <button className="btn">
+            <Icons.Globe size={12} /> Skill 商店
+          </button>
+          <button className="btn primary">
+            <Icons.Plus size={12} /> 创建 Skill
+          </button>
         </div>
-        <div className="search-input"><Icons.Search /><input placeholder="搜索 Skill..." /></div>
-        <button className="btn"><Icons.Globe size={12} /> Skill 商店</button>
-        <button className="btn primary"><Icons.Plus size={12} /> 创建 Skill</button>
+
+        {/* ── Error banner ── */}
+        {error && (
+          <div
+            className="card"
+            style={{
+              marginBottom: 14,
+              padding: '10px 12px',
+              color: 'var(--danger)',
+              fontSize: 12,
+            }}
+          >
+            {error}
+          </div>
+        )}
+
+        {/* ── Content ── */}
+        {loading ? (
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Icons.Sparkles />
+            </div>
+            <div className="empty-title">正在加载 Skills...</div>
+          </div>
+        ) : total === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Icons.Zap />
+            </div>
+            <div className="empty-title">暂无 Skill</div>
+            <div className="empty-desc">
+              安装 Skill 以扩展 Agent 能力，支持代码生成、文件操作等场景
+            </div>
+            <div className="empty-actions">
+              <button className="empty-action-btn">
+                <Icons.Plus size={12} /> 创建 Skill
+              </button>
+            </div>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-icon">
+              <Icons.Search />
+            </div>
+            <div className="empty-title">未找到匹配的 Skill</div>
+            <div className="empty-desc">
+              尝试其他关键词搜索
+            </div>
+          </div>
+        ) : (
+          <div className="skill-grid">
+            {filtered.map((s) => (
+              <SkillCard key={s.id} skill={s} onToggle={toggleSkill} />
+            ))}
+          </div>
+        )}
       </div>
-
-      {error && <div className="card" style={{ marginBottom: 14, padding: '10px 12px', color: 'var(--danger)', fontSize: 12 }}>{error}</div>}
-
-      {loading ? (
-        <div className="muted" style={{ textAlign: 'center', padding: '48px 0', fontSize: 13 }}>
-          正在加载 Skills...
-        </div>
-      ) : skills.length === 0 ? (
-        <div className="muted" style={{ textAlign: 'center', padding: '48px 0', fontSize: 13 }}>
-          暂无 Skill
-        </div>
-      ) : (
-        <div className="skill-grid">
-          {skills.map((s) => <SkillCard key={s.id} skill={s} />)}
-        </div>
-      )}
-    </div>
     </div>
   )
 }
 
-function SkillCard({ skill }: { skill: SkillItem }) {
+function SkillCard({
+  skill,
+  onToggle,
+}: {
+  skill: SkillItem
+  onToggle: (skill: SkillItem) => void
+}) {
   const meta = parseSkillManifest(skill.manifestJson)
   return (
     <div className="skill-card">
       <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
       <div className="row" style={{ gap: 6 }}>
         <span className="name">{skill.name}</span>
-        <span className="badge" style={{ fontSize: 10 }}>{meta.source}</span>
+        <span className="badge" style={{ fontSize: 10 }}>
+          {meta.source}
+        </span>
       </div>
       <div className="desc">{meta.desc}</div>
       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
-        <span className={`badge ${skill.enabled ? 'success' : ''}`} style={{ fontSize: 9.5, height: 16 }}>
+        <span
+          className={`badge ${skill.enabled ? 'success' : ''}`}
+          style={{ fontSize: 9.5, height: 16, cursor: 'pointer' }}
+          onClick={() => onToggle(skill)}
+        >
           {skill.enabled ? '已启用' : '已禁用'}
         </span>
       </div>
       <div className="foot">
-        <span>{meta.source} · {skill.version}</span>
+        <span>
+          {meta.source} · {skill.version}
+        </span>
         <div className="flex1" />
-        <button className="icon-btn" style={{ width: 22, height: 22 }}><Icons.Play size={11} /></button>
-        <button className="icon-btn" style={{ width: 22, height: 22 }}><Icons.More size={11} /></button>
+        <button className="icon-btn" style={{ width: 22, height: 22 }}>
+          <Icons.Play size={11} />
+        </button>
+        <button className="icon-btn" style={{ width: 22, height: 22 }}>
+          <Icons.More size={11} />
+        </button>
       </div>
     </div>
   )
