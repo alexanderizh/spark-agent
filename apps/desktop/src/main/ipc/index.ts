@@ -13,6 +13,9 @@
 import { typedIpcHandle } from './typed-ipc.js'
 import { createLogger } from '@spark/shared'
 import type { SessionId } from '@spark/protocol'
+import { ProviderProfileRepository } from '@spark/storage'
+import { ProviderService } from '@spark/agent-runtime'
+import { getDatabase } from '../db.js'
 
 /** 生成 branded SessionId */
 function newSessionId(): SessionId {
@@ -21,16 +24,10 @@ function newSessionId(): SessionId {
 
 const log = createLogger('ipc:register')
 
-/**
- * 注册所有 IPC handlers
- *
- * 在 main/index.ts 的 initializeApp() 中调用
- *
- * 当前已注册的 handlers：
- *   - session:* — 会话管理（P1-07 实现）
- *   - provider:* — Provider 配置（P1-09 实现）
- *   - workspace:* — 工作区管理（P2-01 实现）
- */
+function getProviderService(): ProviderService {
+  return new ProviderService(new ProviderProfileRepository(getDatabase()))
+}
+
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
 
@@ -77,54 +74,31 @@ export function registerAllIpcHandlers(): void {
   // P1-09 完整实现，当前为骨架
 
   typedIpcHandle('provider:list', async (_req) => {
-    // TODO: 调用 ProviderService.list()
-    log.info('provider:list requested')
-    return { profiles: [] }
+    const profiles = await getProviderService().listProviders()
+    return { profiles }
   })
 
   typedIpcHandle('provider:create', async (req) => {
-    // TODO: 调用 ProviderService.create()
-    // 注意：req.apiKey 在此处为明文，需立即存入 Keychain
     log.info(`provider:create requested, provider=${req.provider}, name=${req.name}`)
-    return {
-      profile: {
-        id: crypto.randomUUID(),
-        name: req.name,
-        provider: req.provider,
-        model: req.model,
-        keystoreRef: `${req.provider}-${crypto.randomUUID()}`,
-        isDefault: req.isDefault ?? false,
-        createdAt: new Date().toISOString(),
-      },
-    }
+    const profile = await getProviderService().createProvider(req)
+    return { profile }
   })
 
   typedIpcHandle('provider:update', async (req) => {
-    // TODO: 调用 ProviderService.update()
     log.info(`provider:update requested, id=${req.id}`)
-    return {
-      profile: {
-        id: req.id,
-        name: req.name ?? 'Updated Profile',
-        provider: 'unknown',
-        model: req.model ?? 'unknown',
-        keystoreRef: `ref-${req.id}`,
-        isDefault: req.isDefault ?? false,
-        createdAt: new Date().toISOString(),
-      },
-    }
+    const profile = await getProviderService().updateProvider(req)
+    return { profile }
   })
 
   typedIpcHandle('provider:delete', async (req) => {
-    // TODO: 调用 ProviderService.delete()
     log.info(`provider:delete requested, id=${req.id}`)
+    await getProviderService().deleteProvider(req.id)
     return { deleted: true }
   })
 
   typedIpcHandle('provider:health-check', async (req) => {
-    // TODO: 调用 ProviderService.healthCheck()
     log.info(`provider:health-check requested, id=${req.id}`)
-    return { healthy: true }
+    return getProviderService().healthCheck(req.id)
   })
 
   // ─── Workspace Handlers ────────────────────────────────────────────────

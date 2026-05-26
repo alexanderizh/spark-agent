@@ -26,6 +26,7 @@ export {
   SessionRepository,
   WorkspaceRepository,
   EventRepository,
+  ProviderProfileRepository,
 } from './repositories/index.js'
 
 export type {
@@ -37,4 +38,6 @@ export type {
   AgentEventRow,
   QueryEventsParams,
   InsertEventParams,
+  ProviderProfileRow,
+  CreateProviderParams,
 } from './repositories/index.js'
