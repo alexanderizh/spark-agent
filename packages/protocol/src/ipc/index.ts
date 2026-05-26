@@ -191,6 +191,18 @@ export interface WorkspaceCloseResponse {
   closed: boolean
 }
 
+// ─── Dialog Channels ────────────────────────────────────────────────────────
+
+export interface DialogOpenDirectoryRequest {
+  title?: string
+  defaultPath?: string
+}
+
+export interface DialogOpenDirectoryResponse {
+  canceled: boolean
+  filePath?: string
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -226,6 +238,9 @@ export interface IpcChannelMap {
   'workspace:open': [WorkspaceOpenRequest, WorkspaceOpenResponse]
   'workspace:get-current': [WorkspaceGetCurrentRequest, WorkspaceGetCurrentResponse]
   'workspace:close': [WorkspaceCloseRequest, WorkspaceCloseResponse]
+
+  // Native dialog
+  'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

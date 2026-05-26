@@ -10,6 +10,8 @@ import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import type { ProviderHealthCheckResponse, ProviderProfile, WorkspaceInfo } from '@spark/protocol'
 
+type ProviderKind = 'anthropic' | 'openai' | 'deepseek' | 'ollama' | 'openai-compatible'
+
 export function SettingsView() {
   const { t, setTweak } = useApp()
   const section = t.settingsSection || 'providers'
@@ -411,7 +413,7 @@ function ProvidersSection() {
   const showProviderEdit = t.showProviderEdit
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [healthMap, setHealthMap] = useState<Record<string, { healthy: boolean; latencyMs?: number }>>({})
+  const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
 
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
@@ -424,7 +426,7 @@ function ProvidersSection() {
   useEffect(() => { refresh() }, [refresh])
 
   const handleDelete = async (id: string) => {
-    if (!confirm('确认删除该 Provider？')) return
+    if (!window.confirm('确认删除该 Provider？')) return
     await deleteProvider({ id })
     refresh()
   }
@@ -509,6 +511,7 @@ function ProviderCardX({
           {status === 'warning' && <span className="badge warning dot">需注意</span>}
           {status === 'error' && <span className="badge danger dot">错误</span>}
           {status === 'off' && <span className="badge dot">未启用</span>}
+          {status === 'unknown' && <span className="badge dot">未验证</span>}
         </div>
         <div className="desc">{desc}</div>
         {detail && <div className="muted" style={{ fontSize: 11, marginTop: 2 }}>{detail}</div>}
@@ -523,8 +526,14 @@ function ProviderCardX({
 }
 
 /* ───────── PROVIDER EDIT slide panel ───────── */
-export function ProviderEditPanel({ profileId, onClose }: { profileId: string | null; onClose: () => void }) {
-  const [form, setForm] = useState({ name: '', provider: 'anthropic', model: '', apiKey: '', isDefault: false })
+export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: string | null; onClose: () => void }) {
+  const [form, setForm] = useState<{
+    name: string
+    provider: ProviderKind
+    model: string
+    apiKey: string
+    isDefault: boolean
+  }>({ name: '', provider: 'anthropic', model: '', apiKey: '', isDefault: false })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -534,12 +543,23 @@ export function ProviderEditPanel({ profileId, onClose }: { profileId: string | 
 
   // 编辑模式：加载现有 profile
   useEffect(() => {
-    if (!profileId) return
+    if (!profileId) {
+      setForm({ name: '', provider: 'anthropic', model: '', apiKey: '', isDefault: false })
+      return
+    }
     listProviders({}).then(r => {
       const p = r.profiles.find(x => x.id === profileId)
-      if (p) setForm({ name: p.name, provider: p.provider, model: p.model, apiKey: '', isDefault: p.isDefault })
+      if (p) {
+        setForm({
+          name: p.name,
+          provider: normalizeProviderKind(p.provider),
+          model: p.model,
+          apiKey: '',
+          isDefault: p.isDefault,
+        })
+      }
     }).catch(console.error)
-  }, [profileId])
+  }, [listProviders, profileId])
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.model.trim()) { setError('名称和模型 ID 不能为空'); return }
@@ -561,7 +581,7 @@ export function ProviderEditPanel({ profileId, onClose }: { profileId: string | 
     }
   }
 
-  const set = (k: keyof typeof form, v: string | boolean) => setForm(prev => ({ ...prev, [k]: v }))
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }))
 
   return (
     <div className="slide-panel-backdrop" onClick={onClose}>
@@ -584,11 +604,12 @@ export function ProviderEditPanel({ profileId, onClose }: { profileId: string | 
             <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="例：Anthropic · Claude" />
 
             <label>Provider 类型<span className="sub">决定使用哪个 adapter</span></label>
-            <select value={form.provider} onChange={e => set('provider', e.target.value)} disabled={!!profileId}>
+            <select value={form.provider} onChange={e => set('provider', normalizeProviderKind(e.target.value))} disabled={!!profileId}>
               <option value="anthropic">Claude Agent SDK</option>
               <option value="openai">OpenAI Responses API</option>
               <option value="deepseek">DeepSeek</option>
               <option value="ollama">Ollama (本地)</option>
+              <option value="openai-compatible">OpenAI 兼容</option>
             </select>
 
             <label>模型 ID</label>
@@ -620,6 +641,19 @@ export function ProviderEditPanel({ profileId, onClose }: { profileId: string | 
       </div>
     </div>
   )
+}
+
+function normalizeProviderKind(value: string): ProviderKind {
+  if (
+    value === 'anthropic' ||
+    value === 'openai' ||
+    value === 'deepseek' ||
+    value === 'ollama' ||
+    value === 'openai-compatible'
+  ) {
+    return value
+  }
+  return 'anthropic'
 }
 
 /* ───────── PROFILE EDIT MODAL ───────── */
@@ -726,6 +760,13 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 /* ───────── MODELS ───────── */
 function ModelsSection() {
   const { setTweak } = useApp()
+  const [profiles, setProfiles] = useState<ProviderProfile[]>([])
+  const { invoke: listProviders } = useIpcInvoke('provider:list')
+
+  useEffect(() => {
+    listProviders({}).then((res) => setProfiles(res.profiles)).catch(console.error)
+  }, [listProviders])
+
   return (
     <div className="settings-section">
       <div className="row" style={{ alignItems: 'flex-end', marginBottom: 14 }}>
@@ -738,24 +779,29 @@ function ModelsSection() {
       </div>
 
       <div className="row" style={{ gap: 6, marginBottom: 14, flexWrap: 'wrap' }}>
-        <span className="badge primary dot">全部 8</span>
+        <span className="badge primary dot">全部 {profiles.length}</span>
         <span className="badge">default</span>
-        <span className="badge">planner</span>
+        <span className="badge">chat</span>
         <span className="badge">coder</span>
-        <span className="badge">reviewer</span>
-        <span className="badge">fast</span>
-        <span className="badge">vision</span>
-        <span className="badge">long-context</span>
       </div>
 
-      <ModelRowFull provider="Anthropic" name="Sonnet 4.5 · 默认" model="claude-sonnet-4-5-20250929" roles={['default', 'coder', 'reviewer']} temp={0.7} ctx="180K/8K" />
-      <ModelRowFull provider="Anthropic" name="Opus 4 · 规划" model="claude-opus-4-20250115" roles={['planner', 'long-context']} temp={0.4} ctx="180K/8K" />
-      <ModelRowFull provider="Anthropic" name="Haiku 4.5 · 快速" model="claude-haiku-4-5-20250416" roles={['fast']} temp={1.0} ctx="180K/4K" />
-      <ModelRowFull provider="Codex SDK" name="GPT-5 · 编码" model="gpt-5" roles={['coder']} temp={0.3} ctx="200K/16K" />
-      <ModelRowFull provider="Codex SDK" name="GPT-5-mini · 测试" model="gpt-5-mini" roles={['tester', 'fast']} temp={0.2} ctx="200K/8K" />
-      <ModelRowFull provider="Responses API" name="o4-mini · 推理" model="o4-mini" roles={['planner']} temp={1.0} ctx="200K/16K" reasoning="high" />
-      <ModelRowFull provider="Ollama" name="qwen3-coder 本地" model="qwen3-coder:32b" roles={['coder', 'fast']} temp={0.2} ctx="128K/4K" disabled />
-      <ModelRowFull provider="Responses API" name="gpt-5 · 视觉" model="gpt-5" roles={['vision']} temp={0.3} ctx="200K/8K" />
+      {profiles.length === 0 && (
+        <div className="card" style={{ padding: 18, color: 'var(--text-muted)', fontSize: 12 }}>
+          暂无模型 Profile。请先在 Provider 页面添加一个 Provider。
+        </div>
+      )}
+      {profiles.map((profile) => (
+        <ModelRowFull
+          key={profile.id}
+          provider={profile.provider}
+          name={profile.name}
+          model={profile.model}
+          roles={profile.isDefault ? ['default', 'chat'] : ['chat']}
+          temp={0.7}
+          ctx="由 Provider 配置"
+          disabled={false}
+        />
+      ))}
     </div>
   )
 }
@@ -1020,6 +1066,42 @@ function TelemetrySection() {
 
 /* ───────── STORAGE ───────── */
 function StorageSection() {
+  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
+  const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
+  const { invoke: closeWorkspace } = useIpcInvoke('workspace:close')
+  const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
+
+  const refreshWorkspace = useCallback(async () => {
+    const res = await getCurrentWorkspace({})
+    setWorkspace(res.workspace)
+  }, [getCurrentWorkspace])
+
+  useEffect(() => {
+    refreshWorkspace().catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+  }, [refreshWorkspace])
+
+  const handleOpenWorkspace = async () => {
+    try {
+      const selected = await openDirectory({ title: '选择默认工作区' })
+      if (selected.canceled || selected.filePath === undefined) {
+        return
+      }
+      const res = await openWorkspace({ rootPath: selected.filePath })
+      setWorkspace(res.workspace)
+      setError(null)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const handleCloseWorkspace = async () => {
+    if (workspace === null) return
+    await closeWorkspace({ workspaceId: workspace.id })
+    setWorkspace(null)
+  }
+
   return (
     <div className="settings-section">
       <h2>存储与备份</h2>
@@ -1031,7 +1113,20 @@ function StorageSection() {
           <input style={{ flex: 1 }} defaultValue="~/Library/Application Support/Spark Agent" readOnly />
           <button className="btn"><Icons.Folder size={12} /> 打开</button>
         </div>
+
+        <label>当前工作区<span className="sub">Agent 文件工具的根目录</span></label>
+        <div className="control">
+          <input style={{ flex: 1 }} value={workspace?.rootPath ?? '未打开工作区'} readOnly />
+          <button className="btn" onClick={handleOpenWorkspace}><Icons.Folder size={12} /> 选择</button>
+          <button className="btn ghost" onClick={handleCloseWorkspace} disabled={workspace === null}>关闭</button>
+        </div>
       </div>
+
+      {error !== null && (
+        <div className="card" style={{ padding: '10px 14px', marginTop: 12, color: 'var(--danger)' }}>
+          {error}
+        </div>
+      )}
 
       <div className="subsec-h">存储用量</div>
       <div className="card">

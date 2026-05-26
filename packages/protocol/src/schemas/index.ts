@@ -81,6 +81,11 @@ export const WorkspaceOpenRequestSchema = z.object({
     .optional(),
 })
 
+export const DialogOpenDirectoryRequestSchema = z.object({
+  title: z.string().max(200).optional(),
+  defaultPath: z.string().optional(),
+})
+
 /**
  * IPC Schema 注册表
  *
@@ -95,4 +100,5 @@ export const IpcSchemaRegistry = {
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
   'workspace:open': WorkspaceOpenRequestSchema,
+  'dialog:open-directory': DialogOpenDirectoryRequestSchema,
 } as const

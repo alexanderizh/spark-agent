@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { dialog } from 'electron'
 import { createLogger } from '@spark/shared'
 import { ProviderProfileRepository, WorkspaceRepository } from '@spark/storage'
 import { ProviderService, SessionService, WorkspaceService } from '@spark/agent-runtime'
@@ -129,6 +130,21 @@ export function registerAllIpcHandlers(): void {
     log.info(`workspace:close requested, workspaceId=${req.workspaceId}`)
     getWorkspaceService().closeWorkspace()
     return { closed: true }
+  })
+
+  // ─── Native Dialog Handlers ─────────────────────────────────────────────
+
+  typedIpcHandle('dialog:open-directory', async (req) => {
+    const result = await dialog.showOpenDialog({
+      title: req.title ?? '选择工作区目录',
+      ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
+      properties: ['openDirectory', 'createDirectory'],
+    })
+
+    return {
+      canceled: result.canceled,
+      ...(result.filePaths[0] === undefined ? {} : { filePath: result.filePaths[0] }),
+    }
   })
 
   log.info('All IPC handlers registered')
