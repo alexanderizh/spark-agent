@@ -1,0 +1,24 @@
+appId: com.spark-agent.desktop
+productName: Spark Agent
+directories:
+  buildResources: resources
+  output: dist
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - target: dmg
+      arch:
+        - universal
+  hardenedRuntime: true
+  gatekeeperAssess: false
+asar: true
+files:
+  - out/**/*
+  - '!**/.DS_Store'
+  - '!src/**'
+  - '!e2e/**'
+extraResources:
+  - from: out/main/migrations
+    to: migrations
+    filter:
+      - '**/*.sql'

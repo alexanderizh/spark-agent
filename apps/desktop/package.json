@@ -8,6 +8,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "build:unpack": "electron-vite build && electron-builder --dir",
+    "build:prod": "electron-vite build && electron-builder",
+    "pack": "electron-builder --dir",
     "preview": "electron-vite preview",
     "postinstall": "electron-rebuild -f -w better-sqlite3 keytar",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
