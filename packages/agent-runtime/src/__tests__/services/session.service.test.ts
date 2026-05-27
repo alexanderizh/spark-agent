@@ -21,6 +21,14 @@ vi.mock('../../services/adapter-factory.js', () => ({
 vi.mock('../../core/index.js', () => ({
   AgentLoop: vi.fn(),
   ToolRegistry: vi.fn(),
+  isCommand: vi.fn(() => false),
+  parseCommand: vi.fn(() => null),
+  createBuiltinRegistry: vi.fn(() => ({
+    list: vi.fn(() => []),
+    get: vi.fn(() => undefined),
+    execute: vi.fn(async () => ({ success: false, message: '' })),
+    register: vi.fn(),
+  })),
 }))
 
 import {

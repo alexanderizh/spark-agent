@@ -9,18 +9,22 @@ import {
 import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
-import { AgentLoop, ToolRegistry } from '../core/index.js'
-import type { AgentConfig } from '../core/index.js'
+import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
+import type { AgentConfig, CommandDeps } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
 type AgentAdapterKind = 'claude' | 'codex'
+type PendingTurn = { turnId: string; message: string }
 
 export class SessionService {
   private activeLoops = new Map<string, AgentLoop>()  // sessionId → AgentLoop
+  private pendingTurns = new Map<string, PendingTurn[]>()
   private seqCounters = new Map<string, number>()
+  private approvalOverrides = new Map<string, boolean>()  // sessionId → approval enabled
+  private readonly commandRegistry = createBuiltinRegistry()
 
   constructor(
     private readonly db: SparkDatabase,
@@ -57,11 +61,82 @@ export class SessionService {
     return { sessionId: row.id as SessionId, createdAt: row.created_at }
   }
 
+  async executeCommand(params: {
+    sessionId: string
+    message: string
+  }): Promise<{ isCommand: true; result: { success: boolean; message: string; data?: Record<string, unknown> } } | { isCommand: false }> {
+    if (!isCommand(params.message)) return { isCommand: false }
+
+    const parsed = parseCommand(params.message)
+    if (parsed == null) return { isCommand: false }
+
+    const sessionRepo = new SessionRepository(this.db)
+    const providerRepo = new ProviderProfileRepository(this.db)
+    const eventRepo = new EventRepository(this.db)
+    const session = sessionRepo.get(params.sessionId)
+
+    const deps: CommandDeps = {
+      getSession: (id) => {
+        const s = sessionRepo.get(id)
+        if (s == null) return null
+        return { title: s.title, status: s.status, modelId: s.model_id ?? null, providerProfileId: s.provider_profile_id ?? '' }
+      },
+      updateSession: async (id, fields) => {
+        sessionRepo.updateRuntime(id, fields)
+      },
+      clearSessionEvents: async (id) => {
+        eventRepo.deleteBySession(id)
+        this.seqCounters.delete(id)
+      },
+      getProviderName: (id) => {
+        return providerRepo.get(id)?.name ?? null
+      },
+      setApprovalMode: (id, enabled) => {
+        this.approvalOverrides.set(id, enabled)
+      },
+    }
+
+    const ctx = {
+      sessionId: params.sessionId,
+      ...(session?.provider_profile_id != null ? { providerId: session.provider_profile_id } : {}),
+      ...(session?.model_id != null ? { model: session.model_id } : {}),
+    }
+
+    const result = await this.commandRegistry.execute(parsed, ctx, deps)
+    return { isCommand: true, result }
+  }
+
+  listCommands(): Array<{ name: string; description: string; category: string; usage?: string; isDangerous?: boolean }> {
+    return this.commandRegistry.list().map((c) => ({
+      name: c.name,
+      description: c.description,
+      category: c.category,
+      ...(c.usage !== undefined ? { usage: c.usage } : {}),
+      ...(c.isDangerous === true ? { isDangerous: true } : {}),
+    }))
+  }
+
   async sendTurn(params: {
     sessionId: string
     message: string
   }): Promise<{ turnId: string; started: boolean }> {
     const { sessionId, message } = params
+    const turnId = crypto.randomUUID()
+    if (this.activeLoops.has(sessionId)) {
+      this.enqueueTurn(sessionId, { turnId, message })
+      return { turnId, started: false }
+    }
+
+    await this.startTurn(sessionId, turnId, message)
+    return { turnId, started: true }
+  }
+
+  private async startTurn(sessionId: string, turnId: string, message: string): Promise<void> {
+    if (this.activeLoops.has(sessionId)) {
+      this.enqueueTurn(sessionId, { turnId, message })
+      return
+    }
+
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const eventRepo = new EventRepository(this.db)
@@ -145,7 +220,6 @@ export class SessionService {
       this.seqCounters.set(sessionId, eventRepo.countBySession(sessionId))
     }
 
-    const turnId = crypto.randomUUID()
     const loop = new AgentLoop()
 
     loop.onEvent((event) => {
@@ -181,9 +255,25 @@ export class SessionService {
       })
       .finally(() => {
         this.activeLoops.delete(sessionId)
+        this.startNextQueuedTurn(sessionId)
       })
+  }
 
-    return { turnId, started: true }
+  private enqueueTurn(sessionId: string, turn: PendingTurn): void {
+    const queue = this.pendingTurns.get(sessionId) ?? []
+    queue.push(turn)
+    this.pendingTurns.set(sessionId, queue)
+  }
+
+  private startNextQueuedTurn(sessionId: string): void {
+    const queue = this.pendingTurns.get(sessionId)
+    const next = queue?.shift()
+    if (queue == null || next == null) {
+      this.pendingTurns.delete(sessionId)
+      return
+    }
+    if (queue.length === 0) this.pendingTurns.delete(sessionId)
+    void this.startTurn(sessionId, next.turnId, next.message)
   }
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {

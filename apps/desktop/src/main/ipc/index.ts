@@ -15,6 +15,7 @@ import { dialog, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
+import { isCommand, parseCommand } from '@spark/agent-runtime'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
 import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
@@ -472,6 +473,29 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('skill:export-batch', async (_req) => {
     // TODO: T-12 Skill 包导入/导出
     throw new Error('Not implemented yet: skill:export-batch')
+  })
+
+  // ─── Command Handlers ───────────────────────────────────────────────────────
+
+  typedIpcHandle('command:execute', async (req) => {
+    log.info(`command:execute requested, sessionId=${req.sessionId}, message=${req.message}`)
+    const cmdResult = await getSessionService().executeCommand({ sessionId: req.sessionId, message: req.message })
+    if (!cmdResult.isCommand) {
+      return { success: false, message: '输入不是有效的斜杠命令' }
+    }
+    return cmdResult.result
+  })
+
+  typedIpcHandle('command:list', async (_req) => {
+    const commands = getSessionService().listCommands()
+    return { commands }
+  })
+
+  typedIpcHandle('command:parse', async (req) => {
+    if (!isCommand(req.message)) return { isCommand: false }
+    const parsed = parseCommand(req.message)
+    if (parsed == null) return { isCommand: false }
+    return { isCommand: true, name: parsed.name, args: parsed.args, flags: parsed.flags }
   })
 
   log.info('All IPC handlers registered')

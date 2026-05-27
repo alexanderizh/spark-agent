@@ -801,6 +801,42 @@ export interface SkillExportBatchResponse {
   count: number
 }
 
+// ─── Command Channels ────────────────────────────────────────────────────────
+
+export interface CommandExecuteRequest {
+  sessionId: string
+  message: string
+}
+
+export interface CommandExecuteResponse {
+  success: boolean
+  message: string
+  data?: Record<string, unknown>
+}
+
+export interface CommandListRequest {}
+
+export interface CommandListResponse {
+  commands: Array<{
+    name: string
+    description: string
+    category: string
+    usage?: string
+    isDangerous?: boolean
+  }>
+}
+
+export interface CommandParseRequest {
+  message: string
+}
+
+export interface CommandParseResponse {
+  isCommand: boolean
+  name?: string
+  args?: string[]
+  flags?: Record<string, string>
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -894,6 +930,11 @@ export interface IpcChannelMap {
   'skill:import-directory': [SkillImportDirectoryRequest, SkillImportDirectoryResponse]
   'skill:export': [SkillExportRequest, SkillExportResponse]
   'skill:export-batch': [SkillExportBatchRequest, SkillExportBatchResponse]
+
+  // Command
+  'command:execute': [CommandExecuteRequest, CommandExecuteResponse]
+  'command:list': [CommandListRequest, CommandListResponse]
+  'command:parse': [CommandParseRequest, CommandParseResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
