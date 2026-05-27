@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
-import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard } from '../ChatInteractions'
+import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, ContextWarn, Checkpoint, SandboxNote, QuickActions, ToolChooser } from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
@@ -612,6 +612,11 @@ export function ChatView() {
         {active ? (
           <>
             <ContextUsageBar usage={contextUsage} />
+            {contextUsage && (contextUsage.estimatedTokens / contextUsage.contextWindowTokens) >= 0.8 && (
+              <div style={{ margin: '0 16px' }}>
+                <ContextWarn used={contextUsage.estimatedTokens} total={contextUsage.contextWindowTokens} />
+              </div>
+            )}
             <ChatStream
               sessionId={active}
               onStatusChange={setAgentStatus}
@@ -1419,7 +1424,7 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
           if (hunks.length > 0) {
             return (
               <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-                <HunkDiff path={block.path} hunks={hunks} />
+                <HunkDiffWithFeedback path={block.path} hunks={hunks} />
               </div>
             )
           }
@@ -1562,7 +1567,18 @@ function parsePlanToItems(plan: string): { status: 'done' | 'running' | 'pending
 function InlinePermissionCard({ block }: {
   block: Extract<UIBlock, { kind: 'permission_request' }>
 }) {
+  const { toast } = useToast()
   const { action, riskLevel, description, paths, command, domains } = block
+
+  const handleAllow = () => {
+    console.log('[PermCard] allowed:', block.requestId)
+    toast.success(`已允许: ${description}`)
+  }
+
+  const handleDeny = () => {
+    console.log('[PermCard] denied:', block.requestId)
+    toast.info(`已拒绝: ${description}`)
+  }
 
   // Route to the appropriate card based on action type
   if (action === 'file_read' || action === 'file_write') {
@@ -1571,6 +1587,8 @@ function InlinePermissionCard({ block }: {
         path={paths?.[0] ?? description}
         scope={riskLevel}
         lines={{ add: 0, del: 0 }}
+        onAllow={handleAllow}
+        onDeny={handleDeny}
       />
     )
   }
@@ -1581,6 +1599,8 @@ function InlinePermissionCard({ block }: {
         url={domains?.[0] ?? description}
         method="GET"
         reason={description}
+        onAllow={handleAllow}
+        onDeny={handleDeny}
       />
     )
   }
@@ -1591,6 +1611,8 @@ function InlinePermissionCard({ block }: {
         server="MCP Server"
         tool={description}
         params={{ paths, command, domains }}
+        onAllow={handleAllow}
+        onDeny={handleDeny}
       />
     )
   }
@@ -1614,12 +1636,38 @@ function InlinePermissionCard({ block }: {
       </div>
       <div className="chat-card-foot">
         <span className="spacer" />
-        <button className="btn sm" onClick={() => console.log('[PermCard] denied:', block.requestId)}>拒绝</button>
-        <button className="btn sm primary" onClick={() => console.log('[PermCard] allowed:', block.requestId)}>
+        <button className="btn sm" onClick={handleDeny}>拒绝</button>
+        <button className="btn sm primary" onClick={handleAllow}>
           <Icons.Check size={11} /> 允许
         </button>
       </div>
     </div>
+  )
+}
+
+/** HunkDiff wrapper that provides toast feedback on accept/reject actions */
+function HunkDiffWithFeedback({ path, hunks }: { path: string; hunks: Array<DiffHunk> }) {
+  const { toast } = useToast()
+
+  const handleAcceptAll = () => {
+    toast.success(`已采纳全部变更: ${path}`)
+  }
+
+  const handleHunkAction = (index: number, action: 'accepted' | 'rejected') => {
+    if (action === 'accepted') {
+      toast.success(`Hunk #${index + 1} 已采纳`)
+    } else {
+      toast.info(`Hunk #${index + 1} 已拒绝`)
+    }
+  }
+
+  return (
+    <HunkDiff
+      path={path}
+      hunks={hunks}
+      onAcceptAll={handleAcceptAll}
+      onHunkAction={handleHunkAction}
+    />
   )
 }
 

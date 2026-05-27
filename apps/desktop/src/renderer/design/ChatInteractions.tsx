@@ -8,7 +8,10 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from './Icons'
 
-export function FilePermCard({ path, scope, lines }: { path: string; scope: string; lines: { add: number; del: number } }) {
+export function FilePermCard({ path, scope, lines, onAllow, onDeny }: {
+  path: string; scope: string; lines: { add: number; del: number }
+  onAllow?: () => void; onDeny?: () => void
+}) {
   return (
     <div className="chat-card">
       <div className="chat-card-h warn">
@@ -36,14 +39,17 @@ export function FilePermCard({ path, scope, lines }: { path: string; scope: stri
           <button style={{ height: 18, fontSize: 10.5 }}>项目内</button>
         </span>
         <span className="spacer" />
-        <button className="btn sm">仅预览</button>
-        <button className="btn sm primary"><Icons.Check size={11} /> 允许写入</button>
+        <button className="btn sm" onClick={onDeny}>拒绝</button>
+        <button className="btn sm primary" onClick={onAllow}><Icons.Check size={11} /> 允许写入</button>
       </div>
     </div>
   )
 }
 
-export function NetPermCard({ url, method, reason }: { url: string; method: string; reason: string }) {
+export function NetPermCard({ url, method, reason, onAllow, onDeny }: {
+  url: string; method: string; reason: string
+  onAllow?: () => void; onDeny?: () => void
+}) {
   return (
     <div className="chat-card">
       <div className="chat-card-h info">
@@ -64,14 +70,17 @@ export function NetPermCard({ url, method, reason }: { url: string; method: stri
       </div>
       <div className="chat-card-foot">
         <span className="spacer" />
-        <button className="btn sm">拒绝</button>
-        <button className="btn sm primary"><Icons.Check size={11} /> 本会话内允许 npmjs.com</button>
+        <button className="btn sm" onClick={onDeny}>拒绝</button>
+        <button className="btn sm primary" onClick={onAllow}><Icons.Check size={11} /> 本会话内允许 npmjs.com</button>
       </div>
     </div>
   )
 }
 
-export function MCPPermCard({ server, tool, params }: { server: string; tool: string; params: unknown }) {
+export function MCPPermCard({ server, tool, params, onAllow, onDeny }: {
+  server: string; tool: string; params: unknown
+  onAllow?: () => void; onDeny?: () => void
+}) {
   return (
     <div className="chat-card">
       <div className="chat-card-h">
@@ -92,9 +101,9 @@ export function MCPPermCard({ server, tool, params }: { server: string; tool: st
           <Icons.Shield size={11} /> 来源: User 范围 · 已签名
         </span>
         <span className="spacer" />
-        <button className="btn sm">拒绝</button>
-        <button className="btn sm">仅本次</button>
-        <button className="btn sm primary">允许并记住</button>
+        <button className="btn sm" onClick={onDeny}>拒绝</button>
+        <button className="btn sm" onClick={onAllow}>仅本次</button>
+        <button className="btn sm primary" onClick={onAllow}>允许并记住</button>
       </div>
     </div>
   )
@@ -108,7 +117,10 @@ type Hunk = {
   lines: { t: 'add' | 'del' | 'ctx' | 'hunk'; n: number | string; s: string }[]
 }
 
-export function HunkDiff({ path, hunks }: { path: string; hunks: Hunk[] }) {
+export function HunkDiff({ path, hunks, onAcceptAll, onHunkAction }: {
+  path: string; hunks: Hunk[]
+  onAcceptAll?: () => void; onHunkAction?: (index: number, action: 'accepted' | 'rejected') => void
+}) {
   const [states, setStates] = useState<('pending' | 'accepted' | 'rejected')[]>(hunks.map(() => 'pending'))
   const acceptedCount = states.filter((s) => s === 'accepted').length
 
@@ -116,6 +128,15 @@ export function HunkDiff({ path, hunks }: { path: string; hunks: Hunk[] }) {
     const ns = [...states]
     ns[i] = v
     setStates(ns)
+    if (v === 'accepted' || v === 'rejected') {
+      onHunkAction?.(i, v)
+    }
+  }
+
+  const acceptRemaining = () => {
+    const ns = states.map((s) => s === 'pending' ? 'accepted' as const : s)
+    setStates(ns)
+    onAcceptAll?.()
   }
 
   return (
@@ -131,7 +152,7 @@ export function HunkDiff({ path, hunks }: { path: string; hunks: Hunk[] }) {
         <button className="btn ghost sm" style={{ height: 22, padding: '0 8px', fontSize: 11 }}>
           {acceptedCount}/{hunks.length} 已采纳
         </button>
-        <button className="btn sm primary" style={{ height: 24, padding: '0 10px', fontSize: 11 }}>
+        <button className="btn sm primary" style={{ height: 24, padding: '0 10px', fontSize: 11 }} onClick={acceptRemaining}>
           <Icons.Check size={11} /> 接受剩余
         </button>
       </div>
