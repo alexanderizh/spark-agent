@@ -15,6 +15,9 @@ export type UIBlock =
   | { kind: 'error'; code: string; message: string; retryable: boolean }
   | { kind: 'file_change'; changeType: string; path: string; diff: string | undefined }
   | { kind: 'terminal'; toolCallId: string; stdout: string; stderr: string; isStreaming: boolean; exitCode: number | undefined }
+  | { kind: 'plan_proposed'; plan: string }
+  | { kind: 'permission_request'; requestId: string; action: string; riskLevel: string; description: string; paths: string[] | undefined; command: string | undefined; domains: string[] | undefined }
+  | { kind: 'subagent'; name: string; role: string; task: string; status: 'running' | 'done'; tokens: string }
 
 export interface ContextUsageSnapshot {
   estimatedTokens: number
@@ -238,9 +241,27 @@ export class MessageBuilder {
       }
 
       case 'plan_proposed': {
-        // Stash the plan; ChatView will poll via consumePlanProposed() and show
-        // a 「批准/拒绝/编辑后批准」 dialog. (Wiring left for a follow-up UI PR.)
+        // Stash the plan for PlanApprovalModal (global overlay)
         this.latestPlanProposed = event.plan
+        // Also emit a UIBlock so it renders inline in the message stream
+        const planMsg = this.getOrCreateAssistant(event.id)
+        planMsg.blocks.push({ kind: 'plan_proposed', plan: event.plan })
+        break
+      }
+
+      case 'permission_request': {
+        // Emit a UIBlock for inline rendering (also handled as global modal in App.tsx)
+        const permMsg = this.getOrCreateAssistant(event.id)
+        permMsg.blocks.push({
+          kind: 'permission_request',
+          requestId: event.requestId,
+          action: event.action,
+          riskLevel: event.riskLevel,
+          description: event.description,
+          paths: event.paths,
+          command: event.command,
+          domains: event.domains,
+        })
         break
       }
     }

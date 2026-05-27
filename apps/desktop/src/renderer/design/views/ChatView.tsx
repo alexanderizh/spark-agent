@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
-import { ErrorCard } from '../ChatInteractions'
+import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard } from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
@@ -1413,16 +1413,214 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
             {block.isStreaming && <span className="dim"> …</span>}
           </TerminalBlock>
         )
-      case 'file_change':
+      case 'file_change': {
+        if (block.diff) {
+          const hunks = parseUnifiedDiff(block.diff)
+          if (hunks.length > 0) {
+            return (
+              <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+                <HunkDiff path={block.path} hunks={hunks} />
+              </div>
+            )
+          }
+        }
         return (
           <div key={i} className="block-file-change">
             <Icons.File size={11} /> {block.changeType}: <code className="mono-sm">{block.path}</code>
           </div>
         )
+      }
+      case 'plan_proposed': {
+        const items = parsePlanToItems(block.plan)
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <PlanCard title="Agent 计划" items={items} />
+          </div>
+        )
+      }
+      case 'permission_request': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <InlinePermissionCard block={block} />
+          </div>
+        )
+      }
+      case 'subagent': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <SubagentCard name={block.name} role={block.role} task={block.task} status={block.status} tokens={block.tokens} />
+          </div>
+        )
+      }
       default:
         return null
     }
   })
+}
+
+// ─── Diff / Plan / Permission helper utilities ──────────────────────────────────
+
+type DiffHunk = {
+  range: string
+  note: string
+  adds: number
+  dels: number
+  lines: { t: 'add' | 'del' | 'ctx' | 'hunk'; n: number | string; s: string }[]
+}
+
+/** Parse a unified diff string into structured hunks for HunkDiff */
+function parseUnifiedDiff(diff: string): DiffHunk[] {
+  const hunks: DiffHunk[] = []
+  const lines = diff.split('\n')
+  let currentHunk: DiffHunk | null = null
+  let oldLine = 0
+  let newLine = 0
+
+  for (const rawLine of lines) {
+    // Hunk header: @@ -a,b +c,d @@
+    const hunkMatch = rawLine.match(/^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@(.*)$/)
+    if (hunkMatch) {
+      oldLine = parseInt(hunkMatch[1] ?? '0', 10)
+      newLine = parseInt(hunkMatch[2] ?? '0', 10)
+      currentHunk = {
+        range: rawLine.replace(/^@@\s*/, '').replace(/\s*@@.*$/, ''),
+        note: hunkMatch[3]?.trim() ?? '',
+        adds: 0,
+        dels: 0,
+        lines: [],
+      }
+      hunks.push(currentHunk)
+      continue
+    }
+    if (!currentHunk) {
+      // Skip diff header lines (--- a/file, +++ b/file, etc.)
+      continue
+    }
+    if (rawLine.startsWith('+')) {
+      currentHunk.adds++
+      currentHunk.lines.push({ t: 'add', n: newLine++, s: rawLine.slice(1) })
+    } else if (rawLine.startsWith('-')) {
+      currentHunk.dels++
+      currentHunk.lines.push({ t: 'del', n: oldLine++, s: rawLine.slice(1) })
+    } else if (rawLine.startsWith(' ')) {
+      currentHunk.lines.push({ t: 'ctx', n: oldLine++, s: rawLine.slice(1) })
+      newLine++
+    }
+    // Skip empty lines (end of diff) and other special lines (\ No newline...)
+  }
+
+  return hunks
+}
+
+/** Parse a markdown plan text into PlanCard items */
+function parsePlanToItems(plan: string): { status: 'done' | 'running' | 'pending'; text: string; meta?: string }[] {
+  const items: { status: 'done' | 'running' | 'pending'; text: string; meta?: string }[] = []
+  const lines = plan.split('\n')
+  for (const line of lines) {
+    const trimmed = line.trim()
+    // Match checkbox items: - [x] done task, - [ ] pending task, - [*] running task
+    const checkboxMatch = trimmed.match(/^[-*]\s+\[([ x*])\]\s+(.*)$/)
+    if (checkboxMatch) {
+      const mark = checkboxMatch[1]
+      const text = checkboxMatch[2] ?? ''
+      if (mark === 'x' || mark === 'X') {
+        items.push({ status: 'done', text })
+      } else if (mark === '*') {
+        items.push({ status: 'running', text })
+      } else {
+        items.push({ status: 'pending', text })
+      }
+      continue
+    }
+    // Match numbered items: 1. task text
+    const numberedMatch = trimmed.match(/^\d+\.\s+(.*)$/)
+    if (numberedMatch) {
+      items.push({ status: 'pending', text: numberedMatch[1] ?? '' })
+      continue
+    }
+    // Match bullet items: - task text (non-checkbox)
+    const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/)
+    if (bulletMatch && (bulletMatch[1] ?? '').length > 0 && !(bulletMatch[1] ?? '').startsWith('[')) {
+      items.push({ status: 'pending', text: bulletMatch[1] ?? '' })
+    }
+  }
+  // If no structured items found, treat whole plan as a single pending item
+  if (items.length === 0 && plan.trim().length > 0) {
+    const fallbackItem: { status: 'done' | 'running' | 'pending'; text: string; meta?: string } = {
+      status: 'pending',
+      text: plan.trim().slice(0, 200),
+    }
+    if (plan.trim().length > 200) {
+      fallbackItem.meta = '...'
+    }
+    items.push(fallbackItem)
+  }
+  return items
+}
+
+/** Inline permission card rendered within the message stream */
+function InlinePermissionCard({ block }: {
+  block: Extract<UIBlock, { kind: 'permission_request' }>
+}) {
+  const { action, riskLevel, description, paths, command, domains } = block
+
+  // Route to the appropriate card based on action type
+  if (action === 'file_read' || action === 'file_write') {
+    return (
+      <FilePermCard
+        path={paths?.[0] ?? description}
+        scope={riskLevel}
+        lines={{ add: 0, del: 0 }}
+      />
+    )
+  }
+
+  if (action === 'network') {
+    return (
+      <NetPermCard
+        url={domains?.[0] ?? description}
+        method="GET"
+        reason={description}
+      />
+    )
+  }
+
+  if (action === 'mcp') {
+    return (
+      <MCPPermCard
+        server="MCP Server"
+        tool={description}
+        params={{ paths, command, domains }}
+      />
+    )
+  }
+
+  // Generic fallback for command_exec, git, etc.
+  return (
+    <div className="chat-card">
+      <div className="chat-card-h warn">
+        <span className="ico"><Icons.Shield size={14} /></span>
+        <span>权限请求 · {action}</span>
+        <span className="badge" style={{ marginLeft: 'auto', fontSize: 10 }}>{riskLevel}</span>
+      </div>
+      <div className="chat-card-body">
+        <div className="spec-grid">
+          <span className="k">描述</span>
+          <span className="v">{description}</span>
+          {command && <><span className="k">命令</span><span className="v"><code>{command}</code></span></>}
+          {paths && paths.length > 0 && <><span className="k">路径</span><span className="v"><code>{paths.join(', ')}</code></span></>}
+          {domains && domains.length > 0 && <><span className="k">域名</span><span className="v"><code>{domains.join(', ')}</code></span></>}
+        </div>
+      </div>
+      <div className="chat-card-foot">
+        <span className="spacer" />
+        <button className="btn sm" onClick={() => console.log('[PermCard] denied:', block.requestId)}>拒绝</button>
+        <button className="btn sm primary" onClick={() => console.log('[PermCard] allowed:', block.requestId)}>
+          <Icons.Check size={11} /> 允许
+        </button>
+      </div>
+    </div>
+  )
 }
 
 type MarkdownBlock =
@@ -2582,7 +2780,7 @@ function ComposerV2({
             title={manualExpanded ? '折叠输入框' : '展开输入框'}
             onClick={() => setManualExpanded((prev) => !prev)}
           >
-            {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
+            {manualExpanded ? '收起' : '展开'}
           </button>
           <div className="composer-submit-row">
             <button
