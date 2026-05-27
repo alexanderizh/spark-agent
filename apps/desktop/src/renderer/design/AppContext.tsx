@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 export type ThemeMode = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
-export type ViewId = 'home' | 'chat' | 'projects' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'settings'
+export type ViewId = 'home' | 'chat' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'settings'
 export type ChatMode = 'vibe' | 'workspace'
 
 export type Tweaks = {

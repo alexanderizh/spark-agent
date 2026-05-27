@@ -39,7 +39,6 @@ export type ShortcutId =
   | 'openSettings'
   | 'viewHome'
   | 'viewChat'
-  | 'viewProjects'
   | 'viewWorkflows'
   | 'viewAgents'
   | 'viewSkills'
@@ -76,12 +75,11 @@ export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
   { id: 'openSettings',  label: '设置',           key: ',', mod: true,  shift: false, description: '打开设置页面',                   group: 'settings' },
   { id: 'viewHome',      label: 'Home 视图',      key: '1', mod: true,  shift: false, description: '切换到 Home 视图',               group: 'navigation' },
   { id: 'viewChat',      label: 'Chat 视图',      key: '2', mod: true,  shift: false, description: '切换到 Chat 视图',               group: 'navigation' },
-  { id: 'viewProjects',  label: 'Projects 视图',  key: '3', mod: true,  shift: false, description: '切换到 Projects 视图',           group: 'navigation' },
-  { id: 'viewWorkflows', label: 'Workflows 视图', key: '4', mod: true,  shift: false, description: '切换到 Workflows 视图',          group: 'navigation' },
-  { id: 'viewAgents',    label: 'Agents 视图',    key: '5', mod: true,  shift: false, description: '切换到 Agents 视图',             group: 'navigation' },
-  { id: 'viewSkills',    label: 'Skills 视图',    key: '6', mod: true,  shift: false, description: '切换到 Skills 视图',             group: 'navigation' },
-  { id: 'viewMcp',       label: 'MCP 视图',       key: '7', mod: true,  shift: false, description: '切换到 MCP 视图',                group: 'navigation' },
-  { id: 'viewSettings',  label: 'Settings 快捷', key: '8', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
+  { id: 'viewWorkflows', label: 'Workflows 视图', key: '3', mod: true,  shift: false, description: '切换到 Workflows 视图',          group: 'navigation' },
+  { id: 'viewAgents',    label: 'Agents 视图',    key: '4', mod: true,  shift: false, description: '切换到 Agents 视图',             group: 'navigation' },
+  { id: 'viewSkills',    label: 'Skills 视图',    key: '5', mod: true,  shift: false, description: '切换到 Skills 视图',             group: 'navigation' },
+  { id: 'viewMcp',       label: 'MCP 视图',       key: '6', mod: true,  shift: false, description: '切换到 MCP 视图',                group: 'navigation' },
+  { id: 'viewSettings',  label: 'Settings 快捷', key: '7', mod: true,  shift: false, description: '切换到 Settings 视图',           group: 'navigation' },
   { id: 'toggleSidebar', label: '切换侧边栏',    key: 'b', mod: true,  shift: false, description: '折叠/展开侧边栏',               group: 'action' },
   { id: 'search',        label: '搜索',           key: 'f', mod: true,  shift: false, description: '聚焦搜索框（Chat 页面）',        group: 'action' },
   { id: 'escape',        label: '关闭',           key: 'Escape', mod: false, shift: false, description: '关闭当前对话框/面板/命令面板', group: 'action' },
@@ -147,12 +145,11 @@ type ShortcutActions = {
 const VIEW_INDEX_MAP: Record<string, ViewId> = {
   '1': 'home',
   '2': 'chat',
-  '3': 'projects',
-  '4': 'workflows',
-  '5': 'agents',
-  '6': 'skills',
-  '7': 'mcp',
-  '8': 'settings',
+  '3': 'workflows',
+  '4': 'agents',
+  '5': 'skills',
+  '6': 'mcp',
+  '7': 'settings',
 }
 
 export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] {
@@ -204,7 +201,7 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
             if (onNewProject) {
               onNewProject()
             } else {
-              setTweak('view', 'projects')
+              setTweak('view', 'chat')
             }
             break
           case 'openSettings':
@@ -212,7 +209,6 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
             break
           case 'viewHome':
           case 'viewChat':
-          case 'viewProjects':
           case 'viewWorkflows':
           case 'viewAgents':
           case 'viewSkills':

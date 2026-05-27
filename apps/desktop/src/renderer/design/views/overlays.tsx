@@ -233,14 +233,6 @@ export function CommandPalette({
       execute: () => onNavigate?.('chat'),
     },
     {
-      id: 'ui:nav-projects',
-      name: 'Projects 视图',
-      description: '切换到 Projects 视图',
-      category: 'navigation',
-      shortcutId: 'viewProjects',
-      execute: () => onNavigate?.('projects'),
-    },
-    {
       id: 'ui:nav-workflows',
       name: 'Workflows 视图',
       description: '切换到 Workflows 视图',

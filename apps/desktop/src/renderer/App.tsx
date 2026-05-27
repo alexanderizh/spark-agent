@@ -46,7 +46,6 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
       chatMode === 'workspace'
         ? { title: 'Chat', sub: 'Workspace mode' }
         : { title: 'Chat', sub: 'Vibe mode · Streaming chat & tool calls' },
-    projects: { title: 'Projects', sub: 'Workspace explorer' },
     workflows: { title: 'Workflows', sub: 'DAG orchestration' },
     agents: { title: 'Agents', sub: 'Multi-agent collaboration' },
     skills: { title: 'Skills', sub: 'Reusable agent capabilities' },
@@ -205,10 +204,12 @@ function Shell() {
   const primary = t.primary
   const info = PRIMARIES[primary]
 
+  const showInlineApproval = t.view === 'chat' && t.chatMode !== 'workspace'
   const ViewMap: Record<string, () => React.ReactElement> = {
     home: HomeView,
-    chat: t.chatMode === 'workspace' ? ProjectView : ChatView,
-    projects: ProjectView,
+    chat: t.chatMode === 'workspace'
+      ? ProjectView
+      : () => <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />,
     workflows: WorkflowView,
     agents: AgentsView,
     mcp: McpView,
@@ -313,21 +314,7 @@ function Shell() {
                 </>
               )}
             </button>
-            <button
-              className={`nav-item ${t.view === 'projects' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'projects')}
-              title="Projects"
-            >
-              <span className="nav-icon">
-                <Icons.Folder />
-              </span>
-              {isExpanded && (
-                <>
-                  <span className="nav-label">Projects</span>
-                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewProjects')}</span>
-                </>
-              )}
-            </button>
+
             <button
               className={`nav-item ${t.view === 'workflows' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'workflows')}
@@ -463,7 +450,7 @@ function Shell() {
         />
       )}
       {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', toolInput: {}, riskLevel: 'medium' }} onClose={() => setTweak('showPerm', false)} />}
-      {approvalRequest && <PermissionModal request={approvalRequest} onClose={() => setApprovalRequest(null)} />}
+      {approvalRequest && !showInlineApproval && <PermissionModal request={approvalRequest} onClose={() => setApprovalRequest(null)} />}
 
       {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}
 

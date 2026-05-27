@@ -57,7 +57,7 @@ export function HomeView() {
       const result = await openWorkspace({ rootPath: selected.filePath })
       setWorkspace(result.workspace)
       setNotice(null)
-      setTweak('view', 'projects')
+      setTweak('view', 'chat')
     } catch (error) {
       setNotice(error instanceof Error ? error.message : String(error))
     }
