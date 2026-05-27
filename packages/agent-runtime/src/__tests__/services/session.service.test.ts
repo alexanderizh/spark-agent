@@ -46,8 +46,9 @@ const mockDb = {} as never
 function makeSessionRepo(overrides = {}) {
   return {
     create: vi.fn().mockReturnValue({ id: 'sess-1', created_at: '2024-01-01T00:00:00.000Z', status: 'idle', provider_profile_id: 'prov-1', title: 'New Session', workspace_ids_json: '[]' }),
-    findByIdOrFail: vi.fn().mockReturnValue({ id: 'sess-1', provider_profile_id: 'prov-1', status: 'running', workspace_ids_json: '[]' }),
+    findByIdOrFail: vi.fn().mockReturnValue({ id: 'sess-1', provider_profile_id: 'prov-1', status: 'running', title: '新会话', workspace_ids_json: '[]' }),
     getWorkspaceIds: vi.fn().mockReturnValue([]),
+    updateTitle: vi.fn(),
     updateStatus: vi.fn(),
     list: vi.fn().mockReturnValue({ sessions: [], total: 0 }),
     ...overrides,
@@ -100,13 +101,63 @@ describe('SessionService.createSession', () => {
     const svc = new SessionService(mockDb, vi.fn())
     const result = await svc.createSession({ providerProfileId: 'prov-1' })
 
-    expect(sessionRepo.create).toHaveBeenCalledWith(expect.objectContaining({ providerProfileId: 'prov-1' }))
+    expect(sessionRepo.create).toHaveBeenCalledWith(expect.objectContaining({ providerProfileId: 'prov-1', title: '新会话' }))
     expect(result.sessionId).toBe('sess-1')
     expect(result.createdAt).toBe('2024-01-01T00:00:00.000Z')
   })
 })
 
 describe('SessionService.sendTurn', () => {
+  it('derives the default session title from the first user message', async () => {
+    const sessionRepo = makeSessionRepo()
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: '# 修复登录超时问题\n请先排查接口' })
+
+    expect(sessionRepo.updateTitle).toHaveBeenCalledWith('sess-1', '修复登录超时问题')
+  })
+
+  it('does not overwrite a custom session title', async () => {
+    const sessionRepo = makeSessionRepo({
+      findByIdOrFail: vi.fn().mockReturnValue({
+        id: 'sess-1',
+        provider_profile_id: 'prov-1',
+        title: '手动命名',
+        status: 'running',
+        workspace_ids_json: '[]',
+      }),
+    })
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: '新的需求说明' })
+
+    expect(sessionRepo.updateTitle).not.toHaveBeenCalled()
+  })
+
   it('returns turnId immediately without awaiting loop completion', async () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
@@ -204,6 +255,100 @@ describe('SessionService.sendTurn', () => {
     await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
 
     expect(createAdapter).toHaveBeenCalledWith('claude')
+  })
+
+  it('passes session runtime parameters into the agent config', async () => {
+    const sessionRepo = makeSessionRepo({
+      findByIdOrFail: vi.fn().mockReturnValue({
+        id: 'sess-1',
+        provider_profile_id: 'prov-1',
+        model_id: 'gpt-custom',
+        agent_adapter: 'codex',
+        permission_mode: 'codex-full-access',
+        reasoning_effort: 'high',
+        chat_mode: 'agent',
+        status: 'running',
+        workspace_ids_json: '[]',
+      }),
+    })
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo({
+      get: vi.fn().mockReturnValue({
+        id: 'prov-1',
+        provider_type: 'openai',
+        keystore_ref: 'ref-1',
+        config_json: '{"defaultModel":"gpt-4.1","modelIds":["gpt-4.1"]}',
+      }),
+    })
+    const rulesRepo = makeRulesRepo()
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
+
+    expect(loop.executeTurn).toHaveBeenCalledWith(
+      'sess-1',
+      expect.any(String),
+      'hello',
+      expect.objectContaining({
+        model: 'gpt-custom',
+        permissionMode: 'codex-full-access',
+        reasoningEffort: 'high',
+      }),
+    )
+  })
+
+  it('queues another turn for the same session until the active loop finishes', async () => {
+    const sessionRepo = makeSessionRepo()
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
+    let resolveFirst!: () => void
+    const firstDone = new Promise<void>((resolve) => {
+      resolveFirst = resolve
+    })
+    const firstLoop = makeLoop({ executeTurn: vi.fn().mockReturnValue(firstDone) })
+    const secondLoop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop)
+      .mockImplementationOnce(() => firstLoop as never)
+      .mockImplementationOnce(() => secondLoop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    const first = await svc.sendTurn({ sessionId: 'sess-1', message: 'first' })
+    const second = await svc.sendTurn({ sessionId: 'sess-1', message: 'second' })
+
+    expect(first.started).toBe(true)
+    expect(second.started).toBe(false)
+    expect(firstLoop.executeTurn).toHaveBeenCalledTimes(1)
+    expect(secondLoop.executeTurn).not.toHaveBeenCalled()
+
+    resolveFirst()
+    await firstDone
+
+    await vi.waitFor(() => {
+      expect(secondLoop.executeTurn).toHaveBeenCalled()
+    })
+    expect(secondLoop.executeTurn).toHaveBeenCalledWith(
+      'sess-1',
+      second.turnId,
+      'second',
+      expect.any(Object),
+    )
   })
 
   it('assigns incrementing seq to events and calls onEvent', async () => {

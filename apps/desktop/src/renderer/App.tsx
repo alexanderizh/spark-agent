@@ -48,6 +48,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
     workflows: { title: 'Workflows', sub: 'DAG orchestration' },
     agents: { title: 'Agents', sub: 'Multi-agent collaboration' },
     skills: { title: 'Skills', sub: 'Reusable agent capabilities' },
+    'skill-store': { title: 'Skill 商店', sub: 'Discover, install and manage AI Skills' },
     mcp: { title: 'MCP', sub: 'Tool servers & data sources' },
     settings: { title: 'Settings', sub: 'App & team configuration' },
   }

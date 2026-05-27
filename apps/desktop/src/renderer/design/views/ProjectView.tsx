@@ -288,7 +288,6 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
         const created = await createSession({
           providerProfileId: provider.id,
           workspaceId,
-          title: 'Workspace Session',
         })
         if (!cancelled) setSessionId(created.sessionId)
         return null

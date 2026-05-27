@@ -1,19 +1,21 @@
 import type { SkillRepository, SkillRow } from '@spark/storage'
 import type { SkillItem } from '@spark/protocol'
-
-const BUILT_IN_SKILLS: Array<{
-  id: string
-  name: string
-  desc: string
-  enabled: boolean
-}> = [
-  { id: 'built-in:search', name: 'Web 搜索', desc: '使用搜索引擎查询信息', enabled: true },
-  { id: 'built-in:calculator', name: '计算器', desc: '精确数学计算', enabled: true },
-  { id: 'built-in:code-exec', name: '代码执行', desc: '在沙箱中运行代码片段', enabled: false },
-]
+import { SkillLoader } from '../skills/skill-loader.js'
+import { BUILTIN_SKILLS } from '../skills/builtin/index.js'
+import { buildSkillSystemPrompt } from '../skills/types.js'
+import type { SkillDefinition } from '../skills/types.js'
 
 export class SkillService {
-  constructor(private readonly repo: SkillRepository) {}
+  private readonly loader: SkillLoader
+
+  constructor(private readonly repo: SkillRepository) {
+    this.loader = new SkillLoader(repo)
+  }
+
+  /** 获取 SkillLoader 实例（供 AgentLoop 集成使用） */
+  getLoader(): SkillLoader {
+    return this.loader
+  }
 
   listSkills(params?: { scope?: string }): SkillItem[] {
     return this.repo.list(params).map(toSkillItem)
@@ -30,27 +32,132 @@ export class SkillService {
   }
 
   deleteSkill(id: string): boolean {
+    // 不允许删除内置 Skill
+    if (id.startsWith('builtin:')) {
+      throw new Error('Cannot delete built-in skill')
+    }
     return this.repo.deleteById(id)
   }
 
+  /**
+   * 切换 Skill 启用/禁用状态
+   */
+  toggleSkill(id: string): SkillItem {
+    const success = this.loader.toggleSkill(id)
+    if (!success) throw new Error(`Skill not found: ${id}`)
+    const row = this.repo.get(id)
+    if (!row) throw new Error(`Skill not found: ${id}`)
+    return toSkillItem(row)
+  }
+
+  /**
+   * 获取 Skill 详情（包含完整定义）
+   */
+  getSkillDetail(id: string): SkillDetailResult | null {
+    const info = this.loader.getSkill(id)
+    if (!info) return null
+
+    const item = info.dbRecord ?? this.getOrCreateBuiltinRecord(id)
+    if (!item) return null
+
+    return {
+      item,
+      definition: info.definition,
+      builtin: info.builtin,
+    }
+  }
+
+  /**
+   * 搜索本地 Skill（内置 + 已安装）
+   */
+  searchSkills(query: string): SkillItem[] {
+    return this.loader.search(query)
+      .map((info) => info.dbRecord ?? this.getOrCreateBuiltinRecord(info.definition?.id ?? ''))
+      .filter((item): item is SkillItem => item != null)
+  }
+
+  /**
+   * 为指定 Skill 构建 system prompt
+   */
+  buildSkillSystemPrompt(skillId: string, userParams: Record<string, unknown> = {}): string | null {
+    return buildSkillSystemPrompt(
+      this.loader.getSkill(skillId)?.definition ?? {} as SkillDefinition,
+      userParams,
+    )
+  }
+
+  /**
+   * 确保内置 Skill 存在于数据库中
+   *
+   * 使用 5 个完整的内置 Skill 定义替代原来的 3 个简化版本
+   */
   ensureBuiltInSkills(): SkillItem[] {
-    for (const skill of BUILT_IN_SKILLS) {
-      if (this.repo.get(skill.id) !== undefined) continue
+    for (const def of BUILTIN_SKILLS) {
+      if (this.repo.get(def.id) !== undefined) continue
       this.repo.create({
-        id: skill.id,
+        id: def.id,
         scope: 'system',
-        name: skill.name,
-        version: '1.0.0',
-        rootPath: `builtin://${skill.id.slice('built-in:'.length)}`,
+        name: def.name,
+        version: def.version,
+        rootPath: `builtin://${def.id.slice('builtin:'.length)}`,
         manifestJson: JSON.stringify({
-          desc: skill.desc,
+          desc: def.description,
           source: '内置',
+          author: def.author,
+          category: def.category,
+          tags: def.tags,
+          systemPrompt: def.systemPrompt,
+          requiredTools: def.requiredTools,
+          parameters: def.parameters,
         }),
-        enabled: skill.enabled,
+        enabled: true,
       })
     }
     return this.listSkills()
   }
+
+  // ─── Private ────────────────────────────────────────────────────────
+
+  /**
+   * 获取或创建内置 Skill 的 SkillItem 记录
+   */
+  private getOrCreateBuiltinRecord(id: string): SkillItem | null {
+    const info = this.loader.getSkill(id)
+    if (!info?.definition) return null
+
+    // 如果数据库中已有记录
+    if (info.dbRecord) return info.dbRecord
+
+    // 返回虚拟记录（不写入数据库）
+    const def = info.definition
+    return {
+      id: def.id,
+      scope: 'system',
+      name: def.name,
+      version: def.version,
+      rootPath: `builtin://${def.id.slice('builtin:'.length)}`,
+      manifestJson: JSON.stringify({
+        desc: def.description,
+        source: '内置',
+        author: def.author,
+        category: def.category,
+        tags: def.tags,
+        systemPrompt: def.systemPrompt,
+        requiredTools: def.requiredTools,
+        parameters: def.parameters,
+      }),
+      enabled: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+  }
+}
+
+/** Skill 详情结果 */
+export interface SkillDetailResult {
+  item: SkillItem
+  definition: SkillDefinition | null
+  builtin: boolean
 }
 
 function toSkillItem(row: SkillRow): SkillItem {

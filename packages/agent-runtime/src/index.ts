@@ -23,3 +23,8 @@ export { AgentLoop, ToolRegistry, AgentEventEmitter, isCommand, parseCommand, Co
 export type { AgentConfig, AgentContext, ToolContext, RegisteredTool, ToolResult, EventListener, ParsedCommand, CommandDefinition, CommandContext, CommandResult, CommandDeps } from './core/index.js'
 export { SkillRegistryService } from './services/skill-registry/index.js'
 export type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './services/skill-registry/adapter.js'
+export { SkillLoader } from './skills/skill-loader.js'
+export type { SkillInfo } from './skills/skill-loader.js'
+export type { SkillDefinition, SkillParameter, SkillCategory, SkillExecutionContext } from './skills/types.js'
+export { buildSkillSystemPrompt } from './skills/types.js'
+export { BUILTIN_SKILLS, getBuiltinSkill } from './skills/builtin/index.js'

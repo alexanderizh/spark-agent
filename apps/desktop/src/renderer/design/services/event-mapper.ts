@@ -52,6 +52,7 @@ export class MessageBuilder {
           }
           if (event.isFinal) {
             msg.status = 'completed'
+            this.finishStreamingBlocks(msg)
           }
           break
         }
@@ -69,6 +70,7 @@ export class MessageBuilder {
 
         if (event.isFinal) {
           msg.status = 'completed'
+          this.finishStreamingBlocks(msg)
         }
         break
       }
@@ -130,8 +132,13 @@ export class MessageBuilder {
           ? this.messages.find(m => m.id === this.currentAssistantId)
           : null
         if (msg) {
-          if (event.status === 'completed') msg.status = 'completed'
-          else if (event.status === 'error' || event.status === 'cancelled') msg.status = 'error'
+          if (event.status === 'completed') {
+            msg.status = 'completed'
+            this.finishStreamingBlocks(msg)
+          } else if (event.status === 'error' || event.status === 'cancelled') {
+            msg.status = 'error'
+            this.finishStreamingBlocks(msg)
+          }
         }
         break
       }
@@ -139,6 +146,7 @@ export class MessageBuilder {
       case 'agent_error': {
         const msg = this.getOrCreateAssistant(event.id)
         msg.status = 'error'
+        this.finishStreamingBlocks(msg)
         msg.blocks.push({ kind: 'error', code: event.code, message: event.message, retryable: event.retryable })
         break
       }
@@ -204,5 +212,13 @@ export class MessageBuilder {
     this.messages.push(msg)
     this.currentAssistantId = msg.id
     return msg
+  }
+
+  private finishStreamingBlocks(msg: UIMessage): void {
+    for (const block of msg.blocks) {
+      if (block.kind === 'text' || block.kind === 'thinking' || block.kind === 'terminal') {
+        block.isStreaming = false
+      }
+    }
   }
 }

@@ -19,6 +19,9 @@ export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: R
 type AgentAdapterKind = 'claude' | 'codex'
 type PendingTurn = { turnId: string; message: string }
 
+const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
+const SESSION_TITLE_MAX_LENGTH = 40
+
 export class SessionService {
   private activeLoops = new Map<string, AgentLoop>()  // sessionId → AgentLoop
   private pendingTurns = new Map<string, PendingTurn[]>()
@@ -47,7 +50,7 @@ export class SessionService {
     const row = sessionRepo.create({
       id,
       kind: 'agent',
-      title: params.title ?? 'New Session',
+      title: params.title?.trim() || '新会话',
       status: 'idle',
       projectId: params.workspaceId ?? 'default',
       workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
@@ -119,19 +122,29 @@ export class SessionService {
   async sendTurn(params: {
     sessionId: string
     message: string
+    /** 可选：要使用的 Skill ID */
+    skillId?: string
+    /** 可选：Skill 参数 */
+    skillParams?: Record<string, unknown>
   }): Promise<{ turnId: string; started: boolean }> {
-    const { sessionId, message } = params
+    const { sessionId, message, skillId, skillParams } = params
     const turnId = crypto.randomUUID()
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(sessionId, { turnId, message })
       return { turnId, started: false }
     }
 
-    await this.startTurn(sessionId, turnId, message)
+    await this.startTurn(sessionId, turnId, message, skillId, skillParams)
     return { turnId, started: true }
   }
 
-  private async startTurn(sessionId: string, turnId: string, message: string): Promise<void> {
+  private async startTurn(
+    sessionId: string,
+    turnId: string,
+    message: string,
+    skillId?: string,
+    skillParams?: Record<string, unknown>,
+  ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(sessionId, { turnId, message })
       return
@@ -144,6 +157,11 @@ export class SessionService {
     const session = sessionRepo.findByIdOrFail(sessionId)
     if (session.provider_profile_id == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
+    }
+
+    const existingEventCount = eventRepo.countBySession(sessionId)
+    if (existingEventCount === 0 && shouldDeriveSessionTitle(session.title)) {
+      sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
 
     const provider = providerRepo.get(session.provider_profile_id)
@@ -174,6 +192,8 @@ export class SessionService {
     }
 
     const agentAdapter = getAgentAdapterFromSession(session.agent_adapter, session.chat_mode, provider.provider_type)
+    const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
+    const permissionMode = this.getEffectivePermissionMode(sessionId, agentAdapter, storedPermissionMode)
     const adapter = createAdapter(agentAdapter)
 
     // Workspace root path for tools
@@ -197,11 +217,24 @@ export class SessionService {
       .map((r) => r.content)
 
     const tools = new ToolRegistry()
+
+    // Build skill system prompt if skillId is provided
+    let skillSystemPrompt: string | undefined
+    if (skillId != null) {
+      const { SkillLoader } = await import('../skills/skill-loader.js')
+      const { SkillRepository } = await import('@spark/storage')
+      const skillRepo = new SkillRepository(this.db)
+      const loader = new SkillLoader(skillRepo)
+      const sp = loader.buildSystemPrompt(skillId, skillParams ?? {})
+      if (sp) skillSystemPrompt = sp
+    }
+
     const agentConfig: AgentConfig = {
       adapter,
       apiKey,
       model,
       ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
+      ...(skillSystemPrompt != null ? { skillSystemPrompt } : {}),
       tools,
       toolContext: { workspaceRootPath },
       context: {
@@ -211,13 +244,13 @@ export class SessionService {
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       ...(config.temperature != null ? { temperature: config.temperature } : {}),
       ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
-      permissionMode: getPermissionModeFromSession(session.permission_mode, agentAdapter),
+      permissionMode,
       ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
     }
 
     // Initialize seq counter from existing event count
     if (!this.seqCounters.has(sessionId)) {
-      this.seqCounters.set(sessionId, eventRepo.countBySession(sessionId))
+      this.seqCounters.set(sessionId, existingEventCount)
     }
 
     const loop = new AgentLoop()
@@ -274,6 +307,19 @@ export class SessionService {
     }
     if (queue.length === 0) this.pendingTurns.delete(sessionId)
     void this.startTurn(sessionId, next.turnId, next.message)
+  }
+
+  private getEffectivePermissionMode(
+    sessionId: string,
+    adapter: AgentAdapterKind,
+    storedMode: SessionPermissionMode,
+  ): SessionPermissionMode {
+    const override = this.approvalOverrides.get(sessionId)
+    if (override === false) return adapter === 'claude' ? 'claude-bypass' : 'codex-full-access'
+    if (override === true && (storedMode === 'claude-bypass' || storedMode === 'codex-full-access')) {
+      return adapter === 'claude' ? 'claude-ask' : 'codex-default'
+    }
+    return storedMode
   }
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
@@ -466,6 +512,34 @@ export class SessionService {
     eventRepo.deleteBySession(sessionId)
     return { deleted: sessionRepo.delete(sessionId) }
   }
+}
+
+function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
+  const normalized = title?.trim() ?? ''
+  return DEFAULT_SESSION_TITLES.has(normalized) || normalized.endsWith(' 会话')
+}
+
+function deriveSessionTitle(message: string): string {
+  const normalized = message
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0)
+    ?.replace(/^#{1,6}\s+/, '')
+    .replace(/^[-*+]\s+/, '')
+    .replace(/^\d+[.)]\s+/, '')
+    .replace(/^>+\s*/, '')
+    .replace(/[`*_~[\](){}<>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+
+  if (normalized == null || normalized.length === 0) return '新会话'
+  return truncateTitle(normalized)
+}
+
+function truncateTitle(title: string): string {
+  const chars = Array.from(title)
+  if (chars.length <= SESSION_TITLE_MAX_LENGTH) return title
+  return `${chars.slice(0, SESSION_TITLE_MAX_LENGTH - 3).join('').trimEnd()}...`
 }
 
 function getAgentAdapterFromSession(value: string | null | undefined, legacyChatMode: string | null | undefined, providerType: string | null): AgentAdapterKind {

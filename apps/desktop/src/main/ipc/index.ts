@@ -410,6 +410,29 @@ export function registerAllIpcHandlers(): void {
     return { success }
   })
 
+  typedIpcHandle('skill:detail', async (req) => {
+    const detail = getSkillService().getSkillDetail(req.id)
+    return { detail }
+  })
+
+  typedIpcHandle('skill:toggle', async (req) => {
+    const skill = getSkillService().toggleSkill(req.id)
+    return { skill }
+  })
+
+  typedIpcHandle('skill:search', async (req) => {
+    const skills = getSkillService().searchSkills(req.query)
+    return { skills }
+  })
+
+  typedIpcHandle('skill:execute', async (req) => {
+    const svc = getSkillService()
+    const systemPrompt = svc.buildSkillSystemPrompt(req.skillId, req.params ?? {})
+    if (!systemPrompt) throw new Error(`Skill not found: ${req.skillId}`)
+    const requiredTools = svc.getLoader().getRequiredTools(req.skillId)
+    return { systemPrompt, requiredTools }
+  })
+
   // ─── Skill Registry Handlers (Skill Store) ─────────────────────────────
 
   typedIpcHandle('skill-registry:list', async (_req) => {

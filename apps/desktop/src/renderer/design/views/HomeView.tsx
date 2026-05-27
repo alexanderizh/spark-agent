@@ -75,7 +75,6 @@ export function HomeView() {
     try {
       await createSession({
         providerProfileId: provider.id,
-        title: '新会话',
         ...(workspace == null ? {} : { workspaceId: workspace.id }),
       })
       await refresh()

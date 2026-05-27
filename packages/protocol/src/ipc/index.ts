@@ -662,6 +662,72 @@ export interface SkillDeleteResponse {
   success: boolean
 }
 
+// ─── Skill Extended Channels ────────────────────────────────────────────
+
+/** Skill 参数定义 */
+export interface SkillParameterDef {
+  name: string
+  type: 'string' | 'number' | 'boolean' | 'select'
+  label: string
+  description?: string
+  defaultValue?: unknown
+  options?: Array<{ label: string; value: string }>
+  required?: boolean
+}
+
+/** Skill 详情（含定义） */
+export interface SkillDetailInfo {
+  item: SkillItem
+  definition: {
+    id: string
+    name: string
+    description: string
+    version: string
+    author: string
+    category: string
+    icon?: string
+    tags: string[]
+    systemPrompt: string
+    requiredTools: string[]
+    parameters: SkillParameterDef[]
+  } | null
+  builtin: boolean
+}
+
+export interface SkillDetailRequest {
+  id: string
+}
+
+export interface SkillDetailResponse {
+  detail: SkillDetailInfo | null
+}
+
+export interface SkillToggleRequest {
+  id: string
+}
+
+export interface SkillToggleResponse {
+  skill: SkillItem
+}
+
+export interface SkillSearchRequest {
+  query: string
+}
+
+export interface SkillSearchResponse {
+  skills: SkillItem[]
+}
+
+export interface SkillExecuteRequest {
+  skillId: string
+  params?: Record<string, unknown>
+}
+
+export interface SkillExecuteResponse {
+  systemPrompt: string
+  requiredTools: string[]
+}
+
 // ─── Skill Registry Channels (Skill Store) ─────────────────────────────────
 
 /** 远程市场中的 Skill 条目 */
@@ -917,6 +983,10 @@ export interface IpcChannelMap {
   'skill:create': [SkillCreateRequest, SkillCreateResponse]
   'skill:update': [SkillUpdateRequest, SkillUpdateResponse]
   'skill:delete': [SkillDeleteRequest, SkillDeleteResponse]
+  'skill:detail': [SkillDetailRequest, SkillDetailResponse]
+  'skill:toggle': [SkillToggleRequest, SkillToggleResponse]
+  'skill:search': [SkillSearchRequest, SkillSearchResponse]
+  'skill:execute': [SkillExecuteRequest, SkillExecuteResponse]
 
   // Skill Registry (Skill Store)
   'skill-registry:list': [SkillRegistryListRequest, SkillRegistryListResponse]

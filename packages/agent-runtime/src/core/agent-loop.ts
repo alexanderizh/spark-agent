@@ -33,6 +33,8 @@ export interface AgentConfig {
   model: string
   apiEndpoint?: string
   systemPrompt?: string
+  /** Skill 注入的 system prompt（在 base system prompt 之前） */
+  skillSystemPrompt?: string
   tools: ToolRegistry
   toolContext: ToolContext
   maxTurnIterations?: number
@@ -72,8 +74,8 @@ export class AgentLoop {
     const { adapter, apiKey, model, apiEndpoint, tools, toolContext, temperature, maxTokens, reasoningEffort, permissionMode, approvalCallback, context } = config
     const maxIter = config.maxTurnIterations ?? 20
 
-    // Build system prompt with injected context
-    const systemPrompt = buildSystemPrompt(config.systemPrompt, context)
+    // Build system prompt with injected context and optional skill prompt
+    const systemPrompt = buildSystemPrompt(config.systemPrompt, context, config.skillSystemPrompt)
 
     this.abortController = new AbortController()
     const signal = this.abortController.signal
@@ -292,9 +294,12 @@ function getToolCategory(toolName: string): 'read' | 'write' | 'command' | 'dang
 }
 
 /**
- * Build the final system prompt by injecting structured context.
+ * Build the final system prompt by injecting structured context and optional skill prompt.
  *
  * Format:
+ *   [Skill Instructions]
+ *   skill system prompt...
+ *
  *   [Workspace]
  *   Name: xxx
  *   Path: xxx
@@ -309,22 +314,31 @@ function getToolCategory(toolName: string): 'read' | 'write' | 'command' | 'dang
  *
  *   {original system prompt}
  */
-function buildSystemPrompt(basePrompt: string | undefined, context: AgentContext | undefined): string | undefined {
-  if (context == null) return basePrompt
+function buildSystemPrompt(
+  basePrompt: string | undefined,
+  context: AgentContext | undefined,
+  skillPrompt?: string,
+): string | undefined {
+  if (context == null && !skillPrompt) return basePrompt
 
   const sections: string[] = []
 
-  if (context.workspace != null) {
+  // Skill prompt takes highest priority (prepended first)
+  if (skillPrompt != null && skillPrompt.length > 0) {
+    sections.push(`[Skill Instructions]\n${skillPrompt}`)
+  }
+
+  if (context?.workspace != null) {
     sections.push(
       `[Workspace]\nName: ${context.workspace.name}\nPath: ${context.workspace.rootPath}\nType: ${context.workspace.projectKind}`,
     )
   }
 
-  if (context.projectRules != null && context.projectRules.length > 0) {
+  if (context?.projectRules != null && context.projectRules.length > 0) {
     sections.push(`[Rules]\n${context.projectRules.map((r) => `- ${r}`).join('\n')}`)
   }
 
-  if (context.sessionSummary != null && context.sessionSummary.length > 0) {
+  if (context?.sessionSummary != null && context.sessionSummary.length > 0) {
     sections.push(`[Session Summary]\n${context.sessionSummary}`)
   }
 

@@ -137,18 +137,18 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
     const load = async () => {
       try {
         if (debouncedQuery.trim()) {
-          const res = await searchSkills({
+          const searchParams: { query: string; registryId?: string; category?: string; limit: number } = {
             query: debouncedQuery,
-            registryId: activeRegistry ?? undefined,
-            category: activeCategory !== '全部' ? activeCategory : undefined,
             limit: 30,
-          })
+          }
+          if (activeRegistry != null) searchParams.registryId = activeRegistry
+          if (activeCategory !== '全部') searchParams.category = activeCategory
+          const res = await searchSkills(searchParams)
           if (!cancelled) setSkills(res.skills)
         } else {
-          const res = await featuredSkills({
-            registryId: activeRegistry ?? undefined,
-            limit: 24,
-          })
+          const featuredParams: { registryId?: string; limit: number } = { limit: 24 }
+          if (activeRegistry != null) featuredParams.registryId = activeRegistry
+          const res = await featuredSkills(featuredParams)
           if (!cancelled) setSkills(res.skills)
         }
       } catch (err) {

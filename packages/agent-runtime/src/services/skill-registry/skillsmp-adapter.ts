@@ -240,7 +240,7 @@ export class SkillsMPAdapter implements SkillRegistryAdapter {
       downloadCount: estimatedDownloads,
       homepageUrl: skill.githubUrl || skill.skillUrl,
       manifestUrl: skill.skillUrl || skill.githubUrl,
-      iconUrl: skill.iconUrl,
+      ...(skill.iconUrl != null ? { iconUrl: skill.iconUrl } : {}),
     })
   }
 
