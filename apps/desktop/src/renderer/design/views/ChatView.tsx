@@ -6,6 +6,7 @@ import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
 import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, ContextWarn, Checkpoint, SandboxNote, QuickActions, ToolChooser } from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
+import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
@@ -3383,10 +3384,14 @@ function ChatInspector({
       <div className="inspector-section">
         <h4>可用工具</h4>
         <div className="tool-chip-list">
-          {['read_file', 'write_file', 'list_directory', 'search_files'].map(t => (
-            <span key={t} className="tool-chip">
+          {CODING_AGENT_TOOLS.map((tool) => (
+            <span
+              key={tool.name}
+              className="tool-chip"
+              title={`${tool.group} · ${tool.status === 'built-in' ? '内置' : '扩展接入'}`}
+            >
               <Icons.Wrench />
-              {t}
+              {tool.name}
             </span>
           ))}
         </div>
