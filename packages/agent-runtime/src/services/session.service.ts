@@ -20,6 +20,7 @@ import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
+import { ProjectContextService } from './project-context.service.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
 import { createLogger } from '@spark/shared'
@@ -367,6 +368,7 @@ export class SessionService {
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
     let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
+    let projectContext = new ProjectContextService().discover(undefined)
     const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
     const primaryWorkspaceId = workspaceIds[0]
     if (workspaceIds.length > 0) {
@@ -375,15 +377,20 @@ export class SessionService {
       if (ws != null) {
         workspaceRootPath = ws.root_path
         workspaceInfo = { name: ws.name, rootPath: ws.root_path, projectKind: ws.project_kind }
+        projectContext = new ProjectContextService().discover(ws.root_path)
       }
     }
 
-    // Query active rules (system + project scope)
+    // Query active rules (system + current project scope) and append workspace files.
     const rulesRepo = new RulesRepository(this.db)
     const activeRules = rulesRepo.list({ scope: 'system' })
-      .concat(rulesRepo.list({ scope: 'project' }))
+      .concat(
+        rulesRepo.list({ scope: 'project' })
+          .filter((r) => r.scope_ref == null || primaryWorkspaceId == null || r.scope_ref === primaryWorkspaceId),
+      )
       .filter((r) => r.enabled === 1)
       .map((r) => r.content)
+      .concat(projectContext.rules)
 
     // Build explicit skill prompt if skillId is provided; available skills are composed below.
     let explicitSkillPrompt: string | undefined
@@ -402,6 +409,8 @@ export class SessionService {
       },
       explicitSkillPrompt,
     )
+    const composedSystemPrompt = joinPromptSections(runtimeContext.systemPrompt, projectContext.systemPrompt)
+    const composedSkillSystemPrompt = joinPromptSections(runtimeContext.skillSystemPrompt, projectContext.skillSystemPrompt)
 
     // Initialize seq counter from existing event count
     if (!this.seqCounters.has(sessionId)) {
@@ -418,8 +427,8 @@ export class SessionService {
         workspaceRootPath,
         permissionMode,
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
-        ...(runtimeContext.systemPrompt != null ? { systemPrompt: runtimeContext.systemPrompt } : {}),
-        ...(runtimeContext.skillSystemPrompt != null ? { skillSystemPrompt: runtimeContext.skillSystemPrompt } : {}),
+        ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
+        ...(composedSkillSystemPrompt != null ? { skillSystemPrompt: composedSkillSystemPrompt } : {}),
         maxTurnCount: this.iterationOverrides.get(sessionId) ?? 25,
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
@@ -452,8 +461,8 @@ export class SessionService {
       apiKey,
       model,
       ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
-      ...(runtimeContext.systemPrompt != null ? { systemPrompt: runtimeContext.systemPrompt } : {}),
-      ...(runtimeContext.skillSystemPrompt != null ? { skillSystemPrompt: runtimeContext.skillSystemPrompt } : {}),
+      ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
+      ...(composedSkillSystemPrompt != null ? { skillSystemPrompt: composedSkillSystemPrompt } : {}),
       tools,
       toolContext: { workspaceRootPath, sessionId },
       context: {
@@ -1027,6 +1036,14 @@ function buildModelHistoryMessages(eventRepo: EventRepository, sessionId: string
 
   if (openToolCallIds.size === 0) return messages
   return messages.filter((message) => !isUnresolvedToolUseMessage(message, openToolCallIds))
+}
+
+function joinPromptSections(...sections: Array<string | undefined>): string | undefined {
+  const joined = sections
+    .map((section) => section?.trim())
+    .filter((section): section is string => section != null && section.length > 0)
+    .join('\n\n')
+  return joined.length > 0 ? joined : undefined
 }
 
 function parseAgentEvent(json: string): AgentEvent | null {
