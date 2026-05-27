@@ -90,7 +90,10 @@ const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
 
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
-  const [active, setActive] = useState<SessionId | null>(() => window.localStorage.getItem(LAST_SESSION_KEY) ?? null)
+  const [active, setActive] = useState<SessionId | null>(() => {
+    const stored = window.localStorage.getItem(LAST_SESSION_KEY)
+    return stored == null ? null : stored as SessionId
+  })
   const [showInspector, setShowInspector] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -127,7 +130,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [projectPath, setProjectPath] = useState('')
   const [notice, setNotice] = useState('')
   const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
+  const [clearTrigger, setClearTrigger] = useState(0)
   const { toast } = useToast()
+  const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -196,6 +201,14 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     refreshProjectsAndSessions().catch(console.error)
   }
 
+  const handleClearMessages = useCallback(() => {
+    if (!active) return
+    clearEvents({ sessionId: active }).then(() => {
+      setClearTrigger(prev => prev + 1)
+      refreshSessions()
+    }).catch(console.error)
+  }, [active, clearEvents, refreshSessions])
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       refreshProjectsAndSessions().catch(console.error)
@@ -219,9 +232,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     if (!found) {
       setActive(null)
     } else if (activeWorkspaceId == null && found.workspaceIds.length > 0) {
-      setActiveWorkspaceId(found.workspaceIds[0])
+      setActiveWorkspaceId(found.workspaceIds[0] ?? null)
     }
-  }, [sessions])
+  }, [active, activeWorkspaceId, sessions])
 
   // Debounced search handler
   const handleSearchChange = useCallback((value: string) => {
@@ -698,6 +711,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           agentStatus={agentStatus}
           showInspector={showInspector}
           setShowInspector={setShowInspector}
+          {...(active ? { onClearMessages: handleClearMessages } : {})}
         />
         {active ? (
           <>
@@ -713,6 +727,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               }}
               onContextUsageChange={setContextUsage}
               onPlanProposed={setProposedPlan}
+              clearTrigger={clearTrigger}
             />
           </>
         ) : (
@@ -1138,13 +1153,26 @@ function ChatTabbar({
   agentStatus,
   showInspector,
   setShowInspector,
+  onClearMessages,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
   agentStatus: string
   showInspector: boolean
   setShowInspector: (v: boolean) => void
+  onClearMessages?: () => void
 }) {
+  const [showClearConfirm, setShowClearConfirm] = useState(false)
+
+  const handleClearClick = () => {
+    setShowClearConfirm(true)
+  }
+
+  const handleClearConfirm = () => {
+    setShowClearConfirm(false)
+    onClearMessages?.()
+  }
+
   return (
     <div className="chat-tabbar">
       <div className="chat-title-block">
@@ -1164,6 +1192,16 @@ function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
+        {showClearConfirm && onClearMessages && (
+          <div className="clear-confirm-bar">
+            <span className="clear-confirm-text">确认清空？</span>
+            <button className="btn ghost sm clear-confirm-cancel" onClick={() => setShowClearConfirm(false)}>取消</button>
+            <button className="btn sm danger-btn" onClick={handleClearConfirm}>清空</button>
+          </div>
+        )}
+        {!showClearConfirm && onClearMessages && (
+          <button className="icon-btn" title="清空会话消息" onClick={handleClearClick}><Icons.Trash size={14} /></button>
+        )}
         <button className={`icon-btn ${showInspector ? 'active' : ''}`} onClick={() => setShowInspector(!showInspector)}><Icons.PanelRight /></button>
         <button className="icon-btn"><Icons.More /></button>
       </div>
@@ -1248,6 +1286,7 @@ function ChatStream({
   onSessionStatusChange,
   onContextUsageChange,
   onPlanProposed,
+  clearTrigger,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -1257,6 +1296,8 @@ function ChatStream({
   onSessionStatusChange: (status: SessionSummary['status']) => void
   onContextUsageChange: (snapshot: ContextUsageState | null) => void
   onPlanProposed: (plan: string) => void
+  /** 递增时清空 ChatStream 内部消息状态 */
+  clearTrigger?: number
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -1269,6 +1310,7 @@ function ChatStream({
   const historyLoadIdRef = useRef(0)
   const usageRef = useRef<SessionUsageData>({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
+  const { invoke: deleteMessageEvents } = useIpcInvoke('session:delete-message')
 
   // ── 会话消息缓存：避免切换时从空白开始 ──
   // 缓存每个会话最后渲染的消息列表，切回时立即显示缓存内容，再异步更新
@@ -1398,6 +1440,19 @@ function ChatStream({
     }
   }, [])
 
+  // 外部触发清空消息
+  useEffect(() => {
+    if (clearTrigger === undefined || clearTrigger === 0) return
+    builderRef.current.clearAll()
+    sessionCacheRef.current.delete(sessionId)
+    setMessages([])
+    onMessagesChange([])
+    onStatusChange('')
+    onUsageDataChange({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
+    onContextUsageChange(null)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearTrigger])
+
   // Track user scroll position to avoid auto-scrolling when user scrolls up
   useEffect(() => {
     const el = streamRef.current
@@ -1499,12 +1554,22 @@ function ChatStream({
   // 是否有正在流式传输的消息
   const hasStreamingMsg = messages.some(m => m.status === 'streaming')
 
+  const handleDeleteMessage = useCallback((msgId: string, eventIds: string[]) => {
+    deleteMessageEvents({ sessionId, eventIds }).then(() => {
+      builderRef.current.removeMessage(msgId)
+      sessionCacheRef.current.delete(sessionId)
+      const nextMessages = builderRef.current.getAllMessages()
+      setMessages(nextMessages)
+      onMessagesChange(nextMessages)
+    }).catch(console.error)
+  }, [deleteMessageEvents, sessionId, onMessagesChange])
+
   return (
     <div className="chat-stream" ref={streamRef}>
       <div className="chat-stream-inner">
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
-            <UserMsg key={msg.id} timestamp={msg.timestamp} blocks={msg.blocks}>{renderBlocks(msg.blocks)}</UserMsg>
+            <UserMsg key={msg.id} timestamp={msg.timestamp} blocks={msg.blocks} onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}>{renderBlocks(msg.blocks)}</UserMsg>
           ) : msg.status === 'streaming' ? (
             <AgentMsg
               key={msg.id}
@@ -1523,6 +1588,7 @@ function ChatStream({
               messageStatus={msg.status}
               isLatest={index === messages.length - 1}
               timestamp={msg.timestamp}
+              onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
             />
           )
         )}
@@ -2214,8 +2280,8 @@ function formatMsgTime(timestamp?: string): string {
   return `${hh}:${mm}`
 }
 
-/** 消息悬浮操作栏：时间 + 复制按钮，放在气泡内部。position: left=agent消息(左下角), right=用户消息(右下角) */
-function MessageHoverBar({ timestamp, textContent, position }: { timestamp?: string | undefined; textContent: string; position: 'left' | 'right' }) {
+/** 消息悬浮操作栏：时间 + 复制按钮 + 删除按钮，放在气泡内部。position: left=agent消息(左下角), right=用户消息(右下角) */
+function MessageHoverBar({ timestamp, textContent, position, onDelete }: { timestamp?: string | undefined; textContent: string; position: 'left' | 'right'; onDelete?: () => void }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
@@ -2233,6 +2299,11 @@ function MessageHoverBar({ timestamp, textContent, position }: { timestamp?: str
       <button className="msg-hover-copy" title="复制" onClick={handleCopy}>
         {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
       </button>
+      {onDelete && (
+        <button className="msg-hover-delete" title="删除" onClick={onDelete}>
+          <Icons.Trash size={12} />
+        </button>
+      )}
     </div>
   )
 }
@@ -2246,14 +2317,14 @@ function extractTextFromBlocks(blocks: UIBlock[]): string {
     .trim()
 }
 
-function UserMsg({ children, timestamp, blocks }: { children: ReactNode; timestamp?: string | undefined; blocks: UIBlock[] }) {
+function UserMsg({ children, timestamp, blocks, onDelete }: { children: ReactNode; timestamp?: string | undefined; blocks: UIBlock[]; onDelete?: () => void }) {
   const textContent = extractTextFromBlocks(blocks)
   return (
     <div className="msg msg-user">
       <div className="msg-bubble msg-bubble-user">
         <div className="msg-content">{children}</div>
       </div>
-      <MessageHoverBar timestamp={timestamp} textContent={textContent} position="right" />
+      <MessageHoverBar timestamp={timestamp} textContent={textContent} position="right" {...(onDelete ? { onDelete } : {})} />
     </div>
   )
 }
@@ -2265,6 +2336,7 @@ function AgentMsg({
   messageStatus,
   isLatest,
   timestamp,
+  onDelete,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -2272,6 +2344,7 @@ function AgentMsg({
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
+  onDelete?: () => void
 }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
@@ -2331,7 +2404,7 @@ function AgentMsg({
           />
         ))}
         {isCancelled && <StoppedMarker />}
-        {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} position="left" />}
+        {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} position="left" {...(onDelete ? { onDelete } : {})} />}
       </div>
     </div>
   )
@@ -2993,6 +3066,10 @@ function ComposerV2({
     })
   }, [manualExpanded, value])
 
+  useEffect(() => {
+    textareaRef.current?.focus()
+  }, [session?.id])
+
   const dispatchMessage = useCallback(async (text: string) => {
     // 斜杠命令拦截：以 / 开头的消息走 command:execute
     if (text.startsWith('/')) {
@@ -3019,11 +3096,15 @@ function ComposerV2({
           }
         }
         const res = await window.spark.invoke('command:execute', { sessionId, message: text })
-        if (res.success) {
-          toast.success(res.message || '命令执行成功')
-        } else {
-          toast.warning(res.message || '命令执行失败')
+        if (res.forwardToAgent) {
+          // 转发给 Agent：作为普通消息发送
+          setSending(false)
+          const sendRes = await sendTurn({ sessionId, message: text })
+          if (!sendRes.started) toast.info('上一条任务仍在执行，消息已加入队列。')
+          onSent(sessionId)
+          return
         }
+        // 命令结果已通过事件流注入到聊天中，无需 Toast
         onSent(sessionId)
       } catch (err) {
         console.error('命令执行失败', err)

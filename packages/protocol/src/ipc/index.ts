@@ -124,6 +124,23 @@ export interface SessionDeleteResponse {
   deleted: boolean
 }
 
+export interface SessionClearEventsRequest {
+  sessionId: SessionId
+}
+
+export interface SessionClearEventsResponse {
+  cleared: boolean
+}
+
+export interface SessionDeleteMessageRequest {
+  sessionId: SessionId
+  eventIds: string[]
+}
+
+export interface SessionDeleteMessageResponse {
+  deleted: number
+}
+
 /**
  * 为指定 session 设置临时的 maxTurnIterations 上限。
  * 主要场景：用户在收到 MAX_ITERATIONS 错误后通过 UI 调高上限。
@@ -391,6 +408,14 @@ export interface DialogOpenDirectoryRequest {
 export interface DialogOpenDirectoryResponse {
   canceled: boolean
   filePath?: string
+}
+
+// ─── App Paths Channels ──────────────────────────────────────────────────────
+
+export interface AppGetTempProjectDirRequest {}
+
+export interface AppGetTempProjectDirResponse {
+  tempDir: string
 }
 
 // ─── Rules Channels ─────────────────────────────────────────────────────────
@@ -1239,6 +1264,27 @@ export interface WorkspaceFileChangePayload {
 
 // ─── Command Channels ────────────────────────────────────────────────────────
 
+export type CommandLayer = 'sdk' | 'builtin' | 'skill'
+
+export type CommandGroup =
+  | 'session'
+  | 'model'
+  | 'context'
+  | 'permission'
+  | 'workflow'
+  | 'agent'
+  | 'mcp'
+  | 'skill'
+  | 'resource'
+  | 'team'
+  | 'git'
+  | 'utility'
+  | 'system'
+
+export type CommandScope = 'global' | 'workspace' | 'session' | 'workflow' | 'team'
+
+export type CommandRisk = 'none' | 'low' | 'medium' | 'high'
+
 export interface CommandExecuteRequest {
   sessionId: string
   message: string
@@ -1246,20 +1292,29 @@ export interface CommandExecuteRequest {
 
 export interface CommandExecuteResponse {
   success: boolean
-  message: string
+  message?: string
   data?: Record<string, unknown>
+  forwardToAgent?: boolean
+  inChat?: boolean
 }
 
 export interface CommandListRequest {}
 
+export interface CommandListItem {
+  id: string
+  name: string
+  aliases: string[]
+  layer: CommandLayer
+  group: CommandGroup
+  description: string
+  scope: CommandScope
+  risk: CommandRisk
+  usage?: string
+  hasSubcommands?: boolean
+}
+
 export interface CommandListResponse {
-  commands: Array<{
-    name: string
-    description: string
-    category: string
-    usage?: string
-    isDangerous?: boolean
-  }>
+  commands: CommandListItem[]
 }
 
 export interface CommandParseRequest {
@@ -1269,8 +1324,11 @@ export interface CommandParseRequest {
 export interface CommandParseResponse {
   isCommand: boolean
   name?: string
+  subcommand?: string
   args?: string[]
   flags?: Record<string, string>
+  targets?: string[]
+  freeText?: string
 }
 
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
@@ -1300,6 +1358,8 @@ export interface IpcChannelMap {
   'session:update': [SessionUpdateRequest, SessionUpdateResponse]
   'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
   'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
+  'session:clear-events': [SessionClearEventsRequest, SessionClearEventsResponse]
+  'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]
@@ -1324,6 +1384,9 @@ export interface IpcChannelMap {
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
+
+  // App Paths
+  'app:get-temp-project-dir': [AppGetTempProjectDirRequest, AppGetTempProjectDirResponse]
 
   // Rules
   'rules:list': [RulesListRequest, RulesListResponse]

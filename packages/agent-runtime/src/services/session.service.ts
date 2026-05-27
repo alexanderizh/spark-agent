@@ -8,7 +8,7 @@ import {
   McpServerRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse } from '@spark/protocol'
+import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse, UserMessageEvent, AssistantMessageEvent } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
@@ -161,6 +161,113 @@ export class SessionService {
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
     if (result.forwardToAgent) return { isCommand: false }
     return { isCommand: true, result }
+  }
+
+  async executeCommandAsEvents(params: {
+    sessionId: string
+    message: string
+  }): Promise<{ isCommand: boolean; forwardToAgent?: boolean }> {
+    if (!isCommand(params.message)) return { isCommand: false }
+    const parsed = parseCommand(params.message)
+    if (parsed == null) return { isCommand: false }
+
+    const sessionRepo = new SessionRepository(this.db)
+    const providerRepo = new ProviderProfileRepository(this.db)
+    const eventRepo = new EventRepository(this.db)
+    const session = sessionRepo.get(params.sessionId)
+
+    let workspacePath: string | null = null
+    try {
+      const workspaceIds: string[] = session?.workspace_ids_json ? JSON.parse(session.workspace_ids_json) : []
+      const workspaceId = workspaceIds[0]
+      if (workspaceId) {
+        const wsRepo = new WorkspaceRepository(this.db)
+        const ws = wsRepo.get(workspaceId)
+        workspacePath = ws?.root_path ?? null
+      }
+    } catch { /* ignore */ }
+
+    const deps: CommandDeps = {
+      getSession: (id) => {
+        const s = sessionRepo.get(id)
+        if (s == null) return null
+        return { title: s.title, status: s.status, modelId: s.model_id ?? null, providerProfileId: s.provider_profile_id ?? '' }
+      },
+      updateSession: async (id, fields) => { sessionRepo.updateRuntime(id, fields) },
+      clearSessionEvents: async (id) => {
+        eventRepo.deleteBySession(id)
+        this.seqCounters.delete(id)
+      },
+      getProviderName: (id) => providerRepo.get(id)?.name ?? null,
+      setApprovalMode: (id, enabled) => { this.approvalOverrides.set(id, enabled) },
+      getWorkspacePath: () => workspacePath,
+      execShell: async (command, cwd) => {
+        const { exec } = await import('node:child_process')
+        const { promisify } = await import('node:util')
+        const execAsync = promisify(exec)
+        try {
+          const { stdout, stderr } = await execAsync(command, { cwd: cwd ?? workspacePath ?? undefined, timeout: 30000, maxBuffer: 1024 * 1024 })
+          return { stdout: stdout || '', stderr: stderr || '', exitCode: 0 }
+        } catch (err: unknown) {
+          const e = err as { stdout?: string; stderr?: string; code?: number }
+          return { stdout: e.stdout || '', stderr: e.stderr || '', exitCode: e.code ?? 1 }
+        }
+      },
+      getSessionEventCount: (id) => eventRepo.countBySession(id),
+      getSessionUsage: (_id) => null,
+    }
+
+    const ctx = {
+      sessionId: params.sessionId,
+      ...(workspacePath != null ? { workspaceId: workspacePath } : {}),
+      ...(session?.provider_profile_id != null ? { providerId: session.provider_profile_id } : {}),
+      ...(session?.model_id != null ? { model: session.model_id } : {}),
+    }
+
+    const result = await this.commandRegistry.execute(parsed, ctx, deps)
+
+    if (result.forwardToAgent) return { isCommand: true, forwardToAgent: true }
+
+    // Inject result as events into the chat stream
+    const turnId = crypto.randomUUID()
+    const seq0 = this.seqCounters.get(params.sessionId) ?? 0
+    this.seqCounters.set(params.sessionId, seq0 + 2)
+
+    const userEvent: UserMessageEvent = {
+      id: crypto.randomUUID(),
+      type: 'user_message',
+      sessionId: params.sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: seq0,
+      content: params.message,
+    }
+    const cmdName = params.message.replace(/^\//, '').split(' ')[0]
+    const icon = result.success ? '✅' : '❌'
+    let content = `${icon} **/${cmdName}**\n\n${result.message}`
+    if (result.data) content += '\n\n```json\n' + JSON.stringify(result.data, null, 2) + '\n```'
+
+    const assistantEvent: AssistantMessageEvent = {
+      id: crypto.randomUUID(),
+      type: 'assistant_message',
+      sessionId: params.sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: seq0 + 1,
+      mode: 'complete',
+      content,
+      provider: 'spark' as const,
+      isFinal: true,
+    }
+
+    for (const event of [userEvent, assistantEvent]) {
+      this.onEvent(event)
+      try {
+        eventRepo.insert({ id: event.id, sessionId: params.sessionId, turnId, eventType: event.type, eventJson: JSON.stringify(event) })
+      } catch { /* non-fatal */ }
+    }
+
+    return { isCommand: true, forwardToAgent: false }
   }
 
   listCommands(): CommandListItem[] {
@@ -608,6 +715,19 @@ export class SessionService {
     this.clearSessionMemory(sessionId)
     eventRepo.deleteBySession(sessionId)
     return { deleted: sessionRepo.delete(sessionId) }
+  }
+
+  async clearEvents(sessionId: string): Promise<{ cleared: boolean }> {
+    const eventRepo = new EventRepository(this.db)
+    this.clearSessionMemory(sessionId)
+    eventRepo.deleteBySession(sessionId)
+    return { cleared: true }
+  }
+
+  async deleteMessage(sessionId: string, eventIds: string[]): Promise<{ deleted: number }> {
+    const eventRepo = new EventRepository(this.db)
+    const count = eventRepo.deleteEventsByIds(eventIds)
+    return { deleted: count }
   }
 }
 

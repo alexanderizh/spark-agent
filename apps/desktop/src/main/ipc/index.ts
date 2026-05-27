@@ -11,7 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
-import { dialog, shell } from 'electron'
+import { app, dialog, shell } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
@@ -160,6 +160,16 @@ export function registerAllIpcHandlers(): void {
     log.info(`session:set-max-iterations sessionId=${req.sessionId} max=${req.maxIterations}`)
     getSessionService().setMaxIterations(req.sessionId, req.maxIterations)
     return { applied: req.maxIterations }
+  })
+
+  typedIpcHandle('session:clear-events', async (req) => {
+    log.info(`session:clear-events requested, sessionId=${req.sessionId}`)
+    return getSessionService().clearEvents(req.sessionId)
+  })
+
+  typedIpcHandle('session:delete-message', async (req) => {
+    log.info(`session:delete-message requested, sessionId=${req.sessionId} eventCount=${req.eventIds.length}`)
+    return getSessionService().deleteMessage(req.sessionId, req.eventIds)
   })
 
   // ─── Provider Handlers ─────────────────────────────────────────────────
@@ -316,6 +326,14 @@ export function registerAllIpcHandlers(): void {
       canceled: result.canceled,
       ...(result.filePaths[0] === undefined ? {} : { filePath: result.filePaths[0] }),
     }
+  })
+
+  // ─── App Paths Handlers ─────────────────────────────────────────────────────
+
+  typedIpcHandle('app:get-temp-project-dir', async () => {
+    const tempBase = app.getPath('temp')
+    const projectsDir = `${tempBase}/spark-agent-projects`
+    return { tempDir: projectsDir }
   })
 
   // ─── Rules Handlers ─────────────────────────────────────────────────────
@@ -580,11 +598,14 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('command:execute', async (req) => {
     log.info(`command:execute requested, sessionId=${req.sessionId}, message=${req.message}`)
-    const cmdResult = await getSessionService().executeCommand({ sessionId: req.sessionId, message: req.message })
+    const cmdResult = await getSessionService().executeCommandAsEvents({ sessionId: req.sessionId, message: req.message })
     if (!cmdResult.isCommand) {
-      return { success: false, message: '输入不是有效的斜杠命令' }
+      return { success: false, forwardToAgent: false }
     }
-    return cmdResult.result
+    if (cmdResult.forwardToAgent) {
+      return { success: true, forwardToAgent: true }
+    }
+    return { success: true, forwardToAgent: false, inChat: true }
   })
 
   typedIpcHandle('command:list', async (_req) => {
@@ -596,7 +617,15 @@ export function registerAllIpcHandlers(): void {
     if (!isCommand(req.message)) return { isCommand: false }
     const parsed = parseCommand(req.message)
     if (parsed == null) return { isCommand: false }
-    return { isCommand: true, name: parsed.name, args: parsed.args, flags: parsed.flags }
+    return {
+      isCommand: true,
+      name: parsed.name,
+      subcommand: parsed.subcommand,
+      args: parsed.args,
+      flags: parsed.flags,
+      targets: parsed.targets,
+      freeText: parsed.freeText,
+    }
   })
 
   // ─── Settings Handlers ─────────────────────────────────────────────────────
