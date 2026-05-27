@@ -39,3 +39,8 @@ export { buildSkillSystemPrompt } from './skills/types.js'
 export { BUILTIN_SKILLS, getBuiltinSkill } from './skills/builtin/index.js'
 export { McpClient, McpToolBridge } from './mcp/index.js'
 export type { McpServerInfo, McpToolDefinition, McpToolResult, McpConnectionStatus, McpTransportConfig, StdioTransportConfig, SseTransportConfig } from './mcp/index.js'
+
+// Claude Agent SDK integration
+export { ClaudeSDKExecutor, isSDKAvailable, SDKNotAvailableError } from './sdk/index.js'
+export { mapPermissionMode, mergeToolPermissions } from './sdk/index.js'
+export type { SDKExecutorConfig, SDKMcpServerConfig, SDKPermissionConfig, SparkPermissionMode } from './sdk/index.js'
