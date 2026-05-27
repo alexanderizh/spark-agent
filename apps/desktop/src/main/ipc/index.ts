@@ -17,7 +17,7 @@ import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
-import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService } from '@spark/agent-runtime'
+import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService, RuntimeCompositionService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
@@ -45,6 +45,10 @@ function getMcpService(): McpService {
 
 function getSkillService(): SkillService {
   return new SkillService(new SkillRepository(getDatabase()))
+}
+
+function getRuntimeCompositionService(): RuntimeCompositionService {
+  return new RuntimeCompositionService(new SkillRepository(getDatabase()), new SettingsRepository(getDatabase()))
 }
 
 let _settingsService: SettingsService | null = null
@@ -511,6 +515,27 @@ export function registerAllIpcHandlers(): void {
     return { systemPrompt, requiredTools }
   })
 
+  typedIpcHandle('skill:detect-local', async (req) => {
+    const candidates = getSkillService().detectLocalSkills(req.searchRoots)
+    return { candidates }
+  })
+
+  typedIpcHandle('skill-config:get', async (req) => {
+    return getRuntimeCompositionService().getSkillConfig(req)
+  })
+
+  typedIpcHandle('skill-config:update', async (req) => {
+    return getRuntimeCompositionService().updateSkillConfig(req.scope, req.scopeRef, req.skillIds, req.disabledSkillIds)
+  })
+
+  typedIpcHandle('prompt-config:get', async (req) => {
+    return getRuntimeCompositionService().getPromptConfig(req)
+  })
+
+  typedIpcHandle('prompt-config:update', async (req) => {
+    return getRuntimeCompositionService().updatePromptConfig(req.scope, req.scopeRef, req.value)
+  })
+
   // ─── Skill Registry Handlers (Skill Store) ─────────────────────────────
 
   typedIpcHandle('skill-registry:list', async (_req) => {
@@ -561,9 +586,9 @@ export function registerAllIpcHandlers(): void {
     throw new Error('Not implemented yet: skill:import-file')
   })
 
-  typedIpcHandle('skill:import-directory', async (_req) => {
-    // TODO: T-12 Skill 包导入/导出
-    throw new Error('Not implemented yet: skill:import-directory')
+  typedIpcHandle('skill:import-directory', async (req) => {
+    const skill = getSkillService().importLocalDirectory(req.directoryPath, req.source)
+    return { skills: [skill], failed: 0 }
   })
 
   typedIpcHandle('skill:export', async (_req) => {

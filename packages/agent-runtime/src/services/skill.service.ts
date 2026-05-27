@@ -1,9 +1,14 @@
 import type { SkillRepository, SkillRow } from '@spark/storage'
-import type { SkillItem } from '@spark/protocol'
+import type { LocalSkillCandidate, SkillItem } from '@spark/protocol'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { BUILTIN_SKILLS } from '../skills/builtin/index.js'
 import { buildSkillSystemPrompt } from '../skills/types.js'
 import type { SkillDefinition } from '../skills/types.js'
+import {
+  detectLocalSkills as detectLocalSkillCandidates,
+  importLocalSkillDirectory,
+  type LocalSkillSource,
+} from './local-skill-importer.js'
 
 export class SkillService {
   private readonly loader: SkillLoader
@@ -37,6 +42,37 @@ export class SkillService {
       throw new Error('Cannot delete built-in skill')
     }
     return this.repo.deleteById(id)
+  }
+
+  detectLocalSkills(searchRoots?: string[]): LocalSkillCandidate[] {
+    const installedByRoot = new Map(this.repo.list().map((row) => [row.root_path, row.id]))
+    return detectLocalSkillCandidates(searchRoots).map((candidate) => {
+      const localSkillId = installedByRoot.get(candidate.rootPath)
+      return {
+        ...candidate,
+        installed: localSkillId !== undefined,
+        ...(localSkillId !== undefined ? { localSkillId } : {}),
+      }
+    })
+  }
+
+  importLocalDirectory(directoryPath: string, source?: LocalSkillSource): SkillItem {
+    const payload = importLocalSkillDirectory(directoryPath, source)
+    const existing = this.repo.get(payload.id) ?? this.repo.list().find((row) => row.root_path === payload.rootPath)
+    if (existing != null) {
+      const fields: { name: string; version: string; rootPath: string; manifestJson: string; enabled?: boolean } = {
+        name: payload.name,
+        version: payload.version,
+        rootPath: payload.rootPath,
+        manifestJson: payload.manifestJson,
+      }
+      if (payload.enabled !== undefined) fields.enabled = payload.enabled
+      const row = this.repo.update(existing.id, fields)
+      if (row == null) throw new Error(`Skill not found: ${existing.id}`)
+      return toSkillItem(row)
+    }
+
+    return toSkillItem(this.repo.create(payload))
   }
 
   /**

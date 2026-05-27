@@ -10,6 +10,7 @@ import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
+import { parseSkillManifest } from '../utils/skills-data'
 import type { UIMessage, UIBlock } from '../services/event-mapper'
 import type {
   AgentEvent,
@@ -21,9 +22,11 @@ import type {
   SessionPermissionMode,
   PermissionApprovalDecision,
   PermissionApprovalRequest,
+  PromptConfigGetResponse,
   SessionId,
   SessionReasoningEffort,
   SessionSearchResult,
+  SkillConfigGetResponse,
   WorkspaceInfo,
 } from '@spark/protocol'
 import { ModelCapabilityRegistry } from '@spark/shared'
@@ -3584,6 +3587,87 @@ function ChatInspector({
 }) {
   const plans = extractPlans(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const [skillConfig, setSkillConfig] = useState<SkillConfigGetResponse | null>(null)
+  const [promptConfig, setPromptConfig] = useState<PromptConfigGetResponse | null>(null)
+  const [projectPromptDraft, setProjectPromptDraft] = useState('')
+  const [sessionPromptDraft, setSessionPromptDraft] = useState('')
+  const [savingRuntime, setSavingRuntime] = useState(false)
+  const { invoke: getSkillConfig } = useIpcInvoke('skill-config:get')
+  const { invoke: updateSkillConfig } = useIpcInvoke('skill-config:update')
+  const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
+  const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
+  const sessionId = session?.id as string | undefined
+  const workspaceId = workspace?.id
+
+  const loadRuntimeConfig = useCallback(async () => {
+    const req = {
+      ...(workspaceId != null ? { workspaceId } : {}),
+      ...(sessionId != null ? { sessionId } : {}),
+    }
+    const [skillsRes, promptsRes] = await Promise.all([
+      getSkillConfig(req),
+      getPromptConfig(req),
+    ])
+    setSkillConfig(skillsRes)
+    setPromptConfig(promptsRes)
+    setProjectPromptDraft(promptsRes.project.content)
+    setSessionPromptDraft(promptsRes.session.content)
+  }, [getPromptConfig, getSkillConfig, sessionId, workspaceId])
+
+  useEffect(() => {
+    if (sessionId == null) {
+      setSkillConfig(null)
+      setPromptConfig(null)
+      setProjectPromptDraft('')
+      setSessionPromptDraft('')
+      return
+    }
+    void loadRuntimeConfig()
+  }, [loadRuntimeConfig, sessionId])
+
+  const toggleRuntimeSkill = useCallback(async (
+    scope: 'project' | 'session',
+    scopeRef: string,
+    skillId: string,
+    active: boolean,
+  ) => {
+    if (skillConfig == null) return
+    const currentDisabled = scope === 'project'
+      ? skillConfig.projectDisabledSkillIds
+      : skillConfig.sessionDisabledSkillIds
+    const currentSelected = scope === 'project'
+      ? skillConfig.projectSkillIds
+      : skillConfig.sessionSkillIds
+    const nextDisabled = active
+      ? currentDisabled.filter((id) => id !== skillId)
+      : Array.from(new Set([...currentDisabled, skillId]))
+    setSavingRuntime(true)
+    try {
+      await updateSkillConfig({
+        scope,
+        scopeRef,
+        skillIds: currentSelected,
+        disabledSkillIds: nextDisabled,
+      })
+      await loadRuntimeConfig()
+    } finally {
+      setSavingRuntime(false)
+    }
+  }, [loadRuntimeConfig, skillConfig, updateSkillConfig])
+
+  const savePromptLayer = useCallback(async (scope: 'project' | 'session', scopeRef: string, content: string) => {
+    setSavingRuntime(true)
+    try {
+      await updatePromptConfig({
+        scope,
+        scopeRef,
+        value: { enabled: content.trim().length > 0, content },
+      })
+      await loadRuntimeConfig()
+    } finally {
+      setSavingRuntime(false)
+    }
+  }, [loadRuntimeConfig, updatePromptConfig])
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -3639,6 +3723,96 @@ function ChatInspector({
           <div className="inspector-muted">未选择会话</div>
         )}
       </div>
+
+      {session != null && skillConfig != null && (
+        <div className="inspector-section">
+          <h4>
+            Skills
+            <span className="inspector-count">{skillConfig.effectiveSkillIds.length}</span>
+          </h4>
+          <div className="runtime-skill-list">
+            {skillConfig.skills.map((skill) => {
+              const systemVisible = skillConfig.systemSkillIds.includes(skill.id)
+              const projectActive = systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
+              const sessionActive = systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
+              const meta = parseSkillManifest(skill.manifestJson)
+              return (
+                <div className="runtime-skill-row" key={skill.id}>
+                  <div className="runtime-skill-main min-w-0">
+                    <div className="runtime-skill-name truncate">{skill.name}</div>
+                    <div className="runtime-skill-desc truncate">{meta.source} · {meta.desc}</div>
+                  </div>
+                  {workspaceId != null && (
+                    <label className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="项目层可见">
+                      <input
+                        type="checkbox"
+                        checked={projectActive}
+                        disabled={!systemVisible || savingRuntime}
+                        onChange={(event) => void toggleRuntimeSkill('project', workspaceId, skill.id, event.target.checked)}
+                      />
+                      P
+                    </label>
+                  )}
+                  {sessionId != null && (
+                    <label className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="会话层可见">
+                      <input
+                        type="checkbox"
+                        checked={sessionActive}
+                        disabled={!systemVisible || savingRuntime}
+                        onChange={(event) => void toggleRuntimeSkill('session', sessionId, skill.id, event.target.checked)}
+                      />
+                      S
+                    </label>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+          <div className="inspector-muted runtime-hint">P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。</div>
+        </div>
+      )}
+
+      {session != null && promptConfig != null && (
+        <div className="inspector-section">
+          <h4>提示词</h4>
+          {workspaceId != null && (
+            <div className="runtime-prompt-block">
+              <div className="runtime-prompt-title">项目提示词</div>
+              <textarea
+                className="spark-textarea inspector-textarea"
+                value={projectPromptDraft}
+                onChange={(event) => setProjectPromptDraft(event.target.value)}
+                placeholder="当前项目会话通用提示词..."
+              />
+              <button
+                className="btn ghost sm runtime-save-btn"
+                disabled={savingRuntime}
+                onClick={() => void savePromptLayer('project', workspaceId, projectPromptDraft)}
+              >
+                保存项目
+              </button>
+            </div>
+          )}
+          {sessionId != null && (
+            <div className="runtime-prompt-block">
+              <div className="runtime-prompt-title">会话提示词</div>
+              <textarea
+                className="spark-textarea inspector-textarea"
+                value={sessionPromptDraft}
+                onChange={(event) => setSessionPromptDraft(event.target.value)}
+                placeholder="仅对当前会话生效..."
+              />
+              <button
+                className="btn ghost sm runtime-save-btn"
+                disabled={savingRuntime}
+                onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
+              >
+                保存会话
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Token Usage Section */}
       <div className="inspector-section">

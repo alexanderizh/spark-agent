@@ -7,6 +7,7 @@ import { useState } from 'react'
 import type { SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput } from '../components/FormControls'
+import { useApp } from '../AppContext'
 import {
   useSkills,
   parseSkillManifest,
@@ -14,6 +15,7 @@ import {
 } from '../utils/skills-data'
 
 export function SkillsView() {
+  const { setTweak } = useApp()
   const { skills, loading, error, toggleSkill, total, enabledCount } =
     useSkills()
   const [search, setSearch] = useState('')
@@ -51,10 +53,10 @@ export function SkillsView() {
             )}
           </div>
 
-          <button className="btn">
+          <button className="btn" onClick={() => setTweak('view', 'skill-store')}>
             <Icons.Globe size={12} /> Skill 商店
           </button>
-          <button className="btn primary">
+          <button className="btn primary" onClick={() => setTweak('view', 'skill-store')}>
             <Icons.Plus size={12} /> 创建 Skill
           </button>
         </div>
@@ -136,8 +138,9 @@ function SkillCard({
           className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}
           onClick={() => onToggle(skill)}
         >
-          {skill.enabled ? '已启用' : '已禁用'}
+          {skill.enabled ? '系统可见' : '系统隐藏'}
         </span>
+        {skill.id === 'builtin:superpowers' && <span className="badge">可在会话关闭</span>}
       </div>
       <div className="foot">
         <span>

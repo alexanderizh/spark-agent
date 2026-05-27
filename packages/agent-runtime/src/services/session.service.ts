@@ -6,6 +6,8 @@ import {
   SessionRepository,
   WorkspaceRepository,
   McpServerRepository,
+  SettingsRepository,
+  SkillRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse } from '@spark/protocol'
@@ -16,6 +18,7 @@ import type { AgentConfig, CommandDeps } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
+import { RuntimeCompositionService } from './runtime-composition.service.js'
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
@@ -214,9 +217,10 @@ export class SessionService {
     let workspaceRootPath = process.cwd()
     let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
     const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
+    const primaryWorkspaceId = workspaceIds[0]
     if (workspaceIds.length > 0) {
       const wsRepo = new WorkspaceRepository(this.db)
-      const ws = wsRepo.get(workspaceIds[0] ?? '')
+      const ws = wsRepo.get(primaryWorkspaceId ?? '')
       if (ws != null) {
         workspaceRootPath = ws.root_path
         workspaceInfo = { name: ws.name, rootPath: ws.root_path, projectKind: ws.project_kind }
@@ -239,23 +243,31 @@ export class SessionService {
       // MCP tool registration failure is non-fatal
     }
 
-    // Build skill system prompt if skillId is provided
-    let skillSystemPrompt: string | undefined
+    // Build explicit skill prompt if skillId is provided; available skills are composed below.
+    let explicitSkillPrompt: string | undefined
+    const skillRepo = new SkillRepository(this.db)
     if (skillId != null) {
       const { SkillLoader } = await import('../skills/skill-loader.js')
-      const { SkillRepository } = await import('@spark/storage')
-      const skillRepo = new SkillRepository(this.db)
       const loader = new SkillLoader(skillRepo)
       const sp = loader.buildSystemPrompt(skillId, skillParams ?? {})
-      if (sp) skillSystemPrompt = sp
+      if (sp) explicitSkillPrompt = sp
     }
+    const runtimeComposition = new RuntimeCompositionService(skillRepo, new SettingsRepository(this.db))
+    const runtimeContext = runtimeComposition.composeRuntimeContext(
+      {
+        ...(primaryWorkspaceId != null ? { workspaceId: primaryWorkspaceId } : {}),
+        sessionId,
+      },
+      explicitSkillPrompt,
+    )
 
     const agentConfig: AgentConfig = {
       adapter,
       apiKey,
       model,
       ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
-      ...(skillSystemPrompt != null ? { skillSystemPrompt } : {}),
+      ...(runtimeContext.systemPrompt != null ? { systemPrompt: runtimeContext.systemPrompt } : {}),
+      ...(runtimeContext.skillSystemPrompt != null ? { skillSystemPrompt: runtimeContext.skillSystemPrompt } : {}),
       tools,
       toolContext: { workspaceRootPath, sessionId },
       context: {

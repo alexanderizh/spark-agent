@@ -1037,6 +1037,62 @@ Skill 功能:
 - Skill Store: 本地索引、远程市场、私有 registry。
 - Skill Vetting: 安装前检查脚本、网络、权限、依赖、来源。
 
+#### 5.7.1 Skill 安装、可见性与分层加载
+
+Skill 管理需要区分两个概念:
+
+- **已安装**: Skill 已经存在于 Spark 本地库中，来源可以是内置、市场安装、本地 Claude/Codex/Agents skill 目录导入，或者后续团队 registry 同步。
+- **运行时可见**: Agent 当前 turn 能看到的 Skill 列表。可见不代表强制使用；Agent 只在任务语义匹配时选择应用 Skill。
+
+当前实现的层级:
+
+1. **系统级**: `skills.enabled` 是全局可见性闸门。关闭后所有 Agent、项目、会话都不可见。`builtin:superpowers` 属于内置 Skill，也可以在系统级关闭。
+2. **Agent 级**: 数据模型保留 `agent:<agentId>` 配置键；当前只有默认 Code Agent，暂不在 UI 中开放。多 Agent 功能上线后，每个 Agent 模板可配置自己的 Skill 选择与禁用覆盖。
+3. **项目级**: Chat 右侧面板按 workspace 配置 Skill 可见性覆盖，作用于该项目下的会话。
+4. **会话级**: Chat 右侧面板按 session 配置临时覆盖，可在单个会话中关闭系统级可见 Skill，例如关闭 `builtin:superpowers`。
+
+合成规则:
+
+```text
+systemEnabled = all installed skills where enabled = true
+selected = systemEnabled ∪ agentSelected ∪ projectSelected ∪ sessionSelected
+disabled = agentDisabled ∪ projectDisabled ∪ sessionDisabled
+effectiveSkills = selected ∩ systemEnabled - disabled
+```
+
+Agent runtime 会把 `effectiveSkills` 转换为 `[Available Skills]` 段落，包含 Skill 名称、描述、标签、所需工具和使用说明。该段落表示“可见技能库”，不是强制执行指令。
+
+#### 5.7.2 本地 Skill 导入
+
+Skill 管理页支持检测并导入本机已有 skill:
+
+- `~/.claude/skills/*/SKILL.md`
+- `~/.codex/skills/*/SKILL.md`
+- `~/.agents/skills/*/SKILL.md`
+- 手动选择的任意包含 `SKILL.md` 的目录
+
+导入时 Spark 不复制用户文件，只记录本地目录路径和解析后的 manifest。这样 Claude/Codex 侧更新 skill 文件后，后续可以做增量刷新。
+
+#### 5.7.3 系统提示词分层合成
+
+系统提示词使用与 Skill 相同的分层制度:
+
+1. **系统级提示词**: Settings → Skills 中配置，所有 Agent 默认继承。
+2. **Agent 级提示词**: 预留给未来多 Agent 模板配置。
+3. **项目级提示词**: Chat 右侧面板配置，按 workspace 生效。
+4. **会话级提示词**: Chat 右侧面板配置，只影响当前 session。
+
+合成顺序固定为:
+
+```text
+[System Prompt]
+[Agent Prompt]
+[Project Prompt]
+[Session Prompt]
+```
+
+越靠后的层级越具体，但不会自动删除上层内容。安全规则仍应放在系统级或规则系统中，由 Rule Engine 负责冲突提示和审计。
+
 运行方式:
 
 - Prompt Skill: 只注入说明。
