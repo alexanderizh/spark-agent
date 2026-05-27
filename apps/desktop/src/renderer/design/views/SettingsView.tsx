@@ -262,6 +262,7 @@ export function SettingsView() {
     {
       group: '系统',
       items: [
+        { id: 'usage', icon: <Icons.Activity />, label: '用量统计' },
         { id: 'telemetry', icon: <Icons.Activity />, label: '遥测与日志' },
         { id: 'storage', icon: <Icons.Database />, label: '存储与备份' },
         { id: 'updates', icon: <Icons.Refresh />, label: '更新' },
@@ -282,6 +283,7 @@ export function SettingsView() {
     workflows: WorkflowTemplatesSection,
     telemetry: TelemetrySection,
     storage: StorageSection,
+    usage: UsageSection,
     updates: UpdatesSection,
     about: AboutSection,
   }
@@ -2500,6 +2502,161 @@ function TelemetrySection() {
       <div className="card">
         <SettingsRow title="生成诊断包" desc="包含 app/OS 版本、provider 健康、近期错误日志，自动脱敏" right={<button className="btn"><Icons.Download size={11} /> 生成</button>} />
         <SettingsRow title="复制最近一次错误" desc="便于发到 GitHub Issue" right={<button className="btn ghost sm"><Icons.Copy size={11} /> 复制</button>} />
+      </div>
+    </div>
+  )
+}
+
+/* ───────── USAGE ───────── */
+function UsageSection() {
+  const [dashboard, setDashboard] = useState<{
+    total: { totalInputTokens: number; totalOutputTokens: number; totalCacheReadTokens: number; totalCacheWriteTokens: number; totalCostUsd: number; recordCount: number }
+    currentMonth: { totalInputTokens: number; totalOutputTokens: number; totalCacheReadTokens: number; totalCacheWriteTokens: number; totalCostUsd: number; recordCount: number }
+    topModels: Array<{ modelId: string; providerId: string; totalInputTokens: number; totalOutputTokens: number; totalCostUsd: number; recordCount: number }>
+    recentRecords: Array<{ id: string; session_id: string; provider_id: string; model_id: string; input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_write_tokens: number; cost_usd: number; request_timestamp: string; created_at: string }>
+  } | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await window.spark.invoke('usage:get-dashboard', {})
+      setDashboard(res)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadDashboard()
+  }, [loadDashboard])
+
+  const fmt = (n: number) => {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+    return String(n)
+  }
+
+  const fmtUsd = (n: number) => {
+    if (n === 0) return '$0.00'
+    if (n < 0.01) return '<$0.01'
+    return `$${n.toFixed(2)}`
+  }
+
+  const fmtDate = (ts: string) => {
+    try {
+      const d = new Date(ts)
+      return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`
+    } catch {
+      return ts
+    }
+  }
+
+  const month = dashboard?.currentMonth
+  const total = dashboard?.total
+  const models = dashboard?.topModels ?? []
+  const records = dashboard?.recentRecords ?? []
+
+  return (
+    <div className="settings-section">
+      <h2>用量统计</h2>
+      <div className="lede">追踪每次对话的 token 消耗和费用。数据仅保存在本地。</div>
+
+      {error && <div className="card usage-error-card">{error}</div>}
+
+      {/* ── Overview Cards ── */}
+      <div className="subsec-h">本月概览</div>
+      <div className="usage-overview-grid">
+        <div className="usage-stat-card">
+          <div className="usage-stat-label">输入 Token</div>
+          <div className="usage-stat-value">{loading ? '—' : fmt(month?.totalInputTokens ?? 0)}</div>
+        </div>
+        <div className="usage-stat-card">
+          <div className="usage-stat-label">输出 Token</div>
+          <div className="usage-stat-value">{loading ? '—' : fmt(month?.totalOutputTokens ?? 0)}</div>
+        </div>
+        <div className="usage-stat-card">
+          <div className="usage-stat-label">缓存命中</div>
+          <div className="usage-stat-value">{loading ? '—' : fmt(month?.totalCacheReadTokens ?? 0)}</div>
+        </div>
+        <div className="usage-stat-card">
+          <div className="usage-stat-label">预估费用</div>
+          <div className="usage-stat-value usage-cost-value">{loading ? '—' : fmtUsd(month?.totalCostUsd ?? 0)}</div>
+        </div>
+      </div>
+
+      {/* ── All-time summary ── */}
+      <div className="subsec-h">累计统计</div>
+      <div className="card">
+        <SettingsRow
+          title="总请求数"
+          right={<span className="mono-sm strong">{loading ? '—' : String(total?.recordCount ?? 0)}</span>}
+        />
+        <SettingsRow
+          title="总输入 Token"
+          right={<span className="mono-sm strong">{loading ? '—' : fmt(total?.totalInputTokens ?? 0)}</span>}
+        />
+        <SettingsRow
+          title="总输出 Token"
+          right={<span className="mono-sm strong">{loading ? '—' : fmt(total?.totalOutputTokens ?? 0)}</span>}
+        />
+        <SettingsRow
+          title="总费用"
+          right={<span className="mono-sm strong usage-cost-value">{loading ? '—' : fmtUsd(total?.totalCostUsd ?? 0)}</span>}
+        />
+      </div>
+
+      {/* ── Top Models ── */}
+      <div className="subsec-h">模型用量排行</div>
+      <div className="card">
+        {models.length === 0 && !loading && (
+          <div className="settings-card-row usage-empty">暂无用量数据</div>
+        )}
+        {models.map((m) => (
+          <div key={`${m.providerId}-${m.modelId}`} className="settings-card-row usage-model-row">
+            <div className="flex1 min-w-0">
+              <div className="row-title">{m.modelId}</div>
+              <div className="row-desc">{m.providerId}</div>
+            </div>
+            <div className="usage-model-stats">
+              <span className="mono-sm">↑{fmt(m.totalInputTokens)}</span>
+              <span className="mono-sm">↓{fmt(m.totalOutputTokens)}</span>
+              <span className="mono-sm usage-cost-value">{fmtUsd(m.totalCostUsd)}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Recent Records ── */}
+      <div className="subsec-h">最近请求</div>
+      <div className="card usage-records-card">
+        {records.length === 0 && !loading && (
+          <div className="settings-card-row usage-empty">暂无记录</div>
+        )}
+        <div className="usage-records-table">
+          {records.map((r) => (
+            <div key={r.id} className="usage-record-row">
+              <span className="usage-rec-time">{fmtDate(r.request_timestamp)}</span>
+              <span className="usage-rec-model">{r.model_id}</span>
+              <span className="usage-rec-tokens mono-sm">↑{fmt(r.input_tokens)} ↓{fmt(r.output_tokens)}</span>
+              <span className="usage-rec-cost mono-sm">{fmtUsd(r.cost_usd)}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── Actions ── */}
+      <div className="subsec-h">数据管理</div>
+      <div className="card">
+        <SettingsRow
+          title="刷新数据"
+          desc="重新从数据库加载用量统计"
+          right={<button className="btn ghost sm" onClick={loadDashboard} disabled={loading}><Icons.Refresh size={11} /> 刷新</button>}
+        />
       </div>
     </div>
   )

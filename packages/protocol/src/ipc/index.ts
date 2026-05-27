@@ -978,6 +978,153 @@ export interface SettingsGetAllResponse {
   settings: Record<string, Record<string, unknown>>
 }
 
+// ─── Usage Ledger Channels ────────────────────────────────────────────────────
+
+export interface UsageRecordRequest {
+  sessionId: string
+  providerId: string
+  modelId: string
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens?: number
+  cacheWriteTokens?: number
+  costUsd?: number
+  requestTimestamp?: string
+}
+
+export interface UsageRecordResponse {
+  id: string
+}
+
+export interface UsageGetSessionRequest {
+  sessionId: string
+}
+
+export interface UsageGetSessionResponse {
+  summary: {
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCacheReadTokens: number
+    totalCacheWriteTokens: number
+    totalCostUsd: number
+    recordCount: number
+  }
+}
+
+export interface UsageGetDashboardRequest {}
+
+export interface UsageGetDashboardResponse {
+  total: {
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCacheReadTokens: number
+    totalCacheWriteTokens: number
+    totalCostUsd: number
+    recordCount: number
+  }
+  currentMonth: {
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCacheReadTokens: number
+    totalCacheWriteTokens: number
+    totalCostUsd: number
+    recordCount: number
+  }
+  topModels: Array<{
+    modelId: string
+    providerId: string
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCostUsd: number
+    recordCount: number
+  }>
+  recentRecords: Array<{
+    id: string
+    session_id: string
+    provider_id: string
+    model_id: string
+    input_tokens: number
+    output_tokens: number
+    cache_read_tokens: number
+    cache_write_tokens: number
+    cost_usd: number
+    request_timestamp: string
+    created_at: string
+  }>
+}
+
+export interface UsageGetByDateRangeRequest {
+  startDate: string
+  endDate: string
+}
+
+export interface UsageGetByDateRangeResponse {
+  summary: {
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCacheReadTokens: number
+    totalCacheWriteTokens: number
+    totalCostUsd: number
+    recordCount: number
+  }
+  modelGroups: Array<{
+    modelId: string
+    providerId: string
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCostUsd: number
+    recordCount: number
+  }>
+  dailyGroups: Array<{
+    date: string
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCostUsd: number
+    recordCount: number
+  }>
+}
+
+export interface UsagePurgeRequest {
+  olderThanDays: number
+}
+
+export interface UsagePurgeResponse {
+  deletedCount: number
+}
+
+// ─── File Watcher Channels ─────────────────────────────────────────────────
+
+export interface WorkspaceWatchStartRequest {
+  workspaceId: string
+  /** 需要忽略的 glob 模式（默认包含 node_modules, .git 等） */
+  ignorePatterns?: string[]
+}
+
+export interface WorkspaceWatchStartResponse {
+  watching: boolean
+}
+
+export interface WorkspaceWatchStopRequest {
+  workspaceId: string
+}
+
+export interface WorkspaceWatchStopResponse {
+  stopped: boolean
+}
+
+/** 外部文件变更事件（由 fs.watch 检测，推送至渲染进程） */
+export interface WorkspaceFileChangePayload {
+  workspaceId: string
+  /** 变更类型 */
+  changeType: 'create' | 'modify' | 'delete' | 'rename'
+  /** 文件路径（相对于 workspace root） */
+  path: string
+  /** rename 时的旧路径 */
+  oldPath?: string
+  /** 时间戳 */
+  timestamp: string
+}
+
 // ─── Command Channels ────────────────────────────────────────────────────────
 
 export interface CommandExecuteRequest {
@@ -1060,6 +1207,8 @@ export interface IpcChannelMap {
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
   'workspace:list-branches': [WorkspaceListBranchesRequest, WorkspaceListBranchesResponse]
   'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
+  'workspace:watch-start': [WorkspaceWatchStartRequest, WorkspaceWatchStartResponse]
+  'workspace:watch-stop': [WorkspaceWatchStopRequest, WorkspaceWatchStopResponse]
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
@@ -1127,6 +1276,13 @@ export interface IpcChannelMap {
   'settings:set': [SettingsSetRequest, SettingsSetResponse]
   'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
   'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
+
+  // Usage Ledger
+  'usage:record': [UsageRecordRequest, UsageRecordResponse]
+  'usage:get-session': [UsageGetSessionRequest, UsageGetSessionResponse]
+  'usage:get-dashboard': [UsageGetDashboardRequest, UsageGetDashboardResponse]
+  'usage:get-by-date-range': [UsageGetByDateRangeRequest, UsageGetByDateRangeResponse]
+  'usage:purge': [UsagePurgeRequest, UsagePurgeResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -1156,6 +1312,8 @@ export interface IpcStreamChannelMap {
   }
   /** 工具审批请求（主进程推送，渲染进程弹窗）*/
   'stream:permission:approval-request': PermissionApprovalRequest
+  /** 工作区文件变更（由 fs.watch 检测外部文件变化，主进程推送）*/
+  'stream:workspace:file-change': WorkspaceFileChangePayload
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap

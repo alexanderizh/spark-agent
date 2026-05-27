@@ -24,6 +24,8 @@ export { SkillRegistryRepository } from './skill-registry.repository.js'
 export type { SkillRegistryRow } from './skill-registry.repository.js'
 export { SettingsRepository } from './settings.repository.js'
 export type { SettingsRow } from './settings.repository.js'
+export { UsageLedgerRepository } from './usage-ledger.repository.js'
+export type { UsageLedgerRow, RecordUsageParams, UsageSummary, ModelUsageGroup, DailyUsageGroup } from './usage-ledger.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

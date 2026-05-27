@@ -34,6 +34,7 @@ export {
   SkillRepository,
   SkillRegistryRepository,
   SettingsRepository,
+  UsageLedgerRepository,
 } from './repositories/index.js'
 
 export type {
@@ -58,4 +59,9 @@ export type {
   SkillRow,
   SkillRegistryRow,
   SettingsRow,
+  UsageLedgerRow,
+  RecordUsageParams,
+  UsageSummary,
+  ModelUsageGroup,
+  DailyUsageGroup,
 } from './repositories/index.js'

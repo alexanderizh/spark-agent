@@ -16,10 +16,11 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
-import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService } from '@spark/agent-runtime'
+import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
+import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
+import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
@@ -51,6 +52,14 @@ function getSettingsService(): SettingsService {
     _settingsService = new SettingsService(new SettingsRepository(getDatabase()))
   }
   return _settingsService
+}
+
+let _usageLedgerService: UsageLedgerService | null = null
+function getUsageLedgerService(): UsageLedgerService {
+  if (_usageLedgerService == null) {
+    _usageLedgerService = new UsageLedgerService(new UsageLedgerRepository(getDatabase()))
+  }
+  return _usageLedgerService
 }
 
 let _skillRegistryService: SkillRegistryService | null = null
@@ -275,6 +284,22 @@ export function registerAllIpcHandlers(): void {
       throw new Error('Unable to determine current git branch after switch')
     }
     return { currentBranch: result.currentBranch, branches: result.branches }
+  })
+
+  // ─── File Watcher Handlers ──────────────────────────────────────────────
+
+  typedIpcHandle('workspace:watch-start', async (req) => {
+    log.info(`workspace:watch-start requested, workspaceId=${req.workspaceId}`)
+    const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
+    const watcherService = getFileWatcherService()
+    watcherService.start(req.workspaceId, workspace.root_path, req.ignorePatterns)
+    return { watching: true }
+  })
+
+  typedIpcHandle('workspace:watch-stop', async (req) => {
+    log.info(`workspace:watch-stop requested, workspaceId=${req.workspaceId}`)
+    const stopped = getFileWatcherService().stop(req.workspaceId)
+    return { stopped }
   })
 
   // ─── Native Dialog Handlers ─────────────────────────────────────────────
@@ -587,6 +612,44 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('settings:get-all', async (_req) => {
     const settings = getSettingsService().getAll()
     return { settings }
+  })
+
+  // ─── Usage Ledger Handlers ────────────────────────────────────────────────
+
+  typedIpcHandle('usage:record', async (req) => {
+    const id = getUsageLedgerService().record({
+      sessionId: req.sessionId,
+      providerId: req.providerId,
+      modelId: req.modelId,
+      inputTokens: req.inputTokens,
+      outputTokens: req.outputTokens,
+      cacheReadTokens: req.cacheReadTokens,
+      cacheWriteTokens: req.cacheWriteTokens,
+      costUsd: req.costUsd,
+      requestTimestamp: req.requestTimestamp,
+    })
+    return { id }
+  })
+
+  typedIpcHandle('usage:get-session', async (req) => {
+    const summary = getUsageLedgerService().getSessionUsage(req.sessionId)
+    return { summary }
+  })
+
+  typedIpcHandle('usage:get-dashboard', async (_req) => {
+    return getUsageLedgerService().getDashboard()
+  })
+
+  typedIpcHandle('usage:get-by-date-range', async (req) => {
+    const summary = getUsageLedgerService().getUsageByDateRange(req.startDate, req.endDate)
+    const modelGroups = getUsageLedgerService().getModelUsageGrouped(req.startDate, req.endDate)
+    const dailyGroups = getUsageLedgerService().getDailyUsageGrouped(req.startDate, req.endDate)
+    return { summary, modelGroups, dailyGroups }
+  })
+
+  typedIpcHandle('usage:purge', async (req) => {
+    const deletedCount = getUsageLedgerService().purgeOldRecords(req.olderThanDays)
+    return { deletedCount }
   })
 
   log.info('All IPC handlers registered')

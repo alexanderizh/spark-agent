@@ -260,6 +260,13 @@ export const IpcSchemaRegistry = {
   'workspace:list-directory': WorkspaceListDirectoryRequestSchema,
   'workspace:list-branches': WorkspaceListBranchesRequestSchema,
   'workspace:switch-branch': WorkspaceSwitchBranchRequestSchema,
+  'workspace:watch-start': z.object({
+    workspaceId: z.string().min(1),
+    ignorePatterns: z.array(z.string()).optional(),
+  }),
+  'workspace:watch-stop': z.object({
+    workspaceId: z.string().min(1),
+  }),
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
   'rules:list': RulesListRequestSchema,
   'rules:create': RulesCreateRequestSchema,
@@ -321,4 +328,28 @@ export const IpcSchemaRegistry = {
     category: z.string().min(1).max(80),
   }),
   'settings:get-all': z.object({}),
+
+  // Usage Ledger
+  'usage:record': z.object({
+    sessionId: z.string().min(1),
+    providerId: z.string().min(1),
+    modelId: z.string().min(1),
+    inputTokens: z.number().int().min(0),
+    outputTokens: z.number().int().min(0),
+    cacheReadTokens: z.number().int().min(0).optional(),
+    cacheWriteTokens: z.number().int().min(0).optional(),
+    costUsd: z.number().min(0).optional(),
+    requestTimestamp: z.string().optional(),
+  }),
+  'usage:get-session': z.object({
+    sessionId: z.string().min(1),
+  }),
+  'usage:get-dashboard': z.object({}),
+  'usage:get-by-date-range': z.object({
+    startDate: z.string().min(1),
+    endDate: z.string().min(1),
+  }),
+  'usage:purge': z.object({
+    olderThanDays: z.number().int().min(1),
+  }),
 } as const
