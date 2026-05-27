@@ -370,19 +370,28 @@ function InstalledTab() {
   const [search, setSearch] = useState('')
   const [localCandidates, setLocalCandidates] = useState<LocalSkillCandidate[]>([])
   const [detecting, setDetecting] = useState(false)
-  const [importingPath, setImportingPath] = useState<string | null>(null)
+  const [importingIds, setImportingIds] = useState<Set<string>>(new Set())
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const { toast } = useToast()
   const { invoke: detectLocalSkills } = useIpcInvoke('skill:detect-local')
   const { invoke: importDirectory } = useIpcInvoke('skill:import-directory')
+  const { invoke: importBatchLocal } = useIpcInvoke('skill:import-batch-local')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const filtered = filterSkills(skills, search)
 
+  const importableCandidates = localCandidates.filter((c) => !c.installed)
+
   const handleDetectLocal = useCallback(async () => {
     setDetecting(true)
+    setSelectedIds(new Set())
     try {
       const res = await detectLocalSkills({})
       setLocalCandidates(res.candidates)
-      toast.success(`检测到 ${res.candidates.length} 个本地 Skill`)
+      if (res.candidates.length > 0) {
+        toast.success(`检测到 ${res.candidates.length} 个本地 Skill`)
+      } else {
+        toast.info('未检测到本地 Skill')
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '检测本地 Skill 失败')
     } finally {
@@ -390,35 +399,100 @@ function InstalledTab() {
     }
   }, [detectLocalSkills, toast])
 
+  const refreshCandidates = useCallback(async () => {
+    try {
+      const res = await detectLocalSkills({})
+      setLocalCandidates(res.candidates)
+    } catch {
+      // silent refresh
+    }
+  }, [detectLocalSkills])
+
   const handleImportLocal = useCallback(async (candidate: LocalSkillCandidate) => {
-    setImportingPath(candidate.rootPath)
+    const id = candidate.id
+    setImportingIds((prev) => new Set(prev).add(id))
     try {
       await importDirectory({ directoryPath: candidate.rootPath, source: candidate.source })
       toast.success(`已导入 ${candidate.name}`)
       refresh()
-      await handleDetectLocal()
+      await refreshCandidates()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '导入本地 Skill 失败')
     } finally {
-      setImportingPath(null)
+      setImportingIds((prev) => {
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
     }
-  }, [handleDetectLocal, importDirectory, refresh, toast])
+  }, [importDirectory, refresh, refreshCandidates, toast])
+
+  const handleBatchImport = useCallback(async () => {
+    const toImport = importableCandidates.filter((c) => selectedIds.has(c.id))
+    if (toImport.length === 0) return
+    setImportingIds((prev) => {
+      const next = new Set(prev)
+      for (const c of toImport) next.add(c.id)
+      return next
+    })
+    try {
+      const result = await importBatchLocal({
+        candidates: toImport.map((c) => ({ rootPath: c.rootPath, source: c.source })),
+      })
+      if (result.failed > 0) {
+        toast.warning(`已导入 ${result.skills.length} 个，${result.failed} 个失败`)
+        for (const e of result.errors) {
+          console.error('Import error:', e)
+        }
+      } else {
+        toast.success(`已批量导入 ${result.skills.length} 个 Skill`)
+      }
+      setSelectedIds(new Set())
+      refresh()
+      await refreshCandidates()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '批量导入失败')
+    } finally {
+      setImportingIds((prev) => {
+        const next = new Set(prev)
+        for (const c of toImport) next.delete(c.id)
+        return next
+      })
+    }
+  }, [importableCandidates, selectedIds, importBatchLocal, refresh, refreshCandidates, toast])
 
   const handlePickImportDirectory = useCallback(async () => {
     const picked = await openDirectoryDialog({ title: '选择包含 SKILL.md 的 Skill 目录' })
     if (picked.canceled || picked.filePath == null) return
-    setImportingPath(picked.filePath)
+    const dir = picked.filePath
     try {
-      await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
+      await importDirectory({ directoryPath: dir, source: 'custom' })
       toast.success('已导入本地 Skill')
       refresh()
-      await handleDetectLocal()
+      await refreshCandidates()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '导入本地 Skill 失败')
-    } finally {
-      setImportingPath(null)
     }
-  }, [handleDetectLocal, importDirectory, openDirectoryDialog, refresh, toast])
+  }, [importDirectory, openDirectoryDialog, refresh, refreshCandidates, toast])
+
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleSelectAll = useCallback(() => {
+    if (selectedIds.size === importableCandidates.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(importableCandidates.map((c) => c.id)))
+    }
+  }, [selectedIds.size, importableCandidates])
+
+  const isImporting = importingIds.size > 0
 
   return (
     <div>
@@ -432,43 +506,80 @@ function InstalledTab() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button className="btn" onClick={() => void handlePickImportDirectory()} disabled={importingPath !== null}>
+        <button className="btn" onClick={() => void handlePickImportDirectory()} disabled={isImporting}>
           <Icons.Upload size={12} /> 导入目录
         </button>
-        <button className="btn" onClick={() => void handleDetectLocal()} disabled={detecting}>
-          <Icons.Refresh size={12} /> {detecting ? '检测中...' : '检测 Claude/Codex'}
-        </button>
-        <button className="btn">
-          <Icons.Download size={12} /> 导出全部
+        <button className="btn" onClick={() => void handleDetectLocal()} disabled={detecting || isImporting}>
+          <Icons.Refresh size={12} /> {detecting ? '检测中...' : '检测本地 Skill'}
         </button>
       </div>
 
+      {/* Local detected skills panel */}
       {localCandidates.length > 0 && (
         <div className="local-skill-panel">
           <div className="local-skill-head">
-            <span>本地可导入</span>
+            <span className="local-skill-title">本地可导入 Skill</span>
             <span className="badge">{localCandidates.length}</span>
+            <div style={{ flex: 1 }} />
+            {importableCandidates.length > 0 && (
+              <>
+                <button
+                  className="btn sm"
+                  onClick={toggleSelectAll}
+                  disabled={isImporting}
+                >
+                  {selectedIds.size === importableCandidates.length ? '取消全选' : '全选'}
+                </button>
+                <button
+                  className="btn sm primary"
+                  onClick={() => void handleBatchImport()}
+                  disabled={selectedIds.size === 0 || isImporting}
+                >
+                  {isImporting ? '导入中...' : `导入所选 (${selectedIds.size})`}
+                </button>
+              </>
+            )}
           </div>
           <div className="local-skill-list">
-            {localCandidates.map((candidate) => (
-              <div className="local-skill-row" key={candidate.id}>
-                <div className="flex1 min-w-0">
-                  <div className="strong truncate">{candidate.name}</div>
-                  <div className="muted truncate">{candidate.description} · {candidate.source} · {candidate.rootPath}</div>
+            {localCandidates.map((candidate) => {
+              const importing = importingIds.has(candidate.id)
+              const selected = selectedIds.has(candidate.id)
+              return (
+                <div className="local-skill-row" key={candidate.id}>
+                  {!candidate.installed && (
+                    <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={importing}
+                        onChange={() => toggleSelect(candidate.id)}
+                      />
+                      <span className="checkmark" />
+                    </label>
+                  )}
+                  <div className="local-skill-icon">
+                    {candidate.name.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="flex1 min-w-0">
+                    <div className="strong truncate">{candidate.name}</div>
+                    <div className="muted truncate">{candidate.description || candidate.source}</div>
+                  </div>
+                  <span className="badge badge-font-sm" style={{ flexShrink: 0 }}>{candidate.source}</span>
+                  {candidate.installed ? (
+                    <span className="badge success" style={{ flexShrink: 0 }}>已导入</span>
+                  ) : (
+                    <button
+                      className="btn sm"
+                      onClick={() => void handleImportLocal(candidate)}
+                      disabled={importing}
+                      style={{ flexShrink: 0 }}
+                    >
+                      {importing ? '导入中...' : '导入'}
+                    </button>
+                  )}
                 </div>
-                {candidate.installed ? (
-                  <span className="badge success">已导入</span>
-                ) : (
-                  <button
-                    className="btn sm"
-                    onClick={() => void handleImportLocal(candidate)}
-                    disabled={importingPath === candidate.rootPath}
-                  >
-                    {importingPath === candidate.rootPath ? '导入中...' : '导入'}
-                  </button>
-                )}
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
@@ -484,7 +595,7 @@ function InstalledTab() {
         <div className="empty-state">
           <div className="empty-icon"><Icons.Package /></div>
           <div className="empty-title">暂无已安装的 Skill</div>
-          <div className="empty-desc">前往商店发现和安装 AI Skill</div>
+          <div className="empty-desc">点击「检测本地 Skill」发现本地目录中的 SKILL.md 文件</div>
         </div>
       ) : filtered.length === 0 ? (
         <div className="empty-state">

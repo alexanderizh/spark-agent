@@ -974,6 +974,19 @@ export interface SkillImportDirectoryResponse {
   failed: number
 }
 
+export interface SkillImportBatchLocalRequest {
+  candidates: Array<{
+    rootPath: string
+    source: 'claude' | 'codex' | 'agents' | 'custom'
+  }>
+}
+
+export interface SkillImportBatchLocalResponse {
+  skills: SkillItem[]
+  failed: number
+  errors: string[]
+}
+
 export interface SkillExportRequest {
   skillId: string
   targetPath: string
@@ -1338,6 +1351,43 @@ export interface WorkspaceFileChangePayload {
   timestamp: string
 }
 
+// ─── External Tool Channels ────────────────────────────────────────────────
+
+export type ExternalToolKind = 'ide' | 'terminal'
+
+export interface ExternalToolInfo {
+  /** Tool unique identifier (e.g. "vscode", "iterm2") */
+  id: string
+  /** Display name */
+  name: string
+  /** Kind: IDE or terminal */
+  kind: ExternalToolKind
+  /** Whether the tool was found installed on this machine */
+  available: boolean
+  /** Optional icon hint (for future use) */
+  iconHint?: string
+}
+
+export interface ToolDetectRequest {
+  /** If provided, only detect tools of this kind */
+  kind?: ExternalToolKind
+}
+
+export interface ToolDetectResponse {
+  tools: ExternalToolInfo[]
+}
+
+export interface ToolOpenProjectRequest {
+  /** Tool ID to open with */
+  toolId: string
+  /** Workspace root path to open */
+  rootPath: string
+}
+
+export interface ToolOpenProjectResponse {
+  opened: boolean
+}
+
 // ─── Command Channels ────────────────────────────────────────────────────────
 
 export type CommandLayer = 'sdk' | 'builtin' | 'skill'
@@ -1520,8 +1570,13 @@ export interface IpcChannelMap {
   'skill-registry:categories': [SkillRegistryCategoriesRequest, SkillRegistryCategoriesResponse]
   'skill:import-file': [SkillImportFileRequest, SkillImportFileResponse]
   'skill:import-directory': [SkillImportDirectoryRequest, SkillImportDirectoryResponse]
+  'skill:import-batch-local': [SkillImportBatchLocalRequest, SkillImportBatchLocalResponse]
   'skill:export': [SkillExportRequest, SkillExportResponse]
   'skill:export-batch': [SkillExportBatchRequest, SkillExportBatchResponse]
+
+  // External Tools (IDE / Terminal)
+  'tool:detect': [ToolDetectRequest, ToolDetectResponse]
+  'tool:open-project': [ToolOpenProjectRequest, ToolOpenProjectResponse]
 
   // Command
   'command:execute': [CommandExecuteRequest, CommandExecuteResponse]

@@ -22,6 +22,7 @@ import type { CommandParseResponse, WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
+import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
@@ -609,6 +610,12 @@ export function registerAllIpcHandlers(): void {
     return { skills: [skill], failed: 0 }
   })
 
+  typedIpcHandle('skill:import-batch-local', async (req) => {
+    log.info(`skill:import-batch-local requested, count=${req.candidates.length}`)
+    const result = getSkillService().importBatchLocal(req.candidates)
+    return result
+  })
+
   typedIpcHandle('skill:export', async (_req) => {
     // TODO: T-12 Skill 包导入/导出
     throw new Error('Not implemented yet: skill:export')
@@ -750,6 +757,20 @@ export function registerAllIpcHandlers(): void {
       svc.setChannel(req.channel)
     }
     return { ok: true }
+  })
+
+  // ─── External Tool Handlers ────────────────────────────────────────────
+
+  typedIpcHandle('tool:detect', async (req) => {
+    log.info(`tool:detect requested, kind=${req.kind ?? 'all'}`)
+    const tools = await detectExternalTools(req.kind)
+    return { tools }
+  })
+
+  typedIpcHandle('tool:open-project', async (req) => {
+    log.info(`tool:open-project requested, toolId=${req.toolId}, rootPath=${req.rootPath}`)
+    const opened = await openProjectInTool(req.toolId, req.rootPath)
+    return { opened }
   })
 
   log.info('All IPC handlers registered')

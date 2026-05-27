@@ -75,6 +75,20 @@ export class SkillService {
     return toSkillItem(this.repo.create(payload))
   }
 
+  importBatchLocal(candidates: Array<{ rootPath: string; source: LocalSkillSource }>): { skills: SkillItem[]; failed: number; errors: string[] } {
+    const skills: SkillItem[] = []
+    const errors: string[] = []
+    for (const c of candidates) {
+      try {
+        const skill = this.importLocalDirectory(c.rootPath, c.source)
+        skills.push(skill)
+      } catch (err) {
+        errors.push(`${c.rootPath}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    return { skills, failed: errors.length, errors }
+  }
+
   /**
    * 切换 Skill 启用/禁用状态
    */

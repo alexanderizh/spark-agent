@@ -305,7 +305,7 @@
   min-height: 0;
 }
 .chat-sidebar {
-  width: var(--sidebar-width, 264px);
+  width: var(--sidebar-width, 254px);
   min-width: 180px;
   max-width: 480px;
   flex-shrink: 0;
@@ -631,7 +631,7 @@ body.sidebar-resizing {
   align-items: center;
   gap: 7px;
   height: 27px;
-  padding: 0 7px 0 34px;
+  padding: 0 7px 0 22px;
 }
 .chat-item-compact .chat-item-title-compact {
   display: flex;
@@ -656,13 +656,15 @@ body.sidebar-resizing {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
   flex-shrink: 0;
-  margin-right: 5px;
 }
 .chat-item-compact:hover .chat-item-time-compact {
   display: none;
 }
 .chat-item-compact:hover .item-menu-wrap {
   display: flex;
+}
+.chat-item-compact .item-menu-wrap {
+  display: none;
 }
 .item-menu-wrap {
   position: relative;
@@ -5858,12 +5860,79 @@ body.inspector-resizing {
   font-size: 12px;
   font-weight: 650;
 }
-.local-skill-list { display: grid; }
+.local-skill-title {
+  color: var(--text);
+  font-weight: 600;
+}
+.local-skill-list {
+  display: grid;
+  max-height: 420px;
+  overflow-y: auto;
+}
 .local-skill-row {
   min-height: 48px;
   padding: 8px 10px;
+  transition: background 0.12s;
 }
+.local-skill-row:hover { background: var(--hover); }
 .local-skill-row + .local-skill-row { border-top: 1px solid var(--border); }
+.local-skill-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+  position: relative;
+}
+.local-skill-check input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.local-skill-check .checkmark {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--panel);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.12s;
+}
+.local-skill-check input:checked + .checkmark {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.local-skill-check input:checked + .checkmark::after {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+  margin-top: -1px;
+}
+.local-skill-check:hover .checkmark {
+  border-color: var(--primary);
+}
+.local-skill-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
 .runtime-skill-list {
   display: grid;
   gap: 6px;

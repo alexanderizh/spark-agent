@@ -338,6 +338,12 @@ export const IpcSchemaRegistry = {
     directoryPath: z.string().min(1).max(1000),
     source: LocalSkillSourceSchema.optional(),
   }),
+  'skill:import-batch-local': z.object({
+    candidates: z.array(z.object({
+      rootPath: z.string().min(1).max(1000),
+      source: LocalSkillSourceSchema,
+    })).min(1).max(100),
+  }),
   'skill-config:get': z.object({
     workspaceId: z.string().min(1).optional(),
     sessionId: z.string().min(1).optional(),
