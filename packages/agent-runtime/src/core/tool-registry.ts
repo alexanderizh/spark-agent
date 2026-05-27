@@ -4,6 +4,9 @@ import { exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import type { ToolDefinition } from '../adapters/types.js'
 import type { ToolCallEvent, ToolResultEvent } from '@spark/protocol'
+import { bashTool, isReadonlyCommand } from './tools/bash.js'
+import { grepTool } from './tools/grep.js'
+import { gitTool, isGitReadonly } from './tools/git.js'
 
 const execAsync = promisify(exec)
 const MAX_TEXT_BYTES = 1_000_000
@@ -312,6 +315,14 @@ export class ToolRegistry {
         }
       },
     })
+
+    // --- Shell Tools (bash/grep/git) ---
+
+    this.register(bashTool)
+
+    this.register(grepTool)
+
+    this.register(gitTool)
   }
 
   register(tool: RegisteredTool): void {

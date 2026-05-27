@@ -3,6 +3,8 @@ import type { AgentEvent, AgentStatusValue, SessionPermissionMode, ToolCallEvent
 import type { IModelAdapter, ChatMessage, ChatParams } from '../adapters/types.js'
 import { ToolRegistry, type ToolContext } from './tool-registry.js'
 import { AgentEventEmitter } from './event-emitter.js'
+import { isReadonlyCommand } from './tools/bash.js'
+import { isGitReadonly, isGitDenied } from './tools/git.js'
 
 type ToolPermissionDecision = 'allow' | 'ask' | 'deny'
 
@@ -136,7 +138,7 @@ export class AgentLoop {
 
             const resultBase = makeBase()
 
-            const permissionDecision = getToolPermissionDecision(permissionMode, pendingToolCall.toolName)
+            const permissionDecision = getToolPermissionDecision(permissionMode, pendingToolCall.toolName, pendingToolCall.toolInput)
             if (permissionDecision === 'deny') {
               this.emitter.emit({
                 ...resultBase,
@@ -272,12 +274,34 @@ export class AgentLoop {
   }
 }
 
-function getToolPermissionDecision(mode: SessionPermissionMode | undefined, toolName: string): ToolPermissionDecision {
+function getToolPermissionDecision(mode: SessionPermissionMode | undefined, toolName: string, toolInput?: Record<string, unknown>): ToolPermissionDecision {
   const permissionMode = mode ?? 'codex-default'
   const category = getToolCategory(toolName)
 
+  // Full access modes: allow everything
   if (permissionMode === 'claude-bypass' || permissionMode === 'codex-full-access') return 'allow'
+
+  // Plan mode: only reads allowed
   if (permissionMode === 'claude-plan') return category === 'read' ? 'allow' : 'deny'
+
+  // Use fine-grained permission for bash and git tools
+  if (toolInput && (toolName === 'bash' || toolName === 'git')) {
+    const level = getToolPermissionLevel(toolName, toolInput)
+
+    // Always deny 'deny' level regardless of mode
+    if (level === 'deny') return 'deny'
+
+    // Auto-approve 'auto' level in all modes except plan (handled above)
+    if (level === 'auto') return 'allow'
+
+    // 'ask' level: depends on permission mode
+    if (permissionMode === 'claude-auto-edits') return category === 'command' ? 'ask' : 'allow'
+    if (permissionMode === 'claude-auto' || permissionMode === 'codex-auto-review') return 'ask'
+    // Default for ask-level: ask
+    return 'ask'
+  }
+
+  // Standard category-based permissions for other tools
   if (permissionMode === 'claude-auto-edits') return category === 'command' || category === 'dangerous' ? 'ask' : 'allow'
   if (permissionMode === 'claude-auto' || permissionMode === 'codex-auto-review') return category === 'dangerous' ? 'ask' : 'allow'
   if (permissionMode === 'claude-ask' || permissionMode === 'codex-default') return category === 'read' ? 'allow' : 'ask'
@@ -286,11 +310,57 @@ function getToolPermissionDecision(mode: SessionPermissionMode | undefined, tool
 }
 
 function getToolCategory(toolName: string): 'read' | 'write' | 'command' | 'dangerous' {
+  // File read tools — always auto-approved
   if (toolName === 'read_file' || toolName === 'list_directory' || toolName === 'search_files' || toolName === 'grep_files') return 'read'
+
+  // grep tool — read-only, auto-approved
+  if (toolName === 'grep') return 'read'
+
+  // File write tools — require approval (except in full-access modes)
   if (toolName === 'write_file' || toolName === 'edit_file' || toolName === 'apply_patch') return 'write'
-  if (toolName === 'run_command') return 'command'
+
+  // bash tool — categorized based on the command content
+  // For permission purposes, bash is 'command' category (default: ask)
+  // But we support fine-grained permission via tool metadata
+  if (toolName === 'bash' || toolName === 'run_command') return 'command'
+
+  // git tool — categorized based on operation type
+  // For permission purposes, git defaults to 'command'
+  // But individual operations can be auto-approved (readonly) or denied
+  if (toolName === 'git') return 'command'
+
+  // Dangerous tools — always denied
   if (toolName === 'delete_file' || toolName === 'git_push') return 'dangerous'
+
   return 'dangerous'
+}
+
+/**
+ * Get fine-grained permission decision for a tool call.
+ * This goes beyond the basic category-based check to support
+ * per-command permission levels (e.g., read-only bash commands auto-approved).
+ */
+export function getToolPermissionLevel(
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): 'auto' | 'ask' | 'deny' {
+  // bash: read-only commands auto-approved
+  if (toolName === 'bash') {
+    const command = String(toolInput['command'] ?? '')
+    if (isReadonlyCommand(command)) return 'auto'
+    return 'ask'
+  }
+
+  // git: read operations auto-approved, write operations ask
+  if (toolName === 'git') {
+    const operation = String(toolInput['operation'] ?? '')
+    if (isGitReadonly(operation)) return 'auto'
+    if (isGitDenied(operation)) return 'deny'
+    return 'ask'
+  }
+
+  // Default: use category-based decision
+  return 'ask'
 }
 
 /**

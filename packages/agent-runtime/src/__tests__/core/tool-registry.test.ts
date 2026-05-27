@@ -23,9 +23,9 @@ describe('ToolRegistry', () => {
   it('getDefinitions returns coding built-in tools', () => {
     const defs = registry.getDefinitions()
     expect(defs.map((d) => d.name)).toEqual(
-      expect.arrayContaining(['read_file', 'write_file', 'list_directory', 'search_files', 'grep_files', 'edit_file', 'run_command', 'apply_patch']),
+      expect.arrayContaining(['read_file', 'write_file', 'list_directory', 'search_files', 'grep_files', 'edit_file', 'run_command', 'apply_patch', 'bash', 'grep', 'git']),
     )
-    expect(defs.length).toBeGreaterThanOrEqual(8)
+    expect(defs.length).toBeGreaterThanOrEqual(11)
   })
 
   it('read_file reads a temp file', async () => {

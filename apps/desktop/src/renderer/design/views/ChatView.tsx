@@ -41,6 +41,7 @@ type ComposerPrefs = {
   permissionMode?: PermissionModeChoice
   reasoningEffort?: SessionReasoningEffort
 }
+type QueuedMessage = { id: string; content: string }
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 
@@ -1131,13 +1132,13 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
         const toolArg = JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
         return toolStatus ? (
           <ToolCall key={i} name={block.toolName} arg={toolArg} status={toolStatus}>
-            {surface !== 'main' && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
-            {surface !== 'main' && block.error && <span className="tool-error-span">{block.error}</span>}
+            {block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+            {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         ) : (
           <ToolCall key={i} name={block.toolName} arg={toolArg}>
-            {surface !== 'main' && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
-            {surface !== 'main' && block.error && <span className="tool-error-span">{block.error}</span>}
+            {block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+            {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         )
       }
@@ -1615,7 +1616,8 @@ function ComposerV2({
   const initialPrefs = initialPrefsRef.current
   const [value, setValue] = useState('')
   const [sending, setSending] = useState(false)
-  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
+  const [queueVisible, setQueueVisible] = useState(true)
   const [manualExpanded, setManualExpanded] = useState(false)
   const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(initialPrefs.adapter ?? 'claude')
   const [draftModelId, setDraftModelId] = useState(initialPrefs.modelId ?? '')
@@ -1626,7 +1628,9 @@ function ComposerV2({
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(initialPrefs.reasoningEffort ?? 'medium')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
+  const nextQueueIdRef = useRef(0)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
 
   const adapter = session?.agentAdapter ?? draftAdapter
   const compatibleProviders = providers.filter((provider) => getProviderAdapterKind(provider) === adapter)
@@ -1748,21 +1752,38 @@ function ComposerV2({
     const [next, ...rest] = queuedMessages
     if (next == null) return
     setQueuedMessages(rest)
-    void dispatchMessage(next)
+    void dispatchMessage(next.content)
   }, [dispatchMessage, isBusy, queuedMessages])
+
+  const enqueueMessage = (content: string) => {
+    setQueueVisible(true)
+    setQueuedMessages((prev) => {
+      toast.info(`任务执行中，已加入临时队列（${prev.length + 1}）。`)
+      return [...prev, { id: `queued-${nextQueueIdRef.current++}`, content }]
+    })
+  }
 
   const handleSend = async () => {
     if (!canSubmit) return
     const text = value.trim()
     setValue('')
     if (isBusy) {
-      setQueuedMessages((prev) => {
-        toast.info(`任务执行中，已加入临时队列（${prev.length + 1}）。`)
-        return [...prev, text]
-      })
+      enqueueMessage(text)
       return
     }
     await dispatchMessage(text)
+  }
+
+  const handleRemoveQueuedMessage = (id: string) => {
+    setQueuedMessages((prev) => prev.filter((message) => message.id !== id))
+  }
+
+  const handleSendQueuedNow = async (message: QueuedMessage) => {
+    setQueuedMessages((prev) => prev.filter((item) => item.id !== message.id))
+    if (session?.id != null && isWorking) {
+      await cancelTurn({ sessionId: session.id })
+    }
+    await dispatchMessage(message.content)
   }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -1843,6 +1864,33 @@ function ComposerV2({
   return (
     <div className="composer-wrap">
       <div className="composer-inner">
+        {queuedMessages.length > 0 && queueVisible && (
+          <div className="composer-queue-panel">
+            {queuedMessages.map((message) => (
+              <div key={message.id} className="composer-queue-item">
+                <Icons.Clock size={15} className="composer-queue-icon" />
+                <span className="composer-queue-text">{message.content}</span>
+                <button
+                  type="button"
+                  className="composer-queue-action"
+                  title="立即发送"
+                  onClick={() => void handleSendQueuedNow(message)}
+                >
+                  <Icons.ArrowUp size={14} />
+                  <span>立即发送</span>
+                </button>
+                <button
+                  type="button"
+                  className="composer-queue-icon-btn"
+                  title="移除"
+                  onClick={() => handleRemoveQueuedMessage(message.id)}
+                >
+                  <Icons.Trash size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''}`}>
           <textarea
             ref={textareaRef}
@@ -1921,7 +1969,16 @@ function ComposerV2({
               <span>{contextRatio}%</span>
               <span className="context-ring" style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties} />
             </div>
-            {queuedMessages.length > 0 && <span className="queued-chip">{queuedMessages.length} 条排队中</span>}
+            {queuedMessages.length > 0 && (
+              <button
+                type="button"
+                className="queued-chip"
+                title={queueVisible ? '隐藏队列' : '显示队列'}
+                onClick={() => setQueueVisible((prev) => !prev)}
+              >
+                {queueVisible ? '隐藏队列' : '显示队列'} · {queuedMessages.length}
+              </button>
+            )}
             <div className="spacer" />
             {showBranchSelect && (
               <ComposerMenuSelect

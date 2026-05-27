@@ -960,7 +960,10 @@
   font-size: var(--font-sm);
 }
 .tool-call-head {
-  display: flex; align-items: center; gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
   padding: 6px 0;
   background: transparent;
   cursor: pointer;
@@ -980,10 +983,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
+  flex: 0 1 auto;
+  max-width: min(72ch, 58vw);
 }
 .tool-call-head .chev {
-  margin-left: auto;
+  margin-left: 0;
   color: var(--text-faint);
   transition: transform 0.15s;
 }
@@ -998,7 +1002,7 @@
   line-height: 1.6;
   max-height: 200px;
   overflow: auto;
-  white-space: pre;
+  white-space: normal;
 }
 
 .tool-icon {
@@ -1210,6 +1214,63 @@
   color: var(--text-faint);
 }
 .composer-send-btn { height: 28px; padding-inline: 14px; }
+
+.composer-queue-panel {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 8px;
+}
+.composer-queue-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+}
+.composer-queue-icon {
+  color: var(--text-faint);
+}
+.composer-queue-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.composer-queue-action,
+.composer-queue-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.composer-queue-action {
+  gap: 5px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-md);
+  font-size: var(--font-sm);
+}
+.composer-queue-action:hover,
+.composer-queue-icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.composer-queue-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-md);
+}
 
 .composer-v2 {
   position: relative;
@@ -1475,13 +1536,20 @@
 .queued-chip {
   display: inline-flex;
   align-items: center;
+  border: 0;
   height: 24px;
   padding: 0 8px;
   border-radius: 12px;
   background: var(--bg-soft);
   color: var(--text-muted);
+  font: inherit;
   font-size: var(--font-xs);
   white-space: nowrap;
+  cursor: pointer;
+}
+.queued-chip:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 
 /* Inspector helpers */
@@ -1494,7 +1562,7 @@
 }
 
 /* Tool output / error within tool-call */
-.tool-output-pre { margin: 0; font-size: 11px; }
+.tool-output-pre { margin: 0; font-size: 11px; white-space: pre-wrap; }
 .tool-error-span { color: var(--danger); font-size: 11px; }
 
 /* Session notice */
@@ -1783,8 +1851,9 @@ body.inspector-resizing {
 }
 .inspector-log-head:hover { background: var(--hover); }
 .inspector-log-head .tool-name {
-  flex: 1;
+  flex: 0 1 auto;
   min-width: 0;
+  max-width: min(38ch, 55%);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
