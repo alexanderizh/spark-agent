@@ -4,6 +4,7 @@ import { ToastProvider, ToastContainer, useToast } from './design/components/Toa
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { SparkInput } from './design/components/FormControls'
 import type { PermissionApprovalRequest } from '@spark/protocol'
+import { useGlobalShortcuts, getShortcutLabel } from './design/hooks/useKeyboard'
 
 import { HomeView } from './design/views/HomeView'
 import { ChatView } from './design/views/ChatView'
@@ -37,7 +38,7 @@ function SparkLogoMark() {
 
 /* ---------- ViewHeader — per-view title bar (matches design spec) ---------- */
 function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
-  const { setTweak } = useApp()
+  const { t, setTweak } = useApp()
 
   const viewMeta: Record<string, { title: string; sub: string }> = {
     home: { title: 'Home', sub: 'Sessions, projects & running tasks' },
@@ -55,6 +56,8 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
   }
   const meta = viewMeta[view] ?? { title: view, sub: '' }
   const isCompact = view === 'chat' || view === 'workflows'
+
+  const paletteHint = getShortcutLabel('openPalette')
 
   return (
     <div
@@ -95,7 +98,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
           </div>
         )}
         <button className="btn ghost sm" onClick={() => setTweak('showPalette', true)}>
-          <Icons.Command size={12} /> ⌘K
+          <Icons.Command size={12} /> {paletteHint}
         </button>
       </div>
     </div>
@@ -165,28 +168,32 @@ function Shell() {
     return () => obs.disconnect()
   }, [])
 
-  // Keyboard shortcuts
-  const onKey = useCallback(
-    (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault()
-        setTweak('showPalette', true)
-      }
-      if (e.key === 'Escape') {
-        setTweak('showPalette', false)
-        setTweak('showPerm', false)
-        setTweak('showProviderEdit', false)
-        setTweak('showProfileEdit', false)
-        setApprovalRequest(null)
+  // Navigation handler for command palette
+  const handleNavigate = useCallback((view: string) => {
+    if (view === '__toggleSidebar') {
+      setTweak('sidebar', t.sidebar === 'expanded' ? 'collapsed' : 'expanded')
+    } else {
+      setTweak('view', view as typeof t.view)
+    }
+  }, [setTweak, t.sidebar])
+
+  // New session handler
+  const handleNewSession = useCallback(() => {
+    setTweak('view', 'chat')
+  }, [setTweak])
+
+  // Global keyboard shortcuts
+  useGlobalShortcuts({
+    setTweak: setTweak as (key: string, val: unknown) => void,
+    onSearchFocus: () => {
+      // Focus the search input in the current view if possible
+      const searchInput = document.querySelector('.search-input input, .search-input .spark-input') as HTMLElement | null
+      if (searchInput) {
+        searchInput.focus()
       }
     },
-    [setTweak],
-  )
-
-  useEffect(() => {
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [onKey])
+    onNewSession: handleNewSession,
+  })
 
   // Listen for tool approval requests from main process
   useEffect(() => {
@@ -213,6 +220,10 @@ function Shell() {
 
   const isExpanded = t.sidebar === 'expanded'
 
+  const paletteHint = getShortcutLabel('openPalette')
+  const sidebarHint = getShortcutLabel('toggleSidebar')
+  const settingsHint = getShortcutLabel('openSettings')
+
   return (
     <ErrorBoundary level="global" name="Shell">
     <div
@@ -236,7 +247,7 @@ function Shell() {
         </div>
         <div className="titlebar-spacer" />
         <div className="titlebar-actions">
-          <button className="icon-btn" onClick={() => setTweak('showPalette', true)}>
+          <button className="icon-btn" onClick={() => setTweak('showPalette', true)} title={paletteHint}>
             <Icons.Search size={14} />
           </button>
           <button className="icon-btn" onClick={() => setTweak('showPerm', true)}>
@@ -263,8 +274,7 @@ function Shell() {
                 <>
                   <span className="nav-label">Search / Command</span>
                   <span style={{ display: 'flex', gap: 2 }}>
-                    <span className="kbd">⌘</span>
-                    <span className="kbd">K</span>
+                    <span className="kbd">{paletteHint}</span>
                   </span>
                 </>
               )}
@@ -281,7 +291,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.Home />
               </span>
-              {isExpanded && <span className="nav-label">Home</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Home</span>
+                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewHome')}</span>
+                </>
+              )}
             </button>
             <button
               className={`nav-item ${t.view === 'chat' ? 'active' : ''}`}
@@ -291,7 +306,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.Chat />
               </span>
-              {isExpanded && <span className="nav-label">Chat</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Chat</span>
+                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewChat')}</span>
+                </>
+              )}
             </button>
             <button
               className={`nav-item ${t.view === 'projects' ? 'active' : ''}`}
@@ -301,7 +321,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.Folder />
               </span>
-              {isExpanded && <span className="nav-label">Projects</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Projects</span>
+                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewProjects')}</span>
+                </>
+              )}
             </button>
             <button
               className={`nav-item ${t.view === 'workflows' ? 'active' : ''}`}
@@ -311,7 +336,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.Workflow />
               </span>
-              {isExpanded && <span className="nav-label">Workflows</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Workflows</span>
+                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewWorkflows')}</span>
+                </>
+              )}
             </button>
             <button
               className={`nav-item ${t.view === 'agents' ? 'active' : ''}`}
@@ -321,7 +351,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.Bot />
               </span>
-              {isExpanded && <span className="nav-label">Agents</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Agents</span>
+                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewAgents')}</span>
+                </>
+              )}
             </button>
           </div>
 
@@ -335,7 +370,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.Skills />
               </span>
-              {isExpanded && <span className="nav-label">Skills</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Skills</span>
+                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewSkills')}</span>
+                </>
+              )}
             </button>
             <button
               className={`nav-item ${t.view === 'mcp' ? 'active' : ''}`}
@@ -345,7 +385,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.MCP />
               </span>
-              {isExpanded && <span className="nav-label">MCP</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">MCP</span>
+                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewMcp')}</span>
+                </>
+              )}
             </button>
           </div>
 
@@ -359,7 +404,12 @@ function Shell() {
               <span className="nav-icon">
                 <Icons.Settings />
               </span>
-              {isExpanded && <span className="nav-label">Settings</span>}
+              {isExpanded && (
+                <>
+                  <span className="nav-label">Settings</span>
+                  <span className="kbd sidebar-kbd">{settingsHint}</span>
+                </>
+              )}
             </button>
           </div>
 
@@ -376,7 +426,7 @@ function Shell() {
                   className="icon-btn sidebar-toggle-btn"
                   onClick={() => setTweak('sidebar', 'collapsed')}
                   aria-label="Collapse sidebar"
-                  title="Collapse sidebar"
+                  title={`Collapse sidebar (${sidebarHint})`}
                 >
                   <Icons.ChevronLeft size={14} />
                 </button>
@@ -387,7 +437,7 @@ function Shell() {
                 className="icon-btn sidebar-toggle-btn collapsed-toggle"
                 onClick={() => setTweak('sidebar', 'expanded')}
                 aria-label="Expand sidebar"
-                title="Expand sidebar"
+                title={`Expand sidebar (${sidebarHint})`}
               >
                 <Icons.PanelLeft size={16} />
               </button>
@@ -405,7 +455,13 @@ function Shell() {
       </div>
 
       {/* Overlays */}
-      {t.showPalette && <CommandPalette onClose={() => setTweak('showPalette', false)} />}
+      {t.showPalette && (
+        <CommandPalette
+          onClose={() => setTweak('showPalette', false)}
+          onNavigate={handleNavigate}
+          onNewSession={handleNewSession}
+        />
+      )}
       {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', toolInput: {}, riskLevel: 'medium' }} onClose={() => setTweak('showPerm', false)} />}
       {approvalRequest && <PermissionModal request={approvalRequest} onClose={() => setApprovalRequest(null)} />}
 

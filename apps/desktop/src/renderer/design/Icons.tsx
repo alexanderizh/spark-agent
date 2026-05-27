@@ -111,6 +111,7 @@ export const Icons = {
   Wifi: (p: IconProps) => <IconBase {...p}><path d="M2 8.5a18 18 0 0 1 20 0" /><path d="M6 12.5a10 10 0 0 1 12 0" /><path d="M10 16.5a3 3 0 0 1 4 0" /><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" /></IconBase>,
   Hash: (p: IconProps) => <IconBase {...p}><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18" /></IconBase>,
   Rocket: (p: IconProps) => <IconBase {...p}><path d="M5 13.5L3 17l3.5-2M14 5l5 5-9 9-5-5 9-9zM14 5c2-2 5-3 8-2-1 3-2 6-4 8M9 11l4 4" /></IconBase>,
+  Compass: (p: IconProps) => <IconBase {...p}><circle cx="12" cy="12" r="9" /><path d="M16.2 7.8l-2.9 5.5-5.5 2.9 2.9-5.5 5.5-2.9z" /></IconBase>,
   Spinner: ({ size = 16, className = '', style }: IconProps) => (
     <svg width={size} height={size} viewBox="0 0 24 24" className={`spin ${className}`} style={style} xmlns="http://www.w3.org/2000/svg">
       <circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" strokeWidth="2.4" opacity="0.2" />

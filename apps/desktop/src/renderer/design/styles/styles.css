@@ -560,6 +560,13 @@ button { font-family: inherit; }
   font-weight: 500;
 }
 
+/* Sidebar shortcut hints — auto-aligned to the right */
+.sidebar-kbd {
+  margin-left: auto;
+  font-size: 9px;
+  opacity: 0.6;
+}
+
 .card {
   background: var(--panel);
   border: 1px solid var(--border);
