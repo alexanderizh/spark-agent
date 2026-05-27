@@ -106,6 +106,18 @@
 - “权限模式与规则配置持久化”已基本具备。
 - “会话中的审批决策转成可审查的持久规则”尚未完成，建议作为下一轮 P0。
 
+### 6. 结构化用户补充问答
+
+当前状态:
+- 尚未实现类似 Claude 的通用 clarification request。
+- agent 不确定时目前只能通过普通 assistant 文本追问用户；用户回复会作为后续 turn 进入，而不是结构化暂停/恢复同一任务。
+- 已有的用户交互能力主要是工具权限审批和 plan approval，它们都不是通用问答模块。
+
+建议目标:
+- 新增结构化用户补充问答能力，让 agent 可以在信息不足时向用户请求单选、多选或自由文本补充。
+- 该能力应区别于 permission approval: 它用于补足任务语义，而不是授权工具执行。
+- 如果 Claude Agent SDK 没有直接暴露通用 human input hook，可评估通过 Spark 侧 MCP/tool bridge 提供 `ask_user` 工具实现。
+
 ## 当前提交进度
 
 已完成提交:
@@ -224,6 +236,21 @@
 验收标准:
 - TypeScript/单测失败时能自动进入修复循环，直到通过或明确停止。
 
+### P1-D: 结构化用户补充问答
+
+目标:
+- 当 agent 对任务意图、约束或偏好不确定时，可以暂停执行并向用户提出结构化问题。
+
+开发内容:
+- 协议层新增通用 `user_input_request` / `user_input_response` 事件或等价 IPC。
+- 支持单选、多选、确认型问题和自由文本输入。
+- ChatView 在 composer 附近渲染问答卡片，回答后将结果回传运行时。
+- 评估 Claude Agent SDK 路径是否可原生暂停/恢复；如不可行，优先通过 Spark MCP/tool bridge 暴露 `ask_user` 工具。
+
+验收标准:
+- agent 可以在同一任务链路中提出补充问题，用户回答后继续执行。
+- 问答记录进入 session history，后续上下文可追踪用户选择和补充文本。
+
 ## 暂缓事项
 
 以下内容不建议立即投入:
@@ -246,5 +273,6 @@
 4. Context Governor MVP。
 5. SDK checkpoint / diff 审查。
 6. 自修复验证循环。
+7. 结构化用户补充问答。
 
 若只选一个下一步，应优先做“权限审批决策持久化闭环”。这是 SDK code agent 能否长期可用、可控、可被用户信任的关键。

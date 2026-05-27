@@ -178,6 +178,8 @@ Spark Agent 作为一个本地优先的桌面端 AI Agent 工作台，在 v0.1.0
 
 5. **无代码 diff 审查界面**：HunkDiff 组件已集成但缺乏交互性——不支持逐行 accept/reject、不支持在 diff 中编辑。
 
+6. **无结构化用户补充问答**：当前 agent 不确定时只能用普通 assistant 文本追问用户；没有通用的 clarification request 协议和 UI，无法像 Claude 一样渲染单选、多选或自由文本补充卡片，也无法把“等待用户补充”作为可追踪的任务状态。现有工具权限审批和 plan approval 只覆盖授权/计划确认，不覆盖任务语义补充。
+
 ### 2.10 Testing & Quality — 评分：60/100
 
 **现状：**
@@ -300,21 +302,24 @@ API 调用失败后自动切换备用模型或指数退避重试
 #### 10. Bash 沙箱执行
 至少实现基本的文件系统隔离（chroot / namespace）和网络策略控制
 
+#### 11. 结构化用户补充问答
+当 agent 缺少关键信息或对任务约束不确定时，支持暂停执行并向用户提出单选、多选、确认或自由文本问题。协议层需新增通用问答事件或 IPC，ChatView 渲染问答卡片，回答后恢复任务上下文。若 Claude Agent SDK 不提供原生 human input hook，优先评估通过 Spark MCP/tool bridge 暴露 `ask_user` 工具。
+
 ### P2 — 中优先级（提升用户体验）
 
-#### 11. Monaco Editor 集成
+#### 12. Monaco Editor 集成
 代码对比、diff 审查、语法高亮是桌面 agent 的必备能力
 
-#### 12. 终端 PTY 集成
+#### 13. 终端 PTY 集成
 node-pty + xterm.js，支持交互式命令执行
 
-#### 13. 虚拟列表
+#### 14. 虚拟列表
 ChatView 长会话性能优化
 
-#### 14. Multi-Agent 编排基础
+#### 15. Multi-Agent 编排基础
 subagent 创建、消息传递、并行执行
 
-#### 15. Workflow 执行引擎
+#### 16. Workflow 执行引擎
 DAG 执行、状态机、节点级重跑
 
 ### P3 — 低优先级（增强与生态）
@@ -369,7 +374,8 @@ Month 3-4: 差异化能力
   ├── Checkpoint / 会话分支
   ├── 代码索引（tree-sitter + FTS5）
   ├── Self-correction 循环
-  └── Bash 沙箱执行
+  ├── Bash 沙箱执行
+  └── 结构化用户补充问答
 
 Month 5-6: 体验提升
   ├── Monaco Editor 集成
