@@ -674,11 +674,13 @@ describe('SessionService.sendTurn', () => {
     capturedListener!(fakeEvent)
     capturedListener!(fakeEvent)
 
-    expect(onEvent).toHaveBeenCalledTimes(2)
+    expect(onEvent).toHaveBeenCalledTimes(3)
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect((onEvent.mock.calls[0] as unknown[][])[0]).toMatchObject({ seq: 0 })
+    expect((onEvent.mock.calls[0] as unknown[][])[0]).toMatchObject({ type: 'project_context_loaded', seq: 0 })
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect((onEvent.mock.calls[1] as unknown[][])[0]).toMatchObject({ seq: 1 })
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect((onEvent.mock.calls[2] as unknown[][])[0]).toMatchObject({ seq: 2 })
   })
 })
 

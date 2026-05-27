@@ -257,6 +257,24 @@ export interface ContextUsageEvent extends BaseEvent {
   compacted: boolean
 }
 
+export interface ProjectContextSource {
+  kind: 'rule' | 'skill' | 'agent'
+  name: string
+  path: string
+  truncated?: boolean
+}
+
+export interface ProjectContextLoadedEvent extends BaseEvent {
+  type: 'project_context_loaded'
+  workspaceRoot?: string
+  sources: ProjectContextSource[]
+  counts: {
+    rules: number
+    skills: number
+    agents: number
+  }
+}
+
 // ─── Plan-mode 事件 ─────────────────────────────────────────────────────────
 
 /**
@@ -316,6 +334,7 @@ export type AgentEvent =
   | AgentErrorEvent
   | PlanProposedEvent
   | ContextUsageEvent
+  | ProjectContextLoadedEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']

@@ -420,6 +420,22 @@ export class SessionService {
     // ── SDK Execution Path ─────────────────────────────────────────────────
     // Claude execution is SDK-only. If the SDK is missing or cannot load, fail
     // the turn with an actionable error instead of falling back to direct API.
+    this.emitAndPersist(sessionId, turnId, {
+      id: crypto.randomUUID(),
+      type: 'project_context_loaded',
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+      ...(workspaceInfo?.rootPath != null ? { workspaceRoot: workspaceInfo.rootPath } : {}),
+      sources: projectContext.sources,
+      counts: {
+        rules: projectContext.sources.filter((source) => source.kind === 'rule').length,
+        skills: projectContext.sources.filter((source) => source.kind === 'skill').length,
+        agents: projectContext.sources.filter((source) => source.kind === 'agent').length,
+      },
+    }, eventRepo)
+
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
       const sdkConfig: SDKExecutorConfig = {
         apiKey,

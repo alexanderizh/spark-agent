@@ -84,6 +84,7 @@ type ContextUsageState = {
   contextWindowTokens: number
   compactedThisTurn: boolean
 }
+type ProjectContextState = Extract<AgentEvent, { type: 'project_context_loaded' }>
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const SESSION_HISTORY_PAGE_SIZE = 500
@@ -128,6 +129,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     turns: [],
   })
   const [contextUsage, setContextUsage] = useState<ContextUsageState | null>(null)
+  const [projectContext, setProjectContext] = useState<ProjectContextState | null>(null)
   const [proposedPlan, setProposedPlan] = useState<string | null>(null)
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
@@ -733,6 +735,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
                 if (status !== 'running') refreshSessions()
               }}
               onContextUsageChange={setContextUsage}
+              onProjectContextChange={setProjectContext}
               onPlanProposed={setProposedPlan}
               clearTrigger={clearTrigger}
             />
@@ -776,6 +779,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           workspace={activeWorkspace}
           messages={active == null ? [] : activeMessages}
           usageData={sessionUsageData}
+          projectContext={projectContext}
           contextInputTokens={contextInputTokens}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
@@ -1403,6 +1407,7 @@ function ChatStream({
   onMessagesChange,
   onSessionStatusChange,
   onContextUsageChange,
+  onProjectContextChange,
   onPlanProposed,
   clearTrigger,
 }: {
@@ -1413,6 +1418,7 @@ function ChatStream({
   onMessagesChange: (messages: UIMessage[]) => void
   onSessionStatusChange: (status: SessionSummary['status']) => void
   onContextUsageChange: (snapshot: ContextUsageState | null) => void
+  onProjectContextChange: (snapshot: ProjectContextState | null) => void
   onPlanProposed: (plan: string) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
@@ -1462,6 +1468,7 @@ function ChatStream({
     isStreamingRef.current = false
     userScrolledRef.current = false
     onContextUsageChange(null)
+    onProjectContextChange(null)
 
     // 2) 异步从 SQLite 加载完整历史并更新
     const timer = window.setTimeout(() => {
@@ -1495,6 +1502,7 @@ function ChatStream({
               compactedThisTurn: latestContext.compacted,
             })
           }
+          onProjectContextChange(getLatestProjectContextEvent(events))
         })
         .catch((err) => {
           console.error('Failed to load session history:', err)
@@ -1536,7 +1544,7 @@ function ChatStream({
         bufferedEventsRef.current = []
       }
     }
-  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onContextUsageChange, sessionId])
+  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onContextUsageChange, onProjectContextChange, sessionId])
 
   // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
   const flushMessages = useCallback(() => {
@@ -1568,6 +1576,7 @@ function ChatStream({
     onStatusChange('')
     onUsageDataChange({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
     onContextUsageChange(null)
+    onProjectContextChange(null)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTrigger])
 
@@ -1636,6 +1645,10 @@ function ChatStream({
       })
     }
 
+    if (event.type === 'project_context_loaded') {
+      onProjectContextChange(event)
+    }
+
     if (event.type === 'plan_proposed') {
       onPlanProposed(event.plan)
     }
@@ -1658,7 +1671,7 @@ function ChatStream({
 
     // 其他事件走 RAF 批量
     scheduleFlush()
-  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onPlanProposed, flushMessages, scheduleFlush])
+  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onProjectContextChange, onPlanProposed, flushMessages, scheduleFlush])
 
   // 智能自动滚动：只在用户未主动上滚时自动跟随
   useEffect(() => {
@@ -1783,6 +1796,14 @@ function getLatestContextUsageEvent(events: AgentEvent[]): Extract<AgentEvent, {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]
     if (event?.type === 'context_usage') return event
+  }
+  return null
+}
+
+function getLatestProjectContextEvent(events: AgentEvent[]): ProjectContextState | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event?.type === 'project_context_loaded') return event
   }
   return null
 }
@@ -4150,6 +4171,7 @@ function ChatInspector({
   workspace,
   messages,
   usageData,
+  projectContext,
   contextInputTokens,
   width,
   onWidthChange,
@@ -4159,6 +4181,7 @@ function ChatInspector({
   workspace: WorkspaceInfo | null
   messages: UIMessage[]
   usageData: SessionUsageData
+  projectContext: ProjectContextState | null
   contextInputTokens: number
   width: number
   onWidthChange: (width: number) => void
@@ -4177,6 +4200,7 @@ function ChatInspector({
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
+  const projectContextSources = projectContext?.sources ?? []
 
   const loadRuntimeConfig = useCallback(async () => {
     const req = {
@@ -4319,6 +4343,32 @@ function ChatInspector({
           <div className="inspector-muted">未选择会话</div>
         )}
       </div>
+
+      {session != null && projectContext != null && (
+        <div className="inspector-section">
+          <h4>
+            项目上下文
+            <span className="inspector-count">{projectContextSources.length}</span>
+          </h4>
+          <div className="kv-row"><span className="k">规则</span><span className="v">{projectContext.counts.rules}</span></div>
+          <div className="kv-row"><span className="k">Skills</span><span className="v">{projectContext.counts.skills}</span></div>
+          <div className="kv-row"><span className="k">Agents</span><span className="v">{projectContext.counts.agents}</span></div>
+          {projectContextSources.length > 0 ? (
+            <div className="runtime-skill-list">
+              {projectContextSources.map((source) => (
+                <div className="runtime-skill-row" key={`${source.kind}:${source.path}`}>
+                  <div className="runtime-skill-main min-w-0">
+                    <div className="runtime-skill-name truncate">{source.name}</div>
+                    <div className="runtime-skill-desc truncate">{source.kind} · {source.path}{source.truncated ? ' · truncated' : ''}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
+          )}
+        </div>
+      )}
 
       {plans.length > 0 && (
         <div className="inspector-section">

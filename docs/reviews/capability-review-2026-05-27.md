@@ -133,6 +133,8 @@
 - `6665f8d fix: refresh workspace sessions after project creation`
 - `e42db8e docs: update code agent roadmap after core progress`
 - `232a2e1 feat: surface SDK tool results and checkpoints`
+- `19455ee feat: persist permission approval decisions`
+- 待提交: project context audit UI，补 `project_context_loaded` event、session history hydration、Inspector sources list。
 - 待提交: permission persistence MVP，补 `permission_decisions`、DB-backed active profile、project/global remembered approval decisions、ChatView approval persistent actions。
 - 待提交: SDK event polish，补 `user(tool_result)`、`file_change`、`checkpoint` 承载。
 
