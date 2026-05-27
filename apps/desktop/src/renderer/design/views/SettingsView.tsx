@@ -1415,19 +1415,46 @@ function RuleEditPanel({
 }
 
 /* ───────── MCP ───────── */
-type McpSettingsDraft = {
-  name: string
-  scope: string
-  type: 'stdio' | 'sse'
-  command: string
-  endpoint: string
-}
+type McpTransportType = 'stdio' | 'sse'
 
 type McpSettingsConfig = {
-  transport?: 'stdio' | 'http' | 'sse'
+  transport?: McpTransportType | 'http'
   command?: string
+  args?: string[]
   url?: string
+  env?: Record<string, string>
   tools?: string[]
+}
+
+type McpServerStatus = {
+  connected: boolean
+  toolCount: number
+  error?: string
+}
+
+type McpServerTools = Array<{
+  name: string
+  description: string
+}>
+
+type McpFormDraft = {
+  name: string
+  scope: string
+  type: McpTransportType
+  command: string
+  args: string
+  url: string
+  envPairs: Array<{ key: string; value: string }>
+}
+
+const EMPTY_MCP_DRAFT: McpFormDraft = {
+  name: '',
+  scope: 'user',
+  type: 'stdio',
+  command: '',
+  args: '',
+  url: '',
+  envPairs: [],
 }
 
 function parseMcpConfig(configJson: string): McpSettingsConfig {
@@ -1438,80 +1465,224 @@ function parseMcpConfig(configJson: string): McpSettingsConfig {
   }
 }
 
-function formatMcpServerDesc(server: McpServerItem): string {
-  const config = parseMcpConfig(server.configJson)
-  const type = config.transport ?? 'stdio'
-  const endpoint = type === 'stdio' ? config.command : config.url
-  const tools = config.tools?.length != null && config.tools.length > 0 ? ` · ${config.tools.length} tools` : ''
-  return `${server.scope} · ${type} · ${endpoint ?? '未配置'}${tools}`
-}
-
 function McpSection() {
   const [servers, setServers] = useState<McpServerItem[]>([])
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [draft, setDraft] = useState<McpSettingsDraft>({
-    name: '',
-    scope: 'user',
-    type: 'stdio',
-    command: '',
-    endpoint: '',
-  })
+  const [statusMap, setStatusMap] = useState<Record<string, McpServerStatus>>({})
+  const [toolsMap, setToolsMap] = useState<Record<string, McpServerTools>>({})
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState<McpFormDraft>({ ...EMPTY_MCP_DRAFT })
+  const [formError, setFormError] = useState('')
+  const [formSaving, setFormSaving] = useState(false)
+  const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({})
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null)
   const [error, setError] = useState('')
+
   const { invoke: listMcp, loading } = useIpcInvoke('mcp:list')
   const { invoke: createMcp } = useIpcInvoke('mcp:create')
   const { invoke: updateMcp } = useIpcInvoke('mcp:update')
   const { invoke: deleteMcp } = useIpcInvoke('mcp:delete')
+  const { invoke: startServer } = useIpcInvoke('mcp:start-server')
+  const { invoke: stopServer } = useIpcInvoke('mcp:stop-server')
+  const { invoke: getServerStatus } = useIpcInvoke('mcp:server-status')
+  const { invoke: getServerTools } = useIpcInvoke('mcp:server-tools')
+  const { toast } = useToast()
 
   const refresh = useCallback(() => {
     setError('')
     listMcp({})
-      .then((res) => setServers(res.servers))
+      .then((res) => {
+        setServers(res.servers)
+        // Fetch status for each server
+        res.servers.forEach((s) => {
+          getServerStatus({ serverId: s.id })
+            .then((status) => setStatusMap((prev) => ({ ...prev, [s.id]: status })))
+            .catch(() => {})
+        })
+      })
       .catch((err) => setError(err instanceof Error ? err.message : '加载 MCP 服务器失败'))
-  }, [listMcp])
+  }, [listMcp, getServerStatus])
 
   useEffect(() => {
     refresh()
   }, [refresh])
 
-  const resetDraft = () => {
-    setDraft({ name: '', scope: 'user', type: 'stdio', command: '', endpoint: '' })
-    setShowAddForm(false)
+  const loadTools = useCallback(async (serverId: string) => {
+    try {
+      const res = await getServerTools({ serverId })
+      setToolsMap((prev) => ({ ...prev, [serverId]: res.tools }))
+    } catch {
+      setToolsMap((prev) => ({ ...prev, [serverId]: [] }))
+    }
+  }, [getServerTools])
+
+  const handleToggleExpand = (serverId: string) => {
+    if (expandedId === serverId) {
+      setExpandedId(null)
+    } else {
+      setExpandedId(serverId)
+      loadTools(serverId)
+    }
   }
 
-  const addServer = async () => {
+  const handleStart = async (serverId: string) => {
+    setActionLoading((prev) => ({ ...prev, [serverId]: true }))
+    try {
+      const res = await startServer({ serverId })
+      if (res.started) {
+        toast.success('MCP 服务器已启动')
+        setStatusMap((prev) => ({ ...prev, [serverId]: { connected: true, toolCount: res.toolCount } }))
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '启动失败')
+      setStatusMap((prev) => ({ ...prev, [serverId]: { connected: false, toolCount: 0, error: err instanceof Error ? err.message : '启动失败' } }))
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [serverId]: false }))
+    }
+  }
+
+  const handleStop = async (serverId: string) => {
+    setActionLoading((prev) => ({ ...prev, [serverId]: true }))
+    try {
+      const res = await stopServer({ serverId })
+      if (res.stopped) {
+        toast.success('MCP 服务器已停止')
+        setStatusMap((prev) => ({ ...prev, [serverId]: { connected: false, toolCount: 0 } }))
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '停止失败')
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [serverId]: false }))
+    }
+  }
+
+  const handleDelete = async (serverId: string) => {
+    setActionLoading((prev) => ({ ...prev, [serverId]: true }))
+    try {
+      // Stop server first if running
+      const status = statusMap[serverId]
+      if (status?.connected) {
+        try { await stopServer({ serverId }) } catch { /* ignore */ }
+      }
+      await deleteMcp({ id: serverId })
+      toast.success('MCP 服务器已删除')
+      setDeleteConfirmId(null)
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除失败')
+    } finally {
+      setActionLoading((prev) => ({ ...prev, [serverId]: false }))
+    }
+  }
+
+  const openAddForm = () => {
+    setEditingId(null)
+    setDraft({ ...EMPTY_MCP_DRAFT })
+    setFormError('')
+    setShowForm(true)
+  }
+
+  const openEditForm = (server: McpServerItem) => {
+    const config = parseMcpConfig(server.configJson)
+    const transport = (config.transport === 'sse' ? 'sse' : 'stdio') as McpTransportType
+    const envPairs = config.env
+      ? Object.entries(config.env).map(([key, value]) => ({ key, value }))
+      : []
+    setEditingId(server.id)
+    setDraft({
+      name: server.name,
+      scope: server.scope,
+      type: transport,
+      command: config.command ?? '',
+      args: config.args?.join(' ') ?? '',
+      url: config.url ?? '',
+      envPairs,
+    })
+    setFormError('')
+    setShowForm(true)
+  }
+
+  const closeForm = () => {
+    setShowForm(false)
+    setEditingId(null)
+    setDraft({ ...EMPTY_MCP_DRAFT })
+    setFormError('')
+  }
+
+  const handleFormSave = async () => {
     const name = draft.name.trim()
-    const command = draft.command.trim()
-    const endpoint = draft.endpoint.trim()
-    if (name.length === 0) return
-    if (draft.type === 'stdio' && command.length === 0) return
-    if (draft.type === 'sse' && endpoint.length === 0) return
+    if (!name) { setFormError('名称不能为空'); return }
+    if (draft.type === 'stdio' && !draft.command.trim()) { setFormError('stdio 类型需要填写启动命令'); return }
+    if (draft.type === 'sse' && !draft.url.trim()) { setFormError('SSE 类型需要填写 URL'); return }
+
+    const envObj: Record<string, string> = {}
+    for (const pair of draft.envPairs) {
+      if (pair.key.trim()) {
+        envObj[pair.key.trim()] = pair.value
+      }
+    }
 
     const config: McpSettingsConfig = {
       transport: draft.type,
       tools: [],
-      ...(draft.type === 'stdio' ? { command } : { endpoint }),
     }
-    await createMcp({
-      name,
-      scope: draft.scope,
-      configJson: JSON.stringify(draft.type === 'stdio' ? config : { transport: draft.type, url: endpoint, tools: [] }),
-      enabled: true,
-    })
-    resetDraft()
-    refresh()
+    if (draft.type === 'stdio') {
+      config.command = draft.command.trim()
+      const args = draft.args.trim().split(/\s+/).filter(Boolean)
+      if (args.length > 0) config.args = args
+    } else {
+      config.url = draft.url.trim()
+    }
+    if (Object.keys(envObj).length > 0) {
+      config.env = envObj
+    }
+
+    setFormSaving(true)
+    setFormError('')
+    try {
+      if (editingId) {
+        await updateMcp({
+          id: editingId,
+          name,
+          configJson: JSON.stringify(config),
+        })
+        toast.success('MCP 服务器已更新')
+      } else {
+        await createMcp({
+          name,
+          scope: draft.scope,
+          configJson: JSON.stringify(config),
+          enabled: true,
+        })
+        toast.success('MCP 服务器已创建')
+      }
+      closeForm()
+      refresh()
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : '保存失败')
+      toast.error(err instanceof Error ? err.message : '保存失败')
+    } finally {
+      setFormSaving(false)
+    }
   }
 
-  const removeServer = async (id: string) => {
-    await deleteMcp({ id })
-    refresh()
+  const addEnvPair = () => {
+    setDraft((prev) => ({ ...prev, envPairs: [...prev.envPairs, { key: '', value: '' }] }))
   }
 
-  const toggleServer = async (server: McpServerItem) => {
-    await updateMcp({ id: server.id, enabled: !server.enabled })
-    refresh()
+  const removeEnvPair = (index: number) => {
+    setDraft((prev) => ({ ...prev, envPairs: prev.envPairs.filter((_, i) => i !== index) }))
   }
 
-  const activeCount = servers.filter((server) => server.enabled).length
+  const updateEnvPair = (index: number, field: 'key' | 'value', val: string) => {
+    setDraft((prev) => ({
+      ...prev,
+      envPairs: prev.envPairs.map((p, i) => i === index ? { ...p, [field]: val } : p),
+    }))
+  }
+
+  const runningCount = servers.filter((s) => statusMap[s.id]?.connected).length
 
   return (
     <div className="settings-section">
@@ -1520,86 +1691,270 @@ function McpSection() {
           <h2 className="section-h2">MCP 服务器</h2>
           <div className="lede section-lede">配置 Model Context Protocol 服务器，为 Agent 提供外部工具和数据源。</div>
         </div>
-        <span className="badge primary dot">{activeCount} / {servers.length} 已连接</span>
+        <span className="badge primary dot">{runningCount} / {servers.length} 运行中</span>
+        <button className="btn primary" onClick={openAddForm} style={{ marginLeft: 10 }} /* dynamic */>
+          <Icons.Plus size={12} /> 添加
+        </button>
       </div>
 
       {error && <div className="alert-banner">{error}</div>}
 
-      <div className="card">
-        {loading ? (
-          <div className="loading-sm">正在加载 MCP 服务器...</div>
-        ) : servers.length === 0 ? (
-          <div className="mcp-empty-state">
-            <Icons.MCP size={24} />
-            <div className="strong mcp-empty-title">暂无 MCP 服务器</div>
-            <div className="mcp-empty-desc">添加 MCP 服务器以扩展 Agent 的工具能力</div>
-          </div>
-        ) : (
-          servers.map((server) => (
-            <SettingsRow
-              key={server.id}
-              title={server.name}
-              desc={formatMcpServerDesc(server)}
-              right={
-                <div className="row row-gap-xs">
-                  <span className={`badge ${server.enabled ? 'success' : 'danger'} dot`}>
-                    {server.enabled ? '已启用' : '已禁用'}
-                  </span>
-                  <button className="btn ghost sm" onClick={() => void toggleServer(server)}>
-                    {server.enabled ? '禁用' : '启用'}
-                  </button>
-                  <button className="icon-btn" title="删除" onClick={() => void removeServer(server.id)}>
-                    <Icons.Trash size={11} />
-                  </button>
-                </div>
-              }
-            />
-          ))
-        )}
-      </div>
-
-      {showAddForm ? (
-        <div className="card mcp-add-card">
-          <div className="subsec-h wf-template-h2">添加 MCP 服务器</div>
-          <div className="form-grid">
-            <label>名称</label>
-            <SparkInput value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
-
-            <label>作用域</label>
-            <SparkSelect value={draft.scope} onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))}>
-              <option value="system">system</option>
-              <option value="user">user</option>
-              <option value="team">team</option>
-              <option value="project">project</option>
-              <option value="session">session</option>
-            </SparkSelect>
-
-            <label>类型</label>
-            <SparkSelect value={draft.type} onChange={(e) => setDraft((prev) => ({ ...prev, type: e.target.value === 'sse' ? 'sse' : 'stdio' }))}>
-              <option value="stdio">stdio</option>
-              <option value="sse">sse</option>
-            </SparkSelect>
-
-            <label>{draft.type === 'stdio' ? '启动命令' : 'Endpoint'}</label>
-            <SparkInput
-              className="mono-sm"
-              value={draft.type === 'stdio' ? draft.command : draft.endpoint}
-              onChange={(e) => {
-                const value = e.target.value
-                setDraft((prev) => draft.type === 'stdio' ? { ...prev, command: value } : { ...prev, endpoint: value })
-              }}
-              placeholder={draft.type === 'stdio' ? 'npx -y @modelcontextprotocol/server-filesystem .' : 'https://mcp.example.com/sse'}
-            />
-          </div>
-          <div className="row row-gap-sm mt-sm">
-            <button className="btn primary sm" onClick={() => void addServer()}><Icons.Plus size={11} /> 添加</button>
-            <button className="btn ghost sm" onClick={resetDraft}>取消</button>
-          </div>
+      {loading ? (
+        <div className="card loading-card">正在加载 MCP 服务器...</div>
+      ) : servers.length === 0 ? (
+        <div className="mcp-empty-state">
+          <Icons.MCP size={24} />
+          <div className="strong mcp-empty-title">暂无 MCP 服务器</div>
+          <div className="mcp-empty-desc">添加 MCP 服务器以扩展 Agent 的工具能力</div>
         </div>
       ) : (
-        <button className="btn ghost sm mt-sm" onClick={() => setShowAddForm(true)}>
-          <Icons.Plus size={11} /> 添加 MCP 服务器
-        </button>
+        <div className="mcp-server-list">
+          {servers.map((server) => {
+            const config = parseMcpConfig(server.configJson)
+            const transport = config.transport === 'sse' ? 'sse' : 'stdio'
+            const status = statusMap[server.id]
+            const isConnected = status?.connected ?? false
+            const hasError = status?.error != null && status.error.length > 0
+            const isExpanded = expandedId === server.id
+            const isLoading = actionLoading[server.id] ?? false
+            const toolCount = status?.toolCount ?? 0
+
+            return (
+              <div key={server.id} className={`mcp-server-card ${isExpanded ? 'expanded' : ''}`}>
+                {/* Server row */}
+                <div className="mcp-server-row" onClick={() => handleToggleExpand(server.id)}>
+                  <span className={`mcp-status-dot ${isConnected ? 'running' : hasError ? 'error' : 'stopped'}`} />
+                  <div className="mcp-server-meta flex1 min-w-0">
+                    <div className="row row-gap-xs">
+                      <span className="mcp-server-name">{server.name}</span>
+                      <span className="badge">{transport.toUpperCase()}</span>
+                    </div>
+                    <div className="mcp-server-desc">
+                      {transport === 'stdio' ? (config.command ?? '—') : (config.url ?? '—')}
+                      <span className="mcp-desc-sep">·</span>
+                      <span>{server.scope}</span>
+                      <span className="mcp-desc-sep">·</span>
+                      <span>{toolCount} 个工具</span>
+                    </div>
+                  </div>
+                  <div className="row row-gap-xs mcp-server-actions" onClick={(e) => e.stopPropagation()}>
+                    {isLoading ? (
+                      <span className="mcp-action-loading"><Icons.Spinner size={13} /></span>
+                    ) : isConnected ? (
+                      <button className="btn ghost sm" onClick={() => void handleStop(server.id)} title="停止">
+                        <Icons.Stop size={11} /> 停止
+                      </button>
+                    ) : (
+                      <button className="btn ghost sm" onClick={() => void handleStart(server.id)} title="启动">
+                        <Icons.Play size={11} /> 启动
+                      </button>
+                    )}
+                    <button className="icon-btn" title="编辑" onClick={() => openEditForm(server)}>
+                      <Icons.Edit size={12} />
+                    </button>
+                    <button className="icon-btn" title="删除" onClick={() => setDeleteConfirmId(server.id)}>
+                      <Icons.Trash size={11} />
+                    </button>
+                    <span className="mcp-expand-icon">
+                      {isExpanded ? <Icons.ChevronUp size={14} /> : <Icons.ChevronDown size={14} />}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Expanded detail panel */}
+                {isExpanded && (
+                  <div className="mcp-server-detail">
+                    <div className="mcp-detail-grid">
+                      <div className="mcp-detail-col">
+                        <div className="mcp-detail-label">连接状态</div>
+                        <div className="mcp-detail-value">
+                          <span className={`badge ${isConnected ? 'success' : hasError ? 'danger' : ''} dot`}>
+                            {isConnected ? '已连接' : hasError ? '错误' : '已停止'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="mcp-detail-col">
+                        <div className="mcp-detail-label">传输类型</div>
+                        <div className="mcp-detail-value">{transport === 'stdio' ? 'Stdio' : 'SSE'}</div>
+                      </div>
+                      <div className="mcp-detail-col">
+                        <div className="mcp-detail-label">工具数量</div>
+                        <div className="mcp-detail-value">{toolCount}</div>
+                      </div>
+                      <div className="mcp-detail-col">
+                        <div className="mcp-detail-label">作用域</div>
+                        <div className="mcp-detail-value">{server.scope}</div>
+                      </div>
+                    </div>
+
+                    {hasError && (
+                      <div className="mcp-detail-error">
+                        <Icons.AlertTriangle size={13} />
+                        <span>{status?.error}</span>
+                      </div>
+                    )}
+
+                    <div className="mcp-detail-tools-h">可用工具</div>
+                    {(() => {
+                      const tools = toolsMap[server.id]
+                      if (tools == null) {
+                        return <div className="mcp-detail-loading"><Icons.Spinner size={13} /> 加载工具列表...</div>
+                      }
+                      if (tools.length === 0) {
+                        return <div className="mcp-detail-empty">暂无工具（服务器未运行或未提供工具）</div>
+                      }
+                      return (
+                        <div className="mcp-detail-tools">
+                          {tools.map((tool) => (
+                            <div key={tool.name} className="mcp-tool-item">
+                              <span className="mcp-tool-name"><Icons.Wrench size={11} /> {tool.name}</span>
+                              <span className="mcp-tool-desc">{tool.description || '—'}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )
+                    })()}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Add/Edit dialog */}
+      {showForm && (
+        <div className="modal-backdrop" onClick={closeForm}>
+          <div className="modal modal-mcp-form" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-h">
+              <div className="modal-h-icon modal-h-icon-primary"><Icons.MCP size={18} /></div>
+              <div className="flex1">
+                <div className="modal-title">{editingId ? '编辑 MCP 服务器' : '添加 MCP 服务器'}</div>
+                <div className="modal-subtitle">{draft.type === 'stdio' ? 'Stdio 传输' : 'SSE 传输'}</div>
+              </div>
+              <button className="icon-btn" onClick={closeForm}><Icons.X /></button>
+            </div>
+
+            <div className="modal-body modal-body-scroll">
+              {formError && <div className="alert-banner">{formError}</div>}
+
+              <div className="subsec-h">基础配置</div>
+              <div className="form-grid">
+                <label>名称<span className="sub">服务器唯一标识名称</span></label>
+                <SparkInput value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
+
+                <label>作用域<span className="sub">配置生效范围</span></label>
+                <SparkSelect value={draft.scope} onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))} disabled={!!editingId}>
+                  <option value="user">user</option>
+                  <option value="team">team</option>
+                  <option value="project">project</option>
+                  <option value="session">session</option>
+                </SparkSelect>
+
+                <label>传输类型<span className="sub">与 MCP 服务器的通信方式</span></label>
+                <SparkSelect value={draft.type} onChange={(e) => setDraft((prev) => ({ ...prev, type: (e.target.value === 'sse' ? 'sse' : 'stdio') as McpTransportType }))} disabled={!!editingId}>
+                  <option value="stdio">Stdio（本地进程）</option>
+                  <option value="sse">SSE（HTTP 流）</option>
+                </SparkSelect>
+              </div>
+
+              {draft.type === 'stdio' ? (
+                <>
+                  <div className="subsec-h mt-lg">Stdio 配置</div>
+                  <div className="form-grid">
+                    <label>启动命令<span className="sub">可执行文件路径</span></label>
+                    <SparkInput className="mono-sm" value={draft.command} onChange={(e) => setDraft((prev) => ({ ...prev, command: e.target.value }))} placeholder="npx" />
+
+                    <label>参数<span className="sub">空格分隔的命令行参数</span></label>
+                    <SparkInput className="mono-sm" value={draft.args} onChange={(e) => setDraft((prev) => ({ ...prev, args: e.target.value }))} placeholder="-y @modelcontextprotocol/server-filesystem ." />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="subsec-h mt-lg">SSE 配置</div>
+                  <div className="form-grid">
+                    <label>URL<span className="sub">SSE 端点地址</span></label>
+                    <SparkInput className="mono-sm" value={draft.url} onChange={(e) => setDraft((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://mcp.example.com/sse" />
+                  </div>
+                </>
+              )}
+
+              <div className="subsec-h mt-lg">
+                环境变量
+                <button className="btn ghost sm mcp-env-add-btn" onClick={addEnvPair}><Icons.Plus size={11} /> 添加</button>
+              </div>
+              {draft.envPairs.length === 0 ? (
+                <div className="mcp-env-empty">未配置环境变量</div>
+              ) : (
+                <div className="mcp-env-list">
+                  {draft.envPairs.map((pair, idx) => (
+                    <div key={idx} className="mcp-env-row">
+                      <SparkInput
+                        className="mcp-env-key mono-sm"
+                        value={pair.key}
+                        onChange={(e) => updateEnvPair(idx, 'key', e.target.value)}
+                        placeholder="KEY"
+                      />
+                      <span className="mcp-env-eq">=</span>
+                      <SparkInput
+                        className="mcp-env-val mono-sm flex1"
+                        value={pair.value}
+                        onChange={(e) => updateEnvPair(idx, 'value', e.target.value)}
+                        placeholder="value"
+                      />
+                      <button className="icon-btn mcp-env-del" onClick={() => removeEnvPair(idx)} title="删除">
+                        <Icons.X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="modal-foot">
+              <span className="flex1" />
+              <button className="btn" onClick={closeForm}>取消</button>
+              <button className="btn primary" onClick={() => void handleFormSave()} disabled={formSaving}>
+                <Icons.Check size={12} /> {formSaving ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {deleteConfirmId !== null && (
+        <div className="modal-backdrop" onClick={() => setDeleteConfirmId(null)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-h">
+              <div className="modal-h-icon" style={{ background: 'var(--danger-bg, #fef2f2)', color: 'var(--danger)' }} /* dynamic */>
+                <Icons.AlertTriangle size={18} />
+              </div>
+              <div>
+                <div className="modal-title">删除 MCP 服务器</div>
+                <div className="modal-subtitle">
+                  {servers.find((s) => s.id === deleteConfirmId)?.name ?? ''}
+                </div>
+              </div>
+            </div>
+            <div className="modal-body">
+              <div className="mcp-delete-warning">
+                确认删除此 MCP 服务器？{statusMap[deleteConfirmId]?.connected ? '该服务器正在运行，将自动停止。' : ''}此操作无法撤销。
+              </div>
+            </div>
+            <div className="modal-foot">
+              <span className="flex1" />
+              <button className="btn" onClick={() => setDeleteConfirmId(null)}>取消</button>
+              <button
+                className="btn danger"
+                onClick={() => void handleDelete(deleteConfirmId)}
+                disabled={actionLoading[deleteConfirmId] ?? false}
+              >
+                {actionLoading[deleteConfirmId] ? '删除中...' : '确认删除'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
