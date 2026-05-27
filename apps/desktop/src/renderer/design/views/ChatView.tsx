@@ -3395,9 +3395,13 @@ function ComposerV2({
       }
       if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
         event.preventDefault()
-        const cmd = flatSlashList[slashIndex]
-        if (cmd != null) selectSlashCmd(cmd)
-        return
+        if (flatSlashList.length > 0) {
+          const cmd = flatSlashList[slashIndex]
+          if (cmd != null) selectSlashCmd(cmd)
+          return
+        }
+        // 无匹配命令时关闭弹窗，让 Enter 落到下面的正常发送逻辑
+        closeSlashPopup()
       }
     }
 
