@@ -18,7 +18,7 @@ import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
 import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService, RuntimeCompositionService } from '@spark/agent-runtime'
-import type { WorkspaceInfo } from '@spark/protocol'
+import type { CommandParseResponse, WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
@@ -642,15 +642,16 @@ export function registerAllIpcHandlers(): void {
     if (!isCommand(req.message)) return { isCommand: false }
     const parsed = parseCommand(req.message)
     if (parsed == null) return { isCommand: false }
-    return {
+    const response: CommandParseResponse = {
       isCommand: true,
       name: parsed.name,
-      subcommand: parsed.subcommand,
       args: parsed.args,
       flags: parsed.flags,
       targets: parsed.targets,
-      freeText: parsed.freeText,
     }
+    if (parsed.subcommand != null) response.subcommand = parsed.subcommand
+    if (parsed.freeText != null) response.freeText = parsed.freeText
+    return response
   })
 
   // ─── Settings Handlers ─────────────────────────────────────────────────────
