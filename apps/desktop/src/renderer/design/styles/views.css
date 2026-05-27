@@ -4692,6 +4692,47 @@ body.inspector-resizing {
   width: 24px;
   height: 24px;
 }
+.explorer-btn-sm.active {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.explorer-change-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--warning);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+.project-bottombar .seg-changes {
+  color: var(--warning);
+  font-weight: 500;
+}
+.tree-row.is-created .nm {
+  color: var(--success);
+}
+.tree-row.is-modified .nm {
+  color: var(--warning);
+}
+.tree-row.is-deleted .nm {
+  color: var(--danger);
+  text-decoration: line-through;
+}
+.tree-row.is-created {
+  background: color-mix(in srgb, var(--success) 6%, transparent);
+}
+.tree-row.is-modified {
+  background: color-mix(in srgb, var(--warning) 6%, transparent);
+}
+.tree-row.is-deleted {
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+}
 .error-icon {
   border-color: var(--danger);
   color: var(--danger);

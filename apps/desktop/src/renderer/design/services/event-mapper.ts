@@ -80,16 +80,27 @@ export class MessageBuilder {
         if (event.mode === 'complete') {
           msg.blocks = msg.blocks.filter(block => block.kind !== 'thinking')
           if (event.content.length > 0) {
+            // Always insert thinking at the beginning so it appears before text blocks
             msg.blocks.unshift({ kind: 'thinking', content: event.content, isStreaming: false })
           }
           break
         }
 
-        const lastBlock = msg.blocks[msg.blocks.length - 1]
-        if (lastBlock?.kind === 'thinking') {
-          lastBlock.content += event.content
+        // Find the last thinking block — search from end, skip non-thinking blocks
+        // This ensures thinking blocks are always grouped together (before text)
+        let lastThinkingIdx = -1
+        for (let i = msg.blocks.length - 1; i >= 0; i--) {
+          if (msg.blocks[i]?.kind === 'thinking') {
+            lastThinkingIdx = i
+            break
+          }
+        }
+
+        if (lastThinkingIdx >= 0) {
+          ;(msg.blocks[lastThinkingIdx] as Extract<UIBlock, { kind: 'thinking' }>).content += event.content
         } else {
-          msg.blocks.push({ kind: 'thinking', content: event.content, isStreaming: true })
+          // No thinking block yet — insert at beginning to keep thinking before text
+          msg.blocks.unshift({ kind: 'thinking', content: event.content, isStreaming: true })
         }
         break
       }
