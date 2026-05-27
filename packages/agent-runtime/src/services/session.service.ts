@@ -10,7 +10,18 @@ import {
   SkillRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
-import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse, UserMessageEvent, AssistantMessageEvent } from '@spark/protocol'
+import type {
+  AgentEvent,
+  SessionCancelQueuedTurnResponse,
+  SessionCreateResponse,
+  SessionGetQueueResponse,
+  SessionId,
+  SessionListResponse,
+  SessionQueuedTurn,
+  SessionSearchResponse,
+  UserMessageEvent,
+  AssistantMessageEvent,
+} from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
@@ -28,12 +39,19 @@ import { createLogger } from '@spark/shared'
 const log = createLogger('session.service')
 
 export type SessionEventHandler = (event: AgentEvent) => void
+export type SessionQueueChangedHandler = (snapshot: SessionGetQueueResponse) => void
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
 /** session 被取消时调用：用于拒绝该 session 下所有挂起的 approval 请求，避免 agent 永久挂起 */
 export type ApprovalCancelHandler = (sessionId: string) => void
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = { cancel(): void }
-type PendingTurn = { turnId: string; message: string }
+type PendingTurn = {
+  turnId: string
+  message: string
+  enqueuedAt: string
+  skillId?: string
+  skillParams?: Record<string, unknown>
+}
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
 const SESSION_TITLE_MAX_LENGTH = 40
@@ -53,6 +71,7 @@ export class SessionService {
     private readonly onEvent: SessionEventHandler,
     private readonly onApproval?: ApprovalHandler,
     private readonly onApprovalCancel?: ApprovalCancelHandler,
+    private readonly onQueueChanged?: SessionQueueChangedHandler,
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
   }
@@ -297,7 +316,7 @@ export class SessionService {
     const { sessionId, message, skillId, skillParams } = params
     const turnId = crypto.randomUUID()
     if (this.activeLoops.has(sessionId)) {
-      this.enqueueTurn(sessionId, { turnId, message })
+      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, skillId, skillParams))
       return { turnId, started: false }
     }
 
@@ -313,7 +332,7 @@ export class SessionService {
     skillParams?: Record<string, unknown>,
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
-      this.enqueueTurn(sessionId, { turnId, message })
+      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, skillId, skillParams))
       return
     }
 
@@ -501,6 +520,7 @@ export class SessionService {
 
     this.activeLoops.set(sessionId, loop)
     sessionRepo.updateStatus(sessionId, 'running')
+    this.emitQueueChanged(sessionId)
 
     // Fire-and-forget: start the loop without awaiting
     const execution = historyMessages.length > 0
@@ -586,6 +606,7 @@ export class SessionService {
 
     this.activeLoops.set(sessionId, executor)
     sessionRepo.updateStatus(sessionId, 'running')
+    this.emitQueueChanged(sessionId)
 
     const sdkConfig: SDKExecutorConfig = {
       ...config,
@@ -660,10 +681,43 @@ export class SessionService {
     }
   }
 
+  getQueueState(params: { sessionId: string }): SessionGetQueueResponse {
+    return this.queueSnapshot(params.sessionId)
+  }
+
+  cancelQueuedTurn(params: { sessionId: string; turnId: string }): SessionCancelQueuedTurnResponse {
+    const queue = this.pendingTurns.get(params.sessionId) ?? []
+    const nextQueue = queue.filter((turn) => turn.turnId !== params.turnId)
+    const cancelled = nextQueue.length !== queue.length
+    if (nextQueue.length === 0) this.pendingTurns.delete(params.sessionId)
+    else this.pendingTurns.set(params.sessionId, nextQueue)
+    if (cancelled) this.emitQueueChanged(params.sessionId)
+    return {
+      cancelled,
+      queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns,
+    }
+  }
+
   private enqueueTurn(sessionId: string, turn: PendingTurn): void {
     const queue = this.pendingTurns.get(sessionId) ?? []
     queue.push(turn)
     this.pendingTurns.set(sessionId, queue)
+    this.emitQueueChanged(sessionId)
+  }
+
+  private makePendingTurn(
+    turnId: string,
+    message: string,
+    skillId?: string,
+    skillParams?: Record<string, unknown>,
+  ): PendingTurn {
+    return {
+      turnId,
+      message,
+      enqueuedAt: new Date().toISOString(),
+      ...(skillId != null ? { skillId } : {}),
+      ...(skillParams != null ? { skillParams } : {}),
+    }
   }
 
   private startNextQueuedTurn(sessionId: string): void {
@@ -671,10 +725,32 @@ export class SessionService {
     const next = queue?.shift()
     if (queue == null || next == null) {
       this.pendingTurns.delete(sessionId)
+      this.emitQueueChanged(sessionId)
       return
     }
     if (queue.length === 0) this.pendingTurns.delete(sessionId)
-    void this.startTurn(sessionId, next.turnId, next.message)
+    this.emitQueueChanged(sessionId)
+    void this.startTurn(sessionId, next.turnId, next.message, next.skillId, next.skillParams)
+  }
+
+  private queueSnapshot(sessionId: string): SessionGetQueueResponse {
+    return {
+      sessionId: sessionId as SessionId,
+      running: this.activeLoops.has(sessionId),
+      queuedTurns: this.toQueuedTurns(this.pendingTurns.get(sessionId) ?? []),
+    }
+  }
+
+  private toQueuedTurns(turns: PendingTurn[]): SessionQueuedTurn[] {
+    return turns.map((turn) => ({
+      turnId: turn.turnId,
+      message: turn.message,
+      enqueuedAt: turn.enqueuedAt,
+    }))
+  }
+
+  private emitQueueChanged(sessionId: string): void {
+    this.onQueueChanged?.(this.queueSnapshot(sessionId))
   }
 
   private getEffectivePermissionMode(
@@ -708,14 +784,19 @@ export class SessionService {
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
+    const hadQueuedTurns = (this.pendingTurns.get(sessionId)?.length ?? 0) > 0
     this.pendingTurns.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
-    if (loop == null) return { cancelled: false }
+    if (loop == null) {
+      if (hadQueuedTurns) this.emitQueueChanged(sessionId)
+      return { cancelled: false }
+    }
     loop.cancel()
     this.activeLoops.delete(sessionId)
     const sessionRepo = new SessionRepository(this.db)
     sessionRepo.updateStatus(sessionId, 'idle')
+    this.emitQueueChanged(sessionId)
     return { cancelled: true }
   }
 
@@ -731,6 +812,7 @@ export class SessionService {
     this.iterationOverrides.delete(sessionId)
     TodoStore.clear(sessionId)
     this.onApprovalCancel?.(sessionId)
+    this.emitQueueChanged(sessionId)
   }
 
   async getHistory(params: {

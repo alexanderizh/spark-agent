@@ -19,7 +19,7 @@ import { isCommand, parseCommand } from '@spark/agent-runtime'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
 import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService, RuntimeCompositionService } from '@spark/agent-runtime'
 import type { CommandParseResponse, WorkspaceInfo } from '@spark/protocol'
-import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
+import type { SessionEventHandler, ApprovalHandler, SessionQueueChangedHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
@@ -132,7 +132,10 @@ function getSessionService(): SessionService {
     const onApprovalCancel = (sessionId: string) => {
       getPermissionService().cancelPendingApprovals(sessionId)
     }
-    _sessionService = new SessionService(getDatabase(), onEvent, onApproval, onApprovalCancel)
+    const onQueueChanged: SessionQueueChangedHandler = (snapshot) => {
+      pushStreamEvent('stream:session:queue-changed', snapshot)
+    }
+    _sessionService = new SessionService(getDatabase(), onEvent, onApproval, onApprovalCancel, onQueueChanged)
   }
   return _sessionService
 }
@@ -150,6 +153,16 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('session:send-turn', async (req) => {
     log.info(`session:send-turn requested, sessionId=${req.sessionId}`)
     return getSessionService().sendTurn({ sessionId: req.sessionId, message: req.message })
+  })
+
+  typedIpcHandle('session:get-queue', async (req) => {
+    log.info(`session:get-queue requested, sessionId=${req.sessionId}`)
+    return getSessionService().getQueueState(req)
+  })
+
+  typedIpcHandle('session:cancel-queued-turn', async (req) => {
+    log.info(`session:cancel-queued-turn requested, sessionId=${req.sessionId}, turnId=${req.turnId}`)
+    return getSessionService().cancelQueuedTurn(req)
   })
 
   typedIpcHandle('session:cancel', async (req) => {

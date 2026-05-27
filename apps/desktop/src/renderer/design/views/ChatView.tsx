@@ -27,6 +27,7 @@ import type {
   SessionId,
   SessionReasoningEffort,
   SessionSearchResult,
+  SessionGetQueueResponse,
   SkillConfigGetResponse,
   WorkspaceInfo,
   CommandListItem,
@@ -51,7 +52,7 @@ type ComposerPrefs = {
   permissionMode?: PermissionModeChoice
   reasoningEffort?: SessionReasoningEffort
 }
-type QueuedMessage = { id: string; content: string }
+type QueuedMessage = { id: string; turnId: string; content: string; enqueuedAt: string }
 type ChatViewProps = {
   approvalRequest?: PermissionApprovalRequest | null
   onApprovalClose?: () => void
@@ -3177,8 +3178,9 @@ function ComposerV2({
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(initialPrefs.reasoningEffort ?? 'medium')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
-  const nextQueueIdRef = useRef(0)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: getQueue } = useIpcInvoke('session:get-queue')
+  const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
 
   const adapter = session?.agentAdapter ?? draftAdapter
   const compatibleProviders = providers.filter((provider) => isProviderCompatibleWithAdapter(provider, adapter))
@@ -3213,6 +3215,28 @@ function ComposerV2({
   const canSubmit = value.trim().length > 0 && selectedProvider != null && effectiveModelId.length > 0 && (session != null || workspace != null)
   const showTaskQueue = activeTaskText != null || queuedMessages.length > 0
 
+  const applyQueueState = useCallback((snapshot: SessionGetQueueResponse | null | undefined) => {
+    if (snapshot == null || snapshot.sessionId !== session?.id) return
+    setQueuedMessages(snapshot.queuedTurns.map((turn) => ({
+      id: turn.turnId,
+      turnId: turn.turnId,
+      content: turn.message,
+      enqueuedAt: turn.enqueuedAt,
+    })))
+  }, [session?.id])
+
+  const refreshQueueState = useCallback(async (sessionId: SessionId | null | undefined) => {
+    if (sessionId == null) {
+      setQueuedMessages([])
+      return
+    }
+    try {
+      applyQueueState(await getQueue({ sessionId }))
+    } catch {
+      setQueuedMessages([])
+    }
+  }, [applyQueueState, getQueue])
+
   useEffect(() => {
     if (session != null || providers.length === 0 || compatibleProviders.length > 0) return
     const fallbackProvider = getPreferredProvider(providers, initialPrefs, draftAdapter)
@@ -3226,6 +3250,16 @@ function ComposerV2({
     setDraftModelId(nextModel)
     writeComposerPrefs({ adapter: nextAdapter, providerProfileId: fallbackProvider.id, modelId: nextModel, permissionMode: nextPermissionMode })
   }, [compatibleProviders.length, draftAdapter, initialPrefs, providers, session, setSelectedProviderId])
+
+  useEffect(() => {
+    void refreshQueueState(session?.id)
+  }, [refreshQueueState, session?.id])
+
+  useEffect(() => {
+    return window.spark.on('stream:session:queue-changed', (snapshot) => {
+      applyQueueState(snapshot)
+    })
+  }, [applyQueueState])
 
   useEffect(() => {
     if (selectedProvider != null && !draftModelId) {
@@ -3291,7 +3325,11 @@ function ComposerV2({
           // 转发给 Agent：作为普通消息发送
           setSending(false)
           const sendRes = await sendTurn({ sessionId, message: text })
-          if (!sendRes.started) toast.info('上一条任务仍在执行，消息已加入队列。')
+          if (!sendRes.started) {
+            setQueueVisible(true)
+            toast.info('上一条任务仍在执行，消息已加入队列。')
+            await refreshQueueState(sessionId)
+          }
           onSent(sessionId)
           return
         }
@@ -3323,7 +3361,11 @@ function ComposerV2({
       }
       if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
       const res = await sendTurn({ sessionId: targetSessionId, message: text })
-      if (!res.started) toast.info('上一条任务仍在执行，消息已加入队列。')
+      if (!res.started) {
+        setQueueVisible(true)
+        toast.info('上一条任务仍在执行，消息已加入队列。')
+        await refreshQueueState(targetSessionId)
+      }
       onSent(targetSessionId)
     } catch (err) {
       console.error('发送失败', err)
@@ -3332,32 +3374,12 @@ function ComposerV2({
     } finally {
       setSending(false)
     }
-  }, [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, onCreateSession, onSent, selectedProvider, sendTurn, session?.id, toast])
-
-  useEffect(() => {
-    if (isBusy || queuedMessages.length === 0) return
-    const [next, ...rest] = queuedMessages
-    if (next == null) return
-    setQueuedMessages(rest)
-    void dispatchMessage(next.content)
-  }, [dispatchMessage, isBusy, queuedMessages])
-
-  const enqueueMessage = (content: string) => {
-    setQueueVisible(true)
-    setQueuedMessages((prev) => {
-      toast.info(`任务执行中，已加入临时队列（${prev.length + 1}）。`)
-      return [...prev, { id: `queued-${nextQueueIdRef.current++}`, content }]
-    })
-  }
+  }, [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, onCreateSession, onSent, refreshQueueState, selectedProvider, sendTurn, session?.id, toast])
 
   const handleSend = async () => {
     if (!canSubmit) return
     const text = value.trim()
     setValue('')
-    if (isBusy) {
-      enqueueMessage(text)
-      return
-    }
     await dispatchMessage(text)
   }
 
@@ -3369,16 +3391,15 @@ function ComposerV2({
     await handleSend()
   }
 
-  const handleRemoveQueuedMessage = (id: string) => {
-    setQueuedMessages((prev) => prev.filter((message) => message.id !== id))
-  }
-
-  const handleSendQueuedNow = async (message: QueuedMessage) => {
-    setQueuedMessages((prev) => prev.filter((item) => item.id !== message.id))
-    if (session?.id != null && isWorking) {
-      await onCancelSession(session.id)
-    }
-    await dispatchMessage(message.content)
+  const handleRemoveQueuedMessage = async (message: QueuedMessage) => {
+    if (session?.id == null) return
+    const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
+    setQueuedMessages(res.queuedTurns.map((turn) => ({
+      id: turn.turnId,
+      turnId: turn.turnId,
+      content: turn.message,
+      enqueuedAt: turn.enqueuedAt,
+    })))
   }
 
   const handleCancelActiveSession = async () => {
@@ -3585,18 +3606,9 @@ function ComposerV2({
                 <span className="composer-queue-text">{message.content}</span>
                 <button
                   type="button"
-                  className="composer-queue-action"
-                  title="立即发送"
-                  onClick={() => void handleSendQueuedNow(message)}
-                >
-                  <Icons.ArrowUp size={14} />
-                  <span>立即发送</span>
-                </button>
-                <button
-                  type="button"
                   className="composer-queue-icon-btn"
                   title="移除"
-                  onClick={() => handleRemoveQueuedMessage(message.id)}
+                  onClick={() => void handleRemoveQueuedMessage(message)}
                 >
                   <Icons.Trash size={14} />
                 </button>

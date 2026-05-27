@@ -53,10 +53,12 @@
 - Composer 中显示当前正在执行的用户任务。
 - 用户连续发送的后续消息以队列形式展示。
 - 队列入口显示“执行中 + 排队中”的总数。
+- 新增 `session:get-queue` / `session:cancel-queued-turn` IPC 和 `stream:session:queue-changed` 推送，前端队列面板已改为后端 `pendingTurns` 快照驱动。
+- 后端 queued turn 保留 `turnId`、message、`enqueuedAt`，支持取消单条排队消息。
 
 当前判断:
-- 基础体验已接近 Codex 风格。
-- 后续需要把后端 `pendingTurns` 队列状态通过 IPC 暴露出来，避免刷新页面或多窗口场景下只依赖前端本地状态。
+- 基础体验已接近 Codex 风格，且不再只依赖前端本地临时队列。
+- 仍需补强: 队列 reorder / promote、跨窗口并发体验、队列事件持久化审计。
 
 ### 4. 项目级规则、skills、agents 读取
 
@@ -140,7 +142,8 @@
 - `232a2e1 feat: surface SDK tool results and checkpoints`
 - `19455ee feat: persist permission approval decisions`
 - `522de69 feat: expose project context sources`
-- 本次变更: context quota harmonization，补共享模型上下文窗口解析、SDK/direct 统一软上限、Inspector 使用本轮 `context_usage`。
+- `b67941c fix: harmonize context window reporting`
+- 本次变更: backend queue sync，补 `pendingTurns` IPC 快照、queue changed stream、ChatView 后端队列渲染与单条取消。
 
 最近验证:
 
@@ -155,6 +158,7 @@
 - `pnpm --filter @spark/agent-runtime typecheck`
 - `pnpm --filter @spark/shared typecheck`
 - `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/core/agent-loop-new.test.ts`
+- `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/services/session.service.test.ts`
 - storage repository test note: `pnpm --filter @spark/storage test:unit -- src/repositories/repositories.test.ts` is currently blocked by local `better-sqlite3` Node ABI mismatch (module 125 vs required 137), before reaching the new SQL logic.
 
 说明: renderer 测试仍会输出既有 React `act(...)` 警告，但测试通过。

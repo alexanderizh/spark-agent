@@ -71,6 +71,32 @@ export interface SessionSendTurnResponse {
   started: boolean
 }
 
+export interface SessionQueuedTurn {
+  turnId: string
+  message: string
+  enqueuedAt: string
+}
+
+export interface SessionGetQueueRequest {
+  sessionId: SessionId
+}
+
+export interface SessionGetQueueResponse {
+  sessionId: SessionId
+  running: boolean
+  queuedTurns: SessionQueuedTurn[]
+}
+
+export interface SessionCancelQueuedTurnRequest {
+  sessionId: SessionId
+  turnId: string
+}
+
+export interface SessionCancelQueuedTurnResponse {
+  cancelled: boolean
+  queuedTurns: SessionQueuedTurn[]
+}
+
 export interface SessionCancelRequest {
   sessionId: SessionId
 }
@@ -1581,6 +1607,8 @@ export interface IpcChannelMap {
   // Session
   'session:create': [SessionCreateRequest, SessionCreateResponse]
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
+  'session:get-queue': [SessionGetQueueRequest, SessionGetQueueResponse]
+  'session:cancel-queued-turn': [SessionCancelQueuedTurnRequest, SessionCancelQueuedTurnResponse]
   'session:cancel': [SessionCancelRequest, SessionCancelResponse]
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]
   'session:list': [SessionListRequest, SessionListResponse]
@@ -1739,6 +1767,8 @@ export type IpcResponse<C extends IpcChannel> = IpcChannelMap[C][1]
 export interface IpcStreamChannelMap {
   /** Agent 事件流（主进程推送，渲染进程监听驱动 Timeline UI）*/
   'stream:session:agent-event': AgentEvent
+  /** Session 后端排队状态变化 */
+  'stream:session:queue-changed': SessionGetQueueResponse
   /** 连接状态变化 */
   'stream:provider:status-changed': {
     profileId: string

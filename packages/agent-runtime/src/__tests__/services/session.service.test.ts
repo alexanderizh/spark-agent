@@ -621,7 +621,8 @@ describe('SessionService.sendTurn', () => {
       .mockImplementationOnce(() => firstLoop as never)
       .mockImplementationOnce(() => secondLoop as never)
 
-    const svc = new SessionService(mockDb, vi.fn())
+    const onQueueChanged = vi.fn()
+    const svc = new SessionService(mockDb, vi.fn(), undefined, undefined, onQueueChanged)
     const first = await svc.sendTurn({ sessionId: 'sess-1', message: 'first' })
     const second = await svc.sendTurn({ sessionId: 'sess-1', message: 'second' })
 
@@ -629,6 +630,13 @@ describe('SessionService.sendTurn', () => {
     expect(second.started).toBe(false)
     expect(firstLoop.executeTurn).toHaveBeenCalledTimes(1)
     expect(secondLoop.executeTurn).not.toHaveBeenCalled()
+    expect(svc.getQueueState({ sessionId: 'sess-1' }).queuedTurns).toMatchObject([
+      { turnId: second.turnId, message: 'second' },
+    ])
+    expect(onQueueChanged).toHaveBeenCalledWith(expect.objectContaining({
+      sessionId: 'sess-1',
+      queuedTurns: [expect.objectContaining({ turnId: second.turnId, message: 'second' })],
+    }))
 
     resolveFirst()
     await firstDone
@@ -642,6 +650,36 @@ describe('SessionService.sendTurn', () => {
       'second',
       expect.any(Object),
     )
+    expect(svc.getQueueState({ sessionId: 'sess-1' }).queuedTurns).toHaveLength(0)
+  })
+
+  it('cancels one queued turn without dropping the rest', async () => {
+    const sessionRepo = makeSessionRepo()
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeOpenAIProviderRepo()
+    const rulesRepo = makeRulesRepo()
+    const firstLoop = makeLoop({ executeTurn: vi.fn().mockReturnValue(new Promise<void>(() => {})) })
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => firstLoop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'first' })
+    const second = await svc.sendTurn({ sessionId: 'sess-1', message: 'second' })
+    const third = await svc.sendTurn({ sessionId: 'sess-1', message: 'third' })
+
+    const cancelled = svc.cancelQueuedTurn({ sessionId: 'sess-1', turnId: second.turnId })
+
+    expect(cancelled.cancelled).toBe(true)
+    expect(cancelled.queuedTurns).toMatchObject([{ turnId: third.turnId, message: 'third' }])
+    expect(svc.getQueueState({ sessionId: 'sess-1' }).queuedTurns).toMatchObject([
+      { turnId: third.turnId, message: 'third' },
+    ])
   })
 
   it('assigns incrementing seq to events and calls onEvent', async () => {

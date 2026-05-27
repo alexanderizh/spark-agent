@@ -64,6 +64,15 @@ export const SessionCancelRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
 
+export const SessionGetQueueRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
+export const SessionCancelQueuedTurnRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  turnId: z.string().uuid(),
+})
+
 export const SessionGetHistoryRequestSchema = z.object({
   sessionId: SessionIdSchema,
   limit: z.number().int().min(1).max(1000).optional().default(50),
@@ -248,6 +257,8 @@ export const RulesComposeRequestSchema = z.object({
 export const IpcSchemaRegistry = {
   'session:create': SessionCreateRequestSchema,
   'session:send-turn': SessionSendTurnRequestSchema,
+  'session:get-queue': SessionGetQueueRequestSchema,
+  'session:cancel-queued-turn': SessionCancelQueuedTurnRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,
   'session:list': SessionListRequestSchema,
