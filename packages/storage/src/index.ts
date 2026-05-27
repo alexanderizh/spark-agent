@@ -33,6 +33,7 @@ export {
   McpServerRepository,
   SkillRepository,
   SkillRegistryRepository,
+  SettingsRepository,
 } from './repositories/index.js'
 
 export type {
@@ -56,4 +57,5 @@ export type {
   McpServerRow,
   SkillRow,
   SkillRegistryRow,
+  SettingsRow,
 } from './repositories/index.js'

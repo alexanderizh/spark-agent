@@ -943,6 +943,41 @@ export interface AppGetInfoResponse {
   buildDate?: string
 }
 
+// ─── Settings Channels ──────────────────────────────────────────────────────
+
+export interface SettingsGetRequest {
+  category: string
+  key: string
+}
+
+export interface SettingsGetResponse {
+  value: unknown | null
+}
+
+export interface SettingsSetRequest {
+  category: string
+  key: string
+  value: unknown
+}
+
+export interface SettingsSetResponse {
+  ok: boolean
+}
+
+export interface SettingsGetCategoryRequest {
+  category: string
+}
+
+export interface SettingsGetCategoryResponse {
+  settings: Record<string, unknown>
+}
+
+export interface SettingsGetAllRequest {}
+
+export interface SettingsGetAllResponse {
+  settings: Record<string, Record<string, unknown>>
+}
+
 // ─── Command Channels ────────────────────────────────────────────────────────
 
 export interface CommandExecuteRequest {
@@ -1086,6 +1121,12 @@ export interface IpcChannelMap {
   'command:execute': [CommandExecuteRequest, CommandExecuteResponse]
   'command:list': [CommandListRequest, CommandListResponse]
   'command:parse': [CommandParseRequest, CommandParseResponse]
+
+  // Settings
+  'settings:get': [SettingsGetRequest, SettingsGetResponse]
+  'settings:set': [SettingsSetRequest, SettingsSetResponse]
+  'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
+  'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

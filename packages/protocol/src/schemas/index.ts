@@ -308,4 +308,17 @@ export const IpcSchemaRegistry = {
     enabled: z.boolean().optional(),
   }),
   'skill:delete': z.object({ id: z.string().min(1).max(120) }),
+  'settings:get': z.object({
+    category: z.string().min(1).max(80),
+    key: z.string().min(1).max(200),
+  }),
+  'settings:set': z.object({
+    category: z.string().min(1).max(80),
+    key: z.string().min(1).max(200),
+    value: z.unknown(),
+  }),
+  'settings:get-category': z.object({
+    category: z.string().min(1).max(80),
+  }),
+  'settings:get-all': z.object({}),
 } as const

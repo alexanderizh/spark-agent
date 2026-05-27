@@ -11,9 +11,17 @@ import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
-import { PROVIDER_PRESETS, getProviderPresetById } from '@spark/protocol'
+import {
+  PROVIDER_PRESETS,
+  VENDOR_CATALOG,
+  getProviderPresetById,
+  getVendorMeta,
+  getPresetsByVendor,
+  getUniqueVendorIds,
+} from '@spark/protocol'
 import type {
   ProviderPreset,
+  VendorMeta,
   ProviderHealthCheckResponse,
   ProviderProfile,
   ProviderUpdateRequest,
@@ -57,6 +65,11 @@ const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
 const SETTINGS_TELEMETRY_KEY = 'spark-settings-telemetry'
 const SETTINGS_UPDATES_KEY = 'spark-settings-updates'
+
+/* ─── Category mapping (localStorage key → IPC category) ─── */
+function localStorageKeyToCategory(key: string): string {
+  return key.replace('spark-settings-', '')
+}
 
 type GeneralSettings = {
   language: string
@@ -150,15 +163,48 @@ const DEFAULT_UPDATES: UpdatesSettings = {
   channel: 'stable',
 }
 
+/**
+ * Persisted settings hook — dual-layer persistence:
+ *
+ *   1. localStorage (sync, instant UI render)
+ *   2. SQLite via IPC (durable, survives app data reset)
+ *
+ * On mount, reads from localStorage for instant render, then async loads
+ * from IPC (SQLite) to get the authoritative value. On update, writes to
+ * both localStorage and IPC (fire-and-forget).
+ */
 function usePersistedSettings<T>(key: string, defaults: T): [T, (patch: Partial<T>) => void] {
+  const category = localStorageKeyToCategory(key)
   const [state, setState] = React.useState<T>(() => readStoredJson(key, defaults))
+  const loadedRef = React.useRef(false)
+
+  // Load from IPC on mount (authoritative source)
+  useEffect(() => {
+    if (loadedRef.current) return
+    loadedRef.current = true
+    window.spark?.invoke('settings:get', { category, key: 'data' })
+      .then((res) => {
+        if (res.value != null && typeof res.value === 'object') {
+          const merged = { ...defaults, ...(res.value as Partial<T>) }
+          setState(merged)
+          writeStoredJson(key, merged)
+        }
+      })
+      .catch(() => {
+        // IPC not available — use localStorage fallback
+      })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const update = useCallback((patch: Partial<T>) => {
     setState(prev => {
       const next = { ...prev, ...patch }
       writeStoredJson(key, next)
+      // Persist to IPC/SQLite (fire-and-forget)
+      window.spark?.invoke('settings:set', { category, key: 'data', value: next })
+        .catch(() => { /* ignore IPC errors */ })
       return next
     })
-  }, [key])
+  }, [key, category])
   return [state, update]
 }
 
@@ -2419,6 +2465,18 @@ function UpdatesSection() {
   const [checking, setChecking] = useState(false)
   const [lastChecked, setLastChecked] = useState<string | null>(() => window.localStorage.getItem('spark-updates-last-checked'))
 
+  // Load lastChecked from IPC on mount
+  useEffect(() => {
+    window.spark?.invoke('settings:get', { category: 'updates', key: 'lastChecked' })
+      .then((res) => {
+        if (res.value != null && typeof res.value === 'string') {
+          setLastChecked(res.value)
+          window.localStorage.setItem('spark-updates-last-checked', res.value)
+        }
+      })
+      .catch(() => { /* ignore */ })
+  }, [])
+
   const handleCheckUpdate = async () => {
     setChecking(true)
     // Simulate check — real auto-updater integration is a future task
@@ -2426,6 +2484,9 @@ function UpdatesSection() {
     const now = new Date().toLocaleString('zh-CN')
     setLastChecked(now)
     window.localStorage.setItem('spark-updates-last-checked', now)
+    // Persist to IPC/SQLite
+    window.spark?.invoke('settings:set', { category: 'updates', key: 'lastChecked', value: now })
+      .catch(() => { /* ignore */ })
     setChecking(false)
   }
 

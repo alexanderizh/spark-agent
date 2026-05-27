@@ -30,8 +30,8 @@ describe('IPC handler registration completeness', () => {
   // Extract channels registered via typedIpcHandle in handlers
   const registeredChannels = extractChannels(handlerSrc)
 
-  it('IpcChannelMap has at least 19 channels', () => {
-    expect(definedChannels.length).toBeGreaterThanOrEqual(19)
+  it('IpcChannelMap has at least 22 channels', () => {
+    expect(definedChannels.length).toBeGreaterThanOrEqual(22)
   })
 
   it('every channel in IpcChannelMap has a registered handler', () => {
@@ -42,7 +42,7 @@ describe('IPC handler registration completeness', () => {
   it('all expected namespaces are covered', () => {
     const namespaces = [...new Set(definedChannels.map((ch) => ch.split(':')[0]))]
     expect(namespaces.sort()).toEqual(
-      ['command', 'dialog', 'mcp', 'model', 'permission', 'provider', 'rules', 'session', 'skill', 'workspace'].sort(),
+      ['command', 'dialog', 'mcp', 'model', 'permission', 'provider', 'rules', 'session', 'settings', 'skill', 'workspace'].sort(),
     )
   })
 })

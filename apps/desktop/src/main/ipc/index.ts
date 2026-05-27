@@ -16,8 +16,8 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
-import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService } from '@spark/agent-runtime'
+import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository } from '@spark/storage'
+import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
@@ -43,6 +43,14 @@ function getMcpService(): McpService {
 
 function getSkillService(): SkillService {
   return new SkillService(new SkillRepository(getDatabase()))
+}
+
+let _settingsService: SettingsService | null = null
+function getSettingsService(): SettingsService {
+  if (_settingsService == null) {
+    _settingsService = new SettingsService(new SettingsRepository(getDatabase()))
+  }
+  return _settingsService
 }
 
 let _skillRegistryService: SkillRegistryService | null = null
@@ -557,6 +565,28 @@ export function registerAllIpcHandlers(): void {
     const parsed = parseCommand(req.message)
     if (parsed == null) return { isCommand: false }
     return { isCommand: true, name: parsed.name, args: parsed.args, flags: parsed.flags }
+  })
+
+  // ─── Settings Handlers ─────────────────────────────────────────────────────
+
+  typedIpcHandle('settings:get', async (req) => {
+    const value = getSettingsService().get(req.category, req.key)
+    return { value }
+  })
+
+  typedIpcHandle('settings:set', async (req) => {
+    getSettingsService().set(req.category, req.key, req.value)
+    return { ok: true }
+  })
+
+  typedIpcHandle('settings:get-category', async (req) => {
+    const settings = getSettingsService().getByCategory(req.category)
+    return { settings }
+  })
+
+  typedIpcHandle('settings:get-all', async (_req) => {
+    const settings = getSettingsService().getAll()
+    return { settings }
   })
 
   log.info('All IPC handlers registered')
