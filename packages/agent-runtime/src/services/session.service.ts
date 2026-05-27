@@ -19,7 +19,7 @@ import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
-import { ClaudeSDKExecutor, SDKNotAvailableError } from '../sdk/index.js'
+import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
 import { createLogger } from '@spark/shared'
 
@@ -30,13 +30,14 @@ export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: R
 /** session 被取消时调用：用于拒绝该 session 下所有挂起的 approval 请求，避免 agent 永久挂起 */
 export type ApprovalCancelHandler = (sessionId: string) => void
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
+type ActiveExecution = { cancel(): void }
 type PendingTurn = { turnId: string; message: string }
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
 const SESSION_TITLE_MAX_LENGTH = 40
 
 export class SessionService {
-  private activeLoops = new Map<string, AgentLoop>()  // sessionId → AgentLoop
+  private activeLoops = new Map<string, ActiveExecution>()  // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
   private seqCounters = new Map<string, number>()
   private approvalOverrides = new Map<string, boolean>()  // sessionId → approval enabled
@@ -405,10 +406,8 @@ export class SessionService {
     }
 
     // ── SDK Execution Path ─────────────────────────────────────────────────
-    // When adapter is 'claude-sdk', use the Claude Agent SDK for execution.
-    // This delegates the entire agent loop, tools, and permissions to the SDK,
-    // giving us Claude Code's battle-tested Read/Edit/Bash/Grep capabilities.
-    // Falls back to direct API path if SDK is not installed.
+    // Claude execution is SDK-only. If the SDK is missing or cannot load, fail
+    // the turn with an actionable error instead of falling back to direct API.
     if (agentAdapter === 'claude-sdk') {
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
@@ -424,12 +423,10 @@ export class SessionService {
         enableCheckpoints: true,
         ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
       }
-      const sdkStarted = await this.tryStartSDKTurn(
+      await this.tryStartSDKTurn(
         sessionId, turnId, message, eventRepo, sessionRepo, sdkConfig,
       )
-      if (sdkStarted) return
-      // SDK not available — fall through to direct API path
-      log.warn(`Claude Agent SDK not available for session ${sessionId}, falling back to direct API`)
+      return
     }
 
     // ── Direct API Execution Path ──────────────────────────────────────────
@@ -495,8 +492,8 @@ export class SessionService {
   }
 
   /**
-   * Attempt to run the turn through the Claude Agent SDK.
-   * Returns true if successfully started, false if SDK is unavailable.
+   * Run the turn through the Claude Agent SDK, or fail explicitly when the SDK
+   * is unavailable. Spark no longer falls back to direct Anthropic API.
    */
   private async tryStartSDKTurn(
     sessionId: string,
@@ -505,12 +502,47 @@ export class SessionService {
     eventRepo: EventRepository,
     sessionRepo: SessionRepository,
     config: SDKExecutorConfig,
-  ): Promise<boolean> {
+  ): Promise<void> {
+    const makeBase = () => ({
+      id: crypto.randomUUID(),
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+    })
+
+    const emitSdkRequiredError = (rawError?: string) => {
+      this.emitAndPersist(sessionId, turnId, {
+        ...makeBase(),
+        type: 'user_message',
+        content: message,
+      }, eventRepo)
+      this.emitAndPersist(sessionId, turnId, {
+        ...makeBase(),
+        type: 'agent_error',
+        code: 'SDK_REQUIRED',
+        message: 'Claude Agent SDK is required for Claude execution. Open Settings and install or repair the Claude Agent SDK.',
+        retryable: false,
+        ...(rawError != null ? { rawError } : {}),
+      }, eventRepo)
+      this.emitAndPersist(sessionId, turnId, {
+        ...makeBase(),
+        type: 'agent_status',
+        status: 'error',
+        message: 'Claude Agent SDK is not available',
+      }, eventRepo)
+      sessionRepo.updateStatus(sessionId, 'error')
+    }
+
     try {
       const { isSDKAvailable: checkSDK } = await import('../sdk/index.js')
-      if (!(await checkSDK())) return false
-    } catch {
-      return false
+      if (!(await checkSDK())) {
+        emitSdkRequiredError()
+        return
+      }
+    } catch (err) {
+      emitSdkRequiredError(err instanceof Error ? `${err.name}: ${err.message}` : String(err))
+      return
     }
 
     // Build MCP server config from our McpService for the SDK
@@ -522,7 +554,7 @@ export class SessionService {
       this.emitAndPersist(sessionId, turnId, event, eventRepo)
     })
 
-    this.activeLoops.set(sessionId, executor as unknown as AgentLoop)
+    this.activeLoops.set(sessionId, executor)
     sessionRepo.updateStatus(sessionId, 'running')
 
     const sdkConfig: SDKExecutorConfig = {
@@ -540,13 +572,11 @@ export class SessionService {
         sessionRepo.updateStatus(sessionId, 'error')
       })
       .finally(() => {
-        if (this.activeLoops.get(sessionId) === (executor as unknown as AgentLoop)) {
+        if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
           this.startNextQueuedTurn(sessionId)
         }
       })
-
-    return true
   }
 
   /**
@@ -899,10 +929,12 @@ function truncateTitle(title: string): string {
 }
 
 function getAgentAdapterFromSession(value: string | null | undefined, legacyChatMode: string | null | undefined, providerType: string | null): AgentAdapterKind {
-  if (value === 'claude' || value === 'claude-sdk' || value === 'codex') return value
-  if (legacyChatMode === 'claude' || legacyChatMode === 'claude-sdk' || legacyChatMode === 'codex') return legacyChatMode
-  // Default: Anthropic providers use claude-sdk (with fallback to direct API),
-  // others use codex (OpenAI-compatible).
+  if (value === 'claude-sdk' || value === 'codex') return value
+  if (value === 'claude') return 'claude-sdk'
+  if (legacyChatMode === 'claude-sdk' || legacyChatMode === 'codex') return legacyChatMode
+  if (legacyChatMode === 'claude') return 'claude-sdk'
+  // Default: Anthropic providers use claude-sdk. Direct Anthropic API is not a
+  // supported execution path for the core code agent.
   return providerType === 'anthropic' ? 'claude-sdk' : 'codex'
 }
 
@@ -919,7 +951,7 @@ function getPermissionModeFromSession(value: string | null | undefined, adapter:
   ) {
     return value
   }
-  return adapter === 'claude' ? 'claude-ask' : 'codex-default'
+  return adapter === 'codex' ? 'codex-default' : 'claude-ask'
 }
 
 function defaultMaxIterations(adapter: AgentAdapterKind): number {

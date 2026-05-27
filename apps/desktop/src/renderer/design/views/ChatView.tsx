@@ -197,7 +197,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     setWorkspaces(workspaceRes.workspaces)
     setSessions(sessionRes.sessions)
     setProviders(providerRes.profiles)
-    setSelectedProviderId((prev) => prev || getPreferredProvider(providerRes.profiles, readComposerPrefs(), 'claude')?.id || '')
+    setSelectedProviderId((prev) => prev || getPreferredProvider(providerRes.profiles, readComposerPrefs(), DEFAULT_AGENT_ADAPTER)?.id || '')
     setActiveWorkspaceId((prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null)
   }, [getCurrentWorkspace, listProviders, listSessions, listWorkspaces])
 
@@ -294,9 +294,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
       const prefs = readComposerPrefs()
-      const preferredAdapter = options.agentAdapter ?? prefs.adapter ?? 'claude'
+      const preferredAdapter = options.agentAdapter ?? prefs.adapter ?? DEFAULT_AGENT_ADAPTER
       const profile = knownProviders.find((item) => item.id === options.providerProfileId)
-        ?? knownProviders.find((item) => item.id === selectedProviderId && getProviderAdapterKind(item) === preferredAdapter)
+        ?? knownProviders.find((item) => item.id === selectedProviderId && isProviderCompatibleWithAdapter(item, preferredAdapter))
         ?? getPreferredProvider(knownProviders, prefs, preferredAdapter)
       if (!profile) {
         alert('请先在设置中配置 Provider')
@@ -3083,11 +3083,11 @@ function ComposerV2({
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const slashListRef = useRef<HTMLDivElement | null>(null)
-  const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(initialPrefs.adapter ?? 'claude')
+  const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER)
   const [draftModelId, setDraftModelId] = useState(initialPrefs.modelId ?? '')
   const [draftMode] = useState<SessionChatMode>('agent')
   const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionModeChoice>(
-    getValidPermissionMode(initialPrefs.permissionMode, initialPrefs.adapter ?? 'claude'),
+    getValidPermissionMode(initialPrefs.permissionMode, initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER),
   )
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(initialPrefs.reasoningEffort ?? 'medium')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -3096,7 +3096,7 @@ function ComposerV2({
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
 
   const adapter = session?.agentAdapter ?? draftAdapter
-  const compatibleProviders = providers.filter((provider) => getProviderAdapterKind(provider) === adapter)
+  const compatibleProviders = providers.filter((provider) => isProviderCompatibleWithAdapter(provider, adapter))
   const selectedProvider = compatibleProviders.find((item) => item.id === (session?.providerProfileId || selectedProviderId))
     ?? compatibleProviders.find((item) => item.isDefault)
     ?? compatibleProviders[0]
@@ -3584,7 +3584,7 @@ function ComposerV2({
             <ComposerMenuSelect
               icon={<AdapterIcon adapter={adapter} />}
               value={adapter}
-              label={adapter === 'claude' ? 'Claude' : 'Codex'}
+              label={ADAPTER_LABELS[adapter]}
               disabled={providers.length === 0}
               title="适配器"
               onChange={(value) => handleAdapterChange(value as AgentAdapter)}
@@ -3813,8 +3813,8 @@ function useCloseOnOutside(ref: RefObject<HTMLElement | null>, onClose: () => vo
   }, [active, onClose, ref])
 }
 
-function AdapterIcon({ adapter }: { adapter: 'claude' | 'codex' }) {
-  if (adapter === 'claude') {
+function AdapterIcon({ adapter }: { adapter: AgentAdapter }) {
+  if (adapter === 'claude' || adapter === 'claude-sdk') {
     return (
       <svg className="adapter-brand-icon adapter-brand-claude" viewBox="0 0 24 24" aria-hidden="true">
         <rect x="2" y="2" width="20" height="20" rx="5" />
@@ -3843,9 +3843,17 @@ function ModelIcon() {
 }
 
 const ADAPTER_OPTIONS: Array<{ value: AgentAdapter; label: string }> = [
-  { value: 'claude', label: 'Claude' },
+  { value: 'claude-sdk', label: 'Claude SDK' },
   { value: 'codex', label: 'Codex' },
 ]
+
+const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
+
+const ADAPTER_LABELS: Record<AgentAdapter, string> = {
+  'claude-sdk': 'Claude SDK',
+  claude: 'Claude API',
+  codex: 'Codex',
+}
 
 const CLAUDE_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label: string }> = [
   { value: 'claude-ask', label: 'Ask permissions' },
@@ -3862,14 +3870,14 @@ const CODEX_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label:
 ]
 
 function getPermissionModeOptions(adapter: AgentAdapter): Array<{ value: PermissionModeChoice; label: string }> {
-  return adapter === 'claude' ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
+  return isClaudeAdapter(adapter) ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
 }
 
 function getValidPermissionMode(value: PermissionModeChoice | undefined, adapter: AgentAdapter): PermissionModeChoice {
   const options = getPermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
     ? value as PermissionModeChoice
-    : options[0]?.value ?? (adapter === 'claude' ? 'claude-ask' : 'codex-default')
+    : options[0]?.value ?? (isClaudeAdapter(adapter) ? 'claude-ask' : 'codex-default')
 }
 
 function readComposerPrefs(): ComposerPrefs {
@@ -3898,19 +3906,29 @@ function getPreferredProvider(
   prefs: ComposerPrefs,
   adapter: AgentAdapter,
 ): ProviderProfile | undefined {
-  return providers.find((provider) => provider.id === prefs.providerProfileId && getProviderAdapterKind(provider) === adapter)
-    ?? providers.find((provider) => provider.isDefault && getProviderAdapterKind(provider) === adapter)
-    ?? providers.find((provider) => getProviderAdapterKind(provider) === adapter)
+  return providers.find((provider) => provider.id === prefs.providerProfileId && isProviderCompatibleWithAdapter(provider, adapter))
+    ?? providers.find((provider) => provider.isDefault && isProviderCompatibleWithAdapter(provider, adapter))
+    ?? providers.find((provider) => isProviderCompatibleWithAdapter(provider, adapter))
     ?? providers.find((provider) => provider.provider === 'anthropic')
     ?? providers[0]
 }
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
-  return provider.provider === 'anthropic' ? 'claude' : 'codex'
+  return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
 }
 
-function getReasoningOptions(adapter: 'claude' | 'codex'): Array<{ value: SessionReasoningEffort; label: string }> {
-  if (adapter === 'claude') {
+function isClaudeAdapter(adapter: AgentAdapter): boolean {
+  return adapter === 'claude' || adapter === 'claude-sdk'
+}
+
+function isProviderCompatibleWithAdapter(provider: ProviderProfile, adapter: AgentAdapter): boolean {
+  return isClaudeAdapter(adapter)
+    ? provider.provider === 'anthropic'
+    : provider.provider !== 'anthropic'
+}
+
+function getReasoningOptions(adapter: AgentAdapter): Array<{ value: SessionReasoningEffort; label: string }> {
+  if (isClaudeAdapter(adapter)) {
     return [
       { value: 'low', label: 'low' },
       { value: 'medium', label: 'middle' },

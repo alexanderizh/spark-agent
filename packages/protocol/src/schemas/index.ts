@@ -416,4 +416,12 @@ export const IpcSchemaRegistry = {
     autoDownload: z.boolean().optional(),
     channel: z.enum(['stable', 'beta']).optional(),
   }),
+
+  // SDK Integrity
+  'sdk:integrity-check': z.object({
+    checkLatest: z.boolean().optional(),
+  }),
+  'sdk:integrity-install': z.object({
+    packageName: z.string().min(1).max(200),
+  }),
 } as const
