@@ -19,9 +19,11 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { registerAllIpcHandlers } from './ipc/index.js'
-import { setMainWindow } from './windows/index.js'
+import { setMainWindow, sendToMainWindow } from './windows/index.js'
 import { getFileWatcherService } from './services/FileWatcherService.js'
+import { getUpdateService } from './services/UpdateService.js'
 import { createLogger } from '@spark/shared'
+import type { UpdateStatus } from '@spark/protocol'
 
 const log = createLogger('main')
 
@@ -107,6 +109,7 @@ async function initializeApp(): Promise<void> {
     // 关闭数据库连接在应用退出时
     app.on('before-quit', () => {
       getFileWatcherService().stopAll()
+      getUpdateService().destroy()
       closeDatabase()
     })
   } catch (err) {
@@ -120,6 +123,38 @@ async function initializeApp(): Promise<void> {
 
   // 3. 创建主窗口
   createWindow()
+
+  // 4. 初始化自动更新服务
+  const updateService = getUpdateService()
+  updateService.initialize((status: UpdateStatus) => {
+    // 推送状态变化到渲染进程
+    sendToMainWindow('stream:update:status', status)
+
+    // 根据状态推送特定事件
+    switch (status.state) {
+      case 'available':
+        if (status.updateInfo != null) {
+          sendToMainWindow('stream:update:available', status.updateInfo)
+        }
+        break
+      case 'downloading':
+        if (status.progress != null) {
+          sendToMainWindow('stream:update:progress', status.progress)
+        }
+        break
+      case 'downloaded':
+        if (status.updateInfo != null) {
+          sendToMainWindow('stream:update:downloaded', status.updateInfo)
+        }
+        break
+    }
+  })
+
+  // 启动自动检查（应用启动后延迟 30 秒检查，避免影响启动速度）
+  setTimeout(() => {
+    void updateService.checkForUpdates()
+  }, 30_000)
+  updateService.startAutoCheck()
 
   log.info('Spark Agent initialized')
 }

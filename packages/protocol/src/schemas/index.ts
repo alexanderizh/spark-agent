@@ -359,4 +359,15 @@ export const IpcSchemaRegistry = {
   'usage:purge': z.object({
     olderThanDays: z.number().int().min(1),
   }),
+
+  // Auto-Update
+  'update:check': z.object({}),
+  'update:download': z.object({}),
+  'update:install-restart': z.object({}),
+  'update:get-status': z.object({}),
+  'update:settings': z.object({
+    autoCheck: z.boolean().optional(),
+    autoDownload: z.boolean().optional(),
+    channel: z.enum(['stable', 'beta']).optional(),
+  }),
 } as const

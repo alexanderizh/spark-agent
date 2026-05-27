@@ -34,6 +34,7 @@ import type {
   ModelProfile,
   McpServerItem,
   SkillItem,
+  UpdateStatus,
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -2772,7 +2773,7 @@ function UsageRow({ label, used, pct }: { label: string; used: string; pct: numb
 /* ───────── UPDATES ───────── */
 function UpdatesSection() {
   const [s, set] = usePersistedSettings(SETTINGS_UPDATES_KEY, DEFAULT_UPDATES)
-  const [checking, setChecking] = useState(false)
+  const [status, setStatus] = useState<UpdateStatus | null>(null)
   const [lastChecked, setLastChecked] = useState<string | null>(() => window.localStorage.getItem('spark-updates-last-checked'))
 
   // Load lastChecked from IPC on mount
@@ -2785,19 +2786,89 @@ function UpdatesSection() {
         }
       })
       .catch(() => { /* ignore */ })
+
+    // Get initial update status
+    window.spark?.invoke('update:get-status', {})
+      .then((res) => {
+        setStatus(res.status)
+      })
+      .catch(() => { /* ignore */ })
+  }, [])
+
+  // Subscribe to update status stream events
+  useEffect(() => {
+    const unsub = window.spark?.on('stream:update:status', (payload) => {
+      setStatus(payload)
+    })
+    return unsub
   }, [])
 
   const handleCheckUpdate = async () => {
-    setChecking(true)
-    // Simulate check — real auto-updater integration is a future task
-    await new Promise((r) => setTimeout(r, 1500))
-    const now = new Date().toLocaleString('zh-CN')
-    setLastChecked(now)
-    window.localStorage.setItem('spark-updates-last-checked', now)
-    // Persist to IPC/SQLite
-    window.spark?.invoke('settings:set', { category: 'updates', key: 'lastChecked', value: now })
-      .catch(() => { /* ignore */ })
-    setChecking(false)
+    try {
+      await window.spark.invoke('update:check', {})
+      const now = new Date().toLocaleString('zh-CN')
+      setLastChecked(now)
+      window.localStorage.setItem('spark-updates-last-checked', now)
+      window.spark?.invoke('settings:set', { category: 'updates', key: 'lastChecked', value: now })
+        .catch(() => { /* ignore */ })
+    } catch {
+      // Error handled via stream events
+    }
+  }
+
+  const handleDownload = async () => {
+    try {
+      await window.spark.invoke('update:download', {})
+    } catch {
+      // Error handled via stream events
+    }
+  }
+
+  const handleInstall = () => {
+    void window.spark.invoke('update:install-restart', {})
+  }
+
+  const handleSettingsChange = (key: keyof UpdatesSettings, value: boolean | string) => {
+    set({ [key]: value })
+    // Sync auto-download setting to main process
+    if (key === 'autoDownload' && typeof value === 'boolean') {
+      void window.spark.invoke('update:settings', { autoDownload: value })
+    }
+    if (key === 'channel' && typeof value === 'string') {
+      void window.spark.invoke('update:settings', { channel: value as 'stable' | 'beta' })
+    }
+  }
+
+  const state = status?.state ?? 'idle'
+  const isChecking = state === 'checking'
+  const isDownloading = state === 'downloading'
+  const hasUpdate = state === 'available' || state === 'downloading' || state === 'downloaded'
+  const isDownloaded = state === 'downloaded'
+  const isError = state === 'error'
+  const currentVersion = status?.currentVersion ?? '0.1.0'
+
+  // Update card status icon and label
+  const getStatusIcon = () => {
+    if (isError) return <Icons.AlertTriangle size={26} />
+    if (isDownloaded) return <Icons.Download size={26} />
+    if (hasUpdate) return <Icons.Refresh size={26} className="spin" />
+    return <Icons.CheckCircle size={26} />
+  }
+
+  const getStatusLabel = () => {
+    if (isError) return `检查失败：${status?.error ?? '未知错误'}`
+    if (isChecking) return '正在检查更新…'
+    if (isDownloading) return `正在下载 ${status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : ''}`
+    if (isDownloaded) return `更新已就绪：v${status?.updateInfo?.version ?? '?'}`
+    if (hasUpdate) return `发现新版本：v${status?.updateInfo?.version ?? '?'}`
+    return `已是最新版本`
+  }
+
+  const getStatusClass = () => {
+    if (isError) return 'error'
+    if (isDownloaded) return 'downloaded'
+    if (hasUpdate) return 'available'
+    return 'ok'
   }
 
   return (
@@ -2806,31 +2877,50 @@ function UpdatesSection() {
       <div className="lede">保持 Spark Agent 最新版本以获得最新模型与安全修复。</div>
 
       <div className="card update-card">
-        <div className="update-icon ok">
-          <Icons.CheckCircle size={26} />
+        <div className={`update-icon ${getStatusClass()}`}>
+          {getStatusIcon()}
         </div>
         <div className="flex1">
-          <div className="strong update-version">已是最新版本</div>
-          <div className="muted update-meta">Spark Agent 0.1.0{lastChecked ? ` · 上次检查 ${lastChecked}` : ''}</div>
+          <div className="strong update-version">{getStatusLabel()}</div>
+          <div className="muted update-meta">
+            Spark Agent {currentVersion}
+            {lastChecked ? ` · 上次检查 ${lastChecked}` : ''}
+          </div>
+          {isDownloading && status?.progress != null && (
+            <div className="update-progress-bar">
+              <div className="update-progress-fill" style={{ width: `${status.progress.percent}%` }} />
+            </div>
+          )}
         </div>
-        <button className="btn" onClick={() => void handleCheckUpdate()} disabled={checking}>
-          <Icons.Refresh size={12} /> {checking ? '检查中…' : '检查更新'}
-        </button>
+        <div className="update-actions">
+          {isDownloaded ? (
+            <button className="btn primary" onClick={handleInstall}>
+              安装并重启
+            </button>
+          ) : hasUpdate && state === 'available' ? (
+            <button className="btn primary" onClick={() => void handleDownload()}>
+              <Icons.Download size={12} /> 下载更新
+            </button>
+          ) : (
+            <button className="btn" onClick={() => void handleCheckUpdate()} disabled={isChecking || isDownloading}>
+              <Icons.Refresh size={12} /> {isChecking ? '检查中…' : '检查更新'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="subsec-h">更新策略</div>
       <div className="card">
-        <SettingsRow title="自动检查更新" right={<div className={`switch ${s.autoCheck ? 'on' : ''}`} onClick={() => set({ autoCheck: !s.autoCheck })} />} />
-        <SettingsRow title="自动下载" desc="后台下载，准备好后提示安装" right={<div className={`switch ${s.autoDownload ? 'on' : ''}`} onClick={() => set({ autoDownload: !s.autoDownload })} />} />
-        <SettingsRow title="自动安装" desc="退出应用时静默安装" right={<div className={`switch ${s.autoInstall ? 'on' : ''}`} onClick={() => set({ autoInstall: !s.autoInstall })} />} />
+        <SettingsRow title="自动检查更新" right={<div className={`switch ${s.autoCheck ? 'on' : ''}`} onClick={() => handleSettingsChange('autoCheck', !s.autoCheck)} />} />
+        <SettingsRow title="自动下载" desc="后台下载，准备好后提示安装" right={<div className={`switch ${s.autoDownload ? 'on' : ''}`} onClick={() => handleSettingsChange('autoDownload', !s.autoDownload)} />} />
+        <SettingsRow title="自动安装" desc="退出应用时静默安装" right={<div className={`switch ${s.autoInstall ? 'on' : ''}`} onClick={() => handleSettingsChange('autoInstall', !s.autoInstall)} />} />
         <SettingsRow
           title="更新通道"
           right={
             <div className="select-sm">
-              <SparkSelect value={s.channel} onChange={(e) => set({ channel: e.target.value })}>
+              <SparkSelect value={s.channel} onChange={(e) => handleSettingsChange('channel', e.target.value)}>
                 <option value="stable">stable</option>
                 <option value="beta">beta</option>
-                <option value="nightly">nightly</option>
               </SparkSelect>
             </div>
           }
@@ -2839,7 +2929,7 @@ function UpdatesSection() {
 
       <div className="subsec-h">版本</div>
       <div className="card">
-        <SettingsRow title="应用" desc="0.1.0 · 2026-05-20" right={<button className="btn ghost sm">更新日志</button>} />
+        <SettingsRow title="Spark Agent" desc={`${currentVersion}`} right={<span className={hasUpdate ? 'badge warning dot' : 'badge success dot'}>{hasUpdate ? `有新版 ${status?.updateInfo?.version}` : '最新'}</span>} />
         <SettingsRow title="Claude Agent SDK" desc="1.0.6" right={<span className="badge success dot">最新</span>} />
         <SettingsRow title="@openai/codex CLI" desc="0.4.1" right={<span className="badge warning dot">有新版 0.4.3</span>} />
         <SettingsRow title="Electron" desc="31.x" right={<span className="badge">嵌入</span>} />

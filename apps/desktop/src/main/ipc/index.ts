@@ -21,6 +21,7 @@ import { ProviderService, RulesService, RuleCompositionEngine, SessionService, W
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
+import { getUpdateService } from '../services/UpdateService.js'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
@@ -623,17 +624,18 @@ export function registerAllIpcHandlers(): void {
   // ─── Usage Ledger Handlers ────────────────────────────────────────────────
 
   typedIpcHandle('usage:record', async (req) => {
-    const id = getUsageLedgerService().record({
+    const params: Parameters<UsageLedgerService['record']>[0] = {
       sessionId: req.sessionId,
       providerId: req.providerId,
       modelId: req.modelId,
       inputTokens: req.inputTokens,
       outputTokens: req.outputTokens,
-      cacheReadTokens: req.cacheReadTokens,
-      cacheWriteTokens: req.cacheWriteTokens,
-      costUsd: req.costUsd,
-      requestTimestamp: req.requestTimestamp,
-    })
+    }
+    if (req.cacheReadTokens !== undefined) params.cacheReadTokens = req.cacheReadTokens
+    if (req.cacheWriteTokens !== undefined) params.cacheWriteTokens = req.cacheWriteTokens
+    if (req.costUsd !== undefined) params.costUsd = req.costUsd
+    if (req.requestTimestamp !== undefined) params.requestTimestamp = req.requestTimestamp
+    const id = getUsageLedgerService().record(params)
     return { id }
   })
 
@@ -656,6 +658,43 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('usage:purge', async (req) => {
     const deletedCount = getUsageLedgerService().purgeOldRecords(req.olderThanDays)
     return { deletedCount }
+  })
+
+  // ─── Auto-Update Handlers ────────────────────────────────────────────────
+
+  typedIpcHandle('update:check', async (_req) => {
+    log.info('update:check requested')
+    const status = await getUpdateService().checkForUpdates()
+    return { status }
+  })
+
+  typedIpcHandle('update:download', async (_req) => {
+    log.info('update:download requested')
+    const started = await getUpdateService().downloadUpdate()
+    return { started }
+  })
+
+  typedIpcHandle('update:install-restart', async (_req) => {
+    log.info('update:install-restart requested')
+    const willInstall = getUpdateService().installAndRestart()
+    return { willInstall }
+  })
+
+  typedIpcHandle('update:get-status', async (_req) => {
+    const status = getUpdateService().getStatus()
+    return { status }
+  })
+
+  typedIpcHandle('update:settings', async (req) => {
+    log.info(`update:settings requested: ${JSON.stringify(req)}`)
+    const svc = getUpdateService()
+    if (req.autoDownload !== undefined) {
+      svc.setAutoDownload(req.autoDownload)
+    }
+    if (req.channel !== undefined) {
+      svc.setChannel(req.channel)
+    }
+    return { ok: true }
   })
 
   log.info('All IPC handlers registered')

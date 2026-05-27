@@ -4820,12 +4820,50 @@ body.inspector-resizing {
   background: var(--success-bg);
   color: var(--success);
 }
+.update-icon.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.update-icon.available {
+  background: var(--warning-bg);
+  color: var(--warning);
+}
+.update-icon.downloaded {
+  background: var(--info-bg);
+  color: var(--info);
+}
 .update-version {
   font-size: 15px;
 }
 .update-meta {
   font-size: 12px;
   margin-top: 2px;
+}
+.update-progress-bar {
+  height: 4px;
+  background: var(--bg-elevated-2);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+.update-progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.btn.primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border: none;
+}
+.btn.primary:hover {
+  opacity: 0.9;
 }
 
 /* ── Settings: Storage ── */

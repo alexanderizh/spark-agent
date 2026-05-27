@@ -29,3 +29,7 @@ extraResources:
     to: migrations
     filter:
       - '**/*.sql'
+publish:
+  provider: generic
+  url: https://releases.spark-agent.dev/${os}/
+  channel: latest

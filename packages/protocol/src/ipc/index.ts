@@ -1392,6 +1392,13 @@ export interface IpcChannelMap {
   'usage:get-dashboard': [UsageGetDashboardRequest, UsageGetDashboardResponse]
   'usage:get-by-date-range': [UsageGetByDateRangeRequest, UsageGetByDateRangeResponse]
   'usage:purge': [UsagePurgeRequest, UsagePurgeResponse]
+
+  // Auto-Update
+  'update:check': [UpdateCheckRequest, UpdateCheckResponse]
+  'update:download': [UpdateDownloadRequest, UpdateDownloadResponse]
+  'update:install-restart': [UpdateInstallRestartRequest, UpdateInstallRestartResponse]
+  'update:get-status': [UpdateGetStatusRequest, UpdateGetStatusResponse]
+  'update:settings': [UpdateSettingsRequest, UpdateSettingsResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -1423,6 +1430,14 @@ export interface IpcStreamChannelMap {
   'stream:permission:approval-request': PermissionApprovalRequest
   /** 工作区文件变更（由 fs.watch 检测外部文件变化，主进程推送）*/
   'stream:workspace:file-change': WorkspaceFileChangePayload
+  /** 更新可用（主进程推送，渲染进程显示通知）*/
+  'stream:update:available': UpdateInfo
+  /** 更新下载进度（主进程推送，渲染进程显示进度条）*/
+  'stream:update:progress': UpdateProgressInfo
+  /** 更新下载完成（主进程推送，渲染进程显示安装提示）*/
+  'stream:update:downloaded': UpdateInfo
+  /** 更新状态变化（主进程推送，渲染进程同步状态）*/
+  'stream:update:status': UpdateStatus
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap
