@@ -52,6 +52,7 @@ export type {
   CreateRuleParams,
   UpdateRuleParams,
   ListRulesParams,
+  PermissionDecisionRow,
   PermissionProfileRow,
   PermissionRuleRow,
   ModelProfileRow,

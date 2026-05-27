@@ -91,6 +91,24 @@ function getPermissionService(): PermissionService {
   return _permissionService
 }
 
+function getSessionPermissionContext(sessionId: string): { projectId?: string; workspaceIds?: string[] } {
+  const row = new SessionRepository(getDatabase()).get(sessionId)
+  if (row == null) return {}
+  let workspaceIds: string[] = []
+  try {
+    const parsed = JSON.parse(row.workspace_ids_json) as unknown
+    if (Array.isArray(parsed)) {
+      workspaceIds = parsed.filter((id): id is string => typeof id === 'string' && id.length > 0)
+    }
+  } catch {
+    workspaceIds = []
+  }
+  return {
+    projectId: row.project_id,
+    workspaceIds,
+  }
+}
+
 let _workspaceService: WorkspaceService | null = null
 function getWorkspaceService(): WorkspaceService {
   if (_workspaceService == null) {
@@ -106,9 +124,10 @@ function getSessionService(): SessionService {
       pushStreamEvent('stream:session:agent-event', event)
     }
     const onApproval: ApprovalHandler = (sessionId, toolName, toolInput) => {
+      const permissionContext = getSessionPermissionContext(sessionId)
       return getPermissionService().requestApproval(sessionId, toolName, toolInput, (req) => {
         pushStreamEvent('stream:permission:approval-request', req)
-      }, { forcePrompt: true })
+      }, { forcePrompt: true, ...permissionContext })
     }
     const onApprovalCancel = (sessionId: string) => {
       getPermissionService().cancelPendingApprovals(sessionId)
@@ -417,6 +436,11 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('permission:update-rule', async (req) => {
     const rule = getPermissionService().updateRule(req.profileId, req.action, req.mode)
     return { rule }
+  })
+
+  typedIpcHandle('permission:set-active-profile', async (req) => {
+    getPermissionService().setActiveProfileId(req.profileId)
+    return { activeProfileId: req.profileId }
   })
 
   typedIpcHandle('permission:approval-respond', async (req) => {

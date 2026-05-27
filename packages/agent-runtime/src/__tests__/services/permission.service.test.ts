@@ -20,6 +20,18 @@ function makeMockRepo(initialRules: Array<Partial<PermissionRuleRow>> = []): Per
     sort_order: r.sort_order ?? i,
   }))
   const profiles: Array<{ id: string; name: string; sandbox_level: number; is_builtin: number; created_at: string }> = []
+  const settings = new Map<string, string>()
+  const decisions: Array<{
+    id: string
+    scope: 'project' | 'global'
+    project_id: string | null
+    workspace_ids_json: string | null
+    action: string
+    tool_name: string
+    decision: 'allow' | 'deny'
+    created_at: string
+    updated_at: string
+  }> = []
   return {
     ensureSchema: vi.fn(),
     hasProfiles: () => profiles.length > 0,
@@ -56,6 +68,44 @@ function makeMockRepo(initialRules: Array<Partial<PermissionRuleRow>> = []): Per
     updateRuleMode: vi.fn((id: string, mode: string) => {
       const r = rules.find((x) => x.id === id)
       if (r) r.mode = mode
+    }),
+    getSetting: vi.fn((key: string) => settings.get(key) ?? null),
+    setSetting: vi.fn((key: string, value: string) => { settings.set(key, value) }),
+    upsertDecision: vi.fn((params) => {
+      const row = {
+        id: params.id,
+        scope: params.scope,
+        project_id: params.projectId ?? null,
+        workspace_ids_json: params.workspaceIds != null ? JSON.stringify(params.workspaceIds) : null,
+        action: params.action,
+        tool_name: params.toolName,
+        decision: params.decision,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }
+      const existing = decisions.findIndex((d) =>
+        d.scope === row.scope
+        && (d.project_id ?? '') === (row.project_id ?? '')
+        && d.action === row.action
+        && d.tool_name === row.tool_name,
+      )
+      if (existing >= 0) decisions.splice(existing, 1)
+      decisions.push(row)
+      return row
+    }),
+    findDecision: vi.fn((params) => {
+      const projectMatch = decisions.find((d) =>
+        d.scope === 'project'
+        && d.project_id === (params.projectId ?? null)
+        && d.action === params.action
+        && d.tool_name === params.toolName,
+      )
+      if (projectMatch != null) return projectMatch
+      return decisions.find((d) =>
+        d.scope === 'global'
+        && d.action === params.action
+        && d.tool_name === params.toolName,
+      ) ?? null
     }),
   } as unknown as PermissionProfileRepository
 }
@@ -153,6 +203,47 @@ describe('PermissionService', () => {
       expect(push).toHaveBeenCalledTimes(1)
       svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny')
       await p2
+    })
+  })
+
+  describe('remembered project/global decisions', () => {
+    it('allow-project persists an action/tool decision and skips the next approval in the same project', async () => {
+      const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push, { projectId: 'project-1' })
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-project')
+      await expect(p1).resolves.toBe(true)
+      expect(repo.upsertDecision).toHaveBeenCalledWith(expect.objectContaining({
+        scope: 'project',
+        projectId: 'project-1',
+        action: 'command_exec',
+        toolName: 'bash',
+        decision: 'allow',
+      }))
+
+      push.mockClear()
+      await expect(
+        svc.requestApproval('sess-B', 'bash', { command: 'pwd' }, push, { projectId: 'project-1' }),
+      ).resolves.toBe(true)
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('deny-project persists a denial and blocks later matching requests', async () => {
+      const repo = makeMockRepo([{ id: 'r1', action: 'command_exec', mode: 'ask' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      const p1 = svc.requestApproval('sess-A', 'bash', { command: 'ls' }, push, { projectId: 'project-1' })
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'deny-project')
+      await expect(p1).resolves.toBe(false)
+
+      push.mockClear()
+      await expect(
+        svc.requestApproval('sess-B', 'bash', { command: 'pwd' }, push, { projectId: 'project-1' }),
+      ).resolves.toBe(false)
+      expect(push).not.toHaveBeenCalled()
     })
   })
 

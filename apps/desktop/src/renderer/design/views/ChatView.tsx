@@ -2971,6 +2971,7 @@ function InlineApprovalRequest({ request, onClose }: { request: PermissionApprov
   const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
   const riskTone = request.riskLevel === 'high' ? 'high' : request.riskLevel === 'medium' ? 'medium' : 'low'
   const inputPreview = JSON.stringify(request.toolInput, null, 2)
+  const canRememberProject = request.persistentScopes.includes('project')
 
   const respond = useCallback(async (decision: PermissionApprovalDecision) => {
     setBusyDecision(decision)
@@ -3018,6 +3019,24 @@ function InlineApprovalRequest({ request, onClose }: { request: PermissionApprov
             >
               拒绝
             </button>
+            {canRememberProject && (
+              <button
+                type="button"
+                className="composer-approval-btn"
+                disabled={busyDecision != null}
+                onClick={() => void respond('deny-project')}
+              >
+                本项目拒绝
+              </button>
+            )}
+            <button
+              type="button"
+              className="composer-approval-btn ghost"
+              disabled={busyDecision != null}
+              onClick={() => void respond('deny-global')}
+            >
+              全局拒绝
+            </button>
             <button
               type="button"
               className="composer-approval-btn"
@@ -3025,6 +3044,24 @@ function InlineApprovalRequest({ request, onClose }: { request: PermissionApprov
               onClick={() => void respond('allow-session')}
             >
               本会话允许
+            </button>
+            {canRememberProject && (
+              <button
+                type="button"
+                className="composer-approval-btn"
+                disabled={busyDecision != null}
+                onClick={() => void respond('allow-project')}
+              >
+                本项目记住
+              </button>
+            )}
+            <button
+              type="button"
+              className="composer-approval-btn"
+              disabled={busyDecision != null}
+              onClick={() => void respond('allow-global')}
+            >
+              全局记住
             </button>
             <button
               type="button"

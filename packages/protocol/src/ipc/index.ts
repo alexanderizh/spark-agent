@@ -502,17 +502,29 @@ export interface RulesComposeResponse {
 // ─── Permission Channels ─────────────────────────────────────────────────────
 
 export type PermissionMode = 'allow' | 'ask' | 'ask-twice' | 'deny'
+export type PermissionDecisionScope = 'project' | 'global'
 
 // Tool approval flow (main → renderer push, then renderer → main respond)
 export interface PermissionApprovalRequest {
   requestId: string
   sessionId: string
   toolName: string
+  action: string
   toolInput: Record<string, unknown>
   riskLevel: 'low' | 'medium' | 'high'
+  projectId?: string
+  workspaceIds?: string[]
+  persistentScopes: PermissionDecisionScope[]
 }
 
-export type PermissionApprovalDecision = 'allow-once' | 'allow-session' | 'deny'
+export type PermissionApprovalDecision =
+  | 'allow-once'
+  | 'allow-session'
+  | 'allow-project'
+  | 'allow-global'
+  | 'deny'
+  | 'deny-project'
+  | 'deny-global'
 
 export interface PermissionApprovalRespondRequest {
   requestId: string
@@ -571,6 +583,13 @@ export interface PermissionUpdateRuleRequest {
 }
 export interface PermissionUpdateRuleResponse {
   rule: PermissionRuleItem
+}
+
+export interface PermissionSetActiveProfileRequest {
+  profileId: string
+}
+export interface PermissionSetActiveProfileResponse {
+  activeProfileId: string
 }
 
 // ─── Model Channels ──────────────────────────────────────────────────────────
@@ -1615,6 +1634,7 @@ export interface IpcChannelMap {
   'permission:delete-profile': [PermissionDeleteProfileRequest, PermissionDeleteProfileResponse]
   'permission:update-sandbox': [PermissionUpdateSandboxRequest, PermissionUpdateSandboxResponse]
   'permission:update-rule': [PermissionUpdateRuleRequest, PermissionUpdateRuleResponse]
+  'permission:set-active-profile': [PermissionSetActiveProfileRequest, PermissionSetActiveProfileResponse]
   'permission:approval-respond': [PermissionApprovalRespondRequest, PermissionApprovalRespondResponse]
 
   // Model

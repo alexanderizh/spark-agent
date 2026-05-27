@@ -60,7 +60,6 @@ type WorkflowTemplate = {
   updatedAt: string
 }
 
-const PERM_PROFILE_KEY = 'spark-perm-profile'
 const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
 const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
@@ -3264,9 +3263,7 @@ function WorkflowTemplatesSection() {
 /* ───────── PERMISSIONS ───────── */
 function PermissionsSection() {
   const [profiles, setProfiles] = useState<PermissionProfileItem[]>([])
-  const [activeProfileId, setActiveProfileId] = useState(
-    () => window.localStorage.getItem(PERM_PROFILE_KEY) || 'project-standard',
-  )
+  const [activeProfileId, setActiveProfileId] = useState('project-standard')
   const [loading, setLoading] = useState(true)
   const [auditEnabled, setAuditEnabled] = useState(
     () => window.localStorage.getItem(AUDIT_ENABLED_KEY) !== 'false',
@@ -3275,18 +3272,14 @@ function PermissionsSection() {
   const { invoke: listProfiles } = useIpcInvoke('permission:list-profiles')
   const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
   const { invoke: updateRule } = useIpcInvoke('permission:update-rule')
+  const { invoke: setActiveProfile } = useIpcInvoke('permission:set-active-profile')
 
   const refresh = useCallback(() => {
     setLoading(true)
     listProfiles({})
       .then((res) => {
         setProfiles(res.profiles)
-        const storedProfileId = window.localStorage.getItem(PERM_PROFILE_KEY)
-        setActiveProfileId(
-          storedProfileId !== null && res.profiles.some((p) => p.id === storedProfileId)
-            ? storedProfileId
-            : res.activeProfileId,
-        )
+        setActiveProfileId(res.activeProfileId)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
@@ -3300,7 +3293,10 @@ function PermissionsSection() {
 
   const handleProfileChange = (profileId: string) => {
     setActiveProfileId(profileId)
-    window.localStorage.setItem(PERM_PROFILE_KEY, profileId)
+    void setActiveProfile({ profileId })
+      .then((res) => setActiveProfileId(res.activeProfileId))
+      .then(refresh)
+      .catch(console.error)
   }
 
   const handleSandboxChange = (level: number) => {

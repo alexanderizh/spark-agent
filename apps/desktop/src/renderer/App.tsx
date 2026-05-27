@@ -449,7 +449,7 @@ function Shell() {
           onNewSession={handleNewSession}
         />
       )}
-      {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', toolInput: {}, riskLevel: 'medium' }} onClose={() => setTweak('showPerm', false)} />}
+      {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', action: 'file_write', toolInput: {}, riskLevel: 'medium', persistentScopes: ['global'] }} onClose={() => setTweak('showPerm', false)} />}
       {approvalRequest && !showInlineApproval && <PermissionModal request={approvalRequest} onClose={() => setApprovalRequest(null)} />}
 
       {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}

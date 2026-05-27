@@ -132,6 +132,8 @@
 - `6388338 feat: load project context into agent runtime`
 - `6665f8d fix: refresh workspace sessions after project creation`
 - `e42db8e docs: update code agent roadmap after core progress`
+- `232a2e1 feat: surface SDK tool results and checkpoints`
+- 待提交: permission persistence MVP，补 `permission_decisions`、DB-backed active profile、project/global remembered approval decisions、ChatView approval persistent actions。
 - 待提交: SDK event polish，补 `user(tool_result)`、`file_change`、`checkpoint` 承载。
 
 最近验证:
@@ -141,6 +143,11 @@
 - `pnpm --filter @spark/agent-runtime test:unit -- src/services/project-context.service.test.ts src/__tests__/services/session.service.test.ts`
 - `pnpm --filter @spark/desktop typecheck`
 - `pnpm --filter @spark/desktop test:unit -- src/renderer/tests/renderer.test.ts`
+- `pnpm --filter @spark/protocol typecheck`
+- `pnpm --filter @spark/storage typecheck`
+- `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/services/permission.service.test.ts`
+- `pnpm --filter @spark/agent-runtime typecheck`
+- storage repository test note: `pnpm --filter @spark/storage test:unit -- src/repositories/repositories.test.ts` is currently blocked by local `better-sqlite3` Node ABI mismatch (module 125 vs required 137), before reaching the new SQL logic.
 
 说明: renderer 测试仍会输出既有 React `act(...)` 警告，但测试通过。
 

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
-import type { PermissionProfileRepository, PermissionProfileRow, PermissionRuleRow } from '@spark/storage'
-import type { PermissionProfileItem, PermissionRuleItem, PermissionMode, PermissionApprovalRequest, PermissionApprovalDecision } from '@spark/protocol'
+import type { PermissionDecisionRow, PermissionProfileRepository, PermissionProfileRow, PermissionRuleRow } from '@spark/storage'
+import type { PermissionProfileItem, PermissionRuleItem, PermissionMode, PermissionApprovalRequest, PermissionApprovalDecision, PermissionDecisionScope } from '@spark/protocol'
 
 const BUILTIN_PROFILES = [
   { id: 'strict', name: 'strict', sandboxLevel: 0 },
@@ -53,6 +53,8 @@ const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000  // 5 minutes; agent will treat 'deny'
 interface RequestApprovalOptions {
   /** The caller already decided this tool call must ask the user. */
   forcePrompt?: boolean
+  projectId?: string
+  workspaceIds?: string[]
 }
 
 // Risk level per action
@@ -124,15 +126,13 @@ export class PermissionService {
   }
 
   getActiveProfileId(): string {
-    // Simple in-memory fallback; could persist to a config table later
-    return PermissionService._activeProfileId ?? 'project-standard'
+    return this.repo.getSetting(ACTIVE_PROFILE_KEY) ?? 'project-standard'
   }
 
   setActiveProfileId(id: string): void {
-    PermissionService._activeProfileId = id
+    if (this.repo.getProfile(id) == null) throw new Error(`Profile not found: ${id}`)
+    this.repo.setSetting(ACTIVE_PROFILE_KEY, id)
   }
-
-  private static _activeProfileId: string | null = null
 
   // ─── Tool Approval Flow ───────────────────────────────────────────────────
 
@@ -159,12 +159,18 @@ export class PermissionService {
     const rule = rules.find((r) => r.action === action)
     const mode = (rule?.mode ?? 'ask') as PermissionMode  // 未知 action 默认 ask（更安全）
 
-    if (mode === 'allow' && options.forcePrompt !== true) return true
     if (mode === 'deny') return false
+
+    const remembered = this.findRememberedDecision(options.projectId, action, toolName)
+    if (remembered?.decision === 'deny') return false
+    if (remembered?.decision === 'allow') return true
+
+    if (mode === 'allow' && options.forcePrompt !== true) return true
 
     // 3) mode === 'ask' or 'ask-twice': push to renderer and wait
     const requestId = randomUUID()
     const riskLevel = RISK_LEVEL_MAP[action] ?? 'low'
+    const persistentScopes = this.getPersistentScopes(options.projectId)
 
     const result = await new Promise<PermissionApprovalDecision>((resolve) => {
       const timer = setTimeout(() => {
@@ -180,12 +186,32 @@ export class PermissionService {
         resolve(decision)
       })
       this._approvalSessions.set(requestId, sessionId)
-      pushFn({ requestId, sessionId, toolName, toolInput, riskLevel })
+      pushFn({
+        requestId,
+        sessionId,
+        toolName,
+        action,
+        toolInput,
+        riskLevel,
+        ...(options.projectId != null ? { projectId: options.projectId } : {}),
+        ...(options.workspaceIds != null ? { workspaceIds: options.workspaceIds } : {}),
+        persistentScopes,
+      })
     })
 
     if (result === 'allow-session') {
       // 只在内存中给该 session 临时放行，不再写穿数据库
       this.allowForSession(sessionId, action)
+    }
+
+    if (result === 'allow-project' || result === 'allow-global') {
+      this.rememberDecision(result === 'allow-project' ? 'project' : 'global', options, action, toolName, 'allow')
+      return true
+    }
+
+    if (result === 'deny-project' || result === 'deny-global') {
+      this.rememberDecision(result === 'deny-project' ? 'project' : 'global', options, action, toolName, 'deny')
+      return false
     }
 
     return result !== 'deny'
@@ -233,6 +259,37 @@ export class PermissionService {
   }
 
   // 实例级状态：service 通常是单例（main process 全局一个），但实例化可隔离测试与多进程场景。
+  private getPersistentScopes(projectId?: string): PermissionDecisionScope[] {
+    return projectId != null ? ['project', 'global'] : ['global']
+  }
+
+  private findRememberedDecision(projectId: string | undefined, action: string, toolName: string): PermissionDecisionRow | null {
+    return this.repo.findDecision({
+      ...(projectId != null ? { projectId } : {}),
+      action,
+      toolName,
+    })
+  }
+
+  private rememberDecision(
+    scope: PermissionDecisionScope,
+    options: RequestApprovalOptions,
+    action: string,
+    toolName: string,
+    decision: 'allow' | 'deny',
+  ): void {
+    if (scope === 'project' && options.projectId == null) return
+    this.repo.upsertDecision({
+      id: randomUUID(),
+      scope,
+      ...(scope === 'project' ? { projectId: options.projectId } : {}),
+      ...(scope === 'project' && options.workspaceIds != null ? { workspaceIds: options.workspaceIds } : {}),
+      action,
+      toolName,
+      decision,
+    })
+  }
+
   private _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
   private _approvalSessions = new Map<string, string>()  // requestId → sessionId（用于 cancel）
   private _sessionAllowances = new Map<string, Set<string>>()  // sessionId → 已临时允许的 actions

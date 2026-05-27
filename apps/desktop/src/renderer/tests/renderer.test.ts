@@ -411,8 +411,10 @@ describe('Renderer Smoke Tests', () => {
           requestId: string
           sessionId: string
           toolName: string
+          action: string
           toolInput: Record<string, unknown>
           riskLevel: 'low' | 'medium' | 'high'
+          persistentScopes: Array<'project' | 'global'>
         }
         onApprovalClose: () => void
       }>
@@ -423,8 +425,10 @@ describe('Renderer Smoke Tests', () => {
               requestId: 'req-1',
               sessionId: '42e5391d-session',
               toolName: 'bash',
+              action: 'command_exec',
               toolInput: { command: 'git log --oneline -20' },
               riskLevel: 'high',
+              persistentScopes: ['project', 'global'],
             },
             onApprovalClose,
           }),

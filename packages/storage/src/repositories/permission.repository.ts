@@ -18,6 +18,18 @@ export interface PermissionRuleRow {
   sort_order: number
 }
 
+export interface PermissionDecisionRow {
+  id: string
+  scope: 'project' | 'global'
+  project_id: string | null
+  workspace_ids_json: string | null
+  action: string
+  tool_name: string
+  decision: 'allow' | 'deny'
+  created_at: string
+  updated_at: string
+}
+
 export class PermissionProfileRepository extends BaseRepository {
   constructor(db: SparkDatabase) {
     super(db, 'permission_profiles')
@@ -40,6 +52,24 @@ export class PermissionProfileRepository extends BaseRepository {
         mode TEXT NOT NULL DEFAULT 'ask',
         sort_order INTEGER NOT NULL DEFAULT 0
       );
+      CREATE TABLE IF NOT EXISTS permission_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE TABLE IF NOT EXISTS permission_decisions (
+        id TEXT PRIMARY KEY,
+        scope TEXT NOT NULL CHECK (scope IN ('project', 'global')),
+        project_id TEXT,
+        workspace_ids_json TEXT,
+        action TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        decision TEXT NOT NULL CHECK (decision IN ('allow', 'deny')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_permission_decisions_lookup
+        ON permission_decisions(scope, project_id, action, tool_name, updated_at);
     `)
   }
 
@@ -86,6 +116,63 @@ export class PermissionProfileRepository extends BaseRepository {
 
   updateRuleMode(id: string, mode: string): void {
     this.raw.prepare(`UPDATE permission_rules SET mode = ? WHERE id = ?`).run(mode, id)
+  }
+
+  getSetting(key: string): string | null {
+    const row = this.raw.prepare(`SELECT value FROM permission_settings WHERE key = ?`).get(key) as { value: string } | undefined
+    return row?.value ?? null
+  }
+
+  setSetting(key: string, value: string): void {
+    this.raw.prepare(`
+      INSERT INTO permission_settings (key, value, updated_at)
+      VALUES (?, ?, datetime('now'))
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at
+    `).run(key, value)
+  }
+
+  upsertDecision(params: {
+    id: string
+    scope: 'project' | 'global'
+    projectId?: string
+    workspaceIds?: string[]
+    action: string
+    toolName: string
+    decision: 'allow' | 'deny'
+  }): PermissionDecisionRow {
+    const workspaceIdsJson = params.workspaceIds != null ? this.toJson(params.workspaceIds) : null
+    this.raw.prepare(`
+      DELETE FROM permission_decisions
+      WHERE scope = ?
+        AND COALESCE(project_id, '') = COALESCE(?, '')
+        AND action = ?
+        AND tool_name = ?
+    `).run(params.scope, params.projectId ?? null, params.action, params.toolName)
+
+    this.raw.prepare(`
+      INSERT INTO permission_decisions
+        (id, scope, project_id, workspace_ids_json, action, tool_name, decision, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `).run(params.id, params.scope, params.projectId ?? null, workspaceIdsJson, params.action, params.toolName, params.decision)
+
+    return this.raw.prepare(`SELECT * FROM permission_decisions WHERE id = ?`).get(params.id) as PermissionDecisionRow
+  }
+
+  findDecision(params: { projectId?: string; action: string; toolName: string }): PermissionDecisionRow | null {
+    const rows = this.raw.prepare(`
+      SELECT * FROM permission_decisions
+      WHERE action = ?
+        AND tool_name = ?
+        AND (
+          scope = 'global'
+          OR (scope = 'project' AND project_id = ?)
+        )
+      ORDER BY
+        CASE scope WHEN 'project' THEN 0 ELSE 1 END,
+        updated_at DESC
+      LIMIT 1
+    `).all(params.action, params.toolName, params.projectId ?? null) as PermissionDecisionRow[]
+    return rows[0] ?? null
   }
 
   hasProfiles(): boolean {
