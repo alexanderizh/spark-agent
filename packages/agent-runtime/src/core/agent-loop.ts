@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, AgentStatusValue, SessionPermissionMode, ToolCallEvent } from '@spark/protocol'
-import { ModelCapabilityRegistry } from '@spark/shared'
+import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import type { IModelAdapter, ChatMessage, ChatParams } from '../adapters/types.js'
 import { ToolRegistry, type ToolContext } from './tool-registry.js'
 import { AgentEventEmitter } from './event-emitter.js'
@@ -327,21 +327,12 @@ function estimateTokens(messages: ChatMessage[]): number {
 
 /** 动态获取模型上下文窗口大小。优先从 ModelCapabilityRegistry 查询，找不到则回退估算。 */
 function contextWindow(model: string): number {
-  const caps = ModelCapabilityRegistry.getCapabilities(model)
-  if (caps && caps.contextWindow > 0) return caps.contextWindow
-  // 回退：基于模型名称前缀估算
-  const lower = model.toLowerCase()
-  if (lower.includes('claude')) return 200_000
-  if (lower.includes('gpt-5') || lower.includes('gpt-4.1')) return 400_000
-  if (lower.includes('gpt-4')) return 128_000
-  if (lower.includes('deepseek')) return 128_000
-  return 128_000
+  return resolveModelContextWindow(model)
 }
 
 /** 软上限：超过即开始压缩。约等于硬窗口的 70%。若无法确定窗口大小，默认 100k。 */
 function softContextLimit(model: string): number {
-  const cw = contextWindow(model)
-  return cw > 0 ? Math.floor(cw * 0.7) : 100_000
+  return resolveSoftContextLimit(model)
 }
 
 const COMPACTION_PLACEHOLDER = '[tool result elided to save context. Re-run the tool if you need this output again.]'

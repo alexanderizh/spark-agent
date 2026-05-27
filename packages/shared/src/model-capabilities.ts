@@ -186,6 +186,31 @@ export const ModelCapabilityRegistry = {
   },
 }
 
+export function resolveModelContextWindow(modelId: string): number {
+  const normalized = normalizeModelId(modelId)
+  if (!normalized) return 0
+
+  const cap = ModelCapabilityRegistry.getCapabilities(normalized)
+  if (cap && cap.contextWindow > 0) return cap.contextWindow
+
+  if (normalized.includes('claude')) return 200_000
+  if (normalized.includes('gpt-5') || normalized.includes('gpt-4.1')) return 400_000
+  if (normalized.includes('gpt-4')) return 128_000
+  if (normalized.includes('o1') || normalized.includes('o3') || normalized.includes('o4')) return 200_000
+  if (normalized.includes('gemini-1.5')) return 2_097_152
+  if (normalized.includes('gemini')) return 1_048_576
+  if (normalized.includes('qwen')) return 131_072
+  if (normalized.includes('deepseek')) return 64_000
+  if (normalized.includes('glm')) return 128_000
+  if (normalized.includes('moonshot') || normalized.includes('kimi')) return 128_000
+  return 128_000
+}
+
+export function resolveSoftContextLimit(modelId: string): number {
+  const contextWindow = resolveModelContextWindow(modelId)
+  return contextWindow > 0 ? Math.floor(contextWindow * 0.7) : 100_000
+}
+
 function normalizeModelId(modelId: string): string {
   const lower = modelId.trim().toLowerCase()
   const withoutProviderPrefix = lower.includes('/') ? lower.split('/').pop() ?? lower : lower

@@ -31,7 +31,7 @@ import type {
   WorkspaceInfo,
   CommandListItem,
 } from '@spark/protocol'
-import { ModelCapabilityRegistry } from '@spark/shared'
+import { resolveModelContextWindow } from '@spark/shared'
 
 type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -780,6 +780,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           messages={active == null ? [] : activeMessages}
           usageData={sessionUsageData}
           projectContext={projectContext}
+          contextUsage={contextUsage}
           contextInputTokens={contextInputTokens}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
@@ -3201,11 +3202,8 @@ function ComposerV2({
     if (contextUsage?.contextWindowTokens && contextUsage.contextWindowTokens > 0) {
       return contextUsage.contextWindowTokens
     }
-    // 2. 从 ModelCapabilityRegistry 查询
-    const caps = ModelCapabilityRegistry.getCapabilities(effectiveModelId)
-    if (caps && caps.contextWindow > 0) return caps.contextWindow
-    // 3. 都没有，返回 0 表示未知
-    return 0
+    // 2. 从共享模型能力表及家族 fallback 查询
+    return resolveModelContextWindow(effectiveModelId)
   })()
   const contextUsedTokens = contextUsage?.estimatedTokens ?? contextInputTokens
   const contextRatio = contextWindow > 0
@@ -3722,7 +3720,7 @@ function ComposerV2({
               >
                 <span>{contextRatio}%</span>
                 <span
-                  className={`context-ring${contextRatio >= 80 ? ' ring-warn' : contextRatio >= 95 ? ' ring-danger' : ''}`}
+                  className={`context-ring${contextRatio >= 95 ? ' ring-danger' : contextRatio >= 80 ? ' ring-warn' : ''}`}
                   style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties}
                 />
                 {contextUsage?.compactedThisTurn && (
@@ -4172,6 +4170,7 @@ function ChatInspector({
   messages,
   usageData,
   projectContext,
+  contextUsage,
   contextInputTokens,
   width,
   onWidthChange,
@@ -4182,6 +4181,7 @@ function ChatInspector({
   messages: UIMessage[]
   usageData: SessionUsageData
   projectContext: ProjectContextState | null
+  contextUsage: ContextUsageState | null
   contextInputTokens: number
   width: number
   onWidthChange: (width: number) => void
@@ -4292,14 +4292,14 @@ function ChatInspector({
     document.body.classList.remove('inspector-resizing')
   }
 
-  // 动态获取上下文窗口：优先 usageData > ModelCapabilityRegistry > 0（不展示）
+  const currentContextTokens = contextUsage?.estimatedTokens ?? contextInputTokens
+  // 动态获取上下文窗口：优先 context_usage > usageData > ModelCapabilityRegistry > 0（不展示）
   const contextWindow = (() => {
+    if (contextUsage?.contextWindowTokens && contextUsage.contextWindowTokens > 0) return contextUsage.contextWindowTokens
     if (usageData.contextWindow && usageData.contextWindow > 0) return usageData.contextWindow
-    const caps = ModelCapabilityRegistry.getCapabilities(session?.modelId ?? '')
-    if (caps && caps.contextWindow > 0) return caps.contextWindow
-    return 0
+    return resolveModelContextWindow(session?.modelId ?? '')
   })()
-  const contextRatio = contextWindow > 0 ? Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10) : 0
+  const contextRatio = contextWindow > 0 ? Math.min(100, Math.round((currentContextTokens / contextWindow) * 1000) / 10) : 0
   const isContextWarning = contextRatio >= 80
   const isContextCritical = contextRatio >= 95
 
@@ -4490,7 +4490,7 @@ function ChatInspector({
             {!isContextCritical && isContextWarning && <span className="badge warning dot usage-warning-badge">接近满</span>}
           </h4>
           <ContextWindowVisualization
-            usedTokens={contextInputTokens}
+            usedTokens={currentContextTokens}
             totalTokens={contextWindow}
             ratio={contextRatio}
             isWarning={isContextWarning}

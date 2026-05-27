@@ -25,7 +25,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
-import { ModelCapabilityRegistry } from '@spark/shared'
+import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
@@ -244,13 +244,11 @@ function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig)
 }
 
 function contextWindow(model: string): number {
-  const caps = ModelCapabilityRegistry.getCapabilities(model)
-  if (caps && caps.contextWindow > 0) return caps.contextWindow
-  return 128_000
+  return resolveModelContextWindow(model)
 }
 
 function softContextLimit(model: string): number {
-  return Math.floor(contextWindow(model) * 0.7)
+  return resolveSoftContextLimit(model)
 }
 
 export class SDKNotAvailableError extends Error {

@@ -6,7 +6,7 @@
 
 ## 总体评估
 
-当前总评: 72/100。
+当前总评: 75/100。
 
 相较最初评审，项目已经从“骨架完整、执行内核薄弱”推进到“Claude SDK 主路径基本成型，核心上下文与项目配置开始进入运行时”的阶段。最关键的产品取舍已经落实: Claude 通道不再回退 direct Anthropic API，Claude Agent SDK 成为强制依赖；SDK 不可用时任务应失败并引导用户安装或修复 SDK。
 
@@ -29,7 +29,7 @@
 当前判断:
 - 核心策略已完成。
 - SDK 工具调用、基础文件变更、usage、checkpoint 承载已补齐一层最小闭环。
-- 仍需继续补强 SDK 权限审批持久化、checkpoint diff 细节、真实任务下的 rollback/accept/reject 产品化。
+- SDK 权限审批持久化已进入可用闭环；仍需继续补强 checkpoint diff 细节、真实任务下的 rollback/accept/reject 产品化。
 
 ### 2. 上下文额度与模型能力
 
@@ -39,9 +39,12 @@
 - 未知模型默认按 128k 处理，不再让 UI 表现为“上下文额度未知/0”。
 - Claude SDK 路径也会发出 `context_usage`。
 - ChatView context meter 使用本轮估算上下文，而不是累计输入 token。
+- 新增 `resolveModelContextWindow` / `resolveSoftContextLimit` 共享解析入口，direct loop、Claude SDK executor、ChatView 共用同一套模型窗口与软上限推断。
+- Chat Inspector 的上下文窗口可视化优先使用最新 `context_usage`，避免把历史累计 input tokens 当作当前模型上下文占用。
+- 修正 context meter 危险阈值判断顺序，95% 以上会进入 danger 状态。
 
 当前判断:
-- “几句话就显示上下文满”的主要显示层问题已修正。
+- “几句话就显示上下文满”的主要显示层问题已修正；SDK 路径不再因为本地 fallback 只有 128k 而低估 Claude 模型窗口。
 - 还没有完成真正的 Context Governor: 尚缺 token budget planner、pin/exclude、长会话摘要、项目上下文裁剪策略和可视化 ledger。
 
 ### 3. 对话任务队列 UI
@@ -90,25 +93,27 @@
 - DB 中的 project rules 已按当前 workspace 过滤。
 
 当前判断:
-- 读取和应用主路径已完成。
-- 仍需 UI 暴露“本轮加载了哪些项目规则/skills/agents”，否则用户无法审查上下文来源。
+- 读取、应用、审查主路径已完成。
+- UI 已通过 `project_context_loaded` 事件和 Chat Inspector 暴露“本轮加载了哪些项目规则/skills/agents”。
 - 当前实现是只读扫描，不会把项目内 skills/agents 自动导入 DB；这是有意保持可控。后续可增加“发现并导入/固定到项目配置”的操作。
 
 ### 5. 权限审批规则持久化
 
-已存在:
+已完成:
 - permission profile/rule/session permission mode 已有 DB 持久化。
 - 会话的 permission mode 会随 session runtime 配置保存。
 - Settings 已有权限规则和 SDK 健康检查相关 UI 基础。
+- `permission_decisions` 已支持 project/global 级 allow/deny 记忆。
+- `PermissionService` active profile 已 DB-backed，不再依赖进程内静态状态。
+- SDK permission callback 会携带 action、project/workspace scope，先命中持久化决策，再弹出审批。
+- ChatView inline approval 已提供 allow once、allow session、allow/deny project、allow/deny global 等操作。
 
-未完全完成:
-- 单次 approval response 仍是运行时临时决策，不会自动沉淀为长期规则。
-- 尚未提供“本次允许/始终允许/仅本项目允许/拒绝并记住”等细粒度 UI。
+仍需补强:
 - 尚未提供审批记录的审计视图。
 
 当前判断:
-- “权限模式与规则配置持久化”已基本具备。
-- “会话中的审批决策转成可审查的持久规则”尚未完成，建议作为下一轮 P0。
+- “权限模式、规则配置、会话审批决策持久化”已基本具备。
+- 后续重点转为 Settings 审计视图、最近命中时间、规则来源解释和批量管理。
 
 ### 6. 结构化用户补充问答
 
@@ -134,9 +139,8 @@
 - `e42db8e docs: update code agent roadmap after core progress`
 - `232a2e1 feat: surface SDK tool results and checkpoints`
 - `19455ee feat: persist permission approval decisions`
-- 待提交: project context audit UI，补 `project_context_loaded` event、session history hydration、Inspector sources list。
-- 待提交: permission persistence MVP，补 `permission_decisions`、DB-backed active profile、project/global remembered approval decisions、ChatView approval persistent actions。
-- 待提交: SDK event polish，补 `user(tool_result)`、`file_change`、`checkpoint` 承载。
+- `522de69 feat: expose project context sources`
+- 本次变更: context quota harmonization，补共享模型上下文窗口解析、SDK/direct 统一软上限、Inspector 使用本轮 `context_usage`。
 
 最近验证:
 
@@ -149,6 +153,8 @@
 - `pnpm --filter @spark/storage typecheck`
 - `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/services/permission.service.test.ts`
 - `pnpm --filter @spark/agent-runtime typecheck`
+- `pnpm --filter @spark/shared typecheck`
+- `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/core/agent-loop-new.test.ts`
 - storage repository test note: `pnpm --filter @spark/storage test:unit -- src/repositories/repositories.test.ts` is currently blocked by local `better-sqlite3` Node ABI mismatch (module 125 vs required 137), before reaching the new SQL logic.
 
 说明: renderer 测试仍会输出既有 React `act(...)` 警告，但测试通过。
