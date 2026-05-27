@@ -1074,6 +1074,8 @@ function ChatStream({
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
   const builderRef = useRef(new MessageBuilder())
+  const rafRef = useRef<number | null>(null)
+  const pendingEventRef = useRef<AgentEvent | null>(null)
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
 
   // 切换会话时加载历史
@@ -1099,14 +1101,33 @@ function ChatStream({
     return () => window.clearTimeout(timer)
   }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, sessionId])
 
-  // 实时监听新事件
-  useIpcStream('stream:session:agent-event', (event) => {
-    if (event.sessionId !== sessionId) return
-    builderRef.current.processEvent(event)
+  // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
+  const flushMessages = useCallback(() => {
+    rafRef.current = null
     const nextMessages = [...builderRef.current.getAllMessages()]
     setMessages(nextMessages)
     onMessagesChange(nextMessages)
+  }, [onMessagesChange])
 
+  const scheduleFlush = useCallback(() => {
+    if (rafRef.current != null) return
+    rafRef.current = requestAnimationFrame(flushMessages)
+  }, [flushMessages])
+
+  // 清理 RAF
+  useEffect(() => {
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+    }
+  }, [])
+
+  // 实时监听新事件 — 每个事件立即追加到 builder，通过 RAF 批量触发渲染
+  useIpcStream('stream:session:agent-event', (event) => {
+    if (event.sessionId !== sessionId) return
+    builderRef.current.processEvent(event)
+    pendingEventRef.current = event
+
+    // 对状态/用量事件立即处理（不走 RAF 延迟）
     if (event.type === 'agent_status') {
       const labels: Record<string, string> = {
         thinking: '思考中',
@@ -1123,12 +1144,35 @@ function ChatStream({
     if (event.type === 'usage_update') {
       if (event.inputTokens > 0) onUsageChange(event.inputTokens)
     }
-  }, [onMessagesChange, onStatusChange, onUsageChange, sessionId])
 
-  // 自动滚动到底部
+    // 对文本/思考增量事件立即 flush，确保无延迟感知
+    if (
+      event.type === 'assistant_message' && event.mode === 'delta'
+      || event.type === 'agent_thinking' && event.mode === 'delta'
+    ) {
+      // 取消已有的 RAF，立即同步渲染 delta
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+      const nextMessages = [...builderRef.current.getAllMessages()]
+      setMessages(nextMessages)
+      onMessagesChange(nextMessages)
+      return
+    }
+
+    // 其他事件走 RAF 批量
+    scheduleFlush()
+  }, [onMessagesChange, onStatusChange, onUsageChange, onSessionStatusChange, sessionId, flushMessages, scheduleFlush])
+
+  // 智能自动滚动：只在用户已位于底部附近时自动跟随，否则不干扰
   useEffect(() => {
-    if (streamRef.current) {
-      streamRef.current.scrollTop = streamRef.current.scrollHeight
+    const el = streamRef.current
+    if (!el) return
+    const threshold = 120
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    if (distanceFromBottom <= threshold) {
+      el.scrollTop = el.scrollHeight
     }
   }, [messages])
 
@@ -1139,9 +1183,9 @@ function ChatStream({
           msg.role === 'user' ? (
             <UserMsg key={msg.id}>{renderBlocks(msg.blocks)}</UserMsg>
           ) : msg.status === 'streaming' ? (
-            <AgentMsg key={msg.id} status="running" blocks={msg.blocks} />
+            <AgentMsg key={msg.id} status="running" blocks={msg.blocks} messageStatus={msg.status} />
           ) : (
-            <AgentMsg key={msg.id} blocks={msg.blocks} />
+            <AgentMsg key={msg.id} blocks={msg.blocks} messageStatus={msg.status} />
           )
         )}
       </div>
@@ -1156,26 +1200,27 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
       case 'text':
         return (
           <div key={i} className="md-surface">
-            <MarkdownText content={block.content} />
+            <MarkdownText content={block.content} isStreaming={block.isStreaming} />
           </div>
         )
       case 'thinking':
         return (
           <details key={i} className="block-thinking">
-            <summary>思考过程{block.isStreaming && ' …'}</summary>
+            <summary>思考过程{block.isStreaming && <span className="thinking-streaming-dots">…</span>}</summary>
             <pre>{block.content}</pre>
           </details>
         )
       case 'tool_call': {
         const toolStatus = block.status === 'success' ? 'ok' as const : block.status === 'error' ? 'error' as const : null
         const toolArg = JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
+        const isPending = block.status === 'pending' || block.status === 'running'
         return toolStatus ? (
-          <ToolCall key={i} name={block.toolName} arg={toolArg} status={toolStatus}>
+          <ToolCall key={i} name={block.toolName} arg={toolArg} status={toolStatus} durationMs={block.durationMs}>
             {block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         ) : (
-          <ToolCall key={i} name={block.toolName} arg={toolArg}>
+          <ToolCall key={i} name={block.toolName} arg={toolArg} pending={isPending} durationMs={block.durationMs}>
             {block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
@@ -1183,11 +1228,11 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
       }
       case 'error':
         return (
-          <ErrorCard
+          <StreamingErrorCard
             key={i}
             message={block.message}
-            detail={block.code}
-            suggestions={block.retryable ? ['点击重试'] : []}
+            code={block.code}
+            retryable={block.retryable}
           />
         )
       case 'terminal':
@@ -1215,28 +1260,43 @@ type MarkdownBlock =
   | { kind: 'heading'; level: number; text: string }
   | { kind: 'paragraph'; text: string }
   | { kind: 'code'; lang: string; code: string }
+  | { kind: 'incomplete_code'; lang: string; code: string }
   | { kind: 'quote'; text: string }
   | { kind: 'list'; ordered: boolean; items: Array<{ text: string; checked?: boolean }> }
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' }
 
-function MarkdownText({ content }: { content: string }) {
+function MarkdownText({ content, isStreaming = false }: { content: string; isStreaming?: boolean }) {
   const blocks = parseMarkdown(content)
 
   return (
     <>
       {blocks.map((block, index) => {
+        const isLastBlock = index === blocks.length - 1
         switch (block.kind) {
           case 'heading': {
             const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
             return <Tag key={index}>{renderInlineMarkdown(block.text)}</Tag>
           }
           case 'paragraph':
-            return <p key={index}>{renderInlineMarkdown(block.text)}</p>
+            return (
+              <p key={index}>
+                {renderInlineMarkdown(block.text)}
+                {isStreaming && isLastBlock && <StreamingCursor />}
+              </p>
+            )
           case 'code':
             return (
               <pre key={index} className="md-code">
                 <code>{block.code}</code>
+                {isStreaming && isLastBlock && <StreamingCursor />}
+              </pre>
+            )
+          case 'incomplete_code':
+            return (
+              <pre key={index} className="md-code md-code-incomplete">
+                <code>{block.code}</code>
+                <span className="md-code-cursor">▌</span>
               </pre>
             )
           case 'quote':
@@ -1279,8 +1339,13 @@ function MarkdownText({ content }: { content: string }) {
             return null
         }
       })}
+      {isStreaming && blocks.length === 0 && <StreamingCursor />}
     </>
   )
+}
+
+function StreamingCursor() {
+  return <span className="streaming-cursor" aria-hidden="true">▌</span>
 }
 
 function parseMarkdown(content: string): MarkdownBlock[] {
@@ -1303,8 +1368,14 @@ function parseMarkdown(content: string): MarkdownBlock[] {
         codeLines.push(lines[index] ?? '')
         index += 1
       }
-      if (index < lines.length) index += 1
-      blocks.push({ kind: 'code', lang: fence[1] ?? '', code: codeLines.join('\n') })
+      if (index < lines.length) {
+        // Found closing ```
+        index += 1
+        blocks.push({ kind: 'code', lang: fence[1] ?? '', code: codeLines.join('\n') })
+      } else {
+        // No closing ``` found — incomplete code block (streaming)
+        blocks.push({ kind: 'incomplete_code', lang: fence[1] ?? '', code: codeLines.join('\n') })
+      }
       continue
     }
 
@@ -1439,13 +1510,14 @@ function UserMsg({ children }: { children: ReactNode }) {
   )
 }
 
-function AgentMsg({ status, blocks }: { status?: 'running'; blocks: UIBlock[] }) {
+function AgentMsg({ status, blocks, messageStatus }: { status?: 'running'; blocks: UIBlock[]; messageStatus?: UIMessage['status'] }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
   const contentBlocks = blocks.filter(b => b.kind !== 'thinking')
   const isStreaming = status === 'running'
   const hasContent = thinkingBlocks.length > 0 || contentBlocks.length > 0
+  const isCancelled = messageStatus === 'error' && !isStreaming
 
   return (
     <div className="msg msg-agent">
@@ -1464,6 +1536,7 @@ function AgentMsg({ status, blocks }: { status?: 'running'; blocks: UIBlock[] })
             <div className="msg-content">{renderBlocks(contentBlocks)}</div>
           </CollapsibleContent>
         )}
+        {isCancelled && hasContent && <StoppedMarker />}
       </div>
     </div>
   )
@@ -1480,8 +1553,21 @@ function ThinkingSection({
   const contentRef = useRef<HTMLDivElement>(null)
   const [needsCollapse, setNeedsCollapse] = useState(false)
   const [expanded, setExpanded] = useState(false)
+  const wasThinkingRef = useRef(false)
 
   const isThinkingActive = streaming && blocks.some(b => b.isStreaming)
+
+  // Auto-expand when thinking starts, collapse when thinking ends
+  useEffect(() => {
+    if (isThinkingActive && !wasThinkingRef.current) {
+      setOpen(true)
+      wasThinkingRef.current = true
+    }
+    if (!isThinkingActive && wasThinkingRef.current) {
+      wasThinkingRef.current = false
+      // Don't auto-collapse — let user see the result
+    }
+  }, [isThinkingActive])
 
   useEffect(() => {
     if (isThinkingActive) {
@@ -1495,11 +1581,16 @@ function ThinkingSection({
   const isCollapsed = needsCollapse && !expanded
 
   return (
-    <div className={`thinking-section ${open ? 'open' : ''}`}>
+    <div className={`thinking-section ${open ? 'open' : ''} ${isThinkingActive ? 'is-active' : ''}`}>
       <button className="thinking-toggle" onClick={() => setOpen(!open)}>
         <Icons.ChevronRight size={12} className={`chev ${open ? 'chev-open' : ''}`} />
         <span className="thinking-label">思考过程</span>
         {isThinkingActive && <Icons.Spinner size={10} className="thinking-spinner" />}
+        {!isThinkingActive && blocks.length > 0 && blocks.every(b => !b.isStreaming) && (
+          <span className="thinking-done-badge">
+            <Icons.Check size={9} />
+          </span>
+        )}
       </button>
       {open && (
         <div className="thinking-body">
@@ -1511,6 +1602,7 @@ function ThinkingSection({
             {blocks.map((block, i) => (
               <pre key={i}>{block.content}</pre>
             ))}
+            {isThinkingActive && <StreamingCursor />}
           </div>
           {isCollapsed && (
             <button className="collapse-toggle" onClick={() => setExpanded(true)}>
@@ -1579,7 +1671,7 @@ function CollapsibleContent({
   )
 }
 
-function ToolCall({ name, arg, status, children }: { name: string; arg: string; status?: 'ok' | 'error'; children?: ReactNode }) {
+function ToolCall({ name, arg, status, pending, durationMs, children }: { name: string; arg: string; status?: 'ok' | 'error'; pending?: boolean; durationMs?: number | undefined; children?: ReactNode }) {
   const [open, setOpen] = useState(false)
   const iconMap: Record<string, ReactNode> = {
     Read: <Icons.File className="tool-icon" />,
@@ -1589,14 +1681,16 @@ function ToolCall({ name, arg, status, children }: { name: string; arg: string; 
     Write: <Icons.File className="tool-icon" />,
   }
   return (
-    <div className={`tool-call ${open ? 'open' : ''}`}>
+    <div className={`tool-call ${open ? 'open' : ''} ${pending ? 'is-pending' : ''}`}>
       <div className="tool-call-head" onClick={() => setOpen(!open)}>
         {iconMap[name] || <Icons.Wrench className="tool-icon" />}
         <span className="tool-name">{name}</span>
         <span className="tool-arg">{arg}</span>
         <span className="tool-call-actions">
+          {pending && <Icons.Spinner size={12} className="tool-status spinner" />}
           {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
           {status === 'error' && <Icons.X size={12} className="tool-status err" />}
+          {durationMs != null && !pending && <span className="tool-duration">{formatDuration(durationMs)}</span>}
           <Icons.ChevronRight size={12} className="chev" />
         </span>
       </div>
@@ -1607,6 +1701,40 @@ function ToolCall({ name, arg, status, children }: { name: string; arg: string; 
 
 function TerminalBlock({ children }: { children: ReactNode }) {
   return <div className="terminal mono-sm">{children}</div>
+}
+
+function StreamingErrorCard({ message, code, retryable }: { message: string; code: string; retryable: boolean }) {
+  return (
+    <div className="streaming-error-card">
+      <div className="streaming-error-head">
+        <Icons.XCircle size={13} className="streaming-error-icon" />
+        <span className="streaming-error-msg">{message}</span>
+      </div>
+      {code && <span className="streaming-error-code">{code}</span>}
+      {retryable && <span className="streaming-error-hint">可重试 — 该错误是临时性的</span>}
+    </div>
+  )
+}
+
+function StoppedMarker() {
+  return (
+    <div className="stopped-marker">
+      <span className="stopped-marker-line" />
+      <span className="stopped-marker-label">
+        <Icons.Stop size={10} />
+        已停止生成
+      </span>
+      <span className="stopped-marker-line" />
+    </div>
+  )
+}
+
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  const min = Math.floor(ms / 60_000)
+  const sec = Math.round((ms % 60_000) / 1000)
+  return `${min}m ${sec}s`
 }
 
 function ComposerV2({

@@ -2265,6 +2265,137 @@ body.inspector-resizing {
 }
 .block-term-status { font-size: 10px; }
 
+/* --- Streaming cursor (blinking ▌ at end of streaming text) --- */
+.streaming-cursor {
+  display: inline;
+  color: var(--primary);
+  font-weight: 400;
+  animation: streaming-blink 0.8s steps(2) infinite;
+  margin-left: 1px;
+}
+@keyframes streaming-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* --- Incomplete code block (streaming: ``` opened but not closed) --- */
+.md-code-incomplete {
+  position: relative;
+  border-left: 3px solid var(--primary);
+}
+.md-code-cursor {
+  display: inline;
+  color: var(--primary);
+  animation: streaming-blink 0.8s steps(2) infinite;
+}
+
+/* --- Thinking section enhancements --- */
+.thinking-section.is-active .thinking-label {
+  color: var(--primary);
+}
+.thinking-done-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--success);
+  color: var(--bg);
+  flex-shrink: 0;
+}
+.thinking-streaming-dots {
+  display: inline-block;
+  animation: thinking-dots 1.2s steps(4) infinite;
+}
+@keyframes thinking-dots {
+  0%   { content: ''; opacity: 0.3; }
+  25%  { opacity: 0.5; }
+  50%  { opacity: 0.7; }
+  75%  { opacity: 1; }
+  100% { opacity: 0.3; }
+}
+
+/* --- Tool call pending state --- */
+.tool-call.is-pending .tool-call-head {
+  opacity: 0.85;
+}
+.tool-call.is-pending .tool-name {
+  color: var(--text-muted);
+}
+.tool-status.spinner {
+  color: var(--text-faint);
+  animation: spin 1s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+.tool-duration {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+/* --- Streaming error card (inline, non-blocking) --- */
+.streaming-error-card {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--r-md);
+  background: rgba(239, 68, 68, 0.06);
+}
+.streaming-error-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.streaming-error-icon {
+  color: var(--danger);
+  flex-shrink: 0;
+}
+.streaming-error-msg {
+  font-size: var(--font-sm);
+  color: var(--text);
+  font-weight: 500;
+}
+.streaming-error-code {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+}
+.streaming-error-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+}
+
+/* --- Stopped marker (shown after cancel) --- */
+.stopped-marker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 0;
+}
+.stopped-marker-line {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.stopped-marker-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* ============================================================
    WORKFLOW VIEW
    ============================================================ */
