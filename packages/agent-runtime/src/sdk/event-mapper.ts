@@ -19,11 +19,13 @@ import type {
   SDKSystemMessage,
   SDKStreamEvent,
   SDKContentBlock,
+  SDKUserMessage,
 } from './types.js'
 
 interface EventContext {
   sessionId: string
   turnId: string
+  toolNamesById?: Map<string, string>
 }
 
 function baseEvent(ctx: EventContext) {
@@ -53,6 +55,8 @@ export function mapSDKMessageToEvents(
       return mapStreamEvent(message as SDKStreamEvent, ctx)
     case 'result':
       return mapResultMessage(message as SDKResultMessage, ctx)
+    case 'user':
+      return mapUserMessage(message as SDKUserMessage, ctx)
     default:
       return []
   }
@@ -91,6 +95,11 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
   }
 
   return events
+}
+
+function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
+  if (!Array.isArray(msg.message.content)) return []
+  return msg.message.content.flatMap((block) => mapContentBlock(block, ctx))
 }
 
 function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
@@ -175,6 +184,20 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
     estimatedCostUsd: msg.total_cost_usd,
   })
 
+  if (msg.checkpoint != null) {
+    const checkpointId = msg.checkpoint.id ?? msg.checkpoint.checkpoint_id
+    if (checkpointId != null && checkpointId.length > 0) {
+      events.push({
+        ...baseEvent(ctx),
+        type: 'checkpoint',
+        checkpointId,
+        ...(msg.checkpoint.label != null ? { label: msg.checkpoint.label } : {}),
+        ...(msg.checkpoint.path != null ? { path: msg.checkpoint.path } : {}),
+        ...normalizeCheckpointFiles(msg.checkpoint),
+      })
+    }
+  }
+
   if (msg.subtype === 'success') {
     if (msg.result != null && msg.result.length > 0) {
       events.push({
@@ -231,6 +254,8 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       }]
 
     case 'tool_use':
+      ctx.toolNamesById?.set(block.id, mapSDKToolName(block.name))
+      getToolInputs(ctx).set(block.id, normalizeToolInput(block.input))
       return [{
         ...baseEvent(ctx),
         type: 'tool_call',
@@ -246,19 +271,56 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       const content = typeof block.content === 'string'
         ? block.content
         : flattenContentBlocks(block.content)
-      return [{
+      const toolName = ctx.toolNamesById?.get(block.tool_use_id) ?? 'unknown'
+      const events: AgentEvent[] = [{
         ...baseEvent(ctx),
         type: 'tool_result',
         toolCallId: block.tool_use_id,
-        toolName: 'unknown',
+        toolName,
         status: isError ? 'error' : 'success',
         ...(isError ? { error: content } : { output: content }),
       }]
+      if (!isError) {
+        const fileChange = buildFileChangeEvent(block.tool_use_id, toolName, ctx)
+        if (fileChange != null) events.push(fileChange)
+      }
+      return events
     }
 
     default:
       return []
   }
+}
+
+function normalizeCheckpointFiles(checkpoint: SDKResultMessage['checkpoint']): { filePaths?: string[] } {
+  const files = checkpoint?.file_paths ?? checkpoint?.files
+  if (!Array.isArray(files)) return {}
+  const filePaths = files.filter((file): file is string => typeof file === 'string' && file.length > 0)
+  return filePaths.length > 0 ? { filePaths } : {}
+}
+
+function buildFileChangeEvent(toolCallId: string, toolName: string, ctx: EventContext): AgentEvent | null {
+  if (toolName !== 'edit_file' && toolName !== 'write_file' && toolName !== 'multi_edit') return null
+  const input = findToolInput(toolCallId, ctx)
+  const path = stringField(input, 'file_path') || stringField(input, 'path')
+  if (!path) return null
+  return {
+    ...baseEvent(ctx),
+    type: 'file_change',
+    changeType: toolName === 'write_file' ? 'modify' : 'modify',
+    path,
+  }
+}
+
+function findToolInput(toolCallId: string, ctx: EventContext): Record<string, unknown> | null {
+  const toolInputs = getToolInputs(ctx)
+  return toolInputs.get(toolCallId) ?? null
+}
+
+function getToolInputs(ctx: EventContext): Map<string, Record<string, unknown>> {
+  const record = ctx as EventContext & { toolInputsById?: Map<string, Record<string, unknown>> }
+  if (record.toolInputsById == null) record.toolInputsById = new Map()
+  return record.toolInputsById
 }
 
 /**
@@ -296,6 +358,11 @@ function normalizeToolInput(input: unknown): Record<string, unknown> {
   if (input == null) return {}
   if (typeof input === 'object' && !Array.isArray(input)) return input as Record<string, unknown>
   return { value: input }
+}
+
+function stringField(input: Record<string, unknown> | null, key: string): string {
+  const value = input?.[key]
+  return typeof value === 'string' ? value : ''
 }
 
 function flattenContentBlocks(blocks: SDKContentBlock[]): string {

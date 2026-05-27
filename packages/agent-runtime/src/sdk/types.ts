@@ -50,6 +50,16 @@ export interface SDKResultMessage {
     costUSD: number
   }>
   errors?: string[]
+  checkpoint?: SDKCheckpointInfo
+}
+
+export interface SDKCheckpointInfo {
+  id?: string
+  checkpoint_id?: string
+  path?: string
+  label?: string
+  file_paths?: string[]
+  files?: string[]
 }
 
 export interface SDKSystemMessage {

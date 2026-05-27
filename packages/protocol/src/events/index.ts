@@ -168,6 +168,15 @@ export interface FileChangeEvent extends BaseEvent {
   sizeBytes?: number
 }
 
+/** Checkpoint metadata emitted by SDK-backed agent turns. */
+export interface CheckpointEvent extends BaseEvent {
+  type: 'checkpoint'
+  checkpointId: string
+  label?: string
+  path?: string
+  filePaths?: string[]
+}
+
 // ─── 终端类事件 ──────────────────────────────────────────────────────────────
 
 /** 命令执行输出（用于 xterm.js 渲染） */
@@ -299,6 +308,7 @@ export type AgentEvent =
   | PermissionRequestEvent
   | PermissionResponseEvent
   | FileChangeEvent
+  | CheckpointEvent
   | TerminalOutputEvent
   | AgentStatusEvent
   | AgentThinkingEvent

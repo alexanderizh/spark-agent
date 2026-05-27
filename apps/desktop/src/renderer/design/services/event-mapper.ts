@@ -18,6 +18,7 @@ export type UIBlock =
   | { kind: 'tool_call'; toolCallId: string; toolName: string; toolInput: Record<string, unknown>; status: 'pending' | 'running' | 'success' | 'error'; output: string | undefined; error: string | undefined; durationMs: number | undefined }
   | { kind: 'error'; code: string; message: string; retryable: boolean }
   | { kind: 'file_change'; changeType: string; path: string; diff: string | undefined }
+  | { kind: 'checkpoint'; checkpointId: string; label: string | undefined; path: string | undefined; filePaths: string[] | undefined }
   | { kind: 'terminal'; toolCallId: string; stdout: string; stderr: string; isStreaming: boolean; exitCode: number | undefined }
   | { kind: 'plan_proposed'; plan: string }
   | { kind: 'permission_request'; requestId: string; action: string; riskLevel: string; description: string; paths: string[] | undefined; command: string | undefined; domains: string[] | undefined }
@@ -230,6 +231,18 @@ export class MessageBuilder {
       case 'file_change': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         msg.blocks.push({ kind: 'file_change', changeType: event.changeType, path: event.path, diff: event.diff ?? undefined })
+        break
+      }
+
+      case 'checkpoint': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        msg.blocks.push({
+          kind: 'checkpoint',
+          checkpointId: event.checkpointId,
+          label: event.label,
+          path: event.path,
+          filePaths: event.filePaths,
+        })
         break
       }
 

@@ -22,10 +22,14 @@
 - Settings 中明确 Claude Agent SDK 为必需组件。
 - SDK 安装不再作为 optional dependency 处理。
 - SDK executor 会产生 Spark 事件流，并补充 `context_usage` 事件。
+- SDK `user(tool_result)` 消息已接入 Spark 事件流，避免工具结果在 UI 中丢失。
+- SDK Edit/Write/MultiEdit 成功结果会产生 `file_change` 事件，ProjectView/ChatView 可感知文件变更。
+- 已新增 `checkpoint` 事件和 UI block 承载，SDK result 若带 checkpoint metadata 可在消息流中展示。
 
 当前判断:
 - 核心策略已完成。
-- 仍需继续补强 SDK 工具调用、权限审批、checkpoint、usage 的真实任务 UI 联调。
+- SDK 工具调用、基础文件变更、usage、checkpoint 承载已补齐一层最小闭环。
+- 仍需继续补强 SDK 权限审批持久化、checkpoint diff 细节、真实任务下的 rollback/accept/reject 产品化。
 
 ### 2. 上下文额度与模型能力
 
@@ -127,6 +131,8 @@
 - `2ce3ca5 fix: correct context budget and task queue display`
 - `6388338 feat: load project context into agent runtime`
 - `6665f8d fix: refresh workspace sessions after project creation`
+- `e42db8e docs: update code agent roadmap after core progress`
+- 待提交: SDK event polish，补 `user(tool_result)`、`file_change`、`checkpoint` 承载。
 
 最近验证:
 

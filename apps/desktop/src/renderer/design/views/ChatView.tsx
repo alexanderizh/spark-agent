@@ -1888,6 +1888,19 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
           </div>
         )
       }
+      case 'checkpoint': {
+        const suffix = block.checkpointId.slice(-6)
+        const fileCount = block.filePaths?.length ?? 0
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <Checkpoint
+              num={Number.parseInt(suffix, 16) || i + 1}
+              time={fileCount > 0 ? `${fileCount} files` : (block.path ?? 'SDK')}
+              label={block.label ?? 'Checkpoint'}
+            />
+          </div>
+        )
+      }
       case 'plan_proposed': {
         const items = parsePlanToItems(block.plan)
         return (

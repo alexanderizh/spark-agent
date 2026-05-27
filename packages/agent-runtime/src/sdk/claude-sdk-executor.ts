@@ -86,7 +86,7 @@ export class ClaudeSDKExecutor {
     }
 
     this.abortController = new AbortController()
-    const ctx = { sessionId, turnId }
+    const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
     const makeBase = () => ({
       id: randomUUID(),
       sessionId,
