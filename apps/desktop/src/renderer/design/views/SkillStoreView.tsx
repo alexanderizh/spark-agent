@@ -7,11 +7,12 @@
  * Skill 详情面板：右侧滑出
  */
 import { useState, useCallback, useEffect, useRef } from 'react'
-import type { RemoteSkillItem, SkillItem, SkillRegistry } from '@spark/protocol'
+import type { LocalSkillCandidate, RemoteSkillItem, SkillItem, SkillRegistry } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput } from '../components/FormControls'
 import { useSkills, parseSkillManifest, filterSkills } from '../utils/skills-data'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useToast } from '../components/Toast'
 
 // ─── Debounce hook ────────────────────────────────────────────────────
 function useDebounce<T>(value: T, delay: number): T {
@@ -178,6 +179,7 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
   }, [activeRegistry, getCategories])
 
   const enabledRegistries = registries.filter((r) => r.enabled)
+  const uninstalledSkills = skills.filter((skill) => !skill.installed)
 
   return (
     <div className="store-layout">
@@ -251,23 +253,26 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
             <div className="empty-icon"><Icons.Sparkles /></div>
             <div className="empty-title">正在搜索...</div>
           </div>
-        ) : skills.length === 0 ? (
+        ) : uninstalledSkills.length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon"><Icons.Search /></div>
             <div className="empty-title">
-              {debouncedQuery.trim() ? '未找到匹配的 Skill' : '暂无推荐 Skill'}
+              {debouncedQuery.trim() ? '未找到未安装的 Skill' : '暂无未安装推荐 Skill'}
             </div>
             <div className="empty-desc">
-              {debouncedQuery.trim() ? '尝试其他关键词或切换市场源' : '请检查网络连接或稍后再试'}
+              {debouncedQuery.trim() ? '尝试其他关键词或切换市场源' : '已安装的 Skill 会在「已安装」中管理'}
             </div>
           </div>
         ) : (
           <div className="store-grid">
-            {skills.map((skill) => (
+            {uninstalledSkills.map((skill) => (
               <StoreSkillCard
                 key={skill.id}
                 skill={skill}
                 onShowDetail={onShowDetail}
+                onInstalled={(id) => {
+                  setSkills((prev) => prev.map((item) => item.id === id ? { ...item, installed: true } : item))
+                }}
               />
             ))}
           </div>
@@ -275,7 +280,7 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
 
         {/* Stats footer */}
         <div className="store-stats">
-          {enabledRegistries.length} 个市场源 · {skills.length} 个可用
+          {enabledRegistries.length} 个市场源 · {uninstalledSkills.length} 个未安装 · {skills.length - uninstalledSkills.length} 个已安装
         </div>
       </div>
     </div>
@@ -286,9 +291,11 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
 function StoreSkillCard({
   skill,
   onShowDetail,
+  onInstalled,
 }: {
   skill: RemoteSkillItem
   onShowDetail: (skill: RemoteSkillItem) => void
+  onInstalled: (skillId: string) => void
 }) {
   const [installing, setInstalling] = useState(false)
   const [installed, setInstalled] = useState(skill.installed)
@@ -301,12 +308,13 @@ function StoreSkillCard({
     try {
       await installSkill({ remoteSkillId: skill.id, registryId: skill.registryId })
       setInstalled(true)
+      onInstalled(skill.id)
     } catch (err) {
       console.error('Install failed:', err)
     } finally {
       setInstalling(false)
     }
-  }, [installSkill, skill.id, skill.registryId, installing, installed])
+  }, [installSkill, skill.id, skill.registryId, installing, installed, onInstalled])
 
   return (
     <div className="store-skill-card" onClick={() => onShowDetail(skill)}>
@@ -358,9 +366,59 @@ function StoreSkillCard({
 
 // ─── Installed Tab ────────────────────────────────────────────────────
 function InstalledTab() {
-  const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount } = useSkills()
+  const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount, refresh } = useSkills()
   const [search, setSearch] = useState('')
+  const [localCandidates, setLocalCandidates] = useState<LocalSkillCandidate[]>([])
+  const [detecting, setDetecting] = useState(false)
+  const [importingPath, setImportingPath] = useState<string | null>(null)
+  const { toast } = useToast()
+  const { invoke: detectLocalSkills } = useIpcInvoke('skill:detect-local')
+  const { invoke: importDirectory } = useIpcInvoke('skill:import-directory')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const filtered = filterSkills(skills, search)
+
+  const handleDetectLocal = useCallback(async () => {
+    setDetecting(true)
+    try {
+      const res = await detectLocalSkills({})
+      setLocalCandidates(res.candidates)
+      toast.success(`检测到 ${res.candidates.length} 个本地 Skill`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '检测本地 Skill 失败')
+    } finally {
+      setDetecting(false)
+    }
+  }, [detectLocalSkills, toast])
+
+  const handleImportLocal = useCallback(async (candidate: LocalSkillCandidate) => {
+    setImportingPath(candidate.rootPath)
+    try {
+      await importDirectory({ directoryPath: candidate.rootPath, source: candidate.source })
+      toast.success(`已导入 ${candidate.name}`)
+      refresh()
+      await handleDetectLocal()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导入本地 Skill 失败')
+    } finally {
+      setImportingPath(null)
+    }
+  }, [handleDetectLocal, importDirectory, refresh, toast])
+
+  const handlePickImportDirectory = useCallback(async () => {
+    const picked = await openDirectoryDialog({ title: '选择包含 SKILL.md 的 Skill 目录' })
+    if (picked.canceled || picked.filePath == null) return
+    setImportingPath(picked.filePath)
+    try {
+      await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
+      toast.success('已导入本地 Skill')
+      refresh()
+      await handleDetectLocal()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导入本地 Skill 失败')
+    } finally {
+      setImportingPath(null)
+    }
+  }, [handleDetectLocal, importDirectory, openDirectoryDialog, refresh, toast])
 
   return (
     <div>
@@ -374,13 +432,46 @@ function InstalledTab() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <button className="btn">
-          <Icons.Upload size={12} /> 导入
+        <button className="btn" onClick={() => void handlePickImportDirectory()} disabled={importingPath !== null}>
+          <Icons.Upload size={12} /> 导入目录
+        </button>
+        <button className="btn" onClick={() => void handleDetectLocal()} disabled={detecting}>
+          <Icons.Refresh size={12} /> {detecting ? '检测中...' : '检测 Claude/Codex'}
         </button>
         <button className="btn">
           <Icons.Download size={12} /> 导出全部
         </button>
       </div>
+
+      {localCandidates.length > 0 && (
+        <div className="local-skill-panel">
+          <div className="local-skill-head">
+            <span>本地可导入</span>
+            <span className="badge">{localCandidates.length}</span>
+          </div>
+          <div className="local-skill-list">
+            {localCandidates.map((candidate) => (
+              <div className="local-skill-row" key={candidate.id}>
+                <div className="flex1 min-w-0">
+                  <div className="strong truncate">{candidate.name}</div>
+                  <div className="muted truncate">{candidate.description} · {candidate.source} · {candidate.rootPath}</div>
+                </div>
+                {candidate.installed ? (
+                  <span className="badge success">已导入</span>
+                ) : (
+                  <button
+                    className="btn sm"
+                    onClick={() => void handleImportLocal(candidate)}
+                    disabled={importingPath === candidate.rootPath}
+                  >
+                    {importingPath === candidate.rootPath ? '导入中...' : '导入'}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {error && <div className="card card-error" style={{ marginBottom: '12px' }}>{error}</div>}
 
@@ -438,8 +529,9 @@ function InstalledSkillCard({
           className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}
           onClick={() => onToggle(skill)}
         >
-          {skill.enabled ? '已启用' : '已禁用'}
+          {skill.enabled ? '系统可见' : '系统隐藏'}
         </span>
+        {skill.id === 'builtin:superpowers' && <span className="badge">内置工作流</span>}
       </div>
       <div className="foot">
         <span>{meta.source} · {skill.version}</span>

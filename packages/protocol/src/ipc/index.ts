@@ -726,6 +726,24 @@ export interface SkillItem {
   updatedAt: string
 }
 
+export type RuntimeConfigScope = 'system' | 'agent' | 'project' | 'session'
+
+export interface LocalSkillCandidate {
+  id: string
+  name: string
+  description: string
+  source: 'claude' | 'codex' | 'agents' | 'custom'
+  rootPath: string
+  skillFilePath: string
+  installed: boolean
+  localSkillId?: string
+}
+
+export interface PromptLayerValue {
+  enabled: boolean
+  content: string
+}
+
 export interface SkillListRequest {
   scope?: string
 }
@@ -948,6 +966,7 @@ export interface SkillImportFileResponse {
 
 export interface SkillImportDirectoryRequest {
   directoryPath: string
+  source?: 'claude' | 'codex' | 'agents' | 'custom'
 }
 
 export interface SkillImportDirectoryResponse {
@@ -973,6 +992,63 @@ export interface SkillExportBatchResponse {
   filePath: string
   count: number
 }
+
+export interface SkillDetectLocalRequest {
+  searchRoots?: string[]
+}
+
+export interface SkillDetectLocalResponse {
+  candidates: LocalSkillCandidate[]
+}
+
+export interface SkillConfigGetRequest {
+  workspaceId?: string
+  sessionId?: string
+  agentId?: string
+}
+
+export interface SkillConfigGetResponse {
+  skills: SkillItem[]
+  systemSkillIds: string[]
+  agentSkillIds: string[]
+  projectSkillIds: string[]
+  sessionSkillIds: string[]
+  agentDisabledSkillIds: string[]
+  projectDisabledSkillIds: string[]
+  sessionDisabledSkillIds: string[]
+  effectiveSkillIds: string[]
+}
+
+export interface SkillConfigUpdateRequest {
+  scope: Exclude<RuntimeConfigScope, 'system'>
+  scopeRef: string
+  skillIds: string[]
+  disabledSkillIds?: string[]
+}
+
+export interface SkillConfigUpdateResponse extends SkillConfigGetResponse {}
+
+export interface PromptConfigGetRequest {
+  workspaceId?: string
+  sessionId?: string
+  agentId?: string
+}
+
+export interface PromptConfigGetResponse {
+  system: PromptLayerValue
+  agent: PromptLayerValue
+  project: PromptLayerValue
+  session: PromptLayerValue
+  effectivePrompt: string
+}
+
+export interface PromptConfigUpdateRequest {
+  scope: RuntimeConfigScope
+  scopeRef?: string
+  value: PromptLayerValue
+}
+
+export interface PromptConfigUpdateResponse extends PromptConfigGetResponse {}
 
 // ─── App Info Channels ──────────────────────────────────────────────────────
 
@@ -1428,6 +1504,11 @@ export interface IpcChannelMap {
   'skill:toggle': [SkillToggleRequest, SkillToggleResponse]
   'skill:search': [SkillSearchRequest, SkillSearchResponse]
   'skill:execute': [SkillExecuteRequest, SkillExecuteResponse]
+  'skill:detect-local': [SkillDetectLocalRequest, SkillDetectLocalResponse]
+  'skill-config:get': [SkillConfigGetRequest, SkillConfigGetResponse]
+  'skill-config:update': [SkillConfigUpdateRequest, SkillConfigUpdateResponse]
+  'prompt-config:get': [PromptConfigGetRequest, PromptConfigGetResponse]
+  'prompt-config:update': [PromptConfigUpdateRequest, PromptConfigUpdateResponse]
 
   // Skill Registry (Skill Store)
   'skill-registry:list': [SkillRegistryListRequest, SkillRegistryListResponse]

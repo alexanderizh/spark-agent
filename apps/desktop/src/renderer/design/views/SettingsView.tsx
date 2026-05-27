@@ -2191,8 +2191,14 @@ function McpSection() {
 function SkillsSection() {
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [error, setError] = useState('')
+  const [systemPrompt, setSystemPrompt] = useState('')
+  const [systemPromptEnabled, setSystemPromptEnabled] = useState(true)
+  const [savingPrompt, setSavingPrompt] = useState(false)
+  const { toast } = useToast()
   const { invoke: listSkills, loading } = useIpcInvoke('skill:list')
   const { invoke: updateSkill } = useIpcInvoke('skill:update')
+  const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
+  const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
 
   const refresh = useCallback(() => {
     setError('')
@@ -2205,17 +2211,69 @@ function SkillsSection() {
     refresh()
   }, [refresh])
 
+  useEffect(() => {
+    getPromptConfig({})
+      .then((res) => {
+        setSystemPrompt(res.system.content)
+        setSystemPromptEnabled(res.system.enabled)
+      })
+      .catch(() => {})
+  }, [getPromptConfig])
+
   const toggleSkill = async (skill: SkillItem) => {
     await updateSkill({ id: skill.id, enabled: !skill.enabled })
     refresh()
   }
 
+  const saveSystemPrompt = async () => {
+    setSavingPrompt(true)
+    try {
+      const res = await updatePromptConfig({
+        scope: 'system',
+        value: { enabled: systemPromptEnabled, content: systemPrompt },
+      })
+      setSystemPrompt(res.system.content)
+      setSystemPromptEnabled(res.system.enabled)
+      toast.success('系统提示词已保存')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '保存系统提示词失败')
+    } finally {
+      setSavingPrompt(false)
+    }
+  }
+
   return (
     <div className="settings-section">
       <h2>Skills</h2>
-      <div className="lede">管理 Agent 可使用的技能模块。启用或禁用会影响 Agent 在对话中可调用的能力。</div>
+      <div className="lede">管理系统级可见 Skill 和系统提示词。系统隐藏的 Skill 不会进入任何 Agent 的可见列表。</div>
 
       {error && <div className="alert-banner">{error}</div>}
+
+      <div className="card prompt-config-card">
+        <div className="settings-row">
+          <div>
+            <div className="settings-row-title">系统级提示词</div>
+            <div className="settings-row-desc">会和后续 Agent、项目、会话提示词逐级合并。</div>
+          </div>
+          <div
+            className={`switch ${systemPromptEnabled ? 'on' : ''}`}
+            onClick={() => setSystemPromptEnabled((prev) => !prev)}
+          />
+        </div>
+        <textarea
+          className="spark-textarea prompt-textarea"
+          value={systemPrompt}
+          onChange={(event) => setSystemPrompt(event.target.value)}
+          placeholder="输入全局系统提示词..."
+        />
+        <div className="row prompt-actions">
+          <span className="muted">Agent 级提示词会在多 Agent 配置功能中开放。</span>
+          <span className="flex1" />
+          <button className="btn primary sm" onClick={() => void saveSystemPrompt()} disabled={savingPrompt}>
+            <Icons.Check size={12} /> {savingPrompt ? '保存中...' : '保存'}
+          </button>
+        </div>
+      </div>
 
       <div className="card">
         {loading ? (
@@ -2228,10 +2286,16 @@ function SkillsSection() {
               title={skill.name}
               desc={`${meta.desc} · ${meta.source} · ${skill.version}`}
               right={
-                <div
-                  className={`switch ${skill.enabled ? 'on' : ''}`}
-                  onClick={() => void toggleSkill(skill)}
-                />
+                <div className="row row-gap-xs">
+                  {skill.id === 'builtin:superpowers' && <span className="badge">内置</span>}
+                  <span className={`badge ${skill.enabled ? 'success' : ''}`}>
+                    {skill.enabled ? '系统可见' : '系统隐藏'}
+                  </span>
+                  <div
+                    className={`switch ${skill.enabled ? 'on' : ''}`}
+                    onClick={() => void toggleSkill(skill)}
+                  />
+                </div>
               }
             />
           )
@@ -2239,7 +2303,7 @@ function SkillsSection() {
       </div>
 
       <div className="skills-hint">
-        Skill 配置保存在本地 SQLite。自定义 Skill 安装将在后续版本支持。
+        已安装不代表会被强制使用；Agent 会从系统/项目/会话合并后的可见列表中自行判断是否应用。
       </div>
     </div>
   )

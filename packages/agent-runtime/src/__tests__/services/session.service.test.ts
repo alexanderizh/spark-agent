@@ -9,6 +9,8 @@ vi.mock('@spark/storage', () => ({
   WorkspaceRepository: vi.fn(),
   RulesRepository: vi.fn(),
   McpServerRepository: vi.fn(),
+  SkillRepository: vi.fn(),
+  SettingsRepository: vi.fn(),
 }))
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -51,6 +53,8 @@ import {
   EventRepository,
   ProviderProfileRepository,
   RulesRepository,
+  SkillRepository,
+  SettingsRepository,
 } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from '../../services/adapter-factory.js'
@@ -102,9 +106,78 @@ function makeRulesRepo(overrides = {}) {
   }
 }
 
+function makeSkillRepo(overrides = {}) {
+  return {
+    list: vi.fn().mockReturnValue([
+      {
+        id: 'skill:review',
+        scope: 'user',
+        name: 'Review',
+        version: '1.0.0',
+        root_path: '/skills/review',
+        manifest_json: JSON.stringify({
+          description: 'Review description',
+          source: 'Test',
+          systemPrompt: 'Review instructions',
+          requiredTools: ['read_file'],
+          tags: ['review'],
+        }),
+        enabled: 1,
+        created_at: '2026-05-27T00:00:00.000Z',
+        updated_at: '2026-05-27T00:00:00.000Z',
+        registry_id: null,
+        remote_id: null,
+        author: 'Test',
+        category: 'coding',
+        tags_json: '["review"]',
+        rating: 0,
+        download_count: 0,
+        homepage_url: null,
+        icon_url: null,
+      },
+    ]),
+    get: vi.fn().mockImplementation((id: string) => {
+      if (id !== 'skill:review') return undefined
+      return {
+        id: 'skill:review',
+        scope: 'user',
+        name: 'Review',
+        version: '1.0.0',
+        root_path: '/skills/review',
+        manifest_json: JSON.stringify({
+          description: 'Review description',
+          source: 'Test',
+          systemPrompt: 'Review instructions',
+          requiredTools: ['read_file'],
+          tags: ['review'],
+        }),
+        enabled: 1,
+        created_at: '2026-05-27T00:00:00.000Z',
+        updated_at: '2026-05-27T00:00:00.000Z',
+      }
+    }),
+    ...overrides,
+  }
+}
+
+function makeSettingsRepo(overrides = {}) {
+  return {
+    get: vi.fn().mockImplementation((category: string, key: string) => {
+      if (category === 'runtime.prompts' && key === 'system') {
+        return { enabled: true, content: 'System prompt from settings' }
+      }
+      return null
+    }),
+    set: vi.fn(),
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(ToolRegistry).mockImplementation(() => ({}) as never)
+  vi.mocked(SkillRepository).mockImplementation(() => makeSkillRepo() as never)
+  vi.mocked(SettingsRepository).mockImplementation(() => makeSettingsRepo() as never)
 })
 
 describe('SessionService.createSession', () => {
@@ -134,6 +207,8 @@ describe('SessionService.sendTurn', () => {
     vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
     vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
     vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(SkillRepository).mockImplementation(() => makeSkillRepo() as never)
+    vi.mocked(SettingsRepository).mockImplementation(() => makeSettingsRepo() as never)
     vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
     vi.mocked(createAdapter).mockReturnValue({} as never)
     vi.mocked(AgentLoop).mockImplementation(() => loop as never)
@@ -234,6 +309,78 @@ describe('SessionService.sendTurn', () => {
         apiEndpoint: 'https://api.example.com/v1',
       }),
     )
+  })
+
+  it('passes layered prompts and visible skills into the agent config', async () => {
+    const sessionRepo = makeSessionRepo({
+      findByIdOrFail: vi.fn().mockReturnValue({
+        id: 'sess-1',
+        provider_profile_id: 'prov-1',
+        model_id: 'gpt-custom',
+        agent_adapter: 'codex',
+        permission_mode: 'codex-default',
+        reasoning_effort: 'medium',
+        chat_mode: 'agent',
+        status: 'running',
+        title: '新会话',
+        workspace_ids_json: '["workspace-1"]',
+      }),
+      getWorkspaceIds: vi.fn().mockReturnValue(['workspace-1']),
+    })
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo({
+      get: vi.fn().mockReturnValue({
+        id: 'prov-1',
+        provider_type: 'openai',
+        keystore_ref: 'ref-1',
+        config_json: '{"defaultModel":"gpt-4.1","modelIds":["gpt-4.1"]}',
+      }),
+    })
+    const rulesRepo = makeRulesRepo()
+    const workspaceRepo = {
+      get: vi.fn().mockReturnValue({
+        id: 'workspace-1',
+        name: 'Workspace',
+        root_path: '/workspace',
+        project_kind: 'generic',
+      }),
+    }
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(SkillRepository).mockImplementation(() => makeSkillRepo() as never)
+    vi.mocked(SettingsRepository).mockImplementation(() => makeSettingsRepo({
+      get: vi.fn().mockImplementation((category: string, key: string) => {
+        if (category === 'runtime.skills' && key === 'project:workspace-1') return ['skill:review']
+        if (category === 'runtime.prompts' && key === 'system') return { enabled: true, content: 'System prompt from settings' }
+        if (category === 'runtime.prompts' && key === 'project:workspace-1') return { enabled: true, content: 'Project prompt from settings' }
+        return null
+      }),
+    }) as never)
+    const { WorkspaceRepository } = await import('@spark/storage')
+    vi.mocked(WorkspaceRepository).mockImplementation(() => workspaceRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
+
+    expect(loop.executeTurn).toHaveBeenCalledWith(
+      'sess-1',
+      expect.any(String),
+      'hello',
+      expect.objectContaining({
+        systemPrompt: expect.stringContaining('System prompt from settings'),
+        skillSystemPrompt: expect.stringContaining('Review instructions'),
+      }),
+    )
+    const config = vi.mocked(loop.executeTurn).mock.calls[0]?.[3] as { systemPrompt?: string; skillSystemPrompt?: string }
+    expect(config.systemPrompt).toContain('Project prompt from settings')
+    expect(config.skillSystemPrompt).toContain('[Available Skills]')
   })
 
   it('uses the session agent adapter instead of provider type when present', async () => {

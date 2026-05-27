@@ -17,6 +17,8 @@ export const ProfileIdSchema = z.string().uuid()
 export const RuleIdSchema = z.string().uuid()
 
 export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
+export const RuntimeConfigScopeSchema = z.enum(['system', 'agent', 'project', 'session'])
+export const LocalSkillSourceSchema = z.enum(['claude', 'codex', 'agents', 'custom'])
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
 export const SessionAgentAdapterSchema = z.enum(['claude', 'codex'])
@@ -310,7 +312,7 @@ export const IpcSchemaRegistry = {
     name: z.string().min(1).max(120),
     version: z.string().min(1).max(80),
     rootPath: z.string().min(1).max(500),
-    manifestJson: z.string().min(2).max(20_000),
+    manifestJson: z.string().min(2).max(500_000),
     enabled: z.boolean().optional(),
   }),
   'skill:update': z.object({
@@ -318,10 +320,48 @@ export const IpcSchemaRegistry = {
     name: z.string().min(1).max(120).optional(),
     version: z.string().min(1).max(80).optional(),
     rootPath: z.string().min(1).max(500).optional(),
-    manifestJson: z.string().min(2).max(20_000).optional(),
+    manifestJson: z.string().min(2).max(500_000).optional(),
     enabled: z.boolean().optional(),
   }),
   'skill:delete': z.object({ id: z.string().min(1).max(120) }),
+  'skill:detail': z.object({ id: z.string().min(1).max(120) }),
+  'skill:toggle': z.object({ id: z.string().min(1).max(120) }),
+  'skill:search': z.object({ query: z.string().min(0).max(200) }),
+  'skill:execute': z.object({
+    skillId: z.string().min(1).max(120),
+    params: z.record(z.unknown()).optional(),
+  }),
+  'skill:detect-local': z.object({
+    searchRoots: z.array(z.string().min(1).max(1000)).max(20).optional(),
+  }),
+  'skill:import-directory': z.object({
+    directoryPath: z.string().min(1).max(1000),
+    source: LocalSkillSourceSchema.optional(),
+  }),
+  'skill-config:get': z.object({
+    workspaceId: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional(),
+    agentId: z.string().min(1).optional(),
+  }),
+  'skill-config:update': z.object({
+    scope: z.enum(['agent', 'project', 'session']),
+    scopeRef: z.string().min(1).max(300),
+    skillIds: z.array(z.string().min(1).max(160)).max(200),
+    disabledSkillIds: z.array(z.string().min(1).max(160)).max(200).optional(),
+  }),
+  'prompt-config:get': z.object({
+    workspaceId: z.string().min(1).optional(),
+    sessionId: z.string().min(1).optional(),
+    agentId: z.string().min(1).optional(),
+  }),
+  'prompt-config:update': z.object({
+    scope: RuntimeConfigScopeSchema,
+    scopeRef: z.string().min(1).max(300).optional(),
+    value: z.object({
+      enabled: z.boolean(),
+      content: z.string().max(200_000),
+    }),
+  }),
   'settings:get': z.object({
     category: z.string().min(1).max(80),
     key: z.string().min(1).max(200),

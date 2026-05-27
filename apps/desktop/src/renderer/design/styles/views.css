@@ -5811,6 +5811,125 @@ body.inspector-resizing {
   height: 22px;
 }
 
+.spark-textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 10px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+}
+.spark-textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  outline: none;
+}
+.prompt-config-card {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.prompt-textarea { min-height: 128px; }
+.prompt-actions {
+  align-items: center;
+  gap: 8px;
+}
+.local-skill-panel {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  margin: 0 0 12px;
+  overflow: hidden;
+}
+.local-skill-head,
+.local-skill-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.local-skill-head {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.local-skill-list { display: grid; }
+.local-skill-row {
+  min-height: 48px;
+  padding: 8px 10px;
+}
+.local-skill-row + .local-skill-row { border-top: 1px solid var(--border); }
+.runtime-skill-list {
+  display: grid;
+  gap: 6px;
+}
+.runtime-skill-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+}
+.runtime-skill-main { min-width: 0; }
+.runtime-skill-name {
+  font-size: 12px;
+  font-weight: 650;
+}
+.runtime-skill-desc {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.mini-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  user-select: none;
+}
+.mini-check input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.mini-check.on {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.mini-check.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.runtime-hint { margin-top: 8px; }
+.runtime-prompt-block {
+  display: grid;
+  gap: 6px;
+}
+.runtime-prompt-block + .runtime-prompt-block { margin-top: 12px; }
+.runtime-prompt-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+.inspector-textarea {
+  min-height: 72px;
+  max-height: 160px;
+  font-size: 12px;
+}
+.runtime-save-btn { justify-self: end; }
+
 /* ── AgentsView helpers ── */
 .agents-run-header {
   gap: 12px;
