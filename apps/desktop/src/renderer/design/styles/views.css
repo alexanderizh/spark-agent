@@ -1316,8 +1316,30 @@
 }
 .composer-select-icon {
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   color: var(--text-muted);
   flex-shrink: 0;
+}
+.composer-select-icon svg {
+  display: block;
+}
+.adapter-brand-icon {
+  width: 15px;
+  height: 15px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linejoin: round;
+}
+.adapter-brand-claude {
+  color: #d97757;
+}
+.adapter-brand-codex {
+  color: #10a37f;
 }
 .composer-model-picker {
   max-width: 188px;
@@ -1339,12 +1361,16 @@
   cursor: pointer;
   box-shadow: none;
   overflow: hidden;
+  line-height: 1;
 }
 .composer-select-trigger span {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1;
 }
 .composer-select-trigger svg {
   flex-shrink: 0;
@@ -1445,6 +1471,17 @@
   inset: 3px;
   border-radius: 50%;
   background: var(--panel);
+}
+.queued-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  white-space: nowrap;
 }
 
 /* Inspector helpers */
@@ -2831,6 +2868,13 @@ body.inspector-resizing {
   color: var(--text-muted);
 }
 .palette-foot .seg { display: flex; align-items: center; gap: 6px; }
+.palette-empty {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  padding: 24px 16px;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.palette-empty .muted { color: var(--text-faint); }
 
 /* ============================================================
    PERMISSION MODAL (separate from inline)

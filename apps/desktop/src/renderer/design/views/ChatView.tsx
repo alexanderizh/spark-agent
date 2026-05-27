@@ -34,6 +34,15 @@ type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
 type BranchState = { currentBranch: string | null; branches: string[] }
 type AgentAdapter = SessionAgentAdapter
 type PermissionModeChoice = SessionPermissionMode
+type ComposerPrefs = {
+  adapter?: AgentAdapter
+  providerProfileId?: string
+  modelId?: string
+  permissionMode?: PermissionModeChoice
+  reasoningEffort?: SessionReasoningEffort
+}
+
+const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 
 export function ChatView() {
   const [active, setActive] = useState<SessionId | null>(null)
@@ -87,7 +96,7 @@ export function ChatView() {
     setWorkspaces(workspaceRes.workspaces)
     setSessions(sessionRes.sessions)
     setProviders(providerRes.profiles)
-    setSelectedProviderId((prev) => prev || providerRes.profiles.find((item) => item.isDefault)?.id || providerRes.profiles[0]?.id || '')
+    setSelectedProviderId((prev) => prev || getPreferredProvider(providerRes.profiles, readComposerPrefs(), 'claude')?.id || '')
     setActiveWorkspaceId((prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null)
   }, [getCurrentWorkspace, listProviders, listSessions, listWorkspaces])
 
@@ -155,29 +164,32 @@ export function ChatView() {
       }
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
+      const prefs = readComposerPrefs()
+      const preferredAdapter = options.agentAdapter ?? prefs.adapter ?? 'claude'
       const profile = knownProviders.find((item) => item.id === options.providerProfileId)
-        ?? knownProviders.find((item) => item.id === selectedProviderId)
-        ?? knownProviders.find((item) => item.isDefault)
-        ?? knownProviders[0]
+        ?? knownProviders.find((item) => item.id === selectedProviderId && getProviderAdapterKind(item) === preferredAdapter)
+        ?? getPreferredProvider(knownProviders, prefs, preferredAdapter)
       if (!profile) {
         alert('请先在设置中配置 Provider')
         return null
       }
-      const workspace = workspaces.find((item) => item.id === workspaceId)
+      const agentAdapter = options.agentAdapter ?? getProviderAdapterKind(profile)
+      const permissionMode = options.permissionMode ?? getValidPermissionMode(prefs.permissionMode, agentAdapter)
+      const modelId = options.modelId ?? (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
       const res = await createSession({
         providerProfileId: profile.id,
-        ...(options.modelId !== undefined ? { modelId: options.modelId } : {}),
-        ...(options.agentAdapter !== undefined ? { agentAdapter: options.agentAdapter } : {}),
-        ...(options.permissionMode !== undefined ? { permissionMode: options.permissionMode } : {}),
+        ...(modelId !== undefined ? { modelId } : {}),
+        agentAdapter,
+        permissionMode,
         ...(options.chatMode !== undefined ? { chatMode: options.chatMode } : {}),
-        ...(options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {}),
+        reasoningEffort: options.reasoningEffort ?? prefs.reasoningEffort ?? 'medium',
         workspaceId,
-        title: workspace == null ? '新会话' : `${workspace.name} 会话`,
       })
       refreshSessions()
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(workspaceId)
+      writeComposerPrefs({ adapter: agentAdapter, providerProfileId: profile.id, ...(modelId !== undefined ? { modelId } : {}), permissionMode })
       return res.sessionId
     } catch (err) {
       console.error('创建会话失败', err)
@@ -560,6 +572,7 @@ export function ChatView() {
           setSelectedProviderId={setSelectedProviderId}
           branchState={branchState}
           contextInputTokens={contextInputTokens}
+          isWorking={agentStatus.length > 0 || activeSession?.status === 'running'}
           onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
           onUpdateSession={handleUpdateActiveSession}
           onSwitchBranch={handleSwitchBranch}
@@ -1068,7 +1081,7 @@ function ChatStream({
       onStatusChange(labels[event.status] ?? '')
     }
     if (event.type === 'usage_update') {
-      onUsageChange(event.inputTokens)
+      if (event.inputTokens > 0) onUsageChange(event.inputTokens)
     }
   }, [onMessagesChange, onStatusChange, onUsageChange, sessionId])
 
@@ -1562,6 +1575,7 @@ function ComposerV2({
   setSelectedProviderId,
   branchState,
   contextInputTokens,
+  isWorking,
   onCreateSession,
   onUpdateSession,
   onSwitchBranch,
@@ -1574,6 +1588,7 @@ function ComposerV2({
   setSelectedProviderId: (providerId: string) => void
   branchState: BranchState
   contextInputTokens: number
+  isWorking: boolean
   onCreateSession: (options: {
     providerProfileId?: string
     modelId?: string
@@ -1595,15 +1610,22 @@ function ComposerV2({
   onSent: () => void
 }) {
   const { toast } = useToast()
+  const initialPrefsRef = useRef<ComposerPrefs | null>(null)
+  if (initialPrefsRef.current == null) initialPrefsRef.current = readComposerPrefs()
+  const initialPrefs = initialPrefsRef.current
   const [value, setValue] = useState('')
   const [sending, setSending] = useState(false)
+  const [queuedMessages, setQueuedMessages] = useState<string[]>([])
   const [manualExpanded, setManualExpanded] = useState(false)
-  const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>('codex')
-  const [draftModelId, setDraftModelId] = useState('')
+  const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(initialPrefs.adapter ?? 'claude')
+  const [draftModelId, setDraftModelId] = useState(initialPrefs.modelId ?? '')
   const [draftMode] = useState<SessionChatMode>('agent')
-  const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionModeChoice>('codex-default')
-  const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>('medium')
+  const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionModeChoice>(
+    getValidPermissionMode(initialPrefs.permissionMode, initialPrefs.adapter ?? 'claude'),
+  )
+  const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(initialPrefs.reasoningEffort ?? 'medium')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const composingRef = useRef(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
 
   const adapter = session?.agentAdapter ?? draftAdapter
@@ -1624,7 +1646,22 @@ function ComposerV2({
     : defaultPermissionMode
   const contextWindow = estimateContextWindow(effectiveModelId)
   const contextRatio = Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10)
-  const canSend = value.trim().length > 0 && !sending && selectedProvider != null && (session != null || workspace != null)
+  const isBusy = sending || isWorking
+  const canSubmit = value.trim().length > 0 && selectedProvider != null && effectiveModelId.length > 0 && (session != null || workspace != null)
+
+  useEffect(() => {
+    if (session != null || providers.length === 0 || compatibleProviders.length > 0) return
+    const fallbackProvider = getPreferredProvider(providers, initialPrefs, draftAdapter)
+    if (fallbackProvider == null) return
+    const nextAdapter = getProviderAdapterKind(fallbackProvider)
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextModel = fallbackProvider.defaultModel || fallbackProvider.modelIds[0] || ''
+    setDraftAdapter(nextAdapter)
+    setDraftPermissionMode(nextPermissionMode)
+    setSelectedProviderId(fallbackProvider.id)
+    setDraftModelId(nextModel)
+    writeComposerPrefs({ adapter: nextAdapter, providerProfileId: fallbackProvider.id, modelId: nextModel, permissionMode: nextPermissionMode })
+  }, [compatibleProviders.length, draftAdapter, initialPrefs, providers, session, setSelectedProviderId])
 
   useEffect(() => {
     if (selectedProvider != null && !draftModelId) {
@@ -1656,10 +1693,30 @@ function ComposerV2({
     })
   }, [manualExpanded, value])
 
-  const handleSend = async () => {
-    if (!canSend) return
-    const text = value.trim()
-    setValue('')
+  const dispatchMessage = useCallback(async (text: string) => {
+    // 斜杠命令拦截：以 / 开头的消息走 command:execute
+    if (text.startsWith('/')) {
+      setSending(true)
+      try {
+        const sessionId = session?.id ?? '__chat__'
+        const res = await window.spark.invoke('command:execute', { sessionId, message: text })
+        if (res.success) {
+          toast.success(res.message || '命令执行成功')
+        } else {
+          toast.warning(res.message || '命令执行失败')
+        }
+        onSent()
+      } catch (err) {
+        console.error('命令执行失败', err)
+        toast.error(err instanceof Error ? err.message : '命令执行失败')
+        setValue(text)
+      } finally {
+        setSending(false)
+      }
+      return
+    }
+
+    if (selectedProvider == null) return
     setSending(true)
     try {
       let targetSessionId = session?.id ?? null
@@ -1674,7 +1731,8 @@ function ComposerV2({
         })
       }
       if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
-      await sendTurn({ sessionId: targetSessionId, message: text })
+      const res = await sendTurn({ sessionId: targetSessionId, message: text })
+      if (!res.started) toast.info('上一条任务仍在执行，消息已加入队列。')
       onSent()
     } catch (err) {
       console.error('发送失败', err)
@@ -1683,9 +1741,33 @@ function ComposerV2({
     } finally {
       setSending(false)
     }
+  }, [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, onCreateSession, onSent, selectedProvider, sendTurn, session?.id, toast])
+
+  useEffect(() => {
+    if (isBusy || queuedMessages.length === 0) return
+    const [next, ...rest] = queuedMessages
+    if (next == null) return
+    setQueuedMessages(rest)
+    void dispatchMessage(next)
+  }, [dispatchMessage, isBusy, queuedMessages])
+
+  const handleSend = async () => {
+    if (!canSubmit) return
+    const text = value.trim()
+    setValue('')
+    if (isBusy) {
+      setQueuedMessages((prev) => {
+        toast.info(`任务执行中，已加入临时队列（${prev.length + 1}）。`)
+        return [...prev, text]
+      })
+      return
+    }
+    await dispatchMessage(text)
   }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
+    const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean }
+    if (nativeEvent.isComposing || composingRef.current || event.keyCode === 229) return
     if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault()
       void handleSend()
@@ -1702,6 +1784,7 @@ function ComposerV2({
     setSelectedProviderId(providerId)
     const nextModel = provider.defaultModel || provider.modelIds[0] || ''
     setDraftModelId(nextModel)
+    writeComposerPrefs({ adapter: nextAdapter, providerProfileId: providerId, modelId: nextModel, permissionMode: nextPermissionMode })
     if (session != null) {
       await onUpdateSession({
         providerProfileId: providerId,
@@ -1722,6 +1805,7 @@ function ComposerV2({
       const nextModel = nextProvider.defaultModel || nextProvider.modelIds[0] || ''
       setSelectedProviderId(nextProvider.id)
       setDraftModelId(nextModel)
+      writeComposerPrefs({ adapter: nextAdapter, providerProfileId: nextProvider.id, modelId: nextModel, permissionMode: nextPermissionMode })
       if (session != null) {
         await onUpdateSession({
           providerProfileId: nextProvider.id,
@@ -1732,16 +1816,22 @@ function ComposerV2({
       }
       return
     }
+    writeComposerPrefs({ adapter: nextAdapter, permissionMode: nextPermissionMode })
     if (session != null) await onUpdateSession({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
   }
 
   const handleModelChange = async (modelId: string) => {
     setDraftModelId(modelId)
+    writeComposerPrefs({
+      ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
+      modelId,
+    })
     if (session != null) await onUpdateSession({ modelId })
   }
 
   const handleReasoningChange = async (reasoningEffort: SessionReasoningEffort) => {
     setDraftReasoning(reasoningEffort)
+    writeComposerPrefs({ reasoningEffort })
     if (session != null) await onUpdateSession({ reasoningEffort })
   }
 
@@ -1760,8 +1850,10 @@ function ComposerV2({
             placeholder={workspace ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个项目'}
             value={value}
             onChange={(event) => setValue(event.target.value)}
+            onCompositionStart={() => { composingRef.current = true }}
+            onCompositionEnd={() => { composingRef.current = false }}
             onKeyDown={handleKeyDown}
-            disabled={!workspace || sending}
+            disabled={!workspace}
           />
           <div className="composer-submit-row">
             <button
@@ -1773,11 +1865,11 @@ function ComposerV2({
             </button>
             <button
               className={`composer-send-round ${sending ? 'is-sending' : ''}`}
-              title={sending ? '发送中' : '发送'}
+              title={isBusy ? '加入队列' : '发送'}
               onClick={() => void handleSend()}
-              disabled={!canSend}
+              disabled={!canSubmit}
             >
-              {sending ? <Icons.Spinner size={15} /> : <Icons.ArrowUp size={18} />}
+              {sending ? <Icons.Spinner size={15} /> : isBusy ? <Icons.Clock size={17} /> : <Icons.ArrowUp size={18} />}
             </button>
           </div>
         </div>
@@ -1794,7 +1886,7 @@ function ComposerV2({
               options={ADAPTER_OPTIONS}
             />
             <ProviderModelPicker
-              icon={<Icons.Bot size={13} />}
+              icon={<AdapterIcon adapter={selectedProvider != null ? getProviderAdapterKind(selectedProvider) : adapter} />}
               providers={compatibleProviders}
               selectedProviderId={selectedProvider?.id ?? ''}
               selectedModelId={effectiveModelId}
@@ -1812,6 +1904,7 @@ function ComposerV2({
               onChange={(mode) => {
                 const permissionMode = mode as PermissionModeChoice
                 setDraftPermissionMode(permissionMode)
+                writeComposerPrefs({ permissionMode })
                 if (session != null) void onUpdateSession({ permissionMode })
               }}
               options={permissionOptions}
@@ -1824,10 +1917,11 @@ function ComposerV2({
               onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
               options={getReasoningOptions(adapter)}
             />
-            <div className="context-meter" title={`上下文使用 ${contextRatio}%`}>
+            <div className="context-meter" title={`上下文使用 ${contextRatio}% · ${formatTokenCount(contextInputTokens)} / ${formatTokenCount(contextWindow)}`}>
               <span>{contextRatio}%</span>
               <span className="context-ring" style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties} />
             </div>
+            {queuedMessages.length > 0 && <span className="queued-chip">{queuedMessages.length} 条排队中</span>}
             <div className="spacer" />
             {showBranchSelect && (
               <ComposerMenuSelect
@@ -1846,10 +1940,10 @@ function ComposerV2({
             <button
               className="btn primary sm composer-send-btn"
               onClick={() => void handleSend()}
-              disabled={!canSend}
+              disabled={!canSubmit}
             >
-              {sending ? <Icons.Spinner size={12} /> : <Icons.Send size={12} />}
-              {sending ? '发送中' : '发送'}
+              {sending ? <Icons.Spinner size={12} /> : isBusy ? <Icons.Clock size={12} /> : <Icons.Send size={12} />}
+              {isBusy ? '排队' : '发送'}
             </button>
           </div>
         </div>
@@ -1993,9 +2087,19 @@ function useCloseOnOutside(ref: RefObject<HTMLElement | null>, onClose: () => vo
 }
 
 function AdapterIcon({ adapter }: { adapter: 'claude' | 'codex' }) {
-  return adapter === 'claude'
-    ? <Icons.Sparkles size={13} />
-    : <Icons.Box size={13} />
+  if (adapter === 'claude') {
+    return (
+      <svg className="adapter-brand-icon adapter-brand-claude" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.5 15.2 9l6.3.1-3.1 5.5 3 5.4-6.2.1L12 20.5 8.8 15l-6.3-.1 3.1-5.5-3-5.4 6.2-.1L12 3.5Z" />
+      </svg>
+    )
+  }
+  return (
+    <svg className="adapter-brand-icon adapter-brand-codex" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2.8 20 7.4v9.2l-8 4.6-8-4.6V7.4l8-4.6Z" />
+      <path d="M8.2 9.2 12 7l3.8 2.2v5.6L12 17l-3.8-2.2V9.2Z" />
+    </svg>
+  )
 }
 
 const ADAPTER_OPTIONS: Array<{ value: AgentAdapter; label: string }> = [
@@ -2019,6 +2123,46 @@ const CODEX_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label:
 
 function getPermissionModeOptions(adapter: AgentAdapter): Array<{ value: PermissionModeChoice; label: string }> {
   return adapter === 'claude' ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
+}
+
+function getValidPermissionMode(value: PermissionModeChoice | undefined, adapter: AgentAdapter): PermissionModeChoice {
+  const options = getPermissionModeOptions(adapter)
+  return options.some((option) => option.value === value)
+    ? value as PermissionModeChoice
+    : options[0]?.value ?? (adapter === 'claude' ? 'claude-ask' : 'codex-default')
+}
+
+function readComposerPrefs(): ComposerPrefs {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY)
+    if (raw == null) return {}
+    const parsed = JSON.parse(raw) as ComposerPrefs
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeComposerPrefs(patch: ComposerPrefs): void {
+  if (typeof window === 'undefined') return
+  const next: ComposerPrefs = { ...readComposerPrefs(), ...patch }
+  for (const key of Object.keys(next) as Array<keyof ComposerPrefs>) {
+    if (next[key] === undefined) delete next[key]
+  }
+  window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(next))
+}
+
+function getPreferredProvider(
+  providers: ProviderProfile[],
+  prefs: ComposerPrefs,
+  adapter: AgentAdapter,
+): ProviderProfile | undefined {
+  return providers.find((provider) => provider.id === prefs.providerProfileId && getProviderAdapterKind(provider) === adapter)
+    ?? providers.find((provider) => provider.isDefault && getProviderAdapterKind(provider) === adapter)
+    ?? providers.find((provider) => getProviderAdapterKind(provider) === adapter)
+    ?? providers.find((provider) => provider.provider === 'anthropic')
+    ?? providers[0]
 }
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
@@ -2050,6 +2194,12 @@ function estimateContextWindow(modelId: string): number {
   if (lower.includes('16k')) return 16_000
   if (lower.includes('8k')) return 8_000
   return 128_000
+}
+
+function formatTokenCount(value: number): string {
+  if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`
+  if (value >= 1_000) return `${Math.round(value / 100) / 10}K`
+  return `${value}`
 }
 
 function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: () => void }) {
@@ -2378,7 +2528,7 @@ function filterSessionsByTime(sessions: SessionSummary[], filter: TimeFilter): S
 function getLatestInputTokens(events: AgentEvent[]): number {
   for (let index = events.length - 1; index >= 0; index -= 1) {
     const event = events[index]
-    if (event?.type === 'usage_update') return event.inputTokens
+    if (event?.type === 'usage_update' && event.inputTokens > 0) return event.inputTokens
   }
   return 0
 }
