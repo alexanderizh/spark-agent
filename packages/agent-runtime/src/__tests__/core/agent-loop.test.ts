@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import * as fs from 'node:fs/promises'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import { describe, it, expect, vi } from 'vitest'
 import { AgentLoop } from '../../core/agent-loop.js'
 import { ToolRegistry } from '../../core/tool-registry.js'
 import type { IModelAdapter, ChatParams } from '../../adapters/types.js'
@@ -109,6 +112,128 @@ describe('AgentLoop', () => {
     const statuses = collected.filter((e) => e.type === 'agent_status').map((e) => (e as { status: string }).status)
     expect(statuses).toContain('calling_tool')
     expect(statuses).toContain('completed')
+  })
+
+  it('codex-default asks before write tools', async () => {
+    const loop = new AgentLoop()
+    const collected: AgentEvent[] = []
+    loop.onEvent((e) => collected.push(e))
+
+    let callCount = 0
+    const adapter: IModelAdapter = {
+      provider: 'mock',
+      async *streamChat() {
+        callCount++
+        if (callCount === 1) {
+          yield {
+            ...BASE,
+            type: 'tool_call' as const,
+            toolCallId: 'tc1',
+            toolName: 'write_file',
+            toolInput: { path: 'out.txt', content: 'data' },
+            source: 'builtin' as const,
+          }
+        } else {
+          yield { ...BASE, type: 'assistant_message' as const, mode: 'complete' as const, content: 'done', isFinal: true }
+        }
+      },
+    }
+
+    const approvalCallback = vi.fn(async () => false)
+    await loop.executeTurn('s1', 't1', 'write file', {
+      adapter,
+      apiKey: 'key',
+      model: 'model',
+      tools: new ToolRegistry(),
+      toolContext: { workspaceRootPath: '/tmp' },
+      permissionMode: 'codex-default',
+      approvalCallback,
+    })
+
+    expect(approvalCallback).toHaveBeenCalledWith('s1', 'write_file', { path: 'out.txt', content: 'data' })
+    expect(collected.some((e) => e.type === 'tool_result' && e.status === 'denied')).toBe(true)
+  })
+
+  it('claude-plan denies write tools without prompting', async () => {
+    const loop = new AgentLoop()
+    const collected: AgentEvent[] = []
+    loop.onEvent((e) => collected.push(e))
+
+    let callCount = 0
+    const adapter: IModelAdapter = {
+      provider: 'mock',
+      async *streamChat() {
+        callCount++
+        if (callCount === 1) {
+          yield {
+            ...BASE,
+            type: 'tool_call' as const,
+            toolCallId: 'tc1',
+            toolName: 'write_file',
+            toolInput: { path: 'out.txt', content: 'data' },
+            source: 'builtin' as const,
+          }
+        } else {
+          yield { ...BASE, type: 'assistant_message' as const, mode: 'complete' as const, content: 'done', isFinal: true }
+        }
+      },
+    }
+
+    const approvalCallback = vi.fn(async () => true)
+    await loop.executeTurn('s1', 't1', 'write file', {
+      adapter,
+      apiKey: 'key',
+      model: 'model',
+      tools: new ToolRegistry(),
+      toolContext: { workspaceRootPath: '/tmp' },
+      permissionMode: 'claude-plan',
+      approvalCallback,
+    })
+
+    expect(approvalCallback).not.toHaveBeenCalled()
+    expect(collected.some((e) => e.type === 'tool_result' && e.status === 'denied')).toBe(true)
+  })
+
+  it('codex-full-access runs write tools without prompting', async () => {
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-agent-loop-'))
+    try {
+      const loop = new AgentLoop()
+      let callCount = 0
+      const adapter: IModelAdapter = {
+        provider: 'mock',
+        async *streamChat() {
+          callCount++
+          if (callCount === 1) {
+            yield {
+              ...BASE,
+              type: 'tool_call' as const,
+              toolCallId: 'tc1',
+              toolName: 'write_file',
+              toolInput: { path: 'out.txt', content: 'data' },
+              source: 'builtin' as const,
+            }
+          } else {
+            yield { ...BASE, type: 'assistant_message' as const, mode: 'complete' as const, content: 'done', isFinal: true }
+          }
+        },
+      }
+
+      const approvalCallback = vi.fn(async () => false)
+      await loop.executeTurn('s1', 't1', 'write file', {
+        adapter,
+        apiKey: 'key',
+        model: 'model',
+        tools: new ToolRegistry(),
+        toolContext: { workspaceRootPath: tmpDir },
+        permissionMode: 'codex-full-access',
+        approvalCallback,
+      })
+
+      expect(approvalCallback).not.toHaveBeenCalled()
+      await expect(fs.readFile(path.join(tmpDir, 'out.txt'), 'utf-8')).resolves.toBe('data')
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true })
+    }
   })
 
   it('cancel emits agent_error ABORTED + cancelled status', async () => {

@@ -8,6 +8,7 @@ import {
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse } from '@spark/protocol'
+import type { SessionPermissionMode } from '@spark/protocol'
 import { AgentLoop, ToolRegistry } from '../core/index.js'
 import type { AgentConfig } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
@@ -31,6 +32,7 @@ export class SessionService {
     providerProfileId: string
     modelId?: string
     agentAdapter?: AgentAdapterKind
+    permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
     reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
     title?: string
@@ -47,7 +49,9 @@ export class SessionService {
       workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
       providerProfileId: params.providerProfileId,
       ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
-      chatMode: params.agentAdapter ?? params.chatMode ?? 'codex',
+      agentAdapter: params.agentAdapter ?? 'codex',
+      permissionMode: params.permissionMode ?? 'codex-default',
+      ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
       ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
     })
     return { sessionId: row.id as SessionId, createdAt: row.created_at }
@@ -94,7 +98,7 @@ export class SessionService {
       throw new Error(`Provider ${provider.id} has no default model configured`)
     }
 
-    const agentAdapter = getAgentAdapterFromSession(session.chat_mode, provider.provider_type)
+    const agentAdapter = getAgentAdapterFromSession(session.agent_adapter, session.chat_mode, provider.provider_type)
     const adapter = createAdapter(agentAdapter)
 
     // Workspace root path for tools
@@ -132,6 +136,7 @@ export class SessionService {
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       ...(config.temperature != null ? { temperature: config.temperature } : {}),
       ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
+      permissionMode: getPermissionModeFromSession(session.permission_mode, agentAdapter),
       ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
     }
 
@@ -221,7 +226,8 @@ export class SessionService {
       workspaceIds: sessionRepo.getWorkspaceIds(row.id),
       providerProfileId: row.provider_profile_id ?? '',
       modelId: row.model_id,
-      agentAdapter: getAgentAdapterFromSession(row.chat_mode, null),
+      agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
+      permissionMode: getPermissionModeFromSession(row.permission_mode, getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null)),
       chatMode: getChatModeFromSession(row.chat_mode),
       reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
       status: row.status as 'idle' | 'running' | 'error',
@@ -305,6 +311,7 @@ export class SessionService {
     providerProfileId?: string
     modelId?: string | null
     agentAdapter?: AgentAdapterKind
+    permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
     reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
@@ -326,13 +333,16 @@ export class SessionService {
       params.providerProfileId !== undefined
       || params.modelId !== undefined
       || params.agentAdapter !== undefined
+      || params.permissionMode !== undefined
       || params.chatMode !== undefined
       || params.reasoningEffort !== undefined
     ) {
       sessionRepo.updateRuntime(params.sessionId, {
         ...(params.providerProfileId !== undefined ? { providerProfileId: params.providerProfileId } : {}),
         ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
-        ...(params.agentAdapter !== undefined || params.chatMode !== undefined ? { chatMode: params.agentAdapter ?? params.chatMode } : {}),
+        ...(params.agentAdapter !== undefined ? { agentAdapter: params.agentAdapter } : {}),
+        ...(params.permissionMode !== undefined ? { permissionMode: params.permissionMode } : {}),
+        ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
         ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
       })
     }
@@ -346,7 +356,8 @@ export class SessionService {
         workspaceIds: sessionRepo.getWorkspaceIds(row.id),
         providerProfileId: row.provider_profile_id ?? '',
         modelId: row.model_id,
-        agentAdapter: getAgentAdapterFromSession(row.chat_mode, null),
+        agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
+        permissionMode: getPermissionModeFromSession(row.permission_mode, getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null)),
         chatMode: getChatModeFromSession(row.chat_mode),
         reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
         status: row.status as 'idle' | 'running' | 'error',
@@ -367,9 +378,26 @@ export class SessionService {
   }
 }
 
-function getAgentAdapterFromSession(value: string | null | undefined, providerType: string | null): AgentAdapterKind {
+function getAgentAdapterFromSession(value: string | null | undefined, legacyChatMode: string | null | undefined, providerType: string | null): AgentAdapterKind {
   if (value === 'claude' || value === 'codex') return value
+  if (legacyChatMode === 'claude' || legacyChatMode === 'codex') return legacyChatMode
   return providerType === 'anthropic' ? 'claude' : 'codex'
+}
+
+function getPermissionModeFromSession(value: string | null | undefined, adapter: AgentAdapterKind): SessionPermissionMode {
+  if (
+    value === 'claude-ask'
+    || value === 'claude-auto-edits'
+    || value === 'claude-plan'
+    || value === 'claude-auto'
+    || value === 'claude-bypass'
+    || value === 'codex-default'
+    || value === 'codex-auto-review'
+    || value === 'codex-full-access'
+  ) {
+    return value
+  }
+  return adapter === 'claude' ? 'claude-ask' : 'codex-default'
 }
 
 function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {

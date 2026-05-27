@@ -21,6 +21,15 @@ import type { AgentEvent, SessionId } from '../events/index.js'
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
 export type SessionAgentAdapter = 'claude' | 'codex'
+export type SessionPermissionMode =
+  | 'claude-ask'
+  | 'claude-auto-edits'
+  | 'claude-plan'
+  | 'claude-auto'
+  | 'claude-bypass'
+  | 'codex-default'
+  | 'codex-auto-review'
+  | 'codex-full-access'
 
 // ─── Session Channels ─────────────────────────────────────────────────────────
 
@@ -33,6 +42,7 @@ export interface SessionCreateRequest {
   modelId?: string
   /** SDK/runtime adapter used to execute the task */
   agentAdapter?: SessionAgentAdapter
+  permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
   /** 会话标题（可选，默认自动生成）*/
@@ -97,6 +107,7 @@ export interface SessionUpdateRequest {
   providerProfileId?: string
   modelId?: string | null
   agentAdapter?: SessionAgentAdapter
+  permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
 }
@@ -145,6 +156,7 @@ export interface SessionListResponse {
     providerProfileId: string
     modelId: string | null
     agentAdapter: SessionAgentAdapter
+    permissionMode: SessionPermissionMode
     chatMode: SessionChatMode
     reasoningEffort: SessionReasoningEffort
     status: 'idle' | 'running' | 'error'
@@ -650,6 +662,145 @@ export interface SkillDeleteResponse {
   success: boolean
 }
 
+// ─── Skill Registry Channels (Skill Store) ─────────────────────────────────
+
+/** 远程市场中的 Skill 条目 */
+export interface RemoteSkillItem {
+  /** 市场 ID（带前缀，如 "skillsmp:xxx"）*/
+  id: string
+  name: string
+  description: string
+  version: string
+  author: string
+  registryId: string
+  registryName: string
+  category: string
+  tags: string[]
+  rating: number
+  downloadCount: number
+  homepageUrl?: string
+  manifestUrl: string
+  iconUrl?: string
+  /** 是否已安装到本地 */
+  installed: boolean
+  /** 安装后的本地 ID */
+  localId?: string
+}
+
+/** Skill 市场源配置 */
+export interface SkillRegistry {
+  id: string
+  name: string
+  description: string
+  iconUrl?: string
+  apiBaseUrl: string
+  enabled: boolean
+  type: 'remote' | 'local'
+  localPath?: string
+  lastSyncAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SkillRegistryListRequest {}
+
+export interface SkillRegistryListResponse {
+  registries: SkillRegistry[]
+}
+
+export interface SkillRegistryUpdateRequest {
+  id: string
+  enabled?: boolean
+  configJson?: string
+}
+
+export interface SkillRegistryUpdateResponse {
+  registry: SkillRegistry
+}
+
+export interface SkillRegistrySearchRequest {
+  query: string
+  registryId?: string
+  category?: string
+  limit?: number
+  offset?: number
+}
+
+export interface SkillRegistrySearchResponse {
+  skills: RemoteSkillItem[]
+  total: number
+}
+
+export interface SkillRegistryFeaturedRequest {
+  registryId?: string
+  limit?: number
+}
+
+export interface SkillRegistryFeaturedResponse {
+  skills: RemoteSkillItem[]
+}
+
+export interface SkillRegistryInstallRequest {
+  remoteSkillId: string
+  registryId: string
+}
+
+export interface SkillRegistryInstallResponse {
+  skill: SkillItem
+}
+
+export interface SkillRegistryUninstallRequest {
+  localSkillId: string
+}
+
+export interface SkillRegistryUninstallResponse {
+  success: boolean
+}
+
+export interface SkillRegistryCategoriesRequest {
+  registryId: string
+}
+
+export interface SkillRegistryCategoriesResponse {
+  categories: string[]
+}
+
+export interface SkillImportFileRequest {
+  filePath: string
+}
+
+export interface SkillImportFileResponse {
+  skill: SkillItem
+}
+
+export interface SkillImportDirectoryRequest {
+  directoryPath: string
+}
+
+export interface SkillImportDirectoryResponse {
+  skills: SkillItem[]
+  failed: number
+}
+
+export interface SkillExportRequest {
+  skillId: string
+  targetPath: string
+}
+
+export interface SkillExportResponse {
+  filePath: string
+}
+
+export interface SkillExportBatchRequest {
+  skillIds: string[]
+  targetPath: string
+}
+
+export interface SkillExportBatchResponse {
+  filePath: string
+  count: number
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -730,6 +881,19 @@ export interface IpcChannelMap {
   'skill:create': [SkillCreateRequest, SkillCreateResponse]
   'skill:update': [SkillUpdateRequest, SkillUpdateResponse]
   'skill:delete': [SkillDeleteRequest, SkillDeleteResponse]
+
+  // Skill Registry (Skill Store)
+  'skill-registry:list': [SkillRegistryListRequest, SkillRegistryListResponse]
+  'skill-registry:update': [SkillRegistryUpdateRequest, SkillRegistryUpdateResponse]
+  'skill-registry:search': [SkillRegistrySearchRequest, SkillRegistrySearchResponse]
+  'skill-registry:featured': [SkillRegistryFeaturedRequest, SkillRegistryFeaturedResponse]
+  'skill-registry:install': [SkillRegistryInstallRequest, SkillRegistryInstallResponse]
+  'skill-registry:uninstall': [SkillRegistryUninstallRequest, SkillRegistryUninstallResponse]
+  'skill-registry:categories': [SkillRegistryCategoriesRequest, SkillRegistryCategoriesResponse]
+  'skill:import-file': [SkillImportFileRequest, SkillImportFileResponse]
+  'skill:import-directory': [SkillImportDirectoryRequest, SkillImportDirectoryResponse]
+  'skill:export': [SkillExportRequest, SkillExportResponse]
+  'skill:export-batch': [SkillExportBatchRequest, SkillExportBatchResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

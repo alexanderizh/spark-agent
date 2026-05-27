@@ -4077,3 +4077,322 @@ body.inspector-resizing {
 .mb-14 {
   margin-bottom: 14px;
 }
+
+/* ============================================================
+   SKILL STORE VIEW
+   ============================================================ */
+
+/* ── Store Tab bar ── */
+.store-tabbar {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 18px;
+}
+.store-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text-muted);
+  border: none;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: default;
+  transition: color 0.15s, border-color 0.15s;
+}
+.store-tab:hover { color: var(--text); }
+.store-tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+  font-weight: 600;
+}
+
+/* ── Store layout: sidebar + main ── */
+.store-layout {
+  display: flex;
+  gap: 20px;
+  min-height: 400px;
+}
+
+/* ── Store sidebar ── */
+.store-sidebar {
+  width: 160px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.store-sidebar-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 0 8px 8px;
+}
+.store-registry-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--r-md);
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  text-align: left;
+  cursor: default;
+  transition: background 0.12s, color 0.12s;
+}
+.store-registry-btn:hover { background: var(--hover); }
+.store-registry-btn.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.store-registry-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+
+/* ── Store main area ── */
+.store-main {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Store toolbar (search) ── */
+.store-toolbar {
+  margin-bottom: 12px;
+}
+
+/* ── Category pills ── */
+.store-categories {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.store-cat-pill {
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: default;
+  transition: all 0.12s;
+}
+.store-cat-pill:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.store-cat-pill.active {
+  background: var(--primary-soft);
+  color: var(--primary);
+  border-color: var(--primary);
+}
+
+/* ── Store skill card grid ── */
+.store-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+/* ── Store skill card ── */
+.store-skill-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.store-skill-card:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-sm);
+}
+.store-card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.store-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.store-card-icon.lg {
+  width: 52px;
+  height: 52px;
+  font-size: 22px;
+}
+.store-card-icon img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+.store-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.store-card-name {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text-strong);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.store-card-author {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.store-card-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 1px;
+  flex-shrink: 0;
+}
+.store-card-rating .stars {
+  font-size: 10px;
+  color: var(--warning, #f59e0b);
+  letter-spacing: -1px;
+}
+.store-card-rating .rating-num {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.store-card-desc {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.store-card-tags {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.store-tag {
+  height: 20px;
+  padding: 0 7px;
+  background: var(--bg-soft);
+  border-radius: 10px;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+}
+.store-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--divider);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.store-card-source {
+  color: var(--text-faint);
+}
+.store-card-downloads {
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Store stats footer ── */
+.store-stats {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
+  font-size: 11px;
+  color: var(--text-faint);
+  display: flex;
+  gap: 12px;
+}
+
+/* ── Skill detail panel ── */
+.skill-detail-panel {
+  width: min(420px, 85vw);
+}
+.skill-detail-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+.skill-detail-stats {
+  display: flex;
+  gap: 16px;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border-radius: var(--r-md);
+  margin-bottom: 18px;
+}
+.skill-detail-stat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.skill-detail-stat .stars {
+  color: var(--warning, #f59e0b);
+  font-size: 11px;
+}
+.skill-detail-stat .strong {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+.skill-detail-section {
+  margin-bottom: 14px;
+}
+.skill-detail-section-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 6px;
+}
+.skill-detail-text {
+  font-size: var(--font-sm);
+  color: var(--text);
+  line-height: 1.6;
+}
+.skill-detail-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}

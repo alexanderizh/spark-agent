@@ -3904,18 +3904,99 @@ type SparkErrorType =
 6. **Claude Agent SDK 未集成** — 无法使用 Claude Code 的内置工具能力 (INFRA-01)
 7. **Settings 6 个 Tab 是装饰** — General/Shortcuts/Telemetry/Updates/ProfileEditModal 全部不可用 (P3-08)
 
+### 25.1 Skill 商店开发计划（2026-05-27 启动）
+
+**PRD 文档**: `docs/prd/PRD-Skill-Store.md`
+**开发负责人**: 浩轩-特级开发
+**状态**: 🔄 第一阶段完成 ✅ + 第二阶段进行中（T-04 SkillsMP Adapter 代码已编写，待接入路由）
+
+**目标**: 接入国内外主流 Skill 市场，支持搜索、安装、导入导出和 Skill 管理智能体。本期不涉及 Skill 执行引擎。
+
+**任务拆解（14 项）**:
+
+| # | 任务 | 涉及层 | 优先级 | 状态 |
+|---|------|--------|--------|------|
+| T-01 | 数据库迁移：skill_registries 表 + skills 字段扩展 | Storage | P0 | ✅ 完成 |
+| T-02 | Protocol 类型定义：RemoteSkillItem、SkillRegistry、新增 IPC | Protocol | P0 | ✅ 完成 |
+| T-03 | SkillRegistryService：市场源管理 + Adapter 接口 + Mock Adapter | Agent-Runtime | P0 | ✅ 完成 |
+| T-04 | SkillsMP Adapter | Agent-Runtime | P0 | 🔄 代码已编写，待接入 createAdapter 路由 |
+| T-05 | MCP Market Adapter | Agent-Runtime | P1 | ❌ 待开发 |
+| T-06 | 扣子 Coze Adapter | Agent-Runtime | P1 | ❌ 待开发 |
+| T-07 | Claude Skills Adapter | Agent-Runtime | P1 | ❌ 待开发 |
+| T-08 | IPC Handler 注册（11 个新通道） | Desktop/Main | P0 | ✅ 完成 |
+| T-09 | SkillStoreView 商店 Tab UI + 搜索 + 卡片网格 | Renderer | P0 | ✅ 完成 |
+| T-10 | Skill 详情面板（侧边滑出） | Renderer | P0 | ✅ 完成 |
+| T-11 | 已安装 Tab 增强（导入/导出/批量） | Renderer | P1 | ❌ 待开发 |
+| T-12 | Skill 包导入/导出（ZIP） | Agent-Runtime | P1 | ❌ 待开发 |
+| T-13 | Skill 管理智能体 system prompt | Agent-Runtime | P2 | ❌ 待开发 |
+| T-14 | Skill 管理智能体对话面板 UI | Renderer | P2 | ❌ 待开发 |
+
+#### 第一阶段测试结果（2026-05-27）
+
+测试发现 3 个 Bug，其中 1 个 P0（已修复）+ 2 个 P2（已修复 1 个）：
+
+| Bug ID | 描述 | 严重程度 | 修复状态 |
+|--------|------|----------|----------|
+| BUG-S1 | Icons.tsx 缺少 Package/ArrowLeft/ExternalLink 图标定义 | P0 | ✅ 已修复 |
+| BUG-S2 | 详情面板安装/卸载后 StoreTab 卡片状态不刷新 | P2 | ✅ 已修复（refreshKey 机制）|
+| BUG-S3 | install() 方法通过 search('') 获取全部数据后筛选，真实 API 场景性能差 | P2 | ⚠️ 待优化（接入真实 API 时处理）|
+
+**新增文件清单（第一阶段）**：
+- `packages/storage/migrations/008_skill_registries.sql`
+- `packages/storage/src/repositories/skill-registry.repository.ts`
+- `packages/agent-runtime/src/services/skill-registry/adapter.ts`
+- `packages/agent-runtime/src/services/skill-registry/mock-adapter.ts`
+- `packages/agent-runtime/src/services/skill-registry/index.ts`
+- `apps/desktop/src/renderer/design/views/SkillStoreView.tsx`
+
+**修改文件清单（第一阶段）**：
+- `packages/protocol/src/ipc/index.ts` — 新增 11 个类型 + 11 个 IPC 通道
+- `packages/storage/src/repositories/skill.repository.ts` — 新增 updateExtendedFields
+- `packages/storage/src/repositories/index.ts` — 导出新增
+- `packages/agent-runtime/src/index.ts` — 导出 SkillRegistryService
+- `apps/desktop/src/main/ipc/index.ts` — 注册 11 个新 IPC Handler
+- `apps/desktop/src/renderer/design/styles/views.css` — 追加 ~300 行商店样式
+- `apps/desktop/src/renderer/App.tsx` — 路由注册 + 导航项
+- `apps/desktop/src/renderer/design/Icons.tsx` — 新增 3 个图标
+
+**开发顺序建议**:
+- ~~第一阶段（核心骨架）: T-01 → T-02 → T-03 → T-08 → T-09 → T-10~~ ✅ 已完成
+- 第二阶段（市场接入）: T-04 → T-05 → T-06 → T-07 — 🔄 T-04 进行中
+- 第三阶段（增强功能）: T-11 → T-12 → T-13 → T-14
+
+#### 第二阶段进展（2026-05-27）
+
+| 任务 | 状态 | 说明 |
+|------|------|------|
+| T-04 SkillsMP Adapter | 🔄 代码已编写 | 295 行完整实现，含搜索/推荐/分类/Manifest/健康检查。待接入 `createAdapter` 路由分发 |
+| T-05 MCP Market Adapter | ❌ 待开发 | |
+| T-06 扣子 Coze Adapter | ❌ 待开发 | |
+| T-07 Claude Skills Adapter | ❌ 待开发 | |
+
+**T-04 技术细节**:
+- 文件: `packages/agent-runtime/src/services/skill-registry/skillsmp-adapter.ts`
+- 对接 skillsmp.com 公开 API（`/skills/search`）
+- 支持 API Key 认证（匿名 50 次/天，认证 500 次/天）
+- 速率限制处理（429 错误）
+- GitHub URL 智能分类推断 + 关键词标签推断
+- 15s 请求超时 + 健康检查
+- **待完成**: 在 `index.ts` 的 `createAdapter` 方法中根据 registryId 分发到 SkillsMPAdapter
+
 ### 建议下一步任务分配
 
 基于团队成员特长:
 
-| 成员 | 建议任务 | 理由 |
+| 成员 | 当前任务 | 理由 |
 |------|---------|------|
-| **codex** | INFRA-03 Shell 工具 → INFRA-01 Claude Agent SDK | 后端/基础设施专家，已连续完成 6 个功能任务 |
-| **浩轩** | P3-10 ChatInteractions 组件集成 → P3-08 Settings 持久化 | 前端专家，对 CSS/组件架构最熟悉 |
+| **浩轩** | Skill 商店第二阶段（T-04~T-07 市场接入） | 已完成 T-04 SkillsMP Adapter 代码，继续开发其余 Adapter |
+| **codex** | INFRA-03 Shell 工具 → INFRA-01 Claude Agent SDK | 后端/基础设施专家 |
 | **claude** | P3-01 MCP Gateway → P3-02 规则合成引擎 → P3-04 Usage Ledger | 全栈/系统设计专家 |
+| **旭阳** | T-12 Skill 包导入/导出（后端逻辑） | 全栈开发，擅长 Service/IPC 层 |
+| **小林** | T-11 已安装 Tab 增强（导入/导出/批量 UI） | 前端开发，擅长 CSS/组件 |
 
 ### 风险提示
 
 - **SDK 集成风险**: INFRA-01/02 是最大不确定性，Claude Agent SDK 和 Codex SDK 的 API 可能与当前设计不完全匹配，建议先做技术调研再排期
 - **MCP 通信风险**: MCP stdio 子进程管理在 Electron 沙箱环境下可能有权限问题
 - **数据库迁移风险**: 新增 7 个表需要 careful migration，避免影响现有数据
+- **第三方市场 API 风险**: 部分市场可能无公开 API 或 API 不稳定，先实现 Adapter 接口 + Mock 数据

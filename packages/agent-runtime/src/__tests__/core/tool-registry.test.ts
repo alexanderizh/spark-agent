@@ -20,12 +20,12 @@ describe('ToolRegistry', () => {
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'spark-test-'))
   })
 
-  it('getDefinitions returns 4 built-in tools', () => {
+  it('getDefinitions returns coding built-in tools', () => {
     const defs = registry.getDefinitions()
     expect(defs.map((d) => d.name)).toEqual(
-      expect.arrayContaining(['read_file', 'write_file', 'list_directory', 'search_files']),
+      expect.arrayContaining(['read_file', 'write_file', 'list_directory', 'search_files', 'grep_files', 'edit_file', 'run_command', 'apply_patch']),
     )
-    expect(defs).toHaveLength(4)
+    expect(defs.length).toBeGreaterThanOrEqual(8)
   })
 
   it('read_file reads a temp file', async () => {
@@ -59,5 +59,19 @@ describe('ToolRegistry', () => {
     const result = await registry.execute({ workspaceRootPath: tmpDir }, makeToolCall('list_directory', { path: '.' }), BASE)
     expect(result.status).toBe('success')
     expect(result.output).toEqual(expect.arrayContaining([{ name: 'a.txt', type: 'file' }]))
+  })
+
+  it('grep_files finds matching lines', async () => {
+    await fs.writeFile(path.join(tmpDir, 'a.txt'), 'hello needle')
+    const result = await registry.execute({ workspaceRootPath: tmpDir }, makeToolCall('grep_files', { query: 'needle' }), BASE)
+    expect(result.status).toBe('success')
+    expect(result.output).toEqual(expect.arrayContaining([expect.objectContaining({ path: 'a.txt', line: 1 })]))
+  })
+
+  it('edit_file replaces exact text', async () => {
+    await fs.writeFile(path.join(tmpDir, 'a.txt'), 'before old after')
+    const result = await registry.execute({ workspaceRootPath: tmpDir }, makeToolCall('edit_file', { path: 'a.txt', oldText: 'old', newText: 'new' }), BASE)
+    expect(result.status).toBe('success')
+    await expect(fs.readFile(path.join(tmpDir, 'a.txt'), 'utf-8')).resolves.toBe('before new after')
   })
 })

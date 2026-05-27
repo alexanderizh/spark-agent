@@ -1,10 +1,10 @@
 import { randomUUID } from 'node:crypto'
-import type { AgentEvent, AgentStatusValue, ToolCallEvent } from '@spark/protocol'
+import type { AgentEvent, AgentStatusValue, SessionPermissionMode, ToolCallEvent } from '@spark/protocol'
 import type { IModelAdapter, ChatMessage, ChatParams } from '../adapters/types.js'
 import { ToolRegistry, type ToolContext } from './tool-registry.js'
 import { AgentEventEmitter } from './event-emitter.js'
 
-export type PermissionMode = 'auto' | 'ask'
+type ToolPermissionDecision = 'allow' | 'ask' | 'deny'
 
 /** Called before a tool executes. Return true to allow, false to deny. */
 export type ApprovalCallback = (
@@ -36,7 +36,7 @@ export interface AgentConfig {
   tools: ToolRegistry
   toolContext: ToolContext
   maxTurnIterations?: number
-  permissionMode?: PermissionMode
+  permissionMode?: SessionPermissionMode
   temperature?: number
   maxTokens?: number
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
@@ -69,7 +69,7 @@ export class AgentLoop {
     config: AgentConfig,
     historyMessages: ChatMessage[] = [],
   ): Promise<void> {
-    const { adapter, apiKey, model, apiEndpoint, tools, toolContext, temperature, maxTokens, reasoningEffort, approvalCallback, context } = config
+    const { adapter, apiKey, model, apiEndpoint, tools, toolContext, temperature, maxTokens, reasoningEffort, permissionMode, approvalCallback, context } = config
     const maxIter = config.maxTurnIterations ?? 20
 
     // Build system prompt with injected context
@@ -134,8 +134,31 @@ export class AgentLoop {
 
             const resultBase = makeBase()
 
+            const permissionDecision = getToolPermissionDecision(permissionMode, pendingToolCall.toolName)
+            if (permissionDecision === 'deny') {
+              this.emitter.emit({
+                ...resultBase,
+                type: 'tool_result',
+                toolCallId: pendingToolCall.toolCallId,
+                toolName: pendingToolCall.toolName,
+                status: 'denied',
+                error: 'Tool execution denied by permission mode',
+                durationMs: 0,
+              })
+              emitStatus('thinking')
+              messages.push({
+                role: 'assistant',
+                content: [{ type: 'tool_use', id: pendingToolCall.toolCallId, name: pendingToolCall.toolName, input: pendingToolCall.toolInput }],
+              })
+              messages.push({
+                role: 'user',
+                content: [{ type: 'tool_result', tool_use_id: pendingToolCall.toolCallId, content: 'Tool execution denied by permission mode' }],
+              })
+              break
+            }
+
             // Permission approval check
-            if (approvalCallback) {
+            if (approvalCallback && permissionDecision === 'ask') {
               const allowed = await approvalCallback(sessionId, pendingToolCall.toolName, pendingToolCall.toolInput)
               if (!allowed) {
                 this.emitter.emit({
@@ -245,6 +268,27 @@ export class AgentLoop {
       }
     }
   }
+}
+
+function getToolPermissionDecision(mode: SessionPermissionMode | undefined, toolName: string): ToolPermissionDecision {
+  const permissionMode = mode ?? 'codex-default'
+  const category = getToolCategory(toolName)
+
+  if (permissionMode === 'claude-bypass' || permissionMode === 'codex-full-access') return 'allow'
+  if (permissionMode === 'claude-plan') return category === 'read' ? 'allow' : 'deny'
+  if (permissionMode === 'claude-auto-edits') return category === 'command' || category === 'dangerous' ? 'ask' : 'allow'
+  if (permissionMode === 'claude-auto' || permissionMode === 'codex-auto-review') return category === 'dangerous' ? 'ask' : 'allow'
+  if (permissionMode === 'claude-ask' || permissionMode === 'codex-default') return category === 'read' ? 'allow' : 'ask'
+
+  return category === 'read' ? 'allow' : 'ask'
+}
+
+function getToolCategory(toolName: string): 'read' | 'write' | 'command' | 'dangerous' {
+  if (toolName === 'read_file' || toolName === 'list_directory' || toolName === 'search_files' || toolName === 'grep_files') return 'read'
+  if (toolName === 'write_file' || toolName === 'edit_file' || toolName === 'apply_patch') return 'write'
+  if (toolName === 'run_command') return 'command'
+  if (toolName === 'delete_file' || toolName === 'git_push') return 'dangerous'
+  return 'dangerous'
 }
 
 /**

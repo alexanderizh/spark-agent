@@ -27,9 +27,13 @@ const ACTIVE_PROFILE_KEY = 'permission:active-profile'
 // Maps built-in tool names to permission action keys
 const TOOL_ACTION_MAP: Record<string, string> = {
   write_file: 'file_write',
+  edit_file: 'file_write',
+  apply_patch: 'file_write',
   read_file: 'file_read',
   list_directory: 'file_read',
   search_files: 'file_read',
+  grep_files: 'file_read',
+  run_command: 'command_exec',
 }
 
 // Risk level per action

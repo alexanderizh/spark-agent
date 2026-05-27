@@ -16,6 +16,7 @@ import type {
   SessionAgentAdapter,
   SessionChatMode,
   SessionListResponse,
+  SessionPermissionMode,
   SessionId,
   SessionReasoningEffort,
   SessionSearchResult,
@@ -32,15 +33,7 @@ type ProjectGroup = {
 type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
 type BranchState = { currentBranch: string | null; branches: string[] }
 type AgentAdapter = SessionAgentAdapter
-type PermissionModeChoice =
-  | 'claude-ask'
-  | 'claude-auto-edits'
-  | 'claude-plan'
-  | 'claude-auto'
-  | 'claude-bypass'
-  | 'codex-default'
-  | 'codex-auto-review'
-  | 'codex-full-access'
+type PermissionModeChoice = SessionPermissionMode
 
 export function ChatView() {
   const [active, setActive] = useState<SessionId | null>(null)
@@ -147,6 +140,7 @@ export function ChatView() {
       providerProfileId?: string
       modelId?: string
       agentAdapter?: AgentAdapter
+      permissionMode?: PermissionModeChoice
       chatMode?: SessionChatMode
       reasoningEffort?: SessionReasoningEffort
       activate?: boolean
@@ -174,6 +168,7 @@ export function ChatView() {
         providerProfileId: profile.id,
         ...(options.modelId !== undefined ? { modelId: options.modelId } : {}),
         ...(options.agentAdapter !== undefined ? { agentAdapter: options.agentAdapter } : {}),
+        ...(options.permissionMode !== undefined ? { permissionMode: options.permissionMode } : {}),
         ...(options.chatMode !== undefined ? { chatMode: options.chatMode } : {}),
         ...(options.reasoningEffort !== undefined ? { reasoningEffort: options.reasoningEffort } : {}),
         workspaceId,
@@ -392,6 +387,7 @@ export function ChatView() {
     providerProfileId?: string
     modelId?: string | null
     agentAdapter?: AgentAdapter
+    permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
   }) => {
@@ -1582,6 +1578,7 @@ function ComposerV2({
     providerProfileId?: string
     modelId?: string
     agentAdapter?: AgentAdapter
+    permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
     activate?: boolean
@@ -1590,6 +1587,7 @@ function ComposerV2({
     providerProfileId?: string
     modelId?: string | null
     agentAdapter?: AgentAdapter
+    permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
   }) => Promise<void>
@@ -1608,18 +1606,21 @@ function ComposerV2({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
 
-  const selectedProvider = providers.find((item) => item.id === (session?.providerProfileId || selectedProviderId))
-    ?? providers.find((item) => item.isDefault)
-    ?? providers[0]
   const adapter = session?.agentAdapter ?? draftAdapter
+  const compatibleProviders = providers.filter((provider) => getProviderAdapterKind(provider) === adapter)
+  const selectedProvider = compatibleProviders.find((item) => item.id === (session?.providerProfileId || selectedProviderId))
+    ?? compatibleProviders.find((item) => item.isDefault)
+    ?? compatibleProviders[0]
   const modelOptions = selectedProvider?.modelIds.length ? selectedProvider.modelIds : selectedProvider?.defaultModel ? [selectedProvider.defaultModel] : []
   const effectiveModelId = session?.modelId ?? (draftModelId || selectedProvider?.defaultModel || modelOptions[0] || '')
   const effectiveMode = session?.chatMode ?? draftMode
   const effectiveReasoning = session?.reasoningEffort ?? draftReasoning
   const permissionOptions = getPermissionModeOptions(adapter)
+  const sessionPermissionMode = session?.permissionMode
+  const draftEffectivePermissionMode = sessionPermissionMode ?? draftPermissionMode
   const defaultPermissionMode = permissionOptions[0]?.value ?? 'codex-default'
-  const effectivePermissionMode = permissionOptions.some((option) => option.value === draftPermissionMode)
-    ? draftPermissionMode
+  const effectivePermissionMode = permissionOptions.some((option) => option.value === draftEffectivePermissionMode)
+    ? draftEffectivePermissionMode
     : defaultPermissionMode
   const contextWindow = estimateContextWindow(effectiveModelId)
   const contextRatio = Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10)
@@ -1667,6 +1668,7 @@ function ComposerV2({
           ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
           modelId: effectiveModelId,
           agentAdapter: adapter,
+          permissionMode: effectivePermissionMode,
           chatMode: effectiveMode,
           reasoningEffort: effectiveReasoning,
         })
@@ -1693,19 +1695,44 @@ function ComposerV2({
   const handleProviderChange = async (providerId: string) => {
     const provider = providers.find((item) => item.id === providerId)
     if (provider == null) return
+    const nextAdapter = getProviderAdapterKind(provider)
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    setDraftAdapter(nextAdapter)
+    setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(providerId)
     const nextModel = provider.defaultModel || provider.modelIds[0] || ''
     setDraftModelId(nextModel)
     if (session != null) {
-      await onUpdateSession({ providerProfileId: providerId, modelId: nextModel || null })
+      await onUpdateSession({
+        providerProfileId: providerId,
+        modelId: nextModel || null,
+        agentAdapter: nextAdapter,
+        permissionMode: nextPermissionMode,
+      })
     }
   }
 
   const handleAdapterChange = async (nextAdapter: AgentAdapter) => {
     if (nextAdapter === adapter) return
     setDraftAdapter(nextAdapter)
-    setDraftPermissionMode(getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default')
-    if (session != null) await onUpdateSession({ agentAdapter: nextAdapter })
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    setDraftPermissionMode(nextPermissionMode)
+    const nextProvider = providers.find((provider) => getProviderAdapterKind(provider) === nextAdapter)
+    if (nextProvider != null) {
+      const nextModel = nextProvider.defaultModel || nextProvider.modelIds[0] || ''
+      setSelectedProviderId(nextProvider.id)
+      setDraftModelId(nextModel)
+      if (session != null) {
+        await onUpdateSession({
+          providerProfileId: nextProvider.id,
+          modelId: nextModel || null,
+          agentAdapter: nextAdapter,
+          permissionMode: nextPermissionMode,
+        })
+      }
+      return
+    }
+    if (session != null) await onUpdateSession({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
   }
 
   const handleModelChange = async (modelId: string) => {
@@ -1768,10 +1795,10 @@ function ComposerV2({
             />
             <ProviderModelPicker
               icon={<Icons.Bot size={13} />}
-              providers={providers}
+              providers={compatibleProviders}
               selectedProviderId={selectedProvider?.id ?? ''}
               selectedModelId={effectiveModelId}
-              disabled={providers.length === 0}
+              disabled={compatibleProviders.length === 0}
               onChange={async (providerId, modelId) => {
                 if (providerId !== selectedProvider?.id) await handleProviderChange(providerId)
                 if (modelId !== effectiveModelId) await handleModelChange(modelId)
@@ -1782,7 +1809,11 @@ function ComposerV2({
               value={effectivePermissionMode}
               label={permissionOptions.find((option) => option.value === effectivePermissionMode)?.label ?? '默认权限'}
               title="权限模式"
-              onChange={(mode) => setDraftPermissionMode(mode as PermissionModeChoice)}
+              onChange={(mode) => {
+                const permissionMode = mode as PermissionModeChoice
+                setDraftPermissionMode(permissionMode)
+                if (session != null) void onUpdateSession({ permissionMode })
+              }}
               options={permissionOptions}
             />
             <ComposerMenuSelect
@@ -1988,6 +2019,10 @@ const CODEX_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label:
 
 function getPermissionModeOptions(adapter: AgentAdapter): Array<{ value: PermissionModeChoice; label: string }> {
   return adapter === 'claude' ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
+}
+
+function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
+  return provider.provider === 'anthropic' ? 'claude' : 'codex'
 }
 
 function getReasoningOptions(adapter: 'claude' | 'codex'): Array<{ value: SessionReasoningEffort; label: string }> {

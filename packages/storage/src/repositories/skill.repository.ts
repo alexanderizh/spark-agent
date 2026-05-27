@@ -11,6 +11,16 @@ export interface SkillRow {
   enabled: number
   created_at: string
   updated_at: string
+  // Extended fields (migration 008)
+  registry_id: string | null
+  remote_id: string | null
+  author: string
+  category: string
+  tags_json: string
+  rating: number
+  download_count: number
+  homepage_url: string | null
+  icon_url: string | null
 }
 
 export class SkillRepository extends BaseRepository {
@@ -62,6 +72,41 @@ export class SkillRepository extends BaseRepository {
       sets.push('enabled = ?')
       vals.push(fields.enabled ? 1 : 0)
     }
+
+    if (sets.length === 0) return this.get(id)
+
+    sets.push('updated_at = ?')
+    vals.push(new Date().toISOString(), id)
+    this.raw.prepare(`UPDATE skills SET ${sets.join(', ')} WHERE id = ?`).run(...vals)
+    return this.get(id)
+  }
+
+  /**
+   * 更新扩展字段（由 migration 008 新增的列）
+   */
+  updateExtendedFields(id: string, fields: {
+    registryId?: string | null
+    remoteId?: string | null
+    author?: string
+    category?: string
+    tagsJson?: string
+    rating?: number
+    downloadCount?: number
+    homepageUrl?: string | null
+    iconUrl?: string | null
+  }): SkillRow | undefined {
+    const sets: string[] = []
+    const vals: unknown[] = []
+
+    if (fields.registryId !== undefined) { sets.push('registry_id = ?'); vals.push(fields.registryId) }
+    if (fields.remoteId !== undefined) { sets.push('remote_id = ?'); vals.push(fields.remoteId) }
+    if (fields.author !== undefined) { sets.push('author = ?'); vals.push(fields.author) }
+    if (fields.category !== undefined) { sets.push('category = ?'); vals.push(fields.category) }
+    if (fields.tagsJson !== undefined) { sets.push('tags_json = ?'); vals.push(fields.tagsJson) }
+    if (fields.rating !== undefined) { sets.push('rating = ?'); vals.push(fields.rating) }
+    if (fields.downloadCount !== undefined) { sets.push('download_count = ?'); vals.push(fields.downloadCount) }
+    if (fields.homepageUrl !== undefined) { sets.push('homepage_url = ?'); vals.push(fields.homepageUrl) }
+    if (fields.iconUrl !== undefined) { sets.push('icon_url = ?'); vals.push(fields.iconUrl) }
 
     if (sets.length === 0) return this.get(id)
 

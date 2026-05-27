@@ -11,6 +11,7 @@ import { WorkflowView } from './design/views/WorkflowView'
 import { AgentsView } from './design/views/AgentsView'
 import { McpView } from './design/views/McpView'
 import { SkillsView } from './design/views/SkillsView'
+import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProviderEditPanel, ProfileEditModal } from './design/views/SettingsView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { Icons } from './design/Icons'
@@ -159,6 +160,7 @@ function Shell() {
     agents: AgentsView,
     mcp: McpView,
     skills: SkillsView,
+    'skill-store': SkillStoreView,
     settings: SettingsView,
   }
   const View = ViewMap[t.view] ?? HomeView
@@ -279,9 +281,9 @@ function Shell() {
           {/* Secondary navigation */}
           <div className="sidebar-section">
             <button
-              className={`nav-item ${t.view === 'skills' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'skills')}
-              title="Skills"
+              className={`nav-item ${t.view === 'skills' || t.view === 'skill-store' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'skill-store')}
+              title="Skill 商店"
             >
               <span className="nav-icon">
                 <Icons.Skills />

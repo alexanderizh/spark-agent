@@ -4,6 +4,37 @@
 
 ---
 
+## [Unreleased] - Skill 商店开发中
+
+### 已完成 — 第一阶段核心骨架（2026-05-27）
+
+- **Skill 商店页面（SkillStoreView）**: 商店/已安装双 Tab，市场源选择器，300ms 防抖搜索，分类导航
+- **Skill 详情面板**: 右侧滑出详情面板，展示名称/版本/描述/评分/来源/标签，安装/卸载按钮
+- **Adapter 架构**: SkillRegistryAdapter 统一接口 + MockSkillRegistryAdapter（12 个 Mock Skill）
+- **SkillRegistryService**: 跨市场聚合搜索，安装/卸载，市场源 CRUD，预置 4 个市场源
+- **数据库**: migration 008 — skill_registries 表 + skills 表 9 个扩展字段
+- **Protocol**: RemoteSkillItem、SkillRegistry 等 11 个新类型 + 11 个新 IPC 通道
+- **Bug 修复**: Icons.tsx 新增 Package/ArrowLeft/ExternalLink 图标，安装状态刷新机制
+
+### 进行中 — 第二阶段市场接入（2026-05-27）
+
+- **SkillsMP Adapter（T-04）**: 295 行完整代码已编写（`skillsmp-adapter.ts`），对接 skillsmp.com 公开 API
+  - 搜索/推荐/分类/Manifest 获取/健康检查全部实现
+  - 支持 API Key 认证（匿名 50 次/天，认证 500 次/天）
+  - GitHub URL 智能分类推断 + 关键词标签推断
+  - 15s 请求超时 + 429 速率限制处理
+  - **待完成**: 接入 `createAdapter` 路由分发，替换 Mock Adapter
+
+### 计划中 — 第二/三阶段（续）
+
+- **市场接入**: SkillsMP、MCP Market、扣子 Coze、Claude Skills 真实 API Adapter
+- **Skill 包导入/导出**: 支持 ZIP 格式的 Skill 包导入和导出
+- **Skill 管理智能体**: 通过自然语言对话完成 Skill 搜索、安装、删除等操作
+
+**PRD 文档**: `docs/prd/PRD-Skill-Store.md`
+
+---
+
 ## [0.1.0] - 2026-05-26
 
 ### 初始发布版本 — 本地优先 AI Agent 桌面工作台

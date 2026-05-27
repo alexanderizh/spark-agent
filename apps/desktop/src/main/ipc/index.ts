@@ -16,7 +16,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService } from '@spark/agent-runtime'
+import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getDatabase } from '../db.js'
@@ -38,6 +38,15 @@ function getMcpService(): McpService {
 
 function getSkillService(): SkillService {
   return new SkillService(new SkillRepository(getDatabase()))
+}
+
+let _skillRegistryService: SkillRegistryService | null = null
+function getSkillRegistryService(): SkillRegistryService {
+  if (_skillRegistryService == null) {
+    _skillRegistryService = new SkillRegistryService(getDatabase())
+    _skillRegistryService.initialize()
+  }
+  return _skillRegistryService
 }
 
 function getRulesService(): RulesService {
@@ -398,6 +407,71 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('skill:delete', async (req) => {
     const success = getSkillService().deleteSkill(req.id)
     return { success }
+  })
+
+  // ─── Skill Registry Handlers (Skill Store) ─────────────────────────────
+
+  typedIpcHandle('skill-registry:list', async (_req) => {
+    const registries = getSkillRegistryService().listRegistries()
+    return { registries }
+  })
+
+  typedIpcHandle('skill-registry:update', async (req) => {
+    log.info(`skill-registry:update requested, id=${req.id}`)
+    const fields: { enabled?: boolean; configJson?: string } = {}
+    if (req.enabled !== undefined) fields.enabled = req.enabled
+    if (req.configJson !== undefined) fields.configJson = req.configJson
+    const registry = getSkillRegistryService().updateRegistry(req.id, fields)
+    return { registry }
+  })
+
+  typedIpcHandle('skill-registry:search', async (req) => {
+    log.info(`skill-registry:search requested, query="${req.query}", registryId=${req.registryId ?? 'all'}`)
+    return getSkillRegistryService().search(req)
+  })
+
+  typedIpcHandle('skill-registry:featured', async (req) => {
+    log.info(`skill-registry:featured requested, registryId=${req.registryId ?? 'all'}`)
+    const skills = await getSkillRegistryService().featured(req)
+    return { skills }
+  })
+
+  typedIpcHandle('skill-registry:install', async (req) => {
+    log.info(`skill-registry:install requested, remoteSkillId=${req.remoteSkillId}, registryId=${req.registryId}`)
+    const skill = await getSkillRegistryService().install(req)
+    return { skill }
+  })
+
+  typedIpcHandle('skill-registry:uninstall', async (req) => {
+    log.info(`skill-registry:uninstall requested, localSkillId=${req.localSkillId}`)
+    const success = getSkillRegistryService().uninstall(req.localSkillId)
+    return { success }
+  })
+
+  typedIpcHandle('skill-registry:categories', async (req) => {
+    log.info(`skill-registry:categories requested, registryId=${req.registryId}`)
+    const categories = await getSkillRegistryService().categories(req.registryId)
+    return { categories }
+  })
+
+  typedIpcHandle('skill:import-file', async (_req) => {
+    // TODO: T-12 Skill 包导入/导出
+    throw new Error('Not implemented yet: skill:import-file')
+  })
+
+  typedIpcHandle('skill:import-directory', async (_req) => {
+    // TODO: T-12 Skill 包导入/导出
+    throw new Error('Not implemented yet: skill:import-directory')
+  })
+
+  typedIpcHandle('skill:export', async (_req) => {
+    // TODO: T-12 Skill 包导入/导出
+    throw new Error('Not implemented yet: skill:export')
+  })
+
+  typedIpcHandle('skill:export-batch', async (_req) => {
+    // TODO: T-12 Skill 包导入/导出
+    throw new Error('Not implemented yet: skill:export-batch')
   })
 
   log.info('All IPC handlers registered')

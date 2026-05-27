@@ -20,6 +20,16 @@ export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'ses
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
 export const SessionAgentAdapterSchema = z.enum(['claude', 'codex'])
+export const SessionPermissionModeSchema = z.enum([
+  'claude-ask',
+  'claude-auto-edits',
+  'claude-plan',
+  'claude-auto',
+  'claude-bypass',
+  'codex-default',
+  'codex-auto-review',
+  'codex-full-access',
+])
 
 // ─── Session Schema ───────────────────────────────────────────────────────────
 
@@ -27,6 +37,7 @@ export const SessionCreateRequestSchema = z.object({
   providerProfileId: ProfileIdSchema,
   modelId: z.string().min(1).max(200).optional(),
   agentAdapter: SessionAgentAdapterSchema.optional().default('codex'),
+  permissionMode: SessionPermissionModeSchema.optional().default('codex-default'),
   chatMode: SessionChatModeSchema.optional().default('agent'),
   reasoningEffort: SessionReasoningEffortSchema.optional().default('medium'),
   title: z.string().max(200).optional(),
@@ -78,6 +89,7 @@ export const SessionUpdateRequestSchema = z.object({
   providerProfileId: ProfileIdSchema.optional(),
   modelId: z.string().min(1).max(200).nullable().optional(),
   agentAdapter: SessionAgentAdapterSchema.optional(),
+  permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional(),
   reasoningEffort: SessionReasoningEffortSchema.optional(),
 })

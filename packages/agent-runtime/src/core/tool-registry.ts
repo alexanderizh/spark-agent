@@ -1,7 +1,13 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import { exec } from 'node:child_process'
+import { promisify } from 'node:util'
 import type { ToolDefinition } from '../adapters/types.js'
 import type { ToolCallEvent, ToolResultEvent } from '@spark/protocol'
+
+const execAsync = promisify(exec)
+const MAX_TEXT_BYTES = 1_000_000
+const MAX_TOOL_OUTPUT = 20_000
 
 export interface ToolContext {
   workspaceRootPath: string
@@ -142,6 +148,170 @@ export class ToolRegistry {
         }
       },
     })
+
+    this.register({
+      definition: {
+        name: 'grep_files',
+        description: 'Search text content in files under the workspace',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            query: { type: 'string' },
+            path: { type: 'string' },
+            caseSensitive: { type: 'boolean' },
+            maxResults: { type: 'number' },
+          },
+          required: ['query'],
+        },
+      },
+      async execute(ctx, input) {
+        const start = Date.now()
+        const searchRoot = input['path']
+          ? resolveSafe(ctx.workspaceRootPath, String(input['path']))
+          : ctx.workspaceRootPath
+        if (!searchRoot) return { status: 'error', error: 'Path outside workspace', durationMs: Date.now() - start }
+        const query = String(input['query'] ?? '')
+        const caseSensitive = input['caseSensitive'] === true
+        const maxResults = typeof input['maxResults'] === 'number' ? input['maxResults'] : 100
+        try {
+          const matches: Array<{ path: string; line: number; text: string }> = []
+          const needle = caseSensitive ? query : query.toLowerCase()
+          for await (const filePath of walkFiles(searchRoot)) {
+            if (matches.length >= maxResults) break
+            const stat = await fs.stat(filePath)
+            if (stat.size > MAX_TEXT_BYTES) continue
+            const content = await fs.readFile(filePath, 'utf-8').catch(() => null)
+            if (content == null || content.includes('\u0000')) continue
+            const lines = content.split(/\r?\n/)
+            for (let index = 0; index < lines.length && matches.length < maxResults; index += 1) {
+              const haystack = caseSensitive ? lines[index] : lines[index]?.toLowerCase()
+              if (haystack?.includes(needle)) {
+                matches.push({
+                  path: path.relative(ctx.workspaceRootPath, filePath),
+                  line: index + 1,
+                  text: lines[index] ?? '',
+                })
+              }
+            }
+          }
+          return { status: 'success', output: matches, durationMs: Date.now() - start }
+        } catch (err) {
+          return { status: 'error', error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - start }
+        }
+      },
+    })
+
+    this.register({
+      definition: {
+        name: 'edit_file',
+        description: 'Replace an exact string in a file',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: { type: 'string' },
+            oldText: { type: 'string' },
+            newText: { type: 'string' },
+            replaceAll: { type: 'boolean' },
+          },
+          required: ['path', 'oldText', 'newText'],
+        },
+      },
+      async execute(ctx, input) {
+        const start = Date.now()
+        const safePath = resolveSafe(ctx.workspaceRootPath, String(input['path']))
+        if (!safePath) return { status: 'error', error: 'Path outside workspace', durationMs: Date.now() - start }
+        const oldText = String(input['oldText'] ?? '')
+        const newText = String(input['newText'] ?? '')
+        if (oldText.length === 0) return { status: 'error', error: 'oldText is required', durationMs: Date.now() - start }
+        try {
+          const content = await fs.readFile(safePath, 'utf-8')
+          if (!content.includes(oldText)) return { status: 'error', error: 'oldText not found', durationMs: Date.now() - start }
+          const next = input['replaceAll'] === true ? content.split(oldText).join(newText) : content.replace(oldText, newText)
+          await fs.writeFile(safePath, next, 'utf-8')
+          return { status: 'success', output: `Edited ${input['path']}`, durationMs: Date.now() - start }
+        } catch (err) {
+          return { status: 'error', error: err instanceof Error ? err.message : String(err), durationMs: Date.now() - start }
+        }
+      },
+    })
+
+    this.register({
+      definition: {
+        name: 'run_command',
+        description: 'Run a shell command in the workspace',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            command: { type: 'string' },
+            cwd: { type: 'string' },
+            timeoutMs: { type: 'number' },
+          },
+          required: ['command'],
+        },
+      },
+      async execute(ctx, input) {
+        const start = Date.now()
+        const cwd = input['cwd'] ? resolveSafe(ctx.workspaceRootPath, String(input['cwd'])) : ctx.workspaceRootPath
+        if (!cwd) return { status: 'error', error: 'cwd outside workspace', durationMs: Date.now() - start }
+        try {
+          const { stdout, stderr } = await execAsync(String(input['command']), {
+            cwd,
+            timeout: typeof input['timeoutMs'] === 'number' ? input['timeoutMs'] : 120_000,
+            maxBuffer: 2 * MAX_TOOL_OUTPUT,
+          })
+          return {
+            status: 'success',
+            output: truncateOutput([stdout, stderr].filter(Boolean).join('\n')),
+            durationMs: Date.now() - start,
+          }
+        } catch (err) {
+          const error = err as { stdout?: string; stderr?: string; message?: string }
+          return {
+            status: 'error',
+            error: truncateOutput([error.message, error.stdout, error.stderr].filter(Boolean).join('\n')),
+            durationMs: Date.now() - start,
+          }
+        }
+      },
+    })
+
+    this.register({
+      definition: {
+        name: 'apply_patch',
+        description: 'Apply a unified diff patch with git apply',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            patch: { type: 'string' },
+          },
+          required: ['patch'],
+        },
+      },
+      async execute(ctx, input) {
+        const start = Date.now()
+        const patch = String(input['patch'] ?? '')
+        if (!patch.trim()) return { status: 'error', error: 'patch is required', durationMs: Date.now() - start }
+        const patchFile = path.join(ctx.workspaceRootPath, `.spark-agent-patch-${Date.now()}.patch`)
+        try {
+          await fs.writeFile(patchFile, patch, 'utf-8')
+          const { stdout, stderr } = await execAsync(`git apply --whitespace=nowarn ${JSON.stringify(path.basename(patchFile))}`, {
+            cwd: ctx.workspaceRootPath,
+            timeout: 120_000,
+            maxBuffer: 2 * MAX_TOOL_OUTPUT,
+          })
+          await fs.unlink(patchFile).catch(() => undefined)
+          return { status: 'success', output: truncateOutput([stdout, stderr].filter(Boolean).join('\n') || 'Patch applied'), durationMs: Date.now() - start }
+        } catch (err) {
+          await fs.unlink(patchFile).catch(() => undefined)
+          const error = err as { stdout?: string; stderr?: string; message?: string }
+          return {
+            status: 'error',
+            error: truncateOutput([error.message, error.stdout, error.stderr].filter(Boolean).join('\n')),
+            durationMs: Date.now() - start,
+          }
+        }
+      },
+    })
   }
 
   register(tool: RegisteredTool): void {
@@ -191,4 +361,21 @@ export class ToolRegistry {
       }
     }
   }
+}
+
+async function* walkFiles(root: string): AsyncGenerator<string> {
+  const entries = await fs.readdir(root, { withFileTypes: true })
+  for (const entry of entries) {
+    if (entry.name === 'node_modules' || entry.name === '.git') continue
+    const fullPath = path.join(root, entry.name)
+    if (entry.isDirectory()) {
+      yield* walkFiles(fullPath)
+    } else if (entry.isFile()) {
+      yield fullPath
+    }
+  }
+}
+
+function truncateOutput(value: string): string {
+  return value.length > MAX_TOOL_OUTPUT ? `${value.slice(0, MAX_TOOL_OUTPUT)}\n...<truncated>` : value
 }

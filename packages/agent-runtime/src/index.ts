@@ -20,4 +20,6 @@ export type {
   ToolDefinition,
 } from './adapters/types.js'
 export { AgentLoop, ToolRegistry, AgentEventEmitter } from './core/index.js'
-export type { AgentConfig, AgentContext, PermissionMode, ToolContext, RegisteredTool, ToolResult, EventListener } from './core/index.js'
+export type { AgentConfig, AgentContext, ToolContext, RegisteredTool, ToolResult, EventListener } from './core/index.js'
+export { SkillRegistryService } from './services/skill-registry/index.js'
+export type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './services/skill-registry/adapter.js'

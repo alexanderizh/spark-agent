@@ -20,6 +20,8 @@ export { McpServerRepository } from './mcp-server.repository.js'
 export type { McpServerRow } from './mcp-server.repository.js'
 export { SkillRepository } from './skill.repository.js'
 export type { SkillRow } from './skill.repository.js'
+export { SkillRegistryRepository } from './skill-registry.repository.js'
+export type { SkillRegistryRow } from './skill-registry.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'
