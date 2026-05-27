@@ -187,7 +187,8 @@ function usePersistedSettings<T>(key: string, defaults: T): [T, (patch: Partial<
   useEffect(() => {
     if (loadedRef.current) return
     loadedRef.current = true
-    window.spark?.invoke('settings:get', { category, key: 'data' })
+    window.spark
+      ?.invoke('settings:get', { category, key: 'data' })
       .then((res) => {
         if (res.value != null && typeof res.value === 'object') {
           const merged = { ...defaults, ...(res.value as Partial<T>) }
@@ -200,22 +201,38 @@ function usePersistedSettings<T>(key: string, defaults: T): [T, (patch: Partial<
       })
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const update = useCallback((patch: Partial<T>) => {
-    setState(prev => {
-      const next = { ...prev, ...patch }
-      writeStoredJson(key, next)
-      // Persist to IPC/SQLite (fire-and-forget)
-      window.spark?.invoke('settings:set', { category, key: 'data', value: next })
-        .catch(() => { /* ignore IPC errors */ })
-      return next
-    })
-  }, [key, category])
+  const update = useCallback(
+    (patch: Partial<T>) => {
+      setState((prev) => {
+        const next = { ...prev, ...patch }
+        writeStoredJson(key, next)
+        // Persist to IPC/SQLite (fire-and-forget)
+        window.spark?.invoke('settings:set', { category, key: 'data', value: next }).catch(() => {
+          /* ignore IPC errors */
+        })
+        return next
+      })
+    },
+    [key, category],
+  )
   return [state, update]
 }
 
 const DEFAULT_WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
-  { id: 'template:agent-dev', name: 'Agent 开发流程', desc: '需求分析、计划、编码、测试、审查', nodes: 6, updatedAt: '内置模板' },
-  { id: 'template:research', name: '资料研究流程', desc: '检索、摘要、交叉验证、报告生成', nodes: 4, updatedAt: '内置模板' },
+  {
+    id: 'template:agent-dev',
+    name: 'Agent 开发流程',
+    desc: '需求分析、计划、编码、测试、审查',
+    nodes: 6,
+    updatedAt: '内置模板',
+  },
+  {
+    id: 'template:research',
+    name: '资料研究流程',
+    desc: '检索、摘要、交叉验证、报告生成',
+    nodes: 4,
+    updatedAt: '内置模板',
+  },
 ]
 
 function readStoredJson<T>(key: string, fallback: T): T {
@@ -304,7 +321,11 @@ export function SettingsView() {
           <div key={g.group}>
             <div className="settings-nav-h">{g.group}</div>
             {g.items.map((it) => (
-              <button key={it.id} className={`nav-item ${section === it.id ? 'active' : ''}`} onClick={() => setSection(it.id)}>
+              <button
+                key={it.id}
+                className={`nav-item ${section === it.id ? 'active' : ''}`}
+                onClick={() => setSection(it.id)}
+              >
                 <span className="nav-icon">{it.icon}</span>
                 <span className="nav-label">{it.label}</span>
               </button>
@@ -331,7 +352,9 @@ function GeneralSection() {
       if (!selected.canceled && selected.filePath !== undefined) {
         set({ defaultWorkspace: selected.filePath })
       }
-    } catch { /* user cancelled */ }
+    } catch {
+      /* user cancelled */
+    }
   }
 
   return (
@@ -340,63 +363,174 @@ function GeneralSection() {
       <div className="lede">应用启动、语言、默认行为。</div>
 
       <div className="form-grid">
-        <label>语言<span className="sub">界面文案语言</span></label>
+        <label>
+          语言<span className="sub">界面文案语言</span>
+        </label>
         <SparkSelect value={s.language} onChange={(e) => set({ language: e.target.value })}>
           <option value="zh-CN">简体中文</option>
           <option value="en-US">English (US)</option>
           <option value="ja-JP">日本語</option>
         </SparkSelect>
 
-        <label>启动行为<span className="sub">应用启动时的默认动作</span></label>
-        <SparkSelect value={s.startupBehavior} onChange={(e) => set({ startupBehavior: e.target.value })}>
+        <label>
+          启动行为<span className="sub">应用启动时的默认动作</span>
+        </label>
+        <SparkSelect
+          value={s.startupBehavior}
+          onChange={(e) => set({ startupBehavior: e.target.value })}
+        >
           <option value="last">恢复上次会话</option>
           <option value="home">打开 Home</option>
           <option value="last-project">打开上次项目</option>
           <option value="blank">空白会话</option>
         </SparkSelect>
 
-        <label>默认工作区<span className="sub">新建项目会话时的预选根目录</span></label>
+        <label>
+          默认工作区<span className="sub">新建项目会话时的预选根目录</span>
+        </label>
         <div className="control">
-          <SparkInput className="flex1" value={s.defaultWorkspace || ''} onChange={(e) => set({ defaultWorkspace: e.target.value })} placeholder="点击浏览选择…" />
-          <button className="btn" onClick={() => void handleBrowseWorkspace()}><Icons.Folder size={12} /> 浏览…</button>
+          <SparkInput
+            className="flex1"
+            value={s.defaultWorkspace || ''}
+            onChange={(e) => set({ defaultWorkspace: e.target.value })}
+            placeholder="点击浏览选择…"
+          />
+          <button className="btn" onClick={() => void handleBrowseWorkspace()}>
+            <Icons.Folder size={12} /> 浏览…
+          </button>
         </div>
 
-        <label>系统托盘<span className="sub">关闭主窗口后保留后台运行</span></label>
-        <div className={`switch ${s.systemTray ? 'on' : ''}`} onClick={() => set({ systemTray: !s.systemTray })} />
+        <label>
+          系统托盘<span className="sub">关闭主窗口后保留后台运行</span>
+        </label>
+        <div
+          className={`switch ${s.systemTray ? 'on' : ''}`}
+          onClick={() => set({ systemTray: !s.systemTray })}
+        />
 
         <label>开机自启动</label>
-        <div className={`switch ${s.autoStart ? 'on' : ''}`} onClick={() => set({ autoStart: !s.autoStart })} />
+        <div
+          className={`switch ${s.autoStart ? 'on' : ''}`}
+          onClick={() => set({ autoStart: !s.autoStart })}
+        />
 
         <label>新会话默认沙箱</label>
         <div className="seg-control">
-          {([['L0 仅聊天', 0], ['L1 只读', 1], ['L2 受控', 2], ['L3 完全', 3]] as [string, number][]).map(([label, level]) => (
-            <button key={level} className={s.defaultSandbox === level ? 'active' : ''} onClick={() => set({ defaultSandbox: level })}>{label}</button>
+          {(
+            [
+              ['L0 仅聊天', 0],
+              ['L1 只读', 1],
+              ['L2 受控', 2],
+              ['L3 完全', 3],
+            ] as [string, number][]
+          ).map(([label, level]) => (
+            <button
+              key={level}
+              className={s.defaultSandbox === level ? 'active' : ''}
+              onClick={() => set({ defaultSandbox: level })}
+            >
+              {label}
+            </button>
           ))}
         </div>
 
-        <label>未保存修改提示<span className="sub">关闭会话或退出前提示</span></label>
-        <div className={`switch ${s.unsavedPrompt ? 'on' : ''}`} onClick={() => set({ unsavedPrompt: !s.unsavedPrompt })} />
+        <label>
+          未保存修改提示<span className="sub">关闭会话或退出前提示</span>
+        </label>
+        <div
+          className={`switch ${s.unsavedPrompt ? 'on' : ''}`}
+          onClick={() => set({ unsavedPrompt: !s.unsavedPrompt })}
+        />
 
-        <label>检查点保留<span className="sub">每个会话保留多少历史检查点</span></label>
+        <label>
+          检查点保留<span className="sub">每个会话保留多少历史检查点</span>
+        </label>
         <div className="control">
-          <SparkInput type="number" value={s.checkpointRetention} onChange={(e) => set({ checkpointRetention: Number(e.target.value) || 50 })} className="input-w-sm" />
+          <SparkInput
+            type="number"
+            value={s.checkpointRetention}
+            onChange={(e) => set({ checkpointRetention: Number(e.target.value) || 50 })}
+            className="input-w-sm"
+          />
           <span className="muted text-xs-12">个 · 超出后按时间淘汰</span>
         </div>
       </div>
 
       <div className="subsec-h">通知</div>
       <div className="settings-card">
-        <SettingsRow title="任务完成" desc="长任务（≥30s）结束后系统通知" right={<div className={`switch ${s.notifyTaskComplete ? 'on' : ''}`} onClick={() => set({ notifyTaskComplete: !s.notifyTaskComplete })} />} />
-        <SettingsRow title="权限请求" desc="需要审批时弹出系统通知" right={<div className={`switch ${s.notifyPermission ? 'on' : ''}`} onClick={() => set({ notifyPermission: !s.notifyPermission })} />} />
-        <SettingsRow title="工作流失败" desc="任意节点失败时通知" right={<div className={`switch ${s.notifyWorkflowFail ? 'on' : ''}`} onClick={() => set({ notifyWorkflowFail: !s.notifyWorkflowFail })} />} />
-        <SettingsRow title="MCP 离线" desc="服务器连接断开时通知" right={<div className={`switch ${s.notifyMcpOffline ? 'on' : ''}`} onClick={() => set({ notifyMcpOffline: !s.notifyMcpOffline })} />} />
-        <SettingsRow title="新版本可用" right={<div className={`switch ${s.notifyNewVersion ? 'on' : ''}`} onClick={() => set({ notifyNewVersion: !s.notifyNewVersion })} />} />
+        <SettingsRow
+          title="任务完成"
+          desc="长任务（≥30s）结束后系统通知"
+          right={
+            <div
+              className={`switch ${s.notifyTaskComplete ? 'on' : ''}`}
+              onClick={() => set({ notifyTaskComplete: !s.notifyTaskComplete })}
+            />
+          }
+        />
+        <SettingsRow
+          title="权限请求"
+          desc="需要审批时弹出系统通知"
+          right={
+            <div
+              className={`switch ${s.notifyPermission ? 'on' : ''}`}
+              onClick={() => set({ notifyPermission: !s.notifyPermission })}
+            />
+          }
+        />
+        <SettingsRow
+          title="工作流失败"
+          desc="任意节点失败时通知"
+          right={
+            <div
+              className={`switch ${s.notifyWorkflowFail ? 'on' : ''}`}
+              onClick={() => set({ notifyWorkflowFail: !s.notifyWorkflowFail })}
+            />
+          }
+        />
+        <SettingsRow
+          title="MCP 离线"
+          desc="服务器连接断开时通知"
+          right={
+            <div
+              className={`switch ${s.notifyMcpOffline ? 'on' : ''}`}
+              onClick={() => set({ notifyMcpOffline: !s.notifyMcpOffline })}
+            />
+          }
+        />
+        <SettingsRow
+          title="新版本可用"
+          right={
+            <div
+              className={`switch ${s.notifyNewVersion ? 'on' : ''}`}
+              onClick={() => set({ notifyNewVersion: !s.notifyNewVersion })}
+            />
+          }
+        />
       </div>
 
       <div className="subsec-h">隐私</div>
       <div className="settings-card">
-        <SettingsRow title="匿名遥测" desc="发送匿名使用与崩溃数据，帮助改进 Spark Agent" right={<div className={`switch ${s.anonymousTelemetry ? 'on' : ''}`} onClick={() => set({ anonymousTelemetry: !s.anonymousTelemetry })} />} />
-        <SettingsRow title="自动诊断包" desc="崩溃时自动收集脱敏诊断包（不含密钥与代码）" right={<div className={`switch ${s.autoDiagPackage ? 'on' : ''}`} onClick={() => set({ autoDiagPackage: !s.autoDiagPackage })} />} />
+        <SettingsRow
+          title="匿名遥测"
+          desc="发送匿名使用与崩溃数据，帮助改进 Spark Agent"
+          right={
+            <div
+              className={`switch ${s.anonymousTelemetry ? 'on' : ''}`}
+              onClick={() => set({ anonymousTelemetry: !s.anonymousTelemetry })}
+            />
+          }
+        />
+        <SettingsRow
+          title="自动诊断包"
+          desc="崩溃时自动收集脱敏诊断包（不含密钥与代码）"
+          right={
+            <div
+              className={`switch ${s.autoDiagPackage ? 'on' : ''}`}
+              onClick={() => set({ autoDiagPackage: !s.autoDiagPackage })}
+            />
+          }
+        />
       </div>
     </div>
   )
@@ -414,26 +548,40 @@ function AppearanceSection() {
 
       <div className="subsec-h">主题</div>
       <div className="theme-grid">
-        <ThemePreview kind="light" active={t.theme === 'light'} onClick={() => setTweak('theme', 'light')} />
-        <ThemePreview kind="dark" active={t.theme === 'dark'} onClick={() => setTweak('theme', 'dark')} />
-        <ThemePreview kind="auto" active={false} onClick={() => setTweak('theme', 'light')} disabled />
+        <ThemePreview
+          kind="light"
+          active={t.theme === 'light'}
+          onClick={() => setTweak('theme', 'light')}
+        />
+        <ThemePreview
+          kind="dark"
+          active={t.theme === 'dark'}
+          onClick={() => setTweak('theme', 'dark')}
+        />
+        <ThemePreview
+          kind="auto"
+          active={false}
+          onClick={() => setTweak('theme', 'light')}
+          disabled
+        />
       </div>
 
       <div className="subsec-h">主色</div>
       <div className="color-swatch-row">
         {Object.entries(PRIMARIES).map(([color, info]) => (
-          <button
-            key={color}
-            onClick={() => setTweak('primary', color)}
-            className="color-swatch"
-          >
+          <button key={color} onClick={() => setTweak('primary', color)} className="color-swatch">
             <span
               className={`color-swatch-circle ${t.primary === color ? 'active' : ''}`}
-              style={{ background: color, boxShadow: t.primary === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none' }} /* dynamic */
+              style={{
+                background: color,
+                boxShadow: t.primary === color ? `0 0 0 2px var(--bg), 0 0 0 4px ${color}` : 'none',
+              }} /* dynamic */
             >
               {t.primary === color && <Icons.Check size={16} />}
             </span>
-            <span className={`color-swatch-label ${t.primary === color ? 'active' : ''}`}>{info.name}</span>
+            <span className={`color-swatch-label ${t.primary === color ? 'active' : ''}`}>
+              {info.name}
+            </span>
           </button>
         ))}
         <button className="color-add-btn">
@@ -443,17 +591,46 @@ function AppearanceSection() {
 
       <div className="subsec-h">布局与字体</div>
       <div className="form-grid">
-        <label>密度<span className="sub">界面元素紧凑度</span></label>
+        <label>
+          密度<span className="sub">界面元素紧凑度</span>
+        </label>
         <div className="seg-control">
-          <button className={t.density === 'compact' ? 'active' : ''} onClick={() => setTweak('density', 'compact')}>紧凑</button>
-          <button className={t.density === 'regular' ? 'active' : ''} onClick={() => setTweak('density', 'regular')}>常规</button>
-          <button className={t.density === 'comfy' ? 'active' : ''} onClick={() => setTweak('density', 'comfy')}>宽松</button>
+          <button
+            className={t.density === 'compact' ? 'active' : ''}
+            onClick={() => setTweak('density', 'compact')}
+          >
+            紧凑
+          </button>
+          <button
+            className={t.density === 'regular' ? 'active' : ''}
+            onClick={() => setTweak('density', 'regular')}
+          >
+            常规
+          </button>
+          <button
+            className={t.density === 'comfy' ? 'active' : ''}
+            onClick={() => setTweak('density', 'comfy')}
+          >
+            宽松
+          </button>
         </div>
 
-        <label>侧边栏<span className="sub">默认展开还是仅图标</span></label>
+        <label>
+          侧边栏<span className="sub">默认展开还是仅图标</span>
+        </label>
         <div className="seg-control">
-          <button className={t.sidebar === 'collapsed' ? 'active' : ''} onClick={() => setTweak('sidebar', 'collapsed')}>图标</button>
-          <button className={t.sidebar === 'expanded' ? 'active' : ''} onClick={() => setTweak('sidebar', 'expanded')}>展开</button>
+          <button
+            className={t.sidebar === 'collapsed' ? 'active' : ''}
+            onClick={() => setTweak('sidebar', 'collapsed')}
+          >
+            图标
+          </button>
+          <button
+            className={t.sidebar === 'expanded' ? 'active' : ''}
+            onClick={() => setTweak('sidebar', 'expanded')}
+          >
+            展开
+          </button>
         </div>
 
         <label>字体</label>
@@ -464,50 +641,132 @@ function AppearanceSection() {
           <option value="jetbrains">JetBrains</option>
         </SparkSelect>
 
-        <label>字号<span className="sub">基础字号，其他字号按比例缩放</span></label>
+        <label>
+          字号<span className="sub">基础字号，其他字号按比例缩放</span>
+        </label>
         <div className="control">
-          <SparkInput type="range" min="11" max="16" value={a.fontSize} onChange={(e) => setA({ fontSize: Number(e.target.value) })} className="flex1" />
+          <SparkInput
+            type="range"
+            min="11"
+            max="16"
+            value={a.fontSize}
+            onChange={(e) => setA({ fontSize: Number(e.target.value) })}
+            className="flex1"
+          />
           <span className="mono-sm muted range-value">{a.fontSize}px</span>
         </div>
 
-        <label>代码字体连字<span className="sub">Geist Mono ligature 例如 =&gt; → ⇒</span></label>
-        <div className={`switch ${a.codeLigature ? 'on' : ''}`} onClick={() => setA({ codeLigature: !a.codeLigature })} />
+        <label>
+          代码字体连字<span className="sub">Geist Mono ligature 例如 =&gt; → ⇒</span>
+        </label>
+        <div
+          className={`switch ${a.codeLigature ? 'on' : ''}`}
+          onClick={() => setA({ codeLigature: !a.codeLigature })}
+        />
 
         <label>会话默认布局</label>
         <div className="seg-control">
-          {([['Vibe（聊天）', 'vibe'], ['Workspace（编辑器）', 'workspace']] as [string, string][]).map(([label, mode]) => (
-            <button key={mode} className={a.sessionLayout === mode ? 'active' : ''} onClick={() => setA({ sessionLayout: mode })}>{label}</button>
+          {(
+            [
+              ['Vibe（聊天）', 'vibe'],
+              ['Workspace（编辑器）', 'workspace'],
+            ] as [string, string][]
+          ).map(([label, mode]) => (
+            <button
+              key={mode}
+              className={a.sessionLayout === mode ? 'active' : ''}
+              onClick={() => setA({ sessionLayout: mode })}
+            >
+              {label}
+            </button>
           ))}
         </div>
 
         <label>窗口圆角</label>
         <div className="seg-control">
-          {([['直角', 'sharp'], ['柔和', 'soft'], ['圆润', 'round']] as [string, string][]).map(([label, mode]) => (
-            <button key={mode} className={a.windowCorners === mode ? 'active' : ''} onClick={() => setA({ windowCorners: mode })}>{label}</button>
+          {(
+            [
+              ['直角', 'sharp'],
+              ['柔和', 'soft'],
+              ['圆润', 'round'],
+            ] as [string, string][]
+          ).map(([label, mode]) => (
+            <button
+              key={mode}
+              className={a.windowCorners === mode ? 'active' : ''}
+              onClick={() => setA({ windowCorners: mode })}
+            >
+              {label}
+            </button>
           ))}
         </div>
 
-        <label>背景毛玻璃<span className="sub">macOS 半透明背景（性能略低）</span></label>
-        <div className={`switch ${a.backdropBlur ? 'on' : ''}`} onClick={() => setA({ backdropBlur: !a.backdropBlur })} />
+        <label>
+          背景毛玻璃<span className="sub">macOS 半透明背景（性能略低）</span>
+        </label>
+        <div
+          className={`switch ${a.backdropBlur ? 'on' : ''}`}
+          onClick={() => setA({ backdropBlur: !a.backdropBlur })}
+        />
 
         <label>动画</label>
         <div className="seg-control">
-          {([['禁用', 'none'], ['仅过渡', 'transitions'], ['完整', 'full']] as [string, string][]).map(([label, mode]) => (
-            <button key={mode} className={a.animation === mode ? 'active' : ''} onClick={() => setA({ animation: mode })}>{label}</button>
+          {(
+            [
+              ['禁用', 'none'],
+              ['仅过渡', 'transitions'],
+              ['完整', 'full'],
+            ] as [string, string][]
+          ).map(([label, mode]) => (
+            <button
+              key={mode}
+              className={a.animation === mode ? 'active' : ''}
+              onClick={() => setA({ animation: mode })}
+            >
+              {label}
+            </button>
           ))}
         </div>
       </div>
 
       <div className="subsec-h">聊天显示</div>
       <div className="settings-card">
-        <SettingsRow title="自动折叠工具调用" desc="超过 200 行的工具结果默认折叠" right={<div className={`switch ${a.autoCollapseTools ? 'on' : ''}`} onClick={() => setA({ autoCollapseTools: !a.autoCollapseTools })} />} />
-        <SettingsRow title="行内显示 token 计数" right={<div className={`switch ${a.inlineTokenCount ? 'on' : ''}`} onClick={() => setA({ inlineTokenCount: !a.inlineTokenCount })} />} />
-        <SettingsRow title="语法高亮代码块" right={<div className={`switch ${a.syntaxHighlight ? 'on' : ''}`} onClick={() => setA({ syntaxHighlight: !a.syntaxHighlight })} />} />
+        <SettingsRow
+          title="自动折叠工具调用"
+          desc="超过 200 行的工具结果默认折叠"
+          right={
+            <div
+              className={`switch ${a.autoCollapseTools ? 'on' : ''}`}
+              onClick={() => setA({ autoCollapseTools: !a.autoCollapseTools })}
+            />
+          }
+        />
+        <SettingsRow
+          title="行内显示 token 计数"
+          right={
+            <div
+              className={`switch ${a.inlineTokenCount ? 'on' : ''}`}
+              onClick={() => setA({ inlineTokenCount: !a.inlineTokenCount })}
+            />
+          }
+        />
+        <SettingsRow
+          title="语法高亮代码块"
+          right={
+            <div
+              className={`switch ${a.syntaxHighlight ? 'on' : ''}`}
+              onClick={() => setA({ syntaxHighlight: !a.syntaxHighlight })}
+            />
+          }
+        />
         <SettingsRow
           title="时间戳格式"
           right={
             <div className="select-sm">
-              <SparkSelect value={a.timestampFormat} onChange={(e) => setA({ timestampFormat: e.target.value })}>
+              <SparkSelect
+                value={a.timestampFormat}
+                onChange={(e) => setA({ timestampFormat: e.target.value })}
+              >
                 <option value="rel">相对时间</option>
                 <option value="abs">绝对时间</option>
               </SparkSelect>
@@ -519,11 +778,39 @@ function AppearanceSection() {
   )
 }
 
-function ThemePreview({ kind, active, onClick, disabled }: { kind: 'light' | 'dark' | 'auto'; active: boolean; onClick: () => void; disabled?: boolean }) {
+function ThemePreview({
+  kind,
+  active,
+  onClick,
+  disabled,
+}: {
+  kind: 'light' | 'dark' | 'auto'
+  active: boolean
+  onClick: () => void
+  disabled?: boolean
+}) {
   const colors = {
-    light: { bg: '#ffffff', soft: '#f7f7f8', text: '#18181b', muted: '#9ca3af', accent: 'var(--primary)' },
-    dark: { bg: '#16161b', soft: '#0d0d10', text: '#fafafa', muted: '#6b7280', accent: 'var(--primary)' },
-    auto: { bg: 'linear-gradient(135deg, #fff 50%, #16161b 50%)', soft: '#444', text: '#888', muted: '#888', accent: 'var(--primary)' },
+    light: {
+      bg: '#ffffff',
+      soft: '#f7f7f8',
+      text: '#18181b',
+      muted: '#9ca3af',
+      accent: 'var(--primary)',
+    },
+    dark: {
+      bg: '#16161b',
+      soft: '#0d0d10',
+      text: '#fafafa',
+      muted: '#6b7280',
+      accent: 'var(--primary)',
+    },
+    auto: {
+      bg: 'linear-gradient(135deg, #fff 50%, #16161b 50%)',
+      soft: '#444',
+      text: '#888',
+      muted: '#888',
+      accent: 'var(--primary)',
+    },
   } as const
   const c = colors[kind]
   return (
@@ -534,12 +821,24 @@ function ThemePreview({ kind, active, onClick, disabled }: { kind: 'light' | 'da
     >
       <div className="theme-preview-body" style={{ background: c.bg }} /* dynamic */>
         <div className="theme-preview-sidebar" style={{ background: c.soft }} /* dynamic */>
-          {[1, 2, 3].map((i) => <div key={i} className="theme-preview-line" style={{ background: c.muted }} /* dynamic */ />)}
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              className="theme-preview-line"
+              style={{ background: c.muted }} /* dynamic */
+            />
+          ))}
         </div>
         <div className="theme-preview-main">
           <div className="theme-preview-title" style={{ background: c.text }} /* dynamic */ />
-          <div className="theme-preview-text" style={{ background: c.muted, width: '90%' }} /* dynamic */ />
-          <div className="theme-preview-text" style={{ background: c.muted, width: '70%' }} /* dynamic */ />
+          <div
+            className="theme-preview-text"
+            style={{ background: c.muted, width: '90%' }} /* dynamic */
+          />
+          <div
+            className="theme-preview-text"
+            style={{ background: c.muted, width: '70%' }} /* dynamic */
+          />
           <div className="theme-preview-accent" style={{ background: c.accent }} /* dynamic */ />
         </div>
       </div>
@@ -608,8 +907,13 @@ function ShortcutsSection() {
       <div className="lede">所有组合可在下方搜索并自定义。Mac 使用 ⌘，其他系统替换为 Ctrl。</div>
 
       <div className="row row-mb-sm">
-        <div className="search-input flex1"><Icons.Search /><SparkInput placeholder="搜索动作或按键..." /></div>
-        <button className="btn"><Icons.Refresh size={12} /> 重置全部</button>
+        <div className="search-input flex1">
+          <Icons.Search />
+          <SparkInput placeholder="搜索动作或按键..." />
+        </div>
+        <button className="btn">
+          <Icons.Refresh size={12} /> 重置全部
+        </button>
       </div>
 
       {groups.map((g) => (
@@ -620,7 +924,11 @@ function ShortcutsSection() {
               <div key={label} className="km-row">
                 <div className="km-action">{label}</div>
                 <div className="km-keys">
-                  {keys.map((k, i) => <span key={i} className="kbd">{k}</span>)}
+                  {keys.map((k, i) => (
+                    <span key={i} className="kbd">
+                      {k}
+                    </span>
+                  ))}
                 </div>
               </div>
             ))}
@@ -648,10 +956,14 @@ function ProvidersSection() {
   const { invoke: healthCheck } = useIpcInvoke('provider:health-check')
 
   const refresh = useCallback(() => {
-    listProviders({}).then(r => setProfiles(r.profiles)).catch(console.error)
+    listProviders({})
+      .then((r) => setProfiles(r.profiles))
+      .catch(console.error)
   }, [listProviders])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('确认删除该 Provider？')) return
@@ -667,14 +979,14 @@ function ProvidersSection() {
   const handleHealthCheck = async (id: string) => {
     try {
       const r = await healthCheck({ id })
-      setHealthMap(prev => ({ ...prev, [id]: r }))
+      setHealthMap((prev) => ({ ...prev, [id]: r }))
       if (r.healthy) {
         toast.success(`连接成功${r.latencyMs != null ? ` · 延迟 ${r.latencyMs}ms` : ''}`)
       } else {
         toast.error('连接失败：Provider 返回不健康状态')
       }
     } catch (err) {
-      setHealthMap(prev => ({ ...prev, [id]: { healthy: false } }))
+      setHealthMap((prev) => ({ ...prev, [id]: { healthy: false } }))
       toast.error(err instanceof Error ? err.message : '连接测试失败')
     }
   }
@@ -700,7 +1012,7 @@ function ProvidersSection() {
   }
 
   /** 已配置的 vendor 名称集合（用于标记已添加） */
-  const configuredNames = useMemo(() => new Set(profiles.map(p => p.name)), [profiles])
+  const configuredNames = useMemo(() => new Set(profiles.map((p) => p.name)), [profiles])
 
   return (
     <>
@@ -708,16 +1020,26 @@ function ProvidersSection() {
         <div className="row section-header-row">
           <div className="flex1">
             <h2 className="section-h2">Provider</h2>
-            <div className="lede section-lede">配置供应商的协议格式、请求地址、鉴权和可用模型列表。每个 Provider 本身就是一份可直接运行的模型配置。</div>
+            <div className="lede section-lede">
+              配置供应商的协议格式、请求地址、鉴权和可用模型列表。每个 Provider
+              本身就是一份可直接运行的模型配置。
+            </div>
           </div>
           <div className="row row-gap-xs">
             <button
               className={`btn ${showPresetCatalog ? 'active' : ''}`}
-              onClick={() => setShowPresetCatalog(prev => !prev)}
+              onClick={() => setShowPresetCatalog((prev) => !prev)}
             >
               <Icons.Layers size={12} /> 从模板添加
             </button>
-            <button className="btn primary" onClick={() => { setEditingId(null); setInitialPresetId(null); setTweak('showProviderEdit', true) }}>
+            <button
+              className="btn primary"
+              onClick={() => {
+                setEditingId(null)
+                setInitialPresetId(null)
+                setTweak('showProviderEdit', true)
+              }}
+            >
               <Icons.Plus size={12} /> 自定义添加
             </button>
           </div>
@@ -755,7 +1077,7 @@ function ProvidersSection() {
             尚未配置 Provider — 点击"从模板添加"快速开始，或"自定义添加"手动配置
           </div>
         ) : (
-          profiles.map(p => {
+          profiles.map((p) => {
             const h = healthMap[p.id]
             const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
             return (
@@ -765,8 +1087,15 @@ function ProvidersSection() {
                 name={p.name}
                 desc={`${p.provider} · 默认 ${p.defaultModel}`}
                 status={status}
-                detail={h?.latencyMs != null ? `延迟 ${h.latencyMs}ms` : `${p.modelIds.length} 个模型${p.isDefault ? ' · 默认 Provider' : ''}`}
-                onEdit={() => { setEditingId(p.id); setTweak('showProviderEdit', true) }}
+                detail={
+                  h?.latencyMs != null
+                    ? `延迟 ${h.latencyMs}ms`
+                    : `${p.modelIds.length} 个模型${p.isDefault ? ' · 默认 Provider' : ''}`
+                }
+                onEdit={() => {
+                  setEditingId(p.id)
+                  setTweak('showProviderEdit', true)
+                }}
                 onDelete={() => handleDelete(p.id)}
                 onHealthCheck={() => handleHealthCheck(p.id)}
               />
@@ -780,7 +1109,11 @@ function ProvidersSection() {
         <ProviderEditPanel
           profileId={editingId}
           initialPresetId={initialPresetId}
-          onClose={() => { setTweak('showProviderEdit', false); setInitialPresetId(null); refresh() }}
+          onClose={() => {
+            setTweak('showProviderEdit', false)
+            setInitialPresetId(null)
+            refresh()
+          }}
         />
       )}
     </>
@@ -824,11 +1157,7 @@ function VendorPresetCard({
           </div>
           <div className="preset-card-desc">{vendor.desc}</div>
         </div>
-        {presets.length > 1 && (
-          <span className="preset-card-formats">
-            {presets.length} 种格式
-          </span>
-        )}
+        {presets.length > 1 && <span className="preset-card-formats">{presets.length} 种格式</span>}
       </div>
       {expanded && presets.length > 1 && (
         <div className="preset-card-formats-list">
@@ -836,7 +1165,10 @@ function VendorPresetCard({
             <button
               key={preset.id}
               className="preset-format-btn"
-              onClick={(e) => { e.stopPropagation(); onSelectPreset(preset.id) }}
+              onClick={(e) => {
+                e.stopPropagation()
+                onSelectPreset(preset.id)
+              }}
             >
               <span className={`preset-format-dot ${preset.provider}`} />
               {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
@@ -850,7 +1182,14 @@ function VendorPresetCard({
 }
 
 function ProviderCardX({
-  logo, name, desc, status, detail, onEdit, onDelete, onHealthCheck,
+  logo,
+  name,
+  desc,
+  status,
+  detail,
+  onEdit,
+  onDelete,
+  onHealthCheck,
 }: {
   logo: string
   name: string
@@ -877,16 +1216,30 @@ function ProviderCardX({
         {detail && <div className="muted detail-sm">{detail}</div>}
       </div>
       <div className="row row-gap-xs self-start mt-sm">
-        <button className="btn ghost sm" onClick={onEdit}><Icons.Edit size={11} /> 编辑</button>
-        <button className="icon-btn" title="健康检查" onClick={onHealthCheck}><Icons.Refresh size={13} /></button>
-        <button className="icon-btn" title="删除" onClick={onDelete}><Icons.X size={13} /></button>
+        <button className="btn ghost sm" onClick={onEdit}>
+          <Icons.Edit size={11} /> 编辑
+        </button>
+        <button className="icon-btn" title="健康检查" onClick={onHealthCheck}>
+          <Icons.Refresh size={13} />
+        </button>
+        <button className="icon-btn" title="删除" onClick={onDelete}>
+          <Icons.X size={13} />
+        </button>
       </div>
     </div>
   )
 }
 
 /* ───────── PROVIDER EDIT slide panel ───────── */
-export function ProviderEditPanel({ profileId = null, initialPresetId = null, onClose }: { profileId?: string | null; initialPresetId?: string | null; onClose: () => void }) {
+export function ProviderEditPanel({
+  profileId = null,
+  initialPresetId = null,
+  onClose,
+}: {
+  profileId?: string | null
+  initialPresetId?: string | null
+  onClose: () => void
+}) {
   const { toast } = useToast()
   const [form, setForm] = useState<ProviderForm>({
     presetId: 'custom',
@@ -927,31 +1280,50 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
           return
         }
       }
-      setForm({ presetId: 'custom', name: '', provider: 'anthropic', defaultModel: '', modelIdsText: '', endpoint: '', codexApiKind: 'chat', apiKey: '', isDefault: false })
+      setForm({
+        presetId: 'custom',
+        name: '',
+        provider: 'anthropic',
+        defaultModel: '',
+        modelIdsText: '',
+        endpoint: '',
+        codexApiKind: 'chat',
+        apiKey: '',
+        isDefault: false,
+      })
       return
     }
-    listProviders({}).then(r => {
-      const p = r.profiles.find(x => x.id === profileId)
-      if (p) {
-        setForm({
-          presetId: 'custom',
-          name: p.name,
-          provider: normalizeProviderKind(p.provider),
-          defaultModel: p.defaultModel,
-          modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
-          endpoint: p.apiEndpoint ?? '',
-          codexApiKind: p.codexApiKind ?? 'chat',
-          apiKey: '',
-          isDefault: p.isDefault,
-        })
-      }
-    }).catch(console.error)
+    listProviders({})
+      .then((r) => {
+        const p = r.profiles.find((x) => x.id === profileId)
+        if (p) {
+          setForm({
+            presetId: 'custom',
+            name: p.name,
+            provider: normalizeProviderKind(p.provider),
+            defaultModel: p.defaultModel,
+            modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
+            endpoint: p.apiEndpoint ?? '',
+            codexApiKind: p.codexApiKind ?? 'chat',
+            apiKey: '',
+            isDefault: p.isDefault,
+          })
+        }
+      })
+      .catch(console.error)
   }, [listProviders, profileId, initialPresetId])
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.defaultModel.trim()) { setError('名称和默认模型 ID 不能为空'); return }
-    if (!profileId && !form.apiKey.trim()) { setError('新建 Provider 需要填写 API Key'); return }
-    setSaving(true); setError('')
+    if (!form.name.trim() || !form.defaultModel.trim()) {
+      setError('名称和默认模型 ID 不能为空')
+      return
+    }
+    if (!profileId && !form.apiKey.trim()) {
+      setError('新建 Provider 需要填写 API Key')
+      return
+    }
+    setSaving(true)
+    setError('')
     try {
       const endpoint = form.endpoint.trim()
       const modelIds = parseModelIds(form.modelIdsText, form.defaultModel)
@@ -989,9 +1361,10 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
     }
   }
 
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm(prev => ({ ...prev, [k]: v }))
+  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
+    setForm((prev) => ({ ...prev, [k]: v }))
   const applyPreset = (preset: ProviderPreset) => {
-    setForm(prev => ({
+    setForm((prev) => ({
       ...prev,
       presetId: preset.id,
       name: preset.name,
@@ -1012,7 +1385,9 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
             <div className="h-title">{profileId ? '编辑 Provider' : '添加 Provider'}</div>
             <div className="h-sub">{form.provider} · API key 鉴权</div>
           </div>
-          <button className="icon-btn" onClick={onClose}><Icons.X /></button>
+          <button className="icon-btn" onClick={onClose}>
+            <Icons.X />
+          </button>
         </div>
 
         <div className="slide-panel-body">
@@ -1020,11 +1395,13 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
 
           <div className="subsec-h">基础</div>
           <div className="form-grid">
-            <label>供应商模板<span className="sub">基于官方公开文档预填，后续仍可修改</span></label>
+            <label>
+              供应商模板<span className="sub">基于官方公开文档预填，后续仍可修改</span>
+            </label>
             <SparkSelect
               value={form.presetId}
               disabled={!!profileId}
-              onChange={e => {
+              onChange={(e) => {
                 const presetId = e.target.value
                 if (presetId === 'custom') {
                   set('presetId', 'custom')
@@ -1037,18 +1414,35 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
               <option value="custom">自定义</option>
               {PROVIDER_PRESETS.map((preset) => (
                 <option key={preset.id} value={preset.id}>
-                  {preset.name} · {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
+                  {preset.name} ·{' '}
+                  {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
                 </option>
               ))}
             </SparkSelect>
 
             <label>显示名称</label>
-            <SparkInput value={form.name} onChange={e => set('name', e.target.value)} placeholder="例：Anthropic · Claude" />
+            <SparkInput
+              value={form.name}
+              onChange={(e) => set('name', e.target.value)}
+              placeholder="例：Anthropic · Claude"
+            />
 
-            <label>协议格式<span className="sub">决定使用 Anthropic 或 OpenAI 适配器</span></label>
+            <label>
+              API 协议格式
+              <span className="sub">
+                决定 Provider 请求格式；Claude 执行统一使用 Claude Agent SDK
+              </span>
+            </label>
             <SparkSelect
               value={form.provider}
-              onChange={e => setForm(prev => ({ ...prev, presetId: 'custom', provider: normalizeProviderKind(e.target.value), codexApiKind: 'chat' }))}
+              onChange={(e) =>
+                setForm((prev) => ({
+                  ...prev,
+                  presetId: 'custom',
+                  provider: normalizeProviderKind(e.target.value),
+                  codexApiKind: 'chat',
+                }))
+              }
               disabled={!!profileId}
             >
               <option value="anthropic">Anthropic 格式</option>
@@ -1057,10 +1451,13 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
 
             {form.provider === 'openai' && (
               <>
-                <label>OpenAI API 类型<span className="sub">Responses 用于 gpt-5-codex，Chat 兼容更多后端</span></label>
+                <label>
+                  OpenAI API 类型
+                  <span className="sub">Responses 用于 gpt-5-codex，Chat 兼容更多后端</span>
+                </label>
                 <SparkSelect
                   value={form.codexApiKind}
-                  onChange={e => set('codexApiKind', normalizeCodexApiKind(e.target.value))}
+                  onChange={(e) => set('codexApiKind', normalizeCodexApiKind(e.target.value))}
                 >
                   <option value="chat">Chat Completions</option>
                   <option value="responses">Responses API</option>
@@ -1069,27 +1466,43 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
             )}
 
             <label>默认模型 ID</label>
-            <SparkInput value={form.defaultModel} onChange={e => set('defaultModel', e.target.value)} placeholder="例：claude-sonnet-4-20250514" className="mono-sm" />
+            <SparkInput
+              value={form.defaultModel}
+              onChange={(e) => set('defaultModel', e.target.value)}
+              placeholder="例：claude-sonnet-4-20250514"
+              className="mono-sm"
+            />
 
-            <label>可用模型 ID<span className="sub">每行一个，默认模型会自动加入</span></label>
+            <label>
+              可用模型 ID<span className="sub">每行一个，默认模型会自动加入</span>
+            </label>
             <textarea
               value={form.modelIdsText}
-              onChange={e => set('modelIdsText', e.target.value)}
+              onChange={(e) => set('modelIdsText', e.target.value)}
               placeholder={`claude-sonnet-4-20250514\nclaude-3-5-haiku-20241022`}
               className="mono-sm"
               rows={4}
             />
 
-            <label>Endpoint URL<span className="sub">可选，自定义请求地址</span></label>
+            <label>
+              Endpoint URL<span className="sub">可选，自定义请求地址</span>
+            </label>
             <SparkInput
               value={form.endpoint}
-              onChange={e => set('endpoint', e.target.value)}
-              placeholder={form.provider === 'anthropic' ? 'https://api.anthropic.com' : 'https://api.openai.com/v1'}
+              onChange={(e) => set('endpoint', e.target.value)}
+              placeholder={
+                form.provider === 'anthropic'
+                  ? 'https://api.anthropic.com'
+                  : 'https://api.openai.com/v1'
+              }
               className="mono-sm"
             />
 
             <label>默认 Provider</label>
-            <div className={`switch ${form.isDefault ? 'on' : ''}`} onClick={() => set('isDefault', !form.isDefault)} />
+            <div
+              className={`switch ${form.isDefault ? 'on' : ''}`}
+              onClick={() => set('isDefault', !form.isDefault)}
+            />
           </div>
 
           <div className="subsec-h">鉴权</div>
@@ -1098,7 +1511,7 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
             <SparkInput
               type="password"
               value={form.apiKey}
-              onChange={e => set('apiKey', e.target.value)}
+              onChange={(e) => set('apiKey', e.target.value)}
               placeholder={profileId ? '••••••••（留空不更新）' : 'sk-ant-...'}
             />
           </div>
@@ -1106,7 +1519,9 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
 
         <div className="slide-panel-foot">
           <span className="flex1" />
-          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn" onClick={onClose}>
+            取消
+          </button>
           <button className="btn primary" onClick={handleSave} disabled={saving}>
             <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
           </button>
@@ -1141,7 +1556,9 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
-          <div className="modal-h-icon modal-h-icon-primary"><Icons.Brain size={18} /></div>
+          <div className="modal-h-icon modal-h-icon-primary">
+            <Icons.Brain size={18} />
+          </div>
           <div>
             <div className="modal-title">编辑模型 Profile</div>
             <div className="modal-subtitle">Anthropic · Claude Sonnet 4.5</div>
@@ -1155,21 +1572,32 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             <label>模型 ID</label>
             <SparkInput className="mono-sm" defaultValue="claude-sonnet-4-5-20250929" />
 
-            <label>角色<span className="sub">该 profile 适配的角色</span></label>
+            <label>
+              角色<span className="sub">该 profile 适配的角色</span>
+            </label>
             <div className="row row-gap-xs">
-              {['default', 'planner', 'coder', 'reviewer', 'fast', 'vision', 'long-context'].map((r) => (
-                <span
-                  key={r}
-                  className={`badge ${['default', 'coder', 'reviewer'].includes(r) ? 'primary' : ''} badge-role-tag`}
-                >
-                  {r}
-                </span>
-              ))}
+              {['default', 'planner', 'coder', 'reviewer', 'fast', 'vision', 'long-context'].map(
+                (r) => (
+                  <span
+                    key={r}
+                    className={`badge ${['default', 'coder', 'reviewer'].includes(r) ? 'primary' : ''} badge-role-tag`}
+                  >
+                    {r}
+                  </span>
+                ),
+              )}
             </div>
 
             <label>Temperature</label>
             <div className="control">
-              <SparkInput type="range" min="0" max="2" step="0.1" defaultValue="0.7" className="flex1" />
+              <SparkInput
+                type="range"
+                min="0"
+                max="2"
+                step="0.1"
+                defaultValue="0.7"
+                className="flex1"
+              />
               <span className="mono-sm muted range-value">0.7</span>
             </div>
 
@@ -1179,7 +1607,9 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             <label>最大输出 token</label>
             <SparkInput type="number" defaultValue="8192" />
 
-            <label>推理强度<span className="sub">extended thinking 时使用</span></label>
+            <label>
+              推理强度<span className="sub">extended thinking 时使用</span>
+            </label>
             <div className="seg-control">
               <button>none</button>
               <button>minimal</button>
@@ -1201,23 +1631,31 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
               <span className="muted text-xs-12">秒</span>
             </div>
 
-            <label>Fallback 链<span className="sub">主模型失败或超限时按顺序尝试</span></label>
+            <label>
+              Fallback 链<span className="sub">主模型失败或超限时按顺序尝试</span>
+            </label>
             <div className="fallback-list">
               <div className="row fallback-row">
                 <span className="mono-sm faint">1.</span>
                 <Icons.Brain size={13} className="color-primary" />
                 <span className="strong fallback-name">Claude Opus 4</span>
                 <span className="badge fallback-badge">当延迟 &gt; 5s</span>
-                <button className="icon-btn fallback-close"><Icons.X size={11} /></button>
+                <button className="icon-btn fallback-close">
+                  <Icons.X size={11} />
+                </button>
               </div>
               <div className="row fallback-row">
                 <span className="mono-sm faint">2.</span>
                 <Icons.Brain size={13} className="color-primary" />
                 <span className="strong fallback-name">Claude Haiku 4.5</span>
                 <span className="badge fallback-badge">当成本超限</span>
-                <button className="icon-btn fallback-close"><Icons.X size={11} /></button>
+                <button className="icon-btn fallback-close">
+                  <Icons.X size={11} />
+                </button>
               </div>
-              <button className="btn ghost sm add-fallback-btn"><Icons.Plus size={11} /> 添加 fallback</button>
+              <button className="btn ghost sm add-fallback-btn">
+                <Icons.Plus size={11} /> 添加 fallback
+              </button>
             </div>
 
             <label>启用</label>
@@ -1227,8 +1665,12 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
         <div className="modal-foot">
           <button className="btn danger sm">删除 Profile</button>
           <div className="flex1" />
-          <button className="btn" onClick={onClose}>取消</button>
-          <button className="btn primary" onClick={onClose}><Icons.Check size={12} /> 保存</button>
+          <button className="btn" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn primary" onClick={onClose}>
+            <Icons.Check size={12} /> 保存
+          </button>
         </div>
       </div>
     </div>
@@ -1253,12 +1695,17 @@ function ModelsSection() {
     setLoading(true)
     setError('')
     Promise.all([listModels({}), listProviders({})])
-      .then(([mRes, pRes]) => { setModels(mRes.models); setProviders(pRes.profiles) })
+      .then(([mRes, pRes]) => {
+        setModels(mRes.models)
+        setProviders(pRes.profiles)
+      })
       .catch((err) => setError(err instanceof Error ? err.message : '加载失败'))
       .finally(() => setLoading(false))
   }, [listModels, listProviders])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const handleToggle = async (m: ModelProfile) => {
     await updateModel({ id: m.id, enabled: !m.enabled })
@@ -1291,78 +1738,94 @@ function ModelsSection() {
       <div className="row section-header-row">
         <div className="flex1">
           <h2 className="section-h2">模型管理</h2>
-          <div className="lede section-lede">按 Provider 分组管理可用模型，可启用/禁用或添加自定义模型。</div>
+          <div className="lede section-lede">
+            按 Provider 分组管理可用模型，可启用/禁用或添加自定义模型。
+          </div>
         </div>
         <span className="badge primary dot">共 {models.length} 个</span>
       </div>
 
-      {error && (
-        <div className="alert-banner">{error}</div>
-      )}
+      {error && <div className="alert-banner">{error}</div>}
 
-      {loading && (
-        <div className="card loading-card">正在加载...</div>
-      )}
+      {loading && <div className="card loading-card">正在加载...</div>}
 
       {!loading && providers.length === 0 && (
-        <div className="card loading-card">
-          暂无 Provider。请先在 Provider 页面添加。
-        </div>
+        <div className="card loading-card">暂无 Provider。请先在 Provider 页面添加。</div>
       )}
 
-      {!loading && byProvider.map(({ provider, models: pModels }) => (
-        <div key={provider.id} className="card model-card">
-          <div className="row model-card-header">
-            <span className="strong">{provider.name}</span>
-            <span className="badge model-provider-badge">{provider.provider}</span>
-            <span className="flex1" />
-            <button className="btn ghost sm" onClick={() => { setAddingForProvider(provider.id); setNewModelName('') }}>
-              <Icons.Plus size={11} /> 添加
-            </button>
-          </div>
-
-          {addingForProvider === provider.id && (
-            <div className="row row-gap-sm mb-sm">
-              <SparkInput
-                className="flex1 model-name-sm"
-                placeholder="模型名称，如 gpt-4o"
-                value={newModelName}
-                onChange={(e) => setNewModelName(e.target.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') void handleAdd(provider.id); if (e.key === 'Escape') setAddingForProvider(null) }}
-                autoFocus
-              />
-              <button className="btn primary sm" onClick={() => void handleAdd(provider.id)}>确认</button>
-              <button className="btn ghost sm" onClick={() => setAddingForProvider(null)}>取消</button>
+      {!loading &&
+        byProvider.map(({ provider, models: pModels }) => (
+          <div key={provider.id} className="card model-card">
+            <div className="row model-card-header">
+              <span className="strong">{provider.name}</span>
+              <span className="badge model-provider-badge">{provider.provider}</span>
+              <span className="flex1" />
+              <button
+                className="btn ghost sm"
+                onClick={() => {
+                  setAddingForProvider(provider.id)
+                  setNewModelName('')
+                }}
+              >
+                <Icons.Plus size={11} /> 添加
+              </button>
             </div>
-          )}
 
-          {pModels.length === 0 && (
-            <div className="model-card-empty">暂无模型</div>
-          )}
-
-          {pModels.map((m) => {
-            const cap = ModelCapabilityRegistry.getCapabilities(m.name)
-            return (
-              <div key={m.id} className="row model-row-border">
-                <span className="mono-sm model-name-sm flex1">{m.name}</span>
-                {cap && (
-                  <div className="row model-cap-tags">
-                    {cap.supportsVision && <span className="model-cap-tag vision">Vision</span>}
-                    {cap.supportsToolUse && <span className="model-cap-tag tool">Tools</span>}
-                    {cap.supportsExtendedThinking && <span className="model-cap-tag thinking">Thinking</span>}
-                    <span className="model-cap-tag ctx">{cap.contextWindow >= 1_000_000 ? `${cap.contextWindow / 1_000_000}M` : `${cap.contextWindow / 1_000}K`}</span>
-                  </div>
-                )}
-                <div
-                  className={`switch${m.enabled ? ' on' : ''} switch-cursor`}
-                  onClick={() => void handleToggle(m)}
+            {addingForProvider === provider.id && (
+              <div className="row row-gap-sm mb-sm">
+                <SparkInput
+                  className="flex1 model-name-sm"
+                  placeholder="模型名称，如 gpt-4o"
+                  value={newModelName}
+                  onChange={(e) => setNewModelName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleAdd(provider.id)
+                    if (e.key === 'Escape') setAddingForProvider(null)
+                  }}
+                  autoFocus
                 />
-                <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}><Icons.X size={12} /></button>
+                <button className="btn primary sm" onClick={() => void handleAdd(provider.id)}>
+                  确认
+                </button>
+                <button className="btn ghost sm" onClick={() => setAddingForProvider(null)}>
+                  取消
+                </button>
               </div>
-            )
-          })}
-        </div>
-      ))}
+            )}
+
+            {pModels.length === 0 && <div className="model-card-empty">暂无模型</div>}
+
+            {pModels.map((m) => {
+              const cap = ModelCapabilityRegistry.getCapabilities(m.name)
+              return (
+                <div key={m.id} className="row model-row-border">
+                  <span className="mono-sm model-name-sm flex1">{m.name}</span>
+                  {cap && (
+                    <div className="row model-cap-tags">
+                      {cap.supportsVision && <span className="model-cap-tag vision">Vision</span>}
+                      {cap.supportsToolUse && <span className="model-cap-tag tool">Tools</span>}
+                      {cap.supportsExtendedThinking && (
+                        <span className="model-cap-tag thinking">Thinking</span>
+                      )}
+                      <span className="model-cap-tag ctx">
+                        {cap.contextWindow >= 1_000_000
+                          ? `${cap.contextWindow / 1_000_000}M`
+                          : `${cap.contextWindow / 1_000}K`}
+                      </span>
+                    </div>
+                  )}
+                  <div
+                    className={`switch${m.enabled ? ' on' : ''} switch-cursor`}
+                    onClick={() => void handleToggle(m)}
+                  />
+                  <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}>
+                    <Icons.X size={12} />
+                  </button>
+                </div>
+              )
+            })}
+          </div>
+        ))}
     </div>
   )
 }
@@ -1375,11 +1838,29 @@ const RULE_LAYER_META: Array<{
   badgeColor: string
   desc: string
 }> = [
-  { scope: 'system', label: 'System', badge: 'SYS', badgeColor: '#94a3b8', desc: '应用内置 · 不可删除' },
+  {
+    scope: 'system',
+    label: 'System',
+    badge: 'SYS',
+    badgeColor: '#94a3b8',
+    desc: '应用内置 · 不可删除',
+  },
   { scope: 'team', label: 'Team', badge: 'TEAM', badgeColor: '#8b5cf6', desc: '团队管理员发布' },
   { scope: 'user', label: 'User', badge: 'USER', badgeColor: '#10b981', desc: '用户全局偏好' },
-  { scope: 'project', label: 'Project', badge: 'PROJ', badgeColor: '#f97316', desc: '.spark/rules · 当前工作区' },
-  { scope: 'session', label: 'Session', badge: 'SESS', badgeColor: '#f43f5e', desc: '本次会话临时规则' },
+  {
+    scope: 'project',
+    label: 'Project',
+    badge: 'PROJ',
+    badgeColor: '#f97316',
+    desc: '.spark/rules · 当前工作区',
+  },
+  {
+    scope: 'session',
+    label: 'Session',
+    badge: 'SESS',
+    badgeColor: '#f43f5e',
+    desc: '本次会话临时规则',
+  },
 ]
 
 function RulesSection() {
@@ -1402,12 +1883,17 @@ function RulesSection() {
       .finally(() => setLoading(false))
   }, [listRules])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
-  const grouped = RULE_LAYER_META.reduce<Record<RuleScope, RuleItem[]>>((acc, meta) => {
-    acc[meta.scope] = rules.filter((rule) => rule.scope === meta.scope)
-    return acc
-  }, { system: [], team: [], user: [], project: [], session: [] })
+  const grouped = RULE_LAYER_META.reduce<Record<RuleScope, RuleItem[]>>(
+    (acc, meta) => {
+      acc[meta.scope] = rules.filter((rule) => rule.scope === meta.scope)
+      return acc
+    },
+    { system: [], team: [], user: [], project: [], session: [] },
+  )
 
   const activeCount = rules.filter((rule) => rule.enabled).length
 
@@ -1422,7 +1908,13 @@ function RulesSection() {
     refresh()
   }
 
-  const handleSave = async (draft: { scope: RuleScope; id?: string; name: string; content: string; priority: number }) => {
+  const handleSave = async (draft: {
+    scope: RuleScope
+    id?: string
+    name: string
+    content: string
+    priority: number
+  }) => {
     if (draft.id !== undefined) {
       await updateRule({
         id: draft.id,
@@ -1446,24 +1938,25 @@ function RulesSection() {
     <>
       <div className="settings-section">
         <h2>规则</h2>
-        <div className="lede">多层规则按优先级合成为有效 prompt 注入。下方按层级展示来源，并显示冲突与覆盖。</div>
+        <div className="lede">
+          多层规则按优先级合成为有效 prompt 注入。下方按层级展示来源，并显示冲突与覆盖。
+        </div>
 
         <div className="row info-banner">
           <Icons.Brain size={14} className="color-primary flex-shrink-0" />
           <div className="flex1 info-banner-text">
-            <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length} 个作用域
+            <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length}{' '}
+            个作用域
           </div>
-          <button className="btn sm primary" onClick={refresh}><Icons.Refresh size={11} /> 刷新</button>
+          <button className="btn sm primary" onClick={refresh}>
+            <Icons.Refresh size={11} /> 刷新
+          </button>
         </div>
 
-        {error && (
-          <div className="alert-banner">{error}</div>
-        )}
+        {error && <div className="alert-banner">{error}</div>}
 
         {loading ? (
-          <div className="card loading-card">
-            正在加载规则...
-          </div>
+          <div className="card loading-card">正在加载规则...</div>
         ) : (
           RULE_LAYER_META.map((meta) => (
             <RuleLayer
@@ -1521,15 +2014,26 @@ function RuleLayer({
   return (
     <div className="rule-layer">
       <div className="rule-layer-h">
-        <span className="badge rule-badge rule-badge-dynamic" style={{ background: badgeColor + '20', color: badgeColor }} /* dynamic */>{badge}</span>
+        <span
+          className="badge rule-badge rule-badge-dynamic"
+          style={{ background: badgeColor + '20', color: badgeColor }} /* dynamic */
+        >
+          {badge}
+        </span>
         <div>
           <span className="name">{scope}</span>
           <span className="desc"> · {desc}</span>
         </div>
         <div className="flex1" />
         {readOnly && <span className="badge rule-readonly-badge">只读</span>}
-        {!readOnly && <button className="icon-btn" title="新增规则" onClick={onAdd}><Icons.Plus size={13} /></button>}
-        <button className="icon-btn"><Icons.ChevronDown size={13} /></button>
+        {!readOnly && (
+          <button className="icon-btn" title="新增规则" onClick={onAdd}>
+            <Icons.Plus size={13} />
+          </button>
+        )}
+        <button className="icon-btn">
+          <Icons.ChevronDown size={13} />
+        </button>
       </div>
       <div className="rule-layer-body">
         {rules.length === 0 && (
@@ -1550,8 +2054,12 @@ function RuleLayer({
             />
             {!readOnly && (
               <>
-                <button className="icon-btn" title="编辑" onClick={() => onEdit(rule)}><Icons.Edit size={12} /></button>
-                <button className="icon-btn" title="删除" onClick={() => onDelete(rule.id)}><Icons.X size={12} /></button>
+                <button className="icon-btn" title="编辑" onClick={() => onEdit(rule)}>
+                  <Icons.Edit size={12} />
+                </button>
+                <button className="icon-btn" title="删除" onClick={() => onDelete(rule.id)}>
+                  <Icons.X size={12} />
+                </button>
               </>
             )}
           </div>
@@ -1570,7 +2078,13 @@ function RuleEditPanel({
   scope: RuleScope
   rule: RuleItem | null
   onClose: () => void
-  onSave: (draft: { scope: RuleScope; id?: string; name: string; content: string; priority: number }) => Promise<void>
+  onSave: (draft: {
+    scope: RuleScope
+    id?: string
+    name: string
+    content: string
+    priority: number
+  }) => Promise<void>
 }) {
   const [name, setName] = useState(rule?.name ?? '')
   const [content, setContent] = useState(rule?.content ?? '')
@@ -1610,7 +2124,9 @@ function RuleEditPanel({
             <div className="h-title">{rule === null ? '新增规则' : '编辑规则'}</div>
             <div className="h-sub">{scope} scope · prompt 片段</div>
           </div>
-          <button className="icon-btn" onClick={onClose}><Icons.X /></button>
+          <button className="icon-btn" onClick={onClose}>
+            <Icons.X />
+          </button>
         </div>
 
         <div className="slide-panel-body">
@@ -1619,10 +2135,20 @@ function RuleEditPanel({
           <div className="subsec-h">规则</div>
           <div className="form-grid">
             <label>名称</label>
-            <SparkInput value={name} onChange={(e) => setName(e.target.value)} placeholder="例：代码风格" />
+            <SparkInput
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="例：代码风格"
+            />
 
-            <label>优先级<span className="sub">数字越大越优先</span></label>
-            <SparkInput type="number" value={priority} onChange={(e) => setPriority(Number(e.target.value))} />
+            <label>
+              优先级<span className="sub">数字越大越优先</span>
+            </label>
+            <SparkInput
+              type="number"
+              value={priority}
+              onChange={(e) => setPriority(Number(e.target.value))}
+            />
 
             <label>内容</label>
             <textarea
@@ -1636,7 +2162,9 @@ function RuleEditPanel({
 
         <div className="slide-panel-foot">
           <span className="flex1" />
-          <button className="btn" onClick={onClose}>取消</button>
+          <button className="btn" onClick={onClose}>
+            取消
+          </button>
           <button className="btn primary" onClick={handleSave} disabled={saving}>
             <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
           </button>
@@ -1740,14 +2268,17 @@ function McpSection() {
     refresh()
   }, [refresh])
 
-  const loadTools = useCallback(async (serverId: string) => {
-    try {
-      const res = await getServerTools({ serverId })
-      setToolsMap((prev) => ({ ...prev, [serverId]: res.tools }))
-    } catch {
-      setToolsMap((prev) => ({ ...prev, [serverId]: [] }))
-    }
-  }, [getServerTools])
+  const loadTools = useCallback(
+    async (serverId: string) => {
+      try {
+        const res = await getServerTools({ serverId })
+        setToolsMap((prev) => ({ ...prev, [serverId]: res.tools }))
+      } catch {
+        setToolsMap((prev) => ({ ...prev, [serverId]: [] }))
+      }
+    },
+    [getServerTools],
+  )
 
   const handleToggleExpand = (serverId: string) => {
     if (expandedId === serverId) {
@@ -1764,11 +2295,21 @@ function McpSection() {
       const res = await startServer({ serverId })
       if (res.started) {
         toast.success('MCP 服务器已启动')
-        setStatusMap((prev) => ({ ...prev, [serverId]: { connected: true, toolCount: res.toolCount } }))
+        setStatusMap((prev) => ({
+          ...prev,
+          [serverId]: { connected: true, toolCount: res.toolCount },
+        }))
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '启动失败')
-      setStatusMap((prev) => ({ ...prev, [serverId]: { connected: false, toolCount: 0, error: err instanceof Error ? err.message : '启动失败' } }))
+      setStatusMap((prev) => ({
+        ...prev,
+        [serverId]: {
+          connected: false,
+          toolCount: 0,
+          error: err instanceof Error ? err.message : '启动失败',
+        },
+      }))
     } finally {
       setActionLoading((prev) => ({ ...prev, [serverId]: false }))
     }
@@ -1795,7 +2336,11 @@ function McpSection() {
       // Stop server first if running
       const status = statusMap[serverId]
       if (status?.connected) {
-        try { await stopServer({ serverId }) } catch { /* ignore */ }
+        try {
+          await stopServer({ serverId })
+        } catch {
+          /* ignore */
+        }
       }
       await deleteMcp({ id: serverId })
       toast.success('MCP 服务器已删除')
@@ -1844,9 +2389,18 @@ function McpSection() {
 
   const handleFormSave = async () => {
     const name = draft.name.trim()
-    if (!name) { setFormError('名称不能为空'); return }
-    if (draft.type === 'stdio' && !draft.command.trim()) { setFormError('stdio 类型需要填写启动命令'); return }
-    if (draft.type === 'sse' && !draft.url.trim()) { setFormError('SSE 类型需要填写 URL'); return }
+    if (!name) {
+      setFormError('名称不能为空')
+      return
+    }
+    if (draft.type === 'stdio' && !draft.command.trim()) {
+      setFormError('stdio 类型需要填写启动命令')
+      return
+    }
+    if (draft.type === 'sse' && !draft.url.trim()) {
+      setFormError('SSE 类型需要填写 URL')
+      return
+    }
 
     const envObj: Record<string, string> = {}
     for (const pair of draft.envPairs) {
@@ -1910,7 +2464,7 @@ function McpSection() {
   const updateEnvPair = (index: number, field: 'key' | 'value', val: string) => {
     setDraft((prev) => ({
       ...prev,
-      envPairs: prev.envPairs.map((p, i) => i === index ? { ...p, [field]: val } : p),
+      envPairs: prev.envPairs.map((p, i) => (i === index ? { ...p, [field]: val } : p)),
     }))
   }
 
@@ -1921,10 +2475,18 @@ function McpSection() {
       <div className="row section-header-row">
         <div className="flex1">
           <h2 className="section-h2">MCP 服务器</h2>
-          <div className="lede section-lede">配置 Model Context Protocol 服务器，为 Agent 提供外部工具和数据源。</div>
+          <div className="lede section-lede">
+            配置 Model Context Protocol 服务器，为 Agent 提供外部工具和数据源。
+          </div>
         </div>
-        <span className="badge primary dot">{runningCount} / {servers.length} 运行中</span>
-        <button className="btn primary" onClick={openAddForm} style={{ marginLeft: 10 }} /* dynamic */>
+        <span className="badge primary dot">
+          {runningCount} / {servers.length} 运行中
+        </span>
+        <button
+          className="btn primary"
+          onClick={openAddForm}
+          style={{ marginLeft: 10 }} /* dynamic */
+        >
           <Icons.Plus size={12} /> 添加
         </button>
       </div>
@@ -1955,7 +2517,9 @@ function McpSection() {
               <div key={server.id} className={`mcp-server-card ${isExpanded ? 'expanded' : ''}`}>
                 {/* Server row */}
                 <div className="mcp-server-row" onClick={() => handleToggleExpand(server.id)}>
-                  <span className={`mcp-status-dot ${isConnected ? 'running' : hasError ? 'error' : 'stopped'}`} />
+                  <span
+                    className={`mcp-status-dot ${isConnected ? 'running' : hasError ? 'error' : 'stopped'}`}
+                  />
                   <div className="mcp-server-meta flex1 min-w-0">
                     <div className="row row-gap-xs">
                       <span className="mcp-server-name">{server.name}</span>
@@ -1969,22 +2533,39 @@ function McpSection() {
                       <span>{toolCount} 个工具</span>
                     </div>
                   </div>
-                  <div className="row row-gap-xs mcp-server-actions" onClick={(e) => e.stopPropagation()}>
+                  <div
+                    className="row row-gap-xs mcp-server-actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {isLoading ? (
-                      <span className="mcp-action-loading"><Icons.Spinner size={13} /></span>
+                      <span className="mcp-action-loading">
+                        <Icons.Spinner size={13} />
+                      </span>
                     ) : isConnected ? (
-                      <button className="btn ghost sm" onClick={() => void handleStop(server.id)} title="停止">
+                      <button
+                        className="btn ghost sm"
+                        onClick={() => void handleStop(server.id)}
+                        title="停止"
+                      >
                         <Icons.Stop size={11} /> 停止
                       </button>
                     ) : (
-                      <button className="btn ghost sm" onClick={() => void handleStart(server.id)} title="启动">
+                      <button
+                        className="btn ghost sm"
+                        onClick={() => void handleStart(server.id)}
+                        title="启动"
+                      >
                         <Icons.Play size={11} /> 启动
                       </button>
                     )}
                     <button className="icon-btn" title="编辑" onClick={() => openEditForm(server)}>
                       <Icons.Edit size={12} />
                     </button>
-                    <button className="icon-btn" title="删除" onClick={() => setDeleteConfirmId(server.id)}>
+                    <button
+                      className="icon-btn"
+                      title="删除"
+                      onClick={() => setDeleteConfirmId(server.id)}
+                    >
                       <Icons.Trash size={11} />
                     </button>
                     <span className="mcp-expand-icon">
@@ -2000,14 +2581,18 @@ function McpSection() {
                       <div className="mcp-detail-col">
                         <div className="mcp-detail-label">连接状态</div>
                         <div className="mcp-detail-value">
-                          <span className={`badge ${isConnected ? 'success' : hasError ? 'danger' : ''} dot`}>
+                          <span
+                            className={`badge ${isConnected ? 'success' : hasError ? 'danger' : ''} dot`}
+                          >
                             {isConnected ? '已连接' : hasError ? '错误' : '已停止'}
                           </span>
                         </div>
                       </div>
                       <div className="mcp-detail-col">
                         <div className="mcp-detail-label">传输类型</div>
-                        <div className="mcp-detail-value">{transport === 'stdio' ? 'Stdio' : 'SSE'}</div>
+                        <div className="mcp-detail-value">
+                          {transport === 'stdio' ? 'Stdio' : 'SSE'}
+                        </div>
                       </div>
                       <div className="mcp-detail-col">
                         <div className="mcp-detail-label">工具数量</div>
@@ -2030,16 +2615,26 @@ function McpSection() {
                     {(() => {
                       const tools = toolsMap[server.id]
                       if (tools == null) {
-                        return <div className="mcp-detail-loading"><Icons.Spinner size={13} /> 加载工具列表...</div>
+                        return (
+                          <div className="mcp-detail-loading">
+                            <Icons.Spinner size={13} /> 加载工具列表...
+                          </div>
+                        )
                       }
                       if (tools.length === 0) {
-                        return <div className="mcp-detail-empty">暂无工具（服务器未运行或未提供工具）</div>
+                        return (
+                          <div className="mcp-detail-empty">
+                            暂无工具（服务器未运行或未提供工具）
+                          </div>
+                        )
                       }
                       return (
                         <div className="mcp-detail-tools">
                           {tools.map((tool) => (
                             <div key={tool.name} className="mcp-tool-item">
-                              <span className="mcp-tool-name"><Icons.Wrench size={11} /> {tool.name}</span>
+                              <span className="mcp-tool-name">
+                                <Icons.Wrench size={11} /> {tool.name}
+                              </span>
                               <span className="mcp-tool-desc">{tool.description || '—'}</span>
                             </div>
                           ))}
@@ -2059,12 +2654,20 @@ function McpSection() {
         <div className="modal-backdrop" onClick={closeForm}>
           <div className="modal modal-mcp-form" onClick={(e) => e.stopPropagation()}>
             <div className="modal-h">
-              <div className="modal-h-icon modal-h-icon-primary"><Icons.MCP size={18} /></div>
-              <div className="flex1">
-                <div className="modal-title">{editingId ? '编辑 MCP 服务器' : '添加 MCP 服务器'}</div>
-                <div className="modal-subtitle">{draft.type === 'stdio' ? 'Stdio 传输' : 'SSE 传输'}</div>
+              <div className="modal-h-icon modal-h-icon-primary">
+                <Icons.MCP size={18} />
               </div>
-              <button className="icon-btn" onClick={closeForm}><Icons.X /></button>
+              <div className="flex1">
+                <div className="modal-title">
+                  {editingId ? '编辑 MCP 服务器' : '添加 MCP 服务器'}
+                </div>
+                <div className="modal-subtitle">
+                  {draft.type === 'stdio' ? 'Stdio 传输' : 'SSE 传输'}
+                </div>
+              </div>
+              <button className="icon-btn" onClick={closeForm}>
+                <Icons.X />
+              </button>
             </div>
 
             <div className="modal-body modal-body-scroll">
@@ -2072,19 +2675,42 @@ function McpSection() {
 
               <div className="subsec-h">基础配置</div>
               <div className="form-grid">
-                <label>名称<span className="sub">服务器唯一标识名称</span></label>
-                <SparkInput value={draft.name} onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))} placeholder="例：filesystem" />
+                <label>
+                  名称<span className="sub">服务器唯一标识名称</span>
+                </label>
+                <SparkInput
+                  value={draft.name}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="例：filesystem"
+                />
 
-                <label>作用域<span className="sub">配置生效范围</span></label>
-                <SparkSelect value={draft.scope} onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))} disabled={!!editingId}>
+                <label>
+                  作用域<span className="sub">配置生效范围</span>
+                </label>
+                <SparkSelect
+                  value={draft.scope}
+                  onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))}
+                  disabled={!!editingId}
+                >
                   <option value="user">user</option>
                   <option value="team">team</option>
                   <option value="project">project</option>
                   <option value="session">session</option>
                 </SparkSelect>
 
-                <label>传输类型<span className="sub">与 MCP 服务器的通信方式</span></label>
-                <SparkSelect value={draft.type} onChange={(e) => setDraft((prev) => ({ ...prev, type: (e.target.value === 'sse' ? 'sse' : 'stdio') as McpTransportType }))} disabled={!!editingId}>
+                <label>
+                  传输类型<span className="sub">与 MCP 服务器的通信方式</span>
+                </label>
+                <SparkSelect
+                  value={draft.type}
+                  onChange={(e) =>
+                    setDraft((prev) => ({
+                      ...prev,
+                      type: (e.target.value === 'sse' ? 'sse' : 'stdio') as McpTransportType,
+                    }))
+                  }
+                  disabled={!!editingId}
+                >
                   <option value="stdio">Stdio（本地进程）</option>
                   <option value="sse">SSE（HTTP 流）</option>
                 </SparkSelect>
@@ -2094,26 +2720,49 @@ function McpSection() {
                 <>
                   <div className="subsec-h mt-lg">Stdio 配置</div>
                   <div className="form-grid">
-                    <label>启动命令<span className="sub">可执行文件路径</span></label>
-                    <SparkInput className="mono-sm" value={draft.command} onChange={(e) => setDraft((prev) => ({ ...prev, command: e.target.value }))} placeholder="npx" />
+                    <label>
+                      启动命令<span className="sub">可执行文件路径</span>
+                    </label>
+                    <SparkInput
+                      className="mono-sm"
+                      value={draft.command}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, command: e.target.value }))}
+                      placeholder="npx"
+                    />
 
-                    <label>参数<span className="sub">空格分隔的命令行参数</span></label>
-                    <SparkInput className="mono-sm" value={draft.args} onChange={(e) => setDraft((prev) => ({ ...prev, args: e.target.value }))} placeholder="-y @modelcontextprotocol/server-filesystem ." />
+                    <label>
+                      参数<span className="sub">空格分隔的命令行参数</span>
+                    </label>
+                    <SparkInput
+                      className="mono-sm"
+                      value={draft.args}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, args: e.target.value }))}
+                      placeholder="-y @modelcontextprotocol/server-filesystem ."
+                    />
                   </div>
                 </>
               ) : (
                 <>
                   <div className="subsec-h mt-lg">SSE 配置</div>
                   <div className="form-grid">
-                    <label>URL<span className="sub">SSE 端点地址</span></label>
-                    <SparkInput className="mono-sm" value={draft.url} onChange={(e) => setDraft((prev) => ({ ...prev, url: e.target.value }))} placeholder="https://mcp.example.com/sse" />
+                    <label>
+                      URL<span className="sub">SSE 端点地址</span>
+                    </label>
+                    <SparkInput
+                      className="mono-sm"
+                      value={draft.url}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, url: e.target.value }))}
+                      placeholder="https://mcp.example.com/sse"
+                    />
                   </div>
                 </>
               )}
 
               <div className="subsec-h mt-lg">
                 环境变量
-                <button className="btn ghost sm mcp-env-add-btn" onClick={addEnvPair}><Icons.Plus size={11} /> 添加</button>
+                <button className="btn ghost sm mcp-env-add-btn" onClick={addEnvPair}>
+                  <Icons.Plus size={11} /> 添加
+                </button>
               </div>
               {draft.envPairs.length === 0 ? (
                 <div className="mcp-env-empty">未配置环境变量</div>
@@ -2134,7 +2783,11 @@ function McpSection() {
                         onChange={(e) => updateEnvPair(idx, 'value', e.target.value)}
                         placeholder="value"
                       />
-                      <button className="icon-btn mcp-env-del" onClick={() => removeEnvPair(idx)} title="删除">
+                      <button
+                        className="icon-btn mcp-env-del"
+                        onClick={() => removeEnvPair(idx)}
+                        title="删除"
+                      >
                         <Icons.X size={12} />
                       </button>
                     </div>
@@ -2145,8 +2798,14 @@ function McpSection() {
 
             <div className="modal-foot">
               <span className="flex1" />
-              <button className="btn" onClick={closeForm}>取消</button>
-              <button className="btn primary" onClick={() => void handleFormSave()} disabled={formSaving}>
+              <button className="btn" onClick={closeForm}>
+                取消
+              </button>
+              <button
+                className="btn primary"
+                onClick={() => void handleFormSave()}
+                disabled={formSaving}
+              >
                 <Icons.Check size={12} /> {formSaving ? '保存中...' : '保存'}
               </button>
             </div>
@@ -2159,7 +2818,13 @@ function McpSection() {
         <div className="modal-backdrop" onClick={() => setDeleteConfirmId(null)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-h">
-              <div className="modal-h-icon" style={{ background: 'var(--danger-bg, #fef2f2)', color: 'var(--danger)' }} /* dynamic */>
+              <div
+                className="modal-h-icon"
+                style={{
+                  background: 'var(--danger-bg, #fef2f2)',
+                  color: 'var(--danger)',
+                }} /* dynamic */
+              >
                 <Icons.AlertTriangle size={18} />
               </div>
               <div>
@@ -2171,12 +2836,16 @@ function McpSection() {
             </div>
             <div className="modal-body">
               <div className="mcp-delete-warning">
-                确认删除此 MCP 服务器？{statusMap[deleteConfirmId]?.connected ? '该服务器正在运行，将自动停止。' : ''}此操作无法撤销。
+                确认删除此 MCP 服务器？
+                {statusMap[deleteConfirmId]?.connected ? '该服务器正在运行，将自动停止。' : ''}
+                此操作无法撤销。
               </div>
             </div>
             <div className="modal-foot">
               <span className="flex1" />
-              <button className="btn" onClick={() => setDeleteConfirmId(null)}>取消</button>
+              <button className="btn" onClick={() => setDeleteConfirmId(null)}>
+                取消
+              </button>
               <button
                 className="btn danger"
                 onClick={() => void handleDelete(deleteConfirmId)}
@@ -2193,19 +2862,105 @@ function McpSection() {
 }
 
 /* ───────── SYSTEM PROMPT ───────── */
+
+type PromptLayerMeta = {
+  scope: string
+  label: string
+  badge: string
+  badgeColor: string
+  desc: string
+}
+
+const PROMPT_LAYERS: PromptLayerMeta[] = [
+  {
+    scope: 'system',
+    label: 'System',
+    badge: 'SYS',
+    badgeColor: '#94a3b8',
+    desc: '全局基础 · 所有 Agent 共享',
+  },
+  {
+    scope: 'agent',
+    label: 'Agent',
+    badge: 'AGENT',
+    badgeColor: '#8b5cf6',
+    desc: '单 Agent 定制 · 多 Agent 配置中设置',
+  },
+  {
+    scope: 'project',
+    label: 'Project',
+    badge: 'PROJ',
+    badgeColor: '#f97316',
+    desc: '.spark/prompt.md · 当前工作区',
+  },
+  {
+    scope: 'session',
+    label: 'Session',
+    badge: 'SESS',
+    badgeColor: '#f43f5e',
+    desc: '本次会话临时覆盖',
+  },
+]
+
+type PromptTemplate = {
+  id: string
+  name: string
+  desc: string
+  content: string
+}
+
+const PROMPT_TEMPLATES: PromptTemplate[] = [
+  {
+    id: 'general-coder',
+    name: '通用编程助手',
+    desc: '适合日常编码、调试、代码审查',
+    content:
+      '你是一个专业的编程助手。请遵循以下原则：\n1. 优先使用项目中已有的模式和风格\n2. 修改代码时保持最小变更原则\n3. 每次修改后说明原因和影响范围\n4. 如果有多种方案，简要对比后给出推荐',
+  },
+  {
+    id: 'strict-reviewer',
+    name: '严格代码审查',
+    desc: '关注安全、性能和可维护性',
+    content:
+      '你是一个严格的代码审查员。在审查代码时请重点关注：\n1. 安全漏洞：SQL 注入、XSS、敏感信息泄露\n2. 性能问题：N+1 查询、不必要的重渲染、内存泄漏\n3. 可维护性：命名规范、函数复杂度、模块耦合\n4. 错误处理：边界条件、异常捕获、降级策略\n给出问题时请同时提供修复建议和示例代码。',
+  },
+  {
+    id: 'architect',
+    name: '架构设计',
+    desc: '系统设计、技术选型、模块划分',
+    content:
+      '你是一个资深架构师。在进行架构设计时请遵循：\n1. 先理解业务场景和约束条件\n2. 提供多个方案并对比权衡\n3. 考虑可扩展性、可观测性、容错能力\n4. 给出清晰的模块划分和依赖关系\n5. 使用图表和代码示例辅助说明',
+  },
+  {
+    id: 'concise',
+    name: '简洁回复',
+    desc: '减少冗余，直接给出答案',
+    content:
+      '请简洁回复：\n1. 直接给出答案或代码，不要重复问题\n2. 仅在必要时解释\n3. 代码注释只在非显而易见的地方添加',
+  },
+]
+
 function SystemPromptSection() {
   const [systemPrompt, setSystemPrompt] = useState('')
+  const [savedPrompt, setSavedPrompt] = useState('')
   const [systemPromptEnabled, setSystemPromptEnabled] = useState(true)
+  const [savedEnabled, setSavedEnabled] = useState(true)
   const [savingPrompt, setSavingPrompt] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(false)
+  const [showLayers, setShowLayers] = useState(true)
   const { toast } = useToast()
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
+
+  const isDirty = systemPrompt !== savedPrompt || systemPromptEnabled !== savedEnabled
 
   useEffect(() => {
     getPromptConfig({})
       .then((res) => {
         setSystemPrompt(res.system.content)
+        setSavedPrompt(res.system.content)
         setSystemPromptEnabled(res.system.enabled)
+        setSavedEnabled(res.system.enabled)
       })
       .catch(() => {})
   }, [getPromptConfig])
@@ -2218,7 +2973,9 @@ function SystemPromptSection() {
         value: { enabled: systemPromptEnabled, content: systemPrompt },
       })
       setSystemPrompt(res.system.content)
+      setSavedPrompt(res.system.content)
       setSystemPromptEnabled(res.system.enabled)
+      setSavedEnabled(res.system.enabled)
       toast.success('系统提示词已保存')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '保存系统提示词失败')
@@ -2227,34 +2984,170 @@ function SystemPromptSection() {
     }
   }
 
+  const handleReset = () => {
+    setSystemPrompt(savedPrompt)
+    setSystemPromptEnabled(savedEnabled)
+  }
+
+  const handleApplyTemplate = (template: PromptTemplate) => {
+    setSystemPrompt(template.content)
+    setShowTemplates(false)
+  }
+
+  const charCount = systemPrompt.length
+  const estimatedTokens = Math.ceil(charCount / 4)
+
   return (
     <div className="settings-section">
-      <h2>系统提示词</h2>
-      <div className="lede">配置全局系统提示词，会和后续 Agent、项目、会话提示词逐级合并。</div>
+      <div className="row section-header-row">
+        <div className="flex1">
+          <h2 className="section-h2">系统提示词</h2>
+          <div className="lede section-lede">
+            配置全局系统提示词，按 System → Agent → Project → Session 逐级合并，后者覆盖前者。
+          </div>
+        </div>
+        {isDirty && <span className="badge warning dot">未保存</span>}
+      </div>
 
-      <div className="card prompt-config-card">
-        <div className="settings-row">
+      {/* ── Prompt layers overview ── */}
+      <div className="subsec-h">
+        提示词层级
+        <button
+          className="btn ghost sm"
+          onClick={() => setShowLayers((prev) => !prev)}
+          style={{ marginLeft: 8 }}
+        >
+          <Icons.ChevronDown size={12} className={showLayers ? 'spin-180' : ''} />
+          {showLayers ? '收起' : '展开'}
+        </button>
+      </div>
+      {showLayers && (
+        <div className="prompt-layers">
+          {PROMPT_LAYERS.map((layer) => (
+            <div
+              key={layer.scope}
+              className={`prompt-layer ${layer.scope === 'system' ? 'active' : ''}`}
+            >
+              <div className="prompt-layer-left">
+                <span
+                  className="badge rule-badge rule-badge-dynamic"
+                  style={{ background: layer.badgeColor + '20', color: layer.badgeColor }}
+                >
+                  {layer.badge}
+                </span>
+                <div className="prompt-layer-info">
+                  <span className="prompt-layer-name">{layer.label}</span>
+                  <span className="prompt-layer-desc">{layer.desc}</span>
+                </div>
+              </div>
+              <div className="prompt-layer-right">
+                {layer.scope === 'system' && <span className="badge success">编辑中</span>}
+                {layer.scope === 'agent' && <span className="muted text-xs-12">多 Agent 配置</span>}
+                {layer.scope === 'project' && (
+                  <span className="muted text-xs-12">.spark/prompt.md</span>
+                )}
+                {layer.scope === 'session' && <span className="muted text-xs-12">会话内覆盖</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── Editor card ── */}
+      <div className="subsec-h">
+        系统级提示词
+        <button
+          className="btn ghost sm"
+          onClick={() => setShowTemplates((prev) => !prev)}
+          style={{ marginLeft: 8 }}
+        >
+          <Icons.Layers size={11} /> 模板
+        </button>
+      </div>
+
+      {showTemplates && (
+        <div className="prompt-templates">
+          <div className="prompt-templates-hint">选择一个模板快速填充，选择后仍可自由编辑。</div>
+          <div className="prompt-templates-grid">
+            {PROMPT_TEMPLATES.map((tpl) => (
+              <button
+                key={tpl.id}
+                className="prompt-template-card"
+                onClick={() => handleApplyTemplate(tpl)}
+              >
+                <div className="prompt-template-name">{tpl.name}</div>
+                <div className="prompt-template-desc">{tpl.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="card prompt-editor-card">
+        <div className="settings-row prompt-editor-header">
           <div>
-            <div className="settings-row-title">系统级提示词</div>
-            <div className="settings-row-desc">全局生效，作为所有 Agent 的基础提示词注入。</div>
+            <div className="settings-row-title">全局系统提示词</div>
+            <div className="settings-row-desc">
+              全局生效，作为所有 Agent 的基础提示词注入。支持中文和英文混合。
+            </div>
           </div>
           <div
             className={`switch ${systemPromptEnabled ? 'on' : ''}`}
             onClick={() => setSystemPromptEnabled((prev) => !prev)}
           />
         </div>
-        <textarea
-          className="spark-textarea prompt-textarea"
-          value={systemPrompt}
-          onChange={(event) => setSystemPrompt(event.target.value)}
-          placeholder="输入全局系统提示词..."
-        />
-        <div className="row prompt-actions">
-          <span className="muted">Agent 级提示词会在多 Agent 配置功能中开放。</span>
-          <span className="flex1" />
-          <button className="btn primary sm" onClick={() => void saveSystemPrompt()} disabled={savingPrompt}>
-            <Icons.Check size={12} /> {savingPrompt ? '保存中...' : '保存'}
-          </button>
+
+        <div className={`prompt-editor-body ${!systemPromptEnabled ? 'disabled' : ''}`}>
+          <textarea
+            className="spark-textarea prompt-textarea"
+            value={systemPrompt}
+            onChange={(event) => setSystemPrompt(event.target.value)}
+            placeholder="输入全局系统提示词...&#10;&#10;例如：你是一个专业的编程助手，请用中文回复。"
+            disabled={!systemPromptEnabled}
+            rows={12}
+          />
+          <div className="prompt-editor-footer">
+            <div className="prompt-editor-stats">
+              <span>{charCount} 字符</span>
+              <span className="prompt-stats-sep">·</span>
+              <span>约 {estimatedTokens} tokens</span>
+              {charCount > 10000 && (
+                <>
+                  <span className="prompt-stats-sep">·</span>
+                  <span className="prompt-stats-warn">内容较长</span>
+                </>
+              )}
+            </div>
+            <div className="row row-gap-xs">
+              {isDirty && (
+                <button className="btn ghost sm" onClick={handleReset}>
+                  撤销修改
+                </button>
+              )}
+              <button
+                className="btn primary sm"
+                onClick={() => void saveSystemPrompt()}
+                disabled={savingPrompt || !isDirty}
+              >
+                <Icons.Check size={12} /> {savingPrompt ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Tips ── */}
+      <div className="prompt-tips">
+        <div className="prompt-tip-item">
+          <Icons.Zap size={13} className="color-primary" />
+          <span>
+            系统提示词对每个会话生效，可在会话内用{' '}
+            <code className="prompt-code">.spark/prompt.md</code> 覆盖。
+          </span>
+        </div>
+        <div className="prompt-tip-item">
+          <Icons.Zap size={13} className="color-primary" />
+          <span>Agent 级提示词会在多 Agent 配置功能中开放，届时可按角色定制。</span>
         </div>
       </div>
     </div>
@@ -2287,35 +3180,39 @@ function SkillsSection() {
   return (
     <div className="settings-section">
       <h2>Skills</h2>
-      <div className="lede">管理系统级可见 Skill。系统隐藏的 Skill 不会进入任何 Agent 的可见列表。</div>
+      <div className="lede">
+        管理系统级可见 Skill。系统隐藏的 Skill 不会进入任何 Agent 的可见列表。
+      </div>
 
       {error && <div className="alert-banner">{error}</div>}
 
       <div className="card">
         {loading ? (
           <div className="loading-card">正在加载 Skills...</div>
-        ) : skills.map((skill) => {
-          const meta = parseSkillManifest(skill.manifestJson)
-          return (
-            <SettingsRow
-              key={skill.id}
-              title={skill.name}
-              desc={`${meta.desc} · ${meta.source} · ${skill.version}`}
-              right={
-                <div className="row row-gap-xs">
-                  {skill.id === 'builtin:superpowers' && <span className="badge">内置</span>}
-                  <span className={`badge ${skill.enabled ? 'success' : ''}`}>
-                    {skill.enabled ? '系统可见' : '系统隐藏'}
-                  </span>
-                  <div
-                    className={`switch ${skill.enabled ? 'on' : ''}`}
-                    onClick={() => void toggleSkill(skill)}
-                  />
-                </div>
-              }
-            />
-          )
-        })}
+        ) : (
+          skills.map((skill) => {
+            const meta = parseSkillManifest(skill.manifestJson)
+            return (
+              <SettingsRow
+                key={skill.id}
+                title={skill.name}
+                desc={`${meta.desc} · ${meta.source} · ${skill.version}`}
+                right={
+                  <div className="row row-gap-xs">
+                    {skill.id === 'builtin:superpowers' && <span className="badge">内置</span>}
+                    <span className={`badge ${skill.enabled ? 'success' : ''}`}>
+                      {skill.enabled ? '系统可见' : '系统隐藏'}
+                    </span>
+                    <div
+                      className={`switch ${skill.enabled ? 'on' : ''}`}
+                      onClick={() => void toggleSkill(skill)}
+                    />
+                  </div>
+                }
+              />
+            )
+          })
+        )}
       </div>
 
       <div className="skills-hint">
@@ -2327,7 +3224,9 @@ function SkillsSection() {
 
 /* ───────── WORKFLOW TEMPLATES ───────── */
 function WorkflowTemplatesSection() {
-  const [templates, setTemplates] = useState<WorkflowTemplate[]>(() => readStoredJson(WORKFLOW_TEMPLATES_KEY, DEFAULT_WORKFLOW_TEMPLATES))
+  const [templates, setTemplates] = useState<WorkflowTemplate[]>(() =>
+    readStoredJson(WORKFLOW_TEMPLATES_KEY, DEFAULT_WORKFLOW_TEMPLATES),
+  )
 
   const restoreDefaults = () => {
     setTemplates(DEFAULT_WORKFLOW_TEMPLATES)
@@ -2339,9 +3238,13 @@ function WorkflowTemplatesSection() {
       <div className="row section-header-row">
         <div className="flex1">
           <h2 className="section-h2">工作流模板</h2>
-          <div className="lede section-lede">管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。</div>
+          <div className="lede section-lede">
+            管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。
+          </div>
         </div>
-        <button className="btn ghost sm" onClick={restoreDefaults}><Icons.Refresh size={11} /> 恢复内置</button>
+        <button className="btn ghost sm" onClick={restoreDefaults}>
+          <Icons.Refresh size={11} /> 恢复内置
+        </button>
       </div>
 
       <div className="card">
@@ -2361,9 +3264,13 @@ function WorkflowTemplatesSection() {
 /* ───────── PERMISSIONS ───────── */
 function PermissionsSection() {
   const [profiles, setProfiles] = useState<PermissionProfileItem[]>([])
-  const [activeProfileId, setActiveProfileId] = useState(() => window.localStorage.getItem(PERM_PROFILE_KEY) || 'project-standard')
+  const [activeProfileId, setActiveProfileId] = useState(
+    () => window.localStorage.getItem(PERM_PROFILE_KEY) || 'project-standard',
+  )
   const [loading, setLoading] = useState(true)
-  const [auditEnabled, setAuditEnabled] = useState(() => window.localStorage.getItem(AUDIT_ENABLED_KEY) !== 'false')
+  const [auditEnabled, setAuditEnabled] = useState(
+    () => window.localStorage.getItem(AUDIT_ENABLED_KEY) !== 'false',
+  )
 
   const { invoke: listProfiles } = useIpcInvoke('permission:list-profiles')
   const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
@@ -2375,13 +3282,19 @@ function PermissionsSection() {
       .then((res) => {
         setProfiles(res.profiles)
         const storedProfileId = window.localStorage.getItem(PERM_PROFILE_KEY)
-        setActiveProfileId(storedProfileId !== null && res.profiles.some((p) => p.id === storedProfileId) ? storedProfileId : res.activeProfileId)
+        setActiveProfileId(
+          storedProfileId !== null && res.profiles.some((p) => p.id === storedProfileId)
+            ? storedProfileId
+            : res.activeProfileId,
+        )
       })
       .catch(console.error)
       .finally(() => setLoading(false))
   }, [listProfiles])
 
-  useEffect(() => { refresh() }, [refresh])
+  useEffect(() => {
+    refresh()
+  }, [refresh])
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
 
@@ -2406,18 +3319,90 @@ function PermissionsSection() {
     window.localStorage.setItem(AUDIT_ENABLED_KEY, String(next))
   }
 
-  const RULE_META: Array<{ action: string; icon: ReactNode; name: string; hint: string; scope: string }> = [
-    { action: 'file_read', icon: <Icons.File />, name: '读取工作区文件', hint: '允许 · 不弹窗', scope: '工作区内' },
-    { action: 'file_write', icon: <Icons.Edit />, name: '编辑工作区文件', hint: '自动写入，记录到 checkpoint', scope: '工作区内' },
-    { action: 'file_read_any', icon: <Icons.File />, name: '访问工作区外文件', hint: '读取或写入 ~/ 之外路径', scope: '任意' },
-    { action: 'command_exec', icon: <Icons.Terminal />, name: '执行 shell 命令', hint: '非破坏性命令', scope: '本会话' },
-    { action: 'command_dangerous', icon: <Icons.AlertTriangle />, name: '高风险命令', hint: 'rm -rf、curl | sh、密钥导出', scope: '任意' },
-    { action: 'git_push', icon: <Icons.GitBranch />, name: 'Git 推送', hint: '包含 --force / --force-with-lease', scope: '任意' },
-    { action: 'network_known', icon: <Icons.Globe />, name: '网络访问', hint: 'HTTP/HTTPS 请求', scope: '域名白名单' },
-    { action: 'network_unknown', icon: <Icons.Globe />, name: '访问陌生域名', hint: '未在白名单中的域名', scope: '任意' },
-    { action: 'mcp_tool', icon: <Icons.MCP />, name: '调用 MCP 工具', hint: '按 server allowlist', scope: '按 server' },
-    { action: 'secret_read', icon: <Icons.Lock />, name: '读取 secret', hint: '通过 secret reference 注入', scope: 'profile 内' },
-    { action: 'long_task', icon: <Icons.Clock />, name: '长任务后台运行', hint: '≥ 30s 的任务', scope: '本会话' },
+  const RULE_META: Array<{
+    action: string
+    icon: ReactNode
+    name: string
+    hint: string
+    scope: string
+  }> = [
+    {
+      action: 'file_read',
+      icon: <Icons.File />,
+      name: '读取工作区文件',
+      hint: '允许 · 不弹窗',
+      scope: '工作区内',
+    },
+    {
+      action: 'file_write',
+      icon: <Icons.Edit />,
+      name: '编辑工作区文件',
+      hint: '自动写入，记录到 checkpoint',
+      scope: '工作区内',
+    },
+    {
+      action: 'file_read_any',
+      icon: <Icons.File />,
+      name: '访问工作区外文件',
+      hint: '读取或写入 ~/ 之外路径',
+      scope: '任意',
+    },
+    {
+      action: 'command_exec',
+      icon: <Icons.Terminal />,
+      name: '执行 shell 命令',
+      hint: '非破坏性命令',
+      scope: '本会话',
+    },
+    {
+      action: 'command_dangerous',
+      icon: <Icons.AlertTriangle />,
+      name: '高风险命令',
+      hint: 'rm -rf、curl | sh、密钥导出',
+      scope: '任意',
+    },
+    {
+      action: 'git_push',
+      icon: <Icons.GitBranch />,
+      name: 'Git 推送',
+      hint: '包含 --force / --force-with-lease',
+      scope: '任意',
+    },
+    {
+      action: 'network_known',
+      icon: <Icons.Globe />,
+      name: '网络访问',
+      hint: 'HTTP/HTTPS 请求',
+      scope: '域名白名单',
+    },
+    {
+      action: 'network_unknown',
+      icon: <Icons.Globe />,
+      name: '访问陌生域名',
+      hint: '未在白名单中的域名',
+      scope: '任意',
+    },
+    {
+      action: 'mcp_tool',
+      icon: <Icons.MCP />,
+      name: '调用 MCP 工具',
+      hint: '按 server allowlist',
+      scope: '按 server',
+    },
+    {
+      action: 'secret_read',
+      icon: <Icons.Lock />,
+      name: '读取 secret',
+      hint: '通过 secret reference 注入',
+      scope: 'profile 内',
+    },
+    {
+      action: 'long_task',
+      icon: <Icons.Clock />,
+      name: '长任务后台运行',
+      hint: '≥ 30s 的任务',
+      scope: '本会话',
+    },
   ]
 
   const PROFILE_META: Record<string, { icon: ReactNode; desc: string }> = {
@@ -2429,7 +3414,9 @@ function PermissionsSection() {
   return (
     <div className="settings-section">
       <h2>权限策略</h2>
-      <div className="lede">控制 Agent 能做什么、何时需要审批。沙箱等级配合策略一起决定运行时风险。</div>
+      <div className="lede">
+        控制 Agent 能做什么、何时需要审批。沙箱等级配合策略一起决定运行时风险。
+      </div>
 
       <div className="subsec-h">权限 Profile</div>
       {loading ? (
@@ -2475,13 +3462,15 @@ function PermissionsSection() {
 
           <div className="subsec-h">沙箱等级</div>
           <div className="card">
-            {([
-              [0, 'L0 · 仅聊天', '完全禁用工具调用', false],
-              [1, 'L1 · 只读工作区', '可读文件，不可写、不可执行命令', false],
-              [2, 'L2 · 受控写入', '可写工作区文件，命令需审批 — 推荐', false],
-              [3, 'L3 · 完全自动化', '工作区内大多数操作免审批；高风险仍审批', false],
-              [4, 'L4 · 隔离沙箱', 'microVM 内执行 (实验性)', true],
-            ] as [number, string, string, boolean][]).map(([level, title, desc, disabled]) => (
+            {(
+              [
+                [0, 'L0 · 仅聊天', '完全禁用工具调用', false],
+                [1, 'L1 · 只读工作区', '可读文件，不可写、不可执行命令', false],
+                [2, 'L2 · 受控写入', '可写工作区文件，命令需审批 — 推荐', false],
+                [3, 'L3 · 完全自动化', '工作区内大多数操作免审批；高风险仍审批', false],
+                [4, 'L4 · 隔离沙箱', 'microVM 内执行 (实验性)', true],
+              ] as [number, string, string, boolean][]
+            ).map(([level, title, desc, disabled]) => (
               <SettingsRow
                 key={level}
                 title={title}
@@ -2504,8 +3493,16 @@ function PermissionsSection() {
 
       <div className="subsec-h">审计</div>
       <div className="card">
-        <SettingsRow title="记录所有权限决策" desc="写入 SQLite · 不可篡改" right={<div className={`switch ${auditEnabled ? 'on' : ''}`} onClick={toggleAudit} />} />
-        <SettingsRow title="导出团队审计报告" desc="按周生成可签发的 JSON 报告" right={<div className="switch" />} />
+        <SettingsRow
+          title="记录所有权限决策"
+          desc="写入 SQLite · 不可篡改"
+          right={<div className={`switch ${auditEnabled ? 'on' : ''}`} onClick={toggleAudit} />}
+        />
+        <SettingsRow
+          title="导出团队审计报告"
+          desc="按周生成可签发的 JSON 报告"
+          right={<div className="switch" />}
+        />
         <SettingsRow
           title="审计日志保留"
           right={
@@ -2524,12 +3521,21 @@ function PermissionsSection() {
   )
 }
 
-function ProfileChip({ active, onClick, icon, name, desc }: { active: boolean; onClick: () => void; icon: ReactNode; name: string; desc: string }) {
+function ProfileChip({
+  active,
+  onClick,
+  icon,
+  name,
+  desc,
+}: {
+  active: boolean
+  onClick: () => void
+  icon: ReactNode
+  name: string
+  desc: string
+}) {
   return (
-    <button
-      onClick={onClick}
-      className={`profile-chip ${active ? 'active' : ''}`}
-    >
+    <button onClick={onClick} className={`profile-chip ${active ? 'active' : ''}`}>
       <span className={`profile-chip-icon ${active ? 'active' : ''}`}>{icon}</span>
       <div>
         <div className={`profile-chip-name ${active ? 'active' : ''}`}>{name}</div>
@@ -2539,7 +3545,21 @@ function ProfileChip({ active, onClick, icon, name, desc }: { active: boolean; o
   )
 }
 
-function PermRule({ icon, name, hint, scope, mode, onModeChange }: { icon: ReactNode; name: string; hint: string; scope: string; mode: PermissionMode; onModeChange?: (m: PermissionMode) => void }) {
+function PermRule({
+  icon,
+  name,
+  hint,
+  scope,
+  mode,
+  onModeChange,
+}: {
+  icon: ReactNode
+  name: string
+  hint: string
+  scope: string
+  mode: PermissionMode
+  onModeChange?: (m: PermissionMode) => void
+}) {
   return (
     <div className="perm-rule">
       <span className="ico">{icon}</span>
@@ -2549,12 +3569,20 @@ function PermRule({ icon, name, hint, scope, mode, onModeChange }: { icon: React
       </div>
       <div className="select-full">
         <SparkSelect defaultValue={scope}>
-          <option>工作区内</option><option>本会话</option><option>本项目</option><option>任意</option>
-          <option>profile 内</option><option>按 server</option><option>域名白名单</option>
+          <option>工作区内</option>
+          <option>本会话</option>
+          <option>本项目</option>
+          <option>任意</option>
+          <option>profile 内</option>
+          <option>按 server</option>
+          <option>域名白名单</option>
         </SparkSelect>
       </div>
       <div className="select-full">
-        <SparkSelect value={mode} onChange={(e) => onModeChange?.(e.target.value as PermissionMode)}>
+        <SparkSelect
+          value={mode}
+          onChange={(e) => onModeChange?.(e.target.value as PermissionMode)}
+        >
           <option value="allow">允许</option>
           <option value="ask">询问</option>
           <option value="ask-twice">双重确认</option>
@@ -2584,30 +3612,88 @@ function TelemetrySection() {
           <option value="trace">trace</option>
         </SparkSelect>
 
-        <label>OpenTelemetry endpoint<span className="sub">可选 — 把 trace 转发到 collector</span></label>
-        <SparkInput value={s.otlpEndpoint} onChange={(e) => set({ otlpEndpoint: e.target.value })} placeholder="https://otlp.example.com:4318 (可选)" />
+        <label>
+          OpenTelemetry endpoint<span className="sub">可选 — 把 trace 转发到 collector</span>
+        </label>
+        <SparkInput
+          value={s.otlpEndpoint}
+          onChange={(e) => set({ otlpEndpoint: e.target.value })}
+          placeholder="https://otlp.example.com:4318 (可选)"
+        />
 
         <label>Trace 采样率</label>
         <div className="control">
-          <SparkInput type="range" min="0" max="100" value={s.traceSamplingRate} onChange={(e) => set({ traceSamplingRate: Number(e.target.value) })} className="flex1" />
+          <SparkInput
+            type="range"
+            min="0"
+            max="100"
+            value={s.traceSamplingRate}
+            onChange={(e) => set({ traceSamplingRate: Number(e.target.value) })}
+            className="flex1"
+          />
           <span className="mono-sm muted range-value">{s.traceSamplingRate}%</span>
         </div>
 
         <label>本地保留 trace 天数</label>
-        <SparkInput type="number" value={s.traceRetentionDays} onChange={(e) => set({ traceRetentionDays: Number(e.target.value) || 14 })} className="input-max-sm" />
+        <SparkInput
+          type="number"
+          value={s.traceRetentionDays}
+          onChange={(e) => set({ traceRetentionDays: Number(e.target.value) || 14 })}
+          className="input-max-sm"
+        />
       </div>
 
       <div className="subsec-h">最近运行</div>
       <div className="card">
-        <SettingsRow title="代码功能开发：搜索优化" desc="Run #4f3a · 5 agent · 4m 38s · $0.92" right={<button className="btn ghost sm"><Icons.Eye size={11} /> 查看 trace</button>} />
-        <SettingsRow title="重构 auth 模块为 OAuth 2.1" desc="Run #41b8 · 1 agent · 6m 12s · $1.34" right={<button className="btn ghost sm"><Icons.Eye size={11} /> 查看 trace</button>} />
-        <SettingsRow title="MCP gateway 性能调优" desc="Run #38c0 · 1 agent · 失败" right={<button className="btn ghost sm danger-btn"><Icons.Eye size={11} /> 查看错误</button>} />
+        <SettingsRow
+          title="代码功能开发：搜索优化"
+          desc="Run #4f3a · 5 agent · 4m 38s · $0.92"
+          right={
+            <button className="btn ghost sm">
+              <Icons.Eye size={11} /> 查看 trace
+            </button>
+          }
+        />
+        <SettingsRow
+          title="重构 auth 模块为 OAuth 2.1"
+          desc="Run #41b8 · 1 agent · 6m 12s · $1.34"
+          right={
+            <button className="btn ghost sm">
+              <Icons.Eye size={11} /> 查看 trace
+            </button>
+          }
+        />
+        <SettingsRow
+          title="MCP gateway 性能调优"
+          desc="Run #38c0 · 1 agent · 失败"
+          right={
+            <button className="btn ghost sm danger-btn">
+              <Icons.Eye size={11} /> 查看错误
+            </button>
+          }
+        />
       </div>
 
       <div className="subsec-h">诊断包</div>
       <div className="card">
-        <SettingsRow title="生成诊断包" desc="包含 app/OS 版本、provider 健康、近期错误日志，自动脱敏" right={<button className="btn"><Icons.Download size={11} /> 生成</button>} />
-        <SettingsRow title="复制最近一次错误" desc="便于发到 GitHub Issue" right={<button className="btn ghost sm"><Icons.Copy size={11} /> 复制</button>} />
+        <SettingsRow
+          title="生成诊断包"
+          desc="包含 app/OS 版本、provider 健康、近期错误日志，自动脱敏"
+          right={
+            <button className="btn">
+              <Icons.Download size={11} /> 生成
+            </button>
+          }
+        />
+        <SettingsRow
+          title="复制最近一次错误"
+          desc="便于发到 GitHub Issue"
+          right={
+            <button className="btn ghost sm">
+              <Icons.Copy size={11} /> 复制
+            </button>
+          }
+        />
       </div>
     </div>
   )
@@ -2616,10 +3702,43 @@ function TelemetrySection() {
 /* ───────── USAGE ───────── */
 function UsageSection() {
   const [dashboard, setDashboard] = useState<{
-    total: { totalInputTokens: number; totalOutputTokens: number; totalCacheReadTokens: number; totalCacheWriteTokens: number; totalCostUsd: number; recordCount: number }
-    currentMonth: { totalInputTokens: number; totalOutputTokens: number; totalCacheReadTokens: number; totalCacheWriteTokens: number; totalCostUsd: number; recordCount: number }
-    topModels: Array<{ modelId: string; providerId: string; totalInputTokens: number; totalOutputTokens: number; totalCostUsd: number; recordCount: number }>
-    recentRecords: Array<{ id: string; session_id: string; provider_id: string; model_id: string; input_tokens: number; output_tokens: number; cache_read_tokens: number; cache_write_tokens: number; cost_usd: number; request_timestamp: string; created_at: string }>
+    total: {
+      totalInputTokens: number
+      totalOutputTokens: number
+      totalCacheReadTokens: number
+      totalCacheWriteTokens: number
+      totalCostUsd: number
+      recordCount: number
+    }
+    currentMonth: {
+      totalInputTokens: number
+      totalOutputTokens: number
+      totalCacheReadTokens: number
+      totalCacheWriteTokens: number
+      totalCostUsd: number
+      recordCount: number
+    }
+    topModels: Array<{
+      modelId: string
+      providerId: string
+      totalInputTokens: number
+      totalOutputTokens: number
+      totalCostUsd: number
+      recordCount: number
+    }>
+    recentRecords: Array<{
+      id: string
+      session_id: string
+      provider_id: string
+      model_id: string
+      input_tokens: number
+      output_tokens: number
+      cache_read_tokens: number
+      cache_write_tokens: number
+      cost_usd: number
+      request_timestamp: string
+      created_at: string
+    }>
   } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -2679,19 +3798,27 @@ function UsageSection() {
       <div className="usage-overview-grid">
         <div className="usage-stat-card">
           <div className="usage-stat-label">输入 Token</div>
-          <div className="usage-stat-value">{loading ? '—' : fmt(month?.totalInputTokens ?? 0)}</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(month?.totalInputTokens ?? 0)}
+          </div>
         </div>
         <div className="usage-stat-card">
           <div className="usage-stat-label">输出 Token</div>
-          <div className="usage-stat-value">{loading ? '—' : fmt(month?.totalOutputTokens ?? 0)}</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(month?.totalOutputTokens ?? 0)}
+          </div>
         </div>
         <div className="usage-stat-card">
           <div className="usage-stat-label">缓存命中</div>
-          <div className="usage-stat-value">{loading ? '—' : fmt(month?.totalCacheReadTokens ?? 0)}</div>
+          <div className="usage-stat-value">
+            {loading ? '—' : fmt(month?.totalCacheReadTokens ?? 0)}
+          </div>
         </div>
         <div className="usage-stat-card">
           <div className="usage-stat-label">预估费用</div>
-          <div className="usage-stat-value usage-cost-value">{loading ? '—' : fmtUsd(month?.totalCostUsd ?? 0)}</div>
+          <div className="usage-stat-value usage-cost-value">
+            {loading ? '—' : fmtUsd(month?.totalCostUsd ?? 0)}
+          </div>
         </div>
       </div>
 
@@ -2700,19 +3827,35 @@ function UsageSection() {
       <div className="card">
         <SettingsRow
           title="总请求数"
-          right={<span className="mono-sm strong">{loading ? '—' : String(total?.recordCount ?? 0)}</span>}
+          right={
+            <span className="mono-sm strong">
+              {loading ? '—' : String(total?.recordCount ?? 0)}
+            </span>
+          }
         />
         <SettingsRow
           title="总输入 Token"
-          right={<span className="mono-sm strong">{loading ? '—' : fmt(total?.totalInputTokens ?? 0)}</span>}
+          right={
+            <span className="mono-sm strong">
+              {loading ? '—' : fmt(total?.totalInputTokens ?? 0)}
+            </span>
+          }
         />
         <SettingsRow
           title="总输出 Token"
-          right={<span className="mono-sm strong">{loading ? '—' : fmt(total?.totalOutputTokens ?? 0)}</span>}
+          right={
+            <span className="mono-sm strong">
+              {loading ? '—' : fmt(total?.totalOutputTokens ?? 0)}
+            </span>
+          }
         />
         <SettingsRow
           title="总费用"
-          right={<span className="mono-sm strong usage-cost-value">{loading ? '—' : fmtUsd(total?.totalCostUsd ?? 0)}</span>}
+          right={
+            <span className="mono-sm strong usage-cost-value">
+              {loading ? '—' : fmtUsd(total?.totalCostUsd ?? 0)}
+            </span>
+          }
         />
       </div>
 
@@ -2748,7 +3891,9 @@ function UsageSection() {
             <div key={r.id} className="usage-record-row">
               <span className="usage-rec-time">{fmtDate(r.request_timestamp)}</span>
               <span className="usage-rec-model">{r.model_id}</span>
-              <span className="usage-rec-tokens mono-sm">↑{fmt(r.input_tokens)} ↓{fmt(r.output_tokens)}</span>
+              <span className="usage-rec-tokens mono-sm">
+                ↑{fmt(r.input_tokens)} ↓{fmt(r.output_tokens)}
+              </span>
               <span className="usage-rec-cost mono-sm">{fmtUsd(r.cost_usd)}</span>
             </div>
           ))}
@@ -2761,7 +3906,11 @@ function UsageSection() {
         <SettingsRow
           title="刷新数据"
           desc="重新从数据库加载用量统计"
-          right={<button className="btn ghost sm" onClick={loadDashboard} disabled={loading}><Icons.Refresh size={11} /> 刷新</button>}
+          right={
+            <button className="btn ghost sm" onClick={loadDashboard} disabled={loading}>
+              <Icons.Refresh size={11} /> 刷新
+            </button>
+          }
         />
       </div>
     </div>
@@ -2783,7 +3932,9 @@ function StorageSection() {
   }, [getCurrentWorkspace])
 
   useEffect(() => {
-    refreshWorkspace().catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+    refreshWorkspace().catch((err: unknown) =>
+      setError(err instanceof Error ? err.message : String(err)),
+    )
   }, [refreshWorkspace])
 
   const handleOpenWorkspace = async () => {
@@ -2814,23 +3965,35 @@ function StorageSection() {
       <div className="form-grid">
         <label>数据目录</label>
         <div className="control">
-          <SparkInput className="flex1" defaultValue="~/Library/Application Support/Spark Agent" readOnly />
-          <button className="btn"><Icons.Folder size={12} /> 打开</button>
+          <SparkInput
+            className="flex1"
+            defaultValue="~/Library/Application Support/Spark Agent"
+            readOnly
+          />
+          <button className="btn">
+            <Icons.Folder size={12} /> 打开
+          </button>
         </div>
 
-        <label>当前工作区<span className="sub">Agent 文件工具的根目录</span></label>
+        <label>
+          当前工作区<span className="sub">Agent 文件工具的根目录</span>
+        </label>
         <div className="control">
           <SparkInput className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
-          <button className="btn" onClick={handleOpenWorkspace}><Icons.Folder size={12} /> 选择</button>
-          <button className="btn ghost" onClick={handleCloseWorkspace} disabled={workspace === null}>关闭</button>
+          <button className="btn" onClick={handleOpenWorkspace}>
+            <Icons.Folder size={12} /> 选择
+          </button>
+          <button
+            className="btn ghost"
+            onClick={handleCloseWorkspace}
+            disabled={workspace === null}
+          >
+            关闭
+          </button>
         </div>
       </div>
 
-      {error !== null && (
-        <div className="card storage-card">
-          {error}
-        </div>
-      )}
+      {error !== null && <div className="card storage-card">{error}</div>}
 
       <div className="subsec-h">存储用量</div>
       <div className="card">
@@ -2843,17 +4006,52 @@ function StorageSection() {
 
       <div className="subsec-h">备份</div>
       <div className="card">
-        <SettingsRow title="自动备份" desc="每日凌晨 3:00 增量备份到 Time Machine / 指定目录" right={<div className="switch on" />} />
-        <SettingsRow title="备份目录" desc="~/Backups/SparkAgent" right={<button className="btn sm"><Icons.Folder size={11} /> 修改</button>} />
-        <SettingsRow title="最近一次备份" desc="今天 03:00 · 成功 · 41 MB" right={<button className="btn ghost sm">查看历史</button>} />
-        <SettingsRow title="导出全部数据" desc="JSONL + 文件 · 可在另一台机器导入" right={<button className="btn"><Icons.Download size={11} /> 导出</button>} />
+        <SettingsRow
+          title="自动备份"
+          desc="每日凌晨 3:00 增量备份到 Time Machine / 指定目录"
+          right={<div className="switch on" />}
+        />
+        <SettingsRow
+          title="备份目录"
+          desc="~/Backups/SparkAgent"
+          right={
+            <button className="btn sm">
+              <Icons.Folder size={11} /> 修改
+            </button>
+          }
+        />
+        <SettingsRow
+          title="最近一次备份"
+          desc="今天 03:00 · 成功 · 41 MB"
+          right={<button className="btn ghost sm">查看历史</button>}
+        />
+        <SettingsRow
+          title="导出全部数据"
+          desc="JSONL + 文件 · 可在另一台机器导入"
+          right={
+            <button className="btn">
+              <Icons.Download size={11} /> 导出
+            </button>
+          }
+        />
       </div>
 
       <div className="subsec-h">清理</div>
       <div className="card">
-        <SettingsRow title="清理 30 天前的检查点" right={<button className="btn ghost sm">运行</button>} />
-        <SettingsRow title="清空全部缓存与索引" desc="下次启动会重建" right={<button className="btn ghost sm danger-btn">清空</button>} />
-        <SettingsRow title="重置所有设置" desc="不影响会话与项目数据" right={<button className="btn ghost sm danger-btn">重置</button>} />
+        <SettingsRow
+          title="清理 30 天前的检查点"
+          right={<button className="btn ghost sm">运行</button>}
+        />
+        <SettingsRow
+          title="清空全部缓存与索引"
+          desc="下次启动会重建"
+          right={<button className="btn ghost sm danger-btn">清空</button>}
+        />
+        <SettingsRow
+          title="重置所有设置"
+          desc="不影响会话与项目数据"
+          right={<button className="btn ghost sm danger-btn">重置</button>}
+        />
       </div>
     </div>
   )
@@ -2882,7 +4080,11 @@ function IntegritySection() {
   const [isChecking, setIsChecking] = useState(false)
   const [isCheckingLatest, setIsCheckingLatest] = useState(false)
   const [installingPkg, setInstallingPkg] = useState<string | null>(null)
-  const [installResult, setInstallResult] = useState<{ pkg: string; success: boolean; message: string } | null>(null)
+  const [installResult, setInstallResult] = useState<{
+    pkg: string
+    success: boolean
+    message: string
+  } | null>(null)
   const { toast } = useToast()
 
   // Load cached result from startup auto-check
@@ -2895,7 +4097,9 @@ function IntegritySection() {
           setSdks(parsed.sdks)
           setCheckedAt(parsed.checkedAt)
         }
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
     loadCached()
 
@@ -3004,14 +4208,22 @@ function IntegritySection() {
       </div>
 
       {installResult && (
-        <div className={`card ${installResult.success ? 'card-success' : 'card-error'}`} style={{ marginBottom: 'var(--gap)' }}>
+        <div
+          className={`card ${installResult.success ? 'card-success' : 'card-error'}`}
+          style={{ marginBottom: 'var(--gap)' }}
+        >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {installResult.success
-              ? <Icons.CheckCircle size={16} />
-              : <Icons.AlertTriangle size={16} />
-            }
+            {installResult.success ? (
+              <Icons.CheckCircle size={16} />
+            ) : (
+              <Icons.AlertTriangle size={16} />
+            )}
             <span>{installResult.message}</span>
-            <button className="btn-sm" onClick={() => setInstallResult(null)} style={{ marginLeft: 'auto' }}>
+            <button
+              className="btn-sm"
+              onClick={() => setInstallResult(null)}
+              style={{ marginLeft: 'auto' }}
+            >
               <Icons.X size={12} />
             </button>
           </div>
@@ -3034,12 +4246,19 @@ function IntegritySection() {
                       onClick={() => void handleInstall(sdk.packageName)}
                       disabled={installingPkg === sdk.packageName}
                     >
-                      {installingPkg === sdk.packageName
-                        ? <><Icons.Spinner size={12} /> 安装中…</>
-                        : sdk.installed
-                          ? <><Icons.Download size={12} /> 更新</>
-                          : <><Icons.Download size={12} /> 安装</>
-                      }
+                      {installingPkg === sdk.packageName ? (
+                        <>
+                          <Icons.Spinner size={12} /> 安装中…
+                        </>
+                      ) : sdk.installed ? (
+                        <>
+                          <Icons.Download size={12} /> 更新
+                        </>
+                      ) : (
+                        <>
+                          <Icons.Download size={12} /> 安装
+                        </>
+                      )}
                     </button>
                   )}
                 </div>
@@ -3064,7 +4283,7 @@ function IntegritySection() {
         <SettingsRow
           title="Claude Agent SDK"
           desc="提供 Claude Code 级别的 Agent 执行引擎，包含文件编辑、Shell 命令、代码搜索等内置工具。"
-          right={<span className="muted mono-sm">可选</span>}
+          right={<span className="badge danger dot">必需</span>}
         />
         <SettingsRow
           title="OpenAI / Codex SDK"
@@ -3080,25 +4299,33 @@ function IntegritySection() {
 function UpdatesSection() {
   const [s, set] = usePersistedSettings(SETTINGS_UPDATES_KEY, DEFAULT_UPDATES)
   const [status, setStatus] = useState<UpdateStatus | null>(null)
-  const [lastChecked, setLastChecked] = useState<string | null>(() => window.localStorage.getItem('spark-updates-last-checked'))
+  const [lastChecked, setLastChecked] = useState<string | null>(() =>
+    window.localStorage.getItem('spark-updates-last-checked'),
+  )
 
   // Load lastChecked from IPC on mount
   useEffect(() => {
-    window.spark?.invoke('settings:get', { category: 'updates', key: 'lastChecked' })
+    window.spark
+      ?.invoke('settings:get', { category: 'updates', key: 'lastChecked' })
       .then((res) => {
         if (res.value != null && typeof res.value === 'string') {
           setLastChecked(res.value)
           window.localStorage.setItem('spark-updates-last-checked', res.value)
         }
       })
-      .catch(() => { /* ignore */ })
+      .catch(() => {
+        /* ignore */
+      })
 
     // Get initial update status
-    window.spark?.invoke('update:get-status', {})
+    window.spark
+      ?.invoke('update:get-status', {})
       .then((res) => {
         setStatus(res.status)
       })
-      .catch(() => { /* ignore */ })
+      .catch(() => {
+        /* ignore */
+      })
   }, [])
 
   // Subscribe to update status stream events
@@ -3115,8 +4342,11 @@ function UpdatesSection() {
       const now = new Date().toLocaleString('zh-CN')
       setLastChecked(now)
       window.localStorage.setItem('spark-updates-last-checked', now)
-      window.spark?.invoke('settings:set', { category: 'updates', key: 'lastChecked', value: now })
-        .catch(() => { /* ignore */ })
+      window.spark
+        ?.invoke('settings:set', { category: 'updates', key: 'lastChecked', value: now })
+        .catch(() => {
+          /* ignore */
+        })
     } catch {
       // Error handled via stream events
     }
@@ -3164,7 +4394,8 @@ function UpdatesSection() {
   const getStatusLabel = () => {
     if (isError) return `检查失败：${status?.error ?? '未知错误'}`
     if (isChecking) return '正在检查更新…'
-    if (isDownloading) return `正在下载 ${status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : ''}`
+    if (isDownloading)
+      return `正在下载 ${status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : ''}`
     if (isDownloaded) return `更新已就绪：v${status?.updateInfo?.version ?? '?'}`
     if (hasUpdate) return `发现新版本：v${status?.updateInfo?.version ?? '?'}`
     return `已是最新版本`
@@ -3183,9 +4414,7 @@ function UpdatesSection() {
       <div className="lede">保持 Spark Agent 最新版本以获得最新模型与安全修复。</div>
 
       <div className="card update-card">
-        <div className={`update-icon ${getStatusClass()}`}>
-          {getStatusIcon()}
-        </div>
+        <div className={`update-icon ${getStatusClass()}`}>{getStatusIcon()}</div>
         <div className="flex1">
           <div className="strong update-version">{getStatusLabel()}</div>
           <div className="muted update-meta">
@@ -3194,7 +4423,10 @@ function UpdatesSection() {
           </div>
           {isDownloading && status?.progress != null && (
             <div className="update-progress-bar">
-              <div className="update-progress-fill" style={{ width: `${status.progress.percent}%` }} />
+              <div
+                className="update-progress-fill"
+                style={{ width: `${status.progress.percent}%` }}
+              />
             </div>
           )}
         </div>
@@ -3208,7 +4440,11 @@ function UpdatesSection() {
               <Icons.Download size={12} /> 下载更新
             </button>
           ) : (
-            <button className="btn" onClick={() => void handleCheckUpdate()} disabled={isChecking || isDownloading}>
+            <button
+              className="btn"
+              onClick={() => void handleCheckUpdate()}
+              disabled={isChecking || isDownloading}
+            >
               <Icons.Refresh size={12} /> {isChecking ? '检查中…' : '检查更新'}
             </button>
           )}
@@ -3217,14 +4453,43 @@ function UpdatesSection() {
 
       <div className="subsec-h">更新策略</div>
       <div className="card">
-        <SettingsRow title="自动检查更新" right={<div className={`switch ${s.autoCheck ? 'on' : ''}`} onClick={() => handleSettingsChange('autoCheck', !s.autoCheck)} />} />
-        <SettingsRow title="自动下载" desc="后台下载，准备好后提示安装" right={<div className={`switch ${s.autoDownload ? 'on' : ''}`} onClick={() => handleSettingsChange('autoDownload', !s.autoDownload)} />} />
-        <SettingsRow title="自动安装" desc="退出应用时静默安装" right={<div className={`switch ${s.autoInstall ? 'on' : ''}`} onClick={() => handleSettingsChange('autoInstall', !s.autoInstall)} />} />
+        <SettingsRow
+          title="自动检查更新"
+          right={
+            <div
+              className={`switch ${s.autoCheck ? 'on' : ''}`}
+              onClick={() => handleSettingsChange('autoCheck', !s.autoCheck)}
+            />
+          }
+        />
+        <SettingsRow
+          title="自动下载"
+          desc="后台下载，准备好后提示安装"
+          right={
+            <div
+              className={`switch ${s.autoDownload ? 'on' : ''}`}
+              onClick={() => handleSettingsChange('autoDownload', !s.autoDownload)}
+            />
+          }
+        />
+        <SettingsRow
+          title="自动安装"
+          desc="退出应用时静默安装"
+          right={
+            <div
+              className={`switch ${s.autoInstall ? 'on' : ''}`}
+              onClick={() => handleSettingsChange('autoInstall', !s.autoInstall)}
+            />
+          }
+        />
         <SettingsRow
           title="更新通道"
           right={
             <div className="select-sm">
-              <SparkSelect value={s.channel} onChange={(e) => handleSettingsChange('channel', e.target.value)}>
+              <SparkSelect
+                value={s.channel}
+                onChange={(e) => handleSettingsChange('channel', e.target.value)}
+              >
                 <option value="stable">stable</option>
                 <option value="beta">beta</option>
               </SparkSelect>
@@ -3235,7 +4500,15 @@ function UpdatesSection() {
 
       <div className="subsec-h">版本</div>
       <div className="card">
-        <SettingsRow title="Spark Agent" desc={`${currentVersion}`} right={<span className={hasUpdate ? 'badge warning dot' : 'badge success dot'}>{hasUpdate ? `有新版 ${status?.updateInfo?.version}` : '最新'}</span>} />
+        <SettingsRow
+          title="Spark Agent"
+          desc={`${currentVersion}`}
+          right={
+            <span className={hasUpdate ? 'badge warning dot' : 'badge success dot'}>
+              {hasUpdate ? `有新版 ${status?.updateInfo?.version}` : '最新'}
+            </span>
+          }
+        />
 
         <SettingsRow title="Electron" desc="31.x" right={<span className="badge">嵌入</span>} />
       </div>
@@ -3266,7 +4539,8 @@ function AboutSection() {
   } | null>(null)
 
   useEffect(() => {
-    window.spark?.invoke('app:get-info', {})
+    window.spark
+      ?.invoke('app:get-info', {})
       .then((res) => {
         setSysInfo({
           appVersion: res.appVersion,
@@ -3297,31 +4571,103 @@ function AboutSection() {
       </div>
       <div className="subsec-h">技术栈</div>
       <div className="card">
-        <SettingsRow title="Electron" desc="桌面应用框架" right={<span className="mono-sm tech-version">{sysInfo?.electronVersion ?? '31.x'}</span>} />
-        <SettingsRow title="Chromium" desc="渲染引擎" right={<span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? '—'}</span>} />
-        <SettingsRow title="Node.js" desc="运行时" right={<span className="mono-sm tech-version">{sysInfo?.nodeVersion ?? '—'}</span>} />
-        <SettingsRow title="React" desc="UI 框架" right={<span className="mono-sm tech-version">19.x</span>} />
-        <SettingsRow title="TypeScript" desc="开发语言" right={<span className="mono-sm tech-version">5.x</span>} />
-        <SettingsRow title="数据库" desc="本地存储" right={<span className="mono-sm tech-version">SQLite (better-sqlite3)</span>} />
-        <SettingsRow title="AI 引擎" desc="Agent Runtime" right={<span className="mono-sm tech-version">Claude / OpenAI / DeepSeek / Ollama</span>} />
+        <SettingsRow
+          title="Electron"
+          desc="桌面应用框架"
+          right={<span className="mono-sm tech-version">{sysInfo?.electronVersion ?? '31.x'}</span>}
+        />
+        <SettingsRow
+          title="Chromium"
+          desc="渲染引擎"
+          right={<span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? '—'}</span>}
+        />
+        <SettingsRow
+          title="Node.js"
+          desc="运行时"
+          right={<span className="mono-sm tech-version">{sysInfo?.nodeVersion ?? '—'}</span>}
+        />
+        <SettingsRow
+          title="React"
+          desc="UI 框架"
+          right={<span className="mono-sm tech-version">19.x</span>}
+        />
+        <SettingsRow
+          title="TypeScript"
+          desc="开发语言"
+          right={<span className="mono-sm tech-version">5.x</span>}
+        />
+        <SettingsRow
+          title="数据库"
+          desc="本地存储"
+          right={<span className="mono-sm tech-version">SQLite (better-sqlite3)</span>}
+        />
+        <SettingsRow
+          title="AI 引擎"
+          desc="Agent Runtime"
+          right={<span className="mono-sm tech-version">Claude / OpenAI / DeepSeek / Ollama</span>}
+        />
       </div>
 
       <div className="subsec-h">系统信息</div>
       <div className="card">
-        <SettingsRow title="平台" desc="操作系统" right={<span className="mono-sm tech-version">{sysInfo?.platform ?? '—'}</span>} />
-        <SettingsRow title="User Agent" desc="浏览器标识" right={<span className="mono-sm tech-version about-user-agent">{navigator.userAgent.slice(0, 60)}…</span>} />
+        <SettingsRow
+          title="平台"
+          desc="操作系统"
+          right={<span className="mono-sm tech-version">{sysInfo?.platform ?? '—'}</span>}
+        />
+        <SettingsRow
+          title="User Agent"
+          desc="浏览器标识"
+          right={
+            <span className="mono-sm tech-version about-user-agent">
+              {navigator.userAgent.slice(0, 60)}…
+            </span>
+          }
+        />
       </div>
 
       <div className="subsec-h">链接</div>
       <div className="card">
-        <SettingsRow title="GitHub" desc="源代码仓库" right={<a href="https://github.com" target="_blank" rel="noreferrer" className="about-link">github.com →</a>} />
-        <SettingsRow title="文档" desc="使用指南与 API 参考" right={<a href="https://docs.spark-agent.dev" target="_blank" rel="noreferrer" className="about-link">文档 →</a>} />
-        <SettingsRow title="反馈" desc="问题报告与功能建议" right={<a href="https://github.com/issues" target="_blank" rel="noreferrer" className="about-link">提交 Issue →</a>} />
+        <SettingsRow
+          title="GitHub"
+          desc="源代码仓库"
+          right={
+            <a href="https://github.com" target="_blank" rel="noreferrer" className="about-link">
+              github.com →
+            </a>
+          }
+        />
+        <SettingsRow
+          title="文档"
+          desc="使用指南与 API 参考"
+          right={
+            <a
+              href="https://docs.spark-agent.dev"
+              target="_blank"
+              rel="noreferrer"
+              className="about-link"
+            >
+              文档 →
+            </a>
+          }
+        />
+        <SettingsRow
+          title="反馈"
+          desc="问题报告与功能建议"
+          right={
+            <a
+              href="https://github.com/issues"
+              target="_blank"
+              rel="noreferrer"
+              className="about-link"
+            >
+              提交 Issue →
+            </a>
+          }
+        />
       </div>
 
-      <div className="about-footer">
-        © 2026 Spark Agent Team. All rights reserved.
-      </div>
+      <div className="about-footer">© 2026 Spark Agent Team. All rights reserved.</div>
     </div>
   )
 }
