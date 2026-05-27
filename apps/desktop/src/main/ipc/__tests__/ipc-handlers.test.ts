@@ -42,7 +42,7 @@ describe('IPC handler registration completeness', () => {
   it('all expected namespaces are covered', () => {
     const namespaces = [...new Set(definedChannels.map((ch) => ch.split(':')[0]))]
     expect(namespaces.sort()).toEqual(
-      ['command', 'dialog', 'mcp', 'model', 'permission', 'provider', 'rules', 'session', 'settings', 'skill', 'usage', 'workspace'].sort(),
+      ['command', 'dialog', 'mcp', 'model', 'permission', 'provider', 'rules', 'session', 'settings', 'skill', 'update', 'usage', 'workspace'].sort(),
     )
   })
 })
