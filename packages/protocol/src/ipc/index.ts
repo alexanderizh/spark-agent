@@ -447,6 +447,29 @@ export interface RulesDeleteResponse {
   success: boolean
 }
 
+export type RuleConflictStrategy = 'override' | 'merge'
+
+export interface RulesComposeRequest {
+  scopes?: RuleScope[]
+  scopeRefs?: Partial<Record<RuleScope, string>>
+  conflictStrategy?: RuleConflictStrategy
+}
+
+export interface ComposedRuleItem {
+  id: string
+  name: string
+  content: string
+  priority: number
+  sourceScope: RuleScope
+  overrode: boolean
+}
+
+export interface RulesComposeResponse {
+  rules: ComposedRuleItem[]
+  prompt: string
+  includedScopes: RuleScope[]
+}
+
 // ─── Permission Channels ─────────────────────────────────────────────────────
 
 export type PermissionMode = 'allow' | 'ask' | 'ask-twice' | 'deny'
@@ -1092,6 +1115,91 @@ export interface UsagePurgeResponse {
   deletedCount: number
 }
 
+// ─── Auto-Update Channels ──────────────────────────────────────────────────
+
+/** 更新通道类型 */
+export type UpdateChannel = 'stable' | 'beta'
+
+/** 更新状态 */
+export type UpdateStatusState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error' | 'not-available'
+
+/** 更新信息 */
+export interface UpdateInfo {
+  /** 新版本号 */
+  version: string
+  /** 发布日期 */
+  releaseDate: string
+  /** 更新说明 (release notes) */
+  releaseNotes?: string
+  /** 更新文件大小（字节） */
+  fileSize?: number
+}
+
+/** 下载进度 */
+export interface UpdateProgressInfo {
+  /** 每秒字节数 */
+  bytesPerSecond: number
+  /** 已传输百分比 (0-100) */
+  percent: number
+  /** 已下载字节数 */
+  transferred: number
+  /** 总字节数 */
+  total: number
+}
+
+/** 更新状态信息 */
+export interface UpdateStatus {
+  state: UpdateStatusState
+  currentVersion: string
+  updateInfo: UpdateInfo | null
+  progress: UpdateProgressInfo | null
+  error: string | null
+}
+
+/** 检查更新请求 */
+export interface UpdateCheckRequest {}
+
+/** 检查更新响应 */
+export interface UpdateCheckResponse {
+  status: UpdateStatus
+}
+
+/** 下载更新请求 */
+export interface UpdateDownloadRequest {}
+
+/** 下载更新响应 */
+export interface UpdateDownloadResponse {
+  started: boolean
+}
+
+/** 安装并重启请求 */
+export interface UpdateInstallRestartRequest {}
+
+/** 安装并重启响应 */
+export interface UpdateInstallRestartResponse {
+  willInstall: boolean
+}
+
+/** 获取更新状态请求 */
+export interface UpdateGetStatusRequest {}
+
+/** 获取更新状态响应 */
+export interface UpdateGetStatusResponse {
+  status: UpdateStatus
+}
+
+/** 更新设置请求 */
+export interface UpdateSettingsRequest {
+  autoCheck?: boolean
+  autoDownload?: boolean
+  channel?: UpdateChannel
+}
+
+/** 更新设置响应 */
+export interface UpdateSettingsResponse {
+  ok: boolean
+}
+
 // ─── File Watcher Channels ─────────────────────────────────────────────────
 
 export interface WorkspaceWatchStartRequest {
@@ -1218,6 +1326,7 @@ export interface IpcChannelMap {
   'rules:create': [RulesCreateRequest, RulesCreateResponse]
   'rules:update': [RulesUpdateRequest, RulesUpdateResponse]
   'rules:delete': [RulesDeleteRequest, RulesDeleteResponse]
+  'rules:compose': [RulesComposeRequest, RulesComposeResponse]
 
   // Permissions
   'permission:list-profiles': [PermissionListProfilesRequest, PermissionListProfilesResponse]

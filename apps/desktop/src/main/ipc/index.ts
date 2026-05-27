@@ -17,7 +17,7 @@ import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
-import { ProviderService, RulesService, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService } from '@spark/agent-runtime'
+import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService } from '@spark/agent-runtime'
 import type { WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
@@ -346,6 +346,12 @@ export function registerAllIpcHandlers(): void {
     log.info(`rules:delete requested, id=${req.id}`)
     const success = getRulesService().delete(req.id)
     return { success }
+  })
+
+  typedIpcHandle('rules:compose', async (req) => {
+    log.info(`rules:compose requested, strategy=${req.conflictStrategy ?? 'override'}`)
+    const engine = new RuleCompositionEngine(new RulesRepository(getDatabase()))
+    return engine.compose(req)
   })
 
   // ─── Permission Handlers ────────────────────────────────────────────────────

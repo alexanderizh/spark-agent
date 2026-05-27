@@ -232,6 +232,12 @@ export const RulesDeleteRequestSchema = z.object({
   id: RuleIdSchema,
 })
 
+export const RulesComposeRequestSchema = z.object({
+  scopes: z.array(RuleScopeSchema).optional(),
+  scopeRefs: z.record(RuleScopeSchema, z.string()).optional(),
+  conflictStrategy: z.enum(['override', 'merge']).optional(),
+})
+
 /**
  * IPC Schema 注册表
  *
@@ -272,6 +278,7 @@ export const IpcSchemaRegistry = {
   'rules:create': RulesCreateRequestSchema,
   'rules:update': RulesUpdateRequestSchema,
   'rules:delete': RulesDeleteRequestSchema,
+  'rules:compose': RulesComposeRequestSchema,
   'permission:list-profiles': z.object({}),
   'permission:create-profile': z.object({ name: z.string().min(1).max(80), sandboxLevel: z.number().int().min(0).max(4).optional() }),
   'permission:delete-profile': z.object({ id: z.string().min(1) }),
