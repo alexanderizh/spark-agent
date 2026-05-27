@@ -798,19 +798,30 @@
   color: var(--text);
 }
 
-/* --- Message hover bar (timestamp + copy) --- */
+/* --- Message hover bar (timestamp + copy) — outside bubble --- */
 .msg-hover-bar {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 2px;
+  padding: 0 2px;
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
 }
 
-.msg-bubble:hover .msg-hover-bar {
+/* 用户消息：hover bar 右对齐（气泡右下角外侧） */
+.msg-hover-right {
+  justify-content: flex-end;
+}
+
+/* Agent 消息：hover bar 左对齐（气泡左下角外侧） */
+.msg-hover-left {
+  justify-content: flex-start;
+}
+
+/* 悬浮整个 msg 容器时显示 hover bar */
+.msg:hover .msg-hover-bar {
   opacity: 1;
   pointer-events: auto;
 }

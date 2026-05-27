@@ -1966,8 +1966,8 @@ function formatMsgTime(timestamp?: string): string {
   return `${hh}:${mm}`
 }
 
-/** 消息悬浮操作栏：时间 + 复制按钮 */
-function MessageHoverBar({ timestamp, textContent }: { timestamp?: string | undefined; textContent: string }) {
+/** 消息悬浮操作栏：时间 + 复制按钮。position: left=agent消息(左下角), right=用户消息(右下角) */
+function MessageHoverBar({ timestamp, textContent, position }: { timestamp?: string | undefined; textContent: string; position: 'left' | 'right' }) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
@@ -1980,7 +1980,7 @@ function MessageHoverBar({ timestamp, textContent }: { timestamp?: string | unde
   const time = formatMsgTime(timestamp)
 
   return (
-    <div className="msg-hover-bar">
+    <div className={`msg-hover-bar msg-hover-${position}`}>
       {time && <span className="msg-hover-time">{time}</span>}
       <button className="msg-hover-copy" title="复制" onClick={handleCopy}>
         {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
@@ -2083,8 +2083,8 @@ function AgentMsg({
           />
         ))}
         {isCancelled && <StoppedMarker />}
-        {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} />}
       </div>
+      {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} position="left" />}
     </div>
   )
 }
