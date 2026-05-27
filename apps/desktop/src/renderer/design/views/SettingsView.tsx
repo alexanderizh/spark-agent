@@ -19,6 +19,7 @@ import {
   getPresetsByVendor,
   getUniqueVendorIds,
 } from '@spark/protocol'
+import { ModelCapabilityRegistry } from '@spark/shared'
 import type {
   ProviderPreset,
   VendorMeta,
@@ -1306,16 +1307,27 @@ function ModelsSection() {
             <div className="model-card-empty">暂无模型</div>
           )}
 
-          {pModels.map((m) => (
-            <div key={m.id} className="row model-row-border">
-              <span className="mono-sm model-name-sm flex1">{m.name}</span>
-              <div
-                className={`switch${m.enabled ? ' on' : ''} switch-cursor`}
-                onClick={() => void handleToggle(m)}
-              />
-              <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}><Icons.X size={12} /></button>
-            </div>
-          ))}
+          {pModels.map((m) => {
+            const cap = ModelCapabilityRegistry.getCapabilities(m.name)
+            return (
+              <div key={m.id} className="row model-row-border">
+                <span className="mono-sm model-name-sm flex1">{m.name}</span>
+                {cap && (
+                  <div className="row model-cap-tags">
+                    {cap.supportsVision && <span className="model-cap-tag vision">Vision</span>}
+                    {cap.supportsToolUse && <span className="model-cap-tag tool">Tools</span>}
+                    {cap.supportsExtendedThinking && <span className="model-cap-tag thinking">Thinking</span>}
+                    <span className="model-cap-tag ctx">{cap.contextWindow >= 1_000_000 ? `${cap.contextWindow / 1_000_000}M` : `${cap.contextWindow / 1_000}K`}</span>
+                  </div>
+                )}
+                <div
+                  className={`switch${m.enabled ? ' on' : ''} switch-cursor`}
+                  onClick={() => void handleToggle(m)}
+                />
+                <button className="icon-btn" title="删除" onClick={() => void handleDelete(m.id)}><Icons.X size={12} /></button>
+              </div>
+            )
+          })}
         </div>
       ))}
     </div>
