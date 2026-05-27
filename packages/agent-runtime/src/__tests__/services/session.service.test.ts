@@ -48,7 +48,7 @@ vi.mock('../../services/mcp-server.service.js', () => ({
   })),
 }))
 
-// SDK not available in test environment — forces fallback to direct API path
+// SDK not available in test environment — Claude SDK sessions fail fast.
 vi.mock('../../sdk/index.js', () => ({
   ClaudeSDKExecutor: vi.fn(),
   isSDKAvailable: vi.fn(async () => false),
@@ -95,6 +95,13 @@ function makeProviderRepo(overrides = {}) {
     get: vi.fn().mockReturnValue({ id: 'prov-1', provider_type: 'anthropic', keystore_ref: 'ref-1', config_json: '{"defaultModel":"claude-3-5-sonnet-20241022","modelIds":["claude-3-5-sonnet-20241022"]}' }),
     ...overrides,
   }
+}
+
+function makeOpenAIProviderRepo(overrides = {}) {
+  return makeProviderRepo({
+    get: vi.fn().mockReturnValue({ id: 'prov-1', provider_type: 'openai', keystore_ref: 'ref-1', config_json: '{"defaultModel":"gpt-4.1","modelIds":["gpt-4.1"]}' }),
+    ...overrides,
+  })
 }
 
 function makeLoop(overrides = {}) {
@@ -206,7 +213,7 @@ describe('SessionService.sendTurn', () => {
   it('derives the default session title from the first user message', async () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
-    const providerRepo = makeProviderRepo()
+    const providerRepo = makeOpenAIProviderRepo()
     const rulesRepo = makeRulesRepo()
     const loop = makeLoop()
 
@@ -237,7 +244,7 @@ describe('SessionService.sendTurn', () => {
       }),
     })
     const eventRepo = makeEventRepo()
-    const providerRepo = makeProviderRepo()
+    const providerRepo = makeOpenAIProviderRepo()
     const rulesRepo = makeRulesRepo()
     const loop = makeLoop()
 
@@ -258,7 +265,7 @@ describe('SessionService.sendTurn', () => {
   it('returns turnId immediately without awaiting loop completion', async () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
-    const providerRepo = makeProviderRepo()
+    const providerRepo = makeOpenAIProviderRepo()
     const rulesRepo = makeRulesRepo()
     const loop = makeLoop()
 
@@ -278,9 +285,7 @@ describe('SessionService.sendTurn', () => {
     expect(typeof result.turnId).toBe('string')
     expect(loop.onEvent).toHaveBeenCalled()
     expect(loop.executeTurn).toHaveBeenCalled()
-    // Default adapter for anthropic is 'claude-sdk', but SDK is unavailable in tests,
-    // so it falls back to direct API using 'claude' adapter type
-    expect(createAdapter).toHaveBeenCalledWith('claude', 'chat')
+    expect(createAdapter).toHaveBeenCalledWith('codex', 'chat')
   })
 
   it('uses provider defaultModel as the runtime model', async () => {
@@ -366,6 +371,7 @@ describe('SessionService.sendTurn', () => {
         if (category === 'runtime.skills' && key === 'project:workspace-1') return ['skill:review']
         if (category === 'runtime.prompts' && key === 'system') return { enabled: true, content: 'System prompt from settings' }
         if (category === 'runtime.prompts' && key === 'project:workspace-1') return { enabled: true, content: 'Project prompt from settings' }
+        if (category === 'runtime.prompts' && key === 'session:sess-1') return { enabled: true, content: 'Session prompt from settings' }
         return null
       }),
     }) as never)
@@ -389,10 +395,123 @@ describe('SessionService.sendTurn', () => {
     )
     const config = vi.mocked(loop.executeTurn).mock.calls[0]?.[3] as { systemPrompt?: string; skillSystemPrompt?: string }
     expect(config.systemPrompt).toContain('Project prompt from settings')
+    expect(config.systemPrompt).toContain('Session prompt from settings')
     expect(config.skillSystemPrompt).toContain('[Available Skills]')
   })
 
-  it('uses the session agent adapter instead of provider type when present', async () => {
+  it('passes prior session messages and tool context into direct model turns', async () => {
+    const sessionRepo = makeSessionRepo({
+      findByIdOrFail: vi.fn().mockReturnValue({
+        id: 'sess-1',
+        provider_profile_id: 'prov-1',
+        model_id: 'gpt-custom',
+        agent_adapter: 'codex',
+        permission_mode: 'codex-default',
+        chat_mode: 'agent',
+        status: 'running',
+        title: 'Existing Session',
+        workspace_ids_json: '[]',
+      }),
+    })
+    const historyEvents = [
+      {
+        type: 'user_message',
+        sessionId: 'sess-1',
+        turnId: 'turn-1',
+        seq: 0,
+        content: 'Remember this requirement',
+      },
+      {
+        type: 'assistant_message',
+        sessionId: 'sess-1',
+        turnId: 'turn-1',
+        seq: 1,
+        mode: 'delta',
+        content: 'partial should be ignored',
+        provider: 'openai',
+        isFinal: false,
+      },
+      {
+        type: 'assistant_message',
+        sessionId: 'sess-1',
+        turnId: 'turn-1',
+        seq: 2,
+        mode: 'complete',
+        content: 'I will remember it',
+        provider: 'openai',
+        isFinal: true,
+      },
+      {
+        type: 'tool_call',
+        sessionId: 'sess-1',
+        turnId: 'turn-2',
+        seq: 3,
+        toolCallId: 'tool-1',
+        toolName: 'read_file',
+        toolInput: { path: 'README.md' },
+        source: 'builtin',
+      },
+      {
+        type: 'tool_result',
+        sessionId: 'sess-1',
+        turnId: 'turn-2',
+        seq: 4,
+        toolCallId: 'tool-1',
+        toolName: 'read_file',
+        status: 'success',
+        output: { text: 'File contents' },
+      },
+    ]
+    const eventRepo = makeEventRepo({
+      countBySession: vi.fn().mockReturnValue(historyEvents.length),
+      queryBySession: vi.fn().mockReturnValue({
+        events: historyEvents.map((event) => ({ event_json: JSON.stringify(event) })),
+        hasMore: false,
+      }),
+    })
+    const providerRepo = makeProviderRepo({
+      get: vi.fn().mockReturnValue({
+        id: 'prov-1',
+        provider_type: 'openai',
+        keystore_ref: 'ref-1',
+        config_json: '{"defaultModel":"gpt-4.1","modelIds":["gpt-4.1"]}',
+      }),
+    })
+    const rulesRepo = makeRulesRepo()
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'Use the previous context' })
+
+    expect(loop.executeTurn).toHaveBeenCalledWith(
+      'sess-1',
+      expect.any(String),
+      'Use the previous context',
+      expect.any(Object),
+      [
+        { role: 'user', content: 'Remember this requirement' },
+        { role: 'assistant', content: 'I will remember it' },
+        {
+          role: 'assistant',
+          content: [{ type: 'tool_use', id: 'tool-1', name: 'read_file', input: { path: 'README.md' } }],
+        },
+        {
+          role: 'user',
+          content: [{ type: 'tool_result', tool_use_id: 'tool-1', content: '{"text":"File contents"}' }],
+        },
+      ],
+    )
+  })
+
+  it('fails fast when legacy Claude adapter is selected and the SDK is unavailable', async () => {
     const sessionRepo = makeSessionRepo({
       findByIdOrFail: vi.fn().mockReturnValue({
         id: 'sess-1',
@@ -412,7 +531,6 @@ describe('SessionService.sendTurn', () => {
       }),
     })
     const rulesRepo = makeRulesRepo()
-    const loop = makeLoop()
 
     vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
     vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
@@ -420,14 +538,16 @@ describe('SessionService.sendTurn', () => {
     vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
     vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
     vi.mocked(createAdapter).mockReturnValue({} as never)
-    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
 
     const svc = new SessionService(mockDb, vi.fn())
     await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
 
-    // Default adapter for anthropic is 'claude-sdk', but SDK is unavailable in tests,
-    // so it falls back to direct API using 'claude' adapter type
-    expect(createAdapter).toHaveBeenCalledWith('claude', 'chat')
+    expect(createAdapter).not.toHaveBeenCalled()
+    expect(eventRepo.insert).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'agent_error',
+      eventJson: expect.stringContaining('SDK_REQUIRED'),
+    }))
+    expect(sessionRepo.updateStatus).toHaveBeenCalledWith('sess-1', 'error')
   })
 
   it('passes session runtime parameters into the agent config', async () => {
@@ -482,7 +602,7 @@ describe('SessionService.sendTurn', () => {
   it('queues another turn for the same session until the active loop finishes', async () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
-    const providerRepo = makeProviderRepo()
+    const providerRepo = makeOpenAIProviderRepo()
     const rulesRepo = makeRulesRepo()
     let resolveFirst!: () => void
     const firstDone = new Promise<void>((resolve) => {
@@ -527,7 +647,7 @@ describe('SessionService.sendTurn', () => {
   it('assigns incrementing seq to events and calls onEvent', async () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
-    const providerRepo = makeProviderRepo()
+    const providerRepo = makeOpenAIProviderRepo()
     const rulesRepo = makeRulesRepo()
 
     let capturedListener: ((e: unknown) => void) | null = null
@@ -566,7 +686,7 @@ describe('SessionService.cancelTurn', () => {
   it('calls cancel on active loop', async () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
-    const providerRepo = makeProviderRepo()
+    const providerRepo = makeOpenAIProviderRepo()
     const rulesRepo = makeRulesRepo()
     const loop = makeLoop()
 
@@ -589,7 +709,7 @@ describe('SessionService.cancelTurn', () => {
   it('releases the active loop and drops queued turns after cancellation', async () => {
     const sessionRepo = makeSessionRepo()
     const eventRepo = makeEventRepo()
-    const providerRepo = makeProviderRepo()
+    const providerRepo = makeOpenAIProviderRepo()
     const rulesRepo = makeRulesRepo()
     const firstLoop = makeLoop({ executeTurn: vi.fn().mockReturnValue(new Promise<void>(() => {})) })
     const secondLoop = makeLoop()

@@ -142,6 +142,8 @@ export class ClaudeSDKExecutor {
       maxTurns: config.maxTurnCount ?? 25,
       ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
       effort: mapReasoningEffort(config.reasoningEffort),
+      sessionId,
+      ...(config.continueSession === true ? { continue: true } : {}),
 
       includePartialMessages: true,
       enableFileCheckpointing: config.enableCheckpoints ?? false,

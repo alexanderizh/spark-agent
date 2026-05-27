@@ -92,6 +92,7 @@ const SIDEBAR_WIDTH_KEY = 'spark-agent:sidebar-width'
 const SIDEBAR_DEFAULT_WIDTH = 254
 const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
+const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
   const [active, setActive] = useState<SessionId | null>(() => {
@@ -1145,7 +1146,7 @@ function ToolDropdown({
     let cancelled = false
     setLoading(true)
     window.spark.invoke('tool:detect', { kind })
-      .then((res) => { if (!cancelled) setTools(res.tools) })
+      .then((res) => { if (!cancelled) setTools(Array.isArray(res.tools) ? res.tools : []) })
       .catch(() => { if (!cancelled) setTools([]) })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
@@ -1309,7 +1310,14 @@ function ChatTabbar({
         {!showClearConfirm && onClearMessages && (
           <button className="icon-btn" title="清空会话消息" onClick={handleClearClick}><Icons.Trash size={14} /></button>
         )}
-        <button className={`icon-btn ${showInspector ? 'active' : ''}`} onClick={() => setShowInspector(!showInspector)}><Icons.PanelRight /></button>
+        <button
+          className={`icon-btn ${showInspector ? 'active' : ''}`}
+          title="会话检查器"
+          aria-label="会话检查器"
+          onClick={() => setShowInspector(!showInspector)}
+        >
+          <Icons.PanelRight />
+        </button>
         <button className="icon-btn"><Icons.More /></button>
       </div>
     </div>
@@ -4019,6 +4027,45 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
   )
 }
 
+function normalizeSkillConfig(value: unknown): SkillConfigGetResponse {
+  const config = isRecord(value) ? value : {}
+  return {
+    skills: asArray<SkillConfigGetResponse['skills'][number]>(config.skills),
+    systemSkillIds: asArray<string>(config.systemSkillIds),
+    agentSkillIds: asArray<string>(config.agentSkillIds),
+    projectSkillIds: asArray<string>(config.projectSkillIds),
+    sessionSkillIds: asArray<string>(config.sessionSkillIds),
+    agentDisabledSkillIds: asArray<string>(config.agentDisabledSkillIds),
+    projectDisabledSkillIds: asArray<string>(config.projectDisabledSkillIds),
+    sessionDisabledSkillIds: asArray<string>(config.sessionDisabledSkillIds),
+    effectiveSkillIds: asArray<string>(config.effectiveSkillIds),
+  }
+}
+
+function normalizePromptConfig(value: unknown): PromptConfigGetResponse {
+  const config = isRecord(value) ? value : {}
+  return {
+    system: normalizePromptLayer(config.system),
+    agent: normalizePromptLayer(config.agent),
+    project: normalizePromptLayer(config.project),
+    session: normalizePromptLayer(config.session),
+    effectivePrompt: typeof config.effectivePrompt === 'string' ? config.effectivePrompt : '',
+  }
+}
+
+function normalizePromptLayer(value: unknown): PromptConfigGetResponse['system'] {
+  if (!isRecord(value)) return EMPTY_PROMPT_LAYER
+  const content = typeof value.content === 'string' ? value.content : ''
+  return {
+    enabled: typeof value.enabled === 'boolean' ? value.enabled : content.trim().length > 0,
+    content,
+  }
+}
+
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? value as T[] : []
+}
+
 function ChatInspector({
   session,
   workspace,
@@ -4061,10 +4108,12 @@ function ChatInspector({
       getSkillConfig(req),
       getPromptConfig(req),
     ])
-    setSkillConfig(skillsRes)
-    setPromptConfig(promptsRes)
-    setProjectPromptDraft(promptsRes.project.content)
-    setSessionPromptDraft(promptsRes.session.content)
+    const normalizedSkills = normalizeSkillConfig(skillsRes)
+    const normalizedPrompts = normalizePromptConfig(promptsRes)
+    setSkillConfig(normalizedSkills)
+    setPromptConfig(normalizedPrompts)
+    setProjectPromptDraft(normalizedPrompts.project.content)
+    setSessionPromptDraft(normalizedPrompts.session.content)
   }, [getPromptConfig, getSkillConfig, sessionId, workspaceId])
 
   useEffect(() => {

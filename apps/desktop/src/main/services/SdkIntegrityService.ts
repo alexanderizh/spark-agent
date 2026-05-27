@@ -15,7 +15,7 @@
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { https } from 'node:https'
+import * as https from 'node:https'
 import { createRequire } from 'node:module'
 import { app } from 'electron'
 import { createLogger } from '@spark/shared'
@@ -355,7 +355,7 @@ export async function installSdk(packageName: string): Promise<SdkIntegrityInsta
       resolve({
         success: true,
         message: `${packageName} 安装成功`,
-        newVersion: newVersion ?? undefined,
+        ...(newVersion != null ? { newVersion } : {}),
       })
     })
   })

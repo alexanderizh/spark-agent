@@ -709,7 +709,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     await act(async () => {
-      container.querySelector<HTMLButtonElement>('.tabbar-actions .icon-btn')?.click()
+      container.querySelector<HTMLButtonElement>('.tabbar-actions .icon-btn[aria-label="会话检查器"]')?.click()
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 

@@ -15,6 +15,7 @@ import type { SessionPermissionMode } from '@spark/protocol'
 import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
 import type { AgentConfig, CommandDeps, CommandListItem } from '../core/index.js'
+import type { ChatMessage } from '../adapters/types.js'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
@@ -35,6 +36,7 @@ type PendingTurn = { turnId: string; message: string }
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
 const SESSION_TITLE_MAX_LENGTH = 40
+const MODEL_HISTORY_EVENT_LIMIT = 400
 
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>()  // sessionId → active execution
@@ -327,6 +329,7 @@ export class SessionService {
     if (existingEventCount === 0 && shouldDeriveSessionTitle(session.title)) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
+    const historyMessages = buildModelHistoryMessages(eventRepo, sessionId)
 
     const provider = providerRepo.get(session.provider_profile_id)
     if (provider == null) {
@@ -408,7 +411,7 @@ export class SessionService {
     // ── SDK Execution Path ─────────────────────────────────────────────────
     // Claude execution is SDK-only. If the SDK is missing or cannot load, fail
     // the turn with an actionable error instead of falling back to direct API.
-    if (agentAdapter === 'claude-sdk') {
+    if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
         model,
@@ -421,6 +424,7 @@ export class SessionService {
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
         enableCheckpoints: true,
+        continueSession: existingEventCount > 0,
         ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
       }
       await this.tryStartSDKTurn(
@@ -431,9 +435,8 @@ export class SessionService {
 
     // ── Direct API Execution Path ──────────────────────────────────────────
     // Uses our own AgentLoop + ToolRegistry with the direct API adapters.
-    const apiKind: 'chat' | 'responses' = agentAdapter === 'codex' && config.codexApiKind === 'responses' ? 'responses' : 'chat'
-    const effectiveAdapterType = agentAdapter === 'claude-sdk' ? 'claude' : agentAdapter
-    const adapter = createAdapter(effectiveAdapterType, apiKind)
+    const apiKind: 'chat' | 'responses' = config.codexApiKind === 'responses' ? 'responses' : 'chat'
+    const adapter = createAdapter(agentAdapter, apiKind)
 
     const tools = new ToolRegistry()
 
@@ -475,8 +478,10 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
 
     // Fire-and-forget: start the loop without awaiting
-    loop
-      .executeTurn(sessionId, turnId, message, agentConfig)
+    const execution = historyMessages.length > 0
+      ? loop.executeTurn(sessionId, turnId, message, agentConfig, historyMessages)
+      : loop.executeTurn(sessionId, turnId, message, agentConfig)
+    execution
       .then(() => {
         sessionRepo.updateStatus(sessionId, 'idle')
       })
@@ -966,4 +971,88 @@ function defaultMaxIterations(adapter: AgentAdapterKind): number {
 function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {
   if (value === 'ask' || value === 'edit' || value === 'review') return value
   return 'agent'
+}
+
+function buildModelHistoryMessages(eventRepo: EventRepository, sessionId: string): ChatMessage[] {
+  const { events: rows } = eventRepo.queryBySession({
+    sessionId,
+    limit: MODEL_HISTORY_EVENT_LIMIT,
+  })
+  const messages: ChatMessage[] = []
+  const openToolCallIds = new Set<string>()
+
+  for (const row of rows) {
+    const event = parseAgentEvent(row.event_json)
+    if (event == null) continue
+
+    switch (event.type) {
+      case 'user_message':
+        if (event.content.trim().length > 0) {
+          messages.push({ role: 'user', content: event.content })
+        }
+        break
+      case 'assistant_message':
+        if (event.mode === 'complete' && event.content.trim().length > 0) {
+          messages.push({ role: 'assistant', content: event.content })
+        }
+        break
+      case 'tool_call':
+        openToolCallIds.add(event.toolCallId)
+        messages.push({
+          role: 'assistant',
+          content: [{
+            type: 'tool_use',
+            id: event.toolCallId,
+            name: event.toolName,
+            input: event.toolInput,
+          }],
+        })
+        break
+      case 'tool_result':
+        if (!openToolCallIds.has(event.toolCallId)) break
+        openToolCallIds.delete(event.toolCallId)
+        messages.push({
+          role: 'user',
+          content: [{
+            type: 'tool_result',
+            tool_use_id: event.toolCallId,
+            content: serializeToolResultForHistory(event),
+          }],
+        })
+        break
+      default:
+        break
+    }
+  }
+
+  if (openToolCallIds.size === 0) return messages
+  return messages.filter((message) => !isUnresolvedToolUseMessage(message, openToolCallIds))
+}
+
+function parseAgentEvent(json: string): AgentEvent | null {
+  try {
+    return JSON.parse(json) as AgentEvent
+  } catch {
+    return null
+  }
+}
+
+function serializeToolResultForHistory(event: Extract<AgentEvent, { type: 'tool_result' }>): string {
+  if (event.status !== 'success') return event.error ?? 'error'
+  return stringifyHistoryValue(event.output)
+}
+
+function stringifyHistoryValue(value: unknown): string {
+  if (typeof value === 'string') return value
+  if (value === undefined) return ''
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function isUnresolvedToolUseMessage(message: ChatMessage, unresolvedToolCallIds: Set<string>): boolean {
+  if (message.role !== 'assistant' || typeof message.content === 'string') return false
+  return message.content.some((block) => block.type === 'tool_use' && unresolvedToolCallIds.has(block.id))
 }

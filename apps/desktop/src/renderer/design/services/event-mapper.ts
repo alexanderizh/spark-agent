@@ -84,7 +84,7 @@ export class MessageBuilder {
           }
           if (event.isFinal) {
             msg.status = 'completed'
-            this.finishStreamingBlocks(msg)
+            this.finishStreamingBlocks(msg, 'completed')
           }
           break
         }
@@ -102,7 +102,7 @@ export class MessageBuilder {
 
         if (event.isFinal) {
           msg.status = 'completed'
-          this.finishStreamingBlocks(msg)
+          this.finishStreamingBlocks(msg, 'completed')
         }
         break
       }
@@ -179,10 +179,10 @@ export class MessageBuilder {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           if (event.status === 'completed') {
             msg.status = 'completed'
-            this.finishStreamingBlocks(msg)
+            this.finishStreamingBlocks(msg, 'completed')
           } else if (event.status === 'error' || event.status === 'cancelled') {
             msg.status = 'error'
-            this.finishStreamingBlocks(msg)
+            this.finishStreamingBlocks(msg, 'error')
           }
         }
         break
@@ -191,7 +191,7 @@ export class MessageBuilder {
       case 'agent_error': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         msg.status = 'error'
-        this.finishStreamingBlocks(msg)
+        this.finishStreamingBlocks(msg, 'error')
         msg.blocks.push({ kind: 'error', code: event.code, message: event.message, retryable: event.retryable })
         break
       }
@@ -313,10 +313,13 @@ export class MessageBuilder {
     return msg
   }
 
-  private finishStreamingBlocks(msg: UIMessage): void {
+  private finishStreamingBlocks(msg: UIMessage, finalStatus?: 'completed' | 'error'): void {
     for (const block of msg.blocks) {
       if (block.kind === 'text' || block.kind === 'thinking' || block.kind === 'terminal') {
         block.isStreaming = false
+      }
+      if (block.kind === 'tool_call' && (block.status === 'pending' || block.status === 'running')) {
+        block.status = finalStatus === 'error' ? 'error' : 'success'
       }
     }
   }

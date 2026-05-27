@@ -200,5 +200,6 @@ export interface SDKExecutorConfig {
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
   enableCheckpoints?: boolean | undefined
+  continueSession?: boolean | undefined
   approvalCallback?: ((sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>) | undefined
 }
