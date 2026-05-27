@@ -17,7 +17,7 @@ export interface CreateProviderParams {
   id: string
   providerType: string
   name: string
-  config: { defaultModel: string; modelIds: string[]; apiEndpoint?: string; maxTokens?: number; temperature?: number }
+  config: { defaultModel: string; modelIds: string[]; apiEndpoint?: string; codexApiKind?: 'chat' | 'responses'; maxTokens?: number; temperature?: number }
   keystoreRef: string
   isDefault?: boolean
 }

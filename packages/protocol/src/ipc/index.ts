@@ -194,6 +194,8 @@ export interface ProviderProfile {
   modelIds: string[]
   /** 自定义 API Endpoint */
   apiEndpoint?: string
+  /** OpenAI-family adapter API kind. Defaults to chat when omitted. */
+  codexApiKind?: 'chat' | 'responses'
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -215,6 +217,7 @@ export interface ProviderCreateRequest {
   /** 兼容旧版 payload，运行时会映射到 defaultModel */
   model?: string
   apiEndpoint?: string
+  codexApiKind?: 'chat' | 'responses'
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -233,6 +236,7 @@ export interface ProviderUpdateRequest {
   model?: string
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
+  codexApiKind?: 'chat' | 'responses'
   /** 更新 API Key 时传入，不更新则不传 */
   apiKey?: string
   isDefault?: boolean

@@ -38,6 +38,7 @@ import type {
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai'
+type CodexApiKind = 'chat' | 'responses'
 type ProviderForm = {
   presetId: string
   name: string
@@ -45,6 +46,7 @@ type ProviderForm = {
   defaultModel: string
   modelIdsText: string
   endpoint: string
+  codexApiKind: CodexApiKind
   apiKey: string
   isDefault: boolean
 }
@@ -888,6 +890,7 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
     defaultModel: '',
     modelIdsText: '',
     endpoint: '',
+    codexApiKind: 'chat',
     apiKey: '',
     isDefault: false,
   })
@@ -912,13 +915,14 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
             defaultModel: preset.defaultModel,
             modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
             endpoint: preset.apiEndpoint,
+            codexApiKind: 'chat',
             apiKey: '',
             isDefault: false,
           })
           return
         }
       }
-      setForm({ presetId: 'custom', name: '', provider: 'anthropic', defaultModel: '', modelIdsText: '', endpoint: '', apiKey: '', isDefault: false })
+      setForm({ presetId: 'custom', name: '', provider: 'anthropic', defaultModel: '', modelIdsText: '', endpoint: '', codexApiKind: 'chat', apiKey: '', isDefault: false })
       return
     }
     listProviders({}).then(r => {
@@ -931,6 +935,7 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
           defaultModel: p.defaultModel,
           modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
           endpoint: p.apiEndpoint ?? '',
+          codexApiKind: p.codexApiKind ?? 'chat',
           apiKey: '',
           isDefault: p.isDefault,
         })
@@ -953,6 +958,7 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
           modelIds,
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
+          ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
         }
         if (form.apiKey.trim()) req.apiKey = form.apiKey
         await updateProvider(req)
@@ -965,6 +971,7 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
           apiKey: form.apiKey,
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
+          ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
         })
       }
       onClose()
@@ -987,6 +994,7 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
       defaultModel: preset.defaultModel,
       modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
       endpoint: preset.apiEndpoint,
+      codexApiKind: 'chat',
     }))
   }
 
@@ -1035,12 +1043,25 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
             <label>协议格式<span className="sub">决定使用 Anthropic 或 OpenAI 适配器</span></label>
             <SparkSelect
               value={form.provider}
-              onChange={e => setForm(prev => ({ ...prev, presetId: 'custom', provider: normalizeProviderKind(e.target.value) }))}
+              onChange={e => setForm(prev => ({ ...prev, presetId: 'custom', provider: normalizeProviderKind(e.target.value), codexApiKind: 'chat' }))}
               disabled={!!profileId}
             >
               <option value="anthropic">Anthropic 格式</option>
               <option value="openai">OpenAI 格式</option>
             </SparkSelect>
+
+            {form.provider === 'openai' && (
+              <>
+                <label>OpenAI API 类型<span className="sub">Responses 用于 gpt-5-codex，Chat 兼容更多后端</span></label>
+                <SparkSelect
+                  value={form.codexApiKind}
+                  onChange={e => set('codexApiKind', normalizeCodexApiKind(e.target.value))}
+                >
+                  <option value="chat">Chat Completions</option>
+                  <option value="responses">Responses API</option>
+                </SparkSelect>
+              </>
+            )}
 
             <label>默认模型 ID</label>
             <SparkInput value={form.defaultModel} onChange={e => set('defaultModel', e.target.value)} placeholder="例：claude-sonnet-4-20250514" className="mono-sm" />
@@ -1092,6 +1113,10 @@ export function ProviderEditPanel({ profileId = null, initialPresetId = null, on
 
 function normalizeProviderKind(value: string): ProviderKind {
   return value === 'anthropic' ? 'anthropic' : 'openai'
+}
+
+function normalizeCodexApiKind(value: string): CodexApiKind {
+  return value === 'responses' ? 'responses' : 'chat'
 }
 
 function parseModelIds(modelIdsText: string, defaultModel: string): string[] {

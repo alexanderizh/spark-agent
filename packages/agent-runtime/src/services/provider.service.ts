@@ -22,6 +22,7 @@ function rowToProfile(row: {
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
+    ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -42,6 +43,7 @@ export class ProviderService {
     modelIds?: string[]
     model?: string
     apiEndpoint?: string
+    codexApiKind?: 'chat' | 'responses'
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -70,6 +72,7 @@ export class ProviderService {
         defaultModel,
         ...(params.modelIds !== undefined && { modelIds: params.modelIds }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
+        ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
@@ -89,6 +92,7 @@ export class ProviderService {
     modelIds?: string[]
     model?: string
     apiEndpoint?: string | null
+    codexApiKind?: 'chat' | 'responses'
     apiKey?: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -104,7 +108,7 @@ export class ProviderService {
     const existingConfig = normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
     const nextDefaultModel = params.defaultModel ?? params.model
     const newConfig =
-      nextDefaultModel !== undefined || params.modelIds !== undefined || params.apiEndpoint !== undefined
+      nextDefaultModel !== undefined || params.modelIds !== undefined || params.apiEndpoint !== undefined || params.codexApiKind !== undefined
         ? { ...existingConfig }
         : undefined
 
@@ -126,6 +130,9 @@ export class ProviderService {
       } else {
         newConfig.apiEndpoint = params.apiEndpoint
       }
+    }
+    if (newConfig !== undefined && params.codexApiKind !== undefined) {
+      newConfig.codexApiKind = params.codexApiKind
     }
 
     this.repo.update(params.id, {
@@ -202,6 +209,7 @@ interface ProviderConfig {
   model?: string
   modelIds?: string[]
   apiEndpoint?: string
+  codexApiKind?: 'chat' | 'responses'
   maxTokens?: number
   temperature?: number
 }

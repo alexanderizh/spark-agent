@@ -107,6 +107,28 @@ describe('ProviderService', () => {
     expect(profile.apiEndpoint).toBe('https://api.example.com/v1')
   })
 
+  it('createProvider stores codexApiKind for OpenAI providers and returns it in profiles', async () => {
+    const profile = await service.createProvider({
+      name: 'OpenAI Codex',
+      provider: 'openai',
+      defaultModel: 'gpt-5-codex',
+      modelIds: ['gpt-5-codex'],
+      apiEndpoint: 'https://api.openai.com/v1',
+      apiKey: 'sk-openai',
+      codexApiKind: 'responses',
+    })
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      config: {
+        defaultModel: 'gpt-5-codex',
+        modelIds: ['gpt-5-codex'],
+        apiEndpoint: 'https://api.openai.com/v1',
+        codexApiKind: 'responses',
+      },
+    }))
+    expect(profile.codexApiKind).toBe('responses')
+  })
+
   it('deleteProvider removes from keystore and repo', async () => {
     // seed a row
     repo.rows.set('id-1', {
@@ -193,6 +215,31 @@ describe('ProviderService', () => {
     })
   })
 
+  it('updateProvider updates codexApiKind without changing model config', async () => {
+    repo.rows.set('id-codex', {
+      id: 'id-codex',
+      provider_type: 'openai',
+      name: 'OpenAI Codex',
+      config_json: '{"defaultModel":"gpt-5-codex","modelIds":["gpt-5-codex"],"apiEndpoint":"https://api.openai.com/v1"}',
+      enabled: 1,
+      keystore_ref: 'openai-id-codex',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await service.updateProvider({ id: 'id-codex', codexApiKind: 'responses' })
+
+    expect(repo.update).toHaveBeenCalledWith('id-codex', {
+      config: {
+        defaultModel: 'gpt-5-codex',
+        modelIds: ['gpt-5-codex'],
+        apiEndpoint: 'https://api.openai.com/v1',
+        codexApiKind: 'responses',
+      },
+    })
+  })
+
   it('updateProvider accepts legacy model field for backward compatibility', async () => {
     repo.rows.set('id-legacy', {
       id: 'id-legacy',
@@ -272,6 +319,28 @@ describe('ProviderService', () => {
     expect(profiles[0]!.id).toBe('id-4')
     expect(profiles[0]!.defaultModel).toBe('claude-3')
     expect(profiles[0]!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
+  })
+
+  it('listProviders exposes stored codexApiKind', async () => {
+    repo.rows.set('id-codex-profile', {
+      id: 'id-codex-profile',
+      provider_type: 'openai',
+      name: 'Codex',
+      config_json: '{"defaultModel":"gpt-5-codex","modelIds":["gpt-5-codex"],"codexApiKind":"responses"}',
+      enabled: 1,
+      keystore_ref: 'openai-id-codex-profile',
+      is_default: 0,
+      created_at: '2026-05-27',
+      updated_at: '2026-05-27',
+    })
+
+    const profiles = await service.listProviders()
+
+    expect(profiles[0]).toMatchObject({
+      provider: 'openai',
+      defaultModel: 'gpt-5-codex',
+      codexApiKind: 'responses',
+    })
   })
 
   it('healthCheck validates Anthropic-compatible providers with a minimal messages request', async () => {

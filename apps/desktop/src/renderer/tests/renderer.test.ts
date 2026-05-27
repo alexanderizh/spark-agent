@@ -83,6 +83,103 @@ describe('Renderer Smoke Tests', () => {
     expect(cn('foo', 'bar')).toBe('foo bar')
   })
 
+  it('saves the OpenAI Responses API kind from the provider edit panel', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'provider:create') {
+        return {
+          profile: {
+            id: 'provider-1',
+            name: 'OpenAI Codex',
+            provider: 'openai',
+            defaultModel: 'gpt-5-codex',
+            modelIds: ['gpt-5-codex'],
+            apiEndpoint: 'https://api.openai.com/v1',
+            keystoreRef: 'openai-provider-1',
+            isDefault: false,
+            createdAt: '2026-05-27T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:update') return { profile: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+    const { ProviderEditPanel } = await import('../design/views/SettingsView')
+    const setInputValue = (input: HTMLInputElement, value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      expect(setter).toBeDefined()
+      if (setter == null) throw new Error('HTMLInputElement value setter unavailable')
+      setter.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    const setSelectValue = (select: HTMLSelectElement, value: string) => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+      expect(setter).toBeDefined()
+      if (setter == null) throw new Error('HTMLSelectElement value setter unavailable')
+      setter.call(select, value)
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    }
+
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(ToastProvider, null,
+          React.createElement(ProviderEditPanel, { onClose: vi.fn() }),
+        ),
+      )
+    })
+
+    let selects = container.querySelectorAll<HTMLSelectElement>('select')
+    expect(selects.length).toBe(2)
+
+    await act(async () => {
+      const providerSelect = selects[1]
+      expect(providerSelect).toBeDefined()
+      if (providerSelect == null) throw new Error('Provider select missing')
+      setSelectValue(providerSelect, 'openai')
+    })
+
+    selects = container.querySelectorAll<HTMLSelectElement>('select')
+    expect(selects.length).toBeGreaterThanOrEqual(3)
+
+    await act(async () => {
+      const codexKindSelect = selects[2]
+      expect(codexKindSelect).toBeDefined()
+      if (codexKindSelect == null) throw new Error('Codex API kind select missing')
+      setSelectValue(codexKindSelect, 'responses')
+    })
+
+    const inputs = container.querySelectorAll<HTMLInputElement>('input')
+    await act(async () => {
+      const nameInput = inputs[0]
+      const modelInput = inputs[1]
+      const apiKeyInput = inputs[3]
+      const saveButton = container.querySelector<HTMLButtonElement>('.slide-panel-foot .btn.primary')
+      expect(nameInput).toBeDefined()
+      expect(modelInput).toBeDefined()
+      expect(apiKeyInput).toBeDefined()
+      expect(saveButton).not.toBeNull()
+      if (nameInput == null || modelInput == null || apiKeyInput == null || saveButton == null) {
+        throw new Error('Provider form controls missing')
+      }
+      setInputValue(nameInput, 'OpenAI Codex')
+      setInputValue(modelInput, 'gpt-5-codex')
+      setInputValue(apiKeyInput, 'sk-openai')
+      saveButton.click()
+      await Promise.resolve()
+    })
+
+    expect(invoke).toHaveBeenCalledWith('provider:create', expect.objectContaining({
+      provider: 'openai',
+      defaultModel: 'gpt-5-codex',
+      codexApiKind: 'responses',
+    }))
+  })
+
   it('toggles the primary sidebar from the bottom control and persists the state', async () => {
     const { App } = await import('../App')
 
