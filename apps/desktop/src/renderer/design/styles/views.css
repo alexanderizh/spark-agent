@@ -727,6 +727,81 @@ body.sidebar-resizing {
   flex-shrink: 0;
 }
 
+/* ---------- TOOL DROPDOWN (IDE / Terminal open) ---------- */
+.tool-dropdown-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tool-dropdown {
+  position: absolute;
+  right: 0;
+  top: 28px;
+  z-index: 40;
+  min-width: 180px;
+  max-height: 280px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+}
+.tool-dropdown-loading,
+.tool-dropdown-empty {
+  padding: 10px 12px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.tool-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.tool-dropdown-item:hover {
+  background: var(--hover);
+}
+.tool-dropdown-item-icon {
+  width: 18px;
+  height: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.tool-dropdown-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-dropdown-refresh {
+  margin-top: 2px;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+  padding-top: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+}
+.tool-dropdown-refresh:hover {
+  color: var(--text);
+}
+
 .chat-main {
   flex: 1;
   display: flex;

@@ -15,6 +15,7 @@ import type { UIMessage, UIBlock } from '../services/event-mapper'
 import type {
   AgentEvent,
   AgentStatusValue,
+  ExternalToolInfo,
   ProviderProfile,
   SessionAgentAdapter,
   SessionChatMode,
@@ -88,7 +89,7 @@ const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const SESSION_HISTORY_PAGE_SIZE = 500
 const LAST_SESSION_KEY = 'spark-agent:last-active-session'
 const SIDEBAR_WIDTH_KEY = 'spark-agent:sidebar-width'
-const SIDEBAR_DEFAULT_WIDTH = 264
+const SIDEBAR_DEFAULT_WIDTH = 254
 const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
 
@@ -1112,6 +1113,103 @@ function ChatListItem({
   )
 }
 
+// ─── Tool Dropdown (IDE / Terminal open) ─────────────────────────────────
+
+function ToolDropdown({
+  kind,
+  rootPath,
+}: {
+  kind: 'ide' | 'terminal'
+  rootPath: string
+}) {
+  const [open, setOpen] = useState(false)
+  const [tools, setTools] = useState<ExternalToolInfo[]>([])
+  const [loading, setLoading] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  const isIde = kind === 'ide'
+  const TriggerIcon = isIde ? Icons.Code : Icons.Terminal
+  const tooltip = isIde ? '在编辑器中打开' : '在终端中打开'
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  useEffect(() => {
+    if (!open || tools.length > 0) return
+    let cancelled = false
+    setLoading(true)
+    window.spark.invoke('tool:detect', { kind })
+      .then((res) => { if (!cancelled) setTools(res.tools) })
+      .catch(() => { if (!cancelled) setTools([]) })
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [open, kind, tools.length])
+
+  const handleSelect = async (tool: ExternalToolInfo) => {
+    setOpen(false)
+    try {
+      await window.spark.invoke('tool:open-project', { toolId: tool.id, rootPath })
+    } catch (err) {
+      console.error(`Failed to open in ${tool.name}:`, err)
+    }
+  }
+
+  const availableTools = tools.filter(t => t.available)
+
+  return (
+    <div className="tool-dropdown-wrap" ref={ref}>
+      <button
+        className={`icon-btn${open ? ' active' : ''}`}
+        title={tooltip}
+        onClick={() => setOpen(prev => !prev)}
+      >
+        <TriggerIcon size={14} />
+      </button>
+      {open && (
+        <div className="tool-dropdown">
+          {loading && (
+            <div className="tool-dropdown-loading">
+              <Icons.Spinner size={12} /> 检测中...
+            </div>
+          )}
+          {!loading && availableTools.length === 0 && (
+            <div className="tool-dropdown-empty">
+              未检测到已安装的{isIde ? '编辑器' : '终端'}工具
+            </div>
+          )}
+          {!loading && availableTools.map(tool => (
+            <button
+              key={tool.id}
+              className="tool-dropdown-item"
+              onClick={() => handleSelect(tool)}
+            >
+              <span className="tool-dropdown-item-icon">
+                {tool.kind === 'ide' ? <Icons.Code size={13} /> : <Icons.Terminal size={13} />}
+              </span>
+              <span className="tool-dropdown-item-name">{tool.name}</span>
+            </button>
+          ))}
+          {!loading && availableTools.length > 0 && (
+            <button
+              className="tool-dropdown-item tool-dropdown-refresh"
+              onClick={() => setTools([])}
+            >
+              <Icons.Refresh size={12} />
+              <span>重新检测</span>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ActionMenu({
   items,
   onClose,
@@ -1195,6 +1293,12 @@ function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
+        {workspace && (
+          <>
+            <ToolDropdown kind="ide" rootPath={workspace.rootPath} />
+            <ToolDropdown kind="terminal" rootPath={workspace.rootPath} />
+          </>
+        )}
         {showClearConfirm && onClearMessages && (
           <div className="clear-confirm-bar">
             <span className="clear-confirm-text">确认清空？</span>
