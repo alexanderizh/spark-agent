@@ -154,7 +154,7 @@ describe('AgentLoop', () => {
     expect(collected.some((e) => e.type === 'tool_result' && e.status === 'denied')).toBe(true)
   })
 
-  it('claude-plan denies write tools without prompting', async () => {
+  it('claude-plan asks before running command tools', async () => {
     const loop = new AgentLoop()
     const collected: AgentEvent[] = []
     loop.onEvent((e) => collected.push(e))
@@ -169,8 +169,8 @@ describe('AgentLoop', () => {
             ...BASE,
             type: 'tool_call' as const,
             toolCallId: 'tc1',
-            toolName: 'write_file',
-            toolInput: { path: 'out.txt', content: 'data' },
+            toolName: 'bash',
+            toolInput: { command: 'npm create vite@latest . -- --template react' },
             source: 'builtin' as const,
           }
         } else {
@@ -179,8 +179,8 @@ describe('AgentLoop', () => {
       },
     }
 
-    const approvalCallback = vi.fn(async () => true)
-    await loop.executeTurn('s1', 't1', 'write file', {
+    const approvalCallback = vi.fn(async () => false)
+    await loop.executeTurn('s1', 't1', 'create project', {
       adapter,
       apiKey: 'key',
       model: 'model',
@@ -190,8 +190,8 @@ describe('AgentLoop', () => {
       approvalCallback,
     })
 
-    expect(approvalCallback).not.toHaveBeenCalled()
-    expect(collected.some((e) => e.type === 'tool_result' && e.status === 'denied')).toBe(true)
+    expect(approvalCallback).toHaveBeenCalledWith('s1', 'bash', { command: 'npm create vite@latest . -- --template react' })
+    expect(collected.some((e) => e.type === 'tool_result' && e.status === 'denied' && e.error === 'User denied tool execution')).toBe(true)
   })
 
   it('codex-full-access runs write tools without prompting', async () => {

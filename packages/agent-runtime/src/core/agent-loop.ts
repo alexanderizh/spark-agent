@@ -392,10 +392,15 @@ function getToolPermissionDecision(mode: SessionPermissionMode | undefined, tool
   // Full access modes: allow everything
   if (permissionMode === 'claude-bypass' || permissionMode === 'codex-full-access') return 'allow'
 
-  // Plan mode: reads + exit_plan_mode allowed; everything else denied.
+  // Plan mode: reads + exit_plan_mode allowed; mutating/command tools require approval.
   if (permissionMode === 'claude-plan') {
     if (toolName === 'exit_plan_mode') return 'allow'
-    return category === 'read' ? 'allow' : 'deny'
+    if (category === 'read') return 'allow'
+    if (toolInput && (toolName === 'bash' || toolName === 'git')) {
+      const level = getToolPermissionLevel(toolName, toolInput)
+      if (level === 'deny') return 'deny'
+    }
+    return category === 'dangerous' ? 'deny' : 'ask'
   }
 
   // Use fine-grained permission for bash and git tools
