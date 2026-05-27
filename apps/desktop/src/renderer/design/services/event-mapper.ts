@@ -119,7 +119,7 @@ export class MessageBuilder {
           ) as Extract<UIBlock, { kind: 'tool_call' }> | undefined
           if (block) {
             block.status = event.status === 'success' ? 'success' : 'error'
-            block.output = event.output != null ? String(event.output) : undefined
+            block.output = formatToolOutput(event.output)
             block.error = event.error
             block.durationMs = event.durationMs
           }
@@ -220,5 +220,19 @@ export class MessageBuilder {
         block.isStreaming = false
       }
     }
+  }
+}
+
+function formatToolOutput(output: unknown): string | undefined {
+  if (output == null) return undefined
+  if (typeof output === 'string') return output
+  if (typeof output === 'number' || typeof output === 'boolean' || typeof output === 'bigint') {
+    return String(output)
+  }
+
+  try {
+    return `\`\`\`json\n${JSON.stringify(output, null, 2)}\n\`\`\``
+  } catch {
+    return String(output)
   }
 }

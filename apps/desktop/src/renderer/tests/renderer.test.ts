@@ -11,6 +11,7 @@ import React from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { ToastProvider } from '../design/components/Toast'
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -118,6 +119,105 @@ describe('Renderer Smoke Tests', () => {
 
     expect(container.querySelector('.sidebar')?.classList.contains('expanded')).toBe(true)
     expect(localStorage.getItem('spark-agent:sidebar')).toBe('expanded')
+  })
+
+  it('shows running sessions in the list and allows stopping the active session', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Running task',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'running',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 1,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'workspace:open') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:cancel') return { cancelled: true }
+      throw new Error(`Unhandled channel ${channel}`)
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.session-running-badge')).not.toBeNull()
+    })
+
+    const item = container.querySelector<HTMLElement>('.chat-item-compact')
+    expect(item).not.toBeNull()
+
+    await act(async () => {
+      item?.click()
+    })
+
+    let stopButton: HTMLButtonElement | null = null
+    await vi.waitFor(() => {
+      stopButton = container.querySelector<HTMLButtonElement>('[title="停止会话"]')
+      expect(stopButton).not.toBeNull()
+    })
+
+    await act(async () => {
+      stopButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('session:cancel', { sessionId: 'session-1' })
   })
 
   it.todo('should render HomePage with metric cards')

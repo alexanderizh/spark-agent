@@ -460,14 +460,6 @@
   line-height: 1;
   flex-shrink: 0;
 }
-.session-stop-btn {
-  color: var(--danger);
-  flex-shrink: 0;
-}
-.session-stop-btn:hover {
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  color: var(--danger);
-}
 .proj-session-empty {
   display: flex; align-items: center; gap: 7px;
   margin: 3px 6px 6px 24px;
@@ -1310,15 +1302,19 @@
   position: relative;
 }
 .composer-v2 textarea {
-  padding-right: 104px;
+  padding-right: 60px;
   padding-bottom: 50px;
   min-height: 0;
   max-height: 320px;
   transition: height 0.12s ease;
 }
 .composer-expand-btn {
-  width: 30px;
-  height: 30px;
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  z-index: 2;
+  width: 28px;
+  height: 28px;
   border: 0;
   border-radius: var(--r-md);
   background: var(--bg-soft);
@@ -1331,21 +1327,6 @@
 .composer-expand-btn:hover {
   color: var(--text);
   background: var(--hover);
-}
-.composer-stop-round {
-  width: 30px;
-  height: 30px;
-  border: 0;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--danger) 12%, var(--bg-soft));
-  color: var(--danger);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.composer-stop-round:hover {
-  background: color-mix(in srgb, var(--danger) 18%, var(--bg-soft));
 }
 .composer-submit-row {
   position: absolute;
@@ -1365,8 +1346,8 @@
   font-family: inherit;
 }
 .composer-send-round {
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: var(--text-strong);
   color: var(--bg);
@@ -1386,6 +1367,13 @@
 .composer-send-round.is-sending {
   opacity: 0.72;
 }
+.composer-send-round.is-stopping {
+  background: var(--danger);
+  color: #fff;
+}
+.composer-send-round.is-stopping:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 86%, #000);
+}
 .composer-param-bar {
   display: flex;
   align-items: center;
@@ -1404,9 +1392,6 @@
 .composer-param-bar .composer-hint,
 .composer-param-bar .composer-send-btn {
   display: none;
-}
-.composer-stop-btn {
-  color: var(--danger);
 }
 .composer-select {
   position: relative;

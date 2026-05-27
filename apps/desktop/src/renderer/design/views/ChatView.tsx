@@ -77,6 +77,7 @@ export function ChatView() {
   const { invoke: searchSessions } = useIpcInvoke('session:search')
   const { invoke: updateSession } = useIpcInvoke('session:update')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
+  const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
   const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
@@ -364,6 +365,27 @@ export function ChatView() {
     }
   }
 
+  const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
+    setSessions((prev) => prev.map((item) => item.id === sessionId ? { ...item, status } : item))
+  }, [])
+
+  const handleCancelSession = useCallback(async (sessionId: SessionId) => {
+    try {
+      const res = await cancelSessionTurn({ sessionId })
+      setAgentStatus('')
+      setSessionStatus(sessionId, 'idle')
+      await refreshProjectsAndSessions()
+      if (res.cancelled) {
+        toast.success('已停止会话')
+      } else {
+        toast.info('该会话当前没有运行中的任务')
+      }
+    } catch (err) {
+      console.error('停止会话失败', err)
+      toast.error(err instanceof Error ? err.message : '停止会话失败')
+    }
+  }, [cancelSessionTurn, refreshProjectsAndSessions, setSessionStatus, toast])
+
   const showSearchResults = searchQuery.trim().length > 0
   const visibleSessions = filterSessionsByTime(sessions, timeFilter)
   const projectGroups = buildProjectGroups(workspaces, visibleSessions)
@@ -555,6 +577,10 @@ export function ChatView() {
             onStatusChange={setAgentStatus}
             onUsageChange={setContextInputTokens}
             onMessagesChange={setActiveMessages}
+            onSessionStatusChange={(status) => {
+              setSessionStatus(active, status)
+              if (status !== 'running') refreshSessions()
+            }}
           />
         ) : (
           <div className="chat-stream chat-stream-empty">
@@ -577,7 +603,11 @@ export function ChatView() {
           onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
           onUpdateSession={handleUpdateActiveSession}
           onSwitchBranch={handleSwitchBranch}
-          onSent={() => {}}
+          onCancelSession={handleCancelSession}
+          onSent={(sessionId) => {
+            setSessionStatus(sessionId, 'running')
+            refreshSessions()
+          }}
         />
       </div>
 
@@ -837,16 +867,20 @@ function ChatListItem({
   onOpenFolder?: (session: SessionSummary) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const isRunning = s.status === 'running'
   return (
-    <div className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''}`} onClick={() => onClick(s.id)}>
+    <div className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${isRunning ? 'is-running' : ''}`} onClick={() => onClick(s.id)}>
       <div className="chat-item-row">
-        {/* 左侧：置顶图标 + 状态指示点 + 标题 */}
         <div className="chat-item-title-compact">
           {s.pinnedAt != null && <Icons.Pin size={10} className="pinned-icon" />}
-          {s.status === 'running' && <span className="pulse-dot" />}
+          {isRunning && (
+            <span className="session-running-badge" title="运行中">
+              <Icons.Spinner size={10} />
+              <span>运行中</span>
+            </span>
+          )}
           <span className="truncate">{s.title || '新会话'}</span>
         </div>
-        {/* 右侧：时间 + 更多菜单 */}
         <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         <div className="item-menu-wrap">
           <button
@@ -1029,11 +1063,13 @@ function ChatStream({
   onStatusChange,
   onUsageChange,
   onMessagesChange,
+  onSessionStatusChange,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
   onUsageChange: (tokens: number) => void
   onMessagesChange: (messages: UIMessage[]) => void
+  onSessionStatusChange: (status: SessionSummary['status']) => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -1080,6 +1116,9 @@ function ChatStream({
         cancelled: '',
       }
       onStatusChange(labels[event.status] ?? '')
+      if (event.status === 'thinking' || event.status === 'calling_tool') onSessionStatusChange('running')
+      if (event.status === 'completed' || event.status === 'cancelled') onSessionStatusChange('idle')
+      if (event.status === 'error') onSessionStatusChange('error')
     }
     if (event.type === 'usage_update') {
       if (event.inputTokens > 0) onUsageChange(event.inputTokens)
@@ -1442,7 +1481,7 @@ function ThinkingSection({
   const [needsCollapse, setNeedsCollapse] = useState(false)
   const [expanded, setExpanded] = useState(false)
 
-  const isThinkingActive = blocks.some(b => b.isStreaming)
+  const isThinkingActive = streaming && blocks.some(b => b.isStreaming)
 
   useEffect(() => {
     if (isThinkingActive) {
@@ -1555,9 +1594,11 @@ function ToolCall({ name, arg, status, children }: { name: string; arg: string; 
         {iconMap[name] || <Icons.Wrench className="tool-icon" />}
         <span className="tool-name">{name}</span>
         <span className="tool-arg">{arg}</span>
-        {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
-        {status === 'error' && <Icons.X size={12} className="tool-status err" />}
-        <Icons.ChevronRight size={12} className="chev" />
+        <span className="tool-call-actions">
+          {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
+          {status === 'error' && <Icons.X size={12} className="tool-status err" />}
+          <Icons.ChevronRight size={12} className="chev" />
+        </span>
       </div>
       {open && children && <div className="tool-call-body">{children}</div>}
     </div>
@@ -1580,6 +1621,7 @@ function ComposerV2({
   onCreateSession,
   onUpdateSession,
   onSwitchBranch,
+  onCancelSession,
   onSent,
 }: {
   session: SessionSummary | null
@@ -1608,7 +1650,8 @@ function ComposerV2({
     reasoningEffort?: SessionReasoningEffort
   }) => Promise<void>
   onSwitchBranch: (branch: string) => Promise<void>
-  onSent: () => void
+  onCancelSession: (sessionId: SessionId) => void | Promise<void>
+  onSent: (sessionId: SessionId) => void
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -1630,7 +1673,6 @@ function ComposerV2({
   const composingRef = useRef(false)
   const nextQueueIdRef = useRef(0)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
-  const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
 
   const adapter = session?.agentAdapter ?? draftAdapter
   const compatibleProviders = providers.filter((provider) => getProviderAdapterKind(provider) === adapter)
@@ -1709,7 +1751,7 @@ function ComposerV2({
         } else {
           toast.warning(res.message || '命令执行失败')
         }
-        onSent()
+        if (session?.id != null) onSent(session.id)
       } catch (err) {
         console.error('命令执行失败', err)
         toast.error(err instanceof Error ? err.message : '命令执行失败')
@@ -1737,7 +1779,7 @@ function ComposerV2({
       if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
       const res = await sendTurn({ sessionId: targetSessionId, message: text })
       if (!res.started) toast.info('上一条任务仍在执行，消息已加入队列。')
-      onSent()
+      onSent(targetSessionId)
     } catch (err) {
       console.error('发送失败', err)
       toast.error(err instanceof Error ? err.message : '发送消息失败')
@@ -1774,6 +1816,14 @@ function ComposerV2({
     await dispatchMessage(text)
   }
 
+  const handlePrimaryAction = async () => {
+    if (isWorking) {
+      await handleCancelActiveSession()
+      return
+    }
+    await handleSend()
+  }
+
   const handleRemoveQueuedMessage = (id: string) => {
     setQueuedMessages((prev) => prev.filter((message) => message.id !== id))
   }
@@ -1781,9 +1831,14 @@ function ComposerV2({
   const handleSendQueuedNow = async (message: QueuedMessage) => {
     setQueuedMessages((prev) => prev.filter((item) => item.id !== message.id))
     if (session?.id != null && isWorking) {
-      await cancelTurn({ sessionId: session.id })
+      await onCancelSession(session.id)
     }
     await dispatchMessage(message.content)
+  }
+
+  const handleCancelActiveSession = async () => {
+    if (session?.id == null) return
+    await onCancelSession(session.id)
   }
 
   const handleKeyDown = (event: React.KeyboardEvent) => {
@@ -1903,21 +1958,21 @@ function ComposerV2({
             onKeyDown={handleKeyDown}
             disabled={!workspace}
           />
+          <button
+            className="composer-expand-btn"
+            title={manualExpanded ? '折叠输入框' : '展开输入框'}
+            onClick={() => setManualExpanded((prev) => !prev)}
+          >
+            {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
+          </button>
           <div className="composer-submit-row">
             <button
-              className="composer-expand-btn"
-              title={manualExpanded ? '折叠输入框' : '展开输入框'}
-              onClick={() => setManualExpanded((prev) => !prev)}
+              className={`composer-send-round ${sending ? 'is-sending' : ''} ${isWorking ? 'is-stopping' : ''}`}
+              title={isWorking ? '停止会话' : '发送'}
+              onClick={() => void handlePrimaryAction()}
+              disabled={isWorking ? session?.id == null : !canSubmit}
             >
-              {manualExpanded ? <Icons.Minimize size={15} /> : <Icons.Maximize size={15} />}
-            </button>
-            <button
-              className={`composer-send-round ${sending ? 'is-sending' : ''}`}
-              title={isBusy ? '加入队列' : '发送'}
-              onClick={() => void handleSend()}
-              disabled={!canSubmit}
-            >
-              {sending ? <Icons.Spinner size={15} /> : isBusy ? <Icons.Clock size={17} /> : <Icons.ArrowUp size={18} />}
+              {sending ? <Icons.Spinner size={14} /> : isWorking ? <Icons.Stop size={11} /> : <Icons.ArrowUp size={16} />}
             </button>
           </div>
         </div>
@@ -1934,7 +1989,7 @@ function ComposerV2({
               options={ADAPTER_OPTIONS}
             />
             <ProviderModelPicker
-              icon={<AdapterIcon adapter={selectedProvider != null ? getProviderAdapterKind(selectedProvider) : adapter} />}
+              icon={<ModelIcon />}
               providers={compatibleProviders}
               selectedProviderId={selectedProvider?.id ?? ''}
               selectedModelId={effectiveModelId}
@@ -2147,14 +2202,27 @@ function AdapterIcon({ adapter }: { adapter: 'claude' | 'codex' }) {
   if (adapter === 'claude') {
     return (
       <svg className="adapter-brand-icon adapter-brand-claude" viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M12 3.5 15.2 9l6.3.1-3.1 5.5 3 5.4-6.2.1L12 20.5 8.8 15l-6.3-.1 3.1-5.5-3-5.4 6.2-.1L12 3.5Z" />
+        <rect x="2" y="2" width="20" height="20" rx="5" />
+        <path d="M12 5.4v13.2M7.3 7.3l9.4 9.4M5.4 12h13.2M7.3 16.7l9.4-9.4" />
+        <path d="M9.1 5.9l5.8 12.2M5.9 14.9l12.2-5.8M5.9 9.1l12.2 5.8M9.1 18.1l5.8-12.2" />
       </svg>
     )
   }
   return (
     <svg className="adapter-brand-icon adapter-brand-codex" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M12 2.8 20 7.4v9.2l-8 4.6-8-4.6V7.4l8-4.6Z" />
-      <path d="M8.2 9.2 12 7l3.8 2.2v5.6L12 17l-3.8-2.2V9.2Z" />
+      <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" />
+      <path className="codex-cloud" d="M8.5 8.4c.9-2.1 4.2-2.7 5.7-.9 2.5-.2 4.1 1.4 4.1 3.5 0 2.4-1.8 4.1-4.4 4.1H8.8c-2 0-3.4-1.2-3.4-3 0-1.6 1.1-2.8 3.1-3.7Z" />
+      <path className="codex-prompt" d="M9 10.2 10.8 12 9 13.8M12.5 14h3" />
+    </svg>
+  )
+}
+
+function ModelIcon() {
+  return (
+    <svg className="model-select-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="5" y="5" width="14" height="14" rx="3" />
+      <rect x="9" y="9" width="6" height="6" rx="1.5" />
+      <path d="M9 2.8v2.2M15 2.8v2.2M9 19v2.2M15 19v2.2M2.8 9h2.2M2.8 15h2.2M19 9h2.2M19 15h2.2" />
     </svg>
   )
 }
