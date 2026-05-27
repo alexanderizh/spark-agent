@@ -63,6 +63,14 @@ type SessionUsageData = {
   turns: UsageSnapshot[]
 }
 
+/** Snapshot from agent-loop context_usage event */
+type ContextUsageState = {
+  estimatedTokens: number
+  softLimitTokens: number
+  contextWindowTokens: number
+  compactedThisTurn: boolean
+}
+
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 
 export function ChatView() {
@@ -85,6 +93,8 @@ export function ChatView() {
     contextWindow: 0,
     turns: [],
   })
+  const [contextUsage, setContextUsage] = useState<ContextUsageState | null>(null)
+  const [proposedPlan, setProposedPlan] = useState<string | null>(null)
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
   const [projectName, setProjectName] = useState('')
@@ -517,7 +527,7 @@ export function ChatView() {
           </div>
         ) : (
           <>
-            <TimeFilterBar value={timeFilter} onChange={setTimeFilter} />
+            <TimeFilterDropdown value={timeFilter} onChange={setTimeFilter} />
 
             <div className="chat-list scroll">
               {notice && (
@@ -600,17 +610,22 @@ export function ChatView() {
           setShowInspector={setShowInspector}
         />
         {active ? (
-          <ChatStream
-            sessionId={active}
-            onStatusChange={setAgentStatus}
-            onUsageChange={setContextInputTokens}
-            onUsageDataChange={setSessionUsageData}
-            onMessagesChange={setActiveMessages}
-            onSessionStatusChange={(status) => {
-              setSessionStatus(active, status)
-              if (status !== 'running') refreshSessions()
-            }}
-          />
+          <>
+            <ContextUsageBar usage={contextUsage} />
+            <ChatStream
+              sessionId={active}
+              onStatusChange={setAgentStatus}
+              onUsageChange={setContextInputTokens}
+              onUsageDataChange={setSessionUsageData}
+              onMessagesChange={setActiveMessages}
+              onSessionStatusChange={(status) => {
+                setSessionStatus(active, status)
+                if (status !== 'running') refreshSessions()
+              }}
+              onContextUsageChange={setContextUsage}
+              onPlanProposed={setProposedPlan}
+            />
+          </>
         ) : (
           <div className="chat-stream chat-stream-empty">
             <div className="empty-state">
@@ -665,6 +680,14 @@ export function ChatView() {
             setNotice('')
           }}
           onCreate={() => void handleCreateProject()}
+        />
+      )}
+
+      {proposedPlan != null && active != null && (
+        <PlanApprovalModal
+          sessionId={active}
+          plan={proposedPlan}
+          onClose={() => setProposedPlan(null)}
         />
       )}
     </div>
@@ -731,27 +754,53 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   return <>{parts}</>
 }
 
-function TimeFilterBar({ value, onChange }: { value: TimeFilter; onChange: (value: TimeFilter) => void }) {
+function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: (value: TimeFilter) => void }) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
   const options: Array<{ value: TimeFilter; label: string }> = [
-    { value: 'all', label: '全部' },
-    { value: '1d', label: '1d' },
-    { value: '3d', label: '3d' },
-    { value: '7d', label: '7d' },
-    { value: '10d', label: '10d' },
+    { value: 'all', label: '全部会话' },
+    { value: '1d', label: '最近 1 天' },
+    { value: '3d', label: '最近 3 天' },
+    { value: '7d', label: '最近 7 天' },
+    { value: '10d', label: '最近 10 天' },
   ]
 
+  const currentLabel = options.find(o => o.value === value)?.label ?? '全部会话'
+
+  useEffect(() => {
+    if (!open) return
+    const handleClickOutside = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
   return (
-    <div className="session-filter-bar" aria-label="按最近时间过滤会话">
-      <span>最近</span>
-      {options.map((option) => (
-        <button
-          key={option.value}
-          className={value === option.value ? 'active' : ''}
-          onClick={() => onChange(option.value)}
-        >
-          {option.label}
-        </button>
-      ))}
+    <div className="session-filter-bar" ref={ref}>
+      <button
+        className={`filter-trigger${value !== 'all' ? ' has-filter' : ''}`}
+        onClick={() => setOpen(prev => !prev)}
+        aria-label="筛选会话"
+      >
+        <Icons.Filter size={13} />
+        <span>{currentLabel}</span>
+        <Icons.ChevronDown size={12} className={`filter-chevron${open ? ' open' : ''}`} />
+      </button>
+      {open && (
+        <div className="filter-dropdown">
+          {options.map((option) => (
+            <button
+              key={option.value}
+              className={`filter-option${value === option.value ? ' active' : ''}`}
+              onClick={() => { onChange(option.value); setOpen(false) }}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1096,6 +1145,8 @@ function ChatStream({
   onUsageDataChange,
   onMessagesChange,
   onSessionStatusChange,
+  onContextUsageChange,
+  onPlanProposed,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -1103,6 +1154,8 @@ function ChatStream({
   onUsageDataChange: (data: SessionUsageData) => void
   onMessagesChange: (messages: UIMessage[]) => void
   onSessionStatusChange: (status: SessionSummary['status']) => void
+  onContextUsageChange: (snapshot: ContextUsageState | null) => void
+  onPlanProposed: (plan: string) => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -1125,6 +1178,9 @@ function ChatStream({
       userScrolledRef.current = false
       usageRef.current = { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] }
 
+      // Switching session — reset context usage / pending plan in parent
+      onContextUsageChange(null)
+
       getHistory({ sessionId, limit: 200 })
         .then(res => {
           for (const event of res.events) builder.processEvent(event)
@@ -1141,7 +1197,7 @@ function ChatStream({
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, sessionId])
+  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onContextUsageChange, sessionId])
 
   // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
   const flushMessages = useCallback(() => {
@@ -1235,6 +1291,19 @@ function ChatStream({
       isStreamingRef.current = true
     }
 
+    if (event.type === 'context_usage') {
+      onContextUsageChange({
+        estimatedTokens: event.estimatedTokens,
+        softLimitTokens: event.softLimitTokens,
+        contextWindowTokens: event.contextWindowTokens,
+        compactedThisTurn: event.compacted,
+      })
+    }
+
+    if (event.type === 'plan_proposed') {
+      onPlanProposed(event.plan)
+    }
+
     // 对文本/思考增量事件立即 flush，确保无延迟感知
     if (
       event.type === 'assistant_message' && event.mode === 'delta'
@@ -1253,7 +1322,7 @@ function ChatStream({
 
     // 其他事件走 RAF 批量
     scheduleFlush()
-  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, sessionId, flushMessages, scheduleFlush])
+  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onPlanProposed, sessionId, flushMessages, scheduleFlush])
 
   // 智能自动滚动：只在用户未主动上滚时自动跟随
   useEffect(() => {
@@ -1314,14 +1383,19 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
         const toolStatus = block.status === 'success' ? 'ok' as const : block.status === 'error' ? 'error' as const : null
         const toolArg = JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
         const isPending = block.status === 'pending' || block.status === 'running'
+        const isTodoWrite = block.toolName === 'todo_write'
+        // 把 todo_write 的输入直接作为预览，避免折叠后还要展开看（todos 数组本身就是状态）
+        const todoListBody = isTodoWrite ? <TodoListInline input={block.toolInput} output={block.output} /> : null
         return toolStatus ? (
-          <ToolCall key={i} name={block.toolName} arg={toolArg} status={toolStatus} durationMs={block.durationMs}>
-            {block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+          <ToolCall key={i} name={block.toolName} arg={isTodoWrite ? '' : toolArg} status={toolStatus} durationMs={block.durationMs}>
+            {todoListBody}
+            {!isTodoWrite && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         ) : (
-          <ToolCall key={i} name={block.toolName} arg={toolArg} pending={isPending} durationMs={block.durationMs}>
-            {block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+          <ToolCall key={i} name={block.toolName} arg={isTodoWrite ? '' : toolArg} pending={isPending} durationMs={block.durationMs}>
+            {todoListBody}
+            {!isTodoWrite && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         )
@@ -1952,6 +2026,63 @@ function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId
   )
 }
 
+/**
+ * Inline todo list renderer for tool_call.toolName === 'todo_write'.
+ * Source of truth: the tool's input (always the FULL list per todo_write contract).
+ * If output is available (post-execution), prefer the parsed list from there.
+ */
+function TodoListInline({ input, output }: { input: Record<string, unknown>; output: string | undefined }) {
+  const todos = parseTodosFromInputOrOutput(input, output)
+  if (todos.length === 0) return null
+  const done = todos.filter((t) => t.status === 'completed').length
+  const inProg = todos.find((t) => t.status === 'in_progress')
+  const inProgLabel = inProg?.activeForm ?? inProg?.content
+  return (
+    <div className="tool-todo-list">
+      <div className="tool-todo-summary">
+        {done}/{todos.length} 完成
+        {inProgLabel ? ` · 进行中：${inProgLabel}` : ''}
+      </div>
+      {todos.map((t, idx) => (
+        <div key={idx} className={`tool-todo-item is-${t.status.replace('_', '-')}`}>
+          <span className={`tool-todo-marker is-${t.status.replace('_', '-')}`}>
+            {t.status === 'completed' && <Icons.Check size={12} />}
+            {t.status === 'in_progress' && <Icons.Spinner size={11} />}
+            {/* pending: pure circle from CSS */}
+          </span>
+          <span>{t.status === 'in_progress' ? (t.activeForm ?? t.content) : t.content}</span>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+type ParsedTodo = { content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }
+
+function parseTodosFromInputOrOutput(input: Record<string, unknown>, output: string | undefined): ParsedTodo[] {
+  // Output (JSON-stringified by event-mapper) has the canonical post-execution list
+  if (output != null) {
+    try {
+      // formatToolOutput wraps as markdown ```json blocks; strip if present.
+      const cleaned = output.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim()
+      const parsed = JSON.parse(cleaned) as { todos?: unknown }
+      if (Array.isArray(parsed.todos)) return parsed.todos.filter(isTodo) as ParsedTodo[]
+    } catch {
+      // fall through to input
+    }
+  }
+  const todos = input['todos']
+  if (Array.isArray(todos)) return todos.filter(isTodo) as ParsedTodo[]
+  return []
+}
+
+function isTodo(t: unknown): t is ParsedTodo {
+  if (t == null || typeof t !== 'object') return false
+  const obj = t as Record<string, unknown>
+  return typeof obj['content'] === 'string'
+    && (obj['status'] === 'pending' || obj['status'] === 'in_progress' || obj['status'] === 'completed')
+}
+
 function StoppedMarker() {
   return (
     <div className="stopped-marker">
@@ -1961,6 +2092,130 @@ function StoppedMarker() {
         已停止生成
       </span>
       <span className="stopped-marker-line" />
+    </div>
+  )
+}
+
+/**
+ * 顶部细条：展示当前 turn 即将携带的 messages tokens 占模型上下文窗口的比例。
+ * - 绿（<70%）/ 黄（70~95%）/ 红（>95%）
+ * - 触发了自动压缩时显示「已压缩」徽标
+ * - 数据来自 agent-loop 的 context_usage 事件
+ */
+function ContextUsageBar({ usage }: { usage: ContextUsageState | null }) {
+  if (usage == null) return null
+  const { estimatedTokens, softLimitTokens, contextWindowTokens, compactedThisTurn } = usage
+  const pct = Math.min(100, (estimatedTokens / contextWindowTokens) * 100)
+  const softPct = Math.min(100, (softLimitTokens / contextWindowTokens) * 100)
+  const tone = pct > 95 ? 'danger' : pct > softPct ? 'warn' : 'ok'
+  const tokensLabel = formatTokensShort(estimatedTokens)
+  const windowLabel = formatTokensShort(contextWindowTokens)
+  return (
+    <div className={`chat-context-strip tone-${tone}`}>
+      <div className="chat-context-strip-track">
+        <div className="chat-context-strip-fill" style={{ width: `${pct}%` }} />
+        <div className="chat-context-strip-soft" style={{ left: `${softPct}%` }} title={`软上限 ${formatTokenCount(softLimitTokens)}`} />
+      </div>
+      <div className="chat-context-strip-meta">
+        <span className="mono-sm">{tokensLabel} / {windowLabel}</span>
+        {compactedThisTurn && (
+          <span className="chat-context-strip-badge" title="已自动裁剪较早的 tool_result 内容以释放上下文">
+            <Icons.Layers size={10} /> 已压缩
+          </span>
+        )}
+        {tone === 'warn' && !compactedThisTurn && (
+          <span className="chat-context-strip-hint">接近上限，下次将自动压缩</span>
+        )}
+        {tone === 'danger' && (
+          <span className="chat-context-strip-hint is-danger">超出软上限，建议精简对话或结束当前 turn</span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// chat-context-strip 用 formatTokensShort 区分 inspector 已有的 formatTokenCount
+function formatTokensShort(n: number): string {
+  if (n < 1000) return `${n}t`
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}kt`
+  return `${(n / 1_000_000).toFixed(2)}Mt`
+}
+
+/**
+ * agent 在 claude-plan 模式下递交计划后弹出。
+ * 三个动作：
+ *   - 批准：把 session permissionMode 切到 claude-auto-edits，发送"按上述计划继续执行"
+ *   - 编辑后批准：用户编辑 plan，然后同上但用编辑后的内容
+ *   - 拒绝：仅 dismiss，turn 已结束，用户可在 composer 中提反馈
+ */
+function PlanApprovalModal({ sessionId, plan, onClose }: { sessionId: SessionId; plan: string; onClose: () => void }) {
+  const { toast } = useToast()
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(plan)
+  const [busy, setBusy] = useState(false)
+
+  const approve = async (planText: string) => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await window.spark.invoke('session:update', {
+        sessionId,
+        permissionMode: 'claude-auto-edits',
+      })
+      const message = `批准上述计划。请按如下计划继续执行：\n\n${planText}`
+      await window.spark.invoke('session:send-turn', { sessionId, message })
+      toast.success('计划已批准，已切换为 auto-edits 模式继续执行')
+      onClose()
+    } catch (err) {
+      toast.error(`批准失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
+      <div className="modal plan-approval-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-h">
+          <div className="modal-h-icon"><Icons.Check size={16} /></div>
+          <div>
+            <div className="modal-title">计划已就绪，等待你审批</div>
+            <div className="modal-subtitle">Plan 模式 · 批准后会切换为 auto-edits 模式继续</div>
+          </div>
+        </div>
+        <div className="modal-body">
+          {editing ? (
+            <textarea
+              className="plan-approval-textarea"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              rows={Math.min(20, Math.max(8, draft.split('\n').length + 1))}
+              autoFocus
+            />
+          ) : (
+            <div className="plan-approval-preview md-surface">
+              <MarkdownText content={plan} />
+            </div>
+          )}
+        </div>
+        <div className="modal-foot">
+          <button className="btn ghost sm" disabled={busy} onClick={onClose}>拒绝</button>
+          <div className="flex1" />
+          {!editing && (
+            <button className="btn sm" disabled={busy} onClick={() => setEditing(true)}>
+              <Icons.Edit size={11} /> 编辑后批准
+            </button>
+          )}
+          {editing && (
+            <button className="btn sm" disabled={busy} onClick={() => { setDraft(plan); setEditing(false) }}>
+              取消编辑
+            </button>
+          )}
+          <button className="btn primary sm" disabled={busy} onClick={() => approve(editing ? draft : plan)}>
+            {editing ? '批准（用编辑后）' : '批准并执行'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

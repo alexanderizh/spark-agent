@@ -162,17 +162,18 @@ export class PermissionService {
 
     const result = await new Promise<PermissionApprovalDecision>((resolve) => {
       const timer = setTimeout(() => {
-        if (PermissionService._pendingApprovals.delete(requestId)) {
+        if (this._pendingApprovals.delete(requestId)) {
+          this._approvalSessions.delete(requestId)
           resolve('deny')  // timeout 视为拒绝，避免 agent 永久挂起
         }
       }, APPROVAL_TIMEOUT_MS)
 
-      PermissionService._pendingApprovals.set(requestId, (decision) => {
+      this._pendingApprovals.set(requestId, (decision) => {
         clearTimeout(timer)
-        PermissionService._approvalSessions.delete(requestId)
+        this._approvalSessions.delete(requestId)
         resolve(decision)
       })
-      PermissionService._approvalSessions.set(requestId, sessionId)
+      this._approvalSessions.set(requestId, sessionId)
       pushFn({ requestId, sessionId, toolName, toolInput, riskLevel })
     })
 
@@ -185,27 +186,24 @@ export class PermissionService {
   }
 
   resolveApproval(requestId: string, decision: PermissionApprovalDecision): boolean {
-    const resolve = PermissionService._pendingApprovals.get(requestId)
+    const resolve = this._pendingApprovals.get(requestId)
     if (!resolve) return false
-    PermissionService._pendingApprovals.delete(requestId)
-    PermissionService._approvalSessions.delete(requestId)
+    this._pendingApprovals.delete(requestId)
+    this._approvalSessions.delete(requestId)
     resolve(decision)
     return true
   }
 
   /**
-   * 当 session 被取消时调用，拒绝所有挂起的 approval（agent 端会收到 deny 然后清理）。
+   * 当 session 被取消时调用，拒绝该 session 下所有挂起的 approval（agent 端会收到 deny 然后清理）。
    * SessionService.cancelTurn 应该调用此方法。
    */
   cancelPendingApprovals(sessionId: string): number {
     let cancelled = 0
-    // 我们没有 requestId→sessionId 的反查表，所以保守做法是拒绝全部挂起项；
-    // 多 session 并发时由 SessionService 通过参数区分。这里先实现简单版本：
-    // 调用方需要保证只在该 session 的 approval flow 上下文调用。
-    for (const [requestId, resolve] of PermissionService._pendingApprovals.entries()) {
-      if (PermissionService._approvalSessions.get(requestId) !== sessionId) continue
-      PermissionService._pendingApprovals.delete(requestId)
-      PermissionService._approvalSessions.delete(requestId)
+    for (const [requestId, resolve] of this._pendingApprovals.entries()) {
+      if (this._approvalSessions.get(requestId) !== sessionId) continue
+      this._pendingApprovals.delete(requestId)
+      this._approvalSessions.delete(requestId)
       resolve('deny')
       cancelled += 1
     }
@@ -215,22 +213,23 @@ export class PermissionService {
   }
 
   private isSessionAllowed(sessionId: string, action: string): boolean {
-    return PermissionService._sessionAllowances.get(sessionId)?.has(action) === true
+    return this._sessionAllowances.get(sessionId)?.has(action) === true
   }
 
   private allowForSession(sessionId: string, action: string): void {
-    const set = PermissionService._sessionAllowances.get(sessionId) ?? new Set<string>()
+    const set = this._sessionAllowances.get(sessionId) ?? new Set<string>()
     set.add(action)
-    PermissionService._sessionAllowances.set(sessionId, set)
+    this._sessionAllowances.set(sessionId, set)
   }
 
   private clearSessionAllowances(sessionId: string): void {
-    PermissionService._sessionAllowances.delete(sessionId)
+    this._sessionAllowances.delete(sessionId)
   }
 
-  private static _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
-  private static _approvalSessions = new Map<string, string>()  // requestId → sessionId（用于 cancel）
-  private static _sessionAllowances = new Map<string, Set<string>>()  // sessionId → 已临时允许的 actions
+  // 实例级状态：service 通常是单例（main process 全局一个），但实例化可隔离测试与多进程场景。
+  private _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
+  private _approvalSessions = new Map<string, string>()  // requestId → sessionId（用于 cancel）
+  private _sessionAllowances = new Map<string, Set<string>>()  // sessionId → 已临时允许的 actions
 
   private toProfileItem(row: PermissionProfileRow): PermissionProfileItem {
     const rules = this.repo.listRules(row.id).map((r) => this.toRuleItem(r))
