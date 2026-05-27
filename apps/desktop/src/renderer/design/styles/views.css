@@ -737,6 +737,15 @@
   padding: 4px 0;
 }
 
+/* Cancelled agent message — dim the bubble */
+.msg-agent.is-cancelled .msg-bubble-agent {
+  opacity: 0.85;
+}
+/* Pure error agent message */
+.msg-agent.is-error .msg-bubble-agent {
+  opacity: 0.9;
+}
+
 .msg-content {
   font-size: var(--font-base);
   line-height: 1.65;
@@ -855,6 +864,22 @@
 /* --- Thinking section (collapsible, minimal inline) --- */
 .thinking-section {
   margin: 0 0 8px;
+  border-left: 2px solid transparent;
+  padding-left: 0;
+  transition: border-color 0.2s, padding-left 0.2s, background 0.2s;
+}
+.thinking-section.is-active {
+  border-left-color: var(--primary);
+  padding-left: 10px;
+  background: var(--primary-soft);
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  padding-right: 10px;
+}
+.thinking-section.open:not(.is-active) {
+  border-left-color: var(--border-strong);
+  padding-left: 10px;
 }
 .thinking-toggle {
   display: flex;
@@ -2315,6 +2340,13 @@ body.inspector-resizing {
   75%  { opacity: 1; }
   100% { opacity: 0.3; }
 }
+.thinking-streaming-cursor {
+  display: inline;
+  color: var(--primary);
+  font-weight: 400;
+  animation: streaming-blink 0.8s steps(2) infinite;
+  margin-left: 1px;
+}
 
 /* --- Tool call pending state --- */
 .tool-call.is-pending .tool-call-head {
@@ -2336,6 +2368,12 @@ body.inspector-resizing {
   font-family: 'Geist Mono', ui-monospace, monospace;
   white-space: nowrap;
 }
+.tool-call.is-success .tool-call-head .tool-name {
+  color: var(--text-muted);
+}
+.tool-call.is-error .tool-call-head .tool-name {
+  color: var(--danger);
+}
 
 /* --- Streaming error card (inline, non-blocking) --- */
 .streaming-error-card {
@@ -2344,6 +2382,20 @@ body.inspector-resizing {
   border: 1px solid rgba(239, 68, 68, 0.2);
   border-radius: var(--r-md);
   background: rgba(239, 68, 68, 0.06);
+}
+.streaming-error-card.is-network {
+  border-color: rgba(234, 179, 8, 0.3);
+  background: rgba(234, 179, 8, 0.06);
+}
+.streaming-error-card.is-network .streaming-error-icon {
+  color: var(--warning, #eab308);
+}
+.streaming-error-card.is-timeout {
+  border-color: rgba(249, 115, 22, 0.3);
+  background: rgba(249, 115, 22, 0.06);
+}
+.streaming-error-card.is-timeout .streaming-error-icon {
+  color: var(--warning, #f97316);
 }
 .streaming-error-head {
   display: flex;

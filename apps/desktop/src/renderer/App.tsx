@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react'
 import { AppProvider, useApp, PRIMARIES } from './design/AppContext'
-import { ToastProvider, ToastContainer } from './design/components/Toast'
+import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
+import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { SparkInput } from './design/components/FormControls'
 import type { PermissionApprovalRequest } from '@spark/protocol'
 
@@ -103,8 +104,52 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
 
 function Shell() {
   const { t, setTweak } = useApp()
+  const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
   const [approvalRequest, setApprovalRequest] = useState<PermissionApprovalRequest | null>(null)
+
+  // Global error handlers: unhandledrejection + window.onerror → toast
+  useEffect(() => {
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      const message = event.reason instanceof Error
+        ? event.reason.message
+        : String(event.reason)
+      toast.error(`未捕获的异步错误: ${message}`, {
+        duration: 8000,
+        actions: [{ label: '查看详情', onClick: () => console.error('Unhandled rejection:', event.reason) }],
+      })
+      event.preventDefault()
+    }
+
+    const handleWindowError = (event: ErrorEvent) => {
+      // Ignore ResizeObserver loop errors (benign)
+      if (event.message?.includes('ResizeObserver loop')) return
+      const message = event.message || 'Unknown error'
+      toast.error(`运行时错误: ${message}`, {
+        duration: 8000,
+        actions: [{ label: '查看详情', onClick: () => console.error('Window error:', event.error) }],
+      })
+    }
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+    window.addEventListener('error', handleWindowError)
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+      window.removeEventListener('error', handleWindowError)
+    }
+  }, [toast])
+
+  // IPC error listener
+  useEffect(() => {
+    const handleIpcError = (event: CustomEvent<{ channel: string; error: string }>) => {
+      const { channel, error: errMsg } = event.detail
+      toast.error(`IPC 错误 [${channel}]: ${errMsg}`, { duration: 6000 })
+    }
+    window.addEventListener('spark:ipc-error', handleIpcError as EventListener)
+    return () => {
+      window.removeEventListener('spark:ipc-error', handleIpcError as EventListener)
+    }
+  }, [toast])
 
   // Auto-scale 1440×900 → viewport
   useEffect(() => {
@@ -169,6 +214,7 @@ function Shell() {
   const isExpanded = t.sidebar === 'expanded'
 
   return (
+    <ErrorBoundary level="global" name="Shell">
     <div
       ref={scaleRef}
       className={`app window theme-${t.theme} density-${t.density}`}
@@ -368,6 +414,7 @@ function Shell() {
       {/* Global toast notifications */}
       <ToastContainer />
     </div>
+    </ErrorBoundary>
   )
 }
 
