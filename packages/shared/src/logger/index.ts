@@ -16,7 +16,13 @@ const LEVELS: Record<LogLevel, number> = {
   error: 3,
 }
 
-let currentLevel: LogLevel = process.env['NODE_ENV'] === 'production' ? 'warn' : 'debug'
+type ProcessLike = {
+  env?: Record<string, string | undefined>
+}
+
+const nodeEnv = (globalThis as typeof globalThis & { process?: ProcessLike }).process?.env?.['NODE_ENV']
+
+let currentLevel: LogLevel = nodeEnv === 'production' ? 'warn' : 'debug'
 
 export function setLogLevel(level: LogLevel): void {
   currentLevel = level

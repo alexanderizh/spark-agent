@@ -241,7 +241,7 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
         {error && (
           <div className="card card-error" style={{ marginBottom: '12px' }}>
             {error}
-            <button className="btn btn-sm" style={{ marginLeft: '8px' }} onClick={() => setSearchQuery(searchQuery + ' ')}>重试</button>
+            <button className="btn sm" style={{ marginLeft: '8px' }} onClick={() => setSearchQuery(searchQuery + ' ')}>重试</button>
           </div>
         )}
 
@@ -344,7 +344,7 @@ function StoreSkillCard({
           <span className="badge success">已安装</span>
         ) : (
           <button
-            className="btn btn-sm primary"
+            className="btn sm primary"
             disabled={installing}
             onClick={handleInstall}
           >

@@ -64,7 +64,7 @@ export const SessionCancelRequestSchema = z.object({
 
 export const SessionGetHistoryRequestSchema = z.object({
   sessionId: SessionIdSchema,
-  limit: z.number().int().min(1).max(200).optional().default(50),
+  limit: z.number().int().min(1).max(1000).optional().default(50),
   beforeSeq: z.number().int().nonnegative().optional(),
 })
 
@@ -77,7 +77,7 @@ export const SessionSearchRequestSchema = z.object({
 export const SessionListRequestSchema = z.object({
   workspaceId: z.string().uuid().optional(),
   includeArchived: z.boolean().optional().default(false),
-  limit: z.number().int().min(1).max(200).optional().default(50),
+  limit: z.number().int().min(1).max(1000).optional().default(50),
   offset: z.number().int().min(0).optional().default(0),
 })
 

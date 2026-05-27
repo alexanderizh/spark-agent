@@ -219,11 +219,44 @@ describe('PermissionService', () => {
       expect(push).not.toHaveBeenCalled()
     })
 
+    it('forcePrompt 会让 allow 规则仍然弹审批（用于会话 ask 模式）', async () => {
+      const repo = makeMockRepo([{ action: 'file_write', mode: 'allow' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      const promise = svc.requestApproval(
+        's',
+        'write_file',
+        { path: 'new.txt', content: 'data' },
+        push,
+        { forcePrompt: true },
+      )
+
+      expect(push).toHaveBeenCalledTimes(1)
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(promise).resolves.toBe(true)
+    })
+
     it('rule mode = deny → 立即返回 false，不调用 pushFn', async () => {
       const repo = makeMockRepo([{ action: 'command_exec', mode: 'deny' }])
       const svc = new PermissionService(repo)
       const push = vi.fn()
       await expect(svc.requestApproval('s', 'bash', { command: 'ls' }, push)).resolves.toBe(false)
+      expect(push).not.toHaveBeenCalled()
+    })
+
+    it('forcePrompt 不会绕过 deny 规则', async () => {
+      const repo = makeMockRepo([{ action: 'file_write', mode: 'deny' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      await expect(
+        svc.requestApproval(
+          's',
+          'write_file',
+          { path: 'new.txt', content: 'data' },
+          push,
+          { forcePrompt: true },
+        ),
+      ).resolves.toBe(false)
       expect(push).not.toHaveBeenCalled()
     })
   })

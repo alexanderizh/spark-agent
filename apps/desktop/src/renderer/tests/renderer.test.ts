@@ -317,6 +317,444 @@ describe('Renderer Smoke Tests', () => {
     expect(invoke).toHaveBeenCalledWith('session:cancel', { sessionId: 'session-1' })
   })
 
+  it('uses different project icons for expanded and collapsed sidebar groups', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'workspace:open') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          },
+        }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    let projectHead: HTMLElement | null = null
+    await vi.waitFor(() => {
+      projectHead = container.querySelector('.proj-head')
+      expect(projectHead).not.toBeNull()
+    })
+
+    const expandedIconPath = projectHead!.querySelector('.proj-folder-icon path')?.getAttribute('d')
+    expect(expandedIconPath).toBeTruthy()
+
+    await act(async () => {
+      projectHead!.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const collapsedIconPath = projectHead!.querySelector('.proj-folder-icon path')?.getAttribute('d')
+    expect(collapsedIconPath).toBeTruthy()
+    expect(collapsedIconPath).not.toBe(expandedIconPath)
+  })
+
+  it('renders permission approval inline above the composer', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') return { workspaces: [], total: 0 }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'permission:approval-respond') return { ok: true }
+      return {}
+    })
+    const onApprovalClose = vi.fn()
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      const ChatViewWithApproval = ChatView as React.ComponentType<{
+        approvalRequest: {
+          requestId: string
+          sessionId: string
+          toolName: string
+          toolInput: Record<string, unknown>
+          riskLevel: 'low' | 'medium' | 'high'
+        }
+        onApprovalClose: () => void
+      }>
+      root.render(
+        React.createElement(ToastProvider, null,
+          React.createElement(ChatViewWithApproval, {
+            approvalRequest: {
+              requestId: 'req-1',
+              sessionId: '42e5391d-session',
+              toolName: 'bash',
+              toolInput: { command: 'git log --oneline -20' },
+              riskLevel: 'high',
+            },
+            onApprovalClose,
+          }),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const inlineCard = container.querySelector('.composer-approval-card')
+    const composer = container.querySelector('.composer')
+    expect(inlineCard).not.toBeNull()
+    expect(composer).not.toBeNull()
+    expect(inlineCard?.compareDocumentPosition(composer!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+    expect(container.querySelector('.modal-backdrop')).toBeNull()
+
+    const allowOnce = Array.from(container.querySelectorAll<HTMLButtonElement>('.composer-approval-btn'))
+      .find((button) => button.textContent?.includes('允许一次'))
+    expect(allowOnce).toBeDefined()
+
+    await act(async () => {
+      allowOnce?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('permission:approval-respond', {
+      requestId: 'req-1',
+      decision: 'allow-once',
+    })
+    expect(onApprovalClose).toHaveBeenCalled()
+  })
+
+  it('does not auto-collapse the latest assistant message body', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Long answer',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 4,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'workspace:open') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'session:get-history') {
+        return {
+          events: [
+            {
+              id: 'user-1',
+              type: 'user_message',
+              sessionId: 'session-1',
+              turnId: 'turn-1',
+              timestamp: '2026-05-27T00:00:00.000Z',
+              seq: 1,
+              content: 'first',
+            },
+            {
+              id: 'assistant-1',
+              type: 'assistant_message',
+              sessionId: 'session-1',
+              turnId: 'turn-1',
+              timestamp: '2026-05-27T00:00:01.000Z',
+              seq: 2,
+              mode: 'complete',
+              provider: 'claude',
+              content: 'Historical long answer',
+              isFinal: true,
+            },
+            {
+              id: 'user-2',
+              type: 'user_message',
+              sessionId: 'session-1',
+              turnId: 'turn-2',
+              timestamp: '2026-05-27T00:00:02.000Z',
+              seq: 3,
+              content: 'second',
+            },
+            {
+              id: 'assistant-2',
+              type: 'assistant_message',
+              sessionId: 'session-1',
+              turnId: 'turn-2',
+              timestamp: '2026-05-27T00:00:03.000Z',
+              seq: 4,
+              mode: 'complete',
+              provider: 'claude',
+              content: 'Latest long answer',
+              isFinal: true,
+            },
+          ],
+          hasMore: false,
+        }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+    const scrollHeightSpy = vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(800)
+
+    try {
+      const { ChatView } = await import('../design/views/ChatView')
+
+      await act(async () => {
+        root = createRoot(container)
+        root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      await vi.waitFor(() => {
+        expect(container.querySelector('.chat-item-compact')).not.toBeNull()
+      })
+
+      await act(async () => {
+        container.querySelector<HTMLElement>('.chat-item-compact')?.click()
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll('.msg-agent').length).toBe(2)
+      })
+
+      await vi.waitFor(() => {
+        expect(container.querySelectorAll('.collapse-overlay .collapse-toggle').length).toBe(1)
+      })
+      const latestMessage = container.querySelectorAll('.msg-agent')[1]
+      expect(latestMessage?.querySelector('.collapse-overlay .collapse-toggle')).toBeNull()
+    } finally {
+      scrollHeightSpy.mockRestore()
+    }
+  })
+
+  it('hydrates paged running history and merges live events received during reload', async () => {
+    let streamHandler: ((event: Record<string, unknown>) => void) | null = null
+    let resolveFirstHistory: ((value: unknown) => void) | null = null
+    const firstHistory = new Promise((resolve) => {
+      resolveFirstHistory = resolve
+    })
+    const historyCalls: Array<Record<string, unknown>> = []
+
+    const userEvent = (seq: number, turnId: string, content: string) => ({
+      id: `user-${seq}`,
+      type: 'user_message',
+      sessionId: 'session-1',
+      turnId,
+      timestamp: `2026-05-27T00:00:0${seq}.000Z`,
+      seq,
+      content,
+    })
+    const assistantEvent = (seq: number, turnId: string, content: string) => ({
+      id: `assistant-${seq}`,
+      type: 'assistant_message',
+      sessionId: 'session-1',
+      turnId,
+      timestamp: `2026-05-27T00:00:0${seq}.000Z`,
+      seq,
+      mode: 'delta',
+      provider: 'claude',
+      content,
+      isFinal: false,
+    })
+
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Running stream',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'running',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 5,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'workspace:open') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'session:get-history') {
+        historyCalls.push(request ?? {})
+        if (historyCalls.length === 1) return firstHistory
+        return {
+          events: [
+            userEvent(0, 'turn-1', 'first'),
+            assistantEvent(1, 'turn-1', 'Older answer. '),
+          ],
+          hasMore: false,
+        }
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (event: Record<string, unknown>) => void) => {
+        if (channel === 'stream:session:agent-event') streamHandler = callback
+        return vi.fn()
+      }),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.chat-item-compact')).not.toBeNull()
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLElement>('.chat-item-compact')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(historyCalls.length).toBe(1)
+      expect(streamHandler).not.toBeNull()
+    })
+
+    await act(async () => {
+      streamHandler?.(assistantEvent(4, 'turn-2', 'live tail. '))
+      resolveFirstHistory?.({
+        events: [
+          userEvent(2, 'turn-2', 'second'),
+          assistantEvent(3, 'turn-2', 'Latest start. '),
+        ],
+        hasMore: true,
+      })
+      await firstHistory
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(historyCalls.length).toBe(2)
+      expect(historyCalls[1]).toEqual(expect.objectContaining({ beforeSeq: 2 }))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Older answer.')
+      expect(container.textContent).toContain('Latest start. live tail.')
+    })
+  })
+
   it.todo('should render HomePage with metric cards')
   it.todo('should render SettingsPage with sub-navigation')
 })

@@ -29,7 +29,7 @@ export function HomeView() {
     setLoading(true)
     try {
       const [sessionRes, providerRes, workspaceRes] = await Promise.all([
-        listSessions({ limit: 12 }),
+        listSessions({ limit: 6 }),
         listProviders({}),
         getCurrentWorkspace({}),
       ])

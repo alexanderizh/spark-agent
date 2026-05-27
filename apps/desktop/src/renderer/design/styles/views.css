@@ -5,11 +5,13 @@
 /* ---------- HOME ---------- */
 .home {
   padding: var(--pad-xl);
+  padding-bottom: calc(var(--pad-xl) * 2);
   display: flex;
   flex-direction: column;
   gap: var(--pad-xl);
   max-width: 1180px;
   min-height: 100%;
+  box-sizing: border-box;
   margin: 0 auto;
   width: 100%;
 }
@@ -329,32 +331,29 @@
   position: relative;
   display: flex;
   align-items: center;
-  padding: 4px 10px 6px;
+  justify-content: flex-end;
+  padding: 0px 10px 0px;
 }
 
 .filter-trigger {
   display: flex;
   align-items: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--border-strong);
-  border-radius: 6px;
-  background: var(--bg-soft);
+  gap: 3px;
+  height: 20px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
   color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: 10px;
   cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-  margin: 0 auto;
+  transition: color 0.15s;
 }
 .filter-trigger:hover {
-  border-color: var(--primary);
   color: var(--text);
 }
 .filter-trigger.has-filter {
-  border-color: var(--primary);
   color: var(--primary);
-  background: var(--primary-soft);
 }
 
 .filter-chevron {
@@ -367,13 +366,12 @@
 .filter-dropdown {
   position: absolute;
   top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  right: 6px;
   z-index: 100;
-  min-width: 120px;
-  padding: 4px;
+  min-width: 110px;
+  padding: 3px;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: 6px;
   background: var(--bg-soft);
   box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
@@ -731,7 +729,7 @@
   overflow: auto;
   padding: var(--pad-xl) 0;
   /* 底部留出足够空间给 composer，避免内容被遮挡 */
-  padding-bottom: 280px;
+  padding-bottom: 200px;
   background: var(--bg);
 }
 .chat-stream-inner {
@@ -745,7 +743,7 @@
 
 /* --- Message bubbles (user right, agent left) --- */
 .msg { display: flex; }
-.msg-user { justify-content: flex-end; padding-left: 48px; }
+.msg-user { flex-direction: column; align-items: flex-end; padding-left: 48px; }
 .msg-agent { justify-content: flex-start; padding-right: 0; }
 
 .msg-bubble {
@@ -798,24 +796,23 @@
   color: var(--text);
 }
 
-/* --- Message hover bar (timestamp + copy) — outside bubble --- */
+/* --- Message hover bar (timestamp + copy) --- */
 .msg-hover-bar {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 2px;
-  padding: 0 2px;
+  padding: 2px 0 0;
   opacity: 0;
   transition: opacity 0.15s ease;
   pointer-events: none;
 }
 
-/* 用户消息：hover bar 右对齐（气泡右下角外侧） */
+/* 用户消息：hover bar 右对齐（气泡外右下角） */
 .msg-hover-right {
   justify-content: flex-end;
 }
 
-/* Agent 消息：hover bar 左对齐（气泡左下角外侧） */
+/* Agent 消息：hover bar 左对齐（气泡内左下角） */
 .msg-hover-left {
   justify-content: flex-start;
 }
@@ -984,11 +981,8 @@
 .md-code-streaming-block .md-code {
   border-radius: 0;
 }
-.md-code-streaming-block {
-  border-left: 3px solid var(--primary);
-}
 .md-code-streaming-badge {
-  color: var(--primary);
+  color: var(--text-faint);
 }
 .md-table-wrap {
   overflow: auto;
@@ -1731,7 +1725,7 @@
   align-items: center;
   gap: 6px;
   height: 28px;
-  max-width: 142px;
+  max-width: 220px;
   min-width: 0;
   padding: 0 8px;
   border: 1px solid transparent;
@@ -2779,7 +2773,6 @@ body.inspector-resizing {
 /* --- Incomplete code block (streaming: ``` opened but not closed) --- */
 .md-code-incomplete {
   position: relative;
-  border-left: 3px solid var(--primary);
 }
 .md-code-cursor {
   display: inline;
@@ -4549,7 +4542,9 @@ body.inspector-resizing {
 .toast-error {
   border-color: var(--danger, #ef4444);
   border-left: 3px solid var(--danger, #ef4444);
-  background: rgba(239, 68, 68, 0.06);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--danger) 8%, transparent), transparent 70%),
+    var(--panel, #fff);
 }
 
 .toast-info .toast-icon { color: var(--info, #3b82f6); }
@@ -4559,7 +4554,9 @@ body.inspector-resizing {
 .toast-warning {
   border-color: var(--warning, #f59e0b);
   border-left: 3px solid var(--warning, #f59e0b);
-  background: rgba(245, 158, 11, 0.06);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--warning) 8%, transparent), transparent 70%),
+    var(--panel, #fff);
 }
 
 /* Toast progress bar for auto-dismiss countdown */
@@ -5046,10 +5043,11 @@ body.inspector-resizing {
 }
 .btn.primary {
   background: var(--primary);
-  color: var(--primary-foreground);
+  color: var(--primary-fg);
   border: none;
 }
 .btn.primary:hover {
+  background: var(--primary-hover);
   opacity: 0.9;
 }
 

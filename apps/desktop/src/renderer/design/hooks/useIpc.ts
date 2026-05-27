@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import type { IpcChannel, IpcRequest, IpcResponse, IpcStreamChannel, IpcStreamPayload } from '@spark/protocol'
 
 export function useIpcInvoke<C extends IpcChannel>(channel: C) {
@@ -25,11 +25,17 @@ export function useIpcInvoke<C extends IpcChannel>(channel: C) {
 export function useIpcStream<C extends IpcStreamChannel>(
   channel: C,
   callback: (payload: IpcStreamPayload<C>) => void,
-  deps: unknown[] = [],
+  _deps: unknown[] = [],
 ) {
+  // 使用 ref 持有最新 callback，使订阅只依赖 channel，不会因 callback/deps 变化而重订阅。
+  // 这避免了 off→on 间隙导致的事件丢失问题。
+  const callbackRef = useRef(callback)
+  callbackRef.current = callback
+
   useEffect(() => {
-    const unsubscribe = window.spark.on(channel, callback)
+    const stableCallback = (payload: IpcStreamPayload<C>) => callbackRef.current(payload)
+    const unsubscribe = window.spark.on(channel, stableCallback)
     return unsubscribe
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channel, ...deps])
+  }, [channel])
 }

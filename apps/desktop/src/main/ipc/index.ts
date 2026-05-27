@@ -101,7 +101,7 @@ function getSessionService(): SessionService {
     const onApproval: ApprovalHandler = (sessionId, toolName, toolInput) => {
       return getPermissionService().requestApproval(sessionId, toolName, toolInput, (req) => {
         pushStreamEvent('stream:permission:approval-request', req)
-      })
+      }, { forcePrompt: true })
     }
     const onApprovalCancel = (sessionId: string) => {
       getPermissionService().cancelPendingApprovals(sessionId)

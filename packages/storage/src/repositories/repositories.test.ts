@@ -313,6 +313,25 @@ describe('EventRepository', () => {
     expect(page2Events).toHaveLength(2)
   })
 
+  it('returns the latest page in chronological order and pages older events by seq', () => {
+    for (let i = 0; i < 5; i++) {
+      repo.insert({
+        id: `evt-seq-${i}`,
+        sessionId: 'sess-1',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: i, content: `chunk-${i}` }),
+      })
+    }
+
+    const latest = repo.queryBySession({ sessionId: 'sess-1', limit: 3 })
+    expect(latest.events.map((event) => JSON.parse(event.event_json).seq)).toEqual([2, 3, 4])
+    expect(latest.hasMore).toBe(true)
+
+    const older = repo.queryBySession({ sessionId: 'sess-1', limit: 3, beforeSeq: 2 })
+    expect(older.events.map((event) => JSON.parse(event.event_json).seq)).toEqual([0, 1])
+    expect(older.hasMore).toBe(false)
+  })
+
   it('should filter by event type', () => {
     repo.insert({
       id: 'evt-1',

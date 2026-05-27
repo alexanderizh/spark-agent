@@ -50,6 +50,11 @@ const TOOL_ACTION_MAP: Record<string, string> = {
 
 const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000  // 5 minutes; agent will treat 'deny' on timeout
 
+interface RequestApprovalOptions {
+  /** The caller already decided this tool call must ask the user. */
+  forcePrompt?: boolean
+}
+
 // Risk level per action
 const RISK_LEVEL_MAP: Record<string, 'low' | 'medium' | 'high'> = {
   file_read: 'low',
@@ -142,6 +147,7 @@ export class PermissionService {
     toolName: string,
     toolInput: Record<string, unknown>,
     pushFn: (req: PermissionApprovalRequest) => void,
+    options: RequestApprovalOptions = {},
   ): Promise<boolean> {
     // 1) 查 session-scoped 临时允许（用户上一次选「本会话允许」）
     const action = TOOL_ACTION_MAP[toolName] ?? 'command_exec'
@@ -153,7 +159,7 @@ export class PermissionService {
     const rule = rules.find((r) => r.action === action)
     const mode = (rule?.mode ?? 'ask') as PermissionMode  // 未知 action 默认 ask（更安全）
 
-    if (mode === 'allow') return true
+    if (mode === 'allow' && options.forcePrompt !== true) return true
     if (mode === 'deny') return false
 
     // 3) mode === 'ask' or 'ask-twice': push to renderer and wait

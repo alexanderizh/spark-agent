@@ -13,6 +13,7 @@ import { useToast } from '../components/Toast'
 import type { UIMessage, UIBlock } from '../services/event-mapper'
 import type {
   AgentEvent,
+  AgentStatusValue,
   ProviderProfile,
   SessionAgentAdapter,
   SessionChatMode,
@@ -80,6 +81,7 @@ type ContextUsageState = {
 }
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
+const SESSION_HISTORY_PAGE_SIZE = 500
 
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
   const [active, setActive] = useState<SessionId | null>(null)
@@ -598,10 +600,6 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
                       ))}
                     </div>
                   )}
-                  <button className="proj-add" onClick={() => setProjectDialog('create')}>
-                    <Icons.Plus size={13} />
-                    新建项目
-                  </button>
                 </>
               )}
             </div>
@@ -794,7 +792,6 @@ function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: 
         onClick={() => setOpen(prev => !prev)}
         aria-label="筛选会话"
       >
-        <Icons.Filter size={13} />
         <span>{currentLabel}</span>
         <Icons.ChevronDown size={12} className={`filter-chevron${open ? ' open' : ''}`} />
       </button>
@@ -866,7 +863,11 @@ function ProjectSessionGroup({
         <span className="proj-toggle">
           {open ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />}
         </span>
-        <Icons.Folder size={15} className="proj-folder-icon" />
+        {open ? (
+          <Icons.FolderOpen size={15} className="proj-folder-icon" />
+        ) : (
+          <Icons.ProjectFolder size={15} className="proj-folder-icon" />
+        )}
         {group.workspace.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
         <span className="proj-count">{group.sessions.length}</span>
@@ -1174,40 +1175,118 @@ function ChatStream({
   const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
   const userScrolledRef = useRef(false)
+  const hydratingRef = useRef(false)
+  const bufferedEventsRef = useRef<AgentEvent[]>([])
+  const historyLoadIdRef = useRef(0)
   const usageRef = useRef<SessionUsageData>({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
 
-  // 切换会话时加载历史
+  // ── 会话消息缓存：避免切换时从空白开始 ──
+  // 缓存每个会话最后渲染的消息列表，切回时立即显示缓存内容，再异步更新
+  const sessionCacheRef = useRef<Map<SessionId, { messages: UIMessage[]; usage: SessionUsageData; status: string }>>(new Map())
+
+  // 切换会话时加载历史（优先展示缓存，异步加载最新）
   useEffect(() => {
-    const builder = new MessageBuilder()
-    const timer = window.setTimeout(() => {
-      builderRef.current = builder
+    const loadId = historyLoadIdRef.current + 1
+    historyLoadIdRef.current = loadId
+    hydratingRef.current = true
+    bufferedEventsRef.current = []
+    let cancelled = false
+
+    // 1) 立即展示缓存，避免空白闪烁
+    const cached = sessionCacheRef.current.get(sessionId)
+    if (cached != null) {
+      const cachedBuilder = new MessageBuilder()
+      // 从缓存的 messages 无法精确重建 builder，但可以立即显示
+      setMessages(cached.messages)
+      onMessagesChange(cached.messages)
+      onStatusChange(cached.status)
+      usageRef.current = cached.usage
+      onUsageDataChange(cached.usage)
+    } else {
+      // 首次进入的会话，短暂延迟后清空再加载
       setMessages([])
       onMessagesChange([])
       onStatusChange('')
-      isStreamingRef.current = false
-      userScrolledRef.current = false
-      usageRef.current = { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] }
+    }
 
-      // Switching session — reset context usage / pending plan in parent
-      onContextUsageChange(null)
+    isStreamingRef.current = false
+    userScrolledRef.current = false
+    onContextUsageChange(null)
 
-      getHistory({ sessionId, limit: 200 })
-        .then(res => {
-          for (const event of res.events) builder.processEvent(event)
-          const nextMessages = builder.getAllMessages()
+    // 2) 异步从 SQLite 加载完整历史并更新
+    const timer = window.setTimeout(() => {
+      loadCompleteSessionHistory(getHistory, sessionId)
+        .then(historyEvents => {
+          if (cancelled || historyLoadIdRef.current !== loadId) return
+          const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
+          const hydratedBuilder = new MessageBuilder()
+          for (const event of events) hydratedBuilder.processEvent(event)
+          builderRef.current = hydratedBuilder
+          const nextMessages = hydratedBuilder.getAllMessages()
           setMessages(nextMessages)
           onMessagesChange(nextMessages)
-          onUsageChange(getLatestInputTokens(res.events))
-          // Reconstruct usage data from history events
-          const historyUsage = buildUsageDataFromEvents(res.events)
+          onUsageChange(getLatestInputTokens(events))
+          const historyUsage = buildUsageDataFromEvents(events)
           usageRef.current = historyUsage
           onUsageDataChange(historyUsage)
+          // 更新缓存
+          const latestStatus = getLatestAgentStatus(events)
+          const statusStr = latestStatus != null
+            ? (latestStatus === 'thinking' || latestStatus === 'calling_tool' ? 'running' : latestStatus === 'error' ? 'error' : '')
+            : ''
+          sessionCacheRef.current.set(sessionId, { messages: nextMessages, usage: historyUsage, status: statusStr })
+          if (latestStatus != null) applyAgentStatus(latestStatus, onStatusChange, onSessionStatusChange, isStreamingRef, userScrolledRef)
+          const latestContext = getLatestContextUsageEvent(events)
+          if (latestContext != null) {
+            onContextUsageChange({
+              estimatedTokens: latestContext.estimatedTokens,
+              softLimitTokens: latestContext.softLimitTokens,
+              contextWindowTokens: latestContext.contextWindowTokens,
+              compactedThisTurn: latestContext.compacted,
+            })
+          }
         })
-        .catch(console.error)
+        .catch((err) => {
+          console.error('Failed to load session history:', err)
+          if (!cancelled && historyLoadIdRef.current === loadId) {
+            // 历史加载失败，使用缓冲的 live 事件回退
+            const bufferedEvents = bufferedEventsRef.current
+            if (bufferedEvents.length > 0) {
+              const fallbackBuilder = new MessageBuilder()
+              for (const event of bufferedEvents) fallbackBuilder.processEvent(event)
+              builderRef.current = fallbackBuilder
+              const fallbackMessages = fallbackBuilder.getAllMessages()
+              setMessages(fallbackMessages)
+              onMessagesChange(fallbackMessages)
+            }
+          }
+        })
+        .finally(() => {
+          if (!cancelled && historyLoadIdRef.current === loadId) {
+            hydratingRef.current = false
+            bufferedEventsRef.current = []
+          }
+        })
     }, 0)
 
-    return () => window.clearTimeout(timer)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+      // 离开当前会话时，保存消息到缓存
+      const currentMessages = builderRef.current.getAllMessages()
+      if (currentMessages.length > 0) {
+        sessionCacheRef.current.set(sessionId, {
+          messages: [...currentMessages],
+          usage: usageRef.current,
+          status: '',
+        })
+      }
+      if (historyLoadIdRef.current === loadId) {
+        hydratingRef.current = false
+        bufferedEventsRef.current = []
+      }
+    }
   }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onContextUsageChange, sessionId])
 
   // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
@@ -1243,35 +1322,19 @@ function ChatStream({
     return () => el.removeEventListener('scroll', handleScroll)
   }, [])
 
-  // 实时监听新事件 — 每个事件立即追加到 builder，通过 RAF 批量触发渲染
+  // 实时监听新事件 — useIpcStream 内部通过 ref 持有 callback，不会因 deps 变化重订阅
+  // 这里直接用闭包中的 sessionId 过滤即可
   useIpcStream('stream:session:agent-event', (event) => {
     if (event.sessionId !== sessionId) return
+    if (hydratingRef.current) {
+      bufferedEventsRef.current.push(event)
+      return
+    }
     builderRef.current.processEvent(event)
 
     // 对状态/用量事件立即处理（不走 RAF 延迟）
     if (event.type === 'agent_status') {
-      const labels: Record<string, string> = {
-        thinking: '思考中',
-        calling_tool: '调用工具',
-        completed: '',
-        error: '',
-        cancelled: '',
-      }
-      onStatusChange(labels[event.status] ?? '')
-      if (event.status === 'thinking' || event.status === 'calling_tool') {
-        onSessionStatusChange('running')
-        isStreamingRef.current = true
-      }
-      if (event.status === 'completed' || event.status === 'cancelled') {
-        onSessionStatusChange('idle')
-        isStreamingRef.current = false
-        // Force scroll to bottom on stream completion
-        userScrolledRef.current = false
-      }
-      if (event.status === 'error') {
-        onSessionStatusChange('error')
-        isStreamingRef.current = false
-      }
+      applyAgentStatus(event.status, onStatusChange, onSessionStatusChange, isStreamingRef, userScrolledRef)
     }
     if (event.type === 'usage_update') {
       if (event.inputTokens > 0) onUsageChange(event.inputTokens)
@@ -1333,7 +1396,7 @@ function ChatStream({
 
     // 其他事件走 RAF 批量
     scheduleFlush()
-  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onPlanProposed, sessionId, flushMessages, scheduleFlush])
+  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onPlanProposed, flushMessages, scheduleFlush])
 
   // 智能自动滚动：只在用户未主动上滚时自动跟随
   useEffect(() => {
@@ -1386,6 +1449,102 @@ function ChatStream({
       </div>
     </div>
   )
+}
+
+type GetSessionHistory = (request: {
+  sessionId: SessionId
+  limit?: number
+  beforeSeq?: number
+}) => Promise<{ events: AgentEvent[]; hasMore: boolean }>
+
+async function loadCompleteSessionHistory(getHistory: GetSessionHistory, sessionId: SessionId): Promise<AgentEvent[]> {
+  const pages: AgentEvent[][] = []
+  let beforeSeq: number | undefined
+
+  for (let page = 0; page < 200; page++) {
+    const res = await getHistory({
+      sessionId,
+      limit: SESSION_HISTORY_PAGE_SIZE,
+      ...(beforeSeq !== undefined ? { beforeSeq } : {}),
+    })
+    pages.unshift(res.events)
+    if (!res.hasMore || res.events.length === 0) break
+
+    const nextBeforeSeq = getFirstEventSeq(res.events)
+    if (nextBeforeSeq === undefined || nextBeforeSeq === beforeSeq) break
+    beforeSeq = nextBeforeSeq
+  }
+
+  return pages.flat()
+}
+
+function getFirstEventSeq(events: AgentEvent[]): number | undefined {
+  const first = events[0]
+  return typeof first?.seq === 'number' ? first.seq : undefined
+}
+
+function mergeSessionEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
+  const byIdentity = new Map<string, AgentEvent>()
+  for (const event of [...historyEvents, ...liveEvents]) {
+    byIdentity.set(event.id, event)
+  }
+  return [...byIdentity.values()].sort(compareAgentEvents)
+}
+
+function compareAgentEvents(a: AgentEvent, b: AgentEvent): number {
+  if (a.seq !== b.seq) return a.seq - b.seq
+  const timeDiff = new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+  if (timeDiff !== 0) return timeDiff
+  return a.id.localeCompare(b.id)
+}
+
+function getLatestAgentStatus(events: AgentEvent[]): AgentStatusValue | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event?.type === 'agent_status') return event.status
+  }
+  return null
+}
+
+function getLatestContextUsageEvent(events: AgentEvent[]): Extract<AgentEvent, { type: 'context_usage' }> | null {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]
+    if (event?.type === 'context_usage') return event
+  }
+  return null
+}
+
+function applyAgentStatus(
+  status: AgentStatusValue,
+  onStatusChange: (s: string) => void,
+  onSessionStatusChange: (status: SessionSummary['status']) => void,
+  isStreamingRef: { current: boolean },
+  userScrolledRef: { current: boolean },
+): void {
+  const labels: Record<AgentStatusValue, string> = {
+    idle: '',
+    thinking: '思考中',
+    calling_tool: '调用工具',
+    waiting_permission: '等待授权',
+    waiting_user: '等待用户',
+    completed: '',
+    error: '',
+    cancelled: '',
+  }
+  onStatusChange(labels[status] ?? '')
+  if (status === 'thinking' || status === 'calling_tool' || status === 'waiting_permission' || status === 'waiting_user') {
+    onSessionStatusChange('running')
+    isStreamingRef.current = true
+  }
+  if (status === 'idle' || status === 'completed' || status === 'cancelled') {
+    onSessionStatusChange('idle')
+    isStreamingRef.current = false
+    userScrolledRef.current = false
+  }
+  if (status === 'error') {
+    onSessionStatusChange('error')
+    isStreamingRef.current = false
+  }
 }
 
 function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspector' } = {}): ReactNode {
@@ -1966,7 +2125,7 @@ function formatMsgTime(timestamp?: string): string {
   return `${hh}:${mm}`
 }
 
-/** 消息悬浮操作栏：时间 + 复制按钮。position: left=agent消息(左下角), right=用户消息(右下角) */
+/** 消息悬浮操作栏：时间 + 复制按钮，放在气泡内部。position: left=agent消息(左下角), right=用户消息(右下角) */
 function MessageHoverBar({ timestamp, textContent, position }: { timestamp?: string | undefined; textContent: string; position: 'left' | 'right' }) {
   const [copied, setCopied] = useState(false)
 
@@ -2083,8 +2242,8 @@ function AgentMsg({
           />
         ))}
         {isCancelled && <StoppedMarker />}
+        {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} position="left" />}
       </div>
-      {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} position="left" />}
     </div>
   )
 }

@@ -96,6 +96,58 @@ describe('SparkDatabase', () => {
     expect(countAfter).toBe(countBefore)
   })
 
+  it('should upgrade legacy usage ledger schema when applying migration 11', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+
+    db = new SparkDatabase(dbPath)
+    db.raw.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE usage_ledger (
+        id TEXT PRIMARY KEY,
+        session_id TEXT,
+        run_id TEXT,
+        turn_id TEXT,
+        workflow_node_id TEXT,
+        agent_id TEXT,
+        provider_id TEXT NOT NULL,
+        model_profile_id TEXT NOT NULL,
+        operation TEXT NOT NULL,
+        token_usage_json TEXT NOT NULL DEFAULT '{}',
+        media_usage_json TEXT,
+        cost_json TEXT NOT NULL DEFAULT '{}',
+        latency_json TEXT NOT NULL DEFAULT '{}',
+        source TEXT NOT NULL DEFAULT 'api',
+        raw_usage_json TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `)
+
+    const insertMigration = db.raw.prepare(
+      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
+    )
+    for (let version = 1; version <= 10; version += 1) {
+      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
+    }
+
+    db.runMigrations(migrationsDir)
+
+    const columns = db.raw
+      .prepare('PRAGMA table_info(usage_ledger)')
+      .all() as Array<{ name: string }>
+    const columnNames = columns.map((column) => column.name)
+
+    expect(columnNames).toContain('model_id')
+    expect(columnNames).toContain('input_tokens')
+    expect(columnNames).toContain('output_tokens')
+    expect(columnNames).toContain('request_timestamp')
+  })
+
   it('should throw error for invalid migration filename', () => {
     const dbPath = join(testDir, 'test.db')
     const invalidDir = join(testDir, 'migrations')

@@ -35,7 +35,7 @@ export interface QueryEventsParams {
   runId?: string
   turnId?: string
   eventType?: string
-  /** 分页：取最近 N 个事件 */
+  /** 分页：取最近 N 个事件，以时间线正序返回 */
   limit?: number
   /** 分页：游标（取 created_at < cursor 的事件） */
   beforeCreatedAt?: string
@@ -103,7 +103,7 @@ export class EventRepository extends BaseRepository {
     insertAll()
   }
 
-  /** 按 session 查询事件（支持分页） */
+  /** 按 session 查询事件（支持分页）。默认取最新页，并以时间线正序返回。 */
   queryBySession(params: QueryEventsParams): { events: AgentEventRow[]; hasMore: boolean } {
     const { sessionId, runId, turnId, eventType, limit = 50, beforeCreatedAt, beforeSeq } = params
 
@@ -133,14 +133,16 @@ export class EventRepository extends BaseRepository {
 
     const whereClause = `WHERE ${conditions.join(' AND ')}`
 
-    // 多取一条判断是否有更多数据
+    const seqOrder = 'CAST(json_extract(event_json, \'$.seq\') AS INTEGER)'
+
+    // 先按时间线倒序取最新页，再在内存中反转为正序，便于 UI 直接回放事件。
     const stmt = this.raw.prepare(
-      `SELECT * FROM agent_events ${whereClause} ORDER BY created_at ASC LIMIT ?`,
+      `SELECT * FROM agent_events ${whereClause} ORDER BY ${seqOrder} DESC, created_at DESC, rowid DESC LIMIT ?`,
     )
     const rows = stmt.all(...args, limit + 1) as AgentEventRow[]
 
     const hasMore = rows.length > limit
-    const events = hasMore ? rows.slice(0, limit) : rows
+    const events = (hasMore ? rows.slice(0, limit) : rows).reverse()
 
     return { events, hasMore }
   }
