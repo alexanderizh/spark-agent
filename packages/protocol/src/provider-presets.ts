@@ -11,7 +11,79 @@ export interface ProviderPreset {
   sourceUrls: string[]
 }
 
+/* ─── Vendor 元数据（用于 UI 展示：emoji logo + 颜色 + 描述） ─── */
+
+export interface VendorMeta {
+  id: string
+  name: string
+  emoji: string
+  color: string
+  desc: string
+}
+
+export const VENDOR_CATALOG: VendorMeta[] = [
+  { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-4.1 / o4 / DALL-E' },
+  { id: 'anthropic',        name: 'Anthropic',       emoji: 'A',   color: '#d4a574', desc: 'Claude Sonnet 4 / Opus 4 / Haiku' },
+  { id: 'google-gemini',    name: 'Google Gemini',   emoji: 'G',   color: '#4285f4', desc: 'Gemini 2.5 Pro / Flash' },
+  { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合' },
+  { id: 'aliyun-bailian-coding-plan', name: '阿里云百炼 Coding Plan', emoji: 'AL', color: '#ff6a00', desc: 'Qwen3 / GLM / Kimi / MiniMax 聚合' },
+  { id: 'zhipu-glm-coding-plan', name: '智谱 GLM Coding Plan', emoji: 'GL', color: '#3b5cff', desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air' },
+  { id: 'qwen-standard',    name: '通义千问',         emoji: 'QW',  color: '#6f42c1', desc: 'Qwen3 / Qwen3-Coder 系列模型' },
+  { id: 'deepseek-api',     name: 'DeepSeek',        emoji: 'DS',  color: '#4d6bfe', desc: 'DeepSeek-V4 Flash / Pro' },
+  { id: 'minimax',          name: 'MiniMax',         emoji: 'MM',  color: '#6c5ce7', desc: 'MiniMax-M2.7 / M2.5 系列' },
+  { id: 'kimi',             name: 'Kimi',            emoji: 'KM',  color: '#1a1a2e', desc: 'Kimi-K2.6 / K2.5 / K2-Thinking' },
+  { id: 'siliconflow',      name: '硅基流动',        emoji: 'SF',  color: '#7c3aed', desc: 'DeepSeek / Qwen / Kimi 聚合' },
+  { id: 'openrouter',       name: 'OpenRouter',      emoji: 'OR',  color: '#6d28d9', desc: 'GPT-4.1 / Claude / Gemini 聚合' },
+  { id: 'ollama',           name: 'Ollama',          emoji: 'OL',  color: '#6366f1', desc: '本地模型 · Llama / Qwen / DeepSeek' },
+]
+
 export const PROVIDER_PRESETS: ProviderPreset[] = [
+  /* ─── OpenAI 官方 ─── */
+  {
+    id: 'openai-official',
+    vendorId: 'openai',
+    name: 'OpenAI',
+    provider: 'openai',
+    apiEndpoint: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-4.1',
+    modelIds: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o4-mini', 'o3', 'gpt-4o'],
+    sourceUrls: [
+      'https://platform.openai.com/docs/models',
+      'https://platform.openai.com/docs/api-reference/chat',
+    ],
+  },
+
+  /* ─── Anthropic 官方 ─── */
+  {
+    id: 'anthropic-official',
+    vendorId: 'anthropic',
+    name: 'Anthropic',
+    provider: 'anthropic',
+    apiEndpoint: 'https://api.anthropic.com',
+    defaultModel: 'claude-sonnet-4-20250514',
+    modelIds: ['claude-sonnet-4-20250514', 'claude-opus-4-20250514', 'claude-3-5-haiku-20241022'],
+    sourceUrls: [
+      'https://docs.anthropic.com/en/docs/about-claude/models',
+      'https://docs.anthropic.com/en/api/messages',
+    ],
+  },
+
+  /* ─── Google Gemini ─── */
+  {
+    id: 'google-gemini',
+    vendorId: 'google-gemini',
+    name: 'Google Gemini',
+    provider: 'openai',
+    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-2.5-pro',
+    modelIds: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+    sourceUrls: [
+      'https://ai.google.dev/gemini-api/docs/models',
+      'https://ai.google.dev/gemini-api/docs/openai',
+    ],
+  },
+
+  /* ─── 腾讯云 Coding Plan ─── */
   {
     id: 'tencent-coding-plan-anthropic',
     vendorId: 'tencent-coding-plan',
@@ -36,6 +108,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://cloud.tencent.com/document/product/1823/130092',
     ],
   },
+
+  /* ─── 阿里云百炼 Coding Plan ─── */
   {
     id: 'aliyun-bailian-coding-plan-anthropic',
     vendorId: 'aliyun-bailian-coding-plan',
@@ -64,6 +138,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://help.aliyun.com/zh/model-studio/opencode',
     ],
   },
+
+  /* ─── 智谱 GLM Coding Plan ─── */
   {
     id: 'zhipu-glm-coding-plan-anthropic',
     vendorId: 'zhipu-glm-coding-plan',
@@ -91,6 +167,23 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://bigmodel.cn/claude-code',
     ],
   },
+
+  /* ─── 通义千问标准版 ─── */
+  {
+    id: 'qwen-standard-openai',
+    vendorId: 'qwen-standard',
+    name: '通义千问',
+    provider: 'openai',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    defaultModel: 'qwen3-235b-a22b',
+    modelIds: ['qwen3-235b-a22b', 'qwen3-30b-a3b', 'qwen3-coder-plus', 'qwen-plus-latest', 'qwen-turbo-latest'],
+    sourceUrls: [
+      'https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api',
+      'https://help.aliyun.com/zh/model-studio/getting-started/models',
+    ],
+  },
+
+  /* ─── DeepSeek API ─── */
   {
     id: 'deepseek-api-anthropic',
     vendorId: 'deepseek-api',
@@ -115,6 +208,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://api-docs.deepseek.com/quick_start/pricing',
     ],
   },
+
+  /* ─── MiniMax ─── */
   {
     id: 'minimax-anthropic',
     vendorId: 'minimax',
@@ -142,6 +237,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://platform.minimaxi.com/docs/api-reference/text-ai-sdk',
     ],
   },
+
+  /* ─── Kimi (Moonshot) ─── */
   {
     id: 'kimi-openai',
     vendorId: 'kimi',
@@ -156,6 +253,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://platform.moonshot.cn/docs/guide/kimi-k2-5-quickstart',
     ],
   },
+
+  /* ─── 硅基流动 ─── */
   {
     id: 'siliconflow-openai',
     vendorId: 'siliconflow',
@@ -170,6 +269,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://docs.siliconflow.cn/api-reference/chat-completions/chat-completions',
     ],
   },
+
+  /* ─── OpenRouter ─── */
   {
     id: 'openrouter-openai',
     vendorId: 'openrouter',
@@ -184,8 +285,46 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://openrouter.ai/docs/guides/overview/models',
     ],
   },
+
+  /* ─── Ollama 本地 ─── */
+  {
+    id: 'ollama-local',
+    vendorId: 'ollama',
+    name: 'Ollama 本地',
+    provider: 'openai',
+    apiEndpoint: 'http://localhost:11434/v1',
+    defaultModel: 'qwen3:14b',
+    modelIds: ['qwen3:14b', 'deepseek-r1:14b', 'llama3.1:8b', 'codellama:13b', 'gemma3:12b'],
+    sourceUrls: [
+      'https://ollama.com/library',
+      'https://github.com/ollama/ollama/blob/main/docs/openai.md',
+    ],
+  },
 ]
+
+/* ─── 查询工具函数 ─── */
 
 export function getProviderPresetById(id: string): ProviderPreset | undefined {
   return PROVIDER_PRESETS.find((preset) => preset.id === id)
+}
+
+export function getVendorMeta(vendorId: string): VendorMeta | undefined {
+  return VENDOR_CATALOG.find((v) => v.id === vendorId)
+}
+
+export function getPresetsByVendor(vendorId: string): ProviderPreset[] {
+  return PROVIDER_PRESETS.filter((p) => p.vendorId === vendorId)
+}
+
+/** 获取去重后的 vendorId 列表（保持顺序） */
+export function getUniqueVendorIds(): string[] {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const preset of PROVIDER_PRESETS) {
+    if (!seen.has(preset.vendorId)) {
+      seen.add(preset.vendorId)
+      result.push(preset.vendorId)
+    }
+  }
+  return result
 }

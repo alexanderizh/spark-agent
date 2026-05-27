@@ -3,7 +3,7 @@
  *
  * 包含：左侧分组导航 + 右侧多 section 内容。Provider 编辑使用滑入面板，Profile 编辑使用 Modal。
  */
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect } from '../components/FormControls'
@@ -628,6 +628,9 @@ function ProvidersSection() {
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
+  const [showPresetCatalog, setShowPresetCatalog] = useState(false)
+  /** 从预设创建时，传递给 ProviderEditPanel 的初始 presetId */
+  const [initialPresetId, setInitialPresetId] = useState<string | null>(null)
 
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
@@ -665,6 +668,29 @@ function ProvidersSection() {
     }
   }
 
+  /** 点击 vendor 卡片 → 选择格式 → 打开编辑面板 */
+  const handleSelectVendor = (vendorId: string) => {
+    const presets = getPresetsByVendor(vendorId)
+    if (presets.length >= 1 && presets[0]) {
+      // 只有一种格式，直接打开
+      setInitialPresetId(presets[0].id)
+      setEditingId(null)
+      setShowPresetCatalog(false)
+      setTweak('showProviderEdit', true)
+    }
+    // 多种格式时在 VendorPresetCard 内部处理
+  }
+
+  const handleSelectPreset = (presetId: string) => {
+    setInitialPresetId(presetId)
+    setEditingId(null)
+    setShowPresetCatalog(false)
+    setTweak('showProviderEdit', true)
+  }
+
+  /** 已配置的 vendor 名称集合（用于标记已添加） */
+  const configuredNames = useMemo(() => new Set(profiles.map(p => p.name)), [profiles])
+
   return (
     <>
       <div className="settings-section">
@@ -673,14 +699,49 @@ function ProvidersSection() {
             <h2 className="section-h2">Provider</h2>
             <div className="lede section-lede">配置供应商的协议格式、请求地址、鉴权和可用模型列表。每个 Provider 本身就是一份可直接运行的模型配置。</div>
           </div>
-          <button className="btn primary" onClick={() => { setEditingId(null); setTweak('showProviderEdit', true) }}>
-            <Icons.Plus size={12} /> 添加 Provider
-          </button>
+          <div className="row row-gap-xs">
+            <button
+              className={`btn ${showPresetCatalog ? 'active' : ''}`}
+              onClick={() => setShowPresetCatalog(prev => !prev)}
+            >
+              <Icons.Layers size={12} /> 从模板添加
+            </button>
+            <button className="btn primary" onClick={() => { setEditingId(null); setInitialPresetId(null); setTweak('showProviderEdit', true) }}>
+              <Icons.Plus size={12} /> 自定义添加
+            </button>
+          </div>
         </div>
 
-        {profiles.length === 0 ? (
+        {/* ─── 预设模板目录 ─── */}
+        {showPresetCatalog && (
+          <div className="preset-catalog">
+            <div className="preset-catalog-hint">
+              选择供应商模板快速配置，选择后仍可自定义所有字段。
+            </div>
+            <div className="preset-catalog-grid">
+              {getUniqueVendorIds().map((vendorId) => {
+                const meta = getVendorMeta(vendorId)
+                if (!meta) return null
+                const presets = getPresetsByVendor(vendorId)
+                const isAdded = configuredNames.has(meta.name)
+                return (
+                  <VendorPresetCard
+                    key={vendorId}
+                    vendor={meta}
+                    presets={presets}
+                    isAdded={isAdded}
+                    onSelectVendor={handleSelectVendor}
+                    onSelectPreset={handleSelectPreset}
+                  />
+                )
+              })}
+            </div>
+          </div>
+        )}
+
+        {profiles.length === 0 && !showPresetCatalog ? (
           <div className="empty-placeholder-lg">
-            尚未配置 Provider — 点击"添加 Provider"开始
+            尚未配置 Provider — 点击"从模板添加"快速开始，或"自定义添加"手动配置
           </div>
         ) : (
           profiles.map(p => {
@@ -707,10 +768,73 @@ function ProvidersSection() {
       {showProviderEdit && (
         <ProviderEditPanel
           profileId={editingId}
-          onClose={() => { setTweak('showProviderEdit', false); refresh() }}
+          initialPresetId={initialPresetId}
+          onClose={() => { setTweak('showProviderEdit', false); setInitialPresetId(null); refresh() }}
         />
       )}
     </>
+  )
+}
+
+/* ─── VENDOR PRESET CARD（模板目录卡片） ─── */
+function VendorPresetCard({
+  vendor,
+  presets,
+  isAdded,
+  onSelectVendor,
+  onSelectPreset,
+}: {
+  vendor: VendorMeta
+  presets: ProviderPreset[]
+  isAdded: boolean
+  onSelectVendor: (vendorId: string) => void
+  onSelectPreset: (presetId: string) => void
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  const handleClick = () => {
+    if (presets.length === 1) {
+      onSelectVendor(vendor.id)
+    } else {
+      setExpanded((prev) => !prev)
+    }
+  }
+
+  return (
+    <div className={`preset-card${isAdded ? ' preset-added' : ''}`}>
+      <div className="preset-card-main" onClick={handleClick}>
+        <div className="preset-card-logo" style={{ background: vendor.color, color: '#fff' }}>
+          {vendor.emoji}
+        </div>
+        <div className="preset-card-info">
+          <div className="preset-card-name">
+            {vendor.name}
+            {isAdded && <span className="preset-card-badge">已添加</span>}
+          </div>
+          <div className="preset-card-desc">{vendor.desc}</div>
+        </div>
+        {presets.length > 1 && (
+          <span className="preset-card-formats">
+            {presets.length} 种格式
+          </span>
+        )}
+      </div>
+      {expanded && presets.length > 1 && (
+        <div className="preset-card-formats-list">
+          {presets.map((preset) => (
+            <button
+              key={preset.id}
+              className="preset-format-btn"
+              onClick={(e) => { e.stopPropagation(); onSelectPreset(preset.id) }}
+            >
+              <span className={`preset-format-dot ${preset.provider}`} />
+              {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
+              <span className="preset-format-model">{preset.defaultModel}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -751,7 +875,7 @@ function ProviderCardX({
 }
 
 /* ───────── PROVIDER EDIT slide panel ───────── */
-export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: string | null; onClose: () => void }) {
+export function ProviderEditPanel({ profileId = null, initialPresetId = null, onClose }: { profileId?: string | null; initialPresetId?: string | null; onClose: () => void }) {
   const { toast } = useToast()
   const [form, setForm] = useState<ProviderForm>({
     presetId: 'custom',
@@ -770,9 +894,26 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
 
-  // 编辑模式：加载现有 profile
+  // 编辑模式：加载现有 profile；新建模式：支持 initialPresetId 预填
   useEffect(() => {
     if (!profileId) {
+      // 从预设模板打开：自动填充 preset 数据
+      if (initialPresetId) {
+        const preset = getProviderPresetById(initialPresetId)
+        if (preset) {
+          setForm({
+            presetId: preset.id,
+            name: preset.name,
+            provider: preset.provider,
+            defaultModel: preset.defaultModel,
+            modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
+            endpoint: preset.apiEndpoint,
+            apiKey: '',
+            isDefault: false,
+          })
+          return
+        }
+      }
       setForm({ presetId: 'custom', name: '', provider: 'anthropic', defaultModel: '', modelIdsText: '', endpoint: '', apiKey: '', isDefault: false })
       return
     }
@@ -791,7 +932,7 @@ export function ProviderEditPanel({ profileId = null, onClose }: { profileId?: s
         })
       }
     }).catch(console.error)
-  }, [listProviders, profileId])
+  }, [listProviders, profileId, initialPresetId])
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.defaultModel.trim()) { setError('名称和默认模型 ID 不能为空'); return }
