@@ -605,6 +605,46 @@ export interface McpDeleteResponse {
   success: boolean
 }
 
+// ─── MCP Gateway Channels (Lifecycle) ──────────────────────────────────────
+
+export interface McpStartServerRequest {
+  serverId: string
+}
+
+export interface McpStartServerResponse {
+  started: boolean
+  toolCount: number
+}
+
+export interface McpStopServerRequest {
+  serverId: string
+}
+
+export interface McpStopServerResponse {
+  stopped: boolean
+}
+
+export interface McpServerStatusRequest {
+  serverId: string
+}
+
+export interface McpServerStatusResponse {
+  connected: boolean
+  toolCount: number
+  error?: string
+}
+
+export interface McpServerToolsRequest {
+  serverId: string
+}
+
+export interface McpServerToolsResponse {
+  tools: Array<{
+    name: string
+    description: string
+  }>
+}
+
 // ─── Skill Channels ─────────────────────────────────────────────────────────
 
 export interface SkillItem {
@@ -867,6 +907,27 @@ export interface SkillExportBatchResponse {
   count: number
 }
 
+// ─── App Info Channels ──────────────────────────────────────────────────────
+
+export interface AppGetInfoRequest {}
+
+export interface AppGetInfoResponse {
+  /** 应用版本号（package.json version） */
+  appVersion: string
+  /** 应用名称 */
+  appName: string
+  /** Electron 版本 */
+  electronVersion: string
+  /** Chrome 版本 */
+  chromeVersion: string
+  /** Node.js 版本 */
+  nodeVersion: string
+  /** 操作系统信息 */
+  platform: string
+  /** 构建日期 */
+  buildDate?: string
+}
+
 // ─── Command Channels ────────────────────────────────────────────────────────
 
 export interface CommandExecuteRequest {
@@ -977,6 +1038,10 @@ export interface IpcChannelMap {
   'mcp:create': [McpCreateRequest, McpCreateResponse]
   'mcp:update': [McpUpdateRequest, McpUpdateResponse]
   'mcp:delete': [McpDeleteRequest, McpDeleteResponse]
+  'mcp:start-server': [McpStartServerRequest, McpStartServerResponse]
+  'mcp:stop-server': [McpStopServerRequest, McpStopServerResponse]
+  'mcp:server-status': [McpServerStatusRequest, McpServerStatusResponse]
+  'mcp:server-tools': [McpServerToolsRequest, McpServerToolsResponse]
 
   // Skills
   'skill:list': [SkillListRequest, SkillListResponse]

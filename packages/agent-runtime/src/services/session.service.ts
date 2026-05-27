@@ -5,6 +5,7 @@ import {
   RulesRepository,
   SessionRepository,
   WorkspaceRepository,
+  McpServerRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse } from '@spark/protocol'
@@ -13,6 +14,7 @@ import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry
 import type { AgentConfig, CommandDeps } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
+import { McpService } from './mcp-server.service.js'
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
@@ -28,12 +30,15 @@ export class SessionService {
   private seqCounters = new Map<string, number>()
   private approvalOverrides = new Map<string, boolean>()  // sessionId → approval enabled
   private readonly commandRegistry = createBuiltinRegistry()
+  private readonly mcpService: McpService
 
   constructor(
     private readonly db: SparkDatabase,
     private readonly onEvent: SessionEventHandler,
     private readonly onApproval?: ApprovalHandler,
-  ) {}
+  ) {
+    this.mcpService = new McpService(new McpServerRepository(db))
+  }
 
   async createSession(params: {
     providerProfileId: string
@@ -218,6 +223,13 @@ export class SessionService {
 
     const tools = new ToolRegistry()
 
+    // Register MCP tools from connected servers
+    try {
+      this.mcpService.registerToToolRegistry(tools)
+    } catch {
+      // MCP tool registration failure is non-fatal
+    }
+
     // Build skill system prompt if skillId is provided
     let skillSystemPrompt: string | undefined
     if (skillId != null) {
@@ -287,8 +299,10 @@ export class SessionService {
         sessionRepo.updateStatus(sessionId, 'error')
       })
       .finally(() => {
-        this.activeLoops.delete(sessionId)
-        this.startNextQueuedTurn(sessionId)
+        if (this.activeLoops.get(sessionId) === loop) {
+          this.activeLoops.delete(sessionId)
+          this.startNextQueuedTurn(sessionId)
+        }
       })
   }
 
@@ -324,8 +338,10 @@ export class SessionService {
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
+    this.pendingTurns.delete(sessionId)
     if (loop == null) return { cancelled: false }
     loop.cancel()
+    this.activeLoops.delete(sessionId)
     const sessionRepo = new SessionRepository(this.db)
     sessionRepo.updateStatus(sessionId, 'idle')
     return { cancelled: true }

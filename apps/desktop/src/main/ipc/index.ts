@@ -33,8 +33,12 @@ function getModelService(): ModelService {
   return new ModelService(new ModelProfileRepository(getDatabase()))
 }
 
+let _mcpService: McpService | null = null
 function getMcpService(): McpService {
-  return new McpService(new McpServerRepository(getDatabase()))
+  if (_mcpService == null) {
+    _mcpService = new McpService(new McpServerRepository(getDatabase()))
+  }
+  return _mcpService
 }
 
 function getSkillService(): SkillService {
@@ -383,6 +387,31 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('mcp:delete', async (req) => {
     const success = getMcpService().deleteServer(req.id)
     return { success }
+  })
+
+  typedIpcHandle('mcp:start-server', async (req) => {
+    log.info(`mcp:start-server requested, serverId=${req.serverId}`)
+    await getMcpService().startServer(req.serverId)
+    const status = getMcpService().getServerStatus(req.serverId)
+    return { started: true, toolCount: status.toolCount }
+  })
+
+  typedIpcHandle('mcp:stop-server', async (req) => {
+    log.info(`mcp:stop-server requested, serverId=${req.serverId}`)
+    await getMcpService().stopServer(req.serverId)
+    return { stopped: true }
+  })
+
+  typedIpcHandle('mcp:server-status', async (req) => {
+    log.info(`mcp:server-status requested, serverId=${req.serverId}`)
+    const status = getMcpService().getServerStatus(req.serverId)
+    return status
+  })
+
+  typedIpcHandle('mcp:server-tools', async (req) => {
+    log.info(`mcp:server-tools requested, serverId=${req.serverId}`)
+    const tools = getMcpService().getServerTools(req.serverId)
+    return { tools }
   })
 
   // ─── Skill Handlers ─────────────────────────────────────────────────────────

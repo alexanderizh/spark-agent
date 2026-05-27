@@ -8,6 +8,7 @@ vi.mock('@spark/storage', () => ({
   ProviderProfileRepository: vi.fn(),
   WorkspaceRepository: vi.fn(),
   RulesRepository: vi.fn(),
+  McpServerRepository: vi.fn(),
 }))
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -28,6 +29,20 @@ vi.mock('../../core/index.js', () => ({
     get: vi.fn(() => undefined),
     execute: vi.fn(async () => ({ success: false, message: '' })),
     register: vi.fn(),
+  })),
+}))
+
+vi.mock('../../services/mcp-server.service.js', () => ({
+  McpService: vi.fn().mockImplementation(() => ({
+    registerToToolRegistry: vi.fn(),
+    startServer: vi.fn(),
+    stopServer: vi.fn(),
+    startAllEnabled: vi.fn(),
+    stopAll: vi.fn(),
+    listServers: vi.fn(() => []),
+    getServerStatus: vi.fn(() => ({ connected: false, toolCount: 0 })),
+    getServerTools: vi.fn(() => []),
+    getAllMcpTools: vi.fn(() => []),
   })),
 }))
 
@@ -411,6 +426,48 @@ describe('SessionService.cancelTurn', () => {
 
     expect(loop.cancel).toHaveBeenCalled()
     expect(result.cancelled).toBe(true)
+  })
+
+  it('releases the active loop and drops queued turns after cancellation', async () => {
+    const sessionRepo = makeSessionRepo()
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
+    const firstLoop = makeLoop({ executeTurn: vi.fn().mockReturnValue(new Promise<void>(() => {})) })
+    const secondLoop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop)
+      .mockImplementationOnce(() => firstLoop as never)
+      .mockImplementationOnce(() => secondLoop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'first' })
+    const queued = await svc.sendTurn({ sessionId: 'sess-1', message: 'queued' })
+    const cancelled = await svc.cancelTurn('sess-1')
+    const immediate = await svc.sendTurn({ sessionId: 'sess-1', message: 'immediate' })
+
+    expect(queued.started).toBe(false)
+    expect(cancelled.cancelled).toBe(true)
+    expect(immediate.started).toBe(true)
+    expect(firstLoop.cancel).toHaveBeenCalled()
+    expect(secondLoop.executeTurn).toHaveBeenCalledWith(
+      'sess-1',
+      immediate.turnId,
+      'immediate',
+      expect.any(Object),
+    )
+    expect(secondLoop.executeTurn).not.toHaveBeenCalledWith(
+      'sess-1',
+      queued.turnId,
+      'queued',
+      expect.any(Object),
+    )
   })
 })
 
