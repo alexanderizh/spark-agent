@@ -959,15 +959,16 @@ function ChatListItem({
       <div className="chat-item-row">
         <div className="chat-item-title-compact">
           {s.pinnedAt != null && <Icons.Pin size={10} className="pinned-icon" />}
-          {isRunning && (
-            <span className="session-running-badge" title="运行中">
-              <Icons.Spinner size={10} />
-              <span>运行中</span>
-            </span>
-          )}
           <span className="truncate">{s.title || '新会话'}</span>
         </div>
-        <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
+        {isRunning ? (
+          <span className="session-running-badge" title="运行中">
+            <Icons.Spinner size={10} />
+            <span>运行中</span>
+          </span>
+        ) : (
+          <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
+        )}
         <div className="item-menu-wrap">
           <button
             className="icon-btn item-menu-btn"
@@ -1381,7 +1382,7 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
       case 'thinking':
         return (
           <details key={i} className="block-thinking">
-            <summary>思考过程{block.isStreaming && <span className="thinking-streaming-dots">…</span>}</summary>
+            <summary>思考过程</summary>
             <pre>{block.content}</pre>
           </details>
         )
@@ -1698,7 +1699,6 @@ function MarkdownText({ content, isStreaming = false }: { content: string; isStr
             return (
               <p key={index}>
                 {renderInlineMarkdown(block.text)}
-                {isStreaming && isLastBlock && <StreamingCursor />}
               </p>
             )
           case 'code':
@@ -1719,7 +1719,6 @@ function MarkdownText({ content, isStreaming = false }: { content: string; isStr
                 )}
                 <pre className="md-code">
                   <code>{block.code}</code>
-                  {isStreaming && isLastBlock && <StreamingCursor />}
                 </pre>
               </div>
             )
@@ -1778,13 +1777,13 @@ function MarkdownText({ content, isStreaming = false }: { content: string; isStr
             return null
         }
       })}
-      {isStreaming && blocks.length === 0 && <StreamingCursor />}
     </>
   )
 }
 
 function StreamingCursor() {
-  return <span className="streaming-cursor" aria-hidden="true">▌</span>
+  // 光标闪烁效果已移除 — 流式消息不再显示闪烁光标
+  return null
 }
 
 function parseMarkdown(content: string): MarkdownBlock[] {
@@ -2065,7 +2064,6 @@ function ThinkingSection({
             {blocks.map((block, i) => (
               <pre key={i}>{block.content}</pre>
             ))}
-            {isThinkingActive && <StreamingCursor />}
           </div>
           {isCollapsed && (
             <button className="collapse-toggle" onClick={() => setExpanded(true)}>
@@ -2141,18 +2139,19 @@ function ToolCall({ name, arg, status, pending, durationMs, children }: { name: 
   const iconMap: Record<string, ReactNode> = {
     Read: <Icons.File className="tool-icon" />,
     Grep: <Icons.Search className="tool-icon" />,
-    Bash: <Icons.Terminal className="tool-icon" />,
+    Bash: <Icons.BashCommand className="tool-icon" />,
+    bash: <Icons.BashCommand className="tool-icon" />,
+    run_command: <Icons.BashCommand className="tool-icon" />,
     Edit: <Icons.Edit className="tool-icon" />,
     Write: <Icons.File className="tool-icon" />,
   }
 
-  // Auto-expand on completion to show result
+  // Auto-collapse on completion — keep open only while pending/running
   useEffect(() => {
     if (status === 'ok' || status === 'error') {
-      // Auto-expand for a brief moment if there's output to show
-      if (children) setOpen(true)
+      setOpen(false)
     }
-  }, [status, children])
+  }, [status])
 
   // Live elapsed timer for pending tool calls
   useEffect(() => {
@@ -3280,7 +3279,6 @@ function ChatInspector({
   onWidthChange: (width: number) => void
 }) {
   const plans = extractPlans(messages)
-  const toolLogs = extractToolLogs(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -3396,19 +3394,6 @@ function ChatInspector({
           ))}
         </div>
       </div>
-      <div className="inspector-section inspector-section-fill">
-        <h4>
-          工具日志
-          <span className="inspector-count">{toolLogs.length}</span>
-        </h4>
-        {toolLogs.length > 0 ? (
-          <div className="inspector-log-list">
-            {toolLogs.map((log) => <ToolLogItem key={log.id} log={log} />)}
-          </div>
-        ) : (
-          <div className="inspector-muted">暂无工具调用</div>
-        )}
-      </div>
     </div>
   )
 }
@@ -3418,16 +3403,6 @@ type SidebarPlan = {
   title: string
   explanation?: string | undefined
   items: Array<{ text: string; status: 'done' | 'running' | 'pending' }>
-}
-
-type ToolLog = {
-  id: string
-  name: string
-  input: Record<string, unknown>
-  status: 'pending' | 'running' | 'success' | 'error'
-  output?: string | undefined
-  error?: string | undefined
-  durationMs?: number | undefined
 }
 
 function PlanSummary({ plan }: { plan: SidebarPlan }) {
@@ -3454,41 +3429,6 @@ function PlanSummary({ plan }: { plan: SidebarPlan }) {
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function ToolLogItem({ log }: { log: ToolLog }) {
-  const [open, setOpen] = useState(false)
-  const statusLabel = log.status === 'success' ? 'ok' : log.status === 'error' ? 'error' : log.status
-
-  return (
-    <div className={`inspector-log ${open ? 'open' : ''}`}>
-      <button className="inspector-log-head" onClick={() => setOpen((prev) => !prev)}>
-        <Icons.Wrench size={13} />
-        <span className="tool-name">{log.name}</span>
-        <span className={`badge ${log.status === 'error' ? 'danger' : log.status === 'success' ? 'success' : 'info'}`}>{statusLabel}</span>
-        <Icons.ChevronRight size={12} className="chev" />
-      </button>
-      {open && (
-        <div className="inspector-log-body">
-          <div className="inspector-log-label">参数</div>
-          <pre>{JSON.stringify(log.input, null, 2)}</pre>
-          {log.output && (
-            <>
-              <div className="inspector-log-label">输出</div>
-              <div className="md-surface"><MarkdownText content={log.output} /></div>
-            </>
-          )}
-          {log.error && (
-            <>
-              <div className="inspector-log-label danger">错误</div>
-              <div className="tool-error-span">{log.error}</div>
-            </>
-          )}
-          {log.durationMs != null && <div className="inspector-log-duration">{log.durationMs} ms</div>}
-        </div>
-      )}
     </div>
   )
 }
@@ -3689,22 +3629,6 @@ function extractPlans(messages: UIMessage[]): SidebarPlan[] {
   }
 
   return plans.slice(-3).reverse()
-}
-
-function extractToolLogs(messages: UIMessage[]): ToolLog[] {
-  return messages.flatMap((message) => message.blocks.flatMap((block) => (
-    block.kind === 'tool_call'
-      ? [{
-        id: block.toolCallId,
-        name: block.toolName,
-        input: block.toolInput,
-        status: block.status,
-        output: block.output,
-        error: block.error,
-        durationMs: block.durationMs,
-      }]
-      : []
-  ))).reverse()
 }
 
 function isPlanToolName(name: string): boolean {

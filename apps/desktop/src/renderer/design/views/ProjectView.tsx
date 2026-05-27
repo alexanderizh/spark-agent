@@ -588,7 +588,6 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
       return (
         <span key={index}>
           {block.content}
-          {block.isStreaming && <span className="cursor-blink">▋</span>}
         </span>
       )
     case 'thinking':

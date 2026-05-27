@@ -986,17 +986,4 @@ pre,
   to { background-position: 200% 0; }
 }
 
-/* Streaming cursor */
-.cursor-blink {
-  display: inline-block;
-  width: 2px;
-  height: 0.85em;
-  background: var(--primary);
-  margin-left: 2px;
-  vertical-align: text-bottom;
-  animation: blink 1s step-end infinite;
-}
-@keyframes blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
+/* Streaming cursor — removed (no blinking cursor during streaming) */
