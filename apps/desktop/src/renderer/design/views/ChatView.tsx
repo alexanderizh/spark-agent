@@ -2828,7 +2828,7 @@ function ComposerV2({
             title={manualExpanded ? '折叠输入框' : '展开输入框'}
             onClick={() => setManualExpanded((prev) => !prev)}
           >
-            {manualExpanded ? '收起' : '展开'}
+            {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
           </button>
           <div className="composer-submit-row">
             <button
