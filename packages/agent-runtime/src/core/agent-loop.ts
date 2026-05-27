@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent, AgentStatusValue, SessionPermissionMode, ToolCallEvent } from '@spark/protocol'
+import { ModelCapabilityRegistry } from '@spark/shared'
 import type { IModelAdapter, ChatMessage, ChatParams } from '../adapters/types.js'
 import { ToolRegistry, type ToolContext } from './tool-registry.js'
 import { AgentEventEmitter } from './event-emitter.js'
@@ -324,18 +325,23 @@ function estimateTokens(messages: ChatMessage[]): number {
   return Math.ceil(chars / 3)
 }
 
-/** 不同模型的硬上下文窗口（用于 UI 进度条 100% 基准）。 */
+/** 动态获取模型上下文窗口大小。优先从 ModelCapabilityRegistry 查询，找不到则回退估算。 */
 function contextWindow(model: string): number {
-  if (model.includes('claude')) return 200_000
-  if (model.includes('gpt-5') || model.includes('gpt-4.1')) return 400_000
-  if (model.includes('gpt-4')) return 128_000
-  if (model.includes('deepseek')) return 128_000
-  return 64_000
+  const caps = ModelCapabilityRegistry.getCapabilities(model)
+  if (caps && caps.contextWindow > 0) return caps.contextWindow
+  // 回退：基于模型名称前缀估算
+  const lower = model.toLowerCase()
+  if (lower.includes('claude')) return 200_000
+  if (lower.includes('gpt-5') || lower.includes('gpt-4.1')) return 400_000
+  if (lower.includes('gpt-4')) return 128_000
+  if (lower.includes('deepseek')) return 128_000
+  return 0 // 未知模型返回 0，UI 层判断后不展示上下文额度
 }
 
-/** 软上限：超过即开始压缩。约等于硬窗口的 70%。 */
+/** 软上限：超过即开始压缩。约等于硬窗口的 70%。若无法确定窗口大小，默认 100k。 */
 function softContextLimit(model: string): number {
-  return Math.floor(contextWindow(model) * 0.7)
+  const cw = contextWindow(model)
+  return cw > 0 ? Math.floor(cw * 0.7) : 100_000
 }
 
 const COMPACTION_PLACEHOLDER = '[tool result elided to save context. Re-run the tool if you need this output again.]'

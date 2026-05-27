@@ -326,31 +326,79 @@
   color: var(--text-faint);
 }
 .session-filter-bar {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 10px 7px;
-  color: var(--text-faint);
-  font-size: 10.5px;
-  border-bottom: 0;
+  padding: 4px 10px 6px;
 }
-.session-filter-bar button {
-  height: 22px;
-  padding: 0 7px;
-  border: 1px solid transparent;
-  border-radius: 0;
+
+.filter-trigger {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+  margin: 0 auto;
+}
+.filter-trigger:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+.filter-trigger.has-filter {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.filter-chevron {
+  transition: transform 0.2s;
+}
+.filter-chevron.open {
+  transform: rotate(180deg);
+}
+
+.filter-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.filter-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 5px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 10.5px;
+  font-size: 11.5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
 }
-.session-filter-bar button:hover {
+.filter-option:hover {
   background: var(--hover);
   color: var(--text);
 }
-.session-filter-bar button.active {
+.filter-option.active {
   background: var(--primary-soft);
   color: var(--primary);
-  border-color: var(--primary);
 }
 
 /* Project group in sidebar */
@@ -1877,6 +1925,26 @@
   inset: 3px;
   border-radius: 50%;
   background: var(--panel);
+}
+/* 上下文使用量警告/危险状态色 */
+.context-ring.ring-warn {
+  background:
+    conic-gradient(var(--warning) var(--context-pct), var(--border) 0),
+    var(--border);
+}
+.context-ring.ring-danger {
+  background:
+    conic-gradient(var(--danger) var(--context-pct), var(--border) 0),
+    var(--border);
+}
+/* 已压缩徽标 */
+.context-compacted-badge {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-faint);
+}
+.context-compacted-badge:hover {
+  color: var(--text-muted);
 }
 .queued-chip {
   display: inline-flex;
@@ -6016,66 +6084,6 @@ body.inspector-resizing {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
-}
-
-/* ===== Chat: context-usage strip (top of stream) ===== */
-.chat-context-strip {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 6px 14px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
-  font-size: 11px;
-}
-.chat-context-strip-track {
-  position: relative;
-  height: 4px;
-  background: var(--bg-soft);
-  border-radius: 2px;
-  overflow: visible;
-}
-.chat-context-strip-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.3s ease;
-  background: var(--success);
-}
-.chat-context-strip.tone-warn .chat-context-strip-fill {
-  background: var(--warning);
-}
-.chat-context-strip.tone-danger .chat-context-strip-fill {
-  background: var(--danger);
-}
-.chat-context-strip-soft {
-  position: absolute;
-  top: -2px;
-  bottom: -2px;
-  width: 1px;
-  background: var(--text-muted);
-  opacity: 0.4;
-}
-.chat-context-strip-meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-}
-.chat-context-strip-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 1px 6px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--warning) 12%, transparent);
-  color: var(--warning);
-  font-size: 10px;
-}
-.chat-context-strip-hint {
-  color: var(--warning);
-}
-.chat-context-strip-hint.is-danger {
-  color: var(--danger);
 }
 
 /* ===== Plan approval modal ===== */

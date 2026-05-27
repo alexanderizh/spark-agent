@@ -202,7 +202,7 @@ describe('AgentLoop — context compaction', () => {
     await loop.executeTurn('s1', 't1', 'go', {
       adapter,
       apiKey: 'k',
-      model: 'unknown-model',  // softLimit = 64000 * 0.7 ≈ 44_800 tokens
+      model: 'deepseek-chat',  // softLimit = 64000 * 0.7 ≈ 44_800 tokens (from ModelCapabilityRegistry)
       tools: new ToolRegistry(),
       toolContext: { workspaceRootPath: '/tmp' },
     }, fatHistory as never)

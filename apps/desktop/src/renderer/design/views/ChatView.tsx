@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
-import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, ContextWarn, Checkpoint, SandboxNote, QuickActions, ToolChooser } from '../ChatInteractions'
+import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, Checkpoint, SandboxNote, QuickActions, ToolChooser } from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
@@ -25,6 +25,7 @@ import type {
   SessionSearchResult,
   WorkspaceInfo,
 } from '@spark/protocol'
+import { ModelCapabilityRegistry } from '@spark/shared'
 
 type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -649,6 +650,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           setSelectedProviderId={setSelectedProviderId}
           branchState={branchState}
           contextInputTokens={contextInputTokens}
+          contextUsage={contextUsage}
           isWorking={agentStatus.length > 0 || activeSession?.status === 'running'}
           approvalRequest={approvalRequest}
           {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
@@ -2002,8 +2004,8 @@ function UserMsg({ children, timestamp, blocks }: { children: ReactNode; timesta
     <div className="msg msg-user">
       <div className="msg-bubble msg-bubble-user">
         <div className="msg-content">{children}</div>
-        <MessageHoverBar timestamp={timestamp} textContent={textContent} />
       </div>
+      <MessageHoverBar timestamp={timestamp} textContent={textContent} position="right" />
     </div>
   )
 }
@@ -2426,51 +2428,6 @@ function StoppedMarker() {
 }
 
 /**
- * 顶部细条：展示当前 turn 即将携带的 messages tokens 占模型上下文窗口的比例。
- * - 绿（<70%）/ 黄（70~95%）/ 红（>95%）
- * - 触发了自动压缩时显示「已压缩」徽标
- * - 数据来自 agent-loop 的 context_usage 事件
- */
-function ContextUsageBar({ usage }: { usage: ContextUsageState | null }) {
-  if (usage == null) return null
-  const { estimatedTokens, softLimitTokens, contextWindowTokens, compactedThisTurn } = usage
-  const pct = Math.min(100, (estimatedTokens / contextWindowTokens) * 100)
-  const softPct = Math.min(100, (softLimitTokens / contextWindowTokens) * 100)
-  const tone = pct > 95 ? 'danger' : pct > softPct ? 'warn' : 'ok'
-  const tokensLabel = formatTokensShort(estimatedTokens)
-  const windowLabel = formatTokensShort(contextWindowTokens)
-  return (
-    <div className={`chat-context-strip tone-${tone}`}>
-      <div className="chat-context-strip-track">
-        <div className="chat-context-strip-fill" style={{ width: `${pct}%` }} />
-        <div className="chat-context-strip-soft" style={{ left: `${softPct}%` }} title={`软上限 ${formatTokenCount(softLimitTokens)}`} />
-      </div>
-      <div className="chat-context-strip-meta">
-        <span className="mono-sm">{tokensLabel} / {windowLabel}</span>
-        {compactedThisTurn && (
-          <span className="chat-context-strip-badge" title="已自动裁剪较早的 tool_result 内容以释放上下文">
-            <Icons.Layers size={10} /> 已压缩
-          </span>
-        )}
-        {tone === 'warn' && !compactedThisTurn && (
-          <span className="chat-context-strip-hint">接近上限，下次将自动压缩</span>
-        )}
-        {tone === 'danger' && (
-          <span className="chat-context-strip-hint is-danger">超出软上限，建议精简对话或结束当前 turn</span>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// chat-context-strip 用 formatTokensShort 区分 inspector 已有的 formatTokenCount
-function formatTokensShort(n: number): string {
-  if (n < 1000) return `${n}t`
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}kt`
-  return `${(n / 1_000_000).toFixed(2)}Mt`
-}
-
-/**
  * agent 在 claude-plan 模式下递交计划后弹出。
  * 三个动作：
  *   - 批准：把 session permissionMode 切到 claude-auto-edits，发送"按上述计划继续执行"
@@ -2642,6 +2599,7 @@ function ComposerV2({
   setSelectedProviderId,
   branchState,
   contextInputTokens,
+  contextUsage,
   isWorking,
   approvalRequest,
   onApprovalClose,
@@ -2658,6 +2616,7 @@ function ComposerV2({
   setSelectedProviderId: (providerId: string) => void
   branchState: BranchState
   contextInputTokens: number
+  contextUsage: ContextUsageState | null
   isWorking: boolean
   approvalRequest?: PermissionApprovalRequest | null
   onApprovalClose?: () => void
@@ -2719,8 +2678,21 @@ function ComposerV2({
   const effectivePermissionMode = permissionOptions.some((option) => option.value === draftEffectivePermissionMode)
     ? draftEffectivePermissionMode
     : defaultPermissionMode
-  const contextWindow = estimateContextWindow(effectiveModelId)
-  const contextRatio = Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10)
+  // 动态获取上下文窗口大小：优先级 context_usage 事件 > ModelCapabilityRegistry > 不展示
+  const contextWindow = (() => {
+    // 1. 从 agent-loop 的 context_usage 事件获取（最准确，来自实际 API 响应/provider 注册）
+    if (contextUsage?.contextWindowTokens && contextUsage.contextWindowTokens > 0) {
+      return contextUsage.contextWindowTokens
+    }
+    // 2. 从 ModelCapabilityRegistry 查询
+    const caps = ModelCapabilityRegistry.getCapabilities(effectiveModelId)
+    if (caps && caps.contextWindow > 0) return caps.contextWindow
+    // 3. 都没有，返回 0 表示未知
+    return 0
+  })()
+  const contextRatio = contextWindow > 0
+    ? Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10)
+    : 0
   const isBusy = sending || isWorking
   const canSubmit = value.trim().length > 0 && selectedProvider != null && effectiveModelId.length > 0 && (session != null || workspace != null)
 
@@ -3055,10 +3027,23 @@ function ComposerV2({
               onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
               options={getReasoningOptions(adapter)}
             />
-            <div className="context-meter" title={`上下文使用 ${contextRatio}% · ${formatTokenCount(contextInputTokens)} / ${formatTokenCount(contextWindow)}`}>
-              <span>{contextRatio}%</span>
-              <span className="context-ring" style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties} />
-            </div>
+            {contextWindow > 0 && (
+              <div
+                className={`context-meter${contextUsage?.compactedThisTurn ? ' context-compacted' : ''}`}
+                title={`上下文使用 ${contextRatio}% · ${formatTokenCount(contextInputTokens)} / ${formatTokenCount(contextWindow)}`}
+              >
+                <span>{contextRatio}%</span>
+                <span
+                  className={`context-ring${contextRatio >= 80 ? ' ring-warn' : contextRatio >= 95 ? ' ring-danger' : ''}`}
+                  style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties}
+                />
+                {contextUsage?.compactedThisTurn && (
+                  <span className="context-compacted-badge" title="已自动裁剪较早的 tool_result 内容以释放上下文">
+                    <Icons.Layers size={10} />
+                  </span>
+                )}
+              </div>
+            )}
             {queuedMessages.length > 0 && (
               <button
                 type="button"
@@ -3346,16 +3331,6 @@ function getReasoningOptions(adapter: 'claude' | 'codex'): Array<{ value: Sessio
   ]
 }
 
-function estimateContextWindow(modelId: string): number {
-  const lower = modelId.toLowerCase()
-  if (lower.includes('1m') || lower.includes('gemini-1.5-pro')) return 1_000_000
-  if (lower.includes('200k') || lower.includes('claude')) return 200_000
-  if (lower.includes('32k')) return 32_000
-  if (lower.includes('16k')) return 16_000
-  if (lower.includes('8k')) return 8_000
-  return 128_000
-}
-
 function formatTokenCount(value: number): string {
   if (value >= 1_000_000) return `${Math.round(value / 100_000) / 10}M`
   if (value >= 1_000) return `${Math.round(value / 100) / 10}K`
@@ -3469,7 +3444,13 @@ function ChatInspector({
     document.body.classList.remove('inspector-resizing')
   }
 
-  const contextWindow = usageData.contextWindow || estimateContextWindow(session?.modelId ?? '')
+  // 动态获取上下文窗口：优先 usageData > ModelCapabilityRegistry > 0（不展示）
+  const contextWindow = (() => {
+    if (usageData.contextWindow && usageData.contextWindow > 0) return usageData.contextWindow
+    const caps = ModelCapabilityRegistry.getCapabilities(session?.modelId ?? '')
+    if (caps && caps.contextWindow > 0) return caps.contextWindow
+    return 0
+  })()
   const contextRatio = contextWindow > 0 ? Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10) : 0
   const isContextWarning = contextRatio >= 80
   const isContextCritical = contextRatio >= 95
@@ -3514,21 +3495,23 @@ function ChatInspector({
         />
       </div>
 
-      {/* Context Window Section */}
-      <div className="inspector-section">
-        <h4>
-          <Icons.Database size={11} /> 上下文窗口
-          {isContextCritical && <span className="badge danger dot usage-warning-badge">即将满</span>}
-          {!isContextCritical && isContextWarning && <span className="badge warning dot usage-warning-badge">接近满</span>}
-        </h4>
-        <ContextWindowVisualization
-          usedTokens={contextInputTokens}
-          totalTokens={contextWindow}
-          ratio={contextRatio}
-          isWarning={isContextWarning}
-          isCritical={isContextCritical}
-        />
-      </div>
+      {/* Context Window Section — 仅在已知上下文窗口大小时展示 */}
+      {contextWindow > 0 && (
+        <div className="inspector-section">
+          <h4>
+            <Icons.Database size={11} /> 上下文窗口
+            {isContextCritical && <span className="badge danger dot usage-warning-badge">即将满</span>}
+            {!isContextCritical && isContextWarning && <span className="badge warning dot usage-warning-badge">接近满</span>}
+          </h4>
+          <ContextWindowVisualization
+            usedTokens={contextInputTokens}
+            totalTokens={contextWindow}
+            ratio={contextRatio}
+            isWarning={isContextWarning}
+            isCritical={isContextCritical}
+          />
+        </div>
+      )}
 
       {/* Per-Turn Token Chart */}
       {usageData.turns.length > 0 && (
