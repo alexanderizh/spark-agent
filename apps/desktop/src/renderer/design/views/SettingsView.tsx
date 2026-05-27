@@ -258,6 +258,7 @@ export function SettingsView() {
       group: '生态',
       items: [
         { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
+        { id: 'system-prompt', icon: <Icons.Chat />, label: '系统提示词' },
         { id: 'skills-settings', icon: <Icons.Skills />, label: 'Skills' },
         { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
       ],
@@ -282,6 +283,7 @@ export function SettingsView() {
     rules: RulesSection,
     permissions: PermissionsSection,
     'mcp-settings': McpSection,
+    'system-prompt': SystemPromptSection,
     'skills-settings': SkillsSection,
     workflows: WorkflowTemplatesSection,
     telemetry: TelemetrySection,
@@ -2187,29 +2189,14 @@ function McpSection() {
   )
 }
 
-/* ───────── SKILLS ───────── */
-function SkillsSection() {
-  const [skills, setSkills] = useState<SkillItem[]>([])
-  const [error, setError] = useState('')
+/* ───────── SYSTEM PROMPT ───────── */
+function SystemPromptSection() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [systemPromptEnabled, setSystemPromptEnabled] = useState(true)
   const [savingPrompt, setSavingPrompt] = useState(false)
   const { toast } = useToast()
-  const { invoke: listSkills, loading } = useIpcInvoke('skill:list')
-  const { invoke: updateSkill } = useIpcInvoke('skill:update')
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
-
-  const refresh = useCallback(() => {
-    setError('')
-    listSkills({})
-      .then((res) => setSkills(res.skills))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载 Skills 失败'))
-  }, [listSkills])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
 
   useEffect(() => {
     getPromptConfig({})
@@ -2219,11 +2206,6 @@ function SkillsSection() {
       })
       .catch(() => {})
   }, [getPromptConfig])
-
-  const toggleSkill = async (skill: SkillItem) => {
-    await updateSkill({ id: skill.id, enabled: !skill.enabled })
-    refresh()
-  }
 
   const saveSystemPrompt = async () => {
     setSavingPrompt(true)
@@ -2244,16 +2226,14 @@ function SkillsSection() {
 
   return (
     <div className="settings-section">
-      <h2>Skills</h2>
-      <div className="lede">管理系统级可见 Skill 和系统提示词。系统隐藏的 Skill 不会进入任何 Agent 的可见列表。</div>
-
-      {error && <div className="alert-banner">{error}</div>}
+      <h2>系统提示词</h2>
+      <div className="lede">配置全局系统提示词，会和后续 Agent、项目、会话提示词逐级合并。</div>
 
       <div className="card prompt-config-card">
         <div className="settings-row">
           <div>
             <div className="settings-row-title">系统级提示词</div>
-            <div className="settings-row-desc">会和后续 Agent、项目、会话提示词逐级合并。</div>
+            <div className="settings-row-desc">全局生效，作为所有 Agent 的基础提示词注入。</div>
           </div>
           <div
             className={`switch ${systemPromptEnabled ? 'on' : ''}`}
@@ -2274,6 +2254,39 @@ function SkillsSection() {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+/* ───────── SKILLS ───────── */
+function SkillsSection() {
+  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [error, setError] = useState('')
+  const { invoke: listSkills, loading } = useIpcInvoke('skill:list')
+  const { invoke: updateSkill } = useIpcInvoke('skill:update')
+
+  const refresh = useCallback(() => {
+    setError('')
+    listSkills({})
+      .then((res) => setSkills(res.skills))
+      .catch((err) => setError(err instanceof Error ? err.message : '加载 Skills 失败'))
+  }, [listSkills])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const toggleSkill = async (skill: SkillItem) => {
+    await updateSkill({ id: skill.id, enabled: !skill.enabled })
+    refresh()
+  }
+
+  return (
+    <div className="settings-section">
+      <h2>Skills</h2>
+      <div className="lede">管理系统级可见 Skill。系统隐藏的 Skill 不会进入任何 Agent 的可见列表。</div>
+
+      {error && <div className="alert-banner">{error}</div>}
 
       <div className="card">
         {loading ? (
