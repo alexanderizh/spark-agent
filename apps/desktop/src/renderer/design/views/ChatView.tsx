@@ -315,7 +315,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         reasoningEffort: options.reasoningEffort ?? prefs.reasoningEffort ?? 'medium',
         workspaceId,
       })
-      refreshSessions()
+      await refreshProjectsAndSessions()
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(workspaceId)
@@ -380,6 +380,8 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       setActiveWorkspaceId(res.workspace.id)
       await refreshProjectsAndSessions()
       toast.success(`项目已创建于：${rootPath}`)
+      // 新建项目后自动新建一个会话并选中
+      await handleNewSession(res.workspace.id)
     } catch (err) {
       console.error('创建项目失败', err)
       toast.error(err instanceof Error ? err.message : '创建项目失败')
