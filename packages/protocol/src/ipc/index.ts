@@ -1457,6 +1457,91 @@ export interface CommandParseResponse {
   freeText?: string
 }
 
+// ─── SDK Integrity Channels ──────────────────────────────────────────────────
+
+export interface SdkIntegrityItem {
+  /** SDK package name, e.g. '@anthropic-ai/claude-agent-sdk' */
+  packageName: string
+  /** Display name */
+  displayName: string
+  /** Whether the SDK is installed and loadable */
+  installed: boolean
+  /** Installed version string (null if not installed) */
+  installedVersion: string | null
+  /** Latest version from npm registry (null if check failed) */
+  latestVersion: string | null
+  /** Whether an update is available */
+  updateAvailable: boolean
+  /** Whether a latest-version check has been performed */
+  latestChecked: boolean
+  /** Error message if detection failed */
+  error?: string
+}
+
+export interface SdkIntegrityCheckRequest {
+  /** If true, also check npm registry for latest versions */
+  checkLatest?: boolean
+}
+
+export interface SdkIntegrityCheckResponse {
+  sdks: SdkIntegrityItem[]
+  /** Timestamp of the check */
+  checkedAt: string
+}
+
+export interface SdkIntegrityInstallRequest {
+  /** Package name to install/update */
+  packageName: string
+}
+
+export interface SdkIntegrityInstallResponse {
+  success: boolean
+  message: string
+  newVersion?: string
+}
+
+// ─── Shell Environment Channels ───────────────────────────────────────────────
+
+export interface RuntimeToolStatus {
+  /** Tool command name (e.g. 'node', 'python') */
+  command: string
+  /** Display name */
+  displayName: string
+  /** Whether the tool was found in PATH */
+  available: boolean
+  /** Resolved absolute path (null if not found) */
+  resolvedPath: string | null
+  /** Version string (null if not found) */
+  version: string | null
+  /** Download URL for installation */
+  downloadUrl: string
+}
+
+export interface ShellEnvironmentStatus {
+  /** Whether PATH was fixed */
+  pathFixed: boolean
+  /** The original PATH before fixing */
+  originalPath: string | null
+  /** The new PATH after fixing (null if unchanged) */
+  fixedPath: string | null
+  /** Detected runtime tools */
+  tools: RuntimeToolStatus[]
+  /** Timestamp of last check */
+  checkedAt: string
+}
+
+export interface EnvGetStatusRequest {}
+
+export interface EnvGetStatusResponse {
+  status: ShellEnvironmentStatus
+}
+
+export interface EnvRecheckRequest {}
+
+export interface EnvRecheckResponse {
+  status: ShellEnvironmentStatus
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -1510,6 +1595,9 @@ export interface IpcChannelMap {
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
+
+  // App Info
+  'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]
 
   // App Paths
   'app:get-temp-project-dir': [AppGetTempProjectDirRequest, AppGetTempProjectDirResponse]
@@ -1602,6 +1690,14 @@ export interface IpcChannelMap {
   'update:install-restart': [UpdateInstallRestartRequest, UpdateInstallRestartResponse]
   'update:get-status': [UpdateGetStatusRequest, UpdateGetStatusResponse]
   'update:settings': [UpdateSettingsRequest, UpdateSettingsResponse]
+
+  // SDK Integrity
+  'sdk:integrity-check': [SdkIntegrityCheckRequest, SdkIntegrityCheckResponse]
+  'sdk:integrity-install': [SdkIntegrityInstallRequest, SdkIntegrityInstallResponse]
+
+  // Shell Environment & Runtime Detection
+  'env:get-status': [EnvGetStatusRequest, EnvGetStatusResponse]
+  'env:recheck': [EnvRecheckRequest, EnvRecheckResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -1641,6 +1737,10 @@ export interface IpcStreamChannelMap {
   'stream:update:downloaded': UpdateInfo
   /** 更新状态变化（主进程推送，渲染进程同步状态）*/
   'stream:update:status': UpdateStatus
+  /** SDK 完整性自检结果（启动时自动推送）*/
+  'stream:sdk:integrity': SdkIntegrityCheckResponse
+  /** Shell 环境状态（PATH 修复 + 运行时工具检测结果）*/
+  'stream:env:status': ShellEnvironmentStatus
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap

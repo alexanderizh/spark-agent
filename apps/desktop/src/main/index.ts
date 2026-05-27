@@ -22,6 +22,8 @@ import { registerAllIpcHandlers } from './ipc/index.js'
 import { setMainWindow, sendToMainWindow } from './windows/index.js'
 import { getFileWatcherService } from './services/FileWatcherService.js'
 import { getUpdateService } from './services/UpdateService.js'
+import { checkSdkIntegrity } from './services/SdkIntegrityService.js'
+import { initializeShellEnvironment, getShellEnvironmentStatus } from './services/ShellEnvironmentService.js'
 import { createLogger } from '@spark/shared'
 import type { UpdateStatus } from '@spark/protocol'
 
@@ -96,6 +98,14 @@ function createWindow(): BrowserWindow {
 async function initializeApp(): Promise<void> {
   log.info('Initializing Spark Agent...')
 
+  // 0. 修复 PATH（必须在所有子进程创建之前执行）
+  // Electron 从桌面启动时继承的是 Explorer 环境，缺少 node/python 等 PATH 条目
+  try {
+    await initializeShellEnvironment()
+  } catch (err) {
+    log.warn(`Shell environment initialization failed (non-fatal): ${String(err)}`)
+  }
+
   // 1. 初始化数据库
   const dbPath = getDatabasePath()
   log.info(`Database path: ${dbPath}`)
@@ -155,6 +165,25 @@ async function initializeApp(): Promise<void> {
     void updateService.checkForUpdates()
   }, 30_000)
   updateService.startAutoCheck()
+
+  // 5. SDK 完整性自检（延迟 5 秒，确保窗口已加载完成）
+  setTimeout(() => {
+    void checkSdkIntegrity({ checkLatest: false }).then((result) => {
+      log.info(`SDK integrity check completed: ${result.sdks.map((s) => `${s.packageName}=${s.installed ? s.installedVersion : 'missing'}`).join(', ')}`)
+      sendToMainWindow('stream:sdk:integrity', result)
+    }).catch((err) => {
+      log.warn(`SDK integrity check failed: ${String(err)}`)
+    })
+  }, 5_000)
+
+  // 6. 推送运行时环境状态到渲染进程（延迟 3 秒）
+  setTimeout(() => {
+    void getShellEnvironmentStatus().then((status) => {
+      sendToMainWindow('stream:env:status', status)
+    }).catch((err) => {
+      log.warn(`Failed to push shell environment status: ${String(err)}`)
+    })
+  }, 3_000)
 
   log.info('Spark Agent initialized')
 }

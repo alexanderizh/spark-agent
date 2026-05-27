@@ -23,6 +23,8 @@ import type { SessionEventHandler, ApprovalHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
+import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
+import { getShellEnvironmentStatus, recheckRuntimeTools } from '../services/ShellEnvironmentService.js'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
@@ -330,6 +332,19 @@ export function registerAllIpcHandlers(): void {
     return {
       canceled: result.canceled,
       ...(result.filePaths[0] === undefined ? {} : { filePath: result.filePaths[0] }),
+    }
+  })
+
+  // ─── App Info Handlers ─────────────────────────────────────────────────────
+
+  typedIpcHandle('app:get-info', async () => {
+    return {
+      appVersion: app.getVersion(),
+      appName: app.getName(),
+      electronVersion: process.versions.electron ?? 'unknown',
+      chromeVersion: process.versions.chrome ?? 'unknown',
+      nodeVersion: process.versions.node ?? 'unknown',
+      platform: `${process.platform} ${process.arch}`,
     }
   })
 
@@ -771,6 +786,31 @@ export function registerAllIpcHandlers(): void {
     log.info(`tool:open-project requested, toolId=${req.toolId}, rootPath=${req.rootPath}`)
     const opened = await openProjectInTool(req.toolId, req.rootPath)
     return { opened }
+  })
+
+  // ─── SDK Integrity Handlers ─────────────────────────────────────────────
+
+  typedIpcHandle('sdk:integrity-check', async (req) => {
+    log.info(`sdk:integrity-check requested, checkLatest=${req.checkLatest ?? false}`)
+    const result = await checkSdkIntegrity(req)
+    return result
+  })
+
+  typedIpcHandle('sdk:integrity-install', async (req) => {
+    log.info(`sdk:integrity-install requested, packageName=${req.packageName}`)
+    const result = await installSdk(req.packageName)
+    return result
+  })
+
+  // Shell Environment & Runtime Detection
+  typedIpcHandle('env:get-status', async () => {
+    const status = await getShellEnvironmentStatus()
+    return { status }
+  })
+
+  typedIpcHandle('env:recheck', async () => {
+    const status = await recheckRuntimeTools()
+    return { status }
   })
 
   log.info('All IPC handlers registered')

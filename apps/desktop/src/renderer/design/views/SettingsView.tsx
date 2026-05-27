@@ -35,6 +35,7 @@ import type {
   McpServerItem,
   SkillItem,
   UpdateStatus,
+  SdkIntegrityItem,
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -266,6 +267,7 @@ export function SettingsView() {
     {
       group: '系统',
       items: [
+        { id: 'integrity', icon: <Icons.Shield />, label: '完整性' },
         { id: 'usage', icon: <Icons.Activity />, label: '用量统计' },
         { id: 'telemetry', icon: <Icons.Activity />, label: '遥测与日志' },
         { id: 'storage', icon: <Icons.Database />, label: '存储与备份' },
@@ -286,6 +288,7 @@ export function SettingsView() {
     'system-prompt': SystemPromptSection,
     'skills-settings': SkillsSection,
     workflows: WorkflowTemplatesSection,
+    integrity: IntegritySection,
     telemetry: TelemetrySection,
     storage: StorageSection,
     usage: UsageSection,
@@ -2872,6 +2875,207 @@ function UsageRow({ label, used, pct }: { label: string; used: string; pct: numb
   )
 }
 
+/* ───────── INTEGRITY ───────── */
+function IntegritySection() {
+  const [sdks, setSdks] = useState<SdkIntegrityItem[]>([])
+  const [checkedAt, setCheckedAt] = useState<string | null>(null)
+  const [isChecking, setIsChecking] = useState(false)
+  const [isCheckingLatest, setIsCheckingLatest] = useState(false)
+  const [installingPkg, setInstallingPkg] = useState<string | null>(null)
+  const [installResult, setInstallResult] = useState<{ pkg: string; success: boolean; message: string } | null>(null)
+  const { toast } = useToast()
+
+  // Load cached result from startup auto-check
+  useEffect(() => {
+    const loadCached = () => {
+      try {
+        const cached = window.localStorage.getItem('spark-sdk-integrity')
+        if (cached) {
+          const parsed = JSON.parse(cached) as { sdks: SdkIntegrityItem[]; checkedAt: string }
+          setSdks(parsed.sdks)
+          setCheckedAt(parsed.checkedAt)
+        }
+      } catch { /* ignore */ }
+    }
+    loadCached()
+
+    // Also subscribe to startup integrity push
+    const unsub = window.spark?.on('stream:sdk:integrity', (payload) => {
+      setSdks(payload.sdks)
+      setCheckedAt(payload.checkedAt)
+      window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(payload))
+    })
+    return unsub ?? (() => {})
+  }, [])
+
+  const handleCheck = async (checkLatest = false) => {
+    if (checkLatest) {
+      setIsCheckingLatest(true)
+    } else {
+      setIsChecking(true)
+    }
+    try {
+      const result = await window.spark.invoke('sdk:integrity-check', { checkLatest })
+      setSdks(result.sdks)
+      setCheckedAt(result.checkedAt)
+      window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(result))
+    } catch (err) {
+      toast.error(`检测失败: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsChecking(false)
+      setIsCheckingLatest(false)
+    }
+  }
+
+  const handleInstall = async (packageName: string) => {
+    setInstallingPkg(packageName)
+    setInstallResult(null)
+    try {
+      const result = await window.spark.invoke('sdk:integrity-install', { packageName })
+      setInstallResult({ pkg: packageName, success: result.success, message: result.message })
+      if (result.success) {
+        toast.success(result.message)
+        // Re-check after install
+        await handleCheck(true)
+      } else {
+        toast.error(result.message)
+      }
+    } catch (err) {
+      toast.error(`安装失败: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setInstallingPkg(null)
+    }
+  }
+
+  const getStatusBadge = (sdk: SdkIntegrityItem) => {
+    if (!sdk.installed) {
+      return <span className="badge error dot">未安装</span>
+    }
+    if (sdk.updateAvailable) {
+      return <span className="badge warning dot">有新版 {sdk.latestVersion}</span>
+    }
+    if (sdk.latestChecked && sdk.latestVersion && !sdk.updateAvailable) {
+      return <span className="badge success dot">最新</span>
+    }
+    if (sdk.installed) {
+      return <span className="badge success dot">已安装</span>
+    }
+    return <span className="badge dot">未知</span>
+  }
+
+  const formatCheckedTime = (iso: string | null) => {
+    if (!iso) return '从未检测'
+    try {
+      return new Date(iso).toLocaleString('zh-CN')
+    } catch {
+      return iso
+    }
+  }
+
+  return (
+    <div className="settings-section">
+      <h2>SDK 完整性</h2>
+      <div className="lede">检测 Agent 运行所需的 SDK 依赖是否安装完整，确保核心功能可用。</div>
+
+      <div className="card" style={{ marginBottom: 'var(--gap)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap)', flexWrap: 'wrap' }}>
+          <button
+            className="btn primary"
+            onClick={() => void handleCheck(false)}
+            disabled={isChecking || isCheckingLatest}
+          >
+            <Icons.Refresh size={12} className={isChecking ? 'spin' : ''} />
+            {isChecking ? '检测中…' : '立即检测'}
+          </button>
+          <button
+            className="btn"
+            onClick={() => void handleCheck(true)}
+            disabled={isChecking || isCheckingLatest}
+          >
+            <Icons.Globe size={12} className={isCheckingLatest ? 'spin' : ''} />
+            {isCheckingLatest ? '检查最新版中…' : '检查最新版本'}
+          </button>
+          {checkedAt && (
+            <span className="muted" style={{ fontSize: '12px' }}>
+              上次检测: {formatCheckedTime(checkedAt)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {installResult && (
+        <div className={`card ${installResult.success ? 'card-success' : 'card-error'}`} style={{ marginBottom: 'var(--gap)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {installResult.success
+              ? <Icons.CheckCircle size={16} />
+              : <Icons.AlertTriangle size={16} />
+            }
+            <span>{installResult.message}</span>
+            <button className="btn-sm" onClick={() => setInstallResult(null)} style={{ marginLeft: 'auto' }}>
+              <Icons.X size={12} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="subsec-h">核心 SDK</div>
+      <div className="card">
+        {sdks.map((sdk) => (
+          <div key={sdk.packageName}>
+            <SettingsRow
+              title={sdk.displayName}
+              desc={sdk.installedVersion ?? (sdk.installed ? '已安装' : '未安装')}
+              right={
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {getStatusBadge(sdk)}
+                  {(!sdk.installed || sdk.updateAvailable) && (
+                    <button
+                      className="btn-sm btn"
+                      onClick={() => void handleInstall(sdk.packageName)}
+                      disabled={installingPkg === sdk.packageName}
+                    >
+                      {installingPkg === sdk.packageName
+                        ? <><Icons.Spinner size={12} /> 安装中…</>
+                        : sdk.installed
+                          ? <><Icons.Download size={12} /> 更新</>
+                          : <><Icons.Download size={12} /> 安装</>
+                      }
+                    </button>
+                  )}
+                </div>
+              }
+            />
+            {sdk.error && (
+              <div className="row-desc" style={{ color: 'var(--danger)', paddingLeft: '1rem' }}>
+                {sdk.error}
+              </div>
+            )}
+          </div>
+        ))}
+        {sdks.length === 0 && !isChecking && (
+          <div className="muted" style={{ textAlign: 'center', padding: '2rem' }}>
+            点击"立即检测"开始检查 SDK 完整性
+          </div>
+        )}
+      </div>
+
+      <div className="subsec-h">说明</div>
+      <div className="card">
+        <SettingsRow
+          title="Claude Agent SDK"
+          desc="提供 Claude Code 级别的 Agent 执行引擎，包含文件编辑、Shell 命令、代码搜索等内置工具。"
+          right={<span className="muted mono-sm">可选</span>}
+        />
+        <SettingsRow
+          title="OpenAI / Codex SDK"
+          desc="提供 OpenAI 模型适配和 Codex 代码生成能力，支持 Responses API。"
+          right={<span className="muted mono-sm">必需</span>}
+        />
+      </div>
+    </div>
+  )
+}
+
 /* ───────── UPDATES ───────── */
 function UpdatesSection() {
   const [s, set] = usePersistedSettings(SETTINGS_UPDATES_KEY, DEFAULT_UPDATES)
@@ -3032,8 +3236,7 @@ function UpdatesSection() {
       <div className="subsec-h">版本</div>
       <div className="card">
         <SettingsRow title="Spark Agent" desc={`${currentVersion}`} right={<span className={hasUpdate ? 'badge warning dot' : 'badge success dot'}>{hasUpdate ? `有新版 ${status?.updateInfo?.version}` : '最新'}</span>} />
-        <SettingsRow title="Claude Agent SDK" desc="1.0.6" right={<span className="badge success dot">最新</span>} />
-        <SettingsRow title="@openai/codex CLI" desc="0.4.1" right={<span className="badge warning dot">有新版 0.4.3</span>} />
+
         <SettingsRow title="Electron" desc="31.x" right={<span className="badge">嵌入</span>} />
       </div>
     </div>
@@ -3055,27 +3258,34 @@ function SettingsRow({ title, desc, right }: { title: string; desc?: string; rig
 
 function AboutSection() {
   const [sysInfo, setSysInfo] = useState<{
+    appVersion: string
     electronVersion: string
     chromeVersion: string
     nodeVersion: string
     platform: string
-    arch: string
   } | null>(null)
 
   useEffect(() => {
-    // In Electron renderer, these are available via preload or process
-    try {
-      const info = {
-        electronVersion: (window as unknown as Record<string, string>).electronVersion ?? '31.x',
-        chromeVersion: (window as unknown as Record<string, string>).chromeVersion ?? (navigator.userAgent.match(/Chrome\/([\d.]+)/)?.[1] ?? 'unknown'),
-        nodeVersion: typeof process !== 'undefined' ? process.versions.node : 'unknown',
-        platform: navigator.platform ?? 'unknown',
-        arch: (window as unknown as Record<string, string>).systemArch ?? 'arm64',
-      }
-      setSysInfo(info)
-    } catch {
-      setSysInfo(null)
-    }
+    window.spark?.invoke('app:get-info', {})
+      .then((res) => {
+        setSysInfo({
+          appVersion: res.appVersion,
+          electronVersion: res.electronVersion,
+          chromeVersion: res.chromeVersion,
+          nodeVersion: res.nodeVersion,
+          platform: res.platform,
+        })
+      })
+      .catch(() => {
+        // Fallback: try user-agent parsing
+        setSysInfo({
+          appVersion: '0.1.0',
+          electronVersion: '31.x',
+          chromeVersion: navigator.userAgent.match(/Chrome\/([\d.]+)/)?.[1] ?? 'unknown',
+          nodeVersion: 'unknown',
+          platform: navigator.platform ?? 'unknown',
+        })
+      })
   }, [])
 
   return (
@@ -3083,7 +3293,7 @@ function AboutSection() {
       <div className="about-header">
         <div className="about-title">Spark Agent</div>
         <div className="about-subtitle">AI Agent 工作台</div>
-        <div className="about-version">版本 0.1.0 (MVP)</div>
+        <div className="about-version">版本 {sysInfo?.appVersion ?? '0.1.0'} (MVP)</div>
       </div>
       <div className="subsec-h">技术栈</div>
       <div className="card">
@@ -3099,7 +3309,6 @@ function AboutSection() {
       <div className="subsec-h">系统信息</div>
       <div className="card">
         <SettingsRow title="平台" desc="操作系统" right={<span className="mono-sm tech-version">{sysInfo?.platform ?? '—'}</span>} />
-        <SettingsRow title="架构" desc="CPU 架构" right={<span className="mono-sm tech-version">{sysInfo?.arch ?? '—'}</span>} />
         <SettingsRow title="User Agent" desc="浏览器标识" right={<span className="mono-sm tech-version about-user-agent">{navigator.userAgent.slice(0, 60)}…</span>} />
       </div>
 
