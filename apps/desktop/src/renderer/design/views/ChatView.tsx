@@ -83,13 +83,14 @@ type ContextUsageState = {
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const SESSION_HISTORY_PAGE_SIZE = 500
+const LAST_SESSION_KEY = 'spark-agent:last-active-session'
 const SIDEBAR_WIDTH_KEY = 'spark-agent:sidebar-width'
 const SIDEBAR_DEFAULT_WIDTH = 264
 const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
 
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
-  const [active, setActive] = useState<SessionId | null>(null)
+  const [active, setActive] = useState<SessionId | null>(() => window.localStorage.getItem(LAST_SESSION_KEY) ?? null)
   const [showInspector, setShowInspector] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
@@ -201,6 +202,26 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     }, 0)
     return () => window.clearTimeout(timer)
   }, [refreshProjectsAndSessions])
+
+  // Persist active session to localStorage
+  useEffect(() => {
+    if (active) {
+      window.localStorage.setItem(LAST_SESSION_KEY, active)
+    } else {
+      window.localStorage.removeItem(LAST_SESSION_KEY)
+    }
+  }, [active])
+
+  // Validate restored session exists after sessions load; restore workspace if needed
+  useEffect(() => {
+    if (!active || sessions.length === 0) return
+    const found = sessions.find((s) => s.id === active)
+    if (!found) {
+      setActive(null)
+    } else if (activeWorkspaceId == null && found.workspaceIds.length > 0) {
+      setActiveWorkspaceId(found.workspaceIds[0])
+    }
+  }, [sessions])
 
   // Debounced search handler
   const handleSearchChange = useCallback((value: string) => {
@@ -3099,6 +3120,26 @@ function ComposerV2({
     return cmd.name.includes(q) || cmd.description.toLowerCase().includes(q) || cmd.aliases.some((a) => a.includes(q))
   })
 
+  const SLASH_GROUP_LABELS: Record<string, string> = {
+    session: '会话', model: '模型', context: '上下文', permission: '权限',
+    git: 'Git', workflow: '工作流', agent: 'Agent', mcp: 'MCP',
+    skill: '技能', resource: '资源', team: '团队', utility: '工具', system: '系统',
+  }
+  const SLASH_GROUP_ORDER = ['session', 'model', 'context', 'permission', 'git', 'workflow', 'agent', 'mcp', 'skill', 'resource', 'team', 'utility', 'system']
+
+  const groupedSlashCmds = (() => {
+    const map = new Map<string, CommandListItem[]>()
+    for (const cmd of filteredSlashCmds) {
+      const arr = map.get(cmd.group) ?? []
+      arr.push(cmd)
+      map.set(cmd.group, arr)
+    }
+    return SLASH_GROUP_ORDER.flatMap((key) => {
+      const cmds = map.get(key)
+      return cmds && cmds.length > 0 ? [{ key, label: SLASH_GROUP_LABELS[key] ?? key, cmds }] : []
+    })
+  })()
+
   const openSlashPopup = useCallback(async () => {
     if (slashCmds.length === 0) {
       try {
@@ -3156,6 +3197,7 @@ function ComposerV2({
         setSlashIndex((i) => Math.max(i - 1, 0))
         return
       }
+
       if (event.key === 'Escape') {
         event.preventDefault()
         closeSlashPopup()
@@ -3279,18 +3321,37 @@ function ComposerV2({
         )}
         {slashOpen && filteredSlashCmds.length > 0 && (
           <div className="slash-cmd-popup" ref={slashListRef}>
-            {filteredSlashCmds.map((cmd, i) => (
-              <div
-                key={cmd.id}
-                className={`slash-cmd-item${i === slashIndex ? ' selected' : ''}`}
-                onMouseEnter={() => setSlashIndex(i)}
-                onMouseDown={(e) => { e.preventDefault(); executeSlashCmd(cmd) }}
-              >
-                <span className="slash-cmd-layer">{cmd.layer === 'sdk' ? 'SDK' : cmd.layer === 'skill' ? '技能' : '内置'}</span>
-                <span className="slash-cmd-name">/{cmd.name}</span>
-                <span className="slash-cmd-desc">{cmd.description}</span>
-              </div>
-            ))}
+            {(() => {
+              let flatIdx = -1
+              return groupedSlashCmds.map((group) => (
+                <div key={group.key}>
+                  <div className="slash-cmd-group-header">{group.label}</div>
+                  {group.cmds.map((cmd) => {
+                    flatIdx++
+                    const idx = flatIdx
+                    return (
+                      <div
+                        key={cmd.id}
+                        className={`slash-cmd-item${idx === slashIndex ? ' selected' : ''}`}
+                        onMouseEnter={() => setSlashIndex(idx)}
+                        onMouseDown={(e) => { e.preventDefault(); executeSlashCmd(cmd) }}
+                      >
+                        <span className={`slash-cmd-layer layer-${cmd.layer}`}>
+                          {cmd.layer === 'sdk' ? 'SDK' : cmd.layer === 'skill' ? '技能' : '内置'}
+                        </span>
+                        <span className="slash-cmd-name">/{cmd.name}</span>
+                        {cmd.aliases.length > 0 && (
+                          <span className="slash-cmd-aliases">{cmd.aliases.map((a) => `/${a}`).join(' ')}</span>
+                        )}
+                        <span className="slash-cmd-desc">{cmd.description}</span>
+                        {cmd.risk === 'high' && <span className="slash-cmd-risk high">危险</span>}
+                        {cmd.risk === 'medium' && <span className="slash-cmd-risk medium">注意</span>}
+                      </div>
+                    )
+                  })}
+                </div>
+              ))
+            })()}
           </div>
         )}
         <div className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''}`}>
@@ -3838,6 +3899,13 @@ function ChatInspector({
         )}
       </div>
 
+      {plans.length > 0 && (
+        <div className="inspector-section">
+          <h4>计划</h4>
+          {plans.map((plan) => <PlanSummary key={plan.id} plan={plan} />)}
+        </div>
+      )}
+
       {/* Token Usage Section */}
       <div className="inspector-section">
         <h4>
@@ -3881,14 +3949,6 @@ function ChatInspector({
         </div>
       )}
 
-      <div className="inspector-section">
-        <h4>计划</h4>
-        {plans.length > 0 ? (
-          plans.map((plan) => <PlanSummary key={plan.id} plan={plan} />)
-        ) : (
-          <div className="inspector-muted">暂无 Agent 计划</div>
-        )}
-      </div>
       <div className="inspector-section">
         <h4>可用工具</h4>
         <div className="tool-chip-list">
@@ -4120,18 +4180,37 @@ function extractPlans(messages: UIMessage[]): SidebarPlan[] {
 
   for (const message of messages) {
     for (const block of message.blocks) {
+      if (block.kind === 'plan_proposed') {
+        const items = parsePlanToItems(block.plan)
+        if (items.length === 0) continue
+        plans.push({
+          id: `${message.id}:plan_proposed`,
+          title: 'Agent 计划',
+          items,
+        })
+        continue
+      }
+
       if (block.kind !== 'tool_call') continue
+
+      const todos = block.toolName === 'todo_write' ? parseTodosFromInputOrOutput(block.toolInput, block.output) : []
       const rawPlan = Array.isArray(block.toolInput.plan) ? block.toolInput.plan : undefined
-      if (rawPlan == null && !isPlanToolName(block.toolName)) continue
-      const items = (rawPlan ?? []).flatMap((item, index) => {
-        if (!isRecord(item)) return []
-        const text = String(item.step ?? item.text ?? item.title ?? `Step ${index + 1}`)
-        return [{ text, status: normalizePlanStatus(item.status) }]
-      })
+      if (todos.length === 0 && rawPlan == null && !isPlanToolName(block.toolName)) continue
+
+      const items = todos.length > 0
+        ? todos.map((todo) => ({
+            text: todo.status === 'in_progress' ? (todo.activeForm ?? todo.content) : todo.content,
+            status: normalizePlanStatus(todo.status),
+          }))
+        : (rawPlan ?? []).flatMap((item, index) => {
+            if (!isRecord(item)) return []
+            const text = String(item.step ?? item.text ?? item.title ?? `Step ${index + 1}`)
+            return [{ text, status: normalizePlanStatus(item.status) }]
+          })
       if (items.length === 0) continue
       plans.push({
         id: block.toolCallId,
-        title: String(block.toolInput.title ?? 'Agent 计划'),
+        title: String(block.toolInput.title ?? (todos.length > 0 ? 'Todo 计划' : 'Agent 计划')),
         explanation: typeof block.toolInput.explanation === 'string' ? block.toolInput.explanation : undefined,
         items,
       })

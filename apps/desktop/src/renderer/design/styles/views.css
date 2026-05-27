@@ -1458,42 +1458,75 @@ body.sidebar-resizing {
   width: 100%;
   max-height: 320px;
   overflow-y: auto;
-  background: var(--bg-elevated, #1e1e2e);
-  border: 1px solid var(--border, rgba(255,255,255,0.1));
+  background: var(--panel-elev);
+  border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 6px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  box-shadow: var(--shadow-md);
+}
+.slash-cmd-group-header {
+  padding: 6px 12px 3px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+  user-select: none;
 }
 .slash-cmd-item {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 12px;
+  padding: 7px 12px 7px 20px;
   cursor: pointer;
   user-select: none;
 }
-.slash-cmd-item.selected { background: var(--bg-hover, rgba(255,255,255,0.07)); }
+.slash-cmd-item.selected { background: var(--hover); }
 .slash-cmd-layer {
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 4px;
-  background: var(--bg-subtle, rgba(255,255,255,0.08));
-  color: var(--text-muted, #888);
   flex-shrink: 0;
+}
+.slash-cmd-layer.layer-sdk {
+  color: var(--info);
+  background: var(--info-bg);
+}
+.slash-cmd-layer.layer-builtin {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.slash-cmd-layer.layer-skill {
+  color: var(--success);
+  background: var(--success-bg);
 }
 .slash-cmd-name {
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-primary, #e0e0e0);
+  color: var(--text-strong);
+  flex-shrink: 0;
+}
+.slash-cmd-aliases {
+  font-size: 11px;
+  color: var(--text-faint);
   flex-shrink: 0;
 }
 .slash-cmd-desc {
   font-size: 12px;
-  color: var(--text-muted, #888);
+  color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.slash-cmd-risk {
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.slash-cmd-risk.high { background: var(--danger-bg); color: var(--danger); }
+.slash-cmd-risk.medium { background: var(--warning-bg); color: var(--warning); }
 
 .composer-queue-panel {
   display: grid;

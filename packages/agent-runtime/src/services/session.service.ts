@@ -12,7 +12,7 @@ import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse,
 import type { SessionPermissionMode } from '@spark/protocol'
 import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
-import type { AgentConfig, CommandDeps } from '../core/index.js'
+import type { AgentConfig, CommandDeps, CommandListItem } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
@@ -88,6 +88,20 @@ export class SessionService {
     const eventRepo = new EventRepository(this.db)
     const session = sessionRepo.get(params.sessionId)
 
+    // Get workspace path for git/shell commands
+    let workspacePath: string | null = null
+    try {
+      const workspaceIds: string[] = session?.workspace_ids_json ? JSON.parse(session.workspace_ids_json) : []
+      const workspaceId = workspaceIds[0]
+      if (workspaceId) {
+        const wsRepo = new WorkspaceRepository(this.db)
+        const ws = wsRepo.get(workspaceId)
+        workspacePath = ws?.root_path ?? null
+      }
+    } catch {
+      // ignore parse errors
+    }
+
     const deps: CommandDeps = {
       getSession: (id) => {
         const s = sessionRepo.get(id)
@@ -107,26 +121,50 @@ export class SessionService {
       setApprovalMode: (id, enabled) => {
         this.approvalOverrides.set(id, enabled)
       },
+      getWorkspacePath: () => workspacePath,
+      execShell: async (command, cwd) => {
+        const { exec } = await import('node:child_process')
+        const { promisify } = await import('node:util')
+        const execAsync = promisify(exec)
+        try {
+          const { stdout, stderr } = await execAsync(command, {
+            cwd: cwd ?? workspacePath ?? undefined,
+            timeout: 30000,
+            maxBuffer: 1024 * 1024,
+          })
+          return { stdout: stdout || '', stderr: stderr || '', exitCode: 0 }
+        } catch (err: unknown) {
+          const execErr = err as { stdout?: string; stderr?: string; code?: number }
+          return {
+            stdout: execErr.stdout || '',
+            stderr: execErr.stderr || '',
+            exitCode: execErr.code ?? 1,
+          }
+        }
+      },
+      getSessionEventCount: (id) => {
+        return eventRepo.countBySession(id)
+      },
+      getSessionUsage: (_id) => {
+        // TODO: integrate with UsageLedger
+        return null
+      },
     }
 
     const ctx = {
       sessionId: params.sessionId,
+      ...(workspacePath != null ? { workspaceId: workspacePath } : {}),
       ...(session?.provider_profile_id != null ? { providerId: session.provider_profile_id } : {}),
       ...(session?.model_id != null ? { model: session.model_id } : {}),
     }
 
     const result = await this.commandRegistry.execute(parsed, ctx, deps)
+    if (result.forwardToAgent) return { isCommand: false }
     return { isCommand: true, result }
   }
 
-  listCommands(): Array<{ name: string; description: string; category: string; usage?: string; isDangerous?: boolean }> {
-    return this.commandRegistry.list().map((c) => ({
-      name: c.name,
-      description: c.description,
-      category: c.category,
-      ...(c.usage !== undefined ? { usage: c.usage } : {}),
-      ...(c.isDangerous === true ? { isDangerous: true } : {}),
-    }))
+  listCommands(): CommandListItem[] {
+    return this.commandRegistry.listItems()
   }
 
   async sendTurn(params: {
