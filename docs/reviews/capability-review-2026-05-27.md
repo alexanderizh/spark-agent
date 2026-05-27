@@ -144,7 +144,9 @@
 - `522de69 feat: expose project context sources`
 - `b67941c fix: harmonize context window reporting`
 - `094190a feat: sync queued turns from runtime`
-- 本次变更: Context Governor MVP，补项目上下文预算、裁剪/排除、budget ledger 事件和 Inspector 展示。
+- `8916c22 feat: add project context governor`
+- `23c9644 feat: show checkpoint file context`
+- 下一步: 自修复开发循环 MVP，补验证命令建议/执行入口、结果回流和失败重试提示。
 
 最近验证:
 
