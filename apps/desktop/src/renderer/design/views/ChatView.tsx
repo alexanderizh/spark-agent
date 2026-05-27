@@ -18,6 +18,8 @@ import type {
   SessionChatMode,
   SessionListResponse,
   SessionPermissionMode,
+  PermissionApprovalDecision,
+  PermissionApprovalRequest,
   SessionId,
   SessionReasoningEffort,
   SessionSearchResult,
@@ -43,6 +45,10 @@ type ComposerPrefs = {
   reasoningEffort?: SessionReasoningEffort
 }
 type QueuedMessage = { id: string; content: string }
+type ChatViewProps = {
+  approvalRequest?: PermissionApprovalRequest | null
+  onApprovalClose?: () => void
+}
 
 /** Per-turn token usage snapshot */
 type UsageSnapshot = {
@@ -74,7 +80,7 @@ type ContextUsageState = {
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 
-export function ChatView() {
+export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
   const [active, setActive] = useState<SessionId | null>(null)
   const [showInspector, setShowInspector] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
@@ -612,12 +618,6 @@ export function ChatView() {
         />
         {active ? (
           <>
-            <ContextUsageBar usage={contextUsage} />
-            {contextUsage && (contextUsage.estimatedTokens / contextUsage.contextWindowTokens) >= 0.8 && (
-              <div style={{ margin: '0 16px' }}>
-                <ContextWarn used={contextUsage.estimatedTokens} total={contextUsage.contextWindowTokens} />
-              </div>
-            )}
             <ChatStream
               sessionId={active}
               onStatusChange={setAgentStatus}
@@ -650,6 +650,8 @@ export function ChatView() {
           branchState={branchState}
           contextInputTokens={contextInputTokens}
           isWorking={agentStatus.length > 0 || activeSession?.status === 'running'}
+          approvalRequest={approvalRequest}
+          {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
           onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
           onUpdateSession={handleUpdateActiveSession}
           onSwitchBranch={handleSwitchBranch}
@@ -1346,13 +1348,28 @@ function ChatStream({
   return (
     <div className="chat-stream" ref={streamRef}>
       <div className="chat-stream-inner">
-        {messages.map(msg =>
+        {messages.map((msg, index) =>
           msg.role === 'user' ? (
-            <UserMsg key={msg.id}>{renderBlocks(msg.blocks)}</UserMsg>
+            <UserMsg key={msg.id} timestamp={msg.timestamp} blocks={msg.blocks}>{renderBlocks(msg.blocks)}</UserMsg>
           ) : msg.status === 'streaming' ? (
-            <AgentMsg key={msg.id} sessionId={sessionId} status="running" blocks={msg.blocks} messageStatus={msg.status} />
+            <AgentMsg
+              key={msg.id}
+              sessionId={sessionId}
+              status="running"
+              blocks={msg.blocks}
+              messageStatus={msg.status}
+              isLatest={index === messages.length - 1}
+              timestamp={msg.timestamp}
+            />
           ) : (
-            <AgentMsg key={msg.id} sessionId={sessionId} blocks={msg.blocks} messageStatus={msg.status} />
+            <AgentMsg
+              key={msg.id}
+              sessionId={sessionId}
+              blocks={msg.blocks}
+              messageStatus={msg.status}
+              isLatest={index === messages.length - 1}
+              timestamp={msg.timestamp}
+            />
           )
         )}
         {messages.length === 0 && (
@@ -1938,17 +1955,74 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return rendered
 }
 
-function UserMsg({ children }: { children: ReactNode }) {
+/** 格式化时间戳为 HH:MM 格式 */
+function formatMsgTime(timestamp?: string): string {
+  if (!timestamp) return ''
+  const d = new Date(timestamp)
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+/** 消息悬浮操作栏：时间 + 复制按钮 */
+function MessageHoverBar({ timestamp, textContent }: { timestamp?: string | undefined; textContent: string }) {
+  const [copied, setCopied] = useState(false)
+
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(textContent).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }).catch(() => {})
+  }, [textContent])
+
+  const time = formatMsgTime(timestamp)
+
+  return (
+    <div className="msg-hover-bar">
+      {time && <span className="msg-hover-time">{time}</span>}
+      <button className="msg-hover-copy" title="复制" onClick={handleCopy}>
+        {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
+      </button>
+    </div>
+  )
+}
+
+/** 从 blocks 中提取纯文本内容（用于复制） */
+function extractTextFromBlocks(blocks: UIBlock[]): string {
+  return blocks
+    .filter(b => b.kind === 'text')
+    .map(b => (b as Extract<UIBlock, { kind: 'text' }>).content)
+    .join('\n')
+    .trim()
+}
+
+function UserMsg({ children, timestamp, blocks }: { children: ReactNode; timestamp?: string | undefined; blocks: UIBlock[] }) {
+  const textContent = extractTextFromBlocks(blocks)
   return (
     <div className="msg msg-user">
       <div className="msg-bubble msg-bubble-user">
         <div className="msg-content">{children}</div>
+        <MessageHoverBar timestamp={timestamp} textContent={textContent} />
       </div>
     </div>
   )
 }
 
-function AgentMsg({ sessionId, status, blocks, messageStatus }: { sessionId: SessionId; status?: 'running'; blocks: UIBlock[]; messageStatus?: UIMessage['status'] }) {
+function AgentMsg({
+  sessionId,
+  status,
+  blocks,
+  messageStatus,
+  isLatest,
+  timestamp,
+}: {
+  sessionId: SessionId
+  status?: 'running'
+  blocks: UIBlock[]
+  messageStatus?: UIMessage['status']
+  isLatest?: boolean
+  timestamp?: string | undefined
+}) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
@@ -1965,6 +2039,11 @@ function AgentMsg({ sessionId, status, blocks, messageStatus }: { sessionId: Ses
   const isCancelled = messageStatus === 'error' && !isStreaming && hasContent
   // Pure error: no content, only error blocks
   const isPureError = messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0
+  // 是否已完成（非流式中）— 只有完成的消息才显示 hover bar
+  const isFinished = !isStreaming
+
+  // 提取纯文本用于复制
+  const textContent = extractTextFromBlocks(blocks)
 
   return (
     <div className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}>
@@ -1984,7 +2063,10 @@ function AgentMsg({ sessionId, status, blocks, messageStatus }: { sessionId: Ses
             <span>{activeToolCount} 个工具并行执行</span>
           </div>
         )}
-        {contentBlocks.length > 0 && (
+        {contentBlocks.length > 0 && isLatest && (
+          <div className="msg-content">{renderBlocks(contentBlocks)}</div>
+        )}
+        {contentBlocks.length > 0 && !isLatest && (
           <CollapsibleContent maxHeight={500} streaming={isStreaming}>
             <div className="msg-content">{renderBlocks(contentBlocks)}</div>
           </CollapsibleContent>
@@ -1999,6 +2081,7 @@ function AgentMsg({ sessionId, status, blocks, messageStatus }: { sessionId: Ses
           />
         ))}
         {isCancelled && <StoppedMarker />}
+        {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} />}
       </div>
     </div>
   )
@@ -2474,6 +2557,83 @@ function formatDuration(ms: number): string {
   return `${min}m ${sec}s`
 }
 
+function InlineApprovalRequest({ request, onClose }: { request: PermissionApprovalRequest; onClose?: () => void }) {
+  const [busyDecision, setBusyDecision] = useState<PermissionApprovalDecision | null>(null)
+  const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
+  const riskTone = request.riskLevel === 'high' ? 'high' : request.riskLevel === 'medium' ? 'medium' : 'low'
+  const inputPreview = JSON.stringify(request.toolInput, null, 2)
+
+  const respond = useCallback(async (decision: PermissionApprovalDecision) => {
+    setBusyDecision(decision)
+    try {
+      await window.spark.invoke('permission:approval-respond', { requestId: request.requestId, decision })
+    } catch {
+      // best-effort
+    } finally {
+      setBusyDecision(null)
+      onClose?.()
+    }
+  }, [onClose, request.requestId])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || busyDecision != null) return
+      event.preventDefault()
+      void respond('deny')
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [busyDecision, respond])
+
+  return (
+    <div className={`composer-approval-card ${riskTone}`}>
+      <div className="composer-approval-icon">
+        {request.riskLevel === 'high' ? <Icons.AlertTriangle size={17} /> : <Icons.Shield size={17} />}
+      </div>
+      <div className="composer-approval-main">
+        <div className="composer-approval-top">
+          <div>
+            <div className="composer-approval-title">
+              允许执行 <span>{request.toolName}</span>?
+            </div>
+            <div className="composer-approval-meta">
+              Session {request.sessionId.slice(0, 8)} · 风险 {riskLabel}
+            </div>
+          </div>
+          <div className="composer-approval-actions">
+            <button
+              type="button"
+              className="composer-approval-btn ghost"
+              disabled={busyDecision != null}
+              onClick={() => void respond('deny')}
+            >
+              拒绝
+            </button>
+            <button
+              type="button"
+              className="composer-approval-btn"
+              disabled={busyDecision != null}
+              onClick={() => void respond('allow-session')}
+            >
+              本会话允许
+            </button>
+            <button
+              type="button"
+              className="composer-approval-btn primary"
+              disabled={busyDecision != null}
+              onClick={() => void respond('allow-once')}
+            >
+              {busyDecision === 'allow-once' ? <Icons.Spinner size={13} /> : null}
+              允许一次
+            </button>
+          </div>
+        </div>
+        <pre className="composer-approval-preview">{inputPreview}</pre>
+      </div>
+    </div>
+  )
+}
+
 function ComposerV2({
   session,
   workspace,
@@ -2483,6 +2643,8 @@ function ComposerV2({
   branchState,
   contextInputTokens,
   isWorking,
+  approvalRequest,
+  onApprovalClose,
   onCreateSession,
   onUpdateSession,
   onSwitchBranch,
@@ -2497,6 +2659,8 @@ function ComposerV2({
   branchState: BranchState
   contextInputTokens: number
   isWorking: boolean
+  approvalRequest?: PermissionApprovalRequest | null
+  onApprovalClose?: () => void
   onCreateSession: (options: {
     providerProfileId?: string
     modelId?: string
@@ -2784,6 +2948,12 @@ function ComposerV2({
   return (
     <div className="composer-wrap">
       <div className="composer-inner">
+        {approvalRequest && (
+          <InlineApprovalRequest
+            request={approvalRequest}
+            {...(onApprovalClose !== undefined ? { onClose: onApprovalClose } : {})}
+          />
+        )}
         {queuedMessages.length > 0 && queueVisible && (
           <div className="composer-queue-panel">
             {queuedMessages.map((message) => (

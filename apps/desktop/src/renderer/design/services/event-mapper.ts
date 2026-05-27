@@ -6,6 +6,8 @@ export interface UIMessage {
   status: 'streaming' | 'completed' | 'error'
   blocks: UIBlock[]
   usage: { inputTokens: number; outputTokens: number; estimatedCostUsd: number | undefined } | null
+  /** 消息创建时间（ISO 8601），取自事件 timestamp */
+  timestamp?: string | undefined
 }
 
 export type UIBlock =
@@ -52,6 +54,7 @@ export class MessageBuilder {
           status: 'completed',
           blocks: [{ kind: 'text', content: event.content, isStreaming: false }],
           usage: null,
+          timestamp: event.timestamp,
         })
         break
       }
@@ -62,7 +65,7 @@ export class MessageBuilder {
           : undefined
 
         if (!msg) {
-          msg = { id: event.id, role: 'assistant', status: 'streaming', blocks: [], usage: null }
+          msg = { id: event.id, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp: event.timestamp }
           this.messages.push(msg)
           this.currentAssistantId = msg.id
         }
@@ -98,7 +101,7 @@ export class MessageBuilder {
       }
 
       case 'agent_thinking': {
-        const msg = this.getOrCreateAssistant(event.id)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         if (event.mode === 'complete') {
           msg.blocks = msg.blocks.filter(block => block.kind !== 'thinking')
           if (event.content.length > 0) {
@@ -128,7 +131,7 @@ export class MessageBuilder {
       }
 
       case 'tool_call': {
-        const msg = this.getOrCreateAssistant(event.id)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         msg.blocks.push({
           kind: 'tool_call',
           toolCallId: event.toolCallId,
@@ -177,7 +180,7 @@ export class MessageBuilder {
       }
 
       case 'agent_error': {
-        const msg = this.getOrCreateAssistant(event.id)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         msg.status = 'error'
         this.finishStreamingBlocks(msg)
         msg.blocks.push({ kind: 'error', code: event.code, message: event.message, retryable: event.retryable })
@@ -215,7 +218,7 @@ export class MessageBuilder {
       }
 
       case 'file_change': {
-        const msg = this.getOrCreateAssistant(event.id)
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         msg.blocks.push({ kind: 'file_change', changeType: event.changeType, path: event.path, diff: event.diff ?? undefined })
         break
       }
@@ -244,14 +247,14 @@ export class MessageBuilder {
         // Stash the plan for PlanApprovalModal (global overlay)
         this.latestPlanProposed = event.plan
         // Also emit a UIBlock so it renders inline in the message stream
-        const planMsg = this.getOrCreateAssistant(event.id)
+        const planMsg = this.getOrCreateAssistant(event.id, event.timestamp)
         planMsg.blocks.push({ kind: 'plan_proposed', plan: event.plan })
         break
       }
 
       case 'permission_request': {
         // Emit a UIBlock for inline rendering (also handled as global modal in App.tsx)
-        const permMsg = this.getOrCreateAssistant(event.id)
+        const permMsg = this.getOrCreateAssistant(event.id, event.timestamp)
         permMsg.blocks.push({
           kind: 'permission_request',
           requestId: event.requestId,
@@ -271,12 +274,12 @@ export class MessageBuilder {
     return [...this.messages]
   }
 
-  private getOrCreateAssistant(eventId: string): UIMessage {
+  private getOrCreateAssistant(eventId: string, timestamp?: string | undefined): UIMessage {
     if (this.currentAssistantId) {
       const existing = this.messages.find(m => m.id === this.currentAssistantId)
       if (existing) return existing
     }
-    const msg: UIMessage = { id: eventId, role: 'assistant', status: 'streaming', blocks: [], usage: null }
+    const msg: UIMessage = { id: eventId, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp }
     this.messages.push(msg)
     this.currentAssistantId = msg.id
     return msg
