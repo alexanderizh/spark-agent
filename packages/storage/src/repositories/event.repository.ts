@@ -163,6 +163,15 @@ export class EventRepository extends BaseRepository {
     return result.changes
   }
 
+  /** 按 ID 列表批量删除事件 */
+  deleteEventsByIds(ids: string[]): number {
+    if (ids.length === 0) return 0
+    const placeholders = ids.map(() => '?').join(',')
+    const stmt = this.raw.prepare(`DELETE FROM agent_events WHERE id IN (${placeholders})`)
+    const result = stmt.run(...ids)
+    return result.changes
+  }
+
   /** 按事件内容模糊搜索，返回匹配的 session ID 列表和内容片段 */
   searchByContent(query: string, limit: number = 20): Array<{ sessionId: string; snippet: string }> {
     const pattern = `%${query}%`

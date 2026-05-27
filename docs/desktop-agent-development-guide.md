@@ -323,12 +323,14 @@ Spark 创新点:
 能力:
 
 - `/` 命令补全。
-- 命令分组、搜索、别名、最近使用。
+- **三层命令架构**: SDK 原生命令 → 程序内置命令 → Agent 技能命令。
+- 命令分组（12 组）、搜索、别名、最近使用。
 - 参数表单化输入。
 - 命令执行前预览影响范围。
-- 命令可由系统、Skill、MCP、Workflow、Team policy 注册。
+- 命令可由 SDK、系统、Skill、MCP、Workflow、Team policy 注册。
 - 命令可被权限引擎拦截。
 - 命令执行结果进入 timeline，成为可审计事件。
+- 支持 Claude Agent SDK 21 命令 + Codex CLI ~40 命令的原生映射。
 
 #### 5.0.6 Run Capsule 可复盘运行胶囊
 
@@ -422,39 +424,122 @@ Spark 的输入框分为三种输入:
 - 让非技术用户也能通过补全、说明、参数表单使用命令。
 - 把所有命令纳入权限、审计、规则和工作流系统。
 
-#### 命令交互
+#### 三层命令架构
 
-输入 `/` 后弹出命令面板:
+命令系统按来源分为三层，命令面板按层分组展示:
 
-- 支持模糊搜索，例如输入 `/mod` 匹配 `/model`。
-- 命令按分组展示: Session、Model、Context、Permission、Workflow、Agent、MCP、Skill、Team、System。
-- 每个命令显示描述、作用域、风险等级、快捷参数。
-- 命令有参数时，支持 inline 参数和表单参数两种方式。
-- 命令执行前如涉及高风险操作，展示预览和审批。
-- 命令执行结果进入当前 timeline。
-
-命令语法:
-
-```text
-/command [subcommand] [--flag value] [@target] [free text]
+```
+┌─────────────────────────────────────────────────────┐
+│ Layer 1: SDK 原生命令                                │
+│   Claude Agent SDK 内置命令 + Codex SDK 内置命令      │
+│   来源: SDK binary 自带，Spark 做映射和适配            │
+├─────────────────────────────────────────────────────┤
+│ Layer 2: 程序内置命令                                │
+│   Spark 程序自身提供的命令（会话管理、git 操作、        │
+│   资源管理、权限控制、工作流等）                        │
+│   来源: Spark CommandRegistry 硬编码注册               │
+├─────────────────────────────────────────────────────┤
+│ Layer 3: Agent 技能命令                              │
+│   当前 Agent（默认 Code Agent）安装的 Skill 注册的命令  │
+│   来源: Skill manifest / Agent 配置 / MCP prompt      │
+└─────────────────────────────────────────────────────┘
 ```
 
-示例:
+**当前所有会话使用内置 Code Agent**，未来多 Agent 时用户可在会话中选择不同 Agent 配置，不同 Agent 的 Layer 3 命令不同。Agent 切换功能后续开发。
 
-```text
-/model coder codex-high
-/approval workspace-write
-/context mode surgical @src/runtime
-/compact --keep decisions,artifacts
-/workflow run feature-development --from plan
-/agent spawn reviewer --model claude-fast
-/mcp enable github --session
-/skill install ./skills/code-review
-/resource eco
-/team request-approval @alex "允许执行数据库迁移检查"
-```
+##### Layer 1: SDK 原生命令
 
-#### 内置命令清单
+**Claude Agent SDK 内置命令**（21 个，来源: Claude Code CLI `slash_command.rs`）:
+
+Spark 对 Claude SDK 命令做两层处理:
+- **直接映射**: 功能与 Spark 重合的命令直接映射到 Spark 实现（如 `/model` → Spark 的 `/model`）
+- **兼容保留**: Claude 特有命令保持原名，确保 Claude 用户习惯不丢失
+
+| Claude 命令 | 映射策略 | Spark 对应 | 说明 |
+|-------------|---------|-----------|------|
+| `/help` | 直接映射 | `/help` | 命令帮助 |
+| `/status` | 直接映射 | `/status` | 会话状态 |
+| `/model` | 直接映射 | `/model` | 切换模型 |
+| `/compact` | 直接映射 | `/compact` | 压缩上下文 |
+| `/clear` | 直接映射 | `/clear` | 清空会话 |
+| `/config` | 兼容保留 | `/config` | SDK 配置查看 |
+| `/cost` | 映射到 | `/usage` | 成本统计 |
+| `/mcp` | 兼容保留 | `/mcp` | MCP 管理 |
+| `/permissions` | 映射到 | `/approval` | 权限管理 |
+| `/init` | 兼容保留 | `/init` | 初始化项目 |
+| `/add-dir` | 兼容保留 | `/add-dir` | 添加工作目录 |
+| `/memory` | 兼容保留 | `/memory` | 管理记忆文件 |
+| `/doctor` | 兼容保留 | `/doctor` | 环境诊断 |
+| `/login` | 兼容保留 | `/login` | 登录 |
+| `/logout` | 兼容保留 | `/logout` | 登出 |
+| `/terminal-setup` | 兼容保留 | `/terminal-setup` | 终端配置 |
+| `/vim` | 兼容保留 | `/vim` | Vim 模式 |
+| `/bug` | 兼容保留 | `/bug` | 报告 Bug |
+| `/review` | 兼容保留 | `/review` | 代码审查 |
+| `/pr_comments` | 兼容保留 | `/pr-comments` | PR 评论审查 |
+| `/agents` | 映射到 | `/agent list` | 查看 Agent |
+
+此外，Claude SDK 支持:
+- **项目命令**: `.claude/commands/` 目录下的 `.md` 文件自动注册为 `/project:xxx` 命令
+- **个人命令**: `~/.claude/commands/` 目录下的 `.md` 文件注册为 `/user:xxx` 命令
+- **MCP prompt 命令**: MCP server 提供的 prompt 注册为 `/mcp__<server>__<prompt>` 命令
+
+Spark 应适配这些动态命令注册机制。
+
+**Codex CLI 内置命令**（~40 个，来源: Codex CLI `slash_command.rs`）:
+
+Codex CLI 的 TUI 模式提供了丰富的 slash commands。Spark 做映射适配:
+
+| Codex 命令 | 映射策略 | Spark 对应 | 说明 |
+|------------|---------|-----------|------|
+| `/new` | 映射到 | `/new-session` | 新建会话 |
+| `/resume` | 兼容保留 | `/resume` | 恢复会话 |
+| `/fork` | 兼容保留 | `/fork` | 分叉会话 |
+| `/clear` | 直接映射 | `/clear` | 清空 |
+| `/rename` | 直接映射 | `/rename` | 重命名 |
+| `/quit` | 兼容保留 | — | 退出程序（桌面端不适用） |
+| `/init` | 直接映射 | `/init` | 初始化 AGENTS.md |
+| `/model` | 直接映射 | `/model` | 切换模型 |
+| `/permissions` | 映射到 | `/approval` | 权限管理 |
+| `/compact` | 直接映射 | `/compact` | 压缩上下文 |
+| `/status` | 直接映射 | `/status` | 状态查看 |
+| `/diff` | 兼容保留 | `/diff` | 查看 git diff |
+| `/copy` | 兼容保留 | `/copy` | 复制上次输出 |
+| `/plan` | 兼容保留 | `/plan` | Plan 模式 |
+| `/goal` | 兼容保留 | `/goal` | 长任务目标管理 |
+| `/side` | 兼容保留 | `/side` | 旁路对话 |
+| `/mcp` | 直接映射 | `/mcp` | MCP 管理 |
+| `/memories` | 映射到 | `/memory` | 记忆管理 |
+| `/skills` | 映射到 | `/skill list` | 技能管理 |
+| `/agent` | 映射到 | `/agent` | Agent 管理 |
+| `/review` | 直接映射 | `/review` | 代码审查 |
+| `/vim` | 兼容保留 | `/vim` | Vim 模式 |
+| `/theme` | 映射到 | `/settings theme` | 主题切换 |
+| `/experimental` | 兼容保留 | `/experimental` | 实验特性 |
+| `/raw` | 兼容保留 | `/raw` | 原始输出模式 |
+| `/mention` | 映射到 | `@` 触发器 | 文件提及（已在 Composer 支持） |
+| `/ide` | 兼容保留 | `/ide` | IDE 上下文 |
+| `/apps` | 兼容保留 | `/apps` | 应用管理 |
+| `/plugins` | 兼容保留 | `/plugins` | 插件管理 |
+| `/ps` | 映射到 | `/queue` | 后台进程 |
+| `/stop` | 映射到 | `/kill-run` | 停止运行 |
+| `/sandbox-*` | 映射到 | `/sandbox` | 沙箱配置 |
+| `/approve` | 映射到 | `/approval` | 审批操作 |
+| `/keymap` | 映射到 | `/shortcuts` | 快捷键配置 |
+| `/personality` | 兼容保留 | `/personality` | 沟通风格 |
+| `/hooks` | 兼容保留 | `/hooks` | 生命周期钩子 |
+| `/title` | 兼容保留 | `/title` | 终端标题配置 |
+| `/statusline` | 兼容保留 | `/statusline` | 状态栏配置 |
+| `/debug-config` | 兼容保留 | `/debug-config` | 调试配置 |
+
+**Codex TUI 交互适配说明**:
+- Codex 的 `@` 文件搜索 → Spark Composer 的 `@` mention 已实现
+- Codex 的 `Esc-Esc` 消息编辑 → Spark 使用直接点击编辑
+- Codex 的键盘快捷键 → Spark 的全局快捷键系统已实现
+
+##### Layer 2: 程序内置命令
+
+Spark 程序自身注册的命令，按功能分组:
 
 Session:
 
@@ -466,6 +551,9 @@ Session:
 - `/export markdown|jsonl|html`: 导出会话。
 - `/undo`: 撤销上一组未提交文件变更。
 - `/checkpoint create|restore|list`: 管理 checkpoint。
+- `/new-session`: 创建新会话。
+- `/fork`: 分叉当前会话。
+- `/resume <id>`: 恢复已保存会话。
 
 Model:
 
@@ -542,15 +630,79 @@ Team:
 - `/comment <text>`: 给当前 run 留评论。
 - `/policy inspect`: 查看团队策略。
 
+Git:
+
+- `/diff`: 查看当前 git diff（含未跟踪文件）。
+- `/git status`: 查看 git 状态。
+- `/git log [n]`: 查看最近 n 条提交记录。
+- `/git stash`: 暂存当前变更。
+
+Utility:
+
+- `/copy`: 复制上次 agent 输出为 Markdown。
+- `/doctor`: 运行环境诊断。
+- `/init`: 初始化项目配置文件（AGENTS.md / .claude/）。
+- `/add-dir <path>`: 添加工作目录。
+- `/memory`: 管理记忆文件。
+- `/plan [task]`: 进入 Plan 模式。
+- `/review [instructions]`: 代码审查。
+- `/usage`: 查看当前会话 token/cost 统计。
+
+##### Layer 3: Agent 技能命令
+
+当前默认 Agent 为 Code Agent，其技能命令来源于:
+- Agent 配置中启用的 Skill manifest 注册的命令
+- MCP server 提供的 prompt 命令（`/mcp__<server>__<prompt>`）
+- 项目/个人自定义命令（`.spark/commands/` 或 `~/.spark/commands/`）
+
+Layer 3 命令随 Agent 切换而变化（Agent 切换功能后续开发）。
+
+#### 命令交互
+
+输入 `/` 后弹出命令面板:
+
+- 支持模糊搜索，例如输入 `/mod` 匹配 `/model`。
+- 命令按三层+分组展示: SDK 原生命令 → 程序内置命令（按 Session/Model/Context/Permission/Workflow/Agent/MCP/Skill/Resource/Team/Git/Utility 分组） → Agent 技能命令。
+- 每个命令显示描述、来源层（SDK/程序/技能）、作用域、风险等级、快捷参数。
+- 命令有参数时，支持 inline 参数和表单参数两种方式。
+- 命令执行前如涉及高风险操作，展示预览和审批。
+- 命令执行结果进入当前 timeline。
+
+命令语法:
+
+```text
+/command [subcommand] [--flag value] [@target] [free text]
+```
+
+示例:
+
+```text
+/model coder codex-high
+/approval workspace-write
+/context mode surgical @src/runtime
+/compact --keep decisions,artifacts
+/workflow run feature-development --from plan
+/agent spawn reviewer --model claude-fast
+/mcp enable github --session
+/skill install ./skills/code-review
+/resource eco
+/team request-approval @alex "允许执行数据库迁移检查"
+/diff
+/doctor
+```
+
 #### 命令注册接口
 
 命令由 Command Registry 管理，系统、Skill、MCP、Workflow 都可以注册命令。
 
 ```ts
+type CommandLayer = "sdk" | "builtin" | "skill";
+
 type SlashCommand = {
   id: string;
   name: string;
   aliases: string[];
+  layer: CommandLayer;
   group:
     | "session"
     | "model"
@@ -562,6 +714,8 @@ type SlashCommand = {
     | "skill"
     | "resource"
     | "team"
+    | "git"
+    | "utility"
     | "system";
   description: string;
   scope: "global" | "workspace" | "session" | "workflow" | "team";
@@ -572,16 +726,31 @@ type SlashCommand = {
 };
 ```
 
+命令解析器升级（支持子命令和别名）:
+
+```ts
+interface ParsedCommand {
+  name: string;         // 主命令名
+  subcommand?: string;  // 子命令（如 workflow 的 run/pause/resume）
+  args: string[];       // 位置参数
+  flags: Record<string, string>;  // --flag value
+  targets: string[];    // @mention 目标
+  freeText?: string;    // 命令后的自由文本
+  rawText: string;      // 原始输入
+}
+```
+
 命令执行流程:
 
 1. 输入解析: 将用户输入解析为 command、subcommand、flags、targets、free text。
-2. 补全: 根据当前 session/workspace/team 状态返回候选命令和参数。
-3. 参数校验: 使用 zod/JSON Schema 校验。
-4. 预览: 展示将修改的配置、目标文件、权限变化、可能启动的进程。
-5. 权限检查: 交给 Permission Engine 判断是否需要审批。
-6. 执行: Command Runtime 调用对应 handler。
-7. 事件落库: 生成 `CommandInvokedEvent`、`CommandPreviewEvent`、`CommandResultEvent`。
-8. UI 更新: Timeline、Inspector、Toast、Settings 同步变化。
+2. 命令查找: 依次在 Layer 1（SDK）→ Layer 2（程序）→ Layer 3（技能）中查找，优先返回 Layer 1 匹配。
+3. 补全: 根据当前 session/workspace/team 状态返回候选命令和参数。
+4. 参数校验: 使用 zod/JSON Schema 校验。
+5. 预览: 展示将修改的配置、目标文件、权限变化、可能启动的进程。
+6. 权限检查: 交给 Permission Engine 判断是否需要审批。
+7. 执行: Command Runtime 调用对应 handler。
+8. 事件落库: 生成 `CommandInvokedEvent`、`CommandPreviewEvent`、`CommandResultEvent`。
+9. UI 更新: Timeline、Inspector、Toast、Settings 同步变化。
 
 #### 命令与自然语言混合
 
@@ -591,6 +760,7 @@ Spark 支持命令后追加自然语言，用于给 agent 提供上下文:
 /agent spawn reviewer 请只检查权限系统和 MCP 工具暴露风险
 /workflow run feature-development 实现 Phase 0 项目骨架，先写最小测试
 /context mode surgical 只允许查看 adapter 相关文件
+/review 重点检查 SQL 注入和 XSS 漏洞
 ```
 
 解析策略:
@@ -606,6 +776,22 @@ Spark 支持命令后追加自然语言，用于给 agent 提供上下文:
 - Skill 注册的命令默认 `risk=medium`，除非 manifest 明确声明低风险且通过 vetting。
 - MCP 注册的命令不能绕过 MCP Gateway。
 - 所有命令都进入 audit log。
+- SDK 原生命令的权限遵循对应 SDK 的约束，Spark 在上层增加额外审计。
+
+#### 当前实现状态与升级路线
+
+**当前已实现**（6 个命令）:
+- `/help`, `/status`, `/model`, `/compact`, `/clear`, `/approval`
+- 命令面板模糊搜索 + 键盘导航 + IPC 执行
+
+**升级为三层架构的步骤**:
+1. 升级 `CommandDefinition` 类型 → 扩展为 `SlashCommand` 类型（增加 layer、aliases、subcommand、scope、risk 枚举）
+2. 升级命令解析器 → 支持子命令解析、别名匹配、`@target` 提取、freeText 拆分
+3. 注册 SDK 命令层 → Claude SDK 21 命令 + Codex SDK 命令映射
+4. 扩展程序内置命令 → 按 PRD 完整实现 Session/Model/Context/Permission/Workflow/Agent/MCP/Skill/Resource/Team/Git/Utility 分组
+5. 实现 Skill 命令注册 → Agent Skill manifest 可注册命令
+6. 升级命令面板 UI → 三层分组展示 + 来源标记
+7. 升级命令执行结果 → 从 toast-only 改为 timeline 事件
 
 ### 5.3 模型与 Provider 配置
 
@@ -2832,7 +3018,7 @@ Day 7:
 | **Resource Governor** | ❌ 缺失 | §5.0.2 | 无法监控 CPU/内存、设置 run 预算、kill switch |
 | **Workflow 执行引擎** | ❌ 缺失 | §5.0.3, §5.11 | WorkflowView 是纯静态演示，无 DAG 执行 |
 | **Visual Agent Graph** | ❌ 缺失 | §5.0.4 | AgentsView 是 100% 硬编码假数据 |
-| **Command Runtime (/命令)** | ✅ 已完成 | §5.0.5, §5.2.1 | Command Runtime 完整实现，6 个内置命令 + 命令注册/解析/执行（commit `41c98e5`） |
+| **Command Runtime (/命令)** | 🟡 需升级 | §5.0.5, §5.2.1 | 基础版已完成（6 命令），需升级为三层架构（SDK 命令 + 程序命令 + Agent 技能命令）+ 10+ 分组 + 子命令支持（详见 §5.2.1 升级路线） |
 | **Run Capsule** | ❌ 缺失 | §5.0.6 | 无法完整回放一次 Agent 运行 |
 | **Usage Ledger** | ✅ 已完成 | §5.3.1 | 完整 6 层架构：Repository → Service → IPC → 前端展示（commit `f7efe0c`，+925/-31） |
 | **多模态能力路由** | ❌ 缺失 | §5.3.2 | 无法路由 vision/image-gen 等多模态能力 |
@@ -2892,7 +3078,7 @@ Day 7:
 | dialog:open-directory | ✅ | ✅ | ✅ |
 | stream:session:agent-event | ✅ | ✅ | ✅ |
 | stream:permission:approval-request | ✅ | ✅ | ✅ |
-| command:suggest/preview/execute | ✅ | ✅ | ✅ Command Runtime 完整实现（commit `41c98e5`） |
+| command:suggest/preview/execute | ✅ | 🟡 需升级 | 🟡 基础版可用，需升级为三层架构（subcommand 解析、SDK 命令映射、timeline 事件） |
 | mcp:start-server/list-tools/call-tool | ✅ | ✅ | ✅ MCP Gateway stdio/SSE 完整实现（commit `8b88e80`） |
 | workflow:run/pause/resume/cancel | ✅ | ❌ 未实现 | ❌ |
 | resource:status/kill-run/kill-workspace | ✅ | ❌ 未实现 | ❌ |
@@ -2947,7 +3133,7 @@ Day 7:
 |------|------|------|------|
 | **Toast** | components/Toast.tsx | 🟢 可用 | ToastProvider + useToast + 4 种类型 + 13 处接入 |
 | **PermissionModal** | views/overlays.tsx | 🟢 可用 | 真实 IPC permission:approval-respond + allow-once/allow-session/deny |
-| **CommandPalette** | views/overlays.tsx | 🟢 可用 | 搜索过滤 + 键盘导航 + 命令执行 + 6 个内置命令（P3-09 + P4-05） |
+| **CommandPalette** | views/overlays.tsx | 🟡 需升级 | 搜索过滤+键盘导航+6 命令可用，需升级为三层分组展示+来源标记+子命令支持 |
 | **ChatInteractions** | ChatInteractions.tsx | 🟢 已集成 | ErrorCard + HunkDiff + PlanCard + SubagentCard + ContextWarn + 权限卡片已集成 |
 | **useIpc** | hooks/useIpc.ts | 🟢 可用 | useIpcInvoke + useIpcStream, 类型安全 |
 | **event-mapper** | services/event-mapper.ts | 🟢 可用 | MessageBuilder + UIMessage + UIBlock, 处理 10+ 事件类型 |
@@ -3491,27 +3677,33 @@ PRD §5.0.2。
 - [ ] 资源超限时 run 暂停
 - [ ] Kill Switch 可一键停止
 
-#### P4-07 Command Runtime (/命令系统) 🔴
+#### P4-07 Command Runtime 三层架构升级 🔴
 
 **优先级: P0（核心能力）**
 
-PRD §5.2.1，当前完全缺失。
+PRD §5.2.1，基础版已有 6 个命令，需升级为三层命令架构。
 
 任务范围:
 
-- [ ] Command Registry: 命令注册接口
-- [ ] 命令解析: 解析 `/command [subcommand] [--flag value] [@target] [free text]`
-- [ ] 命令补全 UI: 输入 `/` 后弹出补全面板
-- [ ] 内置命令: /help /status /model /approval /context /compact /resource /kill-run
-- [ ] 命令预览: 高风险命令执行前预览影响
-- [ ] 命令审计: 所有命令执行写入审计日志
-- [ ] 数据库表: `slash_commands`
+- [ ] **类型升级**: `CommandDefinition` → `SlashCommand`（增加 layer、aliases、subcommand、scope、risk 枚举）
+- [ ] **解析器升级**: 支持子命令（`/workflow run`）、别名匹配（`/quit` → `/exit`）、`@target` 提取、freeText 拆分
+- [ ] **Layer 1 SDK 命令注册**: Claude SDK 21 命令 + Codex SDK ~40 命令映射注册
+- [ ] **Layer 2 程序命令扩展**: 按 PRD 完整实现 Session/Model/Context/Permission/Git/Utility 分组（~30 个新命令）
+- [ ] **Layer 3 Skill 命令注册**: Agent Skill manifest 可注册命令（骨架，待 Skill Runtime 集成）
+- [ ] **命令面板 UI 升级**: 三层分组展示 + 来源标记（SDK/程序/技能）
+- [ ] **执行结果升级**: 从 toast-only 改为 timeline 事件 + toast
+- [ ] **命令补全**: 输入 `/` 后在 Composer 内弹出 inline 补全面板
+- [ ] **命令预览**: 高风险命令执行前预览影响
+- [ ] **命令审计**: 所有命令执行写入审计日志
+- [ ] **数据库表**: 创建 `slash_commands` 表
 
 验收标准:
 
-- [ ] 输入 `/` 弹出命令补全
-- [ ] `/status` 可执行并显示结果
+- [ ] 输入 `/` 弹出命令面板，展示三层分组
+- [ ] `/status` 可执行并显示结果在 timeline
 - [ ] `/model` 可切换模型
+- [ ] `/diff`、`/doctor`、`/usage` 等 SDK 命令可执行
+- [ ] `/workflow list` 子命令可解析
 - [ ] 高风险命令有预览
 
 #### P4-08 Conversation-to-Workflow 提炼 🟡
@@ -3678,6 +3870,7 @@ PRD §5.0.3。
   消息悬浮时间+复制按钮 (commit `1fd5629`)
 
 下一批 (P0 核心差距 — 最高优先级):
+  P4-07 Command Runtime 三层架构升级 ← 命令系统升级为三层架构
   INFRA-01 Claude Agent SDK 集成 ← 当前唯一缺失的 SDK
   P4-01 Workflow 执行引擎 ← Workflow 仍为静态演示
   P4-03 Multi-Agent 编排基础 ← 多 Agent 核心能力

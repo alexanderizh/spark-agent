@@ -21,8 +21,8 @@ export type {
   IModelAdapter,
   ToolDefinition,
 } from './adapters/types.js'
-export { AgentLoop, ToolRegistry, AgentEventEmitter, isCommand, parseCommand, CommandRegistry, createBuiltinRegistry } from './core/index.js'
-export type { AgentConfig, AgentContext, ToolContext, RegisteredTool, ToolResult, EventListener, ParsedCommand, CommandDefinition, CommandContext, CommandResult, CommandDeps } from './core/index.js'
+export { AgentLoop, ToolRegistry, AgentEventEmitter, isCommand, parseCommand, parseCommandWithSubcommand, CommandRegistry, createBuiltinRegistry } from './core/index.js'
+export type { AgentConfig, AgentContext, ToolContext, RegisteredTool, ToolResult, EventListener, ParsedCommand, CommandDefinition, CommandContext, CommandResult, CommandDeps, CommandLayer, CommandGroup, CommandScope, CommandRisk, CommandListItem } from './core/index.js'
 export { SkillRegistryService } from './services/skill-registry/index.js'
 export { SettingsService } from './services/settings.service.js'
 export { UsageLedgerService } from './services/usage-ledger.service.js'

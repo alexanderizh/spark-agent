@@ -1,9 +1,11 @@
 /**
  * 覆盖层组件：命令面板、权限弹窗
  *
- * CommandPalette — 增强版命令面板：
- *   - IPC 驱动命令 + UI 内置快捷命令
- *   - 命令分组（导航/操作/设置）
+ * CommandPalette — 三层命令架构面板：
+ *   Layer 1: SDK 原生命令（Claude/Codex）
+ *   Layer 2: 程序内置命令（Session/Model/Context/...）
+ *   Layer 3: Agent 技能命令（Skill manifest）
+ *   + UI 内置快捷命令（导航/操作）
  *   - 模糊搜索匹配
  *   - 最近使用命令优先排序
  *   - 快捷键提示 UI
@@ -17,18 +19,22 @@ import { SparkInput } from '../components/FormControls'
 import { useToast } from '../components/Toast'
 import { getShortcutLabel, DEFAULT_SHORTCUTS, formatShortcut } from '../hooks/useKeyboard'
 import type { ShortcutId } from '../hooks/useKeyboard'
-import type { PermissionApprovalRequest, PermissionApprovalDecision } from '@spark/protocol'
+import type { PermissionApprovalRequest, PermissionApprovalDecision, CommandListItem, CommandLayer, CommandGroup, CommandRisk } from '@spark/protocol'
 
 /* ============================================================
    Types
    ============================================================ */
 
 type CommandItem = {
+  id: string
   name: string
+  aliases: string[]
+  layer: CommandLayer | 'ui'
+  group: string
   description: string
-  category: string
+  risk: CommandRisk | 'none'
   usage?: string
-  isDangerous?: boolean
+  hasSubcommands?: boolean
   /** Optional shortcut ID for displaying keyboard hint */
   shortcutId?: ShortcutId | undefined
   /** Display shortcut hint directly (overrides shortcutId) */
@@ -37,6 +43,7 @@ type CommandItem = {
 
 type PaletteSection = {
   group: string
+  layer: CommandLayer | 'ui'
   items: CommandItem[]
 }
 
@@ -176,6 +183,91 @@ function highlightMatch(text: string, query: string): ReactNode {
 }
 
 /* ============================================================
+   Layer & Group helpers
+   ============================================================ */
+
+const LAYER_LABELS: Record<string, string> = {
+  sdk: 'SDK 原生命令',
+  builtin: '程序内置命令',
+  skill: 'Agent 技能命令',
+  ui: '快捷操作',
+}
+
+const GROUP_LABELS: Record<string, string> = {
+  session: '会话',
+  model: '模型',
+  context: '上下文',
+  permission: '权限',
+  workflow: '工作流',
+  agent: 'Agent',
+  mcp: 'MCP',
+  skill: '技能',
+  resource: '资源',
+  team: '团队',
+  git: 'Git',
+  utility: '工具',
+  system: '系统',
+  navigation: '导航',
+  action: '操作',
+  settings: '设置',
+}
+
+function getGroupLabel(group: string): string {
+  return GROUP_LABELS[group] ?? group
+}
+
+function getGroupIcon(group: string): ReactNode {
+  const iconMap: Record<string, ReactNode> = {
+    session: <Icons.Chat size={12} />,
+    model: <Icons.Sparkles size={12} />,
+    context: <Icons.File size={12} />,
+    permission: <Icons.Shield size={12} />,
+    workflow: <Icons.Workflow size={12} />,
+    agent: <Icons.Agents size={12} />,
+    mcp: <Icons.MCP size={12} />,
+    skill: <Icons.Skills size={12} />,
+    resource: <Icons.Cpu size={12} />,
+    team: <Icons.Team size={12} />,
+    git: <Icons.GitBranch size={12} />,
+    utility: <Icons.Wrench size={12} />,
+    system: <Icons.Settings size={12} />,
+    navigation: <Icons.Compass size={12} />,
+    action: <Icons.Command size={12} />,
+    settings: <Icons.Settings size={12} />,
+  }
+  return iconMap[group] ?? <Icons.Command size={12} />
+}
+
+function getLayerBadgeColor(layer: CommandLayer | 'ui'): string {
+  switch (layer) {
+    case 'sdk': return 'var(--color-accent, #6366f1)'
+    case 'builtin': return 'var(--color-success, #22c55e)'
+    case 'skill': return 'var(--color-warning, #f59e0b)'
+    case 'ui': return 'var(--color-muted, #94a3b8)'
+  }
+}
+
+function getRiskBadge(risk: CommandRisk | 'none'): ReactNode | null {
+  if (risk === 'none' || risk === 'low') return null
+  const colors: Record<string, string> = {
+    medium: 'var(--color-warning, #f59e0b)',
+    high: 'var(--color-error, #ef4444)',
+  }
+  return (
+    <span className="badge" style={{
+      marginLeft: 6,
+      fontSize: 10,
+      padding: '1px 5px',
+      borderRadius: 3,
+      background: colors[risk] ?? colors.medium,
+      color: '#fff',
+    }}>
+      {risk === 'high' ? '危险' : '注意'}
+    </span>
+  )
+}
+
+/* ============================================================
    CommandPalette
    ============================================================ */
 
@@ -191,14 +283,14 @@ export function CommandPalette({
   onNewSession?: () => void
 }) {
   const [query, setQuery] = useState('')
-  const [ipcCommands, setIpcCommands] = useState<CommandItem[]>([])
+  const [ipcCommands, setIpcCommands] = useState<CommandListItem[]>([])
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const resultsRef = useRef<HTMLDivElement | null>(null)
   const inputRef = useRef<HTMLInputElement | null>(null)
   const { toast } = useToast()
 
-  // Load IPC commands
+  // Load IPC commands (three-layer)
   useEffect(() => {
     let cancelled = false
     window.spark.invoke('command:list', {})
@@ -290,22 +382,38 @@ export function CommandPalette({
     },
   ], [onNavigate, onNewSession])
 
-  // Merge all commands: UI commands + IPC commands
+  // Merge all commands: IPC three-layer + UI commands
   const allCommands = useMemo(() => {
-    const ipcItems: CommandItem[] = ipcCommands.map((cmd) => ({
-      ...cmd,
-      category: cmd.category || 'general',
-    }))
+    // Convert IPC commands (from backend registry)
+    const ipcItems: CommandItem[] = ipcCommands.map((cmd) => {
+      const item: CommandItem = {
+        id: cmd.id,
+        name: cmd.name,
+        aliases: cmd.aliases ?? [],
+        layer: cmd.layer,
+        group: cmd.group,
+        description: cmd.description,
+        risk: cmd.risk,
+      }
+      if (cmd.usage !== undefined) item.usage = cmd.usage
+      if (cmd.hasSubcommands !== undefined) item.hasSubcommands = cmd.hasSubcommands
+      return item
+    })
+    // Convert UI commands
     const uiItems: CommandItem[] = uiCommands.map((cmd) => ({
+      id: cmd.id,
       name: cmd.name,
+      aliases: [],
+      layer: 'ui' as const,
+      group: cmd.category,
       description: cmd.description,
-      category: cmd.category,
+      risk: 'none' as const,
       shortcutId: cmd.shortcutId,
     }))
-    return [...uiItems, ...ipcItems]
+    return [...ipcItems, ...uiItems]
   }, [ipcCommands, uiCommands])
 
-  // Filter, sort (recent first), and group
+  // Filter, sort (recent first), and group by layer + group
   const filteredSections = useCallback((): PaletteSection[] => {
     const lowerQuery = query.toLowerCase().trim()
     const recentIds = loadRecentCommands()
@@ -313,10 +421,10 @@ export function CommandPalette({
     let filtered: CommandItem[]
 
     if (lowerQuery) {
-      // Fuzzy search
+      // Fuzzy search across name, description, aliases, group
       const scored = allCommands
         .map((cmd) => {
-          const searchable = `${cmd.name} ${cmd.description} ${cmd.category}`
+          const searchable = `${cmd.name} ${cmd.aliases.join(' ')} ${cmd.description} ${cmd.group} ${getGroupLabel(cmd.group)}`
           const score = fuzzyScore(searchable, lowerQuery)
           return { cmd, score }
         })
@@ -325,30 +433,49 @@ export function CommandPalette({
         .map((x) => x.cmd)
       filtered = scored
     } else {
-      // No query: show recent first, then all
+      // No query: show recent first, then all grouped by layer
       const recentSet = new Set(recentIds)
       const recentItems = recentIds
-        .map((id) => allCommands.find((c) => c.name === id || `/${c.name}` === id || id === `ui:${c.category}`))
+        .map((id) => allCommands.find((c) => c.name === id || c.id === id || `/${c.name}` === id || c.aliases.includes(id)))
         .filter((x): x is CommandItem => !!x)
-      const rest = allCommands.filter((c) => !recentSet.has(c.name) && !recentSet.has(`/${c.name}`))
+      const rest = allCommands.filter((c) => !recentSet.has(c.name) && !recentSet.has(`/${c.name}`) && !recentSet.has(c.id))
       filtered = [...recentItems, ...rest]
     }
 
     if (filtered.length === 0) return []
 
-    // Group by enhanced category
-    const groupMap = new Map<string, CommandItem[]>()
+    // Group by layer → group
+    const sectionMap = new Map<string, PaletteSection>()
+    const layerOrder: Array<CommandLayer | 'ui'> = ['sdk', 'builtin', 'skill', 'ui']
+
     for (const cmd of filtered) {
-      const group = getEnhancedCategoryLabel(cmd.category, lowerQuery ? undefined : recentIds)
-      const items = groupMap.get(group) ?? []
-      items.push(cmd)
-      groupMap.set(group, items)
+      const layer = cmd.layer
+      const group = cmd.group
+      // If no query and in recent, put in a "最近使用" section
+      const isRecent = !lowerQuery && recentIds.includes(cmd.name)
+      const sectionKey = isRecent ? `recent` : `${layer}:${group}`
+      const sectionLabel = isRecent ? '最近使用' : `${LAYER_LABELS[layer] ?? layer} › ${getGroupLabel(group)}`
+
+      if (!sectionMap.has(sectionKey)) {
+        sectionMap.set(sectionKey, { group: sectionLabel, layer, items: [] })
+      }
+      sectionMap.get(sectionKey)!.items.push(cmd)
     }
 
-    const sections: PaletteSection[] = []
-    for (const [group, items] of groupMap) {
-      sections.push({ group, items })
-    }
+    // Sort sections: recent first, then by layer order, then by group
+    const sections = Array.from(sectionMap.values())
+    sections.sort((a, b) => {
+      // Recent first
+      if (a.group === '最近使用') return -1
+      if (b.group === '最近使用') return 1
+      // Then by layer order
+      const aLayerIdx = layerOrder.indexOf(a.layer)
+      const bLayerIdx = layerOrder.indexOf(b.layer)
+      if (aLayerIdx !== bLayerIdx) return aLayerIdx - bLayerIdx
+      // Then alphabetically by group
+      return a.group.localeCompare(b.group)
+    })
+
     return sections
   }, [allCommands, query])
 
@@ -380,7 +507,7 @@ export function CommandPalette({
     saveRecentCommand(cmd.name)
 
     // Check if it's a UI command
-    const uiCmd = uiCommands.find((c) => c.name === cmd.name)
+    const uiCmd = uiCommands.find((c) => c.id === cmd.id)
     if (uiCmd) {
       uiCmd.execute()
       onClose()
@@ -456,13 +583,15 @@ export function CommandPalette({
           ) : (
             sections.map((section) => (
               <div key={section.group}>
-                <div className="palette-group">{section.group}</div>
+                <div className="palette-group" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>{section.group}</span>
+                </div>
                 {section.items.map((cmd) => {
                   const idx = flatIndex++
                   const isSelected = idx === selectedIndex
                   return (
                     <PaletteCommandItem
-                      key={`${cmd.category}:${cmd.name}`}
+                      key={`${cmd.layer}:${cmd.id}`}
                       command={cmd}
                       selected={isSelected}
                       query={query.trim()}
@@ -504,11 +633,12 @@ function PaletteCommandItem({
   onClick: () => void
   onMouseEnter: () => void
 }) {
-  const icon = getEnhancedCategoryIcon(command.category)
+  const icon = getGroupIcon(command.group)
   const shortcutLabel = command.shortcutId
     ? getShortcutLabel(command.shortcutId)
     : command.shortcutHint ?? ''
-  const displayCommand = command.name.startsWith('ui:') ? command.name.replace('ui:', '') : `/${command.name}`
+  const displayCommand = command.layer === 'ui' ? command.name : `/${command.name}`
+  const layerColor = getLayerBadgeColor(command.layer)
 
   return (
     <div
@@ -518,58 +648,38 @@ function PaletteCommandItem({
     >
       <span className="ico">{icon}</span>
       <div className="body">
-        <div className="title">
-          {query ? highlightMatch(command.name, query) : command.name}
-          {command.isDangerous && <span className="badge danger" style={{ marginLeft: 6 }}>危险</span>}
+        <div className="title" style={{ display: 'flex', alignItems: 'center' }}>
+          <span>
+            {query ? highlightMatch(command.name, query) : command.name}
+          </span>
+          {getRiskBadge(command.risk)}
+          {command.aliases.length > 0 && (
+            <span className="muted" style={{ fontSize: 10, marginLeft: 4 }}>
+              ({command.aliases.join(', ')})
+            </span>
+          )}
         </div>
         <div className="hint">{command.description}</div>
       </div>
-      {(shortcutLabel || command.usage) && (
-        <div className="kbds">
-          {shortcutLabel && <span className="kbd" style={{ fontSize: 10 }}>{shortcutLabel}</span>}
-          {!shortcutLabel && command.usage && (
-            <span className="kbd" style={{ fontSize: 10 }}>{command.usage}</span>
-          )}
-        </div>
-      )}
+      <div className="kbds" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <span style={{
+          fontSize: 9,
+          padding: '1px 4px',
+          borderRadius: 3,
+          background: layerColor,
+          color: '#fff',
+          opacity: 0.7,
+          whiteSpace: 'nowrap',
+        }}>
+          {command.layer === 'sdk' ? 'SDK' : command.layer === 'builtin' ? '内置' : command.layer === 'skill' ? '技能' : ''}
+        </span>
+        {shortcutLabel && <span className="kbd" style={{ fontSize: 10 }}>{shortcutLabel}</span>}
+        {!shortcutLabel && command.usage && (
+          <span className="kbd" style={{ fontSize: 10 }}>{command.usage}</span>
+        )}
+      </div>
     </div>
   )
-}
-
-/* ============================================================
-   Enhanced category helpers
-   ============================================================ */
-
-function getEnhancedCategoryLabel(category: string, recentIds?: string[]): string {
-  if (recentIds) {
-    // When not searching, we use a "最近使用" group marker
-    // Handled in filteredSections
-  }
-  const labels: Record<string, string> = {
-    general: '通用',
-    model: '模型',
-    session: '会话',
-    workspace: '工作区',
-    debug: '调试',
-    navigation: '导航',
-    action: '操作',
-    settings: '设置',
-  }
-  return labels[category] ?? category
-}
-
-function getEnhancedCategoryIcon(category: string): ReactNode {
-  const iconMap: Record<string, ReactNode> = {
-    general: <Icons.Command size={12} />,
-    model: <Icons.Sparkles size={12} />,
-    session: <Icons.Chat size={12} />,
-    workspace: <Icons.Folder size={12} />,
-    debug: <Icons.Terminal size={12} />,
-    navigation: <Icons.Compass size={12} />,
-    action: <Icons.Command size={12} />,
-    settings: <Icons.Settings size={12} />,
-  }
-  return iconMap[category] ?? <Icons.Command size={12} />
 }
 
 /* ============================================================

@@ -880,6 +880,49 @@ body.sidebar-resizing {
   color: var(--text-muted);
   background: var(--bg-subtle);
 }
+
+.msg-hover-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--r-xs);
+  transition: color 0.15s, background 0.15s;
+  line-height: 0;
+}
+
+.msg-hover-delete:hover {
+  color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+/* --- Clear confirm bar in tabbar --- */
+.clear-confirm-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: color-mix(in srgb, var(--danger) 8%, var(--panel));
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, var(--border));
+  border-radius: var(--r-md);
+  padding: 2px 8px;
+  height: 26px;
+}
+
+.clear-confirm-text {
+  font-size: 11px;
+  color: var(--danger);
+  white-space: nowrap;
+}
+
+.clear-confirm-cancel {
+  font-size: 11px;
+  height: 20px;
+  padding: 0 8px;
+}
 .md-surface {
   min-width: 0;
   color: inherit;

@@ -41,8 +41,8 @@ function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 960,
-    minHeight: 600,
+    minWidth: 1000,
+    minHeight: 700,
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset', // macOS 原生红绿灯按钮

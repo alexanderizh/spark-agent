@@ -8,6 +8,8 @@ export interface UIMessage {
   usage: { inputTokens: number; outputTokens: number; estimatedCostUsd: number | undefined } | null
   /** 消息创建时间（ISO 8601），取自事件 timestamp */
   timestamp?: string | undefined
+  /** 参与构建此消息的所有事件 ID（用于删除时定位数据库事件） */
+  eventIds: string[]
 }
 
 export type UIBlock =
@@ -55,6 +57,7 @@ export class MessageBuilder {
           blocks: [{ kind: 'text', content: event.content, isStreaming: false }],
           usage: null,
           timestamp: event.timestamp,
+          eventIds: [event.id],
         })
         break
       }
@@ -65,9 +68,13 @@ export class MessageBuilder {
           : undefined
 
         if (!msg) {
-          msg = { id: event.id, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp: event.timestamp }
+          msg = { id: event.id, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp: event.timestamp, eventIds: [event.id] }
           this.messages.push(msg)
           this.currentAssistantId = msg.id
+        } else {
+          if (!msg.eventIds.includes(event.id)) {
+            msg.eventIds.push(event.id)
+          }
         }
 
         if (event.mode === 'complete') {
@@ -150,6 +157,7 @@ export class MessageBuilder {
           ? this.messages.find(m => m.id === this.currentAssistantId)
           : null
         if (msg) {
+          if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           const block = msg.blocks.find(
             b => b.kind === 'tool_call' && b.toolCallId === event.toolCallId
           ) as Extract<UIBlock, { kind: 'tool_call' }> | undefined
@@ -168,6 +176,7 @@ export class MessageBuilder {
           ? this.messages.find(m => m.id === this.currentAssistantId)
           : null
         if (msg) {
+          if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           if (event.status === 'completed') {
             msg.status = 'completed'
             this.finishStreamingBlocks(msg)
@@ -192,6 +201,7 @@ export class MessageBuilder {
           ? this.messages.find(m => m.id === this.currentAssistantId)
           : null
         if (msg) {
+          if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           const block = msg.blocks.find(
             b => b.kind === 'terminal' && b.toolCallId === event.toolCallId
           ) as Extract<UIBlock, { kind: 'terminal' }> | undefined
@@ -228,6 +238,7 @@ export class MessageBuilder {
           ? this.messages.find(m => m.id === this.currentAssistantId)
           : null
         if (msg) {
+          if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           msg.usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens, estimatedCostUsd: event.estimatedCostUsd }
         }
         break
@@ -274,12 +285,29 @@ export class MessageBuilder {
     return [...this.messages]
   }
 
+  removeMessage(messageId: string): void {
+    this.messages = this.messages.filter(m => m.id !== messageId)
+    if (this.currentAssistantId === messageId) {
+      this.currentAssistantId = null
+    }
+  }
+
+  clearAll(): void {
+    this.messages = []
+    this.currentAssistantId = null
+  }
+
   private getOrCreateAssistant(eventId: string, timestamp?: string | undefined): UIMessage {
     if (this.currentAssistantId) {
       const existing = this.messages.find(m => m.id === this.currentAssistantId)
-      if (existing) return existing
+      if (existing) {
+        if (!existing.eventIds.includes(eventId)) {
+          existing.eventIds.push(eventId)
+        }
+        return existing
+      }
     }
-    const msg: UIMessage = { id: eventId, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp }
+    const msg: UIMessage = { id: eventId, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp, eventIds: [eventId] }
     this.messages.push(msg)
     this.currentAssistantId = msg.id
     return msg

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import { CommandRegistry, createBuiltinRegistry } from '../../core/command-registry.js'
 import type { CommandDeps } from '../../core/command-registry.js'
+import { parseCommand } from '../../core/command-parser.js'
 
 function makeDeps(overrides: Partial<CommandDeps> = {}): CommandDeps {
   return {
@@ -15,10 +16,17 @@ function makeDeps(overrides: Partial<CommandDeps> = {}): CommandDeps {
 
 const ctx = { sessionId: 'sess-1' }
 
+/** Helper to parse a command string and ensure it's not null */
+function parse(text: string) {
+  const result = parseCommand(text)
+  if (!result) throw new Error(`Failed to parse: ${text}`)
+  return result
+}
+
 describe('CommandRegistry', () => {
   it('returns error for unknown command', async () => {
     const registry = new CommandRegistry()
-    const result = await registry.execute({ name: 'unknown', args: [], flags: {}, rawText: '/unknown' }, ctx, makeDeps())
+    const result = await registry.execute(parse('/unknown'), ctx, makeDeps())
     expect(result.success).toBe(false)
     expect(result.message).toContain('/help')
   })
@@ -30,52 +38,148 @@ describe('CommandRegistry', () => {
     expect(cmds.map((c) => c.name)).toContain('status')
     expect(cmds.map((c) => c.name)).toContain('model')
   })
+
+  it('has three-layer architecture commands', () => {
+    const registry = createBuiltinRegistry()
+    const cmds = registry.list()
+    // Layer 1: SDK commands
+    const sdkCmds = cmds.filter((c) => c.layer === 'sdk')
+    expect(sdkCmds.length).toBeGreaterThan(10)
+    // Layer 2: Builtin commands
+    const builtinCmds = cmds.filter((c) => c.layer === 'builtin')
+    expect(builtinCmds.length).toBeGreaterThan(10)
+  })
+
+  it('supports command aliases', () => {
+    const registry = createBuiltinRegistry()
+    // 'cost' is an alias for 'usage'
+    const cmd = registry.get('cost')
+    expect(cmd).toBeDefined()
+    expect(cmd?.name).toBe('usage')
+  })
+
+  it('lists items with layer and group info', () => {
+    const registry = createBuiltinRegistry()
+    const items = registry.listItems()
+    expect(items.length).toBeGreaterThan(20)
+    expect(items[0]).toHaveProperty('layer')
+    expect(items[0]).toHaveProperty('group')
+    expect(items[0]).toHaveProperty('risk')
+  })
 })
 
 describe('Built-in commands', () => {
   const registry = createBuiltinRegistry()
 
   it('/help returns command list', async () => {
-    const result = await registry.execute({ name: 'help', args: [], flags: {}, rawText: '/help' }, ctx, makeDeps())
+    const result = await registry.execute(parse('/help'), ctx, makeDeps())
     expect(result.success).toBe(true)
     expect(result.message).toContain('/help')
   })
 
   it('/status returns session info', async () => {
-    const result = await registry.execute({ name: 'status', args: [], flags: {}, rawText: '/status' }, ctx, makeDeps())
+    const result = await registry.execute(parse('/status'), ctx, makeDeps())
     expect(result.success).toBe(true)
     expect(result.message).toContain('sess-1')
   })
 
   it('/model with arg updates model', async () => {
     const deps = makeDeps()
-    const result = await registry.execute({ name: 'model', args: ['gpt-4o'], flags: {}, rawText: '/model gpt-4o' }, ctx, deps)
+    const result = await registry.execute(parse('/model gpt-4o'), ctx, deps)
     expect(result.success).toBe(true)
     expect(deps.updateSession).toHaveBeenCalledWith('sess-1', { modelId: 'gpt-4o' })
   })
 
   it('/model without arg shows current', async () => {
-    const result = await registry.execute({ name: 'model', args: [], flags: {}, rawText: '/model' }, ctx, makeDeps())
+    const result = await registry.execute(parse('/model'), ctx, makeDeps())
     expect(result.success).toBe(true)
     expect(result.message).toContain('Provider 默认')
   })
 
   it('/clear calls clearSessionEvents', async () => {
     const deps = makeDeps()
-    const result = await registry.execute({ name: 'clear', args: [], flags: {}, rawText: '/clear' }, ctx, deps)
+    const result = await registry.execute(parse('/clear'), ctx, deps)
     expect(result.success).toBe(true)
     expect(deps.clearSessionEvents).toHaveBeenCalledWith('sess-1')
   })
 
   it('/approval on enables approval', async () => {
     const deps = makeDeps()
-    const result = await registry.execute({ name: 'approval', args: ['on'], flags: {}, rawText: '/approval on' }, ctx, deps)
+    const result = await registry.execute(parse('/approval on'), ctx, deps)
     expect(result.success).toBe(true)
     expect(deps.setApprovalMode).toHaveBeenCalledWith('sess-1', true)
   })
 
   it('/approval with invalid arg returns error', async () => {
-    const result = await registry.execute({ name: 'approval', args: ['maybe'], flags: {}, rawText: '/approval maybe' }, ctx, makeDeps())
+    const result = await registry.execute(parse('/approval maybe'), ctx, makeDeps())
     expect(result.success).toBe(false)
+  })
+
+  it('/rename updates session title', async () => {
+    const deps = makeDeps()
+    const result = await registry.execute(parse('/rename New Title'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(deps.updateSession).toHaveBeenCalledWith('sess-1', { title: 'New Title' })
+  })
+
+  it('/reason validates levels', async () => {
+    const result = await registry.execute(parse('/reason invalid'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    const result2 = await registry.execute(parse('/reason high'), ctx, makeDeps())
+    expect(result2.success).toBe(true)
+  })
+
+  it('/workflow shows subcommands', async () => {
+    const result = await registry.execute(parse('/workflow'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('list')
+    expect(result.message).toContain('run')
+  })
+
+  it('/agent list returns info', async () => {
+    const result = await registry.execute(parse('/agent list'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('Code Agent')
+  })
+})
+
+describe('Command Parser', () => {
+  it('parses simple command', () => {
+    const result = parse('/help')
+    expect(result).toBeDefined()
+    expect(result?.name).toBe('help')
+    expect(result?.args).toEqual([])
+  })
+
+  it('parses command with args', () => {
+    const result = parse('/model gpt-4o')
+    expect(result?.name).toBe('model')
+    expect(result?.args).toEqual(['gpt-4o'])
+  })
+
+  it('parses command with flags', () => {
+    const result = parse('/compact --keep decisions')
+    expect(result?.flags).toEqual({ keep: 'decisions' })
+  })
+
+  it('parses @targets', () => {
+    const result = parse('/pin @src/file.ts')
+    expect(result?.targets).toEqual(['@src/file.ts'])
+  })
+
+  it('parses quoted args', () => {
+    const result = parse('/rename "My Session Title"')
+    expect(result?.args).toEqual(['My Session Title'])
+  })
+
+  it('returns null for non-commands', () => {
+    expect(parseCommand('hello world')).toBeNull()
+  })
+
+  it('extracts alias via registry', () => {
+    const registry = createBuiltinRegistry()
+    const cmd = registry.get('new')
+    expect(cmd).toBeDefined()
+    expect(cmd?.name).toBe('new-session')
   })
 })
