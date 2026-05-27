@@ -25,6 +25,7 @@ import type {
   SessionReasoningEffort,
   SessionSearchResult,
   WorkspaceInfo,
+  CommandListItem,
 } from '@spark/protocol'
 import { ModelCapabilityRegistry } from '@spark/shared'
 
@@ -82,11 +83,25 @@ type ContextUsageState = {
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const SESSION_HISTORY_PAGE_SIZE = 500
+const SIDEBAR_WIDTH_KEY = 'spark-agent:sidebar-width'
+const SIDEBAR_DEFAULT_WIDTH = 264
+const SIDEBAR_MIN_WIDTH = 180
+const SIDEBAR_MAX_WIDTH = 480
 
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
   const [active, setActive] = useState<SessionId | null>(null)
   const [showInspector, setShowInspector] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
+  const [sidebarWidth, setSidebarWidth] = useState(() => {
+    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY)
+    if (stored) {
+      const parsed = parseInt(stored, 10)
+      if (!isNaN(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) {
+        return parsed
+      }
+    }
+    return SIDEBAR_DEFAULT_WIDTH
+  })
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
@@ -119,6 +134,31 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [isSearching, setIsSearching] = useState(false)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  // Sidebar resize
+  const sidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+
+  const handleSidebarResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    sidebarDragRef.current = { startX: event.clientX, startWidth: sidebarWidth }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    document.body.classList.add('sidebar-resizing')
+  }
+
+  const handleSidebarResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (sidebarDragRef.current == null) return
+    const delta = event.clientX - sidebarDragRef.current.startX
+    const newWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, sidebarDragRef.current.startWidth + delta))
+    setSidebarWidth(newWidth)
+  }
+
+  const handleSidebarResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (sidebarDragRef.current != null) {
+      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth))
+    }
+    sidebarDragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    document.body.classList.remove('sidebar-resizing')
+  }
+
   const { invoke: listSessions } = useIpcInvoke('session:list')
   const { invoke: createSession } = useIpcInvoke('session:create')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
@@ -135,6 +175,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
   const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
 
   const refreshProjectsAndSessions = useCallback(async () => {
     const [workspaceRes, sessionRes, currentRes, providerRes] = await Promise.all([
@@ -273,12 +314,22 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     }
   }
 
-  const handleCreateProject = async () => {
-    const rootPath = projectPath.trim()
-    const name = projectName.trim() || getBasename(rootPath)
-    if (!rootPath) {
-      toast.warning('请输入或选择项目文件夹地址。')
-      return
+  const handleCreateProject = async (useTempDir = false) => {
+    let rootPath = projectPath.trim()
+    let name = projectName.trim() || getBasename(rootPath) || '新项目'
+
+    // 如果选择使用临时目录，则自动生成路径
+    if (useTempDir || !rootPath) {
+      try {
+        const { tempDir } = await getTempProjectDir({})
+        const timestamp = Date.now()
+        const safeName = name.replace(/[^a-zA-Z0-9一-龥_-]/g, '_') || 'project'
+        rootPath = `${tempDir}/${safeName}-${timestamp}`
+      } catch (err) {
+        console.error('获取临时目录失败', err)
+        toast.error('获取临时目录失败')
+        return
+      }
     }
 
     try {
@@ -289,6 +340,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       setProjectPath('')
       setActiveWorkspaceId(res.workspace.id)
       await refreshProjectsAndSessions()
+      toast.success(`项目已创建于：${rootPath}`)
     } catch (err) {
       console.error('创建项目失败', err)
       toast.error(err instanceof Error ? err.message : '创建项目失败')
@@ -492,7 +544,18 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
 
   return (
     <div className="chat-layout">
-      <div className="chat-sidebar">
+      <div
+        className="chat-sidebar"
+        style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
+      >
+        <div
+          className="sidebar-resize-handle"
+          title="拖拽调整侧边栏宽度"
+          onPointerDown={handleSidebarResizeStart}
+          onPointerMove={handleSidebarResizeMove}
+          onPointerUp={handleSidebarResizeEnd}
+          onPointerCancel={handleSidebarResizeEnd}
+        />
         <div className="chat-sidebar-head">
           <div className="search-input">
             <Icons.Search />
@@ -672,6 +735,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           contextInputTokens={contextInputTokens}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
+          onOpenProjectFolder={() => {
+            if (activeWorkspace) void handleOpenProjectFolder(activeWorkspace)
+          }}
         />
       )}
 
@@ -1101,7 +1167,7 @@ function CreateProjectModal({
   setPath: (value: string) => void
   onPickPath: () => void
   onCancel: () => void
-  onCreate: () => void
+  onCreate: (useTempDir?: boolean) => void
 }) {
   return (
     <div className="modal-backdrop">
@@ -1110,7 +1176,7 @@ function CreateProjectModal({
           <div className="modal-h-icon"><Icons.Folder size={17} /></div>
           <div>
             <div className="modal-title">新建项目</div>
-            <div className="modal-subtitle">选择一个本地文件夹作为项目地址，会话会归属到该项目下。</div>
+            <div className="modal-subtitle">选择一个本地文件夹作为项目地址，或直接创建一个空项目。</div>
           </div>
         </div>
         <div className="modal-body">
@@ -1129,7 +1195,7 @@ function CreateProjectModal({
             />
           </label>
           <label className="field">
-            <span>项目文件夹地址</span>
+            <span>项目文件夹地址（可选）</span>
             <div className="path-picker">
               <SparkInput
                 value={path}
@@ -1138,12 +1204,14 @@ function CreateProjectModal({
               />
               <button className="btn ghost sm" onClick={onPickPath}>选择</button>
             </div>
+            <div className="field-hint">留空则自动在临时目录创建项目文件夹</div>
           </label>
         </div>
         <div className="modal-foot">
+          <button className="btn ghost sm" onClick={() => onCreate(true)}>新建空项目</button>
           <div className="spacer" />
           <button className="btn ghost sm" onClick={onCancel}>取消</button>
-          <button className="btn primary sm" onClick={onCreate}>创建项目</button>
+          <button className="btn primary sm" onClick={() => onCreate(false)}>创建项目</button>
         </div>
       </div>
     </div>
@@ -2809,6 +2877,11 @@ function ComposerV2({
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueVisible, setQueueVisible] = useState(true)
   const [manualExpanded, setManualExpanded] = useState(false)
+  const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
+  const [slashFilter, setSlashFilter] = useState('')
+  const [slashOpen, setSlashOpen] = useState(false)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const slashListRef = useRef<HTMLDivElement | null>(null)
   const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(initialPrefs.adapter ?? 'claude')
   const [draftModelId, setDraftModelId] = useState(initialPrefs.modelId ?? '')
   const [draftMode] = useState<SessionChatMode>('agent')
@@ -2904,14 +2977,33 @@ function ComposerV2({
     if (text.startsWith('/')) {
       setSending(true)
       try {
-        const sessionId = session?.id ?? '__chat__'
+        // 如果没有活跃 session，先创建一个（命令需要 session 上下文）
+        let sessionId = session?.id ?? null
+        if (sessionId == null) {
+          if (selectedProvider == null) {
+            toast.warning('请先选择 Provider 再执行命令。')
+            setValue(text)
+            return
+          }
+          sessionId = await onCreateSession({
+            ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
+            modelId: effectiveModelId,
+            agentAdapter: adapter,
+            permissionMode: effectivePermissionMode,
+          })
+          if (sessionId == null) {
+            toast.error('创建会话失败，无法执行命令。')
+            setValue(text)
+            return
+          }
+        }
         const res = await window.spark.invoke('command:execute', { sessionId, message: text })
         if (res.success) {
           toast.success(res.message || '命令执行成功')
         } else {
           toast.warning(res.message || '命令执行失败')
         }
-        if (session?.id != null) onSent(session.id)
+        onSent(sessionId)
       } catch (err) {
         console.error('命令执行失败', err)
         toast.error(err instanceof Error ? err.message : '命令执行失败')
@@ -3001,9 +3093,82 @@ function ComposerV2({
     await onCancelSession(session.id)
   }
 
+  const filteredSlashCmds = slashCmds.filter((cmd) => {
+    if (!slashFilter) return true
+    const q = slashFilter.toLowerCase()
+    return cmd.name.includes(q) || cmd.description.toLowerCase().includes(q) || cmd.aliases.some((a) => a.includes(q))
+  })
+
+  const openSlashPopup = useCallback(async () => {
+    if (slashCmds.length === 0) {
+      try {
+        const res = await window.spark.invoke('command:list', {})
+        setSlashCmds(res.commands ?? [])
+      } catch {
+        // ignore
+      }
+    }
+    setSlashOpen(true)
+    setSlashIndex(0)
+  }, [slashCmds.length])
+
+  const closeSlashPopup = useCallback(() => {
+    setSlashOpen(false)
+    setSlashFilter('')
+    setSlashIndex(0)
+  }, [])
+
+  const executeSlashCmd = useCallback((cmd: CommandListItem) => {
+    closeSlashPopup()
+    setValue('')
+    void dispatchMessage(`/${cmd.name}`)
+  }, [closeSlashPopup, dispatchMessage])
+
+  const handleValueChange = useCallback((next: string) => {
+    setValue(next)
+    if (next.startsWith('/')) {
+      setSlashFilter(next.slice(1))
+      void openSlashPopup()
+    } else {
+      if (slashOpen) closeSlashPopup()
+    }
+  }, [slashOpen, openSlashPopup, closeSlashPopup])
+
+  // scroll selected item into view
+  useEffect(() => {
+    if (!slashOpen) return
+    const el = slashListRef.current?.querySelector<HTMLElement>('.slash-cmd-item.selected')
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [slashIndex, slashOpen])
+
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean }
     if (nativeEvent.isComposing || composingRef.current || event.keyCode === 229) return
+
+    if (slashOpen) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setSlashIndex((i) => Math.min(i + 1, filteredSlashCmds.length - 1))
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setSlashIndex((i) => Math.max(i - 1, 0))
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeSlashPopup()
+        return
+      }
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault()
+        const cmd = filteredSlashCmds[slashIndex]
+        if (cmd != null) executeSlashCmd(cmd)
+        return
+      }
+    }
+
     if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault()
       void handleSend()
@@ -3112,13 +3277,29 @@ function ComposerV2({
             ))}
           </div>
         )}
+        {slashOpen && filteredSlashCmds.length > 0 && (
+          <div className="slash-cmd-popup" ref={slashListRef}>
+            {filteredSlashCmds.map((cmd, i) => (
+              <div
+                key={cmd.id}
+                className={`slash-cmd-item${i === slashIndex ? ' selected' : ''}`}
+                onMouseEnter={() => setSlashIndex(i)}
+                onMouseDown={(e) => { e.preventDefault(); executeSlashCmd(cmd) }}
+              >
+                <span className="slash-cmd-layer">{cmd.layer === 'sdk' ? 'SDK' : cmd.layer === 'skill' ? '技能' : '内置'}</span>
+                <span className="slash-cmd-name">/{cmd.name}</span>
+                <span className="slash-cmd-desc">{cmd.description}</span>
+              </div>
+            ))}
+          </div>
+        )}
         <div className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''}`}>
           <textarea
             ref={textareaRef}
             rows={1}
             placeholder={workspace ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个项目'}
             value={value}
-            onChange={(event) => setValue(event.target.value)}
+            onChange={(event) => handleValueChange(event.target.value)}
             onCompositionStart={() => { composingRef.current = true }}
             onCompositionEnd={() => { composingRef.current = false }}
             onKeyDown={handleKeyDown}
@@ -3573,6 +3754,7 @@ function ChatInspector({
   contextInputTokens,
   width,
   onWidthChange,
+  onOpenProjectFolder,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -3581,6 +3763,7 @@ function ChatInspector({
   contextInputTokens: number
   width: number
   onWidthChange: (width: number) => void
+  onOpenProjectFolder: () => void
 }) {
   const plans = extractPlans(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
@@ -3631,7 +3814,22 @@ function ChatInspector({
             <div className="kv-row"><span className="k">ID</span><span className="v mono-sm inspector-v-id">{(session.id as string).slice(0, 16)}…</span></div>
             <div className="kv-row"><span className="k">状态</span><span className="v">{session.status}</span></div>
             <div className="kv-row"><span className="k">消息数</span><span className="v">{session.messageCount}</span></div>
-            <div className="kv-row"><span className="k">项目</span><span className="v truncate">{workspace?.name ?? '未归属'}</span></div>
+            <div className="kv-row">
+              <span className="k">项目</span>
+              <span className="v truncate">{workspace?.name ?? '未归属'}</span>
+            </div>
+            {workspace && (
+              <div className="kv-row">
+                <span className="k">路径</span>
+                <span className="v mono-sm truncate inspector-path" title={workspace.rootPath}>{workspace.rootPath}</span>
+              </div>
+            )}
+            {workspace && (
+              <button className="btn ghost sm inspector-open-folder-btn" onClick={onOpenProjectFolder}>
+                <Icons.Folder size={12} />
+                <span>打开文件夹</span>
+              </button>
+            )}
             <div className="kv-row"><span className="k">创建时间</span><span className="v">{new Date(session.createdAt).toLocaleString()}</span></div>
             <div className="kv-row"><span className="k">更新时间</span><span className="v">{new Date(session.updatedAt).toLocaleString()}</span></div>
           </>
