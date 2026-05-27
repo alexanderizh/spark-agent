@@ -819,9 +819,9 @@
   margin: 8px 0;
 }
 .md-surface .md-code {
-  margin: 8px 0;
+  margin: 0;
   padding: 10px 12px;
-  border-radius: var(--r-md);
+  border-radius: 0 0 var(--r-md) var(--r-md);
   background: var(--code-bg);
   color: var(--code-fg);
   overflow: auto;
@@ -829,6 +829,66 @@
   font-family: 'Geist Mono', ui-monospace, monospace;
   font-size: var(--font-xs);
   line-height: 1.55;
+}
+.md-code-block {
+  margin: 8px 0;
+  position: relative;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+}
+.md-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+}
+.md-code-lang {
+  font-size: 10px;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+}
+.md-code-copy,
+.md-code-copy-float {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: var(--r-xs);
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.md-code-copy:hover,
+.md-code-copy-float:hover {
+  color: var(--text-muted);
+}
+.md-code-block:hover .md-code-copy,
+.md-code-block:hover .md-code-copy-float {
+  opacity: 1;
+}
+.md-code-copy-float {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 1;
+}
+.md-code-streaming-block .md-code {
+  border-radius: 0;
+}
+.md-code-streaming-block {
+  border-left: 3px solid var(--primary);
+}
+.md-code-streaming-badge {
+  color: var(--primary);
 }
 .md-table-wrap {
   overflow: auto;
@@ -2446,6 +2506,67 @@ body.inspector-resizing {
   color: var(--text-faint);
   white-space: nowrap;
   flex-shrink: 0;
+}
+
+/* --- Parallel tools indicator --- */
+.parallel-tools-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  margin: 4px 0 6px;
+  font-size: var(--font-xs);
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: var(--r-full);
+  font-weight: 500;
+}
+
+/* --- Tool call progress bar (pending state) --- */
+.tool-call-progress-bar {
+  height: 2px;
+  margin: 0;
+  background: var(--border);
+  overflow: hidden;
+  border-radius: 1px;
+}
+.tool-call-progress-fill {
+  height: 100%;
+  width: 30%;
+  background: var(--primary);
+  border-radius: 1px;
+  animation: tool-progress-slide 1.5s ease-in-out infinite;
+}
+@keyframes tool-progress-slide {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(200%); }
+  100% { transform: translateX(-100%); }
+}
+
+/* --- Streaming error actions --- */
+.streaming-error-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.streaming-error-retry-hint {
+  font-style: italic;
+}
+
+/* --- Chat stream empty state (inside stream) --- */
+.chat-stream-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+}
+
+/* --- Streaming error card is-max-iter variant --- */
+.streaming-error-card.is-max-iter {
+  border-color: rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.04);
 }
 
 /* ============================================================

@@ -1075,7 +1075,8 @@ function ChatStream({
   const [messages, setMessages] = useState<UIMessage[]>([])
   const builderRef = useRef(new MessageBuilder())
   const rafRef = useRef<number | null>(null)
-  const pendingEventRef = useRef<AgentEvent | null>(null)
+  const isStreamingRef = useRef(false)
+  const userScrolledRef = useRef(false)
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
 
   // 切换会话时加载历史
@@ -1086,6 +1087,8 @@ function ChatStream({
       setMessages([])
       onMessagesChange([])
       onStatusChange('')
+      isStreamingRef.current = false
+      userScrolledRef.current = false
 
       getHistory({ sessionId, limit: 200 })
         .then(res => {
@@ -1121,11 +1124,23 @@ function ChatStream({
     }
   }, [])
 
+  // Track user scroll position to avoid auto-scrolling when user scrolls up
+  useEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+    const handleScroll = () => {
+      const threshold = 80
+      const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+      userScrolledRef.current = distanceFromBottom > threshold
+    }
+    el.addEventListener('scroll', handleScroll, { passive: true })
+    return () => el.removeEventListener('scroll', handleScroll)
+  }, [])
+
   // 实时监听新事件 — 每个事件立即追加到 builder，通过 RAF 批量触发渲染
   useIpcStream('stream:session:agent-event', (event) => {
     if (event.sessionId !== sessionId) return
     builderRef.current.processEvent(event)
-    pendingEventRef.current = event
 
     // 对状态/用量事件立即处理（不走 RAF 延迟）
     if (event.type === 'agent_status') {
@@ -1137,12 +1152,28 @@ function ChatStream({
         cancelled: '',
       }
       onStatusChange(labels[event.status] ?? '')
-      if (event.status === 'thinking' || event.status === 'calling_tool') onSessionStatusChange('running')
-      if (event.status === 'completed' || event.status === 'cancelled') onSessionStatusChange('idle')
-      if (event.status === 'error') onSessionStatusChange('error')
+      if (event.status === 'thinking' || event.status === 'calling_tool') {
+        onSessionStatusChange('running')
+        isStreamingRef.current = true
+      }
+      if (event.status === 'completed' || event.status === 'cancelled') {
+        onSessionStatusChange('idle')
+        isStreamingRef.current = false
+        // Force scroll to bottom on stream completion
+        userScrolledRef.current = false
+      }
+      if (event.status === 'error') {
+        onSessionStatusChange('error')
+        isStreamingRef.current = false
+      }
     }
     if (event.type === 'usage_update') {
       if (event.inputTokens > 0) onUsageChange(event.inputTokens)
+    }
+    // Track user_message to reset scroll tracking
+    if (event.type === 'user_message') {
+      userScrolledRef.current = false
+      isStreamingRef.current = true
     }
 
     // 对文本/思考增量事件立即 flush，确保无延迟感知
@@ -1165,16 +1196,17 @@ function ChatStream({
     scheduleFlush()
   }, [onMessagesChange, onStatusChange, onUsageChange, onSessionStatusChange, sessionId, flushMessages, scheduleFlush])
 
-  // 智能自动滚动：只在用户已位于底部附近时自动跟随，否则不干扰
+  // 智能自动滚动：只在用户未主动上滚时自动跟随
   useEffect(() => {
     const el = streamRef.current
     if (!el) return
-    const threshold = 120
-    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-    if (distanceFromBottom <= threshold) {
+    if (!userScrolledRef.current) {
       el.scrollTop = el.scrollHeight
     }
   }, [messages])
+
+  // 是否有正在流式传输的消息
+  const hasStreamingMsg = messages.some(m => m.status === 'streaming')
 
   return (
     <div className="chat-stream" ref={streamRef}>
@@ -1183,10 +1215,19 @@ function ChatStream({
           msg.role === 'user' ? (
             <UserMsg key={msg.id}>{renderBlocks(msg.blocks)}</UserMsg>
           ) : msg.status === 'streaming' ? (
-            <AgentMsg key={msg.id} status="running" blocks={msg.blocks} messageStatus={msg.status} />
+            <AgentMsg key={msg.id} sessionId={sessionId} status="running" blocks={msg.blocks} messageStatus={msg.status} />
           ) : (
-            <AgentMsg key={msg.id} blocks={msg.blocks} messageStatus={msg.status} />
+            <AgentMsg key={msg.id} sessionId={sessionId} blocks={msg.blocks} messageStatus={msg.status} />
           )
+        )}
+        {messages.length === 0 && (
+          <div className="chat-stream-empty-state">
+            <div className="empty-state">
+              <div className="empty-icon"><Icons.Chat size={24} /></div>
+              <div className="empty-title">开始对话</div>
+              <div className="empty-desc">发送消息开始与 AI 交互</div>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -1227,14 +1268,9 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
         )
       }
       case 'error':
-        return (
-          <StreamingErrorCard
-            key={i}
-            message={block.message}
-            code={block.code}
-            retryable={block.retryable}
-          />
-        )
+        // 错误卡由 AgentMsg 单独渲染（可获得 sessionId 上下文以支持调高迭代上限按钮），
+        // 这里跳过避免重复渲染。
+        return null
       case 'terminal':
         if (surface === 'main') return null
         return (
@@ -1287,17 +1323,40 @@ function MarkdownText({ content, isStreaming = false }: { content: string; isStr
             )
           case 'code':
             return (
-              <pre key={index} className="md-code">
-                <code>{block.code}</code>
-                {isStreaming && isLastBlock && <StreamingCursor />}
-              </pre>
+              <div key={index} className="md-code-block">
+                {block.lang && (
+                  <div className="md-code-header">
+                    <span className="md-code-lang">{block.lang}</span>
+                    <button className="md-code-copy" title="复制" onClick={() => { navigator.clipboard.writeText(block.code).catch(() => {}) }}>
+                      <Icons.Copy size={12} />
+                    </button>
+                  </div>
+                )}
+                {!block.lang && (
+                  <button className="md-code-copy-float" title="复制" onClick={() => { navigator.clipboard.writeText(block.code).catch(() => {}) }}>
+                    <Icons.Copy size={12} />
+                  </button>
+                )}
+                <pre className="md-code">
+                  <code>{block.code}</code>
+                  {isStreaming && isLastBlock && <StreamingCursor />}
+                </pre>
+              </div>
             )
           case 'incomplete_code':
             return (
-              <pre key={index} className="md-code md-code-incomplete">
-                <code>{block.code}</code>
-                <span className="md-code-cursor">▌</span>
-              </pre>
+              <div key={index} className="md-code-block md-code-streaming-block">
+                {block.lang && (
+                  <div className="md-code-header">
+                    <span className="md-code-lang">{block.lang}</span>
+                    <Icons.Spinner size={10} className="md-code-streaming-badge" />
+                  </div>
+                )}
+                <pre className="md-code md-code-incomplete">
+                  <code>{block.code}</code>
+                  <span className="md-code-cursor">▌</span>
+                </pre>
+              </div>
             )
           case 'quote':
             return <blockquote key={index}>{renderInlineMarkdown(block.text)}</blockquote>
@@ -1510,17 +1569,26 @@ function UserMsg({ children }: { children: ReactNode }) {
   )
 }
 
-function AgentMsg({ status, blocks, messageStatus }: { status?: 'running'; blocks: UIBlock[]; messageStatus?: UIMessage['status'] }) {
+function AgentMsg({ sessionId, status, blocks, messageStatus }: { sessionId: SessionId; status?: 'running'; blocks: UIBlock[]; messageStatus?: UIMessage['status'] }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
   const contentBlocks = blocks.filter(b => b.kind !== 'thinking')
+  const toolCallBlocks = blocks.filter(
+    (b): b is Extract<UIBlock, { kind: 'tool_call' }> => b.kind === 'tool_call',
+  )
+  const errorBlocks = blocks.filter(b => b.kind === 'error')
   const isStreaming = status === 'running'
   const hasContent = thinkingBlocks.length > 0 || contentBlocks.length > 0
-  const isCancelled = messageStatus === 'error' && !isStreaming
+  // Count active (pending/running) tool calls for parallel indicator
+  const activeToolCount = toolCallBlocks.filter(b => b.status === 'pending' || b.status === 'running').length
+  // Cancelled: streaming ended with error status but has rendered content
+  const isCancelled = messageStatus === 'error' && !isStreaming && hasContent
+  // Pure error: no content, only error blocks
+  const isPureError = messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0
 
   return (
-    <div className="msg msg-agent">
+    <div className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}>
       <div className="msg-bubble msg-bubble-agent">
         {isStreaming && !hasContent && (
           <div className="msg-streaming-indicator">
@@ -1531,12 +1599,27 @@ function AgentMsg({ status, blocks, messageStatus }: { status?: 'running'; block
         {thinkingBlocks.length > 0 && (
           <ThinkingSection blocks={thinkingBlocks} streaming={isStreaming} />
         )}
+        {activeToolCount > 1 && (
+          <div className="parallel-tools-indicator">
+            <Icons.Layers size={11} />
+            <span>{activeToolCount} 个工具并行执行</span>
+          </div>
+        )}
         {contentBlocks.length > 0 && (
           <CollapsibleContent maxHeight={500} streaming={isStreaming}>
             <div className="msg-content">{renderBlocks(contentBlocks)}</div>
           </CollapsibleContent>
         )}
-        {isCancelled && hasContent && <StoppedMarker />}
+        {errorBlocks.map((block, i) => (
+          <StreamingErrorCard
+            key={`error-${i}`}
+            sessionId={sessionId}
+            message={(block as Extract<UIBlock, { kind: 'error' }>).message}
+            code={(block as Extract<UIBlock, { kind: 'error' }>).code}
+            retryable={(block as Extract<UIBlock, { kind: 'error' }>).retryable}
+          />
+        ))}
+        {isCancelled && <StoppedMarker />}
       </div>
     </div>
   )
@@ -1673,6 +1756,8 @@ function CollapsibleContent({
 
 function ToolCall({ name, arg, status, pending, durationMs, children }: { name: string; arg: string; status?: 'ok' | 'error'; pending?: boolean; durationMs?: number | undefined; children?: ReactNode }) {
   const [open, setOpen] = useState(false)
+  const [elapsedMs, setElapsedMs] = useState(0)
+  const startTimeRef = useRef<number | null>(null)
   const iconMap: Record<string, ReactNode> = {
     Read: <Icons.File className="tool-icon" />,
     Grep: <Icons.Search className="tool-icon" />,
@@ -1680,8 +1765,32 @@ function ToolCall({ name, arg, status, pending, durationMs, children }: { name: 
     Edit: <Icons.Edit className="tool-icon" />,
     Write: <Icons.File className="tool-icon" />,
   }
+
+  // Auto-expand on completion to show result
+  useEffect(() => {
+    if (status === 'ok' || status === 'error') {
+      // Auto-expand for a brief moment if there's output to show
+      if (children) setOpen(true)
+    }
+  }, [status, children])
+
+  // Live elapsed timer for pending tool calls
+  useEffect(() => {
+    if (!pending) return
+    startTimeRef.current = Date.now()
+    setElapsedMs(0)
+    const timer = window.setInterval(() => {
+      if (startTimeRef.current != null) {
+        setElapsedMs(Date.now() - startTimeRef.current)
+      }
+    }, 100)
+    return () => window.clearInterval(timer)
+  }, [pending])
+
+  const displayDuration = pending ? elapsedMs : durationMs
+
   return (
-    <div className={`tool-call ${open ? 'open' : ''} ${pending ? 'is-pending' : ''}`}>
+    <div className={`tool-call ${open ? 'open' : ''} ${pending ? 'is-pending' : ''} ${status === 'ok' ? 'is-success' : ''} ${status === 'error' ? 'is-error' : ''}`}>
       <div className="tool-call-head" onClick={() => setOpen(!open)}>
         {iconMap[name] || <Icons.Wrench className="tool-icon" />}
         <span className="tool-name">{name}</span>
@@ -1690,10 +1799,15 @@ function ToolCall({ name, arg, status, pending, durationMs, children }: { name: 
           {pending && <Icons.Spinner size={12} className="tool-status spinner" />}
           {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
           {status === 'error' && <Icons.X size={12} className="tool-status err" />}
-          {durationMs != null && !pending && <span className="tool-duration">{formatDuration(durationMs)}</span>}
+          {displayDuration != null && <span className="tool-duration">{formatDuration(displayDuration)}</span>}
           <Icons.ChevronRight size={12} className="chev" />
         </span>
       </div>
+      {pending && (
+        <div className="tool-call-progress-bar">
+          <div className="tool-call-progress-fill" />
+        </div>
+      )}
       {open && children && <div className="tool-call-body">{children}</div>}
     </div>
   )
@@ -1703,15 +1817,78 @@ function TerminalBlock({ children }: { children: ReactNode }) {
   return <div className="terminal mono-sm">{children}</div>
 }
 
-function StreamingErrorCard({ message, code, retryable }: { message: string; code: string; retryable: boolean }) {
+function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId: SessionId; message: string; code: string; retryable: boolean }) {
+  const { toast } = useToast()
+  const isNetworkError = code === 'NETWORK_ERROR' || code === 'ECONNRESET' || code === 'ECONNREFUSED'
+  const isTimeout = code === 'TIMEOUT' || code === 'ETIMEDOUT'
+  const isAborted = code === 'ABORTED'
+  const isMaxIter = code === 'MAX_ITERATIONS'
+
+  let hint = ''
+  if (isNetworkError) {
+    hint = '网络连接中断，请检查网络后重试'
+  } else if (isTimeout) {
+    hint = '请求超时，可能是服务器繁忙'
+  } else if (isAborted) {
+    hint = '请求已取消'
+  } else if (isMaxIter) {
+    hint = '当前 turn 达到最大迭代次数，可调高上限后重发消息继续'
+  } else if (retryable) {
+    hint = '可重试 — 该错误是临时性的'
+  }
+
+  // 从 message 中解析当前上限（agent_error.message 形如 "Exceeded max turn iterations (20)"）
+  const currentLimit = (() => {
+    const m = /\((\d+)\)/.exec(message)
+    return m ? Number(m[1]) : null
+  })()
+  const proposedLimit = Math.min(Math.max((currentLimit ?? 100) * 2, 200), 500)
+
+  const [busy, setBusy] = useState(false)
+  const [applied, setApplied] = useState<number | null>(null)
+  const raiseLimit = async () => {
+    if (busy) return
+    setBusy(true)
+    try {
+      await window.spark.invoke('session:set-max-iterations', { sessionId, maxIterations: proposedLimit })
+      setApplied(proposedLimit)
+      toast.success(`本会话迭代上限已调至 ${proposedLimit}，请重新发送消息以继续。`)
+    } catch (err) {
+      toast.error(`调整失败：${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const showRetryButton = retryable && !isAborted && !isMaxIter
+
   return (
-    <div className="streaming-error-card">
+    <div className={`streaming-error-card ${isNetworkError ? 'is-network' : ''} ${isTimeout ? 'is-timeout' : ''} ${isMaxIter ? 'is-max-iter' : ''}`}>
       <div className="streaming-error-head">
-        <Icons.XCircle size={13} className="streaming-error-icon" />
+        {isNetworkError && <Icons.Wifi size={13} className="streaming-error-icon" />}
+        {isTimeout && <Icons.Clock size={13} className="streaming-error-icon" />}
+        {!isNetworkError && !isTimeout && <Icons.XCircle size={13} className="streaming-error-icon" />}
         <span className="streaming-error-msg">{message}</span>
       </div>
       {code && <span className="streaming-error-code">{code}</span>}
-      {retryable && <span className="streaming-error-hint">可重试 — 该错误是临时性的</span>}
+      {hint && <span className="streaming-error-hint">{hint}</span>}
+      {(isMaxIter || showRetryButton) && (
+        <div className="streaming-error-actions">
+          {isMaxIter && applied == null && (
+            <button className="btn sm primary" disabled={busy} onClick={raiseLimit}>
+              将本会话上限调至 {proposedLimit} 并重试下条消息
+            </button>
+          )}
+          {isMaxIter && applied != null && (
+            <span className="streaming-error-hint">已生效：本会话上限 = {applied}。重新发送消息继续。</span>
+          )}
+          {showRetryButton && (
+            <span className="streaming-error-hint streaming-error-retry-hint">
+              请重新发送消息以触发重试
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }
