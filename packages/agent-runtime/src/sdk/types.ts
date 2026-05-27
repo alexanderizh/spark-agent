@@ -3,7 +3,7 @@
  *
  * These mirror the SDK's public API surface so we can type-check our executor
  * without hard-coupling to the SDK package at compile time.
- * When the SDK is not installed the executor gracefully falls back.
+ * When the SDK is not installed the runtime fails fast with SDK_REQUIRED.
  *
  * Source: https://code.claude.com/docs/en/agent-sdk/typescript
  * Package: @anthropic-ai/claude-agent-sdk ^0.3.152

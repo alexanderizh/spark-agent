@@ -1957,8 +1957,16 @@ body.sidebar-resizing {
   background: var(--panel);
   box-shadow: var(--shadow-sm);
 }
+.composer-queue-item.active {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+  background: color-mix(in srgb, var(--primary) 7%, var(--panel));
+}
 .composer-queue-icon {
   color: var(--text-faint);
+}
+.composer-queue-item.active .composer-queue-icon {
+  color: var(--primary);
 }
 .composer-queue-text {
   min-width: 0;
@@ -1967,6 +1975,12 @@ body.sidebar-resizing {
   white-space: nowrap;
   color: var(--text);
   font-size: var(--font-sm);
+}
+.composer-queue-status {
+  color: var(--primary);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  white-space: nowrap;
 }
 .composer-queue-action,
 .composer-queue-icon-btn {

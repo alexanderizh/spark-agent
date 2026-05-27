@@ -747,6 +747,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         <ComposerV2
           session={activeSession}
           workspace={activeWorkspace}
+          activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
           providers={providers}
           selectedProviderId={selectedProviderId}
           setSelectedProviderId={setSelectedProviderId}
@@ -3030,6 +3031,7 @@ function InlineApprovalRequest({ request, onClose }: { request: PermissionApprov
 function ComposerV2({
   session,
   workspace,
+  activeTaskText,
   providers,
   selectedProviderId,
   setSelectedProviderId,
@@ -3047,6 +3049,7 @@ function ComposerV2({
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
+  activeTaskText: string | null
   providers: ProviderProfile[]
   selectedProviderId: string
   setSelectedProviderId: (providerId: string) => void
@@ -3131,11 +3134,13 @@ function ComposerV2({
     // 3. 都没有，返回 0 表示未知
     return 0
   })()
+  const contextUsedTokens = contextUsage?.estimatedTokens ?? contextInputTokens
   const contextRatio = contextWindow > 0
-    ? Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10)
+    ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
     : 0
   const isBusy = sending || isWorking
   const canSubmit = value.trim().length > 0 && selectedProvider != null && effectiveModelId.length > 0 && (session != null || workspace != null)
+  const showTaskQueue = activeTaskText != null || queuedMessages.length > 0
 
   useEffect(() => {
     if (session != null || providers.length === 0 || compatibleProviders.length > 0) return
@@ -3494,8 +3499,15 @@ function ComposerV2({
             {...(onApprovalClose !== undefined ? { onClose: onApprovalClose } : {})}
           />
         )}
-        {queuedMessages.length > 0 && queueVisible && (
+        {showTaskQueue && queueVisible && (
           <div className="composer-queue-panel">
+            {activeTaskText != null && (
+              <div className="composer-queue-item active">
+                <Icons.Spinner size={15} className="composer-queue-icon" />
+                <span className="composer-queue-text">{activeTaskText}</span>
+                <span className="composer-queue-status">执行中</span>
+              </div>
+            )}
             {queuedMessages.map((message) => (
               <div key={message.id} className="composer-queue-item">
                 <Icons.Clock size={15} className="composer-queue-icon" />
@@ -3633,7 +3645,7 @@ function ComposerV2({
             {contextWindow > 0 && (
               <div
                 className={`context-meter${contextUsage?.compactedThisTurn ? ' context-compacted' : ''}`}
-                title={`上下文使用 ${contextRatio}% · ${formatTokenCount(contextInputTokens)} / ${formatTokenCount(contextWindow)}`}
+                title={`上下文使用 ${contextRatio}% · ${formatTokenCount(contextUsedTokens)} / ${formatTokenCount(contextWindow)}`}
               >
                 <span>{contextRatio}%</span>
                 <span
@@ -3647,14 +3659,14 @@ function ComposerV2({
                 )}
               </div>
             )}
-            {queuedMessages.length > 0 && (
+            {showTaskQueue && (
               <button
                 type="button"
                 className="queued-chip"
                 title={queueVisible ? '隐藏队列' : '显示队列'}
                 onClick={() => setQueueVisible((prev) => !prev)}
               >
-                {queueVisible ? '隐藏队列' : '显示队列'} · {queuedMessages.length}
+                {queueVisible ? '隐藏队列' : '显示队列'} · {(activeTaskText != null ? 1 : 0) + queuedMessages.length}
               </button>
             )}
             <div className="spacer" />
@@ -4064,6 +4076,21 @@ function normalizePromptLayer(value: unknown): PromptConfigGetResponse['system']
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : []
+}
+
+function getActiveTaskText(messages: UIMessage[], isRunning: boolean): string | null {
+  if (!isRunning) return null
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const message = messages[i]
+    if (message?.role !== 'user') continue
+    const text = message.blocks
+      .filter((block): block is Extract<UIBlock, { kind: 'text' }> => block.kind === 'text')
+      .map((block) => block.content)
+      .join('\n')
+      .trim()
+    if (text.length > 0) return text
+  }
+  return '正在执行当前任务'
 }
 
 function ChatInspector({

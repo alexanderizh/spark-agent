@@ -20,11 +20,12 @@
  * system so the existing UI renders correctly.
  *
  * When the SDK is unavailable (not installed), the executor throws
- * SDKNotAvailableError so SessionService can fall back to direct API.
+ * SDKNotAvailableError and SessionService fails the turn with SDK_REQUIRED.
  */
 
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@spark/protocol'
+import { ModelCapabilityRegistry } from '@spark/shared'
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
@@ -105,6 +106,14 @@ export class ClaudeSDKExecutor {
       ...makeBase(),
       type: 'agent_status',
       status: 'thinking',
+    })
+    this.emitter.emit({
+      ...makeBase(),
+      type: 'context_usage',
+      estimatedTokens: estimateSDKPromptTokens(userMessage, config),
+      softLimitTokens: softContextLimit(config.model),
+      contextWindowTokens: contextWindow(config.model),
+      compacted: false,
     })
 
     // Build permission config
@@ -225,12 +234,30 @@ function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefin
   return sections.join('\n\n')
 }
 
+function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig): number {
+  const chars = [
+    userMessage,
+    config.systemPrompt ?? '',
+    config.skillSystemPrompt ?? '',
+  ].join('\n').length
+  return Math.ceil(chars / 3)
+}
+
+function contextWindow(model: string): number {
+  const caps = ModelCapabilityRegistry.getCapabilities(model)
+  if (caps && caps.contextWindow > 0) return caps.contextWindow
+  return 128_000
+}
+
+function softContextLimit(model: string): number {
+  return Math.floor(contextWindow(model) * 0.7)
+}
+
 export class SDKNotAvailableError extends Error {
   constructor() {
     super(
       'Claude Agent SDK (@anthropic-ai/claude-agent-sdk) is not installed or failed to load. '
-      + 'Install it with: pnpm add @anthropic-ai/claude-agent-sdk\n'
-      + 'Falling back to direct Anthropic API adapter.',
+      + 'Install it with: pnpm add @anthropic-ai/claude-agent-sdk.',
     )
     this.name = 'SDKNotAvailableError'
   }

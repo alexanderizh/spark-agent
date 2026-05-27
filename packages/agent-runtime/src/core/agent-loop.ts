@@ -335,7 +335,7 @@ function contextWindow(model: string): number {
   if (lower.includes('gpt-5') || lower.includes('gpt-4.1')) return 400_000
   if (lower.includes('gpt-4')) return 128_000
   if (lower.includes('deepseek')) return 128_000
-  return 0 // 未知模型返回 0，UI 层判断后不展示上下文额度
+  return 128_000
 }
 
 /** 软上限：超过即开始压缩。约等于硬窗口的 70%。若无法确定窗口大小，默认 100k。 */

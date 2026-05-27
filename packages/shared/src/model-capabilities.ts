@@ -14,6 +14,16 @@ const CAPABILITIES: Record<string, ModelCapability> = {
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image'],
   },
+  'claude-sonnet-4-5-20250929': {
+    contextWindow: 200_000, maxOutputTokens: 16_000,
+    supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text', 'image'],
+  },
+  'claude-opus-4-1-20250805': {
+    contextWindow: 200_000, maxOutputTokens: 32_000,
+    supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text', 'image'],
+  },
   'claude-3-5-sonnet-20241022': {
     contextWindow: 200_000, maxOutputTokens: 8_192,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
@@ -66,6 +76,21 @@ const CAPABILITIES: Record<string, ModelCapability> = {
     supportsVision: false, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text'],
   },
+  'gpt-5': {
+    contextWindow: 400_000, maxOutputTokens: 128_000,
+    supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text', 'image'],
+  },
+  'gpt-5-codex': {
+    contextWindow: 400_000, maxOutputTokens: 128_000,
+    supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
+    supportedModalities: ['text', 'image'],
+  },
+  'gpt-4.1': {
+    contextWindow: 400_000, maxOutputTokens: 32_768,
+    supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
+    supportedModalities: ['text', 'image'],
+  },
 
   // ── DeepSeek ───────────────────────────────────────────────────────────────
   'deepseek-chat': {
@@ -83,6 +108,11 @@ const CAPABILITIES: Record<string, ModelCapability> = {
   'gemini-2.0-flash': {
     contextWindow: 1_048_576, maxOutputTokens: 8_192,
     supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: false,
+    supportedModalities: ['text', 'image', 'audio', 'video'],
+  },
+  'gemini-2.5-pro': {
+    contextWindow: 1_048_576, maxOutputTokens: 65_536,
+    supportsVision: true, supportsToolUse: true, supportsStreaming: true, supportsExtendedThinking: true,
     supportedModalities: ['text', 'image', 'audio', 'video'],
   },
   'gemini-1.5-pro': {
@@ -134,9 +164,11 @@ const CAPABILITIES: Record<string, ModelCapability> = {
 export const ModelCapabilityRegistry = {
   /** 获取指定模型的能力元数据（精确匹配，再尝试前缀匹配） */
   getCapabilities(modelId: string): ModelCapability | undefined {
-    if (CAPABILITIES[modelId]) return CAPABILITIES[modelId]
+    const normalized = normalizeModelId(modelId)
+    if (CAPABILITIES[normalized]) return CAPABILITIES[normalized]
     // 前缀匹配：如 "claude-sonnet-4" 匹配 "claude-sonnet-4-20250514"
-    const key = Object.keys(CAPABILITIES).find((k) => k.startsWith(modelId) || modelId.startsWith(k))
+    const key = Object.keys(CAPABILITIES).find((k) => k.startsWith(normalized) || normalized.startsWith(k))
+      ?? inferFamilyCapabilityKey(normalized)
     return key ? CAPABILITIES[key] : undefined
   },
 
@@ -152,4 +184,27 @@ export const ModelCapabilityRegistry = {
   getAllModelIds(): string[] {
     return Object.keys(CAPABILITIES)
   },
+}
+
+function normalizeModelId(modelId: string): string {
+  const lower = modelId.trim().toLowerCase()
+  const withoutProviderPrefix = lower.includes('/') ? lower.split('/').pop() ?? lower : lower
+  return withoutProviderPrefix
+}
+
+function inferFamilyCapabilityKey(modelId: string): string | undefined {
+  if (modelId.includes('claude-opus')) return 'claude-opus-4-20250514'
+  if (modelId.includes('claude')) return 'claude-sonnet-4-20250514'
+  if (modelId.includes('gpt-5')) return 'gpt-5'
+  if (modelId.includes('gpt-4.1')) return 'gpt-4.1'
+  if (modelId.includes('gpt-4o-mini')) return 'gpt-4o-mini'
+  if (modelId.includes('gpt-4o')) return 'gpt-4o'
+  if (modelId.includes('gpt-4')) return 'gpt-4-turbo'
+  if (modelId.includes('deepseek')) return 'deepseek-chat'
+  if (modelId.includes('gemini-2.5')) return 'gemini-2.5-pro'
+  if (modelId.includes('gemini')) return 'gemini-2.0-flash'
+  if (modelId.includes('qwen')) return 'qwen-plus'
+  if (modelId.includes('glm')) return 'glm-4'
+  if (modelId.includes('moonshot') || modelId.includes('kimi')) return 'moonshot-v1-128k'
+  return undefined
 }

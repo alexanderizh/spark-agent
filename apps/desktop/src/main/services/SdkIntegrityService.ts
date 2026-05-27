@@ -296,14 +296,7 @@ export async function installSdk(packageName: string): Promise<SdkIntegrityInsta
   }
 
   const { command } = getPackageManagerCommand()
-  const isOptional = packageName === '@anthropic-ai/claude-agent-sdk'
-
   const args = ['add', packageName]
-  if (isOptional) {
-    // pnpm 不直接支持 --save-optional 在 workspace 包上，但 add 默认会添加到 dependencies
-    // 如果是 optional dep，在 pnpm 中使用 --save-optional (或 -O) 标志
-    args.push('--save-optional')
-  }
 
   log.info(`Installing ${packageName} via ${command} ${args.join(' ')} in ${targetDir}`)
 
