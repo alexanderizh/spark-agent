@@ -3,9 +3,10 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import type { AgentEvent, AgentStatusValue, SessionId, WorkspaceInfo, WorkspaceTreeEntry } from '@spark/protocol'
+import type { AgentEvent, AgentStatusValue, SessionId, WorkspaceFileChangePayload, WorkspaceInfo, WorkspaceTreeEntry } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
+import { useToast } from '../components/Toast'
 import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-mapper'
 
 /** File change status tracked via file_change agent events */
@@ -20,13 +21,41 @@ type FileSortMode = 'name' | 'modified'
 export function ProjectView() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
   const [fileChanges, setFileChanges] = useState<FileChangeMap>({})
+  const { toast } = useToast()
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
+  const { invoke: startWatch } = useIpcInvoke('workspace:watch-start')
+  const { invoke: stopWatch } = useIpcInvoke('workspace:watch-stop')
+
+  // Track recent external change count for batched toast
+  const externalChangeBufferRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
 
   useEffect(() => {
     getCurrentWorkspace({})
       .then((res) => setWorkspace(res.workspace))
       .catch(console.error)
   }, [getCurrentWorkspace])
+
+  // Start/stop file watcher when workspace changes
+  useEffect(() => {
+    if (workspace == null) return
+
+    let cancelled = false
+    startWatch({ workspaceId: workspace.id })
+      .then(() => {
+        if (!cancelled) {
+          // eslint-disable-next-line no-console
+          console.log(`[FileWatcher] Started watching workspace ${workspace.id}`)
+        }
+      })
+      .catch((err) => {
+        console.error('[FileWatcher] Failed to start:', err)
+      })
+
+    return () => {
+      cancelled = true
+      stopWatch({ workspaceId: workspace.id }).catch(() => {})
+    }
+  }, [workspace?.id, startWatch, stopWatch])
 
   // Reset file changes when workspace changes
   useEffect(() => {
@@ -46,6 +75,41 @@ export function ProjectView() {
       return { ...prev, [filePath]: changeType }
     })
   }, [workspace])
+
+  // Listen for external file changes from FileWatcherService (fs.watch)
+  useIpcStream('stream:workspace:file-change', (payload: WorkspaceFileChangePayload) => {
+    if (workspace == null) return
+    if (payload.workspaceId !== workspace.id) return
+
+    const changeType = payload.changeType as FileChangeStatus
+    const filePath = payload.path
+
+    setFileChanges((prev) => {
+      if (prev[filePath] === changeType) return prev
+      return { ...prev, [filePath]: changeType }
+    })
+
+    // Batched toast: accumulate external changes and show a summary
+    const buf = externalChangeBufferRef.current
+    buf.count++
+
+    if (buf.timer != null) {
+      clearTimeout(buf.timer)
+    }
+
+    buf.timer = setTimeout(() => {
+      if (buf.count > 0) {
+        const label = changeType === 'create' ? '新建' : changeType === 'delete' ? '删除' : '修改'
+        if (buf.count === 1) {
+          toast.info(`文件${label}: ${filePath}`, { duration: 3000 })
+        } else {
+          toast.info(`${buf.count} 个文件发生外部变更`, { duration: 4000 })
+        }
+        buf.count = 0
+      }
+      buf.timer = null
+    }, 500)
+  }, [workspace, toast])
 
   const totalFileChanges = Object.keys(fileChanges).length
 

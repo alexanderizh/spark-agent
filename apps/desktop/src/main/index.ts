@@ -20,6 +20,7 @@ import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { registerAllIpcHandlers } from './ipc/index.js'
 import { setMainWindow } from './windows/index.js'
+import { getFileWatcherService } from './services/FileWatcherService.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('main')
@@ -105,6 +106,7 @@ async function initializeApp(): Promise<void> {
 
     // 关闭数据库连接在应用退出时
     app.on('before-quit', () => {
+      getFileWatcherService().stopAll()
       closeDatabase()
     })
   } catch (err) {
