@@ -1920,6 +1920,7 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
               num={Number.parseInt(suffix, 16) || i + 1}
               time={fileCount > 0 ? `${fileCount} files` : (block.path ?? 'SDK')}
               label={block.label ?? 'Checkpoint'}
+              {...(block.filePaths != null ? { files: block.filePaths } : {})}
             />
           </div>
         )

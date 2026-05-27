@@ -248,9 +248,12 @@
 目标:
 - 利用 Claude SDK 的 checkpoint/change 信息，让用户可审查、可恢复。
 
-开发内容:
+已完成:
 - 捕获 SDK checkpoint metadata。
-- Chat 中展示变更摘要。
+- Chat 中展示 checkpoint，并把 SDK 返回的相关文件列表直接显示在 checkpoint pill 内。
+- Checkpoint 文件列表支持截断展示和 hover 完整文件列表。
+
+仍需补强:
 - Project/Inspector 中展示文件 diff。
 - 后续接入 accept/reject/rollback。
 
