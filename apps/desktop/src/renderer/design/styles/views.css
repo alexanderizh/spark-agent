@@ -441,6 +441,33 @@
 }
 .proj-session:hover { border-left-color: var(--border-strong); }
 .proj-session.active { border-left-color: var(--primary); }
+.proj-session.is-running {
+  border-left-color: var(--info);
+  background: color-mix(in srgb, var(--info) 7%, transparent);
+}
+.session-running-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 18px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--info) 38%, transparent);
+  border-radius: 999px;
+  color: var(--info);
+  background: color-mix(in srgb, var(--info) 10%, var(--panel));
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.session-stop-btn {
+  color: var(--danger);
+  flex-shrink: 0;
+}
+.session-stop-btn:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+}
 .proj-session-empty {
   display: flex; align-items: center; gap: 7px;
   margin: 3px 6px 6px 24px;
@@ -840,6 +867,7 @@
 .thinking-toggle {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 6px;
   padding: 0;
   border: none;
@@ -848,7 +876,7 @@
   font-size: var(--font-sm);
   font-weight: 500;
   cursor: pointer;
-  width: 100%;
+  width: fit-content;
   font-family: inherit;
 }
 .thinking-toggle:hover { color: var(--text-muted); }
@@ -984,7 +1012,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 0 1 auto;
-  max-width: min(72ch, 58vw);
+  max-width: min(64ch, 48vw);
+}
+.tool-call-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
 }
 .tool-call-head .chev {
   margin-left: 0;
@@ -1298,6 +1332,21 @@
   color: var(--text);
   background: var(--hover);
 }
+.composer-stop-round {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--danger) 12%, var(--bg-soft));
+  color: var(--danger);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+.composer-stop-round:hover {
+  background: color-mix(in srgb, var(--danger) 18%, var(--bg-soft));
+}
 .composer-submit-row {
   position: absolute;
   right: 12px;
@@ -1356,6 +1405,9 @@
 .composer-param-bar .composer-send-btn {
   display: none;
 }
+.composer-stop-btn {
+  color: var(--danger);
+}
 .composer-select {
   position: relative;
   display: inline-flex;
@@ -1379,8 +1431,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -1388,19 +1440,53 @@
   display: block;
 }
 .adapter-brand-icon {
-  width: 15px;
-  height: 15px;
+  width: 18px;
+  height: 18px;
   display: block;
   fill: none;
   stroke: currentColor;
-  stroke-width: 1.7;
+  stroke-width: 1.6;
   stroke-linejoin: round;
+  stroke-linecap: round;
 }
 .adapter-brand-claude {
-  color: #d97757;
+  color: #fff7ef;
+}
+.adapter-brand-claude rect {
+  fill: #dc6f43;
+  stroke: #c65a33;
+}
+.adapter-brand-claude path {
+  stroke: #fff9f2;
+  stroke-width: 2.05;
 }
 .adapter-brand-codex {
-  color: #10a37f;
+  color: #ffffff;
+}
+.adapter-brand-codex rect {
+  fill: #f7fbff;
+  stroke: #d8e2ea;
+}
+.adapter-brand-codex .codex-cloud {
+  fill: #655eea;
+  stroke: #8fb7ff;
+  stroke-width: 1.3;
+}
+.adapter-brand-codex .codex-prompt {
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 2.05;
+}
+.model-select-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+  fill: none;
+  color: #5f6f86;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .composer-model-picker {
   max-width: 188px;
@@ -1422,7 +1508,7 @@
   cursor: pointer;
   box-shadow: none;
   overflow: hidden;
-  line-height: 1;
+  line-height: 1.25;
 }
 .composer-select-trigger span {
   display: inline-flex;
@@ -1431,7 +1517,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  line-height: 1;
+  line-height: 1.25;
+  padding-bottom: 1px;
 }
 .composer-select-trigger svg {
   flex-shrink: 0;
@@ -2803,7 +2890,7 @@ body.inspector-resizing {
   background: var(--border-strong);
   border-radius: 9px;
   position: relative;
-  cursor: default;
+  cursor: pointer;
   transition: background 0.15s;
 }
 .switch::after {
@@ -3743,6 +3830,25 @@ body.inspector-resizing {
 }
 .tech-version {
   font-size: 11px;
+}
+.about-user-agent {
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+.about-link {
+  font-size: 12px;
+  color: var(--primary);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.about-link:hover {
+  text-decoration: underline;
+}
+.switch-cursor {
+  cursor: pointer;
 }
 
 /* ── Settings: Update ── */

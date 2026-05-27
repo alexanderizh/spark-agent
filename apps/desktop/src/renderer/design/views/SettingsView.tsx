@@ -52,6 +52,116 @@ const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
 const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
 
+/* ─── Settings persistence keys ─── */
+const SETTINGS_GENERAL_KEY = 'spark-settings-general'
+const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
+const SETTINGS_TELEMETRY_KEY = 'spark-settings-telemetry'
+const SETTINGS_UPDATES_KEY = 'spark-settings-updates'
+
+type GeneralSettings = {
+  language: string
+  startupBehavior: string
+  defaultWorkspace: string
+  systemTray: boolean
+  autoStart: boolean
+  defaultSandbox: number
+  unsavedPrompt: boolean
+  checkpointRetention: number
+  notifyTaskComplete: boolean
+  notifyPermission: boolean
+  notifyWorkflowFail: boolean
+  notifyMcpOffline: boolean
+  notifyNewVersion: boolean
+  anonymousTelemetry: boolean
+  autoDiagPackage: boolean
+}
+
+type AppearanceSettings = {
+  font: string
+  fontSize: number
+  codeLigature: boolean
+  sessionLayout: string
+  windowCorners: string
+  backdropBlur: boolean
+  animation: string
+  autoCollapseTools: boolean
+  inlineTokenCount: boolean
+  syntaxHighlight: boolean
+  timestampFormat: string
+}
+
+type TelemetrySettings = {
+  logLevel: string
+  otlpEndpoint: string
+  traceSamplingRate: number
+  traceRetentionDays: number
+}
+
+type UpdatesSettings = {
+  autoCheck: boolean
+  autoDownload: boolean
+  autoInstall: boolean
+  channel: string
+}
+
+const DEFAULT_GENERAL: GeneralSettings = {
+  language: 'zh-CN',
+  startupBehavior: 'last',
+  defaultWorkspace: '',
+  systemTray: true,
+  autoStart: false,
+  defaultSandbox: 2,
+  unsavedPrompt: true,
+  checkpointRetention: 50,
+  notifyTaskComplete: true,
+  notifyPermission: true,
+  notifyWorkflowFail: true,
+  notifyMcpOffline: false,
+  notifyNewVersion: true,
+  anonymousTelemetry: true,
+  autoDiagPackage: true,
+}
+
+const DEFAULT_APPEARANCE: AppearanceSettings = {
+  font: 'geist',
+  fontSize: 13,
+  codeLigature: false,
+  sessionLayout: 'vibe',
+  windowCorners: 'soft',
+  backdropBlur: false,
+  animation: 'full',
+  autoCollapseTools: true,
+  inlineTokenCount: false,
+  syntaxHighlight: true,
+  timestampFormat: 'rel',
+}
+
+const DEFAULT_TELEMETRY: TelemetrySettings = {
+  logLevel: 'info',
+  otlpEndpoint: '',
+  traceSamplingRate: 100,
+  traceRetentionDays: 14,
+}
+
+const DEFAULT_UPDATES: UpdatesSettings = {
+  autoCheck: true,
+  autoDownload: true,
+  autoInstall: false,
+  channel: 'stable',
+}
+
+function usePersistedSettings<T>(key: string, defaults: T): [T, (patch: Partial<T>) => void] {
+  const [state, setState] = React.useState<T>(() => readStoredJson(key, defaults))
+  const update = useCallback((patch: Partial<T>) => {
+    setState(prev => {
+      const next = { ...prev, ...patch }
+      writeStoredJson(key, next)
+      return next
+    })
+  }, [key])
+  return [state, update]
+}
+
 const DEFAULT_WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   { id: 'template:agent-dev', name: 'Agent 开发流程', desc: '需求分析、计划、编码、测试、审查', nodes: 6, updatedAt: '内置模板' },
   { id: 'template:research', name: '资料研究流程', desc: '检索、摘要、交叉验证、报告生成', nodes: 4, updatedAt: '内置模板' },
@@ -155,6 +265,18 @@ export function SettingsView() {
 
 /* ───────── GENERAL ───────── */
 function GeneralSection() {
+  const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
+  const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
+
+  const handleBrowseWorkspace = async () => {
+    try {
+      const selected = await openDirectory({ title: '选择默认工作区' })
+      if (!selected.canceled && selected.filePath !== undefined) {
+        set({ defaultWorkspace: selected.filePath })
+      }
+    } catch { /* user cancelled */ }
+  }
+
   return (
     <div className="settings-section">
       <h2>通用</h2>
@@ -162,14 +284,14 @@ function GeneralSection() {
 
       <div className="form-grid">
         <label>语言<span className="sub">界面文案语言</span></label>
-        <SparkSelect defaultValue="zh-CN">
+        <SparkSelect value={s.language} onChange={(e) => set({ language: e.target.value })}>
           <option value="zh-CN">简体中文</option>
           <option value="en-US">English (US)</option>
           <option value="ja-JP">日本語</option>
         </SparkSelect>
 
         <label>启动行为<span className="sub">应用启动时的默认动作</span></label>
-        <SparkSelect defaultValue="last">
+        <SparkSelect value={s.startupBehavior} onChange={(e) => set({ startupBehavior: e.target.value })}>
           <option value="last">恢复上次会话</option>
           <option value="home">打开 Home</option>
           <option value="last-project">打开上次项目</option>
@@ -178,47 +300,46 @@ function GeneralSection() {
 
         <label>默认工作区<span className="sub">新建项目会话时的预选根目录</span></label>
         <div className="control">
-          <SparkInput className="flex1" defaultValue="/Users/hayden/work" />
-          <button className="btn"><Icons.Folder size={12} /> 浏览…</button>
+          <SparkInput className="flex1" value={s.defaultWorkspace || ''} onChange={(e) => set({ defaultWorkspace: e.target.value })} placeholder="点击浏览选择…" />
+          <button className="btn" onClick={() => void handleBrowseWorkspace()}><Icons.Folder size={12} /> 浏览…</button>
         </div>
 
         <label>系统托盘<span className="sub">关闭主窗口后保留后台运行</span></label>
-        <div className="switch on" />
+        <div className={`switch ${s.systemTray ? 'on' : ''}`} onClick={() => set({ systemTray: !s.systemTray })} />
 
         <label>开机自启动</label>
-        <div className="switch" />
+        <div className={`switch ${s.autoStart ? 'on' : ''}`} onClick={() => set({ autoStart: !s.autoStart })} />
 
         <label>新会话默认沙箱</label>
         <div className="seg-control">
-          <button>L0 仅聊天</button>
-          <button>L1 只读</button>
-          <button className="active">L2 受控</button>
-          <button>L3 完全</button>
+          {([['L0 仅聊天', 0], ['L1 只读', 1], ['L2 受控', 2], ['L3 完全', 3]] as [string, number][]).map(([label, level]) => (
+            <button key={level} className={s.defaultSandbox === level ? 'active' : ''} onClick={() => set({ defaultSandbox: level })}>{label}</button>
+          ))}
         </div>
 
         <label>未保存修改提示<span className="sub">关闭会话或退出前提示</span></label>
-        <div className="switch on" />
+        <div className={`switch ${s.unsavedPrompt ? 'on' : ''}`} onClick={() => set({ unsavedPrompt: !s.unsavedPrompt })} />
 
         <label>检查点保留<span className="sub">每个会话保留多少历史检查点</span></label>
         <div className="control">
-          <SparkInput type="number" defaultValue="50" className="input-w-sm" />
+          <SparkInput type="number" value={s.checkpointRetention} onChange={(e) => set({ checkpointRetention: Number(e.target.value) || 50 })} className="input-w-sm" />
           <span className="muted text-xs-12">个 · 超出后按时间淘汰</span>
         </div>
       </div>
 
       <div className="subsec-h">通知</div>
       <div className="settings-card">
-        <SettingsRow title="任务完成" desc="长任务（≥30s）结束后系统通知" right={<div className="switch on" />} />
-        <SettingsRow title="权限请求" desc="需要审批时弹出系统通知" right={<div className="switch on" />} />
-        <SettingsRow title="工作流失败" desc="任意节点失败时通知" right={<div className="switch on" />} />
-        <SettingsRow title="MCP 离线" desc="服务器连接断开时通知" right={<div className="switch" />} />
-        <SettingsRow title="新版本可用" right={<div className="switch on" />} />
+        <SettingsRow title="任务完成" desc="长任务（≥30s）结束后系统通知" right={<div className={`switch ${s.notifyTaskComplete ? 'on' : ''}`} onClick={() => set({ notifyTaskComplete: !s.notifyTaskComplete })} />} />
+        <SettingsRow title="权限请求" desc="需要审批时弹出系统通知" right={<div className={`switch ${s.notifyPermission ? 'on' : ''}`} onClick={() => set({ notifyPermission: !s.notifyPermission })} />} />
+        <SettingsRow title="工作流失败" desc="任意节点失败时通知" right={<div className={`switch ${s.notifyWorkflowFail ? 'on' : ''}`} onClick={() => set({ notifyWorkflowFail: !s.notifyWorkflowFail })} />} />
+        <SettingsRow title="MCP 离线" desc="服务器连接断开时通知" right={<div className={`switch ${s.notifyMcpOffline ? 'on' : ''}`} onClick={() => set({ notifyMcpOffline: !s.notifyMcpOffline })} />} />
+        <SettingsRow title="新版本可用" right={<div className={`switch ${s.notifyNewVersion ? 'on' : ''}`} onClick={() => set({ notifyNewVersion: !s.notifyNewVersion })} />} />
       </div>
 
       <div className="subsec-h">隐私</div>
       <div className="settings-card">
-        <SettingsRow title="匿名遥测" desc="发送匿名使用与崩溃数据，帮助改进 Spark Agent" right={<div className="switch on" />} />
-        <SettingsRow title="自动诊断包" desc="崩溃时自动收集脱敏诊断包（不含密钥与代码）" right={<div className="switch on" />} />
+        <SettingsRow title="匿名遥测" desc="发送匿名使用与崩溃数据，帮助改进 Spark Agent" right={<div className={`switch ${s.anonymousTelemetry ? 'on' : ''}`} onClick={() => set({ anonymousTelemetry: !s.anonymousTelemetry })} />} />
+        <SettingsRow title="自动诊断包" desc="崩溃时自动收集脱敏诊断包（不含密钥与代码）" right={<div className={`switch ${s.autoDiagPackage ? 'on' : ''}`} onClick={() => set({ autoDiagPackage: !s.autoDiagPackage })} />} />
       </div>
     </div>
   )
@@ -227,6 +348,8 @@ function GeneralSection() {
 /* ───────── APPEARANCE ───────── */
 function AppearanceSection() {
   const { t, setTweak } = useApp()
+  const [a, setA] = usePersistedSettings(SETTINGS_APPEARANCE_KEY, DEFAULT_APPEARANCE)
+
   return (
     <div className="settings-section">
       <h2>外观</h2>
@@ -277,7 +400,7 @@ function AppearanceSection() {
         </div>
 
         <label>字体</label>
-        <SparkSelect defaultValue="geist">
+        <SparkSelect value={a.font} onChange={(e) => setA({ font: e.target.value })}>
           <option value="geist">Geist Sans + Geist Mono（推荐）</option>
           <option value="system">系统默认</option>
           <option value="ibm-plex">IBM Plex</option>
@@ -286,47 +409,48 @@ function AppearanceSection() {
 
         <label>字号<span className="sub">基础字号，其他字号按比例缩放</span></label>
         <div className="control">
-          <SparkInput type="range" min="11" max="16" defaultValue="13" className="flex1" />
-          <span className="mono-sm muted range-value">13px</span>
+          <SparkInput type="range" min="11" max="16" value={a.fontSize} onChange={(e) => setA({ fontSize: Number(e.target.value) })} className="flex1" />
+          <span className="mono-sm muted range-value">{a.fontSize}px</span>
         </div>
 
         <label>代码字体连字<span className="sub">Geist Mono ligature 例如 =&gt; → ⇒</span></label>
-        <div className="switch" />
+        <div className={`switch ${a.codeLigature ? 'on' : ''}`} onClick={() => setA({ codeLigature: !a.codeLigature })} />
 
         <label>会话默认布局</label>
         <div className="seg-control">
-          <button className="active">Vibe（聊天）</button>
-          <button>Workspace（编辑器）</button>
+          {([['Vibe（聊天）', 'vibe'], ['Workspace（编辑器）', 'workspace']] as [string, string][]).map(([label, mode]) => (
+            <button key={mode} className={a.sessionLayout === mode ? 'active' : ''} onClick={() => setA({ sessionLayout: mode })}>{label}</button>
+          ))}
         </div>
 
         <label>窗口圆角</label>
         <div className="seg-control">
-          <button>直角</button>
-          <button className="active">柔和</button>
-          <button>圆润</button>
+          {([['直角', 'sharp'], ['柔和', 'soft'], ['圆润', 'round']] as [string, string][]).map(([label, mode]) => (
+            <button key={mode} className={a.windowCorners === mode ? 'active' : ''} onClick={() => setA({ windowCorners: mode })}>{label}</button>
+          ))}
         </div>
 
         <label>背景毛玻璃<span className="sub">macOS 半透明背景（性能略低）</span></label>
-        <div className="switch" />
+        <div className={`switch ${a.backdropBlur ? 'on' : ''}`} onClick={() => setA({ backdropBlur: !a.backdropBlur })} />
 
         <label>动画</label>
         <div className="seg-control">
-          <button>禁用</button>
-          <button>仅过渡</button>
-          <button className="active">完整</button>
+          {([['禁用', 'none'], ['仅过渡', 'transitions'], ['完整', 'full']] as [string, string][]).map(([label, mode]) => (
+            <button key={mode} className={a.animation === mode ? 'active' : ''} onClick={() => setA({ animation: mode })}>{label}</button>
+          ))}
         </div>
       </div>
 
       <div className="subsec-h">聊天显示</div>
       <div className="settings-card">
-        <SettingsRow title="自动折叠工具调用" desc="超过 200 行的工具结果默认折叠" right={<div className="switch on" />} />
-        <SettingsRow title="行内显示 token 计数" right={<div className="switch" />} />
-        <SettingsRow title="语法高亮代码块" right={<div className="switch on" />} />
+        <SettingsRow title="自动折叠工具调用" desc="超过 200 行的工具结果默认折叠" right={<div className={`switch ${a.autoCollapseTools ? 'on' : ''}`} onClick={() => setA({ autoCollapseTools: !a.autoCollapseTools })} />} />
+        <SettingsRow title="行内显示 token 计数" right={<div className={`switch ${a.inlineTokenCount ? 'on' : ''}`} onClick={() => setA({ inlineTokenCount: !a.inlineTokenCount })} />} />
+        <SettingsRow title="语法高亮代码块" right={<div className={`switch ${a.syntaxHighlight ? 'on' : ''}`} onClick={() => setA({ syntaxHighlight: !a.syntaxHighlight })} />} />
         <SettingsRow
           title="时间戳格式"
           right={
             <div className="select-sm">
-              <SparkSelect defaultValue="rel">
+              <SparkSelect value={a.timestampFormat} onChange={(e) => setA({ timestampFormat: e.target.value })}>
                 <option value="rel">相对时间</option>
                 <option value="abs">绝对时间</option>
               </SparkSelect>
@@ -1781,6 +1905,8 @@ function PermRule({ icon, name, hint, scope, mode, onModeChange }: { icon: React
 
 /* ───────── TELEMETRY ───────── */
 function TelemetrySection() {
+  const [s, set] = usePersistedSettings(SETTINGS_TELEMETRY_KEY, DEFAULT_TELEMETRY)
+
   return (
     <div className="settings-section">
       <h2>遥测与日志</h2>
@@ -1788,7 +1914,7 @@ function TelemetrySection() {
 
       <div className="form-grid">
         <label>本地日志级别</label>
-        <SparkSelect defaultValue="info">
+        <SparkSelect value={s.logLevel} onChange={(e) => set({ logLevel: e.target.value })}>
           <option value="error">error</option>
           <option value="warn">warn</option>
           <option value="info">info</option>
@@ -1797,16 +1923,16 @@ function TelemetrySection() {
         </SparkSelect>
 
         <label>OpenTelemetry endpoint<span className="sub">可选 — 把 trace 转发到 collector</span></label>
-        <SparkInput placeholder="https://otlp.example.com:4318 (可选)" />
+        <SparkInput value={s.otlpEndpoint} onChange={(e) => set({ otlpEndpoint: e.target.value })} placeholder="https://otlp.example.com:4318 (可选)" />
 
         <label>Trace 采样率</label>
         <div className="control">
-          <SparkInput type="range" min="0" max="100" defaultValue="100" className="flex1" />
-          <span className="mono-sm muted range-value">100%</span>
+          <SparkInput type="range" min="0" max="100" value={s.traceSamplingRate} onChange={(e) => set({ traceSamplingRate: Number(e.target.value) })} className="flex1" />
+          <span className="mono-sm muted range-value">{s.traceSamplingRate}%</span>
         </div>
 
         <label>本地保留 trace 天数</label>
-        <SparkInput type="number" defaultValue="14" className="input-max-sm" />
+        <SparkInput type="number" value={s.traceRetentionDays} onChange={(e) => set({ traceRetentionDays: Number(e.target.value) || 14 })} className="input-max-sm" />
       </div>
 
       <div className="subsec-h">最近运行</div>
@@ -1934,6 +2060,20 @@ function UsageRow({ label, used, pct }: { label: string; used: string; pct: numb
 
 /* ───────── UPDATES ───────── */
 function UpdatesSection() {
+  const [s, set] = usePersistedSettings(SETTINGS_UPDATES_KEY, DEFAULT_UPDATES)
+  const [checking, setChecking] = useState(false)
+  const [lastChecked, setLastChecked] = useState<string | null>(() => window.localStorage.getItem('spark-updates-last-checked'))
+
+  const handleCheckUpdate = async () => {
+    setChecking(true)
+    // Simulate check — real auto-updater integration is a future task
+    await new Promise((r) => setTimeout(r, 1500))
+    const now = new Date().toLocaleString('zh-CN')
+    setLastChecked(now)
+    window.localStorage.setItem('spark-updates-last-checked', now)
+    setChecking(false)
+  }
+
   return (
     <div className="settings-section">
       <h2>更新</h2>
@@ -1945,21 +2085,23 @@ function UpdatesSection() {
         </div>
         <div className="flex1">
           <div className="strong update-version">已是最新版本</div>
-          <div className="muted update-meta">Spark Agent 0.2.4 · 上次检查 12 分钟前</div>
+          <div className="muted update-meta">Spark Agent 0.1.0{lastChecked ? ` · 上次检查 ${lastChecked}` : ''}</div>
         </div>
-        <button className="btn"><Icons.Refresh size={12} /> 检查更新</button>
+        <button className="btn" onClick={() => void handleCheckUpdate()} disabled={checking}>
+          <Icons.Refresh size={12} /> {checking ? '检查中…' : '检查更新'}
+        </button>
       </div>
 
       <div className="subsec-h">更新策略</div>
       <div className="card">
-        <SettingsRow title="自动检查更新" right={<div className="switch on" />} />
-        <SettingsRow title="自动下载" desc="后台下载，准备好后提示安装" right={<div className="switch on" />} />
-        <SettingsRow title="自动安装" desc="退出应用时静默安装" right={<div className="switch" />} />
+        <SettingsRow title="自动检查更新" right={<div className={`switch ${s.autoCheck ? 'on' : ''}`} onClick={() => set({ autoCheck: !s.autoCheck })} />} />
+        <SettingsRow title="自动下载" desc="后台下载，准备好后提示安装" right={<div className={`switch ${s.autoDownload ? 'on' : ''}`} onClick={() => set({ autoDownload: !s.autoDownload })} />} />
+        <SettingsRow title="自动安装" desc="退出应用时静默安装" right={<div className={`switch ${s.autoInstall ? 'on' : ''}`} onClick={() => set({ autoInstall: !s.autoInstall })} />} />
         <SettingsRow
           title="更新通道"
           right={
             <div className="select-sm">
-              <SparkSelect defaultValue="stable">
+              <SparkSelect value={s.channel} onChange={(e) => set({ channel: e.target.value })}>
                 <option value="stable">stable</option>
                 <option value="beta">beta</option>
                 <option value="nightly">nightly</option>
@@ -1971,10 +2113,10 @@ function UpdatesSection() {
 
       <div className="subsec-h">版本</div>
       <div className="card">
-        <SettingsRow title="应用" desc="0.2.4 · 2026-05-20" right={<button className="btn ghost sm">更新日志</button>} />
+        <SettingsRow title="应用" desc="0.1.0 · 2026-05-20" right={<button className="btn ghost sm">更新日志</button>} />
         <SettingsRow title="Claude Agent SDK" desc="1.0.6" right={<span className="badge success dot">最新</span>} />
         <SettingsRow title="@openai/codex CLI" desc="0.4.1" right={<span className="badge warning dot">有新版 0.4.3</span>} />
-        <SettingsRow title="Electron" desc="33.0.2" right={<span className="badge">嵌入</span>} />
+        <SettingsRow title="Electron" desc="31.x" right={<span className="badge">嵌入</span>} />
       </div>
     </div>
   )
@@ -1994,6 +2136,30 @@ function SettingsRow({ title, desc, right }: { title: string; desc?: string; rig
 }
 
 function AboutSection() {
+  const [sysInfo, setSysInfo] = useState<{
+    electronVersion: string
+    chromeVersion: string
+    nodeVersion: string
+    platform: string
+    arch: string
+  } | null>(null)
+
+  useEffect(() => {
+    // In Electron renderer, these are available via preload or process
+    try {
+      const info = {
+        electronVersion: (window as unknown as Record<string, string>).electronVersion ?? '31.x',
+        chromeVersion: (window as unknown as Record<string, string>).chromeVersion ?? (navigator.userAgent.match(/Chrome\/([\d.]+)/)?.[1] ?? 'unknown'),
+        nodeVersion: typeof process !== 'undefined' ? process.versions.node : 'unknown',
+        platform: navigator.platform ?? 'unknown',
+        arch: (window as unknown as Record<string, string>).systemArch ?? 'arm64',
+      }
+      setSysInfo(info)
+    } catch {
+      setSysInfo(null)
+    }
+  }, [])
+
   return (
     <div className="settings-section">
       <div className="about-header">
@@ -2001,13 +2167,31 @@ function AboutSection() {
         <div className="about-subtitle">AI Agent 工作台</div>
         <div className="about-version">版本 0.1.0 (MVP)</div>
       </div>
+      <div className="subsec-h">技术栈</div>
       <div className="card">
-        <SettingsRow title="Electron" desc="桌面应用框架" right={<span className="mono-sm tech-version">33.x</span>} />
+        <SettingsRow title="Electron" desc="桌面应用框架" right={<span className="mono-sm tech-version">{sysInfo?.electronVersion ?? '31.x'}</span>} />
+        <SettingsRow title="Chromium" desc="渲染引擎" right={<span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? '—'}</span>} />
+        <SettingsRow title="Node.js" desc="运行时" right={<span className="mono-sm tech-version">{sysInfo?.nodeVersion ?? '—'}</span>} />
         <SettingsRow title="React" desc="UI 框架" right={<span className="mono-sm tech-version">19.x</span>} />
         <SettingsRow title="TypeScript" desc="开发语言" right={<span className="mono-sm tech-version">5.x</span>} />
         <SettingsRow title="数据库" desc="本地存储" right={<span className="mono-sm tech-version">SQLite (better-sqlite3)</span>} />
         <SettingsRow title="AI 引擎" desc="Agent Runtime" right={<span className="mono-sm tech-version">Claude / OpenAI / DeepSeek / Ollama</span>} />
       </div>
+
+      <div className="subsec-h">系统信息</div>
+      <div className="card">
+        <SettingsRow title="平台" desc="操作系统" right={<span className="mono-sm tech-version">{sysInfo?.platform ?? '—'}</span>} />
+        <SettingsRow title="架构" desc="CPU 架构" right={<span className="mono-sm tech-version">{sysInfo?.arch ?? '—'}</span>} />
+        <SettingsRow title="User Agent" desc="浏览器标识" right={<span className="mono-sm tech-version about-user-agent">{navigator.userAgent.slice(0, 60)}…</span>} />
+      </div>
+
+      <div className="subsec-h">链接</div>
+      <div className="card">
+        <SettingsRow title="GitHub" desc="源代码仓库" right={<a href="https://github.com" target="_blank" rel="noreferrer" className="about-link">github.com →</a>} />
+        <SettingsRow title="文档" desc="使用指南与 API 参考" right={<a href="https://docs.spark-agent.dev" target="_blank" rel="noreferrer" className="about-link">文档 →</a>} />
+        <SettingsRow title="反馈" desc="问题报告与功能建议" right={<a href="https://github.com/issues" target="_blank" rel="noreferrer" className="about-link">提交 Issue →</a>} />
+      </div>
+
       <div className="about-footer">
         © 2026 Spark Agent Team. All rights reserved.
       </div>
