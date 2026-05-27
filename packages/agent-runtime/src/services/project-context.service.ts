@@ -5,6 +5,10 @@ export interface ProjectContextSource {
   kind: 'rule' | 'skill' | 'agent'
   name: string
   path: string
+  estimatedTokens?: number
+  included?: boolean
+  reason?: string
+  truncated?: boolean
 }
 
 export interface ProjectContext {
@@ -12,16 +16,41 @@ export interface ProjectContext {
   systemPrompt?: string
   skillSystemPrompt?: string
   sources: ProjectContextSource[]
+  budget?: ProjectContextBudget
+}
+
+export interface ProjectContextBudget {
+  mode: ContextMode
+  budgetTokens: number
+  usedTokens: number
+  truncated: boolean
+}
+
+export type ContextMode = 'minimal' | 'project-smart' | 'deep-research' | 'review' | 'manual'
+
+export interface ProjectContextOptions {
+  mode?: ContextMode
+  budgetTokens?: number
 }
 
 interface MarkdownDoc {
   name: string
   description: string
   body: string
+  estimatedTokens: number
+  truncated: boolean
 }
 
 const MAX_FILE_CHARS = 20_000
 const MAX_PROMPT_CHARS = 80_000
+const MIN_PARTIAL_DOC_TOKENS = 200
+const DEFAULT_BUDGET_BY_MODE: Record<ContextMode, number> = {
+  minimal: 2_000,
+  'project-smart': 30_000,
+  review: 40_000,
+  'deep-research': 80_000,
+  manual: 30_000,
+}
 const RULE_FILE_PATHS = [
   'AGENTS.md',
   'CLAUDE.md',
@@ -58,7 +87,7 @@ const AGENT_DIR_PATHS = [
 const TEXT_EXTENSIONS = new Set(['', '.md', '.mdc', '.txt', '.rule', '.rules'])
 
 export class ProjectContextService {
-  discover(rootPath: string | undefined): ProjectContext {
+  discover(rootPath: string | undefined, options: ProjectContextOptions = {}): ProjectContext {
     if (rootPath == null || rootPath.trim().length === 0) return emptyContext()
     const root = resolve(rootPath)
     if (!safeStat(root)?.isDirectory()) return emptyContext()
@@ -67,21 +96,27 @@ export class ProjectContextService {
     const skillDocs = discoverSkillDocs(root)
     const agentDocs = discoverAgentDocs(root)
 
+    const mode = options.mode ?? 'project-smart'
+    const budgetTokens = options.budgetTokens ?? DEFAULT_BUDGET_BY_MODE[mode]
+    const budgeted = applyContextBudget(ruleDocs, skillDocs, agentDocs, budgetTokens)
+
     const systemSections = [
-      formatRulePrompt(ruleDocs),
-      formatAgentPrompt(agentDocs),
+      formatRulePrompt(budgeted.ruleDocs),
+      formatAgentPrompt(budgeted.agentDocs),
     ].filter(isNonEmptyString)
-    const skillSystemPrompt = formatSkillPrompt(skillDocs)
+    const skillSystemPrompt = formatSkillPrompt(budgeted.skillDocs)
 
     return {
-      rules: ruleDocs.map((doc) => doc.content),
+      rules: budgeted.ruleDocs.map((doc) => doc.content),
       ...(systemSections.length > 0 ? { systemPrompt: clampPrompt(systemSections.join('\n\n')) } : {}),
       ...(skillSystemPrompt.length > 0 ? { skillSystemPrompt: clampPrompt(skillSystemPrompt) } : {}),
-      sources: [
-        ...ruleDocs.map((doc) => ({ kind: 'rule' as const, name: doc.name, path: doc.relativePath })),
-        ...skillDocs.map((doc) => ({ kind: 'skill' as const, name: doc.name, path: doc.relativePath })),
-        ...agentDocs.map((doc) => ({ kind: 'agent' as const, name: doc.name, path: doc.relativePath })),
-      ],
+      sources: budgeted.sources,
+      budget: {
+        mode,
+        budgetTokens,
+        usedTokens: budgeted.usedTokens,
+        truncated: budgeted.sources.some((source) => source.included === false || source.truncated === true),
+      },
     }
   }
 }
@@ -107,6 +142,8 @@ function discoverRuleDocs(root: string): Array<MarkdownDoc & { relativePath: str
         body: raw.trim(),
         content: `[${relativePath}]\n${raw.trim()}`,
         relativePath,
+        estimatedTokens: estimateTokens(raw),
+        truncated: raw.length >= MAX_FILE_CHARS,
       }
     })
     .filter((doc): doc is MarkdownDoc & { relativePath: string; content: string } => doc != null)
@@ -160,6 +197,8 @@ function toProjectDoc(root: string, filePath: string, fallbackName: string): (Ma
   return {
     ...parsed,
     relativePath: toPosix(relative(root, filePath)),
+    estimatedTokens: estimateTokens(parsed.body),
+    truncated: raw.length >= MAX_FILE_CHARS,
   }
 }
 
@@ -170,7 +209,90 @@ function parseMarkdownDoc(raw: string, fallbackName: string): MarkdownDoc {
     name: stringField(frontmatter, 'name') || fallbackName,
     description: stringField(frontmatter, 'description') || firstBodyLine(trimmedBody),
     body: trimmedBody,
+    estimatedTokens: estimateTokens(trimmedBody),
+    truncated: false,
   }
+}
+
+type RuleDoc = MarkdownDoc & { relativePath: string; content: string }
+type ProjectDoc = MarkdownDoc & { relativePath: string }
+type BudgetedDoc<T extends ProjectDoc> = T & { included: boolean; reason?: string }
+
+function applyContextBudget(
+  ruleDocs: RuleDoc[],
+  skillDocs: ProjectDoc[],
+  agentDocs: ProjectDoc[],
+  budgetTokens: number,
+): {
+  ruleDocs: RuleDoc[]
+  skillDocs: ProjectDoc[]
+  agentDocs: ProjectDoc[]
+  sources: ProjectContextSource[]
+  usedTokens: number
+} {
+  let remaining = Math.max(0, budgetTokens)
+  let usedTokens = 0
+  const selectedRules: RuleDoc[] = []
+  const selectedSkills: ProjectDoc[] = []
+  const selectedAgents: ProjectDoc[] = []
+  const sources: ProjectContextSource[] = []
+
+  const consume = <T extends ProjectDoc>(kind: ProjectContextSource['kind'], doc: T): BudgetedDoc<T> => {
+    const sourceBase = {
+      kind,
+      name: doc.name,
+      path: doc.relativePath,
+      estimatedTokens: doc.estimatedTokens,
+    }
+    if (doc.estimatedTokens <= remaining) {
+      remaining -= doc.estimatedTokens
+      usedTokens += doc.estimatedTokens
+      sources.push({ ...sourceBase, included: true, ...(doc.truncated ? { truncated: true } : {}) })
+      return { ...doc, included: true }
+    }
+    if (remaining >= MIN_PARTIAL_DOC_TOKENS) {
+      const partial = truncateDocToTokens(doc, remaining)
+      usedTokens += partial.estimatedTokens
+      remaining = 0
+      sources.push({ ...sourceBase, estimatedTokens: partial.estimatedTokens, included: true, truncated: true, reason: 'trimmed_to_context_budget' })
+      return { ...partial, included: true, reason: 'trimmed_to_context_budget' }
+    }
+    sources.push({ ...sourceBase, included: false, reason: 'excluded_by_context_budget' })
+    return { ...doc, included: false, reason: 'excluded_by_context_budget' }
+  }
+
+  for (const doc of ruleDocs) {
+    const selected = consume('rule', doc)
+    if (selected.included) selectedRules.push(selected)
+  }
+  for (const doc of agentDocs) {
+    const selected = consume('agent', doc)
+    if (selected.included) selectedAgents.push(selected)
+  }
+  for (const doc of skillDocs) {
+    const selected = consume('skill', doc)
+    if (selected.included) selectedSkills.push(selected)
+  }
+
+  return { ruleDocs: selectedRules, skillDocs: selectedSkills, agentDocs: selectedAgents, sources, usedTokens }
+}
+
+function truncateDocToTokens<T extends ProjectDoc>(doc: T, tokens: number): T {
+  const maxChars = Math.max(0, tokens * 3)
+  const body = `${doc.body.slice(0, maxChars)}\n\n[Project context source truncated by Context Governor]`
+  const next = {
+    ...doc,
+    body,
+    estimatedTokens: estimateTokens(body),
+    truncated: true,
+  }
+  if ('content' in next) {
+    return {
+      ...next,
+      content: `[${next.relativePath}]\n${body}`,
+    }
+  }
+  return next
 }
 
 function splitFrontmatter(raw: string): { frontmatter: Record<string, string>; body: string } {
@@ -265,6 +387,10 @@ function firstBodyLine(body: string): string {
     .split(/\r?\n/)
     .map((line) => line.trim().replace(/^#+\s*/, ''))
     .find((line) => line.length > 0) ?? ''
+}
+
+function estimateTokens(text: string): number {
+  return Math.ceil(text.length / 3)
 }
 
 function uniqueFiles(files: string[]): string[] {

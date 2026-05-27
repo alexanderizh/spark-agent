@@ -51,10 +51,26 @@ describe('ProjectContextService', () => {
     expect(result.skillSystemPrompt).toContain('[Project Local Skills]')
     expect(result.skillSystemPrompt).toContain('Review Skill')
     expect(result.sources).toEqual(expect.arrayContaining([
-      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md' }),
-      expect.objectContaining({ kind: 'skill', path: '.claude/skills/review/SKILL.md' }),
-      expect.objectContaining({ kind: 'agent', path: '.claude/agents/architect.md' }),
+      expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
+      expect.objectContaining({ kind: 'skill', path: '.claude/skills/review/SKILL.md', included: true }),
+      expect.objectContaining({ kind: 'agent', path: '.claude/agents/architect.md', included: true }),
     ]))
+    expect(result.budget).toMatchObject({ mode: 'project-smart', truncated: false })
+  })
+
+  it('trims and excludes project context sources when the budget is tight', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-context-budget-'))
+    roots.push(root)
+    writeFileSync(join(root, 'AGENTS.md'), 'A'.repeat(3000))
+    mkdirSync(join(root, '.claude', 'agents'), { recursive: true })
+    writeFileSync(join(root, '.claude', 'agents', 'large.md'), 'B'.repeat(3000))
+
+    const result = new ProjectContextService().discover(root, { budgetTokens: 500 })
+
+    expect(result.budget).toMatchObject({ budgetTokens: 500, truncated: true })
+    expect(result.sources.some((source) => source.reason === 'trimmed_to_context_budget')).toBe(true)
+    expect(result.sources.some((source) => source.reason === 'excluded_by_context_budget')).toBe(true)
+    expect(result.systemPrompt?.length ?? 0).toBeLessThan(2500)
   })
 
   it('returns an empty context for missing workspaces', () => {

@@ -261,13 +261,24 @@ export interface ProjectContextSource {
   kind: 'rule' | 'skill' | 'agent'
   name: string
   path: string
+  estimatedTokens?: number
+  included?: boolean
+  reason?: string
   truncated?: boolean
+}
+
+export interface ProjectContextBudget {
+  mode: 'minimal' | 'project-smart' | 'deep-research' | 'review' | 'manual'
+  budgetTokens: number
+  usedTokens: number
+  truncated: boolean
 }
 
 export interface ProjectContextLoadedEvent extends BaseEvent {
   type: 'project_context_loaded'
   workspaceRoot?: string
   sources: ProjectContextSource[]
+  budget?: ProjectContextBudget
   counts: {
     rules: number
     skills: number

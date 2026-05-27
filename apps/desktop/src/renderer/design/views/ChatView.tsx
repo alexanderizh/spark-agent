@@ -4365,13 +4365,28 @@ function ChatInspector({
           <div className="kv-row"><span className="k">规则</span><span className="v">{projectContext.counts.rules}</span></div>
           <div className="kv-row"><span className="k">Skills</span><span className="v">{projectContext.counts.skills}</span></div>
           <div className="kv-row"><span className="k">Agents</span><span className="v">{projectContext.counts.agents}</span></div>
+          {projectContext.budget != null && (
+            <>
+              <div className="kv-row"><span className="k">模式</span><span className="v">{projectContext.budget.mode}</span></div>
+              <div className="kv-row">
+                <span className="k">预算</span>
+                <span className="v">{formatTokenCount(projectContext.budget.usedTokens)} / {formatTokenCount(projectContext.budget.budgetTokens)}</span>
+              </div>
+            </>
+          )}
           {projectContextSources.length > 0 ? (
             <div className="runtime-skill-list">
               {projectContextSources.map((source) => (
-                <div className="runtime-skill-row" key={`${source.kind}:${source.path}`}>
+                <div className={`runtime-skill-row ${source.included === false ? 'disabled' : ''}`} key={`${source.kind}:${source.path}`}>
                   <div className="runtime-skill-main min-w-0">
                     <div className="runtime-skill-name truncate">{source.name}</div>
-                    <div className="runtime-skill-desc truncate">{source.kind} · {source.path}{source.truncated ? ' · truncated' : ''}</div>
+                    <div className="runtime-skill-desc truncate">
+                      {source.kind} · {source.path}
+                      {source.estimatedTokens != null ? ` · ${formatTokenCount(source.estimatedTokens)}` : ''}
+                      {source.included === false ? ' · excluded' : ''}
+                      {source.truncated ? ' · truncated' : ''}
+                      {source.reason != null ? ` · ${source.reason}` : ''}
+                    </div>
                   </div>
                 </div>
               ))}

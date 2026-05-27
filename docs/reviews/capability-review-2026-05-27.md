@@ -143,7 +143,8 @@
 - `19455ee feat: persist permission approval decisions`
 - `522de69 feat: expose project context sources`
 - `b67941c fix: harmonize context window reporting`
-- 本次变更: backend queue sync，补 `pendingTurns` IPC 快照、queue changed stream、ChatView 后端队列渲染与单条取消。
+- `094190a feat: sync queued turns from runtime`
+- 本次变更: Context Governor MVP，补项目上下文预算、裁剪/排除、budget ledger 事件和 Inspector 展示。
 
 最近验证:
 
@@ -159,6 +160,7 @@
 - `pnpm --filter @spark/shared typecheck`
 - `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/core/agent-loop-new.test.ts`
 - `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/services/session.service.test.ts`
+- `pnpm --filter @spark/agent-runtime test:unit -- src/services/project-context.service.test.ts src/__tests__/services/session.service.test.ts`
 - storage repository test note: `pnpm --filter @spark/storage test:unit -- src/repositories/repositories.test.ts` is currently blocked by local `better-sqlite3` Node ABI mismatch (module 125 vs required 137), before reaching the new SQL logic.
 
 说明: renderer 测试仍会输出既有 React `act(...)` 警告，但测试通过。
@@ -223,16 +225,23 @@
 目标:
 - 从“显示上下文额度”升级到“主动管理上下文额度”。
 
-开发内容:
+已完成:
+- `ProjectContextService` 支持 `minimal`、`project-smart`、`review`、`deep-research`、`manual` 模式的预算入口。
+- `project-smart` 会按模型软上限的 25% 生成项目上下文预算，最高 60k tokens。
+- 项目规则、agents、skills 会按预算进入 prompt；超预算来源会被裁剪或排除。
+- `project_context_loaded` 事件携带 budget、included、estimatedTokens、truncated、reason。
+- Chat Inspector 可展示项目上下文模式、预算用量、来源 token 估算和裁剪/排除原因。
+
+仍需补强:
 - context modes: minimal、project-smart、deep-research、review、manual。
 - 文件 pin/exclude。
 - Context Ledger: system prompt、project files、skills、history、tool results 分项 token 估算。
 - 长会话摘要策略。
-- 超预算时优先裁剪低价值来源，而不是等模型失败。
+- history/tool results 的 Context Ledger 和长会话摘要仍未完成；当前 MVP 先管理项目上下文块。
 
 验收标准:
 - 200k 模型下能稳定处理长会话，不会几轮后不可继续。
-- UI 能解释上下文消耗来自哪里。
+- UI 已能解释项目上下文消耗来自哪里；history/tool results 分项解释仍需下一轮。
 
 ### P1-B: SDK checkpoint / diff 审查产品化
 

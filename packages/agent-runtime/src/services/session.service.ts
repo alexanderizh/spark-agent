@@ -34,7 +34,7 @@ import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
-import { createLogger } from '@spark/shared'
+import { createLogger, resolveSoftContextLimit } from '@spark/shared'
 
 const log = createLogger('session.service')
 
@@ -387,7 +387,11 @@ export class SessionService {
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
     let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
-    let projectContext = new ProjectContextService().discover(undefined)
+    const projectContextBudgetTokens = Math.max(2_000, Math.min(60_000, Math.floor(resolveSoftContextLimit(model) * 0.25)))
+    let projectContext = new ProjectContextService().discover(undefined, {
+      mode: 'project-smart',
+      budgetTokens: projectContextBudgetTokens,
+    })
     const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
     const primaryWorkspaceId = workspaceIds[0]
     if (workspaceIds.length > 0) {
@@ -396,7 +400,10 @@ export class SessionService {
       if (ws != null) {
         workspaceRootPath = ws.root_path
         workspaceInfo = { name: ws.name, rootPath: ws.root_path, projectKind: ws.project_kind }
-        projectContext = new ProjectContextService().discover(ws.root_path)
+        projectContext = new ProjectContextService().discover(ws.root_path, {
+          mode: 'project-smart',
+          budgetTokens: projectContextBudgetTokens,
+        })
       }
     }
 
@@ -448,10 +455,11 @@ export class SessionService {
       seq: 0,
       ...(workspaceInfo?.rootPath != null ? { workspaceRoot: workspaceInfo.rootPath } : {}),
       sources: projectContext.sources,
+      ...(projectContext.budget != null ? { budget: projectContext.budget } : {}),
       counts: {
-        rules: projectContext.sources.filter((source) => source.kind === 'rule').length,
-        skills: projectContext.sources.filter((source) => source.kind === 'skill').length,
-        agents: projectContext.sources.filter((source) => source.kind === 'agent').length,
+        rules: projectContext.sources.filter((source) => source.kind === 'rule' && source.included !== false).length,
+        skills: projectContext.sources.filter((source) => source.kind === 'skill' && source.included !== false).length,
+        agents: projectContext.sources.filter((source) => source.kind === 'agent' && source.included !== false).length,
       },
     }, eventRepo)
 
