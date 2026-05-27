@@ -85,7 +85,10 @@ function getSessionService(): SessionService {
         pushStreamEvent('stream:permission:approval-request', req)
       })
     }
-    _sessionService = new SessionService(getDatabase(), onEvent, onApproval)
+    const onApprovalCancel = (sessionId: string) => {
+      getPermissionService().cancelPendingApprovals(sessionId)
+    }
+    _sessionService = new SessionService(getDatabase(), onEvent, onApproval, onApprovalCancel)
   }
   return _sessionService
 }
@@ -133,6 +136,12 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('session:delete', async (req) => {
     log.info(`session:delete requested, sessionId=${req.sessionId}`)
     return getSessionService().deleteSession(req.sessionId)
+  })
+
+  typedIpcHandle('session:set-max-iterations', async (req) => {
+    log.info(`session:set-max-iterations sessionId=${req.sessionId} max=${req.maxIterations}`)
+    getSessionService().setMaxIterations(req.sessionId, req.maxIterations)
+    return { applied: req.maxIterations }
   })
 
   // ─── Provider Handlers ─────────────────────────────────────────────────

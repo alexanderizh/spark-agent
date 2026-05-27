@@ -1,9 +1,10 @@
 import { spawn } from 'node:child_process'
 import * as path from 'node:path'
 import type { RegisteredTool, ToolContext, ToolResult } from '../tool-registry.js'
+import { startBackgroundTask } from './background-tasks.js'
 
 const DEFAULT_TIMEOUT_MS = 30_000
-const MAX_TIMEOUT_MS = 120_000
+const MAX_TIMEOUT_MS = 600_000
 const MAX_OUTPUT_BYTES = 50_000
 const TRUNCATION_NOTICE = '\n...<output truncated, use more specific commands to narrow results>'
 
@@ -123,7 +124,11 @@ export const bashTool: RegisteredTool = {
         },
         timeout: {
           type: 'number',
-          description: 'Timeout in seconds (default: 30, max: 120)',
+          description: 'Timeout in seconds (default: 30, max: 600 i.e. 10 min)',
+        },
+        runInBackground: {
+          type: 'boolean',
+          description: 'If true, start the command in the background and return a task_id immediately. Use the `monitor` tool to read its output later, and `bash` with command:"kill <task_id>" semantics to stop it. Good for dev servers, watchers, long test runs.',
         },
       },
       required: ['command'],
@@ -148,6 +153,19 @@ export const bashTool: RegisteredTool = {
     const cwd = resolveCwd(ctx.workspaceRootPath, input['cwd'] ? String(input['cwd']) : undefined)
     if (!cwd) {
       return { status: 'error', error: 'Working directory is outside workspace', durationMs: Date.now() - start }
+    }
+
+    // Background mode: spawn and return immediately with a task_id
+    if (input['runInBackground'] === true) {
+      const { id } = startBackgroundTask(command, cwd)
+      return {
+        status: 'success',
+        output: {
+          backgroundTaskId: id,
+          hint: `Started in background. Use monitor({ action: "read", taskId: "${id}" }) to poll output.`,
+        },
+        durationMs: Date.now() - start,
+      }
     }
 
     // Parse timeout

@@ -16,9 +16,28 @@ export type UIBlock =
   | { kind: 'file_change'; changeType: string; path: string; diff: string | undefined }
   | { kind: 'terminal'; toolCallId: string; stdout: string; stderr: string; isStreaming: boolean; exitCode: number | undefined }
 
+export interface ContextUsageSnapshot {
+  estimatedTokens: number
+  softLimitTokens: number
+  contextWindowTokens: number
+  compactedThisTurn: boolean
+}
+
 export class MessageBuilder {
   private messages: UIMessage[] = []
   private currentAssistantId: string | null = null
+  private latestContextUsage: ContextUsageSnapshot | null = null
+  private latestPlanProposed: string | null = null
+
+  getLatestContextUsage(): ContextUsageSnapshot | null {
+    return this.latestContextUsage
+  }
+
+  consumePlanProposed(): string | null {
+    const plan = this.latestPlanProposed
+    this.latestPlanProposed = null
+    return plan
+  }
 
   processEvent(event: AgentEvent): void {
     switch (event.type) {
@@ -205,6 +224,23 @@ export class MessageBuilder {
         if (msg) {
           msg.usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens, estimatedCostUsd: event.estimatedCostUsd }
         }
+        break
+      }
+
+      case 'context_usage': {
+        this.latestContextUsage = {
+          estimatedTokens: event.estimatedTokens,
+          softLimitTokens: event.softLimitTokens,
+          contextWindowTokens: event.contextWindowTokens,
+          compactedThisTurn: event.compacted,
+        }
+        break
+      }
+
+      case 'plan_proposed': {
+        // Stash the plan; ChatView will poll via consumePlanProposed() and show
+        // a 「批准/拒绝/编辑后批准」 dialog. (Wiring left for a follow-up UI PR.)
+        this.latestPlanProposed = event.plan
         break
       }
     }

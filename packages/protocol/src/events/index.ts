@@ -229,6 +229,43 @@ export interface UsageUpdateEvent extends BaseEvent {
   estimatedCostUsd?: number
 }
 
+/**
+ * 当前 turn 内 messages 上下文占用估算（agent-loop 每轮 LLM 调用前发出）。
+ * 与 UsageUpdateEvent 的区别：
+ *   - UsageUpdateEvent 由 adapter 发出，反映"刚发生的一次 LLM 调用的 token"
+ *   - ContextUsageEvent 由 agent-loop 发出，反映"下一次 LLM 调用即将携带的上下文规模"
+ * UI 可用 estimatedTokens / softLimitTokens 显示进度条；接近上限时弹「即将自动压缩」提示。
+ */
+export interface ContextUsageEvent extends BaseEvent {
+  type: 'context_usage'
+  /** 粗略估算的 messages tokens（agent-loop 用 ~3 chars/token 估算） */
+  estimatedTokens: number
+  /** 模型的软上限（实际上下文窗口的 ~70%；超过即触发自动压缩） */
+  softLimitTokens: number
+  /** 该模型的硬上限（仅用于 UI 展示） */
+  contextWindowTokens: number
+  /** 本轮是否触发了自动压缩 */
+  compacted: boolean
+}
+
+// ─── Plan-mode 事件 ─────────────────────────────────────────────────────────
+
+/**
+ * Agent 在 claude-plan 模式下通过 exit_plan_mode 工具提交了一份计划，
+ * 等待用户审批。UI 应在此事件触发后展示「批准/拒绝/编辑后批准」选项：
+ *
+ *   - 批准：调用 session:update 把 permissionMode 切到 claude-auto-edits，
+ *     然后用户重新发送（或自动注入）一条 "继续执行该计划" 的消息。
+ *   - 拒绝：什么也不做，turn 已经结束，用户可以继续聊天调整计划。
+ *
+ * 当前 turn 在发出该事件后立即结束（status: completed），不会调用更多 tools。
+ */
+export interface PlanProposedEvent extends BaseEvent {
+  type: 'plan_proposed'
+  /** Markdown 格式的计划文本（agent 写的 plan） */
+  plan: string
+}
+
 // ─── 错误类事件 ──────────────────────────────────────────────────────────────
 
 /** Agent 运行时错误 */
@@ -267,6 +304,8 @@ export type AgentEvent =
   | AgentThinkingEvent
   | UsageUpdateEvent
   | AgentErrorEvent
+  | PlanProposedEvent
+  | ContextUsageEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']

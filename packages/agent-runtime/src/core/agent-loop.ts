@@ -74,7 +74,9 @@ export class AgentLoop {
     historyMessages: ChatMessage[] = [],
   ): Promise<void> {
     const { adapter, apiKey, model, apiEndpoint, tools, toolContext, temperature, maxTokens, reasoningEffort, permissionMode, approvalCallback, context } = config
-    const maxIter = config.maxTurnIterations ?? 20
+    // Default 100 turns —编程 agent 单 turn 内常见的「搜索→读多文件→编辑→测试→修复」需要数十轮。
+    // 上层 (session.service) 会按 adapter 进一步区分 (claude 150 / codex 100)。
+    const maxIter = config.maxTurnIterations ?? 100
 
     // Build system prompt with injected context and optional skill prompt
     const systemPrompt = buildSystemPrompt(config.systemPrompt, context, config.skillSystemPrompt)
@@ -112,11 +114,24 @@ export class AgentLoop {
       for (let iter = 0; iter < maxIter; iter++) {
         if (signal.aborted) break
 
+        // 上下文裁剪：超过软上限时，把最早的若干个 tool_result 内容压缩成占位符。
+        // 不调用 LLM 摘要 — 那是一个更重的工程；裁剪式压缩对编码 agent 已经足够：
+        // 大体积通常来自早期的文件读取 / 命令输出，模型在做完后续操作后很少再回头看。
+        const compacted = compactMessagesIfNeeded(messages, model)
+        this.emitter.emit({
+          ...makeBase(),
+          type: 'context_usage',
+          estimatedTokens: estimateTokens(messages),
+          softLimitTokens: softContextLimit(model),
+          contextWindowTokens: contextWindow(model),
+          compacted,
+        })
+
         const params: ChatParams = {
           apiKey,
           model,
           messages,
-          tools: tools.getDefinitions(),
+          tools: tools.getDefinitions(permissionMode),
           ...(apiEndpoint !== undefined && { apiEndpoint }),
           ...(systemPrompt !== undefined && { systemPrompt }),
           ...(temperature !== undefined && { temperature }),
@@ -189,6 +204,22 @@ export class AgentLoop {
 
             const toolResult = await tools.execute(toolContext, pendingToolCall, resultBase)
             this.emitter.emit(toolResult)
+
+            // exit_plan_mode: agent 完成研究、提交计划。立即结束 turn 等待用户审批。
+            if (
+              pendingToolCall.toolName === 'exit_plan_mode'
+              && toolResult.status === 'success'
+              && isPlanProposedOutput(toolResult.output)
+            ) {
+              const plan = (toolResult.output as { plan: string }).plan
+              this.emitter.emit({
+                ...makeBase(),
+                type: 'plan_proposed',
+                plan,
+              })
+              emitStatus('completed')
+              return
+            }
 
             // Append assistant tool_use + tool_result to messages for next iteration
             messages.push({
@@ -274,6 +305,80 @@ export class AgentLoop {
   }
 }
 
+/** 粗略 token 估算：英文 ~4 chars/token，中文 ~1.5 chars/token，
+ *  取保守值 3 chars/token —— 高估优于低估（提前压缩比超限失败好）。 */
+function estimateTokens(messages: ChatMessage[]): number {
+  let chars = 0
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') {
+      chars += msg.content.length
+    } else {
+      for (const block of msg.content) {
+        if (block.type === 'text') chars += block.text.length
+        else if (block.type === 'tool_use') chars += JSON.stringify(block.input ?? {}).length
+        else if (block.type === 'tool_result') chars += block.content.length
+        else if (block.type === 'image') chars += 1500  // image 估为 ~1500 tokens
+      }
+    }
+  }
+  return Math.ceil(chars / 3)
+}
+
+/** 不同模型的硬上下文窗口（用于 UI 进度条 100% 基准）。 */
+function contextWindow(model: string): number {
+  if (model.includes('claude')) return 200_000
+  if (model.includes('gpt-5') || model.includes('gpt-4.1')) return 400_000
+  if (model.includes('gpt-4')) return 128_000
+  if (model.includes('deepseek')) return 128_000
+  return 64_000
+}
+
+/** 软上限：超过即开始压缩。约等于硬窗口的 70%。 */
+function softContextLimit(model: string): number {
+  return Math.floor(contextWindow(model) * 0.7)
+}
+
+const COMPACTION_PLACEHOLDER = '[tool result elided to save context. Re-run the tool if you need this output again.]'
+
+/**
+ * 把最早的若干个 tool_result content 替换为占位符，直到 token 数低于阈值。
+ * 跳过最近 N 个 tool_result（保留近期上下文），保留所有 text 内容。
+ */
+function compactMessagesIfNeeded(messages: ChatMessage[], model: string): boolean {
+  const softLimit = softContextLimit(model)
+  if (estimateTokens(messages) <= softLimit) return false
+
+  type ToolResultBlock = { type: 'tool_result'; tool_use_id: string; content: string }
+  const toolResults: Array<{ msg: ChatMessage; block: ToolResultBlock }> = []
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') continue
+    for (const block of msg.content) {
+      if (block.type === 'tool_result' && block.content !== COMPACTION_PLACEHOLDER) {
+        toolResults.push({ msg, block: block as ToolResultBlock })
+      }
+    }
+  }
+
+  const KEEP_RECENT = 4
+  const candidates = toolResults.slice(0, Math.max(0, toolResults.length - KEEP_RECENT))
+  let didCompact = false
+  for (const { block } of candidates) {
+    block.content = COMPACTION_PLACEHOLDER
+    didCompact = true
+    if (estimateTokens(messages) <= softLimit) break
+  }
+  return didCompact
+}
+
+function isPlanProposedOutput(output: unknown): output is { __planProposed: true; plan: string } {
+  return (
+    output != null
+    && typeof output === 'object'
+    && (output as { __planProposed?: unknown }).__planProposed === true
+    && typeof (output as { plan?: unknown }).plan === 'string'
+  )
+}
+
 function getToolPermissionDecision(mode: SessionPermissionMode | undefined, toolName: string, toolInput?: Record<string, unknown>): ToolPermissionDecision {
   const permissionMode = mode ?? 'codex-default'
   const category = getToolCategory(toolName)
@@ -281,8 +386,11 @@ function getToolPermissionDecision(mode: SessionPermissionMode | undefined, tool
   // Full access modes: allow everything
   if (permissionMode === 'claude-bypass' || permissionMode === 'codex-full-access') return 'allow'
 
-  // Plan mode: only reads allowed
-  if (permissionMode === 'claude-plan') return category === 'read' ? 'allow' : 'deny'
+  // Plan mode: reads + exit_plan_mode allowed; everything else denied.
+  if (permissionMode === 'claude-plan') {
+    if (toolName === 'exit_plan_mode') return 'allow'
+    return category === 'read' ? 'allow' : 'deny'
+  }
 
   // Use fine-grained permission for bash and git tools
   if (toolInput && (toolName === 'bash' || toolName === 'git')) {
@@ -316,8 +424,19 @@ function getToolCategory(toolName: string): 'read' | 'write' | 'command' | 'dang
   // grep tool — read-only, auto-approved
   if (toolName === 'grep') return 'read'
 
+  // Productivity tools — agent-only state, no external side effects
+  if (toolName === 'todo_write') return 'read'
+
+  // monitor — read background-task output / list / stop (stop is a side effect, but contained)
+  if (toolName === 'monitor') return 'command'
+
+  // Network read — fetching public URLs / search is treated as read-level by default;
+  // permission profile can still escalate via 'network_unknown' rule.
+  if (toolName === 'web_search') return 'read'
+  if (toolName === 'web_fetch') return 'command'
+
   // File write tools — require approval (except in full-access modes)
-  if (toolName === 'write_file' || toolName === 'edit_file' || toolName === 'apply_patch') return 'write'
+  if (toolName === 'write_file' || toolName === 'edit_file' || toolName === 'multi_edit' || toolName === 'apply_patch') return 'write'
 
   // bash tool — categorized based on the command content
   // For permission purposes, bash is 'command' category (default: ask)

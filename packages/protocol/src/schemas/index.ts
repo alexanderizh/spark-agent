@@ -98,9 +98,23 @@ export const SessionDeleteRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
 
+export const SessionSetMaxIterationsRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  maxIterations: z.number().int().min(1).max(1000).nullable(),
+})
+
 // ─── Provider Schema ──────────────────────────────────────────────────────────
 
 const ProviderKindSchema = z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
+
+/**
+ * 对 OpenAI 兼容后端而言，agent 可以使用两种 API：
+ *   - 'chat'      使用传统 chat.completions（最广兼容性，DeepSeek/Ollama/智谱等）
+ *   - 'responses' 使用 OpenAI Responses API（gpt-5-codex 等需要，支持 reasoning items 持久化、原生 apply_patch）
+ *
+ * 默认 'chat'。仅在 provider 是 'openai' 时切换到 'responses' 才有意义。
+ */
+export const CodexApiKindSchema = z.enum(['chat', 'responses']).optional()
 
 export const ProviderCreateRequestSchema = z.object({
   name: z.string().min(1).max(100),
@@ -111,6 +125,7 @@ export const ProviderCreateRequestSchema = z.object({
   apiEndpoint: z.string().min(1).max(500).optional(),
   apiKey: z.string().min(1).max(500),
   isDefault: z.boolean().optional().default(false),
+  codexApiKind: CodexApiKindSchema,
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
   ctx.addIssue({
@@ -129,6 +144,7 @@ export const ProviderUpdateRequestSchema = z.object({
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
+  codexApiKind: CodexApiKindSchema,
 })
 
 export const ProviderDeleteRequestSchema = z.object({
@@ -230,6 +246,7 @@ export const IpcSchemaRegistry = {
   'session:search': SessionSearchRequestSchema,
   'session:update': SessionUpdateRequestSchema,
   'session:delete': SessionDeleteRequestSchema,
+  'session:set-max-iterations': SessionSetMaxIterationsRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,

@@ -1,6 +1,7 @@
 import OpenAI from 'openai'
 import type {
   ChatCompletionChunk,
+  ChatCompletionContentPart,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from 'openai/resources/chat/completions'
@@ -213,7 +214,9 @@ function toOpenAIMessages(params: ChatParams): ChatCompletionMessageParam[] {
 
     const toolUseBlocks = message.content.filter((block) => block.type === 'tool_use')
     const toolResultBlocks = message.content.filter((block) => block.type === 'tool_result')
-    const text = contentToText(message.content.filter((block) => block.type === 'text'))
+    const textBlocks = message.content.filter((block) => block.type === 'text')
+    const imageBlocks = message.content.filter((block) => block.type === 'image')
+    const text = contentToText(textBlocks)
 
     if (message.role === 'assistant' && toolUseBlocks.length > 0) {
       messages.push({
@@ -228,6 +231,17 @@ function toOpenAIMessages(params: ChatParams): ChatCompletionMessageParam[] {
           },
         })),
       })
+    } else if (imageBlocks.length > 0 && message.role === 'user') {
+      // User multi-modal turn: combine text + image parts into a content array.
+      const parts: ChatCompletionContentPart[] = []
+      if (text.length > 0) parts.push({ type: 'text', text })
+      for (const img of imageBlocks) {
+        const url = img.source.kind === 'url'
+          ? img.source.url
+          : `data:${img.source.mediaType};base64,${img.source.data}`
+        parts.push({ type: 'image_url', image_url: { url } })
+      }
+      messages.push({ role: 'user', content: parts })
     } else if (text.length > 0) {
       messages.push({ role: message.role, content: text })
     }

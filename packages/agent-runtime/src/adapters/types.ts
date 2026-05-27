@@ -6,10 +6,16 @@ export interface ToolDefinition {
   inputSchema: Record<string, unknown>
 }
 
+export type ImageMediaType = 'image/png' | 'image/jpeg' | 'image/gif' | 'image/webp'
+export type ImageSource =
+  | { kind: 'base64'; mediaType: ImageMediaType; data: string }
+  | { kind: 'url'; url: string }
+
 export type ChatContentBlock =
   | { type: 'text'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; tool_use_id: string; content: string }
+  | { type: 'image'; source: ImageSource }
 
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system'

@@ -124,6 +124,21 @@ export interface SessionDeleteResponse {
   deleted: boolean
 }
 
+/**
+ * 为指定 session 设置临时的 maxTurnIterations 上限。
+ * 主要场景：用户在收到 MAX_ITERATIONS 错误后通过 UI 调高上限。
+ * 传 null 清除 override，恢复 adapter 默认值（claude 150 / codex 100）。
+ */
+export interface SessionSetMaxIterationsRequest {
+  sessionId: SessionId
+  /** 1~1000。null 表示清除 override。 */
+  maxIterations: number | null
+}
+
+export interface SessionSetMaxIterationsResponse {
+  applied: number | null
+}
+
 export interface SessionSearchRequest {
   /** 搜索关键词 */
   query: string
@@ -990,6 +1005,7 @@ export interface IpcChannelMap {
   'session:search': [SessionSearchRequest, SessionSearchResponse]
   'session:update': [SessionUpdateRequest, SessionUpdateResponse]
   'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
+  'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]

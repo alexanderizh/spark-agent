@@ -196,7 +196,7 @@ describe('SessionService.sendTurn', () => {
     expect(typeof result.turnId).toBe('string')
     expect(loop.onEvent).toHaveBeenCalled()
     expect(loop.executeTurn).toHaveBeenCalled()
-    expect(createAdapter).toHaveBeenCalledWith('claude')
+    expect(createAdapter).toHaveBeenCalledWith('claude', 'chat')
   })
 
   it('uses provider defaultModel as the runtime model', async () => {
@@ -224,7 +224,7 @@ describe('SessionService.sendTurn', () => {
     const svc = new SessionService(mockDb, vi.fn())
     await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
 
-    expect(createAdapter).toHaveBeenCalledWith('codex')
+    expect(createAdapter).toHaveBeenCalledWith('codex', 'chat')
     expect(loop.executeTurn).toHaveBeenCalledWith(
       'sess-1',
       expect.any(String),
@@ -269,7 +269,7 @@ describe('SessionService.sendTurn', () => {
     const svc = new SessionService(mockDb, vi.fn())
     await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
 
-    expect(createAdapter).toHaveBeenCalledWith('claude')
+    expect(createAdapter).toHaveBeenCalledWith('claude', 'chat')
   })
 
   it('passes session runtime parameters into the agent config', async () => {

@@ -7,6 +7,11 @@ import type { ToolCallEvent, ToolResultEvent } from '@spark/protocol'
 import { bashTool, isReadonlyCommand } from './tools/bash.js'
 import { grepTool } from './tools/grep.js'
 import { gitTool, isGitReadonly } from './tools/git.js'
+import { todoWriteTool } from './tools/todo.js'
+import { webFetchTool, webSearchTool } from './tools/web.js'
+import { multiEditTool } from './tools/multi-edit.js'
+import { monitorTool } from './tools/background-tasks.js'
+import { exitPlanModeTool } from './tools/exit-plan-mode.js'
 
 const execAsync = promisify(exec)
 const MAX_TEXT_BYTES = 1_000_000
@@ -14,6 +19,8 @@ const MAX_TOOL_OUTPUT = 20_000
 
 export interface ToolContext {
   workspaceRootPath: string
+  /** 当前 session id（部分工具如 todo_write 需要按 session 区分状态） */
+  sessionId?: string
 }
 
 export interface ToolResult {
@@ -323,6 +330,27 @@ export class ToolRegistry {
     this.register(grepTool)
 
     this.register(gitTool)
+
+    // --- Productivity Tools ---
+
+    this.register(todoWriteTool)
+
+    // --- Atomic multi-edit ---
+
+    this.register(multiEditTool)
+
+    // --- Network Tools ---
+
+    this.register(webFetchTool)
+    this.register(webSearchTool)
+
+    // --- Background Task Monitoring ---
+
+    this.register(monitorTool)
+
+    // --- Plan-mode-only Tools ---
+    // exit_plan_mode is filtered IN/OUT by getDefinitions(permissionMode).
+    this.register(exitPlanModeTool)
   }
 
   register(tool: RegisteredTool): void {
@@ -333,8 +361,21 @@ export class ToolRegistry {
     return this.tools.get(name)
   }
 
-  getDefinitions(): ToolDefinition[] {
-    return Array.from(this.tools.values()).map((t) => t.definition)
+  /**
+   * Return tool definitions to expose to the model.
+   *
+   * Some tools are gated to specific permission modes:
+   * - `exit_plan_mode` is ONLY surfaced when permissionMode === 'claude-plan'.
+   *   Otherwise the model shouldn't see it (avoids confusion / spurious calls).
+   */
+  getDefinitions(permissionMode?: string): ToolDefinition[] {
+    const PLAN_ONLY = new Set(['exit_plan_mode'])
+    return Array.from(this.tools.values())
+      .filter((t) => {
+        if (PLAN_ONLY.has(t.definition.name)) return permissionMode === 'claude-plan'
+        return true
+      })
+      .map((t) => t.definition)
   }
 
   async execute(

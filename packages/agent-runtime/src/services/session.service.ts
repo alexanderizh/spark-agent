@@ -11,6 +11,7 @@ import type { SparkDatabase } from '@spark/storage'
 import type { AgentEvent, SessionCreateResponse, SessionId, SessionListResponse, SessionSearchResponse } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
+import { TodoStore } from '../core/todo-store.js'
 import type { AgentConfig, CommandDeps } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
@@ -18,6 +19,8 @@ import { McpService } from './mcp-server.service.js'
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
+/** session 被取消时调用：用于拒绝该 session 下所有挂起的 approval 请求，避免 agent 永久挂起 */
+export type ApprovalCancelHandler = (sessionId: string) => void
 type AgentAdapterKind = 'claude' | 'codex'
 type PendingTurn = { turnId: string; message: string }
 
@@ -29,6 +32,7 @@ export class SessionService {
   private pendingTurns = new Map<string, PendingTurn[]>()
   private seqCounters = new Map<string, number>()
   private approvalOverrides = new Map<string, boolean>()  // sessionId → approval enabled
+  private iterationOverrides = new Map<string, number>()  // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
 
@@ -36,6 +40,7 @@ export class SessionService {
     private readonly db: SparkDatabase,
     private readonly onEvent: SessionEventHandler,
     private readonly onApproval?: ApprovalHandler,
+    private readonly onApprovalCancel?: ApprovalCancelHandler,
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
   }
@@ -189,6 +194,8 @@ export class SessionService {
       apiEndpoint?: string
       maxTokens?: number
       temperature?: number
+      /** 'chat' (default, chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
+      codexApiKind?: 'chat' | 'responses'
     }
 
     const model = session.model_id ?? config.defaultModel ?? config.model
@@ -199,7 +206,9 @@ export class SessionService {
     const agentAdapter = getAgentAdapterFromSession(session.agent_adapter, session.chat_mode, provider.provider_type)
     const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
     const permissionMode = this.getEffectivePermissionMode(sessionId, agentAdapter, storedPermissionMode)
-    const adapter = createAdapter(agentAdapter)
+    // 仅 codex(=openai-family) adapter + provider 配置了 codexApiKind: 'responses' 时才走 Responses API
+    const apiKind: 'chat' | 'responses' = agentAdapter === 'codex' && config.codexApiKind === 'responses' ? 'responses' : 'chat'
+    const adapter = createAdapter(agentAdapter, apiKind)
 
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
@@ -248,7 +257,7 @@ export class SessionService {
       ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
       ...(skillSystemPrompt != null ? { skillSystemPrompt } : {}),
       tools,
-      toolContext: { workspaceRootPath },
+      toolContext: { workspaceRootPath, sessionId },
       context: {
         ...(workspaceInfo != null ? { workspace: workspaceInfo } : {}),
         ...(activeRules.length > 0 ? { projectRules: activeRules } : {}),
@@ -257,6 +266,7 @@ export class SessionService {
       ...(config.temperature != null ? { temperature: config.temperature } : {}),
       ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
       permissionMode,
+      maxTurnIterations: this.iterationOverrides.get(sessionId) ?? defaultMaxIterations(agentAdapter),
       ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
     }
 
@@ -336,15 +346,47 @@ export class SessionService {
     return storedMode
   }
 
+  /**
+   * 为指定 session 设置临时的 maxTurnIterations 上限。
+   * 用于 UI「调高迭代上限」按钮 / `/setiter` 命令。
+   * 传入 null 清除 override。
+   */
+  setMaxIterations(sessionId: string, max: number | null): void {
+    if (max == null) {
+      this.iterationOverrides.delete(sessionId)
+      return
+    }
+    if (!Number.isFinite(max) || max < 1 || max > 1000) {
+      throw new Error(`maxTurnIterations must be 1~1000, got ${max}`)
+    }
+    this.iterationOverrides.set(sessionId, Math.floor(max))
+  }
+
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
     this.pendingTurns.delete(sessionId)
+    // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
+    this.onApprovalCancel?.(sessionId)
     if (loop == null) return { cancelled: false }
     loop.cancel()
     this.activeLoops.delete(sessionId)
     const sessionRepo = new SessionRepository(this.db)
     sessionRepo.updateStatus(sessionId, 'idle')
     return { cancelled: true }
+  }
+
+  /**
+   * Session 删除时调用：清理 session 相关的内存状态。
+   * 由 deleteSession 内部调用，避免 long-lived 进程内存泄漏。
+   */
+  private clearSessionMemory(sessionId: string): void {
+    this.activeLoops.delete(sessionId)
+    this.pendingTurns.delete(sessionId)
+    this.seqCounters.delete(sessionId)
+    this.approvalOverrides.delete(sessionId)
+    this.iterationOverrides.delete(sessionId)
+    TodoStore.clear(sessionId)
+    this.onApprovalCancel?.(sessionId)
   }
 
   async getHistory(params: {
@@ -525,6 +567,7 @@ export class SessionService {
   async deleteSession(sessionId: string): Promise<{ deleted: boolean }> {
     const eventRepo = new EventRepository(this.db)
     const sessionRepo = new SessionRepository(this.db)
+    this.clearSessionMemory(sessionId)
     eventRepo.deleteBySession(sessionId)
     return { deleted: sessionRepo.delete(sessionId) }
   }
@@ -578,6 +621,11 @@ function getPermissionModeFromSession(value: string | null | undefined, adapter:
     return value
   }
   return adapter === 'claude' ? 'claude-ask' : 'codex-default'
+}
+
+function defaultMaxIterations(adapter: AgentAdapterKind): number {
+  // Claude 模型擅长长链思考、能稳定推进 ≥150 轮；Codex/GPT 系列建议保守一些。
+  return adapter === 'claude' ? 150 : 100
 }
 
 function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {

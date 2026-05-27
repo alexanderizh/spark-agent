@@ -26,15 +26,29 @@ const ACTIVE_PROFILE_KEY = 'permission:active-profile'
 
 // Maps built-in tool names to permission action keys
 const TOOL_ACTION_MAP: Record<string, string> = {
-  write_file: 'file_write',
-  edit_file: 'file_write',
-  apply_patch: 'file_write',
+  // 文件读
   read_file: 'file_read',
   list_directory: 'file_read',
   search_files: 'file_read',
   grep_files: 'file_read',
+  grep: 'file_read',
+  // 文件写
+  write_file: 'file_write',
+  edit_file: 'file_write',
+  multi_edit: 'file_write',
+  apply_patch: 'file_write',
+  // 命令执行
   run_command: 'command_exec',
+  bash: 'command_exec',
+  // Git
+  git: 'command_exec',
+  git_push: 'git_push',
+  // 网络
+  web_fetch: 'network_unknown',
+  web_search: 'network_known',
 }
+
+const APPROVAL_TIMEOUT_MS = 5 * 60 * 1000  // 5 minutes; agent will treat 'deny' on timeout
 
 // Risk level per action
 const RISK_LEVEL_MAP: Record<string, 'low' | 'medium' | 'high'> = {
@@ -129,27 +143,42 @@ export class PermissionService {
     toolInput: Record<string, unknown>,
     pushFn: (req: PermissionApprovalRequest) => void,
   ): Promise<boolean> {
-    const action = TOOL_ACTION_MAP[toolName] ?? 'file_read'
+    // 1) 查 session-scoped 临时允许（用户上一次选「本会话允许」）
+    const action = TOOL_ACTION_MAP[toolName] ?? 'command_exec'
+    if (this.isSessionAllowed(sessionId, action)) return true
+
+    // 2) 查 profile 规则
     const profileId = this.getActiveProfileId()
     const rules = this.repo.listRules(profileId)
     const rule = rules.find((r) => r.action === action)
-    const mode = (rule?.mode ?? 'allow') as PermissionMode
+    const mode = (rule?.mode ?? 'ask') as PermissionMode  // 未知 action 默认 ask（更安全）
 
     if (mode === 'allow') return true
     if (mode === 'deny') return false
 
-    // mode === 'ask' or 'ask-twice': push to renderer and wait
+    // 3) mode === 'ask' or 'ask-twice': push to renderer and wait
     const requestId = randomUUID()
     const riskLevel = RISK_LEVEL_MAP[action] ?? 'low'
 
     const result = await new Promise<PermissionApprovalDecision>((resolve) => {
-      PermissionService._pendingApprovals.set(requestId, resolve)
+      const timer = setTimeout(() => {
+        if (PermissionService._pendingApprovals.delete(requestId)) {
+          resolve('deny')  // timeout 视为拒绝，避免 agent 永久挂起
+        }
+      }, APPROVAL_TIMEOUT_MS)
+
+      PermissionService._pendingApprovals.set(requestId, (decision) => {
+        clearTimeout(timer)
+        PermissionService._approvalSessions.delete(requestId)
+        resolve(decision)
+      })
+      PermissionService._approvalSessions.set(requestId, sessionId)
       pushFn({ requestId, sessionId, toolName, toolInput, riskLevel })
     })
 
     if (result === 'allow-session') {
-      // Temporarily allow for this session by upgrading the rule
-      this.repo.updateRuleMode(rules.find((r) => r.action === action)?.id ?? '', 'allow')
+      // 只在内存中给该 session 临时放行，不再写穿数据库
+      this.allowForSession(sessionId, action)
     }
 
     return result !== 'deny'
@@ -159,11 +188,49 @@ export class PermissionService {
     const resolve = PermissionService._pendingApprovals.get(requestId)
     if (!resolve) return false
     PermissionService._pendingApprovals.delete(requestId)
+    PermissionService._approvalSessions.delete(requestId)
     resolve(decision)
     return true
   }
 
+  /**
+   * 当 session 被取消时调用，拒绝所有挂起的 approval（agent 端会收到 deny 然后清理）。
+   * SessionService.cancelTurn 应该调用此方法。
+   */
+  cancelPendingApprovals(sessionId: string): number {
+    let cancelled = 0
+    // 我们没有 requestId→sessionId 的反查表，所以保守做法是拒绝全部挂起项；
+    // 多 session 并发时由 SessionService 通过参数区分。这里先实现简单版本：
+    // 调用方需要保证只在该 session 的 approval flow 上下文调用。
+    for (const [requestId, resolve] of PermissionService._pendingApprovals.entries()) {
+      if (PermissionService._approvalSessions.get(requestId) !== sessionId) continue
+      PermissionService._pendingApprovals.delete(requestId)
+      PermissionService._approvalSessions.delete(requestId)
+      resolve('deny')
+      cancelled += 1
+    }
+    // 同时清除该 session 的临时放行
+    this.clearSessionAllowances(sessionId)
+    return cancelled
+  }
+
+  private isSessionAllowed(sessionId: string, action: string): boolean {
+    return PermissionService._sessionAllowances.get(sessionId)?.has(action) === true
+  }
+
+  private allowForSession(sessionId: string, action: string): void {
+    const set = PermissionService._sessionAllowances.get(sessionId) ?? new Set<string>()
+    set.add(action)
+    PermissionService._sessionAllowances.set(sessionId, set)
+  }
+
+  private clearSessionAllowances(sessionId: string): void {
+    PermissionService._sessionAllowances.delete(sessionId)
+  }
+
   private static _pendingApprovals = new Map<string, (d: PermissionApprovalDecision) => void>()
+  private static _approvalSessions = new Map<string, string>()  // requestId → sessionId（用于 cancel）
+  private static _sessionAllowances = new Map<string, Set<string>>()  // sessionId → 已临时允许的 actions
 
   private toProfileItem(row: PermissionProfileRow): PermissionProfileItem {
     const rules = this.repo.listRules(row.id).map((r) => this.toRuleItem(r))
