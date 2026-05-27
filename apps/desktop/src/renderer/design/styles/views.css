@@ -1709,6 +1709,229 @@
   color: var(--text);
 }
 
+/* ── Token Usage Visualization ── */
+.token-usage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.token-usage-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.token-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: var(--r-md);
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+.token-stat-total {
+  border-color: var(--primary-soft);
+  background: color-mix(in srgb, var(--primary) 4%, var(--panel));
+}
+.token-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  color: var(--text-faint);
+}
+.token-stat-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+.token-usage-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-size: var(--font-sm);
+}
+.token-row-label {
+  color: var(--text-muted);
+}
+.token-row-value {
+  color: var(--text);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.token-cost {
+  color: var(--success);
+  font-weight: 600;
+}
+.token-cost-warn {
+  color: var(--warning);
+}
+.token-cost-critical {
+  color: var(--danger);
+}
+
+/* ── Context Window Visualization ── */
+.context-window-viz {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.context-warning-msg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  font-size: var(--font-xs);
+  font-weight: 500;
+}
+.context-warning-warn {
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
+  color: var(--warning);
+  border: 1px solid color-mix(in srgb, var(--warning) 20%, transparent);
+}
+.context-warning-critical {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--danger);
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
+}
+.context-usage-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.context-usage-fill {
+  height: 100%;
+  display: flex;
+  border-radius: 5px;
+  overflow: hidden;
+  min-width: 0;
+  transition: width 0.3s ease;
+}
+.context-bar-ok .context-fill-history {
+  background: var(--primary);
+  flex: 1;
+}
+.context-bar-ok .context-fill-system {
+  background: color-mix(in srgb, var(--info) 80%, transparent);
+}
+.context-bar-ok .context-fill-tools {
+  background: color-mix(in srgb, var(--success) 70%, transparent);
+}
+.context-bar-warning .context-fill-history {
+  background: var(--warning);
+  flex: 1;
+}
+.context-bar-warning .context-fill-system {
+  background: color-mix(in srgb, var(--warning) 60%, transparent);
+}
+.context-bar-warning .context-fill-tools {
+  background: color-mix(in srgb, var(--warning) 40%, transparent);
+}
+.context-bar-critical .context-fill-history {
+  background: var(--danger);
+  flex: 1;
+}
+.context-bar-critical .context-fill-system {
+  background: color-mix(in srgb, var(--danger) 60%, transparent);
+}
+.context-bar-critical .context-fill-tools {
+  background: color-mix(in srgb, var(--danger) 40%, transparent);
+}
+.context-usage-labels {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.context-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.context-label::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+.context-label-system::before {
+  background: var(--info);
+}
+.context-label-tools::before {
+  background: var(--success);
+}
+.context-label-history::before {
+  background: var(--primary);
+}
+.context-label-remaining::before {
+  background: var(--border);
+}
+.context-usage-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.usage-warning-badge {
+  margin-left: 8px;
+  font-size: 10px;
+}
+
+/* ── Per-Turn Usage Chart ── */
+.turn-usage-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.turn-usage-bar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+}
+.turn-usage-index {
+  font-size: 10px;
+  color: var(--text-faint);
+  width: 16px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.turn-usage-bar-track {
+  flex: 1;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  display: flex;
+  overflow: hidden;
+}
+.turn-usage-bar-input {
+  height: 100%;
+  background: color-mix(in srgb, var(--primary) 70%, transparent);
+  transition: width 0.2s ease;
+}
+.turn-usage-bar-output {
+  height: 100%;
+  background: color-mix(in srgb, var(--success) 60%, transparent);
+  transition: width 0.2s ease;
+}
+.turn-usage-total {
+  font-size: 10px;
+  color: var(--text-muted);
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
 /* Inspector helpers */
 .inspector-v-id { font-size: 10px; }
 .inspector-muted { font-size: 12px; color: var(--text-muted); }

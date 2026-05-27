@@ -1,15 +1,25 @@
 /**
  * ProjectView — Workspace 模式（IDE 风格：文件树 + Tab + Diff + 右侧 Agent 对话）
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import type { AgentStatusValue, SessionId, WorkspaceInfo, WorkspaceTreeEntry } from '@spark/protocol'
+import type { AgentEvent, AgentStatusValue, SessionId, WorkspaceInfo, WorkspaceTreeEntry } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-mapper'
 
+/** File change status tracked via file_change agent events */
+type FileChangeStatus = 'create' | 'modify' | 'delete'
+
+/** Map of file path to its change status */
+type FileChangeMap = Record<string, FileChangeStatus>
+
+/** Sort mode for file tree entries */
+type FileSortMode = 'name' | 'modified'
+
 export function ProjectView() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
+  const [fileChanges, setFileChanges] = useState<FileChangeMap>({})
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
 
   useEffect(() => {
@@ -18,9 +28,30 @@ export function ProjectView() {
       .catch(console.error)
   }, [getCurrentWorkspace])
 
+  // Reset file changes when workspace changes
+  useEffect(() => {
+    setFileChanges({})
+  }, [workspace?.id])
+
+  // Listen for file_change agent events at the top level
+  useIpcStream('stream:session:agent-event', (event: AgentEvent) => {
+    if (event.type !== 'file_change') return
+    if (workspace == null) return
+    const changeType = event.changeType as FileChangeStatus
+    const filePath = event.path
+    if (!filePath) return
+
+    setFileChanges((prev) => {
+      if (prev[filePath] === changeType) return prev
+      return { ...prev, [filePath]: changeType }
+    })
+  }, [workspace])
+
+  const totalFileChanges = Object.keys(fileChanges).length
+
   return (
     <div className="project-layout">
-      <ProjectExplorer workspace={workspace} />
+      <ProjectExplorer workspace={workspace} fileChanges={fileChanges} onFileChangesChange={setFileChanges} />
       <div className="project-center">
         <ProjectTabs />
         <div className="project-split">
@@ -31,15 +62,16 @@ export function ProjectView() {
             <ProjectAgentPane workspaceId={workspace?.id} />
           </div>
         </div>
-        <ProjectBottomBar workspace={workspace} />
+        <ProjectBottomBar workspace={workspace} fileChangeCount={totalFileChanges} />
       </div>
     </div>
   )
 }
 
-function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
+function ProjectExplorer({ workspace, fileChanges, onFileChangesChange }: { workspace: WorkspaceInfo | null; fileChanges: FileChangeMap; onFileChangesChange: (changes: FileChangeMap) => void }) {
   const [entries, setEntries] = useState<WorkspaceTreeEntry[]>([])
   const [error, setError] = useState('')
+  const [sortMode, setSortMode] = useState<FileSortMode>('name')
   const { invoke: listDirectory, loading } = useIpcInvoke('workspace:list-directory')
 
   const refreshTree = useCallback(() => {
@@ -63,6 +95,50 @@ function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
     refreshTree()
   }, [refreshTree])
 
+  // Auto-refresh tree when file changes detected
+  const prevChangeCountRef = useRef(0)
+  useEffect(() => {
+    const changeCount = Object.keys(fileChanges).length
+    if (changeCount > prevChangeCountRef.current && prevChangeCountRef.current > 0) {
+      refreshTree()
+    }
+    prevChangeCountRef.current = changeCount
+  }, [fileChanges, refreshTree])
+
+  // Sort entries: directories first, then by chosen sort mode; changed files float to top within their group
+  const sortedEntries = useMemo(() => {
+    if (sortMode === 'name' && Object.keys(fileChanges).length === 0) return entries
+    const dirs = entries.filter((e) => e.type === 'directory')
+    const files = entries.filter((e) => e.type !== 'directory')
+
+    const sortFiles = (items: WorkspaceTreeEntry[]) => {
+      return [...items].sort((a, b) => {
+        // Changed files always come first
+        const aChanged = fileChanges[a.path] != null ? 1 : 0
+        const bChanged = fileChanges[b.path] != null ? 1 : 0
+        if (aChanged !== bChanged) return bChanged - aChanged
+        if (sortMode === 'modified') {
+          // When sorting by modified, changed files are already at top; rest stays by name
+          return a.name.localeCompare(b.name)
+        }
+        return a.name.localeCompare(b.name)
+      })
+    }
+
+    return [...dirs, ...sortFiles(files)]
+  }, [entries, fileChanges, sortMode])
+
+  // Count file changes by type for summary
+  const changeSummary = useMemo(() => {
+    const counts = { create: 0, modify: 0, delete: 0 }
+    for (const status of Object.values(fileChanges)) {
+      counts[status] = (counts[status] ?? 0) + 1
+    }
+    return counts
+  }, [fileChanges])
+
+  const totalChanges = changeSummary.create + changeSummary.modify + changeSummary.delete
+
   return (
     <div className="project-explorer">
       <div className="explorer-head">
@@ -73,8 +149,19 @@ function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
       <div className="explorer-toolbar">
         <button className="icon-btn explorer-btn-sm"><Icons.Plus size={12} /></button>
         <button className="icon-btn explorer-btn-sm" onClick={refreshTree} disabled={workspace == null || loading} title="刷新文件树"><Icons.Refresh size={12} /></button>
-        <button className="icon-btn explorer-btn-sm"><Icons.ChevronDown size={12} /></button>
+        <button
+          className={`icon-btn explorer-btn-sm ${sortMode === 'modified' ? 'active' : ''}`}
+          onClick={() => setSortMode((prev) => prev === 'name' ? 'modified' : 'name')}
+          title={sortMode === 'name' ? '按修改时间排序' : '按名称排序'}
+        >
+          <Icons.Clock size={12} />
+        </button>
         <div className="flex1"></div>
+        {totalChanges > 0 && (
+          <span className="explorer-change-badge" title={`${totalChanges} 个文件已变更`}>
+            {totalChanges}
+          </span>
+        )}
         <button className="icon-btn explorer-btn-sm"><Icons.Search size={12} /></button>
       </div>
       <div className="tree scroll">
@@ -103,16 +190,21 @@ function ProjectExplorer({ workspace }: { workspace: WorkspaceInfo | null }) {
             <div className="empty-title">该目录为空</div>
           </div>
         )}
-        {workspace != null && error === '' && entries.map((entry) => (
-          <TreeRow
-            key={entry.path}
-            depth={entry.depth}
-            folder={entry.type === 'directory'}
-            expanded={entry.type === 'directory' && entry.depth < 3 && (entry.childrenCount ?? 0) > 0}
-            name={entry.name}
-            {...(entry.extension !== undefined && { ext: entry.extension })}
-          />
-        ))}
+        {workspace != null && error === '' && sortedEntries.map((entry) => {
+          const changeStatus = fileChanges[entry.path]
+          const statusLetter = changeStatus === 'create' ? 'A' : changeStatus === 'modify' ? 'M' : changeStatus === 'delete' ? 'D' : undefined
+          return (
+            <TreeRow
+              key={entry.path}
+              depth={entry.depth}
+              folder={entry.type === 'directory'}
+              expanded={entry.type === 'directory' && entry.depth < 3 && (entry.childrenCount ?? 0) > 0}
+              name={entry.name}
+              {...(entry.extension !== undefined && { ext: entry.extension })}
+              {...(statusLetter != null && { status: statusLetter })}
+            />
+          )
+        })}
       </div>
     </div>
   )
@@ -141,8 +233,9 @@ function TreeRow({
     if (ext === 'json') return <span className="ico mono-sm file-ext-json">{'{ }'}</span>
     return <Icons.File className="ico" size={12} />
   }
+  const changeClass = status === 'A' ? 'is-created' : status === 'M' ? 'is-modified' : status === 'D' ? 'is-deleted' : ''
   return (
-    <div className={`tree-row ${active ? 'active' : ''}`} style={{ paddingLeft: 6 + depth * 12 }} /* dynamic */>
+    <div className={`tree-row ${active ? 'active' : ''} ${changeClass}`} style={{ paddingLeft: 6 + depth * 12 }} /* dynamic */>
       {folder
         ? (expanded ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />)
         : <span className="tree-indent" />}
@@ -538,11 +631,15 @@ function MiniTool({
   )
 }
 
-function ProjectBottomBar({ workspace }: { workspace: WorkspaceInfo | null }) {
+function ProjectBottomBar({ workspace, fileChangeCount }: { workspace: WorkspaceInfo | null; fileChangeCount: number }) {
   return (
     <div className="project-bottombar">
       <div className="seg"><Icons.Folder size={11} /> {workspace?.name ?? '未打开工作区'}</div>
-      <div className="seg"><Icons.Edit size={11} /> 5 个文件已修改</div>
+      {fileChangeCount > 0 ? (
+        <div className="seg seg-changes"><Icons.Edit size={11} /> {fileChangeCount} 个文件已修改</div>
+      ) : (
+        <div className="seg"><Icons.Edit size={11} /> 无文件变更</div>
+      )}
       <div className="seg"><span className="dot-indicator green" /> Agent 就绪</div>
       <div className="seg right"><Icons.Cpu size={11} /> 沙箱 L2</div>
       <div className="seg"><Icons.Database size={11} /> 索引 100%</div>

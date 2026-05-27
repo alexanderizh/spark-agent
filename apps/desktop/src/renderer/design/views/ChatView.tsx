@@ -43,6 +43,26 @@ type ComposerPrefs = {
 }
 type QueuedMessage = { id: string; content: string }
 
+/** Per-turn token usage snapshot */
+type UsageSnapshot = {
+  turnId: string
+  inputTokens: number
+  outputTokens: number
+  cacheHitTokens: number
+  estimatedCostUsd: number
+  timestamp: string
+}
+
+/** Aggregated token usage data for a session */
+type SessionUsageData = {
+  inputTokens: number
+  outputTokens: number
+  cacheHitTokens: number
+  estimatedCostUsd: number
+  contextWindow: number
+  turns: UsageSnapshot[]
+}
+
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 
 export function ChatView() {
@@ -57,6 +77,14 @@ export function ChatView() {
   const [agentStatus, setAgentStatus] = useState<string>('')
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [contextInputTokens, setContextInputTokens] = useState(0)
+  const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheHitTokens: 0,
+    estimatedCostUsd: 0,
+    contextWindow: 0,
+    turns: [],
+  })
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
   const [projectName, setProjectName] = useState('')
@@ -576,6 +604,7 @@ export function ChatView() {
             sessionId={active}
             onStatusChange={setAgentStatus}
             onUsageChange={setContextInputTokens}
+            onUsageDataChange={setSessionUsageData}
             onMessagesChange={setActiveMessages}
             onSessionStatusChange={(status) => {
               setSessionStatus(active, status)
@@ -616,6 +645,8 @@ export function ChatView() {
           session={activeSession}
           workspace={activeWorkspace}
           messages={active == null ? [] : activeMessages}
+          usageData={sessionUsageData}
+          contextInputTokens={contextInputTokens}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
         />
@@ -1062,12 +1093,14 @@ function ChatStream({
   sessionId,
   onStatusChange,
   onUsageChange,
+  onUsageDataChange,
   onMessagesChange,
   onSessionStatusChange,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
   onUsageChange: (tokens: number) => void
+  onUsageDataChange: (data: SessionUsageData) => void
   onMessagesChange: (messages: UIMessage[]) => void
   onSessionStatusChange: (status: SessionSummary['status']) => void
 }) {
@@ -1077,6 +1110,7 @@ function ChatStream({
   const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
   const userScrolledRef = useRef(false)
+  const usageRef = useRef<SessionUsageData>({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
 
   // 切换会话时加载历史
@@ -1089,6 +1123,7 @@ function ChatStream({
       onStatusChange('')
       isStreamingRef.current = false
       userScrolledRef.current = false
+      usageRef.current = { inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] }
 
       getHistory({ sessionId, limit: 200 })
         .then(res => {
@@ -1097,12 +1132,16 @@ function ChatStream({
           setMessages(nextMessages)
           onMessagesChange(nextMessages)
           onUsageChange(getLatestInputTokens(res.events))
+          // Reconstruct usage data from history events
+          const historyUsage = buildUsageDataFromEvents(res.events)
+          usageRef.current = historyUsage
+          onUsageDataChange(historyUsage)
         })
         .catch(console.error)
     }, 0)
 
     return () => window.clearTimeout(timer)
-  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, sessionId])
+  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, sessionId])
 
   // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
   const flushMessages = useCallback(() => {
@@ -1169,6 +1208,26 @@ function ChatStream({
     }
     if (event.type === 'usage_update') {
       if (event.inputTokens > 0) onUsageChange(event.inputTokens)
+      // Update full usage data
+      const snapshot: UsageSnapshot = {
+        turnId: event.turnId,
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheHitTokens: event.cacheHitTokens ?? 0,
+        estimatedCostUsd: event.estimatedCostUsd ?? 0,
+        timestamp: event.timestamp,
+      }
+      const prev = usageRef.current
+      const next: SessionUsageData = {
+        inputTokens: event.inputTokens,
+        outputTokens: event.outputTokens,
+        cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
+        estimatedCostUsd: (prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0)),
+        contextWindow: prev.contextWindow,
+        turns: [...prev.turns, snapshot],
+      }
+      usageRef.current = next
+      onUsageDataChange(next)
     }
     // Track user_message to reset scroll tracking
     if (event.type === 'user_message') {
@@ -1194,7 +1253,7 @@ function ChatStream({
 
     // 其他事件走 RAF 批量
     scheduleFlush()
-  }, [onMessagesChange, onStatusChange, onUsageChange, onSessionStatusChange, sessionId, flushMessages, scheduleFlush])
+  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, sessionId, flushMessages, scheduleFlush])
 
   // 智能自动滚动：只在用户未主动上滚时自动跟随
   useEffect(() => {
@@ -2705,12 +2764,16 @@ function ChatInspector({
   session,
   workspace,
   messages,
+  usageData,
+  contextInputTokens,
   width,
   onWidthChange,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
   messages: UIMessage[]
+  usageData: SessionUsageData
+  contextInputTokens: number
   width: number
   onWidthChange: (width: number) => void
 }) {
@@ -2735,6 +2798,11 @@ function ChatInspector({
     event.currentTarget.releasePointerCapture(event.pointerId)
     document.body.classList.remove('inspector-resizing')
   }
+
+  const contextWindow = usageData.contextWindow || estimateContextWindow(session?.modelId ?? '')
+  const contextRatio = contextWindow > 0 ? Math.min(100, Math.round((contextInputTokens / contextWindow) * 1000) / 10) : 0
+  const isContextWarning = contextRatio >= 80
+  const isContextCritical = contextRatio >= 95
 
   return (
     <div className="inspector scroll" style={{ '--inspector-width': `${width}px` } as React.CSSProperties}>
@@ -2761,6 +2829,48 @@ function ChatInspector({
           <div className="inspector-muted">未选择会话</div>
         )}
       </div>
+
+      {/* Token Usage Section */}
+      <div className="inspector-section">
+        <h4>
+          <Icons.Cpu size={11} /> Token 用量
+        </h4>
+        <TokenUsagePanel
+          inputTokens={usageData.inputTokens}
+          outputTokens={usageData.outputTokens}
+          totalTokens={usageData.inputTokens + usageData.outputTokens}
+          cacheHitTokens={usageData.cacheHitTokens}
+          estimatedCostUsd={usageData.estimatedCostUsd}
+        />
+      </div>
+
+      {/* Context Window Section */}
+      <div className="inspector-section">
+        <h4>
+          <Icons.Database size={11} /> 上下文窗口
+          {isContextCritical && <span className="badge danger dot usage-warning-badge">即将满</span>}
+          {!isContextCritical && isContextWarning && <span className="badge warning dot usage-warning-badge">接近满</span>}
+        </h4>
+        <ContextWindowVisualization
+          usedTokens={contextInputTokens}
+          totalTokens={contextWindow}
+          ratio={contextRatio}
+          isWarning={isContextWarning}
+          isCritical={isContextCritical}
+        />
+      </div>
+
+      {/* Per-Turn Token Chart */}
+      {usageData.turns.length > 0 && (
+        <div className="inspector-section">
+          <h4>
+            <Icons.Activity size={11} /> 轮次用量
+            <span className="inspector-count">{usageData.turns.length} 轮</span>
+          </h4>
+          <TurnUsageChart turns={usageData.turns.slice(-20)} />
+        </div>
+      )}
+
       <div className="inspector-section">
         <h4>计划</h4>
         {plans.length > 0 ? (
@@ -2875,6 +2985,178 @@ function ToolLogItem({ log }: { log: ToolLog }) {
       )}
     </div>
   )
+}
+
+/* ── Token Usage Visualization Components ── */
+
+function TokenUsagePanel({
+  inputTokens,
+  outputTokens,
+  totalTokens,
+  cacheHitTokens,
+  estimatedCostUsd,
+}: {
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  cacheHitTokens: number
+  estimatedCostUsd: number
+}) {
+  const hasUsage = totalTokens > 0
+  return (
+    <div className="token-usage-panel">
+      <div className="token-usage-stats">
+        <div className="token-stat">
+          <span className="token-stat-label">输入</span>
+          <span className="token-stat-value">{formatTokenCount(inputTokens)}</span>
+        </div>
+        <div className="token-stat">
+          <span className="token-stat-label">输出</span>
+          <span className="token-stat-value">{formatTokenCount(outputTokens)}</span>
+        </div>
+        <div className="token-stat token-stat-total">
+          <span className="token-stat-label">总计</span>
+          <span className="token-stat-value">{formatTokenCount(totalTokens)}</span>
+        </div>
+      </div>
+      {cacheHitTokens > 0 && (
+        <div className="token-usage-row">
+          <span className="token-row-label">缓存命中</span>
+          <span className="token-row-value">{formatTokenCount(cacheHitTokens)}</span>
+        </div>
+      )}
+      {hasUsage && (
+        <div className="token-usage-row">
+          <span className="token-row-label">预估成本</span>
+          <span className="token-row-value token-cost">${estimatedCostUsd < 0.01 && estimatedCostUsd > 0 ? '<0.01' : estimatedCostUsd.toFixed(4)}</span>
+        </div>
+      )}
+      {!hasUsage && (
+        <div className="inspector-muted">暂无用量数据</div>
+      )}
+    </div>
+  )
+}
+
+function ContextWindowVisualization({
+  usedTokens,
+  totalTokens,
+  ratio,
+  isWarning,
+  isCritical,
+}: {
+  usedTokens: number
+  totalTokens: number
+  ratio: number
+  isWarning: boolean
+  isCritical: boolean
+}) {
+  // Estimated breakdown percentages (approximate visual representation)
+  // In a real implementation, these would come from actual API response data
+  const systemPct = 5
+  const toolsPct = 10
+  const historyPct = Math.max(0, ratio - systemPct - toolsPct)
+
+  const barClass = isCritical ? 'context-bar-critical' : isWarning ? 'context-bar-warning' : 'context-bar-ok'
+
+  return (
+    <div className="context-window-viz">
+      {isCritical && (
+        <div className="context-warning-msg context-warning-critical">
+          <Icons.AlertTriangle size={11} />
+          <span>上下文窗口即将满 ({ratio}%)，建议开启新会话</span>
+        </div>
+      )}
+      {!isCritical && isWarning && (
+        <div className="context-warning-msg context-warning-warn">
+          <Icons.AlertTriangle size={11} />
+          <span>上下文窗口使用超过 {ratio}%，请注意</span>
+        </div>
+      )}
+      <div className="context-usage-bar">
+        <div
+          className={`context-usage-fill ${barClass}`}
+          style={{ width: `${Math.min(100, ratio)}%` }} /* dynamic */
+        >
+          <div className="context-fill-system" style={{ width: `${systemPct}%` }} /* dynamic */ />
+          <div className="context-fill-tools" style={{ width: `${toolsPct}%` }} /* dynamic */ />
+          <div className="context-fill-history" />
+        </div>
+      </div>
+      <div className="context-usage-labels">
+        <span className="context-label context-label-system">系统提示</span>
+        <span className="context-label context-label-tools">工具定义</span>
+        <span className="context-label context-label-history">对话历史</span>
+        <span className="context-label context-label-remaining">剩余</span>
+      </div>
+      <div className="context-usage-detail">
+        <div className="kv-row">
+          <span className="k">已用</span>
+          <span className="v">{formatTokenCount(usedTokens)}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">总量</span>
+          <span className="v">{formatTokenCount(totalTokens)}</span>
+        </div>
+        <div className="kv-row">
+          <span className="k">使用率</span>
+          <span className={`v ${isCritical ? 'token-cost-critical' : isWarning ? 'token-cost-warn' : ''}`}>{ratio}%</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
+  if (turns.length === 0) return null
+
+  const maxTokens = Math.max(...turns.map((t) => t.inputTokens + t.outputTokens), 1)
+
+  return (
+    <div className="turn-usage-chart">
+      {turns.map((turn, index) => {
+        const total = turn.inputTokens + turn.outputTokens
+        const inputPct = (turn.inputTokens / maxTokens) * 100
+        const outputPct = (turn.outputTokens / maxTokens) * 100
+        return (
+          <div key={`${turn.turnId}-${index}`} className="turn-usage-bar-group" title={`第 ${index + 1} 轮: 输入 ${formatTokenCount(turn.inputTokens)}, 输出 ${formatTokenCount(turn.outputTokens)}`}>
+            <span className="turn-usage-index">{index + 1}</span>
+            <div className="turn-usage-bar-track">
+              <div className="turn-usage-bar-input" style={{ width: `${inputPct}%` }} /* dynamic */ />
+              <div className="turn-usage-bar-output" style={{ width: `${outputPct}%` }} /* dynamic */ />
+            </div>
+            <span className="turn-usage-total">{formatTokenCount(total)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
+  let inputTokens = 0
+  let outputTokens = 0
+  let cacheHitTokens = 0
+  let estimatedCostUsd = 0
+  const turns: UsageSnapshot[] = []
+
+  for (const event of events) {
+    if (event.type !== 'usage_update') continue
+    inputTokens = event.inputTokens
+    outputTokens = event.outputTokens
+    if (event.cacheHitTokens != null) cacheHitTokens = event.cacheHitTokens
+    if (event.estimatedCostUsd != null) estimatedCostUsd += event.estimatedCostUsd
+    turns.push({
+      turnId: event.turnId,
+      inputTokens: event.inputTokens,
+      outputTokens: event.outputTokens,
+      cacheHitTokens: event.cacheHitTokens ?? 0,
+      estimatedCostUsd: event.estimatedCostUsd ?? 0,
+      timestamp: event.timestamp,
+    })
+  }
+
+  return { inputTokens, outputTokens, cacheHitTokens, estimatedCostUsd, contextWindow: 0, turns }
 }
 
 function extractPlans(messages: UIMessage[]): SidebarPlan[] {
