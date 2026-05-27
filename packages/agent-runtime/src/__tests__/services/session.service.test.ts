@@ -48,6 +48,13 @@ vi.mock('../../services/mcp-server.service.js', () => ({
   })),
 }))
 
+// SDK not available in test environment — forces fallback to direct API path
+vi.mock('../../sdk/index.js', () => ({
+  ClaudeSDKExecutor: vi.fn(),
+  isSDKAvailable: vi.fn(async () => false),
+  SDKNotAvailableError: class extends Error { constructor() { super('SDK not available') } },
+}))
+
 import {
   SessionRepository,
   EventRepository,
@@ -271,6 +278,8 @@ describe('SessionService.sendTurn', () => {
     expect(typeof result.turnId).toBe('string')
     expect(loop.onEvent).toHaveBeenCalled()
     expect(loop.executeTurn).toHaveBeenCalled()
+    // Default adapter for anthropic is 'claude-sdk', but SDK is unavailable in tests,
+    // so it falls back to direct API using 'claude' adapter type
     expect(createAdapter).toHaveBeenCalledWith('claude', 'chat')
   })
 
@@ -416,6 +425,8 @@ describe('SessionService.sendTurn', () => {
     const svc = new SessionService(mockDb, vi.fn())
     await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
 
+    // Default adapter for anthropic is 'claude-sdk', but SDK is unavailable in tests,
+    // so it falls back to direct API using 'claude' adapter type
     expect(createAdapter).toHaveBeenCalledWith('claude', 'chat')
   })
 

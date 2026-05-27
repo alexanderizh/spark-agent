@@ -19,12 +19,17 @@ import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
+import { ClaudeSDKExecutor, SDKNotAvailableError } from '../sdk/index.js'
+import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('session.service')
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
 /** session 被取消时调用：用于拒绝该 session 下所有挂起的 approval 请求，避免 agent 永久挂起 */
 export type ApprovalCancelHandler = (sessionId: string) => void
-type AgentAdapterKind = 'claude' | 'codex'
+type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type PendingTurn = { turnId: string; message: string }
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
@@ -354,9 +359,6 @@ export class SessionService {
     const agentAdapter = getAgentAdapterFromSession(session.agent_adapter, session.chat_mode, provider.provider_type)
     const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
     const permissionMode = this.getEffectivePermissionMode(sessionId, agentAdapter, storedPermissionMode)
-    // 仅 codex(=openai-family) adapter + provider 配置了 codexApiKind: 'responses' 时才走 Responses API
-    const apiKind: 'chat' | 'responses' = agentAdapter === 'codex' && config.codexApiKind === 'responses' ? 'responses' : 'chat'
-    const adapter = createAdapter(agentAdapter, apiKind)
 
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
@@ -379,15 +381,6 @@ export class SessionService {
       .filter((r) => r.enabled === 1)
       .map((r) => r.content)
 
-    const tools = new ToolRegistry()
-
-    // Register MCP tools from connected servers
-    try {
-      this.mcpService.registerToToolRegistry(tools)
-    } catch {
-      // MCP tool registration failure is non-fatal
-    }
-
     // Build explicit skill prompt if skillId is provided; available skills are composed below.
     let explicitSkillPrompt: string | undefined
     const skillRepo = new SkillRepository(this.db)
@@ -405,6 +398,54 @@ export class SessionService {
       },
       explicitSkillPrompt,
     )
+
+    // Initialize seq counter from existing event count
+    if (!this.seqCounters.has(sessionId)) {
+      this.seqCounters.set(sessionId, existingEventCount)
+    }
+
+    // ── SDK Execution Path ─────────────────────────────────────────────────
+    // When adapter is 'claude-sdk', use the Claude Agent SDK for execution.
+    // This delegates the entire agent loop, tools, and permissions to the SDK,
+    // giving us Claude Code's battle-tested Read/Edit/Bash/Grep capabilities.
+    // Falls back to direct API path if SDK is not installed.
+    if (agentAdapter === 'claude-sdk') {
+      const sdkConfig: SDKExecutorConfig = {
+        apiKey,
+        model,
+        workspaceRootPath,
+        permissionMode,
+        ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+        ...(runtimeContext.systemPrompt != null ? { systemPrompt: runtimeContext.systemPrompt } : {}),
+        ...(runtimeContext.skillSystemPrompt != null ? { skillSystemPrompt: runtimeContext.skillSystemPrompt } : {}),
+        maxTurnCount: this.iterationOverrides.get(sessionId) ?? 25,
+        ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
+        ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
+        enableCheckpoints: true,
+        ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
+      }
+      const sdkStarted = await this.tryStartSDKTurn(
+        sessionId, turnId, message, eventRepo, sessionRepo, sdkConfig,
+      )
+      if (sdkStarted) return
+      // SDK not available — fall through to direct API path
+      log.warn(`Claude Agent SDK not available for session ${sessionId}, falling back to direct API`)
+    }
+
+    // ── Direct API Execution Path ──────────────────────────────────────────
+    // Uses our own AgentLoop + ToolRegistry with the direct API adapters.
+    const apiKind: 'chat' | 'responses' = agentAdapter === 'codex' && config.codexApiKind === 'responses' ? 'responses' : 'chat'
+    const effectiveAdapterType = agentAdapter === 'claude-sdk' ? 'claude' : agentAdapter
+    const adapter = createAdapter(effectiveAdapterType, apiKind)
+
+    const tools = new ToolRegistry()
+
+    // Register MCP tools from connected servers
+    try {
+      this.mcpService.registerToToolRegistry(tools)
+    } catch {
+      // MCP tool registration failure is non-fatal
+    }
 
     const agentConfig: AgentConfig = {
       adapter,
@@ -427,30 +468,10 @@ export class SessionService {
       ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
     }
 
-    // Initialize seq counter from existing event count
-    if (!this.seqCounters.has(sessionId)) {
-      this.seqCounters.set(sessionId, existingEventCount)
-    }
-
     const loop = new AgentLoop()
 
     loop.onEvent((event) => {
-      const seq = this.seqCounters.get(sessionId) ?? 0
-      this.seqCounters.set(sessionId, seq + 1)
-      const sequenced = { ...event, seq }
-      this.onEvent(sequenced)
-      // Persist (fire-and-forget, sync SQLite call)
-      try {
-        eventRepo.insert({
-          id: sequenced.id,
-          sessionId,
-          turnId,
-          eventType: sequenced.type,
-          eventJson: JSON.stringify(sequenced),
-        })
-      } catch {
-        // Non-fatal: persistence failure should not crash the stream
-      }
+      this.emitAndPersist(sessionId, turnId, event, eventRepo)
     })
 
     this.activeLoops.set(sessionId, loop)
@@ -471,6 +492,112 @@ export class SessionService {
           this.startNextQueuedTurn(sessionId)
         }
       })
+  }
+
+  /**
+   * Attempt to run the turn through the Claude Agent SDK.
+   * Returns true if successfully started, false if SDK is unavailable.
+   */
+  private async tryStartSDKTurn(
+    sessionId: string,
+    turnId: string,
+    message: string,
+    eventRepo: EventRepository,
+    sessionRepo: SessionRepository,
+    config: SDKExecutorConfig,
+  ): Promise<boolean> {
+    try {
+      const { isSDKAvailable: checkSDK } = await import('../sdk/index.js')
+      if (!(await checkSDK())) return false
+    } catch {
+      return false
+    }
+
+    // Build MCP server config from our McpService for the SDK
+    const mcpServers = this.buildMcpServersForSDK()
+
+    const executor = new ClaudeSDKExecutor()
+
+    executor.onEvent((event) => {
+      this.emitAndPersist(sessionId, turnId, event, eventRepo)
+    })
+
+    this.activeLoops.set(sessionId, executor as unknown as AgentLoop)
+    sessionRepo.updateStatus(sessionId, 'running')
+
+    const sdkConfig: SDKExecutorConfig = {
+      ...config,
+      ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
+    }
+
+    // Fire-and-forget
+    executor
+      .executeTurn(sessionId, turnId, message, sdkConfig)
+      .then(() => {
+        sessionRepo.updateStatus(sessionId, 'idle')
+      })
+      .catch(() => {
+        sessionRepo.updateStatus(sessionId, 'error')
+      })
+      .finally(() => {
+        if (this.activeLoops.get(sessionId) === (executor as unknown as AgentLoop)) {
+          this.activeLoops.delete(sessionId)
+          this.startNextQueuedTurn(sessionId)
+        }
+      })
+
+    return true
+  }
+
+  /**
+   * Build MCP server configs in the SDK's expected format from our McpService.
+   */
+  private buildMcpServersForSDK(): Record<string, SDKMcpServerConfig> {
+    const result: Record<string, SDKMcpServerConfig> = {}
+    const servers = this.mcpService.listServers()
+
+    for (const server of servers) {
+      if (!server.enabled) continue
+      try {
+        const cfg = JSON.parse(server.configJson) as Record<string, unknown>
+        if (cfg.type === 'sse' && typeof cfg.url === 'string') {
+          result[server.name] = {
+            type: 'sse',
+            url: cfg.url,
+            ...(cfg.headers != null ? { headers: cfg.headers as Record<string, string> } : {}),
+          }
+        } else {
+          result[server.name] = {
+            type: 'stdio',
+            command: String(cfg.command ?? 'npx'),
+            args: Array.isArray(cfg.args) ? cfg.args.map(String) : [],
+            ...(cfg.env != null ? { env: cfg.env as Record<string, string> } : {}),
+            ...(typeof cfg.cwd === 'string' ? { cwd: cfg.cwd } : {}),
+          }
+        }
+      } catch {
+        // Skip servers with invalid config
+      }
+    }
+    return result
+  }
+
+  private emitAndPersist(sessionId: string, turnId: string, event: AgentEvent, eventRepo: EventRepository): void {
+    const seq = this.seqCounters.get(sessionId) ?? 0
+    this.seqCounters.set(sessionId, seq + 1)
+    const sequenced = { ...event, seq }
+    this.onEvent(sequenced)
+    try {
+      eventRepo.insert({
+        id: sequenced.id,
+        sessionId,
+        turnId,
+        eventType: sequenced.type,
+        eventJson: JSON.stringify(sequenced),
+      })
+    } catch {
+      // Non-fatal: persistence failure should not crash the stream
+    }
   }
 
   private enqueueTurn(sessionId: string, turn: PendingTurn): void {
@@ -772,9 +899,11 @@ function truncateTitle(title: string): string {
 }
 
 function getAgentAdapterFromSession(value: string | null | undefined, legacyChatMode: string | null | undefined, providerType: string | null): AgentAdapterKind {
-  if (value === 'claude' || value === 'codex') return value
-  if (legacyChatMode === 'claude' || legacyChatMode === 'codex') return legacyChatMode
-  return providerType === 'anthropic' ? 'claude' : 'codex'
+  if (value === 'claude' || value === 'claude-sdk' || value === 'codex') return value
+  if (legacyChatMode === 'claude' || legacyChatMode === 'claude-sdk' || legacyChatMode === 'codex') return legacyChatMode
+  // Default: Anthropic providers use claude-sdk (with fallback to direct API),
+  // others use codex (OpenAI-compatible).
+  return providerType === 'anthropic' ? 'claude-sdk' : 'codex'
 }
 
 function getPermissionModeFromSession(value: string | null | undefined, adapter: AgentAdapterKind): SessionPermissionMode {
@@ -794,8 +923,12 @@ function getPermissionModeFromSession(value: string | null | undefined, adapter:
 }
 
 function defaultMaxIterations(adapter: AgentAdapterKind): number {
-  // Claude 模型擅长长链思考、能稳定推进 ≥150 轮；Codex/GPT 系列建议保守一些。
-  return adapter === 'claude' ? 150 : 100
+  // claude-sdk: SDK manages its own iteration limits internally
+  if (adapter === 'claude-sdk') return 25
+  // claude direct API: supports long chains
+  if (adapter === 'claude') return 150
+  // codex/openai: conservative
+  return 100
 }
 
 function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {

@@ -20,7 +20,7 @@ import type { AgentEvent, SessionId } from '../events/index.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
-export type SessionAgentAdapter = 'claude' | 'codex'
+export type SessionAgentAdapter = 'claude' | 'claude-sdk' | 'codex'
 export type SessionPermissionMode =
   | 'claude-ask'
   | 'claude-auto-edits'

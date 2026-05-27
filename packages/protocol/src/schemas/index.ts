@@ -21,7 +21,7 @@ export const RuntimeConfigScopeSchema = z.enum(['system', 'agent', 'project', 's
 export const LocalSkillSourceSchema = z.enum(['claude', 'codex', 'agents', 'custom'])
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
-export const SessionAgentAdapterSchema = z.enum(['claude', 'codex'])
+export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk', 'codex'])
 export const SessionPermissionModeSchema = z.enum([
   'claude-ask',
   'claude-auto-edits',
