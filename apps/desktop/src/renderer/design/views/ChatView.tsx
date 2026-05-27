@@ -3221,6 +3221,8 @@ function ComposerV2({
     })
   })()
 
+  const flatSlashList = groupedSlashCmds.flatMap((g) => g.cmds)
+
   const openSlashPopup = useCallback(async () => {
     if (slashCmds.length === 0) {
       try {
@@ -3270,7 +3272,7 @@ function ComposerV2({
     if (slashOpen) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
-        setSlashIndex((i) => Math.min(i + 1, filteredSlashCmds.length - 1))
+        setSlashIndex((i) => Math.min(i + 1, flatSlashList.length - 1))
         return
       }
       if (event.key === 'ArrowUp') {
@@ -3286,7 +3288,7 @@ function ComposerV2({
       }
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault()
-        const cmd = filteredSlashCmds[slashIndex]
+        const cmd = flatSlashList[slashIndex]
         if (cmd != null) executeSlashCmd(cmd)
         return
       }
@@ -3400,7 +3402,7 @@ function ComposerV2({
             ))}
           </div>
         )}
-        {slashOpen && filteredSlashCmds.length > 0 && (
+        {slashOpen && flatSlashList.length > 0 && (
           <div className="slash-cmd-popup" ref={slashListRef}>
             {(() => {
               let flatIdx = -1
