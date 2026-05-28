@@ -146,8 +146,8 @@
 - `094190a feat: sync queued turns from runtime`
 - `8916c22 feat: add project context governor`
 - `23c9644 feat: show checkpoint file context`
-- 本轮新增: 自修复开发循环 MVP 已补齐验证命令建议、`/validate` 执行入口、Chat 验证卡片和基础结果回流。
-- 下一步: 继续补强验证失败摘要回灌给 agent、自动重试策略、checkpoint diff 审查与结构化用户补充问答。
+- 本轮新增: 自修复开发循环 MVP 已补齐验证命令建议、`/validate` 执行入口、Chat 验证卡片、基础结果回流和失败摘要回灌。
+- 下一步: 继续补强自动重试次数、停止条件、retry trail、checkpoint diff 审查与结构化用户补充问答。
 
 最近验证:
 
@@ -156,6 +156,10 @@
 - `pnpm --filter @spark/agent-runtime test:unit -- src/services/project-context.service.test.ts src/__tests__/services/session.service.test.ts`
 - `pnpm --filter @spark/desktop typecheck`
 - `pnpm --filter @spark/desktop test:unit -- src/renderer/tests/renderer.test.ts`
+- `pnpm --filter @spark/agent-runtime typecheck`
+- `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/core/command-registry.test.ts src/__tests__/services/session.service.test.ts`
+- `pnpm --filter @spark/desktop typecheck`
+- `pnpm --filter @spark/desktop test:unit -- src/renderer/tests/renderer.test.ts src/renderer/tests/event-mapper.test.ts`
 - `pnpm --filter @spark/protocol typecheck`
 - `pnpm --filter @spark/storage typecheck`
 - `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/services/permission.service.test.ts`
@@ -273,13 +277,13 @@
 - 新增 `validation_suggestion` agent event，direct loop 和 Claude SDK loop 在代码变更完成后都会发出验证建议。
 - 新增 `/validate` 命令入口，只允许运行当前 workspace `package.json` 中匹配 typecheck/test/lint/check 的验证脚本，并把 stdout/stderr/exit code 回流到会话。
 - ChatView 已渲染“建议验证”卡片，展示变更文件、推荐命令、推荐原因，并支持一键运行 `/validate`；ProjectView 也会显示验证摘要。
+- ChatView 验证卡片已增加“修复”入口: `/validate "<command>" --repair` 在验证失败时生成失败摘要并交给 `SessionService` 自动发起下一轮 agent 修复 turn。
 
 开发内容:
-- 继续补强失败摘要回灌给 agent 继续修复。
 - 增加自动重试次数、停止条件和用户可见的 retry trail。
 
 验收标准:
-- 当前 MVP 已能在代码变更后建议并运行验证；后续需要让 TypeScript/单测失败时自动进入修复循环，直到通过或明确停止。
+- 当前 MVP 已能在代码变更后建议、运行验证，并在用户选择“修复”时把失败摘要回灌给 agent；后续需要加入自动重试次数、停止条件和用户可见的 retry trail，形成完整自动循环。
 
 ### P1-D: 结构化用户补充问答
 

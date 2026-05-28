@@ -1972,15 +1972,17 @@ function ValidationSuggestionCard({
   const { toast } = useToast()
   const [runningCommand, setRunningCommand] = useState<string | null>(null)
 
-  const runValidationCommand = async (command: string) => {
+  const runValidationCommand = async (command: string, repair: boolean) => {
     if (sessionId == null) {
       toast.warning('请先选中会话再运行验证命令。')
       return
     }
-    setRunningCommand(command)
+    const runKey = repair ? `${command}:repair` : command
+    setRunningCommand(runKey)
     try {
-      await window.spark.invoke('command:execute', { sessionId, message: `/validate ${command}` })
-      toast.info('验证命令已开始执行。')
+      const quotedCommand = quoteSlashCommandArg(command)
+      await window.spark.invoke('command:execute', { sessionId, message: repair ? `/validate ${quotedCommand} --repair` : `/validate ${quotedCommand}` })
+      toast.info(repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '验证命令执行失败')
     } finally {
@@ -2015,11 +2017,20 @@ function ValidationSuggestionCard({
               <button
                 className="btn ghost sm"
                 disabled={runningCommand != null}
-                onClick={() => void runValidationCommand(item.command)}
+                onClick={() => void runValidationCommand(item.command, false)}
                 title="运行验证命令"
               >
                 {runningCommand === item.command ? <Icons.Spinner size={12} /> : <Icons.Play size={12} />}
                 运行
+              </button>
+              <button
+                className="btn ghost sm"
+                disabled={runningCommand != null}
+                onClick={() => void runValidationCommand(item.command, true)}
+                title="验证失败后交给 Agent 继续修复"
+              >
+                {runningCommand === `${item.command}:repair` ? <Icons.Spinner size={12} /> : <Icons.Refresh size={12} />}
+                修复
               </button>
             </div>
           ))}
@@ -2027,6 +2038,10 @@ function ValidationSuggestionCard({
       </div>
     </div>
   )
+}
+
+function quoteSlashCommandArg(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
 // ─── Diff / Plan / Permission helper utilities ──────────────────────────────────

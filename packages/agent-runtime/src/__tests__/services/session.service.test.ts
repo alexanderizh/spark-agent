@@ -65,7 +65,7 @@ import {
 } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from '../../services/adapter-factory.js'
-import { AgentLoop, ToolRegistry } from '../../core/index.js'
+import { AgentLoop, ToolRegistry, createBuiltinRegistry, isCommand, parseCommand } from '../../core/index.js'
 
 const mockDb = {} as never
 
@@ -840,6 +840,55 @@ describe('SessionService.cancelTurn', () => {
       'queued',
       expect.any(Object),
     )
+  })
+})
+
+describe('SessionService.executeCommandAsEvents', () => {
+  it('queues a follow-up agent turn when a command returns a repair prompt', async () => {
+    const sessionRepo = makeSessionRepo({
+      get: vi.fn().mockReturnValue({
+        id: 'sess-1',
+        title: 'Session',
+        status: 'idle',
+        provider_profile_id: 'prov-1',
+        model_id: null,
+        workspace_ids_json: '[]',
+      }),
+    })
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo()
+    const commandRegistry = {
+      listItems: vi.fn(() => []),
+      execute: vi.fn(async () => ({
+        success: false,
+        message: 'validation failed',
+        followUpPrompt: 'repair this validation failure',
+      })),
+    }
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(createBuiltinRegistry).mockReturnValue(commandRegistry as never)
+    vi.mocked(isCommand).mockReturnValue(true)
+    vi.mocked(parseCommand).mockReturnValue({
+      name: 'validate',
+      args: [],
+      flags: {},
+      targets: [],
+      rawText: '/validate',
+    })
+
+    const svc = new SessionService(mockDb, vi.fn())
+    const sendTurnSpy = vi.spyOn(svc, 'sendTurn').mockResolvedValue({ turnId: 'repair-turn', started: true })
+    const result = await svc.executeCommandAsEvents({ sessionId: 'sess-1', message: '/validate npm run typecheck' })
+
+    expect(result).toEqual({ isCommand: true, forwardToAgent: false })
+    expect(eventRepo.insert).toHaveBeenCalledTimes(2)
+    expect(sendTurnSpy).toHaveBeenCalledWith({
+      sessionId: 'sess-1',
+      message: 'repair this validation failure',
+    })
   })
 })
 

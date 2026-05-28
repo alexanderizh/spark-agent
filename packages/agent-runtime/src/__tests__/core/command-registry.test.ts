@@ -177,6 +177,24 @@ describe('Built-in commands', () => {
       rmSync(cwd, { recursive: true, force: true })
     }
   })
+
+  it('/validate --repair returns a follow-up prompt when validation fails', async () => {
+    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit' })
+    try {
+      const deps = makeDeps({
+        getWorkspacePath: () => cwd,
+        execShell: vi.fn(async () => ({ stdout: '', stderr: 'src/app.ts(1,1): error TS2322', exitCode: 2 })),
+      })
+      const result = await registry.execute(parse('/validate "npm run typecheck" --repair'), ctx, deps)
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('已把失败摘要交给 Agent')
+      expect(result.data).toMatchObject({ repairQueued: true })
+      expect(result.followUpPrompt).toContain('验证命令: npm run typecheck')
+      expect(result.followUpPrompt).toContain('error TS2322')
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('Command Parser', () => {

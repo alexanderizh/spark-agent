@@ -58,6 +58,8 @@ export interface CommandResult {
   data?: Record<string, unknown>
   /** 若为 true，调用方应将原始命令文本透传给 Agent 执行，而非本地处理 */
   forwardToAgent?: boolean
+  /** Optional follow-up user message to enqueue after the command result is shown. */
+  followUpPrompt?: string
 }
 
 /** 命令定义（三层架构统一接口） */
@@ -449,7 +451,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     description: '运行项目验证脚本',
     scope: 'workspace',
     risk: 'medium',
-    usage: '/validate [pnpm run typecheck]',
+    usage: '/validate [pnpm run typecheck] [--repair]',
     handler: async (cmd, _ctx, deps) => {
       const cwd = deps.getWorkspacePath?.()
       if (!cwd) return { success: false, message: '未打开工作区，无法运行验证。' }
@@ -487,14 +489,25 @@ function registerSdkCommands(registry: CommandRegistry): void {
       const clippedOutput = output.length > 8000 ? `${output.slice(0, 8000)}\n... output truncated ...` : output
       const statusLine = result.exitCode === 0 ? '验证通过' : '验证失败'
       const body = clippedOutput.trim().length > 0 ? `\n\n\`\`\`\n${clippedOutput.trim()}\n\`\`\`` : ''
+      const repairRequested = cmd.flags.repair === 'true'
+      const followUpPrompt = result.exitCode !== 0 && repairRequested
+        ? buildValidationRepairPrompt({
+            command: requestedCommand,
+            exitCode: result.exitCode,
+            output: clippedOutput,
+          })
+        : undefined
+      const repairNote = followUpPrompt != null ? '\n\n已把失败摘要交给 Agent 继续修复。' : ''
       return {
         success: result.exitCode === 0,
-        message: `**${statusLine}** \`${requestedCommand}\` (${elapsed}ms, exit ${result.exitCode})${body}`,
+        message: `**${statusLine}** \`${requestedCommand}\` (${elapsed}ms, exit ${result.exitCode})${body}${repairNote}`,
         data: {
           command: requestedCommand,
           exitCode: result.exitCode,
           durationMs: elapsed,
+          repairQueued: followUpPrompt != null,
         },
+        ...(followUpPrompt != null ? { followUpPrompt } : {}),
       }
     },
   })
@@ -670,6 +683,25 @@ function parseValidationRunCommand(command: string): { packageManager: string; s
   const scriptName = tokens[runIndex + 1]
   if (scriptName == null || scriptName.startsWith('-')) return null
   return { packageManager, scriptName }
+}
+
+function buildValidationRepairPrompt(params: {
+  command: string
+  exitCode: number
+  output: string
+}): string {
+  const output = params.output.trim()
+  const clipped = output.length > 6000 ? `${output.slice(0, 6000)}\n... output truncated ...` : output
+  return [
+    '上一次代码验证失败，请基于下面的验证结果继续修复项目。',
+    '',
+    `验证命令: ${params.command}`,
+    `退出码: ${params.exitCode}`,
+    '',
+    '请先定位失败原因，修改必要代码，然后再次给出或触发合适的验证命令。不要回退无关改动。',
+    '',
+    clipped.length > 0 ? `验证输出:\n\`\`\`\n${clipped}\n\`\`\`` : '验证输出为空。',
+  ].join('\n')
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

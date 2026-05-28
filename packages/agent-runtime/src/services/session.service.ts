@@ -299,6 +299,10 @@ export class SessionService {
       } catch { /* non-fatal */ }
     }
 
+    if (result.followUpPrompt != null && result.followUpPrompt.trim().length > 0) {
+      await this.sendTurn({ sessionId: params.sessionId, message: result.followUpPrompt })
+    }
+
     return { isCommand: true, forwardToAgent: false }
   }
 
