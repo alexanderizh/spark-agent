@@ -3,7 +3,7 @@
 > 版本: 1.0  
 > 日期: 2026-05-28  
 > 状态: 已实现第一阶段  
-> 范围: Claude Agent SDK 执行路径、Spark 权限审批、Composer 与设置页权限模式 UI
+> 范围: Claude Agent SDK 执行路径、Spark 权限审批、Composer 与设置页权限模式、会话创建默认策略
 
 ## 1. 背景
 
@@ -56,6 +56,7 @@ Spark approval callback 接收 SDK 原生工具名。权限服务必须先归一
 
 - Composer 权限模式下拉展示模式说明，降低用户误解。
 - 设置页“权限策略”需要提供 SDK 执行默认策略设置，并与 Composer 共用默认偏好。
+- 设置页 SDK 执行默认策略必须写入 SQLite-backed `app_settings`，不能只停留在 renderer localStorage。
 - 设置页切换默认执行器时，需要自动回落到该执行器支持的安全默认权限模式。
 - `Auto` / `Auto accept edits` 使用轻量自动化色和闪电图标。
 - `Bypass permissions` / `完全访问` 使用危险色和警告图标，选中后触发器也保持危险态。
@@ -69,4 +70,5 @@ Spark approval callback 接收 SDK 原生工具名。权限服务必须先归一
 - SDK 原生工具名能命中正确 Spark action。
 - 危险 Bash 能进入 `command_dangerous` 并触发双重确认。
 - Renderer 权限审批和 Composer UI 测试通过。
-- 设置页权限模式选择会写入 `spark-agent:composer-prefs`，并驱动新会话/无会话输入区默认策略。
+- 设置页权限模式选择会写入 `app_settings(runtime-permissions/defaults)`，并同步 `spark-agent:composer-prefs` 作为 renderer 快速缓存。
+- `session:create` 请求未显式携带 adapter / permissionMode 时，主进程从 `app_settings(runtime-permissions/defaults)` 读取默认策略。

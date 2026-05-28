@@ -38,8 +38,8 @@ export const SessionPermissionModeSchema = z.enum([
 export const SessionCreateRequestSchema = z.object({
   providerProfileId: ProfileIdSchema,
   modelId: z.string().min(1).max(200).optional(),
-  agentAdapter: SessionAgentAdapterSchema.optional().default('codex'),
-  permissionMode: SessionPermissionModeSchema.optional().default('codex-default'),
+  agentAdapter: SessionAgentAdapterSchema.optional(),
+  permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional().default('agent'),
   reasoningEffort: SessionReasoningEffortSchema.optional().default('medium'),
   title: z.string().max(200).optional(),

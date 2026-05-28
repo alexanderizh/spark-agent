@@ -18,7 +18,7 @@ import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
 import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService, RuntimeCompositionService } from '@spark/agent-runtime'
-import type { CommandParseResponse, WorkspaceInfo } from '@spark/protocol'
+import type { CommandParseResponse, SessionAgentAdapter, SessionPermissionMode, WorkspaceInfo } from '@spark/protocol'
 import type { SessionEventHandler, ApprovalHandler, SessionQueueChangedHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
@@ -29,6 +29,8 @@ import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
 const execFileAsync = promisify(execFile)
+const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
+const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
@@ -109,6 +111,56 @@ function getSessionPermissionContext(sessionId: string): { projectId?: string; w
   }
 }
 
+function applyRuntimePermissionDefaults<T extends {
+  agentAdapter?: SessionAgentAdapter
+  permissionMode?: SessionPermissionMode
+}>(request: T): T {
+  if (request.agentAdapter !== undefined && request.permissionMode !== undefined) return request
+  const defaults = getRuntimePermissionDefaults()
+  return {
+    ...request,
+    agentAdapter: request.agentAdapter ?? defaults.agentAdapter,
+    permissionMode: request.permissionMode ?? defaults.permissionMode,
+  }
+}
+
+function getRuntimePermissionDefaults(): {
+  agentAdapter: SessionAgentAdapter
+  permissionMode: SessionPermissionMode
+} {
+  const value = getSettingsService().get(RUNTIME_PERMISSION_SETTINGS_CATEGORY, RUNTIME_PERMISSION_SETTINGS_KEY)
+  const adapter = readRuntimeAgentAdapter(value)
+  const permissionMode = readRuntimePermissionMode(value, adapter)
+  return { agentAdapter: adapter, permissionMode }
+}
+
+function readRuntimeAgentAdapter(value: unknown): SessionAgentAdapter {
+  if (value != null && typeof value === 'object' && 'adapter' in value) {
+    const adapter = (value as { adapter?: unknown }).adapter
+    if (adapter === 'claude' || adapter === 'claude-sdk' || adapter === 'codex') return adapter
+  }
+  return 'claude-sdk'
+}
+
+function readRuntimePermissionMode(value: unknown, adapter: SessionAgentAdapter): SessionPermissionMode {
+  if (value != null && typeof value === 'object' && 'permissionMode' in value) {
+    const mode = (value as { permissionMode?: unknown }).permissionMode
+    if (typeof mode === 'string' && isPermissionModeForAdapter(mode, adapter)) return mode
+  }
+  return adapter === 'codex' ? 'codex-default' : 'claude-ask'
+}
+
+function isPermissionModeForAdapter(value: string, adapter: SessionAgentAdapter): value is SessionPermissionMode {
+  if (adapter === 'codex') {
+    return value === 'codex-default' || value === 'codex-auto-review' || value === 'codex-full-access'
+  }
+  return value === 'claude-ask'
+    || value === 'claude-auto-edits'
+    || value === 'claude-plan'
+    || value === 'claude-auto'
+    || value === 'claude-bypass'
+}
+
 let _workspaceService: WorkspaceService | null = null
 function getWorkspaceService(): WorkspaceService {
   if (_workspaceService == null) {
@@ -147,7 +199,7 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:create', async (req) => {
     log.info(`session:create requested, providerProfileId=${req.providerProfileId}`)
-    return getSessionService().createSession(req)
+    return getSessionService().createSession(applyRuntimePermissionDefaults(req))
   })
 
   typedIpcHandle('session:send-turn', async (req) => {

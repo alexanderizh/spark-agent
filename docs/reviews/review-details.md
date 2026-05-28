@@ -11,7 +11,8 @@ I'll conduct a comprehensive capability review of this project. Let me start by 
 - SDK 原生工具名归一化到 Spark action，覆盖 `Read`、`Write`、`Edit`、`MultiEdit`、`Bash`、`WebFetch`、`WebSearch`、`mcp__*`。
 - Bash 危险命令识别会升级到 `command_dangerous`，并按 `ask-twice` 执行双重确认。
 - Composer 权限模式 UI 增加 Auto 与 Bypass 的状态联动，Bypass 选中后保持危险色和警告图标。
-- 设置页“权限策略”同步增加 SDK 执行默认策略，写入与 Composer 共用的 `spark-agent:composer-prefs`，保证新会话默认策略一致。
+- 设置页“权限策略”同步增加 SDK 执行默认策略，写入 SQLite-backed `app_settings(runtime-permissions/defaults)`，并同步 `spark-agent:composer-prefs` 作为 renderer 快速缓存。
+- `session:create` schema 不再硬编码 `codex-default`，主进程在请求缺省时从持久化默认策略兜底，避免设置页只是 UI 壳子。
 - 设置页 Bypass / 完全访问模式展示持续危险提示，避免用户把 bypass 误解为普通自动模式。
 
 验证:

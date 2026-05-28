@@ -196,6 +196,8 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'permission:set-active-profile') return { activeProfileId: 'project-standard' }
       if (channel === 'permission:update-sandbox') return {}
       if (channel === 'permission:update-rule') return {}
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'settings:set') return { ok: true }
       return {}
     })
     vi.stubGlobal('spark', {
@@ -226,6 +228,14 @@ describe('Renderer Smoke Tests', () => {
       adapter: 'claude-sdk',
       permissionMode: 'claude-bypass',
     }))
+    expect(invoke).toHaveBeenCalledWith('settings:set', {
+      category: 'runtime-permissions',
+      key: 'defaults',
+      value: expect.objectContaining({
+        adapter: 'claude-sdk',
+        permissionMode: 'claude-bypass',
+      }),
+    })
     expect(container.textContent).toContain('当前默认策略会跳过人工审批')
   })
 

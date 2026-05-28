@@ -69,6 +69,8 @@ const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
 const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
+const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
+const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 
 /* ─── Settings persistence keys ─── */
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
@@ -130,6 +132,11 @@ type UpdatesSettings = {
 type RuntimePermissionPrefs = {
   adapter?: SessionAgentAdapter
   permissionMode?: SessionPermissionMode
+}
+
+type RuntimePermissionSettings = {
+  adapter: SessionAgentAdapter
+  permissionMode: SessionPermissionMode
 }
 
 type RuntimePermissionModeOption = {
@@ -3310,6 +3317,8 @@ export function PermissionsSection() {
   const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
   const { invoke: updateRule } = useIpcInvoke('permission:update-rule')
   const { invoke: setActiveProfile } = useIpcInvoke('permission:set-active-profile')
+  const { invoke: getSetting } = useIpcInvoke('settings:get')
+  const { invoke: setSetting } = useIpcInvoke('settings:set')
 
   const runtimeAdapter = runtimePrefs.adapter ?? 'claude-sdk'
   const runtimeOptions = getRuntimePermissionModeOptions(runtimeAdapter)
@@ -3330,6 +3339,21 @@ export function PermissionsSection() {
   useEffect(() => {
     refresh()
   }, [refresh])
+
+  useEffect(() => {
+    let cancelled = false
+    getSetting({ category: RUNTIME_PERMISSION_SETTINGS_CATEGORY, key: RUNTIME_PERMISSION_SETTINGS_KEY })
+      .then((res) => {
+        if (cancelled || res.value == null) return
+        const next = normalizeRuntimePermissionSettings(res.value)
+        setRuntimePrefs(next)
+        writeRuntimePermissionPrefs(next)
+      })
+      .catch(console.error)
+    return () => {
+      cancelled = true
+    }
+  }, [getSetting])
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
 
@@ -3364,6 +3388,11 @@ export function PermissionsSection() {
     next.permissionMode = getValidRuntimePermissionMode(next.permissionMode, normalizedAdapter)
     setRuntimePrefs(next)
     writeRuntimePermissionPrefs(next)
+    void setSetting({
+      category: RUNTIME_PERMISSION_SETTINGS_CATEGORY,
+      key: RUNTIME_PERMISSION_SETTINGS_KEY,
+      value: next,
+    }).catch(console.error)
   }
 
   const handleRuntimeAdapterChange = (adapter: SessionAgentAdapter) => {
@@ -4917,6 +4946,17 @@ function getValidRuntimePermissionMode(value: SessionPermissionMode | undefined,
   return options.some((option) => option.value === value)
     ? value as SessionPermissionMode
     : options[0]?.value ?? (adapter === 'codex' ? 'codex-default' : 'claude-ask')
+}
+
+function normalizeRuntimePermissionSettings(value: unknown): RuntimePermissionSettings {
+  const source = value != null && typeof value === 'object' ? value as RuntimePermissionPrefs : {}
+  const adapter = source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+    ? source.adapter
+    : 'claude-sdk'
+  return {
+    adapter,
+    permissionMode: getValidRuntimePermissionMode(source.permissionMode, adapter),
+  }
 }
 
 function readRuntimePermissionPrefs(): RuntimePermissionPrefs {

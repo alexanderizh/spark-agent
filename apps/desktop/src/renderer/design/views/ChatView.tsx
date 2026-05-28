@@ -105,6 +105,8 @@ type ContextUsageState = {
 type ProjectContextState = Extract<AgentEvent, { type: 'project_context_loaded' }>
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
+const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
+const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const SESSION_HISTORY_PAGE_SIZE = 500
 const LAST_SESSION_KEY = 'spark-agent:last-active-session'
 const SIDEBAR_WIDTH_KEY = 'spark-agent:sidebar-width'
@@ -3561,9 +3563,11 @@ function ComposerV2({
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(initialPrefs.reasoningEffort ?? 'medium')
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
+  const runtimeSettingsHydratedRef = useRef(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
+  const { invoke: getSetting } = useIpcInvoke('settings:get')
   const pendingRuntimePatchRef = useRef<SessionRuntimePatch>({})
 
   const adapter = session?.agentAdapter ?? draftAdapter
@@ -3649,6 +3653,37 @@ function ComposerV2({
       setQueueRunning(false)
     }
   }, [applyQueueState, getQueue])
+
+  useEffect(() => {
+    if (runtimeSettingsHydratedRef.current || providers.length === 0) return
+    runtimeSettingsHydratedRef.current = true
+    getSetting({ category: RUNTIME_PERMISSION_SETTINGS_CATEGORY, key: RUNTIME_PERMISSION_SETTINGS_KEY })
+      .then((res) => {
+        if (res.value == null) return
+        const runtimePrefs = normalizeRuntimePermissionPrefs(res.value)
+        setDraftAdapter(runtimePrefs.adapter)
+        setDraftPermissionMode(runtimePrefs.permissionMode)
+        if (session == null) {
+          const fallbackProvider = getPreferredProvider(providers, { ...readComposerPrefs(), ...runtimePrefs }, runtimePrefs.adapter)
+          if (fallbackProvider != null) {
+            const nextModel = fallbackProvider.defaultModel || fallbackProvider.modelIds[0] || ''
+            setSelectedProviderId(fallbackProvider.id)
+            setDraftModelId(nextModel)
+            writeComposerPrefs({
+              adapter: runtimePrefs.adapter,
+              providerProfileId: fallbackProvider.id,
+              modelId: nextModel,
+              permissionMode: runtimePrefs.permissionMode,
+            })
+            return
+          }
+        }
+        writeComposerPrefs(runtimePrefs)
+      })
+      .catch(() => {
+        /* local composer preferences remain the fallback */
+      })
+  }, [getSetting, providers, session, setSelectedProviderId])
 
   useEffect(() => {
     if (session != null || providers.length === 0 || compatibleProviders.length > 0) return
@@ -4416,6 +4451,17 @@ function getValidPermissionMode(value: PermissionModeChoice | undefined, adapter
     : options[0]?.value ?? (isClaudeAdapter(adapter) ? 'claude-ask' : 'codex-default')
 }
 
+function normalizeRuntimePermissionPrefs(value: unknown): Pick<ComposerPrefs, 'adapter' | 'permissionMode'> {
+  const source = value != null && typeof value === 'object' ? value as ComposerPrefs : {}
+  const adapter = source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+    ? source.adapter
+    : DEFAULT_AGENT_ADAPTER
+  return {
+    adapter,
+    permissionMode: getValidPermissionMode(source.permissionMode, adapter),
+  }
+}
+
 function readComposerPrefs(): ComposerPrefs {
   if (typeof window === 'undefined') return {}
   try {
@@ -4435,6 +4481,16 @@ function writeComposerPrefs(patch: ComposerPrefs): void {
     if (next[key] === undefined) delete next[key]
   }
   window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(next))
+  if (patch.adapter !== undefined || patch.permissionMode !== undefined) {
+    const runtimePrefs = normalizeRuntimePermissionPrefs(next)
+    void window.spark?.invoke('settings:set', {
+      category: RUNTIME_PERMISSION_SETTINGS_CATEGORY,
+      key: RUNTIME_PERMISSION_SETTINGS_KEY,
+      value: runtimePrefs,
+    }).catch(() => {
+      /* settings persistence is best-effort from the renderer */
+    })
+  }
 }
 
 function getPreferredProvider(
