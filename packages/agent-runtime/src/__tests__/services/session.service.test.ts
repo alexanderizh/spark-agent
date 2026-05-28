@@ -3,6 +3,7 @@ import type { AgentEvent } from '@spark/protocol'
 import {
   buildConversationHistoryPromptFromEvents,
   createInterruptedTurnEvents,
+  isSdkResumeSafe,
 } from '../../services/session.service.js'
 
 function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEvent, 'id' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
@@ -63,5 +64,27 @@ describe('SessionService recovery helpers', () => {
     expect(prompt).toContain('Earlier user request about database indexes')
     expect(prompt).toContain('idx_sessions_updated_at')
     expect(prompt).not.toContain('completed')
+  })
+
+  it('only allows SDK resume for native Claude sessions', () => {
+    expect(isSdkResumeSafe({
+      providerType: 'anthropic',
+      model: 'claude-sonnet-4-5',
+      agentAdapter: 'claude-sdk',
+    })).toBe(true)
+
+    expect(isSdkResumeSafe({
+      providerType: 'anthropic',
+      apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+      model: 'glm-5',
+      agentAdapter: 'claude-sdk',
+    })).toBe(false)
+
+    expect(isSdkResumeSafe({
+      providerType: 'anthropic',
+      apiEndpoint: 'https://api.anthropic.com/v1',
+      model: 'glm-5',
+      agentAdapter: 'claude-sdk',
+    })).toBe(false)
   })
 })

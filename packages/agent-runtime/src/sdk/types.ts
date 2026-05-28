@@ -163,6 +163,20 @@ export interface SDKToolConfig {
   }
 }
 
+export interface SDKSettings {
+  model?: string | undefined
+  env?: Record<string, string> | undefined
+  permissions?: {
+    defaultMode?: SDKPermissionMode | undefined
+    allow?: string[] | undefined
+    deny?: string[] | undefined
+    ask?: string[] | undefined
+  } | undefined
+  [key: string]: unknown
+}
+
+export type SDKSettingSource = 'user' | 'project' | 'local'
+
 export interface SDKQueryOptions {
   abortController?: AbortController | undefined
   cwd?: string | undefined
@@ -182,6 +196,11 @@ export interface SDKQueryOptions {
   sessionId?: string | undefined
   resume?: string | undefined
   continue?: boolean | undefined
+  settings?: string | SDKSettings | undefined
+  settingSources?: SDKSettingSource[] | undefined
+  persistSession?: boolean | undefined
+  debug?: boolean | undefined
+  stderr?: ((data: string) => void) | undefined
   includePartialMessages?: boolean | undefined
   enableFileCheckpointing?: boolean | undefined
   canUseTool?: ((
@@ -253,6 +272,7 @@ export interface SDKExecutorConfig {
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
   enableCheckpoints?: boolean | undefined
+  sdkSessionId?: string | undefined
   continueSession?: boolean | undefined
   approvalCallback?: ((sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>) | undefined
 }

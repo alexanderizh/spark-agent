@@ -28,15 +28,16 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { sep } from 'node:path'
 import type { AgentEvent, AgentStatusValue } from '@spark/protocol'
-import { resolveModelContextWindow, resolveSoftContextLimit, resolveSoftContextLimitForWindow } from '@spark/shared'
+import { createLogger, resolveModelContextWindow, resolveSoftContextLimit, resolveSoftContextLimitForWindow } from '@spark/shared'
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
-import type { SDKExecutorConfig, SDKPermissionResult, SDKQueryFunction, SDKQueryOptions } from './types.js'
+import type { SDKExecutorConfig, SDKPermissionResult, SDKQueryFunction, SDKQueryOptions, SDKSettings } from './types.js'
 
 type SDKModule = { query: SDKQueryFunction }
 
 const CLAUDE_AGENT_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
+const log = createLogger('claude-sdk-executor')
 
 const SDK_HOST_TOOL_INSTRUCTIONS = [
   'SDK host tool rules:',
@@ -45,8 +46,22 @@ const SDK_HOST_TOOL_INSTRUCTIONS = [
   '- ExitPlanMode plans are rendered as Markdown for the user, so provide the plan text directly in the plan field.',
 ].join('\n')
 
+const ENV_BLOCKLIST_PREFIXES = ['ANTHROPIC_', 'CLAUDE_'] as const
+
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
+
+function buildIsolatedRuntimeEnv(apiKey: string, apiEndpoint?: string): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value == null) continue
+    if (ENV_BLOCKLIST_PREFIXES.some((prefix) => key.startsWith(prefix))) continue
+    env[key] = value
+  }
+  env.ANTHROPIC_API_KEY = apiKey
+  if (apiEndpoint != null) env.ANTHROPIC_BASE_URL = apiEndpoint
+  return env
+}
 
 async function loadSDK(): Promise<SDKModule | null> {
   if (sdkLoadAttempted) return sdkModule
@@ -139,6 +154,7 @@ export class ClaudeSDKExecutor {
     // Build composite system prompt
     const systemPrompt = buildCompositeSystemPrompt(config)
     const claudeCodeExecutable = resolveClaudeCodeExecutable()
+    const sdkSessionId = config.sdkSessionId ?? sessionId
 
     let terminalStatusEmitted = false
     const emitTerminalStatus = (status: AgentStatusValue): void => {
@@ -151,15 +167,35 @@ export class ClaudeSDKExecutor {
     }
 
     // Build SDK options
+    const runtimeEnv = buildIsolatedRuntimeEnv(config.apiKey, config.apiEndpoint)
+    const settings: SDKSettings = {
+      model: config.model,
+      env: runtimeEnv,
+      permissions: {
+        defaultMode: mergedPerms.permissionMode,
+        ...(mergedPerms.allowedTools.length > 0 ? { allow: mergedPerms.allowedTools } : {}),
+        ...(mergedPerms.disallowedTools.length > 0 ? { deny: mergedPerms.disallowedTools } : {}),
+      },
+    }
+
     const options: SDKQueryOptions = {
       abortController: this.abortController,
       model: config.model,
       cwd: config.workspaceRootPath,
       ...(claudeCodeExecutable != null ? { pathToClaudeCodeExecutable: claudeCodeExecutable } : {}),
-      env: {
-        ...process.env,
-        ANTHROPIC_API_KEY: config.apiKey,
-        ...(config.apiEndpoint != null ? { ANTHROPIC_BASE_URL: config.apiEndpoint } : {}),
+      env: runtimeEnv,
+      settings,
+      settingSources: ['project'],
+      persistSession: true,
+      debug: true,
+      stderr: (data: string) => {
+        const text = data.trim()
+        if (text.length === 0) return
+        log.debug('Claude Code stderr', {
+          sparkSessionId: sessionId,
+          sdkSessionId,
+          output: text,
+        })
       },
 
       // Use Claude Code's built-in system prompt as base, append our customizations
@@ -179,7 +215,7 @@ export class ClaudeSDKExecutor {
       maxTurns: config.maxTurnCount ?? 25,
       ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
       effort: mapReasoningEffort(config.reasoningEffort),
-      ...(config.continueSession === true ? { resume: sessionId } : { sessionId }),
+      ...(config.continueSession === true ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
 
       includePartialMessages: true,
       enableFileCheckpointing: config.enableCheckpoints ?? false,
@@ -212,11 +248,38 @@ export class ClaudeSDKExecutor {
       } : {}),
     }
 
+    log.debug('SDK query options prepared', {
+      sparkSessionId: sessionId,
+      sdkSessionId,
+      mode: config.continueSession === true ? 'resume' : 'fresh',
+      model: config.model,
+      apiEndpoint: config.apiEndpoint ?? null,
+      resume: options.resume ?? null,
+      sessionId: options.sessionId ?? null,
+      permissionMode: options.permissionMode ?? null,
+      settingsModel: typeof options.settings === 'string' ? null : options.settings?.model ?? null,
+      settingsBaseUrl: typeof options.settings === 'string' ? null : options.settings?.env?.ANTHROPIC_BASE_URL ?? null,
+      settingSources: options.settingSources ?? null,
+      envAnthropicBaseUrl: options.env?.ANTHROPIC_BASE_URL ?? null,
+      envHasAnthropicApiKey: typeof options.env?.ANTHROPIC_API_KEY === 'string' && options.env.ANTHROPIC_API_KEY.length > 0,
+      cwd: options.cwd ?? null,
+    })
+
     try {
       const queryResult = sdk.query({ prompt: userMessage, options })
 
       for await (const message of queryResult) {
         if (this.abortController.signal.aborted) break
+        if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
+          log.debug('Claude Code init message received', {
+            sparkSessionId: sessionId,
+            sdkSessionId,
+            initModel: message.model,
+            initPermissionMode: message.permissionMode,
+            initCwd: message.cwd,
+            initTools: Array.isArray(message.tools) ? message.tools.length : null,
+          })
+        }
 
         const events = mapSDKMessageToEvents(message, ctx)
         for (const event of events) {

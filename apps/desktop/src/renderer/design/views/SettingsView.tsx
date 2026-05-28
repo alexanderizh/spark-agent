@@ -4196,19 +4196,21 @@ function ArchivedSection() {
   const { invoke: deleteWorkspace } = useIpcInvoke('workspace:delete')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     setLoading(true)
     setError(null)
-    Promise.all([
-      listWorkspaces({ includeArchived: true, limit: 100 }),
-      listSessions({ includeArchived: true, limit: 100 }),
-    ])
-      .then(([wsRes, sessRes]) => {
-        setWorkspaces(wsRes.workspaces.filter((w) => w.archivedAt != null))
-        setSessions(sessRes.sessions.filter((s) => s.archivedAt != null))
-      })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setLoading(false))
+    try {
+      const [wsRes, sessRes] = await Promise.all([
+        listWorkspaces({ includeArchived: true, limit: 100 }),
+        listSessions({ includeArchived: true, limit: 100 }),
+      ])
+      setWorkspaces(wsRes.workspaces.filter((w) => w.archivedAt != null))
+      setSessions(sessRes.sessions.filter((s) => s.archivedAt != null))
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
   }, [listWorkspaces, listSessions])
 
   useEffect(() => {

@@ -53,6 +53,68 @@ describe('ClaudeSDKExecutor', () => {
     expect(secondOptions.skills).toEqual([])
   })
 
+  it('uses the configured SDK session id for fresh and resumed turns', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+
+    await new ClaudeSDKExecutor().executeTurn('spark-session', 'turn-1', 'hello', {
+      ...baseConfig(),
+      sdkSessionId: 'sdk-runtime-session',
+    })
+    await new ClaudeSDKExecutor().executeTurn('spark-session', 'turn-2', 'again', {
+      ...baseConfig(),
+      sdkSessionId: 'sdk-runtime-session',
+      continueSession: true,
+    })
+
+    const firstOptions = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const secondOptions = queryMock.mock.calls[1]?.[0]?.options as SDKQueryOptions
+
+    expect(firstOptions.sessionId).toBe('sdk-runtime-session')
+    expect(firstOptions.resume).toBeUndefined()
+    expect(secondOptions.resume).toBe('sdk-runtime-session')
+    expect(secondOptions.sessionId).toBeUndefined()
+  })
+
+  it('writes model and runtime env into the SDK settings layer', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+
+    const previousOauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = 'stale-token'
+
+    try {
+      await new ClaudeSDKExecutor().executeTurn('spark-session', 'turn-1', 'hello', {
+        ...baseConfig(),
+        model: 'glm-5',
+        apiKey: 'sk-runtime',
+        apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+        permissionMode: 'claude-auto',
+      })
+    } finally {
+      if (previousOauthToken == null) delete process.env.CLAUDE_CODE_OAUTH_TOKEN
+      else process.env.CLAUDE_CODE_OAUTH_TOKEN = previousOauthToken
+    }
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+
+    expect(options.model).toBe('glm-5')
+    expect(options.settingSources).toEqual(['project'])
+    expect(options.env?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined()
+    expect(options.settings).toMatchObject({
+      model: 'glm-5',
+      env: expect.objectContaining({
+        ANTHROPIC_API_KEY: 'sk-runtime',
+        ANTHROPIC_BASE_URL: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+      }),
+      permissions: {
+        defaultMode: 'auto',
+      },
+    })
+  })
+
   it('emits completed when the SDK stream ends without a result status', async () => {
     queryMock.mockReturnValue(messages([]))
     const events: AgentEvent[] = []

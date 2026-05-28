@@ -4451,7 +4451,7 @@ function getValidPermissionMode(value: PermissionModeChoice | undefined, adapter
     : options[0]?.value ?? (isClaudeAdapter(adapter) ? 'claude-ask' : 'codex-default')
 }
 
-function normalizeRuntimePermissionPrefs(value: unknown): Pick<ComposerPrefs, 'adapter' | 'permissionMode'> {
+function normalizeRuntimePermissionPrefs(value: unknown): { adapter: AgentAdapter; permissionMode: PermissionModeChoice } {
   const source = value != null && typeof value === 'object' ? value as ComposerPrefs : {}
   const adapter = source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
     ? source.adapter

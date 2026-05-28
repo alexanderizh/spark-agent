@@ -360,6 +360,8 @@ export interface TurnPromptSnapshotEvent extends BaseEvent {
   systemPromptSections: PromptSection[]
   /** 使用的模型名称 */
   model: string
+  /** Provider 配置 Profile ID */
+  providerProfileId?: string
   /** 执行适配器类型 */
   adapterKind: 'claude-sdk' | 'codex'
   /** 权限模式 */
@@ -368,6 +370,8 @@ export interface TurnPromptSnapshotEvent extends BaseEvent {
   toolCount: number
   /** SDK 预设类型（如 'claude_code'），仅 claude-sdk 适配器有值 */
   sdkPreset?: string
+  /** 底层 SDK 会话 ID，用于判断是否可以安全 resume */
+  sdkSessionId?: string
 }
 
 // ─── AgentEvent 联合类型 ──────────────────────────────────────────────────────

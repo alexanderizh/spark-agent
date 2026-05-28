@@ -469,8 +469,42 @@ export class SessionService {
     }
 
     const agentAdapter = getAgentAdapterFromSession(session.agent_adapter, session.chat_mode, provider.provider_type)
+    const adapterKind = (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') ? 'claude-sdk' : 'codex'
+    const sdkSessionId = makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter)
+    const sdkResumeSafe = isSdkResumeSafe({
+      providerType: provider.provider_type,
+      model,
+      agentAdapter,
+      ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+    })
+    const previousPromptSnapshot = getLatestTurnPromptSnapshot(eventRepo, sessionId)
+    const canResumeSdkSession = sdkResumeSafe
+      && previousPromptSnapshot != null
+      && previousPromptSnapshot.adapterKind === adapterKind
+      && previousPromptSnapshot.model === model
+      && previousPromptSnapshot.providerProfileId === session.provider_profile_id
+      && previousPromptSnapshot.sdkSessionId === sdkSessionId
     const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
     const permissionMode = this.getEffectivePermissionMode(sessionId, agentAdapter, storedPermissionMode)
+
+    log.debug('Resolved runtime for turn', {
+      sparkSessionId: sessionId,
+      turnId,
+      providerProfileId: session.provider_profile_id,
+      providerType: provider.provider_type,
+      providerName: provider.name,
+      model,
+      apiEndpoint: config.apiEndpoint ?? null,
+      agentAdapter,
+      adapterKind,
+      sdkSessionId,
+      sdkResumeSafe,
+      existingEventCount,
+      canResumeSdkSession,
+      previousSnapshot: previousPromptSnapshot,
+      runtimePatch: runtimePatch ?? null,
+      permissionMode,
+    })
 
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
@@ -578,9 +612,11 @@ export class SessionService {
         userMessage: message,
         systemPromptSections: promptSections,
         model,
-        adapterKind: (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') ? 'claude-sdk' : 'codex',
+        providerProfileId: session.provider_profile_id,
+        adapterKind,
         permissionMode,
         toolCount: toolCountEstimate,
+        sdkSessionId,
         ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? { sdkPreset: 'claude_code' } : {}),
       }, eventRepo)
     }
@@ -599,7 +635,8 @@ export class SessionService {
         contextWindowTokens,
         ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
         enableCheckpoints: true,
-        continueSession: existingEventCount > 0,
+        sdkSessionId,
+        continueSession: canResumeSdkSession,
         ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
       }
       await this.tryStartSDKTurn(
@@ -1540,6 +1577,58 @@ function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | und
   if (params.chatMode !== undefined) patch.chatMode = params.chatMode
   if (params.reasoningEffort !== undefined) patch.reasoningEffort = params.reasoningEffort
   return Object.keys(patch).length > 0 ? patch : undefined
+}
+
+function makeSdkRuntimeSessionId(sessionId: string, providerProfileId: string, model: string, agentAdapter: AgentAdapterKind): string {
+  const hash = crypto
+    .createHash('sha256')
+    .update([sessionId, providerProfileId, model, agentAdapter].join('\0'))
+    .digest()
+  hash[6] = ((hash[6] ?? 0) & 0x0f) | 0x40
+  hash[8] = ((hash[8] ?? 0) & 0x3f) | 0x80
+  const hex = hash.subarray(0, 16).toString('hex')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
+export function isSdkResumeSafe(params: {
+  providerType: string
+  apiEndpoint?: string
+  model: string
+  agentAdapter: AgentAdapterKind
+}): boolean {
+  if (params.agentAdapter !== 'claude' && params.agentAdapter !== 'claude-sdk') return false
+  if (!params.model.toLowerCase().startsWith('claude')) return false
+  if (params.providerType !== 'anthropic') return false
+  if (params.apiEndpoint == null || params.apiEndpoint.length === 0) return true
+
+  try {
+    const url = new URL(params.apiEndpoint)
+    return url.hostname === 'api.anthropic.com'
+  } catch {
+    return false
+  }
+}
+
+function getLatestTurnPromptSnapshot(eventRepo: EventRepository, sessionId: string): {
+  model: string
+  providerProfileId?: string
+  adapterKind: 'claude-sdk' | 'codex'
+  sdkSessionId?: string
+} | null {
+  const row = eventRepo.queryBySession({ sessionId, eventType: 'turn_prompt_snapshot', limit: 1 }).events[0]
+  if (row == null) return null
+  try {
+    const event = JSON.parse(row.event_json) as AgentEvent
+    if (event.type !== 'turn_prompt_snapshot') return null
+    return {
+      model: event.model,
+      adapterKind: event.adapterKind,
+      ...(event.providerProfileId !== undefined ? { providerProfileId: event.providerProfileId } : {}),
+      ...(event.sdkSessionId !== undefined ? { sdkSessionId: event.sdkSessionId } : {}),
+    }
+  } catch {
+    return null
+  }
 }
 
 function joinPromptSections(...sections: Array<string | undefined>): string | undefined {

@@ -98,6 +98,7 @@ export const Icons = {
   Pin: (p: IconProps) => <IconBase {...p}><path d="M12 17v5M9 10.8V4h6v6.8c.6.4 3 2 3 4.2H6c0-2.2 2.4-3.8 3-4.2z" /></IconBase>,
   Star: (p: IconProps) => <IconBase {...p}><path d="M12 2l3 7 7.5.8-5.6 5 1.6 7.4L12 18.5 5.5 22.2 7 14.8 1.5 9.8 9 9l3-7z" /></IconBase>,
   Trash: (p: IconProps) => <IconBase {...p}><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14M10 11v6M14 11v6" /></IconBase>,
+  Archive: (p: IconProps) => <IconBase {...p}><path d="M21 8v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8M21 8H3M21 8l-2-4H5L3 8M10 12h4" /></IconBase>,
   Copy: (p: IconProps) => <IconBase {...p}><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></IconBase>,
   Edit: (p: IconProps) => <IconBase {...p}><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" /></IconBase>,
   Lock: (p: IconProps) => <IconBase {...p}><rect x="4" y="11" width="16" height="11" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></IconBase>,
