@@ -28,32 +28,32 @@
   --font-sm: 12px;
   --font-xs: 11px;
   --font-lg: 14px;
-  --font-sans: Inter, "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Noto Sans CJK SC", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
 }
 
 /* ---------- THEME: LIGHT (default) ---------- */
 .app.theme-light {
-  --bg: #ffffff;
-  --bg-soft: #f7f7f8;
-  --bg-sunken: #fafafa;
+  --bg: #fdfdfc;
+  --bg-soft: #fefefe;
+  --bg-sunken: #f7f6f4;
   --panel: #ffffff;
   --panel-elev: #ffffff;
-  --hover: rgba(0, 0, 0, 0.04);
-  --active: rgba(0, 0, 0, 0.06);
+  --hover: rgba(36, 32, 27, 0.045);
+  --active: rgba(36, 32, 27, 0.07);
   --selected: var(--primary-soft);
-  --border: #e6e6e9;
-  --border-strong: #d1d1d6;
-  --divider: #ececef;
+  --border: #e8e5df;
+  --border-strong: #d7d2c9;
+  --divider: #efede8;
 
-  --text: #18181b;
-  --text-strong: #09090b;
-  --text-muted: #6b7280;
-  --text-faint: #9ca3af;
+  --text: #20201d;
+  --text-strong: #11100e;
+  --text-muted: #6f6a61;
+  --text-faint: #9b9489;
   --text-inverse: #ffffff;
 
-  --code-bg: #f4f4f5;
-  --code-fg: #1f2937;
+  --code-bg: #f4f3f0;
+  --code-fg: #24211d;
 
   --success: #10b981;
   --success-bg: rgba(16, 185, 129, 0.1);
@@ -160,8 +160,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
-  background: #fff;
-  color: #18181b;
+  background: #fdfdfc;
+  color: #20201d;
 }
 code, pre, .mono {
   font-family: var(--font-mono);
@@ -288,7 +288,7 @@ button { font-family: inherit; }
   flex-direction: column;
   transition: width 0.18s ease;
 }
-.sidebar.expanded { width: 220px; }
+.sidebar.expanded { width: 180px; }
 .sidebar.collapsed { width: 56px; }
 .sidebar-top {
   display: flex;

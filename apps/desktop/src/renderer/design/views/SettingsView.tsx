@@ -817,10 +817,10 @@ function ThemePreview({
 }) {
   const colors = {
     light: {
-      bg: '#ffffff',
-      soft: '#f7f7f8',
-      text: '#18181b',
-      muted: '#9ca3af',
+      bg: '#fdfdfc',
+      soft: '#fefefe',
+      text: '#20201d',
+      muted: '#9b9489',
       accent: 'var(--primary)',
     },
     dark: {

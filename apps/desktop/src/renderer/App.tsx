@@ -224,7 +224,6 @@ function Shell() {
 
   const paletteHint = getShortcutLabel('openPalette')
   const sidebarHint = getShortcutLabel('toggleSidebar')
-  const settingsHint = getShortcutLabel('openSettings')
 
   return (
     <ErrorBoundary level="global" name="Shell">
@@ -294,10 +293,7 @@ function Shell() {
                 <Icons.Home />
               </span>
               {isExpanded && (
-                <>
-                  <span className="nav-label">Home</span>
-                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewHome')}</span>
-                </>
+                <span className="nav-label">Home</span>
               )}
             </button>
             <button
@@ -309,10 +305,7 @@ function Shell() {
                 <Icons.Chat />
               </span>
               {isExpanded && (
-                <>
-                  <span className="nav-label">Chat</span>
-                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewChat')}</span>
-                </>
+                <span className="nav-label">Chat</span>
               )}
             </button>
 
@@ -325,10 +318,7 @@ function Shell() {
                 <Icons.Workflow />
               </span>
               {isExpanded && (
-                <>
-                  <span className="nav-label">Workflows</span>
-                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewWorkflows')}</span>
-                </>
+                <span className="nav-label">Workflows</span>
               )}
             </button>
             <button
@@ -340,10 +330,7 @@ function Shell() {
                 <Icons.Bot />
               </span>
               {isExpanded && (
-                <>
-                  <span className="nav-label">Agents</span>
-                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewAgents')}</span>
-                </>
+                <span className="nav-label">Agents</span>
               )}
             </button>
           </div>
@@ -359,10 +346,7 @@ function Shell() {
                 <Icons.Skills />
               </span>
               {isExpanded && (
-                <>
-                  <span className="nav-label">Skills</span>
-                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewSkills')}</span>
-                </>
+                <span className="nav-label">Skills</span>
               )}
             </button>
             <button
@@ -374,10 +358,7 @@ function Shell() {
                 <Icons.MCP />
               </span>
               {isExpanded && (
-                <>
-                  <span className="nav-label">MCP</span>
-                  <span className="kbd sidebar-kbd">{getShortcutLabel('viewMcp')}</span>
-                </>
+                <span className="nav-label">MCP</span>
               )}
             </button>
           </div>
@@ -393,10 +374,7 @@ function Shell() {
                 <Icons.Settings />
               </span>
               {isExpanded && (
-                <>
-                  <span className="nav-label">Settings</span>
-                  <span className="kbd sidebar-kbd">{settingsHint}</span>
-                </>
+                <span className="nav-label">Settings</span>
               )}
             </button>
           </div>

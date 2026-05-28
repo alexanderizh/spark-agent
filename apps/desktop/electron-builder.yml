@@ -31,8 +31,14 @@ extraResources:
     to: migrations
     filter:
       - '**/*.sql'
+  - from: resources/icon.png
+    to: icon.png
   - from: resources/trayTemplate.png
     to: trayTemplate.png
+  - from: resources/trayIconWin.png
+    to: trayIconWin.png
+  - from: resources/taskbarIcon.png
+    to: taskbarIcon.png
 publish:
   provider: generic
   url: https://releases.spark-agent.dev/${os}/

@@ -31,6 +31,12 @@ const log = createLogger('main')
 let tray: Tray | null = null
 let isQuitting = false
 
+function getResourcePath(fileName: string): string {
+  return is.dev
+    ? join(__dirname, '../../resources', fileName)
+    : join(process.resourcesPath, fileName)
+}
+
 function showMainWindow(): void {
   const existing = BrowserWindow.getAllWindows()[0]
   if (existing != null) {
@@ -45,9 +51,7 @@ function showMainWindow(): void {
 function createTray(): void {
   if (tray != null) return
 
-  const iconPath = is.dev
-    ? join(__dirname, '../../resources/trayTemplate.png')
-    : join(process.resourcesPath, 'trayTemplate.png')
+  const iconPath = getResourcePath(process.platform === 'darwin' ? 'trayTemplate.png' : 'trayIconWin.png')
   const image = nativeImage.createFromPath(iconPath)
   if (process.platform === 'darwin') image.setTemplateImage(true)
 
@@ -78,6 +82,7 @@ function createTray(): void {
  *   - allowRunningInsecureContent: false — 禁止加载 HTTP 资源
  */
 function createWindow(): BrowserWindow {
+  const iconPath = getResourcePath(process.platform === 'win32' ? 'taskbarIcon.png' : 'icon.png')
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -86,6 +91,7 @@ function createWindow(): BrowserWindow {
     show: false,
     autoHideMenuBar: true,
     titleBarStyle: 'hiddenInset', // macOS 原生红绿灯按钮
+    icon: iconPath,
     webPreferences: {
       // ADR-003 安全约束：三项强制配置，不可协商
       preload: join(__dirname, '../preload/index.js'),

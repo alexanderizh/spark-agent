@@ -77,7 +77,7 @@
   --font-2xl: 28px;
 
   /* ---- 字体族 ---- */
-  --font-sans: -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
 
   /* ---- 间距系统 (4px 基准网格) ---- */
@@ -137,28 +137,28 @@
  * ============================================================ */
 [data-theme='light'] {
   /* ---- Surface 层级 ---- */
-  --bg: #ffffff;
-  --bg-soft: #f9fafb;
-  --bg-sunken: #f3f4f6;
+  --bg: #fdfdfc;
+  --bg-soft: #fefefe;
+  --bg-sunken: #f7f6f4;
   --panel: #ffffff;
   --panel-elev: #ffffff;
 
   /* ---- 边框 & 分割 ---- */
-  --border: #e5e7eb;
-  --border-strong: #d1d5db;
-  --divider: #f3f4f6;
+  --border: #e8e5df;
+  --border-strong: #d7d2c9;
+  --divider: #efede8;
 
   /* ---- 交互状态 ---- */
-  --hover: rgba(0, 0, 0, 0.04);
-  --active: rgba(0, 0, 0, 0.07);
+  --hover: rgba(36, 32, 27, 0.045);
+  --active: rgba(36, 32, 27, 0.07);
   --selected: var(--primary-soft);
   --focus-ring: rgba(99, 102, 241, 0.4);
 
   /* ---- 文字层级 ---- */
-  --text-strong: #111827;
-  --text: #374151;
-  --text-muted: #6b7280;
-  --text-faint: #9ca3af;
+  --text-strong: #11100e;
+  --text: #20201d;
+  --text-muted: #6f6a61;
+  --text-faint: #9b9489;
   --text-inverse: #ffffff;
 
   /* ---- 品牌色保持不变 ---- */
@@ -170,8 +170,8 @@
   --info-bg: rgba(96, 165, 250, 0.08);
 
   /* ---- 代码 & 终端 ---- */
-  --code-bg: #f3f4f6;
-  --code-fg: #374151;
+  --code-bg: #f4f3f0;
+  --code-fg: #24211d;
   --term-bg: #1f2937;
   --term-fg: #e5e7eb;
 

@@ -30,7 +30,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   theme: 'light',
   primary: '#6366f1',
   density: 'regular',
-  sidebar: 'expanded',
+  sidebar: 'collapsed',
   view: 'chat',
   chatMode: 'vibe',
   settingsSection: 'providers',
@@ -54,6 +54,7 @@ function readInitialTweaks(): Tweaks {
 }
 
 export const PRIMARIES: Record<string, { name: string; hover: string; soft: string }> = {
+  '#cc785c': { name: 'Claude', hover: '#b86a50', soft: 'rgba(204,120,92,0.13)' },
   '#6366f1': { name: 'Indigo', hover: '#4f46e5', soft: 'rgba(99,102,241,0.12)' },
   '#3b82f6': { name: 'Blue', hover: '#2563eb', soft: 'rgba(59,130,246,0.12)' },
   '#8b5cf6': { name: 'Violet', hover: '#7c3aed', soft: 'rgba(139,92,246,0.14)' },
