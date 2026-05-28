@@ -60,6 +60,7 @@ import {
   EventRepository,
   ProviderProfileRepository,
   RulesRepository,
+  WorkspaceRepository,
   SkillRepository,
   SettingsRepository,
 } from '@spark/storage'
@@ -546,6 +547,54 @@ describe('SessionService.sendTurn', () => {
     expect(eventRepo.insert).toHaveBeenCalledWith(expect.objectContaining({
       eventType: 'agent_error',
       eventJson: expect.stringContaining('SDK_REQUIRED'),
+    }))
+    expect(sessionRepo.updateStatus).toHaveBeenCalledWith('sess-1', 'error')
+  })
+
+  it('reports a missing workspace before starting the Claude SDK process', async () => {
+    const missingRoot = '/definitely/not/a/workspace'
+    const sessionRepo = makeSessionRepo({
+      findByIdOrFail: vi.fn().mockReturnValue({
+        id: 'sess-1',
+        provider_profile_id: 'prov-1',
+        agent_adapter: 'claude-sdk',
+        permission_mode: 'claude-ask',
+        chat_mode: 'agent',
+        status: 'running',
+        title: '新会话',
+        workspace_ids_json: '["workspace-1"]',
+      }),
+      getWorkspaceIds: vi.fn().mockReturnValue(['workspace-1']),
+    })
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeProviderRepo()
+    const rulesRepo = makeRulesRepo()
+    const workspaceRepo = {
+      get: vi.fn().mockReturnValue({
+        id: 'workspace-1',
+        name: 'Missing Workspace',
+        root_path: missingRoot,
+        project_kind: 'generic',
+      }),
+    }
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(WorkspaceRepository).mockImplementation(() => workspaceRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'hello' })
+
+    expect(eventRepo.insert).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'agent_error',
+      eventJson: expect.stringContaining('WORKSPACE_UNAVAILABLE'),
+    }))
+    expect(eventRepo.insert).toHaveBeenCalledWith(expect.objectContaining({
+      eventType: 'agent_error',
+      eventJson: expect.stringContaining(missingRoot),
     }))
     expect(sessionRepo.updateStatus).toHaveBeenCalledWith('sess-1', 'error')
   })

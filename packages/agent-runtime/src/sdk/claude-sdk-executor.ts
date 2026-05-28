@@ -24,6 +24,9 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { sep } from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
 import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
 import { AgentEventEmitter } from '../core/event-emitter.js'
@@ -32,6 +35,8 @@ import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './p
 import type { SDKExecutorConfig, SDKMessage, SDKQueryFunction, SDKQueryOptions } from './types.js'
 
 type SDKModule = { query: SDKQueryFunction }
+
+const CLAUDE_AGENT_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
 
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
@@ -126,12 +131,14 @@ export class ClaudeSDKExecutor {
 
     // Build composite system prompt
     const systemPrompt = buildCompositeSystemPrompt(config)
+    const claudeCodeExecutable = resolveClaudeCodeExecutable()
 
     // Build SDK options
     const options: SDKQueryOptions = {
       abortController: this.abortController,
       model: config.model,
       cwd: config.workspaceRootPath,
+      ...(claudeCodeExecutable != null ? { pathToClaudeCodeExecutable: claudeCodeExecutable } : {}),
       env: {
         ...process.env,
         ANTHROPIC_API_KEY: config.apiKey,
@@ -249,6 +256,53 @@ function contextWindow(model: string): number {
 
 function softContextLimit(model: string): number {
   return resolveSoftContextLimit(model)
+}
+
+function resolveClaudeCodeExecutable(): string | undefined {
+  const require = createRequire(import.meta.url)
+  const binaryName = process.platform === 'win32' ? 'claude.exe' : 'claude'
+
+  for (const packageName of getClaudeNativePackageCandidates()) {
+    try {
+      const resolved = require.resolve(`${packageName}/${binaryName}`)
+      const unpacked = toAsarUnpackedPath(resolved)
+      if (existsSync(unpacked)) return unpacked
+      if (existsSync(resolved)) return resolved
+    } catch {
+      // Try the next platform package candidate.
+    }
+  }
+
+  return undefined
+}
+
+function getClaudeNativePackageCandidates(): string[] {
+  const platform = process.platform
+  const arch = process.arch
+
+  if (platform === 'linux') {
+    const glibcFirst = [
+      `${CLAUDE_AGENT_SDK_PACKAGE}-linux-${arch}`,
+      `${CLAUDE_AGENT_SDK_PACKAGE}-linux-${arch}-musl`,
+    ]
+    return isMuslRuntime() ? [...glibcFirst].reverse() : glibcFirst
+  }
+
+  return [`${CLAUDE_AGENT_SDK_PACKAGE}-${platform}-${arch}`]
+}
+
+function isMuslRuntime(): boolean {
+  if (process.platform !== 'linux') return false
+  const report = (typeof process.report?.getReport === 'function'
+    ? process.report.getReport()
+    : null) as { header?: { glibcVersionRuntime?: string } } | null
+  return report != null && report.header?.glibcVersionRuntime === undefined
+}
+
+function toAsarUnpackedPath(filePath: string): string {
+  const asarSegment = `${sep}app.asar${sep}`
+  if (!filePath.includes(asarSegment)) return filePath
+  return filePath.replace(asarSegment, `${sep}app.asar.unpacked${sep}`)
 }
 
 export class SDKNotAvailableError extends Error {

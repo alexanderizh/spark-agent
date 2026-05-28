@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { stat } from 'node:fs/promises'
 import {
   EventRepository,
   ProviderProfileRepository,
@@ -640,6 +641,32 @@ export class SessionService {
       sessionRepo.updateStatus(sessionId, 'error')
     }
 
+    const workspaceIssue = await getWorkspaceRootIssue(config.workspaceRootPath)
+    if (workspaceIssue != null) {
+      this.emitAndPersist(sessionId, turnId, {
+        ...makeBase(),
+        type: 'user_message',
+        content: message,
+      }, eventRepo)
+      this.emitAndPersist(sessionId, turnId, {
+        ...makeBase(),
+        type: 'agent_error',
+        code: 'WORKSPACE_UNAVAILABLE',
+        message: `Workspace path is not available: ${config.workspaceRootPath}. `
+          + 'Reopen the workspace or update the session workspace before running Claude.',
+        retryable: false,
+        rawError: workspaceIssue,
+      }, eventRepo)
+      this.emitAndPersist(sessionId, turnId, {
+        ...makeBase(),
+        type: 'agent_status',
+        status: 'error',
+        message: 'Workspace path is not available',
+      }, eventRepo)
+      sessionRepo.updateStatus(sessionId, 'error')
+      return
+    }
+
     try {
       const { isSDKAvailable: checkSDK } = await import('../sdk/index.js')
       if (!(await checkSDK())) {
@@ -1275,6 +1302,15 @@ function defaultMaxIterations(adapter: AgentAdapterKind): number {
   if (adapter === 'claude') return 150
   // codex/openai: conservative
   return 100
+}
+
+async function getWorkspaceRootIssue(rootPath: string): Promise<string | null> {
+  try {
+    const info = await stat(rootPath)
+    return info.isDirectory() ? null : 'Workspace path exists but is not a directory'
+  } catch (err) {
+    return err instanceof Error ? `${err.name}: ${err.message}` : String(err)
+  }
 }
 
 function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {
