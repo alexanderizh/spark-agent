@@ -739,9 +739,15 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           workspace={activeWorkspace}
           agentStatus={agentStatus}
           showInspector={showInspector}
-          setShowInspector={setShowInspector}
+          setShowInspector={(v: boolean) => {
+            setShowInspector(v)
+            if (v) setShowConfigPanel(false)
+          }}
           showConfigPanel={showConfigPanel}
-          setShowConfigPanel={setShowConfigPanel}
+          setShowConfigPanel={(v: boolean) => {
+            setShowConfigPanel(v)
+            if (v) setShowInspector(false)
+          }}
           {...(active ? { onClearMessages: handleClearMessages } : {})}
         />
         {active ? (
@@ -791,15 +797,17 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           onSent={(sessionId) => {
             setSessionStatus(sessionId, 'running')
           }}
-        />
-        {showConfigPanel && (
-          <ChatConfigPanel
-            session={activeSession}
-            workspace={activeWorkspace}
-            onClose={() => setShowConfigPanel(false)}
-          />
-        )}
+         />
       </div>
+
+      {showConfigPanel && (
+        <ChatConfigPanel
+          session={activeSession}
+          workspace={activeWorkspace}
+          width={inspectorWidth}
+          onWidthChange={setInspectorWidth}
+        />
+      )}
 
       {showInspector && (
         <ChatInspector
@@ -4502,13 +4510,15 @@ function getActiveTaskText(messages: UIMessage[], isRunning: boolean): string | 
 function ChatConfigPanel({
   session,
   workspace,
-  onClose,
+  width,
+  onWidthChange,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
-  onClose: () => void
+  width: number
+  onWidthChange: (width: number) => void
 }) {
-  const panelRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [skillsCollapsed, setSkillsCollapsed] = useState(true)
   const [promptsCollapsed, setPromptsCollapsed] = useState(true)
   const [toolsCollapsed, setToolsCollapsed] = useState(true)
@@ -4596,22 +4606,38 @@ function ChatConfigPanel({
     }
   }, [loadRuntimeConfig, updatePromptConfig])
 
-  // 点击面板外部关闭
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [onClose])
+  const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = { startX: event.clientX, startWidth: width }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    document.body.classList.add('inspector-resizing')
+  }
+
+  const handleResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
+    if (dragRef.current == null) return
+    const delta = dragRef.current.startX - event.clientX
+    onWidthChange(clamp(dragRef.current.startWidth + delta, 300, 620))
+  }
+
+  const handleResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+    document.body.classList.remove('inspector-resizing')
+  }
 
   return (
-    <div ref={panelRef} className="config-panel scroll">
+    <div className="inspector scroll" style={{ '--inspector-width': `${width}px` } as React.CSSProperties}>
+      <div
+        className="inspector-resize-handle"
+        title="拖拽调整侧边栏宽度"
+        onPointerDown={handleResizeStart}
+        onPointerMove={handleResizeMove}
+        onPointerUp={handleResizeEnd}
+        onPointerCancel={handleResizeEnd}
+      />
+
       {/* Skills */}
       {session != null && skillConfig != null && (
-        <div className="config-panel-section">
+        <div className="inspector-section">
           <h4 className="config-panel-header" onClick={() => setSkillsCollapsed(!skillsCollapsed)}>
             <Icons.Skills size={11} />
             Skills
@@ -4666,10 +4692,11 @@ function ChatConfigPanel({
 
       {/* 提示词 */}
       {session != null && promptConfig != null && (
-        <div className="config-panel-section">
+        <div className="inspector-section">
           <h4 className="config-panel-header" onClick={() => setPromptsCollapsed(!promptsCollapsed)}>
             <Icons.Edit size={11} />
             提示词
+            <span className="spacer" />
             <Icons.ChevronRight size={10} className={`chev ${promptsCollapsed ? '' : 'chev-open'}`} />
           </h4>
           {!promptsCollapsed && (
@@ -4716,7 +4743,7 @@ function ChatConfigPanel({
       )}
 
       {/* 可用工具 */}
-      <div className="config-panel-section">
+      <div className="inspector-section">
         <h4 className="config-panel-header" onClick={() => setToolsCollapsed(!toolsCollapsed)}>
           <Icons.Wrench size={11} />
           可用工具
