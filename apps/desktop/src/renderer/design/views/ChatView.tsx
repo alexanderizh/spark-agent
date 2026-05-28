@@ -103,6 +103,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     return stored == null ? null : stored as SessionId
   })
   const [showInspector, setShowInspector] = useState(false)
+  const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
   const [sidebarWidth, setSidebarWidth] = useState(() => {
     const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY)
@@ -739,6 +740,8 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           agentStatus={agentStatus}
           showInspector={showInspector}
           setShowInspector={setShowInspector}
+          showConfigPanel={showConfigPanel}
+          setShowConfigPanel={setShowConfigPanel}
           {...(active ? { onClearMessages: handleClearMessages } : {})}
         />
         {active ? (
@@ -789,6 +792,13 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
             setSessionStatus(sessionId, 'running')
           }}
         />
+        {showConfigPanel && (
+          <ChatConfigPanel
+            session={activeSession}
+            workspace={activeWorkspace}
+            onClose={() => setShowConfigPanel(false)}
+          />
+        )}
       </div>
 
       {showInspector && (
@@ -1283,6 +1293,8 @@ function ChatTabbar({
   agentStatus,
   showInspector,
   setShowInspector,
+  showConfigPanel,
+  setShowConfigPanel,
   onClearMessages,
 }: {
   session: SessionSummary | null
@@ -1290,6 +1302,8 @@ function ChatTabbar({
   agentStatus: string
   showInspector: boolean
   setShowInspector: (v: boolean) => void
+  showConfigPanel: boolean
+  setShowConfigPanel: (v: boolean) => void
   onClearMessages?: () => void
 }) {
   const [showClearConfirm, setShowClearConfirm] = useState(false)
@@ -1346,7 +1360,14 @@ function ChatTabbar({
         >
           <Icons.PanelRight />
         </button>
-        <button className="icon-btn"><Icons.More /></button>
+        <button
+          className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
+          title="配置面板"
+          aria-label="配置面板"
+          onClick={() => setShowConfigPanel(!showConfigPanel)}
+        >
+          <Icons.More />
+        </button>
       </div>
     </div>
   )
@@ -4478,49 +4499,30 @@ function getActiveTaskText(messages: UIMessage[], isRunning: boolean): string | 
   return '正在执行当前任务'
 }
 
-function ChatInspector({
+function ChatConfigPanel({
   session,
   workspace,
-  messages,
-  usageData,
-  projectContext,
-  contextUsage,
-  contextInputTokens,
-  providerContextWindow,
-  turnPromptSnapshots,
-  width,
-  onWidthChange,
-  onOpenProjectFolder,
+  onClose,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
-  messages: UIMessage[]
-  usageData: SessionUsageData
-  projectContext: ProjectContextState | null
-  contextUsage: ContextUsageState | null
-  contextInputTokens: number
-  providerContextWindow: number
-  turnPromptSnapshots: TurnPromptSnapshotEvent[]
-  width: number
-  onWidthChange: (width: number) => void
-  onOpenProjectFolder: () => void
+  onClose: () => void
 }) {
-  const plans = extractPlans(messages)
-  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const [skillsCollapsed, setSkillsCollapsed] = useState(true)
+  const [promptsCollapsed, setPromptsCollapsed] = useState(true)
+  const [toolsCollapsed, setToolsCollapsed] = useState(true)
   const [skillConfig, setSkillConfig] = useState<SkillConfigGetResponse | null>(null)
   const [promptConfig, setPromptConfig] = useState<PromptConfigGetResponse | null>(null)
   const [projectPromptDraft, setProjectPromptDraft] = useState('')
   const [sessionPromptDraft, setSessionPromptDraft] = useState('')
   const [savingRuntime, setSavingRuntime] = useState(false)
-  const [skillsCollapsed, setSkillsCollapsed] = useState(true)
   const { invoke: getSkillConfig } = useIpcInvoke('skill-config:get')
   const { invoke: updateSkillConfig } = useIpcInvoke('skill-config:update')
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
-  const projectContextSources = projectContext?.sources ?? []
-  const fileChangeSummaries = extractInspectorFileChanges(messages)
 
   const loadRuntimeConfig = useCallback(async () => {
     const req = {
@@ -4593,6 +4595,184 @@ function ChatInspector({
       setSavingRuntime(false)
     }
   }, [loadRuntimeConfig, updatePromptConfig])
+
+  // 点击面板外部关闭
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(event.target as Node)) {
+        onClose()
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [onClose])
+
+  return (
+    <div ref={panelRef} className="config-panel scroll">
+      {/* Skills */}
+      {session != null && skillConfig != null && (
+        <div className="config-panel-section">
+          <h4 className="config-panel-header" onClick={() => setSkillsCollapsed(!skillsCollapsed)}>
+            <Icons.Skills size={11} />
+            Skills
+            <span className="inspector-count">{skillConfig.effectiveSkillIds.length}</span>
+            <Icons.ChevronRight size={10} className={`chev ${skillsCollapsed ? '' : 'chev-open'}`} />
+          </h4>
+          {!skillsCollapsed && (
+            <>
+              <div className="runtime-skill-list">
+                {skillConfig.skills.map((skill) => {
+                  const systemVisible = skillConfig.systemSkillIds.includes(skill.id)
+                  const projectActive = systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
+                  const sessionActive = systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
+                  const meta = parseSkillManifest(skill.manifestJson)
+                  return (
+                    <div className="runtime-skill-row" key={skill.id}>
+                      <div className="runtime-skill-main min-w-0">
+                        <div className="runtime-skill-name truncate">{skill.name}</div>
+                        <div className="runtime-skill-desc truncate">{meta.source} · {meta.desc}</div>
+                      </div>
+                      {workspaceId != null && (
+                        <label className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="项目层可见">
+                          <input
+                            type="checkbox"
+                            checked={projectActive}
+                            disabled={!systemVisible || savingRuntime}
+                            onChange={(event) => void toggleRuntimeSkill('project', workspaceId, skill.id, event.target.checked)}
+                          />
+                          P
+                        </label>
+                      )}
+                      {sessionId != null && (
+                        <label className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="会话层可见">
+                          <input
+                            type="checkbox"
+                            checked={sessionActive}
+                            disabled={!systemVisible || savingRuntime}
+                            onChange={(event) => void toggleRuntimeSkill('session', sessionId, skill.id, event.target.checked)}
+                          />
+                          S
+                        </label>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="inspector-muted runtime-hint">P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。</div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 提示词 */}
+      {session != null && promptConfig != null && (
+        <div className="config-panel-section">
+          <h4 className="config-panel-header" onClick={() => setPromptsCollapsed(!promptsCollapsed)}>
+            <Icons.Edit size={11} />
+            提示词
+            <Icons.ChevronRight size={10} className={`chev ${promptsCollapsed ? '' : 'chev-open'}`} />
+          </h4>
+          {!promptsCollapsed && (
+            <>
+              {workspaceId != null && (
+                <div className="runtime-prompt-block">
+                  <div className="runtime-prompt-title">项目提示词</div>
+                  <textarea
+                    className="spark-textarea inspector-textarea"
+                    value={projectPromptDraft}
+                    onChange={(event) => setProjectPromptDraft(event.target.value)}
+                    placeholder="当前项目会话通用提示词..."
+                  />
+                  <button
+                    className="btn ghost sm runtime-save-btn"
+                    disabled={savingRuntime}
+                    onClick={() => void savePromptLayer('project', workspaceId, projectPromptDraft)}
+                  >
+                    保存项目
+                  </button>
+                </div>
+              )}
+              {sessionId != null && (
+                <div className="runtime-prompt-block">
+                  <div className="runtime-prompt-title">会话提示词</div>
+                  <textarea
+                    className="spark-textarea inspector-textarea"
+                    value={sessionPromptDraft}
+                    onChange={(event) => setSessionPromptDraft(event.target.value)}
+                    placeholder="仅对当前会话生效..."
+                  />
+                  <button
+                    className="btn ghost sm runtime-save-btn"
+                    disabled={savingRuntime}
+                    onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
+                  >
+                    保存会话
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 可用工具 */}
+      <div className="config-panel-section">
+        <h4 className="config-panel-header" onClick={() => setToolsCollapsed(!toolsCollapsed)}>
+          <Icons.Wrench size={11} />
+          可用工具
+          <span className="inspector-count">{CODING_AGENT_TOOLS.length}</span>
+          <Icons.ChevronRight size={10} className={`chev ${toolsCollapsed ? '' : 'chev-open'}`} />
+        </h4>
+        {!toolsCollapsed && (
+          <div className="tool-chip-list">
+            {CODING_AGENT_TOOLS.map((tool) => (
+              <span
+                key={tool.name}
+                className="tool-chip"
+                title={`${tool.group} · ${tool.status === 'built-in' ? '内置' : '扩展接入'}`}
+              >
+                <Icons.Wrench />
+                {tool.name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ChatInspector({
+  session,
+  workspace,
+  messages,
+  usageData,
+  projectContext,
+  contextUsage,
+  contextInputTokens,
+  providerContextWindow,
+  turnPromptSnapshots,
+  width,
+  onWidthChange,
+  onOpenProjectFolder,
+}: {
+  session: SessionSummary | null
+  workspace: WorkspaceInfo | null
+  messages: UIMessage[]
+  usageData: SessionUsageData
+  projectContext: ProjectContextState | null
+  contextUsage: ContextUsageState | null
+  contextInputTokens: number
+  providerContextWindow: number
+  turnPromptSnapshots: TurnPromptSnapshotEvent[]
+  width: number
+  onWidthChange: (width: number) => void
+  onOpenProjectFolder: () => void
+}) {
+  const plans = extractPlans(messages)
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
+  const projectContextSources = projectContext?.sources ?? []
+  const fileChangeSummaries = extractInspectorFileChanges(messages)
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -4731,101 +4911,6 @@ function ChatInspector({
         </div>
       )}
 
-      {session != null && skillConfig != null && (
-        <div className="inspector-section">
-          <h4 className="inspector-collapsible-header" onClick={() => setSkillsCollapsed(!skillsCollapsed)}>
-            Skills
-            <span className="inspector-count">{skillConfig.effectiveSkillIds.length}</span>
-            <Icons.ChevronRight size={10} className={`chev ${skillsCollapsed ? '' : 'chev-open'}`} />
-          </h4>
-          {!skillsCollapsed && (
-            <>
-              <div className="runtime-skill-list">
-                {skillConfig.skills.map((skill) => {
-                  const systemVisible = skillConfig.systemSkillIds.includes(skill.id)
-                  const projectActive = systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
-                  const sessionActive = systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
-                  const meta = parseSkillManifest(skill.manifestJson)
-                  return (
-                    <div className="runtime-skill-row" key={skill.id}>
-                      <div className="runtime-skill-main min-w-0">
-                        <div className="runtime-skill-name truncate">{skill.name}</div>
-                        <div className="runtime-skill-desc truncate">{meta.source} · {meta.desc}</div>
-                      </div>
-                      {workspaceId != null && (
-                        <label className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="项目层可见">
-                          <input
-                            type="checkbox"
-                            checked={projectActive}
-                            disabled={!systemVisible || savingRuntime}
-                            onChange={(event) => void toggleRuntimeSkill('project', workspaceId, skill.id, event.target.checked)}
-                          />
-                          P
-                        </label>
-                      )}
-                      {sessionId != null && (
-                        <label className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="会话层可见">
-                          <input
-                            type="checkbox"
-                            checked={sessionActive}
-                            disabled={!systemVisible || savingRuntime}
-                            onChange={(event) => void toggleRuntimeSkill('session', sessionId, skill.id, event.target.checked)}
-                          />
-                          S
-                        </label>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-              <div className="inspector-muted runtime-hint">P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。</div>
-            </>
-          )}
-        </div>
-      )}
-
-      {session != null && promptConfig != null && (
-        <div className="inspector-section">
-          <h4>提示词</h4>
-          {workspaceId != null && (
-            <div className="runtime-prompt-block">
-              <div className="runtime-prompt-title">项目提示词</div>
-              <textarea
-                className="spark-textarea inspector-textarea"
-                value={projectPromptDraft}
-                onChange={(event) => setProjectPromptDraft(event.target.value)}
-                placeholder="当前项目会话通用提示词..."
-              />
-              <button
-                className="btn ghost sm runtime-save-btn"
-                disabled={savingRuntime}
-                onClick={() => void savePromptLayer('project', workspaceId, projectPromptDraft)}
-              >
-                保存项目
-              </button>
-            </div>
-          )}
-          {sessionId != null && (
-            <div className="runtime-prompt-block">
-              <div className="runtime-prompt-title">会话提示词</div>
-              <textarea
-                className="spark-textarea inspector-textarea"
-                value={sessionPromptDraft}
-                onChange={(event) => setSessionPromptDraft(event.target.value)}
-                placeholder="仅对当前会话生效..."
-              />
-              <button
-                className="btn ghost sm runtime-save-btn"
-                disabled={savingRuntime}
-                onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
-              >
-                保存会话
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Token Usage Section */}
       <div className="inspector-section">
         <h4>
@@ -4869,22 +4954,6 @@ function ChatInspector({
         </div>
       )}
 
-      <div className="inspector-section">
-        <h4>可用工具</h4>
-        <div className="tool-chip-list">
-          {CODING_AGENT_TOOLS.map((tool) => (
-            <span
-              key={tool.name}
-              className="tool-chip"
-              title={`${tool.group} · ${tool.status === 'built-in' ? '内置' : '扩展接入'}`}
-            >
-              <Icons.Wrench />
-              {tool.name}
-            </span>
-          ))}
-        </div>
-      </div>
-
       {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
       {turnPromptSnapshots.length > 0 && (
         <PromptInspectorSection snapshots={turnPromptSnapshots} />
@@ -4910,12 +4979,12 @@ function truncateText(text: string, maxLen: number): string {
   return text.slice(0, maxLen) + '…'
 }
 
-/** PromptInspectorSection — 白盒提示词检查器 */
+/** PromptInspectorSection — 白盒提示词、运行时日志检查器 */
 function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEvent[] }) {
   return (
     <div className="inspector-section">
       <h4>
-        <Icons.Eye size={11} /> 白盒提示词
+        <Icons.Eye size={11} /> 运行时日志
         <span className="inspector-count">{snapshots.length} 轮</span>
       </h4>
       <div className="prompt-snapshot-list">

@@ -918,13 +918,14 @@ body.sidebar-resizing {
   color: var(--text);
 }
 
-.chat-main {
+ .chat-main {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+  position: relative;
 }
 
 .chat-tabbar {
@@ -3116,23 +3117,49 @@ body.inspector-resizing {
   display: flex;
   align-items: center;
 }
-.inspector-collapsible-header {
+/* ─── Config Panel (from More button) ─── */
+.config-panel {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  width: 380px;
+  max-height: calc(100% - 48px);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 100;
+  overflow-y: auto;
+}
+.config-panel-section {
+  padding: var(--pad-md) var(--pad-lg);
+  border-bottom: 1px solid var(--divider);
+}
+.config-panel-header {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   cursor: pointer;
   user-select: none;
-  border-radius: var(--r-sm);
-  padding: 4px 0;
-  transition: background 0.12s;
 }
-.inspector-collapsible-header:hover {
-  background: var(--bg-hover);
+.config-panel-header:hover {
+  color: var(--text-muted);
 }
-.inspector-collapsible-header .chev {
-  margin-left: 4px;
+.config-panel-header .inspector-count {
+  margin-left: auto;
+}
+.config-panel-header .chev {
   color: var(--text-faint);
   transition: transform 0.15s;
   flex-shrink: 0;
 }
-.inspector-collapsible-header .chev-open {
+.config-panel-header .chev-open {
   transform: rotate(90deg);
 }
 .inspector-section h4 .link {
