@@ -42,7 +42,7 @@ export default defineConfig({
     build: {
       rollupOptions: {
         // 原生模块必须保持外置，不能被 Rollup 打包
-        external: ['better-sqlite3', 'keytar'],
+        external: ['better-sqlite3', 'keytar', '@anthropic-ai/claude-agent-sdk'],
         input: {
           index: resolve(__dirname, 'src/main/index.ts'),
         },

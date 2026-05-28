@@ -139,6 +139,7 @@ export type SDKEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 export interface SDKQueryOptions {
   abortController?: AbortController | undefined
   cwd?: string | undefined
+  pathToClaudeCodeExecutable?: string | undefined
   env?: Record<string, string | undefined> | undefined
   model?: string | undefined
   effort?: SDKEffort | undefined
