@@ -192,6 +192,12 @@ function getCommonWindowsPaths(): string[] {
     join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'nodejs'),
   )
 
+  // npm (bundled with Node.js, but also available standalone)
+  paths.push(
+    join(home, 'AppData', 'Roaming', 'npm'),
+    join(process.env['ProgramFiles'] ?? 'C:\\Program Files', 'nodejs'),
+  )
+
   // nvm-windows
   paths.push(
     join(process.env['APPDATA'] ?? join(home, 'AppData', 'Roaming'), 'nvm'),
@@ -314,13 +320,12 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     downloadUrl: 'https://nodejs.org/en/download/',
   },
   {
-    command: 'python',
-    displayName: 'Python',
-    winCommands: ['python.exe', 'py.exe'],
-    unixCommands: ['python3'],
+    command: 'npm',
+    displayName: 'npm',
+    winCommands: ['npm.cmd'],
     versionArgs: ['--version'],
     versionRegex: /(\d+\.\d+\.\d+)/,
-    downloadUrl: 'https://www.python.org/downloads/',
+    downloadUrl: 'https://docs.npmjs.com/downloading-and-installing-node-js-and-npm',
   },
   {
     command: 'git',
@@ -329,6 +334,15 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
     versionArgs: ['--version'],
     versionRegex: /(\d+\.\d+\.\d+)/,
     downloadUrl: 'https://git-scm.com/downloads',
+  },
+  {
+    command: 'python',
+    displayName: 'Python',
+    winCommands: ['python.exe', 'py.exe'],
+    unixCommands: ['python3'],
+    versionArgs: ['--version'],
+    versionRegex: /(\d+\.\d+\.\d+)/,
+    downloadUrl: 'https://www.python.org/downloads/',
   },
 ]
 

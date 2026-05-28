@@ -5167,6 +5167,17 @@ body.inspector-resizing {
   gap: var(--pad-md);
   padding: 10px var(--pad-lg);
 }
+.integrity-tool-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
 .integrity-sdk-row.bordered {
   border-top: 1px solid var(--divider);
 }
