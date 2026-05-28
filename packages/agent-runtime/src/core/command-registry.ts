@@ -506,22 +506,43 @@ function registerSdkCommands(registry: CommandRegistry): void {
       const statusLine = result.exitCode === 0 ? '验证通过' : '验证失败'
       const body = clippedOutput.trim().length > 0 ? `\n\n\`\`\`\n${clippedOutput.trim()}\n\`\`\`` : ''
       const repairRequested = cmd.flags.repair === 'true'
-      const followUpPrompt = result.exitCode !== 0 && repairRequested
+      const repairAttempt = parsePositiveInt(cmd.flags.attempt, 1)
+      const maxRepairAttempts = parsePositiveInt(cmd.flags['max-retries'] ?? cmd.flags.maxRetries, 3)
+      const repairCanContinue = result.exitCode !== 0 && repairRequested && repairAttempt < maxRepairAttempts
+      const repairStopped = result.exitCode !== 0 && repairRequested && !repairCanContinue
+      const followUpPrompt = repairCanContinue
         ? buildValidationRepairPrompt({
             command: requestedCommand,
             exitCode: result.exitCode,
             output: clippedOutput,
+            attempt: repairAttempt,
+            maxAttempts: maxRepairAttempts,
+            nextAttempt: repairAttempt + 1,
           })
         : undefined
       const repairNote = followUpPrompt != null ? '\n\n已把失败摘要交给 Agent 继续修复。' : ''
+      const repairLoopNote = followUpPrompt != null
+        ? `\n\n已把失败摘要交给 Agent 继续修复（attempt ${repairAttempt}/${maxRepairAttempts}）。`
+        : (repairStopped ? `\n\n修复循环已停止：达到最大重试次数 ${maxRepairAttempts}。` : repairNote)
+      const repairLoopNoteText = followUpPrompt != null
+        ? `\n\nRepair summary queued for Agent (attempt ${repairAttempt}/${maxRepairAttempts}).`
+        : (repairStopped ? `\n\nRepair loop stopped: max retries ${maxRepairAttempts} reached.` : repairLoopNote)
       return {
         success: result.exitCode === 0,
-        message: `**${statusLine}** \`${requestedCommand}\` (${elapsed}ms, exit ${result.exitCode})${body}${repairNote}`,
+        message: `**${statusLine}** \`${requestedCommand}\` (${elapsed}ms, exit ${result.exitCode})${body}${repairLoopNoteText}`,
         data: {
           command: requestedCommand,
           exitCode: result.exitCode,
           durationMs: elapsed,
           repairQueued: followUpPrompt != null,
+          validationRepair: {
+            requested: repairRequested,
+            attempt: repairAttempt,
+            maxAttempts: maxRepairAttempts,
+            nextAttempt: repairCanContinue ? repairAttempt + 1 : null,
+            stopped: repairStopped,
+            stopReason: repairStopped ? 'max_retries_exhausted' : null,
+          },
         },
         ...(followUpPrompt != null ? { followUpPrompt } : {}),
       }
@@ -701,10 +722,19 @@ function parseValidationRunCommand(command: string): { packageManager: string; s
   return { packageManager, scriptName }
 }
 
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (value == null) return fallback
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
 function buildValidationRepairPrompt(params: {
   command: string
   exitCode: number
   output: string
+  attempt: number
+  maxAttempts: number
+  nextAttempt: number
 }): string {
   const output = params.output.trim()
   const clipped = output.length > 6000 ? `${output.slice(0, 6000)}\n... output truncated ...` : output

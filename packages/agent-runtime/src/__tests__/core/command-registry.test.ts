@@ -187,10 +187,33 @@ describe('Built-in commands', () => {
       })
       const result = await registry.execute(parse('/validate "npm run typecheck" --repair'), ctx, deps)
       expect(result.success).toBe(false)
-      expect(result.message).toContain('已把失败摘要交给 Agent')
-      expect(result.data).toMatchObject({ repairQueued: true })
+      expect(result.message).toContain('Repair summary queued for Agent')
+      expect(result.data).toMatchObject({
+        repairQueued: true,
+        validationRepair: { attempt: 1, maxAttempts: 3, nextAttempt: 2, stopped: false },
+      })
       expect(result.followUpPrompt).toContain('验证命令: npm run typecheck')
       expect(result.followUpPrompt).toContain('error TS2322')
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('/validate --repair stops when max retries are exhausted', async () => {
+    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit' })
+    try {
+      const deps = makeDeps({
+        getWorkspacePath: () => cwd,
+        execShell: vi.fn(async () => ({ stdout: '', stderr: 'still failing', exitCode: 2 })),
+      })
+      const result = await registry.execute(parse('/validate "npm run typecheck" --repair --attempt 2 --max-retries 2'), ctx, deps)
+      expect(result.success).toBe(false)
+      expect(result.message).toContain('Repair loop stopped')
+      expect(result.data).toMatchObject({
+        repairQueued: false,
+        validationRepair: { attempt: 2, maxAttempts: 2, nextAttempt: null, stopped: true, stopReason: 'max_retries_exhausted' },
+      })
+      expect(result.followUpPrompt).toBeUndefined()
     } finally {
       rmSync(cwd, { recursive: true, force: true })
     }
