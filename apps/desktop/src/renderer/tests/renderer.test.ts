@@ -180,6 +180,55 @@ describe('Renderer Smoke Tests', () => {
     }))
   })
 
+  it('persists the settings permission mode to the shared composer preference', async () => {
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'permission:list-profiles') {
+        return {
+          profiles: [{
+            id: 'project-standard',
+            name: 'Project Standard',
+            sandboxLevel: 2,
+            rules: [],
+          }],
+          activeProfileId: 'project-standard',
+        }
+      }
+      if (channel === 'permission:set-active-profile') return { activeProfileId: 'project-standard' }
+      if (channel === 'permission:update-sandbox') return {}
+      if (channel === 'permission:update-rule') return {}
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { PermissionsSection } = await import('../design/views/SettingsView')
+    act(() => {
+      root = createRoot(container)
+      root.render(React.createElement(PermissionsSection))
+    })
+
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    const bypass = Array.from(container.querySelectorAll<HTMLButtonElement>('.runtime-permission-option'))
+      .find((button) => button.textContent?.includes('Bypass permissions'))
+    expect(bypass).toBeDefined()
+
+    act(() => {
+      bypass!.click()
+    })
+
+    const stored = JSON.parse(localStorage.getItem('spark-agent:composer-prefs') ?? '{}')
+    expect(stored).toEqual(expect.objectContaining({
+      adapter: 'claude-sdk',
+      permissionMode: 'claude-bypass',
+    }))
+    expect(container.textContent).toContain('当前默认策略会跳过人工审批')
+  })
+
   it('toggles the primary sidebar from the bottom control and persists the state', async () => {
     const { App } = await import('../App')
 

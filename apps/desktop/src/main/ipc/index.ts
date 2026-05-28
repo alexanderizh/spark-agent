@@ -155,6 +155,12 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().sendTurn({
       sessionId: req.sessionId,
       message: req.message,
+      ...(req.providerProfileId !== undefined ? { providerProfileId: req.providerProfileId } : {}),
+      ...(req.modelId !== undefined ? { modelId: req.modelId } : {}),
+      ...(req.agentAdapter !== undefined ? { agentAdapter: req.agentAdapter } : {}),
+      ...(req.permissionMode !== undefined ? { permissionMode: req.permissionMode } : {}),
+      ...(req.chatMode !== undefined ? { chatMode: req.chatMode } : {}),
+      ...(req.reasoningEffort !== undefined ? { reasoningEffort: req.reasoningEffort } : {}),
       ...(req.skillId != null ? { skillId: req.skillId } : {}),
       ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
     })

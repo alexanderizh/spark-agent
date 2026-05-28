@@ -48,10 +48,19 @@ export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: R
 export type ApprovalCancelHandler = (sessionId: string) => void
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = { cancel(): void }
+type SessionRuntimePatch = {
+  providerProfileId?: string
+  modelId?: string | null
+  agentAdapter?: AgentAdapterKind
+  permissionMode?: SessionPermissionMode
+  chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+}
 type PendingTurn = {
   turnId: string
   message: string
   enqueuedAt: string
+  runtimePatch?: SessionRuntimePatch
   skillId?: string
   skillParams?: Record<string, unknown>
 }
@@ -375,19 +384,26 @@ export class SessionService {
   async sendTurn(params: {
     sessionId: string
     message: string
+    providerProfileId?: string
+    modelId?: string | null
+    agentAdapter?: AgentAdapterKind
+    permissionMode?: SessionPermissionMode
+    chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
     /** 可选：要使用的 Skill ID */
     skillId?: string
     /** 可选：Skill 参数 */
     skillParams?: Record<string, unknown>
   }): Promise<{ turnId: string; started: boolean }> {
     const { sessionId, message, skillId, skillParams } = params
+    const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
     if (this.activeLoops.has(sessionId)) {
-      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, skillId, skillParams))
+      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams))
       return { turnId, started: false }
     }
 
-    await this.startTurn(sessionId, turnId, message, skillId, skillParams)
+    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams)
     return { turnId, started: true }
   }
 
@@ -395,17 +411,22 @@ export class SessionService {
     sessionId: string,
     turnId: string,
     message: string,
+    runtimePatch?: SessionRuntimePatch,
     skillId?: string,
     skillParams?: Record<string, unknown>,
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
-      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, skillId, skillParams))
+      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams))
       return
     }
 
     const sessionRepo = new SessionRepository(this.db)
     const providerRepo = new ProviderProfileRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+
+    if (runtimePatch != null) {
+      sessionRepo.updateRuntime(sessionId, runtimePatch)
+    }
 
     const session = sessionRepo.findByIdOrFail(sessionId)
     if (session.provider_profile_id == null) {
@@ -856,6 +877,7 @@ export class SessionService {
   private makePendingTurn(
     turnId: string,
     message: string,
+    runtimePatch?: SessionRuntimePatch,
     skillId?: string,
     skillParams?: Record<string, unknown>,
   ): PendingTurn {
@@ -863,6 +885,7 @@ export class SessionService {
       turnId,
       message,
       enqueuedAt: new Date().toISOString(),
+      ...(runtimePatch != null ? { runtimePatch } : {}),
       ...(skillId != null ? { skillId } : {}),
       ...(skillParams != null ? { skillParams } : {}),
     }
@@ -878,7 +901,7 @@ export class SessionService {
     }
     if (queue.length === 0) this.pendingTurns.delete(sessionId)
     this.emitQueueChanged(sessionId)
-    void this.startTurn(sessionId, next.turnId, next.message, next.skillId, next.skillParams)
+    void this.startTurn(sessionId, next.turnId, next.message, next.runtimePatch, next.skillId, next.skillParams)
   }
 
   private queueSnapshot(sessionId: string): SessionGetQueueResponse {
@@ -1506,6 +1529,17 @@ async function getWorkspaceRootIssue(rootPath: string): Promise<string | null> {
 function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {
   if (value === 'ask' || value === 'edit' || value === 'review') return value
   return 'agent'
+}
+
+function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | undefined {
+  const patch: SessionRuntimePatch = {}
+  if (params.providerProfileId !== undefined) patch.providerProfileId = params.providerProfileId
+  if (params.modelId !== undefined) patch.modelId = params.modelId
+  if (params.agentAdapter !== undefined) patch.agentAdapter = params.agentAdapter
+  if (params.permissionMode !== undefined) patch.permissionMode = params.permissionMode
+  if (params.chatMode !== undefined) patch.chatMode = params.chatMode
+  if (params.reasoningEffort !== undefined) patch.reasoningEffort = params.reasoningEffort
+  return Object.keys(patch).length > 0 ? patch : undefined
 }
 
 function joinPromptSections(...sections: Array<string | undefined>): string | undefined {

@@ -26,6 +26,8 @@ import type {
   ProviderHealthCheckResponse,
   ProviderProfile,
   ProviderUpdateRequest,
+  SessionAgentAdapter,
+  SessionPermissionMode,
   PermissionMode,
   PermissionProfileItem,
   RuleItem,
@@ -37,6 +39,7 @@ import type {
   UpdateStatus,
   SdkIntegrityItem,
   RuntimeToolStatus,
+  SessionListResponse,
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -65,6 +68,7 @@ type WorkflowTemplate = {
 const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
 const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
+const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 
 /* ─── Settings persistence keys ─── */
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
@@ -121,6 +125,18 @@ type UpdatesSettings = {
   autoDownload: boolean
   autoInstall: boolean
   channel: string
+}
+
+type RuntimePermissionPrefs = {
+  adapter?: SessionAgentAdapter
+  permissionMode?: SessionPermissionMode
+}
+
+type RuntimePermissionModeOption = {
+  value: SessionPermissionMode
+  label: string
+  desc: string
+  tone?: 'auto' | 'danger'
 }
 
 const DEFAULT_GENERAL: GeneralSettings = {
@@ -289,6 +305,7 @@ export function SettingsView() {
         { id: 'usage', icon: <Icons.Activity />, label: '用量统计' },
         { id: 'telemetry', icon: <Icons.Activity />, label: '遥测与日志' },
         { id: 'storage', icon: <Icons.Database />, label: '存储与备份' },
+        { id: 'archived', icon: <Icons.Archive />, label: '已归档' },
         { id: 'updates', icon: <Icons.Refresh />, label: '更新' },
         { id: 'about', icon: <Icons.Sparkles />, label: '关于' },
       ],
@@ -310,6 +327,7 @@ export function SettingsView() {
     telemetry: TelemetrySection,
     storage: StorageSection,
     usage: UsageSection,
+    archived: ArchivedSection,
     updates: UpdatesSection,
     about: AboutSection,
   }
@@ -3279,18 +3297,24 @@ function WorkflowTemplatesSection() {
 }
 
 /* ───────── PERMISSIONS ───────── */
-function PermissionsSection() {
+export function PermissionsSection() {
   const [profiles, setProfiles] = useState<PermissionProfileItem[]>([])
   const [activeProfileId, setActiveProfileId] = useState('project-standard')
   const [loading, setLoading] = useState(true)
   const [auditEnabled, setAuditEnabled] = useState(
     () => window.localStorage.getItem(AUDIT_ENABLED_KEY) !== 'false',
   )
+  const [runtimePrefs, setRuntimePrefs] = useState<RuntimePermissionPrefs>(() => readRuntimePermissionPrefs())
 
   const { invoke: listProfiles } = useIpcInvoke('permission:list-profiles')
   const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
   const { invoke: updateRule } = useIpcInvoke('permission:update-rule')
   const { invoke: setActiveProfile } = useIpcInvoke('permission:set-active-profile')
+
+  const runtimeAdapter = runtimePrefs.adapter ?? 'claude-sdk'
+  const runtimeOptions = getRuntimePermissionModeOptions(runtimeAdapter)
+  const runtimePermissionMode = getValidRuntimePermissionMode(runtimePrefs.permissionMode, runtimeAdapter)
+  const activeRuntimeMode = runtimeOptions.find((option) => option.value === runtimePermissionMode)
 
   const refresh = useCallback(() => {
     setLoading(true)
@@ -3331,6 +3355,20 @@ function PermissionsSection() {
     const next = !auditEnabled
     setAuditEnabled(next)
     window.localStorage.setItem(AUDIT_ENABLED_KEY, String(next))
+  }
+
+  const updateRuntimePrefs = (patch: RuntimePermissionPrefs) => {
+    const next = { ...runtimePrefs, ...patch }
+    const normalizedAdapter = next.adapter ?? 'claude-sdk'
+    next.adapter = normalizedAdapter
+    next.permissionMode = getValidRuntimePermissionMode(next.permissionMode, normalizedAdapter)
+    setRuntimePrefs(next)
+    writeRuntimePermissionPrefs(next)
+  }
+
+  const handleRuntimeAdapterChange = (adapter: SessionAgentAdapter) => {
+    const permissionMode = getValidRuntimePermissionMode(runtimePermissionMode, adapter)
+    updateRuntimePrefs({ adapter, permissionMode })
   }
 
   const RULE_META: Array<{
@@ -3430,6 +3468,49 @@ function PermissionsSection() {
       <h2>权限策略</h2>
       <div className="lede">
         控制 Agent 能做什么、何时需要审批。沙箱等级配合策略一起决定运行时风险。
+      </div>
+
+      <div className="subsec-h">SDK 执行默认策略</div>
+      <div className="card runtime-permission-card">
+        <SettingsRow
+          title="默认执行器"
+          desc="影响新会话与无会话输入区；已有会话保留自己的运行时策略"
+          right={
+            <div className="select-sm">
+              <SparkSelect
+                value={runtimeAdapter}
+                onChange={(e) => handleRuntimeAdapterChange(e.target.value as SessionAgentAdapter)}
+              >
+                <option value="claude-sdk">Claude SDK</option>
+                <option value="codex">Codex</option>
+              </SparkSelect>
+            </div>
+          }
+        />
+        <div className="runtime-permission-grid">
+          {runtimeOptions.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`runtime-permission-option ${option.value === runtimePermissionMode ? 'active' : ''} ${option.tone ? `tone-${option.tone}` : ''}`}
+              onClick={() => updateRuntimePrefs({ permissionMode: option.value })}
+            >
+              <span className="runtime-permission-icon">
+                {option.tone === 'danger' ? <Icons.AlertTriangle /> : option.tone === 'auto' ? <Icons.Zap /> : <Icons.Shield />}
+              </span>
+              <span className="runtime-permission-copy">
+                <span className="runtime-permission-label">{option.label}</span>
+                <span className="runtime-permission-desc">{option.desc}</span>
+              </span>
+            </button>
+          ))}
+        </div>
+        {activeRuntimeMode?.tone === 'danger' && (
+          <div className="runtime-permission-warning">
+            <Icons.AlertTriangle />
+            <span>当前默认策略会跳过人工审批，agent 的工具调用将被直接执行。仅在完全可信工作区使用。</span>
+          </div>
+        )}
       </div>
 
       <div className="subsec-h">权限 Profile</div>
@@ -4071,6 +4152,153 @@ function StorageSection() {
   )
 }
 
+/* ───────── ARCHIVED ───────── */
+function ArchivedSection() {
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
+  const [sessions, setSessions] = useState<SessionListResponse['sessions']>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const { toast } = useToast()
+
+  const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
+  const { invoke: listSessions } = useIpcInvoke('session:list')
+  const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
+  const { invoke: updateSession } = useIpcInvoke('session:update')
+  const { invoke: deleteWorkspace } = useIpcInvoke('workspace:delete')
+  const { invoke: deleteSession } = useIpcInvoke('session:delete')
+
+  const refresh = useCallback(() => {
+    setLoading(true)
+    setError(null)
+    Promise.all([
+      listWorkspaces({ includeArchived: true, limit: 100 }),
+      listSessions({ includeArchived: true, limit: 100 }),
+    ])
+      .then(([wsRes, sessRes]) => {
+        setWorkspaces(wsRes.workspaces.filter((w) => w.archivedAt != null))
+        setSessions(sessRes.sessions.filter((s) => s.archivedAt != null))
+      })
+      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setLoading(false))
+  }, [listWorkspaces, listSessions])
+
+  useEffect(() => {
+    refresh()
+  }, [refresh])
+
+  const handleRestoreWorkspace = async (workspace: WorkspaceInfo) => {
+    try {
+      await updateWorkspace({ workspaceId: workspace.id, archived: false })
+      toast.success(`项目「${workspace.name}」已恢复`)
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '恢复项目失败')
+    }
+  }
+
+  const handleRestoreSession = async (session: SessionListResponse['sessions'][number]) => {
+    try {
+      await updateSession({ sessionId: session.id, archived: false })
+      toast.success(`会话「${session.title || '新会话'}」已恢复`)
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '恢复会话失败')
+    }
+  }
+
+  const handleDeleteWorkspace = async (workspace: WorkspaceInfo) => {
+    if (!window.confirm(`永久删除项目「${workspace.name}」？此操作不可撤销。`)) return
+    try {
+      await deleteWorkspace({ workspaceId: workspace.id })
+      toast.success(`项目「${workspace.name}」已删除`)
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除项目失败')
+    }
+  }
+
+  const handleDeleteSession = async (session: SessionListResponse['sessions'][number]) => {
+    if (!window.confirm(`永久删除会话「${session.title || '新会话'}」？此操作不可撤销。`)) return
+    try {
+      await deleteSession({ sessionId: session.id })
+      toast.success(`会话「${session.title || '新会话'}」已删除`)
+      refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除会话失败')
+    }
+  }
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return '—'
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+  }
+
+  return (
+    <div className="settings-section">
+      <h2>已归档</h2>
+      <div className="lede">
+        归档后的项目和会话会从主列表隐藏，但仍可在此查看、恢复或永久删除。
+      </div>
+
+      {error && <div className="card storage-card">{error}</div>}
+
+      {/* ── Archived Workspaces ── */}
+      <div className="subsec-h">已归档项目 ({workspaces.length})</div>
+      <div className="card">
+        {loading && <div className="settings-card-row">加载中...</div>}
+        {!loading && workspaces.length === 0 && (
+          <div className="settings-card-row">暂无已归档的项目</div>
+        )}
+        {!loading && workspaces.length > 0 && workspaces.map((w) => (
+          <div key={w.id} className="settings-card-row archived-item-row">
+            <div className="flex1 min-w-0">
+              <div className="row-title">{w.name}</div>
+              <div className="row-desc mono-sm">{w.rootPath}</div>
+              <div className="row-desc">归档于 {formatDate(w.archivedAt)}</div>
+            </div>
+            <div className="archived-item-actions">
+              <button className="btn sm" onClick={() => handleRestoreWorkspace(w)}>
+                <Icons.Refresh size={11} /> 恢复
+              </button>
+              <button className="btn ghost sm danger-btn" onClick={() => handleDeleteWorkspace(w)}>
+                <Icons.Trash size={11} /> 删除
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Archived Sessions ── */}
+      <div className="subsec-h">已归档会话 ({sessions.length})</div>
+      <div className="card">
+        {loading && <div className="settings-card-row">加载中...</div>}
+        {!loading && sessions.length === 0 && (
+          <div className="settings-card-row">暂无已归档的会话</div>
+        )}
+        {!loading && sessions.length > 0 && sessions.map((s) => (
+          <div key={s.id} className="settings-card-row archived-item-row">
+            <div className="flex1 min-w-0">
+              <div className="row-title">{s.title || '新会话'}</div>
+              <div className="row-desc">
+                {s.messageCount} 条消息 · {formatDate(s.createdAt)} · 归档于 {formatDate(s.archivedAt)}
+              </div>
+            </div>
+            <div className="archived-item-actions">
+              <button className="btn sm" onClick={() => handleRestoreSession(s)}>
+                <Icons.Refresh size={11} /> 恢复
+              </button>
+              <button className="btn ghost sm danger-btn" onClick={() => handleDeleteSession(s)}>
+                <Icons.Trash size={11} /> 删除
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function UsageRow({ label, used, pct }: { label: string; used: string; pct: number }) {
   return (
     <div className="settings-card-row usage-row">
@@ -4666,6 +4894,53 @@ function UpdatesSection() {
 }
 
 /* ───────── Helpers ───────── */
+const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
+  { value: 'claude-ask', label: 'Ask permissions', desc: '每次工具执行前确认' },
+  { value: 'claude-auto-edits', label: 'Auto accept edits', desc: '自动接受编辑，命令仍确认', tone: 'auto' },
+  { value: 'claude-plan', label: 'Plan mode', desc: '先产出计划，再批准执行' },
+  { value: 'claude-auto', label: 'Auto', desc: '使用 Claude SDK 自动权限策略', tone: 'auto' },
+  { value: 'claude-bypass', label: 'Bypass permissions', desc: '危险：完全听从 agent 执行', tone: 'danger' },
+]
+
+const CODEX_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
+  { value: 'codex-default', label: '默认权限', desc: '按默认策略请求确认' },
+  { value: 'codex-auto-review', label: '自动审查', desc: '自动处理低风险审查动作', tone: 'auto' },
+  { value: 'codex-full-access', label: '完全访问', desc: '危险：完全听从 agent 执行', tone: 'danger' },
+]
+
+function getRuntimePermissionModeOptions(adapter: SessionAgentAdapter): RuntimePermissionModeOption[] {
+  return adapter === 'codex' ? CODEX_RUNTIME_PERMISSION_OPTIONS : CLAUDE_RUNTIME_PERMISSION_OPTIONS
+}
+
+function getValidRuntimePermissionMode(value: SessionPermissionMode | undefined, adapter: SessionAgentAdapter): SessionPermissionMode {
+  const options = getRuntimePermissionModeOptions(adapter)
+  return options.some((option) => option.value === value)
+    ? value as SessionPermissionMode
+    : options[0]?.value ?? (adapter === 'codex' ? 'codex-default' : 'claude-ask')
+}
+
+function readRuntimePermissionPrefs(): RuntimePermissionPrefs {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY)
+    if (raw == null) return {}
+    const parsed = JSON.parse(raw) as RuntimePermissionPrefs
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeRuntimePermissionPrefs(patch: RuntimePermissionPrefs): void {
+  if (typeof window === 'undefined') return
+  const current = readRuntimePermissionPrefs()
+  const next: RuntimePermissionPrefs = { ...current, ...patch }
+  for (const key of Object.keys(next) as Array<keyof RuntimePermissionPrefs>) {
+    if (next[key] === undefined) delete next[key]
+  }
+  window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(next))
+}
+
 function SettingsRow({ title, desc, right }: { title: string; desc?: string; right: ReactNode }) {
   return (
     <div className="settings-card-row">

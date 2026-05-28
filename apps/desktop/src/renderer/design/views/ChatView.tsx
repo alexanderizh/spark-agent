@@ -60,6 +60,15 @@ type ComposerPrefs = {
   permissionMode?: PermissionModeChoice
   reasoningEffort?: SessionReasoningEffort
 }
+
+type SessionRuntimePatch = {
+  providerProfileId?: string
+  modelId?: string | null
+  agentAdapter?: AgentAdapter
+  permissionMode?: PermissionModeChoice
+  chatMode?: SessionChatMode
+  reasoningEffort?: SessionReasoningEffort
+}
 type QueuedMessage = { id: string; turnId: string; content: string; enqueuedAt: string }
 type ChatViewProps = {
   approvalRequest?: PermissionApprovalRequest | null
@@ -3555,6 +3564,7 @@ function ComposerV2({
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
+  const pendingRuntimePatchRef = useRef<SessionRuntimePatch>({})
 
   const adapter = session?.agentAdapter ?? draftAdapter
   const compatibleProviders = providers.filter((provider) => isProviderCompatibleWithAdapter(provider, adapter))
@@ -3582,6 +3592,38 @@ function ComposerV2({
   const canSubmit = value.trim().length > 0 && selectedProvider != null && effectiveModelId.length > 0 && (session != null || workspace != null)
   const visibleActiveTaskText = queueRunning ? activeTaskText : null
   const showTaskQueue = visibleActiveTaskText != null || queuedMessages.length > 0
+
+  const rememberRuntimePatch = useCallback((patch: SessionRuntimePatch) => {
+    pendingRuntimePatchRef.current = { ...pendingRuntimePatchRef.current, ...patch }
+  }, [])
+
+  const persistRuntimePatch = useCallback(async (patch: SessionRuntimePatch) => {
+    rememberRuntimePatch(patch)
+    if (session == null) return
+    await onUpdateSession(patch)
+    const pending = { ...pendingRuntimePatchRef.current }
+    for (const key of Object.keys(patch) as Array<keyof SessionRuntimePatch>) {
+      if (pending[key] === patch[key]) delete pending[key]
+    }
+    pendingRuntimePatchRef.current = pending
+  }, [onUpdateSession, rememberRuntimePatch, session])
+
+  const flushPendingRuntimePatch = useCallback(async () => {
+    if (session == null) return
+    const patch = pendingRuntimePatchRef.current
+    if (Object.keys(patch).length === 0) return
+    await onUpdateSession(patch)
+    pendingRuntimePatchRef.current = {}
+  }, [onUpdateSession, session])
+
+  const getCurrentRuntimePatch = useCallback((): SessionRuntimePatch => ({
+    ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
+    modelId: effectiveModelId || null,
+    agentAdapter: adapter,
+    permissionMode: effectivePermissionMode,
+    chatMode: effectiveMode,
+    reasoningEffort: effectiveReasoning,
+  }), [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, selectedProvider?.id])
 
   const applyQueueState = useCallback((snapshot: SessionGetQueueResponse | null | undefined) => {
     if (snapshot == null || snapshot.sessionId !== session?.id) return
@@ -3695,7 +3737,8 @@ function ComposerV2({
         if (res.forwardToAgent) {
           // 转发给 Agent：作为普通消息发送
           setSending(false)
-          const sendRes = await sendTurn({ sessionId, message: text })
+          await flushPendingRuntimePatch()
+          const sendRes = await sendTurn({ sessionId, message: text, ...getCurrentRuntimePatch() })
           if (!sendRes.started) {
             setQueueVisible(true)
             toast.info('上一条任务仍在执行，消息已加入队列。')
@@ -3733,7 +3776,8 @@ function ComposerV2({
         })
       }
       if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
-      const res = await sendTurn({ sessionId: targetSessionId, message: text })
+      await flushPendingRuntimePatch()
+      const res = await sendTurn({ sessionId: targetSessionId, message: text, ...getCurrentRuntimePatch() })
       if (!res.started) {
         setQueueVisible(true)
         toast.info('上一条任务仍在执行，消息已加入队列。')
@@ -3749,7 +3793,7 @@ function ComposerV2({
     } finally {
       setSending(false)
     }
-  }, [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, onCreateSession, onSent, refreshQueueState, selectedProvider, sendTurn, session?.id, toast])
+  }, [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, flushPendingRuntimePatch, getCurrentRuntimePatch, onCreateSession, onSent, refreshQueueState, selectedProvider, sendTurn, session?.id, toast])
 
   const handleSend = async () => {
     if (!canSubmit) return
@@ -3903,7 +3947,7 @@ function ComposerV2({
     setDraftModelId(nextModel)
     writeComposerPrefs({ adapter: nextAdapter, providerProfileId: providerId, modelId: nextModel, permissionMode: nextPermissionMode })
     if (session != null) {
-      await onUpdateSession({
+      await persistRuntimePatch({
         providerProfileId: providerId,
         modelId: nextModel || null,
         agentAdapter: nextAdapter,
@@ -3924,7 +3968,7 @@ function ComposerV2({
       setDraftModelId(nextModel)
       writeComposerPrefs({ adapter: nextAdapter, providerProfileId: nextProvider.id, modelId: nextModel, permissionMode: nextPermissionMode })
       if (session != null) {
-        await onUpdateSession({
+        await persistRuntimePatch({
           providerProfileId: nextProvider.id,
           modelId: nextModel || null,
           agentAdapter: nextAdapter,
@@ -3934,7 +3978,7 @@ function ComposerV2({
       return
     }
     writeComposerPrefs({ adapter: nextAdapter, permissionMode: nextPermissionMode })
-    if (session != null) await onUpdateSession({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
+    if (session != null) await persistRuntimePatch({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
   }
 
   const handleModelChange = async (modelId: string) => {
@@ -3943,13 +3987,13 @@ function ComposerV2({
       ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
       modelId,
     })
-    if (session != null) await onUpdateSession({ modelId })
+    if (session != null) await persistRuntimePatch({ modelId })
   }
 
   const handleReasoningChange = async (reasoningEffort: SessionReasoningEffort) => {
     setDraftReasoning(reasoningEffort)
     writeComposerPrefs({ reasoningEffort })
-    if (session != null) await onUpdateSession({ reasoningEffort })
+    if (session != null) await persistRuntimePatch({ reasoningEffort })
   }
 
   const branchOptions = (branchState.branches.length > 0 ? branchState.branches : [branchState.currentBranch ?? ''])
@@ -4093,7 +4137,7 @@ function ComposerV2({
                 const permissionMode = mode as PermissionModeChoice
                 setDraftPermissionMode(permissionMode)
                 writeComposerPrefs({ permissionMode })
-                if (session != null) void onUpdateSession({ permissionMode })
+                if (session != null) void persistRuntimePatch({ permissionMode })
               }}
               options={permissionOptions}
             />

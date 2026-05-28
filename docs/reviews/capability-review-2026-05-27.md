@@ -115,6 +115,7 @@
   - `claude-auto-edits` 保持 SDK `acceptEdits` 语义，编辑类工具自动允许，命令仍进入审批。
   - 危险 Bash 命令升级为 `command_dangerous`，`ask-twice` 现在是真正的双重确认。
   - Composer 权限下拉对 Auto 和 Bypass 做风险态联动，Bypass 使用危险色常驻提示。
+  - Settings 权限策略页已同步 SDK 执行默认策略，和 Composer 共用 `spark-agent:composer-prefs`，新会话默认策略不再脱节。
 
 仍需补强:
 - 尚未提供审批记录的审计视图。

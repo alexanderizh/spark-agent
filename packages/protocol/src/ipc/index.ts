@@ -59,6 +59,12 @@ export interface SessionCreateResponse {
 export interface SessionSendTurnRequest {
   sessionId: SessionId
   message: string
+  providerProfileId?: string
+  modelId?: string | null
+  agentAdapter?: SessionAgentAdapter
+  permissionMode?: SessionPermissionMode
+  chatMode?: SessionChatMode
+  reasoningEffort?: SessionReasoningEffort
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: Array<{
