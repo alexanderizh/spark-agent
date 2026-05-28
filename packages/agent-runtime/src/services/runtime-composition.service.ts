@@ -189,7 +189,7 @@ export class RuntimeCompositionService {
     return [
       '[Available Skills Catalog]',
       'The following skills are discoverable in this runtime. This catalog is only metadata, not the full skill instructions.',
-      'When a task naturally matches a listed skill and the skill_lookup tool is available, load its instructions before following that skill. If a skill was explicitly selected for this turn, its full instructions appear separately and take precedence.',
+      'Use these summaries to decide whether a skill should be explicitly selected. If a skill was explicitly selected for this turn, its full instructions appear separately and take precedence.',
       sections.join('\n\n'),
     ].join('\n\n')
   }
