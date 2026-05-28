@@ -1,7 +1,7 @@
 /**
  * ChatView — 真实 IPC 驱动的会话视图
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
 import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, Checkpoint, SandboxNote, QuickActions, ToolChooser } from '../ChatInteractions'
@@ -31,8 +31,9 @@ import type {
   SkillConfigGetResponse,
   WorkspaceInfo,
   CommandListItem,
+  TurnPromptSnapshotEvent,
 } from '@spark/protocol'
-import { resolveModelContextWindow } from '@spark/shared'
+import { resolveProviderContextWindow } from '@spark/shared'
 
 type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -78,7 +79,7 @@ type SessionUsageData = {
   turns: UsageSnapshot[]
 }
 
-/** Snapshot from agent-loop context_usage event */
+/** Snapshot from SDK context_usage event */
 type ContextUsageState = {
   estimatedTokens: number
   softLimitTokens: number
@@ -132,6 +133,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [contextUsage, setContextUsage] = useState<ContextUsageState | null>(null)
   const [projectContext, setProjectContext] = useState<ProjectContextState | null>(null)
   const [proposedPlan, setProposedPlan] = useState<string | null>(null)
+  const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
   const [projectName, setProjectName] = useState('')
@@ -513,6 +515,20 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     setSessions((prev) => prev.map((item) => item.id === sessionId ? { ...item, status } : item))
   }, [])
 
+  const applySessionQueueState = useCallback((snapshot: SessionGetQueueResponse) => {
+    setSessions((prev) => prev.map((item) => {
+      if (item.id !== snapshot.sessionId) return item
+      if (snapshot.running) return item.status === 'running' ? item : { ...item, status: 'running' }
+      return item.status === 'running' ? { ...item, status: 'idle' } : item
+    }))
+  }, [])
+
+  useEffect(() => {
+    return window.spark.on('stream:session:queue-changed', (snapshot) => {
+      applySessionQueueState(snapshot)
+    })
+  }, [applySessionQueueState])
+
   const handleCancelSession = useCallback(async (sessionId: SessionId) => {
     try {
       const res = await cancelSessionTurn({ sessionId })
@@ -536,6 +552,8 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const ungroupedSessions = visibleSessions.filter((session) => session.workspaceIds.length === 0)
   const activeSession = sessions.find(s => s.id === active) ?? null
   const activeWorkspace = activeWorkspaceId == null ? null : workspaces.find((item) => item.id === activeWorkspaceId) ?? null
+  const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
+  const activeProviderContextWindow = resolveProviderContextWindow(activeProvider?.supportsMillionContext === true)
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
@@ -733,11 +751,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               onMessagesChange={setActiveMessages}
               onSessionStatusChange={(status) => {
                 setSessionStatus(active, status)
-                if (status !== 'running') refreshSessions()
               }}
               onContextUsageChange={setContextUsage}
               onProjectContextChange={setProjectContext}
               onPlanProposed={setProposedPlan}
+              onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
             />
           </>
@@ -769,7 +787,6 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           onCancelSession={handleCancelSession}
           onSent={(sessionId) => {
             setSessionStatus(sessionId, 'running')
-            refreshSessions()
           }}
         />
       </div>
@@ -783,6 +800,8 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           projectContext={projectContext}
           contextUsage={contextUsage}
           contextInputTokens={contextInputTokens}
+          providerContextWindow={activeProviderContextWindow}
+          turnPromptSnapshots={turnPromptSnapshots}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
           onOpenProjectFolder={() => {
@@ -1411,6 +1430,7 @@ function ChatStream({
   onContextUsageChange,
   onProjectContextChange,
   onPlanProposed,
+  onTurnPromptSnapshotsChange,
   clearTrigger,
 }: {
   sessionId: SessionId
@@ -1422,6 +1442,7 @@ function ChatStream({
   onContextUsageChange: (snapshot: ContextUsageState | null) => void
   onProjectContextChange: (snapshot: ProjectContextState | null) => void
   onPlanProposed: (plan: string) => void
+  onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
 }) {
@@ -1471,6 +1492,7 @@ function ChatStream({
     userScrolledRef.current = false
     onContextUsageChange(null)
     onProjectContextChange(null)
+    onTurnPromptSnapshotsChange([])
 
     // 2) 异步从 SQLite 加载完整历史并更新
     const timer = window.setTimeout(() => {
@@ -1505,6 +1527,7 @@ function ChatStream({
             })
           }
           onProjectContextChange(getLatestProjectContextEvent(events))
+          onTurnPromptSnapshotsChange(hydratedBuilder.getTurnPromptSnapshots())
         })
         .catch((err) => {
           console.error('Failed to load session history:', err)
@@ -1655,6 +1678,11 @@ function ChatStream({
       onPlanProposed(event.plan)
     }
 
+    if (event.type === 'turn_prompt_snapshot') {
+      // Builder stores it; notify parent for inspector display
+      onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
+    }
+
     // 对文本/思考增量事件立即 flush，确保无延迟感知
     if (
       event.type === 'assistant_message' && event.mode === 'delta'
@@ -1673,7 +1701,7 @@ function ChatStream({
 
     // 其他事件走 RAF 批量
     scheduleFlush()
-  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onProjectContextChange, onPlanProposed, flushMessages, scheduleFlush])
+  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onProjectContextChange, onPlanProposed, onTurnPromptSnapshotsChange, flushMessages, scheduleFlush])
 
   // 智能自动滚动：只在用户未主动上滚时自动跟随
   useEffect(() => {
@@ -3203,6 +3231,179 @@ function InlineApprovalRequest({ request, onClose }: { request: PermissionApprov
   )
 }
 
+/** 上下文进度悬浮弹窗 */
+function ContextMeterWithPopup({
+  contextRatio,
+  contextUsedTokens,
+  contextWindow,
+  compactedThisTurn,
+  isBusy,
+  sessionId,
+  onCreateSession,
+  selectedProvider,
+  effectiveModelId,
+  adapter,
+  effectivePermissionMode,
+  onSent,
+  toast,
+}: {
+  contextRatio: number
+  contextUsedTokens: number
+  contextWindow: number
+  compactedThisTurn: boolean
+  isBusy: boolean
+  sessionId: SessionId | null
+  onCreateSession: (options: {
+    providerProfileId?: string
+    modelId?: string
+    agentAdapter?: AgentAdapter
+    permissionMode?: PermissionModeChoice
+    chatMode?: SessionChatMode
+    reasoningEffort?: SessionReasoningEffort
+    activate?: boolean
+  }) => Promise<SessionId | null>
+  selectedProvider: ProviderProfile | undefined
+  effectiveModelId: string
+  adapter: AgentAdapter
+  effectivePermissionMode: PermissionModeChoice
+  onSent: (sessionId: SessionId) => void
+  toast: ReturnType<typeof useToast>['toast']
+}) {
+  const [popupVisible, setPopupVisible] = useState(false)
+  const [compressing, setCompressing] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // 点击外部关闭
+  useCloseOnOutside(containerRef, () => setPopupVisible(false), popupVisible)
+
+  const togglePopup = useCallback(() => {
+    setPopupVisible((prev) => !prev)
+  }, [])
+
+  const handleCompact = useCallback(async () => {
+    if (compressing) return
+    setCompressing(true)
+    try {
+      let sid = sessionId
+      if (sid == null) {
+        if (selectedProvider == null) {
+          toast.warning('请先选择 Provider 再执行压缩。')
+          return
+        }
+        sid = await onCreateSession({
+          ...(selectedProvider.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
+          modelId: effectiveModelId,
+          agentAdapter: adapter,
+          permissionMode: effectivePermissionMode,
+        })
+        if (sid == null) {
+          toast.error('创建会话失败。')
+          return
+        }
+      }
+      const res = await window.spark.invoke('command:execute', {
+        sessionId: sid,
+        message: '/compact',
+      })
+      if (res.success) {
+        toast.success('上下文已压缩。')
+        onSent(sid)
+      }
+    } catch (err) {
+      toast.error('压缩上下文失败: ' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setCompressing(false)
+      setPopupVisible(false)
+    }
+  }, [compressing, sessionId, selectedProvider, effectiveModelId, adapter, effectivePermissionMode, onCreateSession, onSent, toast])
+
+  const isWarning = contextRatio >= 80
+  const isCritical = contextRatio >= 95
+
+  return (
+    <div
+      ref={containerRef}
+      className="context-meter-wrap"
+    >
+      <div
+        className={`context-meter${compactedThisTurn ? ' context-compacted' : ''}${popupVisible ? ' context-meter-active' : ''}`}
+        onClick={togglePopup}
+      >
+        <span>{contextRatio}%</span>
+        <span
+          className={`context-ring${isCritical ? ' ring-danger' : isWarning ? ' ring-warn' : ''}`}
+          style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties}
+        />
+        {compactedThisTurn && (
+          <span className="context-compacted-badge" title="已自动裁剪较早的 tool_result 内容以释放上下文">
+            <Icons.Layers size={10} />
+          </span>
+        )}
+      </div>
+      {popupVisible && (
+        <div className="context-popup">
+          <div className="context-popup-header">
+            <div className="context-popup-title">
+              <Icons.Database size={13} />
+              <span>上下文窗口</span>
+            </div>
+            <span className={`context-popup-pct ${isCritical ? 'pct-critical' : isWarning ? 'pct-warn' : ''}`}>
+              {contextRatio}%
+            </span>
+          </div>
+
+          {isCritical && (
+            <div className="context-popup-alert alert-critical">
+              <Icons.AlertTriangle size={11} />
+              <span>上下文窗口即将满，建议压缩或开启新会话</span>
+            </div>
+          )}
+          {!isCritical && isWarning && (
+            <div className="context-popup-alert alert-warn">
+              <Icons.AlertTriangle size={11} />
+              <span>上下文使用率较高，请注意</span>
+            </div>
+          )}
+
+          <div className="context-popup-bar">
+            <div
+              className={`context-popup-bar-fill${isCritical ? ' critical' : isWarning ? ' warn' : ''}`}
+              style={{ width: `${Math.min(100, contextRatio)}%` }}
+            >
+              <div className="context-popup-bar-used" />
+            </div>
+          </div>
+
+          <div className="context-popup-details">
+            <div className="context-popup-row">
+              <span className="row-label">已使用</span>
+              <span className="row-value">{formatTokenCount(contextUsedTokens)}</span>
+            </div>
+            <div className="context-popup-row">
+              <span className="row-label">总容量</span>
+              <span className="row-value">{formatTokenCount(contextWindow)}</span>
+            </div>
+            <div className="context-popup-row">
+              <span className="row-label">剩余</span>
+              <span className="row-value">{formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}</span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className={`context-popup-compact-btn${isBusy ? ' disabled' : ''}`}
+            onClick={handleCompact}
+            disabled={compressing || isBusy}
+          >
+            {compressing ? <Icons.Spinner size={13} /> : <Icons.Minimize size={13} />}
+            <span>{compressing ? '压缩中...' : '手动压缩上下文'}</span>
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ComposerV2({
   session,
   workspace,
@@ -3262,6 +3463,7 @@ function ComposerV2({
   const [value, setValue] = useState('')
   const [sending, setSending] = useState(false)
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
+  const [queueRunning, setQueueRunning] = useState(false)
   const [queueVisible, setQueueVisible] = useState(true)
   const [manualExpanded, setManualExpanded] = useState(false)
   const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
@@ -3298,25 +3500,19 @@ function ComposerV2({
   const effectivePermissionMode = permissionOptions.some((option) => option.value === draftEffectivePermissionMode)
     ? draftEffectivePermissionMode
     : defaultPermissionMode
-  // 动态获取上下文窗口大小：优先级 context_usage 事件 > ModelCapabilityRegistry > 不展示
-  const contextWindow = (() => {
-    // 1. 从 agent-loop 的 context_usage 事件获取（最准确，来自实际 API 响应/provider 注册）
-    if (contextUsage?.contextWindowTokens && contextUsage.contextWindowTokens > 0) {
-      return contextUsage.contextWindowTokens
-    }
-    // 2. 从共享模型能力表及家族 fallback 查询
-    return resolveModelContextWindow(effectiveModelId)
-  })()
+  const contextWindow = resolveProviderContextWindow(selectedProvider?.supportsMillionContext === true)
   const contextUsedTokens = contextUsage?.estimatedTokens ?? contextInputTokens
   const contextRatio = contextWindow > 0
     ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
     : 0
   const isBusy = sending || isWorking
   const canSubmit = value.trim().length > 0 && selectedProvider != null && effectiveModelId.length > 0 && (session != null || workspace != null)
-  const showTaskQueue = activeTaskText != null || queuedMessages.length > 0
+  const visibleActiveTaskText = queueRunning ? activeTaskText : null
+  const showTaskQueue = visibleActiveTaskText != null || queuedMessages.length > 0
 
   const applyQueueState = useCallback((snapshot: SessionGetQueueResponse | null | undefined) => {
     if (snapshot == null || snapshot.sessionId !== session?.id) return
+    setQueueRunning(snapshot.running)
     setQueuedMessages(snapshot.queuedTurns.map((turn) => ({
       id: turn.turnId,
       turnId: turn.turnId,
@@ -3328,12 +3524,14 @@ function ComposerV2({
   const refreshQueueState = useCallback(async (sessionId: SessionId | null | undefined) => {
     if (sessionId == null) {
       setQueuedMessages([])
+      setQueueRunning(false)
       return
     }
     try {
       applyQueueState(await getQueue({ sessionId }))
     } catch {
       setQueuedMessages([])
+      setQueueRunning(false)
     }
   }, [applyQueueState, getQueue])
 
@@ -3428,8 +3626,10 @@ function ComposerV2({
           if (!sendRes.started) {
             setQueueVisible(true)
             toast.info('上一条任务仍在执行，消息已加入队列。')
-            await refreshQueueState(sessionId)
+          } else if (queuedMessages.length === 0) {
+            setQueueVisible(false)
           }
+          await refreshQueueState(sessionId)
           onSent(sessionId)
           return
         }
@@ -3464,8 +3664,10 @@ function ComposerV2({
       if (!res.started) {
         setQueueVisible(true)
         toast.info('上一条任务仍在执行，消息已加入队列。')
-        await refreshQueueState(targetSessionId)
+      } else if (queuedMessages.length === 0) {
+        setQueueVisible(false)
       }
+      await refreshQueueState(targetSessionId)
       onSent(targetSessionId)
     } catch (err) {
       console.error('发送失败', err)
@@ -3693,10 +3895,10 @@ function ComposerV2({
         )}
         {showTaskQueue && queueVisible && (
           <div className="composer-queue-panel">
-            {activeTaskText != null && (
+            {visibleActiveTaskText != null && (
               <div className="composer-queue-item active">
                 <Icons.Spinner size={15} className="composer-queue-icon" />
-                <span className="composer-queue-text">{activeTaskText}</span>
+                <span className="composer-queue-text">{visibleActiveTaskText}</span>
                 <span className="composer-queue-status">执行中</span>
               </div>
             )}
@@ -3826,21 +4028,21 @@ function ComposerV2({
               options={getReasoningOptions(adapter)}
             />
             {contextWindow > 0 && (
-              <div
-                className={`context-meter${contextUsage?.compactedThisTurn ? ' context-compacted' : ''}`}
-                title={`上下文使用 ${contextRatio}% · ${formatTokenCount(contextUsedTokens)} / ${formatTokenCount(contextWindow)}`}
-              >
-                <span>{contextRatio}%</span>
-                <span
-                  className={`context-ring${contextRatio >= 95 ? ' ring-danger' : contextRatio >= 80 ? ' ring-warn' : ''}`}
-                  style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties}
-                />
-                {contextUsage?.compactedThisTurn && (
-                  <span className="context-compacted-badge" title="已自动裁剪较早的 tool_result 内容以释放上下文">
-                    <Icons.Layers size={10} />
-                  </span>
-                )}
-              </div>
+              <ContextMeterWithPopup
+                contextRatio={contextRatio}
+                contextUsedTokens={contextUsedTokens}
+                contextWindow={contextWindow}
+                compactedThisTurn={contextUsage?.compactedThisTurn ?? false}
+                isBusy={isBusy}
+                sessionId={session?.id ?? null}
+                onCreateSession={onCreateSession}
+                selectedProvider={selectedProvider}
+                effectiveModelId={effectiveModelId}
+                adapter={adapter}
+                effectivePermissionMode={effectivePermissionMode}
+                onSent={onSent}
+                toast={toast}
+              />
             )}
             {showTaskQueue && (
               <button
@@ -3849,7 +4051,7 @@ function ComposerV2({
                 title={queueVisible ? '隐藏队列' : '显示队列'}
                 onClick={() => setQueueVisible((prev) => !prev)}
               >
-                {queueVisible ? '隐藏队列' : '显示队列'} · {(activeTaskText != null ? 1 : 0) + queuedMessages.length}
+                {queueVisible ? '隐藏队列' : '显示队列'} · {(visibleActiveTaskText != null ? 1 : 0) + queuedMessages.length}
               </button>
             )}
             <div className="spacer" />
@@ -4284,6 +4486,8 @@ function ChatInspector({
   projectContext,
   contextUsage,
   contextInputTokens,
+  providerContextWindow,
+  turnPromptSnapshots,
   width,
   onWidthChange,
   onOpenProjectFolder,
@@ -4295,6 +4499,8 @@ function ChatInspector({
   projectContext: ProjectContextState | null
   contextUsage: ContextUsageState | null
   contextInputTokens: number
+  providerContextWindow: number
+  turnPromptSnapshots: TurnPromptSnapshotEvent[]
   width: number
   onWidthChange: (width: number) => void
   onOpenProjectFolder: () => void
@@ -4306,6 +4512,7 @@ function ChatInspector({
   const [projectPromptDraft, setProjectPromptDraft] = useState('')
   const [sessionPromptDraft, setSessionPromptDraft] = useState('')
   const [savingRuntime, setSavingRuntime] = useState(false)
+  const [skillsCollapsed, setSkillsCollapsed] = useState(true)
   const { invoke: getSkillConfig } = useIpcInvoke('skill-config:get')
   const { invoke: updateSkillConfig } = useIpcInvoke('skill-config:update')
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
@@ -4406,12 +4613,8 @@ function ChatInspector({
   }
 
   const currentContextTokens = contextUsage?.estimatedTokens ?? contextInputTokens
-  // 动态获取上下文窗口：优先 context_usage > usageData > ModelCapabilityRegistry > 0（不展示）
-  const contextWindow = (() => {
-    if (contextUsage?.contextWindowTokens && contextUsage.contextWindowTokens > 0) return contextUsage.contextWindowTokens
-    if (usageData.contextWindow && usageData.contextWindow > 0) return usageData.contextWindow
-    return resolveModelContextWindow(session?.modelId ?? '')
-  })()
+  // 窗口大小由 Provider 显式配置决定；历史 context_usage 里可能还带旧的模型名推断值。
+  const contextWindow = providerContextWindow
   const contextRatio = contextWindow > 0 ? Math.min(100, Math.round((currentContextTokens / contextWindow) * 1000) / 10) : 0
   const isContextWarning = contextRatio >= 80
   const isContextCritical = contextRatio >= 95
@@ -4530,49 +4733,54 @@ function ChatInspector({
 
       {session != null && skillConfig != null && (
         <div className="inspector-section">
-          <h4>
+          <h4 className="inspector-collapsible-header" onClick={() => setSkillsCollapsed(!skillsCollapsed)}>
             Skills
             <span className="inspector-count">{skillConfig.effectiveSkillIds.length}</span>
+            <Icons.ChevronRight size={10} className={`chev ${skillsCollapsed ? '' : 'chev-open'}`} />
           </h4>
-          <div className="runtime-skill-list">
-            {skillConfig.skills.map((skill) => {
-              const systemVisible = skillConfig.systemSkillIds.includes(skill.id)
-              const projectActive = systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
-              const sessionActive = systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
-              const meta = parseSkillManifest(skill.manifestJson)
-              return (
-                <div className="runtime-skill-row" key={skill.id}>
-                  <div className="runtime-skill-main min-w-0">
-                    <div className="runtime-skill-name truncate">{skill.name}</div>
-                    <div className="runtime-skill-desc truncate">{meta.source} · {meta.desc}</div>
-                  </div>
-                  {workspaceId != null && (
-                    <label className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="项目层可见">
-                      <input
-                        type="checkbox"
-                        checked={projectActive}
-                        disabled={!systemVisible || savingRuntime}
-                        onChange={(event) => void toggleRuntimeSkill('project', workspaceId, skill.id, event.target.checked)}
-                      />
-                      P
-                    </label>
-                  )}
-                  {sessionId != null && (
-                    <label className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="会话层可见">
-                      <input
-                        type="checkbox"
-                        checked={sessionActive}
-                        disabled={!systemVisible || savingRuntime}
-                        onChange={(event) => void toggleRuntimeSkill('session', sessionId, skill.id, event.target.checked)}
-                      />
-                      S
-                    </label>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          <div className="inspector-muted runtime-hint">P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。</div>
+          {!skillsCollapsed && (
+            <>
+              <div className="runtime-skill-list">
+                {skillConfig.skills.map((skill) => {
+                  const systemVisible = skillConfig.systemSkillIds.includes(skill.id)
+                  const projectActive = systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
+                  const sessionActive = systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
+                  const meta = parseSkillManifest(skill.manifestJson)
+                  return (
+                    <div className="runtime-skill-row" key={skill.id}>
+                      <div className="runtime-skill-main min-w-0">
+                        <div className="runtime-skill-name truncate">{skill.name}</div>
+                        <div className="runtime-skill-desc truncate">{meta.source} · {meta.desc}</div>
+                      </div>
+                      {workspaceId != null && (
+                        <label className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="项目层可见">
+                          <input
+                            type="checkbox"
+                            checked={projectActive}
+                            disabled={!systemVisible || savingRuntime}
+                            onChange={(event) => void toggleRuntimeSkill('project', workspaceId, skill.id, event.target.checked)}
+                          />
+                          P
+                        </label>
+                      )}
+                      {sessionId != null && (
+                        <label className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="会话层可见">
+                          <input
+                            type="checkbox"
+                            checked={sessionActive}
+                            disabled={!systemVisible || savingRuntime}
+                            onChange={(event) => void toggleRuntimeSkill('session', sessionId, skill.id, event.target.checked)}
+                          />
+                          S
+                        </label>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="inspector-muted runtime-hint">P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。</div>
+            </>
+          )}
         </div>
       )}
 
@@ -4676,9 +4884,152 @@ function ChatInspector({
           ))}
         </div>
       </div>
+
+      {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
+      {turnPromptSnapshots.length > 0 && (
+        <PromptInspectorSection snapshots={turnPromptSnapshots} />
+      )}
     </div>
   )
 }
+
+// ─── 白盒提示词检查器组件 ──────────────────────────────────────────────────────
+
+/** 相对时间格式化 */
+function relativeTime(iso: string): string {
+  const diff = Date.now() - new Date(iso).getTime()
+  if (diff < 60_000) return '刚刚'
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}小时前`
+  return `${Math.floor(diff / 86_400_000)}天前`
+}
+
+/** 截断文本 */
+function truncateText(text: string, maxLen: number): string {
+  if (text.length <= maxLen) return text
+  return text.slice(0, maxLen) + '…'
+}
+
+/** PromptInspectorSection — 白盒提示词检查器 */
+function PromptInspectorSection({ snapshots }: { snapshots: TurnPromptSnapshotEvent[] }) {
+  return (
+    <div className="inspector-section">
+      <h4>
+        <Icons.Eye size={11} /> 白盒提示词
+        <span className="inspector-count">{snapshots.length} 轮</span>
+      </h4>
+      <div className="prompt-snapshot-list">
+        {[...snapshots].reverse().map((snapshot, idx) => (
+          <TurnPromptRow
+            key={snapshot.turnId}
+            snapshot={snapshot}
+            turnNumber={snapshots.length - idx}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** 单个 Turn 的提示词快照行，支持展开/折叠 */
+const TurnPromptRow = React.memo(function TurnPromptRow({
+  snapshot,
+  turnNumber,
+}: {
+  snapshot: TurnPromptSnapshotEvent
+  turnNumber: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const userPreview = useMemo(() => truncateText(snapshot.userMessage, 80), [snapshot.userMessage])
+  const totalPromptChars = useMemo(
+    () => snapshot.systemPromptSections.reduce((sum, s) => sum + s.charCount, 0),
+    [snapshot.systemPromptSections],
+  )
+  const formatCharCount = (n: number): string => {
+    if (n >= 10_000) return `${Math.round(n / 1000)}K`
+    return `${n}`
+  }
+
+  return (
+    <div className={`prompt-turn-row ${expanded ? 'expanded' : ''}`}>
+      <div
+        className="prompt-turn-header"
+        onClick={() => setExpanded((prev) => !prev)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((prev) => !prev) } }}
+      >
+        <span className={`prompt-turn-chevron ${expanded ? 'open' : ''}`}>{expanded ? '▾' : '▸'}</span>
+        <span className="prompt-turn-title">
+          Turn {turnNumber} · {snapshot.model}
+        </span>
+        <span className="prompt-turn-time">{relativeTime(snapshot.timestamp)}</span>
+      </div>
+      <div className="prompt-turn-summary">
+        <span className="prompt-turn-user" title={snapshot.userMessage}>{userPreview}</span>
+        <span className="prompt-turn-meta">
+          {snapshot.systemPromptSections.length} 段 · {formatCharCount(totalPromptChars)} 字符
+        </span>
+      </div>
+      {expanded && (
+        <div className="prompt-turn-detail">
+          {/* Adapter 信息 */}
+          <div className="prompt-turn-config">
+            <span className="prompt-config-tag">{snapshot.adapterKind}</span>
+            <span className="prompt-config-tag">{snapshot.permissionMode}</span>
+            {snapshot.sdkPreset && <span className="prompt-config-tag sdk">SDK: {snapshot.sdkPreset}</span>}
+            <span className="prompt-config-tag">Tools: {snapshot.toolCount}</span>
+          </div>
+
+          {/* 用户消息 */}
+          <div className="prompt-section-block">
+            <div className="prompt-section-label">用户消息</div>
+            <pre className="prompt-section-content">{snapshot.userMessage}</pre>
+          </div>
+
+          {/* 系统提示词各段落 */}
+          {snapshot.systemPromptSections.map((section, sIdx) => (
+            <PromptSectionBlock key={sIdx} section={section} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+})
+
+/** 单个提示词段落的展示，支持独立折叠 */
+const PromptSectionBlock = React.memo(function PromptSectionBlock({
+  section,
+}: {
+  section: { label: string; content: string; charCount: number }
+}) {
+  const [sectionExpanded, setSectionExpanded] = useState(false)
+  const isPlaceholder = section.charCount === 0
+
+  return (
+    <div className={`prompt-section-block ${isPlaceholder ? 'placeholder' : ''}`}>
+      <div
+        className="prompt-section-label clickable"
+        onClick={() => { if (!isPlaceholder) setSectionExpanded((prev) => !prev) }}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isPlaceholder) setSectionExpanded((prev) => !prev) } }}
+      >
+        <span className={`prompt-section-chevron ${sectionExpanded ? 'open' : ''}`}>
+          {!isPlaceholder ? (sectionExpanded ? '▾' : '▸') : '○'}
+        </span>
+        <span>{section.label}</span>
+        {section.charCount > 0 && <span className="prompt-section-chars">{section.charCount} 字符</span>}
+      </div>
+      {sectionExpanded && !isPlaceholder && (
+        <pre className="prompt-section-content">{section.content}</pre>
+      )}
+      {isPlaceholder && (
+        <div className="prompt-section-placeholder">{section.content}</div>
+      )}
+    </div>
+  )
+})
 
 type SidebarPlan = {
   id: string

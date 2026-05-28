@@ -241,6 +241,8 @@ export interface ProviderProfile {
   apiEndpoint?: string
   /** OpenAI-family adapter API kind. Defaults to chat when omitted. */
   codexApiKind?: 'chat' | 'responses'
+  /** Whether this provider should use a 1M-token context window fallback. */
+  supportsMillionContext?: boolean
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -263,6 +265,7 @@ export interface ProviderCreateRequest {
   model?: string
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses'
+  supportsMillionContext?: boolean
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -282,6 +285,7 @@ export interface ProviderUpdateRequest {
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
   codexApiKind?: 'chat' | 'responses'
+  supportsMillionContext?: boolean
   /** 更新 API Key 时传入，不更新则不传 */
   apiKey?: string
   isDefault?: boolean

@@ -14,7 +14,7 @@
  *   - sandbox: true
  */
 
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, Menu, Tray, nativeImage, shell } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
@@ -28,6 +28,44 @@ import { createLogger } from '@spark/shared'
 import type { UpdateStatus } from '@spark/protocol'
 
 const log = createLogger('main')
+let tray: Tray | null = null
+let isQuitting = false
+
+function showMainWindow(): void {
+  const existing = BrowserWindow.getAllWindows()[0]
+  if (existing != null) {
+    if (existing.isMinimized()) existing.restore()
+    existing.show()
+    existing.focus()
+    return
+  }
+  createWindow()
+}
+
+function createTray(): void {
+  if (tray != null) return
+
+  const iconPath = is.dev
+    ? join(__dirname, '../../resources/trayTemplate.png')
+    : join(process.resourcesPath, 'trayTemplate.png')
+  const image = nativeImage.createFromPath(iconPath)
+  if (process.platform === 'darwin') image.setTemplateImage(true)
+
+  tray = new Tray(image)
+  tray.setToolTip('Spark Agent')
+  tray.setContextMenu(Menu.buildFromTemplate([
+    { label: '显示 Spark Agent', click: showMainWindow },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true
+        app.quit()
+      },
+    },
+  ]))
+  tray.on('click', showMainWindow)
+}
 
 /**
  * 创建主窗口
@@ -65,6 +103,13 @@ function createWindow(): BrowserWindow {
     // 开发模式下自动打开开发者工具
     if (is.dev) {
       mainWindow.webContents.openDevTools()
+    }
+  })
+
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault()
+      mainWindow.hide()
     }
   })
 
@@ -112,7 +157,8 @@ async function initializeApp(): Promise<void> {
 
   try {
     const { createDatabase } = await import('@spark/storage')
-    const db = createDatabase(dbPath)
+    const migrationsDir = is.dev ? undefined : join(process.resourcesPath, 'migrations')
+    const db = createDatabase(dbPath, migrationsDir)
     setDatabaseInstance(db)
     log.info('Database initialized successfully')
 
@@ -133,6 +179,7 @@ async function initializeApp(): Promise<void> {
 
   // 3. 创建主窗口
   createWindow()
+  createTray()
 
   // 4. 初始化自动更新服务
   const updateService = getUpdateService()
@@ -206,7 +253,7 @@ app.whenReady().then(() => {
 // Windows / Linux：所有窗口关闭时退出应用
 // macOS：由 'activate' 事件处理，不在此退出
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && isQuitting) {
     app.quit()
   }
 })

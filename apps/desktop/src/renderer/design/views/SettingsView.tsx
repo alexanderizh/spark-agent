@@ -49,6 +49,7 @@ type ProviderForm = {
   modelIdsText: string
   endpoint: string
   codexApiKind: CodexApiKind
+  supportsMillionContext: boolean
   apiKey: string
   isDefault: boolean
 }
@@ -1249,6 +1250,7 @@ export function ProviderEditPanel({
     modelIdsText: '',
     endpoint: '',
     codexApiKind: 'chat',
+    supportsMillionContext: false,
     apiKey: '',
     isDefault: false,
   })
@@ -1274,6 +1276,7 @@ export function ProviderEditPanel({
             modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
             endpoint: preset.apiEndpoint,
             codexApiKind: 'chat',
+            supportsMillionContext: false,
             apiKey: '',
             isDefault: false,
           })
@@ -1288,6 +1291,7 @@ export function ProviderEditPanel({
         modelIdsText: '',
         endpoint: '',
         codexApiKind: 'chat',
+        supportsMillionContext: false,
         apiKey: '',
         isDefault: false,
       })
@@ -1305,6 +1309,7 @@ export function ProviderEditPanel({
             modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
             endpoint: p.apiEndpoint ?? '',
             codexApiKind: p.codexApiKind ?? 'chat',
+            supportsMillionContext: p.supportsMillionContext === true,
             apiKey: '',
             isDefault: p.isDefault,
           })
@@ -1336,6 +1341,7 @@ export function ProviderEditPanel({
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
           ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
+          supportsMillionContext: form.supportsMillionContext,
         }
         if (form.apiKey.trim()) req.apiKey = form.apiKey
         await updateProvider(req)
@@ -1349,6 +1355,7 @@ export function ProviderEditPanel({
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
           ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
+          supportsMillionContext: form.supportsMillionContext,
         })
       }
       onClose()
@@ -1373,6 +1380,7 @@ export function ProviderEditPanel({
       modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
       endpoint: preset.apiEndpoint,
       codexApiKind: 'chat',
+      supportsMillionContext: false,
     }))
   }
 
@@ -1496,6 +1504,15 @@ export function ProviderEditPanel({
                   : 'https://api.openai.com/v1'
               }
               className="mono-sm"
+            />
+
+            <label>
+              支持 1M 上下文
+              <span className="sub">开启后该 Provider 默认按 1M token 计算；关闭时默认 200K</span>
+            </label>
+            <div
+              className={`switch ${form.supportsMillionContext ? 'on' : ''}`}
+              onClick={() => set('supportsMillionContext', !form.supportsMillionContext)}
             />
 
             <label>默认 Provider</label>

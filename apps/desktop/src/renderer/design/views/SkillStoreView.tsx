@@ -54,14 +54,6 @@ export function SkillStoreView() {
   return (
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
-        {/* ── Header row ── */}
-        <div className="row section-header-row">
-          <div className="flex1">
-            <div className="strong header-title-lg">Skill 商店</div>
-            <div className="muted header-desc">发现、安装和管理 AI Skill 能力扩展</div>
-          </div>
-        </div>
-
         {/* ── Tab bar ── */}
         <div className="store-tabbar">
           <button

@@ -208,6 +208,14 @@ export function resolveModelContextWindow(modelId: string): number {
 
 export function resolveSoftContextLimit(modelId: string): number {
   const contextWindow = resolveModelContextWindow(modelId)
+  return resolveSoftContextLimitForWindow(contextWindow)
+}
+
+export function resolveProviderContextWindow(supportsMillionContext?: boolean): number {
+  return supportsMillionContext === true ? 1_000_000 : 200_000
+}
+
+export function resolveSoftContextLimitForWindow(contextWindow: number): number {
   return contextWindow > 0 ? Math.floor(contextWindow * 0.7) : 100_000
 }
 

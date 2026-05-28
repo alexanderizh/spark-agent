@@ -139,6 +139,7 @@ export const ProviderCreateRequestSchema = z.object({
   apiKey: z.string().min(1).max(500),
   isDefault: z.boolean().optional().default(false),
   codexApiKind: CodexApiKindSchema,
+  supportsMillionContext: z.boolean().optional().default(false),
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
   ctx.addIssue({
@@ -158,6 +159,7 @@ export const ProviderUpdateRequestSchema = z.object({
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
   codexApiKind: CodexApiKindSchema,
+  supportsMillionContext: z.boolean().optional(),
 })
 
 export const ProviderDeleteRequestSchema = z.object({

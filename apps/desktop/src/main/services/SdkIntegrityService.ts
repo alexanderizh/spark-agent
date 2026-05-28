@@ -52,6 +52,7 @@ function getMonorepoRootCandidates(): string[] {
     const appPath = app.getAppPath()
     if (appPath) {
       // appPath 可能指向 apps/desktop，往上 1 级到 monorepo root
+      candidates.push(appPath)
       candidates.push(resolve(appPath, '..', '..'))
       candidates.push(resolve(appPath, '..'))
     }
@@ -61,6 +62,9 @@ function getMonorepoRootCandidates(): string[] {
 
   // process.cwd() 作为最后备选
   candidates.push(process.cwd())
+  if (!app.isPackaged) {
+    candidates.push(resolve(__dirname, '..', '..', '..', '..'))
+  }
 
   return candidates
 }
@@ -83,6 +87,10 @@ function findPackageJsonInNodeModules(packageName: string): string | null {
   // 方法2: 遍历 monorepo 候选路径中的 node_modules
   const roots = getMonorepoRootCandidates()
   const searchPaths = [
+    // packaged Electron app: Contents/Resources/app.asar/node_modules
+    (root: string) => join(root, 'node_modules', pkgSubPath),
+    // packaged Electron app: Contents/Resources/app.asar.unpacked/node_modules
+    (root: string) => join(root.replace(/\.asar$/, '.asar.unpacked'), 'node_modules', pkgSubPath),
     // monorepo root 的 node_modules（pnpm hoisted 或 symlinked）
     (root: string) => join(root, 'node_modules', pkgSubPath),
     // agent-runtime 的 node_modules（pnpm 可能放在包内部）
@@ -286,6 +294,8 @@ function getPackageManagerCommand(): { command: string; args?: string[] } {
  * 查找 agent-runtime 包目录路径
  */
 function findAgentRuntimeDir(): string | null {
+  if (app.isPackaged) return null
+
   const roots = getMonorepoRootCandidates()
   for (const root of roots) {
     const dir = join(root, 'packages', 'agent-runtime')

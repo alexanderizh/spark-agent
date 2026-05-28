@@ -253,15 +253,15 @@ export interface UsageUpdateEvent extends BaseEvent {
 }
 
 /**
- * 当前 turn 内 messages 上下文占用估算（agent-loop 每轮 LLM 调用前发出）。
+ * 当前 turn 内 SDK prompt / messages 上下文占用估算。
  * 与 UsageUpdateEvent 的区别：
  *   - UsageUpdateEvent 由 adapter 发出，反映"刚发生的一次 LLM 调用的 token"
- *   - ContextUsageEvent 由 agent-loop 发出，反映"下一次 LLM 调用即将携带的上下文规模"
+ *   - ContextUsageEvent 由 SDK executor 发出，反映本轮即将携带的上下文规模
  * UI 可用 estimatedTokens / softLimitTokens 显示进度条；接近上限时弹「即将自动压缩」提示。
  */
 export interface ContextUsageEvent extends BaseEvent {
   type: 'context_usage'
-  /** 粗略估算的 messages tokens（agent-loop 用 ~3 chars/token 估算） */
+  /** 粗略估算的 prompt/messages tokens */
   estimatedTokens: number
   /** 模型的软上限（实际上下文窗口的 ~70%；超过即触发自动压缩） */
   softLimitTokens: number
@@ -333,6 +333,43 @@ export interface AgentErrorEvent extends BaseEvent {
   rawError?: string
 }
 
+// ─── 白盒调试类事件 ───────────────────────────────────────────────────────────
+
+/** 提示词快照段落 */
+export interface PromptSection {
+  /** 段落标签（如 "Skill Prompt"、"System Prompt"、"Claude Code Preset"） */
+  label: string
+  /** 段落内容文本 */
+  content: string
+  /** 字符数 */
+  charCount: number
+}
+
+/**
+ * SDK/API 每次调用的真实全量提示词快照
+ *
+ * 在每个 turn 启动时发出，包含系统提示词、用户消息、模型配置等信息，
+ * 用于白盒模式下的提示词审计与调试。
+ */
+export interface TurnPromptSnapshotEvent extends BaseEvent {
+  type: 'turn_prompt_snapshot'
+  turnId: string
+  /** 触发本轮的用户消息 */
+  userMessage: string
+  /** 按顺序排列的系统提示词段落 */
+  systemPromptSections: PromptSection[]
+  /** 使用的模型名称 */
+  model: string
+  /** 执行适配器类型 */
+  adapterKind: 'claude-sdk' | 'codex'
+  /** 权限模式 */
+  permissionMode: string
+  /** 可用工具数量 */
+  toolCount: number
+  /** SDK 预设类型（如 'claude_code'），仅 claude-sdk 适配器有值 */
+  sdkPreset?: string
+}
+
 // ─── AgentEvent 联合类型 ──────────────────────────────────────────────────────
 
 /**
@@ -361,6 +398,7 @@ export type AgentEvent =
   | PlanProposedEvent
   | ContextUsageEvent
   | ProjectContextLoadedEvent
+  | TurnPromptSnapshotEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']

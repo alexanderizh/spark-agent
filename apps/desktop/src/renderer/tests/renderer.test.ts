@@ -317,6 +317,102 @@ describe('Renderer Smoke Tests', () => {
     expect(invoke).toHaveBeenCalledWith('session:cancel', { sessionId: 'session-1' })
   })
 
+  it('clears the composer queue loading state from queue snapshots even when the session list is stale', async () => {
+    const streamHandlers = new Map<string, Array<(payload: unknown) => void>>()
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Running task',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'running',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 1,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: true, queuedTurns: [] }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'workspace:open') return { workspace: null }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, handler: (payload: unknown) => void) => {
+        streamHandlers.set(channel, [...(streamHandlers.get(channel) ?? []), handler])
+        return vi.fn()
+      }),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.chat-item-compact')).not.toBeNull()
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLElement>('.chat-item-compact')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('执行中')
+    })
+
+    await act(async () => {
+      const snapshot = {
+        sessionId: 'session-1',
+        running: false,
+        queuedTurns: [],
+      }
+      for (const handler of streamHandlers.get('stream:session:queue-changed') ?? []) {
+        handler(snapshot)
+      }
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.composer-queue-item.active')).toBeNull()
+      expect(container.querySelector('.session-running-badge')).toBeNull()
+    })
+    expect(container.textContent).not.toContain('正在执行当前任务')
+  })
+
   it('uses different project icons for expanded and collapsed sidebar groups', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {

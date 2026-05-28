@@ -129,6 +129,49 @@ describe('ProviderService', () => {
     expect(profile.codexApiKind).toBe('responses')
   })
 
+  it('createProvider stores provider-level 1M context support', async () => {
+    const profile = await service.createProvider({
+      name: 'Long Context',
+      provider: 'openai',
+      defaultModel: 'provider-default',
+      apiKey: 'sk-openai',
+      supportsMillionContext: true,
+    })
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      config: {
+        defaultModel: 'provider-default',
+        modelIds: ['provider-default'],
+        supportsMillionContext: true,
+      },
+    }))
+    expect(profile.supportsMillionContext).toBe(true)
+  })
+
+  it('updateProvider can disable provider-level 1M context support', async () => {
+    repo.rows.set('id-long-context', {
+      id: 'id-long-context',
+      provider_type: 'openai',
+      name: 'Long Context',
+      config_json: '{"defaultModel":"provider-default","modelIds":["provider-default"],"supportsMillionContext":true}',
+      enabled: 1,
+      keystore_ref: 'openai-id-long-context',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await service.updateProvider({ id: 'id-long-context', supportsMillionContext: false })
+
+    expect(repo.update).toHaveBeenCalledWith('id-long-context', {
+      config: {
+        defaultModel: 'provider-default',
+        modelIds: ['provider-default'],
+        supportsMillionContext: false,
+      },
+    })
+  })
+
   it('deleteProvider removes from keystore and repo', async () => {
     // seed a row
     repo.rows.set('id-1', {

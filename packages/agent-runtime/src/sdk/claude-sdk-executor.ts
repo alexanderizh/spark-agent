@@ -5,7 +5,7 @@
  * engine that leverages Claude Code's battle-tested tools (Read, Edit, Bash,
  * Grep, Glob), agent loop, checkpoint system, and MCP integration.
  *
- * This executor REPLACES our own AgentLoop + ToolRegistry when selected,
+ * This executor is the Claude execution path,
  * delegating all tool execution, permission handling, and agent reasoning
  * to the SDK. Spark's role becomes:
  *   - Session & UI management
@@ -27,12 +27,12 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { sep } from 'node:path'
-import type { AgentEvent } from '@spark/protocol'
-import { resolveModelContextWindow, resolveSoftContextLimit } from '@spark/shared'
+import type { AgentEvent, AgentStatusValue } from '@spark/protocol'
+import { resolveModelContextWindow, resolveSoftContextLimit, resolveSoftContextLimitForWindow } from '@spark/shared'
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
-import type { SDKExecutorConfig, SDKMessage, SDKQueryFunction, SDKQueryOptions } from './types.js'
+import type { SDKExecutorConfig, SDKQueryFunction, SDKQueryOptions } from './types.js'
 
 type SDKModule = { query: SDKQueryFunction }
 
@@ -116,8 +116,8 @@ export class ClaudeSDKExecutor {
       ...makeBase(),
       type: 'context_usage',
       estimatedTokens: estimateSDKPromptTokens(userMessage, config),
-      softLimitTokens: softContextLimit(config.model),
-      contextWindowTokens: contextWindow(config.model),
+      softLimitTokens: softContextLimit(config.model, config.contextWindowTokens),
+      contextWindowTokens: contextWindow(config.model, config.contextWindowTokens),
       compacted: false,
     })
 
@@ -132,6 +132,16 @@ export class ClaudeSDKExecutor {
     // Build composite system prompt
     const systemPrompt = buildCompositeSystemPrompt(config)
     const claudeCodeExecutable = resolveClaudeCodeExecutable()
+
+    let terminalStatusEmitted = false
+    const emitTerminalStatus = (status: AgentStatusValue): void => {
+      terminalStatusEmitted = true
+      this.emitter.emit({
+        ...makeBase(),
+        type: 'agent_status',
+        status,
+      })
+    }
 
     // Build SDK options
     const options: SDKQueryOptions = {
@@ -158,8 +168,7 @@ export class ClaudeSDKExecutor {
       maxTurns: config.maxTurnCount ?? 25,
       ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
       effort: mapReasoningEffort(config.reasoningEffort),
-      sessionId,
-      ...(config.continueSession === true ? { continue: true } : {}),
+      ...(config.continueSession === true ? { resume: sessionId } : { sessionId }),
 
       includePartialMessages: true,
       enableFileCheckpointing: config.enableCheckpoints ?? false,
@@ -171,7 +180,9 @@ export class ClaudeSDKExecutor {
           input: Record<string, unknown>,
         ): Promise<{ behavior: 'allow' } | { behavior: 'deny'; message: string }> => {
           try {
-            const allowed = await config.approvalCallback!(sessionId, toolName, input)
+            const approvalCallback = config.approvalCallback
+            if (approvalCallback == null) return { behavior: 'deny', message: 'Permission check failed' }
+            const allowed = await approvalCallback(sessionId, toolName, input)
             return allowed
               ? { behavior: 'allow' }
               : { behavior: 'deny', message: 'User denied tool execution' }
@@ -190,9 +201,26 @@ export class ClaudeSDKExecutor {
 
         const events = mapSDKMessageToEvents(message, ctx)
         for (const event of events) {
+          if (event.type === 'agent_status' && isTerminalAgentStatus(event.status)) {
+            terminalStatusEmitted = true
+          }
           this.emitter.emit(event)
         }
       }
+
+      if (this.abortController.signal.aborted) {
+        this.emitter.emit({
+          ...makeBase(),
+          type: 'agent_error',
+          code: 'ABORTED',
+          message: 'Turn cancelled by user',
+          retryable: false,
+        })
+        if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+        return
+      }
+
+      if (!terminalStatusEmitted) emitTerminalStatus('completed')
     } catch (err) {
       if (this.abortController.signal.aborted) {
         this.emitter.emit({
@@ -202,11 +230,7 @@ export class ClaudeSDKExecutor {
           message: 'Turn cancelled by user',
           retryable: false,
         })
-        this.emitter.emit({
-          ...makeBase(),
-          type: 'agent_status',
-          status: 'cancelled',
-        })
+        if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
       } else {
         this.emitter.emit({
           ...makeBase(),
@@ -216,14 +240,15 @@ export class ClaudeSDKExecutor {
           retryable: true,
           rawError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
         })
-        this.emitter.emit({
-          ...makeBase(),
-          type: 'agent_status',
-          status: 'error',
-        })
+        if (!terminalStatusEmitted) emitTerminalStatus('error')
+        throw err
       }
     }
   }
+}
+
+function isTerminalAgentStatus(status: AgentStatusValue): boolean {
+  return status === 'completed' || status === 'error' || status === 'cancelled' || status === 'idle'
 }
 
 function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefined {
@@ -250,12 +275,12 @@ function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig)
   return Math.ceil(chars / 3)
 }
 
-function contextWindow(model: string): number {
-  return resolveModelContextWindow(model)
+function contextWindow(model: string, configuredContextWindow?: number): number {
+  return configuredContextWindow !== undefined ? configuredContextWindow : resolveModelContextWindow(model)
 }
 
-function softContextLimit(model: string): number {
-  return resolveSoftContextLimit(model)
+function softContextLimit(model: string, configuredContextWindow?: number): number {
+  return configuredContextWindow !== undefined ? resolveSoftContextLimitForWindow(configuredContextWindow) : resolveSoftContextLimit(model)
 }
 
 function resolveClaudeCodeExecutable(): string | undefined {

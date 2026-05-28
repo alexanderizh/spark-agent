@@ -151,6 +151,7 @@ export interface SDKQueryOptions {
   maxTurns?: number | undefined
   maxBudgetUsd?: number | undefined
   sessionId?: string | undefined
+  resume?: string | undefined
   continue?: boolean | undefined
   includePartialMessages?: boolean | undefined
   enableFileCheckpointing?: boolean | undefined
@@ -204,6 +205,7 @@ export interface SDKExecutorConfig {
   permissionMode: SparkPermissionMode
   maxTurnCount?: number | undefined
   maxTokens?: number | undefined
+  contextWindowTokens?: number | undefined
   maxBudgetUsd?: number | undefined
   workspaceRootPath: string
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined

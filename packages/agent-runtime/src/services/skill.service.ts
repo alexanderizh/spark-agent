@@ -17,7 +17,7 @@ export class SkillService {
     this.loader = new SkillLoader(repo)
   }
 
-  /** 获取 SkillLoader 实例（供 AgentLoop 集成使用） */
+  /** 获取 SkillLoader 实例（供 SDK executor 集成使用） */
   getLoader(): SkillLoader {
     return this.loader
   }

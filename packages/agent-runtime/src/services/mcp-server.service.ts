@@ -4,15 +4,14 @@
  * 管理 MCP 服务器的完整生命周期：
  * - CRUD 操作（服务器配置管理）
  * - 启动/停止 MCP 服务器连接
- * - 工具注册到 ToolRegistry
+ * - SDK MCP 配置读取
  * - 连接状态跟踪
  */
 
 import type { McpServerRepository, McpServerRow } from '@spark/storage'
 import type { McpServerItem } from '@spark/protocol'
-import { McpClient, McpToolBridge } from '../mcp/index.js'
+import { McpClient } from '../mcp/index.js'
 import type { McpTransportConfig } from '../mcp/index.js'
-import type { ToolRegistry } from '../core/tool-registry.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('mcp:service')
@@ -164,27 +163,6 @@ export class McpService {
     }
 
     return result
-  }
-
-  /**
-   * 将所有已连接 MCP 服务器的工具注册到 ToolRegistry
-   *
-   * @returns 注册的工具总数
-   */
-  registerToToolRegistry(registry: ToolRegistry): number {
-    let totalRegistered = 0
-
-    for (const [, client] of this.clients) {
-      if (!client.isConnected()) continue
-
-      const count = McpToolBridge.registerAllTools(client, (tool) => {
-        registry.register(tool)
-      })
-      totalRegistered += count
-    }
-
-    log.info(`Registered ${totalRegistered} MCP tools to ToolRegistry`)
-    return totalRegistered
   }
 
   // ─── Status ──────────────────────────────────────────────────────────────

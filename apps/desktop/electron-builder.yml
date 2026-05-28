@@ -31,6 +31,8 @@ extraResources:
     to: migrations
     filter:
       - '**/*.sql'
+  - from: resources/trayTemplate.png
+    to: trayTemplate.png
 publish:
   provider: generic
   url: https://releases.spark-agent.dev/${os}/

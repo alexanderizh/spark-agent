@@ -1,4 +1,4 @@
-import type { AgentEvent } from '@spark/protocol'
+import type { AgentEvent, TurnPromptSnapshotEvent } from '@spark/protocol'
 
 export interface UIMessage {
   id: string
@@ -37,9 +37,14 @@ export class MessageBuilder {
   private currentAssistantId: string | null = null
   private latestContextUsage: ContextUsageSnapshot | null = null
   private latestPlanProposed: string | null = null
+  private turnPromptSnapshots: TurnPromptSnapshotEvent[] = []
 
   getLatestContextUsage(): ContextUsageSnapshot | null {
     return this.latestContextUsage
+  }
+
+  getTurnPromptSnapshots(): TurnPromptSnapshotEvent[] {
+    return this.turnPromptSnapshots
   }
 
   consumePlanProposed(): string | null {
@@ -279,6 +284,11 @@ export class MessageBuilder {
         break
       }
 
+      case 'turn_prompt_snapshot': {
+        this.turnPromptSnapshots.push(event)
+        break
+      }
+
       case 'plan_proposed': {
         // Stash the plan for PlanApprovalModal (global overlay)
         this.latestPlanProposed = event.plan
@@ -320,6 +330,7 @@ export class MessageBuilder {
   clearAll(): void {
     this.messages = []
     this.currentAssistantId = null
+    this.turnPromptSnapshots = []
   }
 
   private getOrCreateAssistant(eventId: string, timestamp?: string | undefined): UIMessage {

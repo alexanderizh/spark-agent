@@ -23,6 +23,7 @@ function rowToProfile(row: {
     modelIds: config.modelIds,
     ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
+    supportsMillionContext: config.supportsMillionContext === true,
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -44,6 +45,7 @@ export class ProviderService {
     model?: string
     apiEndpoint?: string
     codexApiKind?: 'chat' | 'responses'
+    supportsMillionContext?: boolean
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -73,6 +75,7 @@ export class ProviderService {
         ...(params.modelIds !== undefined && { modelIds: params.modelIds }),
         ...(params.apiEndpoint !== undefined && { apiEndpoint: params.apiEndpoint }),
         ...(params.codexApiKind !== undefined && { codexApiKind: params.codexApiKind }),
+        ...(params.supportsMillionContext !== undefined && { supportsMillionContext: params.supportsMillionContext }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
@@ -93,6 +96,7 @@ export class ProviderService {
     model?: string
     apiEndpoint?: string | null
     codexApiKind?: 'chat' | 'responses'
+    supportsMillionContext?: boolean
     apiKey?: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -108,7 +112,7 @@ export class ProviderService {
     const existingConfig = normalizeProviderConfig(JSON.parse(existing.config_json) as ProviderConfig)
     const nextDefaultModel = params.defaultModel ?? params.model
     const newConfig =
-      nextDefaultModel !== undefined || params.modelIds !== undefined || params.apiEndpoint !== undefined || params.codexApiKind !== undefined
+      nextDefaultModel !== undefined || params.modelIds !== undefined || params.apiEndpoint !== undefined || params.codexApiKind !== undefined || params.supportsMillionContext !== undefined
         ? { ...existingConfig }
         : undefined
 
@@ -133,6 +137,9 @@ export class ProviderService {
     }
     if (newConfig !== undefined && params.codexApiKind !== undefined) {
       newConfig.codexApiKind = params.codexApiKind
+    }
+    if (newConfig !== undefined && params.supportsMillionContext !== undefined) {
+      newConfig.supportsMillionContext = params.supportsMillionContext
     }
 
     this.repo.update(params.id, {
@@ -210,6 +217,7 @@ interface ProviderConfig {
   modelIds?: string[]
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses'
+  supportsMillionContext?: boolean
   maxTokens?: number
   temperature?: number
 }

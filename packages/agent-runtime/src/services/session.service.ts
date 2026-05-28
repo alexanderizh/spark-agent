@@ -26,12 +26,10 @@ import type {
   AssistantMessageEvent,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
-import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
+import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
-import type { AgentConfig, CheckpointRestoreResult, CheckpointSnapshot, CommandDeps, CommandListItem } from '../core/index.js'
-import type { ChatMessage } from '../adapters/types.js'
+import type { CheckpointRestoreResult, CheckpointSnapshot, CommandDeps, CommandListItem } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
-import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
@@ -39,7 +37,7 @@ import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
-import { createLogger, resolveSoftContextLimit } from '@spark/shared'
+import { createLogger, resolveProviderContextWindow, resolveSoftContextLimitForWindow } from '@spark/shared'
 
 const log = createLogger('session.service')
 
@@ -60,8 +58,6 @@ type PendingTurn = {
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
 const SESSION_TITLE_MAX_LENGTH = 40
-const MODEL_HISTORY_EVENT_LIMIT = 400
-
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>()  // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
@@ -379,8 +375,6 @@ export class SessionService {
     if (existingEventCount === 0 && shouldDeriveSessionTitle(session.title)) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
-    const historyMessages = buildModelHistoryMessages(eventRepo, sessionId)
-
     const provider = providerRepo.get(session.provider_profile_id)
     if (provider == null) {
       throw new Error(`Provider profile not found: ${session.provider_profile_id}`)
@@ -403,6 +397,7 @@ export class SessionService {
       temperature?: number
       /** 'chat' (default, chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
       codexApiKind?: 'chat' | 'responses'
+      supportsMillionContext?: boolean
     }
 
     const model = session.model_id ?? config.defaultModel ?? config.model
@@ -417,7 +412,9 @@ export class SessionService {
     // Workspace root path for tools
     let workspaceRootPath = process.cwd()
     let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
-    const projectContextBudgetTokens = Math.max(2_000, Math.min(60_000, Math.floor(resolveSoftContextLimit(model) * 0.25)))
+    const contextWindowTokens = resolveProviderContextWindow(config.supportsMillionContext === true)
+    const softContextLimitTokens = resolveSoftContextLimitForWindow(contextWindowTokens)
+    const projectContextBudgetTokens = Math.max(2_000, Math.min(60_000, Math.floor(softContextLimitTokens * 0.25)))
     let projectContext = new ProjectContextService().discover(undefined, {
       mode: 'project-smart',
       budgetTokens: projectContextBudgetTokens,
@@ -492,6 +489,37 @@ export class SessionService {
       },
     }, eventRepo)
 
+    // ── 白盒提示词快照 ─────────────────────────────────────────────────────
+    // 捕获本轮完整提示词组成，发送到 Renderer 供审计面板展示
+    {
+      const promptSections: Array<{ label: string; content: string; charCount: number }> = []
+      if (composedSkillSystemPrompt && composedSkillSystemPrompt.trim().length > 0) {
+        promptSections.push({ label: 'Skill Prompt', content: composedSkillSystemPrompt, charCount: composedSkillSystemPrompt.length })
+      }
+      if (composedSystemPrompt && composedSystemPrompt.trim().length > 0) {
+        promptSections.push({ label: 'System Prompt', content: composedSystemPrompt, charCount: composedSystemPrompt.length })
+      }
+      if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
+        promptSections.push({ label: 'Claude Code 预设', content: '(SDK 内置系统提示词，约 15,000~20,000 字符，运行时由 Claude Code 注入)', charCount: 0 })
+      }
+      const toolCountEstimate = 12 // built-in coding agent tools (Read, Write, Edit, Bash, Glob, Grep, ...)
+      this.emitAndPersist(sessionId, turnId, {
+        id: crypto.randomUUID(),
+        type: 'turn_prompt_snapshot',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        userMessage: message,
+        systemPromptSections: promptSections,
+        model,
+        adapterKind: (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') ? 'claude-sdk' : 'codex',
+        permissionMode,
+        toolCount: toolCountEstimate,
+        ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? { sdkPreset: 'claude_code' } : {}),
+      }, eventRepo)
+    }
+
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
@@ -503,6 +531,7 @@ export class SessionService {
         ...(composedSkillSystemPrompt != null ? { skillSystemPrompt: composedSkillSystemPrompt } : {}),
         maxTurnCount: this.iterationOverrides.get(sessionId) ?? 25,
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
+        contextWindowTokens,
         ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
         enableCheckpoints: true,
         continueSession: existingEventCount > 0,
@@ -514,101 +543,63 @@ export class SessionService {
       return
     }
 
-    // ── Direct API Execution Path ──────────────────────────────────────────
-    // Uses our own AgentLoop + ToolRegistry with the direct API adapters.
-    const apiKind: 'chat' | 'responses' = config.codexApiKind === 'responses' ? 'responses' : 'chat'
-    const adapter = createAdapter(agentAdapter, apiKind)
-
-    const tools = new ToolRegistry()
-
-    // Register MCP tools from connected servers
-    try {
-      this.mcpService.registerToToolRegistry(tools)
-    } catch {
-      // MCP tool registration failure is non-fatal
-    }
-
-    const agentConfig: AgentConfig = {
-      adapter,
-      apiKey,
-      model,
-      ...(config.apiEndpoint !== undefined && { apiEndpoint: config.apiEndpoint }),
-      ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
-      ...(composedSkillSystemPrompt != null ? { skillSystemPrompt: composedSkillSystemPrompt } : {}),
-      tools,
-      toolContext: { workspaceRootPath, sessionId },
-      context: {
-        ...(workspaceInfo != null ? { workspace: workspaceInfo } : {}),
-        ...(activeRules.length > 0 ? { projectRules: activeRules } : {}),
-      },
-      ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
-      ...(config.temperature != null ? { temperature: config.temperature } : {}),
-      ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
-      permissionMode,
-      maxTurnIterations: this.iterationOverrides.get(sessionId) ?? defaultMaxIterations(agentAdapter),
-      ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
-    }
-
-    const loop = new AgentLoop()
-    const changedFiles = new Set<string>()
-    let validationSuggestionEmitted = false
-    const maybeEmitValidationSuggestion = () => {
-      if (validationSuggestionEmitted || changedFiles.size === 0) return
-      validationSuggestionEmitted = true
-      const suggestion = new ValidationSuggestionService().suggest({
-        workspaceRootPath,
-        changedFiles: Array.from(changedFiles),
-      })
-      if (suggestion == null) return
-      this.emitAndPersist(sessionId, turnId, {
-        id: crypto.randomUUID(),
-        type: 'validation_suggestion',
-        sessionId,
-        turnId,
-        timestamp: new Date().toISOString(),
-        seq: 0,
-        summary: suggestion.summary,
-        changedFiles: suggestion.changedFiles,
-        commands: suggestion.commands,
-      }, eventRepo)
-    }
-
-    loop.onEvent((event) => {
-      if (event.type === 'file_change') changedFiles.add(event.path)
-      this.emitAndPersist(sessionId, turnId, event, eventRepo)
-      if (event.type === 'agent_status' && event.status === 'completed') {
-        maybeEmitValidationSuggestion()
-      }
+    this.emitSdkRequiredError({
+      sessionId,
+      turnId,
+      message,
+      eventRepo,
+      sessionRepo,
+      sdkName: 'Codex SDK',
+      statusMessage: 'Codex SDK is not connected',
+      detail: 'Codex execution must use the real Codex SDK. The legacy in-process AgentLoop has been removed as an execution path.',
     })
-
-    this.activeLoops.set(sessionId, loop)
-    sessionRepo.updateStatus(sessionId, 'running')
-    this.emitQueueChanged(sessionId)
-
-    // Fire-and-forget: start the loop without awaiting
-    const execution = historyMessages.length > 0
-      ? loop.executeTurn(sessionId, turnId, message, agentConfig, historyMessages)
-      : loop.executeTurn(sessionId, turnId, message, agentConfig)
-    execution
-      .then(() => {
-        maybeEmitValidationSuggestion()
-        sessionRepo.updateStatus(sessionId, 'idle')
-      })
-      .catch(() => {
-        sessionRepo.updateStatus(sessionId, 'error')
-      })
-      .finally(() => {
-        if (this.activeLoops.get(sessionId) === loop) {
-          this.activeLoops.delete(sessionId)
-          this.startNextQueuedTurn(sessionId)
-        }
-      })
   }
 
   /**
    * Run the turn through the Claude Agent SDK, or fail explicitly when the SDK
    * is unavailable. Spark no longer falls back to direct Anthropic API.
    */
+  private emitSdkRequiredError(params: {
+    sessionId: string
+    turnId: string
+    message: string
+    eventRepo: EventRepository
+    sessionRepo: SessionRepository
+    sdkName: string
+    statusMessage: string
+    detail: string
+    rawError?: string
+  }): void {
+    const makeBase = () => ({
+      id: crypto.randomUUID(),
+      sessionId: params.sessionId,
+      turnId: params.turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+    })
+
+    this.emitAndPersist(params.sessionId, params.turnId, {
+      ...makeBase(),
+      type: 'user_message',
+      content: params.message,
+    }, params.eventRepo)
+    this.emitAndPersist(params.sessionId, params.turnId, {
+      ...makeBase(),
+      type: 'agent_error',
+      code: 'SDK_REQUIRED',
+      message: `${params.sdkName} is required. ${params.detail}`,
+      retryable: false,
+      ...(params.rawError != null ? { rawError: params.rawError } : {}),
+    }, params.eventRepo)
+    this.emitAndPersist(params.sessionId, params.turnId, {
+      ...makeBase(),
+      type: 'agent_status',
+      status: 'error',
+      message: params.statusMessage,
+    }, params.eventRepo)
+    params.sessionRepo.updateStatus(params.sessionId, 'error')
+  }
+
   private async tryStartSDKTurn(
     sessionId: string,
     turnId: string,
@@ -1302,15 +1293,6 @@ function getPermissionModeFromSession(value: string | null | undefined, adapter:
   return adapter === 'codex' ? 'codex-default' : 'claude-ask'
 }
 
-function defaultMaxIterations(adapter: AgentAdapterKind): number {
-  // claude-sdk: SDK manages its own iteration limits internally
-  if (adapter === 'claude-sdk') return 25
-  // claude direct API: supports long chains
-  if (adapter === 'claude') return 150
-  // codex/openai: conservative
-  return 100
-}
-
 async function getWorkspaceRootIssue(rootPath: string): Promise<string | null> {
   try {
     const info = await stat(rootPath)
@@ -1325,62 +1307,6 @@ function getChatModeFromSession(value: string | null | undefined): 'agent' | 'as
   return 'agent'
 }
 
-function buildModelHistoryMessages(eventRepo: EventRepository, sessionId: string): ChatMessage[] {
-  const { events: rows } = eventRepo.queryBySession({
-    sessionId,
-    limit: MODEL_HISTORY_EVENT_LIMIT,
-  })
-  const messages: ChatMessage[] = []
-  const openToolCallIds = new Set<string>()
-
-  for (const row of rows) {
-    const event = parseAgentEvent(row.event_json)
-    if (event == null) continue
-
-    switch (event.type) {
-      case 'user_message':
-        if (event.content.trim().length > 0) {
-          messages.push({ role: 'user', content: event.content })
-        }
-        break
-      case 'assistant_message':
-        if (event.mode === 'complete' && event.content.trim().length > 0) {
-          messages.push({ role: 'assistant', content: event.content })
-        }
-        break
-      case 'tool_call':
-        openToolCallIds.add(event.toolCallId)
-        messages.push({
-          role: 'assistant',
-          content: [{
-            type: 'tool_use',
-            id: event.toolCallId,
-            name: event.toolName,
-            input: event.toolInput,
-          }],
-        })
-        break
-      case 'tool_result':
-        if (!openToolCallIds.has(event.toolCallId)) break
-        openToolCallIds.delete(event.toolCallId)
-        messages.push({
-          role: 'user',
-          content: [{
-            type: 'tool_result',
-            tool_use_id: event.toolCallId,
-            content: serializeToolResultForHistory(event),
-          }],
-        })
-        break
-      default:
-        break
-    }
-  }
-
-  if (openToolCallIds.size === 0) return messages
-  return messages.filter((message) => !isUnresolvedToolUseMessage(message, openToolCallIds))
-}
-
 function joinPromptSections(...sections: Array<string | undefined>): string | undefined {
   const joined = sections
     .map((section) => section?.trim())
@@ -1388,7 +1314,6 @@ function joinPromptSections(...sections: Array<string | undefined>): string | un
     .join('\n\n')
   return joined.length > 0 ? joined : undefined
 }
-
 
 function listSkillSummaries(skillRepo: SkillRepository, query?: string): Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }> {
   const loader = new SkillLoader(skillRepo)
@@ -1418,32 +1343,4 @@ function listSkillSummaries(skillRepo: SkillRepository, query?: string): Array<{
       }
     })
     .filter((skill) => skill.id.length > 0)
-}
-
-function parseAgentEvent(json: string): AgentEvent | null {
-  try {
-    return JSON.parse(json) as AgentEvent
-  } catch {
-    return null
-  }
-}
-
-function serializeToolResultForHistory(event: Extract<AgentEvent, { type: 'tool_result' }>): string {
-  if (event.status !== 'success') return event.error ?? 'error'
-  return stringifyHistoryValue(event.output)
-}
-
-function stringifyHistoryValue(value: unknown): string {
-  if (typeof value === 'string') return value
-  if (value === undefined) return ''
-  try {
-    return JSON.stringify(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function isUnresolvedToolUseMessage(message: ChatMessage, unresolvedToolCallIds: Set<string>): boolean {
-  if (message.role !== 'assistant' || typeof message.content === 'string') return false
-  return message.content.some((block) => block.type === 'tool_use' && unresolvedToolCallIds.has(block.id))
 }

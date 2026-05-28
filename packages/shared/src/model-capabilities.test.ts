@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ModelCapabilityRegistry, resolveModelContextWindow, resolveSoftContextLimit } from './model-capabilities.js'
+import { ModelCapabilityRegistry, resolveModelContextWindow, resolveProviderContextWindow, resolveSoftContextLimit, resolveSoftContextLimitForWindow } from './model-capabilities.js'
 
 describe('ModelCapabilityRegistry', () => {
   it('resolves provider-prefixed and family model ids', () => {
@@ -14,5 +14,12 @@ describe('ModelCapabilityRegistry', () => {
     expect(resolveModelContextWindow('google/gemini-2.5-pro-preview')).toBe(1_048_576)
     expect(resolveModelContextWindow('')).toBe(0)
     expect(resolveSoftContextLimit('claude-sonnet-4-5-20250929')).toBe(140_000)
+  })
+
+  it('provides provider-level context window defaults', () => {
+    expect(resolveProviderContextWindow(true)).toBe(1_000_000)
+    expect(resolveProviderContextWindow(false)).toBe(200_000)
+    expect(resolveProviderContextWindow()).toBe(200_000)
+    expect(resolveSoftContextLimitForWindow(1_000_000)).toBe(700_000)
   })
 })

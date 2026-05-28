@@ -17,7 +17,7 @@
  */
 
 import { execFile } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, readdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { promisify } from 'node:util'
@@ -254,7 +254,7 @@ async function fixUnixPath(originalPath: string): Promise<{
     // Run an interactive login shell to get the full user PATH
     const { stdout } = await execFileAsync(
       '/usr/bin/env',
-      ['-i', 'HOME', homedir(), shell, '-l', '-c', 'echo $PATH'],
+      ['-i', `HOME=${homedir()}`, `SHELL=${shell}`, shell, '-l', '-c', 'printf "%s" "$PATH"'],
       { timeout: 5000 },
     )
 
@@ -267,6 +267,7 @@ async function fixUnixPath(originalPath: string): Promise<{
     const allPaths = [
       ...splitPathEntries(originalPath),
       ...splitPathEntries(shellPath),
+      ...getCommonUnixPaths(),
     ]
 
     // Deduplicate
@@ -291,6 +292,30 @@ async function fixUnixPath(originalPath: string): Promise<{
     log.warn(`Failed to fix Unix PATH: ${String(err)}`)
     return { originalPath, fixedPath: originalPath, changed: false }
   }
+}
+
+function getCommonUnixPaths(): string[] {
+  const paths = [
+    '/opt/homebrew/bin',
+    '/opt/homebrew/sbin',
+    '/usr/local/bin',
+    '/usr/local/sbin',
+    '/usr/bin',
+    '/bin',
+    '/usr/sbin',
+    '/sbin',
+  ]
+
+  const nvmVersionsDir = join(homedir(), '.nvm', 'versions', 'node')
+  try {
+    for (const version of readdirSync(nvmVersionsDir)) {
+      paths.push(join(nvmVersionsDir, version, 'bin'))
+    }
+  } catch {
+    // nvm is optional.
+  }
+
+  return paths.filter((path) => existsSync(path))
 }
 
 // ─── Runtime Detection ────────────────────────────────────────────────────────

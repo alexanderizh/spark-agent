@@ -41,6 +41,9 @@ importers:
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
+      openai:
+        specifier: ^6.39.0
+        version: 6.39.0(zod@3.25.76)
       react:
         specifier: ^19.0.0
         version: 19.2.6

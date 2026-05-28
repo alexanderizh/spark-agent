@@ -1,38 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="bg" x1="128" y1="96" x2="896" y2="928" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#17171d"/>
-      <stop offset="1" stop-color="#0d0d10"/>
-    </linearGradient>
-    <linearGradient id="spark" x1="256" y1="196" x2="812" y2="812" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#8ee6d7"/>
-      <stop offset="0.55" stop-color="#42c6b7"/>
-      <stop offset="1" stop-color="#6ea8ff"/>
-    </linearGradient>
-    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="22" result="blur"/>
-      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.26 0 0 0 0 0.78 0 0 0 0 0.72 0 0 0 0.55 0"/>
-      <feBlend in="SourceGraphic"/>
-    </filter>
-  </defs>
-
-  <rect x="96" y="96" width="832" height="832" rx="188" fill="url(#bg)"/>
-  <rect x="126" y="126" width="772" height="772" rx="164" fill="none" stroke="#26262f" stroke-width="28"/>
-
-  <g filter="url(#softGlow)">
-    <path
-      d="M514 194c24 121 95 194 216 222-121 27-192 100-216 221-25-121-96-194-217-221 121-28 192-101 217-222Z"
-      fill="url(#spark)"
-    />
-    <path
-      d="M298 584c12 59 46 94 105 108-59 13-93 49-105 108-12-59-47-95-106-108 59-14 94-49 106-108Z"
-      fill="#8ee6d7"
-      opacity="0.95"
-    />
-    <path
-      d="M736 634c9 44 34 70 78 80-44 10-69 36-78 80-9-44-35-70-79-80 44-10 70-36 79-80Z"
-      fill="#6ea8ff"
-      opacity="0.9"
-    />
-  </g>
+  <rect x="168" y="168" width="688" height="688" rx="164" fill="#050509"/>
+  <path
+    d="M537 290c22 112 88 179 199 205-111 25-177 92-199 204-23-112-89-179-200-204 111-26 177-93 200-205Z"
+    fill="#fff"
+  />
+  <path
+    d="M370 562c12 58 47 92 105 105-58 14-93 48-105 106-12-58-46-92-104-106 58-13 92-47 104-105Z"
+    fill="#fff"
+    opacity="0.95"
+  />
 </svg>

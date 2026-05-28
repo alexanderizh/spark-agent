@@ -7,7 +7,7 @@
  *   1. 管理内置 Skill 定义
  *   2. 从数据库加载已安装的 Skill
  *   3. 解析 Skill 的 manifest 并构建完整定义
- *   4. 为 AgentLoop 提供 system prompt 注入
+ *   4. 为 SDK executor 提供 system prompt 注入
  */
 
 import type { SkillItem } from '@spark/protocol'
