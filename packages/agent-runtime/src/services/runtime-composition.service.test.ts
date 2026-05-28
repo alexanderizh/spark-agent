@@ -103,7 +103,7 @@ describe('RuntimeCompositionService', () => {
     expect(result.effectivePrompt.indexOf('Project prompt')).toBeLessThan(result.effectivePrompt.indexOf('Session prompt'))
   })
 
-  it('composes available skill instructions without exposing disabled skills', () => {
+  it('composes available skill catalog without loading full instructions', () => {
     const service = new RuntimeCompositionService(
       makeSkillRepo([
         skillRow({ id: 'skill:review', name: 'Review', enabled: 1 }),
@@ -121,8 +121,9 @@ describe('RuntimeCompositionService', () => {
     })
 
     expect(result.systemPrompt).toContain('Base system prompt')
-    expect(result.skillSystemPrompt).toContain('[Available Skills]')
-    expect(result.skillSystemPrompt).toContain('Review instructions')
+    expect(result.skillSystemPrompt).toContain('[Available Skills Catalog]')
+    expect(result.skillSystemPrompt).toContain('Review description')
+    expect(result.skillSystemPrompt).not.toContain('Review instructions')
     expect(result.skillSystemPrompt).not.toContain('Hidden instructions')
   })
 })

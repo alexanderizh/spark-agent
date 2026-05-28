@@ -1,7 +1,6 @@
 import type { SkillItem } from '@spark/protocol'
 import type { SettingsRepository, SkillRepository } from '@spark/storage'
 import { SkillLoader, type SkillInfo } from '../skills/skill-loader.js'
-import { buildSkillSystemPrompt } from '../skills/types.js'
 
 export type RuntimeLayerScope = 'system' | 'agent' | 'project' | 'session'
 
@@ -178,20 +177,19 @@ export class RuntimeCompositionService {
       const info = this.loader.getSkill(skillId)
       if (!info?.definition) continue
       const def = info.definition
-      const instruction = buildSkillSystemPrompt(def, {})
       sections.push([
         `### ${def.name} (${def.id})`,
         `Description: ${def.description}`,
         def.tags.length > 0 ? `Tags: ${def.tags.join(', ')}` : '',
         def.requiredTools.length > 0 ? `Required tools: ${def.requiredTools.join(', ')}` : '',
-        instruction.trim() ? `Instructions:\n${instruction}` : '',
       ].filter(Boolean).join('\n'))
     }
 
     if (sections.length === 0) return ''
     return [
-      '[Available Skills]',
-      'The following skills are visible in this runtime. Use a skill only when the task naturally matches it; do not mention or use skills that are not listed here.',
+      '[Available Skills Catalog]',
+      'The following skills are discoverable in this runtime. This catalog is only metadata, not the full skill instructions.',
+      'When a task naturally matches a listed skill and the skill_lookup tool is available, load its instructions before following that skill. If a skill was explicitly selected for this turn, its full instructions appear separately and take precedence.',
       sections.join('\n\n'),
     ].join('\n\n')
   }

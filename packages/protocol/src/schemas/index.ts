@@ -49,6 +49,8 @@ export const SessionCreateRequestSchema = z.object({
 export const SessionSendTurnRequestSchema = z.object({
   sessionId: SessionIdSchema,
   message: z.string().min(1).max(100_000),
+  skillId: z.string().min(1).max(160).optional(),
+  skillParams: z.record(z.string(), z.unknown()).optional(),
   attachments: z
     .array(
       z.object({

@@ -60,6 +60,10 @@ export interface CommandResult {
   forwardToAgent?: boolean
   /** Optional follow-up user message to enqueue after the command result is shown. */
   followUpPrompt?: string
+  /** Optional Skill ID whose full instructions should be forced into the follow-up turn. */
+  followUpSkillId?: string
+  /** Optional parameters for the forced follow-up skill. */
+  followUpSkillParams?: Record<string, unknown>
 }
 
 export interface CheckpointSnapshot {
@@ -119,6 +123,7 @@ export interface CommandDeps {
   getSessionUsage?: (id: string) => { totalInputTokens: number; totalOutputTokens: number; totalCost: number } | null
   listSessionCheckpoints?: (id: string) => CheckpointSnapshot[]
   restoreCheckpoint?: (sessionId: string, checkpointRef: string) => Promise<CheckpointRestoreResult>
+  listSkills?: (query?: string) => Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }>
 }
 
 /** 命令面板展示用的轻量类型 */
@@ -1222,10 +1227,49 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     risk: 'low',
     hasSubcommands: true,
     usage: '/skill <list|search|install|enable|disable|run>',
-    handler: async (cmd, _ctx, _deps) => {
+    handler: async (cmd, _ctx, deps) => {
       const subcommand = cmd.args[0] || cmd.subcommand
       if (subcommand === 'list') {
-        return { success: true, message: '请使用 Skills 管理页面查看已安装的技能。' }
+        const skills = deps.listSkills?.() ?? []
+        if (skills.length === 0) return { success: true, message: '当前没有可用 Skill。' }
+        return {
+          success: true,
+          message: [
+            '**可用 Skills**',
+            '',
+            ...skills.map((skill) => `- \`${skill.id}\` — ${skill.name}${skill.description ? `：${skill.description}` : ''}`),
+          ].join('\n'),
+          data: { skills },
+        }
+      }
+      if (subcommand === 'search') {
+        const query = cmd.args.slice(1).join(' ').trim()
+        const skills = deps.listSkills?.(query) ?? []
+        return {
+          success: true,
+          message: skills.length > 0
+            ? [
+                `**Skill 搜索结果** ${query ? `\`${query}\`` : ''}`,
+                '',
+                ...skills.map((skill) => `- \`${skill.id}\` — ${skill.name}${skill.description ? `：${skill.description}` : ''}`),
+              ].join('\n')
+            : `没有找到匹配的 Skill：\`${query}\``,
+          data: { skills },
+        }
+      }
+      if (subcommand === 'run' || subcommand === 'use') {
+        const skillId = cmd.args[1]
+        if (!skillId) return { success: false, message: '用法：/skill run <skill-id> [task]' }
+        const skill = deps.listSkills?.().find((item) => item.id === skillId)
+        if (skill == null) return { success: false, message: `Skill 不可用或不存在：\`${skillId}\`` }
+        const followUpPrompt = cmd.args.slice(2).join(' ').trim() || `Use the selected skill ${skillId} for the current task.`
+        return {
+          success: true,
+          message: `已选择 Skill \`${skillId}\`。下一轮将强制加载该 Skill 的完整指令。`,
+          data: { skillId },
+          followUpPrompt,
+          followUpSkillId: skillId,
+        }
       }
       return {
         success: true,

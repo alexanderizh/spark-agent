@@ -48,8 +48,9 @@ describe('ProjectContextService', () => {
     expect(result.systemPrompt).toContain('[Project Instruction Files]')
     expect(result.systemPrompt).toContain('[Project Agent Definitions]')
     expect(result.systemPrompt).toContain('Architecture reviewer')
-    expect(result.skillSystemPrompt).toContain('[Project Local Skills]')
+    expect(result.skillSystemPrompt).toContain('[Project Local Skills Catalog]')
     expect(result.skillSystemPrompt).toContain('Review Skill')
+    expect(result.skillSystemPrompt).not.toContain('Check regressions and missing tests.')
     expect(result.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
       expect.objectContaining({ kind: 'skill', path: '.claude/skills/review/SKILL.md', included: true }),

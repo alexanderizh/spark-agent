@@ -144,6 +144,22 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('Code Agent')
   })
 
+  it('/skill run selects a skill for the follow-up turn', async () => {
+    const result = await registry.execute(parse('/skill run skill:review inspect changes'), ctx, makeDeps({
+      listSkills: () => [{
+        id: 'skill:review',
+        name: 'Review',
+        description: 'Review changes',
+        tags: ['review'],
+        enabled: true,
+      }],
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.followUpSkillId).toBe('skill:review')
+    expect(result.followUpPrompt).toBe('inspect changes')
+  })
+
   it('/validate lists and runs workspace validation scripts', async () => {
     const cwd = makeWorkspace({ typecheck: 'tsc --noEmit', dev: 'vite' })
     try {

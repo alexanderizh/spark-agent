@@ -190,7 +190,7 @@ function makeSettingsRepo(overrides = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  vi.mocked(ToolRegistry).mockImplementation(() => ({}) as never)
+  vi.mocked(ToolRegistry).mockImplementation(() => ({ register: vi.fn() }) as never)
   vi.mocked(SkillRepository).mockImplementation(() => makeSkillRepo() as never)
   vi.mocked(SettingsRepository).mockImplementation(() => makeSettingsRepo() as never)
 })
@@ -391,13 +391,36 @@ describe('SessionService.sendTurn', () => {
       'hello',
       expect.objectContaining({
         systemPrompt: expect.stringContaining('System prompt from settings'),
-        skillSystemPrompt: expect.stringContaining('Review instructions'),
+        skillSystemPrompt: expect.stringContaining('[Available Skills Catalog]'),
       }),
     )
     const config = vi.mocked(loop.executeTurn).mock.calls[0]?.[3] as { systemPrompt?: string; skillSystemPrompt?: string }
     expect(config.systemPrompt).toContain('Project prompt from settings')
     expect(config.systemPrompt).toContain('Session prompt from settings')
-    expect(config.skillSystemPrompt).toContain('[Available Skills]')
+    expect(config.skillSystemPrompt).toContain('Review description')
+    expect(config.skillSystemPrompt).not.toContain('Review instructions')
+  })
+
+  it('forces full skill instructions when a skill is explicitly selected for the turn', async () => {
+    const sessionRepo = makeSessionRepo()
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeOpenAIProviderRepo()
+    const rulesRepo = makeRulesRepo()
+    const loop = makeLoop()
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const svc = new SessionService(mockDb, vi.fn())
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'review this', skillId: 'skill:review' })
+
+    const config = vi.mocked(loop.executeTurn).mock.calls[0]?.[3] as { skillSystemPrompt?: string }
+    expect(config.skillSystemPrompt).toContain('Review instructions')
   })
 
   it('passes prior session messages and tool context into direct model turns', async () => {

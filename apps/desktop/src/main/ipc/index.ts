@@ -152,7 +152,12 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:send-turn', async (req) => {
     log.info(`session:send-turn requested, sessionId=${req.sessionId}`)
-    return getSessionService().sendTurn({ sessionId: req.sessionId, message: req.message })
+    return getSessionService().sendTurn({
+      sessionId: req.sessionId,
+      message: req.message,
+      ...(req.skillId != null ? { skillId: req.skillId } : {}),
+      ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
+    })
   })
 
   typedIpcHandle('session:get-queue', async (req) => {

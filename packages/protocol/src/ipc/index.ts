@@ -59,6 +59,8 @@ export interface SessionCreateResponse {
 export interface SessionSendTurnRequest {
   sessionId: SessionId
   message: string
+  skillId?: string
+  skillParams?: Record<string, unknown>
   attachments?: Array<{
     type: 'image' | 'file'
     path: string

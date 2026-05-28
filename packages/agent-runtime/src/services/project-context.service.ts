@@ -325,11 +325,10 @@ function formatSkillPrompt(docs: Array<MarkdownDoc & { relativePath: string }>):
     `### ${doc.name} (project:${doc.relativePath})`,
     `Source: ${doc.relativePath}`,
     doc.description ? `Description: ${doc.description}` : '',
-    doc.body ? `Instructions:\n${doc.body}` : '',
   ].filter(isNonEmptyString).join('\n'))
   return [
-    '[Project Local Skills]',
-    'These skills are defined by the current workspace. Use them when the task naturally matches their description.',
+    '[Project Local Skills Catalog]',
+    'These skills are defined by the current workspace. This catalog is metadata only; load the referenced SKILL.md before following a project-local skill.',
     sections.join('\n\n'),
   ].join('\n\n')
 }

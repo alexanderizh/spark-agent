@@ -36,6 +36,7 @@ import { McpService } from './mcp-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
+import { SkillLoader, type SkillInfo } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
 import { createLogger, resolveSoftContextLimit } from '@spark/shared'
@@ -191,6 +192,7 @@ export class SessionService {
         workspacePath,
         checkpointRef,
       }),
+      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), query),
     }
 
     const ctx = {
@@ -264,6 +266,7 @@ export class SessionService {
         workspacePath,
         checkpointRef,
       }),
+      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), query),
     }
 
     const ctx = {
@@ -317,7 +320,12 @@ export class SessionService {
     }
 
     if (result.followUpPrompt != null && result.followUpPrompt.trim().length > 0) {
-      await this.sendTurn({ sessionId: params.sessionId, message: result.followUpPrompt })
+      await this.sendTurn({
+        sessionId: params.sessionId,
+        message: result.followUpPrompt,
+        ...(result.followUpSkillId != null ? { skillId: result.followUpSkillId } : {}),
+        ...(result.followUpSkillParams != null ? { skillParams: result.followUpSkillParams } : {}),
+      })
     }
 
     return { isCommand: true, forwardToAgent: false }
@@ -444,7 +452,6 @@ export class SessionService {
     let explicitSkillPrompt: string | undefined
     const skillRepo = new SkillRepository(this.db)
     if (skillId != null) {
-      const { SkillLoader } = await import('../skills/skill-loader.js')
       const loader = new SkillLoader(skillRepo)
       const sp = loader.buildSystemPrompt(skillId, skillParams ?? {})
       if (sp) explicitSkillPrompt = sp
@@ -513,6 +520,7 @@ export class SessionService {
     const adapter = createAdapter(agentAdapter, apiKind)
 
     const tools = new ToolRegistry()
+    registerSkillLookupTool(tools, skillRepo, runtimeContext.skillConfig.effectiveSkillIds)
 
     // Register MCP tools from connected servers
     try {
@@ -1380,6 +1388,116 @@ function joinPromptSections(...sections: Array<string | undefined>): string | un
     .filter((section): section is string => section != null && section.length > 0)
     .join('\n\n')
   return joined.length > 0 ? joined : undefined
+}
+
+function registerSkillLookupTool(tools: ToolRegistry, skillRepo: SkillRepository, visibleSkillIds: string[]): void {
+  const loader = new SkillLoader(skillRepo)
+  const visibleIds = new Set(visibleSkillIds)
+  tools.register({
+    definition: {
+      name: 'skill_lookup',
+      description: 'Search visible skills or load one visible skill instruction by id',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search text for skill name, description, or tag' },
+          skillId: { type: 'string', description: 'Exact skill id to load' },
+          includeInstructions: { type: 'boolean', description: 'Return full instructions for skillId' },
+        },
+      },
+    },
+    async execute(_ctx, input) {
+      const start = Date.now()
+      const skillId = typeof input['skillId'] === 'string' ? input['skillId'].trim() : ''
+      if (skillId.length > 0) {
+        if (!visibleIds.has(skillId)) {
+          return { status: 'error', error: `Skill is not visible in this runtime: ${skillId}`, durationMs: Date.now() - start }
+        }
+        const info = loader.getSkill(skillId)
+        if (!info?.definition) {
+          return { status: 'error', error: `Skill not found: ${skillId}`, durationMs: Date.now() - start }
+        }
+        const item = toSkillLookupItem(info)
+        return {
+          status: 'success',
+          output: {
+            ...item,
+            instructions: input['includeInstructions'] === false ? undefined : loader.buildSystemPrompt(skillId, {}),
+          },
+          durationMs: Date.now() - start,
+        }
+      }
+
+      const query = typeof input['query'] === 'string' ? input['query'] : ''
+      const matches = loader
+        .search(query)
+        .filter((info) => {
+          const id = info.definition?.id ?? info.dbRecord?.id
+          return id != null && visibleIds.has(id)
+        })
+        .map(toSkillLookupItem)
+      return {
+        status: 'success',
+        output: {
+          skills: matches,
+          note: 'Call skill_lookup with skillId and includeInstructions=true to load full instructions for one skill.',
+        },
+        durationMs: Date.now() - start,
+      }
+    },
+  })
+}
+
+function toSkillLookupItem(info: SkillInfo): Record<string, unknown> {
+  const def = info.definition
+  if (def != null) {
+    return {
+      id: def.id,
+      name: def.name,
+      description: def.description,
+      tags: def.tags,
+      requiredTools: def.requiredTools,
+      source: info.builtin ? 'builtin' : 'installed',
+    }
+  }
+  return {
+    id: info.dbRecord?.id,
+    name: info.dbRecord?.name,
+    description: '',
+    tags: [],
+    requiredTools: [],
+    source: 'installed',
+  }
+}
+
+function listSkillSummaries(skillRepo: SkillRepository, query?: string): Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }> {
+  const loader = new SkillLoader(skillRepo)
+  const infos = query?.trim() ? loader.search(query) : loader.listEnabled()
+  return infos
+    .filter((info) => {
+      if (info.builtin) return true
+      return info.dbRecord?.enabled === true
+    })
+    .map((info) => {
+      const def = info.definition
+      if (def != null) {
+        return {
+          id: def.id,
+          name: def.name,
+          description: def.description,
+          tags: def.tags,
+          enabled: true,
+        }
+      }
+      return {
+        id: info.dbRecord?.id ?? '',
+        name: info.dbRecord?.name ?? '',
+        description: '',
+        tags: [],
+        enabled: info.dbRecord?.enabled === true,
+      }
+    })
+    .filter((skill) => skill.id.length > 0)
 }
 
 function parseAgentEvent(json: string): AgentEvent | null {
