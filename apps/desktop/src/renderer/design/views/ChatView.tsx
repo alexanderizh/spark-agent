@@ -805,7 +805,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           branchState={branchState}
           contextInputTokens={contextInputTokens}
           contextUsage={contextUsage}
-          isWorking={agentStatus.length > 0 || activeSession?.status === 'running'}
+          isWorking={activeSession?.status === 'running'}
           approvalRequest={approvalRequest}
           {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
           onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}

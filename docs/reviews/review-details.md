@@ -1,5 +1,18 @@
 I'll conduct a comprehensive capability review of this project. Let me start by exploring the codebase architecture and all key components in parallel.
 
+## 2026-05-28 Plan Mode / SDK_ERROR 修复复盘
+
+本次补齐了两处和当前代码不一致的运行态风险记录:
+
+- **第二轮消息 `SDK_ERROR`**: 代码曾在原生 Claude 会话第二轮开始启用 Claude SDK `resume`。实际桌面端表现是新会话第一轮可用，第二轮可能触发 `Claude Code process exited with code 1`，导致会话进入错误态并让后续发送体验异常。当前已临时关闭 SDK resume，且在 resume 关闭时为每个 fresh turn 生成唯一 SDK session id，继续依赖 Spark 已持久化的 conversation history prompt 保持多轮上下文连续性。
+- **Plan mode 双审批 UI**: plan 控制工具可能以 `ExitPlanMode` 或 `exit_plan_mode` 等不同命名进入 SDK permission callback。此前只放行 PascalCase，蛇形命名会误触发底部 inline 工具权限卡，同时 `plan_proposed` 又会触发中央计划审批弹窗。当前已统一放行 plan/user-question 控制工具别名，避免同一次计划审批出现两套授权入口。
+- **停止生成后的发送状态**: Composer 的工作中状态不再由非空展示文案推断，而只跟随 session 的真实 `running` 状态，避免 terminal/error 状态残留时把发送按钮误当成停止按钮。
+
+验证:
+
+- `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/sdk/claude-sdk-executor.test.ts src/__tests__/services/session.service.test.ts` 通过。
+- `pnpm --filter @spark/desktop test:unit -- src/renderer/tests/renderer.test.ts` 当前被既有 sidebar 持久化用例阻塞: `toggles the primary sidebar from the bottom control and persists the state` 期望 sidebar expanded，但实际为 collapsed；其余 desktop 测试通过，且该失败点不在本次改动路径。
+
 ## 2026-05-28 Session SDK 权限策略复审
 
 本轮复审针对 Claude Agent SDK 执行路径的权限策略补齐。

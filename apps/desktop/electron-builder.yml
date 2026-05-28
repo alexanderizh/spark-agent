@@ -1,5 +1,7 @@
 appId: com.spark-agent.desktop
 productName: Spark Agent
+npmRebuild: true
+buildDependenciesFromSource: false
 directories:
   buildResources: resources
   output: dist

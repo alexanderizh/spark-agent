@@ -4,6 +4,7 @@ import {
   buildConversationHistoryPromptFromEvents,
   createInterruptedTurnEvents,
   isSdkResumeSafe,
+  makeSdkRuntimeSessionId,
 } from '../../services/session.service.js'
 
 function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEvent, 'id' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
@@ -66,12 +67,12 @@ describe('SessionService recovery helpers', () => {
     expect(prompt).not.toContain('completed')
   })
 
-  it('only allows SDK resume for native Claude sessions', () => {
+  it('keeps SDK resume disabled while persisted history provides continuity', () => {
     expect(isSdkResumeSafe({
       providerType: 'anthropic',
       model: 'claude-sonnet-4-5',
       agentAdapter: 'claude-sdk',
-    })).toBe(true)
+    })).toBe(false)
 
     expect(isSdkResumeSafe({
       providerType: 'anthropic',
@@ -86,5 +87,16 @@ describe('SessionService recovery helpers', () => {
       model: 'glm-5',
       agentAdapter: 'claude-sdk',
     })).toBe(false)
+  })
+
+  it('generates unique SDK session ids for fresh turns when resume is disabled', () => {
+    const stable = makeSdkRuntimeSessionId('spark-session', 'provider-1', 'glm-5', 'claude-sdk')
+    const firstTurn = makeSdkRuntimeSessionId('spark-session', 'provider-1', 'glm-5', 'claude-sdk', 'turn-1')
+    const secondTurn = makeSdkRuntimeSessionId('spark-session', 'provider-1', 'glm-5', 'claude-sdk', 'turn-2')
+
+    expect(firstTurn).not.toBe(stable)
+    expect(secondTurn).not.toBe(stable)
+    expect(secondTurn).not.toBe(firstTurn)
+    expect(firstTurn).toMatch(/^[0-9a-f-]{36}$/)
   })
 })

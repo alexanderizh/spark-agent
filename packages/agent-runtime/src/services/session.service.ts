@@ -73,6 +73,8 @@ const HISTORY_CONTEXT_ENTRY_LIMIT = 40
 const HISTORY_CONTEXT_MAX_CHARS = 24_000
 const HISTORY_CONTEXT_ENTRY_MAX_CHARS = 4_000
 const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
+// Keep SDK resume opt-in until the Claude Code child process can recover cleanly from resume failures.
+const ENABLE_CLAUDE_SDK_RESUME = false
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>()  // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
@@ -470,7 +472,7 @@ export class SessionService {
 
     const agentAdapter = getAgentAdapterFromSession(session.agent_adapter, session.chat_mode, provider.provider_type)
     const adapterKind = (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') ? 'claude-sdk' : 'codex'
-    const sdkSessionId = makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter)
+    const stableSdkSessionId = makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter)
     const sdkResumeSafe = isSdkResumeSafe({
       providerType: provider.provider_type,
       model,
@@ -483,7 +485,10 @@ export class SessionService {
       && previousPromptSnapshot.adapterKind === adapterKind
       && previousPromptSnapshot.model === model
       && previousPromptSnapshot.providerProfileId === session.provider_profile_id
-      && previousPromptSnapshot.sdkSessionId === sdkSessionId
+      && previousPromptSnapshot.sdkSessionId === stableSdkSessionId
+    const sdkSessionId = sdkResumeSafe
+      ? stableSdkSessionId
+      : makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter, turnId)
     const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
     const permissionMode = this.getEffectivePermissionMode(sessionId, agentAdapter, storedPermissionMode)
 
@@ -498,6 +503,7 @@ export class SessionService {
       agentAdapter,
       adapterKind,
       sdkSessionId,
+      stableSdkSessionId,
       sdkResumeSafe,
       existingEventCount,
       canResumeSdkSession,
@@ -1579,10 +1585,16 @@ function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | und
   return Object.keys(patch).length > 0 ? patch : undefined
 }
 
-function makeSdkRuntimeSessionId(sessionId: string, providerProfileId: string, model: string, agentAdapter: AgentAdapterKind): string {
+export function makeSdkRuntimeSessionId(
+  sessionId: string,
+  providerProfileId: string,
+  model: string,
+  agentAdapter: AgentAdapterKind,
+  turnId?: string,
+): string {
   const hash = crypto
     .createHash('sha256')
-    .update([sessionId, providerProfileId, model, agentAdapter].join('\0'))
+    .update([sessionId, providerProfileId, model, agentAdapter, turnId ?? 'stable'].join('\0'))
     .digest()
   hash[6] = ((hash[6] ?? 0) & 0x0f) | 0x40
   hash[8] = ((hash[8] ?? 0) & 0x3f) | 0x80
@@ -1596,6 +1608,8 @@ export function isSdkResumeSafe(params: {
   model: string
   agentAdapter: AgentAdapterKind
 }): boolean {
+  if (!ENABLE_CLAUDE_SDK_RESUME) return false
+
   if (params.agentAdapter !== 'claude' && params.agentAdapter !== 'claude-sdk') return false
   if (!params.model.toLowerCase().startsWith('claude')) return false
   if (params.providerType !== 'anthropic') return false

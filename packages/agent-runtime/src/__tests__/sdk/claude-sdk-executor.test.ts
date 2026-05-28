@@ -177,6 +177,35 @@ describe('ClaudeSDKExecutor', () => {
     })
   })
 
+  it('auto-allows SDK plan and user-question control tool aliases', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => false)
+    const input = { plan: '# Plan' }
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      approvalCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    await expect(options.canUseTool?.('exit_plan_mode', input, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-plan',
+    })).resolves.toEqual({
+      behavior: 'allow',
+      updatedInput: input,
+      toolUseID: 'tool-plan',
+      decisionClassification: 'user_temporary',
+    })
+    await expect(options.canUseTool?.('AskUserQuestion', { question: 'Proceed?' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-question',
+    })).resolves.toEqual(expect.objectContaining({ behavior: 'allow' }))
+    expect(approvalCallback).not.toHaveBeenCalled()
+  })
+
   it('lets SDK-native auto and bypass modes own tool permissions without Spark canUseTool', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

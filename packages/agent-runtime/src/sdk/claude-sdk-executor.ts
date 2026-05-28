@@ -370,9 +370,13 @@ function denyTool(message: string, toolUseID: string | undefined): SDKPermission
 }
 
 function isAlwaysAllowedControlTool(toolName: string): boolean {
-  return toolName === 'ExitPlanMode'
-    || toolName === 'EnterPlanMode'
-    || toolName === 'AskUserQuestion'
+  const normalized = toolName.replace(/-/g, '_').toLowerCase()
+  return normalized === 'exitplanmode'
+    || normalized === 'exit_plan_mode'
+    || normalized === 'enterplanmode'
+    || normalized === 'enter_plan_mode'
+    || normalized === 'askuserquestion'
+    || normalized === 'ask_user_question'
 }
 
 function shouldUseSparkPermissionCallback(permissionMode: SDKExecutorConfig['permissionMode']): boolean {
