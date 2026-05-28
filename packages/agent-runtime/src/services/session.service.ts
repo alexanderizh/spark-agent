@@ -366,6 +366,9 @@ export class SessionService {
   }
 
   listCommands(): CommandListItem[] {
+    // Dynamically register enabled skills as Layer 3 commands
+    const skills = listSkillSummaries(new SkillRepository(this.db))
+    this.commandRegistry.registerSkillCommands(skills)
     return this.commandRegistry.listItems()
   }
 

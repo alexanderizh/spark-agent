@@ -141,6 +141,21 @@ export interface CommandListItem {
 }
 
 /* ============================================================
+   Helpers
+   ============================================================ */
+
+/** Convert a skill name to a slug suitable for a slash command. */
+function slugify(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .trim()
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+}
+
+/* ============================================================
    Command Registry
    ============================================================ */
 
@@ -161,6 +176,57 @@ export class CommandRegistry {
     // Index aliases for lookup
     for (const alias of def.aliases) {
       this.aliasIndex.set(alias, def.name)
+    }
+  }
+
+  /** Remove all Layer 3 skill commands (called before re-registration) */
+  clearSkillCommands(): void {
+    for (const [name, def] of this.commands) {
+      if (def.layer === 'skill') {
+        this.commands.delete(name)
+        for (const alias of def.aliases) {
+          this.aliasIndex.delete(alias)
+        }
+      }
+    }
+  }
+
+  /**
+   * Register enabled skills as individual Layer 3 commands.
+   * Each skill becomes `/<skill-name>` with `forwardToAgent` and `followUpSkillId`.
+   */
+  registerSkillCommands(skills: Array<{ id: string; name: string; description: string; tags: string[] }>): void {
+    this.clearSkillCommands()
+    for (const skill of skills) {
+      // Derive command name from skill name (slugified), not from ID which can be numeric
+      const cmdName = slugify(skill.name)
+      if (!cmdName) continue
+      // Skip if command name already taken by Layer 1/2
+      if (this.commands.has(cmdName) && this.commands.get(cmdName)!.layer !== 'skill') continue
+      const skillId = skill.id
+      this.register({
+        id: `skill:${skill.id}`,
+        name: cmdName,
+        aliases: [],
+        layer: 'skill',
+        group: 'skill',
+        description: skill.description || skill.name,
+        scope: 'session' as const,
+        risk: 'none' as const,
+        handler: async (cmd, _ctx, _deps) => {
+          const task = cmd.freeText || cmd.args.join(' ').trim()
+          const followUpPrompt = task.length > 0
+            ? task
+            : `Use the selected skill ${skillId} for the current task.`
+          return {
+            success: true,
+            message: `已选择 Skill \`${skillId}\`。下一轮将强制加载该 Skill 的完整指令。`,
+            data: { skillId },
+            followUpPrompt,
+            followUpSkillId: skillId,
+          }
+        },
+      })
     }
   }
 

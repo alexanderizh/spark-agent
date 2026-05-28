@@ -68,6 +68,104 @@ describe('CommandRegistry', () => {
     expect(items[0]).toHaveProperty('group')
     expect(items[0]).toHaveProperty('risk')
   })
+
+  it('registerSkillCommands adds skills as Layer 3 commands', () => {
+    const registry = createBuiltinRegistry()
+    const beforeCount = registry.list().length
+    registry.registerSkillCommands([
+      { id: 'builtin:code-review', name: 'Code Review', description: 'Review code quality', tags: ['review'] },
+      { id: 'builtin:translate', name: 'Translate', description: 'Translate text', tags: ['i18n'] },
+    ])
+    const afterCount = registry.list().length
+    expect(afterCount).toBe(beforeCount + 2)
+
+    // Verify the commands are accessible
+    const reviewCmd = registry.get('code-review')
+    expect(reviewCmd).toBeDefined()
+    expect(reviewCmd?.layer).toBe('skill')
+    expect(reviewCmd?.group).toBe('skill')
+    expect(reviewCmd?.description).toBe('Review code quality')
+
+    const translateCmd = registry.get('translate')
+    expect(translateCmd).toBeDefined()
+    expect(translateCmd?.layer).toBe('skill')
+  })
+
+  it('registerSkillCommands skips names that collide with Layer 1/2', () => {
+    const registry = createBuiltinRegistry()
+    const beforeCount = registry.list().length
+    // 'status' is already registered as Layer 1 SDK command
+    registry.registerSkillCommands([
+      { id: 'my:status', name: 'Status', description: 'A skill named status', tags: [] },
+      { id: 'my:other', name: 'Other', description: 'Other skill', tags: [] },
+    ])
+    const afterCount = registry.list().length
+    // 'status' should be skipped (collision), only 'other' added
+    expect(afterCount).toBe(beforeCount + 1)
+    const statusCmd = registry.get('status')
+    expect(statusCmd?.layer).toBe('sdk') // still the original
+  })
+
+  it('registerSkillCommands replaces previous skill commands on re-call', () => {
+    const registry = createBuiltinRegistry()
+    registry.registerSkillCommands([
+      { id: '1', name: 'My Skill A', description: 'First', tags: [] },
+    ])
+    expect(registry.get('my-skill-a')).toBeDefined()
+    // Re-register with different skills
+    registry.registerSkillCommands([
+      { id: '2', name: 'My Skill B', description: 'Second', tags: [] },
+    ])
+    expect(registry.get('my-skill-a')).toBeUndefined()
+    expect(registry.get('my-skill-b')).toBeDefined()
+  })
+
+  it('registerSkillCommands handles numeric skill IDs correctly', () => {
+    const registry = createBuiltinRegistry()
+    // Skills from database can have numeric IDs
+    registry.registerSkillCommands([
+      { id: '1', name: 'Code Review', description: 'Review code', tags: [] },
+      { id: '2', name: 'Translate', description: 'Translate text', tags: [] },
+    ])
+    // Command names should be derived from skill names, not IDs
+    expect(registry.get('1')).toBeUndefined()
+    expect(registry.get('2')).toBeUndefined()
+    expect(registry.get('code-review')).toBeDefined()
+    expect(registry.get('translate')).toBeDefined()
+    expect(registry.get('code-review')?.layer).toBe('skill')
+  })
+
+  it('skill command handler returns followUpSkillId', async () => {
+    const registry = createBuiltinRegistry()
+    registry.registerSkillCommands([
+      { id: 'builtin:code-review', name: 'Code Review', description: 'Review code', tags: ['review'] },
+    ])
+    const cmd = registry.get('code-review')!
+    const result = await cmd.handler(
+      { name: 'code-review', args: [], flags: {}, targets: [], freeText: '' } as any,
+      { sessionId: 'sess-1' },
+      makeDeps(),
+    )
+    expect(result.success).toBe(true)
+    expect(result.followUpSkillId).toBe('builtin:code-review')
+    expect(result.followUpPrompt).toContain('builtin:code-review')
+  })
+
+  it('skill command handler uses freeText as followUpPrompt', async () => {
+    const registry = createBuiltinRegistry()
+    registry.registerSkillCommands([
+      { id: 'builtin:code-review', name: 'Code Review', description: 'Review code', tags: ['review'] },
+    ])
+    const cmd = registry.get('code-review')!
+    const result = await cmd.handler(
+      { name: 'code-review', args: [], flags: {}, targets: [], freeText: 'check the auth module for security issues' } as any,
+      { sessionId: 'sess-1' },
+      makeDeps(),
+    )
+    expect(result.success).toBe(true)
+    expect(result.followUpPrompt).toBe('check the auth module for security issues')
+    expect(result.followUpSkillId).toBe('builtin:code-review')
+  })
 })
 
 describe('Built-in commands', () => {
