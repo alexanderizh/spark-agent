@@ -2244,10 +2244,11 @@ body.sidebar-resizing {
   color: var(--text-muted);
   max-width: 100%;
   min-width: 0;
+  position: relative;
+  z-index: 10;
 }
 .composer-controls {
   flex-wrap: nowrap;
-  overflow: hidden;
 }
 .composer-param-bar .spacer {
   flex: 1;
