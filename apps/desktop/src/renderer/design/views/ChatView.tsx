@@ -2714,6 +2714,16 @@ function AgentMsg({
             retryable={(block as Extract<UIBlock, { kind: 'error' }>).retryable}
           />
         ))}
+        {isStreaming && hasContent && (
+          <div className="agent-running-tail" aria-label="正在运行">
+            <span>正在运行</span>
+            <span className="agent-running-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
+          </div>
+        )}
         {isCancelled && <StoppedMarker />}
         {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} position="left" {...(onDelete ? { onDelete } : {})} />}
       </div>

@@ -46,6 +46,7 @@ const DEFAULT_AGENT_ID = 'code-agent'
 const SKILLS_CATEGORY = 'runtime.skills'
 const DISABLED_SKILLS_CATEGORY = 'runtime.skills.disabled'
 const PROMPTS_CATEGORY = 'runtime.prompts'
+const MAX_SKILL_DESCRIPTION_CHARS = 220
 
 export class RuntimeCompositionService {
   private readonly loader: SkillLoader
@@ -177,20 +178,15 @@ export class RuntimeCompositionService {
       const info = this.loader.getSkill(skillId)
       if (!info?.definition) continue
       const def = info.definition
-      sections.push([
-        `### ${def.name} (${def.id})`,
-        `Description: ${def.description}`,
-        def.tags.length > 0 ? `Tags: ${def.tags.join(', ')}` : '',
-        def.requiredTools.length > 0 ? `Required tools: ${def.requiredTools.join(', ')}` : '',
-      ].filter(Boolean).join('\n'))
+      sections.push(`- ${def.id} — ${def.name}: ${truncateInline(def.description, MAX_SKILL_DESCRIPTION_CHARS)}`)
     }
 
     if (sections.length === 0) return ''
     return [
       '[Available Skills Catalog]',
-      'The following skills are discoverable in this runtime. This catalog is only metadata, not the full skill instructions.',
-      'Use these summaries to decide whether a skill should be explicitly selected. If a skill was explicitly selected for this turn, its full instructions appear separately and take precedence.',
-      sections.join('\n\n'),
+      'Metadata only. Each entry contains only skill id, name, and description; full instructions are not loaded here.',
+      'Decide from this catalog whether a skill is useful. You can choose to load the skills that are helpful for your task execution in the future, and write down in the conversation what skills you have used.',
+      sections.join('\n'),
     ].join('\n\n')
   }
 
@@ -256,4 +252,10 @@ function uniqueStrings(values: Iterable<string>): string[] {
 
 function isString(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0
+}
+
+function truncateInline(value: string, maxChars: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxChars) return normalized
+  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`
 }

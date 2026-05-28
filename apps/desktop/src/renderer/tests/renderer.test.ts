@@ -317,6 +317,110 @@ describe('Renderer Smoke Tests', () => {
     expect(invoke).toHaveBeenCalledWith('session:cancel', { sessionId: 'session-1' })
   })
 
+  it('shows a running indicator at the bottom of a streaming agent message with content', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const historyEvents = [
+      {
+        id: 'assistant-1',
+        type: 'assistant_message',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-05-27T00:00:00.000Z',
+        seq: 1,
+        mode: 'delta',
+        content: '正在处理项目文件',
+        provider: 'codex',
+        isFinal: false,
+      },
+      {
+        id: 'status-1',
+        type: 'agent_status',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-05-27T00:00:01.000Z',
+        seq: 2,
+        status: 'thinking',
+      },
+    ]
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Running task',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'running',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 1,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: historyEvents, hasMore: false }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('正在处理项目文件')
+    })
+    const runningTail = container.querySelector('.agent-running-tail')
+    expect(runningTail).not.toBeNull()
+    expect(runningTail?.textContent).toContain('正在运行')
+  })
+
   it('clears the composer queue loading state from queue snapshots even when the session list is stale', async () => {
     const streamHandlers = new Map<string, Array<(payload: unknown) => void>>()
     const invoke = vi.fn(async (channel: string) => {

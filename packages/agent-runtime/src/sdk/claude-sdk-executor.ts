@@ -32,11 +32,18 @@ import { resolveModelContextWindow, resolveSoftContextLimit, resolveSoftContextL
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
-import type { SDKExecutorConfig, SDKQueryFunction, SDKQueryOptions } from './types.js'
+import type { SDKExecutorConfig, SDKPermissionResult, SDKQueryFunction, SDKQueryOptions } from './types.js'
 
 type SDKModule = { query: SDKQueryFunction }
 
 const CLAUDE_AGENT_SDK_PACKAGE = '@anthropic-ai/claude-agent-sdk'
+
+const SDK_HOST_TOOL_INSTRUCTIONS = [
+  'SDK host tool rules:',
+  '- When using AskUserQuestion, every question must include an options array with 2-4 choices. Each option must include label and description. Do not ask open-ended questions through AskUserQuestion.',
+  '- AskUserQuestion option previews may be HTML fragments; keep them self-contained when included.',
+  '- ExitPlanMode plans are rendered as Markdown for the user, so provide the plan text directly in the plan field.',
+].join('\n')
 
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
@@ -164,6 +171,10 @@ export class ClaudeSDKExecutor {
       ...(mergedPerms.allowedTools.length > 0 ? { allowedTools: mergedPerms.allowedTools } : {}),
       ...(mergedPerms.disallowedTools.length > 0 ? { disallowedTools: mergedPerms.disallowedTools } : {}),
       ...(config.mcpServers != null ? { mcpServers: config.mcpServers } : {}),
+      skills: config.nativeSkills ?? [],
+      toolConfig: {
+        askUserQuestion: { previewFormat: 'html' },
+      },
 
       maxTurns: config.maxTurnCount ?? 25,
       ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
@@ -178,16 +189,20 @@ export class ClaudeSDKExecutor {
         canUseTool: async (
           toolName: string,
           input: Record<string, unknown>,
-        ): Promise<{ behavior: 'allow' } | { behavior: 'deny'; message: string }> => {
+          callbackOptions,
+        ): Promise<SDKPermissionResult> => {
           try {
+            if (isAlwaysAllowedControlTool(toolName)) {
+              return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+            }
             const approvalCallback = config.approvalCallback
-            if (approvalCallback == null) return { behavior: 'deny', message: 'Permission check failed' }
+            if (approvalCallback == null) return denyTool('Permission check failed', callbackOptions.toolUseID)
             const allowed = await approvalCallback(sessionId, toolName, input)
             return allowed
-              ? { behavior: 'allow' }
-              : { behavior: 'deny', message: 'User denied tool execution' }
+              ? allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+              : denyTool('User denied tool execution', callbackOptions.toolUseID)
           } catch {
-            return { behavior: 'deny', message: 'Permission check failed' }
+            return denyTool('Permission check failed', callbackOptions.toolUseID)
           }
         },
       } : {}),
@@ -252,7 +267,7 @@ function isTerminalAgentStatus(status: AgentStatusValue): boolean {
 }
 
 function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefined {
-  const sections: string[] = []
+  const sections: string[] = [SDK_HOST_TOOL_INSTRUCTIONS]
 
   if (config.skillSystemPrompt?.trim()) {
     sections.push(config.skillSystemPrompt)
@@ -262,8 +277,35 @@ function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefin
     sections.push(config.systemPrompt)
   }
 
-  if (sections.length === 0) return undefined
   return sections.join('\n\n')
+}
+
+function allowTool(
+  input: Record<string, unknown>,
+  toolUseID: string | undefined,
+  decisionClassification: SDKPermissionResult['decisionClassification'],
+): SDKPermissionResult {
+  return {
+    behavior: 'allow',
+    updatedInput: input,
+    ...(toolUseID != null ? { toolUseID } : {}),
+    ...(decisionClassification != null ? { decisionClassification } : {}),
+  }
+}
+
+function denyTool(message: string, toolUseID: string | undefined): SDKPermissionResult {
+  return {
+    behavior: 'deny',
+    message,
+    ...(toolUseID != null ? { toolUseID } : {}),
+    decisionClassification: 'user_reject',
+  }
+}
+
+function isAlwaysAllowedControlTool(toolName: string): boolean {
+  return toolName === 'ExitPlanMode'
+    || toolName === 'EnterPlanMode'
+    || toolName === 'AskUserQuestion'
 }
 
 function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig): number {

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
-import { basename, extname, join, relative, resolve } from 'node:path'
+import { basename, extname, isAbsolute, join, relative, resolve } from 'node:path'
 
 export interface ProjectContextSource {
   kind: 'rule' | 'skill' | 'agent'
@@ -33,6 +33,13 @@ export interface ProjectContextOptions {
   budgetTokens?: number
 }
 
+export interface ProjectSkillSummary {
+  id: string
+  name: string
+  description: string
+  relativePath: string
+}
+
 interface MarkdownDoc {
   name: string
   description: string
@@ -44,6 +51,7 @@ interface MarkdownDoc {
 const MAX_FILE_CHARS = 20_000
 const MAX_PROMPT_CHARS = 80_000
 const MIN_PARTIAL_DOC_TOKENS = 200
+const MAX_SKILL_DESCRIPTION_CHARS = 220
 const DEFAULT_BUDGET_BY_MODE: Record<ContextMode, number> = {
   minimal: 2_000,
   'project-smart': 30_000,
@@ -119,6 +127,30 @@ export class ProjectContextService {
       },
     }
   }
+
+  listSkillSummaries(rootPath: string | undefined): ProjectSkillSummary[] {
+    if (rootPath == null || rootPath.trim().length === 0) return []
+    const root = resolve(rootPath)
+    if (!safeStat(root)?.isDirectory()) return []
+    return discoverSkillDocs(root).map((doc) => toProjectSkillSummary(doc))
+  }
+
+  buildSkillSystemPrompt(rootPath: string | undefined, skillId: string): string | null {
+    const relativePath = parseProjectSkillId(skillId)
+    if (relativePath == null || rootPath == null || rootPath.trim().length === 0) return null
+    const root = resolve(rootPath)
+    const skillFilePath = resolve(root, relativePath)
+    if (!isInsideRoot(root, skillFilePath) || basename(skillFilePath).toLowerCase() !== 'skill.md') return null
+    const doc = toProjectDoc(root, skillFilePath, basename(resolve(skillFilePath, '..')))
+    if (doc == null) return null
+    return [
+      `[Selected Project Skill: ${doc.name}]`,
+      `Skill: ${toProjectSkillId(doc.relativePath)}`,
+      `Source: ${doc.relativePath}`,
+      'This project-local skill was explicitly selected for this turn; its full instructions are loaded below.',
+      doc.body,
+    ].join('\n\n')
+  }
 }
 
 function emptyContext(): ProjectContext {
@@ -152,7 +184,7 @@ function discoverRuleDocs(root: string): Array<MarkdownDoc & { relativePath: str
 function discoverSkillDocs(root: string): Array<MarkdownDoc & { relativePath: string }> {
   return SKILL_DIR_PATHS
     .flatMap((path) => discoverSkillFiles(join(root, path)))
-    .map((filePath) => toProjectDoc(root, filePath, basename(resolve(filePath, '..'))))
+    .map((filePath) => toProjectSkillDoc(root, filePath, basename(resolve(filePath, '..'))))
     .filter((doc): doc is MarkdownDoc & { relativePath: string } => doc != null)
 }
 
@@ -199,6 +231,16 @@ function toProjectDoc(root: string, filePath: string, fallbackName: string): (Ma
     relativePath: toPosix(relative(root, filePath)),
     estimatedTokens: estimateTokens(parsed.body),
     truncated: raw.length >= MAX_FILE_CHARS,
+  }
+}
+
+function toProjectSkillDoc(root: string, filePath: string, fallbackName: string): (MarkdownDoc & { relativePath: string }) | null {
+  const doc = toProjectDoc(root, filePath, fallbackName)
+  if (doc == null) return null
+  const summary = `${doc.name}\n${doc.description}`
+  return {
+    ...doc,
+    estimatedTokens: estimateTokens(summary),
   }
 }
 
@@ -321,15 +363,15 @@ function formatRulePrompt(docs: Array<MarkdownDoc & { relativePath: string }>): 
 
 function formatSkillPrompt(docs: Array<MarkdownDoc & { relativePath: string }>): string {
   if (docs.length === 0) return ''
-  const sections = docs.map((doc) => [
-    `### ${doc.name} (project:${doc.relativePath})`,
-    `Source: ${doc.relativePath}`,
-    doc.description ? `Description: ${doc.description}` : '',
-  ].filter(isNonEmptyString).join('\n'))
+  const sections = docs.map((doc) => {
+    const summary = toProjectSkillSummary(doc)
+    return `- ${summary.id} — ${summary.name}: ${summary.description}`
+  })
   return [
     '[Project Local Skills Catalog]',
-    'These skills are defined by the current workspace. This catalog is metadata only; load the referenced SKILL.md before following a project-local skill.',
-    sections.join('\n\n'),
+    'Metadata only. Each entry contains only skill id, name, and description; full SKILL.md instructions are not loaded here.',
+    'Use /skill run project:<relative SKILL.md path> to explicitly load one of these project-local skills.',
+    sections.join('\n'),
   ].join('\n\n')
 }
 
@@ -379,6 +421,37 @@ function safeStat(path: string) {
 
 function stringField(frontmatter: Record<string, string>, key: string): string {
   return frontmatter[key]?.trim() ?? ''
+}
+
+function toProjectSkillSummary(doc: MarkdownDoc & { relativePath: string }): ProjectSkillSummary {
+  const description = truncateInline(doc.description || 'Project-local skill', MAX_SKILL_DESCRIPTION_CHARS)
+  return {
+    id: toProjectSkillId(doc.relativePath),
+    name: doc.name,
+    description,
+    relativePath: doc.relativePath,
+  }
+}
+
+function toProjectSkillId(relativePath: string): string {
+  return `project:${relativePath}`
+}
+
+function parseProjectSkillId(skillId: string): string | null {
+  if (!skillId.startsWith('project:')) return null
+  const relativePath = skillId.slice('project:'.length).trim()
+  return relativePath.length > 0 ? relativePath : null
+}
+
+function isInsideRoot(root: string, target: string): boolean {
+  const relativePath = relative(root, target)
+  return relativePath === '' || (!relativePath.startsWith('..') && !isAbsolute(relativePath))
+}
+
+function truncateInline(value: string, maxChars: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim()
+  if (normalized.length <= maxChars) return normalized
+  return `${normalized.slice(0, Math.max(0, maxChars - 3)).trimEnd()}...`
 }
 
 function firstBodyLine(body: string): string {

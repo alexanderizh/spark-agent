@@ -46,9 +46,11 @@ describe('ClaudeSDKExecutor', () => {
     expect(firstOptions).toMatchObject({ sessionId: 'sess-1' })
     expect(firstOptions.resume).toBeUndefined()
     expect(firstOptions.continue).toBeUndefined()
+    expect(firstOptions.skills).toEqual([])
     expect(secondOptions).toMatchObject({ resume: 'sess-1' })
     expect(secondOptions.sessionId).toBeUndefined()
     expect(secondOptions.continue).toBeUndefined()
+    expect(secondOptions.skills).toEqual([])
   })
 
   it('emits completed when the SDK stream ends without a result status', async () => {
@@ -85,5 +87,46 @@ describe('ClaudeSDKExecutor', () => {
       type: 'agent_status',
       status: 'error',
     }))
+  })
+
+  it('returns SDK-compatible permission results with the original input', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => true)
+    const input = { command: 'git status' }
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      approvalCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const result = await options.canUseTool?.('Bash', input, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-1',
+    })
+
+    expect(result).toEqual({
+      behavior: 'allow',
+      updatedInput: input,
+      toolUseID: 'tool-1',
+      decisionClassification: 'user_temporary',
+    })
+  })
+
+  it('configures AskUserQuestion previews and reminds the model to provide options', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', baseConfig())
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    expect(options.toolConfig).toEqual({
+      askUserQuestion: { previewFormat: 'html' },
+    })
+    expect(JSON.stringify(options.systemPrompt)).toContain('AskUserQuestion')
+    expect(JSON.stringify(options.systemPrompt)).toContain('options')
   })
 })

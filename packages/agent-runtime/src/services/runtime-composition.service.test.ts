@@ -123,6 +123,8 @@ describe('RuntimeCompositionService', () => {
     expect(result.systemPrompt).toContain('Base system prompt')
     expect(result.skillSystemPrompt).toContain('[Available Skills Catalog]')
     expect(result.skillSystemPrompt).toContain('Review description')
+    expect(result.skillSystemPrompt).not.toContain('Tags:')
+    expect(result.skillSystemPrompt).not.toContain('Required tools:')
     expect(result.skillSystemPrompt).not.toContain('Review instructions')
     expect(result.skillSystemPrompt).not.toContain('Hidden instructions')
   })

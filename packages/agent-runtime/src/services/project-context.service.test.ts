@@ -50,6 +50,8 @@ describe('ProjectContextService', () => {
     expect(result.systemPrompt).toContain('Architecture reviewer')
     expect(result.skillSystemPrompt).toContain('[Project Local Skills Catalog]')
     expect(result.skillSystemPrompt).toContain('Review Skill')
+    expect(result.skillSystemPrompt).toContain('project:.claude/skills/review/SKILL.md')
+    expect(result.skillSystemPrompt).not.toContain('Source:')
     expect(result.skillSystemPrompt).not.toContain('Check regressions and missing tests.')
     expect(result.sources).toEqual(expect.arrayContaining([
       expect.objectContaining({ kind: 'rule', path: 'AGENTS.md', included: true }),
@@ -57,6 +59,31 @@ describe('ProjectContextService', () => {
       expect.objectContaining({ kind: 'agent', path: '.claude/agents/architect.md', included: true }),
     ]))
     expect(result.budget).toMatchObject({ mode: 'project-smart', truncated: false })
+  })
+
+  it('loads project-local skill instructions only when explicitly selected', () => {
+    const root = mkdtempSync(join(tmpdir(), 'spark-project-skill-load-'))
+    roots.push(root)
+    mkdirSync(join(root, '.codex', 'skills', 'planner'), { recursive: true })
+    writeFileSync(join(root, '.codex', 'skills', 'planner', 'SKILL.md'), [
+      '---',
+      'name: Planner',
+      'description: Plan project changes',
+      '---',
+      'Full planning workflow.',
+    ].join('\n'))
+
+    const service = new ProjectContextService()
+    const summaries = service.listSkillSummaries(root)
+    const prompt = service.buildSkillSystemPrompt(root, 'project:.codex/skills/planner/SKILL.md')
+
+    expect(summaries).toContainEqual(expect.objectContaining({
+      id: 'project:.codex/skills/planner/SKILL.md',
+      name: 'Planner',
+      description: 'Plan project changes',
+    }))
+    expect(prompt).toContain('[Selected Project Skill: Planner]')
+    expect(prompt).toContain('Full planning workflow.')
   })
 
   it('trims and excludes project context sources when the budget is tight', () => {

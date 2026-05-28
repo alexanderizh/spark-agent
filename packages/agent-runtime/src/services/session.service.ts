@@ -58,6 +58,12 @@ type PendingTurn = {
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
 const SESSION_TITLE_MAX_LENGTH = 40
+const RECOVERY_SESSION_LIMIT = 10_000
+const HISTORY_CONTEXT_EVENT_LIMIT = 240
+const HISTORY_CONTEXT_ENTRY_LIMIT = 40
+const HISTORY_CONTEXT_MAX_CHARS = 24_000
+const HISTORY_CONTEXT_ENTRY_MAX_CHARS = 4_000
+const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>()  // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
@@ -75,6 +81,38 @@ export class SessionService {
     private readonly onQueueChanged?: SessionQueueChangedHandler,
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
+    this.recoverInterruptedSessions()
+  }
+
+  recoverInterruptedSessions(): { recovered: number } {
+    const sessionRepo = new SessionRepository(this.db)
+    const eventRepo = new EventRepository(this.db)
+    const { sessions } = sessionRepo.list({
+      status: 'running',
+      includeArchived: true,
+      limit: RECOVERY_SESSION_LIMIT,
+    })
+
+    let recovered = 0
+    for (const session of sessions) {
+      if (this.activeLoops.has(session.id)) continue
+
+      const latestStatus = getLatestAgentStatusFromEvents(eventRepo, session.id)
+      if (latestStatus == null || !TERMINAL_AGENT_STATUSES.has(latestStatus)) {
+        appendInterruptedTurnEvents(eventRepo, session.id)
+      }
+
+      sessionRepo.updateStatus(session.id, 'idle')
+      this.pendingTurns.delete(session.id)
+      this.onApprovalCancel?.(session.id)
+      this.emitQueueChanged(session.id)
+      recovered += 1
+    }
+
+    if (recovered > 0) {
+      log.info(`Recovered ${recovered} interrupted running session(s) after app restart`)
+    }
+    return { recovered }
   }
 
   async createSession(params: {
@@ -188,7 +226,7 @@ export class SessionService {
         workspacePath,
         checkpointRef,
       }),
-      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), query),
+      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
     }
 
     const ctx = {
@@ -262,7 +300,7 @@ export class SessionService {
         workspacePath,
         checkpointRef,
       }),
-      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), query),
+      listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
     }
 
     const ctx = {
@@ -372,6 +410,7 @@ export class SessionService {
     }
 
     const existingEventCount = eventRepo.countBySession(sessionId)
+    const conversationHistoryPrompt = buildConversationHistoryPrompt(eventRepo, sessionId)
     if (existingEventCount === 0 && shouldDeriveSessionTitle(session.title)) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
@@ -415,7 +454,8 @@ export class SessionService {
     const contextWindowTokens = resolveProviderContextWindow(config.supportsMillionContext === true)
     const softContextLimitTokens = resolveSoftContextLimitForWindow(contextWindowTokens)
     const projectContextBudgetTokens = Math.max(2_000, Math.min(60_000, Math.floor(softContextLimitTokens * 0.25)))
-    let projectContext = new ProjectContextService().discover(undefined, {
+    const projectContextService = new ProjectContextService()
+    let projectContext = projectContextService.discover(undefined, {
       mode: 'project-smart',
       budgetTokens: projectContextBudgetTokens,
     })
@@ -427,7 +467,7 @@ export class SessionService {
       if (ws != null) {
         workspaceRootPath = ws.root_path
         workspaceInfo = { name: ws.name, rootPath: ws.root_path, projectKind: ws.project_kind }
-        projectContext = new ProjectContextService().discover(ws.root_path, {
+        projectContext = projectContextService.discover(ws.root_path, {
           mode: 'project-smart',
           budgetTokens: projectContextBudgetTokens,
         })
@@ -450,8 +490,9 @@ export class SessionService {
     const skillRepo = new SkillRepository(this.db)
     if (skillId != null) {
       const loader = new SkillLoader(skillRepo)
-      const sp = loader.buildSystemPrompt(skillId, skillParams ?? {})
-      if (sp) explicitSkillPrompt = sp
+      const projectSkillPrompt = projectContextService.buildSkillSystemPrompt(workspaceRootPath, skillId)
+      const sp = projectSkillPrompt ?? loader.buildSystemPrompt(skillId, skillParams ?? {})
+      if (sp) explicitSkillPrompt = projectSkillPrompt ?? formatSelectedSkillPrompt(skillId, sp)
     }
     const runtimeComposition = new RuntimeCompositionService(skillRepo, new SettingsRepository(this.db))
     const runtimeContext = runtimeComposition.composeRuntimeContext(
@@ -461,7 +502,7 @@ export class SessionService {
       },
       explicitSkillPrompt,
     )
-    const composedSystemPrompt = joinPromptSections(runtimeContext.systemPrompt, projectContext.systemPrompt)
+    const composedSystemPrompt = joinPromptSections(runtimeContext.systemPrompt, projectContext.systemPrompt, conversationHistoryPrompt)
     const composedSkillSystemPrompt = joinPromptSections(runtimeContext.skillSystemPrompt, projectContext.skillSystemPrompt)
 
     // Initialize seq counter from existing event count
@@ -1121,6 +1162,163 @@ function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
   return DEFAULT_SESSION_TITLES.has(normalized) || normalized.endsWith(' 会话')
 }
 
+function getLatestAgentStatusFromEvents(eventRepo: EventRepository, sessionId: string): string | null {
+  const row = eventRepo.queryBySession({ sessionId, eventType: 'agent_status', limit: 1 }).events[0]
+  if (row == null) return null
+  try {
+    const event = JSON.parse(row.event_json) as AgentEvent
+    return event.type === 'agent_status' ? event.status : null
+  } catch {
+    return null
+  }
+}
+
+function appendInterruptedTurnEvents(eventRepo: EventRepository, sessionId: string): void {
+  const latestRow = eventRepo.queryBySession({ sessionId, limit: 1 }).events[0]
+  let turnId: string = crypto.randomUUID()
+  if (latestRow != null) {
+    try {
+      const event = JSON.parse(latestRow.event_json) as AgentEvent
+      if (event.turnId != null && event.turnId.length > 0) turnId = event.turnId
+    } catch {
+      // Fall back to a synthetic turn id.
+    }
+  }
+
+  const timestamp = new Date().toISOString()
+  const seq = eventRepo.countBySession(sessionId)
+  const events = createInterruptedTurnEvents(sessionId, turnId, seq, timestamp)
+
+  eventRepo.insertBatch(events.map((event) => ({
+    id: event.id,
+    sessionId,
+    turnId,
+    eventType: event.type,
+    eventJson: JSON.stringify(event),
+  })))
+}
+
+export function createInterruptedTurnEvents(sessionId: string, turnId: string, seq: number, timestamp: string = new Date().toISOString()): AgentEvent[] {
+  return [
+    {
+      id: crypto.randomUUID(),
+      type: 'agent_error',
+      sessionId,
+      turnId,
+      timestamp,
+      seq,
+      code: 'APP_RESTARTED',
+      message: 'The previous turn was stopped because Spark Agent restarted.',
+      retryable: true,
+    },
+    {
+      id: crypto.randomUUID(),
+      type: 'agent_status',
+      sessionId,
+      turnId,
+      timestamp,
+      seq: seq + 1,
+      status: 'cancelled',
+      message: 'Stopped after app restart',
+    },
+  ]
+}
+
+function buildConversationHistoryPrompt(eventRepo: EventRepository, sessionId: string): string | undefined {
+  const rows = eventRepo.queryBySession({
+    sessionId,
+    limit: HISTORY_CONTEXT_EVENT_LIMIT,
+  }).events
+
+  const events: AgentEvent[] = []
+  for (const row of rows) {
+    try {
+      events.push(JSON.parse(row.event_json) as AgentEvent)
+    } catch {
+      // Ignore malformed historical rows.
+    }
+  }
+
+  return buildConversationHistoryPromptFromEvents(events)
+}
+
+export function buildConversationHistoryPromptFromEvents(events: AgentEvent[]): string | undefined {
+  const entries = limitHistoryContextEntries(buildDialogueEntries(events))
+  if (entries.length === 0) return undefined
+
+  const transcript = entries
+    .map((entry) => `${entry.role}: ${truncateHistoryEntry(entry.content)}`)
+    .join('\n\n')
+
+  return [
+    '[Spark Session History]',
+    'The following transcript is persisted from earlier turns in this same Spark session. Use it as conversation context for the current user message. Do not restate it unless it is relevant.',
+    transcript,
+  ].join('\n\n')
+}
+
+type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
+
+function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
+  const turns = new Map<string, { userParts: string[]; assistantParts: string[]; assistantFinal?: string }>()
+  const turnOrder: string[] = []
+
+  const getTurn = (turnId: string) => {
+    let turn = turns.get(turnId)
+    if (turn == null) {
+      turn = { userParts: [], assistantParts: [] }
+      turns.set(turnId, turn)
+      turnOrder.push(turnId)
+    }
+    return turn
+  }
+
+  for (const event of events) {
+    if (event.type !== 'user_message' && event.type !== 'assistant_message') continue
+    const turn = getTurn(event.turnId)
+    if (event.type === 'user_message') {
+      turn.userParts.push(event.content)
+      continue
+    }
+    if (event.mode === 'complete' && event.isFinal) {
+      turn.assistantFinal = event.content
+    } else {
+      turn.assistantParts.push(event.content)
+    }
+  }
+
+  const entries: DialogueEntry[] = []
+  for (const turnId of turnOrder) {
+    const turn = turns.get(turnId)
+    if (turn == null) continue
+    const userContent = joinHistoryParts(turn.userParts)
+    if (userContent.length > 0) entries.push({ role: 'User', content: userContent })
+    const assistantContent = turn.assistantFinal?.trim() || joinHistoryParts(turn.assistantParts)
+    if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
+  }
+  return entries
+}
+
+function joinHistoryParts(parts: string[]): string {
+  return parts.join('\n').replace(/\s+\n/g, '\n').trim()
+}
+
+function limitHistoryContextEntries(entries: DialogueEntry[]): DialogueEntry[] {
+  const selected = entries.slice(-HISTORY_CONTEXT_ENTRY_LIMIT)
+  let total = selected.reduce((sum, entry) => sum + entry.content.length, 0)
+  while (selected.length > 0 && total > HISTORY_CONTEXT_MAX_CHARS) {
+    const removed = selected.shift()
+    total -= removed?.content.length ?? 0
+  }
+  return selected
+}
+
+function truncateHistoryEntry(content: string): string {
+  const normalized = content.trim()
+  if (normalized.length <= HISTORY_CONTEXT_ENTRY_MAX_CHARS) return normalized
+  return `${normalized.slice(0, HISTORY_CONTEXT_ENTRY_MAX_CHARS).trimEnd()}\n[truncated]`
+}
+
 function listSessionCheckpointsFromEvents(eventRepo: EventRepository, sessionId: string): CheckpointSnapshot[] {
   const rows = eventRepo.queryBySession({ sessionId, eventType: 'checkpoint', limit: 100 }).events
   const checkpoints: CheckpointSnapshot[] = []
@@ -1315,10 +1513,18 @@ function joinPromptSections(...sections: Array<string | undefined>): string | un
   return joined.length > 0 ? joined : undefined
 }
 
-function listSkillSummaries(skillRepo: SkillRepository, query?: string): Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }> {
+function formatSelectedSkillPrompt(skillId: string, prompt: string): string {
+  return [
+    `[Selected Skill: ${skillId}]`,
+    'This skill was explicitly selected for this turn; its full instructions are loaded below.',
+    prompt,
+  ].join('\n\n')
+}
+
+function listSkillSummaries(skillRepo: SkillRepository, workspacePath?: string | null, query?: string): Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }> {
   const loader = new SkillLoader(skillRepo)
   const infos = query?.trim() ? loader.search(query) : loader.listEnabled()
-  return infos
+  const runtimeSkills = infos
     .filter((info) => {
       if (info.builtin) return true
       return info.dbRecord?.enabled === true
@@ -1343,4 +1549,32 @@ function listSkillSummaries(skillRepo: SkillRepository, query?: string): Array<{
       }
     })
     .filter((skill) => skill.id.length > 0)
+  const projectSkills = new ProjectContextService()
+    .listSkillSummaries(workspacePath ?? undefined)
+    .map((skill) => ({
+      id: skill.id,
+      name: skill.name,
+      description: skill.description,
+      tags: [],
+      enabled: true,
+    }))
+    .filter((skill) => {
+      const q = query?.trim().toLowerCase()
+      if (!q) return true
+      return skill.id.toLowerCase().includes(q)
+        || skill.name.toLowerCase().includes(q)
+        || skill.description.toLowerCase().includes(q)
+    })
+  return uniqueSkillSummaries([...runtimeSkills, ...projectSkills])
+}
+
+function uniqueSkillSummaries<T extends { id: string }>(skills: T[]): T[] {
+  const seen = new Set<string>()
+  const result: T[] = []
+  for (const skill of skills) {
+    if (seen.has(skill.id)) continue
+    seen.add(skill.id)
+    result.push(skill)
+  }
+  return result
 }

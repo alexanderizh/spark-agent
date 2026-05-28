@@ -1,0 +1,67 @@
+import { describe, expect, it } from 'vitest'
+import type { AgentEvent } from '@spark/protocol'
+import {
+  buildConversationHistoryPromptFromEvents,
+  createInterruptedTurnEvents,
+} from '../../services/session.service.js'
+
+function baseEvent(sessionId: string, turnId: string, seq: number): Pick<AgentEvent, 'id' | 'sessionId' | 'turnId' | 'timestamp' | 'seq'> {
+  return {
+    id: `event-${seq}`,
+    sessionId,
+    turnId,
+    timestamp: '2026-05-28T00:00:00.000Z',
+    seq,
+  }
+}
+
+describe('SessionService recovery helpers', () => {
+  it('creates terminal events for a turn interrupted by app restart', () => {
+    const events = createInterruptedTurnEvents('session-1', 'turn-1', 7, '2026-05-28T00:00:00.000Z')
+
+    expect(events).toHaveLength(2)
+    expect(events[0]).toEqual(expect.objectContaining({
+      type: 'agent_error',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      seq: 7,
+      code: 'APP_RESTARTED',
+      retryable: true,
+    }))
+    expect(events[1]).toEqual(expect.objectContaining({
+      type: 'agent_status',
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      seq: 8,
+      status: 'cancelled',
+    }))
+  })
+
+  it('builds a compact system prompt from persisted dialogue events', () => {
+    const prompt = buildConversationHistoryPromptFromEvents([
+      {
+        ...baseEvent('session-1', 'turn-1', 0),
+        type: 'user_message',
+        content: 'Earlier user request about database indexes',
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 1),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'Earlier assistant answer mentioning idx_sessions_updated_at',
+        provider: 'claude',
+        isFinal: true,
+      },
+      {
+        ...baseEvent('session-1', 'turn-2', 2),
+        type: 'agent_status',
+        status: 'completed',
+      },
+    ])
+
+    expect(prompt).toContain('[Spark Session History]')
+    expect(prompt).toContain('Earlier user request about database indexes')
+    expect(prompt).toContain('idx_sessions_updated_at')
+    expect(prompt).not.toContain('completed')
+  })
+})

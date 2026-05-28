@@ -136,6 +136,33 @@ export type SDKPermissionMode =
 
 export type SDKEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+export type SDKPermissionDecisionClassification =
+  | 'user_temporary'
+  | 'user_permanent'
+  | 'user_reject'
+
+export type SDKPermissionResult =
+  | {
+      behavior: 'allow'
+      updatedInput?: Record<string, unknown>
+      updatedPermissions?: unknown[]
+      toolUseID?: string
+      decisionClassification?: SDKPermissionDecisionClassification
+    }
+  | {
+      behavior: 'deny'
+      message: string
+      interrupt?: boolean
+      toolUseID?: string
+      decisionClassification?: SDKPermissionDecisionClassification
+    }
+
+export interface SDKToolConfig {
+  askUserQuestion?: {
+    previewFormat?: 'markdown' | 'html'
+  }
+}
+
 export interface SDKQueryOptions {
   abortController?: AbortController | undefined
   cwd?: string | undefined
@@ -147,7 +174,9 @@ export interface SDKQueryOptions {
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
+  skills?: string[] | 'all' | undefined
   systemPrompt?: string | { type: 'preset'; preset: 'claude_code'; append?: string | undefined } | undefined
+  toolConfig?: SDKToolConfig | undefined
   maxTurns?: number | undefined
   maxBudgetUsd?: number | undefined
   sessionId?: string | undefined
@@ -158,8 +187,18 @@ export interface SDKQueryOptions {
   canUseTool?: ((
     toolName: string,
     input: Record<string, unknown>,
-    options: { signal: AbortSignal },
-  ) => Promise<{ behavior: 'allow' } | { behavior: 'deny'; message: string }>) | undefined
+    options: {
+      signal: AbortSignal
+      suggestions?: unknown[]
+      blockedPath?: string
+      decisionReason?: string
+      title?: string
+      displayName?: string
+      description?: string
+      toolUseID: string
+      agentID?: string
+    },
+  ) => Promise<SDKPermissionResult>) | undefined
   agents?: Record<string, {
     description: string
     prompt: string
@@ -210,6 +249,7 @@ export interface SDKExecutorConfig {
   workspaceRootPath: string
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
+  nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
   enableCheckpoints?: boolean | undefined

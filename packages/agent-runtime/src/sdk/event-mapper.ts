@@ -256,6 +256,16 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
     case 'tool_use':
       ctx.toolNamesById?.set(block.id, mapSDKToolName(block.name))
       getToolInputs(ctx).set(block.id, normalizeToolInput(block.input))
+      if (isPlanProposalTool(block.name)) {
+        const plan = extractPlanText(normalizeToolInput(block.input))
+        return plan != null
+          ? [{
+              ...baseEvent(ctx),
+              type: 'plan_proposed',
+              plan,
+            }]
+          : []
+      }
       return [{
         ...baseEvent(ctx),
         type: 'tool_call',
@@ -272,6 +282,16 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
         ? block.content
         : flattenContentBlocks(block.content)
       const toolName = ctx.toolNamesById?.get(block.tool_use_id) ?? 'unknown'
+      if (toolName === 'exit_plan_mode') {
+        const plan = extractPlanTextFromToolResult(content)
+        return plan != null
+          ? [{
+              ...baseEvent(ctx),
+              type: 'plan_proposed',
+              plan,
+            }]
+          : []
+      }
       const events: AgentEvent[] = [{
         ...baseEvent(ctx),
         type: 'tool_result',
@@ -341,8 +361,32 @@ function mapSDKToolName(sdkName: string): string {
     'WebFetch': 'web_fetch',
     'WebSearch': 'web_search',
     'Agent': 'subagent',
+    'ExitPlanMode': 'exit_plan_mode',
+    'EnterPlanMode': 'enter_plan_mode',
+    'AskUserQuestion': 'ask_user_question',
   }
   return mapping[sdkName] ?? sdkName
+}
+
+function isPlanProposalTool(name: string): boolean {
+  return name === 'ExitPlanMode' || mapSDKToolName(name) === 'exit_plan_mode'
+}
+
+function extractPlanText(input: Record<string, unknown>): string | null {
+  const plan = input['plan']
+  return typeof plan === 'string' && plan.trim().length > 0 ? plan : null
+}
+
+function extractPlanTextFromToolResult(content: string): string | null {
+  try {
+    const parsed = JSON.parse(content) as unknown
+    if (parsed != null && typeof parsed === 'object') {
+      return extractPlanText(parsed as Record<string, unknown>)
+    }
+  } catch {
+    // Some SDK tool results are plain rendered text; only JSON carries a stable plan field.
+  }
+  return null
 }
 
 function isSDKMcpTool(name: string): boolean {

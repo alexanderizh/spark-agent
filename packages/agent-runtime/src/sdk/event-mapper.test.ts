@@ -96,4 +96,35 @@ describe('mapSDKMessageToEvents', () => {
       }),
     ]))
   })
+
+  it('maps ExitPlanMode tool input to a plan proposal event', () => {
+    const assistant: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-1',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'tool-1',
+          name: 'ExitPlanMode',
+          input: { plan: '# Plan\n\n1. Do the thing' },
+        }],
+      },
+    }
+
+    const events = mapSDKMessageToEvents(assistant, {
+      sessionId: 'session-1',
+      turnId: 'turn-1',
+      toolNamesById: new Map<string, string>(),
+    })
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'plan_proposed',
+        plan: '# Plan\n\n1. Do the thing',
+      }),
+    ])
+  })
 })
