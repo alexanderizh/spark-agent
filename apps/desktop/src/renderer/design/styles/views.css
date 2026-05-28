@@ -2320,6 +2320,24 @@ body.sidebar-resizing {
   background: var(--hover);
   border-color: var(--border);
 }
+.composer-select.tone-auto {
+  color: color-mix(in srgb, var(--primary) 72%, var(--text));
+}
+.composer-select.tone-auto .composer-select-icon {
+  color: var(--primary);
+}
+.composer-select.tone-danger {
+  color: color-mix(in srgb, var(--danger) 82%, var(--text));
+  background: color-mix(in srgb, var(--danger) 7%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 26%, transparent);
+}
+.composer-select.tone-danger:hover {
+  background: color-mix(in srgb, var(--danger) 11%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+}
+.composer-select.tone-danger .composer-select-icon {
+  color: var(--danger);
+}
 .composer-select-icon {
   display: inline-flex;
   align-items: center;
@@ -2463,6 +2481,37 @@ body.sidebar-resizing {
 .composer-menu-item:hover,
 .composer-menu-item.active {
   background: var(--hover);
+}
+.composer-menu-item.tone-auto {
+  color: color-mix(in srgb, var(--primary) 72%, var(--text));
+}
+.composer-menu-item.tone-danger {
+  color: color-mix(in srgb, var(--danger) 84%, var(--text));
+}
+.composer-menu-item.tone-danger:hover,
+.composer-menu-item.tone-danger.active {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+.composer-menu-item-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.composer-menu-item-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-weight: 500;
+}
+.composer-menu-item-label svg {
+  flex-shrink: 0;
+}
+.composer-menu-item-desc {
+  display: block;
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+  line-height: 1.25;
 }
 .composer-menu-item span {
   min-width: 0;

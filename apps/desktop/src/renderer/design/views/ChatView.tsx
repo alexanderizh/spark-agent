@@ -46,6 +46,13 @@ type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
 type BranchState = { currentBranch: string | null; branches: string[] }
 type AgentAdapter = SessionAgentAdapter
 type PermissionModeChoice = SessionPermissionMode
+type ComposerOptionTone = 'default' | 'auto' | 'danger'
+type ComposerMenuOption = {
+  value: string
+  label: string
+  description?: string
+  tone?: ComposerOptionTone
+}
 type ComposerPrefs = {
   adapter?: AgentAdapter
   providerProfileId?: string
@@ -1477,6 +1484,7 @@ function ChatStream({
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
+  const [agentIsRunning, setAgentIsRunning] = useState(false)
   const builderRef = useRef(new MessageBuilder())
   const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
@@ -1508,6 +1516,7 @@ function ChatStream({
       setMessages(cached.messages)
       onMessagesChange(cached.messages)
       onStatusChange(cached.status)
+      setAgentIsRunning(cached.status === 'running')
       usageRef.current = cached.usage
       onUsageDataChange(cached.usage)
     } else {
@@ -1515,6 +1524,7 @@ function ChatStream({
       setMessages([])
       onMessagesChange([])
       onStatusChange('')
+      setAgentIsRunning(false)
     }
 
     isStreamingRef.current = false
@@ -1542,8 +1552,9 @@ function ChatStream({
           // 更新缓存
           const latestStatus = getLatestAgentStatus(events)
           const statusStr = latestStatus != null
-            ? (latestStatus === 'thinking' || latestStatus === 'calling_tool' ? 'running' : latestStatus === 'error' ? 'error' : '')
+            ? (isRunningAgentStatus(latestStatus) ? 'running' : latestStatus === 'error' ? 'error' : '')
             : ''
+          setAgentIsRunning(isRunningAgentStatus(latestStatus))
           sessionCacheRef.current.set(sessionId, { messages: nextMessages, usage: historyUsage, status: statusStr })
           if (latestStatus != null) applyAgentStatus(latestStatus, onStatusChange, onSessionStatusChange, isStreamingRef, userScrolledRef)
           const latestContext = getLatestContextUsageEvent(events)
@@ -1631,6 +1642,7 @@ function ChatStream({
     onUsageDataChange({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
     onContextUsageChange(null)
     onProjectContextChange(null)
+    setAgentIsRunning(false)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTrigger])
 
@@ -1659,6 +1671,7 @@ function ChatStream({
 
     // 对状态/用量事件立即处理（不走 RAF 延迟）
     if (event.type === 'agent_status') {
+      setAgentIsRunning(isRunningAgentStatus(event.status))
       applyAgentStatus(event.status, onStatusChange, onSessionStatusChange, isStreamingRef, userScrolledRef)
     }
     if (event.type === 'usage_update') {
@@ -1688,6 +1701,7 @@ function ChatStream({
     if (event.type === 'user_message') {
       userScrolledRef.current = false
       isStreamingRef.current = true
+      setAgentIsRunning(true)
     }
 
     if (event.type === 'context_usage') {
@@ -1739,10 +1753,11 @@ function ChatStream({
     if (!userScrolledRef.current) {
       el.scrollTop = el.scrollHeight
     }
-  }, [messages])
+  }, [messages, agentIsRunning])
 
   // 是否有正在流式传输的消息
   const hasStreamingMsg = messages.some(m => m.status === 'streaming')
+  const showWaitingAgent = agentIsRunning && !hasStreamingMsg
 
   const handleDeleteMessage = useCallback((msgId: string, eventIds: string[]) => {
     deleteMessageEvents({ sessionId, eventIds }).then(() => {
@@ -1782,7 +1797,17 @@ function ChatStream({
             />
           )
         )}
-        {messages.length === 0 && (
+        {showWaitingAgent && (
+          <AgentMsg
+            key="agent-running-placeholder"
+            sessionId={sessionId}
+            status="running"
+            blocks={[]}
+            messageStatus="streaming"
+            isLatest
+          />
+        )}
+        {messages.length === 0 && !showWaitingAgent && (
           <div className="chat-stream-empty-state">
             <div className="empty-state">
               <div className="empty-icon"><Icons.Chat size={24} /></div>
@@ -1865,6 +1890,10 @@ function getLatestProjectContextEvent(events: AgentEvent[]): ProjectContextState
     if (event?.type === 'project_context_loaded') return event
   }
   return null
+}
+
+function isRunningAgentStatus(status: AgentStatusValue | null): boolean {
+  return status === 'thinking' || status === 'calling_tool' || status === 'waiting_permission' || status === 'waiting_user'
 }
 
 function applyAgentStatus(
@@ -2683,9 +2712,13 @@ function AgentMsg({
     <div className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}>
       <div className="msg-bubble msg-bubble-agent">
         {isStreaming && !hasContent && (
-          <div className="msg-streaming-indicator">
-            <Icons.Spinner size={12} />
-            <span>思考中...</span>
+          <div className="agent-running-tail agent-running-tail-empty" aria-label="正在运行">
+            <span>正在运行</span>
+            <span className="agent-running-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </span>
           </div>
         )}
         {thinkingBlocks.length > 0 && (
@@ -3539,6 +3572,7 @@ function ComposerV2({
   const effectivePermissionMode = permissionOptions.some((option) => option.value === draftEffectivePermissionMode)
     ? draftEffectivePermissionMode
     : defaultPermissionMode
+  const activePermissionOption = permissionOptions.find((option) => option.value === effectivePermissionMode)
   const contextWindow = resolveProviderContextWindow(selectedProvider?.supportsMillionContext === true)
   const contextUsedTokens = contextUsage?.estimatedTokens ?? contextInputTokens
   const contextRatio = contextWindow > 0
@@ -4046,10 +4080,15 @@ function ComposerV2({
               }}
             />
             <ComposerMenuSelect
-              icon={<Icons.Shield size={13} />}
+              icon={activePermissionOption?.tone === 'danger'
+                ? <Icons.AlertTriangle size={13} />
+                : activePermissionOption?.tone === 'auto'
+                  ? <Icons.Zap size={13} />
+                  : <Icons.Shield size={13} />}
               value={effectivePermissionMode}
-              label={permissionOptions.find((option) => option.value === effectivePermissionMode)?.label ?? '默认权限'}
+              label={activePermissionOption?.label ?? '默认权限'}
               title="权限模式"
+              tone={activePermissionOption?.tone ?? 'default'}
               onChange={(mode) => {
                 const permissionMode = mode as PermissionModeChoice
                 setDraftPermissionMode(permissionMode)
@@ -4130,15 +4169,17 @@ function ComposerMenuSelect({
   title,
   disabled = false,
   align = 'left',
+  tone = 'default',
   onChange,
 }: {
   icon: ReactNode
   value: string
   label: string
-  options: Array<{ value: string; label: string }>
+  options: ComposerMenuOption[]
   title: string
   disabled?: boolean
   align?: 'left' | 'right'
+  tone?: ComposerOptionTone
   onChange: (value: string) => void | Promise<void>
 }) {
   const [open, setOpen] = useState(false)
@@ -4146,7 +4187,7 @@ function ComposerMenuSelect({
   useCloseOnOutside(rootRef, () => setOpen(false), open)
 
   return (
-    <div ref={rootRef} className={`composer-select composer-menu-select ${align === 'right' ? 'right' : ''}`} title={title}>
+    <div ref={rootRef} className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}`} title={title}>
       <span className="composer-select-icon">{icon}</span>
       <button
         type="button"
@@ -4163,13 +4204,20 @@ function ComposerMenuSelect({
             <button
               key={option.value}
               type="button"
-              className={`composer-menu-item ${option.value === value ? 'active' : ''}`}
+              className={`composer-menu-item tone-${option.tone ?? 'default'} ${option.value === value ? 'active' : ''}`}
               onClick={() => {
                 setOpen(false)
                 void onChange(option.value)
               }}
             >
-              <span>{option.label}</span>
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  {option.tone === 'danger' && <Icons.AlertTriangle size={13} />}
+                  {option.tone === 'auto' && <Icons.Zap size={13} />}
+                  <span>{option.label}</span>
+                </span>
+                {option.description != null && <span className="composer-menu-item-desc">{option.description}</span>}
+              </span>
               {option.value === value && <Icons.Check size={14} />}
             </button>
           ))}
@@ -4299,21 +4347,21 @@ const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   codex: 'Codex',
 }
 
-const CLAUDE_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label: string }> = [
-  { value: 'claude-ask', label: 'Ask permissions' },
-  { value: 'claude-auto-edits', label: 'Auto accept edits' },
-  { value: 'claude-plan', label: 'Plan mode' },
-  { value: 'claude-auto', label: 'Auto' },
-  { value: 'claude-bypass', label: 'Bypass permissions' },
+const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
+  { value: 'claude-ask', label: 'Ask permissions', description: '每次工具执行前确认' },
+  { value: 'claude-auto-edits', label: 'Auto accept edits', description: '自动接受编辑，命令仍确认', tone: 'auto' },
+  { value: 'claude-plan', label: 'Plan mode', description: '先产出计划，再批准执行' },
+  { value: 'claude-auto', label: 'Auto', description: '使用 Claude SDK 自动权限策略', tone: 'auto' },
+  { value: 'claude-bypass', label: 'Bypass permissions', description: '危险：完全听从 agent 执行', tone: 'danger' },
 ]
 
-const CODEX_PERMISSION_MODE_OPTIONS: Array<{ value: PermissionModeChoice; label: string }> = [
-  { value: 'codex-default', label: '默认权限' },
-  { value: 'codex-auto-review', label: '自动审查' },
-  { value: 'codex-full-access', label: '完全访问' },
+const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
+  { value: 'codex-default', label: '默认权限', description: '按默认策略请求确认' },
+  { value: 'codex-auto-review', label: '自动审查', description: '自动处理低风险审查动作', tone: 'auto' },
+  { value: 'codex-full-access', label: '完全访问', description: '危险：完全听从 agent 执行', tone: 'danger' },
 ]
 
-function getPermissionModeOptions(adapter: AgentAdapter): Array<{ value: PermissionModeChoice; label: string }> {
+function getPermissionModeOptions(adapter: AgentAdapter): Array<ComposerMenuOption & { value: PermissionModeChoice }> {
   return isClaudeAdapter(adapter) ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
 }
 

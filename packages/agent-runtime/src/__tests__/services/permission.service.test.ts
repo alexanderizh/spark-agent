@@ -119,6 +119,33 @@ describe('PermissionService', () => {
   })
 
   describe('TOOL_ACTION_MAP coverage (Bug 1)', () => {
+    it('Claude SDK 原生工具名会归一化为对应 permission action', async () => {
+      const repo = makeMockRepo([
+        { action: 'file_read', mode: 'allow' },
+        { action: 'file_write', mode: 'ask' },
+        { action: 'network_known', mode: 'allow' },
+      ])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+
+      await expect(svc.requestApproval('sess-1', 'Read', { file_path: 'README.md' }, push)).resolves.toBe(true)
+      expect(push).not.toHaveBeenCalled()
+
+      const editPromise = svc.requestApproval('sess-1', 'Edit', { file_path: 'README.md' }, push)
+      expect(push).toHaveBeenCalledTimes(1)
+      expect(push.mock.calls[0]![0]).toMatchObject({
+        toolName: 'Edit',
+        action: 'file_write',
+        riskLevel: 'medium',
+      })
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+      await expect(editPromise).resolves.toBe(true)
+
+      push.mockClear()
+      await expect(svc.requestApproval('sess-1', 'WebSearch', { query: 'docs' }, push)).resolves.toBe(true)
+      expect(push).not.toHaveBeenCalled()
+    })
+
     it('bash 工具被识别为 command_exec，命中 ask 而不是默认 allow', async () => {
       // command_exec 默认规则 mode = 'ask'
       const repo = makeMockRepo([{ action: 'command_exec', mode: 'ask' }])
@@ -134,6 +161,29 @@ describe('PermissionService', () => {
       // 模拟用户拒绝
       svc.resolveApproval(req.requestId, 'deny')
       await expect(promise).resolves.toBe(false)
+    })
+
+    it('危险 Bash 命令会归类为 command_dangerous 并执行双重确认', async () => {
+      const repo = makeMockRepo([{ action: 'command_dangerous', mode: 'ask-twice' }])
+      const svc = new PermissionService(repo)
+      const push = vi.fn()
+      const promise = svc.requestApproval('sess-1', 'Bash', { command: 'git clean -fdx' }, push)
+
+      expect(push).toHaveBeenCalledTimes(1)
+      expect(push.mock.calls[0]![0]).toMatchObject({
+        action: 'command_dangerous',
+        riskLevel: 'high',
+      })
+      svc.resolveApproval(push.mock.calls[0]![0].requestId, 'allow-once')
+
+      await vi.waitFor(() => expect(push).toHaveBeenCalledTimes(2))
+      expect(push.mock.calls[1]![0]).toMatchObject({
+        action: 'command_dangerous',
+        riskLevel: 'high',
+      })
+      svc.resolveApproval(push.mock.calls[1]![0].requestId, 'allow-once')
+
+      await expect(promise).resolves.toBe(true)
     })
 
     it('未知工具默认归类为 command_exec + ask（更安全）', async () => {

@@ -115,6 +115,65 @@ describe('ClaudeSDKExecutor', () => {
     })
   })
 
+  it('lets SDK-native auto and bypass modes own tool permissions without Spark canUseTool', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => false)
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      permissionMode: 'claude-auto',
+      approvalCallback,
+    })
+    await new ClaudeSDKExecutor().executeTurn('sess-2', 'turn-1', 'hello', {
+      ...baseConfig(),
+      permissionMode: 'claude-bypass',
+      approvalCallback,
+    })
+
+    const autoOptions = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const bypassOptions = queryMock.mock.calls[1]?.[0]?.options as SDKQueryOptions
+    expect(autoOptions.permissionMode).toBe('auto')
+    expect(autoOptions.canUseTool).toBeUndefined()
+    expect(bypassOptions.permissionMode).toBe('bypassPermissions')
+    expect(bypassOptions.canUseTool).toBeUndefined()
+  })
+
+  it('auto-allows edit tools in acceptEdits mode and still asks for Bash', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => true)
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      permissionMode: 'claude-auto-edits',
+      approvalCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const input = { file_path: 'README.md' }
+    const editResult = await options.canUseTool?.('Edit', input, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-edit',
+    })
+    const bashResult = await options.canUseTool?.('Bash', { command: 'npm test' }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-bash',
+    })
+
+    expect(editResult).toEqual({
+      behavior: 'allow',
+      updatedInput: input,
+      toolUseID: 'tool-edit',
+      decisionClassification: 'user_temporary',
+    })
+    expect(approvalCallback).toHaveBeenCalledTimes(1)
+    expect(approvalCallback).toHaveBeenCalledWith('sess-1', 'Bash', { command: 'npm test' })
+    expect(bashResult).toEqual(expect.objectContaining({ behavior: 'allow' }))
+  })
+
   it('configures AskUserQuestion previews and reminds the model to provide options', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

@@ -184,8 +184,9 @@ export class ClaudeSDKExecutor {
       includePartialMessages: true,
       enableFileCheckpointing: config.enableCheckpoints ?? false,
 
-      // Map Spark approval callback to SDK permission callback
-      ...(config.approvalCallback != null ? {
+      // Map Spark approval callback to SDK permission callback when Spark needs
+      // extra policy on top of the SDK's native permission mode.
+      ...(config.approvalCallback != null && shouldUseSparkPermissionCallback(config.permissionMode) ? {
         canUseTool: async (
           toolName: string,
           input: Record<string, unknown>,
@@ -193,6 +194,9 @@ export class ClaudeSDKExecutor {
         ): Promise<SDKPermissionResult> => {
           try {
             if (isAlwaysAllowedControlTool(toolName)) {
+              return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+            }
+            if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
               return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
             }
             const approvalCallback = config.approvalCallback
@@ -306,6 +310,23 @@ function isAlwaysAllowedControlTool(toolName: string): boolean {
   return toolName === 'ExitPlanMode'
     || toolName === 'EnterPlanMode'
     || toolName === 'AskUserQuestion'
+}
+
+function shouldUseSparkPermissionCallback(permissionMode: SDKExecutorConfig['permissionMode']): boolean {
+  return permissionMode !== 'claude-auto'
+    && permissionMode !== 'claude-bypass'
+    && permissionMode !== 'codex-full-access'
+}
+
+function isEditTool(toolName: string): boolean {
+  return toolName === 'Edit'
+    || toolName === 'Write'
+    || toolName === 'MultiEdit'
+    || toolName === 'NotebookEdit'
+    || toolName === 'edit_file'
+    || toolName === 'write_file'
+    || toolName === 'multi_edit'
+    || toolName === 'apply_patch'
 }
 
 function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig): number {

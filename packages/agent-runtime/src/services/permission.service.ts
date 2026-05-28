@@ -26,6 +26,20 @@ const ACTIVE_PROFILE_KEY = 'permission:active-profile'
 
 // Maps built-in tool names to permission action keys
 const TOOL_ACTION_MAP: Record<string, string> = {
+  // Claude Agent SDK built-ins
+  Read: 'file_read',
+  LS: 'file_read',
+  Glob: 'file_read',
+  Grep: 'file_read',
+  Write: 'file_write',
+  Edit: 'file_write',
+  MultiEdit: 'file_write',
+  NotebookEdit: 'file_write',
+  Bash: 'command_exec',
+  WebFetch: 'network_unknown',
+  WebSearch: 'network_known',
+  Task: 'mcp_tool',
+  Agent: 'mcp_tool',
   // 文件读
   read_file: 'file_read',
   list_directory: 'file_read',
@@ -67,6 +81,54 @@ const RISK_LEVEL_MAP: Record<string, 'low' | 'medium' | 'high'> = {
   network_unknown: 'medium',
   mcp_tool: 'medium',
   secret_read: 'high',
+}
+
+function resolveToolAction(toolName: string, toolInput: Record<string, unknown>): string {
+  if (isMcpToolName(toolName)) return 'mcp_tool'
+  const mapped = TOOL_ACTION_MAP[toolName] ?? TOOL_ACTION_MAP[toolName.toLowerCase()]
+  if (mapped === 'command_exec' && isDangerousCommand(toolInput)) return 'command_dangerous'
+  return mapped ?? 'command_exec'
+}
+
+function isMcpToolName(toolName: string): boolean {
+  return toolName.startsWith('mcp__') || toolName.startsWith('mcp:')
+}
+
+function isDangerousCommand(toolInput: Record<string, unknown>): boolean {
+  const command = typeof toolInput.command === 'string'
+    ? toolInput.command
+    : typeof toolInput.cmd === 'string'
+      ? toolInput.cmd
+      : ''
+  const normalized = command.trim().toLowerCase()
+  if (normalized.length === 0) return false
+
+  return [
+    /\brm\s+(-[^\s]*r[^\s]*f|-[^\s]*f[^\s]*r)\b/,
+    /\bgit\s+clean\b.*\s-[^\s]*[fx]/,
+    /\bgit\s+reset\s+--hard\b/,
+    /\bsudo\b/,
+    /\bchmod\s+-r\b/,
+    /\bchown\s+-r\b/,
+    /\bdd\s+if=/,
+    /\bmkfs(?:\.\w+)?\b/,
+    /:\s*\(\)\s*\{\s*:\|:&\s*\};\s*:/,
+  ].some((pattern) => pattern.test(normalized))
+}
+
+function isDenyDecision(decision: PermissionApprovalDecision): boolean {
+  return decision === 'deny' || decision === 'deny-project' || decision === 'deny-global'
+}
+
+function selectGrantDecision(
+  first: PermissionApprovalDecision,
+  second: PermissionApprovalDecision,
+): PermissionApprovalDecision {
+  const priority: PermissionApprovalDecision[] = ['allow-global', 'allow-project', 'allow-session', 'allow-once']
+  for (const candidate of priority) {
+    if (first === candidate || second === candidate) return candidate
+  }
+  return second
 }
 
 export class PermissionService {
@@ -150,7 +212,7 @@ export class PermissionService {
     options: RequestApprovalOptions = {},
   ): Promise<boolean> {
     // 1) 查 session-scoped 临时允许（用户上一次选「本会话允许」）
-    const action = TOOL_ACTION_MAP[toolName] ?? 'command_exec'
+    const action = resolveToolAction(toolName, toolInput)
     if (this.isSessionAllowed(sessionId, action)) return true
 
     // 2) 查 profile 规则
@@ -168,11 +230,69 @@ export class PermissionService {
     if (mode === 'allow' && options.forcePrompt !== true) return true
 
     // 3) mode === 'ask' or 'ask-twice': push to renderer and wait
-    const requestId = randomUUID()
-    const riskLevel = RISK_LEVEL_MAP[action] ?? 'low'
-    const persistentScopes = this.getPersistentScopes(options.projectId)
+    const result = await this.promptForApproval({
+      sessionId,
+      toolName,
+      action,
+      toolInput,
+      pushFn,
+      options,
+    })
+    let grantDecision = result
 
-    const result = await new Promise<PermissionApprovalDecision>((resolve) => {
+    if (isDenyDecision(result)) return this.applyDenyDecision(result, options, action, toolName)
+
+    if (mode === 'ask-twice') {
+      const second = await this.promptForApproval({
+        sessionId,
+        toolName,
+        action,
+        toolInput,
+        pushFn,
+        options,
+      })
+      if (isDenyDecision(second)) return this.applyDenyDecision(second, options, action, toolName)
+      grantDecision = selectGrantDecision(result, second)
+    }
+
+    if (grantDecision === 'allow-session') {
+      // 只在内存中给该 session 临时放行，不再写穿数据库
+      this.allowForSession(sessionId, action)
+    }
+
+    if (grantDecision === 'allow-project' || grantDecision === 'allow-global') {
+      this.rememberDecision(grantDecision === 'allow-project' ? 'project' : 'global', options, action, toolName, 'allow')
+      return true
+    }
+
+    return true
+  }
+
+  private applyDenyDecision(
+    result: PermissionApprovalDecision,
+    options: RequestApprovalOptions,
+    action: string,
+    toolName: string,
+  ): false {
+    if (result === 'deny-project' || result === 'deny-global') {
+      this.rememberDecision(result === 'deny-project' ? 'project' : 'global', options, action, toolName, 'deny')
+    }
+    return false
+  }
+
+  private async promptForApproval(params: {
+    sessionId: string
+    toolName: string
+    action: string
+    toolInput: Record<string, unknown>
+    pushFn: (req: PermissionApprovalRequest) => void
+    options: RequestApprovalOptions
+  }): Promise<PermissionApprovalDecision> {
+    const requestId = randomUUID()
+    const riskLevel = RISK_LEVEL_MAP[params.action] ?? 'low'
+    const persistentScopes = this.getPersistentScopes(params.options.projectId)
+
+    return await new Promise<PermissionApprovalDecision>((resolve) => {
       const timer = setTimeout(() => {
         if (this._pendingApprovals.delete(requestId)) {
           this._approvalSessions.delete(requestId)
@@ -185,36 +305,19 @@ export class PermissionService {
         this._approvalSessions.delete(requestId)
         resolve(decision)
       })
-      this._approvalSessions.set(requestId, sessionId)
-      pushFn({
+      this._approvalSessions.set(requestId, params.sessionId)
+      params.pushFn({
         requestId,
-        sessionId,
-        toolName,
-        action,
-        toolInput,
+        sessionId: params.sessionId,
+        toolName: params.toolName,
+        action: params.action,
+        toolInput: params.toolInput,
         riskLevel,
-        ...(options.projectId != null ? { projectId: options.projectId } : {}),
-        ...(options.workspaceIds != null ? { workspaceIds: options.workspaceIds } : {}),
+        ...(params.options.projectId != null ? { projectId: params.options.projectId } : {}),
+        ...(params.options.workspaceIds != null ? { workspaceIds: params.options.workspaceIds } : {}),
         persistentScopes,
       })
     })
-
-    if (result === 'allow-session') {
-      // 只在内存中给该 session 临时放行，不再写穿数据库
-      this.allowForSession(sessionId, action)
-    }
-
-    if (result === 'allow-project' || result === 'allow-global') {
-      this.rememberDecision(result === 'allow-project' ? 'project' : 'global', options, action, toolName, 'allow')
-      return true
-    }
-
-    if (result === 'deny-project' || result === 'deny-global') {
-      this.rememberDecision(result === 'deny-project' ? 'project' : 'global', options, action, toolName, 'deny')
-      return false
-    }
-
-    return result !== 'deny'
   }
 
   resolveApproval(requestId: string, decision: PermissionApprovalDecision): boolean {
