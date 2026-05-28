@@ -209,7 +209,19 @@ export function PlanCard({ title, items }: { title: string; items: PlanItem[] })
   )
 }
 
-export function Checkpoint({ num, time, label, files }: { num: number; time: string; label?: string; files?: string[] }) {
+export function Checkpoint({
+  num,
+  time,
+  label,
+  files,
+  onRestore,
+}: {
+  num: number
+  time: string
+  label?: string
+  files?: string[]
+  onRestore?: () => void
+}) {
   const visibleFiles = files?.slice(0, 4) ?? []
   const remaining = Math.max(0, (files?.length ?? 0) - visibleFiles.length)
   return (
@@ -228,7 +240,9 @@ export function Checkpoint({ num, time, label, files }: { num: number; time: str
           </span>
         )}
         <span className="actions">
-          <span className="icon-btn" title="回滚到此处"><Icons.Refresh /></span>
+          <button type="button" className="icon-btn" title="Restore checkpoint" onClick={onRestore} disabled={onRestore == null}>
+            <Icons.Refresh />
+          </button>
           <span className="icon-btn" title="从此处分叉"><Icons.Branch /></span>
         </span>
       </span>

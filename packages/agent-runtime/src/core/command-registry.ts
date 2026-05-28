@@ -62,6 +62,20 @@ export interface CommandResult {
   followUpPrompt?: string
 }
 
+export interface CheckpointSnapshot {
+  checkpointId: string
+  label?: string
+  path?: string
+  filePaths?: string[]
+  timestamp?: string
+}
+
+export interface CheckpointRestoreResult {
+  checkpointId: string
+  restoredFiles: string[]
+  missingFiles: string[]
+}
+
 /** 命令定义（三层架构统一接口） */
 export interface CommandDefinition {
   /** 唯一 ID */
@@ -103,6 +117,8 @@ export interface CommandDeps {
   getSessionEventCount?: (id: string) => number
   /** 获取当前 session 的 usage 统计 */
   getSessionUsage?: (id: string) => { totalInputTokens: number; totalOutputTokens: number; totalCost: number } | null
+  listSessionCheckpoints?: (id: string) => CheckpointSnapshot[]
+  restoreCheckpoint?: (sessionId: string, checkpointRef: string) => Promise<CheckpointRestoreResult>
 }
 
 /** 命令面板展示用的轻量类型 */
@@ -803,6 +819,66 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     usage: '/history',
     handler: async (_cmd, _ctx, _deps) => {
       return { success: true, message: '会话历史请使用侧边栏查看。' }
+    },
+  })
+
+  registry.register({
+    id: 'builtin:checkpoint',
+    name: 'checkpoint',
+    aliases: ['cp'],
+    layer: 'builtin',
+    group: 'session',
+    description: 'List or restore SDK checkpoints',
+    scope: 'session',
+    risk: 'high',
+    usage: '/checkpoint <list|restore> [checkpoint-id]',
+    hasSubcommands: true,
+    handler: async (cmd, ctx, deps) => {
+      const action = cmd.args[0]?.toLowerCase() ?? 'list'
+      if (action === 'list') {
+        const checkpoints = deps.listSessionCheckpoints?.(ctx.sessionId) ?? []
+        if (checkpoints.length === 0) {
+          return { success: true, message: '当前会话还没有可用 checkpoint。' }
+        }
+        const lines = checkpoints.slice(-10).reverse().map((checkpoint) => {
+          const files = checkpoint.filePaths?.length ?? 0
+          const filePreview = checkpoint.filePaths?.slice(0, 3).join(', ')
+          const label = checkpoint.label != null ? ` ${checkpoint.label}` : ''
+          const source = checkpoint.path != null ? ` · ${checkpoint.path}` : ''
+          const fileText = filePreview != null && filePreview.length > 0 ? ` · ${filePreview}` : ''
+          return `- \`${checkpoint.checkpointId}\`${label} · ${files} files${fileText}${source}`
+        })
+        return { success: true, message: ['**Checkpoints**', '', ...lines].join('\n') }
+      }
+
+      if (action !== 'restore' && action !== 'rollback') {
+        return { success: false, message: '用法: /checkpoint <list|restore> [checkpoint-id]' }
+      }
+
+      const checkpointRef = cmd.args[1]
+      if (checkpointRef == null || checkpointRef.trim().length === 0) {
+        return { success: false, message: '用法: /checkpoint restore <checkpoint-id>' }
+      }
+      if (deps.restoreCheckpoint == null) {
+        return { success: false, message: '当前运行时不支持 checkpoint restore。' }
+      }
+
+      const result = await deps.restoreCheckpoint(ctx.sessionId, checkpointRef)
+      const restored = result.restoredFiles.length > 0
+        ? result.restoredFiles.map((file) => `- ${file}`).join('\n')
+        : '- none'
+      const missing = result.missingFiles.length > 0
+        ? `\n\nMissing files:\n${result.missingFiles.map((file) => `- ${file}`).join('\n')}`
+        : ''
+      return {
+        success: result.missingFiles.length === 0,
+        message: `Restored checkpoint \`${result.checkpointId}\`:\n${restored}${missing}`,
+        data: {
+          checkpointId: result.checkpointId,
+          restoredFiles: result.restoredFiles,
+          missingFiles: result.missingFiles,
+        },
+      }
     },
   })
 

@@ -1920,6 +1920,7 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
               num={Number.parseInt(suffix, 16) || i + 1}
               time={fileCount > 0 ? `${fileCount} files` : (block.path ?? 'SDK')}
               label={block.label ?? 'Checkpoint'}
+              {...(options.sessionId != null ? { onRestore: () => void executeCheckpointRestore(options.sessionId as SessionId, block.checkpointId) } : {})}
               {...(block.filePaths != null ? { files: block.filePaths } : {})}
             />
           </div>
@@ -2045,6 +2046,13 @@ function quoteSlashCommandArg(value: string): string {
 }
 
 // ─── Diff / Plan / Permission helper utilities ──────────────────────────────────
+
+async function executeCheckpointRestore(sessionId: SessionId, checkpointId: string): Promise<void> {
+  await window.spark.invoke('command:execute', {
+    sessionId,
+    message: `/checkpoint restore ${quoteSlashCommandArg(checkpointId)}`,
+  })
+}
 
 type DiffHunk = {
   range: string

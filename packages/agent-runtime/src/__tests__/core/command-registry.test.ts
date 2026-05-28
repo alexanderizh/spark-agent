@@ -195,6 +195,34 @@ describe('Built-in commands', () => {
       rmSync(cwd, { recursive: true, force: true })
     }
   })
+
+  it('/checkpoint list shows session checkpoints', async () => {
+    const deps = makeDeps({
+      listSessionCheckpoints: vi.fn(() => [{
+        checkpointId: 'chk_123456',
+        label: 'before edit',
+        path: '.spark/checkpoints/chk_123456',
+        filePaths: ['src/app.ts'],
+      }]),
+    })
+    const result = await registry.execute(parse('/checkpoint list'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('chk_123456')
+    expect(result.message).toContain('src/app.ts')
+  })
+
+  it('/checkpoint restore delegates to runtime restore dependency', async () => {
+    const restoreCheckpoint = vi.fn(async () => ({
+      checkpointId: 'chk_123456',
+      restoredFiles: ['src/app.ts'],
+      missingFiles: [],
+    }))
+    const deps = makeDeps({ restoreCheckpoint })
+    const result = await registry.execute(parse('/checkpoint restore chk_123456'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(restoreCheckpoint).toHaveBeenCalledWith('sess-1', 'chk_123456')
+    expect(result.data).toMatchObject({ restoredFiles: ['src/app.ts'] })
+  })
 })
 
 describe('Command Parser', () => {

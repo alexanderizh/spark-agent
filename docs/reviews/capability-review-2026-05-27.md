@@ -6,7 +6,7 @@
 
 ## 总体评估
 
-当前总评: 79/100。
+当前总评: 80/100。
 
 相较最初评审，项目已经从“骨架完整、执行内核薄弱”推进到“Claude SDK 主路径基本成型，核心上下文与项目配置开始进入运行时”的阶段。最关键的产品取舍已经落实: Claude 通道不再回退 direct Anthropic API，Claude Agent SDK 成为强制依赖；SDK 不可用时任务应失败并引导用户安装或修复 SDK。
 
@@ -29,7 +29,7 @@
 当前判断:
 - 核心策略已完成。
 - SDK 工具调用、基础文件变更、usage、checkpoint 承载已补齐一层最小闭环。
-- SDK 权限审批持久化已进入可用闭环；checkpoint diff 摘要已进入 Chat Inspector / Project agent pane，仍需继续补强真实任务下的 rollback/accept/reject 产品化。
+- SDK 权限审批持久化已进入可用闭环；checkpoint diff 摘要已进入 Chat Inspector / Project agent pane，checkpoint rollback 已有 slash command 与 UI 入口；仍需继续补强 accept/reject 的真实文件级产品化。
 
 ### 2. 上下文额度与模型能力
 
@@ -261,13 +261,15 @@
 - Checkpoint 文件列表支持截断展示和 hover 完整文件列表。
 - Chat Inspector 中新增 Change Review，按文件聚合 `file_change`，展示 changeType、+/- diff 摘要以及关联 checkpoint。
 - Project agent pane 的 `file_change` block 会在存在 diff 时展示 +/- 行数，便于项目视图内快速审查。
+- 新增 `/checkpoint list|restore <checkpoint-id>`，可从会话 checkpoint 事件中定位 SDK checkpoint metadata，并在存在 checkpoint path / filePaths 时安全恢复文件到 workspace。
+- Chat checkpoint pill 增加 restore 入口，触发 `/checkpoint restore` 并将结果写回当前消息流。
 
 仍需补强:
-- 后续接入 accept/reject/rollback。
-- 真实 SDK 任务下继续扩展 richer diff / hunk preview 与 checkpoint 恢复入口。
+- 后续接入文件级 accept/reject，以及 richer diff / hunk preview。
+- 真实 SDK 任务下继续扩展多文件 checkpoint 恢复结果的 UI 反馈和失败分项提示。
 
 验收标准:
-- agent 修改文件后，用户能在 UI 中看到变更文件、diff 摘要和 checkpoint 关系。
+- agent 修改文件后，用户能在 UI 中看到变更文件、diff 摘要和 checkpoint 关系，并可从 checkpoint pill 触发 restore。
 
 ### P1-C: 自修复开发循环
 

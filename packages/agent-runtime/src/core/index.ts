@@ -18,6 +18,8 @@ export type {
   CommandScope,
   CommandRisk,
   CommandListItem,
+  CheckpointSnapshot,
+  CheckpointRestoreResult,
 } from './command-registry.js'
 export { TodoStore } from './todo-store.js'
 export type { TodoItem, TodoStatus } from './todo-store.js'

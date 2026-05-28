@@ -1,4 +1,6 @@
 import crypto from 'node:crypto'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import path from 'node:path'
 import {
   EventRepository,
   ProviderProfileRepository,
@@ -25,7 +27,7 @@ import type {
 import type { SessionPermissionMode } from '@spark/protocol'
 import { AgentLoop, ToolRegistry, isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
-import type { AgentConfig, CommandDeps, CommandListItem } from '../core/index.js'
+import type { AgentConfig, CheckpointRestoreResult, CheckpointSnapshot, CommandDeps, CommandListItem } from '../core/index.js'
 import type { ChatMessage } from '../adapters/types.js'
 import * as keystore from '@spark/shared/keystore'
 import { createAdapter } from './adapter-factory.js'
@@ -181,6 +183,13 @@ export class SessionService {
         // TODO: integrate with UsageLedger
         return null
       },
+      listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
+      restoreCheckpoint: async (id, checkpointRef) => restoreSessionCheckpoint({
+        eventRepo,
+        sessionId: id,
+        workspacePath,
+        checkpointRef,
+      }),
     }
 
     const ctx = {
@@ -247,6 +256,13 @@ export class SessionService {
       },
       getSessionEventCount: (id) => eventRepo.countBySession(id),
       getSessionUsage: (_id) => null,
+      listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
+      restoreCheckpoint: async (id, checkpointRef) => restoreSessionCheckpoint({
+        eventRepo,
+        sessionId: id,
+        workspacePath,
+        checkpointRef,
+      }),
     }
 
     const ctx = {
@@ -1078,6 +1094,129 @@ export class SessionService {
 function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
   const normalized = title?.trim() ?? ''
   return DEFAULT_SESSION_TITLES.has(normalized) || normalized.endsWith(' 会话')
+}
+
+function listSessionCheckpointsFromEvents(eventRepo: EventRepository, sessionId: string): CheckpointSnapshot[] {
+  const rows = eventRepo.queryBySession({ sessionId, eventType: 'checkpoint', limit: 100 }).events
+  const checkpoints: CheckpointSnapshot[] = []
+  for (const row of rows) {
+    try {
+      const event = JSON.parse(row.event_json) as AgentEvent
+      if (event.type !== 'checkpoint') continue
+      checkpoints.push({
+        checkpointId: event.checkpointId,
+        ...(event.label != null ? { label: event.label } : {}),
+        ...(event.path != null ? { path: event.path } : {}),
+        ...(event.filePaths != null ? { filePaths: event.filePaths } : {}),
+        timestamp: event.timestamp,
+      })
+    } catch {
+      // Ignore malformed historical rows.
+    }
+  }
+  return checkpoints
+}
+
+function restoreSessionCheckpoint(params: {
+  eventRepo: EventRepository
+  sessionId: string
+  workspacePath: string | null
+  checkpointRef: string
+}): CheckpointRestoreResult {
+  if (params.workspacePath == null) {
+    throw new Error('No workspace is open for checkpoint restore.')
+  }
+
+  const checkpoints = listSessionCheckpointsFromEvents(params.eventRepo, params.sessionId)
+  const checkpoint = checkpoints.find((item) =>
+    item.checkpointId === params.checkpointRef ||
+    item.checkpointId.endsWith(params.checkpointRef) ||
+    item.path === params.checkpointRef
+  )
+  if (checkpoint == null) {
+    throw new Error(`Checkpoint not found: ${params.checkpointRef}`)
+  }
+  if (checkpoint.path == null || checkpoint.path.trim().length === 0) {
+    throw new Error(`Checkpoint ${checkpoint.checkpointId} does not include a restore path.`)
+  }
+
+  const workspaceRoot = path.resolve(params.workspacePath)
+  const checkpointRoot = path.resolve(workspaceRoot, checkpoint.path)
+  if (!existsSync(checkpointRoot)) {
+    throw new Error(`Checkpoint path does not exist: ${checkpoint.path}`)
+  }
+
+  const rootStat = statSync(checkpointRoot)
+  const requestedFiles = checkpoint.filePaths?.filter((file) => file.trim().length > 0) ?? []
+  const filePaths = requestedFiles.length > 0
+    ? requestedFiles
+    : (rootStat.isFile() ? [path.basename(checkpointRoot)] : listFilesUnder(checkpointRoot, 200))
+
+  const restoredFiles: string[] = []
+  const missingFiles: string[] = []
+  for (const filePath of filePaths) {
+    const safePath = normalizeWorkspaceRelativePath(filePath)
+    if (safePath == null) {
+      missingFiles.push(filePath)
+      continue
+    }
+
+    const sourcePath = rootStat.isDirectory()
+      ? path.resolve(checkpointRoot, safePath)
+      : checkpointRoot
+    if (rootStat.isDirectory() && !isInsidePath(checkpointRoot, sourcePath)) {
+      missingFiles.push(filePath)
+      continue
+    }
+    if (!existsSync(sourcePath) || !statSync(sourcePath).isFile()) {
+      missingFiles.push(filePath)
+      continue
+    }
+
+    const destPath = path.resolve(workspaceRoot, safePath)
+    if (!isInsidePath(workspaceRoot, destPath)) {
+      missingFiles.push(filePath)
+      continue
+    }
+    mkdirSync(path.dirname(destPath), { recursive: true })
+    copyFileSync(sourcePath, destPath)
+    restoredFiles.push(safePath)
+  }
+
+  return {
+    checkpointId: checkpoint.checkpointId,
+    restoredFiles,
+    missingFiles,
+  }
+}
+
+function normalizeWorkspaceRelativePath(filePath: string): string | null {
+  const normalized = filePath.replace(/\\/g, '/').replace(/^\/+/, '')
+  if (normalized.length === 0 || normalized.split('/').includes('..')) return null
+  return normalized
+}
+
+function listFilesUnder(root: string, limit: number): string[] {
+  const files: string[] = []
+  const visit = (dir: string) => {
+    if (files.length >= limit) return
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (files.length >= limit) return
+      const fullPath = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        visit(fullPath)
+        continue
+      }
+      if (entry.isFile()) files.push(path.relative(root, fullPath).replace(/\\/g, '/'))
+    }
+  }
+  visit(root)
+  return files
+}
+
+function isInsidePath(root: string, target: string): boolean {
+  const relative = path.relative(path.resolve(root), path.resolve(target))
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
 function deriveSessionTitle(message: string): string {
