@@ -582,6 +582,18 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
   )
 }
 
+function countBlockDiffLines(diff: string | undefined): { adds: number; dels: number } {
+  if (diff == null || diff.trim().length === 0) return { adds: 0, dels: 0 }
+  let adds = 0
+  let dels = 0
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue
+    if (line.startsWith('+')) adds += 1
+    if (line.startsWith('-')) dels += 1
+  }
+  return { adds, dels }
+}
+
 function renderBlock(block: UIBlock, index: number): ReactNode {
   switch (block.kind) {
     case 'text':
@@ -614,13 +626,18 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
           {block.message}
         </div>
       )
-    case 'file_change':
+    case 'file_change': {
+      const diffCounts = countBlockDiffLines(block.diff)
       return (
         <div key={index} className="block-file-change">
           <span className="badge block-change-type">{block.changeType}</span>
           <span className="mono-sm block-change-path">{block.path}</span>
+          {block.diff != null && block.diff.trim().length > 0 && (
+            <span className="faint mono-sm block-change-path">+{diffCounts.adds} -{diffCounts.dels}</span>
+          )}
         </div>
       )
+    }
     case 'terminal':
       return (
         <div key={index} className="block-terminal">

@@ -4305,6 +4305,7 @@ function ChatInspector({
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
   const projectContextSources = projectContext?.sources ?? []
+  const fileChangeSummaries = extractInspectorFileChanges(messages)
 
   const loadRuntimeConfig = useCallback(async () => {
     const req = {
@@ -4493,6 +4494,29 @@ function ChatInspector({
         <div className="inspector-section">
           <h4>计划</h4>
           {plans.map((plan) => <PlanSummary key={plan.id} plan={plan} />)}
+        </div>
+      )}
+
+      {fileChangeSummaries.length > 0 && (
+        <div className="inspector-section">
+          <h4>
+            Change Review
+            <span className="inspector-count">{fileChangeSummaries.length}</span>
+          </h4>
+          <div className="runtime-skill-list">
+            {fileChangeSummaries.map((change) => (
+              <div className="runtime-skill-row" key={change.id}>
+                <div className="runtime-skill-main min-w-0">
+                  <div className="runtime-skill-name truncate">{change.path}</div>
+                  <div className="runtime-skill-desc truncate">
+                    {change.changeType} · +{change.adds} -{change.dels}
+                    {!change.hasDiff ? ' · no diff' : ''}
+                    {change.checkpointIds.length > 0 ? ` · checkpoint ${change.checkpointIds.join(', ')}` : ''}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -4853,6 +4877,67 @@ function buildUsageDataFromEvents(events: AgentEvent[]): SessionUsageData {
   }
 
   return { inputTokens, outputTokens, cacheHitTokens, estimatedCostUsd, contextWindow: 0, turns }
+}
+
+type InspectorFileChange = {
+  id: string
+  path: string
+  changeType: string
+  adds: number
+  dels: number
+  hasDiff: boolean
+  checkpointIds: string[]
+}
+
+function extractInspectorFileChanges(messages: UIMessage[]): InspectorFileChange[] {
+  const checkpointsByPath = new Map<string, string[]>()
+
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== 'checkpoint') continue
+      for (const filePath of block.filePaths ?? []) {
+        const checkpointIds = checkpointsByPath.get(filePath) ?? []
+        const shortId = formatCheckpointReference(block.checkpointId)
+        if (!checkpointIds.includes(shortId)) checkpointIds.push(shortId)
+        checkpointsByPath.set(filePath, checkpointIds)
+      }
+    }
+  }
+
+  const changes = new Map<string, InspectorFileChange>()
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== 'file_change') continue
+      const counts = countDiffLines(block.diff)
+      changes.set(block.path, {
+        id: `${message.id}:${block.path}`,
+        path: block.path,
+        changeType: block.changeType,
+        adds: counts.adds,
+        dels: counts.dels,
+        hasDiff: block.diff != null && block.diff.trim().length > 0,
+        checkpointIds: checkpointsByPath.get(block.path) ?? [],
+      })
+    }
+  }
+
+  return Array.from(changes.values()).slice(-12).reverse()
+}
+
+function countDiffLines(diff: string | undefined): { adds: number; dels: number } {
+  if (diff == null || diff.trim().length === 0) return { adds: 0, dels: 0 }
+  let adds = 0
+  let dels = 0
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('+++') || line.startsWith('---')) continue
+    if (line.startsWith('+')) adds += 1
+    if (line.startsWith('-')) dels += 1
+  }
+  return { adds, dels }
+}
+
+function formatCheckpointReference(checkpointId: string): string {
+  return checkpointId.length > 8 ? checkpointId.slice(-6) : checkpointId
 }
 
 function extractPlans(messages: UIMessage[]): SidebarPlan[] {
