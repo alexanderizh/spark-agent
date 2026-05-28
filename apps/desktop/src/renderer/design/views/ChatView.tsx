@@ -1843,7 +1843,7 @@ function applyAgentStatus(
   }
 }
 
-function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspector' } = {}): ReactNode {
+function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspector'; sessionId?: SessionId } = {}): ReactNode {
   const surface = options.surface ?? 'main'
   return blocks.map((block, i) => {
     switch (block.kind) {
@@ -1925,6 +1925,15 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
           </div>
         )
       }
+      case 'validation_suggestion':
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <ValidationSuggestionCard
+              block={block}
+              {...(options.sessionId != null ? { sessionId: options.sessionId } : {})}
+            />
+          </div>
+        )
       case 'plan_proposed': {
         const items = parsePlanToItems(block.plan)
         return (
@@ -1951,6 +1960,73 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
         return null
     }
   })
+}
+
+function ValidationSuggestionCard({
+  block,
+  sessionId,
+}: {
+  block: Extract<UIBlock, { kind: 'validation_suggestion' }>
+  sessionId?: SessionId
+}) {
+  const { toast } = useToast()
+  const [runningCommand, setRunningCommand] = useState<string | null>(null)
+
+  const runValidationCommand = async (command: string) => {
+    if (sessionId == null) {
+      toast.warning('请先选中会话再运行验证命令。')
+      return
+    }
+    setRunningCommand(command)
+    try {
+      await window.spark.invoke('command:execute', { sessionId, message: `/validate ${command}` })
+      toast.info('验证命令已开始执行。')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '验证命令执行失败')
+    } finally {
+      setRunningCommand(null)
+    }
+  }
+
+  return (
+    <div className="chat-card validation-card">
+      <div className="chat-card-h info">
+        <span className="ico"><Icons.CheckCircle /></span>
+        <span>建议验证</span>
+      </div>
+      <div className="chat-card-body">
+        <div className="validation-summary">{block.summary}</div>
+        <div className="validation-files">
+          {block.changedFiles.slice(0, 6).map((file) => (
+            <code key={file} className="validation-file">{file}</code>
+          ))}
+          {block.changedFiles.length > 6 && <span className="validation-more">+{block.changedFiles.length - 6}</span>}
+        </div>
+        <div className="validation-command-list">
+          {block.commands.map((item) => (
+            <div className="validation-command-row" key={item.id}>
+              <div className="validation-command-main min-w-0">
+                <div className="validation-command-title">
+                  <span>{item.label}</span>
+                  <code>{item.command}</code>
+                </div>
+                <div className="validation-command-reason">{item.reason}</div>
+              </div>
+              <button
+                className="btn ghost sm"
+                disabled={runningCommand != null}
+                onClick={() => void runValidationCommand(item.command)}
+                title="运行验证命令"
+              >
+                {runningCommand === item.command ? <Icons.Spinner size={12} /> : <Icons.Play size={12} />}
+                运行
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ─── Diff / Plan / Permission helper utilities ──────────────────────────────────
@@ -2542,11 +2618,11 @@ function AgentMsg({
           </div>
         )}
         {contentBlocks.length > 0 && isLatest && (
-          <div className="msg-content">{renderBlocks(contentBlocks)}</div>
+          <div className="msg-content">{renderBlocks(contentBlocks, { sessionId })}</div>
         )}
         {contentBlocks.length > 0 && !isLatest && (
           <CollapsibleContent maxHeight={500} streaming={isStreaming}>
-            <div className="msg-content">{renderBlocks(contentBlocks)}</div>
+            <div className="msg-content">{renderBlocks(contentBlocks, { sessionId })}</div>
           </CollapsibleContent>
         )}
         {errorBlocks.map((block, i) => (

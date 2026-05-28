@@ -128,4 +128,35 @@ describe('MessageBuilder', () => {
       isStreaming: false,
     })
   })
+
+  it('maps validation suggestions into assistant blocks', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('validation_suggestion'),
+      type: 'validation_suggestion',
+      summary: '检测到 1 个文件变更，建议先运行项目验证。',
+      changedFiles: ['src/app.ts'],
+      commands: [
+        {
+          id: 'script:typecheck',
+          label: '类型检查',
+          command: 'pnpm run typecheck',
+          reason: '本轮修改包含代码文件，先确认类型契约没有漂移。',
+        },
+      ],
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'validation_suggestion',
+        changedFiles: ['src/app.ts'],
+        commands: [{ command: 'pnpm run typecheck' }],
+      },
+    ])
+  })
 })

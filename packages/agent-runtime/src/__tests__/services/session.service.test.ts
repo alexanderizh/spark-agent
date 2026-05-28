@@ -720,6 +720,60 @@ describe('SessionService.sendTurn', () => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect((onEvent.mock.calls[2] as unknown[][])[0]).toMatchObject({ seq: 2 })
   })
+
+  it('emits validation suggestions after code file changes complete', async () => {
+    const sessionRepo = makeSessionRepo()
+    const eventRepo = makeEventRepo()
+    const providerRepo = makeOpenAIProviderRepo()
+    const rulesRepo = makeRulesRepo()
+
+    let capturedListener: ((e: unknown) => void) | null = null
+    const loop = {
+      onEvent: vi.fn((fn) => { capturedListener = fn }),
+      cancel: vi.fn(),
+      executeTurn: vi.fn().mockResolvedValue(undefined),
+    }
+
+    vi.mocked(SessionRepository).mockImplementation(() => sessionRepo as never)
+    vi.mocked(EventRepository).mockImplementation(() => eventRepo as never)
+    vi.mocked(ProviderProfileRepository).mockImplementation(() => providerRepo as never)
+    vi.mocked(RulesRepository).mockImplementation(() => rulesRepo as never)
+    vi.mocked(keystore.getSecret).mockResolvedValue('sk-test')
+    vi.mocked(createAdapter).mockReturnValue({} as never)
+    vi.mocked(AgentLoop).mockImplementation(() => loop as never)
+
+    const onEvent = vi.fn()
+    const svc = new SessionService(mockDb, onEvent)
+    await svc.sendTurn({ sessionId: 'sess-1', message: 'change code' })
+
+    capturedListener!({
+      id: 'file-1',
+      type: 'file_change',
+      sessionId: 'sess-1',
+      turnId: 'turn-1',
+      timestamp: '2026-05-28T00:00:00.000Z',
+      seq: 0,
+      changeType: 'modify',
+      path: 'packages/agent-runtime/src/services/session.service.ts',
+    })
+    capturedListener!({
+      id: 'status-1',
+      type: 'agent_status',
+      sessionId: 'sess-1',
+      turnId: 'turn-1',
+      timestamp: '2026-05-28T00:00:01.000Z',
+      seq: 0,
+      status: 'completed',
+    })
+
+    expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'validation_suggestion',
+      changedFiles: ['packages/agent-runtime/src/services/session.service.ts'],
+      commands: expect.arrayContaining([
+        expect.objectContaining({ command: expect.stringMatching(/^(pnpm|npm|yarn) run typecheck$/) }),
+      ]),
+    }))
+  })
 })
 
 describe('SessionService.cancelTurn', () => {

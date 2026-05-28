@@ -32,6 +32,7 @@ import { createAdapter } from './adapter-factory.js'
 import { McpService } from './mcp-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
+import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
 import { createLogger, resolveSoftContextLimit } from '@spark/shared'
@@ -521,9 +522,35 @@ export class SessionService {
     }
 
     const loop = new AgentLoop()
+    const changedFiles = new Set<string>()
+    let validationSuggestionEmitted = false
+    const maybeEmitValidationSuggestion = () => {
+      if (validationSuggestionEmitted || changedFiles.size === 0) return
+      validationSuggestionEmitted = true
+      const suggestion = new ValidationSuggestionService().suggest({
+        workspaceRootPath,
+        changedFiles: Array.from(changedFiles),
+      })
+      if (suggestion == null) return
+      this.emitAndPersist(sessionId, turnId, {
+        id: crypto.randomUUID(),
+        type: 'validation_suggestion',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        summary: suggestion.summary,
+        changedFiles: suggestion.changedFiles,
+        commands: suggestion.commands,
+      }, eventRepo)
+    }
 
     loop.onEvent((event) => {
+      if (event.type === 'file_change') changedFiles.add(event.path)
       this.emitAndPersist(sessionId, turnId, event, eventRepo)
+      if (event.type === 'agent_status' && event.status === 'completed') {
+        maybeEmitValidationSuggestion()
+      }
     })
 
     this.activeLoops.set(sessionId, loop)
@@ -536,6 +563,7 @@ export class SessionService {
       : loop.executeTurn(sessionId, turnId, message, agentConfig)
     execution
       .then(() => {
+        maybeEmitValidationSuggestion()
         sessionRepo.updateStatus(sessionId, 'idle')
       })
       .catch(() => {
@@ -607,9 +635,31 @@ export class SessionService {
     const mcpServers = this.buildMcpServersForSDK()
 
     const executor = new ClaudeSDKExecutor()
+    const changedFiles = new Set<string>()
+    let validationSuggestionEmitted = false
+    const maybeEmitValidationSuggestion = () => {
+      if (validationSuggestionEmitted || changedFiles.size === 0) return
+      validationSuggestionEmitted = true
+      const suggestion = new ValidationSuggestionService().suggest({
+        workspaceRootPath: config.workspaceRootPath,
+        changedFiles: Array.from(changedFiles),
+      })
+      if (suggestion == null) return
+      this.emitAndPersist(sessionId, turnId, {
+        ...makeBase(),
+        type: 'validation_suggestion',
+        summary: suggestion.summary,
+        changedFiles: suggestion.changedFiles,
+        commands: suggestion.commands,
+      }, eventRepo)
+    }
 
     executor.onEvent((event) => {
+      if (event.type === 'file_change') changedFiles.add(event.path)
       this.emitAndPersist(sessionId, turnId, event, eventRepo)
+      if (event.type === 'agent_status' && event.status === 'completed') {
+        maybeEmitValidationSuggestion()
+      }
     })
 
     this.activeLoops.set(sessionId, executor)
@@ -625,6 +675,7 @@ export class SessionService {
     executor
       .executeTurn(sessionId, turnId, message, sdkConfig)
       .then(() => {
+        maybeEmitValidationSuggestion()
         sessionRepo.updateStatus(sessionId, 'idle')
       })
       .catch(() => {

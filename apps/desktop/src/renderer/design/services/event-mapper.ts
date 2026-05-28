@@ -19,6 +19,7 @@ export type UIBlock =
   | { kind: 'error'; code: string; message: string; retryable: boolean }
   | { kind: 'file_change'; changeType: string; path: string; diff: string | undefined }
   | { kind: 'checkpoint'; checkpointId: string; label: string | undefined; path: string | undefined; filePaths: string[] | undefined }
+  | { kind: 'validation_suggestion'; summary: string; changedFiles: string[]; commands: Array<{ id: string; label: string; command: string; reason: string }> }
   | { kind: 'terminal'; toolCallId: string; stdout: string; stderr: string; isStreaming: boolean; exitCode: number | undefined }
   | { kind: 'plan_proposed'; plan: string }
   | { kind: 'permission_request'; requestId: string; action: string; riskLevel: string; description: string; paths: string[] | undefined; command: string | undefined; domains: string[] | undefined }
@@ -242,6 +243,17 @@ export class MessageBuilder {
           label: event.label,
           path: event.path,
           filePaths: event.filePaths,
+        })
+        break
+      }
+
+      case 'validation_suggestion': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        msg.blocks.push({
+          kind: 'validation_suggestion',
+          summary: event.summary,
+          changedFiles: event.changedFiles,
+          commands: event.commands,
         })
         break
       }

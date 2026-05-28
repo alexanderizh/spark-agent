@@ -6,7 +6,7 @@
 
 ## 总体评估
 
-当前总评: 75/100。
+当前总评: 78/100。
 
 相较最初评审，项目已经从“骨架完整、执行内核薄弱”推进到“Claude SDK 主路径基本成型，核心上下文与项目配置开始进入运行时”的阶段。最关键的产品取舍已经落实: Claude 通道不再回退 direct Anthropic API，Claude Agent SDK 成为强制依赖；SDK 不可用时任务应失败并引导用户安装或修复 SDK。
 
@@ -146,7 +146,8 @@
 - `094190a feat: sync queued turns from runtime`
 - `8916c22 feat: add project context governor`
 - `23c9644 feat: show checkpoint file context`
-- 下一步: 自修复开发循环 MVP，补验证命令建议/执行入口、结果回流和失败重试提示。
+- 本轮新增: 自修复开发循环 MVP 已补齐验证命令建议、`/validate` 执行入口、Chat 验证卡片和基础结果回流。
+- 下一步: 继续补强验证失败摘要回灌给 agent、自动重试策略、checkpoint diff 审查与结构化用户补充问答。
 
 最近验证:
 
@@ -267,13 +268,18 @@
 目标:
 - agent 完成代码修改后自动建议或执行本项目合适的验证命令。
 
+已完成:
+- 新增 `ValidationSuggestionService`，根据 workspace package manager、`package.json` scripts 和本轮 `file_change` 范围推荐 typecheck/test/lint。
+- 新增 `validation_suggestion` agent event，direct loop 和 Claude SDK loop 在代码变更完成后都会发出验证建议。
+- 新增 `/validate` 命令入口，只允许运行当前 workspace `package.json` 中匹配 typecheck/test/lint/check 的验证脚本，并把 stdout/stderr/exit code 回流到会话。
+- ChatView 已渲染“建议验证”卡片，展示变更文件、推荐命令、推荐原因，并支持一键运行 `/validate`；ProjectView 也会显示验证摘要。
+
 开发内容:
-- 识别 package manager 和 workspace scripts。
-- 根据改动范围推荐 typecheck/test。
-- 失败摘要回灌给 agent 继续修复。
+- 继续补强失败摘要回灌给 agent 继续修复。
+- 增加自动重试次数、停止条件和用户可见的 retry trail。
 
 验收标准:
-- TypeScript/单测失败时能自动进入修复循环，直到通过或明确停止。
+- 当前 MVP 已能在代码变更后建议并运行验证；后续需要让 TypeScript/单测失败时自动进入修复循环，直到通过或明确停止。
 
 ### P1-D: 结构化用户补充问答
 

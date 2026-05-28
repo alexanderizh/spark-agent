@@ -177,6 +177,20 @@ export interface CheckpointEvent extends BaseEvent {
   filePaths?: string[]
 }
 
+export interface ValidationCommandSuggestion {
+  id: string
+  label: string
+  command: string
+  reason: string
+}
+
+export interface ValidationSuggestionEvent extends BaseEvent {
+  type: 'validation_suggestion'
+  summary: string
+  changedFiles: string[]
+  commands: ValidationCommandSuggestion[]
+}
+
 // ─── 终端类事件 ──────────────────────────────────────────────────────────────
 
 /** 命令执行输出（用于 xterm.js 渲染） */
@@ -338,6 +352,7 @@ export type AgentEvent =
   | PermissionResponseEvent
   | FileChangeEvent
   | CheckpointEvent
+  | ValidationSuggestionEvent
   | TerminalOutputEvent
   | AgentStatusEvent
   | AgentThinkingEvent

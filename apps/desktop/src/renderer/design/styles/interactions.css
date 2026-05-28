@@ -48,6 +48,82 @@
 }
 .chat-card-foot .spacer { flex: 1; }
 
+.validation-card .chat-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.validation-summary {
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.validation-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.validation-file,
+.validation-more {
+  max-width: 220px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.validation-command-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.validation-command-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+}
+.validation-command-main {
+  flex: 1;
+}
+.validation-command-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-strong);
+  font-size: var(--font-xs);
+  font-weight: 600;
+}
+.validation-command-title code {
+  max-width: 100%;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--text);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.validation-command-reason {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1.4;
+}
+.validation-command-row .btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Risk + spec lines */
 .spec-grid {
   display: grid;

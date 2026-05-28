@@ -10,6 +10,8 @@
  *   session / model / context / permission / workflow / agent / mcp / skill / resource / team / git / utility / system
  */
 
+import { existsSync, readFileSync } from 'node:fs'
+import path from 'node:path'
 import type { ParsedCommand } from './command-parser.js'
 
 /* ============================================================
@@ -246,6 +248,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
         '`/clear` — 清空会话消息',
         '`/diff` — 查看 git diff',
         '`/doctor` — 环境诊断',
+        '`/validate [command]` — 运行项目验证脚本',
         '`/usage` — 查看 token/cost 统计',
         '`/init` — 初始化项目配置',
         '`/add-dir <path>` — 添加工作目录',
@@ -438,6 +441,65 @@ function registerSdkCommands(registry: CommandRegistry): void {
   })
 
   registry.register({
+    id: 'builtin:validate',
+    name: 'validate',
+    aliases: ['verify'],
+    layer: 'builtin',
+    group: 'utility',
+    description: '运行项目验证脚本',
+    scope: 'workspace',
+    risk: 'medium',
+    usage: '/validate [pnpm run typecheck]',
+    handler: async (cmd, _ctx, deps) => {
+      const cwd = deps.getWorkspacePath?.()
+      if (!cwd) return { success: false, message: '未打开工作区，无法运行验证。' }
+      if (!deps.execShell) return { success: false, message: 'Shell 执行不可用。' }
+
+      const scripts = readWorkspaceScripts(cwd)
+      const validationScripts = Object.keys(scripts).filter(isValidationScriptName)
+      if (validationScripts.length === 0) {
+        return { success: false, message: '当前工作区 package.json 中没有发现 typecheck/test/lint 类验证脚本。' }
+      }
+
+      if (cmd.args.length === 0) {
+        const pm = detectWorkspacePackageManager(cwd)
+        const lines = [
+          '**可用验证脚本**',
+          '',
+          ...validationScripts.map((script) => `- \`${pm} run ${script}\``),
+        ]
+        return { success: true, message: lines.join('\n') }
+      }
+
+      const requestedCommand = cmd.args.join(' ')
+      const parsed = parseValidationRunCommand(requestedCommand)
+      if (parsed == null || !validationScripts.includes(parsed.scriptName)) {
+        return {
+          success: false,
+          message: `只允许运行 package.json 中的验证脚本：${validationScripts.map((script) => `\`${script}\``).join('、')}。`,
+        }
+      }
+
+      const startedAt = Date.now()
+      const result = await deps.execShell(requestedCommand, cwd)
+      const elapsed = Date.now() - startedAt
+      const output = [result.stdout, result.stderr].filter((part) => part.trim().length > 0).join('\n')
+      const clippedOutput = output.length > 8000 ? `${output.slice(0, 8000)}\n... output truncated ...` : output
+      const statusLine = result.exitCode === 0 ? '验证通过' : '验证失败'
+      const body = clippedOutput.trim().length > 0 ? `\n\n\`\`\`\n${clippedOutput.trim()}\n\`\`\`` : ''
+      return {
+        success: result.exitCode === 0,
+        message: `**${statusLine}** \`${requestedCommand}\` (${elapsed}ms, exit ${result.exitCode})${body}`,
+        data: {
+          command: requestedCommand,
+          exitCode: result.exitCode,
+          durationMs: elapsed,
+        },
+      }
+    },
+  })
+
+  registry.register({
     id: 'sdk:claude:usage',
     name: 'usage',
     aliases: ['cost'],
@@ -570,6 +632,48 @@ function registerSdkCommands(registry: CommandRegistry): void {
     usage: '/side [message]',
     handler: async () => ({ success: true, message: '', forwardToAgent: true }),
   })
+}
+
+function readWorkspaceScripts(cwd: string): Record<string, string> {
+  try {
+    const raw = readFileSync(path.join(cwd, 'package.json'), 'utf8')
+    const parsed = JSON.parse(raw) as unknown
+    if (!isRecord(parsed) || !isRecord(parsed.scripts)) return {}
+    const scripts: Record<string, string> = {}
+    for (const [name, value] of Object.entries(parsed.scripts)) {
+      if (typeof value === 'string') scripts[name] = value
+    }
+    return scripts
+  } catch {
+    return {}
+  }
+}
+
+function detectWorkspacePackageManager(cwd: string): 'pnpm' | 'yarn' | 'npm' {
+  if (existsSync(path.join(cwd, 'pnpm-lock.yaml'))) return 'pnpm'
+  if (existsSync(path.join(cwd, 'yarn.lock'))) return 'yarn'
+  return 'npm'
+}
+
+function isValidationScriptName(name: string): boolean {
+  return /(typecheck|check|tsc|test|vitest|lint|format:check|eslint)/i.test(name)
+}
+
+function parseValidationRunCommand(command: string): { packageManager: string; scriptName: string } | null {
+  const tokens = command.trim().split(/\s+/).filter(Boolean)
+  if (tokens.length < 3) return null
+  const packageManager = tokens[0]
+  if (packageManager !== 'pnpm' && packageManager !== 'npm' && packageManager !== 'yarn') return null
+
+  const runIndex = tokens.indexOf('run')
+  if (runIndex < 0 || runIndex + 1 >= tokens.length) return null
+  const scriptName = tokens[runIndex + 1]
+  if (scriptName == null || scriptName.startsWith('-')) return null
+  return { packageManager, scriptName }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null
 }
 
 /* ============================================================

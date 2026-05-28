@@ -630,6 +630,13 @@ function renderBlock(block: UIBlock, index: number): ReactNode {
           {block.exitCode !== undefined && <span className="faint block-term-status">退出码: {block.exitCode}</span>}
         </div>
       )
+    case 'validation_suggestion':
+      return (
+        <div key={index} className="block-file-change">
+          <span className="badge block-change-type">验证</span>
+          <span className="mono-sm block-change-path">{block.commands.map((command) => command.command).join(' · ')}</span>
+        </div>
+      )
     default:
       return null
   }

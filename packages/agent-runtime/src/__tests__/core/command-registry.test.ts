@@ -1,3 +1,5 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
 import { describe, it, expect, vi } from 'vitest'
 import { CommandRegistry, createBuiltinRegistry } from '../../core/command-registry.js'
 import type { CommandDeps } from '../../core/command-registry.js'
@@ -141,6 +143,40 @@ describe('Built-in commands', () => {
     expect(result.success).toBe(true)
     expect(result.message).toContain('Code Agent')
   })
+
+  it('/validate lists and runs workspace validation scripts', async () => {
+    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit', dev: 'vite' })
+    try {
+      const deps = makeDeps({
+        getWorkspacePath: () => cwd,
+        execShell: vi.fn(async () => ({ stdout: 'ok', stderr: '', exitCode: 0 })),
+      })
+      const list = await registry.execute(parse('/validate'), ctx, deps)
+      expect(list.success).toBe(true)
+      expect(list.message).toContain('npm run typecheck')
+
+      const run = await registry.execute(parse('/validate npm run typecheck'), ctx, deps)
+      expect(run.success).toBe(true)
+      expect(deps.execShell).toHaveBeenCalledWith('npm run typecheck', cwd)
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
+
+  it('/validate refuses non-validation scripts', async () => {
+    const cwd = makeWorkspace({ typecheck: 'tsc --noEmit', postinstall: 'node unsafe.js' })
+    try {
+      const deps = makeDeps({
+        getWorkspacePath: () => cwd,
+        execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+      })
+      const result = await registry.execute(parse('/validate npm run postinstall'), ctx, deps)
+      expect(result.success).toBe(false)
+      expect(deps.execShell).not.toHaveBeenCalled()
+    } finally {
+      rmSync(cwd, { recursive: true, force: true })
+    }
+  })
 })
 
 describe('Command Parser', () => {
@@ -183,3 +219,9 @@ describe('Command Parser', () => {
     expect(cmd?.name).toBe('new-session')
   })
 })
+
+function makeWorkspace(scripts: Record<string, string>): string {
+  const cwd = mkdtempSync(path.join(process.cwd(), 'tmp-command-registry-'))
+  writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ scripts }, null, 2))
+  return cwd
+}
