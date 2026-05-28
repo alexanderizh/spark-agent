@@ -923,7 +923,7 @@ body.sidebar-resizing {
   display: flex;
   flex-direction: column;
   min-width: 0;
-  position: relative;
+  min-height: 0;
   overflow: hidden;
 }
 
@@ -959,10 +959,9 @@ body.sidebar-resizing {
 
 .chat-stream {
   flex: 1;
+  min-height: 0;
   overflow: auto;
   padding: var(--pad-xl) 0;
-  /* 底部留出足够空间给 composer，避免内容被遮挡 */
-  padding-bottom: 200px;
   background: var(--bg);
 }
 .chat-stream-inner {
@@ -1667,14 +1666,10 @@ body.sidebar-resizing {
   color: #71717a;
 }
 
-/* Composer — 底部固定输入区域 */
+/* Composer — 底部输入区域 */
 .composer-wrap {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  flex-shrink: 0;
   min-width: 685px;
-  /* 与父盒子一样的主题背景色，避免滚动时产生视差 */
   background: var(--bg);
   padding: 0;
   z-index: 5;
@@ -2243,16 +2238,17 @@ body.sidebar-resizing {
 .composer-param-bar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   min-height: 38px;
   padding: 8px 2px 0;
   color: var(--text-muted);
   max-width: 100%;
   min-width: 0;
+  position: relative;
+  z-index: 10;
 }
 .composer-controls {
-  flex-wrap: wrap;
-  row-gap: 8px;
+  flex-wrap: nowrap;
 }
 .composer-param-bar .spacer {
   flex: 1;
@@ -5106,6 +5102,148 @@ body.inspector-resizing {
 }
 .subsec-h:first-child {
   margin-top: 0;
+}
+
+/* ── Integrity Section ── */
+.integrity-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-md);
+  padding: var(--pad-md) var(--pad-lg);
+  background: var(--bg-soft);
+  border-radius: var(--r-lg);
+  margin-bottom: var(--pad-lg);
+}
+.integrity-status-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-sm);
+}
+.integrity-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.integrity-status-badge.ok {
+  color: var(--success);
+}
+.integrity-status-badge.warn {
+  color: var(--warning);
+}
+.integrity-status-badge.unknown {
+  color: var(--text-muted);
+}
+.integrity-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.integrity-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  font-size: 12px;
+  margin-bottom: var(--pad-md);
+}
+.integrity-banner.success {
+  background: var(--success-bg);
+  color: var(--success);
+}
+.integrity-banner.error {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.integrity-sdk-card {
+  margin-bottom: var(--pad-lg);
+}
+.integrity-sdk-row {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-md);
+  padding: 10px var(--pad-lg);
+}
+.integrity-tool-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.integrity-sdk-row.bordered {
+  border-top: 1px solid var(--divider);
+}
+.integrity-sdk-info {
+  min-width: 0;
+  flex: 1;
+}
+.integrity-sdk-name {
+  font-size: var(--font-base);
+  font-weight: 500;
+  color: var(--text);
+}
+.integrity-sdk-version {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+}
+.integrity-sdk-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.integrity-sdk-error {
+  padding: 0 var(--pad-lg) 8px;
+  font-size: 11px;
+  color: var(--danger);
+}
+.integrity-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 16px;
+  color: var(--text-faint);
+  font-size: var(--font-sm);
+}
+.integrity-ref-card {
+  background: var(--bg-soft);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.integrity-ref-item {
+  display: flex;
+  align-items: center;
+  gap: var(--pad-md);
+  padding: 10px var(--pad-lg);
+}
+.integrity-ref-item.bordered {
+  border-top: 1px solid var(--divider);
+}
+.integrity-ref-left {
+  min-width: 0;
+  flex: 1;
+}
+.integrity-ref-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.integrity-ref-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.4;
 }
 
 /* ── Appearance: Theme grid ── */

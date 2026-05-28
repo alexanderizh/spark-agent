@@ -19,7 +19,8 @@ import * as https from 'node:https'
 import { createRequire } from 'node:module'
 import { app } from 'electron'
 import { createLogger } from '@spark/shared'
-import type { SdkIntegrityItem, SdkIntegrityCheckRequest, SdkIntegrityCheckResponse, SdkIntegrityInstallResponse } from '@spark/protocol'
+import type { SdkIntegrityItem, SdkIntegrityCheckRequest, SdkIntegrityCheckResponse, SdkIntegrityInstallResponse, RuntimeToolStatus } from '@spark/protocol'
+import { recheckRuntimeTools } from './ShellEnvironmentService.js'
 
 const log = createLogger('sdk-integrity')
 
@@ -241,8 +242,20 @@ export async function checkSdkIntegrity(request: SdkIntegrityCheckRequest): Prom
     sdks.push(item)
   }
 
+  // Also detect host runtime tools (node, npm, git, etc.)
+  let tools: RuntimeToolStatus[] = []
+  try {
+    const envStatus = await recheckRuntimeTools()
+    // Only include tools relevant to agent runtime (node, npm, git)
+    const relevantTools = ['node', 'npm', 'git']
+    tools = envStatus.tools.filter((t) => relevantTools.includes(t.command))
+  } catch (err) {
+    log.warn(`Failed to detect host tools: ${String(err)}`)
+  }
+
   const result: SdkIntegrityCheckResponse = {
     sdks,
+    tools,
     checkedAt: new Date().toISOString(),
   }
 

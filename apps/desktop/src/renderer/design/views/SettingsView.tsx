@@ -36,6 +36,7 @@ import type {
   SkillItem,
   UpdateStatus,
   SdkIntegrityItem,
+  RuntimeToolStatus,
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai'
@@ -4072,6 +4073,7 @@ function UsageRow({ label, used, pct }: { label: string; used: string; pct: numb
 /* ───────── INTEGRITY ───────── */
 function IntegritySection() {
   const [sdks, setSdks] = useState<SdkIntegrityItem[]>([])
+  const [tools, setTools] = useState<RuntimeToolStatus[]>([])
   const [checkedAt, setCheckedAt] = useState<string | null>(null)
   const [isChecking, setIsChecking] = useState(false)
   const [isCheckingLatest, setIsCheckingLatest] = useState(false)
@@ -4089,8 +4091,13 @@ function IntegritySection() {
       try {
         const cached = window.localStorage.getItem('spark-sdk-integrity')
         if (cached) {
-          const parsed = JSON.parse(cached) as { sdks: SdkIntegrityItem[]; checkedAt: string }
+          const parsed = JSON.parse(cached) as {
+            sdks: SdkIntegrityItem[]
+            tools: RuntimeToolStatus[]
+            checkedAt: string
+          }
           setSdks(parsed.sdks)
+          setTools(parsed.tools ?? [])
           setCheckedAt(parsed.checkedAt)
         }
       } catch {
@@ -4102,6 +4109,7 @@ function IntegritySection() {
     // Also subscribe to startup integrity push
     const unsub = window.spark?.on('stream:sdk:integrity', (payload) => {
       setSdks(payload.sdks)
+      setTools(payload.tools ?? [])
       setCheckedAt(payload.checkedAt)
       window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(payload))
     })
@@ -4117,6 +4125,7 @@ function IntegritySection() {
     try {
       const result = await window.spark.invoke('sdk:integrity-check', { checkLatest })
       setSdks(result.sdks)
+      setTools(result.tools ?? [])
       setCheckedAt(result.checkedAt)
       window.localStorage.setItem('spark-sdk-integrity', JSON.stringify(result))
     } catch (err) {
@@ -4163,6 +4172,26 @@ function IntegritySection() {
     return <span className="badge dot">未知</span>
   }
 
+  const getToolBadge = (tool: RuntimeToolStatus) => {
+    if (tool.available) {
+      return <span className="badge success dot">可用</span>
+    }
+    return <span className="badge error dot">未找到</span>
+  }
+
+  const getToolIcon = (command: string) => {
+    switch (command) {
+      case 'node':
+        return <Icons.Cpu size={14} />
+      case 'npm':
+        return <Icons.Package size={14} />
+      case 'git':
+        return <Icons.GitBranch size={14} />
+      default:
+        return <Icons.Terminal size={14} />
+    }
+  }
+
   const formatCheckedTime = (iso: string | null) => {
     if (!iso) return '从未检测'
     try {
@@ -4172,15 +4201,48 @@ function IntegritySection() {
     }
   }
 
+  // Count installed / total for summary (SDKs + tools combined)
+  const sdkInstalled = sdks.filter((s) => s.installed).length
+  const toolAvailable = tools.filter((t) => t.available).length
+  const totalItems = sdks.length + tools.length
+  const allOk = totalItems > 0 && sdkInstalled === sdks.length && toolAvailable === tools.length
+
   return (
     <div className="settings-section">
-      <h2>SDK 完整性</h2>
-      <div className="lede">检测 Agent 运行所需的 SDK 依赖是否安装完整，确保核心功能可用。</div>
+      <h2>完整性检测</h2>
+      <div className="lede">检测 Agent 运行所需的环境依赖和 SDK 包，确保核心功能可用。</div>
 
-      <div className="card" style={{ marginBottom: 'var(--gap)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--gap)', flexWrap: 'wrap' }}>
+      {/* ── Status summary + actions ── */}
+      <div className="integrity-toolbar">
+        <div className="integrity-status-row">
+          {totalItems > 0 ? (
+            <div className={`integrity-status-badge ${allOk ? 'ok' : 'warn'}`}>
+              {allOk ? (
+                <Icons.CheckCircle size={14} />
+              ) : (
+                <Icons.AlertTriangle size={14} />
+              )}
+              <span>
+                {allOk
+                  ? '环境完整'
+                  : `${sdkInstalled + toolAvailable}/${totalItems} 正常`}
+              </span>
+            </div>
+          ) : (
+            <div className="integrity-status-badge unknown">
+              <Icons.Refresh size={14} />
+              <span>尚未检测</span>
+            </div>
+          )}
+          {checkedAt && (
+            <span className="muted" style={{ fontSize: '11px' }}>
+              上次检测: {formatCheckedTime(checkedAt)}
+            </span>
+          )}
+        </div>
+        <div className="integrity-actions">
           <button
-            className="btn primary"
+            className="btn sm"
             onClick={() => void handleCheck(false)}
             disabled={isChecking || isCheckingLatest}
           >
@@ -4188,104 +4250,178 @@ function IntegritySection() {
             {isChecking ? '检测中…' : '立即检测'}
           </button>
           <button
-            className="btn"
+            className="btn sm"
             onClick={() => void handleCheck(true)}
             disabled={isChecking || isCheckingLatest}
           >
             <Icons.Globe size={12} className={isCheckingLatest ? 'spin' : ''} />
-            {isCheckingLatest ? '检查最新版中…' : '检查最新版本'}
+            {isCheckingLatest ? '检查中…' : '检查最新版本'}
           </button>
-          {checkedAt && (
-            <span className="muted" style={{ fontSize: '12px' }}>
-              上次检测: {formatCheckedTime(checkedAt)}
-            </span>
-          )}
         </div>
       </div>
 
+      {/* ── Install result banner ── */}
       {installResult && (
-        <div
-          className={`card ${installResult.success ? 'card-success' : 'card-error'}`}
-          style={{ marginBottom: 'var(--gap)' }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {installResult.success ? (
-              <Icons.CheckCircle size={16} />
-            ) : (
-              <Icons.AlertTriangle size={16} />
-            )}
-            <span>{installResult.message}</span>
-            <button
-              className="btn-sm"
-              onClick={() => setInstallResult(null)}
-              style={{ marginLeft: 'auto' }}
-            >
-              <Icons.X size={12} />
-            </button>
-          </div>
+        <div className={`integrity-banner ${installResult.success ? 'success' : 'error'}`}>
+          {installResult.success ? (
+            <Icons.CheckCircle size={14} />
+          ) : (
+            <Icons.AlertTriangle size={14} />
+          )}
+          <span>{installResult.message}</span>
+          <button
+            className="btn ghost sm"
+            onClick={() => setInstallResult(null)}
+            style={{ marginLeft: 'auto', padding: '0 4px', height: 20 }}
+          >
+            <Icons.X size={12} />
+          </button>
         </div>
       )}
 
-      <div className="subsec-h">核心 SDK</div>
-      <div className="card">
-        {sdks.map((sdk) => (
-          <div key={sdk.packageName}>
-            <SettingsRow
-              title={sdk.displayName}
-              desc={sdk.installedVersion ?? (sdk.installed ? '已安装' : '未安装')}
-              right={
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {getStatusBadge(sdk)}
-                  {(!sdk.installed || sdk.updateAvailable) && (
-                    <button
-                      className="btn-sm btn"
-                      onClick={() => void handleInstall(sdk.packageName)}
-                      disabled={installingPkg === sdk.packageName}
-                    >
-                      {installingPkg === sdk.packageName ? (
-                        <>
-                          <Icons.Spinner size={12} /> 安装中…
-                        </>
-                      ) : sdk.installed ? (
-                        <>
-                          <Icons.Download size={12} /> 更新
-                        </>
-                      ) : (
-                        <>
-                          <Icons.Download size={12} /> 安装
-                        </>
-                      )}
-                    </button>
-                  )}
-                </div>
-              }
-            />
-            {sdk.error && (
-              <div className="row-desc" style={{ color: 'var(--danger)', paddingLeft: '1rem' }}>
-                {sdk.error}
+      {/* ── Environment tools (node, npm, git) ── */}
+      <div className="subsec-h" style={{ marginTop: 0 }}>
+        环境工具
+      </div>
+      <div className="settings-card integrity-sdk-card">
+        {tools.map((tool, idx) => (
+          <div key={tool.command} className={`integrity-sdk-row ${idx > 0 ? 'bordered' : ''}`}>
+            <div className="integrity-tool-icon">{getToolIcon(tool.command)}</div>
+            <div className="integrity-sdk-info">
+              <div className="integrity-sdk-name">{tool.displayName}</div>
+              <div className="integrity-sdk-version">
+                {tool.available
+                  ? tool.version ?? '已安装'
+                  : tool.resolvedPath
+                    ? tool.resolvedPath
+                    : '未找到'}
               </div>
-            )}
+            </div>
+            <div className="integrity-sdk-right">
+              {getToolBadge(tool)}
+              {!tool.available && (
+                <a
+                  className="btn sm"
+                  href={tool.downloadUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <Icons.ExternalLink size={12} /> 下载
+                </a>
+              )}
+            </div>
           </div>
         ))}
-        {sdks.length === 0 && !isChecking && (
-          <div className="muted" style={{ textAlign: 'center', padding: '2rem' }}>
-            点击"立即检测"开始检查 SDK 完整性
+        {tools.length === 0 && !isChecking && (
+          <div className="integrity-empty">
+            <Icons.Terminal size={24} />
+            <span>点击"立即检测"检查环境工具</span>
           </div>
         )}
       </div>
 
-      <div className="subsec-h">说明</div>
-      <div className="card">
-        <SettingsRow
-          title="Claude Agent SDK"
-          desc="提供 Claude Code 级别的 Agent 执行引擎，包含文件编辑、Shell 命令、代码搜索等内置工具。"
-          right={<span className="badge danger dot">必需</span>}
-        />
-        <SettingsRow
-          title="OpenAI / Codex SDK"
-          desc="提供 OpenAI 模型适配和 Codex 代码生成能力，支持 Responses API。"
-          right={<span className="muted mono-sm">必需</span>}
-        />
+      {/* ── SDK list ── */}
+      <div className="subsec-h">核心依赖</div>
+      <div className="settings-card integrity-sdk-card">
+        {sdks.map((sdk, idx) => (
+          <div key={sdk.packageName}>
+            <div className={`integrity-sdk-row ${idx > 0 ? 'bordered' : ''}`}>
+              <div className="integrity-sdk-info">
+                <div className="integrity-sdk-name">{sdk.displayName}</div>
+                <div className="integrity-sdk-version">
+                  {sdk.installedVersion
+                    ? `v${sdk.installedVersion}`
+                    : sdk.installed
+                      ? '已安装'
+                      : '未安装'}
+                </div>
+              </div>
+              <div className="integrity-sdk-right">
+                {getStatusBadge(sdk)}
+                {(!sdk.installed || sdk.updateAvailable) && (
+                  <button
+                    className="btn sm primary"
+                    onClick={() => void handleInstall(sdk.packageName)}
+                    disabled={installingPkg === sdk.packageName}
+                  >
+                    {installingPkg === sdk.packageName ? (
+                      <>
+                        <Icons.Spinner size={12} /> 安装中…
+                      </>
+                    ) : sdk.installed ? (
+                      <>
+                        <Icons.Download size={12} /> 更新
+                      </>
+                    ) : (
+                      <>
+                        <Icons.Download size={12} /> 安装
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+            {sdk.error && (
+              <div className="integrity-sdk-error">{sdk.error}</div>
+            )}
+          </div>
+        ))}
+        {sdks.length === 0 && !isChecking && (
+          <div className="integrity-empty">
+            <Icons.Package size={24} />
+            <span>点击"立即检测"开始检查 SDK 完整性</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Reference ── */}
+      <div className="subsec-h">依赖说明</div>
+      <div className="integrity-ref-card">
+        <div className="integrity-ref-item">
+          <div className="integrity-ref-left">
+            <div className="integrity-ref-name">Node.js</div>
+            <div className="integrity-ref-desc">
+              JavaScript 运行时环境，Agent 进程执行的基础依赖。推荐 v18+ 版本。
+            </div>
+          </div>
+          <span className="badge danger dot">必需</span>
+        </div>
+        <div className="integrity-ref-item bordered">
+          <div className="integrity-ref-left">
+            <div className="integrity-ref-name">npm</div>
+            <div className="integrity-ref-desc">
+              Node.js 包管理器，用于安装和管理 SDK 依赖。随 Node.js 一起安装。
+            </div>
+          </div>
+          <span className="badge danger dot">必需</span>
+        </div>
+        <div className="integrity-ref-item bordered">
+          <div className="integrity-ref-left">
+            <div className="integrity-ref-name">Git</div>
+            <div className="integrity-ref-desc">
+              版本控制系统，支持代码仓库操作、文件差异比较和分支管理。
+            </div>
+          </div>
+          <span className="badge danger dot">必需</span>
+        </div>
+        <div className="integrity-ref-item bordered">
+          <div className="integrity-ref-left">
+            <div className="integrity-ref-name">Claude Agent SDK</div>
+            <div className="integrity-ref-desc">
+              提供 Claude Code 级别的 Agent 执行引擎，包含文件编辑、Shell 命令、代码搜索等内置工具。
+            </div>
+          </div>
+          <span className="badge danger dot">必需</span>
+        </div>
+        <div className="integrity-ref-item bordered">
+          <div className="integrity-ref-left">
+            <div className="integrity-ref-name">OpenAI / Codex SDK</div>
+            <div className="integrity-ref-desc">
+              提供 OpenAI 模型适配和 Codex 代码生成能力，支持 Responses API。
+            </div>
+          </div>
+          <span className="badge danger dot">必需</span>
+        </div>
       </div>
     </div>
   )

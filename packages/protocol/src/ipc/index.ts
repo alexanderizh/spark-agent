@@ -1530,6 +1530,8 @@ export interface SdkIntegrityCheckRequest {
 
 export interface SdkIntegrityCheckResponse {
   sdks: SdkIntegrityItem[]
+  /** Host runtime tool check results (node, npm, git, etc.) */
+  tools: RuntimeToolStatus[]
   /** Timestamp of the check */
   checkedAt: string
 }
