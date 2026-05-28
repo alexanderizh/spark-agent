@@ -4520,8 +4520,8 @@ function ChatConfigPanel({
 }) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const [skillsCollapsed, setSkillsCollapsed] = useState(true)
-  const [promptsCollapsed, setPromptsCollapsed] = useState(true)
-  const [toolsCollapsed, setToolsCollapsed] = useState(true)
+  const [promptsCollapsed, setPromptsCollapsed] = useState(false)
+  const [toolsCollapsed, setToolsCollapsed] = useState(false)
   const [skillConfig, setSkillConfig] = useState<SkillConfigGetResponse | null>(null)
   const [promptConfig, setPromptConfig] = useState<PromptConfigGetResponse | null>(null)
   const [projectPromptDraft, setProjectPromptDraft] = useState('')
