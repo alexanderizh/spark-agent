@@ -140,6 +140,8 @@ type ShortcutActions = {
   onNewSession?: () => void
   /** Optional: trigger a custom new-project action */
   onNewProject?: () => void
+  /** Optional: check if any overlay panel is currently open */
+  hasOverlayOpen?: () => boolean
 }
 
 const VIEW_INDEX_MAP: Record<string, ViewId> = {
@@ -164,7 +166,7 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
 
   const handler = useCallback((e: KeyboardEvent) => {
     const shortcuts = shortcutsRef.current
-    const { setTweak, onSearchFocus, onNewSession, onNewProject } = actionsRef.current
+    const { setTweak, onSearchFocus, onNewSession, onNewProject, hasOverlayOpen } = actionsRef.current
 
     for (const sc of shortcuts) {
       const modPressed = isMac ? e.metaKey : e.ctrlKey
@@ -182,6 +184,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
           // Let the input handle Escape naturally (blur, etc.) — only close overlays
           // If no overlay is open, don't intercept
         }
+
+        // For Escape with no overlay open, skip entirely
+        if (sc.id === 'escape' && !hasOverlayOpen?.()) continue
 
         e.preventDefault()
         e.stopPropagation()
@@ -229,12 +234,16 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
               onSearchFocus()
             }
             break
-          case 'escape':
-            setTweak('showPalette', false)
-            setTweak('showPerm', false)
-            setTweak('showProviderEdit', false)
-            setTweak('showProfileEdit', false)
+          case 'escape': {
+            const anyOpen = hasOverlayOpen ? hasOverlayOpen() : true
+            if (anyOpen) {
+              setTweak('showPalette', false)
+              setTweak('showPerm', false)
+              setTweak('showProviderEdit', false)
+              setTweak('showProfileEdit', false)
+            }
             break
+          }
         }
         return // only first match
       }

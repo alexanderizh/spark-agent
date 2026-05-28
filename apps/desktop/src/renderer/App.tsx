@@ -192,6 +192,7 @@ function Shell() {
       }
     },
     onNewSession: handleNewSession,
+    hasOverlayOpen: () => t.showPalette || t.showPerm || t.showProviderEdit || t.showProfileEdit,
   })
 
   // Listen for tool approval requests from main process

@@ -76,7 +76,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (key === 'sidebar') {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, val as SidebarState)
     }
-    setT((prev) => ({ ...prev, [key]: val }))
+    setT((prev) => {
+      if (prev[key] === val) return prev
+      return { ...prev, [key]: val }
+    })
   }, [])
   const value = useMemo<AppCtx>(() => ({ t, setTweak }), [t, setTweak])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
