@@ -60,39 +60,73 @@ export function filterSkills(
 /* ────────── Deduplication ────────── */
 
 /**
- * Deduplicate a list of installed skills by id.
+ * Deduplicate a list of installed skills by name (case-insensitive).
+ * Keeps the first occurrence when multiple skills share the same name.
  */
 export function deduplicateSkills(skills: SkillItem[]): SkillItem[] {
   const seen = new Set<string>()
   return skills.filter((s) => {
-    if (seen.has(s.id)) return false
-    seen.add(s.id)
+    const key = s.name.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
 }
 
 /**
- * Deduplicate a list of remote skill items by id.
+ * Deduplicate a list of remote skill items by name (case-insensitive).
  */
 export function deduplicateRemoteSkills(skills: RemoteSkillItem[]): RemoteSkillItem[] {
   const seen = new Set<string>()
   return skills.filter((s) => {
-    if (seen.has(s.id)) return false
-    seen.add(s.id)
+    const key = s.name.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
 }
 
 /**
- * Deduplicate a list of local skill candidates by id.
+ * Deduplicate a list of local skill candidates by name (case-insensitive).
  */
 export function deduplicateCandidates(candidates: LocalSkillCandidate[]): LocalSkillCandidate[] {
   const seen = new Set<string>()
   return candidates.filter((c) => {
-    if (seen.has(c.id)) return false
-    seen.add(c.id)
+    const key = c.name.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
     return true
   })
+}
+
+/* ────────── Local candidate search / filter ────────── */
+
+/**
+ * Filter local skill candidates by a search query (matches name, description, source, or rootPath).
+ */
+export function filterCandidates(
+  candidates: LocalSkillCandidate[],
+  query: string
+): LocalSkillCandidate[] {
+  if (!query.trim()) return candidates
+  const q = query.toLowerCase()
+  return candidates.filter((c) => {
+    return (
+      c.name.toLowerCase().includes(q) ||
+      (c.description ?? '').toLowerCase().includes(q) ||
+      c.source.toLowerCase().includes(q) ||
+      c.rootPath.toLowerCase().includes(q)
+    )
+  })
+}
+
+/**
+ * Get unique source values from a list of candidates.
+ */
+export function getCandidateSources(candidates: LocalSkillCandidate[]): string[] {
+  const sources = new Set<string>()
+  for (const c of candidates) sources.add(c.source)
+  return Array.from(sources).sort()
 }
 
 /* ────────── Pagination helpers ────────── */

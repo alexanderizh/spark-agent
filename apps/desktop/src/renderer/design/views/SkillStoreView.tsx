@@ -14,6 +14,8 @@ import {
   useSkills,
   parseSkillManifest,
   filterSkills,
+  filterCandidates,
+  getCandidateSources,
   deduplicateSkills,
   deduplicateRemoteSkills,
   deduplicateCandidates,
@@ -402,6 +404,9 @@ function InstalledTab() {
   const [installedPage, setInstalledPage] = useState(1)
   // Pagination for local candidates
   const [candidatePage, setCandidatePage] = useState(1)
+  // Local candidate search & source tab
+  const [candidateSearch, setCandidateSearch] = useState('')
+  const [activeSourceTab, setActiveSourceTab] = useState<string>('全部')
   // Management mode (multi-select for batch delete)
   const [managementMode, setManagementMode] = useState(false)
   const [selectedDeleteIds, setSelectedDeleteIds] = useState<Set<string>>(new Set())
@@ -417,10 +422,21 @@ function InstalledTab() {
   const visibleInstalled = paginate(filtered, installedPage, SKILL_PAGE_SIZE)
   const hasMoreInstalled = installedPage * SKILL_PAGE_SIZE < filtered.length
 
+  // Local candidates: dedup -> filter by source tab -> filter by search -> paginate
   const dedupedCandidates = deduplicateCandidates(localCandidates)
-  const importableCandidates = dedupedCandidates.filter((c) => !c.installed)
-  const visibleCandidates = dedupedCandidates.slice(0, candidatePage * LOCAL_CANDIDATE_PAGE_SIZE)
-  const hasMoreCandidates = candidatePage * LOCAL_CANDIDATE_PAGE_SIZE < dedupedCandidates.length
+  const candidateSources = getCandidateSources(dedupedCandidates)
+  const sourceFiltered = activeSourceTab === '全部'
+    ? dedupedCandidates
+    : dedupedCandidates.filter((c) => c.source === activeSourceTab)
+  const searchFiltered = filterCandidates(sourceFiltered, candidateSearch)
+  const importableCandidates = searchFiltered.filter((c) => !c.installed)
+  const visibleCandidates = searchFiltered.slice(0, candidatePage * LOCAL_CANDIDATE_PAGE_SIZE)
+  const hasMoreCandidates = candidatePage * LOCAL_CANDIDATE_PAGE_SIZE < searchFiltered.length
+
+  // Reset candidate page when search or tab changes
+  useEffect(() => {
+    setCandidatePage(1)
+  }, [candidateSearch, activeSourceTab])
 
   // Reset installed page when search changes
   useEffect(() => {
@@ -431,6 +447,8 @@ function InstalledTab() {
     setDetecting(true)
     setSelectedIds(new Set())
     setCandidatePage(1)
+    setCandidateSearch('')
+    setActiveSourceTab('全部')
     try {
       const res = await detectLocalSkills({})
       setLocalCandidates(res.candidates)
@@ -672,50 +690,96 @@ function InstalledTab() {
               </>
             )}
           </div>
+
+          {/* Source tabs + search */}
+          <div className="local-skill-filter-bar">
+            <div className="local-skill-source-tabs">
+              <button
+                className={`store-cat-pill ${activeSourceTab === '全部' ? 'active' : ''}`}
+                onClick={() => setActiveSourceTab('全部')}
+              >
+                全部 ({dedupedCandidates.length})
+              </button>
+              {candidateSources.map((src) => {
+                const count = dedupedCandidates.filter((c) => c.source === src).length
+                return (
+                  <button
+                    key={src}
+                    className={`store-cat-pill ${activeSourceTab === src ? 'active' : ''}`}
+                    onClick={() => setActiveSourceTab(src)}
+                  >
+                    {src} ({count})
+                  </button>
+                )
+              })}
+            </div>
+            <div className="search-input" style={{ width: '180px' }}>
+              <Icons.Search />
+              <SparkInput
+                placeholder="搜索本地 Skill..."
+                value={candidateSearch}
+                onChange={(e) => setCandidateSearch(e.target.value)}
+              />
+              {candidateSearch && (
+                <button className="icon-btn" onClick={() => setCandidateSearch('')}>
+                  <Icons.X size={10} />
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="local-skill-list">
-            {visibleCandidates.map((candidate) => {
-              const importing = importingIds.has(candidate.id)
-              const selected = selectedIds.has(candidate.id)
-              return (
-                <div className="local-skill-row" key={candidate.id}>
-                  {!candidate.installed && (
-                    <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selected}
+            {searchFiltered.length === 0 ? (
+              <div style={{ padding: '16px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '12px' }}>
+                未找到匹配的本地 Skill
+              </div>
+            ) : (
+              visibleCandidates.map((candidate) => {
+                const importing = importingIds.has(candidate.id)
+                const selected = selectedIds.has(candidate.id)
+                return (
+                  <div className="local-skill-row" key={candidate.id}>
+                    {!candidate.installed && (
+                      <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={importing}
+                          onChange={() => toggleSelect(candidate.id)}
+                        />
+                        <span className="checkmark" />
+                      </label>
+                    )}
+                    <div className="local-skill-icon">
+                      {candidate.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="flex1 min-w-0">
+                      <div className="strong truncate">{candidate.name}</div>
+                      <div className="muted truncate" title={candidate.rootPath}>
+                        {candidate.description || candidate.source} — {candidate.rootPath}
+                      </div>
+                    </div>
+                    <span className="badge badge-font-sm" style={{ flexShrink: 0 }}>{candidate.source}</span>
+                    {candidate.installed ? (
+                      <span className="badge success" style={{ flexShrink: 0 }}>已导入</span>
+                    ) : (
+                      <button
+                        className="btn sm"
+                        onClick={() => void handleImportLocal(candidate)}
                         disabled={importing}
-                        onChange={() => toggleSelect(candidate.id)}
-                      />
-                      <span className="checkmark" />
-                    </label>
-                  )}
-                  <div className="local-skill-icon">
-                    {candidate.name.charAt(0).toUpperCase()}
+                        style={{ flexShrink: 0 }}
+                      >
+                        {importing ? '导入中...' : '导入'}
+                      </button>
+                    )}
                   </div>
-                  <div className="flex1 min-w-0">
-                    <div className="strong truncate">{candidate.name}</div>
-                    <div className="muted truncate">{candidate.description || candidate.source}</div>
-                  </div>
-                  <span className="badge badge-font-sm" style={{ flexShrink: 0 }}>{candidate.source}</span>
-                  {candidate.installed ? (
-                    <span className="badge success" style={{ flexShrink: 0 }}>已导入</span>
-                  ) : (
-                    <button
-                      className="btn sm"
-                      onClick={() => void handleImportLocal(candidate)}
-                      disabled={importing}
-                      style={{ flexShrink: 0 }}
-                    >
-                      {importing ? '导入中...' : '导入'}
-                    </button>
-                  )}
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
           {hasMoreCandidates && (
             <div className="local-skill-pagination">
-              <span>已显示 {visibleCandidates.length} / {dedupedCandidates.length} 个</span>
+              <span>已显示 {visibleCandidates.length} / {searchFiltered.length} 个</span>
               <button className="btn sm" onClick={() => setCandidatePage((p) => p + 1)}>
                 加载更多
               </button>
