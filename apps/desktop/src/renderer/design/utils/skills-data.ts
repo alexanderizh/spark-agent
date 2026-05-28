@@ -5,7 +5,7 @@
  * All data flows through the real IPC layer (skill:list / skill:update / etc.).
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { SkillItem } from '@spark/protocol'
+import type { LocalSkillCandidate, RemoteSkillItem, SkillItem } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 
 /* ────────── Manifest Parsing ────────── */
@@ -55,6 +55,56 @@ export function filterSkills(
       meta.source.toLowerCase().includes(q)
     )
   })
+}
+
+/* ────────── Deduplication ────────── */
+
+/**
+ * Deduplicate a list of installed skills by id.
+ */
+export function deduplicateSkills(skills: SkillItem[]): SkillItem[] {
+  const seen = new Set<string>()
+  return skills.filter((s) => {
+    if (seen.has(s.id)) return false
+    seen.add(s.id)
+    return true
+  })
+}
+
+/**
+ * Deduplicate a list of remote skill items by id.
+ */
+export function deduplicateRemoteSkills(skills: RemoteSkillItem[]): RemoteSkillItem[] {
+  const seen = new Set<string>()
+  return skills.filter((s) => {
+    if (seen.has(s.id)) return false
+    seen.add(s.id)
+    return true
+  })
+}
+
+/**
+ * Deduplicate a list of local skill candidates by id.
+ */
+export function deduplicateCandidates(candidates: LocalSkillCandidate[]): LocalSkillCandidate[] {
+  const seen = new Set<string>()
+  return candidates.filter((c) => {
+    if (seen.has(c.id)) return false
+    seen.add(c.id)
+    return true
+  })
+}
+
+/* ────────── Pagination helpers ────────── */
+
+/** Default page size for skill lists */
+export const SKILL_PAGE_SIZE = 20
+
+/**
+ * Slice a list for paginated display.
+ */
+export function paginate<T>(items: T[], page: number, pageSize: number): T[] {
+  return items.slice(0, page * pageSize)
 }
 
 /* ────────── useSkills hook ────────── */
