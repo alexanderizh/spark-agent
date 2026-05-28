@@ -10,7 +10,16 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import type { LocalSkillCandidate, RemoteSkillItem, SkillItem, SkillRegistry } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput } from '../components/FormControls'
-import { useSkills, parseSkillManifest, filterSkills } from '../utils/skills-data'
+import {
+  useSkills,
+  parseSkillManifest,
+  filterSkills,
+  deduplicateSkills,
+  deduplicateRemoteSkills,
+  deduplicateCandidates,
+  SKILL_PAGE_SIZE,
+  paginate,
+} from '../utils/skills-data'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 
@@ -93,6 +102,8 @@ export function SkillStoreView() {
 }
 
 // ─── Store Tab ────────────────────────────────────────────────────────
+const STORE_PAGE_SIZE = 20
+
 function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => void }) {
   const [registries, setRegistries] = useState<SkillRegistry[]>([])
   const [activeRegistry, setActiveRegistry] = useState<string | null>(null)
@@ -102,6 +113,7 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
   const [skills, setSkills] = useState<RemoteSkillItem[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [displayCount, setDisplayCount] = useState(STORE_PAGE_SIZE)
 
   const { invoke: listRegistries } = useIpcInvoke('skill-registry:list')
   const { invoke: searchSkills } = useIpcInvoke('skill-registry:search')
@@ -110,6 +122,11 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
 
   const debouncedQuery = useDebounce(searchQuery, 300)
   const mountedRef = useRef(true)
+
+  // Reset display count when filters change
+  useEffect(() => {
+    setDisplayCount(STORE_PAGE_SIZE)
+  }, [debouncedQuery, activeRegistry, activeCategory])
 
   // Load registries on mount
   useEffect(() => {
@@ -132,17 +149,17 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
         if (debouncedQuery.trim()) {
           const searchParams: { query: string; registryId?: string; category?: string; limit: number } = {
             query: debouncedQuery,
-            limit: 30,
+            limit: 60,
           }
           if (activeRegistry != null) searchParams.registryId = activeRegistry
           if (activeCategory !== '全部') searchParams.category = activeCategory
           const res = await searchSkills(searchParams)
-          if (!cancelled) setSkills(res.skills)
+          if (!cancelled) setSkills(deduplicateRemoteSkills(res.skills))
         } else {
-          const featuredParams: { registryId?: string; limit: number } = { limit: 24 }
+          const featuredParams: { registryId?: string; limit: number } = { limit: 60 }
           if (activeRegistry != null) featuredParams.registryId = activeRegistry
           const res = await featuredSkills(featuredParams)
-          if (!cancelled) setSkills(res.skills)
+          if (!cancelled) setSkills(deduplicateRemoteSkills(res.skills))
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : '加载失败')
@@ -172,6 +189,8 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
 
   const enabledRegistries = registries.filter((r) => r.enabled)
   const uninstalledSkills = skills.filter((skill) => !skill.installed)
+  const visibleSkills = uninstalledSkills.slice(0, displayCount)
+  const hasMore = displayCount < uninstalledSkills.length
 
   return (
     <div className="store-layout">
@@ -256,18 +275,31 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
             </div>
           </div>
         ) : (
-          <div className="store-grid">
-            {uninstalledSkills.map((skill) => (
-              <StoreSkillCard
-                key={skill.id}
-                skill={skill}
-                onShowDetail={onShowDetail}
-                onInstalled={(id) => {
-                  setSkills((prev) => prev.map((item) => item.id === id ? { ...item, installed: true } : item))
-                }}
-              />
-            ))}
-          </div>
+          <>
+            <div className="store-grid">
+              {visibleSkills.map((skill) => (
+                <StoreSkillCard
+                  key={skill.id}
+                  skill={skill}
+                  onShowDetail={onShowDetail}
+                  onInstalled={(id) => {
+                    setSkills((prev) => prev.map((item) => item.id === id ? { ...item, installed: true } : item))
+                  }}
+                />
+              ))}
+            </div>
+            {hasMore && (
+              <div className="pagination-bar">
+                <span>已显示 {visibleSkills.length} / {uninstalledSkills.length} 个</span>
+                <button
+                  className="btn sm"
+                  onClick={() => setDisplayCount((c) => c + STORE_PAGE_SIZE)}
+                >
+                  加载更多
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {/* Stats footer */}
@@ -357,6 +389,8 @@ function StoreSkillCard({
 }
 
 // ─── Installed Tab ────────────────────────────────────────────────────
+const LOCAL_CANDIDATE_PAGE_SIZE = 10
+
 function InstalledTab() {
   const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount, refresh } = useSkills()
   const [search, setSearch] = useState('')
@@ -364,18 +398,39 @@ function InstalledTab() {
   const [detecting, setDetecting] = useState(false)
   const [importingIds, setImportingIds] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  // Pagination for installed skills
+  const [installedPage, setInstalledPage] = useState(1)
+  // Pagination for local candidates
+  const [candidatePage, setCandidatePage] = useState(1)
+  // Management mode (multi-select for batch delete)
+  const [managementMode, setManagementMode] = useState(false)
+  const [selectedDeleteIds, setSelectedDeleteIds] = useState<Set<string>>(new Set())
+  const [deleting, setDeleting] = useState(false)
   const { toast } = useToast()
   const { invoke: detectLocalSkills } = useIpcInvoke('skill:detect-local')
   const { invoke: importDirectory } = useIpcInvoke('skill:import-directory')
   const { invoke: importBatchLocal } = useIpcInvoke('skill:import-batch-local')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
-  const filtered = filterSkills(skills, search)
 
-  const importableCandidates = localCandidates.filter((c) => !c.installed)
+  const dedupedSkills = deduplicateSkills(skills)
+  const filtered = filterSkills(dedupedSkills, search)
+  const visibleInstalled = paginate(filtered, installedPage, SKILL_PAGE_SIZE)
+  const hasMoreInstalled = installedPage * SKILL_PAGE_SIZE < filtered.length
+
+  const dedupedCandidates = deduplicateCandidates(localCandidates)
+  const importableCandidates = dedupedCandidates.filter((c) => !c.installed)
+  const visibleCandidates = dedupedCandidates.slice(0, candidatePage * LOCAL_CANDIDATE_PAGE_SIZE)
+  const hasMoreCandidates = candidatePage * LOCAL_CANDIDATE_PAGE_SIZE < dedupedCandidates.length
+
+  // Reset installed page when search changes
+  useEffect(() => {
+    setInstalledPage(1)
+  }, [search])
 
   const handleDetectLocal = useCallback(async () => {
     setDetecting(true)
     setSelectedIds(new Set())
+    setCandidatePage(1)
     try {
       const res = await detectLocalSkills({})
       setLocalCandidates(res.candidates)
@@ -484,6 +539,60 @@ function InstalledTab() {
     }
   }, [selectedIds.size, importableCandidates])
 
+  // ── Management mode: multi-select delete ──
+  const enterManagement = useCallback(() => {
+    setManagementMode(true)
+    setSelectedDeleteIds(new Set())
+  }, [])
+
+  const exitManagement = useCallback(() => {
+    setManagementMode(false)
+    setSelectedDeleteIds(new Set())
+  }, [])
+
+  const toggleDeleteSelect = useCallback((id: string) => {
+    setSelectedDeleteIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const toggleDeleteSelectAll = useCallback(() => {
+    if (selectedDeleteIds.size === filtered.length) {
+      setSelectedDeleteIds(new Set())
+    } else {
+      setSelectedDeleteIds(new Set(filtered.map((s) => s.id)))
+    }
+  }, [selectedDeleteIds.size, filtered])
+
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedDeleteIds.size === 0) return
+    setDeleting(true)
+    try {
+      let successCount = 0
+      let failCount = 0
+      for (const id of selectedDeleteIds) {
+        try {
+          await deleteSkill(id)
+          successCount++
+        } catch {
+          failCount++
+        }
+      }
+      if (failCount > 0) {
+        toast.warning(`已删除 ${successCount} 个，${failCount} 个失败`)
+      } else {
+        toast.success(`已批量删除 ${successCount} 个 Skill`)
+      }
+      exitManagement()
+      refresh()
+    } finally {
+      setDeleting(false)
+    }
+  }, [selectedDeleteIds, deleteSkill, exitManagement, refresh, toast])
+
   const isImporting = importingIds.size > 0
 
   return (
@@ -498,6 +607,15 @@ function InstalledTab() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        {!managementMode && (
+          <button
+            className="btn"
+            onClick={enterManagement}
+            disabled={total === 0 || isImporting}
+          >
+            <Icons.CheckSquare size={12} /> 管理
+          </button>
+        )}
         <button className="btn" onClick={() => void handlePickImportDirectory()} disabled={isImporting}>
           <Icons.Upload size={12} /> 导入目录
         </button>
@@ -506,12 +624,34 @@ function InstalledTab() {
         </button>
       </div>
 
+      {/* Management mode bar */}
+      {managementMode && (
+        <div className="management-bar">
+          <Icons.CheckSquare size={13} />
+          <span>已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个</span>
+          <button className="btn sm" onClick={toggleDeleteSelectAll} disabled={deleting}>
+            {selectedDeleteIds.size === filtered.length ? '取消全选' : '全选'}
+          </button>
+          <button
+            className="btn sm primary"
+            onClick={() => void handleBatchDelete()}
+            disabled={selectedDeleteIds.size === 0 || deleting}
+          >
+            {deleting ? '删除中...' : `删除所选 (${selectedDeleteIds.size})`}
+          </button>
+          <div style={{ flex: 1 }} />
+          <button className="btn sm" onClick={exitManagement} disabled={deleting}>
+            退出管理
+          </button>
+        </div>
+      )}
+
       {/* Local detected skills panel */}
-      {localCandidates.length > 0 && (
+      {dedupedCandidates.length > 0 && (
         <div className="local-skill-panel">
           <div className="local-skill-head">
             <span className="local-skill-title">本地可导入 Skill</span>
-            <span className="badge">{localCandidates.length}</span>
+            <span className="badge">{dedupedCandidates.length}</span>
             <div style={{ flex: 1 }} />
             {importableCandidates.length > 0 && (
               <>
@@ -533,7 +673,7 @@ function InstalledTab() {
             )}
           </div>
           <div className="local-skill-list">
-            {localCandidates.map((candidate) => {
+            {visibleCandidates.map((candidate) => {
               const importing = importingIds.has(candidate.id)
               const selected = selectedIds.has(candidate.id)
               return (
@@ -573,6 +713,14 @@ function InstalledTab() {
               )
             })}
           </div>
+          {hasMoreCandidates && (
+            <div className="local-skill-pagination">
+              <span>已显示 {visibleCandidates.length} / {dedupedCandidates.length} 个</span>
+              <button className="btn sm" onClick={() => setCandidatePage((p) => p + 1)}>
+                加载更多
+              </button>
+            </div>
+          )}
         </div>
       )}
 
@@ -595,11 +743,32 @@ function InstalledTab() {
           <div className="empty-title">未找到匹配的 Skill</div>
         </div>
       ) : (
-        <div className="skill-grid">
-          {filtered.map((s) => (
-            <InstalledSkillCard key={s.id} skill={s} onToggle={toggleSkill} onDelete={deleteSkill} />
-          ))}
-        </div>
+        <>
+          <div className="skill-grid">
+            {visibleInstalled.map((s) => (
+              <InstalledSkillCard
+                key={s.id}
+                skill={s}
+                onToggle={toggleSkill}
+                onDelete={deleteSkill}
+                managementMode={managementMode}
+                selected={selectedDeleteIds.has(s.id)}
+                onToggleSelect={toggleDeleteSelect}
+              />
+            ))}
+          </div>
+          {hasMoreInstalled && (
+            <div className="pagination-bar">
+              <span>已显示 {visibleInstalled.length} / {filtered.length} 个</span>
+              <button
+                className="btn sm"
+                onClick={() => setInstalledPage((p) => p + 1)}
+              >
+                加载更多
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       <div className="store-stats" style={{ marginTop: '16px' }}>
@@ -613,39 +782,69 @@ function InstalledSkillCard({
   skill,
   onToggle,
   onDelete,
+  managementMode,
+  selected,
+  onToggleSelect,
 }: {
   skill: SkillItem
   onToggle: (skill: SkillItem) => Promise<void>
   onDelete: (id: string) => Promise<void>
+  managementMode: boolean
+  selected: boolean
+  onToggleSelect: (id: string) => void
 }) {
   const meta = parseSkillManifest(skill.manifestJson)
   return (
-    <div className="skill-card">
-      <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
-      <div className="row row-gap-xs">
-        <span className="name">{skill.name}</span>
-        <span className="badge badge-font-sm">{meta.source}</span>
-      </div>
+    <div className={`skill-card ${selected ? 'selected' : ''}`}>
+      {managementMode ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <label className="skill-card-check" onClick={(e) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => onToggleSelect(skill.id)}
+            />
+            <span className="checkmark" />
+          </label>
+          <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
+          <div className="row row-gap-xs">
+            <span className="name">{skill.name}</span>
+            <span className="badge badge-font-sm">{meta.source}</span>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
+          <div className="row row-gap-xs">
+            <span className="name">{skill.name}</span>
+            <span className="badge badge-font-sm">{meta.source}</span>
+          </div>
+        </>
+      )}
       <div className="desc">{meta.desc}</div>
-      <div className="row skill-scope-row skill-tools-row">
-        <span
-          className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}
-          onClick={() => onToggle(skill)}
-        >
-          {skill.enabled ? '系统可见' : '系统隐藏'}
-        </span>
-        {skill.id === 'builtin:superpowers' && <span className="badge">内置工作流</span>}
-      </div>
-      <div className="foot">
-        <span>{meta.source} · {skill.version}</span>
-        <div className="flex1" />
-        <button className="icon-btn" title="导出">
-          <Icons.Download size={11} />
-        </button>
-        <button className="icon-btn" title="删除" onClick={() => onDelete(skill.id)}>
-          <Icons.Trash size={11} />
-        </button>
-      </div>
+      {!managementMode && (
+        <>
+          <div className="row skill-scope-row skill-tools-row">
+            <span
+              className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}
+              onClick={() => onToggle(skill)}
+            >
+              {skill.enabled ? '系统可见' : '系统隐藏'}
+            </span>
+            {skill.id === 'builtin:superpowers' && <span className="badge">内置工作流</span>}
+          </div>
+          <div className="foot">
+            <span>{meta.source} · {skill.version}</span>
+            <div className="flex1" />
+            <button className="icon-btn" title="导出">
+              <Icons.Download size={11} />
+            </button>
+            <button className="icon-btn" title="删除" onClick={() => onDelete(skill.id)}>
+              <Icons.Trash size={11} />
+            </button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
