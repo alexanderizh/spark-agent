@@ -2,7 +2,7 @@
 
 日期: 2026-05-27  
 评审对象: Spark Agent 当前代码库  
-更新: 2026-05-27 夜间，结合本轮核心 code agent 开发提交重新校准
+更新: 2026-05-28，补充 05-27~05-28 两天提交中的新进展：slash 命令系统重构、会话恢复、config panel 重构、skills 管理增强、代码清理与 SDK 加固。
 
 ## 总体评估
 
@@ -109,9 +109,16 @@
 - `PermissionService` active profile 已 DB-backed，不再依赖进程内静态状态。
 - SDK permission callback 会携带 action、project/workspace scope，先命中持久化决策，再弹出审批。
 - ChatView inline approval 已提供 allow once、allow session、allow/deny project、allow/deny global 等操作。
+- 2026-05-28 补齐 Session SDK 权限策略第一阶段:
+  - Claude SDK 原生工具名已归一化为 Spark action，`Read/Edit/Bash/WebSearch/mcp__*` 不再误落到默认 command 策略。
+  - `claude-auto` / `claude-bypass` 不再挂 Spark `canUseTool`，优先保留 SDK 自带权限策略。
+  - `claude-auto-edits` 保持 SDK `acceptEdits` 语义，编辑类工具自动允许，命令仍进入审批。
+  - 危险 Bash 命令升级为 `command_dangerous`，`ask-twice` 现在是真正的双重确认。
+  - Composer 权限下拉对 Auto 和 Bypass 做风险态联动，Bypass 使用危险色常驻提示。
 
 仍需补强:
 - 尚未提供审批记录的审计视图。
+- workspace/path/network whitelist/server scope 仍未全部执行到策略判定中，需要下一阶段补齐。
 
 当前判断:
 - “权限模式、规则配置、会话审批决策持久化”已基本具备。
@@ -128,6 +135,68 @@
 - 新增结构化用户补充问答能力，让 agent 可以在信息不足时向用户请求单选、多选或自由文本补充。
 - 该能力应区别于 permission approval: 它用于补足任务语义，而不是授权工具执行。
 - 如果 Claude Agent SDK 没有直接暴露通用 human input hook，可评估通过 Spark 侧 MCP/tool bridge 提供 `ask_user` 工具实现。
+
+### 7. Slash 命令系统重构
+
+已完成:
+- 三层命令架构（系统命令 / 插件命令 / Agent 转发命令）落地。
+- 输入框 `/` 触发 slash command 弹窗，支持键盘导航和树形分组。
+- 命令结果以 Agent 消息模式展示在聊天流中。
+- 命令弹窗主题适配 + forwardToAgent 透传。
+- 清理 28 个未实现命令，保留功能可用的命令集合。
+- 新增 git agent-forwarding 子命令（`/git diff`、`/git log` 等）。
+- 修复 slash command popup index 不一致问题（使用 flatSlashList 作为唯一数据源）。
+- 修复空命令列表时 Enter 被拦截导致发送失败的问题。
+
+当前判断:
+- 命令系统从 6 个命令扩展到完整的三层架构，可维护性和扩展性显著提升。
+- 后续可继续丰富各层命令，尤其是 agent-forwarding 层支持更多 `/git` 子命令和 `/workspace` 操作。
+
+### 8. 会话恢复与历史增强
+
+已完成:
+- 新增 session recovery 机制，应用重启后可恢复上次的活跃会话。
+- 会话历史分页加载，支持 `beforeSeq` 参数按序号分页。
+- 权限审批支持 `forcePrompt`，可在特定上下文强制弹出审批。
+- 消息删除能力（可删除单条消息）。
+- Plan mode 事件和扩展 SDK permission types 集成。
+
+当前判断:
+- 会话持久化和恢复能力已接近产品级。
+- 仍需补强：会话摘要自动生成、跨会话上下文延续。
+
+### 9. Config Panel 重构与 Skills 管理
+
+已完成:
+- Config panel 从 popup 重构为 side panel，与 inspector 互斥展示。
+- Skills/Prompts/Tools 从 inspector 移至 config panel（通过 More 按钮入口）。
+- Skills 管理页支持分页去重、固定卡片高度、多选批量删除。
+- 技能去重改用名称过滤，本地候选显示来源路径，按来源分 tab 搜索。
+- 新增 `deduplicateSkills` utility 和 local/remote skill helpers。
+- Skill instructions 按需加载（Load on demand），减少初始化开销。
+- 本地 Skill 检测后支持多选导入和单个导入。
+- System Prompt 抽取为独立 settings section。
+- Prompts 和 Tools sections 默认展开。
+
+当前判断:
+- Skills 管理和配置面板的用户体验已接近产品级。
+- 已移除 legacy agent loop runtime 和 legacy skill lookup path，技术栈清理干净。
+
+### 10. 代码清理与 SDK 集成加固
+
+已完成:
+- 移除 legacy agent loop runtime（`a8c7a82`）。
+- 移除 legacy skill lookup path（`aceff35`）。
+- Claude Code native executable 路径解析与 workspace 可用性验证（`c457bd7`）。
+- SDK integrity check 扩展：主机工具检测（node/npm/git）。
+- SDK detection 跨平台支持重写。
+- Validation repair retries 增加 bound 限制。
+- Chat header 新增 IDE 和 Terminal 打开按钮，支持自动检测。
+- 会话内容区与底部输入区改为 flex 布局，解决重叠问题。
+- Node.js 在 About 页显示为 unknown 的修复，以及 packaged Electron app 的 PATH 修复。
+- Settings 导航侧栏垂直滚动支持。
+- Composer 参数栏换行修复，选择器弹窗 z-index 修复。
+- ESC 无 overlay 打开时避免不必要的 re-render。
 
 ## 当前提交进度
 
@@ -146,8 +215,25 @@
 - `094190a feat: sync queued turns from runtime`
 - `8916c22 feat: add project context governor`
 - `23c9644 feat: show checkpoint file context`
-- 本轮新增: 自修复开发循环 MVP 已补齐验证命令建议、`/validate` 执行入口、Chat 验证卡片、基础结果回流、失败摘要回灌、retry attempt/max-retries 和停止条件。
-- 下一步: 继续补强自动重试后的 UI retry trail、文件级 accept/reject 与结构化用户补充问答。
+- 自修复开发循环 MVP: 验证命令建议、`/validate` 执行入口、Chat 验证卡片、基础结果回流、失败摘要回灌、retry attempt/max-retries 和停止条件。
+- `a8c7a82 Remove legacy agent loop runtime`
+- `aceff35 Remove legacy skill lookup path`
+- `f9862d0 Load skill instructions on demand`
+- `a826354 feat: 三层命令架构 + 消息删除能力`
+- `008a1e2 feat: 输入框 / 触发 slash command 弹窗`
+- `595d512 feat: add layered skills and prompts`
+- `a2e3dad feat: 会话历史分页加载与权限审批 forcePrompt 支持`
+- `87270c6 refactor: change config panel from popup to side panel, mutual exclusion with inspector`
+- `dd55490 feat: move Skills/Prompts/Tools from inspector to config panel via More button`
+- `c8011a1 feat: 技能管理页分页去重、固定卡片高度、多选批量删除`
+- `a0ae433 fix: 技能去重改用名称过滤、本地候选显示来源路径、按来源分 tab 搜索`
+- `a2a8bd2 feat: add session recovery, conversation history prompt, project-local skills, plan mode events, and expanded SDK permission types`
+- `c457bd7 feat: resolve Claude Code native executable and validate workspace availability`
+- `f26f926 refactor: clean up slash commands, remove 28 non-functional commands, add git agent-forwarding subcommands`
+- `7ae449e fix: prevent unnecessary re-render when pressing ESC with no overlay open`
+- `f80b08f feat(chat-header): add IDE and Terminal open buttons with auto-detection`
+- `7152ee0 feat(settings): extract System Prompt into dedicated settings section`
+- `f0ad3b0 fix: expand prompts and tools sections by default in config panel`
 
 最近验证:
 
@@ -174,7 +260,17 @@
 
 ## 下一步开发建议
 
-### P0-A: 权限审批决策持久化闭环
+### ~~P0-A: 权限审批决策持久化闭环~~ ✅ 已完成
+
+权限审批决策持久化已基本完成（见第 5 节）。后续重点转为 Settings 审计视图和规则管理。
+
+### ~~P0-B: 后端任务队列状态与前端同步~~ ✅ 已完成
+
+后端任务队列已同步到 UI（`094190a`），支持 `session:get-queue` / `session:cancel-queued-turn` IPC。
+
+### ~~P0-C: 项目上下文来源可审查~~ ✅ 已完成
+
+项目上下文来源已通过 `project_context_loaded` 事件和 Chat Inspector 暴露（`8916c22`、`522de69`）。
 
 目标:
 - 把 SDK permission callback 与 Spark 权限系统完全打通。
@@ -323,12 +419,12 @@
 
 ## 推荐下一轮切入顺序
 
-1. 权限审批决策持久化闭环。
-2. 后端任务队列状态同步到 UI。
-3. 项目上下文来源审查 UI。
-4. Context Governor MVP。
-5. SDK checkpoint / diff 审查。
-6. 自修复验证循环。
+~~1. 权限审批决策持久化闭环。~~ ✅ 已完成
+~~2. 后端任务队列状态同步到 UI。~~ ✅ 已完成
+~~3. 项目上下文来源审查 UI。~~ ✅ 已完成
+4. Context Governor 继续补强（文件 pin/exclude、Context Ledger、长会话摘要）。
+5. SDK checkpoint / diff 审查产品化（文件级 accept/reject、richer diff / hunk preview）。
+6. ~~自修复验证循环。~~ ✅ MVP 已完成，继续补强 UI retry trail。
 7. 结构化用户补充问答。
 
-若只选一个下一步，应优先做“权限审批决策持久化闭环”。这是 SDK code agent 能否长期可用、可控、可被用户信任的关键。
+若只选一个下一步，应优先做”Context Governor 继续补强”。上下文管理是长会话可用性的核心瓶颈。

@@ -4,7 +4,40 @@
 > 日期: 2026-05-27  
 > 产品经理: Agent产品经理  
 > 开发负责人: 浩轩-特级开发  
-> 状态: 待开发
+> 状态: 🔄 开发中（第一阶段已完成，第二阶段进行中）
+
+---
+
+## 0. 开发进度
+
+### 第一阶段（核心骨架）— ✅ 已完成
+
+| 任务 | 状态 |
+|------|------|
+| T-01 数据库迁移：skill_registries 表 + skills 字段扩展 | ✅ 完成 |
+| T-02 Protocol 类型定义：RemoteSkillItem、SkillRegistry、新增 IPC | ✅ 完成 |
+| T-03 SkillRegistryService：市场源管理 + Adapter 接口 + Mock Adapter | ✅ 完成 |
+| T-08 IPC Handler 注册（11 个新通道） | ✅ 完成 |
+| T-09 SkillStoreView 商店 Tab UI + 搜索 + 卡片网格 | ✅ 完成 |
+| T-10 Skill 详情面板（侧边滑出） | ✅ 完成 |
+
+### Skills 管理增强（2026-05-27~28）
+
+- ✅ 分页去重、固定卡片高度、多选批量删除
+- ✅ 技能去重改用名称过滤，本地候选显示来源路径
+- ✅ 按来源分 tab 搜索
+- ✅ 按需加载 skill instructions
+- ✅ Skills/Prompts/Tools 从 inspector 移至 config panel（side panel）
+- ✅ 本地 Skill 检测后支持多选导入和单个导入
+
+### 第二阶段（市场接入）— 🔄 进行中
+
+| 任务 | 状态 |
+|------|------|
+| T-04 SkillsMP Adapter | 🔄 代码已编写，待接入 createAdapter 路由 |
+| T-05 MCP Market Adapter | ❌ 待开发 |
+| T-06 扣子 Coze Adapter | ❌ 待开发 |
+| T-07 Claude Skills Adapter | ❌ 待开发 |
 
 ---
 

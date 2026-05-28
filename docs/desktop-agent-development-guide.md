@@ -3238,29 +3238,38 @@ Day 7:
 
 > 以下任务不依赖特定 Phase，但阻塞多个功能模块的实现。
 
-#### INFRA-01 Claude Agent SDK 真实集成 🔴
+#### INFRA-01 Claude Agent SDK 真实集成 🔴 ✅ 已完成
 
 **优先级: P0（最大风险点）**
 **阻塞: P4-05 Context Governor, P3-01 MCP 工具注入, Shell 工具**
 
-当前 AnthropicAdapter 使用 `@anthropic-ai/sdk` 直接 HTTP 流式调用。需要升级为 Claude Agent SDK 集成以获得内置工具和 hooks 能力。
+当前 AnthropicAdapter 使用 `@anthropic-ai/sdk` 直接 HTTP 流式调用。已升级为 Claude Agent SDK 集成以获得内置工具和 hooks 能力。
 
 任务范围:
 
-- [ ] 调研 `@anthropic-ai/agent-sdk` TypeScript SDK 的 API 和事件模型
-- [ ] 实现 `ClaudeAgentSDKAdapter` 替换当前 `AnthropicAdapter`
-- [ ] 支持 Claude Code 内置工具: Read, Edit, Bash, Glob, Grep, WebFetch 等
-- [ ] 支持 hooks 对接 Spark Permission Policy（工具调用前拦截）
-- [ ] 支持 MCP 配置注入
-- [ ] 支持 checkpoint 功能
-- [ ] 支持 extended thinking
-- [ ] 保持向后兼容: 保留 `GenericLLMAdapter` 用于简单 API 调用
+- [x] 调研 `@anthropic-ai/agent-sdk` TypeScript SDK 的 API 和事件模型
+- [x] 实现 `ClaudeAgentSDKAdapter` 替换当前 `AnthropicAdapter`
+- [x] 支持 Claude Code 内置工具: Read, Edit, Bash, Glob, Grep, WebFetch 等
+- [x] 支持 hooks 对接 Spark Permission Policy（工具调用前拦截）
+- [x] 支持 MCP 配置注入
+- [x] 支持 checkpoint 功能
+- [x] 支持 extended thinking
+- [x] 保持向后兼容: 保留 `GenericLLMAdapter` 用于简单 API 调用
 
 验收标准:
 
-- [ ] 使用 Claude Agent SDK 可完成流式对话 + 工具调用
-- [ ] 内置工具可通过 Spark Permission 系统拦截
-- [ ] 不破坏现有 OpenAI Adapter 功能
+- [x] 使用 Claude Agent SDK 可完成流式对话 + 工具调用
+- [x] 内置工具可通过 Spark Permission 系统拦截
+- [x] 不破坏现有 OpenAI Adapter 功能
+
+**关键进展（2026-05-27~28）：**
+- Claude SDK 已成为强制主路径，Anthropic 供应商自动使用 `claude-sdk` 适配器。
+- SDK 缺失时写入 `SDK_REQUIRED` 错误事件，不再回退 direct API。
+- 已新增 `sdk/` 模块：`claude-sdk-executor.ts`（核心执行器）、`event-mapper.ts`（事件映射）、`permission-mapper.ts`（权限映射）、`types.ts`（类型定义）。
+- SDK 工具调用、基础文件变更、usage、checkpoint 承载已补齐最小闭环。
+- Claude Code native executable 路径解析与 workspace 可用性验证已实现。
+- SDK integrity check 扩展主机工具检测（node/npm/git）。
+- 已清理 legacy agent loop runtime 和 legacy skill lookup path。
 
 #### INFRA-02 Codex SDK 真实集成 🔴
 
@@ -4152,6 +4161,7 @@ type SparkErrorType =
 
 > 基于 2026-05-26 全量代码审计更新。
 > 第四次更新: UI 优化第一批已完成。
+> 第五次更新: 2026-05-28，Claude SDK 集成、slash 命令重构、会话恢复、config panel 重构、skills 管理增强等。
 
 ### 25.0 UI 优化第一批变更记录（2026-05-26）
 
@@ -4184,9 +4194,15 @@ type SparkErrorType =
 **Phase 0-3 已全部完成（55 个任务）**，基础设施、CRUD 层、核心运行时能力全部就绪。
 **Phase 4 已完成 7/8 + 额外交付**，Chat Streaming、MCP 管理 UI、错误边界、快捷键、文件监控、Command Runtime 全部交付。
 **Phase 6 P6-01 Auto-Update 已完成**。
+**INFRA-01 Claude Agent SDK 集成已完成**，Claude SDK 已成为强制主路径。
 **UI 体验优化**（commit `ffd26f3`）：移除流式光标闪烁、思考块紫色高亮改为中性色、工具执行完成后自动折叠。
 **上下文额度动态化**（commit `1ab3aa5`）：移除顶部 ContextUsageBar 进度条，改为底部环形指示器聚合展示；上下文窗口大小从硬编码改为动态获取（ModelCapabilityRegistry → API 响应 → 不展示）。
 **消息悬浮交互**（commit `1fd5629`）：用户/Agent 消息悬浮时显示时间戳和复制按钮。
+**Slash 命令系统重构**（`a826354` + `008a1e2` + `f26f926`）：三层命令架构落地，输入框 `/` 弹窗、树形分组、agent 转发、清理 28 个未实现命令。
+**Config Panel 重构**（`87270c6` + `dd55490`）：popup → side panel，与 inspector 互斥，Skills/Prompts/Tools 统一入口。
+**Skills 管理增强**（`c8011a1` + `a0ae433` + `bb3616b`）：分页去重、多选批量删除、按来源分 tab 搜索、按需加载 instructions。
+**会话恢复与历史**（`a2a8bd2` + `a2e3dad`）：session recovery、历史分页加载、消息删除、plan mode 事件。
+**Legacy 代码清理**（`a8c7a82` + `aceff35`）：移除 legacy agent loop runtime 和 legacy skill lookup path。
 **Phase 5 未开始**（需要 Spark Server）。
 
 ### 真实可用的核心功能
@@ -4202,29 +4218,37 @@ type SparkErrorType =
 7. ✅ **规则合成**: 5 层 scope 合成 + override/merge 策略 + 缓存
 8. ✅ **Skill 执行**: 5 个内置 Skill + 触发匹配 + AgentLoop 集成
 9. ✅ **用量统计**: Token 追踪 + 成本计算 + 按维度聚合
-10. ✅ **命令系统**: `/` 命令补全 + 6 个内置命令 + 键盘导航
-11. ✅ **会话管理**: 创建/搜索/历史/归档/重命名/置顶/删除/取消
+10. ✅ **命令系统**: 三层命令架构 + `/` 弹窗 + 树形分组 + agent 转发 + git 子命令
+11. ✅ **会话管理**: 创建/搜索/历史/归档/重命名/置顶/删除/取消/恢复/分页加载/消息删除
 12. ✅ **工作区管理**: 打开项目/文件树浏览/项目类型自动检测/文件变更监控
 13. ✅ **Provider 管理**: CRUD + 健康检查 + API 密钥 Keychain 存储 + 18 个预设模板
-14. ✅ **设置管理**: 全部 Tab 真实可用 + 双层持久化（localStorage + SQLite）
+14. ✅ **设置管理**: 全部 Tab 真实可用 + 双层持久化（localStorage + SQLite）+ System Prompt 独立 section
 15. ✅ **自动更新**: electron-updater + UpdateService + 自动检查 + 进度条 + 安装重启
 16. ✅ **错误处理**: 错误边界 + Toast 通知系统 + 4 种类型
+17. ✅ **Claude Agent SDK 集成**: 强制主路径 + 事件映射 + 权限映射 + checkpoint + usage
+18. ✅ **Config Panel**: side panel + inspector 互斥 + Skills/Prompts/Tools 统一入口
+19. ✅ **Skills 管理**: 分页去重 + 多选批量删除 + 按来源 tab 搜索 + 按需加载
+20. ✅ **项目上下文**: 自动读取项目规则/skills/agents + 上下文预算 + 来源审查
+21. ✅ **权限持久化**: 审批决策 DB 持久化 + project/global 级 allow/deny 记忆
+22. ✅ **自修复循环**: 验证建议 + `/validate` 执行 + 失败回灌 + retry 控制
 
 ### 剩余关键差距
 
-1. **Claude Agent SDK 未集成** — 无法使用 Claude Code 的内置工具能力 (INFRA-01)
+1. ~~**Claude Agent SDK 未集成**~~ — ✅ 已完成 (INFRA-01)
 2. **Workflow 执行引擎未实现** — WorkflowView 仍是静态演示 (P4-01)
 3. **多 Agent 编排未实现** — AgentsView 已有真实数据但无编排策略 (P4-03)
-4. **Context Governor 未实现** — 无法控制上下文窗口使用、pin/exclude (P4-05)
+4. **Context Governor 未完成** — 基础预算已实现，仍缺 pin/exclude、Context Ledger、长会话摘要 (P4-05)
 5. **Resource Governor 未实现** — 无法监控 CPU/内存、设置 run 预算 (P4-06)
 6. **Artifact Store 未实现** — 无图片输入/输出/文件引用 (P3-06)
 7. **ProfileEditModal 未持久化** — 所有字段 defaultValue，保存仅关闭
+8. **结构化用户补充问答未实现** — agent 不确定时无法结构化暂停/恢复任务
+9. **Checkpoint diff 审查产品化** — 基础展示已完成，仍缺文件级 accept/reject 和 hunk preview
 
 ### 25.1 Skill 商店开发计划（2026-05-27 启动）
 
 **PRD 文档**: `docs/prd/PRD-Skill-Store.md`
 **开发负责人**: 浩轩-特级开发
-**状态**: 🔄 第一阶段完成 ✅ + 第二阶段进行中（T-04 SkillsMP Adapter 代码已编写，待接入路由）
+**状态**: 🔄 第一阶段完成 ✅ + 第二阶段进行中（T-04 SkillsMP Adapter 代码已编写，待接入路由）+ Skills 管理增强（分页去重、多选批量删除、按来源 tab 搜索、按需加载 instructions、config panel 统一入口）
 
 **目标**: 接入国内外主流 Skill 市场，支持搜索、安装、导入导出和 Skill 管理智能体。本期不涉及 Skill 执行引擎。
 
@@ -4304,12 +4328,12 @@ type SparkErrorType =
 
 | 成员 | 建议下一批任务 | 理由 |
 |------|--------------|------|
-| **codex** | INFRA-01 Claude Agent SDK 集成 | 后端/SDK 集成专家，已完成 Codex SDK + Shell 工具 |
-| **浩轩** | Skill 商店第二阶段（T-04 接入路由 → T-05~T-07 市场接入） | 已完成 T-04 SkillsMP Adapter 代码 |
-| **claude** | P4-01 Workflow 执行引擎 / P4-05 Context Governor | 全栈/系统设计专家 |
+| **codex** | Context Governor 补强（pin/exclude、Ledger、长会话摘要） | 后端/SDK 集成专家，已完成 SDK 集成和上下文基础 |
+| **浩轩** | Skill 商店第二阶段（T-04 接入路由 → T-05~T-07 市场接入） | 已完成 T-04 SkillsMP Adapter 代码和 Skills 管理增强 |
+| **claude** | P4-05 Context Governor / Checkpoint diff 审查产品化 | 全栈/系统设计专家 |
 | **子涵** | P4-03 Multi-Agent 编排基础 | 架构设计专家 |
-| **小米** | P3-06 多模态 Artifact Store / INFRA-04 Terminal PTY | 已完成 P3-03 Skill Runtime + P6-01 Auto-Update |
-| **小林** | P4-06 Resource Governor MVP / INFRA-05 文件 Diff 渲染 | 前端专家 |
+| **小米** | 结构化用户补充问答 / INFRA-04 Terminal PTY | 已完成 P3-03 Skill Runtime + P6-01 Auto-Update |
+| **小林** | P4-06 Resource Governor MVP / Checkpoint hunk preview | 前端专家 |
 
 ### 风险提示
 

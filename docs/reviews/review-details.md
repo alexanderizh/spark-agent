@@ -1,5 +1,29 @@
 I'll conduct a comprehensive capability review of this project. Let me start by exploring the codebase architecture and all key components in parallel.
 
+## 2026-05-28 Session SDK 权限策略复审
+
+本轮复审针对 Claude Agent SDK 执行路径的权限策略补齐。
+
+已确认并实现:
+
+- `claude-auto` 和 `claude-bypass` 交给 SDK 原生 permission mode 处理，不再由 Spark `canUseTool` 强制弹窗。
+- `claude-auto-edits` 保留 SDK `acceptEdits` 语义，编辑工具自动允许，Bash 等高风险工具仍进入 Spark 审批。
+- SDK 原生工具名归一化到 Spark action，覆盖 `Read`、`Write`、`Edit`、`MultiEdit`、`Bash`、`WebFetch`、`WebSearch`、`mcp__*`。
+- Bash 危险命令识别会升级到 `command_dangerous`，并按 `ask-twice` 执行双重确认。
+- Composer 权限模式 UI 增加 Auto 与 Bypass 的状态联动，Bypass 选中后保持危险色和警告图标。
+
+验证:
+
+- `packages/agent-runtime/src/__tests__/services/permission.service.test.ts`
+- `packages/agent-runtime/src/__tests__/sdk/claude-sdk-executor.test.ts`
+- `apps/desktop/src/renderer/tests/renderer.test.ts`
+
+剩余风险:
+
+- `scope` 字段中的 workspace、whitelist、server、profile 尚未完全参与判定。
+- `sandboxLevel` 仍是配置/展示字段，未映射到 SDK 或本地沙箱执行。
+- Codex adapter 仍未接通真实执行路径，Codex 三个 permission mode 仍属预留语义。
+
 Three agents have completed their analysis. Let me read a few critical files to verify key findings and deepen the review.
 
 Let me read more critical implementation files to deepen the analysis.
