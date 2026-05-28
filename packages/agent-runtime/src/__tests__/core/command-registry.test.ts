@@ -41,7 +41,7 @@ describe('CommandRegistry', () => {
     expect(cmds.map((c) => c.name)).toContain('model')
   })
 
-  it('has three-layer architecture commands', () => {
+  it('has two-layer architecture commands', () => {
     const registry = createBuiltinRegistry()
     const cmds = registry.list()
     // Layer 1: SDK commands
@@ -49,7 +49,7 @@ describe('CommandRegistry', () => {
     expect(sdkCmds.length).toBeGreaterThan(10)
     // Layer 2: Builtin commands
     const builtinCmds = cmds.filter((c) => c.layer === 'builtin')
-    expect(builtinCmds.length).toBeGreaterThan(10)
+    expect(builtinCmds.length).toBeGreaterThan(0)
   })
 
   it('supports command aliases', () => {
@@ -124,24 +124,54 @@ describe('Built-in commands', () => {
     expect(deps.updateSession).toHaveBeenCalledWith('sess-1', { title: 'New Title' })
   })
 
-  it('/reason validates levels', async () => {
-    const result = await registry.execute(parse('/reason invalid'), ctx, makeDeps())
+  it('/reason is removed (unknown command)', async () => {
+    const result = await registry.execute(parse('/reason high'), ctx, makeDeps())
     expect(result.success).toBe(false)
-    const result2 = await registry.execute(parse('/reason high'), ctx, makeDeps())
-    expect(result2.success).toBe(true)
+    expect(result.message).toContain('/help')
   })
 
-  it('/workflow shows subcommands', async () => {
+  it('/workflow is removed (unknown command)', async () => {
     const result = await registry.execute(parse('/workflow'), ctx, makeDeps())
-    expect(result.success).toBe(true)
-    expect(result.message).toContain('list')
-    expect(result.message).toContain('run')
+    expect(result.success).toBe(false)
   })
 
-  it('/agent list returns info', async () => {
+  it('/agent is removed (unknown command)', async () => {
     const result = await registry.execute(parse('/agent list'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+  })
+
+  it('/git add forwards to agent', async () => {
+    const result = await registry.execute(parse('/git add .'), ctx, makeDeps())
     expect(result.success).toBe(true)
-    expect(result.message).toContain('Code Agent')
+    expect(result.forwardToAgent).toBe(true)
+  })
+
+  it('/git commit forwards to agent', async () => {
+    const result = await registry.execute(parse('/git commit "fix: bug"'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBe(true)
+  })
+
+  it('/git push forwards to agent', async () => {
+    const result = await registry.execute(parse('/git push'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBe(true)
+  })
+
+  it('/git pull forwards to agent', async () => {
+    const result = await registry.execute(parse('/git pull'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBe(true)
+  })
+
+  it('/git status executes locally', async () => {
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: 'M src/app.ts', stderr: '', exitCode: 0 })),
+    })
+    const result = await registry.execute(parse('/git status'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('M src/app.ts')
   })
 
   it('/skill run selects a skill for the follow-up turn', async () => {
@@ -299,9 +329,9 @@ describe('Command Parser', () => {
 
   it('extracts alias via registry', () => {
     const registry = createBuiltinRegistry()
-    const cmd = registry.get('new')
+    const cmd = registry.get('cp')
     expect(cmd).toBeDefined()
-    expect(cmd?.name).toBe('new-session')
+    expect(cmd?.name).toBe('checkpoint')
   })
 })
 
