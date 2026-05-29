@@ -820,6 +820,299 @@ describe('Renderer Smoke Tests', () => {
     expect(onApprovalClose).toHaveBeenCalled()
   })
 
+  it('uses the active session provider model instead of stale composer preferences', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    localStorage.setItem('spark-agent:composer-prefs', JSON.stringify({
+      adapter: 'claude-sdk',
+      providerProfileId: 'xiaomi-provider',
+      modelId: 'mimo-v2.5-pro',
+      permissionMode: 'claude-plan',
+    }))
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Old GLM session',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'tencent-provider',
+            modelId: null,
+            agentAdapter: 'claude-sdk',
+            permissionMode: 'claude-plan',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+            messageCount: 0,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: 'tencent-provider',
+              name: 'Tencent Coding Plan',
+              provider: 'anthropic',
+              defaultModel: 'glm-5',
+              modelIds: ['glm-5'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'tencent-key',
+              isDefault: true,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+            {
+              id: 'xiaomi-provider',
+              name: 'Xiaomi MiMo',
+              provider: 'anthropic',
+              defaultModel: 'mimo-v2.5-pro',
+              modelIds: ['mimo-v2.5-pro'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'xiaomi-key',
+              isDefault: false,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'settings:set') return { ok: true }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:send-turn') return { turnId: 'turn-1', started: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('glm-5')
+    })
+    expect(container.textContent).not.toContain('mimo-v2.5-pro')
+
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
+    const sendButton = container.querySelector<HTMLButtonElement>('.composer-send-round')
+    expect(textarea).not.toBeNull()
+    expect(sendButton).not.toBeNull()
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      setter?.call(textarea, 'hello from old session')
+      textarea?.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      sendButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('session:send-turn', expect.objectContaining({
+      sessionId: 'session-1',
+      providerProfileId: 'tencent-provider',
+      modelId: 'glm-5',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+    }))
+  })
+
+  it('switches same-adapter provider and model atomically for an existing session', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Switch model session',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'tencent-provider',
+            modelId: 'glm-5',
+            agentAdapter: 'claude-sdk',
+            permissionMode: 'claude-plan',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+            messageCount: 0,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [
+            {
+              id: 'tencent-provider',
+              name: 'Tencent Coding Plan',
+              provider: 'anthropic',
+              defaultModel: 'glm-5',
+              modelIds: ['glm-5'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'tencent-key',
+              isDefault: true,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+            {
+              id: 'xiaomi-provider',
+              name: 'Xiaomi MiMo',
+              provider: 'anthropic',
+              defaultModel: 'mimo-v2.5-pro',
+              modelIds: ['mimo-v2.5-pro'],
+              apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
+              keystoreRef: 'xiaomi-key',
+              isDefault: false,
+              createdAt: '2026-05-28T00:00:00.000Z',
+            },
+          ],
+        }
+      }
+      if (channel === 'session:update') {
+        return {
+          session: {
+            id: 'session-1',
+            title: 'Switch model session',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: request?.providerProfileId,
+            modelId: request?.modelId,
+            agentAdapter: request?.agentAdapter,
+            permissionMode: request?.permissionMode,
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+            messageCount: 0,
+          },
+        }
+      }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'settings:set') return { ok: true }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('glm-5')
+    })
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.composer-model-picker .composer-select-trigger')?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    const mimoButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.composer-model-menu .composer-menu-item'))
+      .find((button) => button.textContent?.includes('mimo-v2.5-pro'))
+    expect(mimoButton).toBeDefined()
+
+    await act(async () => {
+      mimoButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('session:update', expect.objectContaining({
+      sessionId: 'session-1',
+      providerProfileId: 'xiaomi-provider',
+      modelId: 'mimo-v2.5-pro',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+    }))
+  })
+
   it('does not auto-collapse the latest assistant message body', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'workspace:list') {

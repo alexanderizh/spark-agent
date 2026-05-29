@@ -3576,7 +3576,12 @@ function ComposerV2({
     ?? compatibleProviders.find((item) => item.isDefault)
     ?? compatibleProviders[0]
   const modelOptions = selectedProvider?.modelIds.length ? selectedProvider.modelIds : selectedProvider?.defaultModel ? [selectedProvider.defaultModel] : []
-  const effectiveModelId = session?.modelId ?? (draftModelId || selectedProvider?.defaultModel || modelOptions[0] || '')
+  const providerDefaultModel = selectedProvider?.defaultModel || modelOptions[0] || ''
+  const sessionModelId = normalizeModelForProvider(session?.modelId, selectedProvider)
+  const draftModelForProvider = normalizeModelForProvider(draftModelId, selectedProvider)
+  const effectiveModelId = session != null
+    ? (sessionModelId || providerDefaultModel)
+    : (draftModelForProvider || providerDefaultModel)
   const effectiveMode = session?.chatMode ?? draftMode
   const effectiveReasoning = session?.reasoningEffort ?? draftReasoning
   const permissionOptions = getPermissionModeOptions(adapter)
@@ -3991,6 +3996,35 @@ function ComposerV2({
     }
   }
 
+  const handleProviderModelChange = async (providerId: string, modelId: string) => {
+    const provider = providers.find((item) => item.id === providerId)
+    if (provider == null) return
+    const nextAdapter = getProviderAdapterKind(provider)
+    const nextPermissionMode = adapter === nextAdapter
+      ? effectivePermissionMode
+      : getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextModel = normalizeModelForProvider(modelId, provider) || provider.defaultModel || provider.modelIds[0] || modelId
+
+    setDraftAdapter(nextAdapter)
+    setDraftPermissionMode(nextPermissionMode)
+    setSelectedProviderId(providerId)
+    setDraftModelId(nextModel)
+    writeComposerPrefs({
+      adapter: nextAdapter,
+      providerProfileId: providerId,
+      modelId: nextModel,
+      permissionMode: nextPermissionMode,
+    })
+    if (session != null) {
+      await persistRuntimePatch({
+        providerProfileId: providerId,
+        modelId: nextModel || null,
+        agentAdapter: nextAdapter,
+        permissionMode: nextPermissionMode,
+      })
+    }
+  }
+
   const handleAdapterChange = async (nextAdapter: AgentAdapter) => {
     if (nextAdapter === adapter) return
     setDraftAdapter(nextAdapter)
@@ -4153,10 +4187,7 @@ function ComposerV2({
               selectedProviderId={selectedProvider?.id ?? ''}
               selectedModelId={effectiveModelId}
               disabled={compatibleProviders.length === 0}
-              onChange={async (providerId, modelId) => {
-                if (providerId !== selectedProvider?.id) await handleProviderChange(providerId)
-                if (modelId !== effectiveModelId) await handleModelChange(modelId)
-              }}
+              onChange={handleProviderModelChange}
             />
             <ComposerMenuSelect
               icon={activePermissionOption?.tone === 'danger'
@@ -4507,6 +4538,14 @@ function getPreferredProvider(
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
   return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
+}
+
+function normalizeModelForProvider(modelId: string | null | undefined, provider: ProviderProfile | null | undefined): string {
+  const model = modelId?.trim() ?? ''
+  if (!model || provider == null) return ''
+  const configuredModels = provider.modelIds.length ? provider.modelIds : provider.defaultModel ? [provider.defaultModel] : []
+  if (configuredModels.length === 0) return model
+  return configuredModels.includes(model) ? model : ''
 }
 
 function isClaudeAdapter(adapter: AgentAdapter): boolean {

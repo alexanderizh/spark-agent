@@ -9,15 +9,17 @@
 - 临时关闭 Claude SDK resume。原因是当前桌面端复现出“新会话第一轮成功、第二轮 `Claude Code process exited with code 1`”以及旧会话 fresh turn 报 `Session ID ... is already in use` 的行为。当前在 resume 关闭时为每个 fresh turn 生成唯一 SDK session id，多轮连续性暂时由 Spark 持久化历史上下文注入保障。
 - 放行 `ExitPlanMode` / `exit_plan_mode` / `EnterPlanMode` / `enter_plan_mode` / `AskUserQuestion` / `ask_user_question` 等控制工具别名，避免 Plan mode 同时出现中央计划审批和底部工具权限审批。
 - Composer 工作中状态改为只依赖 session `running` 状态，避免错误或停止后的残留状态让后续发送被当成“停止生成”。
+- Composer 现在按当前 provider 校验会话/草稿 model，旧会话没有 `modelId` 时只使用该 provider 的默认模型，不再把全局草稿模型串到旧会话；同一 SDK adapter 内切换 provider/model 时会原子持久化 `providerProfileId`、`modelId`、`agentAdapter` 和 `permissionMode`，避免把小米模型发到腾讯云 endpoint 这类错配。
 - 下一步计划需把 SDK resume 做成带健康检测/回退的能力，而不是默认启用。
 
 本次复盘后的下一步开发计划:
 
 1. **P0 稳定性回归**: 增加 Plan mode 端到端测试，覆盖“产出计划 -> 只出现一个计划审批入口 -> 批准后继续执行 -> 再发送一轮消息不触发 SDK_ERROR”。
-2. **P0 SDK resume 安全恢复**: 为 Claude SDK resume 增加 capability flag、失败熔断、自动回退到 fresh session，以及明确的错误 telemetry；确认稳定后再逐步开启。
-3. **P0 权限 UI 去重**: 把工具权限审批、计划审批、结构化用户问答三类交互建立统一队列/优先级，保证同一 turn 不会同时渲染多个互相冲突的审批入口。
-4. **P1 结构化用户问答**: 复用 `AskUserQuestion` 控制工具，补齐协议事件和 composer 附近的回答卡片，把“等待用户补充”从普通文本追问升级为可恢复状态。
-5. **P1 评审与恢复链路**: 继续完善 checkpoint diff 的文件级 accept/reject、失败恢复提示，以及验证失败后的 retry trail UI。
+2. **P0 provider/model 一致性回归**: 覆盖旧会话回显、旧会话发送、新建会话继承草稿偏好、同 adapter provider/model 切换、跨 adapter 切换等路径，确保 UI、session runtime patch、SDK query options 三处一致。
+3. **P0 SDK resume 安全恢复**: 为 Claude SDK resume 增加 capability flag、失败熔断、自动回退到 fresh session，以及明确的错误 telemetry；确认稳定后再逐步开启。
+4. **P0 权限 UI 去重**: 把工具权限审批、计划审批、结构化用户问答三类交互建立统一队列/优先级，保证同一 turn 不会同时渲染多个互相冲突的审批入口。
+5. **P1 结构化用户问答**: 复用 `AskUserQuestion` 控制工具，补齐协议事件和 composer 附近的回答卡片，把“等待用户补充”从普通文本追问升级为可恢复状态。
+6. **P1 评审与恢复链路**: 继续完善 checkpoint diff 的文件级 accept/reject、失败恢复提示，以及验证失败后的 retry trail UI。
 
 ## 总体评估
 
