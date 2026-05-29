@@ -16,6 +16,7 @@ I'll conduct a comprehensive capability review of this project. Let me start by 
 - `pnpm --filter @spark/desktop exec vitest run src/renderer/tests/renderer.test.ts -t "renders plan approval as the only approval surface"` 通过。
 - `pnpm --filter @spark/desktop exec vitest run src/renderer/tests/renderer.test.ts -t "uses the active session provider model"` 通过。
 - `pnpm --filter @spark/desktop exec vitest run src/renderer/tests/renderer.test.ts -t "switches same-adapter provider"` 通过。
+- `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/services/session-runtime-config.test.ts` 通过，覆盖旧会话 provider 默认模型、同 SDK adapter 切换 provider/model 后下一轮发送、以及 send-turn runtime patch 原子应用。
 - `pnpm --filter @spark/desktop typecheck` 通过。
 - `pnpm --filter @spark/desktop test:unit -- src/renderer/tests/renderer.test.ts` 当前被既有 sidebar 持久化用例阻塞: `toggles the primary sidebar from the bottom control and persists the state` 期望 sidebar expanded，但实际为 collapsed；其余 desktop 测试通过，且该失败点不在本次改动路径。
 

@@ -11,6 +11,7 @@
 - Composer 侧同步增加控制工具审批抑制，即使控制工具 approval request 被异常透传，也不会渲染底部 inline approval card；计划审批只走中央 `PlanApprovalModal`。
 - Composer 工作中状态改为只依赖 session `running` 状态，避免错误或停止后的残留状态让后续发送被当成“停止生成”。
 - Composer 现在按当前 provider 校验会话/草稿 model，旧会话没有 `modelId` 时只使用该 provider 的默认模型，不再把全局草稿模型串到旧会话；同一 SDK adapter 内切换 provider/model 时会原子持久化 `providerProfileId`、`modelId`、`agentAdapter` 和 `permissionMode`，避免把小米模型发到腾讯云 endpoint 这类错配。
+- SessionService 增加运行时配置回归，证明旧会话发送、同 SDK adapter 切 provider/model 后下一轮发送、以及 `session:send-turn` runtime patch 都会解析到一致的 provider endpoint、model、permission 和独立 SDK session id。
 - 下一步计划需把 SDK resume 做成带健康检测/回退的能力，而不是默认启用。
 
 本次复盘后的下一步开发计划:
