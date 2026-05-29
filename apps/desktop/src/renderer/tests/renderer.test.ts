@@ -820,6 +820,198 @@ describe('Renderer Smoke Tests', () => {
     expect(onApprovalClose).toHaveBeenCalled()
   })
 
+  it('renders plan approval as the only approval surface for control tools', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const listeners = new Map<string, (payload: unknown) => void>()
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Plan mode session',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'anthropic-provider',
+            modelId: 'claude-sonnet-4-5',
+            agentAdapter: 'claude-sdk',
+            permissionMode: 'claude-plan',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+            messageCount: 0,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') {
+        return {
+          workspace: {
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          },
+        }
+      }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [{
+            id: 'anthropic-provider',
+            name: 'Anthropic',
+            provider: 'anthropic',
+            defaultModel: 'claude-sonnet-4-5',
+            modelIds: ['claude-sonnet-4-5'],
+            apiEndpoint: null,
+            keystoreRef: 'anthropic-key',
+            isDefault: true,
+            createdAt: '2026-05-28T00:00:00.000Z',
+          }],
+        }
+      }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'settings:set') return { ok: true }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'session:update') {
+        return {
+          session: {
+            id: 'session-1',
+            title: 'Plan mode session',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'anthropic-provider',
+            modelId: 'claude-sonnet-4-5',
+            agentAdapter: 'claude-sdk',
+            permissionMode: request?.permissionMode,
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+            messageCount: 0,
+          },
+        }
+      }
+      if (channel === 'session:send-turn') return { turnId: 'turn-continue', started: true }
+      return {}
+    })
+    const onApprovalClose = vi.fn()
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (payload: unknown) => void) => {
+        listeners.set(channel, callback)
+        return vi.fn()
+      }),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+
+    await act(async () => {
+      root = createRoot(container)
+      const ChatViewWithApproval = ChatView as React.ComponentType<{
+        approvalRequest: {
+          requestId: string
+          sessionId: string
+          toolName: string
+          action: string
+          toolInput: Record<string, unknown>
+          riskLevel: 'low' | 'medium' | 'high'
+          persistentScopes: Array<'project' | 'global'>
+        }
+        onApprovalClose: () => void
+      }>
+      root.render(
+        React.createElement(ToastProvider, null,
+          React.createElement(ChatViewWithApproval, {
+            approvalRequest: {
+              requestId: 'req-plan',
+              sessionId: 'session-1',
+              toolName: 'exit_plan_mode',
+              action: 'control_plan',
+              toolInput: { plan: '1. inspect\n2. patch\n3. verify' },
+              riskLevel: 'low',
+              persistentScopes: ['project', 'global'],
+            },
+            onApprovalClose,
+          }),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(container.querySelector('.composer-approval-card')).toBeNull()
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Plan mode session')
+    })
+    await vi.waitFor(() => {
+      expect(listeners.get('stream:session:agent-event')).toBeDefined()
+    })
+
+    await act(async () => {
+      listeners.get('stream:session:agent-event')?.({
+        id: 'evt-plan',
+        sessionId: 'session-1',
+        turnId: 'turn-1',
+        timestamp: '2026-05-28T00:00:01.000Z',
+        type: 'plan_proposed',
+        plan: '1. inspect\n2. patch\n3. verify',
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('.plan-approval-modal')).not.toBeNull()
+    })
+    expect(container.querySelector('.composer-approval-card')).toBeNull()
+    expect(container.textContent).toContain('计划已就绪，等待你审批')
+
+    const approveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.plan-approval-modal button'))
+      .find((button) => button.textContent?.includes('批准并执行'))
+    expect(approveButton).toBeDefined()
+
+    await act(async () => {
+      approveButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(invoke).toHaveBeenCalledWith('session:update', {
+      sessionId: 'session-1',
+      permissionMode: 'claude-auto-edits',
+    })
+    expect(invoke).toHaveBeenCalledWith('session:send-turn', {
+      sessionId: 'session-1',
+      message: expect.stringContaining('1. inspect\n2. patch\n3. verify'),
+    })
+    expect(onApprovalClose).not.toHaveBeenCalled()
+  })
+
   it('uses the active session provider model instead of stale composer preferences', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
     localStorage.setItem('spark-agent:composer-prefs', JSON.stringify({

@@ -4069,13 +4069,16 @@ function ComposerV2({
     .filter((branch): branch is string => branch.length > 0)
     .map((branch) => ({ value: branch, label: branch }))
   const showBranchSelect = branchOptions.length > 0 && branchState.currentBranch != null
+  const visibleApprovalRequest = approvalRequest != null && !isControlApprovalRequest(approvalRequest)
+    ? approvalRequest
+    : null
 
   return (
     <div className="composer-wrap">
       <div className="composer-inner">
-        {approvalRequest && (
+        {visibleApprovalRequest && (
           <InlineApprovalRequest
-            request={approvalRequest}
+            request={visibleApprovalRequest}
             {...(onApprovalClose !== undefined ? { onClose: onApprovalClose } : {})}
           />
         )}
@@ -4538,6 +4541,17 @@ function getPreferredProvider(
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
   return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
+}
+
+function isControlApprovalRequest(request: PermissionApprovalRequest): boolean {
+  const rawName = `${request.toolName ?? ''}`.trim()
+  const normalized = rawName
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[-\s]+/g, '_')
+    .toLowerCase()
+  return normalized === 'exit_plan_mode'
+    || normalized === 'enter_plan_mode'
+    || normalized === 'ask_user_question'
 }
 
 function normalizeModelForProvider(modelId: string | null | undefined, provider: ProviderProfile | null | undefined): string {
