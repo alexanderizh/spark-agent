@@ -44,10 +44,7 @@ function baseEvent(ctx: EventContext) {
  * Convert a single SDK message into a sequence of AgentEvents.
  * Called once for each message yielded by the SDK's AsyncGenerator.
  */
-export function mapSDKMessageToEvents(
-  message: SDKMessage,
-  ctx: EventContext,
-): AgentEvent[] {
+export function mapSDKMessageToEvents(message: SDKMessage, ctx: EventContext): AgentEvent[] {
   switch (message.type) {
     case 'system':
       return mapSystemMessage(message as SDKSystemMessage, ctx)
@@ -66,12 +63,14 @@ export function mapSDKMessageToEvents(
 
 function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[] {
   if (msg.subtype !== 'init') return []
-  return [{
-    ...baseEvent(ctx),
-    type: 'agent_status',
-    status: 'thinking',
-    message: `Initialized with model ${msg.model}, ${msg.tools.length} tools, ${msg.mcp_servers.length} MCP servers`,
-  }]
+  return [
+    {
+      ...baseEvent(ctx),
+      type: 'agent_status',
+      status: 'thinking',
+      message: `Initialized with model ${msg.model}, ${msg.tools.length} tools, ${msg.mcp_servers.length} MCP servers`,
+    },
+  ]
 }
 
 function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): AgentEvent[] {
@@ -114,23 +113,27 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
       if (delta == null) return []
 
       if (delta.type === 'text_delta' && delta.text != null) {
-        return [{
-          ...baseEvent(ctx),
-          type: 'assistant_message',
-          mode: 'delta',
-          content: delta.text,
-          provider: 'claude',
-          isFinal: false,
-        }]
+        return [
+          {
+            ...baseEvent(ctx),
+            type: 'assistant_message',
+            mode: 'delta',
+            content: delta.text,
+            provider: 'claude',
+            isFinal: false,
+          },
+        ]
       }
 
       if (delta.type === 'thinking_delta' && delta.thinking != null) {
-        return [{
-          ...baseEvent(ctx),
-          type: 'agent_thinking',
-          mode: 'delta',
-          content: delta.thinking,
-        }]
+        return [
+          {
+            ...baseEvent(ctx),
+            type: 'agent_thinking',
+            mode: 'delta',
+            content: delta.thinking,
+          },
+        ]
       }
 
       return []
@@ -141,12 +144,14 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
       if (block == null) return []
 
       if (block.type === 'tool_use' && block.id != null && block.name != null) {
-        return [{
-          ...baseEvent(ctx),
-          type: 'agent_status',
-          status: 'calling_tool',
-          message: `Calling ${mapSDKToolName(block.name)}`,
-        }]
+        return [
+          {
+            ...baseEvent(ctx),
+            type: 'agent_status',
+            status: 'calling_tool',
+            message: `Calling ${mapSDKToolName(block.name)}`,
+          },
+        ]
       }
       return []
     }
@@ -154,14 +159,16 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
     case 'message_start': {
       const usage = event.message?.usage
       if (usage) {
-        return [{
-          ...baseEvent(ctx),
-          type: 'usage_update',
-          provider: 'claude',
-          model: '',
-          inputTokens: usage.input_tokens,
-          outputTokens: usage.output_tokens,
-        }]
+        return [
+          {
+            ...baseEvent(ctx),
+            type: 'usage_update',
+            provider: 'claude',
+            model: '',
+            inputTokens: usage.input_tokens,
+            outputTokens: usage.output_tokens,
+          },
+        ]
       }
       return []
     }
@@ -238,22 +245,26 @@ function mapResultMessage(msg: SDKResultMessage, ctx: EventContext): AgentEvent[
 function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[] {
   switch (block.type) {
     case 'text':
-      return [{
-        ...baseEvent(ctx),
-        type: 'assistant_message',
-        mode: 'complete',
-        content: block.text,
-        provider: 'claude',
-        isFinal: false,
-      }]
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'assistant_message',
+          mode: 'complete',
+          content: block.text,
+          provider: 'claude',
+          isFinal: false,
+        },
+      ]
 
     case 'thinking':
-      return [{
-        ...baseEvent(ctx),
-        type: 'agent_thinking',
-        mode: 'complete',
-        content: block.thinking,
-      }]
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'agent_thinking',
+          mode: 'complete',
+          content: block.thinking,
+        },
+      ]
 
     case 'tool_use':
       ctx.toolNamesById?.set(block.id, mapSDKToolName(block.name))
@@ -261,28 +272,31 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       if (isPlanProposalTool(block.name)) {
         const plan = extractPlanText(normalizeToolInput(block.input))
         return plan != null
-          ? [{
-              ...baseEvent(ctx),
-              type: 'plan_proposed',
-              plan,
-            }]
+          ? [
+              {
+                ...baseEvent(ctx),
+                type: 'plan_proposed',
+                plan,
+              },
+            ]
           : []
       }
-      return [{
-        ...baseEvent(ctx),
-        type: 'tool_call',
-        toolCallId: block.id,
-        toolName: mapSDKToolName(block.name),
-        toolInput: normalizeToolInput(block.input),
-        source: isSDKMcpTool(block.name) ? 'mcp' : 'builtin',
-        ...(isSDKMcpTool(block.name) ? { mcpServerId: extractMcpServerId(block.name) } : {}),
-      }]
+      return [
+        {
+          ...baseEvent(ctx),
+          type: 'tool_call',
+          toolCallId: block.id,
+          toolName: mapSDKToolName(block.name),
+          toolInput: normalizeToolInput(block.input),
+          source: isSDKMcpTool(block.name) ? 'mcp' : 'builtin',
+          ...(isSDKMcpTool(block.name) ? { mcpServerId: extractMcpServerId(block.name) } : {}),
+        },
+      ]
 
     case 'tool_result': {
       const isError = block.is_error === true
-      const content = typeof block.content === 'string'
-        ? block.content
-        : flattenContentBlocks(block.content)
+      const content =
+        typeof block.content === 'string' ? block.content : flattenContentBlocks(block.content)
       const toolName = ctx.toolNamesById?.get(block.tool_use_id) ?? 'unknown'
 
       // 存储工具结果供后续提取 diff 使用
@@ -293,21 +307,25 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
       if (toolName === 'exit_plan_mode') {
         const plan = extractPlanTextFromToolResult(content)
         return plan != null
-          ? [{
-              ...baseEvent(ctx),
-              type: 'plan_proposed',
-              plan,
-            }]
+          ? [
+              {
+                ...baseEvent(ctx),
+                type: 'plan_proposed',
+                plan,
+              },
+            ]
           : []
       }
-      const events: AgentEvent[] = [{
-        ...baseEvent(ctx),
-        type: 'tool_result',
-        toolCallId: block.tool_use_id,
-        toolName,
-        status: isError ? 'error' : 'success',
-        ...(isError ? { error: content } : { output: content }),
-      }]
+      const events: AgentEvent[] = [
+        {
+          ...baseEvent(ctx),
+          type: 'tool_result',
+          toolCallId: block.tool_use_id,
+          toolName,
+          status: isError ? 'error' : 'success',
+          ...(isError ? { error: content } : { output: content }),
+        },
+      ]
       if (!isError) {
         const fileChange = buildFileChangeEvent(block.tool_use_id, toolName, ctx)
         if (fileChange != null) events.push(fileChange)
@@ -320,15 +338,24 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
   }
 }
 
-function normalizeCheckpointFiles(checkpoint: SDKResultMessage['checkpoint']): { filePaths?: string[] } {
+function normalizeCheckpointFiles(checkpoint: SDKResultMessage['checkpoint']): {
+  filePaths?: string[]
+} {
   const files = checkpoint?.file_paths ?? checkpoint?.files
   if (!Array.isArray(files)) return {}
-  const filePaths = files.filter((file): file is string => typeof file === 'string' && file.length > 0)
+  const filePaths = files.filter(
+    (file): file is string => typeof file === 'string' && file.length > 0,
+  )
   return filePaths.length > 0 ? { filePaths } : {}
 }
 
-function buildFileChangeEvent(toolCallId: string, toolName: string, ctx: EventContext): AgentEvent | null {
-  if (toolName !== 'edit_file' && toolName !== 'write_file' && toolName !== 'multi_edit') return null
+function buildFileChangeEvent(
+  toolCallId: string,
+  toolName: string,
+  ctx: EventContext,
+): AgentEvent | null {
+  if (toolName !== 'edit_file' && toolName !== 'write_file' && toolName !== 'multi_edit')
+    return null
   const input = findToolInput(toolCallId, ctx)
   const path = stringField(input, 'file_path') || stringField(input, 'path')
   if (!path) return null
@@ -350,7 +377,7 @@ function buildFileChangeEvent(toolCallId: string, toolName: string, ctx: EventCo
 function determineChangeType(
   toolName: string,
   toolResult: string | null,
-  input: Record<string, unknown> | null
+  input: Record<string, unknown> | null,
 ): 'create' | 'modify' | 'delete' {
   // write_file 创建新文件的情况
   if (toolName === 'write_file') {
@@ -371,7 +398,7 @@ function extractOrGenerateDiff(
   toolResult: string | null,
   toolName: string,
   input: Record<string, unknown> | null,
-  filePath: string
+  filePath: string,
 ): string | null {
   // 策略 1：尝试从工具结果中提取 unified diff
   if (toolResult && containsUnifiedDiff(toolResult)) {
@@ -400,7 +427,7 @@ function containsUnifiedDiff(text: string): boolean {
 /** 从工具结果中提取 unified diff 部分 */
 function extractUnifiedDiffSection(text: string): string | null {
   const lines = text.split('\n')
-  const diffStartIndex = lines.findIndex(line => line.startsWith('--- '))
+  const diffStartIndex = lines.findIndex((line) => line.startsWith('--- '))
   if (diffStartIndex === -1) return null
 
   // 找到 diff 的结束位置（下一个非 diff 行或文件结束）
@@ -409,14 +436,16 @@ function extractUnifiedDiffSection(text: string): string | null {
     const line = lines[i]
     if (line == null) continue
     // diff 行以 ---, +++ 或 @@ 开头，或者以空格、+、- 开头
-    if (!line.startsWith('--- ') &&
-        !line.startsWith('+++ ') &&
-        !line.startsWith('@@') &&
-        !line.startsWith(' ') &&
-        !line.startsWith('+') &&
-        !line.startsWith('-') &&
-        !line.startsWith('\\') &&
-        line.trim().length > 0) {
+    if (
+      !line.startsWith('--- ') &&
+      !line.startsWith('+++ ') &&
+      !line.startsWith('@@') &&
+      !line.startsWith(' ') &&
+      !line.startsWith('+') &&
+      !line.startsWith('-') &&
+      !line.startsWith('\\') &&
+      line.trim().length > 0
+    ) {
       diffEndIndex = i
       break
     }
@@ -467,7 +496,7 @@ function generateMultiEditDiff(input: Record<string, unknown>, filePath: string)
 function generateWriteFileDiff(
   input: Record<string, unknown>,
   filePath: string,
-  toolResult: string | null
+  toolResult: string | null,
 ): string | null {
   const content = stringField(input, 'content')
   if (!content) return null
@@ -551,21 +580,21 @@ function getToolResults(ctx: EventContext): Map<string, string> {
  */
 function mapSDKToolName(sdkName: string): string {
   const mapping: Record<string, string> = {
-    'Read': 'read_file',
-    'Write': 'write_file',
-    'Edit': 'edit_file',
-    'MultiEdit': 'multi_edit',
-    'Bash': 'bash',
-    'Glob': 'search_files',
-    'Grep': 'grep',
-    'TodoRead': 'todo_read',
-    'TodoWrite': 'todo_write',
-    'WebFetch': 'web_fetch',
-    'WebSearch': 'web_search',
-    'Agent': 'subagent',
-    'ExitPlanMode': 'exit_plan_mode',
-    'EnterPlanMode': 'enter_plan_mode',
-    'AskUserQuestion': 'ask_user_question',
+    Read: 'read_file',
+    Write: 'write_file',
+    Edit: 'edit_file',
+    MultiEdit: 'multi_edit',
+    Bash: 'bash',
+    Glob: 'search_files',
+    Grep: 'grep',
+    TodoRead: 'todo_read',
+    TodoWrite: 'todo_write',
+    WebFetch: 'web_fetch',
+    WebSearch: 'web_search',
+    Agent: 'subagent',
+    ExitPlanMode: 'exit_plan_mode',
+    EnterPlanMode: 'enter_plan_mode',
+    AskUserQuestion: 'ask_user_question',
   }
   return mapping[sdkName] ?? sdkName
 }

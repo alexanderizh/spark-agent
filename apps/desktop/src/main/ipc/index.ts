@@ -16,15 +16,56 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
-import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
-import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService, RuntimeCompositionService } from '@spark/agent-runtime'
-import type { CommandParseResponse, SessionAgentAdapter, SessionPermissionMode, WorkspaceInfo, HookNode } from '@spark/protocol'
-import type { SessionEventHandler, ApprovalHandler, SessionQueueChangedHandler, QuestionHandler, HookTriggerHandler } from '@spark/agent-runtime'
+import {
+  EventRepository,
+  ProviderProfileRepository,
+  RulesRepository,
+  SessionRepository,
+  WorkspaceRepository,
+  PermissionProfileRepository,
+  ModelProfileRepository,
+  McpServerRepository,
+  SkillRepository,
+  SettingsRepository,
+  UsageLedgerRepository,
+} from '@spark/storage'
+import {
+  ProviderService,
+  RulesService,
+  RuleCompositionEngine,
+  SessionService,
+  WorkspaceService,
+  PermissionService,
+  ModelService,
+  McpService,
+  SkillService,
+  SkillRegistryService,
+  SettingsService,
+  UsageLedgerService,
+  RuntimeCompositionService,
+} from '@spark/agent-runtime'
+import type {
+  CommandParseResponse,
+  SessionAgentAdapter,
+  SessionPermissionMode,
+  WorkspaceInfo,
+  HookNode,
+} from '@spark/protocol'
+import type {
+  SessionEventHandler,
+  ApprovalHandler,
+  SessionQueueChangedHandler,
+  QuestionHandler,
+  HookTriggerHandler,
+} from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
-import { getShellEnvironmentStatus, recheckRuntimeTools } from '../services/ShellEnvironmentService.js'
+import {
+  getShellEnvironmentStatus,
+  recheckRuntimeTools,
+} from '../services/ShellEnvironmentService.js'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('ipc:register')
@@ -53,7 +94,10 @@ function getSkillService(): SkillService {
 }
 
 function getRuntimeCompositionService(): RuntimeCompositionService {
-  return new RuntimeCompositionService(new SkillRepository(getDatabase()), new SettingsRepository(getDatabase()))
+  return new RuntimeCompositionService(
+    new SkillRepository(getDatabase()),
+    new SettingsRepository(getDatabase()),
+  )
 }
 
 let _settingsService: SettingsService | null = null
@@ -93,7 +137,10 @@ function getPermissionService(): PermissionService {
   return _permissionService
 }
 
-function getSessionPermissionContext(sessionId: string): { projectId?: string; workspaceIds?: string[] } {
+function getSessionPermissionContext(sessionId: string): {
+  projectId?: string
+  workspaceIds?: string[]
+} {
   const row = new SessionRepository(getDatabase()).get(sessionId)
   if (row == null) return {}
   let workspaceIds: string[] = []
@@ -111,10 +158,12 @@ function getSessionPermissionContext(sessionId: string): { projectId?: string; w
   }
 }
 
-function applyRuntimePermissionDefaults<T extends {
-  agentAdapter?: SessionAgentAdapter
-  permissionMode?: SessionPermissionMode
-}>(request: T): T {
+function applyRuntimePermissionDefaults<
+  T extends {
+    agentAdapter?: SessionAgentAdapter
+    permissionMode?: SessionPermissionMode
+  },
+>(request: T): T {
   if (request.agentAdapter !== undefined && request.permissionMode !== undefined) return request
   const defaults = getRuntimePermissionDefaults()
   return {
@@ -128,7 +177,10 @@ function getRuntimePermissionDefaults(): {
   agentAdapter: SessionAgentAdapter
   permissionMode: SessionPermissionMode
 } {
-  const value = getSettingsService().get(RUNTIME_PERMISSION_SETTINGS_CATEGORY, RUNTIME_PERMISSION_SETTINGS_KEY)
+  const value = getSettingsService().get(
+    RUNTIME_PERMISSION_SETTINGS_CATEGORY,
+    RUNTIME_PERMISSION_SETTINGS_KEY,
+  )
   const adapter = readRuntimeAgentAdapter(value)
   const permissionMode = readRuntimePermissionMode(value, adapter)
   return { agentAdapter: adapter, permissionMode }
@@ -142,7 +194,10 @@ function readRuntimeAgentAdapter(value: unknown): SessionAgentAdapter {
   return 'claude-sdk'
 }
 
-function readRuntimePermissionMode(value: unknown, adapter: SessionAgentAdapter): SessionPermissionMode {
+function readRuntimePermissionMode(
+  value: unknown,
+  adapter: SessionAgentAdapter,
+): SessionPermissionMode {
   if (value != null && typeof value === 'object' && 'permissionMode' in value) {
     const mode = (value as { permissionMode?: unknown }).permissionMode
     if (typeof mode === 'string' && isPermissionModeForAdapter(mode, adapter)) return mode
@@ -150,15 +205,22 @@ function readRuntimePermissionMode(value: unknown, adapter: SessionAgentAdapter)
   return adapter === 'codex' ? 'codex-default' : 'claude-ask'
 }
 
-function isPermissionModeForAdapter(value: string, adapter: SessionAgentAdapter): value is SessionPermissionMode {
+function isPermissionModeForAdapter(
+  value: string,
+  adapter: SessionAgentAdapter,
+): value is SessionPermissionMode {
   if (adapter === 'codex') {
-    return value === 'codex-default' || value === 'codex-auto-review' || value === 'codex-full-access'
+    return (
+      value === 'codex-default' || value === 'codex-auto-review' || value === 'codex-full-access'
+    )
   }
-  return value === 'claude-ask'
-    || value === 'claude-auto-edits'
-    || value === 'claude-plan'
-    || value === 'claude-auto'
-    || value === 'claude-bypass'
+  return (
+    value === 'claude-ask' ||
+    value === 'claude-auto-edits' ||
+    value === 'claude-plan' ||
+    value === 'claude-auto' ||
+    value === 'claude-bypass'
+  )
 }
 
 let _workspaceService: WorkspaceService | null = null
@@ -179,9 +241,15 @@ function getSessionService(): SessionService {
     }
     const onApproval: ApprovalHandler = (sessionId, toolName, toolInput) => {
       const permissionContext = getSessionPermissionContext(sessionId)
-      return getPermissionService().requestApproval(sessionId, toolName, toolInput, (req) => {
-        pushStreamEvent('stream:permission:approval-request', req)
-      }, { forcePrompt: true, ...permissionContext })
+      return getPermissionService().requestApproval(
+        sessionId,
+        toolName,
+        toolInput,
+        (req) => {
+          pushStreamEvent('stream:permission:approval-request', req)
+        },
+        { forcePrompt: true, ...permissionContext },
+      )
     }
     const onApprovalCancel = (sessionId: string) => {
       getPermissionService().cancelPendingApprovals(sessionId)
@@ -206,7 +274,15 @@ function getSessionService(): SessionService {
         log.warn(`Failed to trigger hook: ${String(err)}`)
       })
     }
-    _sessionService = new SessionService(getDatabase(), onEvent, onApproval, onApprovalCancel, onQueueChanged, onQuestion, onHookTrigger)
+    _sessionService = new SessionService(
+      getDatabase(),
+      onEvent,
+      onApproval,
+      onApprovalCancel,
+      onQueueChanged,
+      onQuestion,
+      onHookTrigger,
+    )
   }
   return _sessionService
 }
@@ -306,7 +382,9 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('session:cancel-queued-turn', async (req) => {
-    log.info(`session:cancel-queued-turn requested, sessionId=${req.sessionId}, turnId=${req.turnId}`)
+    log.info(
+      `session:cancel-queued-turn requested, sessionId=${req.sessionId}, turnId=${req.turnId}`,
+    )
     return getSessionService().cancelQueuedTurn(req)
   })
 
@@ -352,7 +430,9 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('session:delete-message', async (req) => {
-    log.info(`session:delete-message requested, sessionId=${req.sessionId} eventCount=${req.eventIds.length}`)
+    log.info(
+      `session:delete-message requested, sessionId=${req.sessionId} eventCount=${req.eventIds.length}`,
+    )
     return getSessionService().deleteMessage(req.sessionId, req.eventIds)
   })
 
@@ -419,7 +499,8 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:list', async (req) => {
     log.info('workspace:list requested')
     const service = getWorkspaceService()
-    const listParams = req.includeArchived === undefined ? {} : { includeArchived: req.includeArchived }
+    const listParams =
+      req.includeArchived === undefined ? {} : { includeArchived: req.includeArchived }
     return {
       workspaces: service.listWorkspaces(req.limit, req.offset, listParams).map(toWorkspaceInfo),
       total: service.countWorkspaces(listParams),
@@ -430,8 +511,12 @@ export function registerAllIpcHandlers(): void {
     log.info(`workspace:update requested, workspaceId=${req.workspaceId}`)
     const workspace = getWorkspaceService().updateWorkspace(req.workspaceId, {
       ...(req.name !== undefined ? { name: req.name } : {}),
-      ...(req.pinned !== undefined ? { pinnedAt: req.pinned ? new Date().toISOString() : null } : {}),
-      ...(req.archived !== undefined ? { archivedAt: req.archived ? new Date().toISOString() : null } : {}),
+      ...(req.pinned !== undefined
+        ? { pinnedAt: req.pinned ? new Date().toISOString() : null }
+        : {}),
+      ...(req.archived !== undefined
+        ? { archivedAt: req.archived ? new Date().toISOString() : null }
+        : {}),
     })
     return { workspace: toWorkspaceInfo(workspace) }
   })
@@ -477,7 +562,9 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('workspace:switch-branch', async (req) => {
-    log.info(`workspace:switch-branch requested, workspaceId=${req.workspaceId}, branch=${req.branch}`)
+    log.info(
+      `workspace:switch-branch requested, workspaceId=${req.workspaceId}, branch=${req.branch}`,
+    )
     const workspace = new WorkspaceRepository(getDatabase()).findByIdOrFail(req.workspaceId)
     await execFileAsync('git', ['switch', req.branch], { cwd: workspace.root_path })
     const result = await getWorkspaceBranches(workspace.root_path)
@@ -644,7 +731,9 @@ export function registerAllIpcHandlers(): void {
   // ─── MCP Handlers ───────────────────────────────────────────────────────────
 
   typedIpcHandle('mcp:list', async (req) => {
-    const servers = getMcpService().listServers(req.scope !== undefined ? { scope: req.scope } : undefined)
+    const servers = getMcpService().listServers(
+      req.scope !== undefined ? { scope: req.scope } : undefined,
+    )
     return { servers }
   })
 
@@ -747,7 +836,12 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('skill-config:update', async (req) => {
-    return getRuntimeCompositionService().updateSkillConfig(req.scope, req.scopeRef, req.skillIds, req.disabledSkillIds)
+    return getRuntimeCompositionService().updateSkillConfig(
+      req.scope,
+      req.scopeRef,
+      req.skillIds,
+      req.disabledSkillIds,
+    )
   })
 
   typedIpcHandle('prompt-config:get', async (req) => {
@@ -775,7 +869,9 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('skill-registry:search', async (req) => {
-    log.info(`skill-registry:search requested, query="${req.query}", registryId=${req.registryId ?? 'all'}`)
+    log.info(
+      `skill-registry:search requested, query="${req.query}", registryId=${req.registryId ?? 'all'}`,
+    )
     return getSkillRegistryService().search(req)
   })
 
@@ -786,7 +882,9 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('skill-registry:install', async (req) => {
-    log.info(`skill-registry:install requested, remoteSkillId=${req.remoteSkillId}, registryId=${req.registryId}`)
+    log.info(
+      `skill-registry:install requested, remoteSkillId=${req.remoteSkillId}, registryId=${req.registryId}`,
+    )
     const skill = await getSkillRegistryService().install(req)
     return { skill }
   })
@@ -833,7 +931,10 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('command:execute', async (req) => {
     log.info(`command:execute requested, sessionId=${req.sessionId}, message=${req.message}`)
-    const cmdResult = await getSessionService().executeCommandAsEvents({ sessionId: req.sessionId, message: req.message })
+    const cmdResult = await getSessionService().executeCommandAsEvents({
+      sessionId: req.sessionId,
+      message: req.message,
+    })
     if (!cmdResult.isCommand) {
       return { success: false, forwardToAgent: false }
     }
@@ -1104,7 +1205,9 @@ function toWorkspaceInfo(workspace: {
   }
 }
 
-async function getWorkspaceBranches(rootPath: string): Promise<{ currentBranch: string | null; branches: string[] }> {
+async function getWorkspaceBranches(
+  rootPath: string,
+): Promise<{ currentBranch: string | null; branches: string[] }> {
   try {
     const [current, branches] = await Promise.all([
       execFileAsync('git', ['branch', '--show-current'], { cwd: rootPath }),

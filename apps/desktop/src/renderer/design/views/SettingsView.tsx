@@ -3313,7 +3313,9 @@ export function PermissionsSection() {
   const [auditEnabled, setAuditEnabled] = useState(
     () => window.localStorage.getItem(AUDIT_ENABLED_KEY) !== 'false',
   )
-  const [runtimePrefs, setRuntimePrefs] = useState<RuntimePermissionPrefs>(() => readRuntimePermissionPrefs())
+  const [runtimePrefs, setRuntimePrefs] = useState<RuntimePermissionPrefs>(() =>
+    readRuntimePermissionPrefs(),
+  )
 
   const { invoke: listProfiles } = useIpcInvoke('permission:list-profiles')
   const { invoke: updateSandbox } = useIpcInvoke('permission:update-sandbox')
@@ -3324,7 +3326,10 @@ export function PermissionsSection() {
 
   const runtimeAdapter = runtimePrefs.adapter ?? 'claude-sdk'
   const runtimeOptions = getRuntimePermissionModeOptions(runtimeAdapter)
-  const runtimePermissionMode = getValidRuntimePermissionMode(runtimePrefs.permissionMode, runtimeAdapter)
+  const runtimePermissionMode = getValidRuntimePermissionMode(
+    runtimePrefs.permissionMode,
+    runtimeAdapter,
+  )
   const activeRuntimeMode = runtimeOptions.find((option) => option.value === runtimePermissionMode)
 
   const refresh = useCallback(() => {
@@ -3344,7 +3349,10 @@ export function PermissionsSection() {
 
   useEffect(() => {
     let cancelled = false
-    getSetting({ category: RUNTIME_PERMISSION_SETTINGS_CATEGORY, key: RUNTIME_PERMISSION_SETTINGS_KEY })
+    getSetting({
+      category: RUNTIME_PERMISSION_SETTINGS_CATEGORY,
+      key: RUNTIME_PERMISSION_SETTINGS_KEY,
+    })
       .then((res) => {
         if (cancelled || res.value == null) return
         const next = normalizeRuntimePermissionSettings(res.value)
@@ -3527,7 +3535,13 @@ export function PermissionsSection() {
               onClick={() => updateRuntimePrefs({ permissionMode: option.value })}
             >
               <span className="runtime-permission-icon">
-                {option.tone === 'danger' ? <Icons.AlertTriangle /> : option.tone === 'auto' ? <Icons.Zap /> : <Icons.Shield />}
+                {option.tone === 'danger' ? (
+                  <Icons.AlertTriangle />
+                ) : option.tone === 'auto' ? (
+                  <Icons.Zap />
+                ) : (
+                  <Icons.Shield />
+                )}
               </span>
               <span className="runtime-permission-copy">
                 <span className="runtime-permission-label">{option.label}</span>
@@ -3539,7 +3553,9 @@ export function PermissionsSection() {
         {activeRuntimeMode?.tone === 'danger' && (
           <div className="runtime-permission-warning">
             <Icons.AlertTriangle />
-            <span>当前默认策略会跳过人工审批，agent 的工具调用将被直接执行。仅在完全可信工作区使用。</span>
+            <span>
+              当前默认策略会跳过人工审批，agent 的工具调用将被直接执行。仅在完全可信工作区使用。
+            </span>
           </div>
         )}
       </div>
@@ -4270,9 +4286,7 @@ function ArchivedSection() {
   return (
     <div className="settings-section">
       <h2>已归档</h2>
-      <div className="lede">
-        归档后的项目和会话会从主列表隐藏，但仍可在此查看、恢复或永久删除。
-      </div>
+      <div className="lede">归档后的项目和会话会从主列表隐藏，但仍可在此查看、恢复或永久删除。</div>
 
       {error && <div className="card storage-card">{error}</div>}
 
@@ -4283,23 +4297,28 @@ function ArchivedSection() {
         {!loading && workspaces.length === 0 && (
           <div className="settings-card-row">暂无已归档的项目</div>
         )}
-        {!loading && workspaces.length > 0 && workspaces.map((w) => (
-          <div key={w.id} className="settings-card-row archived-item-row">
-            <div className="flex1 min-w-0">
-              <div className="row-title">{w.name}</div>
-              <div className="row-desc mono-sm">{w.rootPath}</div>
-              <div className="row-desc">归档于 {formatDate(w.archivedAt)}</div>
+        {!loading &&
+          workspaces.length > 0 &&
+          workspaces.map((w) => (
+            <div key={w.id} className="settings-card-row archived-item-row">
+              <div className="flex1 min-w-0">
+                <div className="row-title">{w.name}</div>
+                <div className="row-desc mono-sm">{w.rootPath}</div>
+                <div className="row-desc">归档于 {formatDate(w.archivedAt)}</div>
+              </div>
+              <div className="archived-item-actions">
+                <button className="btn sm" onClick={() => handleRestoreWorkspace(w)}>
+                  <Icons.Refresh size={11} /> 恢复
+                </button>
+                <button
+                  className="btn ghost sm danger-btn"
+                  onClick={() => handleDeleteWorkspace(w)}
+                >
+                  <Icons.Trash size={11} /> 删除
+                </button>
+              </div>
             </div>
-            <div className="archived-item-actions">
-              <button className="btn sm" onClick={() => handleRestoreWorkspace(w)}>
-                <Icons.Refresh size={11} /> 恢复
-              </button>
-              <button className="btn ghost sm danger-btn" onClick={() => handleDeleteWorkspace(w)}>
-                <Icons.Trash size={11} /> 删除
-              </button>
-            </div>
-          </div>
-        ))}
+          ))}
       </div>
 
       {/* ── Archived Sessions ── */}
@@ -4309,24 +4328,27 @@ function ArchivedSection() {
         {!loading && sessions.length === 0 && (
           <div className="settings-card-row">暂无已归档的会话</div>
         )}
-        {!loading && sessions.length > 0 && sessions.map((s) => (
-          <div key={s.id} className="settings-card-row archived-item-row">
-            <div className="flex1 min-w-0">
-              <div className="row-title">{s.title || '新会话'}</div>
-              <div className="row-desc">
-                {s.messageCount} 条消息 · {formatDate(s.createdAt)} · 归档于 {formatDate(s.archivedAt)}
+        {!loading &&
+          sessions.length > 0 &&
+          sessions.map((s) => (
+            <div key={s.id} className="settings-card-row archived-item-row">
+              <div className="flex1 min-w-0">
+                <div className="row-title">{s.title || '新会话'}</div>
+                <div className="row-desc">
+                  {s.messageCount} 条消息 · {formatDate(s.createdAt)} · 归档于{' '}
+                  {formatDate(s.archivedAt)}
+                </div>
+              </div>
+              <div className="archived-item-actions">
+                <button className="btn sm" onClick={() => handleRestoreSession(s)}>
+                  <Icons.Refresh size={11} /> 恢复
+                </button>
+                <button className="btn ghost sm danger-btn" onClick={() => handleDeleteSession(s)}>
+                  <Icons.Trash size={11} /> 删除
+                </button>
               </div>
             </div>
-            <div className="archived-item-actions">
-              <button className="btn sm" onClick={() => handleRestoreSession(s)}>
-                <Icons.Refresh size={11} /> 恢复
-              </button>
-              <button className="btn ghost sm danger-btn" onClick={() => handleDeleteSession(s)}>
-                <Icons.Trash size={11} /> 删除
-              </button>
-            </div>
-          </div>
-        ))}
+          ))}
       </div>
     </div>
   )
@@ -4495,15 +4517,9 @@ function IntegritySection() {
         <div className="integrity-status-row">
           {totalItems > 0 ? (
             <div className={`integrity-status-badge ${allOk ? 'ok' : 'warn'}`}>
-              {allOk ? (
-                <Icons.CheckCircle size={14} />
-              ) : (
-                <Icons.AlertTriangle size={14} />
-              )}
+              {allOk ? <Icons.CheckCircle size={14} /> : <Icons.AlertTriangle size={14} />}
               <span>
-                {allOk
-                  ? '环境完整'
-                  : `${sdkInstalled + toolAvailable}/${totalItems} 正常`}
+                {allOk ? '环境完整' : `${sdkInstalled + toolAvailable}/${totalItems} 正常`}
               </span>
             </div>
           ) : (
@@ -4569,7 +4585,7 @@ function IntegritySection() {
               <div className="integrity-sdk-name">{tool.displayName}</div>
               <div className="integrity-sdk-version">
                 {tool.available
-                  ? tool.version ?? '已安装'
+                  ? (tool.version ?? '已安装')
                   : tool.resolvedPath
                     ? tool.resolvedPath
                     : '未找到'}
@@ -4639,9 +4655,7 @@ function IntegritySection() {
                 )}
               </div>
             </div>
-            {sdk.error && (
-              <div className="integrity-sdk-error">{sdk.error}</div>
-            )}
+            {sdk.error && <div className="integrity-sdk-error">{sdk.error}</div>}
           </div>
         ))}
         {sdks.length === 0 && !isChecking && (
@@ -4929,34 +4943,55 @@ function UpdatesSection() {
 /* ───────── Helpers ───────── */
 const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   { value: 'claude-ask', label: 'Ask permissions', desc: '每次工具执行前确认' },
-  { value: 'claude-auto-edits', label: 'Auto accept edits', desc: '自动接受编辑，命令仍确认', tone: 'auto' },
+  {
+    value: 'claude-auto-edits',
+    label: 'Auto accept edits',
+    desc: '自动接受编辑，命令仍确认',
+    tone: 'auto',
+  },
   { value: 'claude-plan', label: 'Plan mode', desc: '先产出计划，再批准执行' },
   { value: 'claude-auto', label: 'Auto', desc: '使用 Claude SDK 自动权限策略', tone: 'auto' },
-  { value: 'claude-bypass', label: 'Bypass permissions', desc: '危险：完全听从 agent 执行', tone: 'danger' },
+  {
+    value: 'claude-bypass',
+    label: 'Bypass permissions',
+    desc: '危险：完全听从 agent 执行',
+    tone: 'danger',
+  },
 ]
 
 const CODEX_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   { value: 'codex-default', label: '默认权限', desc: '按默认策略请求确认' },
   { value: 'codex-auto-review', label: '自动审查', desc: '自动处理低风险审查动作', tone: 'auto' },
-  { value: 'codex-full-access', label: '完全访问', desc: '危险：完全听从 agent 执行', tone: 'danger' },
+  {
+    value: 'codex-full-access',
+    label: '完全访问',
+    desc: '危险：完全听从 agent 执行',
+    tone: 'danger',
+  },
 ]
 
-function getRuntimePermissionModeOptions(adapter: SessionAgentAdapter): RuntimePermissionModeOption[] {
+function getRuntimePermissionModeOptions(
+  adapter: SessionAgentAdapter,
+): RuntimePermissionModeOption[] {
   return adapter === 'codex' ? CODEX_RUNTIME_PERMISSION_OPTIONS : CLAUDE_RUNTIME_PERMISSION_OPTIONS
 }
 
-function getValidRuntimePermissionMode(value: SessionPermissionMode | undefined, adapter: SessionAgentAdapter): SessionPermissionMode {
+function getValidRuntimePermissionMode(
+  value: SessionPermissionMode | undefined,
+  adapter: SessionAgentAdapter,
+): SessionPermissionMode {
   const options = getRuntimePermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
-    ? value as SessionPermissionMode
-    : options[0]?.value ?? (adapter === 'codex' ? 'codex-default' : 'claude-ask')
+    ? (value as SessionPermissionMode)
+    : (options[0]?.value ?? (adapter === 'codex' ? 'codex-default' : 'claude-ask'))
 }
 
 function normalizeRuntimePermissionSettings(value: unknown): RuntimePermissionSettings {
-  const source = value != null && typeof value === 'object' ? value as RuntimePermissionPrefs : {}
-  const adapter = source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
-    ? source.adapter
-    : 'claude-sdk'
+  const source = value != null && typeof value === 'object' ? (value as RuntimePermissionPrefs) : {}
+  const adapter =
+    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+      ? source.adapter
+      : 'claude-sdk'
   return {
     adapter,
     permissionMode: getValidRuntimePermissionMode(source.permissionMode, adapter),
@@ -5047,7 +5082,9 @@ function AboutSection() {
         <SettingsRow
           title="Chromium"
           desc="渲染引擎"
-          right={<span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? 'unknown'}</span>}
+          right={
+            <span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? 'unknown'}</span>
+          }
         />
         <SettingsRow
           title="Node.js"

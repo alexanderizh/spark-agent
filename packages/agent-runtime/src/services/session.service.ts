@@ -29,7 +29,12 @@ import type {
 import type { SessionPermissionMode } from '@spark/protocol'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
-import type { CheckpointRestoreResult, CheckpointSnapshot, CommandDeps, CommandListItem } from '../core/index.js'
+import type {
+  CheckpointRestoreResult,
+  CheckpointSnapshot,
+  CommandDeps,
+  CommandListItem,
+} from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { McpService } from './mcp-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
@@ -38,23 +43,38 @@ import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
-import { createLogger, resolveProviderContextWindow, resolveSoftContextLimitForWindow } from '@spark/shared'
+import {
+  createLogger,
+  resolveProviderContextWindow,
+  resolveSoftContextLimitForWindow,
+} from '@spark/shared'
 
 const log = createLogger('session.service')
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type SessionQueueChangedHandler = (snapshot: SessionGetQueueResponse) => void
-export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
+export type ApprovalHandler = (
+  sessionId: string,
+  toolName: string,
+  toolInput: Record<string, unknown>,
+) => Promise<boolean>
 /** session 被取消时调用：用于拒绝该 session 下所有挂起的 approval 请求，避免 agent 永久挂起 */
 export type ApprovalCancelHandler = (sessionId: string) => void
 /** Hook 触发处理器：在关键节点触发提示音/通知等 */
-export type HookTriggerHandler = (sessionId: string, node: HookNode, context?: { title?: string; body?: string }) => void
+export type HookTriggerHandler = (
+  sessionId: string,
+  node: HookNode,
+  context?: { title?: string; body?: string },
+) => void
 /** Handler for AskUserQuestion tool - returns user's answers */
-export type QuestionHandler = (sessionId: string, questions: Array<{
-  question: string
-  header: string
-  options: Array<{ label: string; description?: string; preview?: string }>
-}>) => Promise<Record<string, unknown>>
+export type QuestionHandler = (
+  sessionId: string,
+  questions: Array<{
+    question: string
+    header: string
+    options: Array<{ label: string; description?: string; preview?: string }>
+  }>,
+) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = { cancel(): void }
 type SessionRuntimePatch = {
@@ -85,11 +105,11 @@ const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled
 // Keep SDK resume opt-in until the Claude Code child process can recover cleanly from resume failures.
 const ENABLE_CLAUDE_SDK_RESUME = false
 export class SessionService {
-  private activeLoops = new Map<string, ActiveExecution>()  // sessionId → active execution
+  private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
   private seqCounters = new Map<string, number>()
-  private approvalOverrides = new Map<string, boolean>()  // sessionId → approval enabled
-  private iterationOverrides = new Map<string, number>()  // sessionId → per-session max turn iterations override
+  private approvalOverrides = new Map<string, boolean>() // sessionId → approval enabled
+  private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
 
@@ -169,7 +189,13 @@ export class SessionService {
   async executeCommand(params: {
     sessionId: string
     message: string
-  }): Promise<{ isCommand: true; result: { success: boolean; message: string; data?: Record<string, unknown> } } | { isCommand: false }> {
+  }): Promise<
+    | {
+        isCommand: true
+        result: { success: boolean; message: string; data?: Record<string, unknown> }
+      }
+    | { isCommand: false }
+  > {
     if (!isCommand(params.message)) return { isCommand: false }
 
     const parsed = parseCommand(params.message)
@@ -183,7 +209,9 @@ export class SessionService {
     // Get workspace path for git/shell commands
     let workspacePath: string | null = null
     try {
-      const workspaceIds: string[] = session?.workspace_ids_json ? JSON.parse(session.workspace_ids_json) : []
+      const workspaceIds: string[] = session?.workspace_ids_json
+        ? JSON.parse(session.workspace_ids_json)
+        : []
       const workspaceId = workspaceIds[0]
       if (workspaceId) {
         const wsRepo = new WorkspaceRepository(this.db)
@@ -198,7 +226,12 @@ export class SessionService {
       getSession: (id) => {
         const s = sessionRepo.get(id)
         if (s == null) return null
-        return { title: s.title, status: s.status, modelId: s.model_id ?? null, providerProfileId: s.provider_profile_id ?? '' }
+        return {
+          title: s.title,
+          status: s.status,
+          modelId: s.model_id ?? null,
+          providerProfileId: s.provider_profile_id ?? '',
+        }
       },
       updateSession: async (id, fields) => {
         sessionRepo.updateRuntime(id, fields)
@@ -243,12 +276,13 @@ export class SessionService {
         return null
       },
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
-      restoreCheckpoint: async (id, checkpointRef) => restoreSessionCheckpoint({
-        eventRepo,
-        sessionId: id,
-        workspacePath,
-        checkpointRef,
-      }),
+      restoreCheckpoint: async (id, checkpointRef) =>
+        restoreSessionCheckpoint({
+          eventRepo,
+          sessionId: id,
+          workspacePath,
+          checkpointRef,
+        }),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
     }
 
@@ -279,36 +313,53 @@ export class SessionService {
 
     let workspacePath: string | null = null
     try {
-      const workspaceIds: string[] = session?.workspace_ids_json ? JSON.parse(session.workspace_ids_json) : []
+      const workspaceIds: string[] = session?.workspace_ids_json
+        ? JSON.parse(session.workspace_ids_json)
+        : []
       const workspaceId = workspaceIds[0]
       if (workspaceId) {
         const wsRepo = new WorkspaceRepository(this.db)
         const ws = wsRepo.get(workspaceId)
         workspacePath = ws?.root_path ?? null
       }
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
 
     const deps: CommandDeps = {
       getSession: (id) => {
         const s = sessionRepo.get(id)
         if (s == null) return null
-        return { title: s.title, status: s.status, modelId: s.model_id ?? null, providerProfileId: s.provider_profile_id ?? '' }
+        return {
+          title: s.title,
+          status: s.status,
+          modelId: s.model_id ?? null,
+          providerProfileId: s.provider_profile_id ?? '',
+        }
       },
-      updateSession: async (id, fields) => { sessionRepo.updateRuntime(id, fields) },
+      updateSession: async (id, fields) => {
+        sessionRepo.updateRuntime(id, fields)
+      },
       clearSessionEvents: async (id) => {
         eventRepo.deleteBySession(id)
         this.seqCounters.delete(id)
       },
       getProviderName: (id) => providerRepo.get(id)?.name ?? null,
       getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
-      setApprovalMode: (id, enabled) => { this.approvalOverrides.set(id, enabled) },
+      setApprovalMode: (id, enabled) => {
+        this.approvalOverrides.set(id, enabled)
+      },
       getWorkspacePath: () => workspacePath,
       execShell: async (command, cwd) => {
         const { exec } = await import('node:child_process')
         const { promisify } = await import('node:util')
         const execAsync = promisify(exec)
         try {
-          const { stdout, stderr } = await execAsync(command, { cwd: cwd ?? workspacePath ?? undefined, timeout: 30000, maxBuffer: 1024 * 1024 })
+          const { stdout, stderr } = await execAsync(command, {
+            cwd: cwd ?? workspacePath ?? undefined,
+            timeout: 30000,
+            maxBuffer: 1024 * 1024,
+          })
           return { stdout: stdout || '', stderr: stderr || '', exitCode: 0 }
         } catch (err: unknown) {
           const e = err as { stdout?: string; stderr?: string; code?: number }
@@ -318,12 +369,13 @@ export class SessionService {
       getSessionEventCount: (id) => eventRepo.countBySession(id),
       getSessionUsage: (_id) => null,
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
-      restoreCheckpoint: async (id, checkpointRef) => restoreSessionCheckpoint({
-        eventRepo,
-        sessionId: id,
-        workspacePath,
-        checkpointRef,
-      }),
+      restoreCheckpoint: async (id, checkpointRef) =>
+        restoreSessionCheckpoint({
+          eventRepo,
+          sessionId: id,
+          workspacePath,
+          checkpointRef,
+        }),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
     }
 
@@ -373,8 +425,16 @@ export class SessionService {
     for (const event of [userEvent, assistantEvent]) {
       this.onEvent(event)
       try {
-        eventRepo.insert({ id: event.id, sessionId: params.sessionId, turnId, eventType: event.type, eventJson: JSON.stringify(event) })
-      } catch { /* non-fatal */ }
+        eventRepo.insert({
+          id: event.id,
+          sessionId: params.sessionId,
+          turnId,
+          eventType: event.type,
+          eventJson: JSON.stringify(event),
+        })
+      } catch {
+        /* non-fatal */
+      }
     }
 
     if (result.followUpPrompt != null && result.followUpPrompt.trim().length > 0) {
@@ -414,7 +474,10 @@ export class SessionService {
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
     if (this.activeLoops.has(sessionId)) {
-      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams))
+      this.enqueueTurn(
+        sessionId,
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams),
+      )
       return { turnId, started: false }
     }
 
@@ -431,7 +494,10 @@ export class SessionService {
     skillParams?: Record<string, unknown>,
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
-      this.enqueueTurn(sessionId, this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams))
+      this.enqueueTurn(
+        sessionId,
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams),
+      )
       return
     }
 
@@ -483,9 +549,19 @@ export class SessionService {
       throw new Error(`Provider ${provider.id} has no default model configured`)
     }
 
-    const agentAdapter = getAgentAdapterFromSession(session.agent_adapter, session.chat_mode, provider.provider_type)
-    const adapterKind = (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') ? 'claude-sdk' : 'codex'
-    const stableSdkSessionId = makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter)
+    const agentAdapter = getAgentAdapterFromSession(
+      session.agent_adapter,
+      session.chat_mode,
+      provider.provider_type,
+    )
+    const adapterKind =
+      agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? 'claude-sdk' : 'codex'
+    const stableSdkSessionId = makeSdkRuntimeSessionId(
+      sessionId,
+      session.provider_profile_id,
+      model,
+      agentAdapter,
+    )
     const sdkResumeSafe = isSdkResumeSafe({
       providerType: provider.provider_type,
       model,
@@ -493,17 +569,22 @@ export class SessionService {
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
     })
     const previousPromptSnapshot = getLatestTurnPromptSnapshot(eventRepo, sessionId)
-    const canResumeSdkSession = sdkResumeSafe
-      && previousPromptSnapshot != null
-      && previousPromptSnapshot.adapterKind === adapterKind
-      && previousPromptSnapshot.model === model
-      && previousPromptSnapshot.providerProfileId === session.provider_profile_id
-      && previousPromptSnapshot.sdkSessionId === stableSdkSessionId
+    const canResumeSdkSession =
+      sdkResumeSafe &&
+      previousPromptSnapshot != null &&
+      previousPromptSnapshot.adapterKind === adapterKind &&
+      previousPromptSnapshot.model === model &&
+      previousPromptSnapshot.providerProfileId === session.provider_profile_id &&
+      previousPromptSnapshot.sdkSessionId === stableSdkSessionId
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
       : makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter, turnId)
     const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
-    const permissionMode = this.getEffectivePermissionMode(sessionId, agentAdapter, storedPermissionMode)
+    const permissionMode = this.getEffectivePermissionMode(
+      sessionId,
+      agentAdapter,
+      storedPermissionMode,
+    )
 
     log.debug('Resolved runtime for turn', {
       sparkSessionId: sessionId,
@@ -530,7 +611,10 @@ export class SessionService {
     let workspaceInfo: { name: string; rootPath: string; projectKind: string } | undefined
     const contextWindowTokens = resolveProviderContextWindow(config.supportsMillionContext === true)
     const softContextLimitTokens = resolveSoftContextLimitForWindow(contextWindowTokens)
-    const projectContextBudgetTokens = Math.max(2_000, Math.min(60_000, Math.floor(softContextLimitTokens * 0.25)))
+    const projectContextBudgetTokens = Math.max(
+      2_000,
+      Math.min(60_000, Math.floor(softContextLimitTokens * 0.25)),
+    )
     const projectContextService = new ProjectContextService()
     let projectContext = projectContextService.discover(undefined, {
       mode: 'project-smart',
@@ -553,10 +637,17 @@ export class SessionService {
 
     // Query active rules (system + current project scope) and append workspace files.
     const rulesRepo = new RulesRepository(this.db)
-    const activeRules = rulesRepo.list({ scope: 'system' })
+    const activeRules = rulesRepo
+      .list({ scope: 'system' })
       .concat(
-        rulesRepo.list({ scope: 'project' })
-          .filter((r) => r.scope_ref == null || primaryWorkspaceId == null || r.scope_ref === primaryWorkspaceId),
+        rulesRepo
+          .list({ scope: 'project' })
+          .filter(
+            (r) =>
+              r.scope_ref == null ||
+              primaryWorkspaceId == null ||
+              r.scope_ref === primaryWorkspaceId,
+          ),
       )
       .filter((r) => r.enabled === 1)
       .map((r) => r.content)
@@ -567,11 +658,17 @@ export class SessionService {
     const skillRepo = new SkillRepository(this.db)
     if (skillId != null) {
       const loader = new SkillLoader(skillRepo)
-      const projectSkillPrompt = projectContextService.buildSkillSystemPrompt(workspaceRootPath, skillId)
+      const projectSkillPrompt = projectContextService.buildSkillSystemPrompt(
+        workspaceRootPath,
+        skillId,
+      )
       const sp = projectSkillPrompt ?? loader.buildSystemPrompt(skillId, skillParams ?? {})
       if (sp) explicitSkillPrompt = projectSkillPrompt ?? formatSelectedSkillPrompt(skillId, sp)
     }
-    const runtimeComposition = new RuntimeCompositionService(skillRepo, new SettingsRepository(this.db))
+    const runtimeComposition = new RuntimeCompositionService(
+      skillRepo,
+      new SettingsRepository(this.db),
+    )
     const runtimeContext = runtimeComposition.composeRuntimeContext(
       {
         ...(primaryWorkspaceId != null ? { workspaceId: primaryWorkspaceId } : {}),
@@ -579,8 +676,15 @@ export class SessionService {
       },
       explicitSkillPrompt,
     )
-    const composedSystemPrompt = joinPromptSections(runtimeContext.systemPrompt, projectContext.systemPrompt, conversationHistoryPrompt)
-    const composedSkillSystemPrompt = joinPromptSections(runtimeContext.skillSystemPrompt, projectContext.skillSystemPrompt)
+    const composedSystemPrompt = joinPromptSections(
+      runtimeContext.systemPrompt,
+      projectContext.systemPrompt,
+      conversationHistoryPrompt,
+    )
+    const composedSkillSystemPrompt = joinPromptSections(
+      runtimeContext.skillSystemPrompt,
+      projectContext.skillSystemPrompt,
+    )
 
     // Initialize seq counter from existing event count
     if (!this.seqCounters.has(sessionId)) {
@@ -590,54 +694,84 @@ export class SessionService {
     // ── SDK Execution Path ─────────────────────────────────────────────────
     // Claude execution is SDK-only. If the SDK is missing or cannot load, fail
     // the turn with an actionable error instead of falling back to direct API.
-    this.emitAndPersist(sessionId, turnId, {
-      id: crypto.randomUUID(),
-      type: 'project_context_loaded',
+    this.emitAndPersist(
       sessionId,
       turnId,
-      timestamp: new Date().toISOString(),
-      seq: 0,
-      ...(workspaceInfo?.rootPath != null ? { workspaceRoot: workspaceInfo.rootPath } : {}),
-      sources: projectContext.sources,
-      ...(projectContext.budget != null ? { budget: projectContext.budget } : {}),
-      counts: {
-        rules: projectContext.sources.filter((source) => source.kind === 'rule' && source.included !== false).length,
-        skills: projectContext.sources.filter((source) => source.kind === 'skill' && source.included !== false).length,
-        agents: projectContext.sources.filter((source) => source.kind === 'agent' && source.included !== false).length,
+      {
+        id: crypto.randomUUID(),
+        type: 'project_context_loaded',
+        sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: 0,
+        ...(workspaceInfo?.rootPath != null ? { workspaceRoot: workspaceInfo.rootPath } : {}),
+        sources: projectContext.sources,
+        ...(projectContext.budget != null ? { budget: projectContext.budget } : {}),
+        counts: {
+          rules: projectContext.sources.filter(
+            (source) => source.kind === 'rule' && source.included !== false,
+          ).length,
+          skills: projectContext.sources.filter(
+            (source) => source.kind === 'skill' && source.included !== false,
+          ).length,
+          agents: projectContext.sources.filter(
+            (source) => source.kind === 'agent' && source.included !== false,
+          ).length,
+        },
       },
-    }, eventRepo)
+      eventRepo,
+    )
 
     // ── 白盒提示词快照 ─────────────────────────────────────────────────────
     // 捕获本轮完整提示词组成，发送到 Renderer 供审计面板展示
     {
       const promptSections: Array<{ label: string; content: string; charCount: number }> = []
       if (composedSkillSystemPrompt && composedSkillSystemPrompt.trim().length > 0) {
-        promptSections.push({ label: 'Skill Prompt', content: composedSkillSystemPrompt, charCount: composedSkillSystemPrompt.length })
+        promptSections.push({
+          label: 'Skill Prompt',
+          content: composedSkillSystemPrompt,
+          charCount: composedSkillSystemPrompt.length,
+        })
       }
       if (composedSystemPrompt && composedSystemPrompt.trim().length > 0) {
-        promptSections.push({ label: 'System Prompt', content: composedSystemPrompt, charCount: composedSystemPrompt.length })
+        promptSections.push({
+          label: 'System Prompt',
+          content: composedSystemPrompt,
+          charCount: composedSystemPrompt.length,
+        })
       }
       if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
-        promptSections.push({ label: 'Claude Code 预设', content: '(SDK 内置系统提示词，约 15,000~20,000 字符，运行时由 Claude Code 注入)', charCount: 0 })
+        promptSections.push({
+          label: 'Claude Code 预设',
+          content: '(SDK 内置系统提示词，约 15,000~20,000 字符，运行时由 Claude Code 注入)',
+          charCount: 0,
+        })
       }
       const toolCountEstimate = 12 // built-in coding agent tools (Read, Write, Edit, Bash, Glob, Grep, ...)
-      this.emitAndPersist(sessionId, turnId, {
-        id: crypto.randomUUID(),
-        type: 'turn_prompt_snapshot',
+      this.emitAndPersist(
         sessionId,
         turnId,
-        timestamp: new Date().toISOString(),
-        seq: 0,
-        userMessage: message,
-        systemPromptSections: promptSections,
-        model,
-        providerProfileId: session.provider_profile_id,
-        adapterKind,
-        permissionMode,
-        toolCount: toolCountEstimate,
-        sdkSessionId,
-        ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? { sdkPreset: 'claude_code' } : {}),
-      }, eventRepo)
+        {
+          id: crypto.randomUUID(),
+          type: 'turn_prompt_snapshot',
+          sessionId,
+          turnId,
+          timestamp: new Date().toISOString(),
+          seq: 0,
+          userMessage: message,
+          systemPromptSections: promptSections,
+          model,
+          providerProfileId: session.provider_profile_id,
+          adapterKind,
+          permissionMode,
+          toolCount: toolCountEstimate,
+          sdkSessionId,
+          ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
+            ? { sdkPreset: 'claude_code' }
+            : {}),
+        },
+        eventRepo,
+      )
     }
 
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
@@ -649,20 +783,22 @@ export class SessionService {
         permissionMode,
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
         ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
-        ...(composedSkillSystemPrompt != null ? { skillSystemPrompt: composedSkillSystemPrompt } : {}),
+        ...(composedSkillSystemPrompt != null
+          ? { skillSystemPrompt: composedSkillSystemPrompt }
+          : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
-        ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),
+        ...(session.reasoning_effort != null
+          ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' }
+          : {}),
         enableCheckpoints: true,
         sdkSessionId,
         continueSession: canResumeSdkSession,
         ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
         ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
       }
-      await this.tryStartSDKTurn(
-        sessionId, turnId, message, eventRepo, sessionRepo, sdkConfig,
-      )
+      await this.tryStartSDKTurn(sessionId, turnId, message, eventRepo, sessionRepo, sdkConfig)
       return
     }
 
@@ -674,7 +810,8 @@ export class SessionService {
       sessionRepo,
       sdkName: 'Codex SDK',
       statusMessage: 'Codex SDK is not connected',
-      detail: 'Codex execution must use the real Codex SDK. The legacy in-process AgentLoop has been removed as an execution path.',
+      detail:
+        'Codex execution must use the real Codex SDK. The legacy in-process AgentLoop has been removed as an execution path.',
     })
   }
 
@@ -701,25 +838,40 @@ export class SessionService {
       seq: 0,
     })
 
-    this.emitAndPersist(params.sessionId, params.turnId, {
-      ...makeBase(),
-      type: 'user_message',
-      content: params.message,
-    }, params.eventRepo)
-    this.emitAndPersist(params.sessionId, params.turnId, {
-      ...makeBase(),
-      type: 'agent_error',
-      code: 'SDK_REQUIRED',
-      message: `${params.sdkName} is required. ${params.detail}`,
-      retryable: false,
-      ...(params.rawError != null ? { rawError: params.rawError } : {}),
-    }, params.eventRepo)
-    this.emitAndPersist(params.sessionId, params.turnId, {
-      ...makeBase(),
-      type: 'agent_status',
-      status: 'error',
-      message: params.statusMessage,
-    }, params.eventRepo)
+    this.emitAndPersist(
+      params.sessionId,
+      params.turnId,
+      {
+        ...makeBase(),
+        type: 'user_message',
+        content: params.message,
+      },
+      params.eventRepo,
+    )
+    this.emitAndPersist(
+      params.sessionId,
+      params.turnId,
+      {
+        ...makeBase(),
+        type: 'agent_error',
+        code: 'SDK_REQUIRED',
+        message: `${params.sdkName} is required. ${params.detail}`,
+        retryable: false,
+        ...(params.rawError != null ? { rawError: params.rawError } : {}),
+      },
+      params.eventRepo,
+    )
+    this.emitAndPersist(
+      params.sessionId,
+      params.turnId,
+      {
+        ...makeBase(),
+        type: 'agent_status',
+        status: 'error',
+        message: params.statusMessage,
+      },
+      params.eventRepo,
+    )
     params.sessionRepo.updateStatus(params.sessionId, 'error')
   }
 
@@ -740,50 +892,82 @@ export class SessionService {
     })
 
     const emitSdkRequiredError = (rawError?: string) => {
-      this.emitAndPersist(sessionId, turnId, {
-        ...makeBase(),
-        type: 'user_message',
-        content: message,
-      }, eventRepo)
-      this.emitAndPersist(sessionId, turnId, {
-        ...makeBase(),
-        type: 'agent_error',
-        code: 'SDK_REQUIRED',
-        message: 'Claude Agent SDK is required for Claude execution. Open Settings and install or repair the Claude Agent SDK.',
-        retryable: false,
-        ...(rawError != null ? { rawError } : {}),
-      }, eventRepo)
-      this.emitAndPersist(sessionId, turnId, {
-        ...makeBase(),
-        type: 'agent_status',
-        status: 'error',
-        message: 'Claude Agent SDK is not available',
-      }, eventRepo)
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'user_message',
+          content: message,
+        },
+        eventRepo,
+      )
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'agent_error',
+          code: 'SDK_REQUIRED',
+          message:
+            'Claude Agent SDK is required for Claude execution. Open Settings and install or repair the Claude Agent SDK.',
+          retryable: false,
+          ...(rawError != null ? { rawError } : {}),
+        },
+        eventRepo,
+      )
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'agent_status',
+          status: 'error',
+          message: 'Claude Agent SDK is not available',
+        },
+        eventRepo,
+      )
       sessionRepo.updateStatus(sessionId, 'error')
     }
 
     const workspaceIssue = await getWorkspaceRootIssue(config.workspaceRootPath)
     if (workspaceIssue != null) {
-      this.emitAndPersist(sessionId, turnId, {
-        ...makeBase(),
-        type: 'user_message',
-        content: message,
-      }, eventRepo)
-      this.emitAndPersist(sessionId, turnId, {
-        ...makeBase(),
-        type: 'agent_error',
-        code: 'WORKSPACE_UNAVAILABLE',
-        message: `Workspace path is not available: ${config.workspaceRootPath}. `
-          + 'Reopen the workspace or update the session workspace before running Claude.',
-        retryable: false,
-        rawError: workspaceIssue,
-      }, eventRepo)
-      this.emitAndPersist(sessionId, turnId, {
-        ...makeBase(),
-        type: 'agent_status',
-        status: 'error',
-        message: 'Workspace path is not available',
-      }, eventRepo)
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'user_message',
+          content: message,
+        },
+        eventRepo,
+      )
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'agent_error',
+          code: 'WORKSPACE_UNAVAILABLE',
+          message:
+            `Workspace path is not available: ${config.workspaceRootPath}. ` +
+            'Reopen the workspace or update the session workspace before running Claude.',
+          retryable: false,
+          rawError: workspaceIssue,
+        },
+        eventRepo,
+      )
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'agent_status',
+          status: 'error',
+          message: 'Workspace path is not available',
+        },
+        eventRepo,
+      )
       sessionRepo.updateStatus(sessionId, 'error')
       return
     }
@@ -813,13 +997,18 @@ export class SessionService {
         changedFiles: Array.from(changedFiles),
       })
       if (suggestion == null) return
-      this.emitAndPersist(sessionId, turnId, {
-        ...makeBase(),
-        type: 'validation_suggestion',
-        summary: suggestion.summary,
-        changedFiles: suggestion.changedFiles,
-        commands: suggestion.commands,
-      }, eventRepo)
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'validation_suggestion',
+          summary: suggestion.summary,
+          changedFiles: suggestion.changedFiles,
+          commands: suggestion.commands,
+        },
+        eventRepo,
+      )
     }
 
     executor.onEvent((event) => {
@@ -890,7 +1079,12 @@ export class SessionService {
     return result
   }
 
-  private emitAndPersist(sessionId: string, turnId: string, event: AgentEvent, eventRepo: EventRepository): void {
+  private emitAndPersist(
+    sessionId: string,
+    turnId: string,
+    event: AgentEvent,
+    eventRepo: EventRepository,
+  ): void {
     const seq = this.seqCounters.get(sessionId) ?? 0
     this.seqCounters.set(sessionId, seq + 1)
     const sequenced = { ...event, seq }
@@ -980,7 +1174,14 @@ export class SessionService {
     }
     if (queue.length === 0) this.pendingTurns.delete(sessionId)
     this.emitQueueChanged(sessionId)
-    void this.startTurn(sessionId, next.turnId, next.message, next.runtimePatch, next.skillId, next.skillParams)
+    void this.startTurn(
+      sessionId,
+      next.turnId,
+      next.message,
+      next.runtimePatch,
+      next.skillId,
+      next.skillParams,
+    )
   }
 
   private queueSnapshot(sessionId: string): SessionGetQueueResponse {
@@ -1010,7 +1211,10 @@ export class SessionService {
   ): SessionPermissionMode {
     const override = this.approvalOverrides.get(sessionId)
     if (override === false) return adapter === 'claude' ? 'claude-bypass' : 'codex-full-access'
-    if (override === true && (storedMode === 'claude-bypass' || storedMode === 'codex-full-access')) {
+    if (
+      override === true &&
+      (storedMode === 'claude-bypass' || storedMode === 'codex-full-access')
+    ) {
       return adapter === 'claude' ? 'claude-ask' : 'codex-default'
     }
     return storedMode
@@ -1097,7 +1301,10 @@ export class SessionService {
       providerProfileId: row.provider_profile_id ?? '',
       modelId: row.model_id,
       agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-      permissionMode: getPermissionModeFromSession(row.permission_mode, getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null)),
+      permissionMode: getPermissionModeFromSession(
+        row.permission_mode,
+        getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
+      ),
       chatMode: getChatModeFromSession(row.chat_mode),
       reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
       status: row.status as 'idle' | 'running' | 'error',
@@ -1194,26 +1401,34 @@ export class SessionService {
 
     if (params.pinned !== undefined || params.archived !== undefined) {
       sessionRepo.updateLifecycle(params.sessionId, {
-        ...(params.pinned !== undefined ? { pinnedAt: params.pinned ? new Date().toISOString() : null } : {}),
-        ...(params.archived !== undefined ? { archivedAt: params.archived ? new Date().toISOString() : null } : {}),
+        ...(params.pinned !== undefined
+          ? { pinnedAt: params.pinned ? new Date().toISOString() : null }
+          : {}),
+        ...(params.archived !== undefined
+          ? { archivedAt: params.archived ? new Date().toISOString() : null }
+          : {}),
       })
     }
 
     if (
-      params.providerProfileId !== undefined
-      || params.modelId !== undefined
-      || params.agentAdapter !== undefined
-      || params.permissionMode !== undefined
-      || params.chatMode !== undefined
-      || params.reasoningEffort !== undefined
+      params.providerProfileId !== undefined ||
+      params.modelId !== undefined ||
+      params.agentAdapter !== undefined ||
+      params.permissionMode !== undefined ||
+      params.chatMode !== undefined ||
+      params.reasoningEffort !== undefined
     ) {
       sessionRepo.updateRuntime(params.sessionId, {
-        ...(params.providerProfileId !== undefined ? { providerProfileId: params.providerProfileId } : {}),
+        ...(params.providerProfileId !== undefined
+          ? { providerProfileId: params.providerProfileId }
+          : {}),
         ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
         ...(params.agentAdapter !== undefined ? { agentAdapter: params.agentAdapter } : {}),
         ...(params.permissionMode !== undefined ? { permissionMode: params.permissionMode } : {}),
         ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
-        ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
+        ...(params.reasoningEffort !== undefined
+          ? { reasoningEffort: params.reasoningEffort }
+          : {}),
       })
     }
 
@@ -1227,7 +1442,10 @@ export class SessionService {
         providerProfileId: row.provider_profile_id ?? '',
         modelId: row.model_id,
         agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
-        permissionMode: getPermissionModeFromSession(row.permission_mode, getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null)),
+        permissionMode: getPermissionModeFromSession(
+          row.permission_mode,
+          getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
+        ),
         chatMode: getChatModeFromSession(row.chat_mode),
         reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
         status: row.status as 'idle' | 'running' | 'error',
@@ -1267,7 +1485,10 @@ function shouldDeriveSessionTitle(title: string | null | undefined): boolean {
   return DEFAULT_SESSION_TITLES.has(normalized) || normalized.endsWith(' 会话')
 }
 
-function getLatestAgentStatusFromEvents(eventRepo: EventRepository, sessionId: string): string | null {
+function getLatestAgentStatusFromEvents(
+  eventRepo: EventRepository,
+  sessionId: string,
+): string | null {
   const row = eventRepo.queryBySession({ sessionId, eventType: 'agent_status', limit: 1 }).events[0]
   if (row == null) return null
   try {
@@ -1294,16 +1515,23 @@ function appendInterruptedTurnEvents(eventRepo: EventRepository, sessionId: stri
   const seq = eventRepo.countBySession(sessionId)
   const events = createInterruptedTurnEvents(sessionId, turnId, seq, timestamp)
 
-  eventRepo.insertBatch(events.map((event) => ({
-    id: event.id,
-    sessionId,
-    turnId,
-    eventType: event.type,
-    eventJson: JSON.stringify(event),
-  })))
+  eventRepo.insertBatch(
+    events.map((event) => ({
+      id: event.id,
+      sessionId,
+      turnId,
+      eventType: event.type,
+      eventJson: JSON.stringify(event),
+    })),
+  )
 }
 
-export function createInterruptedTurnEvents(sessionId: string, turnId: string, seq: number, timestamp: string = new Date().toISOString()): AgentEvent[] {
+export function createInterruptedTurnEvents(
+  sessionId: string,
+  turnId: string,
+  seq: number,
+  timestamp: string = new Date().toISOString(),
+): AgentEvent[] {
   return [
     {
       id: crypto.randomUUID(),
@@ -1329,7 +1557,10 @@ export function createInterruptedTurnEvents(sessionId: string, turnId: string, s
   ]
 }
 
-function buildConversationHistoryPrompt(eventRepo: EventRepository, sessionId: string): string | undefined {
+function buildConversationHistoryPrompt(
+  eventRepo: EventRepository,
+  sessionId: string,
+): string | undefined {
   const rows = eventRepo.queryBySession({
     sessionId,
     limit: HISTORY_CONTEXT_EVENT_LIMIT,
@@ -1365,7 +1596,15 @@ export function buildConversationHistoryPromptFromEvents(events: AgentEvent[]): 
 type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
 
 function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
-  const turns = new Map<string, { userParts: string[]; snapshotUserMessage?: string; assistantParts: string[]; assistantFinal?: string }>()
+  const turns = new Map<
+    string,
+    {
+      userParts: string[]
+      snapshotUserMessage?: string
+      assistantParts: string[]
+      assistantFinal?: string
+    }
+  >()
   const turnOrder: string[] = []
 
   const getTurn = (turnId: string) => {
@@ -1379,7 +1618,12 @@ function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
   }
 
   for (const event of events) {
-    if (event.type !== 'user_message' && event.type !== 'assistant_message' && event.type !== 'turn_prompt_snapshot') continue
+    if (
+      event.type !== 'user_message' &&
+      event.type !== 'assistant_message' &&
+      event.type !== 'turn_prompt_snapshot'
+    )
+      continue
     const turn = getTurn(event.turnId)
     if (event.type === 'turn_prompt_snapshot') {
       const userMessage = event.userMessage.trim()
@@ -1429,7 +1673,10 @@ function truncateHistoryEntry(content: string): string {
   return `${normalized.slice(0, HISTORY_CONTEXT_ENTRY_MAX_CHARS).trimEnd()}\n[truncated]`
 }
 
-function listSessionCheckpointsFromEvents(eventRepo: EventRepository, sessionId: string): CheckpointSnapshot[] {
+function listSessionCheckpointsFromEvents(
+  eventRepo: EventRepository,
+  sessionId: string,
+): CheckpointSnapshot[] {
   const rows = eventRepo.queryBySession({ sessionId, eventType: 'checkpoint', limit: 100 }).events
   const checkpoints: CheckpointSnapshot[] = []
   for (const row of rows) {
@@ -1461,10 +1708,11 @@ function restoreSessionCheckpoint(params: {
   }
 
   const checkpoints = listSessionCheckpointsFromEvents(params.eventRepo, params.sessionId)
-  const checkpoint = checkpoints.find((item) =>
-    item.checkpointId === params.checkpointRef ||
-    item.checkpointId.endsWith(params.checkpointRef) ||
-    item.path === params.checkpointRef
+  const checkpoint = checkpoints.find(
+    (item) =>
+      item.checkpointId === params.checkpointRef ||
+      item.checkpointId.endsWith(params.checkpointRef) ||
+      item.path === params.checkpointRef,
   )
   if (checkpoint == null) {
     throw new Error(`Checkpoint not found: ${params.checkpointRef}`)
@@ -1481,9 +1729,12 @@ function restoreSessionCheckpoint(params: {
 
   const rootStat = statSync(checkpointRoot)
   const requestedFiles = checkpoint.filePaths?.filter((file) => file.trim().length > 0) ?? []
-  const filePaths = requestedFiles.length > 0
-    ? requestedFiles
-    : (rootStat.isFile() ? [path.basename(checkpointRoot)] : listFilesUnder(checkpointRoot, 200))
+  const filePaths =
+    requestedFiles.length > 0
+      ? requestedFiles
+      : rootStat.isFile()
+        ? [path.basename(checkpointRoot)]
+        : listFilesUnder(checkpointRoot, 200)
 
   const restoredFiles: string[] = []
   const missingFiles: string[] = []
@@ -1572,10 +1823,17 @@ function deriveSessionTitle(message: string): string {
 function truncateTitle(title: string): string {
   const chars = Array.from(title)
   if (chars.length <= SESSION_TITLE_MAX_LENGTH) return title
-  return `${chars.slice(0, SESSION_TITLE_MAX_LENGTH - 3).join('').trimEnd()}...`
+  return `${chars
+    .slice(0, SESSION_TITLE_MAX_LENGTH - 3)
+    .join('')
+    .trimEnd()}...`
 }
 
-function getAgentAdapterFromSession(value: string | null | undefined, legacyChatMode: string | null | undefined, providerType: string | null): AgentAdapterKind {
+function getAgentAdapterFromSession(
+  value: string | null | undefined,
+  legacyChatMode: string | null | undefined,
+  providerType: string | null,
+): AgentAdapterKind {
   if (value === 'claude-sdk' || value === 'codex') return value
   if (value === 'claude') return 'claude-sdk'
   if (legacyChatMode === 'claude-sdk' || legacyChatMode === 'codex') return legacyChatMode
@@ -1585,16 +1843,19 @@ function getAgentAdapterFromSession(value: string | null | undefined, legacyChat
   return providerType === 'anthropic' ? 'claude-sdk' : 'codex'
 }
 
-function getPermissionModeFromSession(value: string | null | undefined, adapter: AgentAdapterKind): SessionPermissionMode {
+function getPermissionModeFromSession(
+  value: string | null | undefined,
+  adapter: AgentAdapterKind,
+): SessionPermissionMode {
   if (
-    value === 'claude-ask'
-    || value === 'claude-auto-edits'
-    || value === 'claude-plan'
-    || value === 'claude-auto'
-    || value === 'claude-bypass'
-    || value === 'codex-default'
-    || value === 'codex-auto-review'
-    || value === 'codex-full-access'
+    value === 'claude-ask' ||
+    value === 'claude-auto-edits' ||
+    value === 'claude-plan' ||
+    value === 'claude-auto' ||
+    value === 'claude-bypass' ||
+    value === 'codex-default' ||
+    value === 'codex-auto-review' ||
+    value === 'codex-full-access'
   ) {
     return value
   }
@@ -1610,7 +1871,9 @@ async function getWorkspaceRootIssue(rootPath: string): Promise<string | null> {
   }
 }
 
-function getChatModeFromSession(value: string | null | undefined): 'agent' | 'ask' | 'edit' | 'review' {
+function getChatModeFromSession(
+  value: string | null | undefined,
+): 'agent' | 'ask' | 'edit' | 'review' {
   if (value === 'ask' || value === 'edit' || value === 'review') return value
   return 'agent'
 }
@@ -1629,13 +1892,21 @@ function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | und
 function getProviderModelIds(configJson: string | null | undefined): string[] {
   if (configJson == null) return []
   try {
-    const config = JSON.parse(configJson) as { defaultModel?: unknown; model?: unknown; modelIds?: unknown }
+    const config = JSON.parse(configJson) as {
+      defaultModel?: unknown
+      model?: unknown
+      modelIds?: unknown
+    }
     const models = [
       typeof config.defaultModel === 'string' ? config.defaultModel : undefined,
       typeof config.model === 'string' ? config.model : undefined,
-      ...(Array.isArray(config.modelIds) ? config.modelIds.filter((item): item is string => typeof item === 'string') : []),
+      ...(Array.isArray(config.modelIds)
+        ? config.modelIds.filter((item): item is string => typeof item === 'string')
+        : []),
     ]
-    return Array.from(new Set(models.filter((model): model is string => model != null && model.trim().length > 0)))
+    return Array.from(
+      new Set(models.filter((model): model is string => model != null && model.trim().length > 0)),
+    )
   } catch {
     return []
   }
@@ -1679,13 +1950,17 @@ export function isSdkResumeSafe(params: {
   }
 }
 
-function getLatestTurnPromptSnapshot(eventRepo: EventRepository, sessionId: string): {
+function getLatestTurnPromptSnapshot(
+  eventRepo: EventRepository,
+  sessionId: string,
+): {
   model: string
   providerProfileId?: string
   adapterKind: 'claude-sdk' | 'codex'
   sdkSessionId?: string
 } | null {
-  const row = eventRepo.queryBySession({ sessionId, eventType: 'turn_prompt_snapshot', limit: 1 }).events[0]
+  const row = eventRepo.queryBySession({ sessionId, eventType: 'turn_prompt_snapshot', limit: 1 })
+    .events[0]
   if (row == null) return null
   try {
     const event = JSON.parse(row.event_json) as AgentEvent
@@ -1693,7 +1968,9 @@ function getLatestTurnPromptSnapshot(eventRepo: EventRepository, sessionId: stri
     return {
       model: event.model,
       adapterKind: event.adapterKind,
-      ...(event.providerProfileId !== undefined ? { providerProfileId: event.providerProfileId } : {}),
+      ...(event.providerProfileId !== undefined
+        ? { providerProfileId: event.providerProfileId }
+        : {}),
       ...(event.sdkSessionId !== undefined ? { sdkSessionId: event.sdkSessionId } : {}),
     }
   } catch {
@@ -1717,7 +1994,11 @@ function formatSelectedSkillPrompt(skillId: string, prompt: string): string {
   ].join('\n\n')
 }
 
-function listSkillSummaries(skillRepo: SkillRepository, workspacePath?: string | null, query?: string): Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }> {
+function listSkillSummaries(
+  skillRepo: SkillRepository,
+  workspacePath?: string | null,
+  query?: string,
+): Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }> {
   const loader = new SkillLoader(skillRepo)
   const infos = query?.trim() ? loader.search(query) : loader.listEnabled()
   const runtimeSkills = infos
@@ -1757,9 +2038,11 @@ function listSkillSummaries(skillRepo: SkillRepository, workspacePath?: string |
     .filter((skill) => {
       const q = query?.trim().toLowerCase()
       if (!q) return true
-      return skill.id.toLowerCase().includes(q)
-        || skill.name.toLowerCase().includes(q)
-        || skill.description.toLowerCase().includes(q)
+      return (
+        skill.id.toLowerCase().includes(q) ||
+        skill.name.toLowerCase().includes(q) ||
+        skill.description.toLowerCase().includes(q)
+      )
     })
   return uniqueSkillSummaries([...runtimeSkills, ...projectSkills])
 }

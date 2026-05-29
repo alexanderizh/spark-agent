@@ -4,35 +4,107 @@ export { McpService } from './services/mcp-server.service.js'
 export { SkillService } from './services/skill.service.js'
 export { RulesService } from './services/rules.service.js'
 export { RuleCompositionEngine } from './services/rule-composition.engine.js'
-export type { ComposeOptions, ComposedRule, CompositionResult, ConflictStrategy } from './services/rule-composition.engine.js'
+export type {
+  ComposeOptions,
+  ComposedRule,
+  CompositionResult,
+  ConflictStrategy,
+} from './services/rule-composition.engine.js'
 export { RuntimeCompositionService } from './services/runtime-composition.service.js'
-export type { RuntimeCompositionResult, RuntimePromptConfig, RuntimeScopeRefs, RuntimeSkillConfig, PromptLayerValue, RuntimeLayerScope } from './services/runtime-composition.service.js'
-export { detectLocalSkills, importLocalSkillDirectory, defaultLocalSkillRoots } from './services/local-skill-importer.js'
+export type {
+  RuntimeCompositionResult,
+  RuntimePromptConfig,
+  RuntimeScopeRefs,
+  RuntimeSkillConfig,
+  PromptLayerValue,
+  RuntimeLayerScope,
+} from './services/runtime-composition.service.js'
+export {
+  detectLocalSkills,
+  importLocalSkillDirectory,
+  defaultLocalSkillRoots,
+} from './services/local-skill-importer.js'
 export type { LocalSkillCandidate, LocalSkillSource } from './services/local-skill-importer.js'
 export { PermissionService } from './services/permission.service.js'
-export type { CreateRuleParams, ListRulesParams, UpdateRuleFields } from './services/rules.service.js'
+export type {
+  CreateRuleParams,
+  ListRulesParams,
+  UpdateRuleFields,
+} from './services/rules.service.js'
 export { SessionService } from './services/session.service.js'
-export type { ApprovalHandler, SessionEventHandler, SessionQueueChangedHandler, HookTriggerHandler } from './services/session.service.js'
+export type {
+  ApprovalHandler,
+  SessionEventHandler,
+  SessionQueueChangedHandler,
+  QuestionHandler,
+  HookTriggerHandler,
+} from './services/session.service.js'
 export { WorkspaceService, detectProjectKind } from './services/workspace.service.js'
 export type { UpdateWorkspaceParams } from './services/workspace.service.js'
-export { AgentEventEmitter, isCommand, parseCommand, parseCommandWithSubcommand, CommandRegistry, createBuiltinRegistry } from './core/index.js'
-export type { EventListener, ParsedCommand, CommandDefinition, CommandContext, CommandResult, CommandDeps, CommandLayer, CommandGroup, CommandScope, CommandRisk, CommandListItem } from './core/index.js'
+export {
+  AgentEventEmitter,
+  isCommand,
+  parseCommand,
+  parseCommandWithSubcommand,
+  CommandRegistry,
+  createBuiltinRegistry,
+} from './core/index.js'
+export type {
+  EventListener,
+  ParsedCommand,
+  CommandDefinition,
+  CommandContext,
+  CommandResult,
+  CommandDeps,
+  CommandLayer,
+  CommandGroup,
+  CommandScope,
+  CommandRisk,
+  CommandListItem,
+} from './core/index.js'
 export { SkillRegistryService } from './services/skill-registry/index.js'
 export { SettingsService } from './services/settings.service.js'
 export { UsageLedgerService } from './services/usage-ledger.service.js'
-export type { RecordUsageParams, UsageSummary, ModelUsageGroup, DailyUsageGroup, UsageLedgerRow } from './services/usage-ledger.service.js'
+export type {
+  RecordUsageParams,
+  UsageSummary,
+  ModelUsageGroup,
+  DailyUsageGroup,
+  UsageLedgerRow,
+} from './services/usage-ledger.service.js'
 export { HookService } from './services/hook.service.js'
 export type { HookTriggerFn } from './services/hook.service.js'
-export type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './services/skill-registry/adapter.js'
+export type {
+  SkillRegistryAdapter,
+  SkillRegistryAdapterConfig,
+} from './services/skill-registry/adapter.js'
 export { SkillLoader } from './skills/skill-loader.js'
 export type { SkillInfo } from './skills/skill-loader.js'
-export type { SkillDefinition, SkillParameter, SkillCategory, SkillExecutionContext } from './skills/types.js'
+export type {
+  SkillDefinition,
+  SkillParameter,
+  SkillCategory,
+  SkillExecutionContext,
+} from './skills/types.js'
 export { buildSkillSystemPrompt } from './skills/types.js'
 export { BUILTIN_SKILLS, getBuiltinSkill } from './skills/builtin/index.js'
 export { McpClient } from './mcp/index.js'
-export type { McpServerInfo, McpToolDefinition, McpToolResult, McpConnectionStatus, McpTransportConfig, StdioTransportConfig, SseTransportConfig } from './mcp/index.js'
+export type {
+  McpServerInfo,
+  McpToolDefinition,
+  McpToolResult,
+  McpConnectionStatus,
+  McpTransportConfig,
+  StdioTransportConfig,
+  SseTransportConfig,
+} from './mcp/index.js'
 
 // Claude Agent SDK integration
 export { ClaudeSDKExecutor, isSDKAvailable, SDKNotAvailableError } from './sdk/index.js'
 export { mapPermissionMode, mergeToolPermissions } from './sdk/index.js'
-export type { SDKExecutorConfig, SDKMcpServerConfig, SDKPermissionConfig, SparkPermissionMode } from './sdk/index.js'
+export type {
+  SDKExecutorConfig,
+  SDKMcpServerConfig,
+  SDKPermissionConfig,
+  SparkPermissionMode,
+} from './sdk/index.js'

@@ -22,15 +22,58 @@ export interface FileChangeSummary {
 export type UIBlock =
   | { kind: 'text'; content: string; isStreaming: boolean }
   | { kind: 'thinking'; content: string; isStreaming: boolean }
-  | { kind: 'tool_call'; toolCallId: string; toolName: string; toolInput: Record<string, unknown>; status: 'pending' | 'running' | 'success' | 'error'; output: string | undefined; error: string | undefined; durationMs: number | undefined }
+  | {
+      kind: 'tool_call'
+      toolCallId: string
+      toolName: string
+      toolInput: Record<string, unknown>
+      status: 'pending' | 'running' | 'success' | 'error'
+      output: string | undefined
+      error: string | undefined
+      durationMs: number | undefined
+    }
   | { kind: 'error'; code: string; message: string; retryable: boolean }
   | { kind: 'file_change'; changeType: string; path: string; diff: string | undefined }
-  | { kind: 'checkpoint'; checkpointId: string; label: string | undefined; path: string | undefined; filePaths: string[] | undefined }
-  | { kind: 'validation_suggestion'; summary: string; changedFiles: string[]; commands: Array<{ id: string; label: string; command: string; reason: string }> }
-  | { kind: 'terminal'; toolCallId: string; stdout: string; stderr: string; isStreaming: boolean; exitCode: number | undefined }
+  | {
+      kind: 'checkpoint'
+      checkpointId: string
+      label: string | undefined
+      path: string | undefined
+      filePaths: string[] | undefined
+    }
+  | {
+      kind: 'validation_suggestion'
+      summary: string
+      changedFiles: string[]
+      commands: Array<{ id: string; label: string; command: string; reason: string }>
+    }
+  | {
+      kind: 'terminal'
+      toolCallId: string
+      stdout: string
+      stderr: string
+      isStreaming: boolean
+      exitCode: number | undefined
+    }
   | { kind: 'plan_proposed'; plan: string }
-  | { kind: 'permission_request'; requestId: string; action: string; riskLevel: string; description: string; paths: string[] | undefined; command: string | undefined; domains: string[] | undefined }
-  | { kind: 'subagent'; name: string; role: string; task: string; status: 'running' | 'done'; tokens: string }
+  | {
+      kind: 'permission_request'
+      requestId: string
+      action: string
+      riskLevel: string
+      description: string
+      paths: string[] | undefined
+      command: string | undefined
+      domains: string[] | undefined
+    }
+  | {
+      kind: 'subagent'
+      name: string
+      role: string
+      task: string
+      status: 'running' | 'done'
+      tokens: string
+    }
   | { kind: 'turn_file_summary'; files: FileChangeSummary[]; totalAdds: number; totalDels: number }
 
 export interface ContextUsageSnapshot {
@@ -83,11 +126,19 @@ export class MessageBuilder {
 
       case 'assistant_message': {
         let msg: UIMessage | undefined = this.currentAssistantId
-          ? this.messages.find(m => m.id === this.currentAssistantId)
+          ? this.messages.find((m) => m.id === this.currentAssistantId)
           : undefined
 
         if (!msg) {
-          msg = { id: event.id, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp: event.timestamp, eventIds: [event.id] }
+          msg = {
+            id: event.id,
+            role: 'assistant',
+            status: 'streaming',
+            blocks: [],
+            usage: null,
+            timestamp: event.timestamp,
+            eventIds: [event.id],
+          }
           this.messages.push(msg)
           this.currentAssistantId = msg.id
         } else {
@@ -97,7 +148,7 @@ export class MessageBuilder {
         }
 
         if (event.mode === 'complete') {
-          msg.blocks = msg.blocks.filter(block => block.kind !== 'text')
+          msg.blocks = msg.blocks.filter((block) => block.kind !== 'text')
           if (event.content.length > 0) {
             msg.blocks.push({ kind: 'text', content: event.content, isStreaming: false })
           }
@@ -129,7 +180,7 @@ export class MessageBuilder {
       case 'agent_thinking': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         if (event.mode === 'complete') {
-          msg.blocks = msg.blocks.filter(block => block.kind !== 'thinking')
+          msg.blocks = msg.blocks.filter((block) => block.kind !== 'thinking')
           if (event.content.length > 0) {
             // Always insert thinking at the beginning so it appears before text blocks
             msg.blocks.unshift({ kind: 'thinking', content: event.content, isStreaming: false })
@@ -148,7 +199,8 @@ export class MessageBuilder {
         }
 
         if (lastThinkingIdx >= 0) {
-          ;(msg.blocks[lastThinkingIdx] as Extract<UIBlock, { kind: 'thinking' }>).content += event.content
+          ;(msg.blocks[lastThinkingIdx] as Extract<UIBlock, { kind: 'thinking' }>).content +=
+            event.content
         } else {
           // No thinking block yet — insert at beginning to keep thinking before text
           msg.blocks.unshift({ kind: 'thinking', content: event.content, isStreaming: true })
@@ -173,12 +225,12 @@ export class MessageBuilder {
 
       case 'tool_result': {
         const msg = this.currentAssistantId
-          ? this.messages.find(m => m.id === this.currentAssistantId)
+          ? this.messages.find((m) => m.id === this.currentAssistantId)
           : null
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           const block = msg.blocks.find(
-            b => b.kind === 'tool_call' && b.toolCallId === event.toolCallId
+            (b) => b.kind === 'tool_call' && b.toolCallId === event.toolCallId,
           ) as Extract<UIBlock, { kind: 'tool_call' }> | undefined
           if (block) {
             block.status = event.status === 'success' ? 'success' : 'error'
@@ -192,7 +244,7 @@ export class MessageBuilder {
 
       case 'agent_status': {
         const msg = this.currentAssistantId
-          ? this.messages.find(m => m.id === this.currentAssistantId)
+          ? this.messages.find((m) => m.id === this.currentAssistantId)
           : null
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
@@ -215,18 +267,23 @@ export class MessageBuilder {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         msg.status = 'error'
         this.finishStreamingBlocks(msg, 'error')
-        msg.blocks.push({ kind: 'error', code: event.code, message: event.message, retryable: event.retryable })
+        msg.blocks.push({
+          kind: 'error',
+          code: event.code,
+          message: event.message,
+          retryable: event.retryable,
+        })
         break
       }
 
       case 'terminal_output': {
         const msg = this.currentAssistantId
-          ? this.messages.find(m => m.id === this.currentAssistantId)
+          ? this.messages.find((m) => m.id === this.currentAssistantId)
           : null
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           const block = msg.blocks.find(
-            b => b.kind === 'terminal' && b.toolCallId === event.toolCallId
+            (b) => b.kind === 'terminal' && b.toolCallId === event.toolCallId,
           ) as Extract<UIBlock, { kind: 'terminal' }> | undefined
           if (block) {
             if (event.stream === 'stdout') block.stdout += event.data
@@ -236,7 +293,9 @@ export class MessageBuilder {
               block.exitCode = event.exitCode ?? undefined
             }
           } else {
-            const exitCode: number | undefined = event.isFinal ? (event.exitCode ?? undefined) : undefined
+            const exitCode: number | undefined = event.isFinal
+              ? (event.exitCode ?? undefined)
+              : undefined
             msg.blocks.push({
               kind: 'terminal',
               toolCallId: event.toolCallId,
@@ -252,12 +311,17 @@ export class MessageBuilder {
 
       case 'file_change': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
-        msg.blocks.push({ kind: 'file_change', changeType: event.changeType, path: event.path, diff: event.diff ?? undefined })
+        msg.blocks.push({
+          kind: 'file_change',
+          changeType: event.changeType,
+          path: event.path,
+          diff: event.diff ?? undefined,
+        })
 
         // 追踪文件变更用于生成汇总
         const stats = event.diff ? parseDiffStats(event.diff) : { adds: 0, dels: 0 }
         // 避免重复添加同一文件
-        if (!this.currentTurnFileChanges.some(f => f.path === event.path)) {
+        if (!this.currentTurnFileChanges.some((f) => f.path === event.path)) {
           this.currentTurnFileChanges.push({
             path: event.path,
             changeType: event.changeType as 'create' | 'modify' | 'delete',
@@ -293,11 +357,15 @@ export class MessageBuilder {
 
       case 'usage_update': {
         const msg = this.currentAssistantId
-          ? this.messages.find(m => m.id === this.currentAssistantId)
+          ? this.messages.find((m) => m.id === this.currentAssistantId)
           : null
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
-          msg.usage = { inputTokens: event.inputTokens, outputTokens: event.outputTokens, estimatedCostUsd: event.estimatedCostUsd }
+          msg.usage = {
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            estimatedCostUsd: event.estimatedCostUsd,
+          }
         }
         break
       }
@@ -349,7 +417,7 @@ export class MessageBuilder {
   }
 
   removeMessage(messageId: string): void {
-    this.messages = this.messages.filter(m => m.id !== messageId)
+    this.messages = this.messages.filter((m) => m.id !== messageId)
     if (this.currentAssistantId === messageId) {
       this.currentAssistantId = null
     }
@@ -365,7 +433,7 @@ export class MessageBuilder {
 
   private getOrCreateAssistant(eventId: string, timestamp?: string | undefined): UIMessage {
     if (this.currentAssistantId) {
-      const existing = this.messages.find(m => m.id === this.currentAssistantId)
+      const existing = this.messages.find((m) => m.id === this.currentAssistantId)
       if (existing) {
         if (!existing.eventIds.includes(eventId)) {
           existing.eventIds.push(eventId)
@@ -373,7 +441,15 @@ export class MessageBuilder {
         return existing
       }
     }
-    const msg: UIMessage = { id: eventId, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp, eventIds: [eventId] }
+    const msg: UIMessage = {
+      id: eventId,
+      role: 'assistant',
+      status: 'streaming',
+      blocks: [],
+      usage: null,
+      timestamp,
+      eventIds: [eventId],
+    }
     this.messages.push(msg)
     this.currentAssistantId = msg.id
     // 新消息开始时重置 turn 追踪状态
@@ -403,7 +479,10 @@ export class MessageBuilder {
       if (block.kind === 'text' || block.kind === 'thinking' || block.kind === 'terminal') {
         block.isStreaming = false
       }
-      if (block.kind === 'tool_call' && (block.status === 'pending' || block.status === 'running')) {
+      if (
+        block.kind === 'tool_call' &&
+        (block.status === 'pending' || block.status === 'running')
+      ) {
         block.status = finalStatus === 'error' ? 'error' : 'success'
       }
     }
@@ -430,7 +509,12 @@ function parseDiffStats(diff: string): { adds: number; dels: number } {
   let dels = 0
   for (const line of diff.split('\n')) {
     // 跳过 diff 头部行
-    if (line.startsWith('--- ') || line.startsWith('+++ ') || line.startsWith('@@') || line.startsWith('\\')) {
+    if (
+      line.startsWith('--- ') ||
+      line.startsWith('+++ ') ||
+      line.startsWith('@@') ||
+      line.startsWith('\\')
+    ) {
       continue
     }
     if (line.startsWith('+')) {

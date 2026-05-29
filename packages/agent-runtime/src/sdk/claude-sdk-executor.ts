@@ -28,11 +28,24 @@ import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { sep } from 'node:path'
 import type { AgentEvent, AgentStatusValue } from '@spark/protocol'
-import { createLogger, resolveModelContextWindow, resolveSoftContextLimit, resolveSoftContextLimitForWindow } from '@spark/shared'
+import {
+  createLogger,
+  resolveModelContextWindow,
+  resolveSoftContextLimit,
+  resolveSoftContextLimitForWindow,
+} from '@spark/shared'
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
-import type { SDKExecutorConfig, SDKMessage, SDKPermissionResult, SDKQueryFunction, SDKQueryOptions, SDKResultMessage, SDKSettings } from './types.js'
+import type {
+  SDKExecutorConfig,
+  SDKMessage,
+  SDKPermissionResult,
+  SDKQueryFunction,
+  SDKQueryOptions,
+  SDKResultMessage,
+  SDKSettings,
+} from './types.js'
 
 type SDKModule = { query: SDKQueryFunction }
 
@@ -70,7 +83,7 @@ async function loadSDK(): Promise<SDKModule | null> {
   if (sdkLoadAttempted) return sdkModule
   sdkLoadAttempted = true
   try {
-    sdkModule = await import('@anthropic-ai/claude-agent-sdk') as SDKModule
+    sdkModule = (await import('@anthropic-ai/claude-agent-sdk')) as SDKModule
     return sdkModule
   } catch {
     sdkModule = null
@@ -182,8 +195,16 @@ export class ClaudeSDKExecutor {
     }
 
     let maxTurns = normalizePositiveInt(config.maxTurnCount, DEFAULT_SDK_MAX_TURNS, 1000)
-    const maxTurnExtensionRetries = normalizeNonNegativeInt(config.maxTurnExtensionRetries, DEFAULT_MAX_TURN_EXTENSION_RETRIES, 10)
-    const maxTurnExtensionCap = normalizePositiveInt(config.maxTurnExtensionCap, DEFAULT_MAX_TURN_EXTENSION_CAP, 1000)
+    const maxTurnExtensionRetries = normalizeNonNegativeInt(
+      config.maxTurnExtensionRetries,
+      DEFAULT_MAX_TURN_EXTENSION_RETRIES,
+      10,
+    )
+    const maxTurnExtensionCap = normalizePositiveInt(
+      config.maxTurnExtensionCap,
+      DEFAULT_MAX_TURN_EXTENSION_CAP,
+      1000,
+    )
     let extensionAttempts = 0
     let prompt = userMessage
     let resumeExistingSession = config.continueSession === true
@@ -193,7 +214,9 @@ export class ClaudeSDKExecutor {
         abortController: this.abortController,
         model: config.model,
         cwd: config.workspaceRootPath,
-        ...(claudeCodeExecutable != null ? { pathToClaudeCodeExecutable: claudeCodeExecutable } : {}),
+        ...(claudeCodeExecutable != null
+          ? { pathToClaudeCodeExecutable: claudeCodeExecutable }
+          : {}),
         env: runtimeEnv,
         settings,
         settingSources: ['project'],
@@ -210,13 +233,16 @@ export class ClaudeSDKExecutor {
         },
 
         // Use Claude Code's built-in system prompt as base, append our customizations
-        systemPrompt: systemPrompt != null
-          ? { type: 'preset', preset: 'claude_code', append: systemPrompt }
-          : { type: 'preset', preset: 'claude_code' },
+        systemPrompt:
+          systemPrompt != null
+            ? { type: 'preset', preset: 'claude_code', append: systemPrompt }
+            : { type: 'preset', preset: 'claude_code' },
 
         permissionMode: mergedPerms.permissionMode,
         ...(mergedPerms.allowedTools.length > 0 ? { allowedTools: mergedPerms.allowedTools } : {}),
-        ...(mergedPerms.disallowedTools.length > 0 ? { disallowedTools: mergedPerms.disallowedTools } : {}),
+        ...(mergedPerms.disallowedTools.length > 0
+          ? { disallowedTools: mergedPerms.disallowedTools }
+          : {}),
         ...(config.mcpServers != null ? { mcpServers: config.mcpServers } : {}),
         skills: config.nativeSkills ?? [],
         toolConfig: {
@@ -233,45 +259,52 @@ export class ClaudeSDKExecutor {
 
         // Map Spark approval callback to SDK permission callback when Spark needs
         // extra policy on top of the SDK's native permission mode.
-        ...(config.approvalCallback != null && shouldUseSparkPermissionCallback(config.permissionMode) ? {
-          canUseTool: async (
-            toolName: string,
-            input: Record<string, unknown>,
-            callbackOptions,
-          ): Promise<SDKPermissionResult> => {
-            try {
-              // Handle AskUserQuestion specially - it needs user interaction
-              if (isAskUserQuestionTool(toolName)) {
-                const questionCallback = config.questionCallback
-                if (questionCallback != null) {
-                  // Extract questions from input
-                  const questions = extractQuestionsFromInput(input)
-                  // Wait for user to answer questions
-                  const answers = await questionCallback(sessionId, questions)
-                  // Return the answers as updated input
-                  return allowTool(answers, callbackOptions.toolUseID, 'user_temporary')
-                }
-                // If no questionCallback, deny with helpful message
-                return denyTool('AskUserQuestion requires user interaction but no questionCallback was provided', callbackOptions.toolUseID)
-              }
+        ...(config.approvalCallback != null &&
+        shouldUseSparkPermissionCallback(config.permissionMode)
+          ? {
+              canUseTool: async (
+                toolName: string,
+                input: Record<string, unknown>,
+                callbackOptions,
+              ): Promise<SDKPermissionResult> => {
+                try {
+                  // Handle AskUserQuestion specially - it needs user interaction
+                  if (isAskUserQuestionTool(toolName)) {
+                    const questionCallback = config.questionCallback
+                    if (questionCallback != null) {
+                      // Extract questions from input
+                      const questions = extractQuestionsFromInput(input)
+                      // Wait for user to answer questions
+                      const answers = await questionCallback(sessionId, questions)
+                      // Return the answers as updated input
+                      return allowTool(answers, callbackOptions.toolUseID, 'user_temporary')
+                    }
+                    // If no questionCallback, deny with helpful message
+                    return denyTool(
+                      'AskUserQuestion requires user interaction but no questionCallback was provided',
+                      callbackOptions.toolUseID,
+                    )
+                  }
 
-              if (isAlwaysAllowedControlTool(toolName)) {
-                return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
-              }
-              if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
-                return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
-              }
-              const approvalCallback = config.approvalCallback
-              if (approvalCallback == null) return denyTool('Permission check failed', callbackOptions.toolUseID)
-              const allowed = await approvalCallback(sessionId, toolName, input)
-              return allowed
-                ? allowTool(input, callbackOptions.toolUseID, 'user_temporary')
-                : denyTool('User denied tool execution', callbackOptions.toolUseID)
-            } catch {
-              return denyTool('Permission check failed', callbackOptions.toolUseID)
+                  if (isAlwaysAllowedControlTool(toolName)) {
+                    return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                  }
+                  if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
+                    return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                  }
+                  const approvalCallback = config.approvalCallback
+                  if (approvalCallback == null)
+                    return denyTool('Permission check failed', callbackOptions.toolUseID)
+                  const allowed = await approvalCallback(sessionId, toolName, input)
+                  return allowed
+                    ? allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                    : denyTool('User denied tool execution', callbackOptions.toolUseID)
+                } catch {
+                  return denyTool('Permission check failed', callbackOptions.toolUseID)
+                }
+              },
             }
-          },
-        } : {}),
+          : {}),
       }
 
       log.debug('SDK query options prepared', {
@@ -283,11 +316,17 @@ export class ClaudeSDKExecutor {
         resume: options.resume ?? null,
         sessionId: options.sessionId ?? null,
         permissionMode: options.permissionMode ?? null,
-        settingsModel: typeof options.settings === 'string' ? null : options.settings?.model ?? null,
-        settingsBaseUrl: typeof options.settings === 'string' ? null : options.settings?.env?.ANTHROPIC_BASE_URL ?? null,
+        settingsModel:
+          typeof options.settings === 'string' ? null : (options.settings?.model ?? null),
+        settingsBaseUrl:
+          typeof options.settings === 'string'
+            ? null
+            : (options.settings?.env?.ANTHROPIC_BASE_URL ?? null),
         settingSources: options.settingSources ?? null,
         envAnthropicBaseUrl: options.env?.ANTHROPIC_BASE_URL ?? null,
-        envHasAnthropicApiKey: typeof options.env?.ANTHROPIC_API_KEY === 'string' && options.env.ANTHROPIC_API_KEY.length > 0,
+        envHasAnthropicApiKey:
+          typeof options.env?.ANTHROPIC_API_KEY === 'string' &&
+          options.env.ANTHROPIC_API_KEY.length > 0,
         cwd: options.cwd ?? null,
         maxTurns: options.maxTurns ?? null,
         maxTurnExtensionAttempt: extensionAttempts,
@@ -316,7 +355,11 @@ export class ClaudeSDKExecutor {
 
           const events = mapSDKMessageToEvents(message, ctx)
           for (const event of events) {
-            if (maxTurnsResult === message && event.type !== 'usage_update' && event.type !== 'checkpoint') {
+            if (
+              maxTurnsResult === message &&
+              event.type !== 'usage_update' &&
+              event.type !== 'checkpoint'
+            ) {
               continue
             }
             if (event.type === 'agent_status' && isTerminalAgentStatus(event.status)) {
@@ -467,10 +510,12 @@ function denyTool(message: string, toolUseID: string | undefined): SDKPermission
 
 function isAlwaysAllowedControlTool(toolName: string): boolean {
   const normalized = toolName.replace(/-/g, '_').toLowerCase()
-  return normalized === 'exitplanmode'
-    || normalized === 'exit_plan_mode'
-    || normalized === 'enterplanmode'
-    || normalized === 'enter_plan_mode'
+  return (
+    normalized === 'exitplanmode' ||
+    normalized === 'exit_plan_mode' ||
+    normalized === 'enterplanmode' ||
+    normalized === 'enter_plan_mode'
+  )
   // Note: AskUserQuestion is NOT always allowed - it needs user interaction
   // to provide answers. It's handled separately in canUseTool callback.
 }
@@ -515,7 +560,9 @@ function extractQuestionsFromInput(input: Record<string, unknown>): Array<{
     .filter((q): q is NonNullable<typeof q> => q != null)
 }
 
-function normalizeQuestionOptions(options: unknown): Array<{ label: string; description?: string; preview?: string }> {
+function normalizeQuestionOptions(
+  options: unknown,
+): Array<{ label: string; description?: string; preview?: string }> {
   if (!Array.isArray(options)) return []
   return options
     .map((opt: unknown) => {
@@ -534,38 +581,46 @@ function normalizeQuestionOptions(options: unknown): Array<{ label: string; desc
     .filter((opt): opt is NonNullable<typeof opt> => opt != null)
 }
 
-function shouldUseSparkPermissionCallback(permissionMode: SDKExecutorConfig['permissionMode']): boolean {
-  return permissionMode !== 'claude-auto'
-    && permissionMode !== 'claude-bypass'
-    && permissionMode !== 'codex-full-access'
+function shouldUseSparkPermissionCallback(
+  permissionMode: SDKExecutorConfig['permissionMode'],
+): boolean {
+  return (
+    permissionMode !== 'claude-auto' &&
+    permissionMode !== 'claude-bypass' &&
+    permissionMode !== 'codex-full-access'
+  )
 }
 
 function isEditTool(toolName: string): boolean {
-  return toolName === 'Edit'
-    || toolName === 'Write'
-    || toolName === 'MultiEdit'
-    || toolName === 'NotebookEdit'
-    || toolName === 'edit_file'
-    || toolName === 'write_file'
-    || toolName === 'multi_edit'
-    || toolName === 'apply_patch'
+  return (
+    toolName === 'Edit' ||
+    toolName === 'Write' ||
+    toolName === 'MultiEdit' ||
+    toolName === 'NotebookEdit' ||
+    toolName === 'edit_file' ||
+    toolName === 'write_file' ||
+    toolName === 'multi_edit' ||
+    toolName === 'apply_patch'
+  )
 }
 
 function estimateSDKPromptTokens(userMessage: string, config: SDKExecutorConfig): number {
-  const chars = [
-    userMessage,
-    config.systemPrompt ?? '',
-    config.skillSystemPrompt ?? '',
-  ].join('\n').length
+  const chars = [userMessage, config.systemPrompt ?? '', config.skillSystemPrompt ?? ''].join(
+    '\n',
+  ).length
   return Math.ceil(chars / 3)
 }
 
 function contextWindow(model: string, configuredContextWindow?: number): number {
-  return configuredContextWindow !== undefined ? configuredContextWindow : resolveModelContextWindow(model)
+  return configuredContextWindow !== undefined
+    ? configuredContextWindow
+    : resolveModelContextWindow(model)
 }
 
 function softContextLimit(model: string, configuredContextWindow?: number): number {
-  return configuredContextWindow !== undefined ? resolveSoftContextLimitForWindow(configuredContextWindow) : resolveSoftContextLimit(model)
+  return configuredContextWindow !== undefined
+    ? resolveSoftContextLimitForWindow(configuredContextWindow)
+    : resolveSoftContextLimit(model)
 }
 
 function resolveClaudeCodeExecutable(): string | undefined {
@@ -603,9 +658,9 @@ function getClaudeNativePackageCandidates(): string[] {
 
 function isMuslRuntime(): boolean {
   if (process.platform !== 'linux') return false
-  const report = (typeof process.report?.getReport === 'function'
-    ? process.report.getReport()
-    : null) as { header?: { glibcVersionRuntime?: string } } | null
+  const report = (
+    typeof process.report?.getReport === 'function' ? process.report.getReport() : null
+  ) as { header?: { glibcVersionRuntime?: string } } | null
   return report != null && report.header?.glibcVersionRuntime === undefined
 }
 
@@ -618,8 +673,8 @@ function toAsarUnpackedPath(filePath: string): string {
 export class SDKNotAvailableError extends Error {
   constructor() {
     super(
-      'Claude Agent SDK (@anthropic-ai/claude-agent-sdk) is not installed or failed to load. '
-      + 'Install it with: pnpm add @anthropic-ai/claude-agent-sdk.',
+      'Claude Agent SDK (@anthropic-ai/claude-agent-sdk) is not installed or failed to load. ' +
+        'Install it with: pnpm add @anthropic-ai/claude-agent-sdk.',
     )
     this.name = 'SDKNotAvailableError'
   }

@@ -14,11 +14,7 @@
 /**
  * Hook 节点类型
  */
-export type HookNode =
-  | 'permission_request'
-  | 'ask_user_question'
-  | 'session_end'
-  | 'session_fail'
+export type HookNode = 'permission_request' | 'ask_user_question' | 'session_end' | 'session_fail'
 
 /**
  * Hook 类型

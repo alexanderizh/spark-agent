@@ -614,8 +614,12 @@ export interface PermissionCreateProfileResponse {
   profile: PermissionProfileItem
 }
 
-export interface PermissionDeleteProfileRequest { id: string }
-export interface PermissionDeleteProfileResponse { success: boolean }
+export interface PermissionDeleteProfileRequest {
+  id: string
+}
+export interface PermissionDeleteProfileResponse {
+  success: boolean
+}
 
 export interface PermissionUpdateSandboxRequest {
   profileId: string
@@ -1307,7 +1311,14 @@ export interface UsagePurgeResponse {
 export type UpdateChannel = 'stable' | 'beta'
 
 /** 更新状态 */
-export type UpdateStatusState = 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error' | 'not-available'
+export type UpdateStatusState =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  | 'not-available'
 
 /** 更新信息 */
 export interface UpdateInfo {
@@ -1716,8 +1727,14 @@ export interface IpcChannelMap {
   'permission:delete-profile': [PermissionDeleteProfileRequest, PermissionDeleteProfileResponse]
   'permission:update-sandbox': [PermissionUpdateSandboxRequest, PermissionUpdateSandboxResponse]
   'permission:update-rule': [PermissionUpdateRuleRequest, PermissionUpdateRuleResponse]
-  'permission:set-active-profile': [PermissionSetActiveProfileRequest, PermissionSetActiveProfileResponse]
-  'permission:approval-respond': [PermissionApprovalRespondRequest, PermissionApprovalRespondResponse]
+  'permission:set-active-profile': [
+    PermissionSetActiveProfileRequest,
+    PermissionSetActiveProfileResponse,
+  ]
+  'permission:approval-respond': [
+    PermissionApprovalRespondRequest,
+    PermissionApprovalRespondResponse,
+  ]
 
   // Model
   'model:list': [ModelListRequest, ModelListResponse]

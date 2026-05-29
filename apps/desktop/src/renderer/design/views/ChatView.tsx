@@ -4,7 +4,20 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
-import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, Checkpoint, SandboxNote, QuickActions, ToolChooser, TurnFileSummaryCard } from '../ChatInteractions'
+import {
+  ErrorCard,
+  FilePermCard,
+  NetPermCard,
+  MCPPermCard,
+  HunkDiff,
+  PlanCard,
+  SubagentCard,
+  Checkpoint,
+  SandboxNote,
+  QuickActions,
+  ToolChooser,
+  TurnFileSummaryCard,
+} from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
@@ -118,7 +131,7 @@ const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, 
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
   const [active, setActive] = useState<SessionId | null>(() => {
     const stored = window.localStorage.getItem(LAST_SESSION_KEY)
-    return stored == null ? null : stored as SessionId
+    return stored == null ? null : (stored as SessionId)
   })
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
@@ -177,20 +190,29 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
 
   // Listen for user questions from backend
-  useIpcStream('stream:session:user-question', (data) => {
-    setUserQuestion(data)
-  }, [])
+  useIpcStream(
+    'stream:session:user-question',
+    (data) => {
+      setUserQuestion(data)
+    },
+    [],
+  )
 
-  const handleAnswerQuestion = useCallback(async (answers: Record<string, unknown>) => {
-    if (userQuestion == null) return
-    await answerQuestion({ questionId: userQuestion.questionId, answers })
-    setUserQuestion(null)
-  }, [userQuestion, answerQuestion])
+  const handleAnswerQuestion = useCallback(
+    async (answers: Record<string, unknown>) => {
+      if (userQuestion == null) return
+      await answerQuestion({ questionId: userQuestion.questionId, answers })
+      setUserQuestion(null)
+    },
+    [userQuestion, answerQuestion],
+  )
 
   const handleCancelQuestion = useCallback(() => {
     if (userQuestion == null) return
     // Send empty answers to indicate cancellation
-    answerQuestion({ questionId: userQuestion.questionId, answers: { cancelled: true } }).catch(console.error)
+    answerQuestion({ questionId: userQuestion.questionId, answers: { cancelled: true } }).catch(
+      console.error,
+    )
     setUserQuestion(null)
   }, [userQuestion, answerQuestion])
 
@@ -212,7 +234,10 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const handleSidebarResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
     if (sidebarDragRef.current == null) return
     const delta = event.clientX - sidebarDragRef.current.startX
-    const newWidth = Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, sidebarDragRef.current.startWidth + delta))
+    const newWidth = Math.max(
+      SIDEBAR_MIN_WIDTH,
+      Math.min(SIDEBAR_MAX_WIDTH, sidebarDragRef.current.startWidth + delta),
+    )
     setSidebarWidth(newWidth)
   }
 
@@ -253,8 +278,16 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     setWorkspaces(workspaceRes.workspaces)
     setSessions(sessionRes.sessions)
     setProviders(providerRes.profiles)
-    setSelectedProviderId((prev) => prev || getPreferredProvider(providerRes.profiles, readComposerPrefs(), DEFAULT_AGENT_ADAPTER)?.id || '')
-    setActiveWorkspaceId((prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null)
+    setSelectedProviderId(
+      (prev) =>
+        prev ||
+        getPreferredProvider(providerRes.profiles, readComposerPrefs(), DEFAULT_AGENT_ADAPTER)
+          ?.id ||
+        '',
+    )
+    setActiveWorkspaceId(
+      (prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null,
+    )
   }, [getCurrentWorkspace, listProviders, listSessions, listWorkspaces])
 
   const refreshSessions = () => {
@@ -263,10 +296,12 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
 
   const handleClearMessages = useCallback(() => {
     if (!active) return
-    clearEvents({ sessionId: active }).then(() => {
-      setClearTrigger(prev => prev + 1)
-      refreshSessions()
-    }).catch(console.error)
+    clearEvents({ sessionId: active })
+      .then(() => {
+        setClearTrigger((prev) => prev + 1)
+        refreshSessions()
+      })
+      .catch(console.error)
   }, [active, clearEvents, refreshSessions])
 
   useEffect(() => {
@@ -297,29 +332,32 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   }, [active, activeWorkspaceId, sessions])
 
   // Debounced search handler
-  const handleSearchChange = useCallback((value: string) => {
-    setSearchQuery(value)
-    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setSearchQuery(value)
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
 
-    if (!value.trim()) {
-      setSearchResults([])
-      setIsSearching(false)
-      return
-    }
-
-    setIsSearching(true)
-    searchTimerRef.current = setTimeout(async () => {
-      try {
-        const res = await searchSessions({ query: value.trim(), limit: 20 })
-        setSearchResults(res.results)
-      } catch (err) {
-        console.error('搜索失败', err)
+      if (!value.trim()) {
         setSearchResults([])
-      } finally {
         setIsSearching(false)
+        return
       }
-    }, 300)
-  }, [searchSessions])
+
+      setIsSearching(true)
+      searchTimerRef.current = setTimeout(async () => {
+        try {
+          const res = await searchSessions({ query: value.trim(), limit: 20 })
+          setSearchResults(res.results)
+        } catch (err) {
+          console.error('搜索失败', err)
+          setSearchResults([])
+        } finally {
+          setIsSearching(false)
+        }
+      }, 300)
+    },
+    [searchSessions],
+  )
 
   // Clean up timer on unmount
   useEffect(() => {
@@ -351,16 +389,24 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       if (providers.length === 0) setProviders(knownProviders)
       const prefs = readComposerPrefs()
       const preferredAdapter = options.agentAdapter ?? prefs.adapter ?? DEFAULT_AGENT_ADAPTER
-      const profile = knownProviders.find((item) => item.id === options.providerProfileId)
-        ?? knownProviders.find((item) => item.id === selectedProviderId && isProviderCompatibleWithAdapter(item, preferredAdapter))
-        ?? getPreferredProvider(knownProviders, prefs, preferredAdapter)
+      const profile =
+        knownProviders.find((item) => item.id === options.providerProfileId) ??
+        knownProviders.find(
+          (item) =>
+            item.id === selectedProviderId &&
+            isProviderCompatibleWithAdapter(item, preferredAdapter),
+        ) ??
+        getPreferredProvider(knownProviders, prefs, preferredAdapter)
       if (!profile) {
         alert('请先在设置中配置 Provider')
         return null
       }
       const agentAdapter = options.agentAdapter ?? getProviderAdapterKind(profile)
-      const permissionMode = options.permissionMode ?? getValidPermissionMode(prefs.permissionMode, agentAdapter)
-      const modelId = options.modelId ?? (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
+      const permissionMode =
+        options.permissionMode ?? getValidPermissionMode(prefs.permissionMode, agentAdapter)
+      const modelId =
+        options.modelId ??
+        (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
       const res = await createSession({
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
@@ -374,7 +420,12 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(workspaceId)
-      writeComposerPrefs({ adapter: agentAdapter, providerProfileId: profile.id, ...(modelId !== undefined ? { modelId } : {}), permissionMode })
+      writeComposerPrefs({
+        adapter: agentAdapter,
+        providerProfileId: profile.id,
+        ...(modelId !== undefined ? { modelId } : {}),
+        permissionMode,
+      })
       return res.sessionId
     } catch (err) {
       console.error('创建会话失败', err)
@@ -487,7 +538,10 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     if (!window.confirm(`删除项目「${workspace.name}」及其会话记录？本地文件夹不会被删除。`)) return
     try {
       const res = await deleteWorkspace({ workspaceId: workspace.id })
-      if (activeWorkspaceId === workspace.id || (active != null && res.deletedSessionIds.includes(active))) {
+      if (
+        activeWorkspaceId === workspace.id ||
+        (active != null && res.deletedSessionIds.includes(active))
+      ) {
         setActiveWorkspaceId(null)
         setActive(null)
       }
@@ -526,7 +580,8 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   }
 
   const handleArchiveSession = async (session: SessionSummary) => {
-    if (!window.confirm(`归档会话「${session.title || '新会话'}」？归档后会从当前列表隐藏。`)) return
+    if (!window.confirm(`归档会话「${session.title || '新会话'}」？归档后会从当前列表隐藏。`))
+      return
     try {
       await updateSession({ sessionId: session.id, archived: true })
       if (active === session.id) setActive(null)
@@ -562,15 +617,18 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   }
 
   const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
-    setSessions((prev) => prev.map((item) => item.id === sessionId ? { ...item, status } : item))
+    setSessions((prev) => prev.map((item) => (item.id === sessionId ? { ...item, status } : item)))
   }, [])
 
   const applySessionQueueState = useCallback((snapshot: SessionGetQueueResponse) => {
-    setSessions((prev) => prev.map((item) => {
-      if (item.id !== snapshot.sessionId) return item
-      if (snapshot.running) return item.status === 'running' ? item : { ...item, status: 'running' }
-      return item.status === 'running' ? { ...item, status: 'idle' } : item
-    }))
+    setSessions((prev) =>
+      prev.map((item) => {
+        if (item.id !== snapshot.sessionId) return item
+        if (snapshot.running)
+          return item.status === 'running' ? item : { ...item, status: 'running' }
+        return item.status === 'running' ? { ...item, status: 'idle' } : item
+      }),
+    )
   }, [])
 
   useEffect(() => {
@@ -579,31 +637,39 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     })
   }, [applySessionQueueState])
 
-  const handleCancelSession = useCallback(async (sessionId: SessionId) => {
-    try {
-      const res = await cancelSessionTurn({ sessionId })
-      setAgentStatus('')
-      setSessionStatus(sessionId, 'idle')
-      await refreshProjectsAndSessions()
-      if (res.cancelled) {
-        toast.success('已停止会话')
-      } else {
-        toast.info('该会话当前没有运行中的任务')
+  const handleCancelSession = useCallback(
+    async (sessionId: SessionId) => {
+      try {
+        const res = await cancelSessionTurn({ sessionId })
+        setAgentStatus('')
+        setSessionStatus(sessionId, 'idle')
+        await refreshProjectsAndSessions()
+        if (res.cancelled) {
+          toast.success('已停止会话')
+        } else {
+          toast.info('该会话当前没有运行中的任务')
+        }
+      } catch (err) {
+        console.error('停止会话失败', err)
+        toast.error(err instanceof Error ? err.message : '停止会话失败')
       }
-    } catch (err) {
-      console.error('停止会话失败', err)
-      toast.error(err instanceof Error ? err.message : '停止会话失败')
-    }
-  }, [cancelSessionTurn, refreshProjectsAndSessions, setSessionStatus, toast])
+    },
+    [cancelSessionTurn, refreshProjectsAndSessions, setSessionStatus, toast],
+  )
 
   const showSearchResults = searchQuery.trim().length > 0
   const visibleSessions = filterSessionsByTime(sessions, timeFilter)
   const projectGroups = buildProjectGroups(workspaces, visibleSessions)
   const ungroupedSessions = visibleSessions.filter((session) => session.workspaceIds.length === 0)
-  const activeSession = sessions.find(s => s.id === active) ?? null
-  const activeWorkspace = activeWorkspaceId == null ? null : workspaces.find((item) => item.id === activeWorkspaceId) ?? null
+  const activeSession = sessions.find((s) => s.id === active) ?? null
+  const activeWorkspace =
+    activeWorkspaceId == null
+      ? null
+      : (workspaces.find((item) => item.id === activeWorkspaceId) ?? null)
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
-  const activeProviderContextWindow = resolveProviderContextWindow(activeProvider?.supportsMillionContext === true)
+  const activeProviderContextWindow = resolveProviderContextWindow(
+    activeProvider?.supportsMillionContext === true,
+  )
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
@@ -640,7 +706,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   }) => {
     if (active == null) return
     const res = await updateSession({ sessionId: active, ...patch })
-    setSessions((prev) => prev.map((item) => item.id === active ? res.session : item))
+    setSessions((prev) => prev.map((item) => (item.id === active ? res.session : item)))
   }
 
   const handleSwitchBranch = async (branch: string) => {
@@ -674,32 +740,35 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
             <SparkInput
               placeholder="搜索会话..."
               value={searchQuery}
-              onChange={e => handleSearchChange(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
             />
             {isSearching && <Icons.Spinner size={12} className="search-spinner" />}
             {searchQuery && !isSearching && (
-              <button
-                className="icon-btn search-clear-btn"
-                onClick={() => handleSearchChange('')}
-              >
+              <button className="icon-btn search-clear-btn" onClick={() => handleSearchChange('')}>
                 <Icons.X size={10} />
               </button>
             )}
           </div>
-          <button className="icon-btn" title="打开已有项目" onClick={handleOpenExistingProject}><Icons.Folder /></button>
-          <button className="icon-btn" title="新建项目" onClick={() => setProjectDialog('create')}><Icons.Plus /></button>
+          <button className="icon-btn" title="打开已有项目" onClick={handleOpenExistingProject}>
+            <Icons.Folder />
+          </button>
+          <button className="icon-btn" title="新建项目" onClick={() => setProjectDialog('create')}>
+            <Icons.Plus />
+          </button>
         </div>
 
         {showSearchResults ? (
           <div className="chat-list scroll">
             {searchResults.length === 0 && !isSearching ? (
               <div className="empty-compact">
-                <div className="empty-icon"><Icons.Search size={18} /></div>
+                <div className="empty-icon">
+                  <Icons.Search size={18} />
+                </div>
                 <div className="empty-title">未找到匹配的会话</div>
                 <div className="empty-desc">尝试其他关键词</div>
               </div>
             ) : (
-              searchResults.map(r => (
+              searchResults.map((r) => (
                 <SearchResultItem
                   key={r.sessionId}
                   result={r}
@@ -719,12 +788,16 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
                 <div className="session-notice">
                   <Icons.AlertTriangle size={12} />
                   <span>{notice}</span>
-                  <button className="icon-btn" onClick={() => setNotice('')}><Icons.X size={10} /></button>
+                  <button className="icon-btn" onClick={() => setNotice('')}>
+                    <Icons.X size={10} />
+                  </button>
                 </div>
               )}
               {workspaces.length === 0 && sessions.length === 0 ? (
                 <div className="empty-compact">
-                  <div className="empty-icon"><Icons.Folder size={18} /></div>
+                  <div className="empty-icon">
+                    <Icons.Folder size={18} />
+                  </div>
                   <div className="empty-title">还没有项目</div>
                   <div className="empty-desc">先打开已有文件夹，或新建一个项目文件夹</div>
                 </div>
@@ -820,7 +893,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         ) : (
           <div className="chat-stream chat-stream-empty">
             <div className="empty-state">
-              <div className="empty-icon"><Icons.Sparkles size={24} /></div>
+              <div className="empty-icon">
+                <Icons.Sparkles size={24} />
+              </div>
               <div className="empty-title">先选择项目</div>
               <div className="empty-desc">再选择或新建一个会话开始对话</div>
             </div>
@@ -846,7 +921,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           onSent={(sessionId) => {
             setSessionStatus(sessionId, 'running')
           }}
-         />
+        />
       </div>
 
       {showConfigPanel && (
@@ -912,7 +987,12 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   )
 }
 
-function SearchResultItem({ result, query, active, onClick }: {
+function SearchResultItem({
+  result,
+  query,
+  active,
+  onClick,
+}: {
   result: SessionSearchResult
   query: string
   active: SessionId | null
@@ -972,7 +1052,13 @@ function HighlightText({ text, query }: { text: string; query: string }) {
   return <>{parts}</>
 }
 
-function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: (value: TimeFilter) => void }) {
+function TimeFilterDropdown({
+  value,
+  onChange,
+}: {
+  value: TimeFilter
+  onChange: (value: TimeFilter) => void
+}) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -984,7 +1070,7 @@ function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: 
     { value: '10d', label: '最近 10 天' },
   ]
 
-  const currentLabel = options.find(o => o.value === value)?.label ?? '全部会话'
+  const currentLabel = options.find((o) => o.value === value)?.label ?? '全部会话'
 
   useEffect(() => {
     if (!open) return
@@ -999,7 +1085,7 @@ function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: 
     <div className="session-filter-bar" ref={ref}>
       <button
         className={`filter-trigger${value !== 'all' ? ' has-filter' : ''}`}
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => setOpen((prev) => !prev)}
         aria-label="筛选会话"
       >
         <span>{currentLabel}</span>
@@ -1011,7 +1097,10 @@ function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: 
             <button
               key={option.value}
               className={`filter-option${value === option.value ? ' active' : ''}`}
-              onClick={() => { onChange(option.value); setOpen(false) }}
+              onClick={() => {
+                onChange(option.value)
+                setOpen(false)
+              }}
             >
               {option.label}
             </button>
@@ -1071,7 +1160,11 @@ function ProjectSessionGroup({
         }}
       >
         <span className="proj-toggle">
-          {open ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />}
+          {open ? (
+            <Icons.ChevronDown className="chev" size={12} />
+          ) : (
+            <Icons.ChevronRight className="chev" size={12} />
+          )}
         </span>
         {open ? (
           <Icons.FolderOpen size={15} className="proj-folder-icon" />
@@ -1110,10 +1203,27 @@ function ProjectSessionGroup({
                   label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶',
                   onClick: () => onToggleProjectPinned(group.workspace),
                 },
-                { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenProjectFolder(group.workspace) },
-                { icon: <Icons.Edit size={14} />, label: '重命名项目', onClick: () => onRenameProject(group.workspace) },
-                { icon: <Icons.Box size={14} />, label: '归档项目', onClick: () => onArchiveProject(group.workspace) },
-                { icon: <Icons.Trash size={14} />, label: '删除项目', danger: true, onClick: () => onDeleteProject(group.workspace) },
+                {
+                  icon: <Icons.Folder size={14} />,
+                  label: '在文件夹中打开',
+                  onClick: () => onOpenProjectFolder(group.workspace),
+                },
+                {
+                  icon: <Icons.Edit size={14} />,
+                  label: '重命名项目',
+                  onClick: () => onRenameProject(group.workspace),
+                },
+                {
+                  icon: <Icons.Box size={14} />,
+                  label: '归档项目',
+                  onClick: () => onArchiveProject(group.workspace),
+                },
+                {
+                  icon: <Icons.Trash size={14} />,
+                  label: '删除项目',
+                  danger: true,
+                  onClick: () => onDeleteProject(group.workspace),
+                },
               ]}
               onClose={() => setMenuOpen(false)}
             />
@@ -1170,7 +1280,10 @@ function ChatListItem({
   const [menuOpen, setMenuOpen] = useState(false)
   const isRunning = s.status === 'running'
   return (
-    <div className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${isRunning ? 'is-running' : ''}`} onClick={() => onClick(s.id)}>
+    <div
+      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${isRunning ? 'is-running' : ''}`}
+      onClick={() => onClick(s.id)}
+    >
       <div className="chat-item-row">
         <div className="chat-item-title-compact">
           {s.pinnedAt != null && <Icons.Pin size={10} className="pinned-icon" />}
@@ -1203,10 +1316,23 @@ function ChatListItem({
                   label: s.pinnedAt == null ? '置顶会话' : '取消置顶',
                   onClick: () => onTogglePinned?.(s),
                 },
-                { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenFolder?.(s) },
-                { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
+                {
+                  icon: <Icons.Folder size={14} />,
+                  label: '在文件夹中打开',
+                  onClick: () => onOpenFolder?.(s),
+                },
+                {
+                  icon: <Icons.Edit size={14} />,
+                  label: '重命名会话',
+                  onClick: () => onRename?.(s),
+                },
                 { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
-                { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
+                {
+                  icon: <Icons.Trash size={14} />,
+                  label: '删除会话',
+                  danger: true,
+                  onClick: () => onDelete?.(s),
+                },
               ]}
               onClose={() => setMenuOpen(false)}
             />
@@ -1219,13 +1345,7 @@ function ChatListItem({
 
 // ─── Tool Dropdown (IDE / Terminal open) ─────────────────────────────────
 
-function ToolDropdown({
-  kind,
-  rootPath,
-}: {
-  kind: 'ide' | 'terminal'
-  rootPath: string
-}) {
+function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: string }) {
   const [open, setOpen] = useState(false)
   const [tools, setTools] = useState<ExternalToolInfo[]>([])
   const [loading, setLoading] = useState(false)
@@ -1248,11 +1368,20 @@ function ToolDropdown({
     if (!open || tools.length > 0) return
     let cancelled = false
     setLoading(true)
-    window.spark.invoke('tool:detect', { kind })
-      .then((res) => { if (!cancelled) setTools(Array.isArray(res.tools) ? res.tools : []) })
-      .catch(() => { if (!cancelled) setTools([]) })
-      .finally(() => { if (!cancelled) setLoading(false) })
-    return () => { cancelled = true }
+    window.spark
+      .invoke('tool:detect', { kind })
+      .then((res) => {
+        if (!cancelled) setTools(Array.isArray(res.tools) ? res.tools : [])
+      })
+      .catch(() => {
+        if (!cancelled) setTools([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [open, kind, tools.length])
 
   const handleSelect = async (tool: ExternalToolInfo) => {
@@ -1264,14 +1393,14 @@ function ToolDropdown({
     }
   }
 
-  const availableTools = tools.filter(t => t.available)
+  const availableTools = tools.filter((t) => t.available)
 
   return (
     <div className="tool-dropdown-wrap" ref={ref}>
       <button
         className={`icon-btn${open ? ' active' : ''}`}
         title={tooltip}
-        onClick={() => setOpen(prev => !prev)}
+        onClick={() => setOpen((prev) => !prev)}
       >
         <TriggerIcon size={14} />
       </button>
@@ -1287,18 +1416,19 @@ function ToolDropdown({
               未检测到已安装的{isIde ? '编辑器' : '终端'}工具
             </div>
           )}
-          {!loading && availableTools.map(tool => (
-            <button
-              key={tool.id}
-              className="tool-dropdown-item"
-              onClick={() => handleSelect(tool)}
-            >
-              <span className="tool-dropdown-item-icon">
-                {tool.kind === 'ide' ? <Icons.Code size={13} /> : <Icons.Terminal size={13} />}
-              </span>
-              <span className="tool-dropdown-item-name">{tool.name}</span>
-            </button>
-          ))}
+          {!loading &&
+            availableTools.map((tool) => (
+              <button
+                key={tool.id}
+                className="tool-dropdown-item"
+                onClick={() => handleSelect(tool)}
+              >
+                <span className="tool-dropdown-item-icon">
+                  {tool.kind === 'ide' ? <Icons.Code size={13} /> : <Icons.Terminal size={13} />}
+                </span>
+                <span className="tool-dropdown-item-name">{tool.name}</span>
+              </button>
+            ))}
           {!loading && availableTools.length > 0 && (
             <button
               className="tool-dropdown-item tool-dropdown-refresh"
@@ -1389,7 +1519,11 @@ function ChatTabbar({
           <>
             <span className="badge primary dot">会话</span>
             <span className="chat-title truncate">{session.title || '新会话'}</span>
-            {workspace && <span className="badge"><Icons.Folder size={10} /> {workspace.name}</span>}
+            {workspace && (
+              <span className="badge">
+                <Icons.Folder size={10} /> {workspace.name}
+              </span>
+            )}
             {agentStatus && (
               <span className="msg-running">
                 <Icons.Spinner size={11} /> {agentStatus}
@@ -1410,12 +1544,21 @@ function ChatTabbar({
         {showClearConfirm && onClearMessages && (
           <div className="clear-confirm-bar">
             <span className="clear-confirm-text">确认清空？</span>
-            <button className="btn ghost sm clear-confirm-cancel" onClick={() => setShowClearConfirm(false)}>取消</button>
-            <button className="btn sm danger-btn" onClick={handleClearConfirm}>清空</button>
+            <button
+              className="btn ghost sm clear-confirm-cancel"
+              onClick={() => setShowClearConfirm(false)}
+            >
+              取消
+            </button>
+            <button className="btn sm danger-btn" onClick={handleClearConfirm}>
+              清空
+            </button>
           </div>
         )}
         {!showClearConfirm && onClearMessages && (
-          <button className="icon-btn" title="清空会话消息" onClick={handleClearClick}><Icons.Trash size={14} /></button>
+          <button className="icon-btn" title="清空会话消息" onClick={handleClearClick}>
+            <Icons.Trash size={14} />
+          </button>
         )}
         <button
           className={`icon-btn ${showInspector ? 'active' : ''}`}
@@ -1461,10 +1604,14 @@ function CreateProjectModal({
     <div className="modal-backdrop">
       <div className="modal project-modal">
         <div className="modal-h">
-          <div className="modal-h-icon"><Icons.Folder size={17} /></div>
+          <div className="modal-h-icon">
+            <Icons.Folder size={17} />
+          </div>
           <div>
             <div className="modal-title">新建项目</div>
-            <div className="modal-subtitle">选择一个本地文件夹作为项目地址，或直接创建一个空项目。</div>
+            <div className="modal-subtitle">
+              选择一个本地文件夹作为项目地址，或直接创建一个空项目。
+            </div>
           </div>
         </div>
         <div className="modal-body">
@@ -1490,16 +1637,24 @@ function CreateProjectModal({
                 placeholder="/Users/you/projects/my-agent"
                 onChange={(event) => setPath(event.target.value)}
               />
-              <button className="btn ghost sm" onClick={onPickPath}>选择</button>
+              <button className="btn ghost sm" onClick={onPickPath}>
+                选择
+              </button>
             </div>
             <div className="field-hint">留空则自动在临时目录创建项目文件夹</div>
           </label>
         </div>
         <div className="modal-foot">
-          <button className="btn ghost sm" onClick={() => onCreate(true)}>新建空项目</button>
+          <button className="btn ghost sm" onClick={() => onCreate(true)}>
+            新建空项目
+          </button>
           <div className="spacer" />
-          <button className="btn ghost sm" onClick={onCancel}>取消</button>
-          <button className="btn primary sm" onClick={() => onCreate(false)}>创建项目</button>
+          <button className="btn ghost sm" onClick={onCancel}>
+            取消
+          </button>
+          <button className="btn primary sm" onClick={() => onCreate(false)}>
+            创建项目
+          </button>
         </div>
       </div>
     </div>
@@ -1542,13 +1697,22 @@ function ChatStream({
   const hydratingRef = useRef(false)
   const bufferedEventsRef = useRef<AgentEvent[]>([])
   const historyLoadIdRef = useRef(0)
-  const usageRef = useRef<SessionUsageData>({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
+  const usageRef = useRef<SessionUsageData>({
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheHitTokens: 0,
+    estimatedCostUsd: 0,
+    contextWindow: 0,
+    turns: [],
+  })
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
   const { invoke: deleteMessageEvents } = useIpcInvoke('session:delete-message')
 
   // ── 会话消息缓存：避免切换时从空白开始 ──
   // 缓存每个会话最后渲染的消息列表，切回时立即显示缓存内容，再异步更新
-  const sessionCacheRef = useRef<Map<SessionId, { messages: UIMessage[]; usage: SessionUsageData; status: string }>>(new Map())
+  const sessionCacheRef = useRef<
+    Map<SessionId, { messages: UIMessage[]; usage: SessionUsageData; status: string }>
+  >(new Map())
 
   // 切换会话时加载历史（优先展示缓存，异步加载最新）
   useEffect(() => {
@@ -1586,7 +1750,7 @@ function ChatStream({
     // 2) 异步从 SQLite 加载完整历史并更新
     const timer = window.setTimeout(() => {
       loadCompleteSessionHistory(getHistory, sessionId)
-        .then(historyEvents => {
+        .then((historyEvents) => {
           if (cancelled || historyLoadIdRef.current !== loadId) return
           const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
           const hydratedBuilder = new MessageBuilder()
@@ -1601,12 +1765,28 @@ function ChatStream({
           onUsageDataChange(historyUsage)
           // 更新缓存
           const latestStatus = getLatestAgentStatus(events)
-          const statusStr = latestStatus != null
-            ? (isRunningAgentStatus(latestStatus) ? 'running' : latestStatus === 'error' ? 'error' : '')
-            : ''
+          const statusStr =
+            latestStatus != null
+              ? isRunningAgentStatus(latestStatus)
+                ? 'running'
+                : latestStatus === 'error'
+                  ? 'error'
+                  : ''
+              : ''
           setAgentIsRunning(isRunningAgentStatus(latestStatus))
-          sessionCacheRef.current.set(sessionId, { messages: nextMessages, usage: historyUsage, status: statusStr })
-          if (latestStatus != null) applyAgentStatus(latestStatus, onStatusChange, onSessionStatusChange, isStreamingRef, userScrolledRef)
+          sessionCacheRef.current.set(sessionId, {
+            messages: nextMessages,
+            usage: historyUsage,
+            status: statusStr,
+          })
+          if (latestStatus != null)
+            applyAgentStatus(
+              latestStatus,
+              onStatusChange,
+              onSessionStatusChange,
+              isStreamingRef,
+              userScrolledRef,
+            )
           const latestContext = getLatestContextUsageEvent(events)
           if (latestContext != null) {
             onContextUsageChange({
@@ -1659,7 +1839,16 @@ function ChatStream({
         bufferedEventsRef.current = []
       }
     }
-  }, [getHistory, onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onContextUsageChange, onProjectContextChange, sessionId])
+  }, [
+    getHistory,
+    onMessagesChange,
+    onStatusChange,
+    onUsageChange,
+    onUsageDataChange,
+    onContextUsageChange,
+    onProjectContextChange,
+    sessionId,
+  ])
 
   // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
   const flushMessages = useCallback(() => {
@@ -1689,11 +1878,18 @@ function ChatStream({
     setMessages([])
     onMessagesChange([])
     onStatusChange('')
-    onUsageDataChange({ inputTokens: 0, outputTokens: 0, cacheHitTokens: 0, estimatedCostUsd: 0, contextWindow: 0, turns: [] })
+    onUsageDataChange({
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheHitTokens: 0,
+      estimatedCostUsd: 0,
+      contextWindow: 0,
+      turns: [],
+    })
     onContextUsageChange(null)
     onProjectContextChange(null)
     setAgentIsRunning(false)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTrigger])
 
   // Track user scroll position to avoid auto-scrolling when user scrolls up
@@ -1711,90 +1907,112 @@ function ChatStream({
 
   // 实时监听新事件 — useIpcStream 内部通过 ref 持有 callback，不会因 deps 变化重订阅
   // 这里直接用闭包中的 sessionId 过滤即可
-  useIpcStream('stream:session:agent-event', (event) => {
-    if (event.sessionId !== sessionId) return
-    if (hydratingRef.current) {
-      bufferedEventsRef.current.push(event)
-      return
-    }
-    builderRef.current.processEvent(event)
-
-    // 对状态/用量事件立即处理（不走 RAF 延迟）
-    if (event.type === 'agent_status') {
-      setAgentIsRunning(isRunningAgentStatus(event.status))
-      applyAgentStatus(event.status, onStatusChange, onSessionStatusChange, isStreamingRef, userScrolledRef)
-    }
-    if (event.type === 'usage_update') {
-      if (event.inputTokens > 0) onUsageChange(event.inputTokens)
-      // Update full usage data
-      const snapshot: UsageSnapshot = {
-        turnId: event.turnId,
-        inputTokens: event.inputTokens,
-        outputTokens: event.outputTokens,
-        cacheHitTokens: event.cacheHitTokens ?? 0,
-        estimatedCostUsd: event.estimatedCostUsd ?? 0,
-        timestamp: event.timestamp,
+  useIpcStream(
+    'stream:session:agent-event',
+    (event) => {
+      if (event.sessionId !== sessionId) return
+      if (hydratingRef.current) {
+        bufferedEventsRef.current.push(event)
+        return
       }
-      const prev = usageRef.current
-      const next: SessionUsageData = {
-        inputTokens: event.inputTokens,
-        outputTokens: event.outputTokens,
-        cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
-        estimatedCostUsd: (prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0)),
-        contextWindow: prev.contextWindow,
-        turns: [...prev.turns, snapshot],
+      builderRef.current.processEvent(event)
+
+      // 对状态/用量事件立即处理（不走 RAF 延迟）
+      if (event.type === 'agent_status') {
+        setAgentIsRunning(isRunningAgentStatus(event.status))
+        applyAgentStatus(
+          event.status,
+          onStatusChange,
+          onSessionStatusChange,
+          isStreamingRef,
+          userScrolledRef,
+        )
       }
-      usageRef.current = next
-      onUsageDataChange(next)
-    }
-    // Track user_message to reset scroll tracking
-    if (event.type === 'user_message') {
-      userScrolledRef.current = false
-      isStreamingRef.current = true
-      setAgentIsRunning(true)
-    }
-
-    if (event.type === 'context_usage') {
-      onContextUsageChange({
-        estimatedTokens: event.estimatedTokens,
-        softLimitTokens: event.softLimitTokens,
-        contextWindowTokens: event.contextWindowTokens,
-        compactedThisTurn: event.compacted,
-      })
-    }
-
-    if (event.type === 'project_context_loaded') {
-      onProjectContextChange(event)
-    }
-
-    if (event.type === 'plan_proposed') {
-      onPlanProposed(event.plan)
-    }
-
-    if (event.type === 'turn_prompt_snapshot') {
-      // Builder stores it; notify parent for inspector display
-      onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
-    }
-
-    // 对文本/思考增量事件立即 flush，确保无延迟感知
-    if (
-      event.type === 'assistant_message' && event.mode === 'delta'
-      || event.type === 'agent_thinking' && event.mode === 'delta'
-    ) {
-      // 取消已有的 RAF，立即同步渲染 delta
-      if (rafRef.current != null) {
-        cancelAnimationFrame(rafRef.current)
-        rafRef.current = null
+      if (event.type === 'usage_update') {
+        if (event.inputTokens > 0) onUsageChange(event.inputTokens)
+        // Update full usage data
+        const snapshot: UsageSnapshot = {
+          turnId: event.turnId,
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          cacheHitTokens: event.cacheHitTokens ?? 0,
+          estimatedCostUsd: event.estimatedCostUsd ?? 0,
+          timestamp: event.timestamp,
+        }
+        const prev = usageRef.current
+        const next: SessionUsageData = {
+          inputTokens: event.inputTokens,
+          outputTokens: event.outputTokens,
+          cacheHitTokens: event.cacheHitTokens ?? prev.cacheHitTokens,
+          estimatedCostUsd: prev.estimatedCostUsd + (event.estimatedCostUsd ?? 0),
+          contextWindow: prev.contextWindow,
+          turns: [...prev.turns, snapshot],
+        }
+        usageRef.current = next
+        onUsageDataChange(next)
       }
-      const nextMessages = [...builderRef.current.getAllMessages()]
-      setMessages(nextMessages)
-      onMessagesChange(nextMessages)
-      return
-    }
+      // Track user_message to reset scroll tracking
+      if (event.type === 'user_message') {
+        userScrolledRef.current = false
+        isStreamingRef.current = true
+        setAgentIsRunning(true)
+      }
 
-    // 其他事件走 RAF 批量
-    scheduleFlush()
-  }, [onMessagesChange, onStatusChange, onUsageChange, onUsageDataChange, onSessionStatusChange, onContextUsageChange, onProjectContextChange, onPlanProposed, onTurnPromptSnapshotsChange, flushMessages, scheduleFlush])
+      if (event.type === 'context_usage') {
+        onContextUsageChange({
+          estimatedTokens: event.estimatedTokens,
+          softLimitTokens: event.softLimitTokens,
+          contextWindowTokens: event.contextWindowTokens,
+          compactedThisTurn: event.compacted,
+        })
+      }
+
+      if (event.type === 'project_context_loaded') {
+        onProjectContextChange(event)
+      }
+
+      if (event.type === 'plan_proposed') {
+        onPlanProposed(event.plan)
+      }
+
+      if (event.type === 'turn_prompt_snapshot') {
+        // Builder stores it; notify parent for inspector display
+        onTurnPromptSnapshotsChange(builderRef.current.getTurnPromptSnapshots())
+      }
+
+      // 对文本/思考增量事件立即 flush，确保无延迟感知
+      if (
+        (event.type === 'assistant_message' && event.mode === 'delta') ||
+        (event.type === 'agent_thinking' && event.mode === 'delta')
+      ) {
+        // 取消已有的 RAF，立即同步渲染 delta
+        if (rafRef.current != null) {
+          cancelAnimationFrame(rafRef.current)
+          rafRef.current = null
+        }
+        const nextMessages = [...builderRef.current.getAllMessages()]
+        setMessages(nextMessages)
+        onMessagesChange(nextMessages)
+        return
+      }
+
+      // 其他事件走 RAF 批量
+      scheduleFlush()
+    },
+    [
+      onMessagesChange,
+      onStatusChange,
+      onUsageChange,
+      onUsageDataChange,
+      onSessionStatusChange,
+      onContextUsageChange,
+      onProjectContextChange,
+      onPlanProposed,
+      onTurnPromptSnapshotsChange,
+      flushMessages,
+      scheduleFlush,
+    ],
+  )
 
   // 智能自动滚动：只在用户未主动上滚时自动跟随
   useEffect(() => {
@@ -1806,25 +2024,37 @@ function ChatStream({
   }, [messages, agentIsRunning])
 
   // 是否有正在流式传输的消息
-  const hasStreamingMsg = messages.some(m => m.status === 'streaming')
+  const hasStreamingMsg = messages.some((m) => m.status === 'streaming')
   const showWaitingAgent = agentIsRunning && !hasStreamingMsg
 
-  const handleDeleteMessage = useCallback((msgId: string, eventIds: string[]) => {
-    deleteMessageEvents({ sessionId, eventIds }).then(() => {
-      builderRef.current.removeMessage(msgId)
-      sessionCacheRef.current.delete(sessionId)
-      const nextMessages = builderRef.current.getAllMessages()
-      setMessages(nextMessages)
-      onMessagesChange(nextMessages)
-    }).catch(console.error)
-  }, [deleteMessageEvents, sessionId, onMessagesChange])
+  const handleDeleteMessage = useCallback(
+    (msgId: string, eventIds: string[]) => {
+      deleteMessageEvents({ sessionId, eventIds })
+        .then(() => {
+          builderRef.current.removeMessage(msgId)
+          sessionCacheRef.current.delete(sessionId)
+          const nextMessages = builderRef.current.getAllMessages()
+          setMessages(nextMessages)
+          onMessagesChange(nextMessages)
+        })
+        .catch(console.error)
+    },
+    [deleteMessageEvents, sessionId, onMessagesChange],
+  )
 
   return (
     <div className="chat-stream" ref={streamRef}>
       <div className="chat-stream-inner">
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
-            <UserMsg key={msg.id} timestamp={msg.timestamp} blocks={msg.blocks} onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}>{renderBlocks(msg.blocks)}</UserMsg>
+            <UserMsg
+              key={msg.id}
+              timestamp={msg.timestamp}
+              blocks={msg.blocks}
+              onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+            >
+              {renderBlocks(msg.blocks)}
+            </UserMsg>
           ) : msg.status === 'streaming' ? (
             <AgentMsg
               key={msg.id}
@@ -1845,7 +2075,7 @@ function ChatStream({
               timestamp={msg.timestamp}
               onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
             />
-          )
+          ),
         )}
         {showWaitingAgent && (
           <AgentMsg
@@ -1860,7 +2090,9 @@ function ChatStream({
         {messages.length === 0 && !showWaitingAgent && (
           <div className="chat-stream-empty-state">
             <div className="empty-state">
-              <div className="empty-icon"><Icons.Chat size={24} /></div>
+              <div className="empty-icon">
+                <Icons.Chat size={24} />
+              </div>
               <div className="empty-title">开始对话</div>
               <div className="empty-desc">发送消息开始与 AI 交互</div>
             </div>
@@ -1877,7 +2109,10 @@ type GetSessionHistory = (request: {
   beforeSeq?: number
 }) => Promise<{ events: AgentEvent[]; hasMore: boolean }>
 
-async function loadCompleteSessionHistory(getHistory: GetSessionHistory, sessionId: SessionId): Promise<AgentEvent[]> {
+async function loadCompleteSessionHistory(
+  getHistory: GetSessionHistory,
+  sessionId: SessionId,
+): Promise<AgentEvent[]> {
   const pages: AgentEvent[][] = []
   let beforeSeq: number | undefined
 
@@ -1926,7 +2161,9 @@ function getLatestAgentStatus(events: AgentEvent[]): AgentStatusValue | null {
   return null
 }
 
-function getLatestContextUsageEvent(events: AgentEvent[]): Extract<AgentEvent, { type: 'context_usage' }> | null {
+function getLatestContextUsageEvent(
+  events: AgentEvent[],
+): Extract<AgentEvent, { type: 'context_usage' }> | null {
   for (let i = events.length - 1; i >= 0; i--) {
     const event = events[i]
     if (event?.type === 'context_usage') return event
@@ -1943,7 +2180,12 @@ function getLatestProjectContextEvent(events: AgentEvent[]): ProjectContextState
 }
 
 function isRunningAgentStatus(status: AgentStatusValue | null): boolean {
-  return status === 'thinking' || status === 'calling_tool' || status === 'waiting_permission' || status === 'waiting_user'
+  return (
+    status === 'thinking' ||
+    status === 'calling_tool' ||
+    status === 'waiting_permission' ||
+    status === 'waiting_user'
+  )
 }
 
 function applyAgentStatus(
@@ -1964,7 +2206,12 @@ function applyAgentStatus(
     cancelled: '',
   }
   onStatusChange(labels[status] ?? '')
-  if (status === 'thinking' || status === 'calling_tool' || status === 'waiting_permission' || status === 'waiting_user') {
+  if (
+    status === 'thinking' ||
+    status === 'calling_tool' ||
+    status === 'waiting_permission' ||
+    status === 'waiting_user'
+  ) {
     onSessionStatusChange('running')
     isStreamingRef.current = true
   }
@@ -1979,7 +2226,10 @@ function applyAgentStatus(
   }
 }
 
-function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspector'; sessionId?: SessionId } = {}): ReactNode {
+function renderBlocks(
+  blocks: UIBlock[],
+  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId } = {},
+): ReactNode {
   const surface = options.surface ?? 'main'
   return blocks.map((block, i) => {
     switch (block.kind) {
@@ -1997,22 +2247,49 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
           </details>
         )
       case 'tool_call': {
-        const toolStatus = block.status === 'success' ? 'ok' as const : block.status === 'error' ? 'error' as const : null
+        const toolStatus =
+          block.status === 'success'
+            ? ('ok' as const)
+            : block.status === 'error'
+              ? ('error' as const)
+              : null
         const toolArg = JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
         const isPending = block.status === 'pending' || block.status === 'running'
         const isTodoWrite = block.toolName === 'todo_write'
         // 把 todo_write 的输入直接作为预览，避免折叠后还要展开看（todos 数组本身就是状态）
-        const todoListBody = isTodoWrite ? <TodoListInline input={block.toolInput} output={block.output} /> : null
+        const todoListBody = isTodoWrite ? (
+          <TodoListInline input={block.toolInput} output={block.output} />
+        ) : null
         return toolStatus ? (
-          <ToolCall key={i} name={block.toolName} arg={isTodoWrite ? '' : toolArg} status={toolStatus} durationMs={block.durationMs}>
+          <ToolCall
+            key={i}
+            name={block.toolName}
+            arg={isTodoWrite ? '' : toolArg}
+            status={toolStatus}
+            durationMs={block.durationMs}
+          >
             {todoListBody}
-            {!isTodoWrite && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+            {!isTodoWrite && block.output && (
+              <div className="tool-output-pre md-surface">
+                <MarkdownText content={block.output} />
+              </div>
+            )}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         ) : (
-          <ToolCall key={i} name={block.toolName} arg={isTodoWrite ? '' : toolArg} pending={isPending} durationMs={block.durationMs}>
+          <ToolCall
+            key={i}
+            name={block.toolName}
+            arg={isTodoWrite ? '' : toolArg}
+            pending={isPending}
+            durationMs={block.durationMs}
+          >
             {todoListBody}
-            {!isTodoWrite && block.output && <div className="tool-output-pre md-surface"><MarkdownText content={block.output} /></div>}
+            {!isTodoWrite && block.output && (
+              <div className="tool-output-pre md-surface">
+                <MarkdownText content={block.output} />
+              </div>
+            )}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         )
@@ -2043,7 +2320,8 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
         }
         return (
           <div key={i} className="block-file-change">
-            <Icons.File size={11} /> {block.changeType}: <code className="mono-sm">{block.path}</code>
+            <Icons.File size={11} /> {block.changeType}:{' '}
+            <code className="mono-sm">{block.path}</code>
           </div>
         )
       }
@@ -2056,7 +2334,15 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
               num={Number.parseInt(suffix, 16) || i + 1}
               time={fileCount > 0 ? `${fileCount} files` : (block.path ?? 'SDK')}
               label={block.label ?? 'Checkpoint'}
-              {...(options.sessionId != null ? { onRestore: () => void executeCheckpointRestore(options.sessionId as SessionId, block.checkpointId) } : {})}
+              {...(options.sessionId != null
+                ? {
+                    onRestore: () =>
+                      void executeCheckpointRestore(
+                        options.sessionId as SessionId,
+                        block.checkpointId,
+                      ),
+                  }
+                : {})}
               {...(block.filePaths != null ? { files: block.filePaths } : {})}
             />
           </div>
@@ -2089,7 +2375,13 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
       case 'subagent': {
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-            <SubagentCard name={block.name} role={block.role} task={block.task} status={block.status} tokens={block.tokens} />
+            <SubagentCard
+              name={block.name}
+              role={block.role}
+              task={block.task}
+              status={block.status}
+              tokens={block.tokens}
+            />
           </div>
         )
       }
@@ -2129,7 +2421,10 @@ function ValidationSuggestionCard({
     setRunningCommand(runKey)
     try {
       const quotedCommand = quoteSlashCommandArg(command)
-      await window.spark.invoke('command:execute', { sessionId, message: repair ? `/validate ${quotedCommand} --repair` : `/validate ${quotedCommand}` })
+      await window.spark.invoke('command:execute', {
+        sessionId,
+        message: repair ? `/validate ${quotedCommand} --repair` : `/validate ${quotedCommand}`,
+      })
       toast.info(repair ? '验证命令已执行；失败时会交给 Agent 继续修复。' : '验证命令已开始执行。')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '验证命令执行失败')
@@ -2141,16 +2436,22 @@ function ValidationSuggestionCard({
   return (
     <div className="chat-card validation-card">
       <div className="chat-card-h info">
-        <span className="ico"><Icons.CheckCircle /></span>
+        <span className="ico">
+          <Icons.CheckCircle />
+        </span>
         <span>建议验证</span>
       </div>
       <div className="chat-card-body">
         <div className="validation-summary">{block.summary}</div>
         <div className="validation-files">
           {block.changedFiles.slice(0, 6).map((file) => (
-            <code key={file} className="validation-file">{file}</code>
+            <code key={file} className="validation-file">
+              {file}
+            </code>
           ))}
-          {block.changedFiles.length > 6 && <span className="validation-more">+{block.changedFiles.length - 6}</span>}
+          {block.changedFiles.length > 6 && (
+            <span className="validation-more">+{block.changedFiles.length - 6}</span>
+          )}
         </div>
         <div className="validation-command-list">
           {block.commands.map((item) => (
@@ -2168,7 +2469,11 @@ function ValidationSuggestionCard({
                 onClick={() => void runValidationCommand(item.command, false)}
                 title="运行验证命令"
               >
-                {runningCommand === item.command ? <Icons.Spinner size={12} /> : <Icons.Play size={12} />}
+                {runningCommand === item.command ? (
+                  <Icons.Spinner size={12} />
+                ) : (
+                  <Icons.Play size={12} />
+                )}
                 运行
               </button>
               <button
@@ -2177,7 +2482,11 @@ function ValidationSuggestionCard({
                 onClick={() => void runValidationCommand(item.command, true)}
                 title="验证失败后交给 Agent 继续修复"
               >
-                {runningCommand === `${item.command}:repair` ? <Icons.Spinner size={12} /> : <Icons.Refresh size={12} />}
+                {runningCommand === `${item.command}:repair` ? (
+                  <Icons.Spinner size={12} />
+                ) : (
+                  <Icons.Refresh size={12} />
+                )}
                 修复
               </button>
             </div>
@@ -2254,7 +2563,9 @@ function parseUnifiedDiff(diff: string): DiffHunk[] {
 }
 
 /** Parse a markdown plan text into PlanCard items */
-function parsePlanToItems(plan: string): { status: 'done' | 'running' | 'pending'; text: string; meta?: string }[] {
+function parsePlanToItems(
+  plan: string,
+): { status: 'done' | 'running' | 'pending'; text: string; meta?: string }[] {
   const items: { status: 'done' | 'running' | 'pending'; text: string; meta?: string }[] = []
   const lines = plan.split('\n')
   for (const line of lines) {
@@ -2281,7 +2592,11 @@ function parsePlanToItems(plan: string): { status: 'done' | 'running' | 'pending
     }
     // Match bullet items: - task text (non-checkbox)
     const bulletMatch = trimmed.match(/^[-*]\s+(.*)$/)
-    if (bulletMatch && (bulletMatch[1] ?? '').length > 0 && !(bulletMatch[1] ?? '').startsWith('[')) {
+    if (
+      bulletMatch &&
+      (bulletMatch[1] ?? '').length > 0 &&
+      !(bulletMatch[1] ?? '').startsWith('[')
+    ) {
       items.push({ status: 'pending', text: bulletMatch[1] ?? '' })
     }
   }
@@ -2300,7 +2615,9 @@ function parsePlanToItems(plan: string): { status: 'done' | 'running' | 'pending
 }
 
 /** Inline permission card rendered within the message stream */
-function InlinePermissionCard({ block }: {
+function InlinePermissionCard({
+  block,
+}: {
   block: Extract<UIBlock, { kind: 'permission_request' }>
 }) {
   const { toast } = useToast()
@@ -2357,22 +2674,49 @@ function InlinePermissionCard({ block }: {
   return (
     <div className="chat-card">
       <div className="chat-card-h warn">
-        <span className="ico"><Icons.Shield size={14} /></span>
+        <span className="ico">
+          <Icons.Shield size={14} />
+        </span>
         <span>权限请求 · {action}</span>
-        <span className="badge" style={{ marginLeft: 'auto', fontSize: 10 }}>{riskLevel}</span>
+        <span className="badge" style={{ marginLeft: 'auto', fontSize: 10 }}>
+          {riskLevel}
+        </span>
       </div>
       <div className="chat-card-body">
         <div className="spec-grid">
           <span className="k">描述</span>
           <span className="v">{description}</span>
-          {command && <><span className="k">命令</span><span className="v"><code>{command}</code></span></>}
-          {paths && paths.length > 0 && <><span className="k">路径</span><span className="v"><code>{paths.join(', ')}</code></span></>}
-          {domains && domains.length > 0 && <><span className="k">域名</span><span className="v"><code>{domains.join(', ')}</code></span></>}
+          {command && (
+            <>
+              <span className="k">命令</span>
+              <span className="v">
+                <code>{command}</code>
+              </span>
+            </>
+          )}
+          {paths && paths.length > 0 && (
+            <>
+              <span className="k">路径</span>
+              <span className="v">
+                <code>{paths.join(', ')}</code>
+              </span>
+            </>
+          )}
+          {domains && domains.length > 0 && (
+            <>
+              <span className="k">域名</span>
+              <span className="v">
+                <code>{domains.join(', ')}</code>
+              </span>
+            </>
+          )}
         </div>
       </div>
       <div className="chat-card-foot">
         <span className="spacer" />
-        <button className="btn sm" onClick={handleDeny}>拒绝</button>
+        <button className="btn sm" onClick={handleDeny}>
+          拒绝
+        </button>
         <button className="btn sm primary" onClick={handleAllow}>
           <Icons.Check size={11} /> 允许
         </button>
@@ -2417,7 +2761,13 @@ type MarkdownBlock =
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' }
 
-function MarkdownText({ content, isStreaming = false }: { content: string; isStreaming?: boolean }) {
+function MarkdownText({
+  content,
+  isStreaming = false,
+}: {
+  content: string
+  isStreaming?: boolean
+}) {
   const blocks = parseMarkdown(content)
 
   return (
@@ -2430,24 +2780,32 @@ function MarkdownText({ content, isStreaming = false }: { content: string; isStr
             return <Tag key={index}>{renderInlineMarkdown(block.text)}</Tag>
           }
           case 'paragraph':
-            return (
-              <p key={index}>
-                {renderInlineMarkdown(block.text)}
-              </p>
-            )
+            return <p key={index}>{renderInlineMarkdown(block.text)}</p>
           case 'code':
             return (
               <div key={index} className="md-code-block">
                 {block.lang && (
                   <div className="md-code-header">
                     <span className="md-code-lang">{block.lang}</span>
-                    <button className="md-code-copy" title="复制" onClick={() => { navigator.clipboard.writeText(block.code).catch(() => {}) }}>
+                    <button
+                      className="md-code-copy"
+                      title="复制"
+                      onClick={() => {
+                        navigator.clipboard.writeText(block.code).catch(() => {})
+                      }}
+                    >
                       <Icons.Copy size={12} />
                     </button>
                   </div>
                 )}
                 {!block.lang && (
-                  <button className="md-code-copy-float" title="复制" onClick={() => { navigator.clipboard.writeText(block.code).catch(() => {}) }}>
+                  <button
+                    className="md-code-copy-float"
+                    title="复制"
+                    onClick={() => {
+                      navigator.clipboard.writeText(block.code).catch(() => {})
+                    }}
+                  >
                     <Icons.Copy size={12} />
                   </button>
                 )}
@@ -2478,8 +2836,18 @@ function MarkdownText({ content, isStreaming = false }: { content: string; isStr
             return (
               <ListTag key={index}>
                 {block.items.map((item, itemIndex) => (
-                  <li key={itemIndex} className={item.checked !== undefined ? 'md-task' : undefined}>
-                    {item.checked !== undefined && <SparkInput type="checkbox" className="spark-checkbox" checked={item.checked} readOnly />}
+                  <li
+                    key={itemIndex}
+                    className={item.checked !== undefined ? 'md-task' : undefined}
+                  >
+                    {item.checked !== undefined && (
+                      <SparkInput
+                        type="checkbox"
+                        className="spark-checkbox"
+                        checked={item.checked}
+                        readOnly
+                      />
+                    )}
                     <span>{renderInlineMarkdown(item.text)}</span>
                   </li>
                 ))}
@@ -2492,13 +2860,17 @@ function MarkdownText({ content, isStreaming = false }: { content: string; isStr
                 <table>
                   <thead>
                     <tr>
-                      {block.headers.map((header, headerIndex) => <th key={headerIndex}>{renderInlineMarkdown(header)}</th>)}
+                      {block.headers.map((header, headerIndex) => (
+                        <th key={headerIndex}>{renderInlineMarkdown(header)}</th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody>
                     {block.rows.map((row, rowIndex) => (
                       <tr key={rowIndex}>
-                        {block.headers.map((_, cellIndex) => <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '')}</td>)}
+                        {block.headers.map((_, cellIndex) => (
+                          <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '')}</td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
@@ -2586,18 +2958,30 @@ function parseMarkdown(content: string): MarkdownBlock[] {
         if (!match || /\d+[.)]/.test(match[2] ?? '') !== ordered) break
         const itemText = match[3] ?? ''
         const task = itemText.match(/^\[([ xX])]\s+(.*)$/)
-        items.push(task ? { text: task[2] ?? '', checked: (task[1] ?? '').toLowerCase() === 'x' } : { text: itemText })
+        items.push(
+          task
+            ? { text: task[2] ?? '', checked: (task[1] ?? '').toLowerCase() === 'x' }
+            : { text: itemText },
+        )
         index += 1
       }
       blocks.push({ kind: 'list', ordered, items })
       continue
     }
 
-    if (line.includes('|') && index + 1 < lines.length && /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] ?? '')) {
+    if (
+      line.includes('|') &&
+      index + 1 < lines.length &&
+      /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[index + 1] ?? '')
+    ) {
       const headers = splitTableRow(line)
       const rows: string[][] = []
       index += 2
-      while (index < lines.length && (lines[index] ?? '').includes('|') && (lines[index] ?? '').trim()) {
+      while (
+        index < lines.length &&
+        (lines[index] ?? '').includes('|') &&
+        (lines[index] ?? '').trim()
+      ) {
         rows.push(splitTableRow(lines[index] ?? ''))
         index += 1
       }
@@ -2608,13 +2992,13 @@ function parseMarkdown(content: string): MarkdownBlock[] {
     const paragraphLines = [line]
     index += 1
     while (
-      index < lines.length
-      && (lines[index] ?? '').trim()
-      && !/^```/.test(lines[index] ?? '')
-      && !/^(#{1,6})\s+/.test(lines[index] ?? '')
-      && !/^(\s*)([-*+]|\d+[.)])\s+/.test(lines[index] ?? '')
-      && !/^>\s?/.test(lines[index] ?? '')
-      && !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[index] ?? '')
+      index < lines.length &&
+      (lines[index] ?? '').trim() &&
+      !/^```/.test(lines[index] ?? '') &&
+      !/^(#{1,6})\s+/.test(lines[index] ?? '') &&
+      !/^(\s*)([-*+]|\d+[.)])\s+/.test(lines[index] ?? '') &&
+      !/^>\s?/.test(lines[index] ?? '') &&
+      !/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(lines[index] ?? '')
     ) {
       paragraphLines.push(lines[index] ?? '')
       index += 1
@@ -2626,12 +3010,18 @@ function parseMarkdown(content: string): MarkdownBlock[] {
 }
 
 function splitTableRow(line: string): string[] {
-  return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim())
+  return line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim())
 }
 
 function renderInlineMarkdown(text: string): ReactNode[] {
   const nodes: ReactNode[] = []
-  const pattern = /(!?\[[^\]]+]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g
+  const pattern =
+    /(!?\[[^\]]+]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g
   let cursor = 0
   let match: RegExpExecArray | null
 
@@ -2641,9 +3031,15 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     const key = `${match.index}-${token}`
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
     if (link) {
-      nodes.push(link[1] === '!'
-        ? <img key={key} src={link[3]} alt={link[2]} />
-        : <a key={key} href={link[3]} target="_blank" rel="noreferrer">{link[2]}</a>)
+      nodes.push(
+        link[1] === '!' ? (
+          <img key={key} src={link[3]} alt={link[2]} />
+        ) : (
+          <a key={key} href={link[3]} target="_blank" rel="noreferrer">
+            {link[2]}
+          </a>
+        ),
+      )
     } else if (token.startsWith('`')) {
       nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
     } else if (token.startsWith('**') || token.startsWith('__')) {
@@ -2682,14 +3078,27 @@ function formatMsgTime(timestamp?: string): string {
 }
 
 /** 消息悬浮操作栏：时间 + 复制按钮 + 删除按钮，放在气泡内部。position: left=agent消息(左下角), right=用户消息(右下角) */
-function MessageHoverBar({ timestamp, textContent, position, onDelete }: { timestamp?: string | undefined; textContent: string; position: 'left' | 'right'; onDelete?: () => void }) {
+function MessageHoverBar({
+  timestamp,
+  textContent,
+  position,
+  onDelete,
+}: {
+  timestamp?: string | undefined
+  textContent: string
+  position: 'left' | 'right'
+  onDelete?: () => void
+}) {
   const [copied, setCopied] = useState(false)
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(textContent).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    }).catch(() => {})
+    navigator.clipboard
+      .writeText(textContent)
+      .then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+      .catch(() => {})
   }, [textContent])
 
   const time = formatMsgTime(timestamp)
@@ -2712,20 +3121,35 @@ function MessageHoverBar({ timestamp, textContent, position, onDelete }: { times
 /** 从 blocks 中提取纯文本内容（用于复制） */
 function extractTextFromBlocks(blocks: UIBlock[]): string {
   return blocks
-    .filter(b => b.kind === 'text')
-    .map(b => (b as Extract<UIBlock, { kind: 'text' }>).content)
+    .filter((b) => b.kind === 'text')
+    .map((b) => (b as Extract<UIBlock, { kind: 'text' }>).content)
     .join('\n')
     .trim()
 }
 
-function UserMsg({ children, timestamp, blocks, onDelete }: { children: ReactNode; timestamp?: string | undefined; blocks: UIBlock[]; onDelete?: () => void }) {
+function UserMsg({
+  children,
+  timestamp,
+  blocks,
+  onDelete,
+}: {
+  children: ReactNode
+  timestamp?: string | undefined
+  blocks: UIBlock[]
+  onDelete?: () => void
+}) {
   const textContent = extractTextFromBlocks(blocks)
   return (
     <div className="msg msg-user">
       <div className="msg-bubble msg-bubble-user">
         <div className="msg-content">{children}</div>
       </div>
-      <MessageHoverBar timestamp={timestamp} textContent={textContent} position="right" {...(onDelete ? { onDelete } : {})} />
+      <MessageHoverBar
+        timestamp={timestamp}
+        textContent={textContent}
+        position="right"
+        {...(onDelete ? { onDelete } : {})}
+      />
     </div>
   )
 }
@@ -2750,19 +3174,22 @@ function AgentMsg({
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
-  const contentBlocks = blocks.filter(b => b.kind !== 'thinking')
+  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking')
   const toolCallBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'tool_call' }> => b.kind === 'tool_call',
   )
-  const errorBlocks = blocks.filter(b => b.kind === 'error')
+  const errorBlocks = blocks.filter((b) => b.kind === 'error')
   const isStreaming = status === 'running'
   const hasContent = thinkingBlocks.length > 0 || contentBlocks.length > 0
   // Count active (pending/running) tool calls for parallel indicator
-  const activeToolCount = toolCallBlocks.filter(b => b.status === 'pending' || b.status === 'running').length
+  const activeToolCount = toolCallBlocks.filter(
+    (b) => b.status === 'pending' || b.status === 'running',
+  ).length
   // Cancelled: streaming ended with error status but has rendered content
   const isCancelled = messageStatus === 'error' && !isStreaming && hasContent
   // Pure error: no content, only error blocks
-  const isPureError = messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0
+  const isPureError =
+    messageStatus === 'error' && !isStreaming && !hasContent && errorBlocks.length > 0
   // 是否已完成（非流式中）— 只有完成的消息才显示 hover bar
   const isFinished = !isStreaming
 
@@ -2770,7 +3197,9 @@ function AgentMsg({
   const textContent = extractTextFromBlocks(blocks)
 
   return (
-    <div className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}>
+    <div
+      className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}
+    >
       <div className="msg-bubble msg-bubble-agent">
         {isStreaming && !hasContent && (
           <div className="agent-running-tail agent-running-tail-empty" aria-label="正在运行">
@@ -2819,7 +3248,14 @@ function AgentMsg({
           </div>
         )}
         {isCancelled && <StoppedMarker />}
-        {isFinished && textContent && <MessageHoverBar timestamp={timestamp} textContent={textContent} position="left" {...(onDelete ? { onDelete } : {})} />}
+        {isFinished && textContent && (
+          <MessageHoverBar
+            timestamp={timestamp}
+            textContent={textContent}
+            position="left"
+            {...(onDelete ? { onDelete } : {})}
+          />
+        )}
       </div>
     </div>
   )
@@ -2838,7 +3274,7 @@ function ThinkingSection({
   const [expanded, setExpanded] = useState(false)
   const wasThinkingRef = useRef(false)
 
-  const isThinkingActive = streaming && blocks.some(b => b.isStreaming)
+  const isThinkingActive = streaming && blocks.some((b) => b.isStreaming)
 
   // Auto-expand when thinking starts, collapse when thinking ends
   useEffect(() => {
@@ -2864,12 +3300,14 @@ function ThinkingSection({
   const isCollapsed = needsCollapse && !expanded
 
   return (
-    <div className={`thinking-section ${open ? 'open' : ''} ${isThinkingActive ? 'is-active' : ''}`}>
+    <div
+      className={`thinking-section ${open ? 'open' : ''} ${isThinkingActive ? 'is-active' : ''}`}
+    >
       <button className="thinking-toggle" onClick={() => setOpen(!open)}>
         <Icons.ChevronRight size={12} className={`chev ${open ? 'chev-open' : ''}`} />
         <span className="thinking-label">思考过程</span>
         {isThinkingActive && <Icons.Spinner size={10} className="thinking-spinner" />}
-        {!isThinkingActive && blocks.length > 0 && blocks.every(b => !b.isStreaming) && (
+        {!isThinkingActive && blocks.length > 0 && blocks.every((b) => !b.isStreaming) && (
           <span className="thinking-done-badge">
             <Icons.Check size={9} />
           </span>
@@ -2953,7 +3391,21 @@ function CollapsibleContent({
   )
 }
 
-function ToolCall({ name, arg, status, pending, durationMs, children }: { name: string; arg: string; status?: 'ok' | 'error'; pending?: boolean; durationMs?: number | undefined; children?: ReactNode }) {
+function ToolCall({
+  name,
+  arg,
+  status,
+  pending,
+  durationMs,
+  children,
+}: {
+  name: string
+  arg: string
+  status?: 'ok' | 'error'
+  pending?: boolean
+  durationMs?: number | undefined
+  children?: ReactNode
+}) {
   const [open, setOpen] = useState(false)
   const [elapsedMs, setElapsedMs] = useState(0)
   const startTimeRef = useRef<number | null>(null)
@@ -2990,7 +3442,9 @@ function ToolCall({ name, arg, status, pending, durationMs, children }: { name: 
   const displayDuration = pending ? elapsedMs : durationMs
 
   return (
-    <div className={`tool-call ${open ? 'open' : ''} ${pending ? 'is-pending' : ''} ${status === 'ok' ? 'is-success' : ''} ${status === 'error' ? 'is-error' : ''}`}>
+    <div
+      className={`tool-call ${open ? 'open' : ''} ${pending ? 'is-pending' : ''} ${status === 'ok' ? 'is-success' : ''} ${status === 'error' ? 'is-error' : ''}`}
+    >
       <div className="tool-call-head" onClick={() => setOpen(!open)}>
         {iconMap[name] || <Icons.Wrench className="tool-icon" />}
         <span className="tool-name">{name}</span>
@@ -2999,7 +3453,9 @@ function ToolCall({ name, arg, status, pending, durationMs, children }: { name: 
           {pending && <Icons.Spinner size={12} className="tool-status spinner" />}
           {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
           {status === 'error' && <Icons.X size={12} className="tool-status err" />}
-          {displayDuration != null && <span className="tool-duration">{formatDuration(displayDuration)}</span>}
+          {displayDuration != null && (
+            <span className="tool-duration">{formatDuration(displayDuration)}</span>
+          )}
           <Icons.ChevronRight size={12} className="chev" />
         </span>
       </div>
@@ -3017,9 +3473,20 @@ function TerminalBlock({ children }: { children: ReactNode }) {
   return <div className="terminal mono-sm">{children}</div>
 }
 
-function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId: SessionId; message: string; code: string; retryable: boolean }) {
+function StreamingErrorCard({
+  sessionId,
+  message,
+  code,
+  retryable,
+}: {
+  sessionId: SessionId
+  message: string
+  code: string
+  retryable: boolean
+}) {
   const { toast } = useToast()
-  const isNetworkError = code === 'NETWORK_ERROR' || code === 'ECONNRESET' || code === 'ECONNREFUSED'
+  const isNetworkError =
+    code === 'NETWORK_ERROR' || code === 'ECONNRESET' || code === 'ECONNREFUSED'
   const isTimeout = code === 'TIMEOUT' || code === 'ETIMEDOUT'
   const isAborted = code === 'ABORTED'
   const isMaxIter = code === 'MAX_ITERATIONS' || code === 'ERROR_MAX_TURNS'
@@ -3050,7 +3517,10 @@ function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId
     if (busy) return
     setBusy(true)
     try {
-      await window.spark.invoke('session:set-max-iterations', { sessionId, maxIterations: proposedLimit })
+      await window.spark.invoke('session:set-max-iterations', {
+        sessionId,
+        maxIterations: proposedLimit,
+      })
       setApplied(proposedLimit)
       toast.success(`本会话迭代上限已调至 ${proposedLimit}，请重新发送消息以继续。`)
     } catch (err) {
@@ -3063,11 +3533,15 @@ function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId
   const showRetryButton = retryable && !isAborted && !isMaxIter
 
   return (
-    <div className={`streaming-error-card ${isNetworkError ? 'is-network' : ''} ${isTimeout ? 'is-timeout' : ''} ${isMaxIter ? 'is-max-iter' : ''}`}>
+    <div
+      className={`streaming-error-card ${isNetworkError ? 'is-network' : ''} ${isTimeout ? 'is-timeout' : ''} ${isMaxIter ? 'is-max-iter' : ''}`}
+    >
       <div className="streaming-error-head">
         {isNetworkError && <Icons.Wifi size={13} className="streaming-error-icon" />}
         {isTimeout && <Icons.Clock size={13} className="streaming-error-icon" />}
-        {!isNetworkError && !isTimeout && <Icons.XCircle size={13} className="streaming-error-icon" />}
+        {!isNetworkError && !isTimeout && (
+          <Icons.XCircle size={13} className="streaming-error-icon" />
+        )}
         <span className="streaming-error-msg">{message}</span>
       </div>
       {code && <span className="streaming-error-code">{code}</span>}
@@ -3080,7 +3554,9 @@ function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId
             </button>
           )}
           {isMaxIter && applied != null && (
-            <span className="streaming-error-hint">已生效：本会话上限 = {applied}。重新发送消息继续。</span>
+            <span className="streaming-error-hint">
+              已生效：本会话上限 = {applied}。重新发送消息继续。
+            </span>
           )}
           {showRetryButton && (
             <span className="streaming-error-hint streaming-error-retry-hint">
@@ -3098,7 +3574,13 @@ function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId
  * Source of truth: the tool's input (always the FULL list per todo_write contract).
  * If output is available (post-execution), prefer the parsed list from there.
  */
-function TodoListInline({ input, output }: { input: Record<string, unknown>; output: string | undefined }) {
+function TodoListInline({
+  input,
+  output,
+}: {
+  input: Record<string, unknown>
+  output: string | undefined
+}) {
   const todos = parseTodosFromInputOrOutput(input, output)
   if (todos.length === 0) return null
   const done = todos.filter((t) => t.status === 'completed').length
@@ -3124,14 +3606,24 @@ function TodoListInline({ input, output }: { input: Record<string, unknown>; out
   )
 }
 
-type ParsedTodo = { content: string; status: 'pending' | 'in_progress' | 'completed'; activeForm?: string }
+type ParsedTodo = {
+  content: string
+  status: 'pending' | 'in_progress' | 'completed'
+  activeForm?: string
+}
 
-function parseTodosFromInputOrOutput(input: Record<string, unknown>, output: string | undefined): ParsedTodo[] {
+function parseTodosFromInputOrOutput(
+  input: Record<string, unknown>,
+  output: string | undefined,
+): ParsedTodo[] {
   // Output (JSON-stringified by event-mapper) has the canonical post-execution list
   if (output != null) {
     try {
       // formatToolOutput wraps as markdown ```json blocks; strip if present.
-      const cleaned = output.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim()
+      const cleaned = output
+        .replace(/^```json\n?/, '')
+        .replace(/\n?```$/, '')
+        .trim()
       const parsed = JSON.parse(cleaned) as { todos?: unknown }
       if (Array.isArray(parsed.todos)) return parsed.todos.filter(isTodo) as ParsedTodo[]
     } catch {
@@ -3146,8 +3638,12 @@ function parseTodosFromInputOrOutput(input: Record<string, unknown>, output: str
 function isTodo(t: unknown): t is ParsedTodo {
   if (t == null || typeof t !== 'object') return false
   const obj = t as Record<string, unknown>
-  return typeof obj['content'] === 'string'
-    && (obj['status'] === 'pending' || obj['status'] === 'in_progress' || obj['status'] === 'completed')
+  return (
+    typeof obj['content'] === 'string' &&
+    (obj['status'] === 'pending' ||
+      obj['status'] === 'in_progress' ||
+      obj['status'] === 'completed')
+  )
 }
 
 function StoppedMarker() {
@@ -3170,7 +3666,15 @@ function StoppedMarker() {
  *   - 编辑后批准：用户编辑 plan，然后同上但用编辑后的内容
  *   - 拒绝：仅 dismiss，turn 已结束，用户可在 composer 中提反馈
  */
-function PlanApprovalModal({ sessionId, plan, onClose }: { sessionId: SessionId; plan: string; onClose: () => void }) {
+function PlanApprovalModal({
+  sessionId,
+  plan,
+  onClose,
+}: {
+  sessionId: SessionId
+  plan: string
+  onClose: () => void
+}) {
   const { toast } = useToast()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(plan)
@@ -3199,7 +3703,9 @@ function PlanApprovalModal({ sessionId, plan, onClose }: { sessionId: SessionId;
     <div className="modal-backdrop" onClick={() => !busy && onClose()}>
       <div className="modal plan-approval-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
-          <div className="modal-h-icon"><Icons.Check size={16} /></div>
+          <div className="modal-h-icon">
+            <Icons.Check size={16} />
+          </div>
           <div>
             <div className="modal-title">计划已就绪，等待你审批</div>
             <div className="modal-subtitle">Plan 模式 · 批准后会切换为 auto-edits 模式继续</div>
@@ -3221,7 +3727,9 @@ function PlanApprovalModal({ sessionId, plan, onClose }: { sessionId: SessionId;
           )}
         </div>
         <div className="modal-foot">
-          <button className="btn ghost sm" disabled={busy} onClick={onClose}>拒绝</button>
+          <button className="btn ghost sm" disabled={busy} onClick={onClose}>
+            拒绝
+          </button>
           <div className="flex1" />
           {!editing && (
             <button className="btn sm" disabled={busy} onClick={() => setEditing(true)}>
@@ -3229,11 +3737,22 @@ function PlanApprovalModal({ sessionId, plan, onClose }: { sessionId: SessionId;
             </button>
           )}
           {editing && (
-            <button className="btn sm" disabled={busy} onClick={() => { setDraft(plan); setEditing(false) }}>
+            <button
+              className="btn sm"
+              disabled={busy}
+              onClick={() => {
+                setDraft(plan)
+                setEditing(false)
+              }}
+            >
               取消编辑
             </button>
           )}
-          <button className="btn primary sm" disabled={busy} onClick={() => approve(editing ? draft : plan)}>
+          <button
+            className="btn primary sm"
+            disabled={busy}
+            onClick={() => approve(editing ? draft : plan)}
+          >
             {editing ? '批准（用编辑后）' : '批准并执行'}
           </button>
         </div>
@@ -3250,24 +3769,37 @@ function formatDuration(ms: number): string {
   return `${min}m ${sec}s`
 }
 
-function InlineApprovalRequest({ request, onClose }: { request: PermissionApprovalRequest; onClose?: () => void }) {
+function InlineApprovalRequest({
+  request,
+  onClose,
+}: {
+  request: PermissionApprovalRequest
+  onClose?: () => void
+}) {
   const [busyDecision, setBusyDecision] = useState<PermissionApprovalDecision | null>(null)
   const riskLabel = { low: '低', medium: '中', high: '高' }[request.riskLevel]
-  const riskTone = request.riskLevel === 'high' ? 'high' : request.riskLevel === 'medium' ? 'medium' : 'low'
+  const riskTone =
+    request.riskLevel === 'high' ? 'high' : request.riskLevel === 'medium' ? 'medium' : 'low'
   const inputPreview = JSON.stringify(request.toolInput, null, 2)
   const canRememberProject = request.persistentScopes.includes('project')
 
-  const respond = useCallback(async (decision: PermissionApprovalDecision) => {
-    setBusyDecision(decision)
-    try {
-      await window.spark.invoke('permission:approval-respond', { requestId: request.requestId, decision })
-    } catch {
-      // best-effort
-    } finally {
-      setBusyDecision(null)
-      onClose?.()
-    }
-  }, [onClose, request.requestId])
+  const respond = useCallback(
+    async (decision: PermissionApprovalDecision) => {
+      setBusyDecision(decision)
+      try {
+        await window.spark.invoke('permission:approval-respond', {
+          requestId: request.requestId,
+          decision,
+        })
+      } catch {
+        // best-effort
+      } finally {
+        setBusyDecision(null)
+        onClose?.()
+      }
+    },
+    [onClose, request.requestId],
+  )
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -3282,7 +3814,11 @@ function InlineApprovalRequest({ request, onClose }: { request: PermissionApprov
   return (
     <div className={`composer-approval-card ${riskTone}`}>
       <div className="composer-approval-icon">
-        {request.riskLevel === 'high' ? <Icons.AlertTriangle size={17} /> : <Icons.Shield size={17} />}
+        {request.riskLevel === 'high' ? (
+          <Icons.AlertTriangle size={17} />
+        ) : (
+          <Icons.Shield size={17} />
+        )}
       </div>
       <div className="composer-approval-main">
         <div className="composer-approval-top">
@@ -3448,16 +3984,23 @@ function ContextMeterWithPopup({
       setCompressing(false)
       setPopupVisible(false)
     }
-  }, [compressing, sessionId, selectedProvider, effectiveModelId, adapter, effectivePermissionMode, onCreateSession, onSent, toast])
+  }, [
+    compressing,
+    sessionId,
+    selectedProvider,
+    effectiveModelId,
+    adapter,
+    effectivePermissionMode,
+    onCreateSession,
+    onSent,
+    toast,
+  ])
 
   const isWarning = contextRatio >= 80
   const isCritical = contextRatio >= 95
 
   return (
-    <div
-      ref={containerRef}
-      className="context-meter-wrap"
-    >
+    <div ref={containerRef} className="context-meter-wrap">
       <div
         className={`context-meter${compactedThisTurn ? ' context-compacted' : ''}${popupVisible ? ' context-meter-active' : ''}`}
         onClick={togglePopup}
@@ -3468,7 +4011,10 @@ function ContextMeterWithPopup({
           style={{ '--context-pct': `${contextRatio}%` } as React.CSSProperties}
         />
         {compactedThisTurn && (
-          <span className="context-compacted-badge" title="已自动裁剪较早的 tool_result 内容以释放上下文">
+          <span
+            className="context-compacted-badge"
+            title="已自动裁剪较早的 tool_result 内容以释放上下文"
+          >
             <Icons.Layers size={10} />
           </span>
         )}
@@ -3480,7 +4026,9 @@ function ContextMeterWithPopup({
               <Icons.Database size={13} />
               <span>上下文窗口</span>
             </div>
-            <span className={`context-popup-pct ${isCritical ? 'pct-critical' : isWarning ? 'pct-warn' : ''}`}>
+            <span
+              className={`context-popup-pct ${isCritical ? 'pct-critical' : isWarning ? 'pct-warn' : ''}`}
+            >
               {contextRatio}%
             </span>
           </div>
@@ -3518,7 +4066,9 @@ function ContextMeterWithPopup({
             </div>
             <div className="context-popup-row">
               <span className="row-label">剩余</span>
-              <span className="row-value">{formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}</span>
+              <span className="row-value">
+                {formatTokenCount(Math.max(0, contextWindow - contextUsedTokens))}
+              </span>
             </div>
           </div>
 
@@ -3604,13 +4154,20 @@ function ComposerV2({
   const [slashOpen, setSlashOpen] = useState(false)
   const [slashIndex, setSlashIndex] = useState(0)
   const slashListRef = useRef<HTMLDivElement | null>(null)
-  const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER)
+  const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(
+    initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER,
+  )
   const [draftModelId, setDraftModelId] = useState(initialPrefs.modelId ?? '')
   const [draftMode] = useState<SessionChatMode>('agent')
   const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionModeChoice>(
-    getValidPermissionMode(initialPrefs.permissionMode, initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER),
+    getValidPermissionMode(
+      initialPrefs.permissionMode,
+      initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER,
+    ),
   )
-  const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(initialPrefs.reasoningEffort ?? 'medium')
+  const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(
+    initialPrefs.reasoningEffort ?? 'medium',
+  )
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
   const runtimeSettingsHydratedRef = useRef(false)
@@ -3621,34 +4178,55 @@ function ComposerV2({
   const pendingRuntimePatchRef = useRef<SessionRuntimePatch>({})
 
   const adapter = session?.agentAdapter ?? draftAdapter
-  const compatibleProviders = providers.filter((provider) => isProviderCompatibleWithAdapter(provider, adapter))
-  const selectedProvider = compatibleProviders.find((item) => item.id === (session?.providerProfileId || selectedProviderId))
-    ?? compatibleProviders.find((item) => item.isDefault)
-    ?? compatibleProviders[0]
-  const modelOptions = selectedProvider?.modelIds.length ? selectedProvider.modelIds : selectedProvider?.defaultModel ? [selectedProvider.defaultModel] : []
+  const compatibleProviders = providers.filter((provider) =>
+    isProviderCompatibleWithAdapter(provider, adapter),
+  )
+  const selectedProvider =
+    compatibleProviders.find(
+      (item) => item.id === (session?.providerProfileId || selectedProviderId),
+    ) ??
+    compatibleProviders.find((item) => item.isDefault) ??
+    compatibleProviders[0]
+  const modelOptions = selectedProvider?.modelIds.length
+    ? selectedProvider.modelIds
+    : selectedProvider?.defaultModel
+      ? [selectedProvider.defaultModel]
+      : []
   const providerDefaultModel = selectedProvider?.defaultModel || modelOptions[0] || ''
   const sessionModelId = normalizeModelForProvider(session?.modelId, selectedProvider)
   const draftModelForProvider = normalizeModelForProvider(draftModelId, selectedProvider)
-  const effectiveModelId = session != null
-    ? (sessionModelId || providerDefaultModel)
-    : (draftModelForProvider || providerDefaultModel)
+  const effectiveModelId =
+    session != null
+      ? sessionModelId || providerDefaultModel
+      : draftModelForProvider || providerDefaultModel
   const effectiveMode = session?.chatMode ?? draftMode
   const effectiveReasoning = session?.reasoningEffort ?? draftReasoning
   const permissionOptions = getPermissionModeOptions(adapter)
   const sessionPermissionMode = session?.permissionMode
   const draftEffectivePermissionMode = sessionPermissionMode ?? draftPermissionMode
   const defaultPermissionMode = permissionOptions[0]?.value ?? 'codex-default'
-  const effectivePermissionMode = permissionOptions.some((option) => option.value === draftEffectivePermissionMode)
+  const effectivePermissionMode = permissionOptions.some(
+    (option) => option.value === draftEffectivePermissionMode,
+  )
     ? draftEffectivePermissionMode
     : defaultPermissionMode
-  const activePermissionOption = permissionOptions.find((option) => option.value === effectivePermissionMode)
-  const contextWindow = resolveProviderContextWindow(selectedProvider?.supportsMillionContext === true)
+  const activePermissionOption = permissionOptions.find(
+    (option) => option.value === effectivePermissionMode,
+  )
+  const contextWindow = resolveProviderContextWindow(
+    selectedProvider?.supportsMillionContext === true,
+  )
   const contextUsedTokens = contextUsage?.estimatedTokens ?? contextInputTokens
-  const contextRatio = contextWindow > 0
-    ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
-    : 0
+  const contextRatio =
+    contextWindow > 0
+      ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
+      : 0
   const isBusy = sending || isWorking
-  const canSubmit = value.trim().length > 0 && selectedProvider != null && effectiveModelId.length > 0 && (session != null || workspace != null)
+  const canSubmit =
+    value.trim().length > 0 &&
+    selectedProvider != null &&
+    effectiveModelId.length > 0 &&
+    (session != null || workspace != null)
   const visibleActiveTaskText = queueRunning ? activeTaskText : null
   const showTaskQueue = visibleActiveTaskText != null || queuedMessages.length > 0
 
@@ -3656,16 +4234,19 @@ function ComposerV2({
     pendingRuntimePatchRef.current = { ...pendingRuntimePatchRef.current, ...patch }
   }, [])
 
-  const persistRuntimePatch = useCallback(async (patch: SessionRuntimePatch) => {
-    rememberRuntimePatch(patch)
-    if (session == null) return
-    await onUpdateSession(patch)
-    const pending = { ...pendingRuntimePatchRef.current }
-    for (const key of Object.keys(patch) as Array<keyof SessionRuntimePatch>) {
-      if (pending[key] === patch[key]) delete pending[key]
-    }
-    pendingRuntimePatchRef.current = pending
-  }, [onUpdateSession, rememberRuntimePatch, session])
+  const persistRuntimePatch = useCallback(
+    async (patch: SessionRuntimePatch) => {
+      rememberRuntimePatch(patch)
+      if (session == null) return
+      await onUpdateSession(patch)
+      const pending = { ...pendingRuntimePatchRef.current }
+      for (const key of Object.keys(patch) as Array<keyof SessionRuntimePatch>) {
+        if (pending[key] === patch[key]) delete pending[key]
+      }
+      pendingRuntimePatchRef.current = pending
+    },
+    [onUpdateSession, rememberRuntimePatch, session],
+  )
 
   const flushPendingRuntimePatch = useCallback(async () => {
     if (session == null) return
@@ -3675,51 +4256,76 @@ function ComposerV2({
     pendingRuntimePatchRef.current = {}
   }, [onUpdateSession, session])
 
-  const getCurrentRuntimePatch = useCallback((): SessionRuntimePatch => ({
-    ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
-    modelId: effectiveModelId || null,
-    agentAdapter: adapter,
-    permissionMode: effectivePermissionMode,
-    chatMode: effectiveMode,
-    reasoningEffort: effectiveReasoning,
-  }), [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, selectedProvider?.id])
+  const getCurrentRuntimePatch = useCallback(
+    (): SessionRuntimePatch => ({
+      ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
+      modelId: effectiveModelId || null,
+      agentAdapter: adapter,
+      permissionMode: effectivePermissionMode,
+      chatMode: effectiveMode,
+      reasoningEffort: effectiveReasoning,
+    }),
+    [
+      adapter,
+      effectiveMode,
+      effectiveModelId,
+      effectivePermissionMode,
+      effectiveReasoning,
+      selectedProvider?.id,
+    ],
+  )
 
-  const applyQueueState = useCallback((snapshot: SessionGetQueueResponse | null | undefined) => {
-    if (snapshot == null || snapshot.sessionId !== session?.id) return
-    setQueueRunning(snapshot.running)
-    setQueuedMessages(snapshot.queuedTurns.map((turn) => ({
-      id: turn.turnId,
-      turnId: turn.turnId,
-      content: turn.message,
-      enqueuedAt: turn.enqueuedAt,
-    })))
-  }, [session?.id])
+  const applyQueueState = useCallback(
+    (snapshot: SessionGetQueueResponse | null | undefined) => {
+      if (snapshot == null || snapshot.sessionId !== session?.id) return
+      setQueueRunning(snapshot.running)
+      setQueuedMessages(
+        snapshot.queuedTurns.map((turn) => ({
+          id: turn.turnId,
+          turnId: turn.turnId,
+          content: turn.message,
+          enqueuedAt: turn.enqueuedAt,
+        })),
+      )
+    },
+    [session?.id],
+  )
 
-  const refreshQueueState = useCallback(async (sessionId: SessionId | null | undefined) => {
-    if (sessionId == null) {
-      setQueuedMessages([])
-      setQueueRunning(false)
-      return
-    }
-    try {
-      applyQueueState(await getQueue({ sessionId }))
-    } catch {
-      setQueuedMessages([])
-      setQueueRunning(false)
-    }
-  }, [applyQueueState, getQueue])
+  const refreshQueueState = useCallback(
+    async (sessionId: SessionId | null | undefined) => {
+      if (sessionId == null) {
+        setQueuedMessages([])
+        setQueueRunning(false)
+        return
+      }
+      try {
+        applyQueueState(await getQueue({ sessionId }))
+      } catch {
+        setQueuedMessages([])
+        setQueueRunning(false)
+      }
+    },
+    [applyQueueState, getQueue],
+  )
 
   useEffect(() => {
     if (runtimeSettingsHydratedRef.current || providers.length === 0) return
     runtimeSettingsHydratedRef.current = true
-    getSetting({ category: RUNTIME_PERMISSION_SETTINGS_CATEGORY, key: RUNTIME_PERMISSION_SETTINGS_KEY })
+    getSetting({
+      category: RUNTIME_PERMISSION_SETTINGS_CATEGORY,
+      key: RUNTIME_PERMISSION_SETTINGS_KEY,
+    })
       .then((res) => {
         if (res.value == null) return
         const runtimePrefs = normalizeRuntimePermissionPrefs(res.value)
         setDraftAdapter(runtimePrefs.adapter)
         setDraftPermissionMode(runtimePrefs.permissionMode)
         if (session == null) {
-          const fallbackProvider = getPreferredProvider(providers, { ...readComposerPrefs(), ...runtimePrefs }, runtimePrefs.adapter)
+          const fallbackProvider = getPreferredProvider(
+            providers,
+            { ...readComposerPrefs(), ...runtimePrefs },
+            runtimePrefs.adapter,
+          )
           if (fallbackProvider != null) {
             const nextModel = fallbackProvider.defaultModel || fallbackProvider.modelIds[0] || ''
             setSelectedProviderId(fallbackProvider.id)
@@ -3751,8 +4357,20 @@ function ComposerV2({
     setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(fallbackProvider.id)
     setDraftModelId(nextModel)
-    writeComposerPrefs({ adapter: nextAdapter, providerProfileId: fallbackProvider.id, modelId: nextModel, permissionMode: nextPermissionMode })
-  }, [compatibleProviders.length, draftAdapter, initialPrefs, providers, session, setSelectedProviderId])
+    writeComposerPrefs({
+      adapter: nextAdapter,
+      providerProfileId: fallbackProvider.id,
+      modelId: nextModel,
+      permissionMode: nextPermissionMode,
+    })
+  }, [
+    compatibleProviders.length,
+    draftAdapter,
+    initialPrefs,
+    providers,
+    session,
+    setSelectedProviderId,
+  ])
 
   useEffect(() => {
     void refreshQueueState(session?.id)
@@ -3798,92 +4416,122 @@ function ComposerV2({
     textareaRef.current?.focus()
   }, [session?.id])
 
-  const dispatchMessage = useCallback(async (text: string) => {
-    // 斜杠命令拦截：以 / 开头的消息走 command:execute
-    if (text.startsWith('/')) {
-      setSending(true)
-      try {
-        // 如果没有活跃 session，先创建一个（命令需要 session 上下文）
-        let sessionId = session?.id ?? null
-        if (sessionId == null) {
-          if (selectedProvider == null) {
-            toast.warning('请先选择 Provider 再执行命令。')
-            setValue(text)
+  const dispatchMessage = useCallback(
+    async (text: string) => {
+      // 斜杠命令拦截：以 / 开头的消息走 command:execute
+      if (text.startsWith('/')) {
+        setSending(true)
+        try {
+          // 如果没有活跃 session，先创建一个（命令需要 session 上下文）
+          let sessionId = session?.id ?? null
+          if (sessionId == null) {
+            if (selectedProvider == null) {
+              toast.warning('请先选择 Provider 再执行命令。')
+              setValue(text)
+              return
+            }
+            sessionId = await onCreateSession({
+              ...(selectedProvider?.id !== undefined
+                ? { providerProfileId: selectedProvider.id }
+                : {}),
+              modelId: effectiveModelId,
+              agentAdapter: adapter,
+              permissionMode: effectivePermissionMode,
+            })
+            if (sessionId == null) {
+              toast.error('创建会话失败，无法执行命令。')
+              setValue(text)
+              return
+            }
+          }
+          const res = await window.spark.invoke('command:execute', { sessionId, message: text })
+          if (res.forwardToAgent) {
+            // 转发给 Agent：作为普通消息发送
+            setSending(false)
+            await flushPendingRuntimePatch()
+            const sendRes = await sendTurn({
+              sessionId,
+              message: text,
+              ...getCurrentRuntimePatch(),
+            })
+            if (!sendRes.started) {
+              setQueueVisible(true)
+              toast.info('上一条任务仍在执行，消息已加入队列。')
+            } else if (queuedMessages.length === 0) {
+              setQueueVisible(false)
+            }
+            await refreshQueueState(sessionId)
+            onSent(sessionId)
             return
           }
-          sessionId = await onCreateSession({
-            ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
+          // 命令结果已通过事件流注入到聊天中，无需 Toast
+          onSent(sessionId)
+        } catch (err) {
+          console.error('命令执行失败', err)
+          toast.error(err instanceof Error ? err.message : '命令执行失败')
+          setValue(text)
+        } finally {
+          setSending(false)
+        }
+        return
+      }
+
+      if (selectedProvider == null) return
+      setSending(true)
+      try {
+        let targetSessionId = session?.id ?? null
+        if (targetSessionId == null) {
+          targetSessionId = await onCreateSession({
+            ...(selectedProvider?.id !== undefined
+              ? { providerProfileId: selectedProvider.id }
+              : {}),
             modelId: effectiveModelId,
             agentAdapter: adapter,
             permissionMode: effectivePermissionMode,
+            chatMode: effectiveMode,
+            reasoningEffort: effectiveReasoning,
           })
-          if (sessionId == null) {
-            toast.error('创建会话失败，无法执行命令。')
-            setValue(text)
-            return
-          }
         }
-        const res = await window.spark.invoke('command:execute', { sessionId, message: text })
-        if (res.forwardToAgent) {
-          // 转发给 Agent：作为普通消息发送
-          setSending(false)
-          await flushPendingRuntimePatch()
-          const sendRes = await sendTurn({ sessionId, message: text, ...getCurrentRuntimePatch() })
-          if (!sendRes.started) {
-            setQueueVisible(true)
-            toast.info('上一条任务仍在执行，消息已加入队列。')
-          } else if (queuedMessages.length === 0) {
-            setQueueVisible(false)
-          }
-          await refreshQueueState(sessionId)
-          onSent(sessionId)
-          return
+        if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
+        await flushPendingRuntimePatch()
+        const res = await sendTurn({
+          sessionId: targetSessionId,
+          message: text,
+          ...getCurrentRuntimePatch(),
+        })
+        if (!res.started) {
+          setQueueVisible(true)
+          toast.info('上一条任务仍在执行，消息已加入队列。')
+        } else if (queuedMessages.length === 0) {
+          setQueueVisible(false)
         }
-        // 命令结果已通过事件流注入到聊天中，无需 Toast
-        onSent(sessionId)
+        await refreshQueueState(targetSessionId)
+        onSent(targetSessionId)
       } catch (err) {
-        console.error('命令执行失败', err)
-        toast.error(err instanceof Error ? err.message : '命令执行失败')
+        console.error('发送失败', err)
+        toast.error(err instanceof Error ? err.message : '发送消息失败')
         setValue(text)
       } finally {
         setSending(false)
       }
-      return
-    }
-
-    if (selectedProvider == null) return
-    setSending(true)
-    try {
-      let targetSessionId = session?.id ?? null
-      if (targetSessionId == null) {
-        targetSessionId = await onCreateSession({
-          ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
-          modelId: effectiveModelId,
-          agentAdapter: adapter,
-          permissionMode: effectivePermissionMode,
-          chatMode: effectiveMode,
-          reasoningEffort: effectiveReasoning,
-        })
-      }
-      if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
-      await flushPendingRuntimePatch()
-      const res = await sendTurn({ sessionId: targetSessionId, message: text, ...getCurrentRuntimePatch() })
-      if (!res.started) {
-        setQueueVisible(true)
-        toast.info('上一条任务仍在执行，消息已加入队列。')
-      } else if (queuedMessages.length === 0) {
-        setQueueVisible(false)
-      }
-      await refreshQueueState(targetSessionId)
-      onSent(targetSessionId)
-    } catch (err) {
-      console.error('发送失败', err)
-      toast.error(err instanceof Error ? err.message : '发送消息失败')
-      setValue(text)
-    } finally {
-      setSending(false)
-    }
-  }, [adapter, effectiveMode, effectiveModelId, effectivePermissionMode, effectiveReasoning, flushPendingRuntimePatch, getCurrentRuntimePatch, onCreateSession, onSent, refreshQueueState, selectedProvider, sendTurn, session?.id, toast])
+    },
+    [
+      adapter,
+      effectiveMode,
+      effectiveModelId,
+      effectivePermissionMode,
+      effectiveReasoning,
+      flushPendingRuntimePatch,
+      getCurrentRuntimePatch,
+      onCreateSession,
+      onSent,
+      refreshQueueState,
+      selectedProvider,
+      sendTurn,
+      session?.id,
+      toast,
+    ],
+  )
 
   const handleSend = async () => {
     if (!canSubmit) return
@@ -3903,12 +4551,14 @@ function ComposerV2({
   const handleRemoveQueuedMessage = async (message: QueuedMessage) => {
     if (session?.id == null) return
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
-    setQueuedMessages(res.queuedTurns.map((turn) => ({
-      id: turn.turnId,
-      turnId: turn.turnId,
-      content: turn.message,
-      enqueuedAt: turn.enqueuedAt,
-    })))
+    setQueuedMessages(
+      res.queuedTurns.map((turn) => ({
+        id: turn.turnId,
+        turnId: turn.turnId,
+        content: turn.message,
+        enqueuedAt: turn.enqueuedAt,
+      })),
+    )
   }
 
   const handleCancelActiveSession = async () => {
@@ -3919,15 +4569,43 @@ function ComposerV2({
   const filteredSlashCmds = slashCmds.filter((cmd) => {
     if (!slashFilter) return true
     const q = slashFilter.toLowerCase()
-    return cmd.name.includes(q) || cmd.description.toLowerCase().includes(q) || cmd.aliases.some((a) => a.includes(q))
+    return (
+      cmd.name.includes(q) ||
+      cmd.description.toLowerCase().includes(q) ||
+      cmd.aliases.some((a) => a.includes(q))
+    )
   })
 
   const SLASH_GROUP_LABELS: Record<string, string> = {
-    session: '会话', model: '模型', context: '上下文', permission: '权限',
-    git: 'Git', workflow: '工作流', agent: 'Agent', mcp: 'MCP',
-    skill: '技能', resource: '资源', team: '团队', utility: '工具', system: '系统',
+    session: '会话',
+    model: '模型',
+    context: '上下文',
+    permission: '权限',
+    git: 'Git',
+    workflow: '工作流',
+    agent: 'Agent',
+    mcp: 'MCP',
+    skill: '技能',
+    resource: '资源',
+    team: '团队',
+    utility: '工具',
+    system: '系统',
   }
-  const SLASH_GROUP_ORDER = ['session', 'model', 'context', 'permission', 'git', 'workflow', 'agent', 'mcp', 'skill', 'resource', 'team', 'utility', 'system']
+  const SLASH_GROUP_ORDER = [
+    'session',
+    'model',
+    'context',
+    'permission',
+    'git',
+    'workflow',
+    'agent',
+    'mcp',
+    'skill',
+    'resource',
+    'team',
+    'utility',
+    'system',
+  ]
 
   const groupedSlashCmds = (() => {
     const map = new Map<string, CommandListItem[]>()
@@ -3964,20 +4642,26 @@ function ComposerV2({
   }, [])
 
   /** 选中命令：填充到输入框并关闭弹窗，不立即执行 */
-  const selectSlashCmd = useCallback((cmd: CommandListItem) => {
-    closeSlashPopup()
-    setValue(`/${cmd.name} `)
-  }, [closeSlashPopup])
+  const selectSlashCmd = useCallback(
+    (cmd: CommandListItem) => {
+      closeSlashPopup()
+      setValue(`/${cmd.name} `)
+    },
+    [closeSlashPopup],
+  )
 
-  const handleValueChange = useCallback((next: string) => {
-    setValue(next)
-    if (next.startsWith('/')) {
-      setSlashFilter(next.slice(1))
-      void openSlashPopup()
-    } else {
-      if (slashOpen) closeSlashPopup()
-    }
-  }, [slashOpen, openSlashPopup, closeSlashPopup])
+  const handleValueChange = useCallback(
+    (next: string) => {
+      setValue(next)
+      if (next.startsWith('/')) {
+        setSlashFilter(next.slice(1))
+        void openSlashPopup()
+      } else {
+        if (slashOpen) closeSlashPopup()
+      }
+    },
+    [slashOpen, openSlashPopup, closeSlashPopup],
+  )
 
   // scroll selected item into view
   useEffect(() => {
@@ -4035,7 +4719,12 @@ function ComposerV2({
     setSelectedProviderId(providerId)
     const nextModel = provider.defaultModel || provider.modelIds[0] || ''
     setDraftModelId(nextModel)
-    writeComposerPrefs({ adapter: nextAdapter, providerProfileId: providerId, modelId: nextModel, permissionMode: nextPermissionMode })
+    writeComposerPrefs({
+      adapter: nextAdapter,
+      providerProfileId: providerId,
+      modelId: nextModel,
+      permissionMode: nextPermissionMode,
+    })
     if (session != null) {
       await persistRuntimePatch({
         providerProfileId: providerId,
@@ -4050,10 +4739,15 @@ function ComposerV2({
     const provider = providers.find((item) => item.id === providerId)
     if (provider == null) return
     const nextAdapter = getProviderAdapterKind(provider)
-    const nextPermissionMode = adapter === nextAdapter
-      ? effectivePermissionMode
-      : getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
-    const nextModel = normalizeModelForProvider(modelId, provider) || provider.defaultModel || provider.modelIds[0] || modelId
+    const nextPermissionMode =
+      adapter === nextAdapter
+        ? effectivePermissionMode
+        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default')
+    const nextModel =
+      normalizeModelForProvider(modelId, provider) ||
+      provider.defaultModel ||
+      provider.modelIds[0] ||
+      modelId
 
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
@@ -4080,12 +4774,19 @@ function ComposerV2({
     setDraftAdapter(nextAdapter)
     const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
     setDraftPermissionMode(nextPermissionMode)
-    const nextProvider = providers.find((provider) => getProviderAdapterKind(provider) === nextAdapter)
+    const nextProvider = providers.find(
+      (provider) => getProviderAdapterKind(provider) === nextAdapter,
+    )
     if (nextProvider != null) {
       const nextModel = nextProvider.defaultModel || nextProvider.modelIds[0] || ''
       setSelectedProviderId(nextProvider.id)
       setDraftModelId(nextModel)
-      writeComposerPrefs({ adapter: nextAdapter, providerProfileId: nextProvider.id, modelId: nextModel, permissionMode: nextPermissionMode })
+      writeComposerPrefs({
+        adapter: nextAdapter,
+        providerProfileId: nextProvider.id,
+        modelId: nextModel,
+        permissionMode: nextPermissionMode,
+      })
       if (session != null) {
         await persistRuntimePatch({
           providerProfileId: nextProvider.id,
@@ -4097,7 +4798,8 @@ function ComposerV2({
       return
     }
     writeComposerPrefs({ adapter: nextAdapter, permissionMode: nextPermissionMode })
-    if (session != null) await persistRuntimePatch({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
+    if (session != null)
+      await persistRuntimePatch({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
   }
 
   const handleModelChange = async (modelId: string) => {
@@ -4115,13 +4817,14 @@ function ComposerV2({
     if (session != null) await persistRuntimePatch({ reasoningEffort })
   }
 
-  const branchOptions = (branchState.branches.length > 0 ? branchState.branches : [branchState.currentBranch ?? ''])
+  const branchOptions = (
+    branchState.branches.length > 0 ? branchState.branches : [branchState.currentBranch ?? '']
+  )
     .filter((branch): branch is string => branch.length > 0)
     .map((branch) => ({ value: branch, label: branch }))
   const showBranchSelect = branchOptions.length > 0 && branchState.currentBranch != null
-  const visibleApprovalRequest = approvalRequest != null && !isControlApprovalRequest(approvalRequest)
-    ? approvalRequest
-    : null
+  const visibleApprovalRequest =
+    approvalRequest != null && !isControlApprovalRequest(approvalRequest) ? approvalRequest : null
 
   return (
     <div className="composer-wrap">
@@ -4172,18 +4875,25 @@ function ComposerV2({
                         key={cmd.id}
                         className={`slash-cmd-item${idx === slashIndex ? ' selected' : ''}`}
                         onMouseEnter={() => setSlashIndex(idx)}
-                        onMouseDown={(e) => { e.preventDefault(); selectSlashCmd(cmd) }}
+                        onMouseDown={(e) => {
+                          e.preventDefault()
+                          selectSlashCmd(cmd)
+                        }}
                       >
                         <span className={`slash-cmd-layer layer-${cmd.layer}`}>
                           {cmd.layer === 'sdk' ? 'SDK' : cmd.layer === 'skill' ? '技能' : '内置'}
                         </span>
                         <span className="slash-cmd-name">/{cmd.name}</span>
                         {cmd.aliases.length > 0 && (
-                          <span className="slash-cmd-aliases">{cmd.aliases.map((a) => `/${a}`).join(' ')}</span>
+                          <span className="slash-cmd-aliases">
+                            {cmd.aliases.map((a) => `/${a}`).join(' ')}
+                          </span>
                         )}
                         <span className="slash-cmd-desc">{cmd.description}</span>
                         {cmd.risk === 'high' && <span className="slash-cmd-risk high">危险</span>}
-                        {cmd.risk === 'medium' && <span className="slash-cmd-risk medium">注意</span>}
+                        {cmd.risk === 'medium' && (
+                          <span className="slash-cmd-risk medium">注意</span>
+                        )}
                       </div>
                     )
                   })}
@@ -4199,8 +4909,12 @@ function ComposerV2({
             placeholder={workspace ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个项目'}
             value={value}
             onChange={(event) => handleValueChange(event.target.value)}
-            onCompositionStart={() => { composingRef.current = true }}
-            onCompositionEnd={() => { composingRef.current = false }}
+            onCompositionStart={() => {
+              composingRef.current = true
+            }}
+            onCompositionEnd={() => {
+              composingRef.current = false
+            }}
             onKeyDown={handleKeyDown}
             disabled={!workspace}
           />
@@ -4218,109 +4932,134 @@ function ComposerV2({
               onClick={() => void handlePrimaryAction()}
               disabled={isWorking ? session?.id == null : !canSubmit}
             >
-              {sending ? <Icons.Spinner size={14} /> : isWorking ? <Icons.Stop size={11} /> : <Icons.ArrowUp size={16} />}
+              {sending ? (
+                <Icons.Spinner size={14} />
+              ) : isWorking ? (
+                <Icons.Stop size={11} />
+              ) : (
+                <Icons.ArrowUp size={16} />
+              )}
             </button>
           </div>
         </div>
         <div className="composer-param-bar composer-controls">
-            <button className="icon-btn" title="添加文件"><Icons.Plus /></button>
-            <button className="icon-btn" title="工具"><Icons.Wrench /></button>
-            <ComposerMenuSelect
-              icon={<AdapterIcon adapter={adapter} />}
-              value={adapter}
-              label={ADAPTER_LABELS[adapter]}
-              disabled={providers.length === 0}
-              title="适配器"
-              onChange={(value) => handleAdapterChange(value as AgentAdapter)}
-              options={ADAPTER_OPTIONS}
+          <button className="icon-btn" title="添加文件">
+            <Icons.Plus />
+          </button>
+          <button className="icon-btn" title="工具">
+            <Icons.Wrench />
+          </button>
+          <ComposerMenuSelect
+            icon={<AdapterIcon adapter={adapter} />}
+            value={adapter}
+            label={ADAPTER_LABELS[adapter]}
+            disabled={providers.length === 0}
+            title="适配器"
+            onChange={(value) => handleAdapterChange(value as AgentAdapter)}
+            options={ADAPTER_OPTIONS}
+          />
+          <ProviderModelPicker
+            icon={<ModelIcon />}
+            providers={compatibleProviders}
+            selectedProviderId={selectedProvider?.id ?? ''}
+            selectedModelId={effectiveModelId}
+            disabled={compatibleProviders.length === 0}
+            onChange={handleProviderModelChange}
+          />
+          <ComposerMenuSelect
+            icon={
+              activePermissionOption?.tone === 'danger' ? (
+                <Icons.AlertTriangle size={13} />
+              ) : activePermissionOption?.tone === 'auto' ? (
+                <Icons.Zap size={13} />
+              ) : (
+                <Icons.Shield size={13} />
+              )
+            }
+            value={effectivePermissionMode}
+            label={activePermissionOption?.label ?? '默认权限'}
+            title="权限模式"
+            tone={activePermissionOption?.tone ?? 'default'}
+            onChange={(mode) => {
+              const permissionMode = mode as PermissionModeChoice
+              setDraftPermissionMode(permissionMode)
+              writeComposerPrefs({ permissionMode })
+              if (session != null) void persistRuntimePatch({ permissionMode })
+            }}
+            options={permissionOptions}
+          />
+          <ComposerMenuSelect
+            icon={<Icons.Brain size={13} />}
+            value={effectiveReasoning}
+            label={
+              getReasoningOptions(adapter).find((option) => option.value === effectiveReasoning)
+                ?.label ?? effectiveReasoning
+            }
+            title="推理强度"
+            onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
+            options={getReasoningOptions(adapter)}
+          />
+          {contextWindow > 0 && (
+            <ContextMeterWithPopup
+              contextRatio={contextRatio}
+              contextUsedTokens={contextUsedTokens}
+              contextWindow={contextWindow}
+              compactedThisTurn={contextUsage?.compactedThisTurn ?? false}
+              isBusy={isBusy}
+              sessionId={session?.id ?? null}
+              onCreateSession={onCreateSession}
+              selectedProvider={selectedProvider}
+              effectiveModelId={effectiveModelId}
+              adapter={adapter}
+              effectivePermissionMode={effectivePermissionMode}
+              onSent={onSent}
+              toast={toast}
             />
-            <ProviderModelPicker
-              icon={<ModelIcon />}
-              providers={compatibleProviders}
-              selectedProviderId={selectedProvider?.id ?? ''}
-              selectedModelId={effectiveModelId}
-              disabled={compatibleProviders.length === 0}
-              onChange={handleProviderModelChange}
-            />
-            <ComposerMenuSelect
-              icon={activePermissionOption?.tone === 'danger'
-                ? <Icons.AlertTriangle size={13} />
-                : activePermissionOption?.tone === 'auto'
-                  ? <Icons.Zap size={13} />
-                  : <Icons.Shield size={13} />}
-              value={effectivePermissionMode}
-              label={activePermissionOption?.label ?? '默认权限'}
-              title="权限模式"
-              tone={activePermissionOption?.tone ?? 'default'}
-              onChange={(mode) => {
-                const permissionMode = mode as PermissionModeChoice
-                setDraftPermissionMode(permissionMode)
-                writeComposerPrefs({ permissionMode })
-                if (session != null) void persistRuntimePatch({ permissionMode })
-              }}
-              options={permissionOptions}
-            />
-            <ComposerMenuSelect
-              icon={<Icons.Brain size={13} />}
-              value={effectiveReasoning}
-              label={getReasoningOptions(adapter).find((option) => option.value === effectiveReasoning)?.label ?? effectiveReasoning}
-              title="推理强度"
-              onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
-              options={getReasoningOptions(adapter)}
-            />
-            {contextWindow > 0 && (
-              <ContextMeterWithPopup
-                contextRatio={contextRatio}
-                contextUsedTokens={contextUsedTokens}
-                contextWindow={contextWindow}
-                compactedThisTurn={contextUsage?.compactedThisTurn ?? false}
-                isBusy={isBusy}
-                sessionId={session?.id ?? null}
-                onCreateSession={onCreateSession}
-                selectedProvider={selectedProvider}
-                effectiveModelId={effectiveModelId}
-                adapter={adapter}
-                effectivePermissionMode={effectivePermissionMode}
-                onSent={onSent}
-                toast={toast}
-              />
-            )}
-            {showTaskQueue && (
-              <button
-                type="button"
-                className="queued-chip"
-                title={queueVisible ? '隐藏队列' : '显示队列'}
-                onClick={() => setQueueVisible((prev) => !prev)}
-              >
-                {queueVisible ? '隐藏队列' : '显示队列'} · {(visibleActiveTaskText != null ? 1 : 0) + queuedMessages.length}
-              </button>
-            )}
-            <div className="spacer" />
-            {showBranchSelect && (
-              <ComposerMenuSelect
-                icon={<Icons.GitBranch size={13} />}
-                value={branchState.currentBranch ?? ''}
-                label={branchState.currentBranch ?? ''}
-                title="分支"
-                align="right"
-                onChange={onSwitchBranch}
-                options={branchOptions}
-              />
-            )}
-            <span className="composer-hint">
-              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span><span className="kbd">↵</span> 换行
-            </span>
+          )}
+          {showTaskQueue && (
             <button
-              className="btn primary sm composer-send-btn"
-              onClick={() => void handleSend()}
-              disabled={!canSubmit}
+              type="button"
+              className="queued-chip"
+              title={queueVisible ? '隐藏队列' : '显示队列'}
+              onClick={() => setQueueVisible((prev) => !prev)}
             >
-              {sending ? <Icons.Spinner size={12} /> : isBusy ? <Icons.Clock size={12} /> : <Icons.Send size={12} />}
-              {isBusy ? '排队' : '发送'}
+              {queueVisible ? '隐藏队列' : '显示队列'} ·{' '}
+              {(visibleActiveTaskText != null ? 1 : 0) + queuedMessages.length}
             </button>
-          </div>
+          )}
+          <div className="spacer" />
+          {showBranchSelect && (
+            <ComposerMenuSelect
+              icon={<Icons.GitBranch size={13} />}
+              value={branchState.currentBranch ?? ''}
+              label={branchState.currentBranch ?? ''}
+              title="分支"
+              align="right"
+              onChange={onSwitchBranch}
+              options={branchOptions}
+            />
+          )}
+          <span className="composer-hint">
+            <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span>
+            <span className="kbd">↵</span> 换行
+          </span>
+          <button
+            className="btn primary sm composer-send-btn"
+            onClick={() => void handleSend()}
+            disabled={!canSubmit}
+          >
+            {sending ? (
+              <Icons.Spinner size={12} />
+            ) : isBusy ? (
+              <Icons.Clock size={12} />
+            ) : (
+              <Icons.Send size={12} />
+            )}
+            {isBusy ? '排队' : '发送'}
+          </button>
         </div>
       </div>
+    </div>
   )
 }
 
@@ -4350,7 +5089,11 @@ function ComposerMenuSelect({
   useCloseOnOutside(rootRef, () => setOpen(false), open)
 
   return (
-    <div ref={rootRef} className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}`} title={title}>
+    <div
+      ref={rootRef}
+      className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}`}
+      title={title}
+    >
       <span className="composer-select-icon">{icon}</span>
       <button
         type="button"
@@ -4379,7 +5122,9 @@ function ComposerMenuSelect({
                   {option.tone === 'auto' && <Icons.Zap size={13} />}
                   <span>{option.label}</span>
                 </span>
-                {option.description != null && <span className="composer-menu-item-desc">{option.description}</span>}
+                {option.description != null && (
+                  <span className="composer-menu-item-desc">{option.description}</span>
+                )}
               </span>
               {option.value === value && <Icons.Check size={14} />}
             </button>
@@ -4408,8 +5153,10 @@ function ProviderModelPicker({
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
-  const selectedProvider = providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
-  const label = selectedModelId || selectedProvider?.defaultModel || selectedProvider?.name || '未配置'
+  const selectedProvider =
+    providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
+  const label =
+    selectedModelId || selectedProvider?.defaultModel || selectedProvider?.name || '未配置'
 
   return (
     <div ref={rootRef} className="composer-select composer-model-picker" title="供应商模型">
@@ -4427,7 +5174,11 @@ function ProviderModelPicker({
         <div className="composer-menu composer-model-menu">
           {providers.length === 0 && <div className="composer-menu-empty">未配置</div>}
           {providers.map((provider) => {
-            const models = provider.modelIds.length ? provider.modelIds : provider.defaultModel ? [provider.defaultModel] : []
+            const models = provider.modelIds.length
+              ? provider.modelIds
+              : provider.defaultModel
+                ? [provider.defaultModel]
+                : []
             return (
               <div key={provider.id} className="composer-model-group">
                 <div className="composer-model-group-title">{provider.name}</div>
@@ -4457,7 +5208,11 @@ function ProviderModelPicker({
   )
 }
 
-function useCloseOnOutside(ref: RefObject<HTMLElement | null>, onClose: () => void, active: boolean) {
+function useCloseOnOutside(
+  ref: RefObject<HTMLElement | null>,
+  onClose: () => void,
+  active: boolean,
+) {
   useEffect(() => {
     if (!active) return
     const handlePointerDown = (event: PointerEvent) => {
@@ -4471,7 +5226,11 @@ function useCloseOnOutside(ref: RefObject<HTMLElement | null>, onClose: () => vo
 function AdapterIcon({ adapter }: { adapter: AgentAdapter }) {
   if (adapter === 'claude' || adapter === 'claude-sdk') {
     return (
-      <svg className="adapter-brand-icon adapter-brand-claude" viewBox="0 0 24 24" aria-hidden="true">
+      <svg
+        className="adapter-brand-icon adapter-brand-claude"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
         <rect x="2" y="2" width="20" height="20" rx="5" />
         <path d="M12 5.4v13.2M7.3 7.3l9.4 9.4M5.4 12h13.2M7.3 16.7l9.4-9.4" />
         <path d="M9.1 5.9l5.8 12.2M5.9 14.9l12.2-5.8M5.9 9.1l12.2 5.8M9.1 18.1l5.8-12.2" />
@@ -4481,7 +5240,10 @@ function AdapterIcon({ adapter }: { adapter: AgentAdapter }) {
   return (
     <svg className="adapter-brand-icon adapter-brand-codex" viewBox="0 0 24 24" aria-hidden="true">
       <rect x="2.5" y="2.5" width="19" height="19" rx="5.5" />
-      <path className="codex-cloud" d="M8.5 8.4c.9-2.1 4.2-2.7 5.7-.9 2.5-.2 4.1 1.4 4.1 3.5 0 2.4-1.8 4.1-4.4 4.1H8.8c-2 0-3.4-1.2-3.4-3 0-1.6 1.1-2.8 3.1-3.7Z" />
+      <path
+        className="codex-cloud"
+        d="M8.5 8.4c.9-2.1 4.2-2.7 5.7-.9 2.5-.2 4.1 1.4 4.1 3.5 0 2.4-1.8 4.1-4.4 4.1H8.8c-2 0-3.4-1.2-3.4-3 0-1.6 1.1-2.8 3.1-3.7Z"
+      />
       <path className="codex-prompt" d="M9 10.2 10.8 12 9 13.8M12.5 14h3" />
     </svg>
   )
@@ -4510,36 +5272,71 @@ const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   codex: 'Codex',
 }
 
-const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
-  { value: 'claude-ask', label: 'Ask permissions', description: '每次工具执行前确认' },
-  { value: 'claude-auto-edits', label: 'Auto accept edits', description: '自动接受编辑，命令仍确认', tone: 'auto' },
-  { value: 'claude-plan', label: 'Plan mode', description: '先产出计划，再批准执行' },
-  { value: 'claude-auto', label: 'Auto', description: '使用 Claude SDK 自动权限策略', tone: 'auto' },
-  { value: 'claude-bypass', label: 'Bypass permissions', description: '危险：完全听从 agent 执行', tone: 'danger' },
-]
+const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
+  [
+    { value: 'claude-ask', label: 'Ask permissions', description: '每次工具执行前确认' },
+    {
+      value: 'claude-auto-edits',
+      label: 'Auto accept edits',
+      description: '自动接受编辑，命令仍确认',
+      tone: 'auto',
+    },
+    { value: 'claude-plan', label: 'Plan mode', description: '先产出计划，再批准执行' },
+    {
+      value: 'claude-auto',
+      label: 'Auto',
+      description: '使用 Claude SDK 自动权限策略',
+      tone: 'auto',
+    },
+    {
+      value: 'claude-bypass',
+      label: 'Bypass permissions',
+      description: '危险：完全听从 agent 执行',
+      tone: 'danger',
+    },
+  ]
 
 const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
   { value: 'codex-default', label: '默认权限', description: '按默认策略请求确认' },
-  { value: 'codex-auto-review', label: '自动审查', description: '自动处理低风险审查动作', tone: 'auto' },
-  { value: 'codex-full-access', label: '完全访问', description: '危险：完全听从 agent 执行', tone: 'danger' },
+  {
+    value: 'codex-auto-review',
+    label: '自动审查',
+    description: '自动处理低风险审查动作',
+    tone: 'auto',
+  },
+  {
+    value: 'codex-full-access',
+    label: '完全访问',
+    description: '危险：完全听从 agent 执行',
+    tone: 'danger',
+  },
 ]
 
-function getPermissionModeOptions(adapter: AgentAdapter): Array<ComposerMenuOption & { value: PermissionModeChoice }> {
+function getPermissionModeOptions(
+  adapter: AgentAdapter,
+): Array<ComposerMenuOption & { value: PermissionModeChoice }> {
   return isClaudeAdapter(adapter) ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
 }
 
-function getValidPermissionMode(value: PermissionModeChoice | undefined, adapter: AgentAdapter): PermissionModeChoice {
+function getValidPermissionMode(
+  value: PermissionModeChoice | undefined,
+  adapter: AgentAdapter,
+): PermissionModeChoice {
   const options = getPermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
-    ? value as PermissionModeChoice
-    : options[0]?.value ?? (isClaudeAdapter(adapter) ? 'claude-ask' : 'codex-default')
+    ? (value as PermissionModeChoice)
+    : (options[0]?.value ?? (isClaudeAdapter(adapter) ? 'claude-ask' : 'codex-default'))
 }
 
-function normalizeRuntimePermissionPrefs(value: unknown): { adapter: AgentAdapter; permissionMode: PermissionModeChoice } {
-  const source = value != null && typeof value === 'object' ? value as ComposerPrefs : {}
-  const adapter = source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
-    ? source.adapter
-    : DEFAULT_AGENT_ADAPTER
+function normalizeRuntimePermissionPrefs(value: unknown): {
+  adapter: AgentAdapter
+  permissionMode: PermissionModeChoice
+} {
+  const source = value != null && typeof value === 'object' ? (value as ComposerPrefs) : {}
+  const adapter =
+    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+      ? source.adapter
+      : DEFAULT_AGENT_ADAPTER
   return {
     adapter,
     permissionMode: getValidPermissionMode(source.permissionMode, adapter),
@@ -4567,13 +5364,15 @@ function writeComposerPrefs(patch: ComposerPrefs): void {
   window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(next))
   if (patch.adapter !== undefined || patch.permissionMode !== undefined) {
     const runtimePrefs = normalizeRuntimePermissionPrefs(next)
-    void window.spark?.invoke('settings:set', {
-      category: RUNTIME_PERMISSION_SETTINGS_CATEGORY,
-      key: RUNTIME_PERMISSION_SETTINGS_KEY,
-      value: runtimePrefs,
-    }).catch(() => {
-      /* settings persistence is best-effort from the renderer */
-    })
+    void window.spark
+      ?.invoke('settings:set', {
+        category: RUNTIME_PERMISSION_SETTINGS_CATEGORY,
+        key: RUNTIME_PERMISSION_SETTINGS_KEY,
+        value: runtimePrefs,
+      })
+      .catch(() => {
+        /* settings persistence is best-effort from the renderer */
+      })
   }
 }
 
@@ -4582,11 +5381,19 @@ function getPreferredProvider(
   prefs: ComposerPrefs,
   adapter: AgentAdapter,
 ): ProviderProfile | undefined {
-  return providers.find((provider) => provider.id === prefs.providerProfileId && isProviderCompatibleWithAdapter(provider, adapter))
-    ?? providers.find((provider) => provider.isDefault && isProviderCompatibleWithAdapter(provider, adapter))
-    ?? providers.find((provider) => isProviderCompatibleWithAdapter(provider, adapter))
-    ?? providers.find((provider) => provider.provider === 'anthropic')
-    ?? providers[0]
+  return (
+    providers.find(
+      (provider) =>
+        provider.id === prefs.providerProfileId &&
+        isProviderCompatibleWithAdapter(provider, adapter),
+    ) ??
+    providers.find(
+      (provider) => provider.isDefault && isProviderCompatibleWithAdapter(provider, adapter),
+    ) ??
+    providers.find((provider) => isProviderCompatibleWithAdapter(provider, adapter)) ??
+    providers.find((provider) => provider.provider === 'anthropic') ??
+    providers[0]
+  )
 }
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
@@ -4599,15 +5406,24 @@ function isControlApprovalRequest(request: PermissionApprovalRequest): boolean {
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
     .replace(/[-\s]+/g, '_')
     .toLowerCase()
-  return normalized === 'exit_plan_mode'
-    || normalized === 'enter_plan_mode'
-    || normalized === 'ask_user_question'
+  return (
+    normalized === 'exit_plan_mode' ||
+    normalized === 'enter_plan_mode' ||
+    normalized === 'ask_user_question'
+  )
 }
 
-function normalizeModelForProvider(modelId: string | null | undefined, provider: ProviderProfile | null | undefined): string {
+function normalizeModelForProvider(
+  modelId: string | null | undefined,
+  provider: ProviderProfile | null | undefined,
+): string {
   const model = modelId?.trim() ?? ''
   if (!model || provider == null) return ''
-  const configuredModels = provider.modelIds.length ? provider.modelIds : provider.defaultModel ? [provider.defaultModel] : []
+  const configuredModels = provider.modelIds.length
+    ? provider.modelIds
+    : provider.defaultModel
+      ? [provider.defaultModel]
+      : []
   if (configuredModels.length === 0) return model
   return configuredModels.includes(model) ? model : ''
 }
@@ -4616,13 +5432,18 @@ function isClaudeAdapter(adapter: AgentAdapter): boolean {
   return adapter === 'claude' || adapter === 'claude-sdk'
 }
 
-function isProviderCompatibleWithAdapter(provider: ProviderProfile, adapter: AgentAdapter): boolean {
+function isProviderCompatibleWithAdapter(
+  provider: ProviderProfile,
+  adapter: AgentAdapter,
+): boolean {
   return isClaudeAdapter(adapter)
     ? provider.provider === 'anthropic'
     : provider.provider !== 'anthropic'
 }
 
-function getReasoningOptions(adapter: AgentAdapter): Array<{ value: SessionReasoningEffort; label: string }> {
+function getReasoningOptions(
+  adapter: AgentAdapter,
+): Array<{ value: SessionReasoningEffort; label: string }> {
   if (isClaudeAdapter(adapter)) {
     return [
       { value: 'low', label: 'low' },
@@ -4683,13 +5504,17 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
             rows={2}
             placeholder={sessionId ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个会话'}
             value={value}
-            onChange={e => setValue(e.target.value)}
+            onChange={(e) => setValue(e.target.value)}
             onKeyDown={handleKeyDown}
             disabled={!sessionId || sending}
           />
           <div className="composer-actions">
-            <button className="icon-btn" title="添加文件"><Icons.Plus /></button>
-            <button className="icon-btn" title="工具"><Icons.Wrench /></button>
+            <button className="icon-btn" title="添加文件">
+              <Icons.Plus />
+            </button>
+            <button className="icon-btn" title="工具">
+              <Icons.Wrench />
+            </button>
             <div className="model-pill">
               <Icons.Sparkles size={11} />
               <span>Agent</span>
@@ -4697,7 +5522,8 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
             </div>
             <div className="spacer" />
             <span className="composer-hint">
-              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span><span className="kbd">↵</span> 换行
+              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span>
+              <span className="kbd">↵</span> 换行
             </span>
             <button
               className="btn primary sm composer-send-btn"
@@ -4750,7 +5576,7 @@ function normalizePromptLayer(value: unknown): PromptConfigGetResponse['system']
 }
 
 function asArray<T>(value: unknown): T[] {
-  return Array.isArray(value) ? value as T[] : []
+  return Array.isArray(value) ? (value as T[]) : []
 }
 
 function getActiveTaskText(messages: UIMessage[], isRunning: boolean): string | null {
@@ -4800,10 +5626,7 @@ function ChatConfigPanel({
       ...(workspaceId != null ? { workspaceId } : {}),
       ...(sessionId != null ? { sessionId } : {}),
     }
-    const [skillsRes, promptsRes] = await Promise.all([
-      getSkillConfig(req),
-      getPromptConfig(req),
-    ])
+    const [skillsRes, promptsRes] = await Promise.all([getSkillConfig(req), getPromptConfig(req)])
     const normalizedSkills = normalizeSkillConfig(skillsRes)
     const normalizedPrompts = normalizePromptConfig(promptsRes)
     setSkillConfig(normalizedSkills)
@@ -4823,49 +5646,50 @@ function ChatConfigPanel({
     void loadRuntimeConfig()
   }, [loadRuntimeConfig, sessionId])
 
-  const toggleRuntimeSkill = useCallback(async (
-    scope: 'project' | 'session',
-    scopeRef: string,
-    skillId: string,
-    active: boolean,
-  ) => {
-    if (skillConfig == null) return
-    const currentDisabled = scope === 'project'
-      ? skillConfig.projectDisabledSkillIds
-      : skillConfig.sessionDisabledSkillIds
-    const currentSelected = scope === 'project'
-      ? skillConfig.projectSkillIds
-      : skillConfig.sessionSkillIds
-    const nextDisabled = active
-      ? currentDisabled.filter((id) => id !== skillId)
-      : Array.from(new Set([...currentDisabled, skillId]))
-    setSavingRuntime(true)
-    try {
-      await updateSkillConfig({
-        scope,
-        scopeRef,
-        skillIds: currentSelected,
-        disabledSkillIds: nextDisabled,
-      })
-      await loadRuntimeConfig()
-    } finally {
-      setSavingRuntime(false)
-    }
-  }, [loadRuntimeConfig, skillConfig, updateSkillConfig])
+  const toggleRuntimeSkill = useCallback(
+    async (scope: 'project' | 'session', scopeRef: string, skillId: string, active: boolean) => {
+      if (skillConfig == null) return
+      const currentDisabled =
+        scope === 'project'
+          ? skillConfig.projectDisabledSkillIds
+          : skillConfig.sessionDisabledSkillIds
+      const currentSelected =
+        scope === 'project' ? skillConfig.projectSkillIds : skillConfig.sessionSkillIds
+      const nextDisabled = active
+        ? currentDisabled.filter((id) => id !== skillId)
+        : Array.from(new Set([...currentDisabled, skillId]))
+      setSavingRuntime(true)
+      try {
+        await updateSkillConfig({
+          scope,
+          scopeRef,
+          skillIds: currentSelected,
+          disabledSkillIds: nextDisabled,
+        })
+        await loadRuntimeConfig()
+      } finally {
+        setSavingRuntime(false)
+      }
+    },
+    [loadRuntimeConfig, skillConfig, updateSkillConfig],
+  )
 
-  const savePromptLayer = useCallback(async (scope: 'project' | 'session', scopeRef: string, content: string) => {
-    setSavingRuntime(true)
-    try {
-      await updatePromptConfig({
-        scope,
-        scopeRef,
-        value: { enabled: content.trim().length > 0, content },
-      })
-      await loadRuntimeConfig()
-    } finally {
-      setSavingRuntime(false)
-    }
-  }, [loadRuntimeConfig, updatePromptConfig])
+  const savePromptLayer = useCallback(
+    async (scope: 'project' | 'session', scopeRef: string, content: string) => {
+      setSavingRuntime(true)
+      try {
+        await updatePromptConfig({
+          scope,
+          scopeRef,
+          value: { enabled: content.trim().length > 0, content },
+        })
+        await loadRuntimeConfig()
+      } finally {
+        setSavingRuntime(false)
+      }
+    },
+    [loadRuntimeConfig, updatePromptConfig],
+  )
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -4886,7 +5710,10 @@ function ChatConfigPanel({
   }
 
   return (
-    <div className="inspector scroll" style={{ '--inspector-width': `${width}px` } as React.CSSProperties}>
+    <div
+      className="inspector scroll"
+      style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
+    >
       <div
         className="inspector-resize-handle"
         title="拖拽调整侧边栏宽度"
@@ -4903,40 +5730,67 @@ function ChatConfigPanel({
             <Icons.Skills size={11} />
             Skills
             <span className="inspector-count">{skillConfig.effectiveSkillIds.length}</span>
-            <Icons.ChevronRight size={10} className={`chev ${skillsCollapsed ? '' : 'chev-open'}`} />
+            <Icons.ChevronRight
+              size={10}
+              className={`chev ${skillsCollapsed ? '' : 'chev-open'}`}
+            />
           </h4>
           {!skillsCollapsed && (
             <>
               <div className="runtime-skill-list">
                 {skillConfig.skills.map((skill) => {
                   const systemVisible = skillConfig.systemSkillIds.includes(skill.id)
-                  const projectActive = systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
-                  const sessionActive = systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
+                  const projectActive =
+                    systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
+                  const sessionActive =
+                    systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
                   const meta = parseSkillManifest(skill.manifestJson)
                   return (
                     <div className="runtime-skill-row" key={skill.id}>
                       <div className="runtime-skill-main min-w-0">
                         <div className="runtime-skill-name truncate">{skill.name}</div>
-                        <div className="runtime-skill-desc truncate">{meta.source} · {meta.desc}</div>
+                        <div className="runtime-skill-desc truncate">
+                          {meta.source} · {meta.desc}
+                        </div>
                       </div>
                       {workspaceId != null && (
-                        <label className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="项目层可见">
+                        <label
+                          className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`}
+                          title="项目层可见"
+                        >
                           <input
                             type="checkbox"
                             checked={projectActive}
                             disabled={!systemVisible || savingRuntime}
-                            onChange={(event) => void toggleRuntimeSkill('project', workspaceId, skill.id, event.target.checked)}
+                            onChange={(event) =>
+                              void toggleRuntimeSkill(
+                                'project',
+                                workspaceId,
+                                skill.id,
+                                event.target.checked,
+                              )
+                            }
                           />
                           P
                         </label>
                       )}
                       {sessionId != null && (
-                        <label className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`} title="会话层可见">
+                        <label
+                          className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`}
+                          title="会话层可见"
+                        >
                           <input
                             type="checkbox"
                             checked={sessionActive}
                             disabled={!systemVisible || savingRuntime}
-                            onChange={(event) => void toggleRuntimeSkill('session', sessionId, skill.id, event.target.checked)}
+                            onChange={(event) =>
+                              void toggleRuntimeSkill(
+                                'session',
+                                sessionId,
+                                skill.id,
+                                event.target.checked,
+                              )
+                            }
                           />
                           S
                         </label>
@@ -4945,7 +5799,9 @@ function ChatConfigPanel({
                   )
                 })}
               </div>
-              <div className="inspector-muted runtime-hint">P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。</div>
+              <div className="inspector-muted runtime-hint">
+                P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。
+              </div>
             </>
           )}
         </div>
@@ -4954,11 +5810,17 @@ function ChatConfigPanel({
       {/* 提示词 */}
       {session != null && promptConfig != null && (
         <div className="inspector-section">
-          <h4 className="config-panel-header" onClick={() => setPromptsCollapsed(!promptsCollapsed)}>
+          <h4
+            className="config-panel-header"
+            onClick={() => setPromptsCollapsed(!promptsCollapsed)}
+          >
             <Icons.Edit size={11} />
             提示词
             <span className="spacer" />
-            <Icons.ChevronRight size={10} className={`chev ${promptsCollapsed ? '' : 'chev-open'}`} />
+            <Icons.ChevronRight
+              size={10}
+              className={`chev ${promptsCollapsed ? '' : 'chev-open'}`}
+            />
           </h4>
           {!promptsCollapsed && (
             <>
@@ -5083,12 +5945,18 @@ function ChatInspector({
   const currentContextTokens = contextUsage?.estimatedTokens ?? contextInputTokens
   // 窗口大小由 Provider 显式配置决定；历史 context_usage 里可能还带旧的模型名推断值。
   const contextWindow = providerContextWindow
-  const contextRatio = contextWindow > 0 ? Math.min(100, Math.round((currentContextTokens / contextWindow) * 1000) / 10) : 0
+  const contextRatio =
+    contextWindow > 0
+      ? Math.min(100, Math.round((currentContextTokens / contextWindow) * 1000) / 10)
+      : 0
   const isContextWarning = contextRatio >= 80
   const isContextCritical = contextRatio >= 95
 
   return (
-    <div className="inspector scroll" style={{ '--inspector-width': `${width}px` } as React.CSSProperties}>
+    <div
+      className="inspector scroll"
+      style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
+    >
       <div
         className="inspector-resize-handle"
         title="拖拽调整侧边栏宽度"
@@ -5101,9 +5969,20 @@ function ChatInspector({
         <h4>会话信息</h4>
         {session ? (
           <>
-            <div className="kv-row"><span className="k">ID</span><span className="v mono-sm inspector-v-id">{(session.id as string).slice(0, 16)}…</span></div>
-            <div className="kv-row"><span className="k">状态</span><span className="v">{session.status}</span></div>
-            <div className="kv-row"><span className="k">消息数</span><span className="v">{session.messageCount}</span></div>
+            <div className="kv-row">
+              <span className="k">ID</span>
+              <span className="v mono-sm inspector-v-id">
+                {(session.id as string).slice(0, 16)}…
+              </span>
+            </div>
+            <div className="kv-row">
+              <span className="k">状态</span>
+              <span className="v">{session.status}</span>
+            </div>
+            <div className="kv-row">
+              <span className="k">消息数</span>
+              <span className="v">{session.messageCount}</span>
+            </div>
             <div className="kv-row">
               <span className="k">项目</span>
               <span className="v truncate">{workspace?.name ?? '未归属'}</span>
@@ -5111,17 +5990,28 @@ function ChatInspector({
             {workspace && (
               <div className="kv-row">
                 <span className="k">路径</span>
-                <span className="v mono-sm truncate inspector-path" title={workspace.rootPath}>{workspace.rootPath}</span>
+                <span className="v mono-sm truncate inspector-path" title={workspace.rootPath}>
+                  {workspace.rootPath}
+                </span>
               </div>
             )}
             {workspace && (
-              <button className="btn ghost sm inspector-open-folder-btn" onClick={onOpenProjectFolder}>
+              <button
+                className="btn ghost sm inspector-open-folder-btn"
+                onClick={onOpenProjectFolder}
+              >
                 <Icons.Folder size={12} />
                 <span>打开文件夹</span>
               </button>
             )}
-            <div className="kv-row"><span className="k">创建时间</span><span className="v">{new Date(session.createdAt).toLocaleString()}</span></div>
-            <div className="kv-row"><span className="k">更新时间</span><span className="v">{new Date(session.updatedAt).toLocaleString()}</span></div>
+            <div className="kv-row">
+              <span className="k">创建时间</span>
+              <span className="v">{new Date(session.createdAt).toLocaleString()}</span>
+            </div>
+            <div className="kv-row">
+              <span className="k">更新时间</span>
+              <span className="v">{new Date(session.updatedAt).toLocaleString()}</span>
+            </div>
           </>
         ) : (
           <div className="inspector-muted">未选择会话</div>
@@ -5134,27 +6024,47 @@ function ChatInspector({
             项目上下文
             <span className="inspector-count">{projectContextSources.length}</span>
           </h4>
-          <div className="kv-row"><span className="k">规则</span><span className="v">{projectContext.counts.rules}</span></div>
-          <div className="kv-row"><span className="k">Skills</span><span className="v">{projectContext.counts.skills}</span></div>
-          <div className="kv-row"><span className="k">Agents</span><span className="v">{projectContext.counts.agents}</span></div>
+          <div className="kv-row">
+            <span className="k">规则</span>
+            <span className="v">{projectContext.counts.rules}</span>
+          </div>
+          <div className="kv-row">
+            <span className="k">Skills</span>
+            <span className="v">{projectContext.counts.skills}</span>
+          </div>
+          <div className="kv-row">
+            <span className="k">Agents</span>
+            <span className="v">{projectContext.counts.agents}</span>
+          </div>
           {projectContext.budget != null && (
             <>
-              <div className="kv-row"><span className="k">模式</span><span className="v">{projectContext.budget.mode}</span></div>
+              <div className="kv-row">
+                <span className="k">模式</span>
+                <span className="v">{projectContext.budget.mode}</span>
+              </div>
               <div className="kv-row">
                 <span className="k">预算</span>
-                <span className="v">{formatTokenCount(projectContext.budget.usedTokens)} / {formatTokenCount(projectContext.budget.budgetTokens)}</span>
+                <span className="v">
+                  {formatTokenCount(projectContext.budget.usedTokens)} /{' '}
+                  {formatTokenCount(projectContext.budget.budgetTokens)}
+                </span>
               </div>
             </>
           )}
           {projectContextSources.length > 0 ? (
             <div className="runtime-skill-list">
               {projectContextSources.map((source) => (
-                <div className={`runtime-skill-row ${source.included === false ? 'disabled' : ''}`} key={`${source.kind}:${source.path}`}>
+                <div
+                  className={`runtime-skill-row ${source.included === false ? 'disabled' : ''}`}
+                  key={`${source.kind}:${source.path}`}
+                >
                   <div className="runtime-skill-main min-w-0">
                     <div className="runtime-skill-name truncate">{source.name}</div>
                     <div className="runtime-skill-desc truncate">
                       {source.kind} · {source.path}
-                      {source.estimatedTokens != null ? ` · ${formatTokenCount(source.estimatedTokens)}` : ''}
+                      {source.estimatedTokens != null
+                        ? ` · ${formatTokenCount(source.estimatedTokens)}`
+                        : ''}
                       {source.included === false ? ' · excluded' : ''}
                       {source.truncated ? ' · truncated' : ''}
                       {source.reason != null ? ` · ${source.reason}` : ''}
@@ -5172,7 +6082,9 @@ function ChatInspector({
       {plans.length > 0 && (
         <div className="inspector-section">
           <h4>计划</h4>
-          {plans.map((plan) => <PlanSummary key={plan.id} plan={plan} />)}
+          {plans.map((plan) => (
+            <PlanSummary key={plan.id} plan={plan} />
+          ))}
         </div>
       )}
 
@@ -5190,7 +6102,9 @@ function ChatInspector({
                   <div className="runtime-skill-desc truncate">
                     {change.changeType} · +{change.adds} -{change.dels}
                     {!change.hasDiff ? ' · no diff' : ''}
-                    {change.checkpointIds.length > 0 ? ` · checkpoint ${change.checkpointIds.join(', ')}` : ''}
+                    {change.checkpointIds.length > 0
+                      ? ` · checkpoint ${change.checkpointIds.join(', ')}`
+                      : ''}
                   </div>
                 </div>
               </div>
@@ -5218,8 +6132,12 @@ function ChatInspector({
         <div className="inspector-section">
           <h4>
             <Icons.Database size={11} /> 上下文窗口
-            {isContextCritical && <span className="badge danger dot usage-warning-badge">即将满</span>}
-            {!isContextCritical && isContextWarning && <span className="badge warning dot usage-warning-badge">接近满</span>}
+            {isContextCritical && (
+              <span className="badge danger dot usage-warning-badge">即将满</span>
+            )}
+            {!isContextCritical && isContextWarning && (
+              <span className="badge warning dot usage-warning-badge">接近满</span>
+            )}
           </h4>
           <ContextWindowVisualization
             usedTokens={currentContextTokens}
@@ -5243,9 +6161,7 @@ function ChatInspector({
       )}
 
       {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
-      {turnPromptSnapshots.length > 0 && (
-        <PromptInspectorSection snapshots={turnPromptSnapshots} />
-      )}
+      {turnPromptSnapshots.length > 0 && <PromptInspectorSection snapshots={turnPromptSnapshots} />}
     </div>
   )
 }
@@ -5314,16 +6230,25 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
         onClick={() => setExpanded((prev) => !prev)}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((prev) => !prev) } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            setExpanded((prev) => !prev)
+          }
+        }}
       >
-        <span className={`prompt-turn-chevron ${expanded ? 'open' : ''}`}>{expanded ? '▾' : '▸'}</span>
+        <span className={`prompt-turn-chevron ${expanded ? 'open' : ''}`}>
+          {expanded ? '▾' : '▸'}
+        </span>
         <span className="prompt-turn-title">
           Turn {turnNumber} · {snapshot.model}
         </span>
         <span className="prompt-turn-time">{relativeTime(snapshot.timestamp)}</span>
       </div>
       <div className="prompt-turn-summary">
-        <span className="prompt-turn-user" title={snapshot.userMessage}>{userPreview}</span>
+        <span className="prompt-turn-user" title={snapshot.userMessage}>
+          {userPreview}
+        </span>
         <span className="prompt-turn-meta">
           {snapshot.systemPromptSections.length} 段 · {formatCharCount(totalPromptChars)} 字符
         </span>
@@ -5334,7 +6259,9 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
           <div className="prompt-turn-config">
             <span className="prompt-config-tag">{snapshot.adapterKind}</span>
             <span className="prompt-config-tag">{snapshot.permissionMode}</span>
-            {snapshot.sdkPreset && <span className="prompt-config-tag sdk">SDK: {snapshot.sdkPreset}</span>}
+            {snapshot.sdkPreset && (
+              <span className="prompt-config-tag sdk">SDK: {snapshot.sdkPreset}</span>
+            )}
             <span className="prompt-config-tag">Tools: {snapshot.toolCount}</span>
           </div>
 
@@ -5367,23 +6294,30 @@ const PromptSectionBlock = React.memo(function PromptSectionBlock({
     <div className={`prompt-section-block ${isPlaceholder ? 'placeholder' : ''}`}>
       <div
         className="prompt-section-label clickable"
-        onClick={() => { if (!isPlaceholder) setSectionExpanded((prev) => !prev) }}
+        onClick={() => {
+          if (!isPlaceholder) setSectionExpanded((prev) => !prev)
+        }}
         role="button"
         tabIndex={0}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (!isPlaceholder) setSectionExpanded((prev) => !prev) } }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            if (!isPlaceholder) setSectionExpanded((prev) => !prev)
+          }
+        }}
       >
         <span className={`prompt-section-chevron ${sectionExpanded ? 'open' : ''}`}>
           {!isPlaceholder ? (sectionExpanded ? '▾' : '▸') : '○'}
         </span>
         <span>{section.label}</span>
-        {section.charCount > 0 && <span className="prompt-section-chars">{section.charCount} 字符</span>}
+        {section.charCount > 0 && (
+          <span className="prompt-section-chars">{section.charCount} 字符</span>
+        )}
       </div>
       {sectionExpanded && !isPlaceholder && (
         <pre className="prompt-section-content">{section.content}</pre>
       )}
-      {isPlaceholder && (
-        <div className="prompt-section-placeholder">{section.content}</div>
-      )}
+      {isPlaceholder && <div className="prompt-section-placeholder">{section.content}</div>}
     </div>
   )
 })
@@ -5404,10 +6338,18 @@ function PlanSummary({ plan }: { plan: SidebarPlan }) {
     <div className="inspector-plan">
       <div className="inspector-plan-head">
         <span className="strong truncate">{plan.title}</span>
-        <span className="mono-sm">{completed}/{total}</span>
+        <span className="mono-sm">
+          {completed}/{total}
+        </span>
       </div>
-      <div className="inspector-progress"><span style={{ width: `${percent}%` }} /></div>
-      {plan.explanation && <div className="inspector-plan-note md-surface"><MarkdownText content={plan.explanation} /></div>}
+      <div className="inspector-progress">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      {plan.explanation && (
+        <div className="inspector-plan-note md-surface">
+          <MarkdownText content={plan.explanation} />
+        </div>
+      )}
       <div className="inspector-plan-items">
         {plan.items.map((item, index) => (
           <div key={`${item.text}-${index}`} className={`inspector-plan-item ${item.status}`}>
@@ -5464,12 +6406,15 @@ function TokenUsagePanel({
       {hasUsage && (
         <div className="token-usage-row">
           <span className="token-row-label">预估成本</span>
-          <span className="token-row-value token-cost">${estimatedCostUsd < 0.01 && estimatedCostUsd > 0 ? '<0.01' : estimatedCostUsd.toFixed(4)}</span>
+          <span className="token-row-value token-cost">
+            $
+            {estimatedCostUsd < 0.01 && estimatedCostUsd > 0
+              ? '<0.01'
+              : estimatedCostUsd.toFixed(4)}
+          </span>
         </div>
       )}
-      {!hasUsage && (
-        <div className="inspector-muted">暂无用量数据</div>
-      )}
+      {!hasUsage && <div className="inspector-muted">暂无用量数据</div>}
     </div>
   )
 }
@@ -5493,7 +6438,11 @@ function ContextWindowVisualization({
   const toolsPct = 10
   const historyPct = Math.max(0, ratio - systemPct - toolsPct)
 
-  const barClass = isCritical ? 'context-bar-critical' : isWarning ? 'context-bar-warning' : 'context-bar-ok'
+  const barClass = isCritical
+    ? 'context-bar-critical'
+    : isWarning
+      ? 'context-bar-warning'
+      : 'context-bar-ok'
 
   return (
     <div className="context-window-viz">
@@ -5536,7 +6485,11 @@ function ContextWindowVisualization({
         </div>
         <div className="kv-row">
           <span className="k">使用率</span>
-          <span className={`v ${isCritical ? 'token-cost-critical' : isWarning ? 'token-cost-warn' : ''}`}>{ratio}%</span>
+          <span
+            className={`v ${isCritical ? 'token-cost-critical' : isWarning ? 'token-cost-warn' : ''}`}
+          >
+            {ratio}%
+          </span>
         </div>
       </div>
     </div>
@@ -5555,11 +6508,21 @@ function TurnUsageChart({ turns }: { turns: UsageSnapshot[] }) {
         const inputPct = (turn.inputTokens / maxTokens) * 100
         const outputPct = (turn.outputTokens / maxTokens) * 100
         return (
-          <div key={`${turn.turnId}-${index}`} className="turn-usage-bar-group" title={`第 ${index + 1} 轮: 输入 ${formatTokenCount(turn.inputTokens)}, 输出 ${formatTokenCount(turn.outputTokens)}`}>
+          <div
+            key={`${turn.turnId}-${index}`}
+            className="turn-usage-bar-group"
+            title={`第 ${index + 1} 轮: 输入 ${formatTokenCount(turn.inputTokens)}, 输出 ${formatTokenCount(turn.outputTokens)}`}
+          >
             <span className="turn-usage-index">{index + 1}</span>
             <div className="turn-usage-bar-track">
-              <div className="turn-usage-bar-input" style={{ width: `${inputPct}%` }} /* dynamic */ />
-              <div className="turn-usage-bar-output" style={{ width: `${outputPct}%` }} /* dynamic */ />
+              <div
+                className="turn-usage-bar-input"
+                style={{ width: `${inputPct}%` }} /* dynamic */
+              />
+              <div
+                className="turn-usage-bar-output"
+                style={{ width: `${outputPct}%` }} /* dynamic */
+              />
             </div>
             <span className="turn-usage-total">{formatTokenCount(total)}</span>
           </div>
@@ -5674,25 +6637,31 @@ function extractPlans(messages: UIMessage[]): SidebarPlan[] {
 
       if (block.kind !== 'tool_call') continue
 
-      const todos = block.toolName === 'todo_write' ? parseTodosFromInputOrOutput(block.toolInput, block.output) : []
+      const todos =
+        block.toolName === 'todo_write'
+          ? parseTodosFromInputOrOutput(block.toolInput, block.output)
+          : []
       const rawPlan = Array.isArray(block.toolInput.plan) ? block.toolInput.plan : undefined
       if (todos.length === 0 && rawPlan == null && !isPlanToolName(block.toolName)) continue
 
-      const items = todos.length > 0
-        ? todos.map((todo) => ({
-            text: todo.status === 'in_progress' ? (todo.activeForm ?? todo.content) : todo.content,
-            status: normalizePlanStatus(todo.status),
-          }))
-        : (rawPlan ?? []).flatMap((item, index) => {
-            if (!isRecord(item)) return []
-            const text = String(item.step ?? item.text ?? item.title ?? `Step ${index + 1}`)
-            return [{ text, status: normalizePlanStatus(item.status) }]
-          })
+      const items =
+        todos.length > 0
+          ? todos.map((todo) => ({
+              text:
+                todo.status === 'in_progress' ? (todo.activeForm ?? todo.content) : todo.content,
+              status: normalizePlanStatus(todo.status),
+            }))
+          : (rawPlan ?? []).flatMap((item, index) => {
+              if (!isRecord(item)) return []
+              const text = String(item.step ?? item.text ?? item.title ?? `Step ${index + 1}`)
+              return [{ text, status: normalizePlanStatus(item.status) }]
+            })
       if (items.length === 0) continue
       plans.push({
         id: block.toolCallId,
         title: String(block.toolInput.title ?? (todos.length > 0 ? 'Todo 计划' : 'Agent 计划')),
-        explanation: typeof block.toolInput.explanation === 'string' ? block.toolInput.explanation : undefined,
+        explanation:
+          typeof block.toolInput.explanation === 'string' ? block.toolInput.explanation : undefined,
         items,
       })
     }
@@ -5720,7 +6689,10 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
 }
 
-function buildProjectGroups(workspaces: WorkspaceInfo[], sessions: SessionSummary[]): ProjectGroup[] {
+function buildProjectGroups(
+  workspaces: WorkspaceInfo[],
+  sessions: SessionSummary[],
+): ProjectGroup[] {
   return workspaces.map((workspace) => ({
     workspace,
     sessions: sessions.filter((session) => session.workspaceIds.includes(workspace.id)),
@@ -5822,7 +6794,9 @@ function UserQuestionModal({
     <div className="modal-backdrop">
       <div className="modal user-question-modal">
         <div className="modal-h">
-          <div className="modal-h-icon"><Icons.HelpCircle size={17} /></div>
+          <div className="modal-h-icon">
+            <Icons.HelpCircle size={17} />
+          </div>
           <div>
             <div className="modal-title">需要您的选择</div>
             <div className="modal-subtitle">Agent 正在等待您的回答以继续执行任务</div>
@@ -5838,7 +6812,7 @@ function UserQuestionModal({
                   <button
                     key={optIndex}
                     className={`question-option ${selections[qIndex] === opt.label ? 'selected' : ''}`}
-                    onClick={() => setSelections(prev => ({ ...prev, [qIndex]: opt.label }))}
+                    onClick={() => setSelections((prev) => ({ ...prev, [qIndex]: opt.label }))}
                     disabled={submitted}
                   >
                     <div className="option-label">{opt.label}</div>
@@ -5850,9 +6824,15 @@ function UserQuestionModal({
           ))}
         </div>
         <div className="modal-foot">
-          <button className="btn ghost sm" onClick={handleCancel} disabled={submitted}>取消</button>
+          <button className="btn ghost sm" onClick={handleCancel} disabled={submitted}>
+            取消
+          </button>
           <div className="spacer" />
-          <button className="btn primary sm" onClick={handleSubmit} disabled={submitted || Object.keys(selections).length < data.questions.length}>
+          <button
+            className="btn primary sm"
+            onClick={handleSubmit}
+            disabled={submitted || Object.keys(selections).length < data.questions.length}
+          >
             {submitted ? <Icons.Spinner size={12} /> : null}
             提交答案
           </button>
