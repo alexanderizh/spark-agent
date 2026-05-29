@@ -32,7 +32,7 @@ import { createLogger, resolveModelContextWindow, resolveSoftContextLimit, resol
 import { AgentEventEmitter } from '../core/event-emitter.js'
 import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
-import type { SDKExecutorConfig, SDKPermissionResult, SDKQueryFunction, SDKQueryOptions, SDKSettings } from './types.js'
+import type { SDKExecutorConfig, SDKMessage, SDKPermissionResult, SDKQueryFunction, SDKQueryOptions, SDKResultMessage, SDKSettings } from './types.js'
 
 type SDKModule = { query: SDKQueryFunction }
 
@@ -47,6 +47,9 @@ const SDK_HOST_TOOL_INSTRUCTIONS = [
 ].join('\n')
 
 const ENV_BLOCKLIST_PREFIXES = ['ANTHROPIC_', 'CLAUDE_'] as const
+const DEFAULT_SDK_MAX_TURNS = 80
+const DEFAULT_MAX_TURN_EXTENSION_RETRIES = 2
+const DEFAULT_MAX_TURN_EXTENSION_CAP = 500
 
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
@@ -178,142 +181,191 @@ export class ClaudeSDKExecutor {
       },
     }
 
-    const options: SDKQueryOptions = {
-      abortController: this.abortController,
-      model: config.model,
-      cwd: config.workspaceRootPath,
-      ...(claudeCodeExecutable != null ? { pathToClaudeCodeExecutable: claudeCodeExecutable } : {}),
-      env: runtimeEnv,
-      settings,
-      settingSources: ['project'],
-      persistSession: true,
-      debug: true,
-      stderr: (data: string) => {
-        const text = data.trim()
-        if (text.length === 0) return
-        log.debug('Claude Code stderr', {
-          sparkSessionId: sessionId,
-          sdkSessionId,
-          output: text,
-        })
-      },
+    let maxTurns = normalizePositiveInt(config.maxTurnCount, DEFAULT_SDK_MAX_TURNS, 1000)
+    const maxTurnExtensionRetries = normalizeNonNegativeInt(config.maxTurnExtensionRetries, DEFAULT_MAX_TURN_EXTENSION_RETRIES, 10)
+    const maxTurnExtensionCap = normalizePositiveInt(config.maxTurnExtensionCap, DEFAULT_MAX_TURN_EXTENSION_CAP, 1000)
+    let extensionAttempts = 0
+    let prompt = userMessage
+    let resumeExistingSession = config.continueSession === true
 
-      // Use Claude Code's built-in system prompt as base, append our customizations
-      systemPrompt: systemPrompt != null
-        ? { type: 'preset', preset: 'claude_code', append: systemPrompt }
-        : { type: 'preset', preset: 'claude_code' },
-
-      permissionMode: mergedPerms.permissionMode,
-      ...(mergedPerms.allowedTools.length > 0 ? { allowedTools: mergedPerms.allowedTools } : {}),
-      ...(mergedPerms.disallowedTools.length > 0 ? { disallowedTools: mergedPerms.disallowedTools } : {}),
-      ...(config.mcpServers != null ? { mcpServers: config.mcpServers } : {}),
-      skills: config.nativeSkills ?? [],
-      toolConfig: {
-        askUserQuestion: { previewFormat: 'html' },
-      },
-
-      maxTurns: config.maxTurnCount ?? 25,
-      ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
-      effort: mapReasoningEffort(config.reasoningEffort),
-      ...(config.continueSession === true ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
-
-      includePartialMessages: true,
-      enableFileCheckpointing: config.enableCheckpoints ?? false,
-
-      // Map Spark approval callback to SDK permission callback when Spark needs
-      // extra policy on top of the SDK's native permission mode.
-      ...(config.approvalCallback != null && shouldUseSparkPermissionCallback(config.permissionMode) ? {
-        canUseTool: async (
-          toolName: string,
-          input: Record<string, unknown>,
-          callbackOptions,
-        ): Promise<SDKPermissionResult> => {
-          try {
-            if (isAlwaysAllowedControlTool(toolName)) {
-              return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
-            }
-            if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
-              return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
-            }
-            const approvalCallback = config.approvalCallback
-            if (approvalCallback == null) return denyTool('Permission check failed', callbackOptions.toolUseID)
-            const allowed = await approvalCallback(sessionId, toolName, input)
-            return allowed
-              ? allowTool(input, callbackOptions.toolUseID, 'user_temporary')
-              : denyTool('User denied tool execution', callbackOptions.toolUseID)
-          } catch {
-            return denyTool('Permission check failed', callbackOptions.toolUseID)
-          }
-        },
-      } : {}),
-    }
-
-    log.debug('SDK query options prepared', {
-      sparkSessionId: sessionId,
-      sdkSessionId,
-      mode: config.continueSession === true ? 'resume' : 'fresh',
-      model: config.model,
-      apiEndpoint: config.apiEndpoint ?? null,
-      resume: options.resume ?? null,
-      sessionId: options.sessionId ?? null,
-      permissionMode: options.permissionMode ?? null,
-      settingsModel: typeof options.settings === 'string' ? null : options.settings?.model ?? null,
-      settingsBaseUrl: typeof options.settings === 'string' ? null : options.settings?.env?.ANTHROPIC_BASE_URL ?? null,
-      settingSources: options.settingSources ?? null,
-      envAnthropicBaseUrl: options.env?.ANTHROPIC_BASE_URL ?? null,
-      envHasAnthropicApiKey: typeof options.env?.ANTHROPIC_API_KEY === 'string' && options.env.ANTHROPIC_API_KEY.length > 0,
-      cwd: options.cwd ?? null,
-    })
-
-    try {
-      const queryResult = sdk.query({ prompt: userMessage, options })
-
-      for await (const message of queryResult) {
-        if (this.abortController.signal.aborted) break
-        if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
-          log.debug('Claude Code init message received', {
+    while (true) {
+      const options: SDKQueryOptions = {
+        abortController: this.abortController,
+        model: config.model,
+        cwd: config.workspaceRootPath,
+        ...(claudeCodeExecutable != null ? { pathToClaudeCodeExecutable: claudeCodeExecutable } : {}),
+        env: runtimeEnv,
+        settings,
+        settingSources: ['project'],
+        persistSession: true,
+        debug: true,
+        stderr: (data: string) => {
+          const text = data.trim()
+          if (text.length === 0) return
+          log.debug('Claude Code stderr', {
             sparkSessionId: sessionId,
             sdkSessionId,
-            initModel: message.model,
-            initPermissionMode: message.permissionMode,
-            initCwd: message.cwd,
-            initTools: Array.isArray(message.tools) ? message.tools.length : null,
+            output: text,
           })
-        }
+        },
 
-        const events = mapSDKMessageToEvents(message, ctx)
-        for (const event of events) {
-          if (event.type === 'agent_status' && isTerminalAgentStatus(event.status)) {
-            terminalStatusEmitted = true
+        // Use Claude Code's built-in system prompt as base, append our customizations
+        systemPrompt: systemPrompt != null
+          ? { type: 'preset', preset: 'claude_code', append: systemPrompt }
+          : { type: 'preset', preset: 'claude_code' },
+
+        permissionMode: mergedPerms.permissionMode,
+        ...(mergedPerms.allowedTools.length > 0 ? { allowedTools: mergedPerms.allowedTools } : {}),
+        ...(mergedPerms.disallowedTools.length > 0 ? { disallowedTools: mergedPerms.disallowedTools } : {}),
+        ...(config.mcpServers != null ? { mcpServers: config.mcpServers } : {}),
+        skills: config.nativeSkills ?? [],
+        toolConfig: {
+          askUserQuestion: { previewFormat: 'html' },
+        },
+
+        maxTurns,
+        ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
+        effort: mapReasoningEffort(config.reasoningEffort),
+        ...(resumeExistingSession ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
+
+        includePartialMessages: true,
+        enableFileCheckpointing: config.enableCheckpoints ?? false,
+
+        // Map Spark approval callback to SDK permission callback when Spark needs
+        // extra policy on top of the SDK's native permission mode.
+        ...(config.approvalCallback != null && shouldUseSparkPermissionCallback(config.permissionMode) ? {
+          canUseTool: async (
+            toolName: string,
+            input: Record<string, unknown>,
+            callbackOptions,
+          ): Promise<SDKPermissionResult> => {
+            try {
+              if (isAlwaysAllowedControlTool(toolName)) {
+                return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+              }
+              if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
+                return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+              }
+              const approvalCallback = config.approvalCallback
+              if (approvalCallback == null) return denyTool('Permission check failed', callbackOptions.toolUseID)
+              const allowed = await approvalCallback(sessionId, toolName, input)
+              return allowed
+                ? allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                : denyTool('User denied tool execution', callbackOptions.toolUseID)
+            } catch {
+              return denyTool('Permission check failed', callbackOptions.toolUseID)
+            }
+          },
+        } : {}),
+      }
+
+      log.debug('SDK query options prepared', {
+        sparkSessionId: sessionId,
+        sdkSessionId,
+        mode: resumeExistingSession ? 'resume' : 'fresh',
+        model: config.model,
+        apiEndpoint: config.apiEndpoint ?? null,
+        resume: options.resume ?? null,
+        sessionId: options.sessionId ?? null,
+        permissionMode: options.permissionMode ?? null,
+        settingsModel: typeof options.settings === 'string' ? null : options.settings?.model ?? null,
+        settingsBaseUrl: typeof options.settings === 'string' ? null : options.settings?.env?.ANTHROPIC_BASE_URL ?? null,
+        settingSources: options.settingSources ?? null,
+        envAnthropicBaseUrl: options.env?.ANTHROPIC_BASE_URL ?? null,
+        envHasAnthropicApiKey: typeof options.env?.ANTHROPIC_API_KEY === 'string' && options.env.ANTHROPIC_API_KEY.length > 0,
+        cwd: options.cwd ?? null,
+        maxTurns: options.maxTurns ?? null,
+        maxTurnExtensionAttempt: extensionAttempts,
+      })
+
+      try {
+        const queryResult = sdk.query({ prompt, options })
+        let maxTurnsResult: SDKResultMessage | null = null
+
+        for await (const message of queryResult) {
+          if (this.abortController.signal.aborted) break
+          if (message.type === 'system' && 'subtype' in message && message.subtype === 'init') {
+            log.debug('Claude Code init message received', {
+              sparkSessionId: sessionId,
+              sdkSessionId,
+              initModel: message.model,
+              initPermissionMode: message.permissionMode,
+              initCwd: message.cwd,
+              initTools: Array.isArray(message.tools) ? message.tools.length : null,
+            })
           }
-          this.emitter.emit(event)
+
+          if (isMaxTurnsResultMessage(message)) {
+            maxTurnsResult = message
+          }
+
+          const events = mapSDKMessageToEvents(message, ctx)
+          for (const event of events) {
+            if (maxTurnsResult === message && event.type !== 'usage_update' && event.type !== 'checkpoint') {
+              continue
+            }
+            if (event.type === 'agent_status' && isTerminalAgentStatus(event.status)) {
+              terminalStatusEmitted = true
+            }
+            this.emitter.emit(event)
+          }
         }
-      }
 
-      if (this.abortController.signal.aborted) {
-        this.emitter.emit({
-          ...makeBase(),
-          type: 'agent_error',
-          code: 'ABORTED',
-          message: 'Turn cancelled by user',
-          retryable: false,
-        })
-        if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+        if (this.abortController.signal.aborted) {
+          this.emitter.emit({
+            ...makeBase(),
+            type: 'agent_error',
+            code: 'ABORTED',
+            message: 'Turn cancelled by user',
+            retryable: false,
+          })
+          if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+          return
+        }
+
+        if (maxTurnsResult != null) {
+          const nextMaxTurns = Math.min(maxTurnExtensionCap, maxTurns * 2)
+          if (extensionAttempts < maxTurnExtensionRetries && nextMaxTurns > maxTurns) {
+            extensionAttempts += 1
+            this.emitter.emit({
+              ...makeBase(),
+              type: 'agent_status',
+              status: 'thinking',
+              message: `Reached maximum turns (${maxTurns}); automatically extending to ${nextMaxTurns} (retry ${extensionAttempts}/${maxTurnExtensionRetries}).`,
+            })
+            maxTurns = nextMaxTurns
+            prompt = buildMaxTurnContinuationPrompt()
+            resumeExistingSession = true
+            continue
+          }
+
+          this.emitter.emit({
+            ...makeBase(),
+            type: 'agent_error',
+            code: 'MAX_ITERATIONS',
+            message: buildMaxTurnLimitMessage(maxTurns, extensionAttempts),
+            retryable: false,
+            rawError: maxTurnsResult.errors?.join('; ') ?? maxTurnsResult.subtype,
+          })
+          if (!terminalStatusEmitted) emitTerminalStatus('error')
+          return
+        }
+
+        if (!terminalStatusEmitted) emitTerminalStatus('completed')
         return
-      }
+      } catch (err) {
+        if (this.abortController.signal.aborted) {
+          this.emitter.emit({
+            ...makeBase(),
+            type: 'agent_error',
+            code: 'ABORTED',
+            message: 'Turn cancelled by user',
+            retryable: false,
+          })
+          if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+          return
+        }
 
-      if (!terminalStatusEmitted) emitTerminalStatus('completed')
-    } catch (err) {
-      if (this.abortController.signal.aborted) {
-        this.emitter.emit({
-          ...makeBase(),
-          type: 'agent_error',
-          code: 'ABORTED',
-          message: 'Turn cancelled by user',
-          retryable: false,
-        })
-        if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
-      } else {
         this.emitter.emit({
           ...makeBase(),
           type: 'agent_error',
@@ -331,6 +383,35 @@ export class ClaudeSDKExecutor {
 
 function isTerminalAgentStatus(status: AgentStatusValue): boolean {
   return status === 'completed' || status === 'error' || status === 'cancelled' || status === 'idle'
+}
+
+function isMaxTurnsResultMessage(message: SDKMessage): message is SDKResultMessage {
+  return message.type === 'result' && (message as SDKResultMessage).subtype === 'error_max_turns'
+}
+
+function normalizePositiveInt(value: number | undefined, fallback: number, max: number): number {
+  if (value == null || !Number.isFinite(value)) return fallback
+  return Math.max(1, Math.min(max, Math.floor(value)))
+}
+
+function normalizeNonNegativeInt(value: number | undefined, fallback: number, max: number): number {
+  if (value == null || !Number.isFinite(value)) return fallback
+  return Math.max(0, Math.min(max, Math.floor(value)))
+}
+
+function buildMaxTurnContinuationPrompt(): string {
+  return [
+    'Continue the previous task from the point where the agent stopped because it reached the max-turn limit.',
+    'Do not repeat completed work. Inspect the current workspace state if needed, continue the remaining steps, and finish with a concise status update.',
+  ].join('\n')
+}
+
+function buildMaxTurnLimitMessage(maxTurns: number, extensionAttempts: number): string {
+  if (extensionAttempts === 0) {
+    return `Reached maximum number of turns (${maxTurns}). Review progress and choose whether to continue.`
+  }
+  const noun = extensionAttempts === 1 ? 'extension' : 'extensions'
+  return `Reached maximum number of turns (${maxTurns}) after ${extensionAttempts} automatic ${noun}. Review progress and choose whether to continue.`
 }
 
 function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefined {

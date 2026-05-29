@@ -262,6 +262,10 @@ export interface SDKExecutorConfig {
   skillSystemPrompt?: string | undefined
   permissionMode: SparkPermissionMode
   maxTurnCount?: number | undefined
+  /** Number of automatic max-turn extensions before asking the user to decide. */
+  maxTurnExtensionRetries?: number | undefined
+  /** Hard cap for automatic max-turn extensions. */
+  maxTurnExtensionCap?: number | undefined
   maxTokens?: number | undefined
   contextWindowTokens?: number | undefined
   maxBudgetUsd?: number | undefined

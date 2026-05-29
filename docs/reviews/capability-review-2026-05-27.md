@@ -403,6 +403,7 @@
 - ChatView 验证卡片已增加“修复”入口: `/validate "<command>" --repair` 在验证失败时生成失败摘要并交给 `SessionService` 自动发起下一轮 agent 修复 turn。
 - `/validate --repair` 支持 `--attempt` / `--max-retries`，默认最多 3 次；达到上限时停止继续回灌。
 - 命令结果 `data.validationRepair` 会记录 attempt、maxAttempts、nextAttempt、stopped、stopReason，形成可追踪的 retry trail 基础数据。
+- Claude SDK turn budget 不再硬停在 25 turns；默认 80 turns，遇到 `error_max_turns` 自动 resume 并翻倍扩展，最多自动扩展 2 次/500 turns，达到阈值后返回 `MAX_ITERATIONS` 让用户判断是否继续。
 
 开发内容:
 - 自动重试后的 UI retry trail 展示。

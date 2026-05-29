@@ -151,6 +151,102 @@ describe('ClaudeSDKExecutor', () => {
     }))
   })
 
+  it('automatically extends max turns and resumes once when the SDK reports max turns', async () => {
+    queryMock
+      .mockReturnValueOnce(messages([
+        {
+          type: 'result',
+          subtype: 'error_max_turns',
+          uuid: 'result-1',
+          session_id: 'sess-1',
+          duration_ms: 10,
+          duration_api_ms: 10,
+          is_error: true,
+          num_turns: 25,
+          total_cost_usd: 0,
+          usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+          errors: ['Reached maximum number of turns (25)'],
+        },
+      ]))
+      .mockReturnValueOnce(messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          uuid: 'result-2',
+          session_id: 'sess-1',
+          duration_ms: 10,
+          duration_api_ms: 10,
+          is_error: false,
+          num_turns: 1,
+          result: 'done',
+          total_cost_usd: 0,
+          usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        },
+      ]))
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      maxTurnCount: 25,
+      maxTurnExtensionRetries: 1,
+    })
+
+    const firstOptions = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const secondOptions = queryMock.mock.calls[1]?.[0]?.options as SDKQueryOptions
+
+    expect(queryMock).toHaveBeenCalledTimes(2)
+    expect(firstOptions).toMatchObject({ sessionId: 'sess-1', maxTurns: 25 })
+    expect(secondOptions).toMatchObject({ resume: 'sess-1', maxTurns: 50 })
+    expect(queryMock.mock.calls[1]?.[0]?.prompt).toContain('Continue the previous task')
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent_status',
+      status: 'thinking',
+      message: 'Reached maximum turns (25); automatically extending to 50 (retry 1/1).',
+    }))
+    expect(events).not.toContainEqual(expect.objectContaining({ type: 'agent_error' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'assistant_message', content: 'done' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'agent_status', status: 'completed' }))
+  })
+
+  it('stops after the max-turn extension retry threshold and asks the user to decide', async () => {
+    const maxTurnsResult = (uuid: string, limit: number) => ({
+      type: 'result',
+      subtype: 'error_max_turns',
+      uuid,
+      session_id: 'sess-1',
+      duration_ms: 10,
+      duration_api_ms: 10,
+      is_error: true,
+      num_turns: limit,
+      total_cost_usd: 0,
+      usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+      errors: [`Reached maximum number of turns (${limit})`],
+    })
+    queryMock
+      .mockReturnValueOnce(messages([maxTurnsResult('result-1', 25)]))
+      .mockReturnValueOnce(messages([maxTurnsResult('result-2', 50)]))
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      maxTurnCount: 25,
+      maxTurnExtensionRetries: 1,
+    })
+
+    expect(queryMock).toHaveBeenCalledTimes(2)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent_error',
+      code: 'MAX_ITERATIONS',
+      message: 'Reached maximum number of turns (50) after 1 automatic extension. Review progress and choose whether to continue.',
+      retryable: false,
+    }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'agent_status', status: 'error' }))
+  })
+
   it('returns SDK-compatible permission results with the original input', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

@@ -4231,6 +4231,7 @@ type SparkErrorType =
 20. ✅ **项目上下文**: 自动读取项目规则/skills/agents + 上下文预算 + 来源审查
 21. ✅ **权限持久化**: 审批决策 DB 持久化 + project/global 级 allow/deny 记忆
 22. ✅ **自修复循环**: 验证建议 + `/validate` 执行 + 失败回灌 + retry 控制
+23. ✅ **Turn budget 自适应扩展**: Claude SDK 默认 80 turns，遇到 max-turn 结果自动 resume 并按 80→160→320 扩展；连续自动扩展达到阈值后停止，提示用户判断是否继续调高上限。
 
 ### 剩余关键差距
 

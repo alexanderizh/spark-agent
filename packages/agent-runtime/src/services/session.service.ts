@@ -630,6 +630,7 @@ export class SessionService {
     }
 
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
+      const iterationOverride = this.iterationOverrides.get(sessionId)
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
         model,
@@ -638,7 +639,7 @@ export class SessionService {
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
         ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
         ...(composedSkillSystemPrompt != null ? { skillSystemPrompt: composedSkillSystemPrompt } : {}),
-        maxTurnCount: this.iterationOverrides.get(sessionId) ?? 25,
+        ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
         ...(session.reasoning_effort != null ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' } : {}),

@@ -2972,7 +2972,7 @@ function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId
   const isNetworkError = code === 'NETWORK_ERROR' || code === 'ECONNRESET' || code === 'ECONNREFUSED'
   const isTimeout = code === 'TIMEOUT' || code === 'ETIMEDOUT'
   const isAborted = code === 'ABORTED'
-  const isMaxIter = code === 'MAX_ITERATIONS'
+  const isMaxIter = code === 'MAX_ITERATIONS' || code === 'ERROR_MAX_TURNS'
 
   let hint = ''
   if (isNetworkError) {
@@ -2982,12 +2982,12 @@ function StreamingErrorCard({ sessionId, message, code, retryable }: { sessionId
   } else if (isAborted) {
     hint = '请求已取消'
   } else if (isMaxIter) {
-    hint = '当前 turn 达到最大迭代次数，可调高上限后重发消息继续'
+    hint = '自动扩展已达到阈值，请检查进展后决定是否继续调高上限'
   } else if (retryable) {
     hint = '可重试 — 该错误是临时性的'
   }
 
-  // 从 message 中解析当前上限（agent_error.message 形如 "Exceeded max turn iterations (20)"）
+  // 从 message 中解析当前上限（agent_error.message 形如 "Reached maximum number of turns (80)"）
   const currentLimit = (() => {
     const m = /\((\d+)\)/.exec(message)
     return m ? Number(m[1]) : null

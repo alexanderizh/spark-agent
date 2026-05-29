@@ -178,7 +178,7 @@ export interface SessionDeleteMessageResponse {
 /**
  * 为指定 session 设置临时的 maxTurnIterations 上限。
  * 主要场景：用户在收到 MAX_ITERATIONS 错误后通过 UI 调高上限。
- * 传 null 清除 override，恢复 adapter 默认值（claude 150 / codex 100）。
+ * 传 null 清除 override，恢复 SDK 默认值（claude 80，自动扩展最多 2 次，最高 500）。
  */
 export interface SessionSetMaxIterationsRequest {
   sessionId: SessionId
