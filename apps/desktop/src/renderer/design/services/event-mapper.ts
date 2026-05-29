@@ -12,6 +12,13 @@ export interface UIMessage {
   eventIds: string[]
 }
 
+export interface FileChangeSummary {
+  path: string
+  changeType: 'create' | 'modify' | 'delete'
+  adds: number
+  dels: number
+}
+
 export type UIBlock =
   | { kind: 'text'; content: string; isStreaming: boolean }
   | { kind: 'thinking'; content: string; isStreaming: boolean }
@@ -24,6 +31,7 @@ export type UIBlock =
   | { kind: 'plan_proposed'; plan: string }
   | { kind: 'permission_request'; requestId: string; action: string; riskLevel: string; description: string; paths: string[] | undefined; command: string | undefined; domains: string[] | undefined }
   | { kind: 'subagent'; name: string; role: string; task: string; status: 'running' | 'done'; tokens: string }
+  | { kind: 'turn_file_summary'; files: FileChangeSummary[]; totalAdds: number; totalDels: number }
 
 export interface ContextUsageSnapshot {
   estimatedTokens: number
@@ -38,6 +46,10 @@ export class MessageBuilder {
   private latestContextUsage: ContextUsageSnapshot | null = null
   private latestPlanProposed: string | null = null
   private turnPromptSnapshots: TurnPromptSnapshotEvent[] = []
+  /** 追踪当前 turn 的文件变更，用于生成汇总 */
+  private currentTurnFileChanges: FileChangeSummary[] = []
+  /** 是否已经为当前 turn 生成了汇总 */
+  private turnSummaryEmitted = false
 
   getLatestContextUsage(): ContextUsageSnapshot | null {
     return this.latestContextUsage
@@ -187,9 +199,13 @@ export class MessageBuilder {
           if (event.status === 'completed') {
             msg.status = 'completed'
             this.finishStreamingBlocks(msg, 'completed')
+            // 在 turn 完成时生成文件变更汇总
+            this.appendTurnSummary(msg)
           } else if (event.status === 'error' || event.status === 'cancelled') {
             msg.status = 'error'
             this.finishStreamingBlocks(msg, 'error')
+            // 即使出错也生成文件变更汇总
+            this.appendTurnSummary(msg)
           }
         }
         break
@@ -237,6 +253,18 @@ export class MessageBuilder {
       case 'file_change': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         msg.blocks.push({ kind: 'file_change', changeType: event.changeType, path: event.path, diff: event.diff ?? undefined })
+
+        // 追踪文件变更用于生成汇总
+        const stats = event.diff ? parseDiffStats(event.diff) : { adds: 0, dels: 0 }
+        // 避免重复添加同一文件
+        if (!this.currentTurnFileChanges.some(f => f.path === event.path)) {
+          this.currentTurnFileChanges.push({
+            path: event.path,
+            changeType: event.changeType as 'create' | 'modify' | 'delete',
+            adds: stats.adds,
+            dels: stats.dels,
+          })
+        }
         break
       }
 
@@ -331,6 +359,8 @@ export class MessageBuilder {
     this.messages = []
     this.currentAssistantId = null
     this.turnPromptSnapshots = []
+    this.currentTurnFileChanges = []
+    this.turnSummaryEmitted = false
   }
 
   private getOrCreateAssistant(eventId: string, timestamp?: string | undefined): UIMessage {
@@ -346,7 +376,26 @@ export class MessageBuilder {
     const msg: UIMessage = { id: eventId, role: 'assistant', status: 'streaming', blocks: [], usage: null, timestamp, eventIds: [eventId] }
     this.messages.push(msg)
     this.currentAssistantId = msg.id
+    // 新消息开始时重置 turn 追踪状态
+    this.currentTurnFileChanges = []
+    this.turnSummaryEmitted = false
     return msg
+  }
+
+  /** 在消息末尾追加文件变更汇总块 */
+  private appendTurnSummary(msg: UIMessage): void {
+    if (this.turnSummaryEmitted || this.currentTurnFileChanges.length === 0) return
+    this.turnSummaryEmitted = true
+
+    const totalAdds = this.currentTurnFileChanges.reduce((s, f) => s + f.adds, 0)
+    const totalDels = this.currentTurnFileChanges.reduce((s, f) => s + f.dels, 0)
+
+    msg.blocks.push({
+      kind: 'turn_file_summary',
+      files: [...this.currentTurnFileChanges],
+      totalAdds,
+      totalDels,
+    })
   }
 
   private finishStreamingBlocks(msg: UIMessage, finalStatus?: 'completed' | 'error'): void {
@@ -373,4 +422,22 @@ function formatToolOutput(output: unknown): string | undefined {
   } catch {
     return String(output)
   }
+}
+
+/** 从 unified diff 中解析新增/删除行数 */
+function parseDiffStats(diff: string): { adds: number; dels: number } {
+  let adds = 0
+  let dels = 0
+  for (const line of diff.split('\n')) {
+    // 跳过 diff 头部行
+    if (line.startsWith('--- ') || line.startsWith('+++ ') || line.startsWith('@@') || line.startsWith('\\')) {
+      continue
+    }
+    if (line.startsWith('+')) {
+      adds++
+    } else if (line.startsWith('-')) {
+      dels++
+    }
+  }
+  return { adds, dels }
 }

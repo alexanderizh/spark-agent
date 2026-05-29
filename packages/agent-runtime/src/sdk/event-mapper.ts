@@ -26,6 +26,8 @@ interface EventContext {
   sessionId: string
   turnId: string
   toolNamesById?: Map<string, string>
+  /** 存储工具调用结果，用于提取 diff */
+  toolResultsById?: Map<string, string>
 }
 
 function baseEvent(ctx: EventContext) {
@@ -282,6 +284,12 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
         ? block.content
         : flattenContentBlocks(block.content)
       const toolName = ctx.toolNamesById?.get(block.tool_use_id) ?? 'unknown'
+
+      // 存储工具结果供后续提取 diff 使用
+      if (!isError && content) {
+        getToolResults(ctx).set(block.tool_use_id, content)
+      }
+
       if (toolName === 'exit_plan_mode') {
         const plan = extractPlanTextFromToolResult(content)
         return plan != null
@@ -324,12 +332,195 @@ function buildFileChangeEvent(toolCallId: string, toolName: string, ctx: EventCo
   const input = findToolInput(toolCallId, ctx)
   const path = stringField(input, 'file_path') || stringField(input, 'path')
   if (!path) return null
+
+  // 提取或生成 diff
+  const toolResult = findToolResult(toolCallId, ctx)
+  const diff = extractOrGenerateDiff(toolResult, toolName, input, path)
+
   return {
     ...baseEvent(ctx),
     type: 'file_change',
-    changeType: toolName === 'write_file' ? 'modify' : 'modify',
+    changeType: determineChangeType(toolName, toolResult, input),
     path,
+    ...(diff ? { diff } : {}),
   }
+}
+
+/** 确定文件变更类型 */
+function determineChangeType(
+  toolName: string,
+  toolResult: string | null,
+  input: Record<string, unknown> | null
+): 'create' | 'modify' | 'delete' {
+  // write_file 创建新文件的情况
+  if (toolName === 'write_file') {
+    // 检查工具结果中是否有 "created" 或 "new file" 的提示
+    if (toolResult) {
+      const lowerResult = toolResult.toLowerCase()
+      if (lowerResult.includes('created') || lowerResult.includes('new file')) {
+        return 'create'
+      }
+    }
+    return 'modify'
+  }
+  return 'modify'
+}
+
+/** 从工具结果提取 diff 或从输入参数生成 diff */
+function extractOrGenerateDiff(
+  toolResult: string | null,
+  toolName: string,
+  input: Record<string, unknown> | null,
+  filePath: string
+): string | null {
+  // 策略 1：尝试从工具结果中提取 unified diff
+  if (toolResult && containsUnifiedDiff(toolResult)) {
+    return extractUnifiedDiffSection(toolResult)
+  }
+
+  // 策略 2：从工具输入参数生成 diff
+  if (toolName === 'edit_file' && input) {
+    return generateEditFileDiff(input, filePath)
+  }
+  if (toolName === 'multi_edit' && input) {
+    return generateMultiEditDiff(input, filePath)
+  }
+  if (toolName === 'write_file' && input) {
+    return generateWriteFileDiff(input, filePath, toolResult)
+  }
+
+  return null
+}
+
+/** 检测文本是否包含 unified diff 格式 */
+function containsUnifiedDiff(text: string): boolean {
+  return text.includes('--- ') && text.includes('+++ ') && text.includes('@@')
+}
+
+/** 从工具结果中提取 unified diff 部分 */
+function extractUnifiedDiffSection(text: string): string | null {
+  const lines = text.split('\n')
+  const diffStartIndex = lines.findIndex(line => line.startsWith('--- '))
+  if (diffStartIndex === -1) return null
+
+  // 找到 diff 的结束位置（下一个非 diff 行或文件结束）
+  let diffEndIndex = lines.length
+  for (let i = diffStartIndex + 1; i < lines.length; i++) {
+    const line = lines[i]
+    if (line == null) continue
+    // diff 行以 ---, +++ 或 @@ 开头，或者以空格、+、- 开头
+    if (!line.startsWith('--- ') &&
+        !line.startsWith('+++ ') &&
+        !line.startsWith('@@') &&
+        !line.startsWith(' ') &&
+        !line.startsWith('+') &&
+        !line.startsWith('-') &&
+        !line.startsWith('\\') &&
+        line.trim().length > 0) {
+      diffEndIndex = i
+      break
+    }
+  }
+
+  return lines.slice(diffStartIndex, diffEndIndex).join('\n')
+}
+
+/** 为 edit_file 工具生成 unified diff */
+function generateEditFileDiff(input: Record<string, unknown>, filePath: string): string | null {
+  const oldString = stringField(input, 'old_string')
+  const newString = stringField(input, 'new_string')
+
+  if (!oldString && !newString) return null
+
+  // 生成简单的 unified diff
+  const oldLines = oldString ? oldString.split('\n') : []
+  const newLines = newString ? newString.split('\n') : []
+
+  return buildUnifiedDiff(filePath, oldLines, newLines)
+}
+
+/** 为 multi_edit 工具生成 unified diff */
+function generateMultiEditDiff(input: Record<string, unknown>, filePath: string): string | null {
+  const edits = input['edits']
+  if (!Array.isArray(edits) || edits.length === 0) return null
+
+  // 合并所有编辑为一个 diff
+  const diffParts: string[] = []
+  for (const edit of edits) {
+    if (typeof edit === 'object' && edit != null) {
+      const editInput = edit as Record<string, unknown>
+      const oldString = stringField(editInput, 'old_string')
+      const newString = stringField(editInput, 'new_string')
+      if (oldString || newString) {
+        const oldLines = oldString ? oldString.split('\n') : []
+        const newLines = newString ? newString.split('\n') : []
+        const diff = buildUnifiedDiff(filePath, oldLines, newLines)
+        if (diff) diffParts.push(diff)
+      }
+    }
+  }
+
+  return diffParts.length > 0 ? diffParts.join('\n') : null
+}
+
+/** 为 write_file 工具生成 unified diff */
+function generateWriteFileDiff(
+  input: Record<string, unknown>,
+  filePath: string,
+  toolResult: string | null
+): string | null {
+  const content = stringField(input, 'content')
+  if (!content) return null
+
+  const newLines = content.split('\n')
+
+  // 如果工具结果中提到了 "created" 或 "new file"，则视为创建新文件
+  if (toolResult) {
+    const lowerResult = toolResult.toLowerCase()
+    if (lowerResult.includes('created') || lowerResult.includes('new file')) {
+      // 新文件：所有内容都是新增
+      return buildUnifiedDiff(filePath, [], newLines)
+    }
+  }
+
+  // 否则视为修改文件（无法知道原始内容，生成一个全量 diff）
+  // 使用空原始内容，显示为全量新增
+  return buildUnifiedDiff(filePath, [], newLines)
+}
+
+/** 构建 unified diff 格式 */
+function buildUnifiedDiff(filePath: string, oldLines: string[], newLines: string[]): string | null {
+  if (oldLines.length === 0 && newLines.length === 0) return null
+
+  // 简单的 diff 生成：当新旧内容完全不同时，显示为全量替换
+  // 这不是精确的行级 diff，但足以让 UI 展示变更概览
+
+  const diffLines: string[] = []
+
+  // diff 头部
+  diffLines.push(`--- a/${filePath}`)
+  diffLines.push(`+++ b/${filePath}`)
+
+  // 计算 hunks
+  const oldStart = 1
+  const newStart = 1
+  const oldCount = oldLines.length
+  const newCount = newLines.length
+
+  // hunk header
+  diffLines.push(`@@ -${oldStart},${oldCount} +${newStart},${newCount} @@`)
+
+  // 添加删除的行
+  for (const line of oldLines) {
+    diffLines.push(`-${line}`)
+  }
+
+  // 添加新增的行
+  for (const line of newLines) {
+    diffLines.push(`+${line}`)
+  }
+
+  return diffLines.join('\n')
 }
 
 function findToolInput(toolCallId: string, ctx: EventContext): Record<string, unknown> | null {
@@ -337,10 +528,21 @@ function findToolInput(toolCallId: string, ctx: EventContext): Record<string, un
   return toolInputs.get(toolCallId) ?? null
 }
 
+function findToolResult(toolCallId: string, ctx: EventContext): string | null {
+  const toolResults = getToolResults(ctx)
+  return toolResults.get(toolCallId) ?? null
+}
+
 function getToolInputs(ctx: EventContext): Map<string, Record<string, unknown>> {
   const record = ctx as EventContext & { toolInputsById?: Map<string, Record<string, unknown>> }
   if (record.toolInputsById == null) record.toolInputsById = new Map()
   return record.toolInputsById
+}
+
+function getToolResults(ctx: EventContext): Map<string, string> {
+  const record = ctx as EventContext & { toolResultsById?: Map<string, string> }
+  if (record.toolResultsById == null) record.toolResultsById = new Map()
+  return record.toolResultsById
 }
 
 /**

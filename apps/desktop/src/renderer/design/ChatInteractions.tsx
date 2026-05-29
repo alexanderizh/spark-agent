@@ -251,6 +251,64 @@ export function Checkpoint({
   )
 }
 
+export interface FileChangeSummaryItem {
+  path: string
+  changeType: 'create' | 'modify' | 'delete'
+  adds: number
+  dels: number
+}
+
+export function TurnFileSummaryCard({
+  files,
+  totalAdds,
+  totalDels,
+}: {
+  files: FileChangeSummaryItem[]
+  totalAdds: number
+  totalDels: number
+}) {
+  const [expanded, setExpanded] = useState(true)
+  const fileCount = files.length
+
+  return (
+    <div className="chat-card turn-summary-card">
+      <div className="chat-card-h success" onClick={() => setExpanded(!expanded)} style={{ cursor: 'pointer' }}>
+        <span className="ico"><Icons.CheckCircle /></span>
+        <span>本次修改完成</span>
+        <span className="diff-stats">
+          <span className="add">+{totalAdds}</span>
+          <span className="del">−{totalDels}</span>
+        </span>
+        <span className="badge" style={{ fontSize: 10, marginLeft: 8 }}>{fileCount} 个文件</span>
+        <span className="spacer" />
+        <button className="btn ghost sm" style={{ height: 20, padding: '0 6px' }}>
+          {expanded ? <Icons.ChevronDown size={12} /> : <Icons.ChevronRight size={12} />}
+        </button>
+      </div>
+      {expanded && (
+        <div className="chat-card-body">
+          <div className="turn-summary-files">
+            {files.map((file, i) => (
+              <div key={i} className="turn-summary-file-row">
+                <span className="file-icon">
+                  {file.changeType === 'create' ? <Icons.FilePlus size={12} /> :
+                   file.changeType === 'delete' ? <Icons.FileMinus size={12} /> :
+                   <Icons.File size={12} />}
+                </span>
+                <code className="file-path">{file.path}</code>
+                <span className="file-stats">
+                  <span className="add">+{file.adds}</span>
+                  <span className="del">−{file.dels}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function QuickActions({ actions }: { actions: { icon: ReactNode; label: string }[] }) {
   return (
     <div className="quick-actions">

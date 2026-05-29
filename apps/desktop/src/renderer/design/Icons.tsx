@@ -63,6 +63,8 @@ export const Icons = {
   Terminal: (p: IconProps) => <IconBase {...p}><path d="M4 17l6-6-6-6M12 19h8" /></IconBase>,
   BashCommand: (p: IconProps) => <IconBase {...p}><rect x="3.5" y="5" width="17" height="14" rx="2.5" /><path d="M7.5 10l3 2-3 2M13.5 14h3" /></IconBase>,
   File: (p: IconProps) => <IconBase {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /></IconBase>,
+  FilePlus: (p: IconProps) => <IconBase {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M12 12v6M9 15h6" /></IconBase>,
+  FileMinus: (p: IconProps) => <IconBase {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><path d="M14 2v6h6" /><path d="M9 15h6" /></IconBase>,
   Check: (p: IconProps) => <IconBase {...p}><path d="M5 12l5 5L20 7" /></IconBase>,
   CheckSquare: (p: IconProps) => <IconBase {...p}><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M9 12l2 2 4-4" /></IconBase>,
   AlertTriangle: (p: IconProps) => <IconBase {...p}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" /><path d="M12 9v4M12 17h.01" /></IconBase>,

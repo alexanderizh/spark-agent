@@ -4,7 +4,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
-import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, Checkpoint, SandboxNote, QuickActions, ToolChooser } from '../ChatInteractions'
+import { ErrorCard, FilePermCard, NetPermCard, MCPPermCard, HunkDiff, PlanCard, SubagentCard, Checkpoint, SandboxNote, QuickActions, ToolChooser, TurnFileSummaryCard } from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
@@ -2090,6 +2090,17 @@ function renderBlocks(blocks: UIBlock[], options: { surface?: 'main' | 'inspecto
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
             <SubagentCard name={block.name} role={block.role} task={block.task} status={block.status} tokens={block.tokens} />
+          </div>
+        )
+      }
+      case 'turn_file_summary': {
+        return (
+          <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
+            <TurnFileSummaryCard
+              files={block.files}
+              totalAdds={block.totalAdds}
+              totalDels={block.totalDels}
+            />
           </div>
         )
       }
@@ -5783,7 +5794,7 @@ function UserQuestionModal({
     const initial: Record<number, string> = {}
     data.questions.forEach((q, i) => {
       if (q.options.length > 0) {
-        initial[i] = q.options[0].label
+        initial[i] = q.options[0]!.label
       }
     })
     setSelections(initial)

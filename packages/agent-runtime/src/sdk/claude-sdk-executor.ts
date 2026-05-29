@@ -523,9 +523,13 @@ function normalizeQuestionOptions(options: unknown): Array<{ label: string; desc
       const optObj = opt as Record<string, unknown>
       const label = typeof optObj.label === 'string' ? optObj.label : ''
       if (!label) return null
-      const description = typeof optObj.description === 'string' ? optObj.description : undefined
-      const preview = typeof optObj.preview === 'string' ? optObj.preview : undefined
-      return { label, description, preview }
+      const hasDescription = typeof optObj.description === 'string'
+      const hasPreview = typeof optObj.preview === 'string'
+      return {
+        label,
+        ...(hasDescription ? { description: optObj.description as string } : {}),
+        ...(hasPreview ? { preview: optObj.preview as string } : {}),
+      }
     })
     .filter((opt): opt is NonNullable<typeof opt> => opt != null)
 }
