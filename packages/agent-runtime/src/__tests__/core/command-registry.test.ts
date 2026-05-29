@@ -11,6 +11,7 @@ function makeDeps(overrides: Partial<CommandDeps> = {}): CommandDeps {
     updateSession: vi.fn(async () => {}),
     clearSessionEvents: vi.fn(async () => {}),
     getProviderName: vi.fn(() => 'Anthropic'),
+    getProviderModelIds: vi.fn(() => ['gpt-4o', 'gpt-4.1']),
     setApprovalMode: vi.fn(),
     ...overrides,
   }
@@ -188,6 +189,18 @@ describe('Built-in commands', () => {
     const result = await registry.execute(parse('/model gpt-4o'), ctx, deps)
     expect(result.success).toBe(true)
     expect(deps.updateSession).toHaveBeenCalledWith('sess-1', { modelId: 'gpt-4o' })
+  })
+
+  it('/model rejects models outside the current provider to avoid runtime mismatch', async () => {
+    const deps = makeDeps({
+      getSession: vi.fn(() => ({ title: 'Test', status: 'idle', modelId: 'glm-5', providerProfileId: 'tencent-provider' })),
+      getProviderName: vi.fn(() => 'Tencent Coding'),
+      getProviderModelIds: vi.fn(() => ['glm-5']),
+    })
+    const result = await registry.execute(parse('/model mimo-v2.5-pro'), ctx, deps)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('不属于当前 Provider')
+    expect(deps.updateSession).not.toHaveBeenCalled()
   })
 
   it('/model without arg shows current', async () => {

@@ -112,6 +112,7 @@ export interface CommandDeps {
   updateSession: (id: string, fields: { modelId?: string | null; title?: string }) => Promise<void>
   clearSessionEvents: (id: string) => Promise<void>
   getProviderName: (id: string) => string | null
+  getProviderModelIds?: (id: string) => string[]
   setApprovalMode: (sessionId: string, enabled: boolean) => void
   /** 获取 workspace 文件路径 */
   getWorkspacePath?: () => string | null
@@ -418,11 +419,23 @@ function registerSdkCommands(registry: CommandRegistry): void {
     risk: 'low',
     usage: '/model [model-id]',
     handler: async (cmd, ctx, deps) => {
+      const session = deps.getSession(ctx.sessionId)
       const modelId = cmd.args[0]
       if (modelId == null || modelId.length === 0) {
-        const session = deps.getSession(ctx.sessionId)
         const current = session?.modelId ?? '（使用 Provider 默认）'
         return { success: true, message: `当前模型：${current}\n用法：/model <model-id>` }
+      }
+      if (session == null) {
+        return { success: false, message: '当前会话不存在，无法切换模型。' }
+      }
+      const providerModels = deps.getProviderModelIds?.(session.providerProfileId) ?? []
+      if (providerModels.length > 0 && !providerModels.includes(modelId)) {
+        const providerName = deps.getProviderName(session.providerProfileId) ?? session.providerProfileId
+        return {
+          success: false,
+          message: `模型 \`${modelId}\` 不属于当前 Provider（${providerName}）。请在模型选择器中切换到对应 Provider，或使用当前 Provider 支持的模型：${providerModels.join(', ')}`,
+          data: { modelId, providerProfileId: session.providerProfileId, providerModels },
+        }
       }
       await deps.updateSession(ctx.sessionId, { modelId })
       return { success: true, message: `模型已切换为 \`${modelId}\``, data: { modelId } }

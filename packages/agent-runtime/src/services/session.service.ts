@@ -199,6 +199,7 @@ export class SessionService {
       getProviderName: (id) => {
         return providerRepo.get(id)?.name ?? null
       },
+      getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
       setApprovalMode: (id, enabled) => {
         this.approvalOverrides.set(id, enabled)
       },
@@ -288,6 +289,7 @@ export class SessionService {
         this.seqCounters.delete(id)
       },
       getProviderName: (id) => providerRepo.get(id)?.name ?? null,
+      getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
       setApprovalMode: (id, enabled) => { this.approvalOverrides.set(id, enabled) },
       getWorkspacePath: () => workspacePath,
       execShell: async (command, cwd) => {
@@ -1583,6 +1585,21 @@ function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | und
   if (params.chatMode !== undefined) patch.chatMode = params.chatMode
   if (params.reasoningEffort !== undefined) patch.reasoningEffort = params.reasoningEffort
   return Object.keys(patch).length > 0 ? patch : undefined
+}
+
+function getProviderModelIds(configJson: string | null | undefined): string[] {
+  if (configJson == null) return []
+  try {
+    const config = JSON.parse(configJson) as { defaultModel?: unknown; model?: unknown; modelIds?: unknown }
+    const models = [
+      typeof config.defaultModel === 'string' ? config.defaultModel : undefined,
+      typeof config.model === 'string' ? config.model : undefined,
+      ...(Array.isArray(config.modelIds) ? config.modelIds.filter((item): item is string => typeof item === 'string') : []),
+    ]
+    return Array.from(new Set(models.filter((model): model is string => model != null && model.trim().length > 0)))
+  } catch {
+    return []
+  }
 }
 
 export function makeSdkRuntimeSessionId(

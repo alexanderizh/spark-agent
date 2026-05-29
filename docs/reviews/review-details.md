@@ -9,10 +9,12 @@ I'll conduct a comprehensive capability review of this project. Let me start by 
 - **Plan approval renderer 防线**: 即使主进程意外把 `ExitPlanMode` / `exit_plan_mode` / `AskUserQuestion` 等控制工具审批透传到 renderer，Composer 也会抑制底部 inline approval card；计划审批只由 `plan_proposed` 事件打开中央弹窗，批准后切到 `claude-auto-edits` 并继续发送执行请求。
 - **停止生成后的发送状态**: Composer 的工作中状态不再由非空展示文案推断，而只跟随 session 的真实 `running` 状态，避免 terminal/error 状态残留时把发送按钮误当成停止按钮。
 - **旧会话 provider/model 串线**: 旧会话缺少 `modelId` 或用户在同一 SDK adapter 内切换 provider/model 时，Composer 曾可能把全局草稿模型和当前会话 provider 混用，表现为 UI 显示一个模型但 SDK query options 发往另一个 provider endpoint。当前按 provider 校验 model fallback，并把 provider/model/adapter/permission 作为一个运行时配置原子写入，避免 `invalid model` 这类错配。
+- **`/model` 命令旁路错配**: slash `/model <id>` 曾只写 `modelId`，可能绕过模型选择器把不属于当前 provider 的模型写入会话。当前命令会读取当前 provider 支持的模型列表，拒绝跨 provider 模型，提示用户先通过模型选择器切换 provider。
 
 验证:
 
 - `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/sdk/claude-sdk-executor.test.ts src/__tests__/services/session.service.test.ts` 通过。
+- `pnpm --filter @spark/agent-runtime test:unit -- src/__tests__/core/command-registry.test.ts src/__tests__/services/session-runtime-config.test.ts src/__tests__/services/session.service.test.ts` 通过。
 - `pnpm --filter @spark/desktop exec vitest run src/renderer/tests/renderer.test.ts -t "renders plan approval as the only approval surface"` 通过。
 - `pnpm --filter @spark/desktop exec vitest run src/renderer/tests/renderer.test.ts -t "uses the active session provider model"` 通过。
 - `pnpm --filter @spark/desktop exec vitest run src/renderer/tests/renderer.test.ts -t "switches same-adapter provider"` 通过。
