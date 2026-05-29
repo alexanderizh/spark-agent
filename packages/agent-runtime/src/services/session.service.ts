@@ -24,6 +24,7 @@ import type {
   SessionSearchResponse,
   UserMessageEvent,
   AssistantMessageEvent,
+  HookNode,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
@@ -46,6 +47,14 @@ export type SessionQueueChangedHandler = (snapshot: SessionGetQueueResponse) => 
 export type ApprovalHandler = (sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>
 /** session 被取消时调用：用于拒绝该 session 下所有挂起的 approval 请求，避免 agent 永久挂起 */
 export type ApprovalCancelHandler = (sessionId: string) => void
+/** Hook 触发处理器：在关键节点触发提示音/通知等 */
+export type HookTriggerHandler = (sessionId: string, node: HookNode, context?: { title?: string; body?: string }) => void
+/** Handler for AskUserQuestion tool - returns user's answers */
+export type QuestionHandler = (sessionId: string, questions: Array<{
+  question: string
+  header: string
+  options: Array<{ label: string; description?: string; preview?: string }>
+}>) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = { cancel(): void }
 type SessionRuntimePatch = {
@@ -90,6 +99,8 @@ export class SessionService {
     private readonly onApproval?: ApprovalHandler,
     private readonly onApprovalCancel?: ApprovalCancelHandler,
     private readonly onQueueChanged?: SessionQueueChangedHandler,
+    private readonly onQuestion?: QuestionHandler,
+    private readonly onHookTrigger?: HookTriggerHandler,
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
     this.recoverInterruptedSessions()
@@ -647,6 +658,7 @@ export class SessionService {
         sdkSessionId,
         continueSession: canResumeSdkSession,
         ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
+        ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
       }
       await this.tryStartSDKTurn(
         sessionId, turnId, message, eventRepo, sessionRepo, sdkConfig,
@@ -893,6 +905,27 @@ export class SessionService {
       })
     } catch {
       // Non-fatal: persistence failure should not crash the stream
+    }
+
+    // 触发 hook：检测 agent_status 事件的关键状态变化
+    if (event.type === 'agent_status') {
+      const status = event.status
+      if (status === 'completed') {
+        this.onHookTrigger?.(sessionId, 'session_end', {
+          title: 'Spark Agent - 任务完成',
+          body: '当前任务已完成',
+        })
+      } else if (status === 'error') {
+        this.onHookTrigger?.(sessionId, 'session_fail', {
+          title: 'Spark Agent - 任务失败',
+          body: event.message ?? '任务执行出错，请检查',
+        })
+      } else if (status === 'waiting_user') {
+        this.onHookTrigger?.(sessionId, 'ask_user_question', {
+          title: 'Spark Agent - 需要您的输入',
+          body: event.message ?? 'Agent 需要您提供更多信息',
+        })
+      }
     }
   }
 

@@ -311,6 +311,7 @@ export function SettingsView() {
         { id: 'integrity', icon: <Icons.Shield />, label: '完整性' },
         { id: 'usage', icon: <Icons.Activity />, label: '用量统计' },
         { id: 'telemetry', icon: <Icons.Activity />, label: '遥测与日志' },
+        { id: 'hooks', icon: <Icons.Bell />, label: 'Hooks' },
         { id: 'storage', icon: <Icons.Database />, label: '存储与备份' },
         { id: 'archived', icon: <Icons.Archive />, label: '已归档' },
         { id: 'updates', icon: <Icons.Refresh />, label: '更新' },
@@ -332,6 +333,7 @@ export function SettingsView() {
     workflows: WorkflowTemplatesSection,
     integrity: IntegritySection,
     telemetry: TelemetrySection,
+    hooks: HooksSection,
     storage: StorageSection,
     usage: UsageSection,
     archived: ArchivedSection,
@@ -5045,12 +5047,12 @@ function AboutSection() {
         <SettingsRow
           title="Chromium"
           desc="渲染引擎"
-          right={<span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? '—'}</span>}
+          right={<span className="mono-sm tech-version">{sysInfo?.chromeVersion ?? 'unknown'}</span>}
         />
         <SettingsRow
           title="Node.js"
-          desc="运行时"
-          right={<span className="mono-sm tech-version">{sysInfo?.nodeVersion ?? '—'}</span>}
+          desc="JavaScript 运行时"
+          right={<span className="mono-sm tech-version">{sysInfo?.nodeVersion ?? 'unknown'}</span>}
         />
         <SettingsRow
           title="React"
@@ -5134,6 +5136,166 @@ function AboutSection() {
       </div>
 
       <div className="about-footer">© 2026 Spark Agent Team. All rights reserved.</div>
+    </div>
+  )
+}
+
+/* ───────── HOOKS ───────── */
+type HookNodeType = 'permission_request' | 'ask_user_question' | 'session_end' | 'session_fail'
+
+type HookNodeConfig = {
+  sound: boolean
+  notification: boolean
+}
+
+type HookConfig = {
+  enabled: boolean
+  nodes: Record<HookNodeType, HookNodeConfig>
+}
+
+const SETTINGS_HOOKS_KEY = 'spark-settings-hooks'
+
+const DEFAULT_HOOK_CONFIG: HookConfig = {
+  enabled: true,
+  nodes: {
+    permission_request: { sound: true, notification: true },
+    ask_user_question: { sound: true, notification: true },
+    session_end: { sound: true, notification: true },
+    session_fail: { sound: true, notification: true },
+  },
+}
+
+const HOOK_NODE_LABELS: Record<HookNodeType, { label: string; desc: string }> = {
+  permission_request: { label: '权限请求', desc: 'Agent 需要您的审批' },
+  ask_user_question: { label: '用户提问', desc: 'Agent 需要您提供更多信息' },
+  session_end: { label: '任务完成', desc: '当前任务已成功完成' },
+  session_fail: { label: '任务失败', desc: '任务执行出错' },
+}
+
+function HooksSection() {
+  const [config, setConfig] = usePersistedSettings(SETTINGS_HOOKS_KEY, DEFAULT_HOOK_CONFIG)
+  const [testing, setTesting] = useState<string | null>(null)
+  const { toast } = useToast()
+
+  const updateNodeConfig = (node: HookNodeType, type: 'sound' | 'notification', value: boolean) => {
+    setConfig({
+      ...config,
+      nodes: {
+        ...config.nodes,
+        [node]: {
+          ...config.nodes[node],
+          [type]: value,
+        },
+      },
+    })
+  }
+
+  const testHook = async (node: HookNodeType) => {
+    setTesting(node)
+    try {
+      // 测试播放声音
+      await window.spark?.invoke('hook:play-sound', {})
+      // 测试显示通知
+      const nodeInfo = HOOK_NODE_LABELS[node]
+      await window.spark?.invoke('hook:show-notification', {
+        title: `测试：${nodeInfo.label}`,
+        body: `这是一条测试通知，来自 ${nodeInfo.label} 节点`,
+      })
+      toast.success('Hook 测试完成')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '测试失败')
+    } finally {
+      setTesting(null)
+    }
+  }
+
+  return (
+    <div className="settings-section">
+      <h2>Hooks</h2>
+      <div className="lede">
+        在会话关键节点触发提示音和系统通知，帮助您及时响应 Agent 的状态变化。
+      </div>
+
+      <div className="subsec-h">总开关</div>
+      <div className="settings-card">
+        <SettingsRow
+          title="启用 Hooks"
+          desc="开启后，在关键节点会触发提示音和系统通知"
+          right={
+            <div
+              className={`switch ${config.enabled ? 'on' : ''}`}
+              onClick={() => setConfig({ ...config, enabled: !config.enabled })}
+            />
+          }
+        />
+      </div>
+
+      {config.enabled && (
+        <>
+          <div className="subsec-h">节点配置</div>
+          <div className="settings-card">
+            {(Object.keys(HOOK_NODE_LABELS) as HookNodeType[]).map((node) => {
+              const info = HOOK_NODE_LABELS[node]
+              const nodeConfig = config.nodes[node]
+              return (
+                <div key={node} className="hook-node-row">
+                  <div className="hook-node-info">
+                    <div className="hook-node-label">{info.label}</div>
+                    <div className="hook-node-desc">{info.desc}</div>
+                  </div>
+                  <div className="hook-node-actions">
+                    <label className="hook-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={nodeConfig.sound}
+                        onChange={(e) => updateNodeConfig(node, 'sound', e.target.checked)}
+                      />
+                      <span className="hook-checkbox-label">🔊 提示音</span>
+                    </label>
+                    <label className="hook-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={nodeConfig.notification}
+                        onChange={(e) => updateNodeConfig(node, 'notification', e.target.checked)}
+                      />
+                      <span className="hook-checkbox-label">🔔 通知</span>
+                    </label>
+                    <button
+                      className="btn ghost sm"
+                      onClick={() => void testHook(node)}
+                      disabled={testing === node}
+                    >
+                      {testing === node ? (
+                        <>
+                          <Icons.Spinner size={11} /> 测试中…
+                        </>
+                      ) : (
+                        <>
+                          <Icons.Play size={11} /> 测试
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          <div className="subsec-h">说明</div>
+          <div className="card">
+            <SettingsRow
+              title="提示音"
+              desc="使用系统默认提示音（Windows/macOS 均支持）"
+              right={<span className="badge">系统声音</span>}
+            />
+            <SettingsRow
+              title="系统通知"
+              desc="显示 macOS/Windows 原生横幅通知，点击可聚焦窗口"
+              right={<span className="badge">原生通知</span>}
+            />
+          </div>
+        </>
+      )}
     </div>
   )
 }

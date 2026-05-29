@@ -17,6 +17,7 @@
  */
 
 import type { AgentEvent, SessionId } from '../events/index.js'
+import type { HookNode } from '../hooks.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -173,6 +174,16 @@ export interface SessionDeleteMessageRequest {
 
 export interface SessionDeleteMessageResponse {
   deleted: number
+}
+
+/** Answer to an AskUserQuestion tool call */
+export interface SessionAnswerQuestionRequest {
+  questionId: string
+  answers: Record<string, unknown>
+}
+
+export interface SessionAnswerQuestionResponse {
+  ok: boolean
 }
 
 /**
@@ -1601,6 +1612,34 @@ export interface EnvRecheckResponse {
   status: ShellEnvironmentStatus
 }
 
+// ─── Hook Channels ───────────────────────────────────────────────────────
+
+export interface HookTriggerRequest {
+  sessionId: string
+  node: HookNode
+  title?: string
+  body?: string
+}
+
+export interface HookTriggerResponse {
+  triggered: boolean
+}
+
+export interface HookPlaySoundRequest {}
+
+export interface HookPlaySoundResponse {
+  played: boolean
+}
+
+export interface HookShowNotificationRequest {
+  title: string
+  body?: string
+}
+
+export interface HookShowNotificationResponse {
+  shown: boolean
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -1632,6 +1671,7 @@ export interface IpcChannelMap {
   'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
   'session:clear-events': [SessionClearEventsRequest, SessionClearEventsResponse]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
+  'session:answer-question': [SessionAnswerQuestionRequest, SessionAnswerQuestionResponse]
 
   // Provider
   'provider:list': [ProviderListRequest, ProviderListResponse]
@@ -1760,6 +1800,11 @@ export interface IpcChannelMap {
   // Shell Environment & Runtime Detection
   'env:get-status': [EnvGetStatusRequest, EnvGetStatusResponse]
   'env:recheck': [EnvRecheckRequest, EnvRecheckResponse]
+
+  // Hooks
+  'hook:trigger': [HookTriggerRequest, HookTriggerResponse]
+  'hook:play-sound': [HookPlaySoundRequest, HookPlaySoundResponse]
+  'hook:show-notification': [HookShowNotificationRequest, HookShowNotificationResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -1783,6 +1828,16 @@ export interface IpcStreamChannelMap {
   'stream:session:agent-event': AgentEvent
   /** Session 后端排队状态变化 */
   'stream:session:queue-changed': SessionGetQueueResponse
+  /** 用户问题请求（AskUserQuestion 工具，主进程推送，渲染进程显示选择界面）*/
+  'stream:session:user-question': {
+    questionId: string
+    sessionId: string
+    questions: Array<{
+      question: string
+      header: string
+      options: Array<{ label: string; description?: string; preview?: string }>
+    }>
+  }
   /** 连接状态变化 */
   'stream:provider:status-changed': {
     profileId: string

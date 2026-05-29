@@ -279,4 +279,6 @@ export interface SDKExecutorConfig {
   sdkSessionId?: string | undefined
   continueSession?: boolean | undefined
   approvalCallback?: ((sessionId: string, toolName: string, toolInput: Record<string, unknown>) => Promise<boolean>) | undefined
+  /** Callback for AskUserQuestion tool - returns user's answers to the questions */
+  questionCallback?: ((sessionId: string, questions: Array<{ question: string; header: string; options: Array<{ label: string; description?: string; preview?: string }> }>) => Promise<Record<string, unknown>>) | undefined
 }

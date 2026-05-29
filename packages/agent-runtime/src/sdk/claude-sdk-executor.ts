@@ -240,6 +240,21 @@ export class ClaudeSDKExecutor {
             callbackOptions,
           ): Promise<SDKPermissionResult> => {
             try {
+              // Handle AskUserQuestion specially - it needs user interaction
+              if (isAskUserQuestionTool(toolName)) {
+                const questionCallback = config.questionCallback
+                if (questionCallback != null) {
+                  // Extract questions from input
+                  const questions = extractQuestionsFromInput(input)
+                  // Wait for user to answer questions
+                  const answers = await questionCallback(sessionId, questions)
+                  // Return the answers as updated input
+                  return allowTool(answers, callbackOptions.toolUseID, 'user_temporary')
+                }
+                // If no questionCallback, deny with helpful message
+                return denyTool('AskUserQuestion requires user interaction but no questionCallback was provided', callbackOptions.toolUseID)
+              }
+
               if (isAlwaysAllowedControlTool(toolName)) {
                 return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
               }
@@ -456,8 +471,63 @@ function isAlwaysAllowedControlTool(toolName: string): boolean {
     || normalized === 'exit_plan_mode'
     || normalized === 'enterplanmode'
     || normalized === 'enter_plan_mode'
-    || normalized === 'askuserquestion'
-    || normalized === 'ask_user_question'
+  // Note: AskUserQuestion is NOT always allowed - it needs user interaction
+  // to provide answers. It's handled separately in canUseTool callback.
+}
+
+function isAskUserQuestionTool(toolName: string): boolean {
+  const normalized = toolName.replace(/-/g, '_').toLowerCase()
+  return normalized === 'askuserquestion' || normalized === 'ask_user_question'
+}
+
+/**
+ * Extract questions from AskUserQuestion tool input.
+ * The input format follows SDK's AskUserQuestion schema:
+ * { questions: [{ question, header, options: [{ label, description, preview }] }] }
+ */
+function extractQuestionsFromInput(input: Record<string, unknown>): Array<{
+  question: string
+  header: string
+  options: Array<{ label: string; description?: string; preview?: string }>
+}> {
+  const questions = input.questions
+  if (!Array.isArray(questions)) {
+    // Single question format: { question, header, options }
+    const question = typeof input.question === 'string' ? input.question : ''
+    const header = typeof input.header === 'string' ? input.header : ''
+    const options = normalizeQuestionOptions(input.options)
+    if (question && options.length > 0) {
+      return [{ question, header, options }]
+    }
+    return []
+  }
+
+  return questions
+    .map((q: unknown) => {
+      if (typeof q !== 'object' || q == null) return null
+      const qObj = q as Record<string, unknown>
+      const question = typeof qObj.question === 'string' ? qObj.question : ''
+      const header = typeof qObj.header === 'string' ? qObj.header : ''
+      const options = normalizeQuestionOptions(qObj.options)
+      if (!question || options.length === 0) return null
+      return { question, header, options }
+    })
+    .filter((q): q is NonNullable<typeof q> => q != null)
+}
+
+function normalizeQuestionOptions(options: unknown): Array<{ label: string; description?: string; preview?: string }> {
+  if (!Array.isArray(options)) return []
+  return options
+    .map((opt: unknown) => {
+      if (typeof opt !== 'object' || opt == null) return null
+      const optObj = opt as Record<string, unknown>
+      const label = typeof optObj.label === 'string' ? optObj.label : ''
+      if (!label) return null
+      const description = typeof optObj.description === 'string' ? optObj.description : undefined
+      const preview = typeof optObj.preview === 'string' ? optObj.preview : undefined
+      return { label, description, preview }
+    })
+    .filter((opt): opt is NonNullable<typeof opt> => opt != null)
 }
 
 function shouldUseSparkPermissionCallback(permissionMode: SDKExecutorConfig['permissionMode']): boolean {

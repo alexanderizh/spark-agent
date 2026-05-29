@@ -11,15 +11,15 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
-import { app, dialog, shell } from 'electron'
+import { app, dialog, shell, Notification } from 'electron'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import { EventRepository, ProviderProfileRepository, RulesRepository, SessionRepository, WorkspaceRepository, PermissionProfileRepository, ModelProfileRepository, McpServerRepository, SkillRepository, SettingsRepository, UsageLedgerRepository } from '@spark/storage'
 import { ProviderService, RulesService, RuleCompositionEngine, SessionService, WorkspaceService, PermissionService, ModelService, McpService, SkillService, SkillRegistryService, SettingsService, UsageLedgerService, RuntimeCompositionService } from '@spark/agent-runtime'
-import type { CommandParseResponse, SessionAgentAdapter, SessionPermissionMode, WorkspaceInfo } from '@spark/protocol'
-import type { SessionEventHandler, ApprovalHandler, SessionQueueChangedHandler } from '@spark/agent-runtime'
+import type { CommandParseResponse, SessionAgentAdapter, SessionPermissionMode, WorkspaceInfo, HookNode } from '@spark/protocol'
+import type { SessionEventHandler, ApprovalHandler, SessionQueueChangedHandler, QuestionHandler, HookTriggerHandler } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
@@ -170,6 +170,8 @@ function getWorkspaceService(): WorkspaceService {
 }
 
 let _sessionService: SessionService | null = null
+let pendingQuestionResolvers = new Map<string, (answers: Record<string, unknown>) => void>()
+
 function getSessionService(): SessionService {
   if (_sessionService == null) {
     const onEvent: SessionEventHandler = (event) => {
@@ -187,9 +189,89 @@ function getSessionService(): SessionService {
     const onQueueChanged: SessionQueueChangedHandler = (snapshot) => {
       pushStreamEvent('stream:session:queue-changed', snapshot)
     }
-    _sessionService = new SessionService(getDatabase(), onEvent, onApproval, onApprovalCancel, onQueueChanged)
+    const onQuestion: QuestionHandler = async (sessionId, questions) => {
+      return new Promise((resolve) => {
+        const questionId = `${sessionId}:${Date.now()}`
+        pendingQuestionResolvers.set(questionId, resolve)
+        pushStreamEvent('stream:session:user-question', {
+          questionId,
+          sessionId,
+          questions,
+        })
+      })
+    }
+    const onHookTrigger: HookTriggerHandler = (sessionId, node, context) => {
+      // 异步触发 hook，不阻塞事件流
+      triggerHook(sessionId, node, context).catch((err) => {
+        log.warn(`Failed to trigger hook: ${String(err)}`)
+      })
+    }
+    _sessionService = new SessionService(getDatabase(), onEvent, onApproval, onApprovalCancel, onQueueChanged, onQuestion, onHookTrigger)
   }
   return _sessionService
+}
+
+/** Resolve a pending user question with the provided answers */
+export function resolveUserQuestion(questionId: string, answers: Record<string, unknown>): void {
+  const resolver = pendingQuestionResolvers.get(questionId)
+  if (resolver) {
+    pendingQuestionResolvers.delete(questionId)
+    resolver(answers)
+  }
+}
+
+/**
+ * 触发 Hook
+ * 内部函数，用于在 SessionService 中触发 hook
+ */
+async function triggerHook(
+  sessionId: string,
+  node: HookNode,
+  context?: { title?: string; body?: string },
+): Promise<boolean> {
+  try {
+    // 直接调用 hook 逻辑（不通过 IPC）
+    const hookConfigValue = getSettingsService().get('hooks', 'config')
+    const hookConfig = parseHookConfig(hookConfigValue)
+
+    if (!hookConfig.enabled) {
+      return false
+    }
+
+    const nodeConfig = hookConfig.nodes[node]
+    if (!nodeConfig) {
+      return false
+    }
+
+    let triggered = false
+
+    // 播放提示音
+    if (nodeConfig.sound) {
+      try {
+        shell.beep()
+        triggered = true
+      } catch (err) {
+        log.warn(`Failed to play sound: ${String(err)}`)
+      }
+    }
+
+    // 显示系统通知
+    if (nodeConfig.notification) {
+      try {
+        const notificationTitle = context?.title ?? getNodeDefaultTitle(node)
+        const notificationBody = context?.body ?? getNodeDefaultBody(node)
+        showSystemNotification(notificationTitle, notificationBody)
+        triggered = true
+      } catch (err) {
+        log.warn(`Failed to show notification: ${String(err)}`)
+      }
+    }
+
+    return triggered
+  } catch (err) {
+    log.warn(`Failed to trigger hook: ${String(err)}`)
+    return false
+  }
 }
 
 export function registerAllIpcHandlers(): void {
@@ -272,6 +354,12 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('session:delete-message', async (req) => {
     log.info(`session:delete-message requested, sessionId=${req.sessionId} eventCount=${req.eventIds.length}`)
     return getSessionService().deleteMessage(req.sessionId, req.eventIds)
+  })
+
+  typedIpcHandle('session:answer-question', async (req) => {
+    log.info(`session:answer-question requested, questionId=${req.questionId}`)
+    resolveUserQuestion(req.questionId, req.answers)
+    return { ok: true }
   })
 
   // ─── Provider Handlers ─────────────────────────────────────────────────
@@ -913,6 +1001,86 @@ export function registerAllIpcHandlers(): void {
     return { status }
   })
 
+  // ─── Hook Handlers ─────────────────────────────────────────────────────
+
+  /**
+   * Hook 触发入口
+   * 根据配置和节点类型，决定是否执行 sound 和 notification
+   */
+  typedIpcHandle('hook:trigger', async (req) => {
+    const { sessionId, node, title, body } = req
+    log.info(`hook:trigger requested, sessionId=${sessionId}, node=${node}`)
+
+    // 从 settings 获取 hook 配置
+    const hookConfigValue = getSettingsService().get('hooks', 'config')
+    const hookConfig = parseHookConfig(hookConfigValue)
+
+    // 如果 hook 系统未启用，直接返回
+    if (!hookConfig.enabled) {
+      return { triggered: false }
+    }
+
+    const nodeConfig = hookConfig.nodes[node]
+    if (!nodeConfig) {
+      return { triggered: false }
+    }
+
+    // 执行配置的 hooks
+    let triggered = false
+
+    // 播放提示音
+    if (nodeConfig.sound) {
+      try {
+        shell.beep()
+        triggered = true
+        log.debug(`Hook sound triggered for node=${node}`)
+      } catch (err) {
+        log.warn(`Failed to play sound: ${String(err)}`)
+      }
+    }
+
+    // 显示系统通知
+    if (nodeConfig.notification) {
+      try {
+        const notificationTitle = title ?? getNodeDefaultTitle(node)
+        const notificationBody = body ?? getNodeDefaultBody(node)
+        showSystemNotification(notificationTitle, notificationBody)
+        triggered = true
+        log.debug(`Hook notification triggered for node=${node}`)
+      } catch (err) {
+        log.warn(`Failed to show notification: ${String(err)}`)
+      }
+    }
+
+    return { triggered }
+  })
+
+  /**
+   * 直接播放提示音（用于测试）
+   */
+  typedIpcHandle('hook:play-sound', async () => {
+    try {
+      shell.beep()
+      return { played: true }
+    } catch (err) {
+      log.warn(`Failed to play sound: ${String(err)}`)
+      return { played: false }
+    }
+  })
+
+  /**
+   * 直接显示系统通知（用于测试）
+   */
+  typedIpcHandle('hook:show-notification', async (req) => {
+    try {
+      showSystemNotification(req.title, req.body ?? '')
+      return { shown: true }
+    } catch (err) {
+      log.warn(`Failed to show notification: ${String(err)}`)
+      return { shown: false }
+    }
+  })
+
   log.info('All IPC handlers registered')
 }
 
@@ -951,4 +1119,97 @@ async function getWorkspaceBranches(rootPath: string): Promise<{ currentBranch: 
   } catch {
     return { currentBranch: null, branches: [] }
   }
+}
+
+// ─── Hook Helper Functions ─────────────────────────────────────────────────
+
+type HookNodeConfig = { sound: boolean; notification: boolean }
+type HookConfigInternal = {
+  enabled: boolean
+  nodes: Record<HookNode, HookNodeConfig>
+}
+
+const DEFAULT_HOOK_CONFIG_INTERNAL: HookConfigInternal = {
+  enabled: true,
+  nodes: {
+    permission_request: { sound: true, notification: true },
+    ask_user_question: { sound: true, notification: true },
+    session_end: { sound: true, notification: true },
+    session_fail: { sound: true, notification: true },
+  },
+}
+
+function parseHookConfig(value: unknown): HookConfigInternal {
+  if (value == null || typeof value !== 'object') {
+    return DEFAULT_HOOK_CONFIG_INTERNAL
+  }
+  try {
+    const config = value as Partial<HookConfigInternal>
+    return {
+      enabled: config.enabled ?? DEFAULT_HOOK_CONFIG_INTERNAL.enabled,
+      nodes: {
+        ...DEFAULT_HOOK_CONFIG_INTERNAL.nodes,
+        ...(config.nodes ?? {}),
+      },
+    }
+  } catch {
+    return DEFAULT_HOOK_CONFIG_INTERNAL
+  }
+}
+
+function getNodeDefaultTitle(node: HookNode): string {
+  switch (node) {
+    case 'permission_request':
+      return 'Spark Agent - 权限请求'
+    case 'ask_user_question':
+      return 'Spark Agent - 需要您的输入'
+    case 'session_end':
+      return 'Spark Agent - 任务完成'
+    case 'session_fail':
+      return 'Spark Agent - 任务失败'
+    default:
+      return 'Spark Agent'
+  }
+}
+
+function getNodeDefaultBody(node: HookNode): string {
+  switch (node) {
+    case 'permission_request':
+      return 'Agent 正在请求您的审批'
+    case 'ask_user_question':
+      return 'Agent 需要您提供更多信息'
+    case 'session_end':
+      return '当前任务已完成'
+    case 'session_fail':
+      return '任务执行出错，请检查'
+    default:
+      return ''
+  }
+}
+
+function showSystemNotification(title: string, body: string): void {
+  // 检查系统是否支持通知
+  if (!Notification.isSupported()) {
+    log.warn('System notifications are not supported on this platform')
+    return
+  }
+
+  const notification = new Notification({
+    title,
+    body,
+    silent: true, // 不播放系统默认声音（我们已经单独处理 sound）
+  })
+
+  notification.on('click', () => {
+    // 点击通知时聚焦窗口
+    const { getMainWindow } = require('../windows/index.js')
+    const mainWindow = getMainWindow()
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore()
+      mainWindow.show()
+      mainWindow.focus()
+    }
+  })
+
+  notification.show()
 }

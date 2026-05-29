@@ -163,6 +163,37 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const { toast } = useToast()
   const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
 
+  // User question state (AskUserQuestion tool)
+  type UserQuestionData = {
+    questionId: string
+    sessionId: string
+    questions: Array<{
+      question: string
+      header: string
+      options: Array<{ label: string; description?: string; preview?: string }>
+    }>
+  }
+  const [userQuestion, setUserQuestion] = useState<UserQuestionData | null>(null)
+  const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
+
+  // Listen for user questions from backend
+  useIpcStream('stream:session:user-question', (data) => {
+    setUserQuestion(data)
+  }, [])
+
+  const handleAnswerQuestion = useCallback(async (answers: Record<string, unknown>) => {
+    if (userQuestion == null) return
+    await answerQuestion({ questionId: userQuestion.questionId, answers })
+    setUserQuestion(null)
+  }, [userQuestion, answerQuestion])
+
+  const handleCancelQuestion = useCallback(() => {
+    if (userQuestion == null) return
+    // Send empty answers to indicate cancellation
+    answerQuestion({ questionId: userQuestion.questionId, answers: { cancelled: true } }).catch(console.error)
+    setUserQuestion(null)
+  }, [userQuestion, answerQuestion])
+
   // Search state
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState<SessionSearchResult[]>([])
@@ -867,6 +898,14 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           sessionId={active}
           plan={proposedPlan}
           onClose={() => setProposedPlan(null)}
+        />
+      )}
+
+      {userQuestion != null && (
+        <UserQuestionModal
+          data={userQuestion}
+          onAnswer={handleAnswerQuestion}
+          onCancel={handleCancelQuestion}
         />
       )}
     </div>
@@ -5716,4 +5755,98 @@ function formatRelativeTime(value: string): string {
   if (diffMs < day) return `${Math.floor(diffMs / hour)} 小时`
   if (diffMs < week) return `${Math.floor(diffMs / day)} 天`
   return `${Math.floor(diffMs / week)} 周`
+}
+
+/** Modal for AskUserQuestion tool - displays questions and collects user answers */
+function UserQuestionModal({
+  data,
+  onAnswer,
+  onCancel,
+}: {
+  data: {
+    questionId: string
+    sessionId: string
+    questions: Array<{
+      question: string
+      header: string
+      options: Array<{ label: string; description?: string; preview?: string }>
+    }>
+  }
+  onAnswer: (answers: Record<string, unknown>) => void
+  onCancel: () => void
+}) {
+  const [selections, setSelections] = useState<Record<number, string>>({})
+  const [submitted, setSubmitted] = useState(false)
+
+  // Initialize selections with first option for each question
+  useEffect(() => {
+    const initial: Record<number, string> = {}
+    data.questions.forEach((q, i) => {
+      if (q.options.length > 0) {
+        initial[i] = q.options[0].label
+      }
+    })
+    setSelections(initial)
+  }, [data.questions])
+
+  const handleSubmit = () => {
+    if (submitted) return
+    setSubmitted(true)
+    // Format answers as expected by SDK
+    const answers: Record<string, unknown> = {
+      answers: data.questions.map((q, i) => ({
+        question: q.question,
+        answer: selections[i] ?? '',
+      })),
+    }
+    onAnswer(answers)
+  }
+
+  const handleCancel = () => {
+    if (submitted) return
+    onCancel()
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="modal user-question-modal">
+        <div className="modal-h">
+          <div className="modal-h-icon"><Icons.HelpCircle size={17} /></div>
+          <div>
+            <div className="modal-title">需要您的选择</div>
+            <div className="modal-subtitle">Agent 正在等待您的回答以继续执行任务</div>
+          </div>
+        </div>
+        <div className="modal-body">
+          {data.questions.map((q, qIndex) => (
+            <div key={qIndex} className="question-item">
+              {q.header && <div className="question-header">{q.header}</div>}
+              <div className="question-text">{q.question}</div>
+              <div className="question-options">
+                {q.options.map((opt, optIndex) => (
+                  <button
+                    key={optIndex}
+                    className={`question-option ${selections[qIndex] === opt.label ? 'selected' : ''}`}
+                    onClick={() => setSelections(prev => ({ ...prev, [qIndex]: opt.label }))}
+                    disabled={submitted}
+                  >
+                    <div className="option-label">{opt.label}</div>
+                    {opt.description && <div className="option-desc">{opt.description}</div>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div className="modal-foot">
+          <button className="btn ghost sm" onClick={handleCancel} disabled={submitted}>取消</button>
+          <div className="spacer" />
+          <button className="btn primary sm" onClick={handleSubmit} disabled={submitted || Object.keys(selections).length < data.questions.length}>
+            {submitted ? <Icons.Spinner size={12} /> : null}
+            提交答案
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
