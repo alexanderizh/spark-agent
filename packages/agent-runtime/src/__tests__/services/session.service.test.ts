@@ -67,6 +67,32 @@ describe('SessionService recovery helpers', () => {
     expect(prompt).not.toContain('completed')
   })
 
+  it('recovers user turns from prompt snapshots when SDK did not persist user_message events', () => {
+    const prompt = buildConversationHistoryPromptFromEvents([
+      {
+        ...baseEvent('session-1', 'turn-1', 0),
+        type: 'turn_prompt_snapshot',
+        userMessage: 'Earlier user request about the resume bug',
+        systemPromptSections: [],
+        model: 'glm-5',
+        adapterKind: 'claude-sdk',
+        permissionMode: 'claude-plan',
+        toolCount: 12,
+      },
+      {
+        ...baseEvent('session-1', 'turn-1', 1),
+        type: 'assistant_message',
+        mode: 'complete',
+        content: 'Earlier assistant answer about Spark Session History',
+        provider: 'claude',
+        isFinal: true,
+      },
+    ])
+
+    expect(prompt).toContain('Earlier user request about the resume bug')
+    expect(prompt).toContain('Earlier assistant answer about Spark Session History')
+  })
+
   it('keeps SDK resume disabled while persisted history provides continuity', () => {
     expect(isSdkResumeSafe({
       providerType: 'anthropic',

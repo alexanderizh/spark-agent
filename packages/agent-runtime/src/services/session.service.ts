@@ -1331,7 +1331,7 @@ export function buildConversationHistoryPromptFromEvents(events: AgentEvent[]): 
 type DialogueEntry = { role: 'User' | 'Assistant'; content: string }
 
 function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
-  const turns = new Map<string, { userParts: string[]; assistantParts: string[]; assistantFinal?: string }>()
+  const turns = new Map<string, { userParts: string[]; snapshotUserMessage?: string; assistantParts: string[]; assistantFinal?: string }>()
   const turnOrder: string[] = []
 
   const getTurn = (turnId: string) => {
@@ -1345,8 +1345,13 @@ function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
   }
 
   for (const event of events) {
-    if (event.type !== 'user_message' && event.type !== 'assistant_message') continue
+    if (event.type !== 'user_message' && event.type !== 'assistant_message' && event.type !== 'turn_prompt_snapshot') continue
     const turn = getTurn(event.turnId)
+    if (event.type === 'turn_prompt_snapshot') {
+      const userMessage = event.userMessage.trim()
+      if (userMessage.length > 0) turn.snapshotUserMessage = userMessage
+      continue
+    }
     if (event.type === 'user_message') {
       turn.userParts.push(event.content)
       continue
@@ -1362,7 +1367,7 @@ function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
   for (const turnId of turnOrder) {
     const turn = turns.get(turnId)
     if (turn == null) continue
-    const userContent = joinHistoryParts(turn.userParts)
+    const userContent = joinHistoryParts(turn.userParts) || turn.snapshotUserMessage?.trim() || ''
     if (userContent.length > 0) entries.push({ role: 'User', content: userContent })
     const assistantContent = turn.assistantFinal?.trim() || joinHistoryParts(turn.assistantParts)
     if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
