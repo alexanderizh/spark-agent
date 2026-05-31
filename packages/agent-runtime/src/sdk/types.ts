@@ -282,3 +282,101 @@ export interface SDKExecutorConfig {
   /** Callback for AskUserQuestion tool - returns user's answers to the questions */
   questionCallback?: ((sessionId: string, questions: Array<{ question: string; header: string; options: Array<{ label: string; description?: string; preview?: string }> }>) => Promise<Record<string, unknown>>) | undefined
 }
+
+// ── Resume Recovery ──────────────────────────────────────────────────────────
+
+/**
+ * Error patterns that indicate a resume attempt failed because the SDK
+ * session is stale, already in use, or otherwise unrecoverable.
+ * When a resume error matches any of these patterns, the executor should
+ * fall back to a fresh session automatically.
+ */
+export const SDK_RESUME_ERROR_PATTERNS: ReadonlyArray<RegExp> = [
+  /session\s+id\s+already\s+in\s+use/i,
+  /session\s+not\s+found/i,
+  /session\s+expired/i,
+  /session\s+does\s+not\s+exist/i,
+  /invalid\s+session/i,
+  /session\s+is\s+no\s+longer\s+available/i,
+  /failed\s+to\s+resume/i,
+  /cannot\s+resume/i,
+] as const
+
+/**
+ * Result of a resume error classification.
+ */
+export interface ResumeErrorClassification {
+  /** Whether the error is a resume-specific failure that should trigger fallback */
+  isResumeError: boolean
+  /** Human-readable classification for telemetry */
+  reason: string
+}
+
+/**
+ * Classify an error from the SDK to determine if it's a resume-specific failure.
+ */
+export function classifyResumeError(err: unknown): ResumeErrorClassification {
+  const message = err instanceof Error ? err.message : String(err)
+  for (const pattern of SDK_RESUME_ERROR_PATTERNS) {
+    if (pattern.test(message)) {
+      return { isResumeError: true, reason: `resume_error:${pattern.source}` }
+    }
+  }
+  return { isResumeError: false, reason: 'unknown' }
+}
+
+/**
+ * Circuit breaker state for SDK resume attempts.
+ * Tracks consecutive resume failures per Spark session to automatically
+ * disable resume when it keeps failing.
+ */
+export class ResumeCircuitBreaker {
+  private failureCounts = new Map<string, number>()
+  private readonly maxFailures: number
+
+  constructor(maxFailures: number = 3) {
+    this.maxFailures = maxFailures
+  }
+
+  /**
+   * Record a resume failure for a session.
+   * Returns true if the circuit is now open (resume should be disabled).
+   */
+  recordFailure(sessionId: string): boolean {
+    const count = (this.failureCounts.get(sessionId) ?? 0) + 1
+    this.failureCounts.set(sessionId, count)
+    return count >= this.maxFailures
+  }
+
+  /**
+   * Record a resume success for a session, resetting the failure counter.
+   */
+  recordSuccess(sessionId: string): void {
+    this.failureCounts.delete(sessionId)
+  }
+
+  /**
+   * Check if resume is allowed for a session (circuit is not open).
+   */
+  isResumeAllowed(sessionId: string): boolean {
+    return (this.failureCounts.get(sessionId) ?? 0) < this.maxFailures
+  }
+
+  /**
+   * Get the current failure count for a session.
+   */
+  getFailureCount(sessionId: string): number {
+    return this.failureCounts.get(sessionId) ?? 0
+  }
+
+  /**
+   * Reset the circuit breaker for a specific session or all sessions.
+   */
+  reset(sessionId?: string): void {
+    if (sessionId != null) {
+      this.failureCounts.delete(sessionId)
+    } else {
+      this.failureCounts.clear()
+    }
+  }
+}

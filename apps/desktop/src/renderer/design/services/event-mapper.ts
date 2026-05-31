@@ -75,6 +75,24 @@ export type UIBlock =
       tokens: string
     }
   | { kind: 'turn_file_summary'; files: FileChangeSummary[]; totalAdds: number; totalDels: number }
+  | {
+      kind: 'user_question'
+      toolCallId: string
+      questions: Array<{
+        question: string
+        header: string
+        options: Array<{ label: string; description?: string; preview?: string }>
+      }>
+      answered: boolean
+    }
+  | {
+      kind: 'context_ledger'
+      sections: Array<{ label: string; estimatedTokens: number; charCount: number; truncated: boolean }>
+      totalEstimatedTokens: number
+      softLimitTokens: number
+      contextWindowTokens: number
+      usagePercent: number
+    }
 
 export interface ContextUsageSnapshot {
   estimatedTokens: number
@@ -210,16 +228,29 @@ export class MessageBuilder {
 
       case 'tool_call': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
-        msg.blocks.push({
-          kind: 'tool_call',
-          toolCallId: event.toolCallId,
-          toolName: event.toolName,
-          toolInput: event.toolInput,
-          status: 'pending',
-          output: undefined,
-          error: undefined,
-          durationMs: undefined,
-        })
+        // AskUserQuestion gets its own dedicated inline block
+        const isAskQuestion =
+          event.toolName.replace(/[-_]/g, '').toLowerCase() === 'askuserquestion'
+        if (isAskQuestion) {
+          const questions = extractQuestions(event.toolInput)
+          msg.blocks.push({
+            kind: 'user_question',
+            toolCallId: event.toolCallId,
+            questions,
+            answered: false,
+          })
+        } else {
+          msg.blocks.push({
+            kind: 'tool_call',
+            toolCallId: event.toolCallId,
+            toolName: event.toolName,
+            toolInput: event.toolInput,
+            status: 'pending',
+            output: undefined,
+            error: undefined,
+            durationMs: undefined,
+          })
+        }
         break
       }
 
@@ -229,6 +260,14 @@ export class MessageBuilder {
           : null
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+          // Update user_question block answered state
+          const questionBlock = msg.blocks.find(
+            (b) => b.kind === 'user_question' && b.toolCallId === event.toolCallId,
+          ) as Extract<UIBlock, { kind: 'user_question' }> | undefined
+          if (questionBlock) {
+            questionBlock.answered = true
+          }
+          // Update tool_call block
           const block = msg.blocks.find(
             (b) => b.kind === 'tool_call' && b.toolCallId === event.toolCallId,
           ) as Extract<UIBlock, { kind: 'tool_call' }> | undefined
@@ -380,6 +419,19 @@ export class MessageBuilder {
         break
       }
 
+      case 'context_ledger': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        msg.blocks.push({
+          kind: 'context_ledger',
+          sections: event.sections,
+          totalEstimatedTokens: event.totalEstimatedTokens,
+          softLimitTokens: event.softLimitTokens,
+          contextWindowTokens: event.contextWindowTokens,
+          usagePercent: event.usagePercent,
+        })
+        break
+      }
+
       case 'turn_prompt_snapshot': {
         this.turnPromptSnapshots.push(event)
         break
@@ -524,4 +576,65 @@ function parseDiffStats(diff: string): { adds: number; dels: number } {
     }
   }
   return { adds, dels }
+}
+
+/** Extract question data from AskUserQuestion tool input */
+function extractQuestions(
+  toolInput: Record<string, unknown>,
+): Array<{
+  question: string
+  header: string
+  options: Array<{ label: string; description?: string; preview?: string }>
+}> {
+  // Support both single-question and multi-question formats
+  const raw = toolInput.questions ?? toolInput
+  if (Array.isArray(raw)) {
+    return raw
+      .map((q: unknown) => {
+        if (typeof q !== 'object' || q == null) return null
+        const obj = q as Record<string, unknown>
+        return {
+          question: typeof obj.question === 'string' ? obj.question : '',
+          header: typeof obj.header === 'string' ? obj.header : '',
+          options: normalizeOptions(obj.options),
+        }
+      })
+      .filter(
+        (
+          q,
+        ): q is NonNullable<{
+          question: string
+          header: string
+          options: Array<{ label: string; description?: string; preview?: string }>
+        }> => q != null && q.question.length > 0 && q.options.length > 0,
+      )
+  }
+
+  // Single question in top-level input
+  const question = typeof toolInput.question === 'string' ? toolInput.question : ''
+  const header = typeof toolInput.header === 'string' ? toolInput.header : ''
+  const options = normalizeOptions(toolInput.options)
+  if (question && options.length > 0) {
+    return [{ question, header, options }]
+  }
+  return []
+}
+
+function normalizeOptions(
+  options: unknown,
+): Array<{ label: string; description?: string; preview?: string }> {
+  if (!Array.isArray(options)) return []
+  return options
+    .map((opt: unknown) => {
+      if (typeof opt !== 'object' || opt == null) return null
+      const obj = opt as Record<string, unknown>
+      const label = typeof obj.label === 'string' ? obj.label : ''
+      if (!label) return null
+      return {
+        label,
+        ...(typeof obj.description === 'string' ? { description: obj.description } : {}),
+        ...(typeof obj.preview === 'string' ? { preview: obj.preview } : {}),
+      }
+    })
+    .filter((opt): opt is NonNullable<typeof opt> => opt != null)
 }

@@ -43,6 +43,7 @@ import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
+import { getResumeCircuitBreaker } from '../sdk/index.js'
 import {
   createLogger,
   resolveProviderContextWindow,
@@ -774,6 +775,74 @@ export class SessionService {
       )
     }
 
+    // ── Context Ledger ──────────────────────────────────────────────────
+    // Emit a detailed token breakdown of all context sections for UI display
+    {
+      const estimateChars = (s: string | undefined): number => s?.trim().length ?? 0
+      const estimateSectionTokens = (s: string | undefined): number =>
+        Math.ceil(estimateChars(s) / 3)
+
+      const ledgerSections = [
+        {
+          label: 'Skill Prompt',
+          estimatedTokens: estimateSectionTokens(composedSkillSystemPrompt),
+          charCount: estimateChars(composedSkillSystemPrompt),
+          truncated: false,
+        },
+        {
+          label: 'System Prompt',
+          estimatedTokens: estimateSectionTokens(composedSystemPrompt),
+          charCount: estimateChars(composedSystemPrompt),
+          truncated: false,
+        },
+        {
+          label: 'Project Context',
+          estimatedTokens: projectContext.budget?.usedTokens ?? estimateSectionTokens(projectContext.systemPrompt),
+          charCount: estimateChars(projectContext.systemPrompt),
+          truncated: projectContext.budget?.truncated ?? false,
+        },
+        {
+          label: 'Conversation History',
+          estimatedTokens: estimateSectionTokens(conversationHistoryPrompt),
+          charCount: estimateChars(conversationHistoryPrompt),
+          truncated: false,
+        },
+        {
+          label: 'User Message',
+          estimatedTokens: estimateSectionTokens(message),
+          charCount: estimateChars(message),
+          truncated: false,
+        },
+      ].filter((section) => section.charCount > 0 || section.estimatedTokens > 0)
+
+      const totalEstimatedTokens = ledgerSections.reduce(
+        (sum, section) => sum + section.estimatedTokens,
+        0,
+      )
+
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          id: crypto.randomUUID(),
+          type: 'context_ledger',
+          sessionId,
+          turnId,
+          timestamp: new Date().toISOString(),
+          seq: 0,
+          sections: ledgerSections,
+          totalEstimatedTokens,
+          softLimitTokens: softContextLimitTokens,
+          contextWindowTokens,
+          usagePercent:
+            softContextLimitTokens > 0
+              ? Math.round((totalEstimatedTokens / softContextLimitTokens) * 100)
+              : 0,
+        },
+        eventRepo,
+      )
+    }
+
     if (agentAdapter === 'claude-sdk' || agentAdapter === 'claude') {
       const iterationOverride = this.iterationOverrides.get(sessionId)
       const sdkConfig: SDKExecutorConfig = {
@@ -1034,6 +1103,8 @@ export class SessionService {
       .then(() => {
         maybeEmitValidationSuggestion()
         sessionRepo.updateStatus(sessionId, 'idle')
+        // Reset resume circuit breaker on successful turn completion
+        getResumeCircuitBreaker().recordSuccess(sessionId)
       })
       .catch(() => {
         sessionRepo.updateStatus(sessionId, 'error')

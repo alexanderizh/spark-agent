@@ -2396,6 +2396,20 @@ function renderBlocks(
           </div>
         )
       }
+      case 'user_question': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <InlineQuestionCard block={block} />
+          </div>
+        )
+      }
+      case 'context_ledger': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <ContextLedgerCard block={block} />
+          </div>
+        )
+      }
       default:
         return null
     }
@@ -2720,6 +2734,177 @@ function InlinePermissionCard({
         <button className="btn sm primary" onClick={handleAllow}>
           <Icons.Check size={11} /> 允许
         </button>
+      </div>
+    </div>
+  )
+}
+
+/** Inline card for AskUserQuestion tool calls in the timeline */
+function InlineQuestionCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'user_question' }>
+}) {
+  if (block.questions.length === 0) return null
+
+  return (
+    <div className="chat-card">
+      <div className="chat-card-h info">
+        <span className="ico"><Icons.HelpCircle size={14} /></span>
+        <span>Agent 提问</span>
+        {block.answered && (
+          <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-ok)' }}>
+            已回答
+          </span>
+        )}
+      </div>
+      <div className="chat-card-body" style={{ gap: 12 }}>
+        {block.questions.map((q, qi) => (
+          <div key={qi} className="question-item" style={{ padding: '8px 0' }}>
+            {q.header && (
+              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--c-text)' }}>
+                {q.header}
+              </div>
+            )}
+            <div style={{ fontSize: 13, marginBottom: 8, color: 'var(--c-text)' }}>{q.question}</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {q.options.map((opt, oi) => (
+                <div
+                  key={oi}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    border: '1px solid var(--c-border)',
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{ fontWeight: 500 }}>{opt.label}</div>
+                  {opt.description && (
+                    <div style={{ color: 'var(--c-dim)', marginTop: 2, fontSize: 11 }}>
+                      {opt.description}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/** Inline card showing Context Ledger token breakdown */
+function ContextLedgerCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'context_ledger' }>
+}) {
+  const barMaxWidth = 180
+  const usageColor =
+    block.usagePercent > 90
+      ? 'var(--c-err, #ef4444)'
+      : block.usagePercent > 70
+        ? 'var(--c-warn, #f59e0b)'
+        : 'var(--c-ok, #22c55e)'
+
+  return (
+    <div
+      style={{
+        padding: '8px 12px',
+        borderRadius: 8,
+        border: '1px solid var(--c-border)',
+        fontSize: 12,
+        background: 'var(--c-surface, #fff)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <Icons.Activity size={13} style={{ opacity: 0.6 }} />
+        <span style={{ fontWeight: 600 }}>Context Ledger</span>
+        <span style={{ marginLeft: 'auto', color: usageColor, fontWeight: 600 }}>
+          {block.usagePercent}%
+        </span>
+      </div>
+      {/* Usage bar */}
+      <div
+        style={{
+          height: 4,
+          borderRadius: 2,
+          background: 'var(--c-border)',
+          marginBottom: 8,
+          overflow: 'hidden',
+        }}
+      >
+        <div
+          style={{
+            height: '100%',
+            width: `${Math.min(100, block.usagePercent)}%`,
+            background: usageColor,
+            borderRadius: 2,
+            transition: 'width 0.3s ease',
+          }}
+        />
+      </div>
+      {/* Per-section breakdown */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {block.sections.map((section, si) => {
+          const maxTokens = block.softLimitTokens || 1
+          const sectionPercent = Math.round((section.estimatedTokens / maxTokens) * 100)
+          return (
+            <div key={si} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ width: 130, flexShrink: 0, color: 'var(--c-dim)' }}>
+                {section.label}
+              </span>
+              <div
+                style={{
+                  flex: 1,
+                  height: 3,
+                  borderRadius: 1.5,
+                  background: 'var(--c-border)',
+                  overflow: 'hidden',
+                }}
+              >
+                <div
+                  style={{
+                    height: '100%',
+                    width: `${Math.min(100, sectionPercent * (barMaxWidth / 100))}%`,
+                    background: 'var(--c-text, #888)',
+                    borderRadius: 1.5,
+                  }}
+                />
+              </div>
+              <span style={{ width: 60, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {section.estimatedTokens.toLocaleString()} t
+              </span>
+              {section.truncated && (
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: 'var(--c-warn, #f59e0b)',
+                    border: '1px solid var(--c-warn)',
+                    borderRadius: 3,
+                    padding: '0 3px',
+                  }}
+                >
+                  truncated
+                </span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          marginTop: 6,
+          paddingTop: 4,
+          borderTop: '1px solid var(--c-border)',
+          color: 'var(--c-dim)',
+        }}
+      >
+        <span>Total: {block.totalEstimatedTokens.toLocaleString()} tokens</span>
+        <span>Window: {block.contextWindowTokens.toLocaleString()}</span>
       </div>
     </div>
   )

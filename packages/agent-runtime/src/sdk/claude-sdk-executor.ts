@@ -46,6 +46,7 @@ import type {
   SDKResultMessage,
   SDKSettings,
 } from './types.js'
+import { classifyResumeError, ResumeCircuitBreaker } from './types.js'
 
 type SDKModule = { query: SDKQueryFunction }
 
@@ -66,6 +67,14 @@ const DEFAULT_MAX_TURN_EXTENSION_CAP = 500
 
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
+
+/** Shared circuit breaker for SDK resume attempts across all sessions. */
+const resumeCircuitBreaker = new ResumeCircuitBreaker()
+
+/** Access the shared circuit breaker (for testing / session service integration). */
+export function getResumeCircuitBreaker(): ResumeCircuitBreaker {
+  return resumeCircuitBreaker
+}
 
 function buildIsolatedRuntimeEnv(apiKey: string, apiEndpoint?: string): Record<string, string> {
   const env: Record<string, string> = {}
@@ -170,7 +179,6 @@ export class ClaudeSDKExecutor {
     // Build composite system prompt
     const systemPrompt = buildCompositeSystemPrompt(config)
     const claudeCodeExecutable = resolveClaudeCodeExecutable()
-    const sdkSessionId = config.sdkSessionId ?? sessionId
 
     let terminalStatusEmitted = false
     const emitTerminalStatus = (status: AgentStatusValue): void => {
@@ -210,6 +218,8 @@ export class ClaudeSDKExecutor {
     let resumeExistingSession = config.continueSession === true
 
     while (true) {
+      // Resolve sdkSessionId from config each iteration (resume recovery may update it)
+      const sdkSessionId = config.sdkSessionId ?? sessionId
       const options: SDKQueryOptions = {
         abortController: this.abortController,
         model: config.model,
@@ -410,6 +420,10 @@ export class ClaudeSDKExecutor {
         }
 
         if (!terminalStatusEmitted) emitTerminalStatus('completed')
+        // Record resume success if this was a resumed session
+        if (resumeExistingSession) {
+          resumeCircuitBreaker.recordSuccess(sessionId)
+        }
         return
       } catch (err) {
         if (this.abortController.signal.aborted) {
@@ -422,6 +436,65 @@ export class ClaudeSDKExecutor {
           })
           if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
           return
+        }
+
+        // ── Resume Recovery ────────────────────────────────────────────
+        // If this was a resume attempt and the error is a recoverable
+        // resume failure (e.g., session already in use, session expired),
+        // automatically fall back to a fresh session instead of failing.
+        if (resumeExistingSession) {
+          const classification = classifyResumeError(err)
+          if (classification.isResumeError && resumeCircuitBreaker.isResumeAllowed(sessionId)) {
+            const circuitOpen = resumeCircuitBreaker.recordFailure(sessionId)
+            log.warn('SDK resume failed, falling back to fresh session', {
+              sparkSessionId: sessionId,
+              sdkSessionId,
+              classification: classification.reason,
+              circuitOpen,
+              failureCount: resumeCircuitBreaker.getFailureCount(sessionId),
+            })
+
+            // Emit telemetry event for the resume failure and recovery
+            this.emitter.emit({
+              ...makeBase(),
+              type: 'agent_status',
+              status: 'thinking',
+              message: `Session resume failed (${classification.reason}), retrying with a fresh session…`,
+            })
+
+            // Switch to fresh session mode and retry
+            resumeExistingSession = false
+            const freshSessionId = `${sdkSessionId}-fresh-${Date.now()}`
+            // Overwrite config.sdkSessionId for the fresh attempt
+            config = { ...config, sdkSessionId: freshSessionId }
+            // Reset terminal status since we're retrying
+            terminalStatusEmitted = false
+            continue
+          }
+
+          if (classification.isResumeError && !resumeCircuitBreaker.isResumeAllowed(sessionId)) {
+            log.error('SDK resume circuit breaker open, giving up', {
+              sparkSessionId: sessionId,
+              sdkSessionId,
+              failureCount: resumeCircuitBreaker.getFailureCount(sessionId),
+            })
+            this.emitter.emit({
+              ...makeBase(),
+              type: 'agent_error',
+              code: 'SDK_RESUME_CIRCUIT_OPEN',
+              message: `Session resume has failed ${resumeCircuitBreaker.getFailureCount(sessionId)} consecutive times. Starting a new session is recommended.`,
+              retryable: false,
+              rawError: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+            })
+            if (!terminalStatusEmitted) emitTerminalStatus('error')
+            throw err
+          }
+        }
+
+        // Record success if we got here on a non-resume error (the break
+        // didn't happen because the turn simply failed for other reasons)
+        if (resumeExistingSession) {
+          resumeCircuitBreaker.recordSuccess(sessionId)
         }
 
         this.emitter.emit({

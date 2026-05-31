@@ -8,7 +8,7 @@ vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
   query: queryMock,
 }))
 
-const { ClaudeSDKExecutor, resetSDKLoadState } = await import('../../sdk/claude-sdk-executor.js')
+const { ClaudeSDKExecutor, resetSDKLoadState, getResumeCircuitBreaker } = await import('../../sdk/claude-sdk-executor.js')
 
 function baseConfig() {
   return {
@@ -27,6 +27,7 @@ describe('ClaudeSDKExecutor', () => {
   beforeEach(() => {
     queryMock.mockReset()
     resetSDKLoadState()
+    getResumeCircuitBreaker().reset()
   })
 
   it('uses a fixed session id for the first turn and resume for later turns', async () => {
@@ -279,10 +280,12 @@ describe('ClaudeSDKExecutor', () => {
     ]))
     const approvalCallback = vi.fn(async () => false)
     const input = { plan: '# Plan' }
+    const questionCallback = vi.fn(async () => ({ answers: {} }))
 
     await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
       ...baseConfig(),
       approvalCallback,
+      questionCallback,
     })
 
     const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
@@ -295,11 +298,12 @@ describe('ClaudeSDKExecutor', () => {
       toolUseID: 'tool-plan',
       decisionClassification: 'user_temporary',
     })
-    await expect(options.canUseTool?.('AskUserQuestion', { question: 'Proceed?' }, {
+    await expect(options.canUseTool?.('AskUserQuestion', { question: 'Proceed?', questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes', description: 'Proceed' }] }] }, {
       signal: new AbortController().signal,
       toolUseID: 'tool-question',
     })).resolves.toEqual(expect.objectContaining({ behavior: 'allow' }))
     expect(approvalCallback).not.toHaveBeenCalled()
+    expect(questionCallback).toHaveBeenCalled()
   })
 
   it('lets SDK-native auto and bypass modes own tool permissions without Spark canUseTool', async () => {
@@ -374,5 +378,185 @@ describe('ClaudeSDKExecutor', () => {
     })
     expect(JSON.stringify(options.systemPrompt)).toContain('AskUserQuestion')
     expect(JSON.stringify(options.systemPrompt)).toContain('options')
+  })
+
+  // ── Resume Recovery Tests ──────────────────────────────────────────────────
+
+  describe('resume recovery', () => {
+    it('falls back to a fresh session when resume throws a session-not-found error', async () => {
+      queryMock
+        .mockImplementationOnce(() => { throw new Error('Session not found: sdk-session-1') })
+        .mockReturnValueOnce(messages([
+          { type: 'result', subtype: 'success', result: 'recovered', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+        ]))
+
+      const events: AgentEvent[] = []
+      const executor = new ClaudeSDKExecutor()
+      executor.onEvent((event) => events.push(event))
+
+      await executor.executeTurn('sess-1', 'turn-1', 'hello', {
+        ...baseConfig(),
+        sdkSessionId: 'sdk-session-1',
+        continueSession: true,
+      })
+
+      expect(queryMock).toHaveBeenCalledTimes(2)
+
+      // First call should have used resume
+      const firstOptions = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+      expect(firstOptions.resume).toBe('sdk-session-1')
+
+      // Second call should use sessionId (fresh mode, no resume)
+      const secondOptions = queryMock.mock.calls[1]?.[0]?.options as SDKQueryOptions
+      expect(secondOptions.resume).toBeUndefined()
+      expect(secondOptions.sessionId).toBeDefined()
+      expect(typeof secondOptions.sessionId).toBe('string')
+      // Fresh session id should differ from the original resume id
+      expect(secondOptions.sessionId).not.toBe('sdk-session-1')
+
+      // Should emit a telemetry status about the recovery
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'agent_status',
+        status: 'thinking',
+        message: expect.stringContaining('Session resume failed'),
+      }))
+
+      // Should complete successfully
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'agent_status',
+        status: 'completed',
+      }))
+    })
+
+    it('falls back when resume throws a session-already-in-use error', async () => {
+      queryMock
+        .mockImplementationOnce(() => { throw new Error('session id already in use') })
+        .mockReturnValueOnce(messages([
+          { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+        ]))
+
+      const events: AgentEvent[] = []
+      const executor = new ClaudeSDKExecutor()
+      executor.onEvent((event) => events.push(event))
+
+      await executor.executeTurn('sess-1', 'turn-1', 'hello', {
+        ...baseConfig(),
+        sdkSessionId: 'sdk-session-1',
+        continueSession: true,
+      })
+
+      expect(queryMock).toHaveBeenCalledTimes(2)
+      const secondOptions = queryMock.mock.calls[1]?.[0]?.options as SDKQueryOptions
+      expect(secondOptions.resume).toBeUndefined()
+      expect(secondOptions.sessionId).toBeDefined()
+      expect(secondOptions.sessionId).not.toBe('sdk-session-1')
+      expect(events).toContainEqual(expect.objectContaining({ type: 'agent_status', status: 'completed' }))
+    })
+
+    it('does not fall back on non-resume errors', async () => {
+      queryMock.mockImplementation(() => { throw new Error('write EPIPE') })
+
+      const events: AgentEvent[] = []
+      const executor = new ClaudeSDKExecutor()
+      executor.onEvent((event) => events.push(event))
+
+      await expect(executor.executeTurn('sess-1', 'turn-1', 'hello', {
+        ...baseConfig(),
+        sdkSessionId: 'sdk-session-1',
+        continueSession: true,
+      })).rejects.toThrow('write EPIPE')
+
+      // Should not retry - only one call
+      expect(queryMock).toHaveBeenCalledTimes(1)
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'agent_error',
+        code: 'SDK_ERROR',
+      }))
+    })
+
+    it('does not fall back on fresh (non-resume) sessions', async () => {
+      queryMock.mockImplementation(() => { throw new Error('Session not found: xyz') })
+
+      const events: AgentEvent[] = []
+      const executor = new ClaudeSDKExecutor()
+      executor.onEvent((event) => events.push(event))
+
+      await expect(executor.executeTurn('sess-1', 'turn-1', 'hello', {
+        ...baseConfig(),
+        sdkSessionId: 'sdk-session-1',
+        continueSession: false,
+      })).rejects.toThrow('Session not found: xyz')
+
+      // Should not retry since this wasn't a resume attempt
+      expect(queryMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('opens the circuit breaker after consecutive resume failures', async () => {
+      const breaker = getResumeCircuitBreaker()
+      breaker.reset('sess-circuit')
+
+      // Simulate 3 consecutive resume failures to open the circuit
+      for (let i = 0; i < 3; i++) {
+        queryMock.mockReset()
+        queryMock
+          .mockImplementationOnce(() => { throw new Error('Session not found') })
+          .mockReturnValueOnce(messages([
+            { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+          ]))
+
+        const executor = new ClaudeSDKExecutor()
+        await executor.executeTurn('sess-circuit', `turn-${i}`, 'hello', {
+          ...baseConfig(),
+          sdkSessionId: 'sdk-circuit',
+          continueSession: true,
+        })
+      }
+
+      // Now the circuit should be open - next resume failure should NOT fall back
+      queryMock.mockReset()
+      queryMock.mockImplementation(() => { throw new Error('Session not found') })
+
+      const events: AgentEvent[] = []
+      const executor = new ClaudeSDKExecutor()
+      executor.onEvent((event) => events.push(event))
+
+      await expect(executor.executeTurn('sess-circuit', 'turn-final', 'hello', {
+        ...baseConfig(),
+        sdkSessionId: 'sdk-circuit',
+        continueSession: true,
+      })).rejects.toThrow('Session not found')
+
+      // Should only have called once (no fallback retry)
+      expect(queryMock).toHaveBeenCalledTimes(1)
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'agent_error',
+        code: 'SDK_RESUME_CIRCUIT_OPEN',
+      }))
+    })
+
+    it('resets the circuit breaker on a successful turn', async () => {
+      const breaker = getResumeCircuitBreaker()
+
+      // Record 2 failures
+      breaker.recordFailure('sess-recover')
+      expect(breaker.isResumeAllowed('sess-recover')).toBe(true)
+      expect(breaker.getFailureCount('sess-recover')).toBe(1)
+
+      // Now a successful resume turn
+      queryMock.mockReturnValue(messages([
+        { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+      ]))
+
+      const executor = new ClaudeSDKExecutor()
+      await executor.executeTurn('sess-recover', 'turn-1', 'hello', {
+        ...baseConfig(),
+        sdkSessionId: 'sdk-recover',
+        continueSession: true,
+      })
+
+      // Circuit breaker should be reset
+      expect(breaker.getFailureCount('sess-recover')).toBe(0)
+      expect(breaker.isResumeAllowed('sess-recover')).toBe(true)
+    })
   })
 })

@@ -288,6 +288,31 @@ export interface ProjectContextBudget {
   truncated: boolean
 }
 
+export interface ContextLedgerEntry {
+  /** Section label (e.g., "System Prompt", "Project Context", "Conversation History", "Skill Prompt") */
+  label: string
+  /** Estimated token count for this section */
+  estimatedTokens: number
+  /** Character count for this section */
+  charCount: number
+  /** Whether this section was truncated to fit budget */
+  truncated: boolean
+}
+
+export interface ContextLedgerEvent extends BaseEvent {
+  type: 'context_ledger'
+  /** Per-section token breakdown */
+  sections: ContextLedgerEntry[]
+  /** Total estimated tokens across all sections */
+  totalEstimatedTokens: number
+  /** Model soft context limit */
+  softLimitTokens: number
+  /** Model hard context window */
+  contextWindowTokens: number
+  /** Percentage of soft limit used */
+  usagePercent: number
+}
+
 export interface ProjectContextLoadedEvent extends BaseEvent {
   type: 'project_context_loaded'
   workspaceRoot?: string
@@ -403,6 +428,7 @@ export type AgentEvent =
   | ContextUsageEvent
   | ProjectContextLoadedEvent
   | TurnPromptSnapshotEvent
+  | ContextLedgerEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']
