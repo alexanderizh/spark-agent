@@ -1900,7 +1900,7 @@ function truncateTitle(title: string): string {
     .trimEnd()}...`
 }
 
-function getAgentAdapterFromSession(
+export function getAgentAdapterFromSession(
   value: string | null | undefined,
   legacyChatMode: string | null | undefined,
   providerType: string | null,
@@ -1914,7 +1914,7 @@ function getAgentAdapterFromSession(
   return providerType === 'anthropic' ? 'claude-sdk' : 'codex'
 }
 
-function getPermissionModeFromSession(
+export function getPermissionModeFromSession(
   value: string | null | undefined,
   adapter: AgentAdapterKind,
 ): SessionPermissionMode {
