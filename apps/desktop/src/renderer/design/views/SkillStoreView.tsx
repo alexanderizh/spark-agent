@@ -108,6 +108,9 @@ export function SkillStoreView() {
           onInstallChange={handleInstallChange}
         />
       )}
+
+      {/* ── Floating Skill Assistant ── */}
+      <SkillAssistant onRefresh={handleInstallChange} />
     </div>
   )
 }
@@ -1406,5 +1409,395 @@ tags: [tag1, tag2]
         </div>
       )}
     </div>
+  )
+}
+
+// ─── Floating Skill Assistant ─────────────────────────────────────────
+
+interface AssistantMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  actions?: Array<{
+    label: string
+    action: () => void
+  }>
+}
+
+type SkillAction = 'list' | 'search' | 'install' | 'uninstall' | 'enable' | 'disable' | 'help' | 'unknown'
+
+function parseSkillCommand(input: string): { action: SkillAction; target: string } {
+  const text = input.trim().toLowerCase()
+
+  // Help
+  if (/^(帮助|help|怎么用|使用说明|你能做什么|功能)/.test(text)) {
+    return { action: 'help', target: '' }
+  }
+
+  // List
+  if (/^(列出|列表|显示所有|查看所有|全部技能|列出技能|有什么|有哪些|installed|list all|show all)/.test(text)) {
+    return { action: 'list', target: '' }
+  }
+
+  // Search
+  const searchMatch = text.match(/(?:搜索|查找|找|search)\s*(.+?)(?:的?技能)?$/)
+  if (searchMatch) {
+    return { action: 'search', target: searchMatch[1]! }
+  }
+
+  // Uninstall
+  const uninstallMatch = text.match(/(?:卸载|删除|移除|卸下|uninstall|remove|delete)\s*(.+?)(?:的?技能)?$/)
+  if (uninstallMatch) {
+    return { action: 'uninstall', target: uninstallMatch[1]! }
+  }
+
+  // Disable
+  const disableMatch = text.match(/(?:禁用|关闭|停用|隐藏|disable|turn off|hide)\s*(.+?)(?:的?技能)?$/)
+  if (disableMatch) {
+    return { action: 'disable', target: disableMatch[1]! }
+  }
+
+  // Enable
+  const enableMatch = text.match(/(?:启用|开启|激活|显示|enable|turn on|activate)\s*(.+?)(?:的?技能)?$/)
+  if (enableMatch) {
+    return { action: 'enable', target: enableMatch[1]! }
+  }
+
+  // Install
+  const installMatch = text.match(/(?:安装|install|添加|下载)\s*(.+?)(?:的?技能)?$/)
+  if (installMatch) {
+    return { action: 'install', target: installMatch[1]! }
+  }
+
+  return { action: 'unknown', target: input.trim() }
+}
+
+function findSkillByName(skills: SkillItem[], query: string): SkillItem | undefined {
+  const q = query.toLowerCase()
+  return skills.find((s) => s.name.toLowerCase() === q)
+    ?? skills.find((s) => s.name.toLowerCase().includes(q))
+    ?? skills.find((s) => {
+      try {
+        const manifest = JSON.parse(s.manifestJson)
+        return (manifest.tags as string[] ?? []).some((t: string) => t.toLowerCase().includes(q))
+      } catch { return false }
+    })
+}
+
+function SkillAssistant({ onRefresh }: { onRefresh: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [messages, setMessages] = useState<AssistantMessage[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content: '你好！我是 Skill 管理助手。你可以用自然语言告诉我你想做什么，例如：\n\n• 安装 代码审查助手\n• 禁用 测试生成器\n• 列出所有技能\n• 搜索 文档\n\n输入"帮助"查看完整指令列表。',
+    },
+  ])
+  const [input, setInput] = useState('')
+  const [processing, setProcessing] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const { toast } = useToast()
+
+  // IPC hooks
+  const { invoke: listSkills } = useIpcInvoke('skill:list')
+  const { invoke: toggleSkill } = useIpcInvoke('skill:toggle')
+  const { invoke: deleteSkill } = useIpcInvoke('skill:delete')
+  const { invoke: searchRegistry } = useIpcInvoke('skill-registry:search')
+  const { invoke: installSkill } = useIpcInvoke('skill-registry:install')
+
+  const addMessage = useCallback((role: 'user' | 'assistant', content: string, actions?: AssistantMessage['actions']) => {
+    const msg: AssistantMessage = { id: `msg-${Date.now()}-${Math.random()}`, role, content, ...(actions ? { actions } : {}) }
+    setMessages((prev) => [...prev, msg])
+    return msg
+  }, [])
+
+  // Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const executeAction = useCallback(async (action: SkillAction, target: string) => {
+    setProcessing(true)
+    try {
+      switch (action) {
+        case 'help': {
+          addMessage('assistant', '我可以帮你管理 Skill，支持的指令：\n\n' +
+            '• **安装 [名称]** — 从商店搜索并安装技能\n' +
+            '• **卸载 [名称]** — 删除已安装的技能\n' +
+            '• **启用 [名称]** — 启用已安装的技能\n' +
+            '• **禁用 [名称]** — 禁用已安装的技能\n' +
+            '• **列出所有** — 显示已安装的所有技能\n' +
+            '• **搜索 [关键词]** — 在商店中搜索技能\n\n' +
+            '你也可以直接描述需求，我会帮你找到合适的技能。')
+          break
+        }
+
+        case 'list': {
+          const res = await listSkills({})
+          const skills = res.skills as SkillItem[]
+          if (skills.length === 0) {
+            addMessage('assistant', '当前没有已安装的技能。你可以说"安装 [名称]"来安装新技能。')
+          } else {
+            const lines = skills.map((s, i) => {
+              const meta = parseSkillManifest(s.manifestJson)
+              const status = s.enabled ? '✓ 已启用' : '✗ 已禁用'
+              return `${i + 1}. **${s.name}** — ${meta.desc || '无描述'} [${status}]`
+            })
+            addMessage('assistant', `已安装 ${skills.length} 个技能：\n\n${lines.join('\n')}`)
+          }
+          break
+        }
+
+        case 'search': {
+          const res = await searchRegistry({ query: target, limit: 8 })
+          const results = res.skills as RemoteSkillItem[]
+          if (results.length === 0) {
+            addMessage('assistant', `未找到与"${target}"相关的技能。试试其他关键词？`)
+          } else {
+            const lines = results.map((s, i) => {
+              const installed = s.installed ? ' [已安装]' : ''
+              return `${i + 1}. **${s.name}** by ${s.author} — ${s.description.slice(0, 60)}${installed}`
+            })
+            const actions = results.filter((s) => !s.installed).slice(0, 3).map((s) => ({
+              label: `安装 ${s.name}`,
+              action: () => { void handleInstallFromSearch(s) },
+            }))
+            addMessage('assistant', `找到 ${results.length} 个与"${target}"相关的技能：\n\n${lines.join('\n')}`, actions)
+          }
+          break
+        }
+
+        case 'install': {
+          // First search in registry, then install
+          const searchRes = await searchRegistry({ query: target, limit: 5 })
+          const remoteSkills = searchRes.skills as RemoteSkillItem[]
+          if (remoteSkills.length === 0) {
+            addMessage('assistant', `在商店中未找到"${target}"。请检查名称是否正确，或尝试使用"搜索"指令查找。`)
+          } else if (remoteSkills.length === 1) {
+            // Auto install the only result
+            const skill = remoteSkills[0]!
+            if (skill.installed) {
+              addMessage('assistant', `**${skill.name}** 已经安装过了。`)
+            } else {
+              try {
+                await installSkill({ remoteSkillId: skill.id, registryId: skill.registryId })
+                addMessage('assistant', `已成功安装 **${skill.name}** v${skill.version}！`)
+                onRefresh()
+              } catch (err) {
+                addMessage('assistant', `安装失败：${err instanceof Error ? err.message : '未知错误'}`)
+              }
+            }
+          } else {
+            // Multiple results, let user choose
+            const lines = remoteSkills.map((s, i) => `${i + 1}. **${s.name}** by ${s.author} — ${s.description.slice(0, 50)}`)
+            const actions = remoteSkills.slice(0, 3).map((s) => ({
+              label: `安装 ${s.name}`,
+              action: () => { void handleInstallFromSearch(s) },
+            }))
+            addMessage('assistant', `找到多个匹配的技能，请选择要安装的：\n\n${lines.join('\n')}`, actions)
+          }
+          break
+        }
+
+        case 'uninstall': {
+          const listRes = await listSkills({})
+          const skills = listRes.skills as SkillItem[]
+          const skill = findSkillByName(skills, target)
+          if (!skill) {
+            addMessage('assistant', `未找到名为"${target}"的已安装技能。说"列出所有"查看已安装列表。`)
+          } else {
+            try {
+              await deleteSkill({ id: skill.id })
+              addMessage('assistant', `已卸载 **${skill.name}**。`)
+              onRefresh()
+            } catch (err) {
+              addMessage('assistant', `卸载失败：${err instanceof Error ? err.message : '未知错误'}`)
+            }
+          }
+          break
+        }
+
+        case 'enable':
+        case 'disable': {
+          const listRes = await listSkills({})
+          const skills = listRes.skills as SkillItem[]
+          const skill = findSkillByName(skills, target)
+          if (!skill) {
+            addMessage('assistant', `未找到名为"${target}"的已安装技能。说"列出所有"查看已安装列表。`)
+          } else if (action === 'enable' && skill.enabled) {
+            addMessage('assistant', `**${skill.name}** 已经是启用状态。`)
+          } else if (action === 'disable' && !skill.enabled) {
+            addMessage('assistant', `**${skill.name}** 已经是禁用状态。`)
+          } else {
+            try {
+              await toggleSkill({ id: skill.id })
+              const newState = action === 'enable' ? '启用' : '禁用'
+              addMessage('assistant', `已${newState} **${skill.name}**。`)
+              onRefresh()
+            } catch (err) {
+              addMessage('assistant', `操作失败：${err instanceof Error ? err.message : '未知错误'}`)
+            }
+          }
+          break
+        }
+
+        default:
+          addMessage('assistant', '抱歉，我没有理解你的意思。你可以试试：\n\n• "列出所有" — 查看已安装技能\n• "安装 [名称]" — 安装新技能\n• "帮助" — 查看完整指令')
+      }
+    } catch (err) {
+      addMessage('assistant', `出错了：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setProcessing(false)
+    }
+  }, [listSkills, searchRegistry, installSkill, deleteSkill, toggleSkill, addMessage, onRefresh])
+
+  const handleInstallFromSearch = useCallback(async (skill: RemoteSkillItem) => {
+    setProcessing(true)
+    try {
+      await installSkill({ remoteSkillId: skill.id, registryId: skill.registryId })
+      addMessage('assistant', `已成功安装 **${skill.name}** v${skill.version}！`)
+      onRefresh()
+    } catch (err) {
+      addMessage('assistant', `安装失败：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setProcessing(false)
+    }
+  }, [installSkill, addMessage, onRefresh])
+
+  const handleSend = useCallback(() => {
+    const text = input.trim()
+    if (!text || processing) return
+
+    addMessage('user', text)
+    setInput('')
+
+    const { action, target } = parseSkillCommand(text)
+    void executeAction(action, target)
+  }, [input, processing, addMessage, executeAction])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }, [handleSend])
+
+  // Quick action buttons for the welcome state
+  const quickActions = [
+    { label: '列出所有技能', command: '列出所有' },
+    { label: '搜索技能', command: '搜索 ' },
+    { label: '安装技能', command: '安装 ' },
+    { label: '帮助', command: '帮助' },
+  ]
+
+  return (
+    <>
+      {/* Floating button */}
+      {!open && (
+        <button
+          className="skill-assistant-fab"
+          onClick={() => setOpen(true)}
+          title="Skill 管理助手"
+        >
+          <Icons.Bot size={20} />
+        </button>
+      )}
+
+      {/* Assistant panel */}
+      {open && (
+        <div className="skill-assistant-panel">
+          {/* Header */}
+          <div className="sa-header">
+            <div className="sa-header-info">
+              <Icons.Bot size={16} />
+              <span className="sa-header-title">Skill 助手</span>
+            </div>
+            <button className="icon-btn" onClick={() => setOpen(false)}>
+              <Icons.X size={14} />
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="sa-messages">
+            {messages.map((msg) => (
+              <div key={msg.id} className={`sa-msg sa-msg-${msg.role}`}>
+                {msg.role === 'assistant' && (
+                  <div className="sa-msg-avatar">
+                    <Icons.Bot size={14} />
+                  </div>
+                )}
+                <div className="sa-msg-body">
+                  <div className="sa-msg-text">{msg.content}</div>
+                  {msg.actions && msg.actions.length > 0 && (
+                    <div className="sa-msg-actions">
+                      {msg.actions.map((act, i) => (
+                        <button key={i} className="btn sm primary" onClick={act.action} disabled={processing}>
+                          {act.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {processing && (
+              <div className="sa-msg sa-msg-assistant">
+                <div className="sa-msg-avatar"><Icons.Bot size={14} /></div>
+                <div className="sa-msg-body">
+                  <div className="sa-typing">
+                    <span /><span /><span />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Quick actions */}
+          {messages.length <= 1 && (
+            <div className="sa-quick-actions">
+              {quickActions.map((qa) => (
+                <button
+                  key={qa.label}
+                  className="sa-quick-btn"
+                  onClick={() => {
+                    if (qa.command.endsWith(' ')) {
+                      setInput(qa.command)
+                    } else {
+                      setInput(qa.command)
+                      const { action, target } = parseSkillCommand(qa.command)
+                      addMessage('user', qa.command)
+                      void executeAction(action, target)
+                    }
+                  }}
+                >
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="sa-input-bar">
+            <input
+              className="sa-input"
+              type="text"
+              placeholder="输入指令，如：安装 代码审查助手"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={processing}
+            />
+            <button
+              className="sa-send-btn"
+              onClick={handleSend}
+              disabled={processing || !input.trim()}
+            >
+              <Icons.Send size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }
