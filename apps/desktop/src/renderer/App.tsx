@@ -46,15 +46,13 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
       chatMode === 'workspace'
         ? { title: 'Chat', sub: 'Workspace mode' }
         : { title: 'Chat', sub: 'Vibe mode · Streaming chat & tool calls' },
-    workflows: { title: 'Workflows', sub: 'DAG orchestration' },
     agents: { title: 'Agents', sub: 'Multi-agent collaboration' },
     skills: { title: 'Skills', sub: 'Reusable agent capabilities' },
     'skill-store': { title: 'Skill 商店', sub: 'Discover, install and manage AI Skills' },
-    mcp: { title: 'MCP', sub: 'Tool servers & data sources' },
     settings: { title: 'Settings', sub: 'App & team configuration' },
   }
   const meta = viewMeta[view] ?? { title: view, sub: '' }
-  const isCompact = view === 'chat' || view === 'workflows'
+  const isCompact = view === 'chat'
 
   const paletteHint = getShortcutLabel('openPalette')
 
@@ -211,9 +209,7 @@ function Shell() {
     chat: t.chatMode === 'workspace'
       ? ProjectView
       : () => <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />,
-    workflows: WorkflowView,
     agents: AgentsView,
-    mcp: McpView,
     skills: SkillsView,
     'skill-store': SkillStoreView,
     settings: SettingsView,
@@ -309,6 +305,7 @@ function Shell() {
               )}
             </button>
 
+            {/* Workflows menu item - hidden
             <button
               className={`nav-item ${t.view === 'workflows' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'workflows')}
@@ -321,6 +318,7 @@ function Shell() {
                 <span className="nav-label">Workflows</span>
               )}
             </button>
+            */}
             <button
               className={`nav-item ${t.view === 'agents' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'agents')}
@@ -349,6 +347,7 @@ function Shell() {
                 <span className="nav-label">Skills</span>
               )}
             </button>
+            {/* MCP menu item - hidden
             <button
               className={`nav-item ${t.view === 'mcp' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'mcp')}
@@ -361,6 +360,7 @@ function Shell() {
                 <span className="nav-label">MCP</span>
               )}
             </button>
+            */}
           </div>
 
           {/* Settings */}

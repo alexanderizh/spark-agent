@@ -376,6 +376,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       chatMode?: SessionChatMode
       reasoningEffort?: SessionReasoningEffort
       activate?: boolean
+      skipRefresh?: boolean
     } = {},
   ): Promise<SessionId | null> => {
     try {
@@ -416,10 +417,14 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         reasoningEffort: options.reasoningEffort ?? prefs.reasoningEffort ?? 'medium',
         workspaceId,
       })
-      await refreshProjectsAndSessions()
+      // 先设置 active 和 workspaceId，确保立即跳转到新会话
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(workspaceId)
+      // 然后再刷新列表（除非明确跳过）
+      if (options.skipRefresh !== true) {
+        await refreshProjectsAndSessions()
+      }
       writeComposerPrefs({
         adapter: agentAdapter,
         providerProfileId: profile.id,
@@ -484,10 +489,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       setProjectName('')
       setProjectPath('')
       setActiveWorkspaceId(res.workspace.id)
-      await refreshProjectsAndSessions()
       toast.success(`项目已创建于：${rootPath}`)
-      // 新建项目后自动新建一个会话并选中
-      await handleNewSession(res.workspace.id)
+      // 新建项目后自动新建一个会话并选中（跳过内部刷新，统一在外部刷新）
+      await handleNewSession(res.workspace.id, { skipRefresh: true })
+      // 统一刷新一次
+      await refreshProjectsAndSessions()
     } catch (err) {
       console.error('创建项目失败', err)
       toast.error(err instanceof Error ? err.message : '创建项目失败')
@@ -1345,6 +1351,45 @@ function ChatListItem({
 
 // ─── Tool Dropdown (IDE / Terminal open) ─────────────────────────────────
 
+/** Map iconHint to the corresponding Icons component */
+function getToolIcon(iconHint?: string, kind?: 'ide' | 'terminal'): JSX.Element {
+  const size = 13
+  const fallback = kind === 'ide' ? <Icons.Code size={size} /> : <Icons.Terminal size={size} />
+  if (!iconHint) return fallback
+
+  // Map iconHint to Icons component
+  const iconMap: Record<string, (() => JSX.Element) | undefined> = {
+    VSCode: () => <Icons.VSCode size={size} />,
+    Cursor: () => <Icons.Cursor size={size} />,
+    Zed: () => <Icons.Zed size={size} />,
+    WebStorm: () => <Icons.WebStorm size={size} />,
+    Sublime: () => <Icons.Sublime size={size} />,
+    Vim: () => <Icons.Vim size={size} />,
+    Neovim: () => <Icons.Neovim size={size} />,
+    Windsurf: () => <Icons.Windsurf size={size} />,
+    Trae: () => <Icons.Trae size={size} />,
+    CodeBuddy: () => <Icons.CodeBuddy size={size} />,
+    Kiro: () => <Icons.Kiro size={size} />,
+    Qoder: () => <Icons.Qoder size={size} />,
+    IntelliJ: () => <Icons.IntelliJ size={size} />,
+    PyCharm: () => <Icons.PyCharm size={size} />,
+    ITerm2: () => <Icons.ITerm2 size={size} />,
+    TerminalApp: () => <Icons.TerminalApp size={size} />,
+    Warp: () => <Icons.Warp size={size} />,
+    Alacritty: () => <Icons.Alacritty size={size} />,
+    Kitty: () => <Icons.Kitty size={size} />,
+    Hyper: () => <Icons.Hyper size={size} />,
+    Tabby: () => <Icons.Tabby size={size} />,
+    PowerShell: () => <Icons.PowerShell size={size} />,
+    WindowsTerminal: () => <Icons.WindowsTerminal size={size} />,
+    GitBash: () => <Icons.GitBash size={size} />,
+    CMD: () => <Icons.CMD size={size} />,
+  }
+
+  const iconFn = iconMap[iconHint]
+  return iconFn ? iconFn() : fallback
+}
+
 function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: string }) {
   const [open, setOpen] = useState(false)
   const [tools, setTools] = useState<ExternalToolInfo[]>([])
@@ -1424,7 +1469,7 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
                 onClick={() => handleSelect(tool)}
               >
                 <span className="tool-dropdown-item-icon">
-                  {tool.kind === 'ide' ? <Icons.Code size={13} /> : <Icons.Terminal size={13} />}
+                  {getToolIcon(tool.iconHint, tool.kind)}
                 </span>
                 <span className="tool-dropdown-item-name">{tool.name}</span>
               </button>
@@ -1733,13 +1778,9 @@ function ChatStream({
       setAgentIsRunning(cached.status === 'running')
       usageRef.current = cached.usage
       onUsageDataChange(cached.usage)
-    } else {
-      // 首次进入的会话，短暂延迟后清空再加载
-      setMessages([])
-      onMessagesChange([])
-      onStatusChange('')
-      setAgentIsRunning(false)
     }
+    // 首次进入的会话，不立即清空消息，等待历史加载完成后再更新
+    // 这样可以避免闪屏：新会话历史为空会设置为 []，有历史的会话会显示加载的内容
 
     isStreamingRef.current = false
     userScrolledRef.current = false
@@ -2381,6 +2422,7 @@ function renderBlocks(
               task={block.task}
               status={block.status}
               tokens={block.tokens}
+              output={block.output}
             />
           </div>
         )
@@ -2407,6 +2449,20 @@ function renderBlocks(
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
             <ContextLedgerCard block={block} />
+          </div>
+        )
+      }
+      case 'context_summarized': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <ContextSummarizedCard block={block} />
+          </div>
+        )
+      }
+      case 'retry_trail': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <RetryTrailCard block={block} />
           </div>
         )
       }
@@ -2910,19 +2966,189 @@ function ContextLedgerCard({
   )
 }
 
-/** HunkDiff wrapper that provides toast feedback on accept/reject actions */
+/** Inline card showing context summarization stats */
+function ContextSummarizedCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'context_summarized' }>
+}) {
+  return (
+    <div
+      style={{
+        padding: '8px 12px',
+        borderRadius: 8,
+        background: 'var(--c-surface, #1e1e2e)',
+        border: '1px solid var(--c-border, #333)',
+        fontSize: 12,
+        color: 'var(--c-text, #ccc)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+      }}
+    >
+      <Icons.File size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
+      <span style={{ opacity: 0.7 }}>
+        Context Governor summarized {block.summarizedEntryCount} older exchanges
+        (saved ~{block.tokensSaved.toLocaleString()} tokens)
+      </span>
+    </div>
+  )
+}
+
+/** Inline card showing a self-correction retry trail */
+function RetryTrailCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'retry_trail' }>
+}) {
+  const outcomeColor =
+    block.finalOutcome === 'success'
+      ? 'var(--c-ok, #22c55e)'
+      : block.finalOutcome === 'failure'
+        ? 'var(--c-err, #ef4444)'
+        : 'var(--c-warn, #f59e0b)'
+
+  return (
+    <div
+      style={{
+        padding: '10px 12px',
+        borderRadius: 8,
+        background: 'var(--c-surface, #1e1e2e)',
+        border: '1px solid var(--c-border, #333)',
+        fontSize: 12,
+        color: 'var(--c-text, #ccc)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <Icons.Refresh size={14} style={{ opacity: 0.6 }} />
+        <span style={{ fontWeight: 600 }}>Self-correction: {block.target}</span>
+        <span
+          style={{
+            marginLeft: 'auto',
+            padding: '2px 8px',
+            borderRadius: 4,
+            background: outcomeColor,
+            color: '#fff',
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          {block.finalOutcome.toUpperCase()}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {block.attempts.map((attempt, idx) => {
+          const icon =
+            attempt.result === 'success' ? (
+              <Icons.Check size={11} style={{ color: 'var(--c-ok, #22c55e)' }} />
+            ) : attempt.result === 'failure' ? (
+              <Icons.X size={11} style={{ color: 'var(--c-err, #ef4444)' }} />
+            ) : (
+              <Icons.AlertTriangle size={11} style={{ color: 'var(--c-warn, #f59e0b)' }} />
+            )
+
+          return (
+            <div
+              key={idx}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '3px 8px',
+                borderRadius: 4,
+                background: 'rgba(255,255,255,0.03)',
+              }}
+            >
+              <span
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                {attempt.attempt}
+              </span>
+              {icon}
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {attempt.action}
+              </span>
+              {attempt.durationMs != null && (
+                <span style={{ opacity: 0.5, fontSize: 10 }}>{attempt.durationMs}ms</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {block.attempts.some((a) => a.failureSummary) && (
+        <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 4, background: 'rgba(239,68,68,0.08)', fontSize: 11 }}>
+          {block.attempts
+            .filter((a) => a.failureSummary)
+            .map((a, idx) => (
+              <div key={idx} style={{ opacity: 0.7 }}>
+                Attempt {a.attempt}: {a.failureSummary}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** HunkDiff wrapper that provides real file I/O on accept/reject actions */
 function HunkDiffWithFeedback({ path, hunks }: { path: string; hunks: Array<DiffHunk> }) {
   const { toast } = useToast()
+  const [processing, setProcessing] = React.useState<number | null>(null)
 
   const handleAcceptAll = () => {
     toast.success(`已采纳全部变更: ${path}`)
   }
 
-  const handleHunkAction = (index: number, action: 'accepted' | 'rejected') => {
+  const handleHunkAction = async (index: number, action: 'accepted' | 'rejected') => {
     if (action === 'accepted') {
       toast.success(`Hunk #${index + 1} 已采纳`)
-    } else {
-      toast.info(`Hunk #${index + 1} 已拒绝`)
+      return
+    }
+
+    // Reject: reverse-apply the hunk to restore original content
+    setProcessing(index)
+    try {
+      const hunk = hunks[index]
+      if (hunk == null) return
+
+      // Reconstruct the unified diff hunk text from parsed hunk data
+      const hunkDiff = reconstructHunkDiff(hunk)
+
+      // Get workspace root path
+      const wsRes = await window.spark.invoke('workspace:get-current', {})
+      const workspaceRootPath = wsRes?.workspace?.rootPath
+      if (!workspaceRootPath) {
+        toast.error('无法确定工作区路径')
+        return
+      }
+
+      const result = await window.spark.invoke('file:apply-hunk-patch', {
+        workspaceRootPath,
+        filePath: path,
+        hunkDiff,
+        direction: 'reverse',
+      })
+
+      if (result?.applied) {
+        toast.success(`Hunk #${index + 1} 已拒绝并还原: ${path}`)
+      } else {
+        toast.error(`还原失败: ${result?.error ?? '未知错误'}`)
+      }
+    } catch (err) {
+      toast.error(`还原异常: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setProcessing(null)
     }
   }
 
@@ -2934,6 +3160,18 @@ function HunkDiffWithFeedback({ path, hunks }: { path: string; hunks: Array<Diff
       onHunkAction={handleHunkAction}
     />
   )
+}
+
+/** Reconstruct unified diff text from a parsed DiffHunk object */
+function reconstructHunkDiff(hunk: DiffHunk): string {
+  const header = `@@ ${hunk.range} @@${hunk.note ? ` ${hunk.note}` : ''}`
+  const lines = hunk.lines.map((line) => {
+    if (line.t === 'add') return `+${line.s}`
+    if (line.t === 'del') return `-${line.s}`
+    if (line.t === 'ctx') return ` ${line.s}`
+    return line.s
+  })
+  return [header, ...lines].join('\n')
 }
 
 type MarkdownBlock =
@@ -4389,7 +4627,7 @@ function ComposerV2({
   const permissionOptions = getPermissionModeOptions(adapter)
   const sessionPermissionMode = session?.permissionMode
   const draftEffectivePermissionMode = sessionPermissionMode ?? draftPermissionMode
-  const defaultPermissionMode = permissionOptions[0]?.value ?? 'codex-default'
+  const defaultPermissionMode = permissionOptions[0]?.value ?? 'claude-ask'
   const effectivePermissionMode = permissionOptions.some(
     (option) => option.value === draftEffectivePermissionMode,
   )
@@ -4536,7 +4774,7 @@ function ComposerV2({
     const fallbackProvider = getPreferredProvider(providers, initialPrefs, draftAdapter)
     if (fallbackProvider == null) return
     const nextAdapter = getProviderAdapterKind(fallbackProvider)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
     const nextModel = fallbackProvider.defaultModel || fallbackProvider.modelIds[0] || ''
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
@@ -4898,7 +5136,7 @@ function ComposerV2({
     const provider = providers.find((item) => item.id === providerId)
     if (provider == null) return
     const nextAdapter = getProviderAdapterKind(provider)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(providerId)
@@ -4927,7 +5165,7 @@ function ComposerV2({
     const nextPermissionMode =
       adapter === nextAdapter
         ? effectivePermissionMode
-        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default')
+        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask')
     const nextModel =
       normalizeModelForProvider(modelId, provider) ||
       provider.defaultModel ||
@@ -4957,7 +5195,7 @@ function ComposerV2({
   const handleAdapterChange = async (nextAdapter: AgentAdapter) => {
     if (nextAdapter === adapter) return
     setDraftAdapter(nextAdapter)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
     setDraftPermissionMode(nextPermissionMode)
     const nextProvider = providers.find(
       (provider) => getProviderAdapterKind(provider) === nextAdapter,
@@ -5446,7 +5684,6 @@ function ModelIcon() {
 
 const ADAPTER_OPTIONS: Array<{ value: AgentAdapter; label: string }> = [
   { value: 'claude-sdk', label: 'Claude SDK' },
-  { value: 'codex', label: 'Codex' },
 ]
 
 const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
@@ -5454,7 +5691,6 @@ const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
 const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   'claude-sdk': 'Claude SDK',
   claude: 'Claude API',
-  codex: 'Codex',
 }
 
 const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
@@ -5481,26 +5717,12 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
     },
   ]
 
-const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
-  { value: 'codex-default', label: '默认权限', description: '按默认策略请求确认' },
-  {
-    value: 'codex-auto-review',
-    label: '自动审查',
-    description: '自动处理低风险审查动作',
-    tone: 'auto',
-  },
-  {
-    value: 'codex-full-access',
-    label: '完全访问',
-    description: '危险：完全听从 agent 执行',
-    tone: 'danger',
-  },
-]
+// Codex 权限选项已移除，项目仅支持 Claude SDK
 
 function getPermissionModeOptions(
   adapter: AgentAdapter,
 ): Array<ComposerMenuOption & { value: PermissionModeChoice }> {
-  return isClaudeAdapter(adapter) ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
+  return CLAUDE_PERMISSION_MODE_OPTIONS
 }
 
 function getValidPermissionMode(
@@ -5510,7 +5732,7 @@ function getValidPermissionMode(
   const options = getPermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
     ? (value as PermissionModeChoice)
-    : (options[0]?.value ?? (isClaudeAdapter(adapter) ? 'claude-ask' : 'codex-default'))
+    : (options[0]?.value ?? 'claude-ask')
 }
 
 function normalizeRuntimePermissionPrefs(value: unknown): {
@@ -5519,7 +5741,7 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
 } {
   const source = value != null && typeof value === 'object' ? (value as ComposerPrefs) : {}
   const adapter =
-    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+    source.adapter === 'claude' || source.adapter === 'claude-sdk'
       ? source.adapter
       : DEFAULT_AGENT_ADAPTER
   return {
@@ -5582,7 +5804,8 @@ function getPreferredProvider(
 }
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
-  return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
+  // 仅支持 Claude SDK
+  return DEFAULT_AGENT_ADAPTER
 }
 
 function isControlApprovalRequest(request: PermissionApprovalRequest): boolean {
@@ -6105,6 +6328,7 @@ function ChatInspector({
   onOpenProjectFolder: () => void
 }) {
   const plans = extractPlans(messages)
+  const subagents = extractInspectorSubagents(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
   const fileChangeSummaries = extractInspectorFileChanges(messages)
@@ -6290,6 +6514,35 @@ function ChatInspector({
                     {change.checkpointIds.length > 0
                       ? ` · checkpoint ${change.checkpointIds.join(', ')}`
                       : ''}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {subagents.length > 0 && (
+        <div className="inspector-section">
+          <h4>
+            <Icons.Bot size={11} /> 子 Agent
+            <span className="inspector-count">{subagents.length}</span>
+          </h4>
+          <div className="runtime-skill-list">
+            {subagents.map((sa, idx) => (
+              <div
+                className={`runtime-skill-row${sa.status === 'running' ? ' running' : ''}`}
+                key={`${sa.toolCallId}-${idx}`}
+                title={sa.output ? '点击查看输出' : undefined}
+                style={sa.output ? { cursor: 'pointer' } : undefined}
+              >
+                <div className="runtime-skill-main min-w-0">
+                  <div className="runtime-skill-name truncate">
+                    {sa.status === 'running' ? <Icons.Spinner size={10} className="thinking-spinner" /> : <Icons.Check size={10} style={{ color: 'var(--c-ok, #22c55e)' }} />}
+                    {' '}{sa.name}
+                  </div>
+                  <div className="runtime-skill-desc truncate">
+                    {sa.task || sa.role || '-'}
                   </div>
                 </div>
               </div>
@@ -6798,6 +7051,33 @@ function countDiffLines(diff: string | undefined): { adds: number; dels: number 
     if (line.startsWith('-')) dels += 1
   }
   return { adds, dels }
+}
+
+interface InspectorSubagent {
+  toolCallId: string
+  name: string
+  role: string
+  task: string
+  status: 'running' | 'done'
+  output?: string | undefined
+}
+
+function extractInspectorSubagents(messages: UIMessage[]): InspectorSubagent[] {
+  const seen = new Map<string, InspectorSubagent>()
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== 'subagent') continue
+      seen.set(block.toolCallId, {
+        toolCallId: block.toolCallId,
+        name: block.name,
+        role: block.role,
+        task: block.task,
+        status: block.status,
+        output: block.output,
+      })
+    }
+  }
+  return Array.from(seen.values())
 }
 
 function formatCheckpointReference(checkpointId: string): string {

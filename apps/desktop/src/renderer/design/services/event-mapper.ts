@@ -68,11 +68,14 @@ export type UIBlock =
     }
   | {
       kind: 'subagent'
+      toolCallId: string
       name: string
       role: string
       task: string
       status: 'running' | 'done'
       tokens: string
+      /** Full output (available when status=done) */
+      output?: string
     }
   | { kind: 'turn_file_summary'; files: FileChangeSummary[]; totalAdds: number; totalDels: number }
   | {
@@ -92,6 +95,24 @@ export type UIBlock =
       softLimitTokens: number
       contextWindowTokens: number
       usagePercent: number
+    }
+  | {
+      kind: 'context_summarized'
+      summarizedEntryCount: number
+      tokensSaved: number
+      summaryTokens: number
+    }
+  | {
+      kind: 'retry_trail'
+      target: string
+      attempts: Array<{
+        attempt: number
+        action: string
+        result: 'success' | 'failure' | 'partial'
+        failureSummary?: string
+        durationMs?: number
+      }>
+      finalOutcome: 'success' | 'failure' | 'abandoned'
     }
 
 export interface ContextUsageSnapshot {
@@ -429,6 +450,61 @@ export class MessageBuilder {
           contextWindowTokens: event.contextWindowTokens,
           usagePercent: event.usagePercent,
         })
+        break
+      }
+
+      case 'context_summarized': {
+        const sumMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        sumMsg.blocks.push({
+          kind: 'context_summarized',
+          summarizedEntryCount: event.summarizedEntryCount,
+          tokensSaved: event.tokensSaved,
+          summaryTokens: event.summaryTokens,
+        })
+        break
+      }
+
+      case 'retry_trail': {
+        const rtMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        rtMsg.blocks.push({
+          kind: 'retry_trail',
+          target: event.target,
+          attempts: event.attempts,
+          finalOutcome: event.finalOutcome,
+        })
+        break
+      }
+
+      case 'subagent_started': {
+        const saMsg = this.getOrCreateAssistant(event.id, event.timestamp)
+        saMsg.blocks.push({
+          kind: 'subagent',
+          toolCallId: event.toolCallId,
+          name: event.name,
+          role: event.role,
+          task: event.task,
+          status: 'running',
+          tokens: '',
+        })
+        break
+      }
+
+      case 'subagent_completed': {
+        // Find the existing subagent block by toolCallId and update it
+        for (const msg of this.messages) {
+          const block = msg.blocks.find(
+            (b) => b.kind === 'subagent' && b.toolCallId === event.toolCallId,
+          )
+          if (block && block.kind === 'subagent') {
+            const tokenCount =
+              (event.inputTokens ?? 0) + (event.outputTokens ?? 0)
+            ;(block as Record<string, unknown>).status = 'done'
+            ;(block as Record<string, unknown>).tokens = `${tokenCount.toLocaleString()}`
+            ;(block as Record<string, unknown>).output = event.output
+            if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+            break
+          }
+        }
         break
       }
 

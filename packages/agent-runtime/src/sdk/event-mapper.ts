@@ -269,6 +269,20 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
     case 'tool_use':
       ctx.toolNamesById?.set(block.id, mapSDKToolName(block.name))
       getToolInputs(ctx).set(block.id, normalizeToolInput(block.input))
+      // Intercept Agent tool calls → emit SubagentStartedEvent
+      if (block.name === 'Agent' || mapSDKToolName(block.name) === 'subagent') {
+        const input = normalizeToolInput(block.input)
+        return [
+          {
+            ...baseEvent(ctx),
+            type: 'subagent_started',
+            toolCallId: block.id,
+            name: typeof input.agent === 'string' ? input.agent : 'Subagent',
+            role: typeof input.description === 'string' ? input.description : '',
+            task: typeof input.prompt === 'string' ? input.prompt : '',
+          },
+        ]
+      }
       if (isPlanProposalTool(block.name)) {
         const plan = extractPlanText(normalizeToolInput(block.input))
         return plan != null
@@ -316,6 +330,25 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
             ]
           : []
       }
+
+      // Intercept subagent tool results → emit SubagentCompletedEvent
+      if (toolName === 'subagent') {
+        const subagentInput = getToolInputs(ctx).get(block.tool_use_id)
+        const name = typeof subagentInput?.agent === 'string' ? subagentInput.agent : 'Subagent'
+        const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
+        return [
+          {
+            ...baseEvent(ctx),
+            type: 'subagent_completed',
+            toolCallId: block.tool_use_id,
+            name,
+            status: isError ? 'error' : 'success',
+            resultSummary: isError ? (content || 'Subagent failed') : summary,
+            output: content || '',
+          },
+        ]
+      }
+
       const events: AgentEvent[] = [
         {
           ...baseEvent(ctx),

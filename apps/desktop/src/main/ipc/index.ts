@@ -13,6 +13,7 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { app, dialog, shell, Notification } from 'electron'
 import { execFile } from 'node:child_process'
+import crypto from 'node:crypto'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
@@ -28,6 +29,7 @@ import {
   SkillRepository,
   SettingsRepository,
   UsageLedgerRepository,
+  ContextPreferenceRepository,
 } from '@spark/storage'
 import {
   ProviderService,
@@ -67,6 +69,7 @@ import {
   recheckRuntimeTools,
 } from '../services/ShellEnvironmentService.js'
 import { getDatabase } from '../db.js'
+import { applyHunkPatch } from '../services/FilePatchService.js'
 
 const log = createLogger('ipc:register')
 const execFileAsync = promisify(execFile)
@@ -1180,6 +1183,67 @@ export function registerAllIpcHandlers(): void {
       log.warn(`Failed to show notification: ${String(err)}`)
       return { shown: false }
     }
+  })
+
+  // ─── Context Governor Handlers ─────────────────────────────────────────
+
+  typedIpcHandle('context:list-preferences', async (req) => {
+    log.info(`context:list-preferences requested, workspaceId=${req.workspaceId}`)
+    const repo = new ContextPreferenceRepository(getDatabase())
+    const rows = repo.list({ workspaceId: req.workspaceId, action: req.action, enabledOnly: false })
+    const preferences = rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspace_id,
+      filePath: row.file_path,
+      action: row.action,
+      enabled: row.enabled === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+    return { preferences }
+  })
+
+  typedIpcHandle('context:set-preference', async (req) => {
+    log.info(`context:set-preference requested, workspaceId=${req.workspaceId}, filePath=${req.filePath}, action=${req.action}`)
+    const repo = new ContextPreferenceRepository(getDatabase())
+    const row = repo.upsert({
+      id: crypto.randomUUID(),
+      workspaceId: req.workspaceId,
+      filePath: req.filePath,
+      action: req.action,
+      enabled: req.enabled,
+    })
+    return {
+      preference: {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        filePath: row.file_path,
+        action: row.action,
+        enabled: row.enabled === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    }
+  })
+
+  typedIpcHandle('context:delete-preference', async (req) => {
+    log.info(`context:delete-preference requested, id=${req.id}`)
+    const repo = new ContextPreferenceRepository(getDatabase())
+    const deleted = repo.delete(req.id)
+    return { deleted }
+  })
+
+  // ─── File Patch Handlers ─────────────────────────────────────────────
+
+  typedIpcHandle('file:apply-hunk-patch', async (req) => {
+    log.info(`file:apply-hunk-patch requested, path=${req.filePath}, direction=${req.direction}`)
+    const result = applyHunkPatch({
+      workspaceRootPath: req.workspaceRootPath,
+      filePath: req.filePath,
+      hunkDiff: req.hunkDiff,
+      direction: req.direction,
+    })
+    return result
   })
 
   log.info('All IPC handlers registered')

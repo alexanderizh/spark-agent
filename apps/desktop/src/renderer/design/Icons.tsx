@@ -547,6 +547,251 @@ export const Icons = {
       />
     </svg>
   ),
+
+  // ─── Editor/IDE Brand Icons ─────────────────────────────────────────────
+  VSCode: (p: IconProps) => (
+    <IconBase {...p}>
+      <path
+        d="M16.5 2.5L21 7v10l-4.5 4.5-7-3.5v-8l7-3.5z"
+        fill="#0098FF"
+        stroke="none"
+      />
+      <path
+        d="M3 18l4.5 3.5 7-3.5v-8l-7-3.5L3 10v8z"
+        fill="#0078D4"
+        stroke="none"
+      />
+      <path d="M7.5 6.5l7 3.5v8l-7-3.5v-8z" fill="#50E6FF" stroke="none" />
+    </IconBase>
+  ),
+
+  Cursor: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="9" fill="#000" stroke="none" />
+      <path
+        d="M8 8h3v3H8V8zm5 0h3v3h-3V8zm-5 5h3v3H8v-3zm5 0h3v3h-3v-3z"
+        fill="#fff"
+        stroke="none"
+      />
+    </IconBase>
+  ),
+
+  Zed: (p: IconProps) => (
+    <IconBase {...p}>
+      <path
+        d="M4 4h16v16H4V4zm2 2v12h12V6H6zm2 2l8 4-8 4V8z"
+        fill="#F5A623"
+        stroke="none"
+      />
+    </IconBase>
+  ),
+
+  WebStorm: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="2" fill="#000" stroke="none" />
+      <path
+        d="M7 7h4v2H9v6h2v2H7V7zm6 0h4v2h-2v6h2v2h-4V7z"
+        fill="#fff"
+        stroke="none"
+      />
+    </IconBase>
+  ),
+
+  Sublime: (p: IconProps) => (
+    <IconBase {...p}>
+      <path
+        d="M4 6l16-2v14l-16 2V6z"
+        fill="#FF9800"
+        stroke="none"
+      />
+      <path d="M6 8l12-1.5v9L6 17V8z" fill="#fff" stroke="none" opacity="0.9" />
+    </IconBase>
+  ),
+
+  Vim: (p: IconProps) => (
+    <IconBase {...p}>
+      <path
+        d="M4 4h16v16H4V4zm2 2v12h3l2-4 2 4h3V6h-3v8l-2-4-2 4V6H6z"
+        fill="#019733"
+        stroke="none"
+      />
+    </IconBase>
+  ),
+
+  Neovim: (p: IconProps) => (
+    <IconBase {...p}>
+      <path
+        d="M4 4l6 8v8l-6-4V4zm16 0v12l-6 4v-8l6-8z"
+        fill="#57A143"
+        stroke="none"
+      />
+      <path d="M10 12l6-8v12l-6 4V12z" fill="#3C8A2E" stroke="none" />
+    </IconBase>
+  ),
+
+  Windsurf: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="9" fill="#6366F1" stroke="none" />
+      <path
+        d="M8 12c0-2.2 1.8-4 4-4s4 1.8 4 4-1.8 4-4 4"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="2"
+      />
+      <circle cx="12" cy="12" r="2" fill="#fff" stroke="none" />
+    </IconBase>
+  ),
+
+  Trae: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="3" fill="#4A90D9" stroke="none" />
+      <path
+        d="M8 8h8l-4 8-4-8zm4 3l2-4h-4l2 4z"
+        fill="#fff"
+        stroke="none"
+      />
+    </IconBase>
+  ),
+
+  CodeBuddy: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="9" fill="#7C3AED" stroke="none" />
+      <path
+        d="M8 10l3 3-3 3M13 16h4"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+    </IconBase>
+  ),
+
+  Kiro: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="2" fill="#FF9900" stroke="none" />
+      <path
+        d="M7 7h3l5 5-5 5H7l5-5-5-5zm7 0h3v10h-3V7z"
+        fill="#fff"
+        stroke="none"
+      />
+    </IconBase>
+  ),
+
+  Qoder: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="9" fill="#10B981" stroke="none" />
+      <path
+        d="M8 12l3-4v8l-3-4zm8 0l-3-4v8l3-4z"
+        fill="#fff"
+        stroke="none"
+      />
+    </IconBase>
+  ),
+
+  IntelliJ: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="2" fill="#000" stroke="none" />
+      <path d="M7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z" fill="#fff" stroke="none" />
+      <path d="M16 15l3 3" stroke="#fff" strokeWidth="2" />
+    </IconBase>
+  ),
+
+  PyCharm: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="2" fill="#21D789" stroke="none" />
+      <path d="M7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2z" fill="#fff" stroke="none" />
+    </IconBase>
+  ),
+
+  // ─── Terminal Brand Icons ───────────────────────────────────────────────
+  ITerm2: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#000" stroke="none" />
+      <path d="M6 8l4 4-4 4" stroke="#fff" strokeWidth="1.5" fill="none" />
+      <path d="M12 16h6" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  TerminalApp: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#1D1D1F" stroke="none" />
+      <path d="M6 8l4 4-4 4" stroke="#fff" strokeWidth="1.5" fill="none" />
+      <path d="M12 16h6" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  Warp: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#01A4FF" stroke="none" />
+      <path d="M6 9h12M6 12h8M6 15h4" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  Alacritty: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#F5A623" stroke="none" />
+      <path d="M6 8l4 4-4 4" stroke="#fff" strokeWidth="1.5" fill="none" />
+      <path d="M12 16h6" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  Kitty: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#6C5CE7" stroke="none" />
+      <path d="M6 8l4 4-4 4" stroke="#fff" strokeWidth="1.5" fill="none" />
+      <path d="M12 16h6" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  Hyper: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#000" stroke="none" />
+      <circle cx="7" cy="12" r="2" fill="#fff" stroke="none" />
+      <path d="M11 10h7M11 14h5" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  Tabby: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#00BCD4" stroke="none" />
+      <path d="M6 8l4 4-4 4" stroke="#fff" strokeWidth="1.5" fill="none" />
+      <path d="M12 16h6" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  PowerShell: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#012456" stroke="none" />
+      <path d="M6 8l5 4-5 4" stroke="#fff" strokeWidth="1.5" fill="none" />
+      <path d="M14 16h4" stroke="#fff" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  WindowsTerminal: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#0C0C0C" stroke="none" />
+      <rect x="5" y="6" width="5" height="4" rx="0.5" fill="#0179D4" stroke="none" />
+      <rect x="11" y="6" width="5" height="4" rx="0.5" fill="#C63A6B" stroke="none" />
+      <rect x="5" y="11" width="5" height="4" rx="0.5" fill="#50B23E" stroke="none" />
+      <rect x="11" y="11" width="5" height="4" rx="0.5" fill="#FFB900" stroke="none" />
+    </IconBase>
+  ),
+
+  GitBash: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#1A1A1A" stroke="none" />
+      <path d="M6 8l4 4-4 4" stroke="#F05032" strokeWidth="1.5" fill="none" />
+      <path d="M12 16h6" stroke="#F05032" strokeWidth="1.5" />
+    </IconBase>
+  ),
+
+  CMD: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" fill="#0C0C0C" stroke="none" />
+      <path d="M6 8l4 4-4 4" stroke="#C0C0C0" strokeWidth="1.5" fill="none" />
+      <path d="M12 16h6" stroke="#C0C0C0" strokeWidth="1.5" />
+    </IconBase>
+  ),
 }
 
 // 注入 spinner 旋转动画样式（仅 1 次）

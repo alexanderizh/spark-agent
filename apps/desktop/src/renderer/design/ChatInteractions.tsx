@@ -511,35 +511,69 @@ export function SubagentCard({
   task,
   status,
   tokens,
+  output,
+  onClick,
 }: {
   name: string
   role: string
   task: string
   status: 'running' | 'done'
   tokens: string
+  output?: string | undefined
+  onClick?: (() => void) | undefined
 }) {
+  const [expanded, setExpanded] = useState(false)
+  const hasOutput = output != null && output.length > 0
+  const isClickable = status === 'done' && hasOutput
+
+  const handleClick = () => {
+    if (isClickable) {
+      setExpanded(!expanded)
+      onClick?.()
+    }
+  }
+
   return (
-    <div className="subagent-card">
-      <span className="ico">
-        <Icons.Bot size={14} />
-      </span>
-      <div className="body">
-        <div className="title">派生子 Agent · {name}</div>
-        <div className="meta">
-          {role} · {task}
+    <div
+      className={`subagent-card${isClickable ? ' clickable' : ''}${expanded ? ' expanded' : ''}`}
+      onClick={handleClick}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+    >
+      <div className="subagent-card-header">
+        <span className="ico">
+          <Icons.Bot size={14} />
+        </span>
+        <div className="body">
+          <div className="title">
+            派生子 Agent · {name}
+            {isClickable && (
+              <span className="expand-hint">
+                {expanded ? <Icons.ChevronDown size={11} /> : <Icons.ChevronRight size={11} />}
+              </span>
+            )}
+          </div>
+          <div className="meta">
+            {role || task ? `${role}${role && task ? ' · ' : ''}${task}` : ''}
+          </div>
         </div>
+        {status === 'running' && (
+          <span className="live">
+            <Icons.Spinner size={11} />
+            运行中{tokens ? ` · ${tokens} tokens` : ''}
+          </span>
+        )}
+        {status === 'done' && (
+          <span className="live" style={{ color: 'var(--success)' }}>
+            <Icons.Check size={11} />
+            完成{tokens ? ` · ${tokens} tokens` : ''}
+          </span>
+        )}
       </div>
-      {status === 'running' && (
-        <span className="live">
-          <Icons.Spinner size={11} />
-          运行中 · {tokens} tokens
-        </span>
-      )}
-      {status === 'done' && (
-        <span className="live" style={{ color: 'var(--success)' }}>
-          <Icons.Check size={11} />
-          完成 · {tokens} tokens
-        </span>
+      {expanded && hasOutput && (
+        <div className="subagent-output">
+          <pre className="subagent-output-content">{output}</pre>
+        </div>
       )}
     </div>
   )

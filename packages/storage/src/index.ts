@@ -35,6 +35,8 @@ export {
   SkillRegistryRepository,
   SettingsRepository,
   UsageLedgerRepository,
+  ContextPreferenceRepository,
+  SessionSummaryRepository,
 } from './repositories/index.js'
 
 export type {
@@ -65,4 +67,9 @@ export type {
   UsageSummary,
   ModelUsageGroup,
   DailyUsageGroup,
+  ContextPreferenceRow,
+  UpsertContextPreferenceParams,
+  ListContextPreferencesParams,
+  SessionSummaryRow,
+  CreateSessionSummaryParams,
 } from './repositories/index.js'

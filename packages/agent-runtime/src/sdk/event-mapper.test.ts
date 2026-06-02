@@ -97,6 +97,187 @@ describe('mapSDKMessageToEvents', () => {
     ]))
   })
 
+  it('emits subagent_started when Agent tool_use is encountered', () => {
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById: new Map<string, string>() }
+    const assistant: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-1',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'agent-tool-1',
+          name: 'Agent',
+          input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search for null pointer issues' },
+        }],
+      },
+    }
+
+    const events = mapSDKMessageToEvents(assistant, ctx)
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'subagent_started',
+        toolCallId: 'agent-tool-1',
+        name: 'Researcher',
+        role: 'Finds bugs',
+        task: 'Search for null pointer issues',
+      }),
+    ])
+  })
+
+  it('emits subagent_completed when subagent tool_result is received', () => {
+    const toolNamesById = new Map<string, string>()
+    toolNamesById.set('agent-tool-1', 'subagent')
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById }
+
+    // First, register the input via a prior assistant message (simulates toolInputs map)
+    const assistant: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-1',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'agent-tool-1',
+          name: 'Agent',
+          input: { agent: 'Researcher', description: 'Finds bugs', prompt: 'Search for null pointer issues' },
+        }],
+      },
+    }
+    mapSDKMessageToEvents(assistant, ctx)
+
+    const user: SDKUserMessage = {
+      type: 'user',
+      uuid: 'user-1',
+      session_id: 'sdk-session',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'agent-tool-1',
+          content: 'Found 3 null pointer issues in auth module.',
+        }],
+      },
+    }
+
+    const events = mapSDKMessageToEvents(user, ctx)
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'subagent_completed',
+        toolCallId: 'agent-tool-1',
+        name: 'Researcher',
+        status: 'success',
+        resultSummary: 'Found 3 null pointer issues in auth module.',
+        output: 'Found 3 null pointer issues in auth module.',
+      }),
+    ])
+  })
+
+  it('emits subagent_completed with error status on failed tool_result', () => {
+    const toolNamesById = new Map<string, string>()
+    toolNamesById.set('agent-tool-2', 'subagent')
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById }
+
+    const assistant: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-1',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'agent-tool-2',
+          name: 'Agent',
+          input: { agent: 'Writer', description: 'Writes docs', prompt: 'Write README' },
+        }],
+      },
+    }
+    mapSDKMessageToEvents(assistant, ctx)
+
+    const user: SDKUserMessage = {
+      type: 'user',
+      uuid: 'user-1',
+      session_id: 'sdk-session',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'agent-tool-2',
+          content: 'Permission denied',
+          is_error: true,
+        }],
+      },
+    }
+
+    const events = mapSDKMessageToEvents(user, ctx)
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'subagent_completed',
+        toolCallId: 'agent-tool-2',
+        name: 'Writer',
+        status: 'error',
+        resultSummary: 'Permission denied',
+        output: 'Permission denied',
+      }),
+    ])
+  })
+
+  it('truncates long subagent output in resultSummary', () => {
+    const toolNamesById = new Map<string, string>()
+    toolNamesById.set('agent-tool-3', 'subagent')
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById }
+
+    const assistant: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-1',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'agent-tool-3',
+          name: 'Agent',
+          input: { agent: 'Analyst', description: 'Deep analysis', prompt: 'Analyze all files' },
+        }],
+      },
+    }
+    mapSDKMessageToEvents(assistant, ctx)
+
+    const longOutput = 'x'.repeat(300)
+    const user: SDKUserMessage = {
+      type: 'user',
+      uuid: 'user-1',
+      session_id: 'sdk-session',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'agent-tool-3',
+          content: longOutput,
+        }],
+      },
+    }
+
+    const events = mapSDKMessageToEvents(user, ctx)
+
+    expect(events[0]).toEqual(
+      expect.objectContaining({
+        type: 'subagent_completed',
+        resultSummary: `${'x'.repeat(197)}...`,
+        output: longOutput,
+      }),
+    )
+  })
+
   it('maps ExitPlanMode tool input to a plan proposal event', () => {
     const assistant: SDKAssistantMessage = {
       type: 'assistant',

@@ -34,6 +34,7 @@ import type {
   RuleScope,
   WorkspaceInfo,
   ModelProfile,
+  // MCP 设置暂未完全实现，保留类型导入以便后续启用
   McpServerItem,
   SkillItem,
   UpdateStatus,
@@ -43,7 +44,6 @@ import type {
 } from '@spark/protocol'
 
 type ProviderKind = 'anthropic' | 'openai'
-type CodexApiKind = 'chat' | 'responses'
 type ProviderForm = {
   presetId: string
   name: string
@@ -51,12 +51,12 @@ type ProviderForm = {
   defaultModel: string
   modelIdsText: string
   endpoint: string
-  codexApiKind: CodexApiKind
   supportsMillionContext: boolean
   apiKey: string
   isDefault: boolean
 }
 
+// 工作流模板暂未实现，保留类型定义以便后续启用
 type WorkflowTemplate = {
   id: string
   name: string
@@ -67,6 +67,7 @@ type WorkflowTemplate = {
 
 const SANDBOX_LEVEL_KEY = 'spark-sandbox-level'
 const AUDIT_ENABLED_KEY = 'spark-audit-enabled'
+// 工作流模板暂未实现，保留常量定义以便后续启用
 const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
@@ -242,6 +243,7 @@ function usePersistedSettings<T>(key: string, defaults: T): [T, (patch: Partial<
   return [state, update]
 }
 
+// 工作流模板暂未实现，保留默认模板数据以便后续启用
 const DEFAULT_WORKFLOW_TEMPLATES: WorkflowTemplate[] = [
   {
     id: 'template:agent-dev',
@@ -299,10 +301,12 @@ export function SettingsView() {
     {
       group: '生态',
       items: [
-        { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
+        // MCP 设置暂未完全实现，隐藏导航项
+        // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
         { id: 'system-prompt', icon: <Icons.Chat />, label: '系统提示词' },
         { id: 'skills-settings', icon: <Icons.Skills />, label: 'Skills' },
-        { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
+        // 工作流模板暂未实现，隐藏导航项
+        // { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
       ],
     },
     {
@@ -327,10 +331,12 @@ export function SettingsView() {
     providers: ProvidersSection,
     rules: RulesSection,
     permissions: PermissionsSection,
-    'mcp-settings': McpSection,
+    // MCP 设置暂未完全实现，隐藏
+    // 'mcp-settings': McpSection,
     'system-prompt': SystemPromptSection,
     'skills-settings': SkillsSection,
-    workflows: WorkflowTemplatesSection,
+    // 工作流模板暂未实现，隐藏
+    // workflows: WorkflowTemplatesSection,
     integrity: IntegritySection,
     telemetry: TelemetrySection,
     hooks: HooksSection,
@@ -1276,7 +1282,6 @@ export function ProviderEditPanel({
     defaultModel: '',
     modelIdsText: '',
     endpoint: '',
-    codexApiKind: 'chat',
     supportsMillionContext: false,
     apiKey: '',
     isDefault: false,
@@ -1302,7 +1307,6 @@ export function ProviderEditPanel({
             defaultModel: preset.defaultModel,
             modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
             endpoint: preset.apiEndpoint,
-            codexApiKind: 'chat',
             supportsMillionContext: false,
             apiKey: '',
             isDefault: false,
@@ -1317,7 +1321,6 @@ export function ProviderEditPanel({
         defaultModel: '',
         modelIdsText: '',
         endpoint: '',
-        codexApiKind: 'chat',
         supportsMillionContext: false,
         apiKey: '',
         isDefault: false,
@@ -1335,7 +1338,6 @@ export function ProviderEditPanel({
             defaultModel: p.defaultModel,
             modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
             endpoint: p.apiEndpoint ?? '',
-            codexApiKind: p.codexApiKind ?? 'chat',
             supportsMillionContext: p.supportsMillionContext === true,
             apiKey: '',
             isDefault: p.isDefault,
@@ -1367,7 +1369,6 @@ export function ProviderEditPanel({
           modelIds,
           isDefault: form.isDefault,
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
-          ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
           supportsMillionContext: form.supportsMillionContext,
         }
         if (form.apiKey.trim()) req.apiKey = form.apiKey
@@ -1381,7 +1382,6 @@ export function ProviderEditPanel({
           apiKey: form.apiKey,
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
-          ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
           supportsMillionContext: form.supportsMillionContext,
         })
       }
@@ -1406,7 +1406,6 @@ export function ProviderEditPanel({
       defaultModel: preset.defaultModel,
       modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
       endpoint: preset.apiEndpoint,
-      codexApiKind: 'chat',
       supportsMillionContext: false,
     }))
   }
@@ -1475,7 +1474,6 @@ export function ProviderEditPanel({
                   ...prev,
                   presetId: 'custom',
                   provider: normalizeProviderKind(e.target.value),
-                  codexApiKind: 'chat',
                 }))
               }
               disabled={!!profileId}
@@ -1483,22 +1481,6 @@ export function ProviderEditPanel({
               <option value="anthropic">Anthropic 格式</option>
               <option value="openai">OpenAI 格式</option>
             </SparkSelect>
-
-            {form.provider === 'openai' && (
-              <>
-                <label>
-                  OpenAI API 类型
-                  <span className="sub">Responses 用于 gpt-5-codex，Chat 兼容更多后端</span>
-                </label>
-                <SparkSelect
-                  value={form.codexApiKind}
-                  onChange={(e) => set('codexApiKind', normalizeCodexApiKind(e.target.value))}
-                >
-                  <option value="chat">Chat Completions</option>
-                  <option value="responses">Responses API</option>
-                </SparkSelect>
-              </>
-            )}
 
             <label>默认模型 ID</label>
             <SparkInput
@@ -1577,10 +1559,6 @@ export function ProviderEditPanel({
 
 function normalizeProviderKind(value: string): ProviderKind {
   return value === 'anthropic' ? 'anthropic' : 'openai'
-}
-
-function normalizeCodexApiKind(value: string): CodexApiKind {
-  return value === 'responses' ? 'responses' : 'chat'
 }
 
 function parseModelIds(modelIdsText: string, defaultModel: string): string[] {
@@ -2219,6 +2197,8 @@ function RuleEditPanel({
 }
 
 /* ───────── MCP ───────── */
+// MCP 设置暂未完全实现，从导航和 Section 映射中移除
+// 代码保留以便后续启用
 type McpTransportType = 'stdio' | 'sse'
 
 type McpSettingsConfig = {
@@ -2904,6 +2884,7 @@ function McpSection() {
     </div>
   )
 }
+// MCP 设置 section 结束 - 保留代码以便后续启用
 
 /* ───────── SYSTEM PROMPT ───────── */
 
@@ -3267,6 +3248,8 @@ function SkillsSection() {
 }
 
 /* ───────── WORKFLOW TEMPLATES ───────── */
+// 工作流模板暂未实现，从导航和 Section 映射中移除
+// 代码保留以便后续启用
 function WorkflowTemplatesSection() {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>(() =>
     readStoredJson(WORKFLOW_TEMPLATES_KEY, DEFAULT_WORKFLOW_TEMPLATES),
@@ -3304,6 +3287,7 @@ function WorkflowTemplatesSection() {
     </div>
   )
 }
+// 工作流模板 section 结束 - 保留代码以便后续启用
 
 /* ───────── PERMISSIONS ───────── */
 export function PermissionsSection() {
@@ -3521,7 +3505,6 @@ export function PermissionsSection() {
                 onChange={(e) => handleRuntimeAdapterChange(e.target.value as SessionAgentAdapter)}
               >
                 <option value="claude-sdk">Claude SDK</option>
-                <option value="codex">Codex</option>
               </SparkSelect>
             </div>
           }
@@ -4959,21 +4942,13 @@ const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   },
 ]
 
-const CODEX_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
-  { value: 'codex-default', label: '默认权限', desc: '按默认策略请求确认' },
-  { value: 'codex-auto-review', label: '自动审查', desc: '自动处理低风险审查动作', tone: 'auto' },
-  {
-    value: 'codex-full-access',
-    label: '完全访问',
-    desc: '危险：完全听从 agent 执行',
-    tone: 'danger',
-  },
-]
+// Codex 权限选项已移除，项目仅支持 Claude SDK
 
 function getRuntimePermissionModeOptions(
   adapter: SessionAgentAdapter,
 ): RuntimePermissionModeOption[] {
-  return adapter === 'codex' ? CODEX_RUNTIME_PERMISSION_OPTIONS : CLAUDE_RUNTIME_PERMISSION_OPTIONS
+  // 仅支持 Claude SDK
+  return CLAUDE_RUNTIME_PERMISSION_OPTIONS
 }
 
 function getValidRuntimePermissionMode(
@@ -4983,13 +4958,13 @@ function getValidRuntimePermissionMode(
   const options = getRuntimePermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
     ? (value as SessionPermissionMode)
-    : (options[0]?.value ?? (adapter === 'codex' ? 'codex-default' : 'claude-ask'))
+    : (options[0]?.value ?? 'claude-ask')
 }
 
 function normalizeRuntimePermissionSettings(value: unknown): RuntimePermissionSettings {
   const source = value != null && typeof value === 'object' ? (value as RuntimePermissionPrefs) : {}
   const adapter =
-    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+    source.adapter === 'claude' || source.adapter === 'claude-sdk'
       ? source.adapter
       : 'claude-sdk'
   return {

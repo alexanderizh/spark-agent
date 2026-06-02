@@ -392,13 +392,23 @@
 
 /* === Subagent spawn card === */
 .subagent-card {
-  display: flex; align-items: center; gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg-soft);
   margin: 8px 0;
   font-size: var(--font-sm);
+}
+.subagent-card.clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.subagent-card.clickable:hover {
+  border-color: var(--primary);
+  background: var(--bg-hover);
+}
+.subagent-card-header {
+  display: flex; align-items: center; gap: 10px;
 }
 .subagent-card .ico {
   width: 28px; height: 28px;
@@ -408,14 +418,41 @@
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.subagent-card .body { flex: 1; }
-.subagent-card .title { font-weight: 600; color: var(--text-strong); }
-.subagent-card .meta { font-size: var(--font-xs); color: var(--text-muted); }
+.subagent-card .body { flex: 1; min-width: 0; }
+.subagent-card .title {
+  font-weight: 600; color: var(--text-strong);
+  display: flex; align-items: center; gap: 4px;
+}
+.subagent-card .title .expand-hint {
+  opacity: 0.5;
+  display: inline-flex;
+}
+.subagent-card .meta {
+  font-size: var(--font-xs); color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .subagent-card .live {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: var(--font-xs);
   color: var(--info);
   margin-left: auto;
+  flex-shrink: 0;
+}
+.subagent-card .subagent-output {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.subagent-card .subagent-output-content {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
 }
 
 /* === MCP tool call (with server tag) === */
