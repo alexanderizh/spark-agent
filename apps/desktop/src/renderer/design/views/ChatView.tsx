@@ -133,6 +133,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     const stored = window.localStorage.getItem(LAST_SESSION_KEY)
     return stored == null ? null : (stored as SessionId)
   })
+  // 标记刚通过 handleNewSession 主动创建的 session，避免下面那个校验 useEffect
+  // 在 refreshProjectsAndSessions 完成前看到 sessions 列表里没有它就 setActive(null) 把 active 清掉
+  const justCreatedSessionRef = useRef<SessionId | null>(null)
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
@@ -323,6 +326,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   // Validate restored session exists after sessions load; restore workspace if needed
   useEffect(() => {
     if (!active || sessions.length === 0) return
+    // 跳过刚刚由 handleNewSession 主动创建的 session（sessions 列表还没刷新到）
+    if (justCreatedSessionRef.current === active) {
+      justCreatedSessionRef.current = null
+      return
+    }
     const found = sessions.find((s) => s.id === active)
     if (!found) {
       setActive(null)
@@ -417,7 +425,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         reasoningEffort: options.reasoningEffort ?? prefs.reasoningEffort ?? 'medium',
         workspaceId,
       })
-      // 先设置 active 和 workspaceId，确保立即跳转到新会话
+      // 标记这是刚主动创建的 session，避免下面 useEffect 把它清掉
+      justCreatedSessionRef.current = res.sessionId
+      // 先设 active 和 workspaceId，确保立即跳转到新会话
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(workspaceId)
@@ -676,6 +686,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
   )
+  // 决定右侧是显示 hero 居中布局还是活动对话布局（tabbar + chat-stream + 底部 composer）
+  // 规则：没有 active session 时、或者 active session 还没有任何消息时，都显示 hero 居中布局
+  // —— 任何"空对话"（无论是否在项目下、无论 session 是新创建还是历史切回的）都按 hero 展示
+  // —— 只有当消息列表非空（至少已经产生了 user/agent message）才切到活动布局
+  const showEmptyHero = active == null || activeMessages.length === 0
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
@@ -861,25 +876,47 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         )}
       </div>
 
-      <div className="chat-main">
-        <ChatTabbar
-          session={activeSession}
-          workspace={activeWorkspace}
-          agentStatus={agentStatus}
-          showInspector={showInspector}
-          setShowInspector={(v: boolean) => {
-            setShowInspector(v)
-            if (v) setShowConfigPanel(false)
-          }}
-          showConfigPanel={showConfigPanel}
-          setShowConfigPanel={(v: boolean) => {
-            setShowConfigPanel(v)
-            if (v) setShowInspector(false)
-          }}
-          {...(active ? { onClearMessages: handleClearMessages } : {})}
-        />
-        {active ? (
+      <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}>
+        {showEmptyHero ? (
+          <EmptyChatHero
+            session={activeSession}
+            workspace={activeWorkspace}
+            activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
+            providers={providers}
+            selectedProviderId={selectedProviderId}
+            setSelectedProviderId={setSelectedProviderId}
+            branchState={branchState}
+            contextInputTokens={contextInputTokens}
+            contextUsage={contextUsage}
+            isWorking={activeSession?.status === 'running'}
+            approvalRequest={approvalRequest}
+            {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+            onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+            onUpdateSession={handleUpdateActiveSession}
+            onSwitchBranch={handleSwitchBranch}
+            onCancelSession={handleCancelSession}
+            onSent={(sessionId) => {
+              setSessionStatus(sessionId, 'running')
+            }}
+          />
+        ) : (
           <>
+            <ChatTabbar
+              session={activeSession}
+              workspace={activeWorkspace}
+              agentStatus={agentStatus}
+              showInspector={showInspector}
+              setShowInspector={(v: boolean) => {
+                setShowInspector(v)
+                if (v) setShowConfigPanel(false)
+              }}
+              showConfigPanel={showConfigPanel}
+              setShowConfigPanel={(v: boolean) => {
+                setShowConfigPanel(v)
+                if (v) setShowInspector(false)
+              }}
+              {...(active ? { onClearMessages: handleClearMessages } : {})}
+            />
             <ChatStream
               sessionId={active}
               onStatusChange={setAgentStatus}
@@ -895,39 +932,29 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
             />
+            <ComposerV2
+              session={activeSession}
+              workspace={activeWorkspace}
+              activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
+              providers={providers}
+              selectedProviderId={selectedProviderId}
+              setSelectedProviderId={setSelectedProviderId}
+              branchState={branchState}
+              contextInputTokens={contextInputTokens}
+              contextUsage={contextUsage}
+              isWorking={activeSession?.status === 'running'}
+              approvalRequest={approvalRequest}
+              {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+              onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+              onUpdateSession={handleUpdateActiveSession}
+              onSwitchBranch={handleSwitchBranch}
+              onCancelSession={handleCancelSession}
+              onSent={(sessionId) => {
+                setSessionStatus(sessionId, 'running')
+              }}
+            />
           </>
-        ) : (
-          <div className="chat-stream chat-stream-empty">
-            <div className="empty-state">
-              <div className="empty-icon">
-                <Icons.Sparkles size={24} />
-              </div>
-              <div className="empty-title">先选择项目</div>
-              <div className="empty-desc">再选择或新建一个会话开始对话</div>
-            </div>
-          </div>
         )}
-        <ComposerV2
-          session={activeSession}
-          workspace={activeWorkspace}
-          activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
-          providers={providers}
-          selectedProviderId={selectedProviderId}
-          setSelectedProviderId={setSelectedProviderId}
-          branchState={branchState}
-          contextInputTokens={contextInputTokens}
-          contextUsage={contextUsage}
-          isWorking={activeSession?.status === 'running'}
-          approvalRequest={approvalRequest}
-          {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-          onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
-          onUpdateSession={handleUpdateActiveSession}
-          onSwitchBranch={handleSwitchBranch}
-          onCancelSession={handleCancelSession}
-          onSent={(sessionId) => {
-            setSessionStatus(sessionId, 'running')
-          }}
-        />
       </div>
 
       {showConfigPanel && (
@@ -2446,11 +2473,8 @@ function renderBlocks(
         )
       }
       case 'context_ledger': {
-        return (
-          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-            <ContextLedgerCard block={block} />
-          </div>
-        )
+        // Context Ledger 不在消息流中渲染 — 上下文信息已在底部 ComposerV2 的 ContextMeterWithPopup 中显示
+        return null
       }
       case 'context_summarized': {
         return (
@@ -4510,6 +4534,95 @@ function ContextMeterWithPopup({
   )
 }
 
+/**
+ * EmptyChatHero — 空对话欢迎页（仅在还没有 active session 时显示）
+ * 设计：渐变消失的网格背景 + 居中标题 + 居中输入区
+ */
+function EmptyChatHero({
+  session,
+  workspace,
+  activeTaskText,
+  providers,
+  selectedProviderId,
+  setSelectedProviderId,
+  branchState,
+  contextInputTokens,
+  contextUsage,
+  isWorking,
+  approvalRequest,
+  onApprovalClose,
+  onCreateSession,
+  onUpdateSession,
+  onSwitchBranch,
+  onCancelSession,
+  onSent,
+}: {
+  session: SessionSummary | null
+  workspace: WorkspaceInfo | null
+  activeTaskText: string | null
+  providers: ProviderProfile[]
+  selectedProviderId: string
+  setSelectedProviderId: (providerId: string) => void
+  branchState: BranchState
+  contextInputTokens: number
+  contextUsage: ContextUsageState | null
+  isWorking: boolean
+  approvalRequest?: PermissionApprovalRequest | null
+  onApprovalClose?: () => void
+  onCreateSession: (options: {
+    providerProfileId?: string
+    modelId?: string
+    agentAdapter?: AgentAdapter
+    permissionMode?: PermissionModeChoice
+    chatMode?: SessionChatMode
+    reasoningEffort?: SessionReasoningEffort
+    activate?: boolean
+  }) => Promise<SessionId | null>
+  onUpdateSession: (patch: {
+    providerProfileId?: string
+    modelId?: string | null
+    agentAdapter?: AgentAdapter
+    permissionMode?: PermissionModeChoice
+    chatMode?: SessionChatMode
+    reasoningEffort?: SessionReasoningEffort
+  }) => Promise<void>
+  onSwitchBranch: (branch: string) => Promise<void>
+  onCancelSession: (sessionId: SessionId) => void | Promise<void>
+  onSent: (sessionId: SessionId) => void
+}) {
+  return (
+    <div className="chat-hero">
+      {/* 渐变消失的网格背景 */}
+      <div className="chat-hero-grid" aria-hidden="true" />
+      {/* 标题 */}
+      <h1 className="chat-hero-title">Spark Agent，让工作更简单。</h1>
+
+      {/* 居中的输入区 */}
+      <div className="chat-hero-composer">
+        <ComposerV2
+          session={session}
+          workspace={workspace}
+          activeTaskText={activeTaskText}
+          providers={providers}
+          selectedProviderId={selectedProviderId}
+          setSelectedProviderId={setSelectedProviderId}
+          branchState={branchState}
+          contextInputTokens={contextInputTokens}
+          contextUsage={contextUsage}
+          isWorking={isWorking}
+          {...(approvalRequest !== undefined ? { approvalRequest } : {})}
+          {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+          onCreateSession={onCreateSession}
+          onUpdateSession={onUpdateSession}
+          onSwitchBranch={onSwitchBranch}
+          onCancelSession={onCancelSession}
+          onSent={onSent}
+        />
+      </div>
+    </div>
+  )
+}
+
 function ComposerV2({
   session,
   workspace,
@@ -5372,15 +5485,6 @@ function ComposerV2({
           <button className="icon-btn" title="工具">
             <Icons.Wrench />
           </button>
-          <ComposerMenuSelect
-            icon={<AdapterIcon adapter={adapter} />}
-            value={adapter}
-            label={ADAPTER_LABELS[adapter]}
-            disabled={providers.length === 0}
-            title="适配器"
-            onChange={(value) => handleAdapterChange(value as AgentAdapter)}
-            options={ADAPTER_OPTIONS}
-          />
           <ProviderModelPicker
             icon={<ModelIcon />}
             providers={compatibleProviders}

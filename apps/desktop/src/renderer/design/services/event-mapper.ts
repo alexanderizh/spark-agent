@@ -441,15 +441,9 @@ export class MessageBuilder {
       }
 
       case 'context_ledger': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
-        msg.blocks.push({
-          kind: 'context_ledger',
-          sections: event.sections,
-          totalEstimatedTokens: event.totalEstimatedTokens,
-          softLimitTokens: event.softLimitTokens,
-          contextWindowTokens: event.contextWindowTokens,
-          usagePercent: event.usagePercent,
-        })
+        // Context Ledger 不再在消息流中渲染 — 上下文信息已在底部 ComposerV2 的 ContextMeterWithPopup 中显示。
+        // 不创建 assistant 消息，避免 context_ledger 事件先于 user_message 到达时
+        // 导致 running 动画出现在用户消息上方。
         break
       }
 
