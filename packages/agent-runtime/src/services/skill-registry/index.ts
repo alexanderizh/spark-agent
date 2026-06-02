@@ -17,6 +17,8 @@ import {
 } from '@spark/storage'
 import type { SkillRegistryAdapter, SkillRegistryAdapterConfig } from './adapter.js'
 import { MockSkillRegistryAdapter } from './mock-adapter.js'
+import { SkillHubAdapter } from './skillhub-adapter.js'
+import { SkillsMPAdapter } from './skillsmp-adapter.js'
 
 export class SkillRegistryService {
   private registryRepo: SkillRegistryRepository
@@ -262,9 +264,16 @@ export class SkillRegistryService {
   }
 
   private createAdapter(config: SkillRegistryAdapterConfig): SkillRegistryAdapter {
-    // 当前阶段全部使用 Mock Adapter
-    // 后续根据 registryId 分发到真实 Adapter
-    return new MockSkillRegistryAdapter(config)
+    // 根据 registryId 分发到对应 Adapter
+    switch (config.registryId) {
+      case 'skillhub':
+        return new SkillHubAdapter(config)
+      case 'skillsmp':
+        return new SkillsMPAdapter(config)
+      default:
+        // 未实现的 registry 类型使用 Mock Adapter
+        return new MockSkillRegistryAdapter(config)
+    }
   }
 
   private buildInstalledMap(): Map<string, string> {

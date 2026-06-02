@@ -7,6 +7,7 @@ import type { SkillDefinition } from '../skills/types.js'
 import {
   detectLocalSkills as detectLocalSkillCandidates,
   importLocalSkillDirectory,
+  importLocalSkillFile,
   type LocalSkillSource,
 } from './local-skill-importer.js'
 
@@ -59,6 +60,28 @@ export class SkillService {
   importLocalDirectory(directoryPath: string, source?: LocalSkillSource): SkillItem {
     const payload = importLocalSkillDirectory(directoryPath, source)
     const existing = this.repo.get(payload.id) ?? this.repo.list().find((row) => row.root_path === payload.rootPath)
+    if (existing != null) {
+      const fields: { name: string; version: string; rootPath: string; manifestJson: string; enabled?: boolean } = {
+        name: payload.name,
+        version: payload.version,
+        rootPath: payload.rootPath,
+        manifestJson: payload.manifestJson,
+      }
+      if (payload.enabled !== undefined) fields.enabled = payload.enabled
+      const row = this.repo.update(existing.id, fields)
+      if (row == null) throw new Error(`Skill not found: ${existing.id}`)
+      return toSkillItem(row)
+    }
+
+    return toSkillItem(this.repo.create(payload))
+  }
+
+  /**
+   * 导入单个文件作为 Skill（SKILL.md 或 .md 文件）
+   */
+  importFile(filePath: string): SkillItem {
+    const payload = importLocalSkillFile(filePath)
+    const existing = this.repo.get(payload.id)
     if (existing != null) {
       const fields: { name: string; version: string; rootPath: string; manifestJson: string; enabled?: boolean } = {
         name: payload.name,

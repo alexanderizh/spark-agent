@@ -16,6 +16,18 @@ import { createLogger } from '@spark/shared'
 
 const log = createLogger('mcp:service')
 
+/**
+ * Scope reserved for internally-managed MCP servers (auto-registered by the app).
+ *
+ * Servers with this scope cannot be deleted or renamed through the public API —
+ * users can only enable/disable them or update their config. This prevents
+ * accidental removal of critical integrations like Playwright.
+ */
+export const MANAGED_MCP_SCOPE = 'managed'
+
+/** Stable identifier used for the auto-registered Playwright MCP server. */
+export const PLAYWRIGHT_MCP_NAME = 'playwright'
+
 export class McpService {
   private clients = new Map<string, McpClient>()
 
@@ -34,6 +46,14 @@ export class McpService {
   }
 
   updateServer(id: string, fields: { name?: string; configJson?: string; enabled?: boolean }): McpServerItem {
+    const existing = this.repo.get(id)
+    if (existing == null) throw new Error(`MCP server not found: ${id}`)
+
+    // Managed servers cannot be renamed (their name is a stable key)
+    if (existing.scope === MANAGED_MCP_SCOPE && fields.name !== undefined && fields.name !== existing.name) {
+      throw new Error(`Cannot rename managed MCP server "${existing.name}"`)
+    }
+
     const row = this.repo.update(id, fields)
     if (row == null) throw new Error(`MCP server not found: ${id}`)
 
@@ -50,6 +70,16 @@ export class McpService {
   }
 
   deleteServer(id: string): boolean {
+    const existing = this.repo.get(id)
+    if (existing == null) return false
+
+    // Managed servers cannot be deleted through the public API — disable instead.
+    if (existing.scope === MANAGED_MCP_SCOPE) {
+      throw new Error(
+        `Cannot delete managed MCP server "${existing.name}". Disable it from settings instead.`,
+      )
+    }
+
     // Stop the server first if running
     if (this.clients.has(id)) {
       void this.stopServer(id)

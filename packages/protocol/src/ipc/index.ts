@@ -452,6 +452,17 @@ export interface DialogOpenDirectoryResponse {
   filePath?: string
 }
 
+export interface DialogOpenFileRequest {
+  title?: string
+  defaultPath?: string
+  filters?: Array<{ name: string; extensions: string[] }>
+}
+
+export interface DialogOpenFileResponse {
+  canceled: boolean
+  filePath?: string
+}
+
 // ─── App Paths Channels ──────────────────────────────────────────────────────
 
 export interface AppGetTempProjectDirRequest {}
@@ -1616,6 +1627,118 @@ export interface EnvRecheckResponse {
   status: ShellEnvironmentStatus
 }
 
+// ─── Playwright Browser Automation Channels ───────────────────────────────────
+
+/**
+ * Playwright auto-managed MCP integration status.
+ *
+ * Exposed by `PlaywrightIntegrityService` and surfaced to the Settings UI.
+ */
+export interface PlaywrightStatusRequest {}
+
+export interface PlaywrightStatusResponse {
+  /** Whether `@playwright/mcp` package is resolvable */
+  mcpInstalled: boolean
+  /** Resolved version of `@playwright/mcp` (null if not installed) */
+  mcpVersion: string | null
+  /** Whether `playwright` package is resolvable */
+  playwrightInstalled: boolean
+  /** Whether the chromium browser binary is downloaded and ready */
+  browserReady: boolean
+  /** Whether the managed `playwright` row exists in `mcp_servers` */
+  mcpRegistered: boolean
+  /** Whether the user has the managed MCP enabled (DB row `enabled=1`) */
+  mcpEnabled: boolean
+  /** Current run mode (headful shows the embedded window) */
+  mode: 'headful' | 'headless'
+  /** Whether the embedded BrowserWindow is currently open */
+  viewOpen: boolean
+  /** CDP endpoint URL the MCP server connects to (null if view not open) */
+  cdpEndpoint: string | null
+  /** Last error encountered during install / browser launch */
+  lastError: string | null
+}
+
+export interface PlaywrightInstallRequest {
+  /** `'mcp'` installs `@playwright/mcp`; `'browser'` runs `playwright install chromium` */
+  target: 'mcp' | 'browser'
+}
+
+export interface PlaywrightInstallResponse {
+  success: boolean
+  message: string
+  /** Updated version after install (when applicable) */
+  newVersion?: string
+}
+
+export interface PlaywrightResetConfigRequest {}
+
+export interface PlaywrightResetConfigResponse {
+  success: boolean
+}
+
+export interface PlaywrightSetModeRequest {
+  mode: 'headful' | 'headless'
+}
+
+export interface PlaywrightSetModeResponse {
+  success: boolean
+  mode: 'headful' | 'headless'
+}
+
+export interface PlaywrightSetEnabledRequest {
+  enabled: boolean
+}
+
+export interface PlaywrightSetEnabledResponse {
+  success: boolean
+  enabled: boolean
+}
+
+export interface PlaywrightOpenViewRequest {
+  /** Optional initial URL; if omitted opens `about:blank` */
+  url?: string
+}
+
+export interface PlaywrightOpenViewResponse {
+  success: boolean
+  /** The CDP endpoint that Playwright MCP should connect to */
+  cdpEndpoint: string | null
+}
+
+export interface PlaywrightCloseViewRequest {}
+
+export interface PlaywrightCloseViewResponse {
+  success: boolean
+}
+
+export interface PlaywrightCaptureViewRequest {}
+
+export interface PlaywrightCaptureViewResponse {
+  /** PNG screenshot encoded as base64 data URL (null if view not open) */
+  dataUrl: string | null
+  /** Current page title (null if view not open) */
+  title: string | null
+  /** Current page URL (null if view not open) */
+  url: string | null
+}
+
+// ─── Pop-out Browser Window Channels ───────────────────────────────────────
+
+export interface BrowserPopOutRequest {
+  url?: string
+}
+
+export interface BrowserPopOutResponse {
+  success: boolean
+}
+
+export interface BrowserPopInRequest {}
+
+export interface BrowserPopInResponse {
+  success: boolean
+}
+
 // ─── File Patch Channels ───────────────────────────────────────────────────────
 
 export interface FileApplyHunkPatchRequest {
@@ -1758,6 +1881,7 @@ export interface IpcChannelMap {
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
+  'dialog:open-file': [DialogOpenFileRequest, DialogOpenFileResponse]
 
   // App Info
   'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]
@@ -1881,6 +2005,20 @@ export interface IpcChannelMap {
 
   // File Patch (hunk-level accept/reject)
   'file:apply-hunk-patch': [FileApplyHunkPatchRequest, FileApplyHunkPatchResponse]
+
+  // Playwright Browser Automation
+  'playwright:status': [PlaywrightStatusRequest, PlaywrightStatusResponse]
+  'playwright:install': [PlaywrightInstallRequest, PlaywrightInstallResponse]
+  'playwright:reset-config': [PlaywrightResetConfigRequest, PlaywrightResetConfigResponse]
+  'playwright:set-mode': [PlaywrightSetModeRequest, PlaywrightSetModeResponse]
+  'playwright:set-enabled': [PlaywrightSetEnabledRequest, PlaywrightSetEnabledResponse]
+  'playwright:open-view': [PlaywrightOpenViewRequest, PlaywrightOpenViewResponse]
+  'playwright:close-view': [PlaywrightCloseViewRequest, PlaywrightCloseViewResponse]
+  'playwright:capture-view': [PlaywrightCaptureViewRequest, PlaywrightCaptureViewResponse]
+
+  // Pop-out Browser Window
+  'browser:pop-out': [BrowserPopOutRequest, BrowserPopOutResponse]
+  'browser:pop-in': [BrowserPopInRequest, BrowserPopInResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -1936,6 +2074,15 @@ export interface IpcStreamChannelMap {
   'stream:sdk:integrity': SdkIntegrityCheckResponse
   /** Shell 环境状态（PATH 修复 + 运行时工具检测结果）*/
   'stream:env:status': ShellEnvironmentStatus
+  /** Playwright 安装/状态变化推送（Settings UI 监听）*/
+  'stream:playwright:status': PlaywrightStatusResponse
+  /** Embedded browser view screenshot/page update (Renderer listens for live preview) */
+  'stream:playwright:view': {
+    title: string | null
+    url: string | null
+    /** PNG screenshot encoded as base64 data URL (omitted when unchanged) */
+    dataUrl?: string
+  }
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap

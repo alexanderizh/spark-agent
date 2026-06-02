@@ -15,24 +15,20 @@ import { McpView } from './design/views/McpView'
 import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProviderEditPanel, ProfileEditModal } from './design/views/SettingsView'
+import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { Icons } from './design/Icons'
+import sparkLogo from './assets/spark-logo.png'
 
 function SparkLogoMark() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id="spark-logo-gradient" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="var(--primary)" />
-          <stop offset="100%" stopColor="var(--primary-hover)" />
-        </linearGradient>
-      </defs>
-      <rect x="4" y="4" width="16" height="16" rx="5" fill="url(#spark-logo-gradient)" />
-      <path
-        d="M9 14.8 12.2 7.8c.2-.5.9-.5 1.1 0l1.1 2.4h2.3c.5 0 .8.6.4 1l-3.1 3.2.8 1.8c.2.5-.3 1-.8.8l-2-1-2 1c-.5.2-1-.3-.8-.8l.8-1.7-1.3-1.4c-.4-.4-.1-1 .4-1h1.7Z"
-        fill="#fff"
-      />
-    </svg>
+    <img
+      src={sparkLogo}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      style={{ width: '100%', height: '100%', display: 'block' }}
+    />
   )
 }
 
@@ -85,6 +81,13 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
               </span>
             </button>
           </div>
+          <button
+            className={`btn ghost sm${t.browserPanelOpen ? ' active' : ''}`}
+            onClick={() => setTweak('browserPanelOpen', !t.browserPanelOpen)}
+            title={t.browserPanelOpen ? '隐藏浏览器面板' : '显示浏览器面板'}
+          >
+            <Icons.Globe size={12} /> 浏览器
+          </button>
         </div>
       )}
       <div className="view-header-actions">
@@ -225,7 +228,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
     <div
       ref={scaleRef}
-      className={`app window theme-${t.theme} density-${t.density}`}
+      className={`app window theme-${t.theme} density-${t.density} platform-${window.spark.platform}`}
       style={
         {
           '--primary': primary,
@@ -418,6 +421,8 @@ function Shell() {
             <View />
           </div>
         </div>
+        {/* Browser automation side panel — chat view only, default closed */}
+        {t.view === 'chat' && <BrowserPanelView />}
       </div>
 
       {/* Overlays */}

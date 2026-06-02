@@ -20,6 +20,7 @@ import {
   getUniqueVendorIds,
 } from '@spark/protocol'
 import { ModelCapabilityRegistry } from '@spark/shared'
+import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import type {
   ProviderPreset,
   VendorMeta,
@@ -313,6 +314,7 @@ export function SettingsView() {
       group: '系统',
       items: [
         { id: 'integrity', icon: <Icons.Shield />, label: '完整性' },
+        { id: 'playwright', icon: <Icons.Globe />, label: '浏览器自动化' },
         { id: 'usage', icon: <Icons.Activity />, label: '用量统计' },
         { id: 'telemetry', icon: <Icons.Activity />, label: '遥测与日志' },
         { id: 'hooks', icon: <Icons.Bell />, label: 'Hooks' },
@@ -338,6 +340,7 @@ export function SettingsView() {
     // 工作流模板暂未实现，隐藏
     // workflows: WorkflowTemplatesSection,
     integrity: IntegritySection,
+    playwright: PlaywrightStatusCard,
     telemetry: TelemetrySection,
     hooks: HooksSection,
     storage: StorageSection,

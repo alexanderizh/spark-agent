@@ -429,4 +429,23 @@ export const IpcSchemaRegistry = {
   'sdk:integrity-install': z.object({
     packageName: z.string().min(1).max(200),
   }),
+
+  // Playwright Browser Automation
+  'playwright:status': z.object({}),
+  'playwright:install': z.object({
+    target: z.enum(['mcp', 'browser']),
+  }),
+  'playwright:reset-config': z.object({}),
+  'playwright:set-mode': z.object({
+    /** "headful" shows the embedded browser window; "headless" runs invisibly. */
+    mode: z.enum(['headful', 'headless']),
+  }),
+  'playwright:set-enabled': z.object({
+    enabled: z.boolean(),
+  }),
+  'playwright:open-view': z.object({
+    url: z.string().min(1).max(2000).optional(),
+  }),
+  'playwright:close-view': z.object({}),
+  'playwright:capture-view': z.object({}),
 } as const

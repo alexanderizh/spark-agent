@@ -50,7 +50,7 @@ function renderStars(rating: number): string {
 }
 
 // ─── Main View ────────────────────────────────────────────────────────
-type TabType = 'store' | 'installed'
+type TabType = 'store' | 'installed' | 'create'
 
 export function SkillStoreView() {
   const [activeTab, setActiveTab] = useState<TabType>('store')
@@ -81,13 +81,22 @@ export function SkillStoreView() {
             <Icons.Package size={13} />
             已安装
           </button>
+          <button
+            className={`store-tab ${activeTab === 'create' ? 'active' : ''}`}
+            onClick={() => setActiveTab('create')}
+          >
+            <Icons.Plus size={13} />
+            创建
+          </button>
         </div>
 
         {/* ── Tab content ── */}
         {activeTab === 'store' ? (
           <StoreTab key={`store-${refreshKey}`} onShowDetail={setDetailSkill} />
-        ) : (
+        ) : activeTab === 'installed' ? (
           <InstalledTab key={`installed-${refreshKey}`} />
+        ) : (
+          <CreateTab key={`create-${refreshKey}`} onCreated={handleInstallChange} />
         )}
       </div>
 
@@ -1037,6 +1046,365 @@ function SkillDetailPanel({
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ─── Create Tab (New Skill Creation Form) ─────────────────────────────
+
+function CreateTab({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState('')
+  const [version, setVersion] = useState('1.0.0')
+  const [description, setDescription] = useState('')
+  const [author, setAuthor] = useState('')
+  const [category, setCategory] = useState('utility')
+  const [tagsInput, setTagsInput] = useState('')
+  const [content, setContent] = useState('')
+  const [requiredTools, setRequiredTools] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [importMode, setImportMode] = useState<'none' | 'file' | 'directory'>('none')
+  const { toast } = useToast()
+  const { invoke: createSkill } = useIpcInvoke('skill:create')
+  const { invoke: importFile } = useIpcInvoke('skill:import-file')
+  const { invoke: importDirectory } = useIpcInvoke('skill:import-directory')
+  const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+
+  const resetForm = useCallback(() => {
+    setName('')
+    setVersion('1.0.0')
+    setDescription('')
+    setAuthor('')
+    setCategory('utility')
+    setTagsInput('')
+    setContent('')
+    setRequiredTools('')
+  }, [])
+
+  const handleCreate = useCallback(async () => {
+    if (!name.trim()) {
+      toast.error('请输入 Skill 名称')
+      return
+    }
+    if (!content.trim() && !description.trim()) {
+      toast.error('请输入 Skill 描述或详细内容')
+      return
+    }
+
+    setCreating(true)
+    try {
+      const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean)
+      const tools = requiredTools.split(',').map((t) => t.trim()).filter(Boolean)
+      const id = `user:${name.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')}`
+
+      const manifest = {
+        desc: description.trim() || content.trim().slice(0, 100),
+        description: description.trim(),
+        source: '用户创建',
+        author: author.trim() || 'User',
+        category,
+        tags,
+        systemPrompt: content.trim(),
+        requiredTools: tools,
+        parameters: [],
+      }
+
+      await createSkill({
+        id,
+        scope: 'user',
+        name: name.trim(),
+        version: version.trim() || '1.0.0',
+        rootPath: `user://${id}`,
+        manifestJson: JSON.stringify(manifest),
+        enabled: true,
+      })
+
+      toast.success(`Skill「${name.trim()}」创建成功`)
+      resetForm()
+      onCreated()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建失败')
+    } finally {
+      setCreating(false)
+    }
+  }, [name, version, description, author, category, tagsInput, content, requiredTools, createSkill, toast, resetForm, onCreated])
+
+  const handleImportFile = useCallback(async () => {
+    try {
+      const picked = await openFileDialog({
+        title: '选择 Skill 文件（SKILL.md 或 .md）',
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      })
+      if (picked.canceled || picked.filePath == null) return
+
+      setCreating(true)
+      try {
+        const res = await importFile({ filePath: picked.filePath })
+        toast.success(`已导入 Skill：${res.skill.name}`)
+        onCreated()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '导入文件失败')
+      } finally {
+        setCreating(false)
+      }
+    } catch {
+      // dialog cancelled
+    }
+  }, [openFileDialog, importFile, toast, onCreated])
+
+  const handleImportDirectory = useCallback(async () => {
+    try {
+      const picked = await openDirectoryDialog({
+        title: '选择包含 SKILL.md 的 Skill 目录',
+      })
+      if (picked.canceled || picked.filePath == null) return
+
+      setCreating(true)
+      try {
+        await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
+        toast.success('已导入本地 Skill 目录')
+        onCreated()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '导入目录失败')
+      } finally {
+        setCreating(false)
+      }
+    } catch {
+      // dialog cancelled
+    }
+  }, [openDirectoryDialog, importDirectory, toast, onCreated])
+
+  return (
+    <div className="create-skill-layout">
+      {/* Mode selector */}
+      <div className="create-mode-bar">
+        <button
+          className={`store-tab ${importMode === 'none' ? 'active' : ''}`}
+          onClick={() => setImportMode('none')}
+        >
+          <Icons.Edit size={13} />
+          手动创建
+        </button>
+        <button
+          className={`store-tab ${importMode === 'file' ? 'active' : ''}`}
+          onClick={() => setImportMode('file')}
+        >
+          <Icons.File size={13} />
+          文件导入
+        </button>
+        <button
+          className={`store-tab ${importMode === 'directory' ? 'active' : ''}`}
+          onClick={() => setImportMode('directory')}
+        >
+          <Icons.FolderOpen size={13} />
+          目录导入
+        </button>
+      </div>
+
+      {importMode === 'none' ? (
+        /* ── Manual Creation Form ── */
+        <div className="create-skill-form">
+          <div className="create-form-section">
+            <div className="create-section-title">基本信息</div>
+            <div className="create-form-grid">
+              <div className="form-field">
+                <label className="form-label">
+                  名称 <span className="required">*</span>
+                </label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="例如：代码审查助手"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label">版本</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="1.0.0"
+                  value={version}
+                  onChange={(e) => setVersion(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label">作者</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="作者名称"
+                  value={author}
+                  onChange={(e) => setAuthor(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label">分类</label>
+                <select
+                  className="form-select"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="utility">通用</option>
+                  <option value="code-generation">代码生成</option>
+                  <option value="code-review">代码审查</option>
+                  <option value="testing">测试</option>
+                  <option value="documentation">文档</option>
+                  <option value="data-analysis">数据分析</option>
+                  <option value="web-development">Web 开发</option>
+                  <option value="api-development">API 开发</option>
+                  <option value="devops">DevOps</option>
+                  <option value="security">安全</option>
+                  <option value="ai-ml">AI/ML</option>
+                  <option value="automation">自动化</option>
+                  <option value="database">数据库</option>
+                  <option value="frontend">前端</option>
+                  <option value="backend">后端</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="create-form-section">
+            <div className="create-section-title">描述与标签</div>
+            <div className="form-field">
+              <label className="form-label">
+                简短描述 <span className="required">*</span>
+              </label>
+              <textarea
+                className="form-textarea"
+                rows={3}
+                placeholder="一句话描述 Skill 的功能，例如：自动化代码审查，检测潜在 Bug 和安全问题"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label">标签（逗号分隔）</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="code-review, security, quality"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label">所需工具（逗号分隔）</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="例如：Bash, Read, Edit"
+                value={requiredTools}
+                onChange={(e) => setRequiredTools(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="create-form-section">
+            <div className="create-section-title">Skill 详细内容</div>
+            <div className="form-field">
+              <label className="form-label">
+                System Prompt / 指令内容 <span className="required">*</span>
+              </label>
+              <textarea
+                className="form-textarea form-textarea-lg"
+                rows={12}
+                placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              />
+              <div className="form-hint">
+                支持 Markdown 格式。此内容将作为 Skill 的 System Prompt，在 Agent 运行时注入。
+              </div>
+            </div>
+          </div>
+
+          <div className="create-form-actions">
+            <button className="btn" onClick={resetForm}>
+              重置
+            </button>
+            <button
+              className="btn primary"
+              disabled={creating || !name.trim()}
+              onClick={() => void handleCreate()}
+            >
+              {creating ? '创建中...' : '创建 Skill'}
+            </button>
+          </div>
+        </div>
+      ) : importMode === 'file' ? (
+        /* ── File Import ── */
+        <div className="create-import-panel">
+          <div className="import-panel-icon">
+            <Icons.File size={48} />
+          </div>
+          <div className="import-panel-title">导入 Skill 文件</div>
+          <div className="import-panel-desc">
+            选择一个 SKILL.md 或 Markdown 文件，系统会自动解析文件中的 frontmatter（名称、描述、版本等）和内容，创建为本地 Skill。
+          </div>
+          <div className="import-panel-supported">
+            <span className="badge">SKILL.md</span>
+            <span className="badge">.md</span>
+          </div>
+          <div className="import-panel-format">
+            <div className="import-format-title">支持的文件格式：</div>
+            <pre className="import-format-code">{`---
+name: 我的 Skill
+description: 描述文字
+version: 1.0.0
+author: 作者名
+category: utility
+tags: [tag1, tag2]
+---
+
+# Skill 指令内容
+
+这里是 Skill 的详细指令...`}</pre>
+          </div>
+          <button
+            className="btn primary lg"
+            disabled={creating}
+            onClick={() => void handleImportFile()}
+          >
+            <Icons.Upload size={14} />
+            {creating ? '导入中...' : '选择文件并导入'}
+          </button>
+        </div>
+      ) : (
+        /* ── Directory Import ── */
+        <div className="create-import-panel">
+          <div className="import-panel-icon">
+            <Icons.FolderOpen size={48} />
+          </div>
+          <div className="import-panel-title">导入 Skill 目录</div>
+          <div className="import-panel-desc">
+            选择一个包含 SKILL.md 文件的目录。目录中的所有文件将被作为 Skill 内容导入。
+          </div>
+          <div className="import-panel-supported">
+            <span className="badge">SKILL.md</span>
+            <span className="badge">目录</span>
+          </div>
+          <div className="import-panel-format">
+            <div className="import-format-title">目录结构示例：</div>
+            <pre className="import-format-code">{`my-skill/
+├── SKILL.md          ← 必须包含
+├── scripts/
+│   └── helper.ts     ← 辅助脚本
+└── templates/
+    └── output.md     ← 模板文件`}</pre>
+          </div>
+          <button
+            className="btn primary lg"
+            disabled={creating}
+            onClick={() => void handleImportDirectory()}
+          >
+            <Icons.Upload size={14} />
+            {creating ? '导入中...' : '选择目录并导入'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

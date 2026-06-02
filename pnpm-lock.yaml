@@ -43,7 +43,7 @@ importers:
         version: 1.16.0(react@19.2.6)
       openai:
         specifier: ^6.39.0
-        version: 6.39.0(zod@3.25.76)
+        version: 6.39.0(ws@8.21.0)(zod@3.25.76)
       react:
         specifier: ^19.0.0
         version: 19.2.6
@@ -115,6 +115,12 @@ importers:
       '@anthropic-ai/claude-agent-sdk':
         specifier: 0.3.153
         version: 0.3.153(@anthropic-ai/sdk@0.98.0(zod@3.25.76))(@modelcontextprotocol/sdk@1.29.0(zod@3.25.76))(zod@3.25.76)
+      '@playwright/mcp':
+        specifier: ^0.0.30
+        version: 0.0.30(zod@3.25.76)
+      playwright:
+        specifier: ^1.60.0
+        version: 1.60.0
 
   packages/agent-runtime:
     dependencies:
@@ -132,7 +138,7 @@ importers:
         version: link:../storage
       openai:
         specifier: ^6.39.0
-        version: 6.39.0(zod@3.25.76)
+        version: 6.39.0(ws@8.21.0)(zod@3.25.76)
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -796,6 +802,11 @@ packages:
   '@pkgjs/parseargs@0.11.0':
     resolution: {integrity: sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg==}
     engines: {node: '>=14'}
+
+  '@playwright/mcp@0.0.30':
+    resolution: {integrity: sha512-ul1MnnGNXN520yqUoDZX1X0UD4E7o2PikdEWM3i7UFxeGgmY9sAHd+tyFioTdrawsyLoGHpvDH33oiTtVRydCg==}
+    engines: {node: '>=18'}
+    hasBin: true
 
   '@playwright/test@1.60.0':
     resolution: {integrity: sha512-O71yZIbAh/PxDMNGns37GHBIfrVkEVyn+AXyIa5dOTfb4/xNvRWV+Vv/NMbNCtODB/pO7vLlF2OTmMVLhmr7Ag==}
@@ -1889,6 +1900,10 @@ packages:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
 
+  commander@13.1.0:
+    resolution: {integrity: sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw==}
+    engines: {node: '>=18'}
+
   commander@5.1.0:
     resolution: {integrity: sha512-P0CysNDQ7rtVw4QIQtm+MRxV66vKFSvlsQvGYXZWR3qFU0jlMKHZZZgw8e+8DSah4UDKMqnknRDQz+xuQXQ/Zg==}
     engines: {node: '>= 6'}
@@ -2814,6 +2829,11 @@ packages:
     engines: {node: '>=4.0.0'}
     hasBin: true
 
+  mime@4.1.0:
+    resolution: {integrity: sha512-X5ju04+cAzsojXKes0B/S4tcYtFAJ6tTMuSPBEn9CPGlrWr8Fiw7qYeLT0XyH80HSoAoqWCaz+MWKh22P7G1cw==}
+    engines: {node: '>=16'}
+    hasBin: true
+
   mimic-response@1.0.1:
     resolution: {integrity: sha512-j5EctnkH7amfV/q5Hgmoal1g2QHFJRraOtmx0JpIqkxhBhI/lJSl1nMpQ45hVarwNETOoWEimndZ4QK0RHxuxQ==}
     engines: {node: '>=4'}
@@ -3001,8 +3021,18 @@ packages:
     resolution: {integrity: sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ==}
     engines: {node: '>=16.20.0'}
 
+  playwright-core@1.54.1:
+    resolution: {integrity: sha512-Nbjs2zjj0htNhzgiy5wu+3w09YetDx5pkrpI/kZotDlDUaYk0HVA5xrBVPdow4SAUIlhgKcJeJg4GRKW6xHusA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
   playwright-core@1.60.0:
     resolution: {integrity: sha512-9bW6zvX/m0lEbgTKJ6YppOKx8H3VOPBMOCFh2irXFOT4BbHgrx5hPjwJYLT40Lu+4qtD36qKc/Hn56StUW57IA==}
+    engines: {node: '>=18'}
+    hasBin: true
+
+  playwright@1.54.1:
+    resolution: {integrity: sha512-peWpSwIBmSLi6aW2auvrUtf2DqY16YYcCMO8rTVx486jKmDTJg7UAhyrraP98GB8BoPURZP8+nxO7TSd4cPr5g==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -3641,6 +3671,18 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
+  ws@8.21.0:
+    resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
+
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
     engines: {node: '>=18'}
@@ -4185,6 +4227,23 @@ snapshots:
     optional: true
 
   '@pkgjs/parseargs@0.11.0':
+    optional: true
+
+  '@playwright/mcp@0.0.30(zod@3.25.76)':
+    dependencies:
+      '@modelcontextprotocol/sdk': 1.29.0(zod@3.25.76)
+      commander: 13.1.0
+      debug: 4.4.3
+      mime: 4.1.0
+      playwright: 1.54.1
+      ws: 8.21.0
+      zod-to-json-schema: 3.25.2(zod@3.25.76)
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - bufferutil
+      - supports-color
+      - utf-8-validate
+      - zod
     optional: true
 
   '@playwright/test@1.60.0':
@@ -5322,6 +5381,9 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
+  commander@13.1.0:
+    optional: true
+
   commander@5.1.0: {}
 
   compare-version@0.1.2: {}
@@ -6348,6 +6410,9 @@ snapshots:
 
   mime@2.6.0: {}
 
+  mime@4.1.0:
+    optional: true
+
   mimic-response@1.0.1: {}
 
   mimic-response@3.1.0: {}
@@ -6431,8 +6496,9 @@ snapshots:
     dependencies:
       wrappy: 1.0.2
 
-  openai@6.39.0(zod@3.25.76):
+  openai@6.39.0(ws@8.21.0)(zod@3.25.76):
     optionalDependencies:
+      ws: 8.21.0
       zod: 3.25.76
 
   optionator@0.9.4:
@@ -6490,7 +6556,17 @@ snapshots:
   pkce-challenge@5.0.1:
     optional: true
 
+  playwright-core@1.54.1:
+    optional: true
+
   playwright-core@1.60.0: {}
+
+  playwright@1.54.1:
+    dependencies:
+      playwright-core: 1.54.1
+    optionalDependencies:
+      fsevents: 2.3.2
+    optional: true
 
   playwright@1.60.0:
     dependencies:
@@ -7253,6 +7329,9 @@ snapshots:
       strip-ansi: 7.2.0
 
   wrappy@1.0.2: {}
+
+  ws@8.21.0:
+    optional: true
 
   xml-name-validator@5.0.0: {}
 

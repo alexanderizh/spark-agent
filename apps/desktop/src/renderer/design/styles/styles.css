@@ -218,12 +218,14 @@ button { font-family: inherit; }
   display: flex;
   align-items: center;
   gap: var(--pad-md);
-  padding: 0 12px 0 84px;
+  padding: 0 12px;
   background: var(--bg-soft);
   border-bottom: 1px solid var(--border);
   -webkit-app-region: drag;
   user-select: none;
 }
+/* macOS 自绘标题栏需要为红绿黄三色按钮预留左侧空间；Windows / Linux 无原生按钮，紧贴 logo 即可 */
+.platform-darwin .titlebar { padding-left: 84px; }
 .titlebar-brand {
   display: flex;
   align-items: center;
@@ -497,11 +499,12 @@ button { font-family: inherit; }
   color: var(--text);
   font-size: var(--font-sm);
   font-weight: 500;
-  cursor: default;
+  cursor: pointer;
   transition: background 0.12s, border-color 0.12s;
   white-space: nowrap;
 }
 .btn:hover { background: var(--hover); border-color: var(--border-strong); }
+.btn:disabled, .btn[disabled] { cursor: not-allowed; opacity: 0.55; }
 .btn.primary {
   background: var(--primary);
   border-color: var(--primary);

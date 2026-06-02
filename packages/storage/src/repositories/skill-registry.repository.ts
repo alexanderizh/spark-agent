@@ -117,6 +117,13 @@ export class SkillRegistryRepository extends BaseRepository {
       type: 'remote' | 'local'
     }> = [
       {
+        id: 'skillhub',
+        name: 'SkillHub',
+        description: '面向中国用户的 AI Skills 社区，71k+ Skills 开放市场',
+        apiBaseUrl: 'https://skillhub.cn',
+        type: 'remote',
+      },
+      {
         id: 'skillsmp',
         name: 'SkillsMP',
         description: 'Agent Skills 聚合市场，支持 Claude/Codex/ChatGPT Skills',

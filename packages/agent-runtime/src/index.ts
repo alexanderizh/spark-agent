@@ -1,6 +1,6 @@
 export { ProviderService } from './services/provider.service.js'
 export { ModelService } from './services/model.service.js'
-export { McpService } from './services/mcp-server.service.js'
+export { McpService, MANAGED_MCP_SCOPE, PLAYWRIGHT_MCP_NAME } from './services/mcp-server.service.js'
 export { SkillService } from './services/skill.service.js'
 export { RulesService } from './services/rules.service.js'
 export { RuleCompositionEngine } from './services/rule-composition.engine.js'

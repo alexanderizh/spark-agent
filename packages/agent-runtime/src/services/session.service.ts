@@ -2089,9 +2089,15 @@ function joinPromptSections(...sections: Array<string | undefined>): string | un
 }
 
 function formatSelectedSkillPrompt(skillId: string, prompt: string): string {
+  // IMPORTANT: do NOT use the word "Skill" as a label here. The Claude Code SDK
+  // preset registers a built-in `Skill` tool (for loading Anthropic-shipped
+  // skills from disk); if the LLM sees "[Selected Skill: <id>]" it will try
+  // to call that tool with our custom id, which fails with "Unknown skill".
+  // Our custom skills are already fully expanded into the system prompt
+  // below — the agent should act on them directly, not via any tool dispatch.
   return [
-    `[Selected Skill: ${skillId}]`,
-    'This skill was explicitly selected for this turn; its full instructions are loaded below.',
+    `## Active capability: ${skillId}`,
+    'The full instructions for this capability are inlined below. Follow them directly. Do NOT call the built-in `Skill` tool to load it — it is already loaded.',
     prompt,
   ].join('\n\n')
 }

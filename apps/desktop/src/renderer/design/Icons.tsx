@@ -59,6 +59,18 @@ export const Icons = {
       <path d="M3 18.5 5.8 12a2 2 0 0 1 1.8-1h13a1.4 1.4 0 0 1 1.3 1.9l-2 5A2 2 0 0 1 18 19H4.1a1.2 1.2 0 0 1-1.1-.5z" />
     </IconBase>
   ),
+  FolderPlus: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+      <path d="M12 10v6M9 13h6" />
+    </IconBase>
+  ),
+  FolderX: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z" />
+      <path d="M9.5 9.5l5 5M14.5 9.5l-5 5" />
+    </IconBase>
+  ),
   ProjectFolder: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M3 7a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2v3.2" />

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import type { SkillCreateRequest } from '@spark/protocol'
 
 export type LocalSkillSource = 'claude' | 'codex' | 'agents' | 'custom'
@@ -82,6 +82,53 @@ export function importLocalSkillDirectory(directoryPath: string, source: LocalSk
       parameters: [],
       importedFrom: source,
       skillFilePath,
+    }),
+    enabled: true,
+  }
+}
+
+/**
+ * 导入单个文件作为 Skill（SKILL.md 或 Markdown 文件）
+ */
+export function importLocalSkillFile(filePath: string): SkillCreateRequest {
+  const resolvedPath = resolve(filePath)
+  if (!existsSync(resolvedPath)) {
+    throw new Error(`File not found: ${resolvedPath}`)
+  }
+
+  const stat = safeStat(resolvedPath)
+  if (!stat?.isFile()) {
+    throw new Error(`Path is not a file: ${resolvedPath}`)
+  }
+
+  // If the file is inside a directory that has the same name as a skill folder, use dirname as rootPath
+  const dirPath = dirname(resolvedPath)
+  const fileName = basename(resolvedPath)
+  const fallbackName = basename(resolvedPath, '.md').replace(/\.SKILL$/i, '')
+
+  const raw = readFileSync(resolvedPath, 'utf-8')
+  const { frontmatter, body } = splitFrontmatter(raw)
+  const name = stringField(frontmatter, 'name') || fallbackName
+  const description = stringField(frontmatter, 'description') || firstBodyLine(body) || 'Imported Skill'
+
+  return {
+    id: `local:file:${hashPath(resolvedPath)}`,
+    scope: 'user',
+    name,
+    version: stringField(frontmatter, 'version') || '0.0.0',
+    rootPath: dirPath,
+    manifestJson: JSON.stringify({
+      desc: description,
+      description,
+      source: fileName.toUpperCase() === 'SKILL.MD' ? 'SKILL.md 文件导入' : '文件导入',
+      author: stringField(frontmatter, 'author') || 'Local',
+      category: stringField(frontmatter, 'category') || 'utility',
+      tags: listField(frontmatter, 'tags'),
+      systemPrompt: body.trim(),
+      requiredTools: listField(frontmatter, 'requiredTools').concat(listField(frontmatter, 'tools')),
+      parameters: [],
+      importedFrom: 'file',
+      skillFilePath: resolvedPath,
     }),
     enabled: true,
   }

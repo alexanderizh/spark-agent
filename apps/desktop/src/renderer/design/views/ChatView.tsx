@@ -128,6 +128,18 @@ const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
+// “不使用项目” 特殊 workspace：始终指向 os-temp/spark-agent-projects/no-project，
+// 不属于用户任何真实项目目录，但能复用 session/workspace 数据模型，
+// 让用户在没有项目时也能正常开 session。
+export const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
+export const NO_PROJECT_WORKSPACE_ROOT_SUFFIX = '/no-project'
+
+/** 根据 tempDir 拼出 “不使用项目” workspace 的 rootPath */
+function getNoProjectRootPath(tempDir: string): string {
+  const sep = tempDir.includes('\\') ? '\\' : '/'
+  return `${tempDir.replace(/[\\/]$/, '')}${sep}no-project`
+}
+
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
   const [active, setActive] = useState<SessionId | null>(() => {
     const stored = window.localStorage.getItem(LAST_SESSION_KEY)
@@ -171,6 +183,10 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
+  // “不使用项目” 特殊 workspace 的 id；启动时懒初始化
+  const [noProjectWorkspaceId, setNoProjectWorkspaceId] = useState<string | null>(null)
+  // ProjectPicker 下拉打开状态（受控，让外部点击其他位置时能关掉）
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [notice, setNotice] = useState('')
@@ -307,6 +323,64 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       .catch(console.error)
   }, [active, clearEvents, refreshSessions])
 
+  /**
+   * 确保 “不使用项目” 这个特殊 workspace 存在并返回它的 id。
+   * 由于 rootPath 固定，第一次调用后后端会记住，后续调用直接返回现有记录。
+   */
+  const ensureNoProjectWorkspace = useCallback(async (): Promise<string | null> => {
+    if (noProjectWorkspaceId) return noProjectWorkspaceId
+    try {
+      const { tempDir } = await getTempProjectDir({})
+      const rootPath = getNoProjectRootPath(tempDir)
+      const res = await openWorkspace({
+        create: { name: NO_PROJECT_WORKSPACE_NAME, rootPath },
+      })
+      setNoProjectWorkspaceId(res.workspace.id)
+      // 顺手加入 workspaces 列表以便侧边栏可显示（但默认会被去重过滤）
+      setWorkspaces((prev) => {
+        if (prev.some((w) => w.id === res.workspace.id)) return prev
+        return [...prev, res.workspace]
+      })
+      return res.workspace.id
+    } catch (err) {
+      console.error('创建 “不使用项目” workspace 失败', err)
+      toast.error(err instanceof Error ? err.message : '创建临时项目目录失败')
+      return null
+    }
+  }, [getTempProjectDir, noProjectWorkspaceId, openWorkspace, toast])
+
+  /**
+   * 把当前 active workspace 切到 “不使用项目”。
+   * 首次切换会先确保 no-project workspace 存在。
+   */
+  const useNoProject = useCallback(async () => {
+    const id = await ensureNoProjectWorkspace()
+    if (id) setActiveWorkspaceId(id)
+  }, [ensureNoProjectWorkspace])
+
+  /**
+   * 弹文件夹选择对话框，选中后打开（创建）该 workspace 并设为 active。
+   */
+  const pickProjectFolder = useCallback(async () => {
+    try {
+      const selected = await openDirectoryDialog({ title: '选择项目文件夹' })
+      if (selected.canceled || selected.filePath == null) return
+      const res = await openWorkspace({ rootPath: selected.filePath })
+      setActiveWorkspaceId(res.workspace.id)
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      console.error('选择项目文件夹失败', err)
+      toast.error(err instanceof Error ? err.message : '选择项目文件夹失败')
+    }
+  }, [openDirectoryDialog, openWorkspace, refreshProjectsAndSessions, toast])
+
+  /**
+   * 在 workspaces 列表中点某个项目，切到那个项目。
+   */
+  const switchToWorkspace = useCallback((workspaceId: string) => {
+    setActiveWorkspaceId(workspaceId)
+  }, [])
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       refreshProjectsAndSessions().catch(console.error)
@@ -390,9 +464,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     try {
       setNotice('')
       if (workspaceId == null) {
-        setProjectDialog('create')
-        toast.warning('请先创建或打开一个项目，然后再在项目下新建会话。')
-        return null
+        // 没选项目：自动走 “不使用项目” 临时目录，让用户无需先建项目也能开 session
+        const noProjectId = await ensureNoProjectWorkspace()
+        if (noProjectId == null) return null
+        workspaceId = noProjectId
+        setActiveWorkspaceId(noProjectId)
       }
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
@@ -877,46 +953,67 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       </div>
 
       <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}>
-        {showEmptyHero ? (
-          <EmptyChatHero
-            session={activeSession}
-            workspace={activeWorkspace}
-            activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
-            providers={providers}
-            selectedProviderId={selectedProviderId}
-            setSelectedProviderId={setSelectedProviderId}
-            branchState={branchState}
-            contextInputTokens={contextInputTokens}
-            contextUsage={contextUsage}
-            isWorking={activeSession?.status === 'running'}
-            approvalRequest={approvalRequest}
-            {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-            onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
-            onUpdateSession={handleUpdateActiveSession}
-            onSwitchBranch={handleSwitchBranch}
-            onCancelSession={handleCancelSession}
-            onSent={(sessionId) => {
-              setSessionStatus(sessionId, 'running')
-            }}
-          />
-        ) : (
-          <>
-            <ChatTabbar
+        {/* hero 模式（active 为 null 或消息为空）：渐变网格背景 + 居中标题 */}
+        {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
+        {showEmptyHero && (
+          <h1 className="chat-hero-title">Spark Agent，让工作更简单。</h1>
+        )}
+
+        {active == null ? (
+          /* 没有任何 active session：纯 hero 居中（不需要订阅 agent event） */
+          <div className="chat-hero-composer">
+            <ComposerV2
               session={activeSession}
               workspace={activeWorkspace}
-              agentStatus={agentStatus}
-              showInspector={showInspector}
-              setShowInspector={(v: boolean) => {
-                setShowInspector(v)
-                if (v) setShowConfigPanel(false)
+              activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
+              providers={providers}
+              selectedProviderId={selectedProviderId}
+              setSelectedProviderId={setSelectedProviderId}
+              branchState={branchState}
+              contextInputTokens={contextInputTokens}
+              contextUsage={contextUsage}
+              isWorking={activeSession?.status === 'running'}
+              approvalRequest={approvalRequest}
+              {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+              onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+              onUpdateSession={handleUpdateActiveSession}
+              onSwitchBranch={handleSwitchBranch}
+              onCancelSession={handleCancelSession}
+              onSent={(sessionId) => {
+                setSessionStatus(sessionId, 'running')
               }}
-              showConfigPanel={showConfigPanel}
-              setShowConfigPanel={(v: boolean) => {
-                setShowConfigPanel(v)
-                if (v) setShowInspector(false)
-              }}
-              {...(active ? { onClearMessages: handleClearMessages } : {})}
+              showProjectPicker
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              onPickProject={pickProjectFolder}
+              onUseNoProject={() => void useNoProject()}
+              onSwitchWorkspace={switchToWorkspace}
             />
+          </div>
+        ) : (
+          /* active != null：始终渲染 ChatStream（保持 event 订阅）
+             视觉上根据 showEmptyHero 切换：
+             - 空消息：hero 风格（无 tabbar、隐藏 stream empty state、composer 居中）
+             - 有消息：active 风格（tabbar + stream + 底部 composer） */
+          <>
+            {!showEmptyHero && (
+              <ChatTabbar
+                session={activeSession}
+                workspace={activeWorkspace}
+                agentStatus={agentStatus}
+                showInspector={showInspector}
+                setShowInspector={(v: boolean) => {
+                  setShowInspector(v)
+                  if (v) setShowConfigPanel(false)
+                }}
+                showConfigPanel={showConfigPanel}
+                setShowConfigPanel={(v: boolean) => {
+                  setShowConfigPanel(v)
+                  if (v) setShowInspector(false)
+                }}
+                {...(active ? { onClearMessages: handleClearMessages } : {})}
+              />
+            )}
             <ChatStream
               sessionId={active}
               onStatusChange={setAgentStatus}
@@ -952,6 +1049,12 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               onSent={(sessionId) => {
                 setSessionStatus(sessionId, 'running')
               }}
+              showProjectPicker={showEmptyHero}
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              onPickProject={pickProjectFolder}
+              onUseNoProject={() => void useNoProject()}
+              onSwitchWorkspace={switchToWorkspace}
             />
           </>
         )}
@@ -4538,91 +4641,6 @@ function ContextMeterWithPopup({
  * EmptyChatHero — 空对话欢迎页（仅在还没有 active session 时显示）
  * 设计：渐变消失的网格背景 + 居中标题 + 居中输入区
  */
-function EmptyChatHero({
-  session,
-  workspace,
-  activeTaskText,
-  providers,
-  selectedProviderId,
-  setSelectedProviderId,
-  branchState,
-  contextInputTokens,
-  contextUsage,
-  isWorking,
-  approvalRequest,
-  onApprovalClose,
-  onCreateSession,
-  onUpdateSession,
-  onSwitchBranch,
-  onCancelSession,
-  onSent,
-}: {
-  session: SessionSummary | null
-  workspace: WorkspaceInfo | null
-  activeTaskText: string | null
-  providers: ProviderProfile[]
-  selectedProviderId: string
-  setSelectedProviderId: (providerId: string) => void
-  branchState: BranchState
-  contextInputTokens: number
-  contextUsage: ContextUsageState | null
-  isWorking: boolean
-  approvalRequest?: PermissionApprovalRequest | null
-  onApprovalClose?: () => void
-  onCreateSession: (options: {
-    providerProfileId?: string
-    modelId?: string
-    agentAdapter?: AgentAdapter
-    permissionMode?: PermissionModeChoice
-    chatMode?: SessionChatMode
-    reasoningEffort?: SessionReasoningEffort
-    activate?: boolean
-  }) => Promise<SessionId | null>
-  onUpdateSession: (patch: {
-    providerProfileId?: string
-    modelId?: string | null
-    agentAdapter?: AgentAdapter
-    permissionMode?: PermissionModeChoice
-    chatMode?: SessionChatMode
-    reasoningEffort?: SessionReasoningEffort
-  }) => Promise<void>
-  onSwitchBranch: (branch: string) => Promise<void>
-  onCancelSession: (sessionId: SessionId) => void | Promise<void>
-  onSent: (sessionId: SessionId) => void
-}) {
-  return (
-    <div className="chat-hero">
-      {/* 渐变消失的网格背景 */}
-      <div className="chat-hero-grid" aria-hidden="true" />
-      {/* 标题 */}
-      <h1 className="chat-hero-title">Spark Agent，让工作更简单。</h1>
-
-      {/* 居中的输入区 */}
-      <div className="chat-hero-composer">
-        <ComposerV2
-          session={session}
-          workspace={workspace}
-          activeTaskText={activeTaskText}
-          providers={providers}
-          selectedProviderId={selectedProviderId}
-          setSelectedProviderId={setSelectedProviderId}
-          branchState={branchState}
-          contextInputTokens={contextInputTokens}
-          contextUsage={contextUsage}
-          isWorking={isWorking}
-          {...(approvalRequest !== undefined ? { approvalRequest } : {})}
-          {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-          onCreateSession={onCreateSession}
-          onUpdateSession={onUpdateSession}
-          onSwitchBranch={onSwitchBranch}
-          onCancelSession={onCancelSession}
-          onSent={onSent}
-        />
-      </div>
-    </div>
-  )
-}
-
 function ComposerV2({
   session,
   workspace,
@@ -4641,6 +4659,12 @@ function ComposerV2({
   onSwitchBranch,
   onCancelSession,
   onSent,
+  showProjectPicker,
+  workspaces,
+  activeWorkspaceId,
+  onPickProject,
+  onUseNoProject,
+  onSwitchWorkspace,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -4674,6 +4698,13 @@ function ComposerV2({
   onSwitchBranch: (branch: string) => Promise<void>
   onCancelSession: (sessionId: SessionId) => void | Promise<void>
   onSent: (sessionId: SessionId) => void
+  // 项目选择器相关（仅在空会话下使用）
+  showProjectPicker?: boolean
+  workspaces: WorkspaceInfo[]
+  activeWorkspaceId: string | null
+  onPickProject?: () => void
+  onUseNoProject?: () => void
+  onSwitchWorkspace?: (workspaceId: string) => void
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -4758,11 +4789,13 @@ function ComposerV2({
       ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
       : 0
   const isBusy = sending || isWorking
+  // 发送前置条件：用户输入了内容、供应商 + 模型已选好。
+  // session / workspace 不在这里卡—— handleNewSession 内部对 null 做了 no-project fallback，
+  // 真正发送时再做详细校验（toast 提示）
   const canSubmit =
     value.trim().length > 0 &&
     selectedProvider != null &&
-    effectiveModelId.length > 0 &&
-    (session != null || workspace != null)
+    effectiveModelId.length > 0
   const visibleActiveTaskText = queueRunning ? activeTaskText : null
   const showTaskQueue = visibleActiveTaskText != null || queuedMessages.length > 0
 
@@ -4927,24 +4960,35 @@ function ComposerV2({
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
-    // 高度范围：collapsed=102-168px, expanded=270-320px
-    const minHeight = manualExpanded ? 270 : 102
-    const maxHeight = manualExpanded ? 320 : 168
+    // 高度范围：折叠态 60-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
+    // 展开态 220-400px
+    // 关键点：minHeight 留一个能容纳一行文字 + 一点 padding 的值，
+    // 避免空 textarea 看起来永远是一坨；maxHeight 给得宽一些，常规长 prompt 都能直接展示完，
+    // 不需要靠滚动条来回看。
+    const minHeight = manualExpanded ? 220 : 60
+    const maxHeight = manualExpanded ? 400 : 280
 
-    // 临时禁用 transition 以准确测量 scrollHeight
-    const transition = el.style.transition
+    // 用 'auto' 临时高度测量内容真实高度，再 clamp 到区间内
+    // 之前用 '0px' 临时归零在某些渲染时机下会触发 textarea 高度抖动，体感是"打不出字"
+    const prevHeight = el.style.height
+    const prevTransition = el.style.transition
     el.style.transition = 'none'
-    el.style.height = '0px'
-    // 强制回流以应用 height: 0
+    el.style.height = 'auto'
+    // 强制回流以让浏览器按 auto 重新计算 scrollHeight
     void el.offsetHeight
+    const scrollH = el.scrollHeight
 
-    const nextHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight))
+    const nextHeight = Math.max(minHeight, Math.min(scrollH, maxHeight))
     el.style.height = `${nextHeight}px`
-    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden'
 
-    // 恢复 transition（下一帧生效）
+    // 滚动条统一交给 CSS（scrollbar-width: none + ::-webkit-scrollbar { display: none }），
+    // 这里不要再去切换 overflowY，避免 inline style 跟 CSS 互相覆盖
     requestAnimationFrame(() => {
-      el.style.transition = transition
+      el.style.transition = prevTransition || ''
+      // 防御性：保证 height 永远不是空 / auto
+      if (el.style.height === 'auto' || el.style.height === '') {
+        el.style.height = prevHeight || `${minHeight}px`
+      }
     })
   }, [manualExpanded, value])
 
@@ -5442,7 +5486,7 @@ function ComposerV2({
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder={workspace ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个项目'}
+            placeholder="询问、修改、运行任务…  ↵ 发送"
             value={value}
             onChange={(event) => handleValueChange(event.target.value)}
             onCompositionStart={() => {
@@ -5452,7 +5496,6 @@ function ComposerV2({
               composingRef.current = false
             }}
             onKeyDown={handleKeyDown}
-            disabled={!workspace}
           />
           <button
             className="composer-expand-btn"
@@ -5555,6 +5598,15 @@ function ComposerV2({
             </button>
           )}
           <div className="spacer" />
+          {showProjectPicker && (
+            <ProjectPicker
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              {...(onPickProject !== undefined ? { onPickProject } : {})}
+              {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
+              {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
+            />
+          )}
           {showBranchSelect && (
             <ComposerMenuSelect
               icon={<Icons.GitBranch size={13} />}
@@ -5656,6 +5708,146 @@ function ComposerMenuSelect({
               {option.value === value && <Icons.Check size={14} />}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * ProjectPicker — 项目选择器（下拉）
+ * 位置：composer 工具栏中，分支选择器左边
+ * 下拉内容：
+ *   - "最近" 分组：用户最近的项目（最多 5 个），当前选中的打勾
+ *   - "选择新项目"：从文件夹选择
+ *   - "不需要项目"：使用临时会话目录（"不使用项目" workspace）
+ * 显示：
+ *   - 选中某项目：显示该项目名（带文件夹图标）
+ *   - 选中"不需要项目"：显示"不需要项目"（带叉号图标）
+ *   - 没选：显示"选择项目"（带加号图标）
+ */
+function ProjectPicker({
+  workspaces,
+  activeWorkspaceId,
+  onPickProject,
+  onUseNoProject,
+  onSwitchWorkspace,
+}: {
+  workspaces: WorkspaceInfo[]
+  activeWorkspaceId: string | null
+  onPickProject?: () => void
+  onUseNoProject?: () => void
+  onSwitchWorkspace?: (workspaceId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  // 最近项目：按更新时间倒序，最多 5 个，且不包括 "不使用项目"
+  const recent = useMemo(() => {
+    return workspaces
+      .filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME)
+      .sort((a, b) => {
+        const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime()
+        const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime()
+        return tb - ta
+      })
+      .slice(0, 5)
+  }, [workspaces])
+
+  const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
+  const isNoProject = activeWorkspaceId != null && noProjectWorkspace?.id === activeWorkspaceId
+  const selectedProject = isNoProject
+    ? null
+    : workspaces.find((w) => w.id === activeWorkspaceId) ?? null
+
+  const triggerLabel = selectedProject?.name ?? (isNoProject ? NO_PROJECT_WORKSPACE_NAME : '选择项目')
+  const triggerIcon = selectedProject ? (
+    <Icons.Folder size={13} />
+  ) : isNoProject ? (
+    <Icons.FolderX size={13} />
+  ) : (
+    <Icons.Plus size={13} />
+  )
+  const triggerTitle = selectedProject
+    ? `项目：${selectedProject.name}\n${selectedProject.rootPath}`
+    : isNoProject
+      ? '当前不使用项目，session 数据走临时目录'
+      : '选择项目'
+
+  return (
+    <div
+      ref={rootRef}
+      className="composer-select composer-project-picker"
+      title={triggerTitle}
+    >
+      <span className="composer-select-icon">{triggerIcon}</span>
+      <button
+        type="button"
+        className="composer-select-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span>{triggerLabel}</span>
+        <Icons.ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="composer-menu composer-project-menu right">
+          {recent.length > 0 && (
+            <>
+              <div className="composer-project-group-header">最近</div>
+              {recent.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  className={`composer-menu-item${selectedProject?.id === w.id ? ' active' : ''}`}
+                  onClick={() => {
+                    setOpen(false)
+                    onSwitchWorkspace?.(w.id)
+                  }}
+                >
+                  <span className="composer-menu-item-copy">
+                    <span className="composer-menu-item-label">
+                      <Icons.Folder size={13} />
+                      <span>{w.name}</span>
+                    </span>
+                  </span>
+                  {selectedProject?.id === w.id && <Icons.Check size={14} />}
+                </button>
+              ))}
+              <div className="composer-project-divider" />
+            </>
+          )}
+          <button
+            type="button"
+            className="composer-menu-item"
+            onClick={() => {
+              setOpen(false)
+              onPickProject?.()
+            }}
+          >
+            <span className="composer-menu-item-copy">
+              <span className="composer-menu-item-label">
+                <Icons.FolderPlus size={13} />
+                <span>选择新项目</span>
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`composer-menu-item${isNoProject ? ' active' : ''}`}
+            onClick={() => {
+              setOpen(false)
+              onUseNoProject?.()
+            }}
+          >
+            <span className="composer-menu-item-copy">
+              <span className="composer-menu-item-label">
+                <Icons.FolderX size={13} />
+                <span>不需要项目</span>
+              </span>
+            </span>
+            {isNoProject && <Icons.Check size={14} />}
+          </button>
         </div>
       )}
     </div>
@@ -7262,7 +7454,9 @@ function buildProjectGroups(
   workspaces: WorkspaceInfo[],
   sessions: SessionSummary[],
 ): ProjectGroup[] {
-  return workspaces.map((workspace) => ({
+  // 过滤掉 “不使用项目” 这种系统内置 workspace，不在侧边栏项目组里展示
+  const userWorkspaces = workspaces.filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME)
+  return userWorkspaces.map((workspace) => ({
     workspace,
     sessions: sessions.filter((session) => session.workspaceIds.includes(workspace.id)),
   }))
@@ -7287,9 +7481,10 @@ function getLatestInputTokens(events: AgentEvent[]): number {
 }
 
 function getBasename(value: string): string {
-  const trimmed = value.trim().replace(/\/+$/, '')
+  // 兼容 POSIX (/Users/foo/bar) 与 Windows (C:\foo\bar、\\server\share\bar、混合写法) 两种路径
+  const trimmed = value.trim().replace(/[\\/]+$/, '')
   if (!trimmed) return '新项目'
-  return trimmed.split('/').filter(Boolean).at(-1) ?? '新项目'
+  return trimmed.split(/[\\/]/).filter(Boolean).at(-1) ?? '新项目'
 }
 
 function formatRelativeTime(value: string): string {
