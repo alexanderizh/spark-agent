@@ -100,7 +100,7 @@ import {
   closePopOutWindow,
   isPopOutOpen,
 } from '../services/PopOutBrowserService.js'
-import { getDatabase } from '../db.js'
+import { getDatabase, getDatabasePath } from '../db.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
 
 const log = createLogger('ipc:register')
@@ -689,9 +689,174 @@ export function registerAllIpcHandlers(): void {
   // ─── App Paths Handlers ─────────────────────────────────────────────────────
 
   typedIpcHandle('app:get-temp-project-dir', async () => {
-    const tempBase = app.getPath('temp')
-    const projectsDir = `${tempBase}/spark-agent-projects`
+    // 持久化的项目目录：放在 userData 下，避免被 macOS/Linux 定期清理 /tmp
+    const projectsDir = `${app.getPath('userData')}/projects`
+    try {
+      await import('node:fs/promises').then((fs) => fs.mkdir(projectsDir, { recursive: true }))
+    } catch (err) {
+      log.warn(`Failed to ensure projects dir: ${err instanceof Error ? err.message : String(err)}`)
+    }
     return { tempDir: projectsDir }
+  })
+
+  typedIpcHandle('app:get-storage-stats', async () => {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+    const userDataPath = app.getPath('userData')
+    const projectsDir = path.join(userDataPath, 'projects')
+    const databasePath = getDatabasePath()
+
+    const dirSize = async (dir: string): Promise<number> => {
+      let total = 0
+      try {
+        const entries = await fs.readdir(dir, { withFileTypes: true })
+        for (const entry of entries) {
+          const full = path.join(dir, entry.name)
+          try {
+            if (entry.isDirectory()) {
+              total += await dirSize(full)
+            } else if (entry.isFile()) {
+              const st = await fs.stat(full)
+              total += st.size
+            }
+          } catch {
+            // 忽略权限/损坏文件
+          }
+        }
+      } catch {
+        // 目录不存在
+      }
+      return total
+    }
+
+    const fileSize = async (filePath: string): Promise<number> => {
+      try {
+        const st = await fs.stat(filePath)
+        return st.size
+      } catch {
+        return 0
+      }
+    }
+
+    const CACHE_DIRS = [
+      'Cache',
+      'Code Cache',
+      'GPUCache',
+      'DawnGraphiteCache',
+      'DawnWebGPUCache',
+      'Shared Dictionary',
+      'blob_storage',
+    ]
+    let cacheBytes = 0
+    for (const name of CACHE_DIRS) {
+      cacheBytes += await dirSize(path.join(userDataPath, name))
+    }
+
+    const databaseBytes =
+      (await fileSize(databasePath)) +
+      (await fileSize(`${databasePath}-shm`)) +
+      (await fileSize(`${databasePath}-wal`))
+
+    const projectsBytes = await dirSize(projectsDir)
+
+    return {
+      userDataPath,
+      projectsDir,
+      databasePath,
+      databaseBytes,
+      cacheBytes,
+      projectsBytes,
+      totalBytes: databaseBytes + cacheBytes + projectsBytes,
+    }
+  })
+
+  typedIpcHandle('app:clear-cache', async (req) => {
+    const fs = await import('node:fs/promises')
+    const path = await import('node:path')
+    const userDataPath = app.getPath('userData')
+
+    // 1) 清 Electron / Chromium 缓存（不动 Cookies / Local Storage / Preferences）
+    const CACHE_DIRS = [
+      'Cache',
+      'Code Cache',
+      'GPUCache',
+      'DawnGraphiteCache',
+      'DawnWebGPUCache',
+      'Shared Dictionary',
+      'blob_storage',
+    ]
+    let clearedBytes = 0
+    for (const name of CACHE_DIRS) {
+      const full = path.join(userDataPath, name)
+      try {
+        const st = await fs.stat(full)
+        if (st.isDirectory()) {
+          const before = await (async function size(dir: string): Promise<number> {
+            let t = 0
+            try {
+              const entries = await fs.readdir(dir, { withFileTypes: true })
+              for (const e of entries) {
+                const f = path.join(dir, e.name)
+                try {
+                  if (e.isDirectory()) t += await size(f)
+                  else if (e.isFile()) t += (await fs.stat(f)).size
+                } catch {}
+              }
+            } catch {}
+            return t
+          })(full)
+          await fs.rm(full, { recursive: true, force: true })
+          clearedBytes += before
+        }
+      } catch {
+        // 不存在就跳过
+      }
+    }
+
+    try {
+      const { session } = await import('electron')
+      await session.defaultSession.clearCache()
+      await session.defaultSession.clearCodeCaches({})
+    } catch (err) {
+      log.warn(`session.clearCache failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+
+    // 2) 可选：清掉临时项目目录里不再被任何 workspace 引用的孤儿目录
+    let clearedOrphanProjects = false
+    if (req.pruneOrphanProjects === true) {
+      const projectsDir = path.join(userDataPath, 'projects')
+      try {
+        const workspaces = new WorkspaceRepository(getDatabase()).listAll(1000, 0, {
+          includeArchived: true,
+        })
+        const referenced = new Set(workspaces.map((w) => w.root_path))
+        const entries = await fs.readdir(projectsDir, { withFileTypes: true })
+        for (const entry of entries) {
+          if (!entry.isDirectory()) continue
+          const full = path.join(projectsDir, entry.name)
+          if (referenced.has(full)) continue
+          try {
+            await fs.rm(full, { recursive: true, force: true })
+            clearedOrphanProjects = true
+          } catch (err) {
+            log.warn(`prune orphan ${full} failed: ${err instanceof Error ? err.message : String(err)}`)
+          }
+        }
+      } catch (err) {
+        log.warn(`prune orphan projects scan failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
+    return { clearedBytes, clearedCache: true, clearedOrphanProjects }
+  })
+
+  typedIpcHandle('app:open-data-dir', async () => {
+    const result = await shell.openPath(app.getPath('userData'))
+    if (result !== '') {
+      log.warn(`app:open-data-dir failed: ${result}`)
+      return { opened: false }
+    }
+    return { opened: true }
   })
 
   // ─── Rules Handlers ─────────────────────────────────────────────────────

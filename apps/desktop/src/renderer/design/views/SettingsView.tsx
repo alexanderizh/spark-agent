@@ -1,7 +1,8 @@
 /**
- * SettingsView — 多分类设置（通用/外观/快捷键/Provider/模型/规则/权限/MCP/Skills/工作流/遥测/存储/更新）
+ * SettingsView — 多分类设置（通用/外观/快捷键/模型/规则/权限/MCP/Skills/工作流/遥测/存储/更新）
  *
- * 包含：左侧分组导航 + 右侧多 section 内容。Provider 编辑使用滑入面板，Profile 编辑使用 Modal。
+ * 包含：左侧分组导航 + 右侧多 section 内容。Profile 编辑使用 Modal。
+ * 注意：Provider 配置 UI 已抽到 ProvidersView.tsx（侧边栏一级菜单）。
  */
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
@@ -11,22 +12,13 @@ import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
-import {
-  PROVIDER_PRESETS,
-  VENDOR_CATALOG,
-  getProviderPresetById,
-  getVendorMeta,
-  getPresetsByVendor,
-  getUniqueVendorIds,
-} from '@spark/protocol'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
+// Provider 相关 UI 已抽到 ProvidersView；保留 ProviderEditPanel 的 re-export
+// 以便现有测试（apps/desktop/src/renderer/tests/renderer.test.ts）等其他消费者
+// 仍能通过原路径 import。
+export { ProviderEditPanel } from './ProvidersView'
 import type {
-  ProviderPreset,
-  VendorMeta,
-  ProviderHealthCheckResponse,
-  ProviderProfile,
-  ProviderUpdateRequest,
   SessionAgentAdapter,
   SessionPermissionMode,
   PermissionMode,
@@ -35,6 +27,7 @@ import type {
   RuleScope,
   WorkspaceInfo,
   ModelProfile,
+  ProviderProfile,
   // MCP 设置暂未完全实现，保留类型导入以便后续启用
   McpServerItem,
   SkillItem,
@@ -44,19 +37,6 @@ import type {
   SessionListResponse,
 } from '@spark/protocol'
 
-type ProviderKind = 'anthropic' | 'openai'
-type ProviderForm = {
-  presetId: string
-  name: string
-  provider: ProviderKind
-  defaultModel: string
-  modelIdsText: string
-  endpoint: string
-  codexApiKind: 'chat' | 'responses'
-  supportsMillionContext: boolean
-  apiKey: string
-  isDefault: boolean
-}
 
 // 工作流模板暂未实现，保留类型定义以便后续启用
 type WorkflowTemplate = {
@@ -280,7 +260,7 @@ function writeStoredJson<T>(key: string, value: T) {
 
 export function SettingsView() {
   const { t, setTweak } = useApp()
-  const section = t.settingsSection || 'providers'
+  const section = t.settingsSection || 'general'
   const setSection = (s: string) => setTweak('settingsSection', s)
 
   const nav = [
@@ -295,7 +275,6 @@ export function SettingsView() {
     {
       group: 'Agent',
       items: [
-        { id: 'providers', icon: <Icons.Bot />, label: 'Provider' },
         { id: 'rules', icon: <Icons.Beaker />, label: '规则' },
         { id: 'permissions', icon: <Icons.Shield />, label: '权限策略' },
       ],
@@ -331,7 +310,6 @@ export function SettingsView() {
     general: GeneralSection,
     appearance: AppearanceSection,
     shortcuts: ShortcutsSection,
-    providers: ProvidersSection,
     rules: RulesSection,
     permissions: PermissionsSection,
     // MCP 设置暂未完全实现，隐藏
@@ -975,629 +953,6 @@ function ShortcutsSection() {
       ))}
     </div>
   )
-}
-
-/* ───────── PROVIDERS ───────── */
-function ProvidersSection() {
-  const { setTweak, t } = useApp()
-  const { toast } = useToast()
-  const showProviderEdit = t.showProviderEdit
-  const [profiles, setProfiles] = useState<ProviderProfile[]>([])
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
-  const [showPresetCatalog, setShowPresetCatalog] = useState(false)
-  /** 从预设创建时，传递给 ProviderEditPanel 的初始 presetId */
-  const [initialPresetId, setInitialPresetId] = useState<string | null>(null)
-
-  const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { invoke: deleteProvider } = useIpcInvoke('provider:delete')
-  const { invoke: healthCheck } = useIpcInvoke('provider:health-check')
-
-  const refresh = useCallback(() => {
-    listProviders({})
-      .then((r) => setProfiles(r.profiles))
-      .catch(console.error)
-  }, [listProviders])
-
-  useEffect(() => {
-    refresh()
-  }, [refresh])
-
-  const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除该 Provider？')) return
-    try {
-      await deleteProvider({ id })
-      toast.success('Provider 已删除')
-      refresh()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除失败')
-    }
-  }
-
-  const handleHealthCheck = async (id: string) => {
-    try {
-      const r = await healthCheck({ id })
-      setHealthMap((prev) => ({ ...prev, [id]: r }))
-      if (r.healthy) {
-        toast.success(`连接成功${r.latencyMs != null ? ` · 延迟 ${r.latencyMs}ms` : ''}`)
-      } else {
-        toast.error('连接失败：Provider 返回不健康状态')
-      }
-    } catch (err) {
-      setHealthMap((prev) => ({ ...prev, [id]: { healthy: false } }))
-      toast.error(err instanceof Error ? err.message : '连接测试失败')
-    }
-  }
-
-  /** 点击 vendor 卡片 → 选择格式 → 打开编辑面板 */
-  const handleSelectVendor = (vendorId: string) => {
-    const presets = getPresetsByVendor(vendorId)
-    if (presets.length >= 1 && presets[0]) {
-      // 只有一种格式，直接打开
-      setInitialPresetId(presets[0].id)
-      setEditingId(null)
-      setShowPresetCatalog(false)
-      setTweak('showProviderEdit', true)
-    }
-    // 多种格式时在 VendorPresetCard 内部处理
-  }
-
-  const handleSelectPreset = (presetId: string) => {
-    setInitialPresetId(presetId)
-    setEditingId(null)
-    setShowPresetCatalog(false)
-    setTweak('showProviderEdit', true)
-  }
-
-  /** 已配置的 vendor 名称集合（用于标记已添加） */
-  const configuredNames = useMemo(() => new Set(profiles.map((p) => p.name)), [profiles])
-
-  return (
-    <>
-      <div className="settings-section">
-        <div className="row section-header-row">
-          <div className="flex1">
-            <h2 className="section-h2">Provider</h2>
-            <div className="lede section-lede">
-              配置供应商的协议格式、请求地址、鉴权和可用模型列表。每个 Provider
-              本身就是一份可直接运行的模型配置。
-            </div>
-          </div>
-          <div className="row row-gap-xs">
-            <button
-              className={`btn ${showPresetCatalog ? 'active' : ''}`}
-              onClick={() => setShowPresetCatalog((prev) => !prev)}
-            >
-              <Icons.Layers size={12} /> 从模板添加
-            </button>
-            <button
-              className="btn primary"
-              onClick={() => {
-                setEditingId(null)
-                setInitialPresetId(null)
-                setTweak('showProviderEdit', true)
-              }}
-            >
-              <Icons.Plus size={12} /> 自定义添加
-            </button>
-          </div>
-        </div>
-
-        {/* ─── 预设模板目录 ─── */}
-        {showPresetCatalog && (
-          <div className="preset-catalog">
-            <div className="preset-catalog-hint">
-              选择供应商模板快速配置，选择后仍可自定义所有字段。
-            </div>
-            <div className="preset-catalog-grid">
-              {getUniqueVendorIds().map((vendorId) => {
-                const meta = getVendorMeta(vendorId)
-                if (!meta) return null
-                const presets = getPresetsByVendor(vendorId)
-                const isAdded = configuredNames.has(meta.name)
-                return (
-                  <VendorPresetCard
-                    key={vendorId}
-                    vendor={meta}
-                    presets={presets}
-                    isAdded={isAdded}
-                    onSelectVendor={handleSelectVendor}
-                    onSelectPreset={handleSelectPreset}
-                  />
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {profiles.length === 0 && !showPresetCatalog ? (
-          <div className="empty-placeholder-lg">
-            尚未配置 Provider — 点击"从模板添加"快速开始，或"自定义添加"手动配置
-          </div>
-        ) : (
-          profiles.map((p) => {
-            const h = healthMap[p.id]
-            const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
-            return (
-              <ProviderCardX
-                key={p.id}
-                logo={(p.name[0] ?? p.provider[0] ?? '?').toUpperCase()}
-                name={p.name}
-                desc={`${p.provider} · 默认 ${p.defaultModel}`}
-                status={status}
-                detail={
-                  h?.latencyMs != null
-                    ? `延迟 ${h.latencyMs}ms`
-                    : `${p.modelIds.length} 个模型${p.isDefault ? ' · 默认 Provider' : ''}`
-                }
-                onEdit={() => {
-                  setEditingId(p.id)
-                  setTweak('showProviderEdit', true)
-                }}
-                onDelete={() => handleDelete(p.id)}
-                onHealthCheck={() => handleHealthCheck(p.id)}
-              />
-            )
-          })
-        )}
-      </div>
-
-      {/* Provider 编辑面板 */}
-      {showProviderEdit && (
-        <ProviderEditPanel
-          profileId={editingId}
-          initialPresetId={initialPresetId}
-          onClose={() => {
-            setTweak('showProviderEdit', false)
-            setInitialPresetId(null)
-            refresh()
-          }}
-        />
-      )}
-    </>
-  )
-}
-
-/* ─── VENDOR PRESET CARD（模板目录卡片） ─── */
-function VendorPresetCard({
-  vendor,
-  presets,
-  isAdded,
-  onSelectVendor,
-  onSelectPreset,
-}: {
-  vendor: VendorMeta
-  presets: ProviderPreset[]
-  isAdded: boolean
-  onSelectVendor: (vendorId: string) => void
-  onSelectPreset: (presetId: string) => void
-}) {
-  const [expanded, setExpanded] = useState(false)
-
-  const handleClick = () => {
-    if (presets.length === 1) {
-      onSelectVendor(vendor.id)
-    } else {
-      setExpanded((prev) => !prev)
-    }
-  }
-
-  return (
-    <div className={`preset-card${isAdded ? ' preset-added' : ''}`}>
-      <div className="preset-card-main" onClick={handleClick}>
-        <div className="preset-card-logo" style={{ background: vendor.color, color: '#fff' }}>
-          {vendor.emoji}
-        </div>
-        <div className="preset-card-info">
-          <div className="preset-card-name">
-            {vendor.name}
-            {isAdded && <span className="preset-card-badge">已添加</span>}
-          </div>
-          <div className="preset-card-desc">{vendor.desc}</div>
-        </div>
-        {presets.length > 1 && <span className="preset-card-formats">{presets.length} 种格式</span>}
-      </div>
-      {expanded && presets.length > 1 && (
-        <div className="preset-card-formats-list">
-          {presets.map((preset) => (
-            <button
-              key={preset.id}
-              className="preset-format-btn"
-              onClick={(e) => {
-                e.stopPropagation()
-                onSelectPreset(preset.id)
-              }}
-            >
-              <span className={`preset-format-dot ${preset.provider}`} />
-              {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
-              <span className="preset-format-model">{preset.defaultModel}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ProviderCardX({
-  logo,
-  name,
-  desc,
-  status,
-  detail,
-  onEdit,
-  onDelete,
-  onHealthCheck,
-}: {
-  logo: string
-  name: string
-  desc: string
-  status: 'ok' | 'warning' | 'off' | 'error' | 'unknown'
-  detail: string
-  onEdit: () => void
-  onDelete: () => void
-  onHealthCheck: () => void
-}) {
-  return (
-    <div className="provider-card">
-      <div className="provider-logo border-transparent">{logo}</div>
-      <div className="provider-info">
-        <div className="row row-gap-sm">
-          <span className="name">{name}</span>
-          {status === 'ok' && <span className="badge success dot">在线</span>}
-          {status === 'warning' && <span className="badge warning dot">需注意</span>}
-          {status === 'error' && <span className="badge danger dot">错误</span>}
-          {status === 'off' && <span className="badge dot">未启用</span>}
-          {status === 'unknown' && <span className="badge dot">未验证</span>}
-        </div>
-        <div className="desc">{desc}</div>
-        {detail && <div className="muted detail-sm">{detail}</div>}
-      </div>
-      <div className="row row-gap-xs self-start mt-sm">
-        <button className="btn ghost sm" onClick={onEdit}>
-          <Icons.Edit size={11} /> 编辑
-        </button>
-        <button className="icon-btn" title="健康检查" onClick={onHealthCheck}>
-          <Icons.Refresh size={13} />
-        </button>
-        <button className="icon-btn" title="删除" onClick={onDelete}>
-          <Icons.X size={13} />
-        </button>
-      </div>
-    </div>
-  )
-}
-
-/* ───────── PROVIDER EDIT slide panel ───────── */
-export function ProviderEditPanel({
-  profileId = null,
-  initialPresetId = null,
-  onClose,
-}: {
-  profileId?: string | null
-  initialPresetId?: string | null
-  onClose: () => void
-}) {
-  const { toast } = useToast()
-  const [form, setForm] = useState<ProviderForm>({
-    presetId: 'custom',
-    name: '',
-    provider: 'anthropic',
-    defaultModel: '',
-    modelIdsText: '',
-    endpoint: '',
-    codexApiKind: 'chat',
-    supportsMillionContext: false,
-    apiKey: '',
-    isDefault: false,
-  })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-
-  const { invoke: createProvider } = useIpcInvoke('provider:create')
-  const { invoke: updateProvider } = useIpcInvoke('provider:update')
-  const { invoke: listProviders } = useIpcInvoke('provider:list')
-
-  // 编辑模式：加载现有 profile；新建模式：支持 initialPresetId 预填
-  useEffect(() => {
-    if (!profileId) {
-      // 从预设模板打开：自动填充 preset 数据
-      if (initialPresetId) {
-        const preset = getProviderPresetById(initialPresetId)
-        if (preset) {
-          setForm({
-            presetId: preset.id,
-            name: preset.name,
-            provider: preset.provider,
-            defaultModel: preset.defaultModel,
-            modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
-            endpoint: preset.apiEndpoint,
-            codexApiKind: 'chat',
-            supportsMillionContext: false,
-            apiKey: '',
-            isDefault: false,
-          })
-          return
-        }
-      }
-      setForm({
-        presetId: 'custom',
-        name: '',
-        provider: 'anthropic',
-        defaultModel: '',
-        modelIdsText: '',
-        endpoint: '',
-        codexApiKind: 'chat',
-        supportsMillionContext: false,
-        apiKey: '',
-        isDefault: false,
-      })
-      return
-    }
-    listProviders({})
-      .then((r) => {
-        const p = r.profiles.find((x) => x.id === profileId)
-        if (p) {
-          setForm({
-            presetId: 'custom',
-            name: p.name,
-            provider: normalizeProviderKind(p.provider),
-            defaultModel: p.defaultModel,
-            modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
-            endpoint: p.apiEndpoint ?? '',
-            codexApiKind: p.codexApiKind ?? 'chat',
-            supportsMillionContext: p.supportsMillionContext === true,
-            apiKey: '',
-            isDefault: p.isDefault,
-          })
-        }
-      })
-      .catch(console.error)
-  }, [listProviders, profileId, initialPresetId])
-
-  const handleSave = async () => {
-    if (!form.name.trim() || !form.defaultModel.trim()) {
-      setError('名称和默认模型 ID 不能为空')
-      return
-    }
-    if (!profileId && !form.apiKey.trim()) {
-      setError('新建 Provider 需要填写 API Key')
-      return
-    }
-    setSaving(true)
-    setError('')
-    try {
-      const endpoint = form.endpoint.trim()
-      const modelIds = parseModelIds(form.modelIdsText, form.defaultModel)
-      if (profileId) {
-        const req: ProviderUpdateRequest = {
-          id: profileId,
-          name: form.name.trim(),
-          defaultModel: form.defaultModel.trim(),
-          modelIds,
-          isDefault: form.isDefault,
-          apiEndpoint: endpoint.length > 0 ? endpoint : null,
-          supportsMillionContext: form.supportsMillionContext,
-        }
-        if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
-        if (form.apiKey.trim()) req.apiKey = form.apiKey
-        await updateProvider(req)
-      } else {
-        await createProvider({
-          name: form.name.trim(),
-          provider: form.provider,
-          defaultModel: form.defaultModel.trim(),
-          modelIds,
-          apiKey: form.apiKey,
-          isDefault: form.isDefault,
-          ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
-          ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
-          supportsMillionContext: form.supportsMillionContext,
-        })
-      }
-      onClose()
-      toast.success(profileId ? 'Provider 已更新' : 'Provider 已创建')
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '保存失败')
-      toast.error(e instanceof Error ? e.message : '保存失败')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) =>
-    setForm((prev) => ({ ...prev, [k]: v }))
-  const applyPreset = (preset: ProviderPreset) => {
-    setForm((prev) => ({
-      ...prev,
-      presetId: preset.id,
-      name: preset.name,
-      provider: preset.provider,
-      defaultModel: preset.defaultModel,
-      modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
-      endpoint: preset.apiEndpoint,
-      codexApiKind: 'chat',
-      supportsMillionContext: false,
-    }))
-  }
-
-  return (
-    <div className="slide-panel-backdrop" onClick={onClose}>
-      <div className="slide-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="slide-panel-h">
-          <div className="h-icon">{(form.name[0] ?? form.provider[0] ?? 'P').toUpperCase()}</div>
-          <div className="flex1">
-            <div className="h-title">{profileId ? '编辑 Provider' : '添加 Provider'}</div>
-            <div className="h-sub">{form.provider} · API key 鉴权</div>
-          </div>
-          <button className="icon-btn" onClick={onClose}>
-            <Icons.X />
-          </button>
-        </div>
-
-        <div className="slide-panel-body">
-          {error && <div className="alert-banner">{error}</div>}
-
-          <div className="subsec-h">基础</div>
-          <div className="form-grid">
-            <label>
-              供应商模板<span className="sub">基于官方公开文档预填，后续仍可修改</span>
-            </label>
-            <SparkSelect
-              value={form.presetId}
-              disabled={!!profileId}
-              onChange={(e) => {
-                const presetId = e.target.value
-                if (presetId === 'custom') {
-                  set('presetId', 'custom')
-                  return
-                }
-                const preset = getProviderPresetById(presetId)
-                if (preset) applyPreset(preset)
-              }}
-            >
-              <option value="custom">自定义</option>
-              {PROVIDER_PRESETS.map((preset) => (
-                <option key={preset.id} value={preset.id}>
-                  {preset.name} ·{' '}
-                  {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
-                </option>
-              ))}
-            </SparkSelect>
-
-            <label>显示名称</label>
-            <SparkInput
-              value={form.name}
-              onChange={(e) => set('name', e.target.value)}
-              placeholder="例：Anthropic · Claude"
-            />
-
-            <label>
-              API 协议格式
-              <span className="sub">
-                决定 Provider 请求格式；Claude 执行统一使用 Claude Agent SDK
-              </span>
-            </label>
-            <SparkSelect
-              value={form.provider}
-              onChange={(e) =>
-                setForm((prev) => ({
-                  ...prev,
-                  presetId: 'custom',
-                  provider: normalizeProviderKind(e.target.value),
-                  codexApiKind: 'chat',
-                }))
-              }
-              disabled={!!profileId}
-            >
-              <option value="anthropic">Anthropic 格式</option>
-              <option value="openai">OpenAI 格式</option>
-            </SparkSelect>
-
-            {form.provider === 'openai' && (
-              <>
-                <label>
-                  Codex API 类型
-                  <span className="sub">控制 Codex/OpenAI 执行使用 Chat Completions 还是 Responses API</span>
-                </label>
-                <SparkSelect
-                  value={form.codexApiKind}
-                  onChange={(e) => set('codexApiKind', e.target.value === 'responses' ? 'responses' : 'chat')}
-                >
-                  <option value="chat">Chat Completions</option>
-                  <option value="responses">Responses API</option>
-                </SparkSelect>
-              </>
-            )}
-
-            <label>默认模型 ID</label>
-            <SparkInput
-              value={form.defaultModel}
-              onChange={(e) => set('defaultModel', e.target.value)}
-              placeholder="例：claude-sonnet-4-20250514"
-              className="mono-sm"
-            />
-
-            <label>
-              可用模型 ID<span className="sub">每行一个，默认模型会自动加入</span>
-            </label>
-            <textarea
-              value={form.modelIdsText}
-              onChange={(e) => set('modelIdsText', e.target.value)}
-              placeholder={`claude-sonnet-4-20250514\nclaude-3-5-haiku-20241022`}
-              className="mono-sm"
-              rows={4}
-            />
-
-            <label>
-              Endpoint URL<span className="sub">可选，自定义请求地址</span>
-            </label>
-            <SparkInput
-              value={form.endpoint}
-              onChange={(e) => set('endpoint', e.target.value)}
-              placeholder={
-                form.provider === 'anthropic'
-                  ? 'https://api.anthropic.com'
-                  : 'https://api.openai.com/v1'
-              }
-              className="mono-sm"
-            />
-
-            <label>
-              支持 1M 上下文
-              <span className="sub">开启后该 Provider 默认按 1M token 计算；关闭时默认 200K</span>
-            </label>
-            <div
-              className={`switch ${form.supportsMillionContext ? 'on' : ''}`}
-              onClick={() => set('supportsMillionContext', !form.supportsMillionContext)}
-            />
-
-            <label>默认 Provider</label>
-            <div
-              className={`switch ${form.isDefault ? 'on' : ''}`}
-              onClick={() => set('isDefault', !form.isDefault)}
-            />
-          </div>
-
-          <div className="subsec-h">鉴权</div>
-          <div className="form-grid">
-            <label>API Key{profileId && <span className="sub">留空则不更新</span>}</label>
-            <SparkInput
-              type="password"
-              value={form.apiKey}
-              onChange={(e) => set('apiKey', e.target.value)}
-              placeholder={profileId ? '••••••••（留空不更新）' : 'sk-ant-...'}
-            />
-          </div>
-        </div>
-
-        <div className="slide-panel-foot">
-          <span className="flex1" />
-          <button className="btn" onClick={onClose}>
-            取消
-          </button>
-          <button className="btn primary" onClick={handleSave} disabled={saving}>
-            <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function normalizeProviderKind(value: string): ProviderKind {
-  return value === 'anthropic' ? 'anthropic' : 'openai'
-}
-
-function parseModelIds(modelIdsText: string, defaultModel: string): string[] {
-  const values = [defaultModel, ...modelIdsText.split(/[\n,]/)]
-    .map((value) => value.trim())
-    .filter((value) => value.length > 0)
-  return [...new Set(values)]
-}
-
-function joinModelIds(modelIds: string[], defaultModel?: string): string {
-  return modelIds.filter((modelId) => modelId !== defaultModel).join('\n')
 }
 
 /* ───────── PROFILE EDIT MODAL ───────── */
@@ -4074,21 +3429,72 @@ function UsageSection() {
 function StorageSection() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [stats, setStats] = useState<{
+    userDataPath: string
+    projectsDir: string
+    databasePath: string
+    databaseBytes: number
+    cacheBytes: number
+    projectsBytes: number
+    totalBytes: number
+  } | null>(null)
+  const [statsLoading, setStatsLoading] = useState(false)
+  const [clearing, setClearing] = useState(false)
+  const { toast } = useToast()
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: closeWorkspace } = useIpcInvoke('workspace:close')
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
+  const { invoke: getStorageStats } = useIpcInvoke('app:get-storage-stats')
+  const { invoke: clearCache } = useIpcInvoke('app:clear-cache')
+  const { invoke: openDataDir } = useIpcInvoke('app:open-data-dir')
 
   const refreshWorkspace = useCallback(async () => {
     const res = await getCurrentWorkspace({})
     setWorkspace(res.workspace)
   }, [getCurrentWorkspace])
 
+  const refreshStats = useCallback(async () => {
+    setStatsLoading(true)
+    try {
+      const res = await getStorageStats({})
+      setStats(res)
+    } catch (err) {
+      console.error('加载存储统计失败', err)
+    } finally {
+      setStatsLoading(false)
+    }
+  }, [getStorageStats])
+
   useEffect(() => {
     refreshWorkspace().catch((err: unknown) =>
       setError(err instanceof Error ? err.message : String(err)),
     )
-  }, [refreshWorkspace])
+    refreshStats().catch(console.error)
+  }, [refreshWorkspace, refreshStats])
+
+  const handleOpenDataDir = async () => {
+    try {
+      await openDataDir({})
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '打开数据目录失败')
+    }
+  }
+
+  const handleClearCache = async (pruneOrphan: boolean) => {
+    const label = pruneOrphan ? '清空缓存并清理孤儿项目目录' : '清空全部缓存'
+    if (!window.confirm(`${label}？\n\n该操作不会影响会话、消息、规则等业务数据。`)) return
+    setClearing(true)
+    try {
+      const res = await clearCache({ pruneOrphanProjects: pruneOrphan })
+      toast.success(`已清理 ${formatBytes(res.clearedBytes)}`)
+      await refreshStats()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '清空缓存失败')
+    } finally {
+      setClearing(false)
+    }
+  }
 
   const handleOpenWorkspace = async () => {
     try {
@@ -4120,10 +3526,10 @@ function StorageSection() {
         <div className="control">
           <SparkInput
             className="flex1"
-            defaultValue="~/Library/Application Support/Spark Agent"
+            value={stats?.userDataPath ?? '加载中...'}
             readOnly
           />
-          <button className="btn">
+          <button className="btn" onClick={handleOpenDataDir}>
             <Icons.Folder size={12} /> 打开
           </button>
         </div>
@@ -4148,13 +3554,44 @@ function StorageSection() {
 
       {error !== null && <div className="card storage-card">{error}</div>}
 
-      <div className="subsec-h">存储用量</div>
+      <div className="subsec-h">
+        存储用量
+        <button
+          className="btn ghost sm"
+          onClick={() => void refreshStats()}
+          disabled={statsLoading}
+          style={{ marginLeft: 8 }}
+        >
+          {statsLoading ? '刷新中...' : '刷新'}
+        </button>
+      </div>
       <div className="card">
-        <UsageRow label="会话事件 (agent_events)" used="284.2 MB" pct={48} />
-        <UsageRow label="文件 artifact (大文本)" used="156.8 MB" pct={26} />
-        <UsageRow label="索引与缓存" used="98.4 MB" pct={17} />
-        <UsageRow label="检查点快照" used="42.1 MB" pct={7} />
-        <UsageRow label="日志与 trace" used="12.4 MB" pct={2} />
+        {stats === null ? (
+          <div className="empty-compact">
+            <div className="empty-desc">{statsLoading ? '正在统计...' : '暂无数据'}</div>
+          </div>
+        ) : (
+          <>
+            <UsageRow
+              label="业务数据库 (spark.db)"
+              used={formatBytes(stats.databaseBytes)}
+              pct={percent(stats.databaseBytes, stats.totalBytes)}
+            />
+            <UsageRow
+              label="项目工作目录 (projects/)"
+              used={formatBytes(stats.projectsBytes)}
+              pct={percent(stats.projectsBytes, stats.totalBytes)}
+            />
+            <UsageRow
+              label="浏览器缓存 (Cache / GPU / 共享词典)"
+              used={formatBytes(stats.cacheBytes)}
+              pct={percent(stats.cacheBytes, stats.totalBytes)}
+            />
+            <div className="field-hint" style={{ marginTop: 8 }}>
+              合计：{formatBytes(stats.totalBytes)} · 数据库位置：{stats.databasePath}
+            </div>
+          </>
+        )}
       </div>
 
       <div className="subsec-h">备份</div>
@@ -4192,18 +3629,30 @@ function StorageSection() {
       <div className="subsec-h">清理</div>
       <div className="card">
         <SettingsRow
-          title="清理 30 天前的检查点"
-          right={<button className="btn ghost sm">运行</button>}
+          title="清空浏览器与渲染缓存"
+          desc={`清理 Electron / Chromium 的 Cache、Code Cache、GPUCache 等${stats ? `（当前占用 ${formatBytes(stats.cacheBytes)}）` : ''}。下次启动会自动重建，不影响会话与设置。`}
+          right={
+            <button
+              className="btn ghost sm danger-btn"
+              onClick={() => void handleClearCache(false)}
+              disabled={clearing}
+            >
+              {clearing ? '清理中...' : '清空'}
+            </button>
+          }
         />
         <SettingsRow
-          title="清空全部缓存与索引"
-          desc="下次启动会重建"
-          right={<button className="btn ghost sm danger-btn">清空</button>}
-        />
-        <SettingsRow
-          title="重置所有设置"
-          desc="不影响会话与项目数据"
-          right={<button className="btn ghost sm danger-btn">重置</button>}
+          title="清理孤儿项目目录"
+          desc="删除 projects/ 下不再被任何项目引用的临时目录。同时清空浏览器缓存。"
+          right={
+            <button
+              className="btn ghost sm danger-btn"
+              onClick={() => void handleClearCache(true)}
+              disabled={clearing}
+            >
+              {clearing ? '清理中...' : '清空'}
+            </button>
+          }
         />
       </div>
     </div>
@@ -4363,6 +3812,23 @@ function ArchivedSection() {
       </div>
     </div>
   )
+}
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`
+}
+
+function percent(part: number, total: number): number {
+  if (total <= 0) return 0
+  return Math.min(100, Math.round((part / total) * 100))
 }
 
 function UsageRow({ label, used, pct }: { label: string; used: string; pct: number }) {

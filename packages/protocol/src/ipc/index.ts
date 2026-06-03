@@ -265,6 +265,12 @@ export interface ProviderProfile {
   codexApiKind?: 'chat' | 'responses'
   /** Whether this provider should use a 1M-token context window fallback. */
   supportsMillionContext?: boolean
+  /** Haiku 档（子 agent / Task 工具默认）；为空时回落 defaultModel */
+  haikuModel?: string
+  /** Sonnet 档（主对话默认）；为空时回落 defaultModel */
+  sonnetModel?: string
+  /** Opus 档（Plan/Review 等高能力 agent）；为空时回落 defaultModel */
+  opusModel?: string
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -288,6 +294,10 @@ export interface ProviderCreateRequest {
   apiEndpoint?: string
   codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
+  /** 档位映射：留空则回落 defaultModel */
+  haikuModel?: string
+  sonnetModel?: string
+  opusModel?: string
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -308,6 +318,10 @@ export interface ProviderUpdateRequest {
   apiEndpoint?: string | null
   codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
+  /** 档位映射：传 string 设置；传 null 清除（回落 defaultModel）；undefined 不修改 */
+  haikuModel?: string | null
+  sonnetModel?: string | null
+  opusModel?: string | null
   /** 更新 API Key 时传入，不更新则不传 */
   apiKey?: string
   isDefault?: boolean
@@ -481,6 +495,35 @@ export interface AppGetTempProjectDirRequest {}
 
 export interface AppGetTempProjectDirResponse {
   tempDir: string
+}
+
+export interface AppGetStorageStatsRequest {}
+
+export interface AppGetStorageStatsResponse {
+  userDataPath: string
+  projectsDir: string
+  databasePath: string
+  databaseBytes: number
+  cacheBytes: number
+  projectsBytes: number
+  totalBytes: number
+}
+
+export interface AppClearCacheRequest {
+  /** 是否同时清空临时项目目录下不再被任何 workspace 引用的孤儿目录。默认 false */
+  pruneOrphanProjects?: boolean
+}
+
+export interface AppClearCacheResponse {
+  clearedBytes: number
+  clearedCache: boolean
+  clearedOrphanProjects: boolean
+}
+
+export interface AppOpenDataDirRequest {}
+
+export interface AppOpenDataDirResponse {
+  opened: boolean
 }
 
 // ─── Rules Channels ─────────────────────────────────────────────────────────
@@ -2125,6 +2168,9 @@ export interface IpcChannelMap {
 
   // App Paths
   'app:get-temp-project-dir': [AppGetTempProjectDirRequest, AppGetTempProjectDirResponse]
+  'app:get-storage-stats': [AppGetStorageStatsRequest, AppGetStorageStatsResponse]
+  'app:clear-cache': [AppClearCacheRequest, AppClearCacheResponse]
+  'app:open-data-dir': [AppOpenDataDirRequest, AppOpenDataDirResponse]
 
   // Rules
   'rules:list': [RulesListRequest, RulesListResponse]
