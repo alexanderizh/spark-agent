@@ -1757,6 +1757,24 @@ export interface FileApplyHunkPatchResponse {
   error?: string
 }
 
+// ─── File Open Channel ─────────────────────────────────────────────────────────
+
+export interface FileOpenRequest {
+  /**
+   * Absolute path to the file to open with the OS default application.
+   * On Windows the path is opened with the user's default association
+   * (e.g. .html → browser, .png → image viewer, .md → editor).
+   */
+  filePath: string
+}
+
+export interface FileOpenResponse {
+  /** True when shell.openPath succeeded (returned an empty error string). */
+  opened: boolean
+  /** Populated with the OS error message when opened=false. */
+  error?: string
+}
+
 // ─── Context Governor Channels ───────────────────────────────────────────────
 
 export interface ContextPreferenceItem {
@@ -2005,6 +2023,9 @@ export interface IpcChannelMap {
 
   // File Patch (hunk-level accept/reject)
   'file:apply-hunk-patch': [FileApplyHunkPatchRequest, FileApplyHunkPatchResponse]
+
+  // File Open — open a file with the OS default application
+  'file:open': [FileOpenRequest, FileOpenResponse]
 
   // Playwright Browser Automation
   'playwright:status': [PlaywrightStatusRequest, PlaywrightStatusResponse]

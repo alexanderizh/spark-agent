@@ -4,9 +4,11 @@
  * 包含权限请求（文件/网络/MCP）、计划卡、Hunk 级 diff 审查、检查点、错误卡、
  * 子 Agent、工具选择器、上下文警告、沙箱提示等。
  */
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from './Icons'
+import { useIpcInvoke } from './hooks/useIpc'
+import { useToast } from './components/Toast'
 
 export function FilePermCard({
   path,
@@ -393,7 +395,25 @@ export function TurnFileSummaryCard({
   totalDels: number
 }) {
   const [expanded, setExpanded] = useState(true)
+  const { invoke: openFile } = useIpcInvoke('file:open')
+  const { toast } = useToast()
   const fileCount = files.length
+
+  const handleOpen = useCallback(
+    async (e: React.MouseEvent, filePath: string) => {
+      // 阻止冒泡，避免触发展开/折叠
+      e.stopPropagation()
+      try {
+        const res = await openFile({ filePath })
+        if (!res.opened) {
+          toast.error(res.error ?? '无法打开文件')
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '打开文件失败')
+      }
+    },
+    [openFile, toast],
+  )
 
   return (
     <div className="chat-card turn-summary-card">
@@ -421,24 +441,41 @@ export function TurnFileSummaryCard({
       {expanded && (
         <div className="chat-card-body">
           <div className="turn-summary-files">
-            {files.map((file, i) => (
-              <div key={i} className="turn-summary-file-row">
-                <span className="file-icon">
-                  {file.changeType === 'create' ? (
-                    <Icons.FilePlus size={12} />
-                  ) : file.changeType === 'delete' ? (
-                    <Icons.FileMinus size={12} />
-                  ) : (
-                    <Icons.File size={12} />
-                  )}
-                </span>
-                <code className="file-path">{file.path}</code>
-                <span className="file-stats">
-                  <span className="add">+{file.adds}</span>
-                  <span className="del">−{file.dels}</span>
-                </span>
-              </div>
-            ))}
+            {files.map((file, i) => {
+              const canOpen = file.changeType !== 'delete'
+              return (
+                <div key={i} className="turn-summary-file-row">
+                  <span className="file-icon">
+                    {file.changeType === 'create' ? (
+                      <Icons.FilePlus size={12} />
+                    ) : file.changeType === 'delete' ? (
+                      <Icons.FileMinus size={12} />
+                    ) : (
+                      <Icons.File size={12} />
+                    )}
+                  </span>
+                  <code className="file-path" title={file.path}>
+                    {file.path}
+                  </code>
+                  <span className="file-stats">
+                    <span className="add">+{file.adds}</span>
+                    <span className="del">−{file.dels}</span>
+                  </span>
+                  <span className="file-actions">
+                    {canOpen && (
+                      <button
+                        type="button"
+                        className="icon-btn file-action-btn"
+                        title="用系统默认应用打开"
+                        onClick={(e) => handleOpen(e, file.path)}
+                      >
+                        <Icons.ExternalLink size={11} />
+                      </button>
+                    )}
+                  </span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

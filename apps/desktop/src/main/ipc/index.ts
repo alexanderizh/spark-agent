@@ -1286,6 +1286,27 @@ export function registerAllIpcHandlers(): void {
     return result
   })
 
+  // ─── File Open Handler ───────────────────────────────────────────────
+
+  typedIpcHandle('file:open', async (req) => {
+    const filePath = req.filePath
+    if (!filePath || typeof filePath !== 'string') {
+      return { opened: false, error: 'filePath is required' }
+    }
+
+    log.info(`file:open requested, path=${filePath}`)
+
+    // shell.openPath opens the file with the OS default application based on
+    // its extension/association. It returns a Promise that resolves to an
+    // empty string on success, or an error message on failure.
+    const errorMessage = await shell.openPath(filePath)
+    if (errorMessage) {
+      log.warn(`file:open failed, path=${filePath}, error=${errorMessage}`)
+      return { opened: false, error: errorMessage }
+    }
+    return { opened: true }
+  })
+
   // ─── Playwright Browser Automation Handlers ──────────────────────────
 
   typedIpcHandle('playwright:status', async () => {

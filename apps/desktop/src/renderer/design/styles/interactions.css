@@ -270,6 +270,80 @@
 }
 .checkpoint .pill .actions .icon-btn svg { width: 11px; height: 11px; }
 
+/* === Turn File Summary Card (本次修改完成) === */
+.turn-summary-card {
+  overflow: hidden;
+}
+.turn-summary-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.turn-summary-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+  transition: background 0.12s ease;
+}
+.turn-summary-file-row:hover {
+  background: var(--hover);
+}
+.turn-summary-file-row .file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.turn-summary-file-row .file-icon svg { width: 12px; height: 12px; }
+.turn-summary-file-row .file-path {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-summary-file-row .file-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+.turn-summary-file-row .file-stats .add { color: var(--success); }
+.turn-summary-file-row .file-stats .del { color: var(--danger); }
+.turn-summary-file-row .file-actions {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.turn-summary-file-row:hover .file-actions,
+.turn-summary-file-row:focus-within .file-actions {
+  opacity: 1;
+}
+.turn-summary-file-row .file-action-btn {
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+}
+.turn-summary-file-row .file-action-btn:hover {
+  color: var(--primary);
+  background: var(--selected);
+}
+.turn-summary-file-row .file-action-btn svg { width: 12px; height: 12px; }
+
 /* === Plan / Todo list === */
 .plan-card {
   border: 1px solid var(--border);

@@ -63,6 +63,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
       </div>
       {view === 'chat' && (
         <div className="row" style={{ marginLeft: 16, gap: 8 }}>
+          {/* Vibe / Workspace switcher - hidden while workspace mode is not ready
           <div className="seg-control">
             <button
               className={chatMode === 'vibe' ? 'active' : ''}
@@ -81,6 +82,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
               </span>
             </button>
           </div>
+          */}
           <button
             className={`btn ghost sm${t.browserPanelOpen ? ' active' : ''}`}
             onClick={() => setTweak('browserPanelOpen', !t.browserPanelOpen)}
