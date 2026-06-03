@@ -2238,6 +2238,55 @@ body.sidebar-resizing {
   border-radius: var(--r-md);
 }
 
+.composer-attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 2px 8px;
+}
+
+.composer-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(240px, 100%);
+  height: 28px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  line-height: 1;
+}
+
+.composer-attachment-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-attachment-chip button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.composer-attachment-chip button:hover {
+  background: var(--hover);
+  color: var(--danger);
+}
+
 .composer-approval-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

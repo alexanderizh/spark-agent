@@ -29,6 +29,7 @@ import type {
   UserMessageEvent,
   AssistantMessageEvent,
   HookNode,
+  SessionAttachment,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
@@ -46,7 +47,7 @@ import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
-import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
+import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
 import {
@@ -96,6 +97,7 @@ type PendingTurn = {
   turnId: string
   message: string
   enqueuedAt: string
+  attachments?: SessionAttachment[]
   runtimePatch?: SessionRuntimePatch
   skillId?: string
   skillParams?: Record<string, unknown>
@@ -248,7 +250,8 @@ export class SessionService {
         }
       },
       updateSession: async (id, fields) => {
-        sessionRepo.updateRuntime(id, fields)
+        if (fields.title !== undefined) sessionRepo.updateTitle(id, fields.title)
+        if (fields.modelId !== undefined) sessionRepo.updateRuntime(id, { modelId: fields.modelId })
       },
       clearSessionEvents: async (id) => {
         eventRepo.deleteBySession(id)
@@ -315,7 +318,7 @@ export class SessionService {
   async executeCommandAsEvents(params: {
     sessionId: string
     message: string
-  }): Promise<{ isCommand: boolean; forwardToAgent?: boolean }> {
+  }): Promise<{ isCommand: boolean; forwardToAgent?: boolean; started?: boolean }> {
     if (!isCommand(params.message)) return { isCommand: false }
     const parsed = parseCommand(params.message)
     if (parsed == null) return { isCommand: false }
@@ -352,7 +355,8 @@ export class SessionService {
         }
       },
       updateSession: async (id, fields) => {
-        sessionRepo.updateRuntime(id, fields)
+        if (fields.title !== undefined) sessionRepo.updateTitle(id, fields.title)
+        if (fields.modelId !== undefined) sessionRepo.updateRuntime(id, { modelId: fields.modelId })
       },
       clearSessionEvents: async (id) => {
         eventRepo.deleteBySession(id)
@@ -452,15 +456,16 @@ export class SessionService {
     }
 
     if (result.followUpPrompt != null && result.followUpPrompt.trim().length > 0) {
-      await this.sendTurn({
+      const sendResult = await this.sendTurn({
         sessionId: params.sessionId,
         message: result.followUpPrompt,
         ...(result.followUpSkillId != null ? { skillId: result.followUpSkillId } : {}),
         ...(result.followUpSkillParams != null ? { skillParams: result.followUpSkillParams } : {}),
       })
+      return { isCommand: true, forwardToAgent: false, started: sendResult.started }
     }
 
-    return { isCommand: true, forwardToAgent: false }
+    return { isCommand: true, forwardToAgent: false, started: false }
   }
 
   listCommands(): CommandListItem[] {
@@ -484,19 +489,21 @@ export class SessionService {
     skillId?: string
     /** 可选：Skill 参数 */
     skillParams?: Record<string, unknown>
+    attachments?: SessionAttachment[]
   }): Promise<{ turnId: string; started: boolean }> {
     const { sessionId, message, skillId, skillParams } = params
+    const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams),
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments),
       )
       return { turnId, started: false }
     }
 
-    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams)
+    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams, attachments)
     return { turnId, started: true }
   }
 
@@ -507,11 +514,12 @@ export class SessionService {
     runtimePatch?: SessionRuntimePatch,
     skillId?: string,
     skillParams?: Record<string, unknown>,
+    attachments?: SessionAttachment[],
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams),
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments),
       )
       return
     }
@@ -661,6 +669,11 @@ export class SessionService {
         })
       }
     }
+    const turnAttachments = prepareTurnAttachments(attachments, workspaceRootPath)
+    const attachmentDirectories = getAttachmentAdditionalDirectories(
+      turnAttachments,
+      workspaceRootPath,
+    )
 
     // Query active rules (system + current project scope) and append workspace files.
     const rulesRepo = new RulesRepository(this.db)
@@ -795,7 +808,7 @@ export class SessionService {
           turnId,
           timestamp: new Date().toISOString(),
           seq: 0,
-          userMessage: message,
+          userMessage: buildUserMessageSnapshot(message, turnAttachments),
           systemPromptSections: promptSections,
           model,
           providerProfileId: session.provider_profile_id,
@@ -847,6 +860,12 @@ export class SessionService {
           label: 'User Message',
           estimatedTokens: estimateSectionTokens(message),
           charCount: estimateChars(message),
+          truncated: false,
+        },
+        {
+          label: 'Attachments',
+          estimatedTokens: Math.ceil(buildAttachmentPromptLedger(turnAttachments).length / 3),
+          charCount: buildAttachmentPromptLedger(turnAttachments).length,
           truncated: false,
         },
       ].filter((section) => section.charCount > 0 || section.estimatedTokens > 0)
@@ -922,6 +941,8 @@ export class SessionService {
         ...(session.reasoning_effort != null
           ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' }
           : {}),
+        ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+        ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
         enableCheckpoints: true,
         sdkSessionId,
         continueSession: canResumeSdkSession,
@@ -1322,11 +1343,13 @@ export class SessionService {
     runtimePatch?: SessionRuntimePatch,
     skillId?: string,
     skillParams?: Record<string, unknown>,
+    attachments?: SessionAttachment[],
   ): PendingTurn {
     return {
       turnId,
       message,
       enqueuedAt: new Date().toISOString(),
+      ...(attachments != null && attachments.length > 0 ? { attachments } : {}),
       ...(runtimePatch != null ? { runtimePatch } : {}),
       ...(skillId != null ? { skillId } : {}),
       ...(skillParams != null ? { skillParams } : {}),
@@ -1350,6 +1373,7 @@ export class SessionService {
       next.runtimePatch,
       next.skillId,
       next.skillParams,
+      next.attachments,
     )
   }
 
@@ -1366,6 +1390,7 @@ export class SessionService {
       turnId: turn.turnId,
       message: turn.message,
       enqueuedAt: turn.enqueuedAt,
+      ...(turn.attachments != null ? { attachments: turn.attachments } : {}),
     }))
   }
 
@@ -1975,6 +2000,73 @@ function listFilesUnder(root: string, limit: number): string[] {
 function isInsidePath(root: string, target: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(target))
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+function normalizeTurnAttachments(
+  attachments: SessionAttachment[] | undefined,
+): SessionAttachment[] | undefined {
+  if (attachments == null || attachments.length === 0) return undefined
+  const seen = new Set<string>()
+  const normalized: SessionAttachment[] = []
+  for (const attachment of attachments) {
+    const rawPath = attachment.path.trim()
+    if (rawPath.length === 0) continue
+    const absolutePath = path.isAbsolute(rawPath) ? path.normalize(rawPath) : path.resolve(rawPath)
+    if (seen.has(absolutePath)) continue
+    seen.add(absolutePath)
+    normalized.push({ type: attachment.type, path: absolutePath })
+  }
+  return normalized.length > 0 ? normalized.slice(0, 20) : undefined
+}
+
+function prepareTurnAttachments(
+  attachments: SessionAttachment[] | undefined,
+  workspaceRootPath: string,
+): SDKTurnAttachment[] {
+  if (attachments == null || attachments.length === 0) return []
+  return attachments.map((attachment) => {
+    const absolutePath = path.isAbsolute(attachment.path)
+      ? path.normalize(attachment.path)
+      : path.resolve(workspaceRootPath, attachment.path)
+    if (!existsSync(absolutePath)) {
+      throw new Error(`附件不存在: ${absolutePath}`)
+    }
+    const fileStat = statSync(absolutePath)
+    if (!fileStat.isFile()) {
+      throw new Error(`附件必须是文件: ${absolutePath}`)
+    }
+    return {
+      type: attachment.type,
+      path: absolutePath,
+      name: path.basename(absolutePath),
+      sizeBytes: fileStat.size,
+    }
+  })
+}
+
+function getAttachmentAdditionalDirectories(
+  attachments: SDKTurnAttachment[],
+  workspaceRootPath: string,
+): string[] {
+  const directories = new Set<string>()
+  for (const attachment of attachments) {
+    const directory = path.dirname(attachment.path)
+    if (!isInsidePath(workspaceRootPath, directory)) directories.add(directory)
+  }
+  return Array.from(directories)
+}
+
+function buildUserMessageSnapshot(message: string, attachments: SDKTurnAttachment[]): string {
+  if (attachments.length === 0) return message
+  return [message, '', buildAttachmentPromptLedger(attachments)].join('\n')
+}
+
+function buildAttachmentPromptLedger(attachments: SDKTurnAttachment[]): string {
+  if (attachments.length === 0) return ''
+  const lines = attachments.map((attachment, index) => {
+    return `${index + 1}. ${attachment.type}: ${attachment.name} (${attachment.path})`
+  })
+  return ['Attachments:', ...lines].join('\n')
 }
 
 function deriveSessionTitle(message: string): string {

@@ -429,6 +429,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.reasoningEffort !== undefined ? { reasoningEffort: req.reasoningEffort } : {}),
       ...(req.skillId != null ? { skillId: req.skillId } : {}),
       ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
+      ...(req.attachments != null ? { attachments: req.attachments } : {}),
     })
   })
 
@@ -786,13 +787,14 @@ export function registerAllIpcHandlers(): void {
     const result = await dialog.showOpenDialog({
       title: req.title ?? '选择文件',
       ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
-      properties: ['openFile'],
+      properties: req.multiple === true ? ['openFile', 'multiSelections'] : ['openFile'],
       ...(req.filters ? { filters: req.filters } : {}),
     })
 
     return {
       canceled: result.canceled,
       ...(result.filePaths[0] === undefined ? {} : { filePath: result.filePaths[0] }),
+      ...(result.filePaths.length > 0 ? { filePaths: result.filePaths } : {}),
     }
   })
 
@@ -1404,7 +1406,14 @@ export function registerAllIpcHandlers(): void {
     if (cmdResult.forwardToAgent) {
       return { success: true, forwardToAgent: true }
     }
-    return { success: true, forwardToAgent: false, inChat: true }
+    const { session } = await getSessionService().updateSession({ sessionId: req.sessionId })
+    return {
+      success: true,
+      forwardToAgent: false,
+      inChat: true,
+      started: cmdResult.started ?? false,
+      session,
+    }
   })
 
   typedIpcHandle('command:list', async (_req) => {

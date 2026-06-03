@@ -56,6 +56,7 @@ import type {
   CommandListItem,
   TurnPromptSnapshotEvent,
   ManagedAgent,
+  SessionAttachment,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
@@ -88,6 +89,7 @@ type SessionRuntimePatch = {
   reasoningEffort?: SessionReasoningEffort
 }
 type QueuedMessage = { id: string; turnId: string; content: string; enqueuedAt: string }
+type ComposerAttachment = SessionAttachment & { id: string; name: string }
 type ChatViewProps = {
   approvalRequest?: PermissionApprovalRequest | null
   onApprovalClose?: () => void
@@ -344,6 +346,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
               onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
               onUpdateSession={handleUpdateActiveSession}
+              onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
               onSwitchBranch={handleSwitchBranch}
               onCancelSession={handleCancelSession}
               onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
@@ -398,6 +401,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
               onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
               onUpdateSession={handleUpdateActiveSession}
+              onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
               onSwitchBranch={handleSwitchBranch}
               onCancelSession={handleCancelSession}
               onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
@@ -3513,6 +3517,7 @@ function ComposerV2({
   onApprovalClose,
   onCreateSession,
   onUpdateSession,
+  onCommandComplete,
   onSwitchBranch,
   onCancelSession,
   onSent,
@@ -3555,6 +3560,7 @@ function ComposerV2({
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
   }) => Promise<void>
+  onCommandComplete: (session: SessionSummary) => void
   onSwitchBranch: (branch: string) => Promise<void>
   onCancelSession: (sessionId: SessionId) => void | Promise<void>
   onSent: (sessionId: SessionId) => void
@@ -3571,6 +3577,7 @@ function ComposerV2({
   if (initialPrefsRef.current == null) initialPrefsRef.current = readComposerPrefs()
   const initialPrefs = initialPrefsRef.current
   const [value, setValue] = useState('')
+  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
   const [sending, setSending] = useState(false)
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueRunning, setQueueRunning] = useState(false)
@@ -3600,6 +3607,7 @@ function ComposerV2({
   const composingRef = useRef(false)
   const runtimeSettingsHydratedRef = useRef(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
+  const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
@@ -3659,7 +3667,7 @@ function ComposerV2({
   // session / workspace 不在这里卡—— handleNewSession 内部对 null 做了 no-project fallback，
   // 真正发送时再做详细校验（toast 提示）
   const canSubmit =
-    value.trim().length > 0 &&
+    (value.trim().length > 0 || attachments.length > 0) &&
     selectedProvider != null &&
     effectiveModelId.length > 0
   const visibleActiveTaskText = queueRunning ? activeTaskText : null
@@ -3866,7 +3874,8 @@ function ComposerV2({
   }, [session?.id])
 
   const dispatchMessage = useCallback(
-    async (text: string) => {
+    async (text: string, turnAttachments: ComposerAttachment[]) => {
+      const requestAttachments = toSessionAttachments(turnAttachments)
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
       if (text.startsWith('/')) {
         setSending(true)
@@ -3902,6 +3911,7 @@ function ComposerV2({
             const sendRes = await sendTurn({
               sessionId,
               message: text,
+              ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
               ...getCurrentRuntimePatch(),
             })
             if (!sendRes.started) {
@@ -3915,11 +3925,14 @@ function ComposerV2({
             return
           }
           // 命令结果已通过事件流注入到聊天中，无需 Toast
-          onSent(sessionId)
+          if (res.session != null) onCommandComplete(res.session)
+          await refreshQueueState(sessionId)
+          if (res.started === true) onSent(sessionId)
         } catch (err) {
           console.error('命令执行失败', err)
           toast.error(err instanceof Error ? err.message : '命令执行失败')
           setValue(text)
+          setAttachments(turnAttachments)
         } finally {
           setSending(false)
         }
@@ -3948,6 +3961,7 @@ function ComposerV2({
         const res = await sendTurn({
           sessionId: targetSessionId,
           message: text,
+          ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
           ...getCurrentRuntimePatch(),
         })
         if (!res.started) {
@@ -3962,6 +3976,7 @@ function ComposerV2({
         console.error('发送失败', err)
         toast.error(err instanceof Error ? err.message : '发送消息失败')
         setValue(text)
+        setAttachments(turnAttachments)
       } finally {
         setSending(false)
       }
@@ -3975,6 +3990,7 @@ function ComposerV2({
       flushPendingRuntimePatch,
       getCurrentRuntimePatch,
       onCreateSession,
+      onCommandComplete,
       onSent,
       refreshQueueState,
       selectedProvider,
@@ -3984,11 +4000,50 @@ function ComposerV2({
     ],
   )
 
+  const handleAddAttachments = useCallback(async () => {
+    try {
+      const selected = await openFileDialog({
+        title: '添加文件或图片',
+        multiple: true,
+      })
+      const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
+      if (selected.canceled || filePaths.length === 0) return
+      let truncated = false
+      setAttachments((current) => {
+        const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
+        for (const filePath of filePaths) {
+          if (byPath.size >= 20) {
+            truncated = true
+            break
+          }
+          if (byPath.has(filePath)) continue
+          byPath.set(filePath, {
+            id: `${Date.now()}-${byPath.size}-${filePath}`,
+            type: isImageAttachmentPath(filePath) ? 'image' : 'file',
+            path: filePath,
+            name: getFileNameFromPath(filePath),
+          })
+        }
+        return Array.from(byPath.values())
+      })
+      if (truncated) toast.info('单轮最多添加 20 个附件。')
+    } catch (err) {
+      console.error('添加附件失败', err)
+      toast.error(err instanceof Error ? err.message : '添加附件失败')
+    }
+  }, [openFileDialog, toast])
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+  }, [])
+
   const handleSend = async () => {
     if (!canSubmit) return
-    const text = value.trim()
+    const text = value.trim() || '请查看附件。'
+    const turnAttachments = attachments
     setValue('')
-    await dispatchMessage(text)
+    setAttachments([])
+    await dispatchMessage(text, turnAttachments)
   }
 
   const handlePrimaryAction = async () => {
@@ -4387,6 +4442,23 @@ function ComposerV2({
             })()}
           </div>
         )}
+        {attachments.length > 0 && (
+          <div className="composer-attachment-strip">
+            {attachments.map((attachment) => (
+              <div key={attachment.id} className="composer-attachment-chip">
+                {attachment.type === 'image' ? <Icons.Image size={13} /> : <Icons.File size={13} />}
+                <span>{attachment.name}</span>
+                <button
+                  type="button"
+                  title="移除附件"
+                  onClick={() => handleRemoveAttachment(attachment.id)}
+                >
+                  <Icons.X size={12} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div
           className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''} ${
             showProjectPicker || showBranchSelect ? 'has-workspace-picks' : ''
@@ -4456,8 +4528,13 @@ function ComposerV2({
           </div>
         </div>
         <div className="composer-param-bar composer-controls">
-          <button className="icon-btn" title="添加文件">
-            <Icons.Plus />
+          <button
+            type="button"
+            className="icon-btn"
+            title="添加文件或图片"
+            onClick={() => void handleAddAttachments()}
+          >
+            <Icons.Upload />
           </button>
           <button className="icon-btn" title="工具">
             <Icons.Wrench />
@@ -4996,6 +5073,35 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
   ]
 
 // Codex 权限选项已移除，项目仅支持 Claude SDK
+
+const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'gif',
+  'webp',
+  'bmp',
+  'tif',
+  'tiff',
+  'heic',
+  'heif',
+])
+
+function isImageAttachmentPath(filePath: string): boolean {
+  const extension = getFileNameFromPath(filePath).split('.').pop()?.toLowerCase()
+  return extension != null && IMAGE_ATTACHMENT_EXTENSIONS.has(extension)
+}
+
+function getFileNameFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath
+}
+
+function toSessionAttachments(attachments: ComposerAttachment[]): SessionAttachment[] {
+  return attachments.map((attachment) => ({
+    type: attachment.type,
+    path: attachment.path,
+  }))
+}
 
 function getPermissionModeOptions(
   adapter: AgentAdapter,

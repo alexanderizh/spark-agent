@@ -177,6 +177,13 @@ export interface SDKSettings {
 
 export type SDKSettingSource = 'user' | 'project' | 'local'
 
+export interface SDKTurnAttachment {
+  type: 'image' | 'file'
+  path: string
+  name: string
+  sizeBytes?: number
+}
+
 export interface SDKQueryOptions {
   abortController?: AbortController | undefined
   cwd?: string | undefined
@@ -199,6 +206,7 @@ export interface SDKQueryOptions {
   settings?: string | SDKSettings | undefined
   settingSources?: SDKSettingSource[] | undefined
   persistSession?: boolean | undefined
+  additionalDirectories?: string[] | undefined
   debug?: boolean | undefined
   stderr?: ((data: string) => void) | undefined
   includePartialMessages?: boolean | undefined
@@ -281,6 +289,8 @@ export interface SDKExecutorConfig {
   nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
+  attachments?: SDKTurnAttachment[] | undefined
+  additionalDirectories?: string[] | undefined
   enableCheckpoints?: boolean | undefined
   sdkSessionId?: string | undefined
   continueSession?: boolean | undefined

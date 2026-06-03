@@ -12,6 +12,7 @@ export type {
   SDKStreamEvent,
   SDKContentBlock,
   SDKQueryOptions,
+  SDKTurnAttachment,
   SDKPermissionMode,
   SDKEffort,
   SparkPermissionMode,

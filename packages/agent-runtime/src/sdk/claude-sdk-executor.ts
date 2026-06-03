@@ -156,6 +156,8 @@ export class ClaudeSDKExecutor {
 
     this.abortController = new AbortController()
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
+    const promptWithAttachments = buildPromptWithAttachments(userMessage, config.attachments)
+    const displayUserMessage = buildDisplayUserMessage(userMessage, config.attachments)
     const makeBase = () => ({
       id: randomUUID(),
       sessionId,
@@ -168,7 +170,7 @@ export class ClaudeSDKExecutor {
     this.emitter.emit({
       ...makeBase(),
       type: 'user_message',
-      content: userMessage,
+      content: displayUserMessage,
     })
 
     this.emitter.emit({
@@ -179,7 +181,7 @@ export class ClaudeSDKExecutor {
     this.emitter.emit({
       ...makeBase(),
       type: 'context_usage',
-      estimatedTokens: estimateSDKPromptTokens(userMessage, config),
+      estimatedTokens: estimateSDKPromptTokens(promptWithAttachments, config),
       softLimitTokens: softContextLimit(config.model, config.contextWindowTokens),
       contextWindowTokens: contextWindow(config.model, config.contextWindowTokens),
       compacted: false,
@@ -235,7 +237,7 @@ export class ClaudeSDKExecutor {
       1000,
     )
     let extensionAttempts = 0
-    let prompt = userMessage
+    let prompt = promptWithAttachments
     let resumeExistingSession = config.continueSession === true
 
     while (true) {
@@ -284,6 +286,9 @@ export class ClaudeSDKExecutor {
         ...(config.maxBudgetUsd != null ? { maxBudgetUsd: config.maxBudgetUsd } : {}),
         effort: mapReasoningEffort(config.reasoningEffort),
         ...(resumeExistingSession ? { resume: sdkSessionId } : { sessionId: sdkSessionId }),
+        ...(config.additionalDirectories != null && config.additionalDirectories.length > 0
+          ? { additionalDirectories: config.additionalDirectories }
+          : {}),
 
         includePartialMessages: true,
         enableFileCheckpointing: config.enableCheckpoints ?? false,
@@ -361,6 +366,8 @@ export class ClaudeSDKExecutor {
         cwd: options.cwd ?? null,
         maxTurns: options.maxTurns ?? null,
         maxTurnExtensionAttempt: extensionAttempts,
+        attachmentCount: config.attachments?.length ?? 0,
+        additionalDirectories: options.additionalDirectories ?? null,
       })
 
       try {
@@ -578,6 +585,35 @@ function buildCompositeSystemPrompt(config: SDKExecutorConfig): string | undefin
   }
 
   return sections.join('\n\n')
+}
+
+function buildPromptWithAttachments(
+  userMessage: string,
+  attachments: SDKExecutorConfig['attachments'],
+): string {
+  if (attachments == null || attachments.length === 0) return userMessage
+  const lines = attachments.map((attachment, index) => {
+    const size = attachment.sizeBytes != null ? `, size=${attachment.sizeBytes} bytes` : ''
+    return `${index + 1}. type=${attachment.type}, name=${attachment.name}${size}, path=${attachment.path}`
+  })
+  return [
+    userMessage,
+    '',
+    'User-selected attachments:',
+    ...lines,
+    '',
+    'Use the Read tool to inspect these file paths when they are relevant to the request.',
+    'For image attachments, use Read on the path so the SDK can inspect the image content.',
+  ].join('\n')
+}
+
+function buildDisplayUserMessage(
+  userMessage: string,
+  attachments: SDKExecutorConfig['attachments'],
+): string {
+  if (attachments == null || attachments.length === 0) return userMessage
+  const names = attachments.map((attachment) => `${attachment.type}: ${attachment.name}`)
+  return [userMessage, '', `Attachments: ${names.join(', ')}`].join('\n')
 }
 
 function allowTool(

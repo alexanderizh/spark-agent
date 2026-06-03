@@ -72,3 +72,11 @@ Spark approval callback 接收 SDK 原生工具名。权限服务必须先归一
 - Renderer 权限审批和 Composer UI 测试通过。
 - 设置页权限模式选择会写入 `app_settings(runtime-permissions/defaults)`，并同步 `spark-agent:composer-prefs` 作为 renderer 快速缓存。
 - `session:create` 请求未显式携带 adapter / permissionMode 时，主进程从 `app_settings(runtime-permissions/defaults)` 读取默认策略。
+
+## 7. 附件输入
+
+- Composer 支持在单轮消息中选择本机文件或图片，`session:send-turn` 通过可选 `attachments` 字段传递 `{ type, path }`。
+- 主进程使用原生打开文件对话框返回真实文件路径，支持多选。Renderer 只负责展示附件 chip 和后缀识别，文件可用性由 runtime 执行前校验。
+- SessionService 在启动 turn 前校验附件存在且为文件，并将附件路径整理为 SDK prompt 中的显式 “User-selected attachments” 清单。
+- 附件位于 workspace 之外时，SessionService 会把附件目录写入 Claude SDK `additionalDirectories`，让 SDK 的 `Read` 工具可以读取用户明确选择的文件。
+- 单轮最多 20 个附件；附件不写入数据库，只作为当前 turn 的临时输入和提示词快照审计信息。

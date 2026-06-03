@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fileURLToPath } from 'node:url'
 import type { AgentEvent } from '@spark/protocol'
 import { SessionService } from '../../services/session.service.js'
 
@@ -200,6 +201,13 @@ vi.mock('@spark/storage', () => {
     list(): unknown[] { return [] }
     get(): null { return null }
   }
+  class AgentRepository {
+    get(): null { return null }
+  }
+  class SessionSummaryRepository {
+    getLatest(): null { return null }
+    create(): void {}
+  }
 
   return {
     SessionRepository,
@@ -210,6 +218,8 @@ vi.mock('@spark/storage', () => {
     McpServerRepository,
     SettingsRepository,
     SkillRepository,
+    AgentRepository,
+    SessionSummaryRepository,
   }
 })
 
@@ -353,6 +363,64 @@ describe('SessionService runtime provider/model resolution', () => {
       agent_adapter: 'claude-sdk',
       permission_mode: 'claude-plan',
     })
+  })
+
+  it('updates the persisted session title when /rename is executed as chat events', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Old title',
+    })
+
+    const result = await service.executeCommandAsEvents({
+      sessionId,
+      message: '/rename New command title',
+    })
+
+    expect(result).toMatchObject({ isCommand: true, forwardToAgent: false, started: false })
+    expect(mockState.sessions.get(sessionId)?.title).toBe('New command title')
+    expect(mockState.sdkTurns).toHaveLength(0)
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'assistant_message',
+      provider: 'spark',
+      isFinal: true,
+    }))
+  })
+
+  it('passes selected attachments into the Claude SDK turn config', async () => {
+    const attachmentPath = fileURLToPath(new URL('../../../package.json', import.meta.url))
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Attachment session',
+    })
+
+    await service.sendTurn({
+      sessionId,
+      message: 'inspect the selected file',
+      attachments: [{ type: 'file', path: attachmentPath }],
+    })
+
+    await vi.waitFor(() => {
+      expect(mockState.sdkConfigs).toHaveLength(1)
+    })
+    expect(mockState.sdkConfigs[0]).toMatchObject({
+      attachments: [
+        expect.objectContaining({
+          type: 'file',
+          name: 'package.json',
+          path: attachmentPath,
+        }),
+      ],
+    })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'turn_prompt_snapshot',
+      userMessage: expect.stringContaining('package.json'),
+    }))
   })
 
   it('applies provider and model overrides atomically on send-turn', async () => {

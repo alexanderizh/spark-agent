@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DialogOpenFileRequestSchema,
   SessionCreateRequestSchema,
   SessionSendTurnRequestSchema,
   SessionUpdateRequestSchema,
@@ -74,5 +75,31 @@ describe('IPC schemas', () => {
       chatMode: 'agent',
       reasoningEffort: 'high',
     })
+  })
+
+  it('accepts file and image attachments when sending a turn', () => {
+    const request = SessionSendTurnRequestSchema.parse({
+      sessionId: '00000000-0000-4000-8000-000000000002',
+      message: 'please inspect these',
+      attachments: [
+        { type: 'image', path: '/tmp/screenshot.png' },
+        { type: 'file', path: '/tmp/notes.md' },
+      ],
+    })
+
+    expect(request.attachments).toEqual([
+      { type: 'image', path: '/tmp/screenshot.png' },
+      { type: 'file', path: '/tmp/notes.md' },
+    ])
+  })
+
+  it('accepts multi-file open dialog options', () => {
+    const request = DialogOpenFileRequestSchema.parse({
+      title: 'Add attachments',
+      multiple: true,
+      filters: [{ name: 'All Files', extensions: ['*'] }],
+    })
+
+    expect(request).toMatchObject({ multiple: true })
   })
 })

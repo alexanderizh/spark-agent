@@ -218,6 +218,13 @@ export const Icons = {
       <path d="M9 15h6" />
     </IconBase>
   ),
+  Image: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <circle cx="8.5" cy="10.5" r="1.5" />
+      <path d="M21 17l-5.2-5.2a2 2 0 0 0-2.8 0L5 20" />
+    </IconBase>
+  ),
   HelpCircle: (p: IconProps) => (
     <IconBase {...p}>
       <circle cx="12" cy="12" r="9" />

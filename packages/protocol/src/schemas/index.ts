@@ -71,6 +71,26 @@ export const SessionSendTurnRequestSchema = z.object({
     .optional(),
 })
 
+export const DialogOpenDirectoryRequestSchema = z.object({
+  title: z.string().max(200).optional(),
+  defaultPath: z.string().optional(),
+})
+
+export const DialogOpenFileRequestSchema = z.object({
+  title: z.string().max(200).optional(),
+  defaultPath: z.string().optional(),
+  multiple: z.boolean().optional(),
+  filters: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(80),
+        extensions: z.array(z.string().min(1).max(32)).min(1).max(50),
+      }),
+    )
+    .max(20)
+    .optional(),
+})
+
 export const SessionCancelRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
@@ -223,11 +243,6 @@ export const WorkspaceOpenFolderRequestSchema = z.object({
   workspaceId: z.string().uuid(),
 })
 
-export const DialogOpenDirectoryRequestSchema = z.object({
-  title: z.string().max(200).optional(),
-  defaultPath: z.string().optional(),
-})
-
 // ─── Rules Schema ────────────────────────────────────────────────────────────
 
 export const RulesListRequestSchema = z.object({
@@ -305,6 +320,7 @@ export const IpcSchemaRegistry = {
     workspaceId: z.string().min(1),
   }),
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
+  'dialog:open-file': DialogOpenFileRequestSchema,
   'rules:list': RulesListRequestSchema,
   'rules:create': RulesCreateRequestSchema,
   'rules:update': RulesUpdateRequestSchema,

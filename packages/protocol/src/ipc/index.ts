@@ -37,6 +37,11 @@ export type SessionPermissionMode =
   | 'codex-auto-review'
   | 'codex-full-access'
 
+export interface SessionAttachment {
+  type: 'image' | 'file'
+  path: string
+}
+
 // ─── Session Channels ─────────────────────────────────────────────────────────
 
 export interface SessionCreateRequest {
@@ -76,10 +81,7 @@ export interface SessionSendTurnRequest {
   reasoningEffort?: SessionReasoningEffort
   skillId?: string
   skillParams?: Record<string, unknown>
-  attachments?: Array<{
-    type: 'image' | 'file'
-    path: string
-  }>
+  attachments?: SessionAttachment[]
 }
 
 export interface SessionSendTurnResponse {
@@ -92,6 +94,7 @@ export interface SessionQueuedTurn {
   turnId: string
   message: string
   enqueuedAt: string
+  attachments?: SessionAttachment[]
 }
 
 export interface SessionGetQueueRequest {
@@ -542,12 +545,14 @@ export interface DialogOpenDirectoryResponse {
 export interface DialogOpenFileRequest {
   title?: string
   defaultPath?: string
+  multiple?: boolean
   filters?: Array<{ name: string; extensions: string[] }>
 }
 
 export interface DialogOpenFileResponse {
   canceled: boolean
   filePath?: string
+  filePaths?: string[]
 }
 
 // ─── App Paths Channels ──────────────────────────────────────────────────────
@@ -1818,6 +1823,8 @@ export interface CommandExecuteResponse {
   data?: Record<string, unknown>
   forwardToAgent?: boolean
   inChat?: boolean
+  started?: boolean
+  session?: SessionListResponse['sessions'][number]
 }
 
 export interface CommandListRequest {}
