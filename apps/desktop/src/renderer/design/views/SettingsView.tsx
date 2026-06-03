@@ -4,7 +4,7 @@
  * 包含：左侧分组导航 + 右侧多 section 内容。Profile 编辑使用 Modal。
  * 注意：Provider 配置 UI 已抽到 ProvidersView.tsx（侧边栏一级菜单）。
  */
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect } from '../components/FormControls'
@@ -54,6 +54,13 @@ const WORKFLOW_TEMPLATES_KEY = 'spark-workflow-templates'
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
+
+function deferEffect(task: () => void | Promise<void>): () => void {
+  const id = window.setTimeout(() => {
+    void task()
+  }, 0)
+  return () => window.clearTimeout(id)
+}
 
 /* ─── Settings persistence keys ─── */
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
@@ -328,7 +335,7 @@ export function SettingsView() {
     updates: UpdatesSection,
     about: AboutSection,
   }
-  const Body = Section[section] || (() => <PlaceholderSection name={section} />)
+  const SectionBody = Section[section]
 
   return (
     <div className="settings-layout">
@@ -351,7 +358,7 @@ export function SettingsView() {
       </div>
 
       <div className="settings-content scroll">
-        <Body />
+        {SectionBody != null ? <SectionBody /> : <PlaceholderSection name={section} />}
       </div>
     </div>
   )
@@ -1095,6 +1102,7 @@ function ModelsSection() {
   const { invoke: createModel } = useIpcInvoke('model:create')
   const { invoke: updateModel } = useIpcInvoke('model:update')
   const { invoke: deleteModel } = useIpcInvoke('model:delete')
+  const { requestConfirm } = useApp()
 
   const refresh = useCallback(() => {
     setLoading(true)
@@ -1109,7 +1117,7 @@ function ModelsSection() {
   }, [listModels, listProviders])
 
   useEffect(() => {
-    refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   const handleToggle = async (m: ModelProfile) => {
@@ -1118,7 +1126,13 @@ function ModelsSection() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除该模型？')) return
+    const confirmed = await requestConfirm({
+      title: '删除模型？',
+      description: '该自定义模型会从当前 Provider 下移除。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
     await deleteModel({ id })
     refresh()
   }
@@ -1278,6 +1292,7 @@ function RulesSection() {
   const { invoke: createRule } = useIpcInvoke('rules:create')
   const { invoke: updateRule } = useIpcInvoke('rules:update')
   const { invoke: deleteRule } = useIpcInvoke('rules:delete')
+  const { requestConfirm } = useApp()
 
   const refresh = useCallback(() => {
     setLoading(true)
@@ -1289,7 +1304,7 @@ function RulesSection() {
   }, [listRules])
 
   useEffect(() => {
-    refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   const grouped = RULE_LAYER_META.reduce<Record<RuleScope, RuleItem[]>>(
@@ -1308,7 +1323,13 @@ function RulesSection() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除该规则？')) return
+    const confirmed = await requestConfirm({
+      title: '删除规则？',
+      description: '该规则会从本地规则列表中移除。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
     await deleteRule({ id })
     refresh()
   }
@@ -1672,7 +1693,7 @@ function McpSection() {
   }, [listMcp, getServerStatus])
 
   useEffect(() => {
-    refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   const loadTools = useCallback(
@@ -2577,7 +2598,7 @@ function SkillsSection() {
   }, [listSkills])
 
   useEffect(() => {
-    refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   const toggleSkill = async (skill: SkillItem) => {
@@ -2711,7 +2732,7 @@ export function PermissionsSection() {
   }, [listProfiles])
 
   useEffect(() => {
-    refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   useEffect(() => {
@@ -3265,7 +3286,7 @@ function UsageSection() {
   }, [])
 
   useEffect(() => {
-    loadDashboard()
+    return deferEffect(loadDashboard)
   }, [loadDashboard])
 
   const fmt = (n: number) => {
@@ -3441,6 +3462,7 @@ function StorageSection() {
   const [statsLoading, setStatsLoading] = useState(false)
   const [clearing, setClearing] = useState(false)
   const { toast } = useToast()
+  const { requestConfirm } = useApp()
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: closeWorkspace } = useIpcInvoke('workspace:close')
@@ -3467,10 +3489,12 @@ function StorageSection() {
   }, [getStorageStats])
 
   useEffect(() => {
-    refreshWorkspace().catch((err: unknown) =>
-      setError(err instanceof Error ? err.message : String(err)),
-    )
-    refreshStats().catch(console.error)
+    return deferEffect(() => {
+      refreshWorkspace().catch((err: unknown) =>
+        setError(err instanceof Error ? err.message : String(err)),
+      )
+      refreshStats().catch(console.error)
+    })
   }, [refreshWorkspace, refreshStats])
 
   const handleOpenDataDir = async () => {
@@ -3483,7 +3507,13 @@ function StorageSection() {
 
   const handleClearCache = async (pruneOrphan: boolean) => {
     const label = pruneOrphan ? '清空缓存并清理孤儿项目目录' : '清空全部缓存'
-    if (!window.confirm(`${label}？\n\n该操作不会影响会话、消息、规则等业务数据。`)) return
+    const confirmed = await requestConfirm({
+      title: `${label}？`,
+      description: '该操作不会影响会话、消息、规则等业务数据。',
+      confirmText: '清空',
+      danger: true,
+    })
+    if (!confirmed) return
     setClearing(true)
     try {
       const res = await clearCache({ pruneOrphanProjects: pruneOrphan })
@@ -3666,6 +3696,7 @@ function ArchivedSection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const { toast } = useToast()
+  const { requestConfirm } = useApp()
 
   const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
   const { invoke: listSessions } = useIpcInvoke('session:list')
@@ -3692,7 +3723,7 @@ function ArchivedSection() {
   }, [listWorkspaces, listSessions])
 
   useEffect(() => {
-    refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   const handleRestoreWorkspace = async (workspace: WorkspaceInfo) => {
@@ -3716,7 +3747,13 @@ function ArchivedSection() {
   }
 
   const handleDeleteWorkspace = async (workspace: WorkspaceInfo) => {
-    if (!window.confirm(`永久删除项目「${workspace.name}」？此操作不可撤销。`)) return
+    const confirmed = await requestConfirm({
+      title: `永久删除项目「${workspace.name}」？`,
+      description: '此操作不可撤销。',
+      confirmText: '永久删除',
+      danger: true,
+    })
+    if (!confirmed) return
     try {
       await deleteWorkspace({ workspaceId: workspace.id })
       toast.success(`项目「${workspace.name}」已删除`)
@@ -3727,7 +3764,13 @@ function ArchivedSection() {
   }
 
   const handleDeleteSession = async (session: SessionListResponse['sessions'][number]) => {
-    if (!window.confirm(`永久删除会话「${session.title || '新会话'}」？此操作不可撤销。`)) return
+    const confirmed = await requestConfirm({
+      title: `永久删除会话「${session.title || '新会话'}」？`,
+      description: '此操作不可撤销。',
+      confirmText: '永久删除',
+      danger: true,
+    })
+    if (!confirmed) return
     try {
       await deleteSession({ sessionId: session.id })
       toast.success(`会话「${session.title || '新会话'}」已删除`)

@@ -38,6 +38,19 @@ import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/nod
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
 type WorkflowScreen = 'list' | 'detail'
+let workflowNodeSequence = 0
+
+function deferEffect(task: () => void | Promise<void>): () => void {
+  const id = window.setTimeout(() => {
+    void task()
+  }, 0)
+  return () => window.clearTimeout(id)
+}
+
+function createWorkflowNodeId(kind: WorkflowNodeKind): string {
+  workflowNodeSequence = (workflowNodeSequence + 1) % Number.MAX_SAFE_INTEGER
+  return `${kind}-${workflowNodeSequence.toString(36)}`
+}
 
 export function WorkflowView() {
   return (
@@ -138,7 +151,7 @@ function WorkflowViewInner() {
   }, [])
 
   useEffect(() => {
-    void refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
@@ -232,7 +245,7 @@ function WorkflowViewInner() {
 
   const addNode = (kind: WorkflowNodeKind) => {
     const meta = getNodeKindMeta(kind)
-    const id = `${kind}-${Date.now().toString(36)}`
+    const id = createWorkflowNodeId(kind)
     const baseX = 160 + (nodes.length % 4) * 240
     const baseY = 120 + Math.floor(nodes.length / 4) * 180
     const node: SparkFlowNode = {

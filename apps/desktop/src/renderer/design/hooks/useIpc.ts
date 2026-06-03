@@ -36,6 +36,5 @@ export function useIpcStream<C extends IpcStreamChannel>(
     const stableCallback = (payload: IpcStreamPayload<C>) => callbackRef.current(payload)
     const unsubscribe = window.spark.on(channel, stableCallback)
     return unsubscribe
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [channel])
 }

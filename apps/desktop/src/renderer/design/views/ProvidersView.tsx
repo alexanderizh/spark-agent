@@ -68,7 +68,7 @@ type ProviderForm = {
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
 
 function ProvidersView() {
-  const { setTweak, t } = useApp()
+  const { setTweak, t, requestConfirm } = useApp()
   const { toast } = useToast()
   const showProviderEdit = t.showProviderEdit
   const [profiles, setProfiles] = useState<ProviderProfile[]>([])
@@ -117,7 +117,13 @@ function ProvidersView() {
   }, [refresh])
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除该 Provider？')) return
+    const confirmed = await requestConfirm({
+      title: '删除 Provider？',
+      description: '删除后该模型供应商配置会从本地移除。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
     try {
       await deleteProvider({ id })
       toast.success('Provider 已删除')
@@ -173,7 +179,13 @@ function ProvidersView() {
   // ─── 批量删除 ─────────────────────────────────────────────────────────────
   const handleDeleteSelected = useCallback(async () => {
     if (selectedIds.size === 0) return
-    if (!window.confirm(`确认删除选中的 ${selectedIds.size} 个 Provider？此操作不可撤销。`)) return
+    const confirmed = await requestConfirm({
+      title: `删除 ${selectedIds.size} 个 Provider？`,
+      description: '此操作不可撤销，选中的模型供应商配置会从本地移除。',
+      confirmText: '批量删除',
+      danger: true,
+    })
+    if (!confirmed) return
     let ok = 0
     const errs: string[] = []
     for (const id of selectedIds) {
@@ -189,7 +201,7 @@ function ProvidersView() {
     if (errs.length > 0) toast.error(`${errs.length} 个删除失败：${errs.slice(0, 2).join('；')}`)
     clearSelection()
     refresh()
-  }, [selectedIds, deleteProvider, profiles, toast, clearSelection, refresh])
+  }, [selectedIds, requestConfirm, deleteProvider, profiles, toast, clearSelection, refresh])
 
   // ─── 导出 ─────────────────────────────────────────────────────────────────
   /**
@@ -771,36 +783,40 @@ export function ProviderEditPanel({
       if (initialPresetId) {
         const preset = getProviderPresetById(initialPresetId)
         if (preset) {
-          setForm({
-            presetId: preset.id,
-            name: preset.name,
-            provider: preset.provider,
-            defaultModel: preset.defaultModel,
-            modelIds: uniqPreserveOrder([...preset.modelIds]),
-            endpoint: preset.apiEndpoint,
-            codexApiKind: 'chat',
-            supportsMillionContext: false,
-            apiKey: '',
-            isDefault: false,
-            ...EMPTY_TIER_MODELS,
-          })
-          return
+          const id = window.setTimeout(() => {
+            setForm({
+              presetId: preset.id,
+              name: preset.name,
+              provider: preset.provider,
+              defaultModel: preset.defaultModel,
+              modelIds: uniqPreserveOrder([...preset.modelIds]),
+              endpoint: preset.apiEndpoint,
+              codexApiKind: 'chat',
+              supportsMillionContext: false,
+              apiKey: '',
+              isDefault: false,
+              ...EMPTY_TIER_MODELS,
+            })
+          }, 0)
+          return () => window.clearTimeout(id)
         }
       }
-      setForm({
-        presetId: 'custom',
-        name: '',
-        provider: 'anthropic',
-        defaultModel: '',
-        modelIds: [],
-        endpoint: '',
-        codexApiKind: 'chat',
-        supportsMillionContext: false,
-        apiKey: '',
-        isDefault: false,
-        ...EMPTY_TIER_MODELS,
-      })
-      return
+      const id = window.setTimeout(() => {
+        setForm({
+          presetId: 'custom',
+          name: '',
+          provider: 'anthropic',
+          defaultModel: '',
+          modelIds: [],
+          endpoint: '',
+          codexApiKind: 'chat',
+          supportsMillionContext: false,
+          apiKey: '',
+          isDefault: false,
+          ...EMPTY_TIER_MODELS,
+        })
+      }, 0)
+      return () => window.clearTimeout(id)
     }
     listProviders({})
       .then((r) => {

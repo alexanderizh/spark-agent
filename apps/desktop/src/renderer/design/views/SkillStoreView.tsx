@@ -6,7 +6,7 @@
  * 已安装 Tab：沿用 SkillsView 的卡片布局，增强操作按钮
  * Skill 详情面板：右侧滑出
  */
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { LocalSkillCandidate, RemoteSkillItem, SkillItem, SkillRegistry } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput } from '../components/FormControls'
@@ -47,6 +47,13 @@ function renderStars(rating: number): string {
   const half = rating - full >= 0.5
   const empty = 5 - full - (half ? 1 : 0)
   return '★'.repeat(full) + (half ? '½' : '') + '☆'.repeat(empty)
+}
+
+function deferEffect(task: () => void | Promise<void>): () => void {
+  const id = window.setTimeout(() => {
+    void task()
+  }, 0)
+  return () => window.clearTimeout(id)
 }
 
 // ─── Main View ────────────────────────────────────────────────────────
@@ -139,7 +146,7 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
 
   // Reset display count when filters change
   useEffect(() => {
-    setDisplayCount(STORE_PAGE_SIZE)
+    return deferEffect(() => setDisplayCount(STORE_PAGE_SIZE))
   }, [debouncedQuery, activeRegistry, activeCategory])
 
   // Load registries on mount
@@ -155,10 +162,10 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
   // Load featured or search results
   useEffect(() => {
     let cancelled = false
-    setLoading(true)
-    setError('')
 
     const load = async () => {
+      setLoading(true)
+      setError('')
       try {
         if (debouncedQuery.trim()) {
           const searchParams: { query: string; registryId?: string; category?: string; limit: number } = {
@@ -181,29 +188,34 @@ function StoreTab({ onShowDetail }: { onShowDetail: (skill: RemoteSkillItem) => 
         if (!cancelled) setLoading(false)
       }
     }
-    load()
-    return () => { cancelled = true }
+    const cancelLoad = deferEffect(load)
+    return () => {
+      cancelled = true
+      cancelLoad()
+    }
   }, [debouncedQuery, activeRegistry, activeCategory, searchSkills, featuredSkills])
 
   // Load categories when registry changes
   useEffect(() => {
-    if (!activeRegistry) {
-      setCategories(['全部'])
-      return
-    }
-    getCategories({ registryId: activeRegistry })
-      .then((res) => {
-        if (mountedRef.current) {
-          setCategories(res.categories)
-          setActiveCategory('全部')
-        }
+    return deferEffect(() => {
+      if (!activeRegistry) {
+        setCategories(['全部'])
+        return
+      }
+      getCategories({ registryId: activeRegistry })
+        .then((res) => {
+          if (mountedRef.current) {
+            setCategories(res.categories)
+            setActiveCategory('全部')
+          }
+        })
+        .catch(() => {})
       })
-      .catch(() => {})
   }, [activeRegistry, getCategories])
 
-  const enabledRegistries = registries.filter((r) => r.enabled)
-  const uninstalledSkills = skills.filter((skill) => !skill.installed)
-  const visibleSkills = uninstalledSkills.slice(0, displayCount)
+  const enabledRegistries = useMemo(() => registries.filter((r) => r.enabled), [registries])
+  const uninstalledSkills = useMemo(() => skills.filter((skill) => !skill.installed), [skills])
+  const visibleSkills = useMemo(() => uninstalledSkills.slice(0, displayCount), [displayCount, uninstalledSkills])
   const hasMore = displayCount < uninstalledSkills.length
 
   return (
@@ -429,30 +441,44 @@ function InstalledTab() {
   const { invoke: importBatchLocal } = useIpcInvoke('skill:import-batch-local')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
 
-  const dedupedSkills = deduplicateSkills(skills)
-  const filtered = filterSkills(dedupedSkills, search)
-  const visibleInstalled = paginate(filtered, installedPage, SKILL_PAGE_SIZE)
+  const dedupedSkills = useMemo(() => deduplicateSkills(skills), [skills])
+  const filtered = useMemo(() => filterSkills(dedupedSkills, search), [dedupedSkills, search])
+  const visibleInstalled = useMemo(
+    () => paginate(filtered, installedPage, SKILL_PAGE_SIZE),
+    [filtered, installedPage],
+  )
   const hasMoreInstalled = installedPage * SKILL_PAGE_SIZE < filtered.length
 
   // Local candidates: dedup -> filter by source tab -> filter by search -> paginate
-  const dedupedCandidates = deduplicateCandidates(localCandidates)
-  const candidateSources = getCandidateSources(dedupedCandidates)
-  const sourceFiltered = activeSourceTab === '全部'
-    ? dedupedCandidates
-    : dedupedCandidates.filter((c) => c.source === activeSourceTab)
-  const searchFiltered = filterCandidates(sourceFiltered, candidateSearch)
-  const importableCandidates = searchFiltered.filter((c) => !c.installed)
-  const visibleCandidates = searchFiltered.slice(0, candidatePage * LOCAL_CANDIDATE_PAGE_SIZE)
+  const dedupedCandidates = useMemo(() => deduplicateCandidates(localCandidates), [localCandidates])
+  const candidateSources = useMemo(() => getCandidateSources(dedupedCandidates), [dedupedCandidates])
+  const sourceFiltered = useMemo(() => (
+    activeSourceTab === '全部'
+      ? dedupedCandidates
+      : dedupedCandidates.filter((c) => c.source === activeSourceTab)
+  ), [activeSourceTab, dedupedCandidates])
+  const searchFiltered = useMemo(
+    () => filterCandidates(sourceFiltered, candidateSearch),
+    [candidateSearch, sourceFiltered],
+  )
+  const importableCandidates = useMemo(
+    () => searchFiltered.filter((c) => !c.installed),
+    [searchFiltered],
+  )
+  const visibleCandidates = useMemo(
+    () => searchFiltered.slice(0, candidatePage * LOCAL_CANDIDATE_PAGE_SIZE),
+    [candidatePage, searchFiltered],
+  )
   const hasMoreCandidates = candidatePage * LOCAL_CANDIDATE_PAGE_SIZE < searchFiltered.length
 
   // Reset candidate page when search or tab changes
   useEffect(() => {
-    setCandidatePage(1)
+    return deferEffect(() => setCandidatePage(1))
   }, [candidateSearch, activeSourceTab])
 
   // Reset installed page when search changes
   useEffect(() => {
-    setInstalledPage(1)
+    return deferEffect(() => setInstalledPage(1))
   }, [search])
 
   const handleDetectLocal = useCallback(async () => {
@@ -1516,6 +1542,19 @@ function SkillAssistant({ onRefresh }: { onRefresh: () => void }) {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const handleInstallFromSearch = useCallback(async (skill: RemoteSkillItem) => {
+    setProcessing(true)
+    try {
+      await installSkill({ remoteSkillId: skill.id, registryId: skill.registryId })
+      addMessage('assistant', `已成功安装 **${skill.name}** v${skill.version}！`)
+      onRefresh()
+    } catch (err) {
+      addMessage('assistant', `安装失败：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setProcessing(false)
+    }
+  }, [installSkill, addMessage, onRefresh])
+
   const executeAction = useCallback(async (action: SkillAction, target: string) => {
     setProcessing(true)
     try {
@@ -1649,20 +1688,7 @@ function SkillAssistant({ onRefresh }: { onRefresh: () => void }) {
     } finally {
       setProcessing(false)
     }
-  }, [listSkills, searchRegistry, installSkill, deleteSkill, toggleSkill, addMessage, onRefresh])
-
-  const handleInstallFromSearch = useCallback(async (skill: RemoteSkillItem) => {
-    setProcessing(true)
-    try {
-      await installSkill({ remoteSkillId: skill.id, registryId: skill.registryId })
-      addMessage('assistant', `已成功安装 **${skill.name}** v${skill.version}！`)
-      onRefresh()
-    } catch (err) {
-      addMessage('assistant', `安装失败：${err instanceof Error ? err.message : '未知错误'}`)
-    } finally {
-      setProcessing(false)
-    }
-  }, [installSkill, addMessage, onRefresh])
+  }, [listSkills, searchRegistry, handleInstallFromSearch, installSkill, deleteSkill, toggleSkill, addMessage, onRefresh])
 
   const handleSend = useCallback(() => {
     const text = input.trim()

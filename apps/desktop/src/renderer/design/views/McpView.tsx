@@ -7,6 +7,7 @@ import type { McpServerItem } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect } from '../components/FormControls'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useApp } from '../AppContext'
 
 type ServerStatus = 'ok' | 'warn' | 'err' | 'off'
 
@@ -77,6 +78,7 @@ function toServer(item: McpServerItem): Server {
 }
 
 export function McpView() {
+  const { requestConfirm } = useApp()
   const [servers, setServers] = useState<McpServerItem[]>([])
   const [query, setQuery] = useState('')
   const [scopeFilter, setScopeFilter] = useState('all')
@@ -97,7 +99,10 @@ export function McpView() {
   }, [listMcp, scopeFilter])
 
   useEffect(() => {
-    refresh()
+    const id = window.setTimeout(() => {
+      refresh()
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [refresh])
 
   const mappedServers = useMemo(() => servers.map(toServer), [servers])
@@ -156,7 +161,13 @@ export function McpView() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('确认删除该 MCP 服务器？')) return
+    const confirmed = await requestConfirm({
+      title: '删除 MCP 服务器？',
+      description: '删除后该 MCP 配置会从本地移除，相关工具将不再可用。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
     await deleteMcp({ id })
     refresh()
   }

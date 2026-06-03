@@ -10,6 +10,13 @@ import { useApp } from '../AppContext'
 
 type SessionSummary = SessionListResponse['sessions'][number]
 
+function deferEffect(task: () => void | Promise<void>): () => void {
+  const id = window.setTimeout(() => {
+    void task()
+  }, 0)
+  return () => window.clearTimeout(id)
+}
+
 export function HomeView() {
   const { setTweak } = useApp()
   const [sessions, setSessions] = useState<SessionSummary[]>([])
@@ -45,7 +52,7 @@ export function HomeView() {
   }, [getCurrentWorkspace, listProviders, listSessions])
 
   useEffect(() => {
-    void refresh()
+    return deferEffect(refresh)
   }, [refresh])
 
   const handleOpenProject = useCallback(async () => {

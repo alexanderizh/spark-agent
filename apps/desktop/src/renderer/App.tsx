@@ -27,6 +27,12 @@ import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
 import sparkLogo from './assets/spark-logo.png'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@spark/ui-kit'
 
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
 
@@ -47,9 +53,14 @@ function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false)
 
   useEffect(() => {
-    window.spark.invoke('window:is-maximized', {}).then((res) => {
-      setIsMaximized(res.maximized)
-    }).catch(() => {})
+    void (async () => {
+      try {
+        const res = await window.spark.invoke('window:is-maximized', {})
+        if (res?.maximized != null) setIsMaximized(res.maximized)
+      } catch {
+        // ignore window chrome state errors in test and preview environments
+      }
+    })()
   }, [])
 
   const handleMinimize = useCallback(() => {
@@ -98,18 +109,7 @@ function WindowControls() {
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const userMenuRef = useRef<HTMLDivElement>(null)
   const isResizing = useRef(false)
-
-  // Close user menu on outside click
-  useEffect(() => {
-    if (!userMenuOpen) return
-    const handler = (e: MouseEvent) => {
-      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [userMenuOpen])
 
   const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
     const isActive = t.view === viewId
@@ -217,21 +217,23 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
       {/* Bottom area: user + window controls */}
       <div className="sidebar-bottom">
-        <div className="sidebar-user" ref={userMenuRef} style={{ cursor: 'pointer' }} onClick={() => setUserMenuOpen(prev => !prev)}>
-          <div className="avatar">U</div>
-          <div className="sidebar-user-info">
-            <div className="name">User</div>
-            <div className="meta">Local · Desktop</div>
-          </div>
-          <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-          {userMenuOpen && (
-            <div className="user-menu" onClick={e => e.stopPropagation()}>
-              <button onClick={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
-                <Icons.Settings size={14} /> Settings
-              </button>
-            </div>
-          )}
-        </div>
+        <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button className="sidebar-user" style={{ cursor: 'pointer' }}>
+              <div className="avatar">U</div>
+              <div className="sidebar-user-info">
+                <div className="name">User</div>
+                <div className="meta">Local · Desktop</div>
+              </div>
+              <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" side="top" className="user-menu user-menu-portal">
+            <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
+              <Icons.Settings size={14} /> Settings
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {!isPlatformDarwin && <WindowControls />}
       </div>
 

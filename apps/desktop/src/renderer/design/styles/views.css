@@ -483,16 +483,18 @@ body.sidebar-resizing {
 }
 
 .filter-dropdown {
-  position: absolute;
-  top: 100%;
-  right: 6px;
-  z-index: 100;
   min-width: 110px;
   padding: 3px;
   border: 1px solid var(--border-strong);
   border-radius: 6px;
   background: var(--bg-soft);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.filter-dropdown-portal {
+  position: static;
+  top: auto;
+  right: auto;
+  z-index: var(--z-dropdown, 100);
 }
 
 .filter-option {
@@ -816,23 +818,26 @@ body.sidebar-resizing {
 .proj-head:hover .item-menu-btn,
 .chat-item:hover .item-menu-btn,
 .item-menu-btn:focus,
-.item-menu-wrap:has(.action-menu) .item-menu-btn,
+.item-menu-btn[data-state="open"],
 .proj-head:hover .proj-add-session-btn {
   opacity: 1;
 }
 .action-menu {
-  position: absolute;
-  right: 0;
-  top: 24px;
-  z-index: 30;
   min-width: 176px;
   padding: 6px;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
 }
-.action-menu button {
+.action-menu-portal {
+  position: static;
+  right: auto;
+  top: auto;
+  z-index: var(--z-dropdown, 100);
+}
+.action-menu button,
+.action-menu [role="menuitem"] {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -845,10 +850,12 @@ body.sidebar-resizing {
   font-size: var(--font-sm);
   text-align: left;
 }
-.action-menu button:hover {
+.action-menu button:hover,
+.action-menu [role="menuitem"]:hover {
   background: var(--hover);
 }
-.action-menu button.danger {
+.action-menu button.danger,
+.action-menu [data-danger="true"] {
   color: var(--danger);
 }
 .pinned-icon {
@@ -1777,17 +1784,6 @@ body.sidebar-resizing {
     0 -4px 16px rgba(0, 0, 0, 0.06),
     0 0 0 1px rgba(0, 0, 0, 0.03),
     var(--shadow-sm);
-  transition:
-    border-color 0.15s,
-    box-shadow 0.15s;
-}
-.composer:focus-within {
-  border-color: var(--primary);
-  box-shadow:
-    0 -6px 24px rgba(0, 0, 0, 0.08),
-    0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent),
-    0 0 0 4px var(--primary-soft);
-  z-index: 1;
 }
 
 /* 输入框叠在参数栏上（DOM 分离，仅视觉层叠 — 参考 Cursor 新会话） */
@@ -1850,10 +1846,12 @@ body.sidebar-resizing {
   color: var(--primary);
   border-color: var(--primary);
 }
-.composer textarea {
+.composer textarea,
+.composer.composer-v2 textarea {
   width: 100%;
   border: none;
   outline: none;
+  box-shadow: none;
   background: transparent;
   resize: none;
   padding: 10px 12px;
@@ -1862,6 +1860,15 @@ body.sidebar-resizing {
   color: var(--text);
   line-height: 1.55;
   min-height: 24px;
+}
+.composer textarea:hover,
+.composer textarea:focus,
+.composer.composer-v2 textarea:hover,
+.composer.composer-v2 textarea:focus {
+  border: none;
+  outline: none;
+  box-shadow: none;
+  background: transparent;
 }
 .composer textarea::placeholder {
   color: var(--text-faint);
@@ -5114,28 +5121,33 @@ body.inspector-resizing {
 
 .skill-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
   gap: var(--pad-md);
+  align-content: start;
 }
 .skill-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  padding: var(--pad-lg);
+  border-radius: var(--r-md);
+  padding: var(--pad-md);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
   cursor: default;
-  height: 190px;
+  min-height: 176px;
   overflow: hidden;
   box-sizing: border-box;
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
 }
 .skill-card.selected {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
 .skill-card:hover {
-  border-color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 36%, transparent);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }
 .skill-card .icon-wrap {
   width: 40px;
@@ -5169,7 +5181,7 @@ body.inspector-resizing {
   gap: 6px;
   align-items: center;
   padding-top: 8px;
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
   font-size: 10.5px;
   color: var(--text-faint);
 }
@@ -5179,12 +5191,13 @@ body.inspector-resizing {
   display: flex;
   height: 100%;
   min-height: 0;
+  background: var(--bg);
 }
 .settings-nav {
-  width: 220px;
+  width: 216px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
-  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--bg-soft) 78%, var(--panel));
   padding: var(--pad-md);
   display: flex;
   flex-direction: column;
@@ -5203,11 +5216,12 @@ body.inspector-resizing {
   flex: 1;
   overflow: auto;
   padding: var(--pad-xl);
+  min-width: 0;
 }
 .settings-section {
   max-width: 980px;
   margin: 0 auto var(--pad-xl);
-  min-width: 780;
+  min-width: 0;
 }
 .settings-section h2 {
   font-size: 18px;
@@ -5223,8 +5237,9 @@ body.inspector-resizing {
 .settings-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   overflow: hidden;
+  box-shadow: var(--shadow-xs);
 }
 .settings-card-row {
   display: flex;
@@ -5233,7 +5248,7 @@ body.inspector-resizing {
   padding: var(--pad-md) var(--pad-lg);
 }
 .settings-card-row + .settings-card-row {
-  border-top: 1px solid var(--divider);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
 }
 .settings-card-row .row-title {
   font-size: var(--font-base);
@@ -8537,7 +8552,7 @@ body.inspector-resizing {
 .store-skill-card {
   background: var(--panel);
   border: 1px solid var(--border);
-  border-radius: var(--r-lg);
+  border-radius: var(--r-md);
   padding: 14px;
   display: flex;
   flex-direction: column;
@@ -8549,9 +8564,10 @@ body.inspector-resizing {
   height: 210px;
   overflow: hidden;
   box-sizing: border-box;
+  box-shadow: var(--shadow-xs);
 }
 .store-skill-card:hover {
-  border-color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 36%, transparent);
   box-shadow: var(--shadow-sm);
 }
 .store-card-head {
@@ -9369,10 +9385,11 @@ body.inspector-resizing {
   gap: 14px;
   padding: 18px;
   overflow: hidden;
+  background: var(--bg-soft);
 }
 .agents-manager-grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr);
+  grid-template-columns: minmax(220px, 268px) minmax(0, 1fr);
   gap: 14px;
   min-height: 0;
   flex: 1;
@@ -9382,8 +9399,10 @@ body.inspector-resizing {
 .agent-config-panel,
 .workflow-list-panel {
   border: 1px solid var(--border);
-  background: var(--bg);
+  border-radius: var(--r-md);
+  background: var(--panel);
   min-height: 0;
+  box-shadow: var(--shadow-xs);
 }
 .agents-list-panel {
   display: flex;
@@ -9482,9 +9501,9 @@ body.inspector-resizing {
 .agent-field.wide {
   grid-column: 1 / -1;
 }
-.agent-field input,
-.agent-field select,
-.agent-field textarea,
+.agent-field input:not(.spark-input),
+.agent-field select:not(.spark-select),
+.agent-field textarea:not(.spark-textarea),
 .workflow-builder input,
 .workflow-builder select,
 .wf-inspector input,
@@ -9504,6 +9523,11 @@ body.inspector-resizing {
   resize: vertical;
   line-height: 1.45;
 }
+.agent-field .spark-select-wrap,
+.agent-field .spark-input,
+.agent-field .spark-textarea {
+  width: 100%;
+}
 .agent-config-panel {
   display: flex;
   flex-direction: column;
@@ -9511,10 +9535,17 @@ body.inspector-resizing {
   padding: 14px;
   overflow: auto;
   border-width: 0 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-soft) 55%, var(--panel));
 }
 .agent-config-section {
   display: grid;
   gap: 8px;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: var(--r-md);
+  background: var(--panel);
 }
 .agent-config-head {
   display: flex;
@@ -9535,7 +9566,7 @@ body.inspector-resizing {
 }
 .agent-pick-item {
   border: 1px solid var(--border);
-  background: var(--bg-soft);
+  background: var(--panel);
   color: var(--text);
   border-radius: 6px;
   padding: 6px 8px;
@@ -9551,8 +9582,10 @@ body.inspector-resizing {
   display: flex;
   gap: 10px;
   align-items: center;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
+  border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
+  border-radius: var(--r-md);
+  padding: 10px;
+  background: var(--panel);
 }
 .agent-workflow-icon {
   width: 34px;
@@ -9585,7 +9618,7 @@ body.inspector-resizing {
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 7px 8px;
-  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--bg-soft) 70%, var(--panel));
 }
 .agent-hook-row > span {
   min-width: 72px;
@@ -9997,6 +10030,7 @@ body.inspector-resizing {
   .workflow-builder .wf-inspector {
     border-left: 0;
     border-top: 1px solid var(--border);
+    border-radius: 0;
   }
   .workflow-builder-v2 .wf-inspector {
     width: 100%;

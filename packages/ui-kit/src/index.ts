@@ -27,6 +27,22 @@ export { Tooltip, TooltipProvider, type TooltipProps } from './components/toolti
 export { ScrollArea, ScrollBar, type ScrollAreaProps } from './components/scroll-area'
 export { Tabs, TabsList, TabsTrigger, TabsContent } from './components/tabs'
 export {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuCheckboxItem,
+  DropdownMenuRadioItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuGroup,
+  DropdownMenuPortal,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuRadioGroup,
+} from './components/dropdown-menu'
+export {
   Dialog,
   DialogTrigger,
   DialogContent,

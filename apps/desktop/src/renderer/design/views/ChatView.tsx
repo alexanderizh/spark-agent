@@ -4390,6 +4390,7 @@ function ComposerV2({
           }`}
         >
           <textarea
+            className="composer-input"
             ref={textareaRef}
             rows={1}
             placeholder="询问、修改、运行任务…  ↵ 发送"
@@ -5197,6 +5198,7 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
       <div className="composer-inner">
         <div className="composer">
           <textarea
+            className="composer-input"
             rows={2}
             placeholder={sessionId ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个会话'}
             value={value}

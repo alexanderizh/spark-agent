@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, us
 import type { ReactNode } from 'react'
 import { useIpcInvoke } from './hooks/useIpc'
 import { useToast } from './components/Toast'
+import { useApp } from './AppContext'
 import type {
   SessionId,
   SessionListResponse,
@@ -201,6 +202,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [projectNotice, setProjectNotice] = useState('')
   const justCreatedSessionRef = useRef<SessionId | null>(null)
   const { toast } = useToast()
+  const { requestConfirm, requestPrompt } = useApp()
 
   const { invoke: listSessions } = useIpcInvoke('session:list')
   const { invoke: createSession } = useIpcInvoke('session:create')
@@ -269,8 +271,11 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       return
     }
     const found = sessions.find(s => s.id === active)
-    if (!found) setActive(null)
-    else if (activeWorkspaceId == null && found.workspaceIds.length > 0) setActiveWorkspaceId(found.workspaceIds[0] ?? null)
+    const id = window.setTimeout(() => {
+      if (!found) setActive(null)
+      else if (activeWorkspaceId == null && found.workspaceIds.length > 0) setActiveWorkspaceId(found.workspaceIds[0] ?? null)
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [active, activeWorkspaceId, sessions])
 
   const updateSessionInList = useCallback((sessionId: SessionId, patch: Partial<SessionSummary>) => {
@@ -317,7 +322,14 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         knownProviders.find(p => p.id === selectedAgent?.providerProfileId) ??
         knownProviders.find(p => p.id === selectedProviderId && isProviderCompatibleWithAdapter(p, preferredAdapter)) ??
         getPreferredProvider(knownProviders, prefs, preferredAdapter)
-      if (!profile) { alert('请先在设置中配置 Provider'); return null }
+      if (!profile) {
+        void requestConfirm({
+          title: '需要配置 Provider',
+          description: '请先在设置中配置模型供应商，然后再新建会话。',
+          confirmText: '知道了',
+        })
+        return null
+      }
       const agentAdapter = (options.agentAdapter as SessionAgentAdapter) ?? selectedAgent?.agentAdapter ?? getProviderAdapterKind(profile)
       const permissionMode = (options.permissionMode as SessionPermissionMode) ?? selectedAgent?.permissionMode ?? getValidPermissionMode(prefs.permissionMode, agentAdapter)
       const modelId = (options.modelId as string) ?? selectedAgent?.modelId ?? (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
@@ -349,7 +361,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       toast.error(err instanceof Error ? err.message : '创建会话失败')
       return null
     }
-  }, [activeWorkspaceId, agents, createSession, ensureNoProjectWorkspace, listProviders, providers, refreshData, selectedProviderId, toast])
+  }, [activeWorkspaceId, agents, createSession, ensureNoProjectWorkspace, listProviders, providers, refreshData, requestConfirm, selectedProviderId, toast])
 
   // Search
   const searchSessions = useCallback(async (query: string): Promise<SessionSearchResult[]> => {
@@ -375,7 +387,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   const handleCreateProject = useCallback(async (useTempDir = false) => {
     let rootPath = projectPath.trim()
-    let name = projectName.trim() || getBasename(rootPath) || '新项目'
+    const name = projectName.trim() || getBasename(rootPath) || '新项目'
     if (useTempDir || !rootPath) {
       try {
         const { tempDir } = await getTempProjectDir({})
@@ -406,11 +418,16 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   // Project actions
   const handleRenameProject = useCallback(async (workspace: WorkspaceInfo) => {
-    const name = window.prompt('重命名项目', workspace.name)?.trim()
+    const name = (await requestPrompt({
+      title: '重命名项目',
+      value: workspace.name,
+      placeholder: '输入项目名称',
+      confirmText: '重命名',
+    }))?.trim()
     if (!name || name === workspace.name) return
     try { await updateWorkspace({ workspaceId: workspace.id, name }); await refreshData() }
     catch (err) { toast.error(err instanceof Error ? err.message : '重命名项目失败') }
-  }, [refreshData, toast, updateWorkspace])
+  }, [refreshData, requestPrompt, toast, updateWorkspace])
 
   const handleToggleProjectPinned = useCallback(async (workspace: WorkspaceInfo) => {
     try { await updateWorkspace({ workspaceId: workspace.id, pinned: workspace.pinnedAt == null }); await refreshData() }
@@ -418,16 +435,27 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   }, [refreshData, toast, updateWorkspace])
 
   const handleArchiveProject = useCallback(async (workspace: WorkspaceInfo) => {
-    if (!window.confirm(`归档项目「${workspace.name}」？归档后会从当前列表隐藏。`)) return
+    const confirmed = await requestConfirm({
+      title: `归档项目「${workspace.name}」？`,
+      description: '归档后会从当前列表隐藏，可在设置中恢复。',
+      confirmText: '归档',
+    })
+    if (!confirmed) return
     try {
       await updateWorkspace({ workspaceId: workspace.id, archived: true })
       if (activeWorkspaceId === workspace.id) { setActiveWorkspaceId(null); setActive(null) }
       await refreshData()
     } catch (err) { toast.error(err instanceof Error ? err.message : '归档项目失败') }
-  }, [activeWorkspaceId, refreshData, toast, updateWorkspace])
+  }, [activeWorkspaceId, refreshData, requestConfirm, toast, updateWorkspace])
 
   const handleDeleteProject = useCallback(async (workspace: WorkspaceInfo) => {
-    if (!window.confirm(`删除项目「${workspace.name}」及其会话记录？本地文件夹不会被删除。`)) return
+    const confirmed = await requestConfirm({
+      title: `删除项目「${workspace.name}」？`,
+      description: '项目及其会话记录会被删除，本地文件夹不会被删除。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
     try {
       const res = await deleteWorkspace({ workspaceId: workspace.id })
       if (activeWorkspaceId === workspace.id || (active != null && res.deletedSessionIds.includes(active))) {
@@ -435,7 +463,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       }
       await refreshData()
     } catch (err) { toast.error(err instanceof Error ? err.message : '删除项目失败') }
-  }, [active, activeWorkspaceId, deleteWorkspace, refreshData, toast])
+  }, [active, activeWorkspaceId, deleteWorkspace, refreshData, requestConfirm, toast])
 
   const handleOpenProjectFolder = useCallback(async (workspace: WorkspaceInfo) => {
     try { await openWorkspaceFolder({ workspaceId: workspace.id }) }
@@ -454,17 +482,28 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   }, [refreshData, toast, updateSession])
 
   const handleRenameSession = useCallback(async (session: SessionSummary) => {
-    const title = window.prompt('重命名会话', session.title ?? '')?.trim()
+    const title = (await requestPrompt({
+      title: '重命名会话',
+      value: session.title ?? '',
+      placeholder: '输入会话标题',
+      confirmText: '重命名',
+    }))?.trim()
     if (!title || title === (session.title ?? '')) return
     try { await updateSession({ sessionId: session.id, title }); await refreshData() }
     catch (err) { toast.error(err instanceof Error ? err.message : '重命名会话失败') }
-  }, [refreshData, toast, updateSession])
+  }, [refreshData, requestPrompt, toast, updateSession])
 
   const handleDeleteSession = useCallback(async (session: SessionSummary) => {
-    if (!window.confirm(`删除会话「${session.title ?? '未命名'}」？`)) return
+    const confirmed = await requestConfirm({
+      title: `删除会话「${session.title ?? '未命名'}」？`,
+      description: '该会话记录会从本地删除。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
     try { await deleteSession({ sessionId: session.id }); if (active === session.id) setActive(null); await refreshData() }
     catch (err) { toast.error(err instanceof Error ? err.message : '删除会话失败') }
-  }, [active, deleteSession, refreshData, toast])
+  }, [active, deleteSession, refreshData, requestConfirm, toast])
 
   const handleArchiveSession = useCallback(async (session: SessionSummary) => {
     try { await updateSession({ sessionId: session.id, archived: true }); await refreshData() }
@@ -523,7 +562,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     handleDeleteProject, handleOpenProjectFolder, handleOpenWorkspace,
     handleCreateProject, handlePickProjectPath,
     projectDialog, projectName, projectPath, projectNotice,
-    searchSessions, selectedProviderId,
+    searchSessions, ensureNoProjectWorkspace, selectedProviderId,
   ])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

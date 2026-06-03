@@ -413,7 +413,11 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   gap: 10px;
   width: 100%;
   padding: var(--pad-sm);
+  border: 0;
   border-radius: var(--r-md);
+  background: transparent;
+  color: inherit;
+  text-align: left;
   position: relative;
 }
 .sidebar-user:hover { background: var(--hover); }
@@ -432,18 +436,22 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 
 /* User dropdown menu */
 .user-menu {
-  position: absolute;
-  bottom: 100%;
-  left: 4px;
-  right: 4px;
+  min-width: 174px;
   background: var(--panel-elev);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-md);
   padding: 4px;
-  z-index: 20;
+  z-index: var(--z-dropdown, 100);
 }
-.user-menu button {
+.user-menu-portal {
+  position: static;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+.user-menu button,
+.user-menu [role="menuitem"] {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -456,7 +464,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   border-radius: var(--r-sm);
   cursor: pointer;
 }
-.user-menu button:hover {
+.user-menu button:hover,
+.user-menu [role="menuitem"]:hover {
   background: var(--hover);
 }
 
@@ -796,6 +805,40 @@ pre,
 }
 .spark-input.mono-sm { font-family: 'Geist Mono', ui-monospace, monospace; font-size: var(--font-sm); }
 
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.spark-input):not(.composer-input),
+.app select:not(.spark-select) {
+  height: 36px;
+  min-width: 0;
+  padding: 0 12px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.app select:not(.spark-select) {
+  padding-right: 30px;
+}
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.spark-input):not(.composer-input):hover,
+.app select:not(.spark-select):hover {
+  border-color: var(--text-faint);
+}
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.spark-input):not(.composer-input):focus,
+.app select:not(.spark-select):focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--panel);
+}
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):disabled,
+.app select:disabled {
+  opacity: 0.55;
+  cursor: default;
+  background: var(--bg-soft);
+}
+
 /* Input wrapper with icon */
 .spark-input-wrap {
   position: relative;
@@ -918,6 +961,95 @@ pre,
 .spark-select-wrap:hover .spark-select-arrow { color: var(--text-muted); }
 .spark-select:focus ~ .spark-select-arrow { color: var(--primary); }
 
+/* ============================================================
+   SPARK TEXTAREA / CHECKBOX — themed form primitives
+   ============================================================ */
+.spark-textarea,
+.app textarea:not(.composer-input):not(.plan-approval-textarea) {
+  width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  resize: vertical;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 9px 10px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+.spark-textarea::placeholder,
+.app textarea:not(.composer-input)::placeholder {
+  color: var(--text-faint);
+}
+.spark-textarea:hover,
+.app textarea:not(.composer-input):hover {
+  border-color: var(--text-faint);
+}
+.spark-textarea:focus,
+.app textarea:not(.composer-input):focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--panel);
+}
+.spark-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+}
+.spark-checkbox input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.spark-checkbox-box {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: var(--r-xs);
+  background: var(--panel);
+  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+}
+.spark-checkbox input:checked + .spark-checkbox-box {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+.spark-checkbox input:checked + .spark-checkbox-box::after {
+  content: '';
+  width: 5px;
+  height: 9px;
+  border: solid var(--primary-fg);
+  border-width: 0 1.5px 1.5px 0;
+  transform: rotate(45deg);
+  margin-top: -2px;
+}
+.spark-checkbox input:focus-visible + .spark-checkbox-box {
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.spark-checkbox-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spark-confirm-dialog {
+  width: min(420px, calc(100vw - 32px));
+  max-width: 420px;
+}
+.spark-confirm-dialog .spark-input {
+  margin-top: -2px;
+}
+
 /* Size variants */
 .select-sm .spark-select-wrap,
 .spark-select-wrap.sm {
@@ -996,7 +1128,7 @@ pre,
 }
 
 /* Checkbox styling (for markdown task lists) */
-.spark-checkbox {
+input.spark-checkbox {
   appearance: none;
   -webkit-appearance: none;
   width: 14px;
@@ -1009,11 +1141,11 @@ pre,
   margin: 2px 0 0;
   transition: background 0.12s, border-color 0.12s;
 }
-.spark-checkbox:checked {
+input.spark-checkbox:checked {
   background: var(--primary);
   border-color: var(--primary);
 }
-.spark-checkbox:checked::after {
+input.spark-checkbox:checked::after {
   content: '';
   position: absolute;
   left: 3.5px;

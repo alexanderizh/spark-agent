@@ -2,9 +2,16 @@
  * SidebarSessionList — Complete conversation list extracted from ChatView.
  * Renders search, time filter, project groups, session items, and all context menus.
  */
-import React, { useEffect, useRef, useState, useCallback } from 'react'
-import { createPortal } from 'react-dom'
+import React, { useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from '@spark/ui-kit'
 import { Icons } from './Icons'
 import { SparkInput } from './components/FormControls'
 import {
@@ -38,39 +45,30 @@ function formatRelativeTime(value: string): string {
 /* ─── ActionMenu ─── */
 function ActionMenu({
   items,
-  onClose,
 }: {
   items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
-  onClose: () => void
 }) {
-  const ref = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose()
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [onClose])
   return (
-    <div ref={ref} className="action-menu" onClick={e => e.stopPropagation()}>
+    <DropdownMenuContent align="end" side="bottom" className="action-menu action-menu-portal">
       {items.map(item => (
-        <button
+        <DropdownMenuItem
           key={item.label}
-          className={item.danger ? 'danger' : ''}
-          onClick={() => { onClose(); item.onClick() }}
+          danger={item.danger}
+          onSelect={() => {
+            item.onClick()
+          }}
         >
           {item.icon}
           <span>{item.label}</span>
-        </button>
+        </DropdownMenuItem>
       ))}
-    </div>
+    </DropdownMenuContent>
   )
 }
 
 /* ─── TimeFilterDropdown ─── */
 function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: (v: TimeFilter) => void }) {
   const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
   const options: Array<{ value: TimeFilter; label: string }> = [
     { value: 'all', label: '全部' },
     { value: '1d', label: '最近 1 天' },
@@ -79,33 +77,35 @@ function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: 
     { value: '10d', label: '最近 10 天' },
   ]
   const currentLabel = options.find(o => o.value === value)?.label ?? '全部会话'
-  useEffect(() => {
-    if (!open) return
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
-  }, [open])
   return (
-    <div className="session-filter-bar" ref={ref}>
-      <button className={`filter-trigger${value !== 'all' ? ' has-filter' : ''}`} onClick={() => setOpen(prev => !prev)} aria-label="筛选会话">
-        <span>{currentLabel}</span>
-        <Icons.ChevronDown size={12} className={`filter-chevron${open ? ' open' : ''}`} />
-      </button>
-      {open && (
-        <div className="filter-dropdown">
-          {options.map(option => (
-            <button
+    <div className="session-filter-bar">
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <button className={`filter-trigger${value !== 'all' ? ' has-filter' : ''}`} aria-label="筛选会话">
+            <span>{currentLabel}</span>
+            <Icons.ChevronDown size={12} className={`filter-chevron${open ? ' open' : ''}`} />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="start"
+          side="bottom"
+          className="filter-dropdown filter-dropdown-portal"
+          style={{ minWidth: 'var(--radix-dropdown-menu-trigger-width)' }}
+        >
+          <DropdownMenuRadioGroup value={value} onValueChange={(next) => onChange(next as TimeFilter)}>
+            {options.map(option => (
+              <DropdownMenuRadioItem
               key={option.value}
-              className={`filter-option${value === option.value ? ' active' : ''}`}
-              onClick={() => { onChange(option.value); setOpen(false) }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      )}
+                value={option.value}
+                className={`filter-option${value === option.value ? ' active' : ''}`}
+                onSelect={() => setOpen(false)}
+              >
+                {option.label}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   )
 }
@@ -148,10 +148,12 @@ function ChatListItem({
           <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         )}
         <div className="item-menu-wrap">
-          <button className="icon-btn item-menu-btn" title="会话操作" onClick={e => { e.stopPropagation(); setMenuOpen(prev => !prev) }}>
-            <Icons.More size={12} />
-          </button>
-          {menuOpen && (
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button className="icon-btn item-menu-btn" title="会话操作" onClick={e => e.stopPropagation()}>
+                <Icons.More size={12} />
+              </button>
+            </DropdownMenuTrigger>
             <ActionMenu
               items={[
                 { icon: <Icons.Pin size={14} />, label: s.pinnedAt == null ? '置顶会话' : '取消置顶', onClick: () => onTogglePinned?.(s) },
@@ -160,9 +162,8 @@ function ChatListItem({
                 { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
                 { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
               ]}
-              onClose={() => setMenuOpen(false)}
             />
-          )}
+          </DropdownMenu>
         </div>
       </div>
     </div>
@@ -233,10 +234,12 @@ function ProjectSessionGroup({
           <Icons.Plus size={12} />
         </button>
         <div className="item-menu-wrap">
-          <button className="icon-btn item-menu-btn" title="项目操作" onClick={e => { e.stopPropagation(); setMenuOpen(prev => !prev) }}>
-            <Icons.More size={12} />
-          </button>
-          {menuOpen && (
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+            <DropdownMenuTrigger asChild>
+              <button className="icon-btn item-menu-btn" title="项目操作" onClick={e => e.stopPropagation()}>
+                <Icons.More size={12} />
+              </button>
+            </DropdownMenuTrigger>
             <ActionMenu
               items={[
                 { icon: <Icons.Pin size={14} />, label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶', onClick: () => onToggleProjectPinned(group.workspace) },
@@ -245,9 +248,8 @@ function ProjectSessionGroup({
                 { icon: <Icons.Box size={14} />, label: '归档项目', onClick: () => onArchiveProject(group.workspace) },
                 { icon: <Icons.Trash size={14} />, label: '删除项目', danger: true, onClick: () => onDeleteProject(group.workspace) },
               ]}
-              onClose={() => setMenuOpen(false)}
             />
-          )}
+          </DropdownMenu>
         </div>
       </div>
       {open && (

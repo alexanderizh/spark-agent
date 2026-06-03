@@ -4,6 +4,7 @@ import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
+import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import type {
   ManagedAgent,
   McpServerItem,
@@ -74,7 +75,7 @@ const NEW_AGENT_ID = '__new_agent__'
 
 export function AgentsView() {
   const { toast } = useToast()
-  const { registerNavGuard } = useApp()
+  const { registerNavGuard, requestConfirm } = useApp()
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -88,11 +89,20 @@ export function AgentsView() {
   const [loading, setLoading] = useState(true)
   const dirty = useMemo(() => pendingNew || JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline, pendingNew])
   const dirtyRef = useRef(dirty)
-  dirtyRef.current = dirty
   const selectedIdRef = useRef(selectedId)
-  selectedIdRef.current = selectedId
   const pendingNewRef = useRef(pendingNew)
-  pendingNewRef.current = pendingNew
+
+  useEffect(() => {
+    dirtyRef.current = dirty
+  }, [dirty])
+
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+  }, [selectedId])
+
+  useEffect(() => {
+    pendingNewRef.current = pendingNew
+  }, [pendingNew])
 
   const { invoke: listAgents } = useIpcInvoke('agent:list')
   const { invoke: createAgent } = useIpcInvoke('agent:create')
@@ -137,16 +147,23 @@ export function AgentsView() {
   }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows])
 
   useEffect(() => {
-    void refresh()
+    const id = window.setTimeout(() => {
+      void refresh()
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [refresh])
 
   useEffect(() => {
-    registerNavGuard(() => {
+    registerNavGuard(async () => {
       if (!dirtyRef.current) return true
-      return window.confirm('当前 Agent 有未保存的修改，确定要离开吗？')
+      return requestConfirm({
+        title: '放弃未保存的 Agent 修改？',
+        description: '离开后，当前 Agent 编辑内容会恢复到上次保存的状态。',
+        confirmText: '离开',
+      })
     })
     return () => registerNavGuard(null)
-  }, [registerNavGuard])
+  }, [registerNavGuard, requestConfirm])
 
   const selectedProvider = providers.find((provider) => provider.id === draft.providerProfileId)
   const modelOptions = selectedProvider?.modelIds.length
@@ -155,16 +172,12 @@ export function AgentsView() {
       ? [selectedProvider.defaultModel]
       : []
   const activeWorkflow = workflows.find((workflow) => workflow.id === draft.workflowId)
-  const enabledAgents = agents.filter((agent) => agent.enabled).length
-  const configuredAgents = agents.filter((agent) => agent.prompt.trim() || agent.workflowId).length
 
   const updateDraft = <K extends keyof AgentDraft>(key: K, value: AgentDraft[K]) => {
     setDraft((prev) => ({ ...prev, [key]: value }))
   }
 
-  const handleSelect = (agent: ManagedAgent) => {
-    if (agent.id === selectedId) return
-    if (dirty && !window.confirm('当前 Agent 有未保存的修改，确定要切换吗？')) return
+  const selectAgent = (agent: ManagedAgent) => {
     setSelectedId(agent.id)
     const next = agentToDraft(agent)
     setDraft(next)
@@ -172,8 +185,22 @@ export function AgentsView() {
     setPendingNew(false)
   }
 
-  const handleNew = () => {
-    if (dirty && !window.confirm('当前 Agent 有未保存的修改，确定要新建吗？')) return
+  const handleSelect = async (agent: ManagedAgent) => {
+    if (agent.id === selectedId) return
+    if (dirty) {
+      const confirmed = await requestConfirm({
+        title: '放弃未保存的修改？',
+        description: '切换 Agent 后，当前编辑内容会恢复到上次保存的状态。',
+        confirmText: '切换',
+      })
+      if (!confirmed) return
+      selectAgent(agent)
+      return
+    }
+    selectAgent(agent)
+  }
+
+  const createDraft = () => {
     const provider = providers[0]
     const next: AgentDraft = {
       ...EMPTY_DRAFT,
@@ -184,6 +211,20 @@ export function AgentsView() {
     setDraft(next)
     setBaseline(next)
     setPendingNew(true)
+  }
+
+  const handleNew = async () => {
+    if (dirty) {
+      const confirmed = await requestConfirm({
+        title: '放弃未保存的修改？',
+        description: '新建 Agent 会清空当前编辑区的未保存内容。',
+        confirmText: '新建',
+      })
+      if (!confirmed) return
+      createDraft()
+      return
+    }
+    createDraft()
   }
 
   const handleSave = async () => {
@@ -209,7 +250,13 @@ export function AgentsView() {
 
   const handleDelete = async () => {
     if (draft.id == null || draft.builtIn) return
-    if (!window.confirm(`确定要删除 Agent「${draft.name}」吗？此操作不可撤销。`)) return
+    const confirmed = await requestConfirm({
+      title: `删除 Agent「${draft.name}」？`,
+      description: '此操作不可撤销，删除后该 Agent 将从会话选择器中移除。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed || draft.id == null) return
     const res = await deleteAgent({ id: draft.id })
     if (!res.deleted) {
       toast.warning('内置 Agent 或不存在的 Agent 不能删除')
@@ -233,7 +280,7 @@ export function AgentsView() {
           <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
             {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
           </button>
-          <button className="btn primary sm" onClick={handleNew}>
+          <button className="btn primary sm" onClick={() => void handleNew()}>
             <Icons.Plus size={12} /> 新建 Agent
           </button>
         </div>
@@ -246,7 +293,7 @@ export function AgentsView() {
               <button
                 key={agent.id}
                 className={`agent-list-item ${agent.id === selectedId ? 'active' : ''}`}
-                onClick={() => handleSelect(agent)}
+                onClick={() => void handleSelect(agent)}
               >
                 <span className="agent-list-icon">
                   {agent.builtIn ? <Icons.Code size={15} /> : <Icons.Bot size={15} />}
@@ -296,19 +343,19 @@ export function AgentsView() {
 
             <div className="agent-form-grid">
               <Field label="名称">
-                <input value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} />
+                <SparkInput value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} />
               </Field>
               <Field label="状态">
-                <select value={draft.enabled ? 'enabled' : 'disabled'} onChange={(event) => updateDraft('enabled', event.target.value === 'enabled')}>
+                <SparkSelect value={draft.enabled ? 'enabled' : 'disabled'} onChange={(event) => updateDraft('enabled', event.target.value === 'enabled')}>
                   <option value="enabled">启用</option>
                   <option value="disabled">停用</option>
-                </select>
+                </SparkSelect>
               </Field>
               <Field label="说明" wide>
-                <input value={draft.description} onChange={(event) => updateDraft('description', event.target.value)} />
+                <SparkInput value={draft.description} onChange={(event) => updateDraft('description', event.target.value)} />
               </Field>
               <Field label="Provider">
-                <select
+                <SparkSelect
                   value={draft.providerProfileId}
                   onChange={(event) => {
                     const provider = providers.find((item) => item.id === event.target.value)
@@ -320,41 +367,41 @@ export function AgentsView() {
                   {providers.map((provider) => (
                     <option key={provider.id} value={provider.id}>{provider.name}</option>
                   ))}
-                </select>
+                </SparkSelect>
               </Field>
               <Field label="默认模型">
-                <select value={draft.modelId} onChange={(event) => updateDraft('modelId', event.target.value)}>
+                <SparkSelect value={draft.modelId} onChange={(event) => updateDraft('modelId', event.target.value)}>
                   <option value="">Provider 默认</option>
                   {modelOptions.map((model) => (
                     <option key={model} value={model}>{model}</option>
                   ))}
-                </select>
+                </SparkSelect>
               </Field>
               <Field label="权限">
-                <select value={draft.permissionMode} onChange={(event) => updateDraft('permissionMode', event.target.value as SessionPermissionMode)}>
+                <SparkSelect value={draft.permissionMode} onChange={(event) => updateDraft('permissionMode', event.target.value as SessionPermissionMode)}>
                   {PERMISSION_OPTIONS.map((option) => (
                     <option key={option.value} value={option.value}>{option.label}</option>
                   ))}
-                </select>
+                </SparkSelect>
               </Field>
               <Field label="推理强度">
-                <select value={draft.reasoningEffort} onChange={(event) => updateDraft('reasoningEffort', event.target.value as SessionReasoningEffort)}>
+                <SparkSelect value={draft.reasoningEffort} onChange={(event) => updateDraft('reasoningEffort', event.target.value as SessionReasoningEffort)}>
                   <option value="low">low</option>
                   <option value="medium">medium</option>
                   <option value="high">high</option>
                   <option value="xhigh">xhigh</option>
-                </select>
+                </SparkSelect>
               </Field>
               <Field label="工作流" wide>
-                <select value={draft.workflowId} onChange={(event) => updateDraft('workflowId', event.target.value)}>
+                <SparkSelect value={draft.workflowId} onChange={(event) => updateDraft('workflowId', event.target.value)}>
                   <option value="">不使用工作流</option>
                   {workflows.map((workflow) => (
                     <option key={workflow.id} value={workflow.id}>{workflow.name}</option>
                   ))}
-                </select>
+                </SparkSelect>
               </Field>
               <Field label="提示词" wide>
-                <textarea rows={8} value={draft.prompt} onChange={(event) => updateDraft('prompt', event.target.value)} />
+                <SparkTextarea rows={8} value={draft.prompt} onChange={(event) => updateDraft('prompt', event.target.value)} />
               </Field>
             </div>
           </section>
@@ -522,33 +569,25 @@ function HookEditor({
   }
   return (
     <div className="agent-hook-editor">
-      <label className="agent-toggle-row">
-        <input
-          type="checkbox"
-          checked={value.enabled}
-          onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
-        />
-        <span>启用 Agent 专属 Hook</span>
-      </label>
+      <SparkCheckbox
+        className="agent-toggle-row"
+        checked={value.enabled}
+        onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
+        label="启用 Agent 专属 Hook"
+      />
       {HOOK_NODES.map((item) => (
         <div key={item.node} className="agent-hook-row">
           <span>{item.label}</span>
-          <label>
-            <input
-              type="checkbox"
-              checked={value.nodes[item.node].sound}
-              onChange={(event) => patchNode(item.node, { sound: event.target.checked })}
-            />
-            声音
-          </label>
-          <label>
-            <input
-              type="checkbox"
-              checked={value.nodes[item.node].notification}
-              onChange={(event) => patchNode(item.node, { notification: event.target.checked })}
-            />
-            通知
-          </label>
+          <SparkCheckbox
+            checked={value.nodes[item.node].sound}
+            onChange={(event) => patchNode(item.node, { sound: event.target.checked })}
+            label="声音"
+          />
+          <SparkCheckbox
+            checked={value.nodes[item.node].notification}
+            onChange={(event) => patchNode(item.node, { notification: event.target.checked })}
+            label="通知"
+          />
         </div>
       ))}
     </div>

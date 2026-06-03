@@ -33,16 +33,11 @@ export function BrowserPanelView(): ReactElement | null {
   const { t, setTweak } = useApp()
   const [status, setStatus] = useState<PlaywrightStatusResponse | null>(null)
   const [view, setView] = useState<ViewState>({ title: null, url: null })
-  const [open, setOpen] = useState(false)
   const [urlInput, setUrlInput] = useState(DEFAULT_URL)
   const [poppedOut, setPoppedOut] = useState(false)
   const webviewRef = useRef<Electron.WebviewTag | null>(null)
   const panelOpenTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
-
-  // Sync local `open` from AppContext tweak
-  useEffect(() => {
-    setOpen(t.browserPanelOpen)
-  }, [t.browserPanelOpen])
+  const open = t.browserPanelOpen
 
   // Load initial status + subscribe to status updates
   useEffect(() => {

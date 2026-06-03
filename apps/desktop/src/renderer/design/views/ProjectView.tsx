@@ -18,6 +18,13 @@ type FileChangeMap = Record<string, FileChangeStatus>
 /** Sort mode for file tree entries */
 type FileSortMode = 'name' | 'modified'
 
+function deferEffect(task: () => void | Promise<void>): () => void {
+  const id = window.setTimeout(() => {
+    void task()
+  }, 0)
+  return () => window.clearTimeout(id)
+}
+
 export function ProjectView() {
   const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
   const [fileChanges, setFileChanges] = useState<FileChangeMap>({})
@@ -28,6 +35,7 @@ export function ProjectView() {
 
   // Track recent external change count for batched toast
   const externalChangeBufferRef = useRef<{ count: number; timer: ReturnType<typeof setTimeout> | null }>({ count: 0, timer: null })
+  const workspaceId = workspace?.id
 
   useEffect(() => {
     getCurrentWorkspace({})
@@ -37,14 +45,14 @@ export function ProjectView() {
 
   // Start/stop file watcher when workspace changes
   useEffect(() => {
-    if (workspace == null) return
+    if (workspaceId == null) return
 
     let cancelled = false
-    startWatch({ workspaceId: workspace.id })
+    startWatch({ workspaceId })
       .then(() => {
         if (!cancelled) {
           // eslint-disable-next-line no-console
-          console.log(`[FileWatcher] Started watching workspace ${workspace.id}`)
+          console.log(`[FileWatcher] Started watching workspace ${workspaceId}`)
         }
       })
       .catch((err) => {
@@ -53,14 +61,14 @@ export function ProjectView() {
 
     return () => {
       cancelled = true
-      stopWatch({ workspaceId: workspace.id }).catch(() => {})
+      stopWatch({ workspaceId }).catch(() => {})
     }
-  }, [workspace?.id, startWatch, stopWatch])
+  }, [workspaceId, startWatch, stopWatch])
 
   // Reset file changes when workspace changes
   useEffect(() => {
-    setFileChanges({})
-  }, [workspace?.id])
+    return deferEffect(() => setFileChanges({}))
+  }, [workspaceId])
 
   // Listen for file_change agent events at the top level
   useIpcStream('stream:session:agent-event', (event: AgentEvent) => {
@@ -156,7 +164,7 @@ function ProjectExplorer({ workspace, fileChanges, onFileChangesChange }: { work
   }, [workspace, listDirectory])
 
   useEffect(() => {
-    refreshTree()
+    return deferEffect(refreshTree)
   }, [refreshTree])
 
   // Auto-refresh tree when file changes detected
@@ -409,66 +417,69 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
   const { invoke: listProviders } = useIpcInvoke('provider:list')
 
   useEffect(() => {
-    const builder = new MessageBuilder()
-    builderRef.current = builder
-    setMessages([])
-    setSessionId(null)
-    setAgentStatus('idle')
-    setNotice('')
-
-    if (workspaceId == null) {
-      setLoading(false)
-      setNotice('未打开工作区。请先在 Home 或设置中打开一个项目。')
-      return
-    }
-
     let cancelled = false
-    setLoading(true)
+    const cancelStart = deferEffect(() => {
+      const builder = new MessageBuilder()
+      builderRef.current = builder
+      setMessages([])
+      setSessionId(null)
+      setAgentStatus('idle')
+      setNotice('')
 
-    listSessions({ workspaceId, limit: 50 })
-      .then(async (sessionsRes) => {
-        if (cancelled) return null
-        const existing = sessionsRes.sessions.find((session) => session.status !== 'error')
-        if (existing != null) {
-          setSessionId(existing.id)
-          return getHistory({ sessionId: existing.id, limit: 200 })
-        }
+      if (workspaceId == null) {
+        setLoading(false)
+        setNotice('未打开工作区。请先在 Home 或设置中打开一个项目。')
+        return
+      }
 
-        const providersRes = await listProviders({})
-        if (cancelled) return null
-        const provider = providersRes.profiles.find((profile) => profile.isDefault) ?? providersRes.profiles[0]
-        if (provider == null) {
-          setNotice('尚未配置 Provider。请先在设置中添加 Provider 后再使用项目 Agent。')
+      setLoading(true)
+
+      listSessions({ workspaceId, limit: 50 })
+        .then(async (sessionsRes) => {
+          if (cancelled) return null
+          const existing = sessionsRes.sessions.find((session) => session.status !== 'error')
+          if (existing != null) {
+            setSessionId(existing.id)
+            return getHistory({ sessionId: existing.id, limit: 200 })
+          }
+
+          const providersRes = await listProviders({})
+          if (cancelled) return null
+          const provider = providersRes.profiles.find((profile) => profile.isDefault) ?? providersRes.profiles[0]
+          if (provider == null) {
+            setNotice('尚未配置 Provider。请先在设置中添加 Provider 后再使用项目 Agent。')
+            return null
+          }
+
+          const created = await createSession({
+            providerProfileId: provider.id,
+            workspaceId,
+          })
+          if (!cancelled) setSessionId(created.sessionId)
           return null
-        }
-
-        const created = await createSession({
-          providerProfileId: provider.id,
-          workspaceId,
         })
-        if (!cancelled) setSessionId(created.sessionId)
-        return null
-      })
-      .then((historyRes) => {
-        if (cancelled || historyRes == null) return
-        const historyBuilder = new MessageBuilder()
-        for (const event of historyRes.events) {
-          historyBuilder.processEvent(event)
-          if (event.type === 'agent_status') setAgentStatus(event.status)
-        }
-        builderRef.current = historyBuilder
-        setMessages(historyBuilder.getAllMessages())
-      })
-      .catch((err) => {
-        console.error(err)
-        if (!cancelled) setNotice(err instanceof Error ? err.message : '加载项目 Agent 失败')
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
+        .then((historyRes) => {
+          if (cancelled || historyRes == null) return
+          const historyBuilder = new MessageBuilder()
+          for (const event of historyRes.events) {
+            historyBuilder.processEvent(event)
+            if (event.type === 'agent_status') setAgentStatus(event.status)
+          }
+          builderRef.current = historyBuilder
+          setMessages(historyBuilder.getAllMessages())
+        })
+        .catch((err) => {
+          console.error(err)
+          if (!cancelled) setNotice(err instanceof Error ? err.message : '加载项目 Agent 失败')
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false)
+        })
       })
 
     return () => {
       cancelled = true
+      cancelStart()
     }
   }, [workspaceId, listSessions, getHistory, listProviders, createSession])
 
@@ -561,6 +572,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
       <div className="agent-pane-composer">
         <div className="composer">
           <textarea
+            className="composer-input"
             rows={2}
             placeholder={sessionId != null ? '给 Agent 发消息…  ⌘↵ 发送' : '请先打开工作区并配置 Provider'}
             value={input}

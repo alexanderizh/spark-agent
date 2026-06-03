@@ -57,6 +57,13 @@ type UICmd = {
   execute: () => void | Promise<void>
 }
 
+function deferEffect(task: () => void | Promise<void>): () => void {
+  const id = window.setTimeout(() => {
+    void task()
+  }, 0)
+  return () => window.clearTimeout(id)
+}
+
 /* ============================================================
    Recent commands persistence
    ============================================================ */
@@ -490,13 +497,15 @@ export function CommandPalette({
   const flatItems = filteredSections().flatMap((s) => s.items)
 
   useEffect(() => {
-    setSelectedIndex(0)
+    return deferEffect(() => setSelectedIndex(0))
   }, [query])
 
   useEffect(() => {
-    if (flatItems.length > 0 && selectedIndex >= flatItems.length) {
-      setSelectedIndex(flatItems.length - 1)
-    }
+    return deferEffect(() => {
+      if (flatItems.length > 0 && selectedIndex >= flatItems.length) {
+        setSelectedIndex(flatItems.length - 1)
+      }
+    })
   }, [flatItems.length, selectedIndex])
 
   // Scroll selected into view

@@ -5,14 +5,33 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { ConfirmDialog } from './components/ConfirmDialog'
+import { PromptDialog } from './components/PromptDialog'
 
-export type NavGuard = () => boolean
+export type NavGuard = () => boolean | Promise<boolean>
 
 export type ThemeMode = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
 export type ViewId = 'chat' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
 export type ChatMode = 'vibe' | 'workspace'
+
+export type ConfirmOptions = {
+  title: string
+  description?: string
+  confirmText?: string
+  cancelText?: string
+  danger?: boolean
+}
+
+export type PromptOptions = {
+  title: string
+  description?: string
+  value?: string
+  placeholder?: string
+  confirmText?: string
+  cancelText?: string
+}
 
 export type Tweaks = {
   theme: ThemeMode
@@ -129,20 +148,33 @@ type AppCtx = {
   t: Tweaks
   setTweak: <K extends keyof Tweaks>(key: K, val: Tweaks[K]) => void
   registerNavGuard: (guard: NavGuard | null) => void
+  requestConfirm: (options: ConfirmOptions) => Promise<boolean>
+  requestPrompt: (options: PromptOptions) => Promise<string | null>
 }
 
 const Ctx = createContext<AppCtx | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [t, setT] = useState<Tweaks>(readInitialTweaks)
+  const [confirmRequest, setConfirmRequest] = useState<(ConfirmOptions & { resolve: (value: boolean) => void }) | null>(null)
+  const [promptRequest, setPromptRequest] = useState<(PromptOptions & { resolve: (value: string | null) => void }) | null>(null)
   const navGuardRef = useRef<NavGuard | null>(null)
+  const confirmHandledRef = useRef(false)
+  const promptHandledRef = useRef(false)
   const registerNavGuard = useCallback<AppCtx['registerNavGuard']>((guard) => {
     navGuardRef.current = guard
   }, [])
-  const setTweak = useCallback<AppCtx['setTweak']>((key, val) => {
-    if (key === 'view' && navGuardRef.current && val !== t.view) {
-      if (!navGuardRef.current()) return
-    }
+  const requestConfirm = useCallback<AppCtx['requestConfirm']>((options) => (
+    new Promise<boolean>((resolve) => {
+      setConfirmRequest({ ...options, resolve })
+    })
+  ), [])
+  const requestPrompt = useCallback<AppCtx['requestPrompt']>((options) => (
+    new Promise<string | null>((resolve) => {
+      setPromptRequest({ ...options, resolve })
+    })
+  ), [])
+  const applyTweak = useCallback<AppCtx['setTweak']>((key, val) => {
     if (key === 'sidebar') {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, val as SidebarState)
     } else if (key === 'browserPanelOpen') {
@@ -158,7 +190,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (prev[key] === val) return prev
       return { ...prev, [key]: val }
     })
-  }, [t.view])
+  }, [])
+
+  const setTweak = useCallback<AppCtx['setTweak']>((key, val) => {
+    if (key === 'view' && navGuardRef.current && val !== t.view) {
+      void (async () => {
+        if (await navGuardRef.current?.()) applyTweak(key, val)
+      })()
+      return
+    }
+    applyTweak(key, val)
+  }, [applyTweak, t.view])
   useEffect(() => {
     const handler = (event: BeforeUnloadEvent) => {
       if (navGuardRef.current) {
@@ -169,8 +211,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
     window.addEventListener('beforeunload', handler)
     return () => window.removeEventListener('beforeunload', handler)
   }, [])
-  const value = useMemo<AppCtx>(() => ({ t, setTweak, registerNavGuard }), [t, setTweak, registerNavGuard])
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
+  useEffect(() => {
+    const root = document.documentElement
+    const primary = t.primary
+    const info = PRIMARIES[primary]
+    root.dataset.theme = t.theme
+    root.style.setProperty('--primary', primary)
+    root.style.setProperty('--primary-hover', info?.hover ?? primary)
+    root.style.setProperty('--primary-soft', info?.soft ?? 'rgba(99,102,241,0.12)')
+  }, [t.theme, t.primary])
+  const value = useMemo<AppCtx>(
+    () => ({ t, setTweak, registerNavGuard, requestConfirm, requestPrompt }),
+    [t, setTweak, registerNavGuard, requestConfirm, requestPrompt],
+  )
+  return (
+    <Ctx.Provider value={value}>
+      {children}
+      <ConfirmDialog
+        open={confirmRequest != null}
+        title={confirmRequest?.title ?? ''}
+        description={confirmRequest?.description}
+        confirmText={confirmRequest?.confirmText}
+        cancelText={confirmRequest?.cancelText}
+        danger={confirmRequest?.danger}
+        onOpenChange={(open) => {
+          if (open || confirmRequest == null) return
+          if (confirmHandledRef.current) {
+            confirmHandledRef.current = false
+            return
+          }
+          confirmRequest.resolve(false)
+          setConfirmRequest(null)
+        }}
+        onConfirm={() => {
+          confirmHandledRef.current = true
+          confirmRequest?.resolve(true)
+          setConfirmRequest(null)
+        }}
+      />
+      <PromptDialog
+        open={promptRequest != null}
+        title={promptRequest?.title ?? ''}
+        description={promptRequest?.description}
+        value={promptRequest?.value}
+        placeholder={promptRequest?.placeholder}
+        confirmText={promptRequest?.confirmText}
+        cancelText={promptRequest?.cancelText}
+        onOpenChange={(open) => {
+          if (open || promptRequest == null) return
+          if (promptHandledRef.current) {
+            promptHandledRef.current = false
+            return
+          }
+          promptRequest.resolve(null)
+          setPromptRequest(null)
+        }}
+        onConfirm={(value) => {
+          promptHandledRef.current = true
+          promptRequest?.resolve(value)
+          setPromptRequest(null)
+        }}
+      />
+    </Ctx.Provider>
+  )
 }
 
 export function useApp(): AppCtx {

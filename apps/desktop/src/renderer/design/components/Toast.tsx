@@ -13,7 +13,7 @@
  *   toast.error('连接失败', { duration: 8000 })
  *   toast.error('保存失败', { actions: [{ label: '重试', onClick: () => retry() }] })
  */
-import { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react'
+import { createContext, useCallback, useContext, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 
@@ -76,26 +76,16 @@ let _nextId = 0
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([])
-  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
-
-  const clearTimer = useCallback((id: string) => {
-    const timer = timersRef.current.get(id)
-    if (timer != null) {
-      clearTimeout(timer)
-      timersRef.current.delete(id)
-    }
-  }, [])
 
   const dismiss = useCallback((id: string) => {
     // Mark as exiting first (triggers slide-out animation)
     setToasts((prev) => prev.map((t) => t.id === id ? { ...t, exiting: true } : t))
-    clearTimer(id)
 
     // Remove after animation completes
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 260)
-  }, [clearTimer])
+  }, [])
 
   const addToast = useCallback(
     (type: ToastType, message: string, options?: ToastOptions): string => {
@@ -120,10 +110,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
       // Auto-dismiss (only if duration is finite)
       if (isFinite(duration) && duration > 0) {
-        const timer = setTimeout(() => {
+        setTimeout(() => {
           dismiss(id)
         }, duration)
-        timersRef.current.set(id, timer)
       }
 
       return id
@@ -131,16 +120,15 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     [dismiss],
   )
 
-  const toastFn = useCallback<ToastFn>(
-    ((type: ToastType, message: string, options?: ToastOptions) =>
-      addToast(type, message, options)) as ToastFn,
-    [addToast],
-  )
-
-  toastFn.success = (message, options) => addToast('success', message, options)
-  toastFn.error = (message, options) => addToast('error', message, options)
-  toastFn.info = (message, options) => addToast('info', message, options)
-  toastFn.warning = (message, options) => addToast('warning', message, options)
+  const toastFn = useMemo<ToastFn>(() => Object.assign(
+    (type: ToastType, message: string, options?: ToastOptions) => addToast(type, message, options),
+    {
+      success: (message: string, options?: ToastOptions) => addToast('success', message, options),
+      error: (message: string, options?: ToastOptions) => addToast('error', message, options),
+      info: (message: string, options?: ToastOptions) => addToast('info', message, options),
+      warning: (message: string, options?: ToastOptions) => addToast('warning', message, options),
+    },
+  ), [addToast])
 
   const value = useMemo<ToastCtx>(
     () => ({ toasts, toast: toastFn, dismiss }),

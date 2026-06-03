@@ -9,7 +9,7 @@
  * - 支持 mono-sm / flex1 / input-w-sm / input-max-sm 等原有 className
  */
 import { forwardRef } from 'react'
-import type { InputHTMLAttributes, SelectHTMLAttributes, ReactNode } from 'react'
+import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, ReactNode } from 'react'
 
 /* ============================================================
    SparkInput
@@ -21,7 +21,7 @@ type SparkInputProps = InputHTMLAttributes<HTMLInputElement> & {
 }
 
 export const SparkInput = forwardRef<HTMLInputElement, SparkInputProps>(
-  function SparkInput({ className = '', icon, children, ...rest }, ref) {
+  function SparkInput({ className = '', icon, ...rest }, ref) {
     if (icon) {
       return (
         <span className={`spark-input-wrap ${className}`}>
@@ -63,6 +63,38 @@ export const SparkSelect = forwardRef<HTMLSelectElement, SparkSelectProps>(
           <path d="M3 4.5L6 7.5L9 4.5" />
         </svg>
       </span>
+    )
+  },
+)
+
+/* ============================================================
+   SparkTextarea
+   ============================================================ */
+
+type SparkTextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>
+
+export const SparkTextarea = forwardRef<HTMLTextAreaElement, SparkTextareaProps>(
+  function SparkTextarea({ className = '', ...rest }, ref) {
+    return <textarea ref={ref} className={`spark-textarea ${className}`} {...rest} />
+  },
+)
+
+/* ============================================================
+   SparkCheckbox
+   ============================================================ */
+
+type SparkCheckboxProps = InputHTMLAttributes<HTMLInputElement> & {
+  label?: ReactNode
+}
+
+export const SparkCheckbox = forwardRef<HTMLInputElement, SparkCheckboxProps>(
+  function SparkCheckbox({ className = '', label, ...rest }, ref) {
+    return (
+      <label className={`spark-checkbox ${className}`}>
+        <input ref={ref} type="checkbox" {...rest} />
+        <span className="spark-checkbox-box" aria-hidden="true" />
+        {label != null && <span className="spark-checkbox-label">{label}</span>}
+      </label>
     )
   },
 )
