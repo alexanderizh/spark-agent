@@ -21,13 +21,16 @@ import type { HookNode } from '../hooks.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
-export type SessionAgentAdapter = 'claude' | 'claude-sdk'
+export type SessionAgentAdapter = 'claude' | 'claude-sdk' | 'codex'
 export type SessionPermissionMode =
   | 'claude-ask'
   | 'claude-auto-edits'
   | 'claude-plan'
   | 'claude-auto'
   | 'claude-bypass'
+  | 'codex-default'
+  | 'codex-auto-review'
+  | 'codex-full-access'
 
 // ─── Session Channels ─────────────────────────────────────────────────────────
 
@@ -40,6 +43,8 @@ export interface SessionCreateRequest {
   modelId?: string
   /** SDK/runtime adapter used to execute the task */
   agentAdapter?: SessionAgentAdapter
+  /** Managed agent profile; defaults to built-in code-agent. */
+  agentId?: string
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
@@ -60,6 +65,7 @@ export interface SessionSendTurnRequest {
   providerProfileId?: string
   modelId?: string | null
   agentAdapter?: SessionAgentAdapter
+  agentId?: string
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
@@ -139,6 +145,7 @@ export interface SessionUpdateRequest {
   providerProfileId?: string
   modelId?: string | null
   agentAdapter?: SessionAgentAdapter
+  agentId?: string
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
@@ -229,6 +236,7 @@ export interface SessionListResponse {
     workspaceIds: string[]
     providerProfileId: string
     modelId: string | null
+    agentId: string
     agentAdapter: SessionAgentAdapter
     permissionMode: SessionPermissionMode
     chatMode: SessionChatMode
@@ -253,6 +261,8 @@ export interface ProviderProfile {
   modelIds: string[]
   /** 自定义 API Endpoint */
   apiEndpoint?: string
+  /** OpenAI/Codex provider API style. */
+  codexApiKind?: 'chat' | 'responses'
   /** Whether this provider should use a 1M-token context window fallback. */
   supportsMillionContext?: boolean
   /** Keychain 引用 ID（非明文 Key）*/
@@ -276,6 +286,7 @@ export interface ProviderCreateRequest {
   /** 兼容旧版 payload，运行时会映射到 defaultModel */
   model?: string
   apiEndpoint?: string
+  codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
@@ -295,6 +306,7 @@ export interface ProviderUpdateRequest {
   model?: string
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
+  codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
   /** 更新 API Key 时传入，不更新则不传 */
   apiKey?: string
@@ -808,7 +820,7 @@ export interface LocalSkillCandidate {
   id: string
   name: string
   description: string
-  source: 'claude' | 'agents' | 'custom'
+  source: 'claude' | 'codex' | 'agents' | 'custom'
   rootPath: string
   skillFilePath: string
   installed: boolean
@@ -1042,7 +1054,7 @@ export interface SkillImportFileResponse {
 
 export interface SkillImportDirectoryRequest {
   directoryPath: string
-  source?: 'claude' | 'agents' | 'custom'
+  source?: 'claude' | 'codex' | 'agents' | 'custom'
 }
 
 export interface SkillImportDirectoryResponse {
@@ -1053,7 +1065,7 @@ export interface SkillImportDirectoryResponse {
 export interface SkillImportBatchLocalRequest {
   candidates: Array<{
     rootPath: string
-    source: 'claude' | 'agents' | 'custom'
+    source: 'claude' | 'codex' | 'agents' | 'custom'
   }>
 }
 
@@ -1138,6 +1150,203 @@ export interface PromptConfigUpdateRequest {
 }
 
 export interface PromptConfigUpdateResponse extends PromptConfigGetResponse {}
+
+// ─── Agent Management Channels ─────────────────────────────────────────────
+
+export interface ManagedAgent {
+  id: string
+  name: string
+  description: string
+  builtIn: boolean
+  enabled: boolean
+  providerProfileId?: string | null
+  modelId?: string | null
+  agentAdapter: SessionAgentAdapter
+  permissionMode: SessionPermissionMode
+  reasoningEffort: SessionReasoningEffort
+  prompt: string
+  ruleIds: string[]
+  skillIds: string[]
+  disabledSkillIds: string[]
+  mcpServerIds: string[]
+  hookConfig: Record<string, unknown>
+  workflowId?: string | null
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface AgentListRequest {
+  includeDisabled?: boolean
+}
+
+export interface AgentListResponse {
+  agents: ManagedAgent[]
+}
+
+export interface AgentGetRequest {
+  id: string
+}
+
+export interface AgentGetResponse {
+  agent: ManagedAgent | null
+}
+
+export interface AgentCreateRequest {
+  name: string
+  description?: string
+  enabled?: boolean
+  providerProfileId?: string | null
+  modelId?: string | null
+  agentAdapter?: SessionAgentAdapter
+  permissionMode?: SessionPermissionMode
+  reasoningEffort?: SessionReasoningEffort
+  prompt?: string
+  ruleIds?: string[]
+  skillIds?: string[]
+  disabledSkillIds?: string[]
+  mcpServerIds?: string[]
+  hookConfig?: Record<string, unknown>
+  workflowId?: string | null
+  metadata?: Record<string, unknown>
+}
+
+export interface AgentCreateResponse {
+  agent: ManagedAgent
+}
+
+export interface AgentUpdateRequest extends Partial<AgentCreateRequest> {
+  id: string
+}
+
+export interface AgentUpdateResponse {
+  agent: ManagedAgent
+}
+
+export interface AgentDeleteRequest {
+  id: string
+}
+
+export interface AgentDeleteResponse {
+  deleted: boolean
+}
+
+// ─── Workflow Channels ─────────────────────────────────────────────────────
+
+export type WorkflowStatus = 'draft' | 'active' | 'archived'
+export type WorkflowNodeKind =
+  | 'input'
+  | 'plan'
+  | 'agent'
+  | 'subagent'
+  | 'skill'
+  | 'tool'
+  | 'mcp'
+  | 'approval'
+  | 'verify'
+  | 'review'
+  | 'artifact'
+
+export interface WorkflowNodeConfig {
+  prompt?: string
+  role?: string
+  modelId?: string | null
+  providerProfileId?: string | null
+  skillIds?: string[]
+  toolIds?: string[]
+  mcpServerIds?: string[]
+  ruleIds?: string[]
+  permissionMode?: SessionPermissionMode
+  retryCount?: number
+  timeoutMs?: number
+  outputKey?: string
+  agentId?: string | null
+  parallelism?: number
+  verifyCommands?: string[]
+  [key: string]: unknown
+}
+
+export interface WorkflowNode {
+  id: string
+  kind: WorkflowNodeKind
+  title: string
+  x: number
+  y: number
+  config: WorkflowNodeConfig
+}
+
+export interface WorkflowEdge {
+  id: string
+  from: string
+  to: string
+}
+
+export interface WorkflowGraph {
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+}
+
+export interface WorkflowItem {
+  id: string
+  scope: string
+  name: string
+  version: string
+  description: string
+  status: WorkflowStatus
+  tags: string[]
+  enabled: boolean
+  graph: WorkflowGraph
+  createdAt: string
+  updatedAt: string
+}
+
+export interface WorkflowListRequest {
+  scope?: string
+  includeArchived?: boolean
+}
+
+export interface WorkflowListResponse {
+  workflows: WorkflowItem[]
+}
+
+export interface WorkflowGetRequest {
+  id: string
+}
+
+export interface WorkflowGetResponse {
+  workflow: WorkflowItem | null
+}
+
+export interface WorkflowCreateRequest {
+  scope?: string
+  name: string
+  version?: string
+  description?: string
+  status?: WorkflowStatus
+  tags?: string[]
+  enabled?: boolean
+  graph?: WorkflowGraph
+}
+
+export interface WorkflowCreateResponse {
+  workflow: WorkflowItem
+}
+
+export interface WorkflowUpdateRequest extends Partial<WorkflowCreateRequest> {
+  id: string
+}
+
+export interface WorkflowUpdateResponse {
+  workflow: WorkflowItem
+}
+
+export interface WorkflowDeleteRequest {
+  id: string
+}
+
+export interface WorkflowDeleteResponse {
+  deleted: boolean
+}
 
 // ─── App Info Channels ──────────────────────────────────────────────────────
 
@@ -1643,8 +1852,10 @@ export interface PlaywrightStatusResponse {
   mcpVersion: string | null
   /** Whether `playwright` package is resolvable */
   playwrightInstalled: boolean
-  /** Whether the chromium browser binary is downloaded and ready */
+  /** Whether any Playwright-compatible browser source is ready */
   browserReady: boolean
+  /** Which browser source is currently available for Playwright */
+  browserSource: 'bundled' | 'system' | 'none'
   /** Whether the managed `playwright` row exists in `mcp_servers` */
   mcpRegistered: boolean
   /** Whether the user has the managed MCP enabled (DB row `enabled=1`) */
@@ -1669,6 +1880,14 @@ export interface PlaywrightInstallResponse {
   message: string
   /** Updated version after install (when applicable) */
   newVersion?: string
+}
+
+export interface PlaywrightInstallProgress {
+  target: 'mcp' | 'browser'
+  state: 'starting' | 'downloading' | 'installing' | 'verifying' | 'done' | 'error'
+  percent: number | null
+  message: string
+  logLine: string | null
 }
 
 export interface PlaywrightResetConfigRequest {}
@@ -1960,6 +2179,20 @@ export interface IpcChannelMap {
   'prompt-config:get': [PromptConfigGetRequest, PromptConfigGetResponse]
   'prompt-config:update': [PromptConfigUpdateRequest, PromptConfigUpdateResponse]
 
+  // Agents
+  'agent:list': [AgentListRequest, AgentListResponse]
+  'agent:get': [AgentGetRequest, AgentGetResponse]
+  'agent:create': [AgentCreateRequest, AgentCreateResponse]
+  'agent:update': [AgentUpdateRequest, AgentUpdateResponse]
+  'agent:delete': [AgentDeleteRequest, AgentDeleteResponse]
+
+  // Workflows
+  'workflow:list': [WorkflowListRequest, WorkflowListResponse]
+  'workflow:get': [WorkflowGetRequest, WorkflowGetResponse]
+  'workflow:create': [WorkflowCreateRequest, WorkflowCreateResponse]
+  'workflow:update': [WorkflowUpdateRequest, WorkflowUpdateResponse]
+  'workflow:delete': [WorkflowDeleteRequest, WorkflowDeleteResponse]
+
   // Skill Registry (Skill Store)
   'skill-registry:list': [SkillRegistryListRequest, SkillRegistryListResponse]
   'skill-registry:update': [SkillRegistryUpdateRequest, SkillRegistryUpdateResponse]
@@ -2097,6 +2330,8 @@ export interface IpcStreamChannelMap {
   'stream:env:status': ShellEnvironmentStatus
   /** Playwright 安装/状态变化推送（Settings UI 监听）*/
   'stream:playwright:status': PlaywrightStatusResponse
+  /** Playwright MCP / Chromium 安装进度推送 */
+  'stream:playwright:install-progress': PlaywrightInstallProgress
   /** Embedded browser view screenshot/page update (Renderer listens for live preview) */
   'stream:playwright:view': {
     title: string | null

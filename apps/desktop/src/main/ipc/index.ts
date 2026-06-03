@@ -30,7 +30,10 @@ import {
   SettingsRepository,
   UsageLedgerRepository,
   ContextPreferenceRepository,
+  AgentRepository,
+  WorkflowRepository,
 } from '@spark/storage'
+import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem } from '@spark/storage'
 import {
   ProviderService,
   RulesService,
@@ -52,6 +55,10 @@ import type {
   SessionPermissionMode,
   WorkspaceInfo,
   HookNode,
+  PlaywrightInstallProgress,
+  ManagedAgent,
+  WorkflowItem as ProtocolWorkflowItem,
+  WorkflowGraph,
 } from '@spark/protocol'
 import type {
   SessionEventHandler,
@@ -119,6 +126,14 @@ function getMcpService(): McpService {
 
 function getSkillService(): SkillService {
   return new SkillService(new SkillRepository(getDatabase()))
+}
+
+function getAgentRepository(): AgentRepository {
+  return new AgentRepository(getDatabase())
+}
+
+function getWorkflowRepository(): WorkflowRepository {
+  return new WorkflowRepository(getDatabase())
 }
 
 function getRuntimeCompositionService(): RuntimeCompositionService {
@@ -336,7 +351,9 @@ async function triggerHook(
   try {
     // 直接调用 hook 逻辑（不通过 IPC）
     const hookConfigValue = getSettingsService().get('hooks', 'config')
-    const hookConfig = parseHookConfig(hookConfigValue)
+    const globalHookConfig = parseHookConfig(hookConfigValue)
+    const agentHookConfig = readAgentHookConfig(sessionId)
+    const hookConfig = agentHookConfig.enabled ? agentHookConfig : globalHookConfig
 
     if (!hookConfig.enabled) {
       return false
@@ -378,6 +395,14 @@ async function triggerHook(
   }
 }
 
+function readAgentHookConfig(sessionId: string): HookConfigInternal {
+  const session = new SessionRepository(getDatabase()).get(sessionId)
+  if (session == null) return { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false }
+  const agent = getAgentRepository().get(session.agent_id ?? 'code-agent')
+  if (agent == null) return { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false }
+  return parseHookConfig(agent.hookConfig, { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false })
+}
+
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
 
@@ -395,6 +420,7 @@ export function registerAllIpcHandlers(): void {
       message: req.message,
       ...(req.providerProfileId !== undefined ? { providerProfileId: req.providerProfileId } : {}),
       ...(req.modelId !== undefined ? { modelId: req.modelId } : {}),
+      ...(req.agentId !== undefined ? { agentId: req.agentId } : {}),
       ...(req.agentAdapter !== undefined ? { agentAdapter: req.agentAdapter } : {}),
       ...(req.permissionMode !== undefined ? { permissionMode: req.permissionMode } : {}),
       ...(req.chatMode !== undefined ? { chatMode: req.chatMode } : {}),
@@ -894,6 +920,112 @@ export function registerAllIpcHandlers(): void {
     return getRuntimeCompositionService().updatePromptConfig(req.scope, req.scopeRef, req.value)
   })
 
+  // ─── Agent Management Handlers ────────────────────────────────────────
+
+  typedIpcHandle('agent:list', async (req) => {
+    const agents = getAgentRepository()
+      .list(req.includeDisabled !== undefined ? { includeDisabled: req.includeDisabled } : {})
+      .map(toManagedAgent)
+    return { agents }
+  })
+
+  typedIpcHandle('agent:get', async (req) => {
+    const agent = getAgentRepository().get(req.id)
+    return { agent: agent != null ? toManagedAgent(agent) : null }
+  })
+
+  typedIpcHandle('agent:create', async (req) => {
+    const agent = getAgentRepository().create(req)
+    if (agent.prompt.trim().length > 0) {
+      getRuntimeCompositionService().updatePromptConfig('agent', agent.id, {
+        enabled: true,
+        content: agent.prompt,
+      })
+    }
+    if ((agent.skillIds.length > 0 || agent.disabledSkillIds.length > 0) && agent.id) {
+      getRuntimeCompositionService().updateSkillConfig(
+        'agent',
+        agent.id,
+        agent.skillIds,
+        agent.disabledSkillIds,
+      )
+    }
+    return { agent: toManagedAgent(agent) }
+  })
+
+  typedIpcHandle('agent:update', async (req) => {
+    const { id, ...fields } = req
+    const agent = getAgentRepository().update(id, fields)
+    if (agent == null) throw new Error(`Agent not found: ${id}`)
+    if (fields.prompt !== undefined) {
+      getRuntimeCompositionService().updatePromptConfig('agent', agent.id, {
+        enabled: agent.prompt.trim().length > 0,
+        content: agent.prompt,
+      })
+    }
+    if (fields.skillIds !== undefined || fields.disabledSkillIds !== undefined) {
+      getRuntimeCompositionService().updateSkillConfig(
+        'agent',
+        agent.id,
+        agent.skillIds,
+        agent.disabledSkillIds,
+      )
+    }
+    return { agent: toManagedAgent(agent) }
+  })
+
+  typedIpcHandle('agent:delete', async (req) => {
+    const deleted = getAgentRepository().delete(req.id)
+    return { deleted }
+  })
+
+  // ─── Workflow Handlers ────────────────────────────────────────────────
+
+  typedIpcHandle('workflow:list', async (req) => {
+    const workflows = getWorkflowRepository()
+      .list({
+        ...(req.scope !== undefined ? { scope: req.scope } : {}),
+        ...(req.includeArchived !== undefined ? { includeArchived: req.includeArchived } : {}),
+      })
+      .map(toWorkflowItem)
+    return { workflows }
+  })
+
+  typedIpcHandle('workflow:get', async (req) => {
+    const workflow = getWorkflowRepository().get(req.id)
+    return { workflow: workflow != null ? toWorkflowItem(workflow) : null }
+  })
+
+  typedIpcHandle('workflow:create', async (req) => {
+    const { graph, ...fields } = req
+    const workflow = getWorkflowRepository().create({
+      ...fields,
+      ...(graph !== undefined ? { graph: graph as unknown as Record<string, unknown> } : {}),
+    })
+    return { workflow: toWorkflowItem(workflow) }
+  })
+
+  typedIpcHandle('workflow:update', async (req) => {
+    const { id, graph, ...fields } = req
+    const workflow = getWorkflowRepository().update(id, {
+      ...fields,
+      ...(graph !== undefined ? { graph: graph as unknown as Record<string, unknown> } : {}),
+    })
+    if (workflow == null) throw new Error(`Workflow not found: ${id}`)
+    return { workflow: toWorkflowItem(workflow) }
+  })
+
+  typedIpcHandle('workflow:delete', async (req) => {
+    const agents = getAgentRepository().list({ includeDisabled: true })
+    for (const agent of agents) {
+      if (agent.workflowId === req.id && !agent.builtIn) {
+        getAgentRepository().update(agent.id, { workflowId: null })
+      }
+    }
+    const deleted = getWorkflowRepository().delete(req.id)
+    return { deleted }
+  })
+
   // ─── Skill Registry Handlers (Skill Store) ─────────────────────────────
 
   typedIpcHandle('skill-registry:list', async (_req) => {
@@ -1230,7 +1362,11 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('context:list-preferences', async (req) => {
     log.info(`context:list-preferences requested, workspaceId=${req.workspaceId}`)
     const repo = new ContextPreferenceRepository(getDatabase())
-    const rows = repo.list({ workspaceId: req.workspaceId, action: req.action, enabledOnly: false })
+    const rows = repo.list({
+      workspaceId: req.workspaceId,
+      ...(req.action !== undefined ? { action: req.action } : {}),
+      enabledOnly: false,
+    })
     const preferences = rows.map((row) => ({
       id: row.id,
       workspaceId: row.workspace_id,
@@ -1251,7 +1387,7 @@ export function registerAllIpcHandlers(): void {
       workspaceId: req.workspaceId,
       filePath: req.filePath,
       action: req.action,
-      enabled: req.enabled,
+      ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
     })
     return {
       preference: {
@@ -1315,8 +1451,43 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('playwright:install', async (req) => {
     log.info(`playwright:install requested, target=${req.target}`)
+    let lastPercent: number | null = null
+    const emitInstallProgress = (
+      patch: Partial<PlaywrightInstallProgress> & Pick<PlaywrightInstallProgress, 'state' | 'message'>,
+    ) => {
+      pushStreamEvent('stream:playwright:install-progress', {
+        target: req.target,
+        percent: patch.percent ?? lastPercent,
+        logLine: patch.logLine ?? null,
+        ...patch,
+      })
+    }
+    emitInstallProgress({
+      state: 'starting',
+      percent: 0,
+      message: req.target === 'browser' ? '准备下载内置 Chromium' : '准备安装 Playwright MCP',
+    })
     const onLog = (line: string) => {
-      log.info(`[playwright-install] ${line.trim()}`)
+      const text = line.trim()
+      if (text.length === 0) return
+      log.info(`[playwright-install] ${text}`)
+      const percentMatch = text.match(/(\d+(?:\.\d+)?)%/)
+      const parsedPercent = percentMatch != null ? Number(percentMatch[1]) : null
+      if (parsedPercent != null && Number.isFinite(parsedPercent)) {
+        lastPercent = Math.max(0, Math.min(100, parsedPercent))
+      }
+      const lower = text.toLowerCase()
+      const state: PlaywrightInstallProgress['state'] =
+        req.target === 'browser' && (lower.includes('download') || lower.includes('chromium'))
+          ? 'downloading'
+          : lower.includes('install') || lower.includes('add')
+            ? 'installing'
+            : 'verifying'
+      emitInstallProgress({
+        state,
+        message: req.target === 'browser' ? '正在下载内置 Chromium' : '正在安装 Playwright MCP',
+        logLine: text,
+      })
     }
     const result =
       req.target === 'mcp'
@@ -1325,6 +1496,12 @@ export function registerAllIpcHandlers(): void {
     // Refresh state after install completes
     detectIntegrity()
     pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    emitInstallProgress({
+      state: result.success ? 'done' : 'error',
+      percent: result.success ? 100 : lastPercent,
+      message: result.message,
+      logLine: result.message,
+    })
     return result
   })
 
@@ -1372,10 +1549,8 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('playwright:close-view', async () => {
-    log.info('playwright:close-view requested (hiding window)')
-    // Hide instead of destroy — the embedded view stays alive so MCP keeps
-    // connected via CDP. Window is destroyed only on app quit (bindLifecycle).
-    setVisible(false)
+    log.info('playwright:close-view requested')
+    closeView()
     pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
     return { success: true }
   })
@@ -1422,6 +1597,99 @@ function toWorkspaceInfo(workspace: {
   }
 }
 
+function toManagedAgent(agent: StorageAgentItem): ManagedAgent {
+  return {
+    ...agent,
+    agentAdapter:
+      agent.agentAdapter === 'claude' ||
+      agent.agentAdapter === 'claude-sdk' ||
+      agent.agentAdapter === 'codex'
+        ? agent.agentAdapter
+        : 'claude-sdk',
+    permissionMode: isProtocolPermissionMode(agent.permissionMode)
+      ? agent.permissionMode
+      : 'claude-ask',
+    reasoningEffort: isProtocolReasoning(agent.reasoningEffort)
+      ? agent.reasoningEffort
+      : 'medium',
+  }
+}
+
+function toWorkflowItem(workflow: StorageWorkflowItem): ProtocolWorkflowItem {
+  return {
+    ...workflow,
+    graph: toWorkflowGraph(workflow.graph),
+  }
+}
+
+function toWorkflowGraph(value: Record<string, unknown>): WorkflowGraph {
+  const nodes = Array.isArray(value.nodes)
+    ? value.nodes.flatMap((node) => {
+        if (node == null || typeof node !== 'object') return []
+        const record = node as Record<string, unknown>
+        const id = typeof record.id === 'string' ? record.id : ''
+        if (!id) return []
+        const kind = typeof record.kind === 'string' ? record.kind : 'agent'
+        return [{
+          id,
+          kind: isWorkflowNodeKind(kind) ? kind : 'agent',
+          title: typeof record.title === 'string' ? record.title : id,
+          x: typeof record.x === 'number' ? record.x : 80,
+          y: typeof record.y === 'number' ? record.y : 80,
+          config:
+            record.config != null && typeof record.config === 'object'
+              ? (record.config as Record<string, unknown>)
+              : {},
+        }]
+      })
+    : []
+  const edges = Array.isArray(value.edges)
+    ? value.edges.flatMap((edge) => {
+        if (edge == null || typeof edge !== 'object') return []
+        const record = edge as Record<string, unknown>
+        const from = typeof record.from === 'string' ? record.from : ''
+        const to = typeof record.to === 'string' ? record.to : ''
+        if (!from || !to) return []
+        return [{
+          id: typeof record.id === 'string' ? record.id : `${from}-${to}`,
+          from,
+          to,
+        }]
+      })
+    : []
+  return { nodes, edges }
+}
+
+function isProtocolPermissionMode(value: string): value is ManagedAgent['permissionMode'] {
+  return (
+    value === 'claude-ask' ||
+    value === 'claude-auto-edits' ||
+    value === 'claude-plan' ||
+    value === 'claude-auto' ||
+    value === 'claude-bypass' ||
+    value === 'codex-default' ||
+    value === 'codex-auto-review' ||
+    value === 'codex-full-access'
+  )
+}
+
+function isProtocolReasoning(value: string): value is ManagedAgent['reasoningEffort'] {
+  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh'
+}
+
+function isWorkflowNodeKind(kind: string): kind is ProtocolWorkflowItem['graph']['nodes'][number]['kind'] {
+  return (
+    kind === 'input' ||
+    kind === 'agent' ||
+    kind === 'skill' ||
+    kind === 'tool' ||
+    kind === 'mcp' ||
+    kind === 'approval' ||
+    kind === 'review' ||
+    kind === 'artifact'
+  )
+}
+
 async function getWorkspaceBranches(
   rootPath: string,
 ): Promise<{ currentBranch: string | null; branches: string[] }> {
@@ -1459,21 +1727,24 @@ const DEFAULT_HOOK_CONFIG_INTERNAL: HookConfigInternal = {
   },
 }
 
-function parseHookConfig(value: unknown): HookConfigInternal {
+function parseHookConfig(
+  value: unknown,
+  defaults: HookConfigInternal = DEFAULT_HOOK_CONFIG_INTERNAL,
+): HookConfigInternal {
   if (value == null || typeof value !== 'object') {
-    return DEFAULT_HOOK_CONFIG_INTERNAL
+    return defaults
   }
   try {
     const config = value as Partial<HookConfigInternal>
     return {
-      enabled: config.enabled ?? DEFAULT_HOOK_CONFIG_INTERNAL.enabled,
+      enabled: config.enabled ?? defaults.enabled,
       nodes: {
-        ...DEFAULT_HOOK_CONFIG_INTERNAL.nodes,
+        ...defaults.nodes,
         ...(config.nodes ?? {}),
       },
     }
   } catch {
-    return DEFAULT_HOOK_CONFIG_INTERNAL
+    return defaults
   }
 }
 
@@ -1548,6 +1819,7 @@ function buildPlaywrightStatus(): import('@spark/protocol').PlaywrightStatusResp
     mcpVersion: integrity.mcpVersion,
     playwrightInstalled: integrity.playwrightInstalled,
     browserReady: integrity.browserReady,
+    browserSource: integrity.browserSource,
     mcpRegistered: registration.registered,
     mcpEnabled: registration.enabled,
     mode: registration.mode,

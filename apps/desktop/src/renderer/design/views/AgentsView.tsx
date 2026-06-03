@@ -1,493 +1,532 @@
-/**
- * AgentsView — Multi-Agent 协作视图（真实 IPC 数据驱动）
- *
- * 数据来源：
- *   - session:list → 每个 session 就是一个 agent 实例
- *   - session:get-history → 聚合事件时间线
- *   - provider:list → Provider 信息
- *   - usage:get-session → Token 用量
- */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useToast } from '../components/Toast'
 import type {
-  AgentEvent,
+  ManagedAgent,
+  McpServerItem,
   ProviderProfile,
-  SessionListResponse,
-  WorkspaceInfo,
+  RuleItem,
+  SessionAgentAdapter,
+  SessionPermissionMode,
+  SessionReasoningEffort,
+  SkillItem,
+  WorkflowItem,
 } from '@spark/protocol'
-import { useApp } from '../AppContext'
 
-type AgentStatus = 'running' | 'done' | 'idle' | 'failed'
-
-type SessionSummary = SessionListResponse['sessions'][number]
-
-/** Agent 卡片需要的数据（从 session 衍生） */
-interface AgentCardData {
-  sessionId: string
-  icon: ReactNode
+type AgentDraft = {
+  id?: string
   name: string
-  role: string
-  status: AgentStatus
-  stats: [string, string][]
-  current: string
-  createdAt: string
-  messageCount: number
+  description: string
+  enabled: boolean
+  builtIn: boolean
+  providerProfileId: string
+  modelId: string
+  agentAdapter: SessionAgentAdapter
+  permissionMode: SessionPermissionMode
+  reasoningEffort: SessionReasoningEffort
+  prompt: string
+  skillIds: string[]
+  disabledSkillIds: string[]
+  mcpServerIds: string[]
+  ruleIds: string[]
+  hookConfig: AgentHookConfig
+  workflowId: string
 }
 
-/** 时间线条目（从 session event 衍生） */
-interface TimelineEntry {
-  time: string
-  marker: string
-  icon: ReactNode
-  title: ReactNode
-  meta?: string | undefined
-  sortKey: number
+type AgentHookConfig = {
+  enabled: boolean
+  nodes: Record<AgentHookNode, { sound: boolean; notification: boolean }>
 }
 
-// ─── 辅助函数 ─────────────────────────────────────────────────────────────────
+type AgentHookNode = 'permission_request' | 'ask_user_question' | 'session_end' | 'session_fail'
 
-/** 从 ISO 时间戳提取 HH:MM:SS */
-function toHHMMSS(iso: string): string {
-  try {
-    const d = new Date(iso)
-    return d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-  } catch {
-    return '--:--:--'
-  }
+const EMPTY_DRAFT: AgentDraft = {
+  name: '新 Agent',
+  description: '',
+  enabled: true,
+  builtIn: false,
+  providerProfileId: '',
+  modelId: '',
+  agentAdapter: 'claude-sdk',
+  permissionMode: 'claude-ask',
+  reasoningEffort: 'medium',
+  prompt: '',
+  skillIds: [],
+  disabledSkillIds: [],
+  mcpServerIds: [],
+  ruleIds: [],
+  hookConfig: {
+    enabled: false,
+    nodes: {
+      permission_request: { sound: true, notification: true },
+      ask_user_question: { sound: true, notification: true },
+      session_end: { sound: false, notification: true },
+      session_fail: { sound: true, notification: true },
+    },
+  },
+  workflowId: '',
 }
-
-/** 根据 agentAdapter 返回对应图标 */
-function adapterIcon(adapter: string): ReactNode {
-  switch (adapter) {
-    case 'claude':
-      return <Icons.Brain />
-    case 'codex':
-      return <Icons.Code />
-    default:
-      return <Icons.Zap size={16} />
-  }
-}
-
-/** 根据 agentAdapter 返回可读名称 */
-function adapterLabel(adapter: string): string {
-  switch (adapter) {
-    case 'claude':
-      return 'Claude'
-    case 'codex':
-      return 'Codex'
-    default:
-      return adapter
-  }
-}
-
-/** 将 session status 映射为 AgentStatus */
-function mapSessionStatus(status: string): AgentStatus {
-  switch (status) {
-    case 'running':
-      return 'running'
-    case 'idle':
-      return 'idle'
-    case 'error':
-      return 'failed'
-    default:
-      return 'done'
-  }
-}
-
-/** 根据 chatMode 返回角色标签 */
-function chatModeLabel(chatMode: string): string {
-  switch (chatMode) {
-    case 'agent':
-      return 'Agent'
-    case 'ask':
-      return 'Ask'
-    case 'edit':
-      return 'Edit'
-    case 'review':
-      return 'Review'
-    default:
-      return chatMode
-  }
-}
-
-/** 根据 event 类型生成时间线条目 */
-function eventToTimeline(event: AgentEvent, idx: number): TimelineEntry | null {
-  const time = toHHMMSS(event.timestamp)
-  switch (event.type) {
-    case 'user_message':
-      return {
-        time, marker: 'primary', icon: <Icons.User size={11} />,
-        title: <><strong>用户</strong> 发送消息</>,
-        meta: event.content.length > 80 ? event.content.slice(0, 80) + '...' : event.content,
-        sortKey: idx,
-      }
-    case 'assistant_message':
-      if (event.mode === 'delta') return null // skip streaming deltas
-      return {
-        time, marker: '', icon: <Icons.Chat size={11} />,
-        title: <><strong>助手</strong> 回复</>,
-        meta: event.content.length > 80 ? event.content.slice(0, 80) + '...' : event.content,
-        sortKey: idx,
-      }
-    case 'tool_call':
-      return {
-        time, marker: '', icon: <Icons.Terminal size={11} />,
-        title: <>调用 <span className="mono-sm">{event.toolName}</span></>,
-        meta: event.source === 'mcp' ? `MCP: ${event.mcpServerId ?? 'unknown'}` : '内置工具',
-        sortKey: idx,
-      }
-    case 'tool_result': {
-      const success = event.status === 'success'
-      return {
-        time, marker: success ? 'success' : 'warning', icon: success ? <Icons.Check size={11} /> : <Icons.AlertTriangle size={11} />,
-        title: <><strong>{event.toolName}</strong> {success ? '执行完成' : `失败: ${event.error ?? ''}`}</>,
-        meta: event.durationMs != null ? `耗时 ${event.durationMs}ms` : undefined,
-        sortKey: idx,
-      }
-    }
-    case 'permission_request':
-      return {
-        time, marker: 'warning', icon: <Icons.Shield size={11} />,
-        title: <>请求权限 · <span className="mono-sm">{event.action}</span></>,
-        meta: event.description,
-        sortKey: idx,
-      }
-    case 'permission_response':
-      return {
-        time, marker: 'primary', icon: <Icons.Shield size={11} />,
-        title: <>权限审批 · {event.decision}</>,
-        sortKey: idx,
-      }
-    case 'file_change':
-      return {
-        time, marker: '', icon: <Icons.Edit size={11} />,
-        title: <><strong>文件{event.changeType === 'create' ? '创建' : event.changeType === 'delete' ? '删除' : '修改'}</strong> <span className="mono-sm">{event.path}</span></>,
-        meta: event.diff != null ? `${event.diff.split('\n').length} 行变更` : undefined,
-        sortKey: idx,
-      }
-    case 'agent_status':
-      return {
-        time, marker: event.status === 'completed' ? 'success' : event.status === 'error' ? 'warning' : 'primary',
-        icon: <Icons.Activity size={11} />,
-        title: <>状态: <strong>{event.status}</strong></>,
-        meta: event.message,
-        sortKey: idx,
-      }
-    case 'agent_thinking':
-      return null // skip thinking events (too many)
-    case 'usage_update':
-      return null // skip usage events (shown in card stats)
-    case 'agent_error':
-      return {
-        time, marker: 'warning', icon: <Icons.XCircle size={11} />,
-        title: <><strong>错误</strong> {event.code}</>,
-        meta: event.message,
-        sortKey: idx,
-      }
-    case 'terminal_output':
-      return null // skip terminal output (too verbose)
-    case 'plan_proposed':
-      return {
-        time, marker: 'primary', icon: <Icons.Map size={11} />,
-        title: <><strong>计划提交</strong> 等待审批</>,
-        meta: event.plan.length > 80 ? event.plan.slice(0, 80) + '...' : event.plan,
-        sortKey: idx,
-      }
-    case 'context_usage':
-      return null // skip context usage
-    default:
-      return null
-  }
-}
-
-// ─── 组件 ─────────────────────────────────────────────────────────────────────
 
 export function AgentsView() {
-  const { setTweak } = useApp()
-
-  // State
-  const [sessions, setSessions] = useState<SessionSummary[]>([])
+  const { toast } = useToast()
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
-  const [workspace, setWorkspace] = useState<WorkspaceInfo | null>(null)
-  const [timelineEvents, setTimelineEvents] = useState<TimelineEntry[]>([])
+  const [skills, setSkills] = useState<SkillItem[]>([])
+  const [mcpServers, setMcpServers] = useState<McpServerItem[]>([])
+  const [rules, setRules] = useState<RuleItem[]>([])
+  const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
+  const [selectedId, setSelectedId] = useState<string>('code-agent')
+  const [draft, setDraft] = useState<AgentDraft>(EMPTY_DRAFT)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
-  // IPC hooks
-  const { invoke: listSessions } = useIpcInvoke('session:list')
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: createAgent } = useIpcInvoke('agent:create')
+  const { invoke: updateAgent } = useIpcInvoke('agent:update')
+  const { invoke: deleteAgent } = useIpcInvoke('agent:delete')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
-  const { invoke: getSessionHistory } = useIpcInvoke('session:get-history')
+  const { invoke: listSkills } = useIpcInvoke('skill:list')
+  const { invoke: listMcp } = useIpcInvoke('mcp:list')
+  const { invoke: listRules } = useIpcInvoke('rules:list')
+  const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
 
-  // Refresh data
   const refresh = useCallback(async () => {
     setLoading(true)
-    setError(null)
     try {
-      const [sessionRes, providerRes, workspaceRes] = await Promise.all([
-        listSessions({ limit: 50 }),
+      const [agentRes, providerRes, skillRes, mcpRes, ruleRes, workflowRes] = await Promise.all([
+        listAgents({ includeDisabled: true }),
         listProviders({}),
-        getCurrentWorkspace({}),
+        listSkills({}),
+        listMcp({}),
+        listRules({}),
+        listWorkflows({ includeArchived: true }),
       ])
-      setSessions(sessionRes.sessions)
+      setAgents(agentRes.agents)
       setProviders(providerRes.profiles)
-      setWorkspace(workspaceRes.workspace)
-
-      // Aggregate timeline from all sessions (take last 50 events across sessions)
-      const allTimelineEntries: TimelineEntry[] = []
-      const sortedSessions = [...sessionRes.sessions].sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-      )
-      // Only fetch events from recent sessions to avoid excessive IPC calls
-      const recentSessions = sortedSessions.slice(0, 5)
-      for (const session of recentSessions) {
-        try {
-          const historyRes = await getSessionHistory({
-            sessionId: session.id,
-            limit: 20,
-          })
-          for (const evt of historyRes.events) {
-            const entry = eventToTimeline(evt, new Date(evt.timestamp).getTime())
-            if (entry) {
-              allTimelineEntries.push({
-                ...entry,
-                // Prefix title with session title for clarity
-                title: <>{entry.title}</>,
-              })
-            }
-          }
-        } catch {
-          // Skip sessions whose history fails to load
-        }
+      setSkills(skillRes.skills)
+      setMcpServers(mcpRes.servers)
+      setRules(ruleRes.rules)
+      setWorkflows(workflowRes.workflows)
+      const selected = agentRes.agents.find((agent) => agent.id === selectedId) ?? agentRes.agents[0]
+      if (selected != null) {
+        setSelectedId(selected.id)
+        setDraft(agentToDraft(selected))
       }
-      // Sort by timestamp descending
-      allTimelineEntries.sort((a, b) => b.sortKey - a.sortKey)
-      setTimelineEvents(allTimelineEntries.slice(0, 50))
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
     } finally {
       setLoading(false)
     }
-  }, [listSessions, listProviders, getCurrentWorkspace, getSessionHistory])
+  }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows, selectedId])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  // Derive agent cards from sessions
-  const agentCards: AgentCardData[] = useMemo(() => {
-    return sessions.map((session) => {
-      const adapter = session.agentAdapter
-      const status = mapSessionStatus(session.status)
-      const provider = providers.find((p) => p.id === session.providerProfileId)
-      const modelName = session.modelId ?? provider?.defaultModel ?? adapterLabel(adapter)
+  const selectedProvider = providers.find((provider) => provider.id === draft.providerProfileId)
+  const modelOptions = selectedProvider?.modelIds.length
+    ? selectedProvider.modelIds
+    : selectedProvider?.defaultModel
+      ? [selectedProvider.defaultModel]
+      : []
+  const activeWorkflow = workflows.find((workflow) => workflow.id === draft.workflowId)
+  const enabledAgents = agents.filter((agent) => agent.enabled).length
+  const configuredAgents = agents.filter((agent) => agent.prompt.trim() || agent.workflowId).length
 
-      // Compute elapsed time for running sessions
-      let elapsed = ''
-      if (status === 'running') {
-        const ms = Date.now() - new Date(session.updatedAt).getTime()
-        const sec = Math.floor(ms / 1000)
-        if (sec < 60) elapsed = `${sec}s`
-        else if (sec < 3600) elapsed = `${Math.floor(sec / 60)}m ${sec % 60}s`
-        else elapsed = `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`
-      }
+  const updateDraft = <K extends keyof AgentDraft>(key: K, value: AgentDraft[K]) => {
+    setDraft((prev) => ({ ...prev, [key]: value }))
+  }
 
-      // Format message count
-      const msgCount = session.messageCount
-      const msgLabel = msgCount > 1000 ? `${(msgCount / 1000).toFixed(1)}K` : String(msgCount)
+  const handleSelect = (agent: ManagedAgent) => {
+    setSelectedId(agent.id)
+    setDraft(agentToDraft(agent))
+  }
 
-      return {
-        sessionId: session.id,
-        icon: adapterIcon(adapter),
-        name: session.title || '未命名会话',
-        role: `${modelName} · ${chatModeLabel(session.chatMode)}`,
-        status,
-        stats: [
-          ['消息', msgLabel],
-          ['模式', chatModeLabel(session.chatMode)],
-          ['适配器', adapterLabel(adapter)],
-          ...(elapsed ? [['耗时', elapsed] as [string, string]] : []),
-        ],
-        current: status === 'running'
-          ? '处理中...'
-          : status === 'idle'
-            ? '等待输入'
-            : status === 'failed'
-              ? '发生错误'
-              : '会话完成',
-        createdAt: session.createdAt,
-        messageCount: session.messageCount,
-      }
+  const handleNew = () => {
+    setSelectedId('')
+    const provider = providers[0]
+    setDraft({
+      ...EMPTY_DRAFT,
+      providerProfileId: provider?.id ?? '',
+      modelId: provider?.defaultModel ?? provider?.modelIds[0] ?? '',
     })
-  }, [sessions, providers])
-
-  // Computed stats
-  const runningCount = sessions.filter((s) => s.status === 'running').length
-  const totalMessages = sessions.reduce((sum, s) => sum + s.messageCount, 0)
-  const workspaceName = workspace?.name ?? '未打开工作区'
-
-  // Navigate to chat
-  const handleOpenSession = useCallback((sessionId: string) => {
-    // TODO: set active session ID via global state when session switching is implemented
-    setTweak('view', 'chat')
-  }, [setTweak])
-
-  // ─── Loading State ────────────────────────────────────────────────────
-  if (loading) {
-    return (
-      <div className="agents-layout">
-        <div className="agents-empty-state">
-          <div className="agents-empty-icon"><Icons.Spinner size={24} className="tl-status-running" /></div>
-          <div className="agents-empty-title">正在加载 Agent 数据…</div>
-          <div className="agents-empty-desc">从本地数据库同步会话列表和事件</div>
-        </div>
-      </div>
-    )
   }
 
-  // ─── Error State ──────────────────────────────────────────────────────
-  if (error != null) {
-    return (
-      <div className="agents-layout">
-        <div className="agents-empty-state">
-          <div className="agents-empty-icon"><Icons.XCircle size={24} /></div>
-          <div className="agents-empty-title">加载失败</div>
-          <div className="agents-empty-desc">{error}</div>
-          <button className="btn sm" onClick={() => void refresh()}>重试</button>
-        </div>
-      </div>
-    )
+  const handleSave = async () => {
+    const payload = draftToPayload(draft)
+    if (!payload.name.trim()) {
+      toast.warning('Agent 名称不能为空')
+      return
+    }
+    const saved =
+      draft.id != null
+        ? (await updateAgent({ id: draft.id, ...payload })).agent
+        : (await createAgent(payload)).agent
+    toast.success('Agent 配置已保存')
+    setSelectedId(saved.id)
+    await refresh()
   }
 
-  // ─── Empty State ──────────────────────────────────────────────────────
-  if (sessions.length === 0) {
-    return (
-      <div className="agents-layout">
-        <div className="agents-empty-state">
-          <div className="agents-empty-icon"><Icons.Zap size={24} /></div>
-          <div className="agents-empty-title">暂无 Agent 会话</div>
-          <div className="agents-empty-desc">创建一个新会话开始与 AI Agent 协作</div>
-          <button className="btn sm" onClick={() => setTweak('view', 'chat')}>开始对话</button>
-        </div>
-      </div>
-    )
+  const handleDelete = async () => {
+    if (draft.id == null || draft.builtIn) return
+    const res = await deleteAgent({ id: draft.id })
+    if (!res.deleted) {
+      toast.warning('内置 Agent 或不存在的 Agent 不能删除')
+      return
+    }
+    toast.success('Agent 已删除')
+    setSelectedId('code-agent')
+    await refresh()
   }
 
-  // ─── Normal State ─────────────────────────────────────────────────────
   return (
-    <div className="agents-layout">
-      {/* Header */}
-      <div className="row agents-run-header">
-        <div className="flex1">
-          <div className="strong agents-title-lg">Agent 会话总览</div>
-          <div className="muted agents-desc">
-            {sessions.length} 个会话 · {workspaceName} ·{' '}
-            {runningCount > 0
-              ? <span className="agents-info">● {runningCount} 个运行中</span>
-              : <span>全部空闲</span>
-            } · 共 {totalMessages} 条消息
+    <div className="agents-layout agents-manager">
+      <div className="agents-run-header">
+        <div>
+          <div className="agents-desc">配置可在对话中选择的智能体、默认模型、提示词、规则、Skill、MCP 和工作流。</div>
+        </div>
+        <div className="agents-actions ">
+          <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
+            {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
+          </button>
+          <button className="btn primary sm" onClick={handleNew}>
+            <Icons.Plus size={12} /> 新建 Agent
+          </button>
+        </div>
+      </div>
+
+      <div className="agents-manager-grid">
+        <aside className="agents-list-panel">
+          <div className="agents-list">
+            {agents.map((agent) => (
+              <button
+                key={agent.id}
+                className={`agent-list-item ${agent.id === selectedId ? 'active' : ''}`}
+                onClick={() => handleSelect(agent)}
+              >
+                <span className="agent-list-icon">
+                  {agent.builtIn ? <Icons.Code size={15} /> : <Icons.Bot size={15} />}
+                </span>
+                <span className="agent-list-copy">
+                  <span className="agent-list-name">{agent.name}</span>
+                  <span className="agent-list-meta">
+                    {agent.builtIn ? '内置' : '自定义'} · {agent.enabled ? '启用' : '停用'}
+                  </span>
+                </span>
+                {agent.workflowId && <Icons.Workflow size={14} />}
+              </button>
+            ))}
           </div>
-        </div>
-        <div className="row agents-actions">
-          <button className="btn ghost sm" onClick={() => setTweak('view', 'workflows')}>
-            <Icons.Map size={12} /> 工作流视图
-          </button>
-          <button className="btn ghost sm" onClick={() => void refresh()}>
-            <Icons.Refresh size={12} /> 刷新
-          </button>
-          <button className="btn sm" onClick={() => setTweak('view', 'chat')}>
-            <Icons.Plus size={12} /> 新会话
-          </button>
-        </div>
-      </div>
+        </aside>
 
-      {/* Agent Cards */}
-      <div className="agents-row">
-        {agentCards.map((agent) => (
-          <AgentCard
-            key={agent.sessionId}
-            {...agent}
-            onClick={() => handleOpenSession(agent.sessionId)}
-          />
-        ))}
-      </div>
-
-      {/* Timeline */}
-      <div className="timeline">
-        <div className="timeline-head">
-          <span className="strong timeline-title">活动时间线</span>
-          <span className="badge">{timelineEvents.length} 事件</span>
-          <div className="flex1" />
-        </div>
-        <div className="timeline-body scroll">
-          {timelineEvents.length === 0 ? (
-            <div className="agents-timeline-empty">
-              <span className="muted">暂无活动事件</span>
+        <main className="agent-editor-panel">
+          <section className="agent-editor-main">
+            <div className="agent-editor-head">
+              <div>
+                <div className="agent-editor-title">{draft.id ? draft.name : '新建 Agent'}</div>
+                <div className="agent-editor-subtitle">
+                  {draft.builtIn ? '内置 Agent 可调整提示词和运行配置，但不可删除。' : '自定义 Agent 会出现在对话输入栏的 Agent 选择器中。'}
+                </div>
+              </div>
+              <div className="agents-actions">
+                <button className="btn ghost sm danger" onClick={() => void handleDelete()} disabled={!draft.id || draft.builtIn}>
+                  <Icons.Trash size={12} /> 删除
+                </button>
+                <button className="btn primary sm" onClick={() => void handleSave()}>
+                  <Icons.Check size={12} /> 保存
+                </button>
+              </div>
             </div>
-          ) : (
-            timelineEvents.map((entry, i) => (
-              <TLRow key={i} {...entry} />
-            ))
-          )}
-        </div>
+
+            <div className="agent-form-grid">
+              <Field label="名称">
+                <input value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} />
+              </Field>
+              <Field label="状态">
+                <select value={draft.enabled ? 'enabled' : 'disabled'} onChange={(event) => updateDraft('enabled', event.target.value === 'enabled')}>
+                  <option value="enabled">启用</option>
+                  <option value="disabled">停用</option>
+                </select>
+              </Field>
+              <Field label="说明" wide>
+                <input value={draft.description} onChange={(event) => updateDraft('description', event.target.value)} />
+              </Field>
+              <Field label="Provider">
+                <select
+                  value={draft.providerProfileId}
+                  onChange={(event) => {
+                    const provider = providers.find((item) => item.id === event.target.value)
+                    updateDraft('providerProfileId', event.target.value)
+                    updateDraft('modelId', provider?.defaultModel ?? provider?.modelIds[0] ?? '')
+                  }}
+                >
+                  <option value="">跟随会话</option>
+                  {providers.map((provider) => (
+                    <option key={provider.id} value={provider.id}>{provider.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="默认模型">
+                <select value={draft.modelId} onChange={(event) => updateDraft('modelId', event.target.value)}>
+                  <option value="">Provider 默认</option>
+                  {modelOptions.map((model) => (
+                    <option key={model} value={model}>{model}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="权限">
+                <select value={draft.permissionMode} onChange={(event) => updateDraft('permissionMode', event.target.value as SessionPermissionMode)}>
+                  {PERMISSION_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="推理强度">
+                <select value={draft.reasoningEffort} onChange={(event) => updateDraft('reasoningEffort', event.target.value as SessionReasoningEffort)}>
+                  <option value="low">low</option>
+                  <option value="medium">medium</option>
+                  <option value="high">high</option>
+                  <option value="xhigh">xhigh</option>
+                </select>
+              </Field>
+              <Field label="工作流" wide>
+                <select value={draft.workflowId} onChange={(event) => updateDraft('workflowId', event.target.value)}>
+                  <option value="">不使用工作流</option>
+                  {workflows.map((workflow) => (
+                    <option key={workflow.id} value={workflow.id}>{workflow.name}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="提示词" wide>
+                <textarea rows={8} value={draft.prompt} onChange={(event) => updateDraft('prompt', event.target.value)} />
+              </Field>
+            </div>
+          </section>
+
+          <aside className="agent-config-panel">
+            <ConfigSection title="Skills" count={draft.skillIds.length}>
+              <PickList
+                items={skills.map((skill) => ({ id: skill.id, label: skill.name }))}
+                selected={draft.skillIds}
+                onChange={(ids) => updateDraft('skillIds', ids)}
+              />
+            </ConfigSection>
+            <ConfigSection title="禁用 Skills" count={draft.disabledSkillIds.length}>
+              <PickList
+                items={skills.map((skill) => ({ id: skill.id, label: skill.name }))}
+                selected={draft.disabledSkillIds}
+                onChange={(ids) => updateDraft('disabledSkillIds', ids)}
+              />
+            </ConfigSection>
+            <ConfigSection title="MCP" count={draft.mcpServerIds.length}>
+              <PickList
+                items={mcpServers.map((server) => ({ id: server.id, label: server.name }))}
+                selected={draft.mcpServerIds}
+                onChange={(ids) => updateDraft('mcpServerIds', ids)}
+              />
+            </ConfigSection>
+            <ConfigSection title="规则" count={draft.ruleIds.length}>
+              <PickList
+                items={rules.map((rule) => ({ id: rule.id, label: rule.name }))}
+                selected={draft.ruleIds}
+                onChange={(ids) => updateDraft('ruleIds', ids)}
+              />
+            </ConfigSection>
+            <ConfigSection title="Hook" count={draft.hookConfig.enabled ? 1 : 0}>
+              <HookEditor
+                value={draft.hookConfig}
+                onChange={(hookConfig) => updateDraft('hookConfig', hookConfig)}
+              />
+            </ConfigSection>
+            <div className="agent-workflow-card">
+              <div className="agent-workflow-icon"><Icons.Workflow size={16} /></div>
+              <div>
+                <div className="strong">{activeWorkflow?.name ?? '未绑定工作流'}</div>
+                <div className="muted">{activeWorkflow ? `${activeWorkflow.graph.nodes.length} 节点 · ${activeWorkflow.status}` : 'Agent 会按普通编码流程执行'}</div>
+              </div>
+            </div>
+          </aside>
+        </main>
       </div>
     </div>
   )
 }
 
-// ─── 子组件 ───────────────────────────────────────────────────────────────────
+function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
+  return (
+    <label className={`agent-field ${wide ? 'wide' : ''}`}>
+      <span>{label}</span>
+      {children}
+    </label>
+  )
+}
 
-function AgentCard({ icon, name, role, status, stats, current, onClick }: AgentCardData & { onClick: () => void }) {
-  const statusMap: Record<AgentStatus, { label: string; cls: string }> = {
-    running: { label: '运行中', cls: 'info' },
-    done: { label: '已完成', cls: 'success' },
-    idle: { label: '空闲', cls: '' },
-    failed: { label: '失败', cls: 'danger' },
+function ConfigSection({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+  return (
+    <section className="agent-config-section">
+      <div className="agent-config-head">
+        <span>{title}</span>
+        <span className="badge">{count}</span>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function PickList({
+  items,
+  selected,
+  onChange,
+}: {
+  items: Array<{ id: string; label: string }>
+  selected: string[]
+  onChange: (ids: string[]) => void
+}) {
+  const selectedSet = useMemo(() => new Set(selected), [selected])
+  if (items.length === 0) return <div className="agents-empty-mini">暂无可选项</div>
+  return (
+    <div className="agent-pick-list">
+      {items.map((item) => {
+        const active = selectedSet.has(item.id)
+        return (
+          <button
+            key={item.id}
+            className={`agent-pick-item ${active ? 'active' : ''}`}
+            onClick={() => onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])}
+          >
+            <span>{item.label}</span>
+            {active && <Icons.Check size={12} />}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function agentToDraft(agent: ManagedAgent): AgentDraft {
+  return {
+    id: agent.id,
+    name: agent.name,
+    description: agent.description,
+    enabled: agent.enabled,
+    builtIn: agent.builtIn,
+    providerProfileId: agent.providerProfileId ?? '',
+    modelId: agent.modelId ?? '',
+    agentAdapter: agent.agentAdapter,
+    permissionMode: agent.permissionMode,
+    reasoningEffort: agent.reasoningEffort,
+    prompt: agent.prompt,
+    skillIds: agent.skillIds,
+    disabledSkillIds: agent.disabledSkillIds,
+    mcpServerIds: agent.mcpServerIds,
+    ruleIds: agent.ruleIds,
+    hookConfig: normalizeAgentHookConfig(agent.hookConfig),
+    workflowId: agent.workflowId ?? '',
+  }
+}
+
+function draftToPayload(draft: AgentDraft) {
+  return {
+    name: draft.name.trim(),
+    description: draft.description.trim(),
+    enabled: draft.enabled,
+    providerProfileId: draft.providerProfileId || null,
+    modelId: draft.modelId || null,
+    agentAdapter: draft.agentAdapter,
+    permissionMode: draft.permissionMode,
+    reasoningEffort: draft.reasoningEffort,
+    prompt: draft.prompt,
+    skillIds: draft.skillIds,
+    disabledSkillIds: draft.disabledSkillIds,
+    mcpServerIds: draft.mcpServerIds,
+    ruleIds: draft.ruleIds,
+    hookConfig: draft.hookConfig,
+    workflowId: draft.workflowId || null,
+  }
+}
+
+function HookEditor({
+  value,
+  onChange,
+}: {
+  value: AgentHookConfig
+  onChange: (value: AgentHookConfig) => void
+}) {
+  const patchNode = (
+    node: AgentHookNode,
+    patch: Partial<AgentHookConfig['nodes'][AgentHookNode]>,
+  ) => {
+    onChange({
+      ...value,
+      nodes: {
+        ...value.nodes,
+        [node]: { ...value.nodes[node], ...patch },
+      },
+    })
   }
   return (
-    <div
-      className={`agent-card ${status === 'running' ? 'running' : ''}`}
-      onClick={onClick}
-      style={{ cursor: 'pointer' }}
-    >
-      <div className="agent-head">
-        <div className="agent-icon">{icon}</div>
-        <div className="info">
-          <div className="name">{name}</div>
-          <div className="role">{role}</div>
+    <div className="agent-hook-editor">
+      <label className="agent-toggle-row">
+        <input
+          type="checkbox"
+          checked={value.enabled}
+          onChange={(event) => onChange({ ...value, enabled: event.target.checked })}
+        />
+        <span>启用 Agent 专属 Hook</span>
+      </label>
+      {HOOK_NODES.map((item) => (
+        <div key={item.node} className="agent-hook-row">
+          <span>{item.label}</span>
+          <label>
+            <input
+              type="checkbox"
+              checked={value.nodes[item.node].sound}
+              onChange={(event) => patchNode(item.node, { sound: event.target.checked })}
+            />
+            声音
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={value.nodes[item.node].notification}
+              onChange={(event) => patchNode(item.node, { notification: event.target.checked })}
+            />
+            通知
+          </label>
         </div>
-        <span className={`badge ${statusMap[status].cls} dot`}>{statusMap[status].label}</span>
-      </div>
-      <div className="agent-stats">
-        {stats.map(([label, val], i) => (
-          <div key={i}>
-            <div className="label">{label}</div>
-            <div className="val">{val}</div>
-          </div>
-        ))}
-      </div>
-      <div className={`agent-current ${status === 'idle' ? 'idle' : ''}`}>
-        {status === 'running' && <Icons.Spinner size={11} className="tl-status-running" />}
-        {status === 'done' && <Icons.Check size={11} className="tl-status-done" />}
-        {status === 'idle' && <Icons.Clock size={11} />}
-        {status === 'failed' && <Icons.XCircle size={11} />}
-        <span className="truncate">{current}</span>
-      </div>
+      ))}
     </div>
   )
 }
 
-function TLRow({ time, marker, icon, title, meta }: { time: string; marker: string; icon: ReactNode; title: ReactNode; meta?: string | undefined }) {
-  return (
-    <div className="tl-row">
-      <div className="tl-time mono-sm">{time}</div>
-      <div className={`tl-marker ${marker}`}>{icon}</div>
-      <div className="tl-content">
-        <div className="tl-title">{title}</div>
-        {meta && <div className="tl-meta">{meta}</div>}
-      </div>
-    </div>
-  )
+function normalizeAgentHookConfig(value: Record<string, unknown>): AgentHookConfig {
+  const enabled = value.enabled === true
+  const rawNodes = value.nodes != null && typeof value.nodes === 'object'
+    ? value.nodes as Record<string, unknown>
+    : {}
+  const nodes = Object.fromEntries(
+    HOOK_NODES.map((item) => {
+      const raw = rawNodes[item.node]
+      const record = raw != null && typeof raw === 'object' ? raw as Record<string, unknown> : {}
+      return [item.node, {
+        sound: record.sound !== false,
+        notification: record.notification !== false,
+      }]
+    }),
+  ) as AgentHookConfig['nodes']
+  return { enabled, nodes }
 }
+
+const HOOK_NODES: Array<{ node: AgentHookNode; label: string }> = [
+  { node: 'permission_request', label: '权限请求' },
+  { node: 'ask_user_question', label: '用户提问' },
+  { node: 'session_end', label: '任务完成' },
+  { node: 'session_fail', label: '任务失败' },
+]
+
+const PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> = [
+  { value: 'claude-ask', label: '每次询问' },
+  { value: 'claude-auto-edits', label: '自动接受编辑' },
+  { value: 'claude-plan', label: '计划模式' },
+  { value: 'claude-auto', label: '自动权限' },
+  { value: 'claude-bypass', label: '绕过权限' },
+]

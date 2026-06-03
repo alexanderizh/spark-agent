@@ -239,9 +239,6 @@ export function HunkDiff({
       <div className="diff-head">
         <Icons.File size={12} className="faint" />
         <span className="diff-path">{path}</span>
-        <span className="badge" style={{ fontSize: 10, marginLeft: 8 }}>
-          逐 hunk 审查
-        </span>
         <span className="diff-stats">
           <span className="add">+{hunks.reduce((s, h) => s + h.adds, 0)}</span>
           <span className="del">−{hunks.reduce((s, h) => s + h.dels, 0)}</span>

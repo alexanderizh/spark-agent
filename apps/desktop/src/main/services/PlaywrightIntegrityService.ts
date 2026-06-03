@@ -195,6 +195,7 @@ export function buildStatus(opts: {
     mcpVersion: state.mcpVersion,
     playwrightInstalled: state.playwrightInstalled,
     browserReady: state.browserReady,
+    browserSource: state.browserSource,
     mcpRegistered: opts.mcpRegistered,
     mcpEnabled: opts.mcpEnabled,
     mode: opts.mode,
@@ -316,8 +317,11 @@ export async function installBrowser(
     }
   }
 
-  // Ensure the bundled browsers directory exists
-  const browsersDir = join(targetDir, 'browsers')
+  // Ensure the bundled browsers directory exists. In packaged apps this must
+  // match PlaywrightEnvironment's runtime lookup path.
+  const browsersDir = app.isPackaged
+    ? join(process.resourcesPath, 'browsers')
+    : join(targetDir, 'browsers')
   mkdirSync(browsersDir, { recursive: true })
 
   // Set PLAYWRIGHT_BROWSERS_PATH so chromium downloads to the bundled directory
@@ -343,13 +347,23 @@ export async function installBrowser(
 
   onLog('[playwright] chromium 下载完成')
 
-  // Reset caches so next detection picks up the newly downloaded browser
-  resetBundledBrowsersPathCache()
-  cachedState = { ...detectIntegrity(), lastError: null }
-
-  // Update process env so spawned MCP subprocesses find the bundled browser
+  // Update process env before detection so both Playwright and spawned MCP
+  // subprocesses resolve the newly downloaded bundled browser.
   process.env.PLAYWRIGHT_BROWSERS_PATH = browsersDir
   log.info(`Set PLAYWRIGHT_BROWSERS_PATH=${browsersDir}`)
+
+  // Reset caches so next detection picks up the newly downloaded browser
+  resetBundledBrowsersPathCache()
+  const nextState = detectIntegrity()
+
+  if (nextState.browserSource !== 'bundled') {
+    const message = `浏览器下载完成，但未能在内置目录检测到 Chromium: ${browsersDir}`
+    log.error(message)
+    cachedState = { ...nextState, lastError: message }
+    return { success: false, message }
+  }
+
+  cachedState = { ...nextState, lastError: null }
 
   return { success: true, message: 'chromium 浏览器下载完成' }
 }

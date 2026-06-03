@@ -3,7 +3,6 @@ import { copyFileSync, mkdirSync, readdirSync } from 'fs'
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
-import type { Plugin } from 'vite'
 
 /**
  * 将 packages/storage/migrations/*.sql 复制到 out/main/migrations/
@@ -12,7 +11,7 @@ import type { Plugin } from 'vite'
  * database.ts 的 getDefaultMigrationsDir() 会在 out/main/migrations/ 查找 SQL 文件。
  * 此插件确保每次 main process 构建时 SQL 文件都已就位。
  */
-function copyMigrationsPlugin(): Plugin {
+function copyMigrationsPlugin() {
   return {
     name: 'copy-migrations',
     closeBundle() {

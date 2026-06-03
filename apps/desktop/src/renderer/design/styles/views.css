@@ -1717,10 +1717,8 @@ body.sidebar-resizing {
 
 /* Composer — 底部输入区域 */
 .composer-wrap {
-  flex-shrink: 0;
-  /* 固定一个足以容纳"参数栏所有选项卡"的最小宽度，
-     避免权限模式 / 推理强度 / 项目名等 label 长度变化时把上方输入框撑大或挤窄 */
-  min-width: 880px;
+  flex-shrink: 1;
+  min-width: 0;
   background: var(--bg);
   padding: 0;
   z-index: 5;
@@ -2320,6 +2318,15 @@ body.sidebar-resizing {
   transform: none;
 }
 
+.composer-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0 2px 6px;
+  min-width: 0;
+  flex-wrap: nowrap;
+}
 .composer-v2 {
   position: relative;
 }
@@ -2426,7 +2433,8 @@ body.sidebar-resizing {
   z-index: 10;
 }
 .composer-controls {
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
+  row-gap: 4px;
 }
 .composer-param-bar .spacer {
   flex: 1;
@@ -8154,7 +8162,7 @@ body.inspector-resizing {
 }
 .agents-desc {
   font-size: 12px;
-  margin-top: 2px;
+  margin: 2px 0 8px 0;
 }
 .agents-info {
   color: var(--info);
@@ -9249,4 +9257,325 @@ body.inspector-resizing {
 }
 .sa-send-btn:not(:disabled):hover {
   opacity: 0.85;
+}
+
+/* Agent manager */
+.agents-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  overflow: hidden;
+}
+.agents-manager-grid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 14px;
+  min-height: 0;
+  flex: 1;
+}
+.agents-list-panel,
+.agent-editor-panel,
+.agent-config-panel,
+.workflow-list-panel {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  min-height: 0;
+}
+.agents-list-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 12px;
+}
+.agents-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow: auto;
+  min-height: 0;
+}
+.agent-list-item,
+.wf-list-button {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.agent-list-item:hover,
+.wf-list-button:hover {
+  background: var(--bg-soft);
+}
+.agent-list-item.active,
+.wf-list-button.active {
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
+}
+.agent-list-icon,
+.wf-list-icon {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--primary);
+  flex-shrink: 0;
+}
+.agent-list-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+.agent-list-name,
+.agent-editor-title {
+  font-weight: 650;
+  color: var(--text);
+}
+.agent-list-meta,
+.agent-editor-subtitle,
+.agents-empty-mini {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.agent-editor-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  overflow: hidden;
+}
+.agent-editor-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+}
+.agent-editor-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.agent-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.agent-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.agent-field.wide {
+  grid-column: 1 / -1;
+}
+.agent-field input,
+.agent-field select,
+.agent-field textarea,
+.workflow-builder input,
+.workflow-builder select,
+.wf-inspector input,
+.wf-inspector select,
+.wf-inspector textarea {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+}
+.agent-field textarea,
+.wf-inspector textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+.agent-config-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  overflow: auto;
+  border-width: 0 0 0 1px;
+}
+.agent-config-section {
+  display: grid;
+  gap: 8px;
+}
+.agent-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-weight: 650;
+}
+.agent-pick-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.agent-pick-item,
+.tool-chip.active {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.agent-pick-item {
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.agent-pick-item.active,
+.tool-chip.active {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
+  background: var(--primary-soft);
+}
+.agent-workflow-card {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+.agent-workflow-icon {
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.agent-hook-editor {
+  display: grid;
+  gap: 8px;
+}
+.agent-toggle-row,
+.agent-hook-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+}
+.agent-toggle-row {
+  color: var(--text);
+  font-weight: 600;
+}
+.agent-hook-row {
+  justify-content: space-between;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 7px 8px;
+  background: var(--bg-soft);
+}
+.agent-hook-row > span {
+  min-width: 72px;
+  color: var(--text);
+}
+.agent-hook-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Workflow builder */
+.workflow-builder {
+  grid-template-columns: 280px minmax(0, 1fr) 340px;
+  padding: 0;
+  background: var(--bg-soft);
+}
+.workflow-list-panel {
+  display: flex;
+  flex-direction: column;
+  padding: 14px;
+  overflow: hidden;
+}
+.workflow-list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.wf-list-button {
+  border-radius: 6px;
+}
+.workflow-builder .wf-canvas {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  background:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px),
+    var(--bg);
+  background-size: 24px 24px;
+}
+.wf-title-input {
+  width: 240px;
+  font-weight: 650;
+}
+.wf-node-palette {
+  position: absolute;
+  left: 14px;
+  top: 58px;
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: 720px;
+}
+.workflow-builder .wf-node {
+  cursor: grab;
+  user-select: none;
+}
+.workflow-builder .wf-node:active {
+  cursor: grabbing;
+}
+.workflow-builder .wf-inspector {
+  border-left: 1px solid var(--border);
+}
+.workflow-builder .field {
+  display: grid;
+  gap: 6px;
+}
+.workflow-builder .field label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.workflow-builder .wf-tools-row {
+  gap: 6px;
+  max-height: 160px;
+  overflow: auto;
+}
+.composer-agent-menu {
+  width: 280px;
+}
+
+@media (max-width: 980px) {
+  .agents-manager-grid,
+  .agent-editor-panel,
+  .workflow-builder {
+    grid-template-columns: 1fr;
+  }
+  .agent-config-panel,
+  .workflow-builder .wf-inspector {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
 }

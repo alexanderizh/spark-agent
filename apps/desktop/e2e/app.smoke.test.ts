@@ -13,7 +13,7 @@ const ROOT = join(__dirname, '..')
 describe('App Smoke Tests', () => {
   it('should have correct app metadata', () => {
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')) as Record<string, unknown>
-    expect(pkg.name).toBe('@spark/desktop')
+    expect(pkg.name).toBe('@spark/desktop-dev')
     expect(typeof pkg.version).toBe('string')
     expect((pkg.version as string)).toMatch(/^\d+\.\d+\.\d+/)
   })

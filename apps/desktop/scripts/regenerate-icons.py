@@ -13,9 +13,15 @@ The matching .svg source files are also rewritten.
 import io
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter
-import icnsutil
 
-ROOT = Path(r"G:\spark\spark-agent\apps\desktop\resources")
+try:
+    import icnsutil
+except ModuleNotFoundError:
+    icnsutil = None
+
+DESKTOP_ROOT = Path(__file__).resolve().parents[1]
+ROOT = DESKTOP_ROOT / "resources"
+TRAY_LOGO_SOURCE = DESKTOP_ROOT / "src" / "renderer" / "assets" / "spark-logo.png"
 
 # ---------------------------------------------------------------------------
 # Drawing primitives
@@ -198,54 +204,49 @@ def render_master(size: int) -> Image.Image:
 # Tray (color, no background) — for Windows tray
 # ---------------------------------------------------------------------------
 def render_tray_color(size: int = 32) -> Image.Image:
-    s = size
-    img = make_canvas(s)
+    source = Image.open(TRAY_LOGO_SOURCE).convert("RGBA")
+    mask = Image.new("L", source.size, 0)
+    src_px = source.load()
+    mask_px = mask.load()
 
-    # At small tray sizes, the rings need to be thick and close together so the
-    # infinity shape stays legible. We bias the geometry to be chunky.
-    LEFT_CX, LEFT_CY = int(s * 0.38), s // 2
-    RIGHT_CX, RIGHT_CY = int(s * 0.62), s // 2
-    OUTER = int(s * 0.20)
-    INNER = int(s * 0.08)
+    for y in range(source.height):
+        for x in range(source.width):
+            r, g, b, _a = src_px[x, y]
+            distance_from_white = ((255 - r) ** 2 + (255 - g) ** 2 + (255 - b) ** 2) ** 0.5
+            mask_px[x, y] = max(0, min(255, int((distance_from_white - 34) * 4.2)))
 
-    # Ring-anchored gradient: spans the right ring's bounding box.
-    def build_grad() -> Image.Image:
-        rb_w = 2 * OUTER
-        small = gradient(rb_w, [
-            (0.0,  (59, 130, 246)),
-            (0.33, (139, 92, 246)),
-            (0.66, (236, 72, 153)),
-            (1.0,  (249, 115, 22)),
-        ], diagonal=True)
-        full = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-        full.paste(small, (RIGHT_CX - OUTER, RIGHT_CY - OUTER))
-        return full
+    bbox = mask.getbbox()
+    if bbox is None:
+        return make_canvas(size)
 
-    grad = build_grad()
-
-    # Soft glow on right ring
-    glow_mask = ring_mask(s, RIGHT_CX, RIGHT_CY, OUTER + 2, max(0, INNER - 1))
-    glow = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    glow.paste(grad, (0, 0), glow_mask)
-    glow = glow.filter(ImageFilter.GaussianBlur(radius=1.4))
-    img.alpha_composite(glow)
-
-    # Two rings
-    img.paste(
-        Image.new("RGBA", (s, s), (14, 14, 22, 255)),
-        (0, 0),
-        ring_mask(s, LEFT_CX, LEFT_CY, OUTER, INNER),
+    left, top, right, bottom = bbox
+    pad = 8
+    box = (
+        max(0, left - pad),
+        max(0, top - pad),
+        min(source.width, right + pad),
+        min(source.height, bottom + pad),
     )
-    img.paste(grad, (0, 0), ring_mask(s, RIGHT_CX, RIGHT_CY, OUTER, INNER))
+    source = source.crop(box)
+    mask = mask.crop(box).filter(ImageFilter.GaussianBlur(0.4))
 
-    # Soft knot shadow in the middle
-    knot = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    kd = ImageDraw.Draw(knot)
-    kd.ellipse((s // 2 - 1, s // 2 - OUTER + 1, s // 2 + 2, s // 2 + OUTER - 1), fill=(0, 0, 0, 130))
-    knot = knot.filter(ImageFilter.GaussianBlur(radius=0.8))
-    img.alpha_composite(knot)
+    max_width = size - 2
+    max_height = max(1, round(size * 0.69))
+    scale = min(max_width / source.width, max_height / source.height)
+    resized_size = (
+        max(1, round(source.width * scale)),
+        max(1, round(source.height * scale)),
+    )
+    source = source.resize(resized_size, Image.LANCZOS)
+    mask = mask.resize(resized_size, Image.LANCZOS)
 
-    return img
+    result = make_canvas(size)
+    alpha = Image.new("L", (size, size), 0)
+    position = ((size - resized_size[0]) // 2, (size - resized_size[1]) // 2)
+    result.paste(source, position)
+    alpha.paste(mask, position)
+    result.putalpha(alpha)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -445,14 +446,17 @@ def main():
         (512, "ic09"),
         (1024,"ic10"),
     ]
-    icns_file = icnsutil.IcnsFile()
-    for s, key in icns_spec:
-        img = downscale(master_1024, s)
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        icns_file.add_media(key=key, data=buf.getvalue())
-    icns_file.write(str(ROOT / "icon.icns"))
-    print(f"  icon.icns       -> {[s for s, _ in icns_spec]}")
+    if icnsutil is None:
+        print("  icon.icns       -> skipped (install icnsutil to regenerate)")
+    else:
+        icns_file = icnsutil.IcnsFile()
+        for s, key in icns_spec:
+            img = downscale(master_1024, s)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            icns_file.add_media(key=key, data=buf.getvalue())
+        icns_file.write(str(ROOT / "icon.icns"))
+        print(f"  icon.icns       -> {[s for s, _ in icns_spec]}")
 
     # Taskbar
     taskbar = render_taskbar(256)

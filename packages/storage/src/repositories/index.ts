@@ -30,6 +30,10 @@ export { ContextPreferenceRepository } from './context-preference.repository.js'
 export type { ContextPreferenceRow, UpsertContextPreferenceParams, ListContextPreferencesParams } from './context-preference.repository.js'
 export { SessionSummaryRepository } from './session-summary.repository.js'
 export type { SessionSummaryRow, CreateSessionSummaryParams } from './session-summary.repository.js'
+export { AgentRepository } from './agent.repository.js'
+export type { AgentConfig, AgentItem, AgentRow, CreateAgentParams, UpdateAgentParams } from './agent.repository.js'
+export { WorkflowRepository } from './workflow.repository.js'
+export type { CreateWorkflowParams, UpdateWorkflowParams, WorkflowItem, WorkflowRow, WorkflowStatus } from './workflow.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

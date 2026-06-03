@@ -37,6 +37,8 @@ export {
   UsageLedgerRepository,
   ContextPreferenceRepository,
   SessionSummaryRepository,
+  AgentRepository,
+  WorkflowRepository,
 } from './repositories/index.js'
 
 export type {
@@ -72,4 +74,14 @@ export type {
   ListContextPreferencesParams,
   SessionSummaryRow,
   CreateSessionSummaryParams,
+  AgentConfig,
+  AgentItem,
+  AgentRow,
+  CreateAgentParams,
+  UpdateAgentParams,
+  CreateWorkflowParams,
+  UpdateWorkflowParams,
+  WorkflowItem,
+  WorkflowRow,
+  WorkflowStatus,
 } from './repositories/index.js'

@@ -15,6 +15,7 @@
  *      it explicitly to `spawn()`
  */
 import { existsSync, readdirSync } from 'node:fs'
+import type { Dirent } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { app } from 'electron'
@@ -49,7 +50,7 @@ export function getBundledBrowsersPath(): string | null {
   }
 
   for (const dir of candidates) {
-    if (existsSync(dir) && hasChromiumSubdir(dir)) {
+    if (existsSync(dir) && hasUsableChromium(dir)) {
       cachedBrowsersPath = dir
       log.info(`Bundled chromium found at: ${dir}`)
       return dir
@@ -57,10 +58,16 @@ export function getBundledBrowsersPath(): string | null {
   }
 
   log.warn(
-    'No bundled chromium directory found. Will fall back to system Chrome or Playwright default cache.',
+    'No usable bundled chromium found. Will fall back to system Chrome or Playwright default cache.',
   )
   cachedBrowsersPath = null
   return null
+}
+
+function hasUsableChromium(dir: string): boolean {
+  if (!hasChromiumSubdir(dir)) return false
+  if (canPlaywrightResolveChromiumFrom(dir)) return true
+  return hasChromiumExecutable(dir)
 }
 
 function hasChromiumSubdir(dir: string): boolean {
@@ -72,6 +79,53 @@ function hasChromiumSubdir(dir: string): boolean {
   } catch {
     return false
   }
+}
+
+function canPlaywrightResolveChromiumFrom(dir: string): boolean {
+  const previous = process.env.PLAYWRIGHT_BROWSERS_PATH
+  try {
+    process.env.PLAYWRIGHT_BROWSERS_PATH = dir
+    const require = createRequire(import.meta.url)
+    const pw = require('playwright') as { chromium?: { executablePath: () => string } }
+    if (pw.chromium == null) return false
+    const exePath = pw.chromium.executablePath()
+    return typeof exePath === 'string' && exePath.length > 0 && existsSync(exePath)
+  } catch {
+    return false
+  } finally {
+    if (previous == null) {
+      delete process.env.PLAYWRIGHT_BROWSERS_PATH
+    } else {
+      process.env.PLAYWRIGHT_BROWSERS_PATH = previous
+    }
+  }
+}
+
+function hasChromiumExecutable(dir: string, depth = 0): boolean {
+  if (depth > 8) return false
+  let entries: Dirent<string>[]
+  try {
+    entries = readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return false
+  }
+
+  for (const entry of entries) {
+    const child = join(dir, entry.name)
+    if (entry.isFile() && isChromiumExecutableName(entry.name)) return true
+    if (entry.isDirectory() && hasChromiumExecutable(child, depth + 1)) return true
+  }
+  return false
+}
+
+function isChromiumExecutableName(name: string): boolean {
+  return (
+    name === 'chrome' ||
+    name === 'chrome.exe' ||
+    name === 'chromium' ||
+    name === 'chromium.exe' ||
+    name === 'Google Chrome for Testing'
+  )
 }
 
 // ─── System Browser Detection ─────────────────────────────────────────────

@@ -45,6 +45,7 @@ import type {
   WorkspaceInfo,
   CommandListItem,
   TurnPromptSnapshotEvent,
+  ManagedAgent,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
@@ -72,11 +73,13 @@ type ComposerPrefs = {
   modelId?: string
   permissionMode?: PermissionModeChoice
   reasoningEffort?: SessionReasoningEffort
+  agentId?: string
 }
 
 type SessionRuntimePatch = {
   providerProfileId?: string
   modelId?: string | null
+  agentId?: string
   agentAdapter?: AgentAdapter
   permissionMode?: PermissionModeChoice
   chatMode?: SessionChatMode
@@ -164,6 +167,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [selectedProviderId, setSelectedProviderId] = useState<string>('')
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [agentStatus, setAgentStatus] = useState<string>('')
@@ -272,6 +276,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const { invoke: listSessions } = useIpcInvoke('session:list')
   const { invoke: createSession } = useIpcInvoke('session:create')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
   const { invoke: searchSessions } = useIpcInvoke('session:search')
   const { invoke: updateSession } = useIpcInvoke('session:update')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
@@ -288,15 +293,17 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
 
   const refreshProjectsAndSessions = useCallback(async () => {
-    const [workspaceRes, sessionRes, currentRes, providerRes] = await Promise.all([
+    const [workspaceRes, sessionRes, currentRes, providerRes, agentRes] = await Promise.all([
       listWorkspaces({ limit: 100 }),
       listSessions({ limit: 200 }),
       getCurrentWorkspace({}),
       listProviders({}),
+      listAgents({}).catch(() => ({ agents: [] })),
     ])
     setWorkspaces(workspaceRes.workspaces)
     setSessions(sessionRes.sessions)
     setProviders(providerRes.profiles)
+    setAgents(Array.isArray(agentRes.agents) ? agentRes.agents : [])
     setSelectedProviderId(
       (prev) =>
         prev ||
@@ -307,7 +314,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     setActiveWorkspaceId(
       (prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null,
     )
-  }, [getCurrentWorkspace, listProviders, listSessions, listWorkspaces])
+  }, [getCurrentWorkspace, listAgents, listProviders, listSessions, listWorkspaces])
 
   const refreshSessions = () => {
     refreshProjectsAndSessions().catch(console.error)
@@ -454,6 +461,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       providerProfileId?: string
       modelId?: string
       agentAdapter?: AgentAdapter
+      agentId?: string
       permissionMode?: PermissionModeChoice
       chatMode?: SessionChatMode
       reasoningEffort?: SessionReasoningEffort
@@ -473,9 +481,14 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
       const prefs = readComposerPrefs()
-      const preferredAdapter = options.agentAdapter ?? prefs.adapter ?? DEFAULT_AGENT_ADAPTER
+      const selectedAgent = agents.find((agent) => agent.id === options.agentId) ??
+        agents.find((agent) => agent.id === prefs.agentId) ??
+        agents.find((agent) => agent.id === 'code-agent')
+      const preferredAdapter =
+        options.agentAdapter ?? selectedAgent?.agentAdapter ?? prefs.adapter ?? DEFAULT_AGENT_ADAPTER
       const profile =
         knownProviders.find((item) => item.id === options.providerProfileId) ??
+        knownProviders.find((item) => item.id === selectedAgent?.providerProfileId) ??
         knownProviders.find(
           (item) =>
             item.id === selectedProviderId &&
@@ -486,15 +499,19 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         alert('请先在设置中配置 Provider')
         return null
       }
-      const agentAdapter = options.agentAdapter ?? getProviderAdapterKind(profile)
+      const agentAdapter = options.agentAdapter ?? selectedAgent?.agentAdapter ?? getProviderAdapterKind(profile)
       const permissionMode =
-        options.permissionMode ?? getValidPermissionMode(prefs.permissionMode, agentAdapter)
+        options.permissionMode ??
+        selectedAgent?.permissionMode ??
+        getValidPermissionMode(prefs.permissionMode, agentAdapter)
       const modelId =
         options.modelId ??
+        selectedAgent?.modelId ??
         (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
       const res = await createSession({
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
+        agentId: options.agentId ?? selectedAgent?.id ?? 'code-agent',
         agentAdapter,
         permissionMode,
         ...(options.chatMode !== undefined ? { chatMode: options.chatMode } : {}),
@@ -513,6 +530,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       }
       writeComposerPrefs({
         adapter: agentAdapter,
+        agentId: options.agentId ?? selectedAgent?.id ?? 'code-agent',
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
         permissionMode,
@@ -523,20 +541,6 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       toast.error(err instanceof Error ? err.message : '创建会话失败')
     }
     return null
-  }
-
-  const handleOpenExistingProject = async () => {
-    try {
-      setNotice('')
-      const selected = await openDirectoryDialog({ title: '选择已有项目文件夹' })
-      if (selected.canceled || selected.filePath == null) return
-      const res = await openWorkspace({ rootPath: selected.filePath })
-      setActiveWorkspaceId(res.workspace.id)
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      console.error('打开项目失败', err)
-      toast.error(err instanceof Error ? err.message : '打开项目失败')
-    }
   }
 
   const handlePickProjectPath = async () => {
@@ -752,6 +756,10 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const showSearchResults = searchQuery.trim().length > 0
   const visibleSessions = filterSessionsByTime(sessions, timeFilter)
   const projectGroups = buildProjectGroups(workspaces, visibleSessions)
+  const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
+  const noProjectSessions = noProjectWorkspace
+    ? visibleSessions.filter((session) => session.workspaceIds.includes(noProjectWorkspace.id))
+    : []
   const ungroupedSessions = visibleSessions.filter((session) => session.workspaceIds.length === 0)
   const activeSession = sessions.find((s) => s.id === active) ?? null
   const activeWorkspace =
@@ -796,6 +804,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const handleUpdateActiveSession = async (patch: {
     providerProfileId?: string
     modelId?: string | null
+    agentId?: string
     agentAdapter?: AgentAdapter
     permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
@@ -846,10 +855,17 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               </button>
             )}
           </div>
-          <button className="icon-btn" title="打开已有项目" onClick={handleOpenExistingProject}>
+          <button className="icon-btn" title="新建项目" onClick={() => setProjectDialog('create')}>
             <Icons.Folder />
           </button>
-          <button className="icon-btn" title="新建项目" onClick={() => setProjectDialog('create')}>
+          <button
+            className="icon-btn"
+            title="新建空白对话"
+            onClick={() => {
+              setActive(null)
+              setActiveWorkspaceId(null)
+            }}
+          >
             <Icons.Plus />
           </button>
         </div>
@@ -927,6 +943,27 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
                       onOpenSessionFolder={handleOpenSessionFolder}
                     />
                   ))}
+                  {noProjectSessions.length > 0 && (
+                    <div className="proj-group">
+                      <div className="chat-list-section-h">无项目对话</div>
+                      {noProjectSessions.map((session) => (
+                        <ChatListItem
+                          key={session.id}
+                          session={session}
+                          active={active}
+                          onClick={(id) => {
+                            setActive(id)
+                            if (noProjectWorkspace) setActiveWorkspaceId(noProjectWorkspace.id)
+                          }}
+                          onRename={handleRenameSession}
+                          onTogglePinned={handleToggleSessionPinned}
+                          onArchive={handleArchiveSession}
+                          onDelete={handleDeleteSession}
+                          onOpenFolder={handleOpenSessionFolder}
+                        />
+                      ))}
+                    </div>
+                  )}
                   {ungroupedSessions.length > 0 && (
                     <div className="proj-group">
                       <div className="chat-list-section-h">未归属会话</div>
@@ -967,6 +1004,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               workspace={activeWorkspace}
               activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
               providers={providers}
+              agents={agents}
               selectedProviderId={selectedProviderId}
               setSelectedProviderId={setSelectedProviderId}
               branchState={branchState}
@@ -1034,6 +1072,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               workspace={activeWorkspace}
               activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
               providers={providers}
+              agents={agents}
               selectedProviderId={selectedProviderId}
               setSelectedProviderId={setSelectedProviderId}
               branchState={branchState}
@@ -4646,6 +4685,7 @@ function ComposerV2({
   workspace,
   activeTaskText,
   providers,
+  agents,
   selectedProviderId,
   setSelectedProviderId,
   branchState,
@@ -4670,6 +4710,7 @@ function ComposerV2({
   workspace: WorkspaceInfo | null
   activeTaskText: string | null
   providers: ProviderProfile[]
+  agents: ManagedAgent[]
   selectedProviderId: string
   setSelectedProviderId: (providerId: string) => void
   branchState: BranchState
@@ -4681,6 +4722,7 @@ function ComposerV2({
   onCreateSession: (options: {
     providerProfileId?: string
     modelId?: string
+    agentId?: string
     agentAdapter?: AgentAdapter
     permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
@@ -4690,6 +4732,7 @@ function ComposerV2({
   onUpdateSession: (patch: {
     providerProfileId?: string
     modelId?: string | null
+    agentId?: string
     agentAdapter?: AgentAdapter
     permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
@@ -4724,6 +4767,7 @@ function ComposerV2({
   const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(
     initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER,
   )
+  const [draftAgentId, setDraftAgentId] = useState(initialPrefs.agentId ?? 'code-agent')
   const [draftModelId, setDraftModelId] = useState(initialPrefs.modelId ?? '')
   const [draftMode] = useState<SessionChatMode>('agent')
   const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionModeChoice>(
@@ -4744,7 +4788,12 @@ function ComposerV2({
   const { invoke: getSetting } = useIpcInvoke('settings:get')
   const pendingRuntimePatchRef = useRef<SessionRuntimePatch>({})
 
-  const adapter = session?.agentAdapter ?? draftAdapter
+  const effectiveAgentId = session?.agentId ?? draftAgentId
+  const activeAgent =
+    agents.find((agent) => agent.id === effectiveAgentId) ??
+    agents.find((agent) => agent.id === 'code-agent') ??
+    null
+  const adapter = session?.agentAdapter ?? activeAgent?.agentAdapter ?? draftAdapter
   const compatibleProviders = providers.filter((provider) =>
     isProviderCompatibleWithAdapter(provider, adapter),
   )
@@ -4829,6 +4878,7 @@ function ComposerV2({
     (): SessionRuntimePatch => ({
       ...(selectedProvider?.id !== undefined ? { providerProfileId: selectedProvider.id } : {}),
       modelId: effectiveModelId || null,
+      agentId: effectiveAgentId,
       agentAdapter: adapter,
       permissionMode: effectivePermissionMode,
       chatMode: effectiveMode,
@@ -4836,10 +4886,12 @@ function ComposerV2({
     }),
     [
       adapter,
+      effectiveAgentId,
       effectiveMode,
       effectiveModelId,
       effectivePermissionMode,
       effectiveReasoning,
+      effectiveAgentId,
       selectedProvider?.id,
     ],
   )
@@ -5015,6 +5067,7 @@ function ComposerV2({
                 ? { providerProfileId: selectedProvider.id }
                 : {}),
               modelId: effectiveModelId,
+              agentId: effectiveAgentId,
               agentAdapter: adapter,
               permissionMode: effectivePermissionMode,
             })
@@ -5066,6 +5119,7 @@ function ComposerV2({
               ? { providerProfileId: selectedProvider.id }
               : {}),
             modelId: effectiveModelId,
+            agentId: effectiveAgentId,
             agentAdapter: adapter,
             permissionMode: effectivePermissionMode,
             chatMode: effectiveMode,
@@ -5382,6 +5436,40 @@ function ComposerV2({
       await persistRuntimePatch({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
   }
 
+  const handleAgentChange = async (agentId: string) => {
+    const agent = agents.find((item) => item.id === agentId)
+    if (agent == null) return
+    setDraftAgentId(agent.id)
+    setDraftAdapter(agent.agentAdapter)
+    setDraftPermissionMode(agent.permissionMode)
+    setDraftReasoning(agent.reasoningEffort)
+
+    const provider =
+      providers.find((item) => item.id === agent.providerProfileId) ??
+      getPreferredProvider(providers, { ...readComposerPrefs(), agentId: agent.id }, agent.agentAdapter)
+    const model = agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? ''
+    if (provider != null) setSelectedProviderId(provider.id)
+    setDraftModelId(model)
+    writeComposerPrefs({
+      agentId: agent.id,
+      adapter: agent.agentAdapter,
+      ...(provider?.id !== undefined ? { providerProfileId: provider.id } : {}),
+      modelId: model,
+      permissionMode: agent.permissionMode,
+      reasoningEffort: agent.reasoningEffort,
+    })
+    if (session != null) {
+      await persistRuntimePatch({
+        agentId: agent.id,
+        ...(provider != null ? { providerProfileId: provider.id } : {}),
+        modelId: model || null,
+        agentAdapter: agent.agentAdapter,
+        permissionMode: agent.permissionMode,
+        reasoningEffort: agent.reasoningEffort,
+      })
+    }
+  }
+
   const handleModelChange = async (modelId: string) => {
     setDraftModelId(modelId)
     writeComposerPrefs({
@@ -5482,6 +5570,30 @@ function ComposerV2({
             })()}
           </div>
         )}
+        {(showProjectPicker || showBranchSelect) && (
+          <div className="composer-top-row">
+            {showProjectPicker && (
+              <ProjectPicker
+                workspaces={workspaces}
+                activeWorkspaceId={activeWorkspaceId}
+                {...(onPickProject !== undefined ? { onPickProject } : {})}
+                {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
+                {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
+              />
+            )}
+            {showBranchSelect && (
+              <ComposerMenuSelect
+                icon={<Icons.GitBranch size={13} />}
+                value={branchState.currentBranch ?? ''}
+                label={branchState.currentBranch ?? ''}
+                title="分支"
+                align="right"
+                onChange={onSwitchBranch}
+                options={branchOptions}
+              />
+            )}
+          </div>
+        )}
         <div className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''}`}>
           <textarea
             ref={textareaRef}
@@ -5528,6 +5640,11 @@ function ComposerV2({
           <button className="icon-btn" title="工具">
             <Icons.Wrench />
           </button>
+          <AgentPicker
+            agents={agents}
+            selectedAgentId={effectiveAgentId}
+            onChange={(agentId) => void handleAgentChange(agentId)}
+          />
           <ProviderModelPicker
             icon={<ModelIcon />}
             providers={compatibleProviders}
@@ -5598,26 +5715,6 @@ function ComposerV2({
             </button>
           )}
           <div className="spacer" />
-          {showProjectPicker && (
-            <ProjectPicker
-              workspaces={workspaces}
-              activeWorkspaceId={activeWorkspaceId}
-              {...(onPickProject !== undefined ? { onPickProject } : {})}
-              {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
-              {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
-            />
-          )}
-          {showBranchSelect && (
-            <ComposerMenuSelect
-              icon={<Icons.GitBranch size={13} />}
-              value={branchState.currentBranch ?? ''}
-              label={branchState.currentBranch ?? ''}
-              title="分支"
-              align="right"
-              onChange={onSwitchBranch}
-              options={branchOptions}
-            />
-          )}
           <span className="composer-hint">
             <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span>
             <span className="kbd">↵</span> 换行
@@ -5854,6 +5951,68 @@ function ProjectPicker({
   )
 }
 
+function AgentPicker({
+  agents,
+  selectedAgentId,
+  onChange,
+}: {
+  agents: ManagedAgent[]
+  selectedAgentId: string
+  onChange: (agentId: string) => void | Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useCloseOnOutside(rootRef, () => setOpen(false), open)
+  const selected =
+    agents.find((agent) => agent.id === selectedAgentId) ??
+    agents.find((agent) => agent.id === 'code-agent') ??
+    agents[0]
+
+  return (
+    <div ref={rootRef} className="composer-select composer-agent-picker" title="Agent">
+      <span className="composer-select-icon">
+        {selected?.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
+      </span>
+      <button
+        type="button"
+        className="composer-select-trigger"
+        disabled={agents.length === 0}
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span>{selected?.name ?? '编码 Agent'}</span>
+        <Icons.ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="composer-menu composer-agent-menu">
+          {agents.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
+              onClick={() => {
+                setOpen(false)
+                void onChange(agent.id)
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  {agent.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
+                  <span>{agent.name}</span>
+                </span>
+                {agent.description && (
+                  <span className="composer-menu-item-desc">{agent.description}</span>
+                )}
+              </span>
+              {agent.workflowId && <Icons.Workflow size={13} />}
+              {agent.id === selected?.id && <Icons.Check size={14} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ProviderModelPicker({
   icon,
   providers,
@@ -5987,6 +6146,7 @@ const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
 const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   'claude-sdk': 'Claude SDK',
   claude: 'Claude API',
+  codex: 'Codex',
 }
 
 const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =

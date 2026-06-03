@@ -2,9 +2,9 @@
  * PlaywrightMcpRegistration — pure-logic tests
  *
  * Tests `buildPlaywrightConfig` (the only logic that does not require a live
- * SparkDatabase). The config now dynamically picks `--browser chromium` or
- * `--channel chrome/msedge` based on what's available on the system, so tests
- * verify the structural properties rather than exact arg values.
+ * SparkDatabase). The config now dynamically omits `--browser` for bundled
+ * chromium or picks a valid system browser channel, so tests verify structural
+ * properties rather than exact arg values.
  *
  * Database-dependent paths (ensureRegistered, setEnabled, readRegistration)
  * are covered by integration verification.
@@ -37,7 +37,9 @@ describe('buildPlaywrightConfig', () => {
     // Package specifier must come before any flag arg
     const pkgIdx = config.args.indexOf('@playwright/mcp')
     const firstFlagIdx = config.args.findIndex((a) => a.startsWith('--'))
-    expect(pkgIdx).toBeLessThan(firstFlagIdx)
+    if (firstFlagIdx >= 0) {
+      expect(pkgIdx).toBeLessThan(firstFlagIdx)
+    }
   })
 
   it('omits --browser when bundled chromium is selected (or accepts a valid channel)', () => {

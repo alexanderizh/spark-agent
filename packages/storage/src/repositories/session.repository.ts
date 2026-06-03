@@ -29,6 +29,7 @@ export interface SessionRow {
   provider_profile_id: string | null
   model_id: string | null
   agent_adapter: string
+  agent_id: string
   permission_mode: string
   chat_mode: string
   reasoning_effort: string
@@ -51,6 +52,7 @@ export interface CreateSessionParams {
   providerProfileId?: string
   modelId?: string
   agentAdapter?: string
+  agentId?: string
   permissionMode?: string
   chatMode?: string
   reasoningEffort?: string
@@ -80,8 +82,8 @@ export class SessionRepository extends BaseRepository {
   create(params: CreateSessionParams): SessionRow {
     const now = new Date().toISOString()
     const stmt = this.raw.prepare(`
-      INSERT INTO sessions (id, kind, title, status, project_id, workspace_ids_json, rule_bundle_id, permission_profile_id, provider_profile_id, model_id, agent_adapter, permission_mode, chat_mode, reasoning_effort, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO sessions (id, kind, title, status, project_id, workspace_ids_json, rule_bundle_id, permission_profile_id, provider_profile_id, model_id, agent_adapter, agent_id, permission_mode, chat_mode, reasoning_effort, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -96,6 +98,7 @@ export class SessionRepository extends BaseRepository {
       params.providerProfileId ?? null,
       params.modelId ?? null,
       params.agentAdapter ?? 'codex',
+      params.agentId ?? 'code-agent',
       params.permissionMode ?? 'codex-default',
       params.chatMode ?? 'agent',
       params.reasoningEffort ?? 'medium',
@@ -170,6 +173,7 @@ export class SessionRepository extends BaseRepository {
       providerProfileId?: string
       modelId?: string | null
       agentAdapter?: string
+      agentId?: string
       permissionMode?: string
       chatMode?: string
       reasoningEffort?: string
@@ -191,6 +195,11 @@ export class SessionRepository extends BaseRepository {
     if (params.agentAdapter !== undefined) {
       fields.push('agent_adapter = ?')
       values.push(params.agentAdapter)
+    }
+
+    if (params.agentId !== undefined) {
+      fields.push('agent_id = ?')
+      values.push(params.agentId)
     }
 
     if (params.permissionMode !== undefined) {

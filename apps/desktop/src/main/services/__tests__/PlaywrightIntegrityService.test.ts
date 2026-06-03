@@ -74,6 +74,8 @@ describe('PlaywrightIntegrityService', () => {
       expect(status).toHaveProperty('mcpVersion')
       expect(status).toHaveProperty('playwrightInstalled')
       expect(status).toHaveProperty('browserReady')
+      expect(status).toHaveProperty('browserSource')
+      expect(['bundled', 'system', 'none']).toContain(status.browserSource)
       expect(status.mcpRegistered).toBe(true)
       expect(status.mcpEnabled).toBe(true)
       expect(status.mode).toBe('headful')

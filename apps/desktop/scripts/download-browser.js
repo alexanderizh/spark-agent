@@ -80,8 +80,40 @@ function findPlaywrightCli() {
 
 function isChromiumAlreadyDownloaded() {
   if (!fs.existsSync(BROWSERS_DIR)) return false
-  const entries = fs.readdirSync(BROWSERS_DIR, { withFileTypes: true })
+  return hasChromiumSubdir(BROWSERS_DIR) && hasChromiumExecutable(BROWSERS_DIR)
+}
+
+function hasChromiumSubdir(dir) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
   return entries.some((e) => e.isDirectory() && /^chromium[_-]/.test(e.name))
+}
+
+function hasChromiumExecutable(dir, depth = 0) {
+  if (depth > 8) return false
+
+  let entries
+  try {
+    entries = fs.readdirSync(dir, { withFileTypes: true })
+  } catch {
+    return false
+  }
+
+  for (const entry of entries) {
+    const child = path.join(dir, entry.name)
+    if (entry.isFile() && isChromiumExecutableName(entry.name)) return true
+    if (entry.isDirectory() && hasChromiumExecutable(child, depth + 1)) return true
+  }
+  return false
+}
+
+function isChromiumExecutableName(name) {
+  return [
+    'chrome',
+    'chrome.exe',
+    'chromium',
+    'chromium.exe',
+    'Google Chrome for Testing',
+  ].includes(name)
 }
 
 function main() {
@@ -115,6 +147,11 @@ function main() {
   if (result.status !== 0) {
     log(`playwright install failed with exit code ${result.status}`)
     process.exit(result.status ?? 1)
+  }
+
+  if (!isChromiumAlreadyDownloaded()) {
+    log(`chromium download finished but no executable was found at ${BROWSERS_DIR}`)
+    process.exit(1)
   }
 
   log('chromium downloaded successfully.')

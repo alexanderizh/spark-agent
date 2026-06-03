@@ -12,7 +12,10 @@ import {
   SettingsRepository,
   SkillRepository,
   ContextPreferenceRepository,
+  AgentRepository,
+  WorkflowRepository,
 } from '@spark/storage'
+import type { AgentItem, WorkflowItem } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type {
   AgentEvent,
@@ -83,6 +86,7 @@ type ActiveExecution = { cancel(): void }
 type SessionRuntimePatch = {
   providerProfileId?: string
   modelId?: string | null
+  agentId?: string
   agentAdapter?: AgentAdapterKind
   permissionMode?: SessionPermissionMode
   chatMode?: 'agent' | 'ask' | 'edit' | 'review'
@@ -163,6 +167,7 @@ export class SessionService {
   async createSession(params: {
     providerProfileId: string
     modelId?: string
+    agentId?: string
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
@@ -172,6 +177,7 @@ export class SessionService {
   }): Promise<SessionCreateResponse> {
     const sessionRepo = new SessionRepository(this.db)
     const id = crypto.randomUUID()
+    const agent = this.resolveAgent(params.agentId)
     const row = sessionRepo.create({
       id,
       kind: 'agent',
@@ -179,12 +185,17 @@ export class SessionService {
       status: 'idle',
       projectId: params.workspaceId ?? 'default',
       workspaceIds: params.workspaceId != null ? [params.workspaceId] : [],
-      providerProfileId: params.providerProfileId,
-      ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
-      agentAdapter: params.agentAdapter ?? 'codex',
-      permissionMode: params.permissionMode ?? 'codex-default',
+      providerProfileId: params.providerProfileId ?? agent.providerProfileId ?? '',
+      ...(params.modelId !== undefined
+        ? { modelId: params.modelId }
+        : agent.modelId != null
+          ? { modelId: agent.modelId }
+          : {}),
+      agentId: agent.id,
+      agentAdapter: params.agentAdapter ?? normalizeAgentAdapter(agent.agentAdapter),
+      permissionMode: params.permissionMode ?? normalizePermissionMode(agent.permissionMode),
       ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
-      ...(params.reasoningEffort !== undefined ? { reasoningEffort: params.reasoningEffort } : {}),
+      reasoningEffort: params.reasoningEffort ?? normalizeReasoningEffort(agent.reasoningEffort),
     })
     return { sessionId: row.id as SessionId, createdAt: row.created_at }
   }
@@ -464,6 +475,7 @@ export class SessionService {
     message: string
     providerProfileId?: string
     modelId?: string | null
+    agentId?: string
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
@@ -513,6 +525,8 @@ export class SessionService {
     }
 
     const session = sessionRepo.findByIdOrFail(sessionId)
+    const agent = this.resolveAgent(session.agent_id)
+    const workflow = agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
     if (session.provider_profile_id == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
@@ -662,6 +676,8 @@ export class SessionService {
       .filter((r) => r.enabled === 1)
       .map((r) => r.content)
       .concat(projectContext.rules)
+    const managedRules = collectManagedRuleContents(rulesRepo, agent, workflow)
+    const runtimeRulesPrompt = buildRuntimeRulesPrompt([...activeRules, ...managedRules])
 
     // Build explicit skill prompt if skillId is provided; available skills are composed below.
     let explicitSkillPrompt: string | undefined
@@ -683,10 +699,18 @@ export class SessionService {
       {
         ...(primaryWorkspaceId != null ? { workspaceId: primaryWorkspaceId } : {}),
         sessionId,
+        agentId: agent.id,
       },
       explicitSkillPrompt,
+      {
+        agentSkillIds: agent.skillIds,
+        agentDisabledSkillIds: agent.disabledSkillIds,
+      },
     )
+    const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
     const composedSystemPrompt = joinPromptSections(
+      managedAgentPrompt,
+      runtimeRulesPrompt,
       runtimeContext.systemPrompt,
       projectContext.systemPrompt,
       conversationHistoryPrompt,
@@ -898,7 +922,16 @@ export class SessionService {
         ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
         ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
       }
-      await this.tryStartSDKTurn(sessionId, turnId, message, eventRepo, sessionRepo, sdkConfig)
+      const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
+      await this.tryStartSDKTurn(
+        sessionId,
+        turnId,
+        message,
+        eventRepo,
+        sessionRepo,
+        sdkConfig,
+        allowedMcpServerIds != null ? { allowedMcpServerIds } : {},
+      )
       return
     }
 
@@ -982,6 +1015,7 @@ export class SessionService {
     eventRepo: EventRepository,
     sessionRepo: SessionRepository,
     config: SDKExecutorConfig,
+    options: { allowedMcpServerIds?: Set<string> } = {},
   ): Promise<void> {
     const makeBase = () => ({
       id: crypto.randomUUID(),
@@ -1084,7 +1118,7 @@ export class SessionService {
     }
 
     // Build MCP server config from our McpService for the SDK
-    const mcpServers = this.buildMcpServersForSDK()
+    const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
 
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
@@ -1151,12 +1185,13 @@ export class SessionService {
   /**
    * Build MCP server configs in the SDK's expected format from our McpService.
    */
-  private buildMcpServersForSDK(): Record<string, SDKMcpServerConfig> {
+  private buildMcpServersForSDK(allowedServerIds?: Set<string>): Record<string, SDKMcpServerConfig> {
     const result: Record<string, SDKMcpServerConfig> = {}
     const servers = this.mcpService.listServers()
 
     for (const server of servers) {
       if (!server.enabled) continue
+      if (allowedServerIds != null && !allowedServerIds.has(server.id)) continue
       try {
         const cfg = JSON.parse(server.configJson) as Record<string, unknown>
         if (cfg.type === 'sse' && typeof cfg.url === 'string') {
@@ -1179,6 +1214,32 @@ export class SessionService {
       }
     }
     return result
+  }
+
+  private resolveAgent(agentId: string | undefined): AgentItem {
+    const repo = new AgentRepository(this.db)
+    return repo.get(agentId ?? 'code-agent') ?? repo.get('code-agent') ?? {
+      id: 'code-agent',
+      name: '编码 Agent',
+      description: '系统内置编码智能体',
+      builtIn: true,
+      enabled: true,
+      providerProfileId: null,
+      modelId: null,
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-ask',
+      reasoningEffort: 'medium',
+      prompt: '',
+      ruleIds: [],
+      skillIds: [],
+      disabledSkillIds: [],
+      mcpServerIds: [],
+      hookConfig: {},
+      workflowId: null,
+      metadata: {},
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    }
   }
 
   private emitAndPersist(
@@ -1402,6 +1463,7 @@ export class SessionService {
       workspaceIds: sessionRepo.getWorkspaceIds(row.id),
       providerProfileId: row.provider_profile_id ?? '',
       modelId: row.model_id,
+      agentId: row.agent_id ?? 'code-agent',
       agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
       permissionMode: getPermissionModeFromSession(
         row.permission_mode,
@@ -1489,6 +1551,7 @@ export class SessionService {
     archived?: boolean
     providerProfileId?: string
     modelId?: string | null
+    agentId?: string
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
@@ -1515,6 +1578,7 @@ export class SessionService {
     if (
       params.providerProfileId !== undefined ||
       params.modelId !== undefined ||
+      params.agentId !== undefined ||
       params.agentAdapter !== undefined ||
       params.permissionMode !== undefined ||
       params.chatMode !== undefined ||
@@ -1525,6 +1589,7 @@ export class SessionService {
           ? { providerProfileId: params.providerProfileId }
           : {}),
         ...(params.modelId !== undefined ? { modelId: params.modelId } : {}),
+        ...(params.agentId !== undefined ? { agentId: params.agentId } : {}),
         ...(params.agentAdapter !== undefined ? { agentAdapter: params.agentAdapter } : {}),
         ...(params.permissionMode !== undefined ? { permissionMode: params.permissionMode } : {}),
         ...(params.chatMode !== undefined ? { chatMode: params.chatMode } : {}),
@@ -1543,6 +1608,7 @@ export class SessionService {
         workspaceIds: sessionRepo.getWorkspaceIds(row.id),
         providerProfileId: row.provider_profile_id ?? '',
         modelId: row.model_id,
+        agentId: row.agent_id ?? 'code-agent',
         agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
         permissionMode: getPermissionModeFromSession(
           row.permission_mode,
@@ -1964,6 +2030,193 @@ export function getPermissionModeFromSession(
   return adapter === 'codex' ? 'codex-default' : 'claude-ask'
 }
 
+function normalizeAgentAdapter(value: string | null | undefined): AgentAdapterKind {
+  if (value === 'claude' || value === 'claude-sdk') return 'claude-sdk'
+  if (value === 'codex') return 'codex'
+  return 'claude-sdk'
+}
+
+function normalizePermissionMode(value: string | null | undefined): SessionPermissionMode {
+  const adapter = value?.startsWith('codex-') ? 'codex' : 'claude-sdk'
+  return getPermissionModeFromSession(value, adapter)
+}
+
+function normalizeReasoningEffort(
+  value: string | null | undefined,
+): 'low' | 'medium' | 'high' | 'xhigh' {
+  if (value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh') return value
+  return 'medium'
+}
+
+function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem | null): string {
+  const sections: string[] = [
+    '[Managed Agent]',
+    `Agent: ${agent.name} (${agent.id})`,
+    agent.description.trim() ? `Description: ${agent.description.trim()}` : '',
+    agent.prompt.trim() ? `[Agent Instructions]\n${agent.prompt.trim()}` : '',
+  ].filter((section) => section.trim().length > 0)
+
+  const workflowPrompt = workflow != null ? buildWorkflowSystemPrompt(workflow) : ''
+  if (workflowPrompt.trim().length > 0) sections.push(workflowPrompt)
+  return sections.join('\n\n')
+}
+
+function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {
+  const graph = normalizeWorkflowGraph(workflow.graph)
+  if (graph.nodes.length === 0) return ''
+  const ordered = orderWorkflowNodes(graph.nodes, graph.edges)
+  const lines = ordered.map((node, index) => {
+    const config = node.config
+    const detail = [
+      `kind=${node.kind}`,
+      config.role != null ? `role=${String(config.role)}` : '',
+      config.modelId != null && String(config.modelId).trim() ? `model=${String(config.modelId)}` : '',
+      Array.isArray(config.skillIds) && config.skillIds.length > 0
+        ? `skills=${config.skillIds.join(', ')}`
+        : '',
+      Array.isArray(config.toolIds) && config.toolIds.length > 0
+        ? `tools=${config.toolIds.join(', ')}`
+        : '',
+      Array.isArray(config.ruleIds) && config.ruleIds.length > 0
+        ? `rules=${config.ruleIds.join(', ')}`
+        : '',
+      Array.isArray(config.mcpServerIds) && config.mcpServerIds.length > 0
+        ? `mcp=${config.mcpServerIds.join(', ')}`
+        : '',
+      typeof config.permissionMode === 'string' && config.permissionMode.trim()
+        ? `permission=${config.permissionMode}`
+        : '',
+      typeof config.retryCount === 'number' ? `retry=${config.retryCount}` : '',
+    ].filter(Boolean)
+    const prompt = typeof config.prompt === 'string' && config.prompt.trim()
+      ? `\n   prompt: ${config.prompt.trim()}`
+      : ''
+    return `${index + 1}. ${node.title} [${detail.join('; ')}]${prompt}`
+  })
+
+  return [
+    '[Workflow Execution Plan]',
+    `Workflow: ${workflow.name} (${workflow.id})`,
+    workflow.description.trim() ? `Description: ${workflow.description.trim()}` : '',
+    'Execute the task by following these workflow nodes in order. If a node declares a model, tool, skill, MCP server, or permission preference, treat it as the preferred configuration for that phase. When the SDK cannot literally switch model per node within one turn, preserve the node intent in your planning and execution notes.',
+    lines.join('\n'),
+  ].filter((line) => line.trim().length > 0).join('\n\n')
+}
+
+function collectManagedRuleContents(
+  rulesRepo: RulesRepository,
+  agent: AgentItem,
+  workflow: WorkflowItem | null,
+): string[] {
+  const ruleIds = new Set(agent.ruleIds)
+  const graph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : null
+  for (const node of graph?.nodes ?? []) {
+    const configured = node.config.ruleIds
+    if (!Array.isArray(configured)) continue
+    for (const id of configured) {
+      if (typeof id === 'string' && id.trim().length > 0) ruleIds.add(id)
+    }
+  }
+  if (ruleIds.size === 0) return []
+  const allRules = rulesRepo.list().filter((rule) => rule.enabled === 1)
+  return allRules
+    .filter((rule) => ruleIds.has(rule.id))
+    .sort((a, b) => b.priority - a.priority)
+    .map((rule) => `[${rule.name}]\n${rule.content}`)
+}
+
+function buildRuntimeRulesPrompt(rules: string[]): string | undefined {
+  const unique = Array.from(new Set(rules.map((rule) => rule.trim()).filter(Boolean)))
+  if (unique.length === 0) return undefined
+  return ['[Runtime Rules]', ...unique.map((rule, index) => `${index + 1}. ${rule}`)].join('\n\n')
+}
+
+function getAllowedMcpServerIds(agent: AgentItem, workflow: WorkflowItem | null): Set<string> | undefined {
+  const ids = new Set(agent.mcpServerIds)
+  const graph = workflow != null ? normalizeWorkflowGraph(workflow.graph) : null
+  for (const node of graph?.nodes ?? []) {
+    const configured = node.config.mcpServerIds
+    if (!Array.isArray(configured)) continue
+    for (const id of configured) {
+      if (typeof id === 'string' && id.trim().length > 0) ids.add(id)
+    }
+  }
+  return ids.size > 0 ? ids : undefined
+}
+
+type NormalizedWorkflowNode = {
+  id: string
+  kind: string
+  title: string
+  config: Record<string, unknown>
+}
+
+type NormalizedWorkflowEdge = { from: string; to: string }
+
+function normalizeWorkflowGraph(graph: Record<string, unknown>): {
+  nodes: NormalizedWorkflowNode[]
+  edges: NormalizedWorkflowEdge[]
+} {
+  const nodes = Array.isArray(graph.nodes)
+    ? graph.nodes.flatMap((node): NormalizedWorkflowNode[] => {
+        if (node == null || typeof node !== 'object') return []
+        const record = node as Record<string, unknown>
+        const id = typeof record.id === 'string' ? record.id : ''
+        if (!id) return []
+        return [{
+          id,
+          kind: typeof record.kind === 'string' ? record.kind : 'agent',
+          title: typeof record.title === 'string' ? record.title : id,
+          config: record.config != null && typeof record.config === 'object'
+            ? record.config as Record<string, unknown>
+            : {},
+        }]
+      })
+    : []
+  const edges = Array.isArray(graph.edges)
+    ? graph.edges.flatMap((edge): NormalizedWorkflowEdge[] => {
+        if (edge == null || typeof edge !== 'object') return []
+        const record = edge as Record<string, unknown>
+        const from = typeof record.from === 'string' ? record.from : ''
+        const to = typeof record.to === 'string' ? record.to : ''
+        return from && to ? [{ from, to }] : []
+      })
+    : []
+  return { nodes, edges }
+}
+
+function orderWorkflowNodes(
+  nodes: NormalizedWorkflowNode[],
+  edges: NormalizedWorkflowEdge[],
+): NormalizedWorkflowNode[] {
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  const incoming = new Map(nodes.map((node) => [node.id, 0]))
+  const outgoing = new Map<string, string[]>()
+  for (const edge of edges) {
+    if (!byId.has(edge.from) || !byId.has(edge.to)) continue
+    incoming.set(edge.to, (incoming.get(edge.to) ?? 0) + 1)
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to])
+  }
+
+  const queue = nodes.filter((node) => (incoming.get(node.id) ?? 0) === 0)
+  const ordered: NormalizedWorkflowNode[] = []
+  while (queue.length > 0) {
+    const node = queue.shift()!
+    ordered.push(node)
+    for (const to of outgoing.get(node.id) ?? []) {
+      const next = (incoming.get(to) ?? 0) - 1
+      incoming.set(to, next)
+      if (next === 0) {
+        const target = byId.get(to)
+        if (target != null) queue.push(target)
+      }
+    }
+  }
+
+  if (ordered.length !== nodes.length) return nodes
+  return ordered
+}
+
 async function getWorkspaceRootIssue(rootPath: string): Promise<string | null> {
   try {
     const info = await stat(rootPath)
@@ -1984,6 +2237,7 @@ function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | und
   const patch: SessionRuntimePatch = {}
   if (params.providerProfileId !== undefined) patch.providerProfileId = params.providerProfileId
   if (params.modelId !== undefined) patch.modelId = params.modelId
+  if (params.agentId !== undefined) patch.agentId = params.agentId
   if (params.agentAdapter !== undefined) patch.agentAdapter = params.agentAdapter
   if (params.permissionMode !== undefined) patch.permissionMode = params.permissionMode
   if (params.chatMode !== undefined) patch.chatMode = params.chatMode

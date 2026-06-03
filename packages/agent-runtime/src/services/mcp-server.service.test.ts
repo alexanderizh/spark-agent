@@ -33,7 +33,7 @@ function makeMockRepo(store: MockStore): McpServerRepository {
       Array.from(store.rows.values())
         .filter((r) => r.scope === scope)
         .sort((a, b) => a.created_at.localeCompare(b.created_at)),
-    create: ({ scope, name, configJson, enabled }) => {
+    create: ({ scope, name, configJson, enabled }: { id?: string; scope: string; name: string; configJson: string; enabled?: boolean }) => {
       const id = `mock-${store.rows.size + 1}-${Date.now()}`
       const now = new Date().toISOString()
       const row: McpServerRow = {
@@ -48,7 +48,7 @@ function makeMockRepo(store: MockStore): McpServerRepository {
       store.rows.set(id, row)
       return row
     },
-    update: (id, fields) => {
+    update: (id: string, fields: Partial<{ name: string; configJson: string; enabled: boolean }>) => {
       const row = store.rows.get(id)
       if (row == null) return undefined
       const next: McpServerRow = {
@@ -219,7 +219,7 @@ describe('McpService — managed scope protection', () => {
       store.rows.set('u1', makeRow({ id: 'u1', scope: 'user', name: 'custom' }))
       const managedOnly = service.listServers({ scope: MANAGED_MCP_SCOPE })
       expect(managedOnly).toHaveLength(1)
-      expect(managedOnly[0].name).toBe(PLAYWRIGHT_MCP_NAME)
+      expect(managedOnly[0]?.name).toBe(PLAYWRIGHT_MCP_NAME)
     })
   })
 })

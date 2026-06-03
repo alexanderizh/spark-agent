@@ -248,18 +248,17 @@ describe('Renderer Smoke Tests', () => {
     })
 
     const sidebar = container.querySelector('.sidebar')
-    expect(sidebar?.classList.contains('expanded')).toBe(true)
-    expect(container.querySelector('.sidebar-control')).toBeNull()
+    expect(sidebar?.classList.contains('collapsed')).toBe(true)
 
-    const toggle = container.querySelector<HTMLButtonElement>('.sidebar-bottom [aria-label="Collapse sidebar"]')
+    const toggle = container.querySelector<HTMLButtonElement>('.sidebar-bottom [aria-label="Expand sidebar"]')
     expect(toggle).not.toBeNull()
 
     act(() => {
       toggle!.click()
     })
 
-    expect(sidebar?.classList.contains('collapsed')).toBe(true)
-    expect(localStorage.getItem('spark-agent:sidebar')).toBe('collapsed')
+    expect(sidebar?.classList.contains('expanded')).toBe(true)
+    expect(localStorage.getItem('spark-agent:sidebar')).toBe('expanded')
 
     act(() => {
       root!.unmount()
@@ -267,14 +266,14 @@ describe('Renderer Smoke Tests', () => {
       root.render(React.createElement(App))
     })
 
-    expect(container.querySelector('.sidebar')?.classList.contains('collapsed')).toBe(true)
+    expect(container.querySelector('.sidebar')?.classList.contains('expanded')).toBe(true)
 
     act(() => {
-      container.querySelector<HTMLButtonElement>('.sidebar-bottom [aria-label="Expand sidebar"]')!.click()
+      container.querySelector<HTMLButtonElement>('.sidebar-bottom [aria-label="Collapse sidebar"]')!.click()
     })
 
-    expect(container.querySelector('.sidebar')?.classList.contains('expanded')).toBe(true)
-    expect(localStorage.getItem('spark-agent:sidebar')).toBe('expanded')
+    expect(container.querySelector('.sidebar')?.classList.contains('collapsed')).toBe(true)
+    expect(localStorage.getItem('spark-agent:sidebar')).toBe('collapsed')
   })
 
   it('shows running sessions in the list and allows stopping the active session', async () => {

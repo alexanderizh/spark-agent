@@ -52,6 +52,7 @@ type ProviderForm = {
   defaultModel: string
   modelIdsText: string
   endpoint: string
+  codexApiKind: 'chat' | 'responses'
   supportsMillionContext: boolean
   apiKey: string
   isDefault: boolean
@@ -1285,6 +1286,7 @@ export function ProviderEditPanel({
     defaultModel: '',
     modelIdsText: '',
     endpoint: '',
+    codexApiKind: 'chat',
     supportsMillionContext: false,
     apiKey: '',
     isDefault: false,
@@ -1310,6 +1312,7 @@ export function ProviderEditPanel({
             defaultModel: preset.defaultModel,
             modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
             endpoint: preset.apiEndpoint,
+            codexApiKind: 'chat',
             supportsMillionContext: false,
             apiKey: '',
             isDefault: false,
@@ -1324,6 +1327,7 @@ export function ProviderEditPanel({
         defaultModel: '',
         modelIdsText: '',
         endpoint: '',
+        codexApiKind: 'chat',
         supportsMillionContext: false,
         apiKey: '',
         isDefault: false,
@@ -1341,6 +1345,7 @@ export function ProviderEditPanel({
             defaultModel: p.defaultModel,
             modelIdsText: joinModelIds(p.modelIds, p.defaultModel),
             endpoint: p.apiEndpoint ?? '',
+            codexApiKind: p.codexApiKind ?? 'chat',
             supportsMillionContext: p.supportsMillionContext === true,
             apiKey: '',
             isDefault: p.isDefault,
@@ -1374,6 +1379,7 @@ export function ProviderEditPanel({
           apiEndpoint: endpoint.length > 0 ? endpoint : null,
           supportsMillionContext: form.supportsMillionContext,
         }
+        if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
         if (form.apiKey.trim()) req.apiKey = form.apiKey
         await updateProvider(req)
       } else {
@@ -1385,6 +1391,7 @@ export function ProviderEditPanel({
           apiKey: form.apiKey,
           isDefault: form.isDefault,
           ...(endpoint.length > 0 && { apiEndpoint: endpoint }),
+          ...(form.provider === 'openai' && { codexApiKind: form.codexApiKind }),
           supportsMillionContext: form.supportsMillionContext,
         })
       }
@@ -1409,6 +1416,7 @@ export function ProviderEditPanel({
       defaultModel: preset.defaultModel,
       modelIdsText: joinModelIds(preset.modelIds, preset.defaultModel),
       endpoint: preset.apiEndpoint,
+      codexApiKind: 'chat',
       supportsMillionContext: false,
     }))
   }
@@ -1477,6 +1485,7 @@ export function ProviderEditPanel({
                   ...prev,
                   presetId: 'custom',
                   provider: normalizeProviderKind(e.target.value),
+                  codexApiKind: 'chat',
                 }))
               }
               disabled={!!profileId}
@@ -1484,6 +1493,22 @@ export function ProviderEditPanel({
               <option value="anthropic">Anthropic 格式</option>
               <option value="openai">OpenAI 格式</option>
             </SparkSelect>
+
+            {form.provider === 'openai' && (
+              <>
+                <label>
+                  Codex API 类型
+                  <span className="sub">控制 Codex/OpenAI 执行使用 Chat Completions 还是 Responses API</span>
+                </label>
+                <SparkSelect
+                  value={form.codexApiKind}
+                  onChange={(e) => set('codexApiKind', e.target.value === 'responses' ? 'responses' : 'chat')}
+                >
+                  <option value="chat">Chat Completions</option>
+                  <option value="responses">Responses API</option>
+                </SparkSelect>
+              </>
+            )}
 
             <label>默认模型 ID</label>
             <SparkInput

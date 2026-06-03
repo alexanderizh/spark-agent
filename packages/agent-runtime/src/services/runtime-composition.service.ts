@@ -10,6 +10,11 @@ export interface RuntimeScopeRefs {
   agentId?: string
 }
 
+export interface RuntimeCompositionOverrides {
+  agentSkillIds?: string[]
+  agentDisabledSkillIds?: string[]
+}
+
 export interface PromptLayerValue {
   enabled: boolean
   content: string
@@ -58,15 +63,24 @@ export class RuntimeCompositionService {
     this.loader = new SkillLoader(skillRepo)
   }
 
-  getSkillConfig(refs: RuntimeScopeRefs = {}): RuntimeSkillConfig {
+  getSkillConfig(
+    refs: RuntimeScopeRefs = {},
+    overrides: RuntimeCompositionOverrides = {},
+  ): RuntimeSkillConfig {
     const allInfos = this.loader.listAll()
     const enabledInfos = this.loader.listEnabled()
     const enabledIds = new Set(enabledInfos.map((info) => info.definition?.id ?? info.dbRecord?.id).filter(isString))
 
-    const agentSkillIds = this.getLayerSkillIds('agent', refs.agentId ?? DEFAULT_AGENT_ID)
+    const agentSkillIds = uniqueStrings([
+      ...this.getLayerSkillIds('agent', refs.agentId ?? DEFAULT_AGENT_ID),
+      ...(overrides.agentSkillIds ?? []),
+    ])
     const projectSkillIds = refs.workspaceId != null ? this.getLayerSkillIds('project', refs.workspaceId) : []
     const sessionSkillIds = refs.sessionId != null ? this.getLayerSkillIds('session', refs.sessionId) : []
-    const agentDisabledSkillIds = this.getDisabledSkillIds('agent', refs.agentId ?? DEFAULT_AGENT_ID)
+    const agentDisabledSkillIds = uniqueStrings([
+      ...this.getDisabledSkillIds('agent', refs.agentId ?? DEFAULT_AGENT_ID),
+      ...(overrides.agentDisabledSkillIds ?? []),
+    ])
     const projectDisabledSkillIds = refs.workspaceId != null ? this.getDisabledSkillIds('project', refs.workspaceId) : []
     const sessionDisabledSkillIds = refs.sessionId != null ? this.getDisabledSkillIds('session', refs.sessionId) : []
     const disabledIds = new Set([...agentDisabledSkillIds, ...projectDisabledSkillIds, ...sessionDisabledSkillIds])
@@ -139,8 +153,12 @@ export class RuntimeCompositionService {
     return this.getPromptConfig(refs)
   }
 
-  composeRuntimeContext(refs: RuntimeScopeRefs = {}, explicitSkillPrompt?: string): RuntimeCompositionResult {
-    const skillConfig = this.getSkillConfig(refs)
+  composeRuntimeContext(
+    refs: RuntimeScopeRefs = {},
+    explicitSkillPrompt?: string,
+    overrides: RuntimeCompositionOverrides = {},
+  ): RuntimeCompositionResult {
+    const skillConfig = this.getSkillConfig(refs, overrides)
     const promptConfig = this.getPromptConfig(refs)
     const availableSkillsPrompt = this.buildAvailableSkillsPrompt(skillConfig.effectiveSkillIds)
     const skillSections = [explicitSkillPrompt, availableSkillsPrompt].filter((section): section is string => Boolean(section?.trim()))
