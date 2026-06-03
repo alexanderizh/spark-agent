@@ -80,6 +80,9 @@ let viewWindow: BrowserWindow | null = null
 let snapshotTimer: NodeJS.Timeout | null = null
 let currentUrl = WELCOME_HTML
 let currentTitle: string | null = 'Spark Agent · Browser'
+/** Set to true once `app` starts quitting — used to bypass the hide-on-close
+ *  behavior so the window can be destroyed and the app can actually exit. */
+let isAppQuitting = false
 
 export interface OpenViewResult {
   cdpEndpoint: string
@@ -147,8 +150,13 @@ export async function openView(opts: OpenViewOptions = {}): Promise<OpenViewResu
     currentTitle = 'Spark Agent · Browser'
   })
   viewWindow.on('close', (event) => {
-    // Prevent the user from closing via X button — hide instead
-    // (closing would break the CDP connection and MCP config)
+    // If the app is quitting, allow the window to be destroyed (cleanup will
+    // have already detached the debugger). Otherwise the user clicked X —
+    // hide instead of close so the CDP connection / MCP config stays intact.
+    if (isAppQuitting) {
+      log.info('Browser automation view closing (app quitting)')
+      return
+    }
     event.preventDefault()
     viewWindow?.hide()
   })
@@ -291,6 +299,7 @@ function stopSnapshotTimer(): void {
  */
 export function bindLifecycle(): void {
   app.on('before-quit', () => {
+    isAppQuitting = true
     closeView()
   })
 }

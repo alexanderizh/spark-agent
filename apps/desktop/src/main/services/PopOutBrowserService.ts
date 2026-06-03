@@ -8,7 +8,7 @@
  * The shell UI uses the same dark theme as the main application.
  */
 
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('popout-browser')
@@ -16,6 +16,9 @@ const log = createLogger('popout-browser')
 const DEFAULT_URL = 'https://www.yiqibyte.com'
 
 let popOutWindow: BrowserWindow | null = null
+/** Set to true once `app` starts quitting — used to bypass the hide-on-close
+ *  behavior so the window can be destroyed and the app can actually exit. */
+let isAppQuitting = false
 
 /** Browser shell HTML — themed to match the main application */
 const SHELL_HTML = `data:text/html;charset=utf-8,${encodeURIComponent(`
@@ -173,6 +176,13 @@ export async function openPopOutWindow(opts: { url?: string }): Promise<void> {
   })
 
   popOutWindow.on('close', (event) => {
+    // If the app is quitting, allow the window to be destroyed. Otherwise the
+    // user clicked the X button — hide instead of close so the window state
+    // is preserved for the next open.
+    if (isAppQuitting) {
+      log.info('Pop-out browser window closing (app quitting)')
+      return
+    }
     event.preventDefault()
     popOutWindow?.hide()
     log.info('Pop-out browser window hidden (user closed)')
@@ -201,4 +211,22 @@ export function closePopOutWindow(): void {
 
 export function isPopOutOpen(): boolean {
   return popOutWindow != null && !popOutWindow.isDestroyed() && popOutWindow.isVisible()
+}
+
+/**
+ * Bind to app lifecycle for cleanup on quit.
+ *
+ * The close handler above hides the window instead of destroying it (so the
+ * next `openPopOutWindow` can reuse the existing session). But on quit we
+ * must actually destroy it — otherwise the hidden window keeps the Electron
+ * event loop alive and `window-all-closed` never fires, so the process
+ * cannot exit.
+ *
+ * Pair with `closePopOutWindow()` so the IPC pop-in path also stays healthy.
+ */
+export function bindLifecycle(): void {
+  app.on('before-quit', () => {
+    isAppQuitting = true
+    closePopOutWindow()
+  })
 }

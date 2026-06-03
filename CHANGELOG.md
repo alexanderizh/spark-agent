@@ -6,6 +6,10 @@
 
 ## [Unreleased] - Skill 商店开发中
 
+### Bug 修复
+
+- **应用退出时关闭内置浏览器窗口**: 修复 `PopOutBrowserService` 的 hide-on-close 处理器在退出时阻止窗口销毁导致 Electron 进程无法退出的问题。同步加固 `BrowserAutomationViewService` 的同名处理器，在 `app` 处于退出流程时允许窗口正常关闭（双重保险）。
+
 ### 已完成 — 第一阶段核心骨架（2026-05-27）
 
 - **Skill 商店页面（SkillStoreView）**: 商店/已安装双 Tab，市场源选择器，300ms 防抖搜索，分类导航

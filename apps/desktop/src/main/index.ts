@@ -42,6 +42,7 @@ import { initializeShellEnvironment, getShellEnvironmentStatus } from './service
 import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as readPlaywrightRegistration } from './services/PlaywrightMcpRegistration.js'
 import { detectIntegrity as detectPlaywrightIntegrity, installBrowser as autoInstallBrowser, invalidateCache as invalidatePlaywrightCache } from './services/PlaywrightIntegrityService.js'
 import { isViewOpen as isBrowserViewOpen, getCdpEndpoint as getBrowserCdpEndpoint, bindLifecycle as bindBrowserViewLifecycle } from './services/BrowserAutomationViewService.js'
+import { bindLifecycle as bindPopOutBrowserLifecycle } from './services/PopOutBrowserService.js'
 import { ensureBundledBrowserEnv, resetBundledBrowsersPathCache } from './services/PlaywrightEnvironment.js'
 import { getDatabase } from './db.js'
 import { createLogger } from '@spark/shared'
@@ -72,8 +73,11 @@ function createTray(): void {
   if (tray != null) return
 
   const iconPath = getResourcePath(process.platform === 'darwin' ? 'trayTemplate.png' : 'trayIconWin.png')
-  const image = nativeImage.createFromPath(iconPath)
-  if (process.platform === 'darwin') image.setTemplateImage(true)
+  let image = nativeImage.createFromPath(iconPath)
+  if (process.platform === 'darwin') {
+    image = image.resize({ width: 16, height: 16 })
+    image.setTemplateImage(true)
+  }
 
   tray = new Tray(image)
   tray.setToolTip('Spark Agent')
@@ -169,6 +173,7 @@ function pushPlaywrightStatus(): void {
       mcpVersion: integrity.mcpVersion,
       playwrightInstalled: integrity.playwrightInstalled,
       browserReady: integrity.browserReady,
+      browserSource: integrity.browserSource,
       mcpRegistered: registration.registered,
       mcpEnabled: registration.enabled,
       mode: registration.mode,
@@ -250,6 +255,10 @@ async function initializeApp(): Promise<void> {
       cdpEndpoint: null,
     })
     bindBrowserViewLifecycle()
+    // Pop-out browser window is opened on demand, but its hide-on-close
+    // handler would otherwise block app quit — register a before-quit
+    // hook that destroys it (mirrors bindBrowserViewLifecycle above).
+    bindPopOutBrowserLifecycle()
   } catch (err) {
     log.warn(`Failed to register Playwright MCP: ${String(err)}`)
   }
@@ -313,8 +322,8 @@ async function initializeApp(): Promise<void> {
     // 仅在 dev 模式下自动下载（打包模式下浏览器应已内置）
     if (is.dev) {
       const integrity = detectPlaywrightIntegrity()
-      if (!integrity.browserReady && integrity.playwrightInstalled) {
-        log.info('Browser not ready — auto-downloading chromium to bundled directory...')
+      if (integrity.browserSource !== 'bundled' && integrity.playwrightInstalled) {
+        log.info('Bundled chromium not ready — auto-downloading chromium to bundled directory...')
         autoInstallBrowser((line) => {
           log.info(`[auto-download] ${line.trim()}`)
         }).then((result) => {
