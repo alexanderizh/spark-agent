@@ -95,3 +95,4 @@ pnpm-debug.log*
 # TeamAgentX 输出文件
 .teamagentx-output/
 
+.opencode

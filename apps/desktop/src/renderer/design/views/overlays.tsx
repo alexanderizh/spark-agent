@@ -357,6 +357,13 @@ export function CommandPalette({
       execute: () => onNavigate?.('mcp'),
     },
     {
+      id: 'ui:nav-providers',
+      name: 'Providers 视图',
+      description: '切换到 Providers 视图',
+      category: 'navigation',
+      execute: () => onNavigate?.('providers'),
+    },
+    {
       id: 'ui:nav-settings',
       name: 'Settings 视图',
       description: '切换到 Settings 视图',

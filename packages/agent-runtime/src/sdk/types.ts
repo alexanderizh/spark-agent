@@ -257,6 +257,12 @@ export type SparkPermissionMode =
 export interface SDKExecutorConfig {
   apiKey: string
   model: string
+  /** Haiku 档（SDK 派生子 agent 用）；缺省回落 model */
+  haikuModel?: string | undefined
+  /** Sonnet 档；缺省回落 model */
+  sonnetModel?: string | undefined
+  /** Opus 档（Plan/Review 等高能力 agent）；缺省回落 model */
+  opusModel?: string | undefined
   apiEndpoint?: string | undefined
   systemPrompt?: string | undefined
   skillSystemPrompt?: string | undefined

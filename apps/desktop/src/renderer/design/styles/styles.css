@@ -700,21 +700,21 @@ pre,
    SPARK INPUT — themed text input
    ============================================================ */
 .spark-input {
-  height: 32px;
-  padding: 0 10px;
+  height: 36px;
+  padding: 0 12px;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   color: var(--text);
   font-size: var(--font-sm);
   font-family: inherit;
   outline: none;
   width: 100%;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 .spark-input::placeholder { color: var(--text-faint); }
-.spark-input:hover { border-color: var(--border-strong); }
-.spark-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.spark-input:hover { border-color: var(--text-faint); }
+.spark-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); background: var(--panel); }
 .spark-input:disabled {
   opacity: 0.55;
   cursor: default;
@@ -736,20 +736,21 @@ pre,
 .spark-input-wrap .spark-input { width: 100%; }
 .spark-input-icon {
   position: absolute;
-  left: 9px;
+  left: 11px;
   display: inline-flex;
   color: var(--text-faint);
   pointer-events: none;
   z-index: 1;
 }
 .spark-input-icon svg { width: 14px; height: 14px; }
-.spark-input-has-icon { padding-left: 30px !important; }
+.spark-input-has-icon { padding-left: 32px !important; }
 
 /* Size variants */
 .spark-input.sm, .select-sm .spark-select {
-  height: 26px;
-  padding: 0 7px;
+  height: 28px;
+  padding: 0 8px;
   font-size: var(--font-xs);
+  border-radius: var(--r-sm);
 }
 .input-w-sm { width: 80px; }
 .input-max-sm { max-width: 120px; }
@@ -806,10 +807,10 @@ pre,
   width: 100%;
 }
 .spark-select {
-  height: 32px;
-  padding: 0 28px 0 10px;
+  height: 36px;
+  padding: 0 30px 0 12px;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   color: var(--text);
   font-size: var(--font-sm);
@@ -821,7 +822,7 @@ pre,
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.spark-select:hover { border-color: var(--border-strong); }
+.spark-select:hover { border-color: var(--text-faint); }
 .spark-select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
 .spark-select:disabled {
   opacity: 0.55;
@@ -831,13 +832,13 @@ pre,
 .spark-select option {
   background: var(--panel);
   color: var(--text);
-  padding: 6px;
+  padding: 6px 8px;
 }
 
 /* Custom dropdown arrow */
 .spark-select-arrow {
   position: absolute;
-  right: 8px;
+  right: 10px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-faint);
@@ -850,13 +851,14 @@ pre,
 /* Size variants */
 .select-sm .spark-select-wrap,
 .spark-select-wrap.sm {
-  height: 26px;
+  height: 28px;
 }
 .select-sm .spark-select,
 .spark-select.sm {
-  height: 26px;
-  padding: 0 24px 0 7px;
+  height: 28px;
+  padding: 0 24px 0 8px;
   font-size: var(--font-xs);
+  border-radius: var(--r-sm);
 }
 .select-full .spark-select-wrap,
 .spark-select-wrap.full {
@@ -868,15 +870,9 @@ pre,
 
 /* Override .form-grid children */
 .form-grid > .spark-input {
-  height: 32px;
-  padding: 0 10px;
+  /* 让 SparkInput 自己的样式（.spark-input { height:36px; padding:0 12px; border:1px solid var(--border-strong) }）生效 */
   background: var(--panel);
-  border: 1px solid var(--border);
   border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
   width: 100%;
 }
 .form-grid > .spark-input:focus {
@@ -885,11 +881,17 @@ pre,
 }
 .form-grid > .spark-select-wrap {
   width: 100%;
+  display: flex;
 }
 .form-grid > .spark-select-wrap .spark-select {
-  height: 32px;
-  padding: 0 28px 0 10px;
+  height: 36px;
+  padding: 0 28px 0 12px;
   width: 100%;
+  border-color: var(--border-strong);
+}
+.form-grid > .spark-select-wrap .spark-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
 }
 
 /* Radio button styling (for sandbox level) */

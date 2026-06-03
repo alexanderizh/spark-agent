@@ -1,10 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import {
+  Background,
+  Controls,
+  MiniMap,
+  ReactFlow,
+  ReactFlowProvider,
+  addEdge,
+  useEdgesState,
+  useNodesState,
+  type Connection,
+  type Edge,
+  type NodeTypes,
+  type OnSelectionChangeParams,
+} from '@xyflow/react'
+import '@xyflow/react/dist/style.css'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import type {
+  ManagedAgent,
   McpServerItem,
   ProviderProfile,
   RuleItem,
@@ -16,34 +32,36 @@ import type {
   WorkflowNodeKind,
   WorkflowStatus,
 } from '@spark/protocol'
+import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workflow/graph-adapter'
+import { SparkNode } from './workflow/SparkNode'
+import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 
-type DragState = { nodeId: string; dx: number; dy: number } | null
-
-const NODE_KINDS: Array<{ kind: WorkflowNodeKind; label: string; icon: ReactNode }> = [
-  { kind: 'input', label: '输入', icon: <Icons.Hash size={13} /> },
-  { kind: 'agent', label: 'Agent', icon: <Icons.Bot size={13} /> },
-  { kind: 'skill', label: 'Skill', icon: <Icons.Skills size={13} /> },
-  { kind: 'tool', label: '工具', icon: <Icons.Wrench size={13} /> },
-  { kind: 'mcp', label: 'MCP', icon: <Icons.MCP size={13} /> },
-  { kind: 'approval', label: '审批', icon: <Icons.Shield size={13} /> },
-  { kind: 'review', label: '复核', icon: <Icons.Eye size={13} /> },
-  { kind: 'artifact', label: '产物', icon: <Icons.File size={13} /> },
-]
+const NODE_TYPES: NodeTypes = { spark: SparkNode }
 
 export function WorkflowView() {
+  return (
+    <ReactFlowProvider>
+      <WorkflowViewInner />
+    </ReactFlowProvider>
+  )
+}
+
+function WorkflowViewInner() {
   const { toast } = useToast()
-  const canvasRef = useRef<HTMLDivElement | null>(null)
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [mcpServers, setMcpServers] = useState<McpServerItem[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [draft, setDraft] = useState<WorkflowItem | null>(null)
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
-  const [connectFrom, setConnectFrom] = useState<string | null>(null)
-  const [drag, setDrag] = useState<DragState>(null)
   const [loading, setLoading] = useState(true)
+  const [paletteOpen, setPaletteOpen] = useState(true)
+
+  const [nodes, setNodes, onNodesChange] = useNodesState<SparkFlowNode>([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
 
   const { invoke: listWorkflows } = useIpcInvoke('workflow:list')
   const { invoke: createWorkflow } = useIpcInvoke('workflow:create')
@@ -53,84 +71,123 @@ export function WorkflowView() {
   const { invoke: listSkills } = useIpcInvoke('skill:list')
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
   const { invoke: listRules } = useIpcInvoke('rules:list')
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
+
+  const loadWorkflowIntoCanvas = useCallback(
+    (workflow: WorkflowItem | null) => {
+      setDraft(workflow)
+      if (workflow == null) {
+        setNodes([])
+        setEdges([])
+        setSelectedNodeId(null)
+        return
+      }
+      const { nodes: flowNodes, edges: flowEdges } = graphToReactFlow(workflow.graph)
+      setNodes(flowNodes)
+      setEdges(flowEdges)
+      setSelectedNodeId(flowNodes[0]?.id ?? null)
+    },
+    [setNodes, setEdges],
+  )
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      const [workflowRes, providerRes, skillRes, mcpRes, ruleRes] = await Promise.all([
+      const [workflowRes, providerRes, skillRes, mcpRes, ruleRes, agentRes] = await Promise.all([
         listWorkflows({ includeArchived: true }),
         listProviders({}),
         listSkills({}),
         listMcp({}),
         listRules({}),
+        listAgents({}),
       ])
       setWorkflows(workflowRes.workflows)
       setProviders(providerRes.profiles)
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
-      const active = workflowRes.workflows.find((item) => item.id === activeId) ?? workflowRes.workflows[0]
+      setAgents(agentRes.agents ?? [])
+      const active =
+        workflowRes.workflows.find((item) => item.id === activeId) ?? workflowRes.workflows[0] ?? null
       if (active != null) {
         setActiveId(active.id)
-        setDraft(active)
-        setSelectedNodeId(active.graph.nodes[0]?.id ?? null)
+        loadWorkflowIntoCanvas(active)
+      } else {
+        setActiveId(null)
+        loadWorkflowIntoCanvas(null)
       }
     } finally {
       setLoading(false)
     }
-  }, [activeId, listMcp, listProviders, listRules, listSkills, listWorkflows])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
 
-  const selectedNode = draft?.graph.nodes.find((node) => node.id === selectedNodeId) ?? null
+  const selectedNode = nodes.find((node) => node.id === selectedNodeId) ?? null
+
   const modelOptions = useMemo(
-    () => Array.from(new Set(providers.flatMap((provider) => provider.modelIds.length ? provider.modelIds : [provider.defaultModel]).filter(Boolean))),
+    () =>
+      Array.from(
+        new Set(
+          providers
+            .flatMap((provider) => (provider.modelIds.length ? provider.modelIds : [provider.defaultModel]))
+            .filter(Boolean),
+        ),
+      ),
     [providers],
   )
 
-  const patchDraft = (patch: Partial<WorkflowItem>) => {
+  const patchDraftMeta = (patch: Partial<WorkflowItem>) => {
     setDraft((prev) => (prev == null ? prev : { ...prev, ...patch }))
   }
 
-  const patchGraph = (updater: (graph: WorkflowGraph) => WorkflowGraph) => {
-    setDraft((prev) => (prev == null ? prev : { ...prev, graph: updater(prev.graph) }))
-  }
+  const patchSelectedNodeData = useCallback(
+    (updater: (node: SparkFlowNode) => SparkFlowNode) => {
+      if (selectedNodeId == null) return
+      setNodes((prev) => prev.map((node) => (node.id === selectedNodeId ? updater(node) : node)))
+    },
+    [selectedNodeId, setNodes],
+  )
 
   const selectWorkflow = (workflow: WorkflowItem) => {
     setActiveId(workflow.id)
-    setDraft(workflow)
-    setSelectedNodeId(workflow.graph.nodes[0]?.id ?? null)
-    setConnectFrom(null)
+    loadWorkflowIntoCanvas(workflow)
   }
 
   const createNewWorkflow = async () => {
-    const workflow = (await createWorkflow({
-      name: `工作流 ${workflows.length + 1}`,
-      description: '自定义 Agent 执行流程',
-      status: 'draft',
-    })).workflow
+    const workflow = (
+      await createWorkflow({
+        name: `工作流 ${workflows.length + 1}`,
+        description: '自定义 Agent 执行流程',
+        status: 'draft',
+        graph: defaultStarterGraph(),
+      })
+    ).workflow
     toast.success('工作流已创建')
     setActiveId(workflow.id)
-    setDraft(workflow)
-    setSelectedNodeId(workflow.graph.nodes[0]?.id ?? null)
+    loadWorkflowIntoCanvas(workflow)
     await refresh()
   }
 
   const saveWorkflow = async () => {
     if (draft == null) return
-    const saved = (await updateWorkflow({
-      id: draft.id,
-      name: draft.name,
-      description: draft.description,
-      status: draft.status,
-      tags: draft.tags,
-      graph: draft.graph,
-    })).workflow
+    const graph: WorkflowGraph = reactFlowToGraph(nodes, edges)
+    const saved = (
+      await updateWorkflow({
+        id: draft.id,
+        name: draft.name,
+        description: draft.description,
+        status: draft.status,
+        tags: draft.tags,
+        graph,
+      })
+    ).workflow
     toast.success('工作流已保存')
-    setDraft(saved)
     setActiveId(saved.id)
+    loadWorkflowIntoCanvas(saved)
     await refresh()
   }
 
@@ -140,77 +197,58 @@ export function WorkflowView() {
     if (res.deleted) {
       toast.success('工作流已删除')
       setActiveId(null)
-      setDraft(null)
+      loadWorkflowIntoCanvas(null)
       await refresh()
     }
   }
 
   const addNode = (kind: WorkflowNodeKind) => {
+    const meta = getNodeKindMeta(kind)
     const id = `${kind}-${Date.now().toString(36)}`
-    const node: WorkflowNode = {
+    const baseX = 160 + (nodes.length % 4) * 240
+    const baseY = 120 + Math.floor(nodes.length / 4) * 180
+    const node: SparkFlowNode = {
       id,
-      kind,
-      title: NODE_KINDS.find((item) => item.kind === kind)?.label ?? '节点',
-      x: 120 + (draft?.graph.nodes.length ?? 0) * 28,
-      y: 120 + (draft?.graph.nodes.length ?? 0) * 18,
-      config: { prompt: defaultPromptForKind(kind), retryCount: 1 },
+      type: 'spark',
+      position: { x: baseX, y: baseY },
+      data: { kind, title: meta.label, config: { prompt: meta.defaultPrompt, retryCount: 1 } },
     }
-    patchGraph((graph) => ({ ...graph, nodes: [...graph.nodes, node] }))
+    setNodes((prev) => [...prev, node])
     setSelectedNodeId(id)
   }
 
   const removeNode = (nodeId: string) => {
-    patchGraph((graph) => ({
-      nodes: graph.nodes.filter((node) => node.id !== nodeId),
-      edges: graph.edges.filter((edge) => edge.from !== nodeId && edge.to !== nodeId),
-    }))
+    setNodes((prev) => prev.filter((node) => node.id !== nodeId))
+    setEdges((prev) => prev.filter((edge) => edge.source !== nodeId && edge.target !== nodeId))
     setSelectedNodeId(null)
   }
 
-  const handleNodeClick = (nodeId: string) => {
-    if (connectFrom != null && connectFrom !== nodeId) {
-      const edgeId = `${connectFrom}-${nodeId}`
-      patchGraph((graph) => {
-        if (graph.edges.some((edge) => edge.from === connectFrom && edge.to === nodeId)) return graph
-        return { ...graph, edges: [...graph.edges, { id: edgeId, from: connectFrom, to: nodeId }] }
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      setEdges((prev) => {
+        const exists = prev.some(
+          (edge) => edge.source === connection.source && edge.target === connection.target,
+        )
+        if (exists) return prev
+        const id = `${connection.source}-${connection.target}-${Date.now().toString(36)}`
+        return addEdge({ ...connection, id, type: 'smoothstep', animated: true }, prev)
       })
-      setConnectFrom(null)
-      return
-    }
-    setSelectedNodeId(nodeId)
-  }
+    },
+    [setEdges],
+  )
 
-  const startDrag = (event: ReactPointerEvent, node: WorkflowNode) => {
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (rect == null) return
-    setDrag({ nodeId: node.id, dx: event.clientX - rect.left - node.x, dy: event.clientY - rect.top - node.y })
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }
-
-  const moveDrag = (event: ReactPointerEvent) => {
-    if (drag == null) return
-    const rect = canvasRef.current?.getBoundingClientRect()
-    if (rect == null) return
-    const x = Math.max(24, Math.min(1320, event.clientX - rect.left - drag.dx))
-    const y = Math.max(24, Math.min(760, event.clientY - rect.top - drag.dy))
-    patchGraph((graph) => ({
-      ...graph,
-      nodes: graph.nodes.map((node) => node.id === drag.nodeId ? { ...node, x, y } : node),
-    }))
-  }
-
-  const endDrag = (event: ReactPointerEvent) => {
-    if (drag != null) event.currentTarget.releasePointerCapture(event.pointerId)
-    setDrag(null)
-  }
+  const onSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    const nodeId = params.nodes[0]?.id ?? null
+    if (nodeId != null) setSelectedNodeId(nodeId)
+  }, [])
 
   return (
-    <div className="workflow-layout workflow-builder">
+    <div className="workflow-layout workflow-builder workflow-builder-v2">
       <aside className="workflow-list-panel">
         <div className="workflow-list-head">
           <div>
             <div className="agents-title-lg">Workflows</div>
-            <div className="agents-desc">拖动节点并连接，定义 Agent 的优先执行流程。</div>
+            <div className="agents-desc">拖动节点端点连线，定义 Agent 的优先执行流程。</div>
           </div>
           <button className="icon-btn" title="新建工作流" onClick={() => void createNewWorkflow()}>
             <Icons.Plus size={14} />
@@ -223,7 +261,9 @@ export function WorkflowView() {
               className={`wf-list-item wf-list-button ${workflow.id === activeId ? 'active' : ''}`}
               onClick={() => selectWorkflow(workflow)}
             >
-              <span className="wf-list-icon"><Icons.Workflow size={14} /></span>
+              <span className="wf-list-icon">
+                <Icons.Workflow size={14} />
+              </span>
               <span className="wf-list-body">
                 <span className="wf-list-name">{workflow.name}</span>
                 <span className="wf-list-meta">
@@ -232,14 +272,18 @@ export function WorkflowView() {
               </span>
             </button>
           ))}
-          {!loading && workflows.length === 0 && <div className="agents-empty-mini">暂无工作流</div>}
+          {!loading && workflows.length === 0 && (
+            <div className="agents-empty-mini">暂无工作流</div>
+          )}
         </div>
       </aside>
 
       {draft == null ? (
         <div className="wf-empty-state">
           <div className="empty-state">
-            <div className="empty-icon"><Icons.Workflow size={24} /></div>
+            <div className="empty-icon">
+              <Icons.Workflow size={24} />
+            </div>
             <div className="empty-title">创建第一个工作流</div>
             <div className="empty-actions">
               <button className="btn primary" onClick={() => void createNewWorkflow()}>
@@ -250,16 +294,30 @@ export function WorkflowView() {
         </div>
       ) : (
         <>
-          <div className="wf-canvas" ref={canvasRef} onPointerMove={moveDrag} onPointerUp={endDrag}>
-            <div className="wf-canvas-controls">
-              <input className="wf-title-input" value={draft.name} onChange={(event) => patchDraft({ name: event.target.value })} />
-              <select value={draft.status} onChange={(event) => patchDraft({ status: event.target.value as WorkflowStatus })}>
+          <div className="wf-stage">
+            <div className="wf-toolbar">
+              <input
+                className="wf-title-input"
+                value={draft.name}
+                onChange={(event) => patchDraftMeta({ name: event.target.value })}
+                placeholder="工作流名称"
+              />
+              <select
+                className="wf-status-select"
+                value={draft.status}
+                onChange={(event) => patchDraftMeta({ status: event.target.value as WorkflowStatus })}
+              >
                 <option value="draft">draft</option>
                 <option value="active">active</option>
                 <option value="archived">archived</option>
               </select>
-              <button className="btn ghost sm" onClick={() => setConnectFrom(selectedNodeId)}>
-                <Icons.Branch size={12} /> {connectFrom ? '选择目标节点' : '连接'}
+              <div className="wf-toolbar-spacer" />
+              <button
+                className="btn ghost sm"
+                onClick={() => setPaletteOpen((open) => !open)}
+                title="节点面板"
+              >
+                <Icons.Plus size={12} /> 节点
               </button>
               <button className="btn ghost sm danger" onClick={() => void removeWorkflow()}>
                 <Icons.Trash size={12} /> 删除
@@ -269,44 +327,51 @@ export function WorkflowView() {
               </button>
             </div>
 
-            <div className="wf-node-palette">
-              {NODE_KINDS.map((item) => (
-                <button key={item.kind} className="tool-chip" onClick={() => addNode(item.kind)}>
-                  {item.icon} {item.label}
-                </button>
-              ))}
+            <div className="wf-canvas-wrap">
+              {paletteOpen && (
+                <div className="wf-palette">
+                  <div className="wf-palette-title">节点类型</div>
+                  {NODE_KIND_ORDER.map((kind) => {
+                    const meta = NODE_KIND_META[kind]
+                    return (
+                      <button
+                        key={kind}
+                        className="wf-palette-item"
+                        onClick={() => addNode(kind)}
+                        style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
+                      >
+                        <span className="wf-palette-icon">{meta.icon}</span>
+                        <span className="wf-palette-body">
+                          <span className="wf-palette-label">{meta.label}</span>
+                          <span className="wf-palette-hint">{meta.hint}</span>
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
+              <div className="wf-flow">
+                <ReactFlow
+                  nodes={nodes}
+                  edges={edges}
+                  onNodesChange={onNodesChange}
+                  onEdgesChange={onEdgesChange}
+                  onConnect={onConnect}
+                  onSelectionChange={onSelectionChange}
+                  nodeTypes={NODE_TYPES}
+                  fitView
+                  fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+                  defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
+                  proOptions={{ hideAttribution: true }}
+                  deleteKeyCode={['Delete', 'Backspace']}
+                >
+                  <Background gap={20} size={1} />
+                  <MiniMap pannable zoomable className="wf-minimap" />
+                  <Controls showInteractive={false} />
+                </ReactFlow>
+              </div>
             </div>
-
-            <svg className="wf-edges">
-              {draft.graph.edges.map((edge) => {
-                const from = draft.graph.nodes.find((node) => node.id === edge.from)
-                const to = draft.graph.nodes.find((node) => node.id === edge.to)
-                if (from == null || to == null) return null
-                const x1 = from.x + 220
-                const y1 = from.y + 42
-                const x2 = to.x
-                const y2 = to.y + 42
-                const mx = (x1 + x2) / 2
-                return (
-                  <path
-                    key={edge.id}
-                    d={`M ${x1} ${y1} C ${mx} ${y1}, ${mx} ${y2}, ${x2} ${y2}`}
-                    className={connectFrom === edge.from ? 'active' : ''}
-                  />
-                )
-              })}
-            </svg>
-
-            {draft.graph.nodes.map((node) => (
-              <WorkflowNodeCard
-                key={node.id}
-                node={node}
-                selected={node.id === selectedNodeId}
-                connecting={node.id === connectFrom}
-                onClick={() => handleNodeClick(node.id)}
-                onPointerDown={(event) => startDrag(event, node)}
-              />
-            ))}
           </div>
 
           <WorkflowInspector
@@ -316,23 +381,18 @@ export function WorkflowView() {
             skills={skills}
             rules={rules}
             mcpServers={mcpServers}
+            agents={agents}
+            currentWorkflowId={draft.id}
             onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
-            onPatch={(patch) => {
-              if (selectedNodeId == null) return
-              patchGraph((graph) => ({
-                ...graph,
-                nodes: graph.nodes.map((node) => node.id === selectedNodeId ? { ...node, ...patch } : node),
+            onPatch={(patch) =>
+              patchSelectedNodeData((node) => ({ ...node, data: { ...node.data, ...patch } }))
+            }
+            onPatchConfig={(patch) =>
+              patchSelectedNodeData((node) => ({
+                ...node,
+                data: { ...node.data, config: { ...node.data.config, ...patch } },
               }))
-            }}
-            onPatchConfig={(patch) => {
-              if (selectedNodeId == null) return
-              patchGraph((graph) => ({
-                ...graph,
-                nodes: graph.nodes.map((node) =>
-                  node.id === selectedNodeId ? { ...node, config: { ...node.config, ...patch } } : node,
-                ),
-              }))
-            }}
+            }
           />
         </>
       )}
@@ -340,108 +400,146 @@ export function WorkflowView() {
   )
 }
 
-function WorkflowNodeCard({
-  node,
-  selected,
-  connecting,
-  onClick,
-  onPointerDown,
-}: {
-  node: WorkflowNode
-  selected: boolean
-  connecting: boolean
-  onClick: () => void
-  onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void
-}) {
-  const meta = NODE_KINDS.find((item) => item.kind === node.kind) ?? NODE_KINDS[1]
-  return (
-    <div
-      className={`wf-node ${selected ? 'selected' : ''} ${connecting ? 'running' : ''}`}
-      style={{ left: node.x, top: node.y }}
-      onClick={onClick}
-      onPointerDown={onPointerDown}
-    >
-      <span className="wf-port in" />
-      <span className="wf-port out" />
-      <div className="wf-node-head">
-        <div className="wf-node-icon">{meta?.icon}</div>
-        <div className="wf-node-title">{node.title}</div>
-        <span className="badge wf-badge-sm">{meta?.label}</span>
-      </div>
-      <div className="wf-node-meta">
-        <span>{node.config.modelId ? String(node.config.modelId) : node.config.role ? String(node.config.role) : '默认配置'}</span>
-      </div>
-      {typeof node.config.prompt === 'string' && node.config.prompt.trim().length > 0 && (
-        <div className="wf-node-foot">{node.config.prompt.slice(0, 42)}</div>
-      )}
-    </div>
-  )
+function defaultStarterGraph(): WorkflowGraph {
+  const nodes: WorkflowNode[] = [
+    {
+      id: 'input-1',
+      kind: 'input',
+      title: '需求输入',
+      x: 80,
+      y: 120,
+      config: { prompt: NODE_KIND_META.input.defaultPrompt, retryCount: 1 },
+    },
+    {
+      id: 'plan-1',
+      kind: 'plan',
+      title: '计划节点',
+      x: 360,
+      y: 120,
+      config: {
+        prompt: NODE_KIND_META.plan.defaultPrompt,
+        permissionMode: 'claude-plan' satisfies SessionPermissionMode,
+      },
+    },
+    {
+      id: 'agent-1',
+      kind: 'agent',
+      title: '执行节点',
+      x: 640,
+      y: 120,
+      config: { prompt: NODE_KIND_META.agent.defaultPrompt, role: 'coder' },
+    },
+    {
+      id: 'verify-1',
+      kind: 'verify',
+      title: '验证复核',
+      x: 920,
+      y: 120,
+      config: { prompt: NODE_KIND_META.verify.defaultPrompt },
+    },
+  ]
+  return {
+    nodes,
+    edges: [
+      { id: 'e-input-plan', from: 'input-1', to: 'plan-1' },
+      { id: 'e-plan-agent', from: 'plan-1', to: 'agent-1' },
+      { id: 'e-agent-verify', from: 'agent-1', to: 'verify-1' },
+    ],
+  }
 }
 
-function WorkflowInspector({
-  node,
-  providers,
-  modelOptions,
-  skills,
-  rules,
-  mcpServers,
-  onPatch,
-  onPatchConfig,
-  onDelete,
-}: {
-  node: WorkflowNode | null
+type InspectorProps = {
+  node: SparkFlowNode | null
   providers: ProviderProfile[]
   modelOptions: string[]
   skills: SkillItem[]
   rules: RuleItem[]
   mcpServers: McpServerItem[]
-  onPatch: (patch: Partial<WorkflowNode>) => void
+  agents: ManagedAgent[]
+  currentWorkflowId: string
+  onPatch: (patch: Partial<SparkFlowNode['data']>) => void
   onPatchConfig: (patch: WorkflowNode['config']) => void
   onDelete: () => void
-}) {
+}
+
+function WorkflowInspector(props: InspectorProps) {
+  const { node, providers, modelOptions, skills, rules, mcpServers, agents, currentWorkflowId } = props
   if (node == null) {
     return (
       <div className="wf-inspector">
-        <div className="wf-insp-body"><div className="agents-empty-mini">选择一个节点进行配置</div></div>
+        <div className="wf-insp-body">
+          <div className="agents-empty-mini">选择一个节点进行配置</div>
+        </div>
       </div>
     )
   }
+  const meta = getNodeKindMeta(node.data.kind)
+  const config = node.data.config
+  const isSubagent = node.data.kind === 'subagent'
+  const isVerify = node.data.kind === 'verify'
   return (
     <div className="wf-inspector">
       <div className="wf-insp-head">
-        <div className="wf-insp-icon"><Icons.Workflow size={15} /></div>
-        <div className="flex1">
-          <div className="strong">{node.title}</div>
-          <div className="muted wf-insp-role">{node.kind} 节点</div>
+        <div className="wf-insp-icon" style={{ ['--node-accent' as string]: `var(${meta.accent})` }}>
+          {meta.icon}
         </div>
-        <button className="icon-btn" title="删除节点" onClick={onDelete}><Icons.Trash size={13} /></button>
+        <div className="flex1">
+          <div className="strong">{node.data.title}</div>
+          <div className="muted wf-insp-role">{meta.label} 节点</div>
+        </div>
+        <button className="icon-btn" title="删除节点" onClick={props.onDelete}>
+          <Icons.Trash size={13} />
+        </button>
       </div>
       <div className="wf-insp-body scroll">
         <InspectorField label="标题">
-          <input value={node.title} onChange={(event) => onPatch({ title: event.target.value })} />
+          <input value={node.data.title} onChange={(event) => props.onPatch({ title: event.target.value })} />
         </InspectorField>
         <InspectorField label="节点类型">
-          <select value={node.kind} onChange={(event) => onPatch({ kind: event.target.value as WorkflowNodeKind })}>
-            {NODE_KINDS.map((item) => <option key={item.kind} value={item.kind}>{item.label}</option>)}
+          <select
+            value={node.data.kind}
+            onChange={(event) => props.onPatch({ kind: event.target.value as WorkflowNodeKind })}
+          >
+            {NODE_KIND_ORDER.map((kind) => (
+              <option key={kind} value={kind}>
+                {NODE_KIND_META[kind].label}
+              </option>
+            ))}
           </select>
         </InspectorField>
         <InspectorField label="Provider">
-          <select value={String(node.config.providerProfileId ?? '')} onChange={(event) => onPatchConfig({ providerProfileId: event.target.value || null })}>
+          <select
+            value={String(config.providerProfileId ?? '')}
+            onChange={(event) =>
+              props.onPatchConfig({ providerProfileId: event.target.value || null })
+            }
+          >
             <option value="">继承 Agent</option>
-            {providers.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name}
+              </option>
+            ))}
           </select>
         </InspectorField>
         <InspectorField label="模型">
-          <select value={String(node.config.modelId ?? '')} onChange={(event) => onPatchConfig({ modelId: event.target.value || null })}>
+          <select
+            value={String(config.modelId ?? '')}
+            onChange={(event) => props.onPatchConfig({ modelId: event.target.value || null })}
+          >
             <option value="">继承 Agent</option>
-            {modelOptions.map((model) => <option key={model} value={model}>{model}</option>)}
+            {modelOptions.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
           </select>
         </InspectorField>
         <InspectorField label="权限">
           <select
-            value={String(node.config.permissionMode ?? '')}
+            value={String(config.permissionMode ?? '')}
             onChange={(event) =>
-              onPatchConfig(
+              props.onPatchConfig(
                 event.target.value
                   ? { permissionMode: event.target.value as SessionPermissionMode }
                   : {},
@@ -456,34 +554,83 @@ function WorkflowInspector({
           </select>
         </InspectorField>
         <InspectorField label="节点提示词">
-          <textarea rows={6} value={String(node.config.prompt ?? '')} onChange={(event) => onPatchConfig({ prompt: event.target.value })} />
+          <textarea
+            rows={6}
+            value={String(config.prompt ?? '')}
+            onChange={(event) => props.onPatchConfig({ prompt: event.target.value })}
+          />
         </InspectorField>
+        {isSubagent && (
+          <>
+            <InspectorField label="子代理">
+              <select
+                value={String(config.agentId ?? '')}
+                onChange={(event) => props.onPatchConfig({ agentId: event.target.value || null })}
+              >
+                <option value="">选择子代理</option>
+                {agents
+                  .filter((agent) => agent.workflowId !== currentWorkflowId)
+                  .map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+              </select>
+            </InspectorField>
+            <InspectorField label="并发数">
+              <input
+                type="number"
+                min={1}
+                max={8}
+                value={Number(config.parallelism ?? 1)}
+                onChange={(event) => props.onPatchConfig({ parallelism: Number(event.target.value) })}
+              />
+            </InspectorField>
+          </>
+        )}
+        {isVerify && (
+          <InspectorField label="验证命令">
+            <textarea
+              rows={3}
+              placeholder="一行一条，例如：pnpm test"
+              value={(config.verifyCommands ?? []).join('\n')}
+              onChange={(event) =>
+                props.onPatchConfig({
+                  verifyCommands: event.target.value
+                    .split('\n')
+                    .map((line) => line.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </InspectorField>
+        )}
         <InspectorField label="Skills">
           <TagPicker
             items={skills.map((skill) => ({ id: skill.id, label: skill.name }))}
-            selected={asStringArray(node.config.skillIds)}
-            onChange={(skillIds) => onPatchConfig({ skillIds })}
+            selected={asStringArray(config.skillIds)}
+            onChange={(skillIds) => props.onPatchConfig({ skillIds })}
           />
         </InspectorField>
         <InspectorField label="规则">
           <TagPicker
             items={rules.map((rule) => ({ id: rule.id, label: rule.name }))}
-            selected={asStringArray(node.config.ruleIds)}
-            onChange={(ruleIds) => onPatchConfig({ ruleIds })}
+            selected={asStringArray(config.ruleIds)}
+            onChange={(ruleIds) => props.onPatchConfig({ ruleIds })}
           />
         </InspectorField>
         <InspectorField label="工具">
           <TagPicker
             items={CODING_AGENT_TOOLS.map((tool) => ({ id: tool.name, label: tool.name }))}
-            selected={asStringArray(node.config.toolIds)}
-            onChange={(toolIds) => onPatchConfig({ toolIds })}
+            selected={asStringArray(config.toolIds)}
+            onChange={(toolIds) => props.onPatchConfig({ toolIds })}
           />
         </InspectorField>
         <InspectorField label="MCP">
           <TagPicker
             items={mcpServers.map((server) => ({ id: server.id, label: server.name }))}
-            selected={asStringArray(node.config.mcpServerIds)}
-            onChange={(mcpServerIds) => onPatchConfig({ mcpServerIds })}
+            selected={asStringArray(config.mcpServerIds)}
+            onChange={(mcpServerIds) => props.onPatchConfig({ mcpServerIds })}
           />
         </InspectorField>
         <InspectorField label="重试次数">
@@ -491,8 +638,8 @@ function WorkflowInspector({
             type="number"
             min={0}
             max={10}
-            value={Number(node.config.retryCount ?? 1)}
-            onChange={(event) => onPatchConfig({ retryCount: Number(event.target.value) })}
+            value={Number(config.retryCount ?? 1)}
+            onChange={(event) => props.onPatchConfig({ retryCount: Number(event.target.value) })}
           />
         </InspectorField>
       </div>
@@ -528,7 +675,9 @@ function TagPicker({
           <button
             key={item.id}
             className={`tool-chip ${active ? 'active' : ''}`}
-            onClick={() => onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])}
+            onClick={() =>
+              onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])
+            }
           >
             {active && <Icons.Check size={11} />} {item.label}
           </button>
@@ -540,25 +689,4 @@ function TagPicker({
 
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
-}
-
-function defaultPromptForKind(kind: WorkflowNodeKind): string {
-  switch (kind) {
-    case 'input':
-      return '解析用户输入，确认目标、约束、上下文和完成标准。'
-    case 'agent':
-      return '执行该阶段任务，必要时调用工具，并输出阶段结果。'
-    case 'skill':
-      return '加载并应用所选 Skill 的方法与约束。'
-    case 'tool':
-      return '调用所需工具，记录输入、输出和异常。'
-    case 'mcp':
-      return '使用所选 MCP 服务完成外部能力调用。'
-    case 'approval':
-      return '在继续前等待用户确认关键计划或高风险动作。'
-    case 'review':
-      return '复核上一阶段结果，运行验证并指出风险。'
-    case 'artifact':
-      return '整理最终交付物、变更摘要和后续建议。'
-  }
 }

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
+import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import type {
@@ -69,8 +70,11 @@ const EMPTY_DRAFT: AgentDraft = {
   workflowId: '',
 }
 
+const NEW_AGENT_ID = '__new_agent__'
+
 export function AgentsView() {
   const { toast } = useToast()
+  const { registerNavGuard } = useApp()
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -79,7 +83,16 @@ export function AgentsView() {
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
   const [selectedId, setSelectedId] = useState<string>('code-agent')
   const [draft, setDraft] = useState<AgentDraft>(EMPTY_DRAFT)
+  const [baseline, setBaseline] = useState<AgentDraft>(EMPTY_DRAFT)
+  const [pendingNew, setPendingNew] = useState(false)
   const [loading, setLoading] = useState(true)
+  const dirty = useMemo(() => pendingNew || JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline, pendingNew])
+  const dirtyRef = useRef(dirty)
+  dirtyRef.current = dirty
+  const selectedIdRef = useRef(selectedId)
+  selectedIdRef.current = selectedId
+  const pendingNewRef = useRef(pendingNew)
+  pendingNewRef.current = pendingNew
 
   const { invoke: listAgents } = useIpcInvoke('agent:list')
   const { invoke: createAgent } = useIpcInvoke('agent:create')
@@ -108,19 +121,32 @@ export function AgentsView() {
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
       setWorkflows(workflowRes.workflows)
-      const selected = agentRes.agents.find((agent) => agent.id === selectedId) ?? agentRes.agents[0]
+      if (pendingNewRef.current) return
+      const currentId = selectedIdRef.current
+      const selected = agentRes.agents.find((agent) => agent.id === currentId) ?? agentRes.agents[0]
       if (selected != null) {
         setSelectedId(selected.id)
-        setDraft(agentToDraft(selected))
+        const next = agentToDraft(selected)
+        setDraft(next)
+        setBaseline(next)
+        setPendingNew(false)
       }
     } finally {
       setLoading(false)
     }
-  }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows, selectedId])
+  }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows])
 
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    registerNavGuard(() => {
+      if (!dirtyRef.current) return true
+      return window.confirm('当前 Agent 有未保存的修改，确定要离开吗？')
+    })
+    return () => registerNavGuard(null)
+  }, [registerNavGuard])
 
   const selectedProvider = providers.find((provider) => provider.id === draft.providerProfileId)
   const modelOptions = selectedProvider?.modelIds.length
@@ -137,18 +163,27 @@ export function AgentsView() {
   }
 
   const handleSelect = (agent: ManagedAgent) => {
+    if (agent.id === selectedId) return
+    if (dirty && !window.confirm('当前 Agent 有未保存的修改，确定要切换吗？')) return
     setSelectedId(agent.id)
-    setDraft(agentToDraft(agent))
+    const next = agentToDraft(agent)
+    setDraft(next)
+    setBaseline(next)
+    setPendingNew(false)
   }
 
   const handleNew = () => {
-    setSelectedId('')
+    if (dirty && !window.confirm('当前 Agent 有未保存的修改，确定要新建吗？')) return
     const provider = providers[0]
-    setDraft({
+    const next: AgentDraft = {
       ...EMPTY_DRAFT,
       providerProfileId: provider?.id ?? '',
       modelId: provider?.defaultModel ?? provider?.modelIds[0] ?? '',
-    })
+    }
+    setSelectedId(NEW_AGENT_ID)
+    setDraft(next)
+    setBaseline(next)
+    setPendingNew(true)
   }
 
   const handleSave = async () => {
@@ -162,19 +197,29 @@ export function AgentsView() {
         ? (await updateAgent({ id: draft.id, ...payload })).agent
         : (await createAgent(payload)).agent
     toast.success('Agent 配置已保存')
+    selectedIdRef.current = saved.id
+    pendingNewRef.current = false
     setSelectedId(saved.id)
+    setPendingNew(false)
+    const next = agentToDraft(saved)
+    setDraft(next)
+    setBaseline(next)
     await refresh()
   }
 
   const handleDelete = async () => {
     if (draft.id == null || draft.builtIn) return
+    if (!window.confirm(`确定要删除 Agent「${draft.name}」吗？此操作不可撤销。`)) return
     const res = await deleteAgent({ id: draft.id })
     if (!res.deleted) {
       toast.warning('内置 Agent 或不存在的 Agent 不能删除')
       return
     }
     toast.success('Agent 已删除')
+    selectedIdRef.current = 'code-agent'
+    pendingNewRef.current = false
     setSelectedId('code-agent')
+    setPendingNew(false)
     await refresh()
   }
 
@@ -215,6 +260,15 @@ export function AgentsView() {
                 {agent.workflowId && <Icons.Workflow size={14} />}
               </button>
             ))}
+            {pendingNew && (
+              <button className={`agent-list-item ${selectedId === NEW_AGENT_ID ? 'active' : ''}`}>
+                <span className="agent-list-icon"><Icons.Bot size={15} /></span>
+                <span className="agent-list-copy">
+                  <span className="agent-list-name">{draft.name || '新 Agent'}</span>
+                  <span className="agent-list-meta">自定义 · 未保存</span>
+                </span>
+              </button>
+            )}
           </div>
         </aside>
 
@@ -228,9 +282,12 @@ export function AgentsView() {
                 </div>
               </div>
               <div className="agents-actions">
-                <button className="btn ghost sm danger" onClick={() => void handleDelete()} disabled={!draft.id || draft.builtIn}>
-                  <Icons.Trash size={12} /> 删除
-                </button>
+                {dirty && <span className="agent-dirty-badge">已编辑未保存</span>}
+                {draft.id != null && !draft.builtIn && (
+                  <button className="btn ghost sm danger" onClick={() => void handleDelete()}>
+                    <Icons.Trash size={12} /> 删除
+                  </button>
+                )}
                 <button className="btn primary sm" onClick={() => void handleSave()}>
                   <Icons.Check size={12} /> 保存
                 </button>

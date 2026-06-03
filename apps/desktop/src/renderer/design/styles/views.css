@@ -5123,8 +5123,9 @@ body.inspector-resizing {
   padding: var(--pad-xl);
 }
 .settings-section {
-  max-width: 680px;
+  max-width: 980px;
   margin: 0 auto var(--pad-xl);
+  min-width: 780;
 }
 .settings-section h2 {
   font-size: 18px;
@@ -5642,15 +5643,15 @@ body.inspector-resizing {
 /* Form grid (2-col label + control) */
 .form-grid {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 14px 20px;
+  grid-template-columns: 220px 1fr;
+  gap: 14px 24px;
   align-items: start;
 }
 .form-grid > label {
   font-size: var(--font-sm);
   font-weight: 500;
   color: var(--text);
-  padding-top: 8px;
+  padding-top: 9px;
 }
 .form-grid > label .sub {
   display: block;
@@ -5664,23 +5665,28 @@ body.inspector-resizing {
 .form-grid > input,
 .form-grid > select,
 .form-grid > textarea {
-  height: 32px;
-  padding: 0 10px;
+  height: 36px;
+  padding: 0 12px;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   color: var(--text);
   font-size: var(--font-sm);
   font-family: inherit;
   outline: none;
   width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 .form-grid > textarea {
   height: auto;
-  min-height: 60px;
-  padding: 8px 10px;
+  min-height: 84px;
+  padding: 10px 12px;
   resize: vertical;
+  line-height: 1.55;
 }
+.form-grid > input:hover,
+.form-grid > select:hover,
+.form-grid > textarea:hover { border-color: var(--text-faint); }
 .form-grid > input:focus,
 .form-grid > select:focus,
 .form-grid > textarea:focus {
@@ -5707,7 +5713,7 @@ body.inspector-resizing {
   justify-content: flex-end;
 }
 .slide-panel {
-  width: min(640px, 90vw);
+  width: min(960px, 92vw);
   height: 100%;
   background: var(--panel);
   border-left: 1px solid var(--border);
@@ -5715,6 +5721,9 @@ body.inspector-resizing {
   display: flex;
   flex-direction: column;
   animation: slideRight 0.2s;
+}
+@media (min-width: 1600px) {
+  .slide-panel { width: min(1120px, 80vw); }
 }
 @keyframes slideRight {
   from {
@@ -5759,7 +5768,7 @@ body.inspector-resizing {
 .slide-panel-body {
   flex: 1;
   overflow: auto;
-  padding: 18px;
+  padding: 22px 28px;
 }
 .slide-panel-foot {
   display: flex;
@@ -6619,6 +6628,7 @@ body.inspector-resizing {
   display: flex;
   align-items: flex-end;
   margin-bottom: 18px;
+  padding-top: 12px;
 }
 .section-h2 {
   margin: 0;
@@ -8169,6 +8179,17 @@ body.inspector-resizing {
 }
 .agents-actions {
   gap: 4px;
+}
+.agent-dirty-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  margin-right: 4px;
+  border-radius: 10px;
+  font-size: var(--font-xs);
+  color: var(--warning, #d97706);
+  background: rgba(217, 119, 6, 0.12);
+  border: 1px solid rgba(217, 119, 6, 0.28);
 }
 .timeline-title-text {
   font-size: var(--font-base);
@@ -9783,4 +9804,564 @@ body.inspector-resizing {
     border-left: 0;
     border-top: 1px solid var(--border);
   }
+}
+
+/* ============================================================
+   PROVIDER LOGO — 真实 SVG logo 渲染，失败回退到 emoji
+   ============================================================ */
+.provider-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
+  user-select: none;
+}
+.provider-logo-rounded { border-radius: var(--r-sm) !important; }
+.provider-logo-circle { border-radius: 50% !important; }
+.provider-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  padding: 0;
+  display: block;
+}
+/* 部分 SVG 资源是深色实心 logo，在深底上反差不够 — 用 mix-blend 让白色块透明化 */
+.theme-light .provider-logo-img {
+  mix-blend-mode: multiply;
+}
+.provider-logo-fallback {
+  font-size: 0.6em;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.18);
+  line-height: 1;
+}
+
+/* ============================================================
+   CHIP LIST — chip 列表编辑器（input + add + chips）
+   ============================================================ */
+.chip-list {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  padding: 8px;
+  gap: 8px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  cursor: text;
+}
+.chip-list:hover { border-color: var(--text-faint); }
+.chip-list:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.chip-list-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.chip-list-input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  outline: none;
+  transition: background 0.12s, border-color 0.12s;
+}
+.chip-list-input::placeholder { color: var(--text-faint); }
+.chip-list-input:hover { background: var(--hover); }
+.chip-list-input:focus { background: var(--bg-soft); border-color: var(--border); }
+.chip-list-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: var(--r-sm);
+  background: var(--primary);
+  color: var(--primary-fg);
+  border: none;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, opacity 0.12s;
+  flex-shrink: 0;
+}
+.chip-list-add:hover:not(:disabled) { background: var(--primary-hover); }
+.chip-list-add:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.chip-list-area {
+  overflow: auto;
+  padding: 2px;
+  border-radius: var(--r-sm);
+}
+.chip-list-empty {
+  padding: 6px 4px 2px;
+}
+.chip-list-empty-text {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  padding: 4px 6px;
+  font-style: italic;
+}
+.chip-list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 6px 0 8px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  font-size: var(--font-xs);
+  color: var(--text);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  max-width: 100%;
+  transition: background 0.12s, border-color 0.12s;
+}
+.chip:hover { background: var(--hover); }
+.chip-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+.chip-locked {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  color: var(--text-strong);
+}
+.chip-locked .chip-locked-star {
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+}
+.chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.12s, color 0.12s;
+}
+.chip-remove:hover { background: var(--danger-bg); color: var(--danger); }
+.chip-list-compact { padding: 6px; gap: 6px; }
+.chip-list-compact .chip { height: 22px; font-size: 10.5px; padding: 0 4px 0 6px; }
+.chip-list-compact .chip-list-input { height: 26px; }
+
+/* ============================================================
+   PROVIDER EDIT FORM — slide panel 的 C 端版式
+   ============================================================ */
+.provider-form-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  margin-bottom: 18px;
+  background: linear-gradient(135deg, var(--bg-soft) 0%, var(--panel) 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+}
+.provider-form-hero .provider-form-hero-info { flex: 1; min-width: 0; }
+.provider-form-hero .provider-form-hero-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.provider-form-hero .provider-form-hero-sub {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 3px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.provider-form-hero .provider-form-hero-sub .dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  display: inline-block;
+}
+.provider-form-section {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 16px 18px 18px;
+  margin-bottom: 16px;
+  background: var(--panel);
+  transition: border-color 0.15s;
+}
+.provider-form-section:hover { border-color: var(--border-strong); }
+.provider-form-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-faint);
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--divider);
+}
+.provider-form-section-title .icon {
+  color: var(--primary);
+  display: inline-flex;
+  align-items: center;
+}
+.provider-form-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.provider-form-row + .provider-form-row {
+  border-top: 1px solid var(--divider);
+}
+.provider-form-row-info { flex: 1; min-width: 0; }
+.provider-form-row-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+.provider-form-row-sub {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.45;
+}
+.provider-form-section .form-grid {
+  grid-template-columns: 200px 1fr;
+  gap: 12px 20px;
+}
+.provider-form-section .tier-grid {
+  gap: 10px 14px;
+}
+.provider-form-section .tier-cell {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px 12px;
+}
+.provider-form-section .tier-cell > label {
+  padding-top: 0;
+}
+
+/* Provider select with logos (preset select) */
+.provider-form-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.provider-form-select-row .spark-select-wrap { flex: 1; }
+.provider-form-select-preview {
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+/* 错误 banner 美化 */
+.alert-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-radius: var(--r-md);
+  font-size: var(--font-sm);
+  margin-bottom: 16px;
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+}
+.alert-banner-icon { flex-shrink: 0; display: inline-flex; align-items: center; padding-top: 1px; }
+.alert-banner-content { flex: 1; line-height: 1.5; }
+
+/* Provider card logo：使用真实 logo 后 fallback 改为纯色字母 */
+.provider-card .provider-logo {
+  border: 1px solid var(--border);
+}
+.provider-card .provider-info .name { font-size: 14px; }
+.provider-card .provider-info .models-row {
+  display: flex;
+  gap: 5px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+.provider-card .provider-info .model-pill {
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  border: 1px solid var(--border);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.provider-card .provider-info .model-pill-more {
+  font-size: 10.5px;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-faint);
+}
+
+/* Preset card logo 调整：用真实 logo 时去掉强色背景 */
+.preset-card .preset-card-logo {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  overflow: hidden;
+}
+.preset-card.preset-added .preset-card-logo { opacity: 0.5; }
+
+/* ============================================================
+   PROVIDER 多选 / 导入导出 样式（import-export task）
+   ============================================================ */
+
+/* Provider card 多选态 */
+.provider-card.multi-select {
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.provider-card.multi-select:hover {
+  background: var(--bg-soft);
+}
+.provider-card.multi-select.selected {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+}
+.provider-card-checkbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 4px 2px 2px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.provider-card-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+/* 批量操作工具栏 */
+.multi-select-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary);
+  border-radius: var(--r-lg);
+  padding: 8px 12px;
+  margin-bottom: var(--pad-md);
+  position: sticky;
+  top: 0;
+  z-index: 5;
+}
+.multi-select-toolbar .multi-select-count {
+  font-size: var(--font-sm);
+  color: var(--text);
+  white-space: nowrap;
+}
+.multi-select-toolbar .multi-select-count strong {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+/* 危险按钮（批量删除） */
+.btn.ghost.danger {
+  color: var(--danger);
+}
+.btn.ghost.danger:hover:not(:disabled) {
+  background: var(--danger-bg, rgba(220, 38, 38, 0.08));
+}
+
+/* ─── Import Preview Modal ───────────────────────────────── */
+.modal-panel {
+  width: min(640px, 92vw);
+  max-height: 86vh;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  outline: none;
+  animation: modalIn 0.18s;
+}
+@keyframes modalIn {
+  from { transform: scale(0.96); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-md);
+  background: var(--primary-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.modal-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.modal-sub {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+  word-break: break-all;
+}
+.modal-footer {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+
+/* ─── Import modal body 内部结构 ─────────────────────────── */
+.import-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  font-size: var(--font-xs);
+  color: var(--text);
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+}
+.import-meta .text-warning {
+  color: var(--warning);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.import-meta .mono-sm {
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+}
+.import-meta .muted { color: var(--text-muted); }
+
+.import-mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: var(--font-sm);
+}
+.import-mode-row .radio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+.import-mode-row .radio-row:hover {
+  background: var(--bg-soft);
+}
+.import-mode-row .radio-row input[type="radio"] {
+  accent-color: var(--primary);
+  margin: 0;
+}
+
+.import-list-header {
+  display: grid;
+  grid-template-columns: 1.2fr 80px 1.4fr 90px;
+  gap: 10px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px 4px;
+  border-bottom: 1px solid var(--divider);
+}
+.import-list {
+  max-height: 240px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.import-list-row {
+  display: grid;
+  grid-template-columns: 1.2fr 80px 1.4fr 90px;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--divider);
+  font-size: var(--font-sm);
+}
+.import-list-row:last-child { border-bottom: none; }
+.import-list-row.conflict {
+  background: rgba(245, 158, 11, 0.05);
+}
+.import-list-row .cell-name {
+  font-weight: 500;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-list-row .cell-model {
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.import-list-row .cell-status {
+  text-align: right;
+}
+.import-list-row .preset-format-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
 }

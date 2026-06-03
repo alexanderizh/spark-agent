@@ -561,6 +561,9 @@ export class SessionService {
       /** 'chat' (default, chat.completions) or 'responses' (OpenAI Responses API; Codex models) */
       codexApiKind?: 'chat' | 'responses'
       supportsMillionContext?: boolean
+      haikuModel?: string
+      sonnetModel?: string
+      opusModel?: string
     }
 
     const model = session.model_id ?? config.defaultModel ?? config.model
@@ -906,6 +909,9 @@ export class SessionService {
         workspaceRootPath,
         permissionMode,
         ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+        ...(config.haikuModel != null ? { haikuModel: config.haikuModel } : {}),
+        ...(config.sonnetModel != null ? { sonnetModel: config.sonnetModel } : {}),
+        ...(config.opusModel != null ? { opusModel: config.opusModel } : {}),
         ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
         ...(composedSkillSystemPrompt != null
           ? { skillSystemPrompt: composedSkillSystemPrompt }

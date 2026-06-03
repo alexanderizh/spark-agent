@@ -14,7 +14,8 @@ import { AgentsView } from './design/views/AgentsView'
 import { McpView } from './design/views/McpView'
 import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
-import { SettingsView, ProviderEditPanel, ProfileEditModal } from './design/views/SettingsView'
+import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
+import ProvidersView from './design/views/ProvidersView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { Icons } from './design/Icons'
@@ -46,6 +47,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
     agents: { title: 'Agents', sub: 'Multi-agent collaboration' },
     skills: { title: 'Skills', sub: 'Reusable agent capabilities' },
     'skill-store': { title: 'Skill 商店', sub: 'Discover, install and manage AI Skills' },
+    providers: { title: 'Providers', sub: '模型供应商与协议配置' },
     settings: { title: 'Settings', sub: 'App & team configuration' },
   }
   const meta = viewMeta[view] ?? { title: view, sub: '' }
@@ -219,6 +221,7 @@ function Shell() {
     agents: AgentsView,
     skills: SkillsView,
     'skill-store': SkillStoreView,
+    providers: ProvidersView,
     settings: SettingsView,
   }
   const View = ViewMap[t.view] ?? HomeView
@@ -370,6 +373,18 @@ function Shell() {
 
           {/* Settings */}
           <div className="sidebar-section">
+            <button
+              className={`nav-item ${t.view === 'providers' ? 'active' : ''}`}
+              onClick={() => setTweak('view', 'providers')}
+              title="Providers"
+            >
+              <span className="nav-icon">
+                <Icons.Server />
+              </span>
+              {isExpanded && (
+                <span className="nav-label">Providers</span>
+              )}
+            </button>
             <button
               className={`nav-item ${t.view === 'settings' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'settings')}

@@ -59,6 +59,7 @@ import type {
   ManagedAgent,
   WorkflowItem as ProtocolWorkflowItem,
   WorkflowGraph,
+  ProviderExportPayload,
 } from '@spark/protocol'
 import type {
   SessionEventHandler,
@@ -525,6 +526,127 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('provider:health-check', async (req) => {
     log.info(`provider:health-check requested, id=${req.id}`)
     return getProviderService().healthCheck(req.id)
+  })
+
+  // ─── Provider Import/Export Handlers ─────────────────────────────────────
+  //
+  // 流程：
+  //   - 内存构造 ExportPayload  → `provider:export`
+  //   - 弹保存对话框写 .json     → `provider:export-to-file`（内部走 export 拿到 payload）
+  //   - 弹打开对话框读 .json     → `provider:import-from-file`（只解析，不写库）
+  //   - 真正写库                  → `provider:import`（让 UI 走预览/确认流程）
+  //
+  // 文件 IO 走 electron 的 dialog + node:fs/promises（不要用浏览器 File API）。
+  // 解析失败、IO 失败、版本不匹配都返回友好错误，UI 弹 toast。
+
+  typedIpcHandle('provider:export', async (req) => {
+    const count = req.ids.length
+    log.info(`provider:export requested, ids=${count}`)
+    const payload = await getProviderService().exportProviders(req.ids)
+    return { payload }
+  })
+
+  typedIpcHandle('provider:import', async (req) => {
+    const total = req.payload.profiles.length
+    log.info(`provider:import requested, mode=${req.mode}, profiles=${total}`)
+    const result = await getProviderService().importProviders(req.payload, req.mode)
+    log.info(
+      `provider:import done, imported=${result.imported}, skipped=${result.skipped}, errors=${result.errors.length}`,
+    )
+    return result
+  })
+
+  typedIpcHandle('provider:export-to-file', async (req) => {
+    const count = req.ids.length
+    log.info(`provider:export-to-file requested, ids=${count}`)
+
+    const payload = await getProviderService().exportProviders(req.ids)
+
+    // 默认文件名：spark-agent-providers-YYYY-MM-DD.json
+    const datePart = new Date().toISOString().slice(0, 10)
+    const defaultName = `spark-agent-providers-${datePart}.json`
+
+    const result = await dialog.showSaveDialog({
+      title: '导出 Provider 配置',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePath == null || result.filePath.length === 0) {
+      log.info('provider:export-to-file canceled by user')
+      return { filePath: '', count: payload.profiles.length }
+    }
+
+    const fs = await import('node:fs/promises')
+    try {
+      const json = JSON.stringify(payload, null, 2)
+      await fs.writeFile(result.filePath, json, 'utf-8')
+      log.info(`provider:export-to-file wrote ${payload.profiles.length} profiles to ${result.filePath}`)
+      return { filePath: result.filePath, count: payload.profiles.length }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`provider:export-to-file write failed: ${message}`)
+      throw new Error(`写入文件失败：${message}`)
+    }
+  })
+
+  typedIpcHandle('provider:import-from-file', async () => {
+    log.info('provider:import-from-file requested')
+
+    const result = await dialog.showOpenDialog({
+      title: '选择 Provider 配置文件',
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      log.info('provider:import-from-file canceled by user')
+      return { payload: null, filePath: '' }
+    }
+
+    const filePath = result.filePaths[0]!
+    const fs = await import('node:fs/promises')
+
+    let raw: string
+    try {
+      raw = await fs.readFile(filePath, 'utf-8')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`provider:import-from-file read failed: ${message}`)
+      throw new Error(`读取文件失败：${message}`)
+    }
+
+    let json: unknown
+    try {
+      json = JSON.parse(raw)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`provider:import-from-file parse failed: ${message}`)
+      throw new Error(`JSON 解析失败：${message}`)
+    }
+
+    // 用 protocol 提供的 zod schema 做运行时校验，version 不匹配会抛 ZodError
+    // typedIpcHandle 统一捕获后会返回给 UI
+    const { ProviderExportPayloadSchema, PROVIDER_EXPORT_VERSION } = await import('@spark/protocol')
+    const parsed = ProviderExportPayloadSchema.parse(json)
+
+    log.info(
+      `provider:import-from-file parsed ${parsed.profiles.length} profiles, version=${parsed.version}`,
+    )
+    // 二次确认：zod literal 已经校验过 version，但额外提示更友好
+    if (parsed.version !== PROVIDER_EXPORT_VERSION) {
+      throw new Error(
+        `不支持的导出文件版本 ${parsed.version}，当前期望 ${PROVIDER_EXPORT_VERSION}`,
+      )
+    }
+
+    return { payload: parsed as ProviderExportPayload, filePath }
   })
 
   // ─── Workspace Handlers ────────────────────────────────────────────────

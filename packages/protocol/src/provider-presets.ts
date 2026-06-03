@@ -19,22 +19,45 @@ export interface VendorMeta {
   emoji: string
   color: string
   desc: string
+  /**
+   * 渲染时优先加载的 logo 资源路径（相对 renderer 进程）。
+   * 缺省或加载失败时，UI 应回退到 emoji + color 组合。
+   */
+  logoPath: string
 }
 
 export const VENDOR_CATALOG: VendorMeta[] = [
-  { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-4.1 / o4 / DALL-E' },
-  { id: 'anthropic',        name: 'Anthropic',       emoji: 'A',   color: '#d4a574', desc: 'Claude Sonnet 4 / Opus 4 / Haiku' },
-  { id: 'google-gemini',    name: 'Google Gemini',   emoji: 'G',   color: '#4285f4', desc: 'Gemini 2.5 Pro / Flash' },
-  { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合' },
-  { id: 'aliyun-bailian-coding-plan', name: '阿里云百炼 Coding Plan', emoji: 'AL', color: '#ff6a00', desc: 'Qwen3 / GLM / Kimi / MiniMax 聚合' },
-  { id: 'zhipu-glm-coding-plan', name: '智谱 GLM Coding Plan', emoji: 'GL', color: '#3b5cff', desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air' },
-  { id: 'qwen-standard',    name: '通义千问',         emoji: 'QW',  color: '#6f42c1', desc: 'Qwen3 / Qwen3-Coder 系列模型' },
-  { id: 'deepseek-api',     name: 'DeepSeek',        emoji: 'DS',  color: '#4d6bfe', desc: 'DeepSeek-V4 Flash / Pro' },
-  { id: 'minimax',          name: 'MiniMax',         emoji: 'MM',  color: '#6c5ce7', desc: 'MiniMax-M2.7 / M2.5 系列' },
-  { id: 'kimi',             name: 'Kimi',            emoji: 'KM',  color: '#1a1a2e', desc: 'Kimi-K2.6 / K2.5 / K2-Thinking' },
-  { id: 'siliconflow',      name: '硅基流动',        emoji: 'SF',  color: '#7c3aed', desc: 'DeepSeek / Qwen / Kimi 聚合' },
-  { id: 'openrouter',       name: 'OpenRouter',      emoji: 'OR',  color: '#6d28d9', desc: 'GPT-4.1 / Claude / Gemini 聚合' },
-  { id: 'ollama',           name: 'Ollama',          emoji: 'OL',  color: '#6366f1', desc: '本地模型 · Llama / Qwen / DeepSeek' },
+  /* ─── 现有 13 个 ─── */
+  { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-4.1 / o4 / DALL-E',  logoPath: 'providers/openai.svg' },
+  { id: 'anthropic',        name: 'Anthropic',       emoji: 'A',   color: '#d4a574', desc: 'Claude Sonnet 4 / Opus 4 / Haiku', logoPath: 'providers/anthropic.svg' },
+  { id: 'google-gemini',    name: 'Google Gemini',   emoji: 'G',   color: '#4285f4', desc: 'Gemini 2.5 Pro / Flash', logoPath: 'providers/google-gemini.svg' },
+  { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合', logoPath: 'providers/tencent-coding-plan.svg' },
+  { id: 'aliyun-bailian-coding-plan', name: '阿里云百炼 Coding Plan', emoji: 'AL', color: '#ff6a00', desc: 'Qwen3 / GLM / Kimi / MiniMax 聚合', logoPath: 'providers/aliyun-bailian-coding-plan.svg' },
+  { id: 'zhipu-glm-coding-plan', name: '智谱 GLM Coding Plan', emoji: 'GL', color: '#3b5cff', desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air', logoPath: 'providers/zhipu-glm-coding-plan.svg' },
+  { id: 'qwen-standard',    name: '通义千问',         emoji: 'QW',  color: '#6f42c1', desc: 'Qwen3 / Qwen3-Coder 系列模型', logoPath: 'providers/qwen-standard.svg' },
+  { id: 'deepseek-api',     name: 'DeepSeek',        emoji: 'DS',  color: '#4d6bfe', desc: 'DeepSeek-V4 Flash / Pro', logoPath: 'providers/deepseek-api.svg' },
+  { id: 'minimax',          name: 'MiniMax',         emoji: 'MM',  color: '#6c5ce7', desc: 'MiniMax-M2.7 / M2.5 系列', logoPath: 'providers/minimax.svg' },
+  { id: 'kimi',             name: 'Kimi',            emoji: 'KM',  color: '#1a1a2e', desc: 'Kimi-K2.6 / K2.5 / K2-Thinking', logoPath: 'providers/kimi.svg' },
+  { id: 'siliconflow',      name: '硅基流动',        emoji: 'SF',  color: '#7c3aed', desc: 'DeepSeek / Qwen / Kimi 聚合', logoPath: 'providers/siliconflow.svg' },
+  { id: 'openrouter',       name: 'OpenRouter',      emoji: 'OR',  color: '#6d28d9', desc: 'GPT-4.1 / Claude / Gemini 聚合', logoPath: 'providers/openrouter.svg' },
+  { id: 'ollama',           name: 'Ollama',          emoji: 'OL',  color: '#6366f1', desc: '本地模型 · Llama / Qwen / DeepSeek', logoPath: 'providers/ollama.svg' },
+
+  /* ─── 新增 15 个 ─── */
+  { id: 'xiaomi-mimo',      name: '小米 MiMo',       emoji: 'MM',  color: '#ff6900', desc: 'MiMo-V2-Pro / V2-Omni / V2-TTS', logoPath: 'providers/xiaomi-mimo.svg' },
+  { id: 'xfyun',            name: '讯飞星火',         emoji: 'SF',  color: '#1e88e5', desc: 'Spark X2 / X1.5 / Ultra / Pro', logoPath: 'providers/xfyun.svg' },
+  { id: 'jdcloud',          name: '京东云 JoyBuilder', emoji: 'JD',  color: '#e1251b', desc: 'JoyAI-LLM / JoyAI-M3 / Coding Plan', logoPath: 'providers/jdcloud.svg' },
+  { id: 'ctyun',            name: '天翼云息壤',       emoji: 'CT',  color: '#cf0a2c', desc: '息壤 Tokens · DeepSeek / Qwen / GLM 聚合', logoPath: 'providers/ctyun.svg' },
+  { id: 'baidu',            name: '百度千帆',         emoji: 'BD',  color: '#2932e1', desc: 'ERNIE-4.5 / Qianfan-VL / 文心系列', logoPath: 'providers/baidu.svg' },
+  { id: 'volcengine',       name: '火山方舟',         emoji: 'VK',  color: '#1a73e8', desc: 'Doubao-pro / Doubao-Seed / Seedance', logoPath: 'providers/volcengine.svg' },
+  { id: 'huaweicloud',      name: '华为云盘古',       emoji: 'HW',  color: '#c7000b', desc: 'Pangu-NLP-N4 718B / Pangu Pro MoE', logoPath: 'providers/huaweicloud.svg' },
+  { id: 'unicom',           name: '联通云',           emoji: 'UC',  color: '#003c8f', desc: '元景 32B / 编码助手 AISP', logoPath: 'providers/unicom.svg' },
+  { id: 'ucloud',           name: 'UCloud UModelVerse', emoji: 'UC', color: '#0052d9', desc: 'DeepSeek / Qwen / 文心 / 阶跃 聚合', logoPath: 'providers/ucloud.svg' },
+  { id: 'infini-ai',        name: '无问芯穹 Infini-AI', emoji: 'IA', color: '#0d47a1', desc: 'DeepSeek / Qwen / 20+ 模型 · 多芯异构', logoPath: 'providers/infini-ai.svg' },
+  { id: 'alaya',            name: '九章云极 Alaya Code', emoji: 'AC', color: '#ff5722', desc: 'Kimi / Qwen3.5 / GLM-5 / MiniMax 聚合', logoPath: 'providers/alaya.svg' },
+  { id: 'mthreads',         name: '摩尔线程',         emoji: 'MT',  color: '#00a86b', desc: '夸娥 GPU · Qwen / DeepSeek / MiniMax', logoPath: 'providers/mthreads.svg' },
+  { id: 'kuaishou',         name: '快手可灵',         emoji: 'KS',  color: '#ff6633', desc: '可灵 Kling V1.6 / 视频生成', logoPath: 'providers/kuaishou.svg' },
+  { id: 'trae',             name: 'Trae (字节)',     emoji: 'TR',  color: '#5b21b6', desc: 'Trae IDE · Doubao-1.5 / DeepSeek', logoPath: 'providers/trae.svg' },
+  { id: 'qwen-tongyi',      name: '阿里通义',         emoji: 'QY',  color: '#ff6a00', desc: 'Qwen3.5 / Qwen3-Max / Qwen-Coder', logoPath: 'providers/qwen-tongyi.svg' },
 ]
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -300,6 +323,295 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://github.com/ollama/ollama/blob/main/docs/openai.md',
     ],
   },
+
+  /* ════════════════════════════════════════════════════════════════ */
+  /* ─── 新增 vendor 模板（14+） ───                                  */
+  /* ════════════════════════════════════════════════════════════════ */
+
+  /* ─── 小米 MiMo ─── */
+  {
+    id: 'xiaomi-mimo-openai',
+    vendorId: 'xiaomi-mimo',
+    name: '小米 MiMo',
+    provider: 'openai',
+    apiEndpoint: 'https://api.xiaomimimo.com/v1',
+    defaultModel: 'mimo-v2-flash',
+    modelIds: ['mimo-v2-flash', 'MiMo-V2-Pro', 'MiMo-V2-Omni', 'MiMo-Coder', 'MiMo-V2-7B-Instruct'],
+    sourceUrls: [
+      'https://platform.xiaomimimo.com/',
+      'https://aistudio.xiaomimimo.com/',
+    ],
+  },
+
+  /* ─── 讯飞星火（Spark）─── */
+  {
+    id: 'xfyun-spark-openai',
+    vendorId: 'xfyun',
+    name: '讯飞星火 Spark',
+    provider: 'openai',
+    apiEndpoint: 'https://spark-api.xf-yun.com/v4.0/chat',
+    defaultModel: 'general',
+    modelIds: ['general', '4.0Ultra', 'max-32k', 'pro-128k', 'lite'],
+    sourceUrls: [
+      'https://www.xfyun.cn/doc/spark/Web.html',
+      'https://xinghuo.xfyun.cn/sparkapi',
+    ],
+  },
+
+  /* ─── 京东云 JoyBuilder ─── */
+  {
+    id: 'jdcloud-joybuilder-openai',
+    vendorId: 'jdcloud',
+    name: '京东云 JoyBuilder',
+    provider: 'openai',
+    apiEndpoint: 'https://aiapi.jdcloud.com/v1',
+    defaultModel: 'JoyAI-LLM-Flash',
+    modelIds: ['JoyAI-LLM-Flash', 'JoyAI-LLM-Pro', 'JoyAI-M3', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5'],
+    sourceUrls: [
+      'https://www.jdcloud.com/cn/products/jdcloud-joybuilder',
+      'https://lavm-console.jdcloud.com/lavm/create',
+    ],
+  },
+
+  /* ─── 天翼云息壤（中国电信）─── */
+  {
+    id: 'ctyun-xirang-openai',
+    vendorId: 'ctyun',
+    name: '天翼云息壤',
+    provider: 'openai',
+    apiEndpoint: 'https://wishub-x1.ctyun.cn/v1/chat/completions',
+    defaultModel: 'Qwen3.5-397B-A17B',
+    modelIds: ['Qwen3.5-397B-A17B', 'DeepSeek-V3.2', 'Doubao-Seed-2.0-pro', 'GLM-5', 'TeleChat-12B', 'kimi-k2.5'],
+    sourceUrls: [
+      'https://www.ctyun.cn/h5/huiju/',
+      'https://huiju.ctyun.cn/modelSquare',
+    ],
+  },
+
+  /* ─── 百度千帆 ─── */
+  {
+    id: 'baidu-qianfan-openai',
+    vendorId: 'baidu',
+    name: '百度千帆',
+    provider: 'openai',
+    apiEndpoint: 'https://qianfan.baidubce.com/v2',
+    defaultModel: 'ernie-4.5-8k',
+    modelIds: ['ernie-4.5-8k', 'ernie-4.0-8k', 'ernie-3.5-128k', 'ernie-speed-8k', 'ernie-lite-8k', 'Qianfan-VL-72B'],
+    sourceUrls: [
+      'https://cloud.baidu.com/doc/qianfan/s/hlrk4akp7',
+      'https://console.bce.baidu.com/qianfan/modelcenter/model/buildIn/list',
+    ],
+  },
+
+  /* ─── 火山方舟（字节）─── */
+  {
+    id: 'volcengine-ark-openai',
+    vendorId: 'volcengine',
+    name: '火山方舟',
+    provider: 'openai',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    defaultModel: 'doubao-pro-32k',
+    modelIds: ['doubao-pro-32k', 'doubao-pro-256k', 'doubao-lite-32k', 'doubao-seed-1-6-250615', 'deepseek-v3-1-250821', 'kimi-k2-250711'],
+    sourceUrls: [
+      'https://www.volcengine.com/docs/82379/1356615',
+      'https://www.volcengine.com/product/ark',
+    ],
+  },
+  /* 火山方舟 Coding Plan：anthropic 协议（Claude Code） */
+  {
+    id: 'volcengine-ark-anthropic',
+    vendorId: 'volcengine',
+    name: '火山方舟 Coding Plan',
+    provider: 'anthropic',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/anthropic',
+    defaultModel: 'doubao-seed-code',
+    modelIds: ['doubao-seed-code', 'deepseek-v3-1-250821', 'kimi-k2-250711', 'doubao-pro-32k'],
+    sourceUrls: [
+      'https://www.volcengine.com/docs/82379/1356615',
+    ],
+  },
+
+  /* ─── 华为云盘古 ─── */
+  {
+    id: 'huaweicloud-pangu-openai',
+    vendorId: 'huaweicloud',
+    name: '华为云盘古',
+    provider: 'openai',
+    apiEndpoint: 'https://api.modelarts-maas.com/v1',
+    defaultModel: 'Pangu-NLP-N4-718B',
+    modelIds: ['Pangu-NLP-N4-718B', 'Pangu-NLP-N2-128K', 'Pangu-NLP-N1-32K', 'Pangu-Pro-MoE-72B', 'DeepSeek-V3', 'Qwen3-32B'],
+    sourceUrls: [
+      'https://support.huaweicloud.com/api-pangulm/pangulm_05_0011.html',
+      'https://www.huaweicloud.com/product/pangu.html',
+    ],
+  },
+
+  /* ─── 联通云 ─── */
+  {
+    id: 'unicom-aisp-anthropic',
+    vendorId: 'unicom',
+    name: '联通云 AISP',
+    provider: 'anthropic',
+    apiEndpoint: 'https://aigw-sh22.cucloud.cn/v1',
+    defaultModel: 'GLM-4.7',
+    modelIds: ['GLM-4.7', 'MiniMax-M2.5', 'Qwen3.5', 'Qwen3-235B', 'DeepSeek-V3.1', 'Unichat-32B'],
+    sourceUrls: [
+      'https://www.cucloud.cn/product/aisp',
+      'https://www.cucloud.cn/',
+    ],
+  },
+  {
+    id: 'unicom-aisp-openai',
+    vendorId: 'unicom',
+    name: '联通云 AISP',
+    provider: 'openai',
+    apiEndpoint: 'https://aigw-sh22.cucloud.cn/v1',
+    defaultModel: 'Qwen3-235B',
+    modelIds: ['Qwen3-235B', 'DeepSeek-V3.1', 'MiniMax-M2.5', 'Qwen3.5', 'GLM-5', 'kimi-k2.5'],
+    sourceUrls: [
+      'https://www.cucloud.cn/product/aisp',
+    ],
+  },
+
+  /* ─── UCloud UModelVerse ─── */
+  {
+    id: 'ucloud-modelverse-openai',
+    vendorId: 'ucloud',
+    name: 'UCloud UModelVerse',
+    provider: 'openai',
+    apiEndpoint: 'https://api.modelverse.ucloud.cn/v1',
+    defaultModel: 'DeepSeek-R1',
+    modelIds: ['DeepSeek-R1', 'DeepSeek-V3', 'Qwen/Qwen2.5-14B-Instruct', 'Qwen/Qwen2.5-7B-Instruct', 'meta-llama/Meta-Llama-3.1-8B-Instruct', 'Qwen/Qwen1.5-14B-Chat'],
+    sourceUrls: [
+      'https://www.ucloud.cn/site/product/modelverse.html',
+      'https://doc.ucloud.cn/api/uai-modelverse-api/README',
+    ],
+  },
+
+  /* ─── 无问芯穹 Infini-AI ─── */
+  {
+    id: 'infini-ai-maas-openai',
+    vendorId: 'infini-ai',
+    name: '无问芯穹 Infini-AI',
+    provider: 'openai',
+    apiEndpoint: 'https://cloud.infini-ai.com/maas/v1',
+    defaultModel: 'deepseek-r1',
+    modelIds: ['deepseek-r1', 'deepseek-v3', 'deepseek-r1-distill-qwen-32b', 'Qwen/Qwen2.5-72B-Instruct', 'meta-llama/Meta-Llama-3.1-70B-Instruct', 'Megrez-3B-Omni'],
+    sourceUrls: [
+      'https://cloud.infini-ai.com/genstudio',
+      'https://docs.infini-ai.com/',
+    ],
+  },
+
+  /* ─── 九章云极 Alaya Code ─── */
+  {
+    id: 'alaya-code-anthropic',
+    vendorId: 'alaya',
+    name: '九章云极 Alaya Code',
+    provider: 'anthropic',
+    apiEndpoint: 'https://api.alayacode.com/coding/anthropic',
+    defaultModel: 'kimi-k2.5',
+    modelIds: ['kimi-k2.5', 'Qwen3.5-Plus', 'GLM-5', 'MiniMax-M2.5', 'deepseek-v4-pro'],
+    sourceUrls: [
+      'https://www.datacanvas.com/',
+      'https://www.alayacode.com/',
+    ],
+  },
+  {
+    id: 'alaya-code-openai',
+    vendorId: 'alaya',
+    name: '九章云极 Alaya Code',
+    provider: 'openai',
+    apiEndpoint: 'https://api.alayacode.com/v1',
+    defaultModel: 'kimi-k2.5',
+    modelIds: ['kimi-k2.5', 'Qwen3.5-Plus', 'GLM-5', 'MiniMax-M2.5', 'deepseek-v4-pro'],
+    sourceUrls: [
+      'https://www.datacanvas.com/',
+    ],
+  },
+
+  /* ─── 摩尔线程（夸娥 GPU + 多模型推理）─── */
+  {
+    id: 'mthreads-kuae-openai',
+    vendorId: 'mthreads',
+    name: '摩尔线程夸娥',
+    provider: 'openai',
+    apiEndpoint: 'https://api.mthreads.com/v1',
+    defaultModel: 'Qwen3-32B',
+    modelIds: ['Qwen3-32B', 'Qwen3-14B', 'DeepSeek-V4', 'MiniMax-M2.7', 'MiniMax-M2.5', 'GLM-5'],
+    sourceUrls: [
+      'https://www.mthreads.com/',
+      'https://developer.mthreads.com/',
+    ],
+  },
+
+  /* ─── 快手可灵（视频/图像）─── */
+  {
+    id: 'kuaishou-kling-openai',
+    vendorId: 'kuaishou',
+    name: '快手可灵 Kling',
+    provider: 'openai',
+    apiEndpoint: 'https://api.klingai.com/v1',
+    defaultModel: 'kling-v1-6',
+    modelIds: ['kling-v1-6', 'kling-v1-5', 'kling-v1', 'kling-virtual-try-on'],
+    sourceUrls: [
+      'https://klingai.kuaishou.com/',
+      'https://platform.klingai.com/',
+    ],
+  },
+
+  /* ─── Trae IDE（字节 AI 原生 IDE）─── */
+  {
+    id: 'trae-cn-anthropic',
+    vendorId: 'trae',
+    name: 'Trae 国内版',
+    provider: 'anthropic',
+    apiEndpoint: 'https://api.trae.cn/v1',
+    defaultModel: 'doubao-1.5-pro',
+    modelIds: ['doubao-1.5-pro', 'doubao-1.5-thinking', 'DeepSeek-V3', 'DeepSeek-R1'],
+    sourceUrls: [
+      'https://www.trae.cn/',
+    ],
+  },
+  {
+    id: 'trae-global-openai',
+    vendorId: 'trae',
+    name: 'Trae 国际版',
+    provider: 'openai',
+    apiEndpoint: 'https://api.trae.ai/v1',
+    defaultModel: 'claude-3-5-sonnet',
+    modelIds: ['claude-3-5-sonnet', 'claude-3-7-sonnet', 'gpt-4o', 'gpt-4.1'],
+    sourceUrls: [
+      'https://www.trae.ai/',
+    ],
+  },
+
+  /* ─── 阿里通义（qwen-tongyi）─── */
+  {
+    id: 'qwen-tongyi-openai',
+    vendorId: 'qwen-tongyi',
+    name: '阿里通义',
+    provider: 'openai',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    defaultModel: 'qwen3-max',
+    modelIds: ['qwen3-max', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-235b-a22b', 'qwen3-vl-plus', 'qwen-long'],
+    sourceUrls: [
+      'https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api',
+      'https://tongyi.aliyun.com/',
+    ],
+  },
+  {
+    id: 'qwen-tongyi-anthropic',
+    vendorId: 'qwen-tongyi',
+    name: '阿里通义',
+    provider: 'anthropic',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/apps/anthropic',
+    defaultModel: 'qwen3-max',
+    modelIds: ['qwen3-max', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-235b-a22b', 'qwen3-vl-plus'],
+    sourceUrls: [
+      'https://help.aliyun.com/zh/model-studio/claude-code',
+    ],
+  },
 ]
 
 /* ─── 查询工具函数 ─── */
@@ -327,4 +639,62 @@ export function getUniqueVendorIds(): string[] {
     }
   }
   return result
+}
+
+/* ─── 资产一致性自检（仅 dev / 显式开启时使用） ─── */
+
+/**
+ * 在浏览器/Dev 环境下，校验每个 vendor 的 logoPath 看上去合法。
+ *
+ * - 不强制 import node:fs，避免 protocol 包耦合 Node API。
+ * - 只检查字符串形态（路径是否以 .svg / .png 结尾，是否含有非法字符）。
+ * - 真正的"文件存在性"在 renderer 端通过 fetch 资源做运行时兜底。
+ *
+ * 满足条件返回 null；否则返回问题描述数组。
+ */
+export function assertProviderAssetsConsistency(): string[] | null {
+  const issues: string[] = []
+
+  if (VENDOR_CATALOG.length === 0) {
+    issues.push('VENDOR_CATALOG is empty')
+  }
+
+  // 每个 vendor 必须有 logoPath
+  for (const v of VENDOR_CATALOG) {
+    if (!v.logoPath || v.logoPath.trim().length === 0) {
+      issues.push(`vendor[${v.id}] missing logoPath`)
+      continue
+    }
+    if (!/^providers\/[a-z0-9._-]+\.(svg|png)$/i.test(v.logoPath)) {
+      issues.push(`vendor[${v.id}] logoPath "${v.logoPath}" has unexpected format`)
+    }
+  }
+
+  // vendorId 唯一
+  const seen = new Set<string>()
+  for (const v of VENDOR_CATALOG) {
+    if (seen.has(v.id)) {
+      issues.push(`duplicate vendor id: ${v.id}`)
+    }
+    seen.add(v.id)
+  }
+
+  // preset 引用了已存在的 vendorId
+  const known = new Set(VENDOR_CATALOG.map((v) => v.id))
+  for (const p of PROVIDER_PRESETS) {
+    if (!known.has(p.vendorId)) {
+      issues.push(`preset[${p.id}] references unknown vendorId=${p.vendorId}`)
+    }
+    if (!p.id || p.id.trim().length === 0) {
+      issues.push('preset has empty id')
+    }
+    if (!p.apiEndpoint || !/^https?:\/\//.test(p.apiEndpoint)) {
+      issues.push(`preset[${p.id}] apiEndpoint invalid: ${p.apiEndpoint}`)
+    }
+    if (p.modelIds.length === 0 || !p.modelIds.includes(p.defaultModel)) {
+      issues.push(`preset[${p.id}] defaultModel "${p.defaultModel}" not in modelIds`)
+    }
+  }
+
+  return issues.length === 0 ? null : issues
 }

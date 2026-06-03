@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="智谱 GLM Coding Plan">
+  <defs>
+    <linearGradient id="glm1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3b5cff"/>
+      <stop offset="100%" stop-color="#5a73ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#glm1)"/>
+  <path d="M22 20h12c5 0 8 3 8 7s-3 6-6 6l8 11h-7l-7-10h-3v10h-5V20Zm5 10h6c2 0 3-1 3-3s-1-3-3-3h-6v6Z" fill="#fff"/>
+</svg>

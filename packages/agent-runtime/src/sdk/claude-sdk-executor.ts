@@ -76,7 +76,12 @@ export function getResumeCircuitBreaker(): ResumeCircuitBreaker {
   return resumeCircuitBreaker
 }
 
-function buildIsolatedRuntimeEnv(apiKey: string, apiEndpoint?: string): Record<string, string> {
+function buildIsolatedRuntimeEnv(
+  apiKey: string,
+  model: string,
+  apiEndpoint?: string,
+  tierModels?: { haiku?: string | undefined; sonnet?: string | undefined; opus?: string | undefined },
+): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value == null) continue
@@ -85,6 +90,18 @@ function buildIsolatedRuntimeEnv(apiKey: string, apiEndpoint?: string): Record<s
   }
   env.ANTHROPIC_API_KEY = apiKey
   if (apiEndpoint != null) env.ANTHROPIC_BASE_URL = apiEndpoint
+  // Map Claude tier slots: prefer per-tier override, fall back to provider's
+  // single configured model. Without this, SDK-spawned subagents (which default
+  // to the Haiku tier) would request an Anthropic model ID the third-party
+  // provider doesn't expose, producing 400 invalid_model.
+  const haiku = tierModels?.haiku?.trim() || model
+  const sonnet = tierModels?.sonnet?.trim() || model
+  const opus = tierModels?.opus?.trim() || model
+  env.ANTHROPIC_MODEL = model
+  env.ANTHROPIC_DEFAULT_HAIKU_MODEL = haiku
+  env.ANTHROPIC_DEFAULT_SONNET_MODEL = sonnet
+  env.ANTHROPIC_DEFAULT_OPUS_MODEL = opus
+  env.ANTHROPIC_SMALL_FAST_MODEL = haiku
   return env
 }
 
@@ -191,7 +208,11 @@ export class ClaudeSDKExecutor {
     }
 
     // Build SDK options
-    const runtimeEnv = buildIsolatedRuntimeEnv(config.apiKey, config.apiEndpoint)
+    const runtimeEnv = buildIsolatedRuntimeEnv(config.apiKey, config.model, config.apiEndpoint, {
+      haiku: config.haikuModel,
+      sonnet: config.sonnetModel,
+      opus: config.opusModel,
+    })
     const settings: SDKSettings = {
       model: config.model,
       env: runtimeEnv,

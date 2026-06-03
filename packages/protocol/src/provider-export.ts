@@ -1,0 +1,89 @@
+/**
+ * @module provider-export
+ *
+ * Provider 配置导入导出协议定义（versioned）
+ *
+ * 核心设计：
+ *   - version 字段允许未来 schema 演进；导入端做版本校验
+ *   - 导出 payload 显式不包含 apiKey（避免泄露到 .json 文件）
+ *   - 导入端对每个 profile 按 name 决定冲突处理（merge 跳过 / replace 覆盖）
+ *   - 档位映射（haikuModel/sonnetModel/opusModel）随 profile 一起导出，
+ *     导入时同样保留
+ */
+
+import { z } from 'zod'
+
+/** 当前 schema 版本。导入时校验；不匹配则拒绝 */
+export const PROVIDER_EXPORT_VERSION = 1 as const
+
+export const ProviderExportVersionSchema = z.literal(PROVIDER_EXPORT_VERSION)
+
+/**
+ * 导出文件中单个 profile 的 schema。
+ *
+ * 注意：与运行时 ProviderProfile 的差别：
+ *   - 不导出 apiKey（写入 Keychain，不进 .json）
+ *   - 不导出 keystoreRef（导入时新建）
+ *   - 不导出 createdAt（导入时新生成）
+ *   - provider 仅允许 'anthropic' | 'openai'（与 VENDOR 目录保持一致）
+ */
+export const ProviderExportProfileSchema = z.object({
+  /** 源 profile id（仅作为元数据保留，导入时不复用 id） */
+  id: z.string().min(1).max(200),
+  name: z.string().min(1).max(100),
+  provider: z.enum(['anthropic', 'openai']),
+  /** 自定义 API Endpoint；null 表示使用默认 */
+  apiEndpoint: z.string().min(1).max(500).nullable(),
+  defaultModel: z.string().min(1).max(200),
+  modelIds: z.array(z.string().min(1).max(200)).max(200),
+  supportsMillionContext: z.boolean(),
+  isDefault: z.boolean(),
+  /** 档位映射；缺失则回落 defaultModel */
+  haikuModel: z.string().min(1).max(200).nullable().optional(),
+  sonnetModel: z.string().min(1).max(200).nullable().optional(),
+  opusModel: z.string().min(1).max(200).nullable().optional(),
+  /** OpenAI/Codex API 风格 */
+  codexApiKind: z.enum(['chat', 'responses']).optional(),
+})
+
+export type ProviderExportProfile = z.infer<typeof ProviderExportProfileSchema>
+
+/**
+ * 整个导出文件 schema。
+ *
+ * 格式示例：
+ * {
+ *   "version": 1,
+ *   "exportedAt": "2026-06-03T12:00:00.000Z",
+ *   "exportedBy": "spark-agent",
+ *   "profiles": [ { ... }, ... ]
+ * }
+ */
+export const ProviderExportPayloadSchema = z.object({
+  version: ProviderExportVersionSchema,
+  exportedAt: z.string().min(1),
+  exportedBy: z.literal('spark-agent'),
+  profiles: z.array(ProviderExportProfileSchema).max(500),
+})
+
+export type ProviderExportPayload = z.infer<typeof ProviderExportPayloadSchema>
+
+/**
+ * 导入结果条目。UI 用来展示"已导入 N 个，跳过 M 个"
+ */
+export interface ProviderImportResult {
+  /** 实际写入数据库的 profile 数量 */
+  imported: number
+  /** 被跳过（merge 模式下 name 已存在）的 profile 数量 */
+  skipped: number
+  /** 单条错误信息（导入失败但未中断整个流程） */
+  errors: string[]
+}
+
+/**
+ * 导入模式
+ *   - merge：按 name 判断，已存在则跳过
+ *   - replace：按 name 判断，已存在则覆盖（更新字段但保留本地 keystoreRef）
+ */
+export const ProviderImportModeSchema = z.enum(['merge', 'replace'])
+export type ProviderImportMode = z.infer<typeof ProviderImportModeSchema>

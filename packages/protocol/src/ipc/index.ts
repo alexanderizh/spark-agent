@@ -18,6 +18,11 @@
 
 import type { AgentEvent, SessionId } from '../events/index.js'
 import type { HookNode } from '../hooks.js'
+import type {
+  ProviderExportPayload,
+  ProviderImportResult,
+  ProviderImportMode,
+} from '../provider-export.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -347,6 +352,62 @@ export interface ProviderHealthCheckResponse {
   healthy: boolean
   latencyMs?: number
   errorMessage?: string
+}
+
+// ─── Provider Import/Export Channels ──────────────────────────────────────────
+
+/**
+ * `provider:export` — 内存内构造 ExportPayload（不写文件）。
+ * 调用方一般会立刻跟 `provider:export-to-file` 写盘，
+ * 或在 UI 里直接复制 JSON 到剪贴板。
+ */
+export interface ProviderExportRequest {
+  /** 要导出的 profile id 列表；空数组表示导出全部 */
+  ids: string[]
+}
+
+export interface ProviderExportResponse {
+  payload: ProviderExportPayload
+}
+
+/**
+ * `provider:import` — 直接在内存里导入 ExportPayload。
+ * 主要被 `provider:import-from-file` 在读取文件后调用，
+ * 也支持从剪贴板 JSON 字符串导入。
+ */
+export interface ProviderImportRequest {
+  payload: ProviderExportPayload
+  mode: ProviderImportMode
+}
+
+export interface ProviderImportResponse extends ProviderImportResult {}
+
+/**
+ * `provider:export-to-file` — 弹保存对话框并写入 .json。
+ * 返回 filePath 供 UI 提示用户。
+ */
+export interface ProviderExportToFileRequest {
+  ids: string[]
+}
+
+export interface ProviderExportToFileResponse {
+  /** 实际写入路径；用户取消时为空字符串 */
+  filePath: string
+  /** 写入的 profile 数量（仅用于 UI 反馈）*/
+  count: number
+}
+
+/**
+ * `provider:import-from-file` — 弹打开对话框、读文件、解析为 payload。
+ * 实际写入数据库需要再调用 `provider:import`（让 UI 走预览流程）。
+ */
+export interface ProviderImportFromFileRequest {}
+
+export interface ProviderImportFromFileResponse {
+  /** 用户取消时为 null */
+  payload: ProviderExportPayload | null
+  /** 实际读取路径（成功或失败时都填，方便 UI 提示）*/
+  filePath: string
 }
 
 // ─── Workspace Channels ──────────────────────────────────────────────────────
@@ -2144,6 +2205,11 @@ export interface IpcChannelMap {
   'provider:update': [ProviderUpdateRequest, ProviderUpdateResponse]
   'provider:delete': [ProviderDeleteRequest, ProviderDeleteResponse]
   'provider:health-check': [ProviderHealthCheckRequest, ProviderHealthCheckResponse]
+  // Provider 导入/导出（多选 + 文件 IO + JSON 序列化）
+  'provider:export': [ProviderExportRequest, ProviderExportResponse]
+  'provider:import': [ProviderImportRequest, ProviderImportResponse]
+  'provider:export-to-file': [ProviderExportToFileRequest, ProviderExportToFileResponse]
+  'provider:import-from-file': [ProviderImportFromFileRequest, ProviderImportFromFileResponse]
 
   // Workspace
   'workspace:open': [WorkspaceOpenRequest, WorkspaceOpenResponse]

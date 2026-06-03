@@ -8,6 +8,10 @@
  */
 
 import { z } from 'zod'
+import {
+  ProviderExportPayloadSchema,
+  ProviderImportModeSchema,
+} from '../provider-export.js'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
 
@@ -35,6 +39,7 @@ export const SessionPermissionModeSchema = z.enum([
 export const SessionCreateRequestSchema = z.object({
   providerProfileId: ProfileIdSchema,
   modelId: z.string().min(1).max(200).optional(),
+  agentId: z.string().min(1).max(160).optional(),
   agentAdapter: SessionAgentAdapterSchema.optional(),
   permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional().default('agent'),
@@ -46,6 +51,13 @@ export const SessionCreateRequestSchema = z.object({
 export const SessionSendTurnRequestSchema = z.object({
   sessionId: SessionIdSchema,
   message: z.string().min(1).max(100_000),
+  providerProfileId: ProfileIdSchema.optional(),
+  modelId: z.string().min(1).max(200).nullable().optional(),
+  agentId: z.string().min(1).max(160).optional(),
+  agentAdapter: SessionAgentAdapterSchema.optional(),
+  permissionMode: SessionPermissionModeSchema.optional(),
+  chatMode: SessionChatModeSchema.optional(),
+  reasoningEffort: SessionReasoningEffortSchema.optional(),
   skillId: z.string().min(1).max(160).optional(),
   skillParams: z.record(z.string(), z.unknown()).optional(),
   attachments: z
@@ -98,6 +110,7 @@ export const SessionUpdateRequestSchema = z.object({
   archived: z.boolean().optional(),
   providerProfileId: ProfileIdSchema.optional(),
   modelId: z.string().min(1).max(200).nullable().optional(),
+  agentId: z.string().min(1).max(160).optional(),
   agentAdapter: SessionAgentAdapterSchema.optional(),
   permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional(),
@@ -127,6 +140,12 @@ export const ProviderCreateRequestSchema = z.object({
   apiKey: z.string().min(1).max(500),
   isDefault: z.boolean().optional().default(false),
   supportsMillionContext: z.boolean().optional().default(false),
+  /** 子 agent 默认走 Haiku 档；可选。留空则回落 defaultModel。 */
+  haikuModel: z.string().min(1).max(200).optional(),
+  /** 主对话档；可选。留空则回落 defaultModel。 */
+  sonnetModel: z.string().min(1).max(200).optional(),
+  /** Plan/Review 等高能力 agent；可选。留空则回落 defaultModel。 */
+  opusModel: z.string().min(1).max(200).optional(),
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
   ctx.addIssue({
@@ -146,6 +165,10 @@ export const ProviderUpdateRequestSchema = z.object({
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
   supportsMillionContext: z.boolean().optional(),
+  /** 传 null 清除该档自定义；string 设置；undefined 不修改 */
+  haikuModel: z.string().min(1).max(200).nullable().optional(),
+  sonnetModel: z.string().min(1).max(200).nullable().optional(),
+  opusModel: z.string().min(1).max(200).nullable().optional(),
 })
 
 export const ProviderDeleteRequestSchema = z.object({
@@ -259,6 +282,11 @@ export const IpcSchemaRegistry = {
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
+  // Provider 导入/导出 schema
+  'provider:export': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
+  'provider:import': z.object({ payload: ProviderExportPayloadSchema, mode: ProviderImportModeSchema }),
+  'provider:export-to-file': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
+  'provider:import-from-file': z.object({}),
   'workspace:open': WorkspaceOpenRequestSchema,
   'workspace:get-current': z.object({}),
   'workspace:list': WorkspaceListRequestSchema,

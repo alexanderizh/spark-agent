@@ -578,9 +578,39 @@
 /* Two-column key/value form layout */
 .form-grid {
   display: grid;
-  grid-template-columns: 180px 1fr;
-  gap: 14px 20px;
+  grid-template-columns: 220px 1fr;
+  gap: 14px 24px;
   align-items: start;
+}
+/* Tier-models row: three side-by-side fields with stacked label+input */
+.tier-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 16px;
+  margin-top: 4px;
+}
+.tier-grid > .tier-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.tier-grid > .tier-cell > label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text);
+}
+.tier-grid > .tier-cell > label .sub {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-top: 2px;
+  line-height: 1.4;
+  min-height: 2.6em;
+}
+.tier-grid > .tier-cell > .spark-input {
+  width: 100%;
 }
 .form-grid > label {
   font-size: var(--font-sm);
@@ -600,30 +630,40 @@
 .form-grid > .spark-input,
 .form-grid > .spark-select-wrap,
 .form-grid > textarea {
-  height: 32px;
-  padding: 0 10px;
+  height: 36px;
+  padding: 0 12px;
   background: var(--panel);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-strong);
   border-radius: var(--r-md);
   color: var(--text);
   font-size: var(--font-sm);
   font-family: inherit;
   outline: none;
   width: 100%;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 .form-grid > .spark-input,
 .form-grid > .spark-select-wrap {
+  /* 让 SparkInput/SparkSelect 自己的 .spark-input / .spark-select 样式生效，不被覆盖 */
   padding: 0;
   border: none;
   background: none;
+  height: auto;
 }
 .form-grid > .spark-select-wrap {
-  height: 32px;
+  display: flex;
 }
-.form-grid > textarea { height: auto; min-height: 60px; padding: 8px 10px; resize: vertical; }
+.form-grid > textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
+.form-grid > .spark-input:hover,
+.form-grid > .spark-select-wrap:hover .spark-select,
+.form-grid > textarea:hover { border-color: var(--text-faint); }
 .form-grid > .spark-input:focus,
 .form-grid > .spark-select-wrap .spark-select:focus,
-.form-grid > textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); }
+.form-grid > textarea:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--panel);
+}
 
 .form-grid > .control { display: flex; align-items: center; gap: 8px; padding: 0; background: none; border: none; }
 
@@ -637,13 +677,16 @@
   display: flex; justify-content: flex-end;
 }
 .slide-panel {
-  width: min(640px, 90vw);
+  width: min(960px, 92vw);
   height: 100%;
   background: var(--panel);
   border-left: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
+}
+@media (min-width: 1600px) {
+  .slide-panel { width: min(1120px, 80vw); }
 }
 @keyframes slideRight {
   from { transform: translateX(40px); opacity: 0; }
@@ -666,7 +709,7 @@
 }
 .slide-panel-h .h-title { font-size: 15px; font-weight: 600; color: var(--text-strong); }
 .slide-panel-h .h-sub { font-size: var(--font-xs); color: var(--text-muted); margin-top: 1px; }
-.slide-panel-body { flex: 1; overflow: auto; padding: 18px; }
+.slide-panel-body { flex: 1; overflow: auto; padding: 22px 28px; }
 .slide-panel-foot {
   display: flex; gap: 8px; align-items: center;
   padding: 12px 18px;

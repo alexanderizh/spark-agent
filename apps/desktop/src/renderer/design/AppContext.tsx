@@ -3,13 +3,15 @@
  *
  * 取代原设计 jsx 中的 window.__app 共享状态，提供 React Context 给所有视图使用。
  */
-import { createContext, useCallback, useContext, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+
+export type NavGuard = () => boolean
 
 export type ThemeMode = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
-export type ViewId = 'home' | 'chat' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'settings'
+export type ViewId = 'home' | 'chat' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
 export type ChatMode = 'vibe' | 'workspace'
 
 export type Tweaks = {
@@ -97,13 +99,21 @@ export const PRIMARIES: Record<string, { name: string; hover: string; soft: stri
 type AppCtx = {
   t: Tweaks
   setTweak: <K extends keyof Tweaks>(key: K, val: Tweaks[K]) => void
+  registerNavGuard: (guard: NavGuard | null) => void
 }
 
 const Ctx = createContext<AppCtx | null>(null)
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [t, setT] = useState<Tweaks>(readInitialTweaks)
+  const navGuardRef = useRef<NavGuard | null>(null)
+  const registerNavGuard = useCallback<AppCtx['registerNavGuard']>((guard) => {
+    navGuardRef.current = guard
+  }, [])
   const setTweak = useCallback<AppCtx['setTweak']>((key, val) => {
+    if (key === 'view' && navGuardRef.current && val !== t.view) {
+      if (!navGuardRef.current()) return
+    }
     if (key === 'sidebar') {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, val as SidebarState)
     } else if (key === 'browserPanelOpen') {
@@ -115,8 +125,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (prev[key] === val) return prev
       return { ...prev, [key]: val }
     })
+  }, [t.view])
+  useEffect(() => {
+    const handler = (event: BeforeUnloadEvent) => {
+      if (navGuardRef.current) {
+        event.preventDefault()
+        event.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
   }, [])
-  const value = useMemo<AppCtx>(() => ({ t, setTweak }), [t, setTweak])
+  const value = useMemo<AppCtx>(() => ({ t, setTweak, registerNavGuard }), [t, setTweak, registerNavGuard])
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 

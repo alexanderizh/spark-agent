@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="九章云极 Alaya Code">
+  <defs>
+    <linearGradient id="alaya" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ff5722"/>
+      <stop offset="100%" stop-color="#ff9800"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#alaya)"/>
+  <path d="M16 16h14l16 32H32L16 16Z" fill="#fff" opacity=".95"/>
+  <path d="M32 16h16l-8 16h-16l8-16Z" fill="#fff" opacity=".7"/>
+  <path d="M40 32h12l-6 16H34l6-16Z" fill="#fff" opacity=".85"/>
+</svg>
