@@ -21,16 +21,13 @@ import type { HookNode } from '../hooks.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
-export type SessionAgentAdapter = 'claude' | 'claude-sdk' | 'codex'
+export type SessionAgentAdapter = 'claude' | 'claude-sdk'
 export type SessionPermissionMode =
   | 'claude-ask'
   | 'claude-auto-edits'
   | 'claude-plan'
   | 'claude-auto'
   | 'claude-bypass'
-  | 'codex-default'
-  | 'codex-auto-review'
-  | 'codex-full-access'
 
 // ─── Session Channels ─────────────────────────────────────────────────────────
 
@@ -256,8 +253,6 @@ export interface ProviderProfile {
   modelIds: string[]
   /** 自定义 API Endpoint */
   apiEndpoint?: string
-  /** OpenAI-family adapter API kind. Defaults to chat when omitted. */
-  codexApiKind?: 'chat' | 'responses'
   /** Whether this provider should use a 1M-token context window fallback. */
   supportsMillionContext?: boolean
   /** Keychain 引用 ID（非明文 Key）*/
@@ -281,7 +276,6 @@ export interface ProviderCreateRequest {
   /** 兼容旧版 payload，运行时会映射到 defaultModel */
   model?: string
   apiEndpoint?: string
-  codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
@@ -301,7 +295,6 @@ export interface ProviderUpdateRequest {
   model?: string
   /** 传入 null 可清除自定义 Endpoint */
   apiEndpoint?: string | null
-  codexApiKind?: 'chat' | 'responses'
   supportsMillionContext?: boolean
   /** 更新 API Key 时传入，不更新则不传 */
   apiKey?: string
@@ -455,6 +448,17 @@ export interface DialogOpenDirectoryRequest {
 }
 
 export interface DialogOpenDirectoryResponse {
+  canceled: boolean
+  filePath?: string
+}
+
+export interface DialogOpenFileRequest {
+  title?: string
+  defaultPath?: string
+  filters?: Array<{ name: string; extensions: string[] }>
+}
+
+export interface DialogOpenFileResponse {
   canceled: boolean
   filePath?: string
 }
@@ -804,7 +808,7 @@ export interface LocalSkillCandidate {
   id: string
   name: string
   description: string
-  source: 'claude' | 'codex' | 'agents' | 'custom'
+  source: 'claude' | 'agents' | 'custom'
   rootPath: string
   skillFilePath: string
   installed: boolean
@@ -1038,7 +1042,7 @@ export interface SkillImportFileResponse {
 
 export interface SkillImportDirectoryRequest {
   directoryPath: string
-  source?: 'claude' | 'codex' | 'agents' | 'custom'
+  source?: 'claude' | 'agents' | 'custom'
 }
 
 export interface SkillImportDirectoryResponse {
@@ -1049,7 +1053,7 @@ export interface SkillImportDirectoryResponse {
 export interface SkillImportBatchLocalRequest {
   candidates: Array<{
     rootPath: string
-    source: 'claude' | 'codex' | 'agents' | 'custom'
+    source: 'claude' | 'agents' | 'custom'
   }>
 }
 
@@ -1623,6 +1627,194 @@ export interface EnvRecheckResponse {
   status: ShellEnvironmentStatus
 }
 
+// ─── Playwright Browser Automation Channels ───────────────────────────────────
+
+/**
+ * Playwright auto-managed MCP integration status.
+ *
+ * Exposed by `PlaywrightIntegrityService` and surfaced to the Settings UI.
+ */
+export interface PlaywrightStatusRequest {}
+
+export interface PlaywrightStatusResponse {
+  /** Whether `@playwright/mcp` package is resolvable */
+  mcpInstalled: boolean
+  /** Resolved version of `@playwright/mcp` (null if not installed) */
+  mcpVersion: string | null
+  /** Whether `playwright` package is resolvable */
+  playwrightInstalled: boolean
+  /** Whether the chromium browser binary is downloaded and ready */
+  browserReady: boolean
+  /** Whether the managed `playwright` row exists in `mcp_servers` */
+  mcpRegistered: boolean
+  /** Whether the user has the managed MCP enabled (DB row `enabled=1`) */
+  mcpEnabled: boolean
+  /** Current run mode (headful shows the embedded window) */
+  mode: 'headful' | 'headless'
+  /** Whether the embedded BrowserWindow is currently open */
+  viewOpen: boolean
+  /** CDP endpoint URL the MCP server connects to (null if view not open) */
+  cdpEndpoint: string | null
+  /** Last error encountered during install / browser launch */
+  lastError: string | null
+}
+
+export interface PlaywrightInstallRequest {
+  /** `'mcp'` installs `@playwright/mcp`; `'browser'` runs `playwright install chromium` */
+  target: 'mcp' | 'browser'
+}
+
+export interface PlaywrightInstallResponse {
+  success: boolean
+  message: string
+  /** Updated version after install (when applicable) */
+  newVersion?: string
+}
+
+export interface PlaywrightResetConfigRequest {}
+
+export interface PlaywrightResetConfigResponse {
+  success: boolean
+}
+
+export interface PlaywrightSetModeRequest {
+  mode: 'headful' | 'headless'
+}
+
+export interface PlaywrightSetModeResponse {
+  success: boolean
+  mode: 'headful' | 'headless'
+}
+
+export interface PlaywrightSetEnabledRequest {
+  enabled: boolean
+}
+
+export interface PlaywrightSetEnabledResponse {
+  success: boolean
+  enabled: boolean
+}
+
+export interface PlaywrightOpenViewRequest {
+  /** Optional initial URL; if omitted opens `about:blank` */
+  url?: string
+}
+
+export interface PlaywrightOpenViewResponse {
+  success: boolean
+  /** The CDP endpoint that Playwright MCP should connect to */
+  cdpEndpoint: string | null
+}
+
+export interface PlaywrightCloseViewRequest {}
+
+export interface PlaywrightCloseViewResponse {
+  success: boolean
+}
+
+export interface PlaywrightCaptureViewRequest {}
+
+export interface PlaywrightCaptureViewResponse {
+  /** PNG screenshot encoded as base64 data URL (null if view not open) */
+  dataUrl: string | null
+  /** Current page title (null if view not open) */
+  title: string | null
+  /** Current page URL (null if view not open) */
+  url: string | null
+}
+
+// ─── Pop-out Browser Window Channels ───────────────────────────────────────
+
+export interface BrowserPopOutRequest {
+  url?: string
+}
+
+export interface BrowserPopOutResponse {
+  success: boolean
+}
+
+export interface BrowserPopInRequest {}
+
+export interface BrowserPopInResponse {
+  success: boolean
+}
+
+// ─── File Patch Channels ───────────────────────────────────────────────────────
+
+export interface FileApplyHunkPatchRequest {
+  /** Absolute workspace root path */
+  workspaceRootPath: string
+  /** File path relative to workspace root */
+  filePath: string
+  /** The unified diff hunk text to reverse-apply (e.g. the `@@ ... @@` block) */
+  hunkDiff: string
+  /** Direction: 'reverse' means revert (undo the hunk) */
+  direction: 'forward' | 'reverse'
+}
+
+export interface FileApplyHunkPatchResponse {
+  applied: boolean
+  error?: string
+}
+
+// ─── File Open Channel ─────────────────────────────────────────────────────────
+
+export interface FileOpenRequest {
+  /**
+   * Absolute path to the file to open with the OS default application.
+   * On Windows the path is opened with the user's default association
+   * (e.g. .html → browser, .png → image viewer, .md → editor).
+   */
+  filePath: string
+}
+
+export interface FileOpenResponse {
+  /** True when shell.openPath succeeded (returned an empty error string). */
+  opened: boolean
+  /** Populated with the OS error message when opened=false. */
+  error?: string
+}
+
+// ─── Context Governor Channels ───────────────────────────────────────────────
+
+export interface ContextPreferenceItem {
+  id: string
+  workspaceId: string
+  filePath: string
+  action: 'pin' | 'exclude'
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ContextPreferenceListRequest {
+  workspaceId: string
+  action?: 'pin' | 'exclude'
+}
+
+export interface ContextPreferenceListResponse {
+  preferences: ContextPreferenceItem[]
+}
+
+export interface ContextPreferenceSetRequest {
+  workspaceId: string
+  filePath: string
+  action: 'pin' | 'exclude'
+  enabled?: boolean
+}
+
+export interface ContextPreferenceSetResponse {
+  preference: ContextPreferenceItem
+}
+
+export interface ContextPreferenceDeleteRequest {
+  id: string
+}
+
+export interface ContextPreferenceDeleteResponse {
+  deleted: boolean
+}
+
 // ─── Hook Channels ───────────────────────────────────────────────────────
 
 export interface HookTriggerRequest {
@@ -1707,6 +1899,7 @@ export interface IpcChannelMap {
 
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
+  'dialog:open-file': [DialogOpenFileRequest, DialogOpenFileResponse]
 
   // App Info
   'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]
@@ -1822,6 +2015,31 @@ export interface IpcChannelMap {
   'hook:trigger': [HookTriggerRequest, HookTriggerResponse]
   'hook:play-sound': [HookPlaySoundRequest, HookPlaySoundResponse]
   'hook:show-notification': [HookShowNotificationRequest, HookShowNotificationResponse]
+
+  // Context Governor
+  'context:list-preferences': [ContextPreferenceListRequest, ContextPreferenceListResponse]
+  'context:set-preference': [ContextPreferenceSetRequest, ContextPreferenceSetResponse]
+  'context:delete-preference': [ContextPreferenceDeleteRequest, ContextPreferenceDeleteResponse]
+
+  // File Patch (hunk-level accept/reject)
+  'file:apply-hunk-patch': [FileApplyHunkPatchRequest, FileApplyHunkPatchResponse]
+
+  // File Open — open a file with the OS default application
+  'file:open': [FileOpenRequest, FileOpenResponse]
+
+  // Playwright Browser Automation
+  'playwright:status': [PlaywrightStatusRequest, PlaywrightStatusResponse]
+  'playwright:install': [PlaywrightInstallRequest, PlaywrightInstallResponse]
+  'playwright:reset-config': [PlaywrightResetConfigRequest, PlaywrightResetConfigResponse]
+  'playwright:set-mode': [PlaywrightSetModeRequest, PlaywrightSetModeResponse]
+  'playwright:set-enabled': [PlaywrightSetEnabledRequest, PlaywrightSetEnabledResponse]
+  'playwright:open-view': [PlaywrightOpenViewRequest, PlaywrightOpenViewResponse]
+  'playwright:close-view': [PlaywrightCloseViewRequest, PlaywrightCloseViewResponse]
+  'playwright:capture-view': [PlaywrightCaptureViewRequest, PlaywrightCaptureViewResponse]
+
+  // Pop-out Browser Window
+  'browser:pop-out': [BrowserPopOutRequest, BrowserPopOutResponse]
+  'browser:pop-in': [BrowserPopInRequest, BrowserPopInResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -1877,6 +2095,15 @@ export interface IpcStreamChannelMap {
   'stream:sdk:integrity': SdkIntegrityCheckResponse
   /** Shell 环境状态（PATH 修复 + 运行时工具检测结果）*/
   'stream:env:status': ShellEnvironmentStatus
+  /** Playwright 安装/状态变化推送（Settings UI 监听）*/
+  'stream:playwright:status': PlaywrightStatusResponse
+  /** Embedded browser view screenshot/page update (Renderer listens for live preview) */
+  'stream:playwright:view': {
+    title: string | null
+    url: string | null
+    /** PNG screenshot encoded as base64 data URL (omitted when unchanged) */
+    dataUrl?: string
+  }
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap

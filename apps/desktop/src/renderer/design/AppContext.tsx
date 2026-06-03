@@ -24,6 +24,10 @@ export type Tweaks = {
   showPerm: boolean
   showProviderEdit: boolean
   showProfileEdit: boolean
+  /** Browser automation side panel visibility (chat view only). Default: closed. */
+  browserPanelOpen: boolean
+  /** Browser panel width in pixels, persisted across sessions. */
+  browserPanelWidth: number
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -38,19 +42,45 @@ export const DEFAULT_TWEAKS: Tweaks = {
   showPerm: false,
   showProviderEdit: false,
   showProfileEdit: false,
+  browserPanelOpen: false,
+  browserPanelWidth: 380,
 }
 
 const SIDEBAR_STORAGE_KEY = 'spark-agent:sidebar'
+const BROWSER_PANEL_OPEN_KEY = 'spark-agent:browser-panel-open'
+const BROWSER_PANEL_WIDTH_KEY = 'spark-agent:browser-panel-width'
+
+/** Min/max bounds for the browser panel width (px). */
+export const BROWSER_PANEL_WIDTH_MIN = 280
+export const BROWSER_PANEL_WIDTH_MAX = 1200
 
 function readInitialTweaks(): Tweaks {
   if (typeof window === 'undefined') return DEFAULT_TWEAKS
 
+  let tweaks = DEFAULT_TWEAKS
+
   const savedSidebar = window.localStorage.getItem(SIDEBAR_STORAGE_KEY)
   if (savedSidebar === 'collapsed' || savedSidebar === 'expanded') {
-    return { ...DEFAULT_TWEAKS, sidebar: savedSidebar }
+    tweaks = { ...tweaks, sidebar: savedSidebar }
   }
 
-  return DEFAULT_TWEAKS
+  // Always start with browser panel closed — user opens it explicitly
+  // (prevents auto-opening on app launch)
+  // const savedBrowserOpen = window.localStorage.getItem(BROWSER_PANEL_OPEN_KEY)
+
+  const savedBrowserWidth = window.localStorage.getItem(BROWSER_PANEL_WIDTH_KEY)
+  if (savedBrowserWidth != null) {
+    const parsed = Number.parseInt(savedBrowserWidth, 10)
+    if (
+      Number.isFinite(parsed) &&
+      parsed >= BROWSER_PANEL_WIDTH_MIN &&
+      parsed <= BROWSER_PANEL_WIDTH_MAX
+    ) {
+      tweaks = { ...tweaks, browserPanelWidth: parsed }
+    }
+  }
+
+  return tweaks
 }
 
 export const PRIMARIES: Record<string, { name: string; hover: string; soft: string }> = {
@@ -76,6 +106,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const setTweak = useCallback<AppCtx['setTweak']>((key, val) => {
     if (key === 'sidebar') {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, val as SidebarState)
+    } else if (key === 'browserPanelOpen') {
+      window.localStorage.setItem(BROWSER_PANEL_OPEN_KEY, String(val))
+    } else if (key === 'browserPanelWidth') {
+      window.localStorage.setItem(BROWSER_PANEL_WIDTH_KEY, String(val))
     }
     setT((prev) => {
       if (prev[key] === val) return prev

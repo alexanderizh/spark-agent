@@ -25,6 +25,8 @@ interface ToolDef {
   id: string
   name: string
   kind: ExternalToolKind
+  /** Icon hint for UI (maps to Icons component name) */
+  iconHint?: string
   /** macOS detection: path suffixes under /Applications or ~/Applications */
   macAppPaths?: string[]
   /** macOS CLI binary name to `which` */
@@ -45,9 +47,15 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'vscode',
     name: 'Visual Studio Code',
     kind: 'ide',
+    iconHint: 'VSCode',
     macAppPaths: ['Visual Studio Code.app'],
     macCli: 'code',
     macOpen: ['code', '{path}'],
+    winPaths: [
+      'Microsoft VS Code/Code.exe',
+      'VSCode/bin/code.cmd',
+      'Programs/Microsoft VS Code/Code.exe',
+    ],
     winCli: 'code',
     winOpen: ['code', '{path}'],
   },
@@ -55,59 +63,108 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'cursor',
     name: 'Cursor',
     kind: 'ide',
+    iconHint: 'Cursor',
     macAppPaths: ['Cursor.app'],
     macCli: 'cursor',
     macOpen: ['cursor', '{path}'],
+    winPaths: [
+      'Cursor/Cursor.exe',
+      'Programs/Cursor/Cursor.exe',
+      'App/Cursor/Cursor.exe',
+    ],
     winCli: 'cursor',
     winOpen: ['cursor', '{path}'],
-  },
-  {
-    id: 'codebuddy',
-    name: 'CodeBuddy',
-    kind: 'ide',
-    macAppPaths: ['CodeBuddy.app'],
-    macCli: 'codebuddy',
-    macOpen: ['codebuddy', '{path}'],
-    winCli: 'codebuddy',
-    winOpen: ['codebuddy', '{path}'],
-  },
-  {
-    id: 'qoder',
-    name: 'Qoder',
-    kind: 'ide',
-    macAppPaths: ['Qoder.app'],
-    macCli: 'qoder',
-    macOpen: ['qoder', '{path}'],
-    winCli: 'qoder',
-    winOpen: ['qoder', '{path}'],
-  },
-  {
-    id: 'trae',
-    name: 'Trae',
-    kind: 'ide',
-    macAppPaths: ['Trae.app'],
-    macCli: 'trae',
-    macOpen: ['trae', '{path}'],
-    winCli: 'trae',
-    winOpen: ['trae', '{path}'],
   },
   {
     id: 'windsurf',
     name: 'Windsurf',
     kind: 'ide',
+    iconHint: 'Windsurf',
     macAppPaths: ['Windsurf.app'],
     macCli: 'windsurf',
     macOpen: ['windsurf', '{path}'],
+    winPaths: [
+      'Windsurf/Windsurf.exe',
+      'Programs/Windsurf/Windsurf.exe',
+    ],
     winCli: 'windsurf',
     winOpen: ['windsurf', '{path}'],
+  },
+  {
+    id: 'trae',
+    name: 'Trae',
+    kind: 'ide',
+    iconHint: 'Trae',
+    macAppPaths: ['Trae.app'],
+    macCli: 'trae',
+    macOpen: ['trae', '{path}'],
+    winPaths: [
+      'Trae/Trae.exe',
+      'Programs/Trae/Trae.exe',
+      'ByteDance/Trae/Trae.exe',
+    ],
+    winCli: 'trae',
+    winOpen: ['trae', '{path}'],
+  },
+  {
+    id: 'codebuddy',
+    name: 'CodeBuddy',
+    kind: 'ide',
+    iconHint: 'CodeBuddy',
+    macAppPaths: ['CodeBuddy.app'],
+    macCli: 'codebuddy',
+    macOpen: ['codebuddy', '{path}'],
+    winPaths: [
+      'CodeBuddy/CodeBuddy.exe',
+      'Programs/CodeBuddy/CodeBuddy.exe',
+      'Tencent/CodeBuddy/CodeBuddy.exe',
+    ],
+    winCli: 'codebuddy',
+    winOpen: ['codebuddy', '{path}'],
+  },
+  {
+    id: 'kiro',
+    name: 'Kiro',
+    kind: 'ide',
+    iconHint: 'Kiro',
+    macAppPaths: ['Kiro.app'],
+    macCli: 'kiro',
+    macOpen: ['kiro', '{path}'],
+    winPaths: [
+      'Kiro/Kiro.exe',
+      'Programs/Kiro/Kiro.exe',
+      'Amazon/Kiro/Kiro.exe',
+    ],
+    winCli: 'kiro',
+    winOpen: ['kiro', '{path}'],
+  },
+  {
+    id: 'qoder',
+    name: 'Qoder',
+    kind: 'ide',
+    iconHint: 'Qoder',
+    macAppPaths: ['Qoder.app'],
+    macCli: 'qoder',
+    macOpen: ['qoder', '{path}'],
+    winPaths: [
+      'Qoder/Qoder.exe',
+      'Programs/Qoder/Qoder.exe',
+    ],
+    winCli: 'qoder',
+    winOpen: ['qoder', '{path}'],
   },
   {
     id: 'zed',
     name: 'Zed',
     kind: 'ide',
+    iconHint: 'Zed',
     macAppPaths: ['Zed.app'],
     macCli: 'zed',
     macOpen: ['zed', '{path}'],
+    winPaths: [
+      'Zed/zed.exe',
+      'Programs/Zed/zed.exe',
+    ],
     winCli: 'zed',
     winOpen: ['zed', '{path}'],
   },
@@ -115,18 +172,57 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'webstorm',
     name: 'WebStorm',
     kind: 'ide',
-    macAppPaths: ['WebStorm.app'],
+    iconHint: 'WebStorm',
+    macAppPaths: ['WebStorm.app', 'JetBrains Toolbox/WebStorm.app'],
     macOpen: ['open', '-a', 'WebStorm', '{path}'],
-    winPaths: ['JetBrains/WebStorm'],
+    winPaths: [
+      'JetBrains/WebStorm',
+      'JetBrains/Toolbox/apps/WebStorm',
+      'Programs/JetBrains/WebStorm',
+    ],
     winOpen: ['webstorm64.exe', '{path}'],
+  },
+  {
+    id: 'intellij',
+    name: 'IntelliJ IDEA',
+    kind: 'ide',
+    iconHint: 'IntelliJ',
+    macAppPaths: ['IntelliJ IDEA.app', 'IntelliJ IDEA CE.app', 'JetBrains Toolbox/IntelliJ IDEA.app'],
+    macOpen: ['open', '-a', 'IntelliJ IDEA', '{path}'],
+    winPaths: [
+      'JetBrains/IntelliJ IDEA',
+      'JetBrains/IntelliJ IDEA Community Edition',
+      'JetBrains/Toolbox/apps/IntelliJ IDEA',
+    ],
+    winOpen: ['idea64.exe', '{path}'],
+  },
+  {
+    id: 'pycharm',
+    name: 'PyCharm',
+    kind: 'ide',
+    iconHint: 'PyCharm',
+    macAppPaths: ['PyCharm.app', 'PyCharm CE.app', 'JetBrains Toolbox/PyCharm.app'],
+    macOpen: ['open', '-a', 'PyCharm', '{path}'],
+    winPaths: [
+      'JetBrains/PyCharm',
+      'JetBrains/PyCharm Community Edition',
+      'JetBrains/Toolbox/apps/PyCharm',
+    ],
+    winOpen: ['pycharm64.exe', '{path}'],
   },
   {
     id: 'sublime',
     name: 'Sublime Text',
     kind: 'ide',
-    macAppPaths: ['Sublime Text.app'],
+    iconHint: 'Sublime',
+    macAppPaths: ['Sublime Text.app', 'Sublime Text 4.app'],
     macCli: 'subl',
     macOpen: ['subl', '{path}'],
+    winPaths: [
+      'Sublime Text/subl.exe',
+      'Sublime Text 3/subl.exe',
+      'Sublime Text 4/subl.exe',
+    ],
     winCli: 'subl',
     winOpen: ['subl', '{path}'],
   },
@@ -134,8 +230,10 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'vim',
     name: 'Vim',
     kind: 'ide',
+    iconHint: 'Vim',
     macCli: 'vim',
     macOpen: ['vim', '{path}'],
+    winPaths: ['Vim/vim90/vim.exe', 'Git/usr/bin/vim.exe'],
     winCli: 'vim',
     winOpen: ['vim', '{path}'],
   },
@@ -143,8 +241,10 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'neovim',
     name: 'Neovim',
     kind: 'ide',
+    iconHint: 'Neovim',
     macCli: 'nvim',
     macOpen: ['nvim', '{path}'],
+    winPaths: ['Neovim/bin/nvim.exe'],
     winCli: 'nvim',
     winOpen: ['nvim', '{path}'],
   },
@@ -153,7 +253,8 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'iterm2',
     name: 'iTerm2',
     kind: 'terminal',
-    macAppPaths: ['iTerm.app'],
+    iconHint: 'ITerm2',
+    macAppPaths: ['iTerm.app', 'iTerm2.app'],
     macOpen: ['open', '-a', 'iTerm', '{path}'],
     winOpen: [],
   },
@@ -161,6 +262,7 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'terminal-app',
     name: 'Terminal',
     kind: 'terminal',
+    iconHint: 'TerminalApp',
     macAppPaths: ['Terminal.app'],
     macOpen: ['open', '-a', 'Terminal', '{path}'],
     winOpen: [],
@@ -169,17 +271,21 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'warp',
     name: 'Warp',
     kind: 'terminal',
+    iconHint: 'Warp',
     macAppPaths: ['Warp.app'],
     macOpen: ['open', '-a', 'Warp', '{path}'],
-    winOpen: [],
+    winPaths: ['Warp/Warp.exe', 'Programs/Warp/Warp.exe'],
+    winOpen: ['warp', '{path}'],
   },
   {
     id: 'alacritty',
     name: 'Alacritty',
     kind: 'terminal',
+    iconHint: 'Alacritty',
     macAppPaths: ['Alacritty.app'],
     macCli: 'alacritty',
     macOpen: ['open', '-a', 'Alacritty'],
+    winPaths: ['Alacritty/alacritty.exe'],
     winCli: 'alacritty',
     winOpen: ['alacritty'],
   },
@@ -187,8 +293,10 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'kitty',
     name: 'Kitty',
     kind: 'terminal',
+    iconHint: 'Kitty',
     macCli: 'kitty',
     macOpen: ['kitty', '--directory', '{path}'],
+    winPaths: ['kitty/kitty.exe'],
     winCli: 'kitty',
     winOpen: ['kitty', '--directory', '{path}'],
   },
@@ -196,9 +304,11 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'hyper',
     name: 'Hyper',
     kind: 'terminal',
+    iconHint: 'Hyper',
     macAppPaths: ['Hyper.app'],
     macCli: 'hyper',
     macOpen: ['open', '-a', 'Hyper', '{path}'],
+    winPaths: ['Hyper/Hyper.exe', 'Programs/Hyper/Hyper.exe'],
     winCli: 'hyper',
     winOpen: ['hyper', '{path}'],
   },
@@ -206,24 +316,28 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'tabby',
     name: 'Tabby',
     kind: 'terminal',
+    iconHint: 'Tabby',
     macAppPaths: ['Tabby.app'],
     macOpen: ['open', '-a', 'Tabby', '{path}'],
-    winPaths: ['Tabby'],
+    winPaths: ['Tabby/Tabby.exe', 'Programs/Tabby/Tabby.exe'],
     winOpen: ['Tabby.exe'],
   },
   {
     id: 'powershell',
     name: 'PowerShell',
     kind: 'terminal',
+    iconHint: 'PowerShell',
     macCli: 'pwsh',
     macOpen: ['open', '-a', 'Terminal', '{path}'],
     winCli: 'pwsh',
+    winPaths: ['PowerShell/7/pwsh.exe', 'WindowsPowerShell/v1.0/powershell.exe'],
     winOpen: ['pwsh', '-NoExit', '-Command', 'cd "{path}"'],
   },
   {
     id: 'cmd',
     name: 'Command Prompt',
     kind: 'terminal',
+    iconHint: 'CMD',
     winCli: 'cmd',
     winOpen: ['cmd', '/K', 'cd /d "{path}"'],
     macCli: 'Terminal',
@@ -233,7 +347,9 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'windows-terminal',
     name: 'Windows Terminal',
     kind: 'terminal',
+    iconHint: 'WindowsTerminal',
     winCli: 'wt',
+    winPaths: ['WindowsApps/Microsoft.WindowsTerminal_8wekyb3d8bbwe/wt.exe'],
     winOpen: ['wt', '-d', '{path}'],
     macOpen: [],
   },
@@ -241,8 +357,46 @@ const TOOL_DEFS: ToolDef[] = [
     id: 'git-bash',
     name: 'Git Bash',
     kind: 'terminal',
-    winPaths: ['Git/git-bash.exe'],
+    iconHint: 'GitBash',
+    winPaths: ['Git/git-bash.exe', 'Git/bin/bash.exe', 'Programs/Git/git-bash.exe'],
     winOpen: ['git-bash.exe', '--cd={path}'],
+    macOpen: [],
+  },
+  {
+    id: 'fluentterminal',
+    name: 'FluentTerminal',
+    kind: 'terminal',
+    iconHint: 'Terminal',
+    winPaths: ['FluentTerminal/FluentTerminal.exe'],
+    winOpen: ['fluentterminal.exe', '{path}'],
+    macOpen: [],
+  },
+  {
+    id: 'terminus',
+    name: 'Terminus',
+    kind: 'terminal',
+    iconHint: 'Terminal',
+    macAppPaths: ['Terminus.app'],
+    macOpen: ['open', '-a', 'Terminus', '{path}'],
+    winPaths: ['Terminus/Terminus.exe'],
+    winOpen: ['terminus.exe', '{path}'],
+  },
+  {
+    id: 'moba-xterm',
+    name: 'MobaXterm',
+    kind: 'terminal',
+    iconHint: 'Terminal',
+    winPaths: ['Mobatek/MobaXterm/MobaXterm.exe'],
+    winOpen: ['MobaXterm.exe', '{path}'],
+    macOpen: [],
+  },
+  {
+    id: 'conemu',
+    name: 'ConEmu',
+    kind: 'terminal',
+    iconHint: 'CMD',
+    winPaths: ['ConEmu/ConEmu64.exe', 'ConEmu/ConEmu.exe'],
+    winOpen: ['ConEmu64.exe', '-dir', '{path}'],
     macOpen: [],
   },
 ]
@@ -310,11 +464,34 @@ async function detectTool(tool: ToolDef): Promise<ExternalToolInfo> {
       }
     }
   } else if (isWin) {
+    // Windows: first try CLI, then try multiple path locations
     if (tool.winCli) {
       available = await cliExists(tool.winCli)
     }
     if (!available && tool.winPaths) {
       available = await winAppExists(tool.winPaths)
+    }
+    // Also check common LocalAppData locations for Electron-based apps
+    if (!available) {
+      const localAppData = process.env['LOCALAPPDATA'] ?? join(homedir(), 'AppData', 'Local')
+      const electronPaths = [
+        join(localAppData, 'Programs'),
+        join(localAppData, 'App'),
+      ]
+      for (const basePath of electronPaths) {
+        if (tool.winPaths) {
+          for (const suffix of tool.winPaths) {
+            try {
+              await access(join(basePath, suffix), constants.F_OK)
+              available = true
+              break
+            } catch {
+              // continue
+            }
+          }
+        }
+        if (available) break
+      }
     }
   } else {
     // Linux: try CLI only
@@ -324,12 +501,16 @@ async function detectTool(tool: ToolDef): Promise<ExternalToolInfo> {
     }
   }
 
-  return {
+  const result: ExternalToolInfo = {
     id: tool.id,
     name: tool.name,
     kind: tool.kind,
     available,
   }
+  if (tool.iconHint) {
+    result.iconHint = tool.iconHint
+  }
+  return result
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────────

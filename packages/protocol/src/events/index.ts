@@ -4,7 +4,7 @@
  * Spark Agent 统一事件协议 (AgentEvent)
  *
  * 设计目标：
- *   - Claude Adapter 和 Codex Adapter 的输出都必须转换为此格式
+ *   - Claude Adapter 的输出必须转换为此格式
  *   - Renderer 通过 IPC 接收这些事件并驱动 Timeline UI
  *   - 所有事件写入 SQLite agent_events 表，供回放和审计
  *
@@ -36,7 +36,7 @@ export type SessionId = string & { readonly __brand: 'SessionId' }
 export type TurnId = string & { readonly __brand: 'TurnId' }
 
 /** Provider 标识 */
-export type ProviderId = 'claude' | 'codex' | string
+export type ProviderId = 'claude' | string
 
 // ─── 事件基础结构 ─────────────────────────────────────────────────────────────
 
@@ -113,6 +113,41 @@ export interface ToolResultEvent extends BaseEvent {
   output?: unknown
   /** 错误信息（失败时）*/
   error?: string
+  /** 执行耗时 ms */
+  durationMs?: number
+}
+
+// ─── 子 Agent 事件 ──────────────────────────────────────────────────────────
+
+/** 子 Agent 开始执行（由 Claude Code SDK 的 Agent 工具触发） */
+export interface SubagentStartedEvent extends BaseEvent {
+  type: 'subagent_started'
+  /** 关联的 toolCallId（来自 SDK 的 tool_use block ID）*/
+  toolCallId: string
+  /** 子 Agent 名称 */
+  name: string
+  /** 角色/描述 */
+  role: string
+  /** 分配给子 Agent 的任务描述 */
+  task: string
+}
+
+/** 子 Agent 执行完成 */
+export interface SubagentCompletedEvent extends BaseEvent {
+  type: 'subagent_completed'
+  /** 关联的 toolCallId（对应 SubagentStartedEvent.toolCallId）*/
+  toolCallId: string
+  /** 子 Agent 名称 */
+  name: string
+  /** 完成状态 */
+  status: 'success' | 'error'
+  /** 结果摘要 */
+  resultSummary: string
+  /** 完整输出（可展开查看）*/
+  output: string
+  /** Token 用量 */
+  inputTokens?: number
+  outputTokens?: number
   /** 执行耗时 ms */
   durationMs?: number
 }
@@ -313,6 +348,45 @@ export interface ContextLedgerEvent extends BaseEvent {
   usagePercent: number
 }
 
+/** Emitted when the Context Governor summarizes older turns */
+export interface ContextSummarizedEvent extends BaseEvent {
+  type: 'context_summarized'
+  /** Number of older dialogue entries that were summarized */
+  summarizedEntryCount: number
+  /** Seq range of the summarized entries */
+  fromSeq: number
+  toSeq: number
+  /** Estimated tokens saved by summarization */
+  tokensSaved: number
+  /** Estimated tokens of the summary itself */
+  summaryTokens: number
+}
+
+/** A single attempt in a self-correction retry trail */
+export interface RetryAttempt {
+  /** Attempt number (1-based) */
+  attempt: number
+  /** What was tried */
+  action: string
+  /** Result: 'success' | 'failure' | 'partial' */
+  result: 'success' | 'failure' | 'partial'
+  /** Brief failure summary (if failed) */
+  failureSummary?: string
+  /** Duration in ms */
+  durationMs?: number
+}
+
+/** Emitted when the agent performs a self-correction retry loop */
+export interface RetryTrailEvent extends BaseEvent {
+  type: 'retry_trail'
+  /** What was being validated/fixed */
+  target: string
+  /** All attempts in chronological order */
+  attempts: RetryAttempt[]
+  /** Final outcome */
+  finalOutcome: 'success' | 'failure' | 'abandoned'
+}
+
 export interface ProjectContextLoadedEvent extends BaseEvent {
   type: 'project_context_loaded'
   workspaceRoot?: string
@@ -429,6 +503,10 @@ export type AgentEvent =
   | ProjectContextLoadedEvent
   | TurnPromptSnapshotEvent
   | ContextLedgerEvent
+  | ContextSummarizedEvent
+  | RetryTrailEvent
+  | SubagentStartedEvent
+  | SubagentCompletedEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']

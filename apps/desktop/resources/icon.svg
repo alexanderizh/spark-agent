@@ -1,12 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="168" y="168" width="688" height="688" rx="164" fill="#050509"/>
-  <path
-    d="M537 290c22 112 88 179 199 205-111 25-177 92-199 204-23-112-89-179-200-204 111-26 177-93 200-205Z"
-    fill="#fff"
-  />
-  <path
-    d="M370 562c12 58 47 92 105 105-58 14-93 48-105 106-12-58-46-92-104-106 58-13 92-47 104-105Z"
-    fill="#fff"
-    opacity="0.95"
-  />
+<!--
+  Spark Tool desktop icon — source of truth is icon.png.
+  The original artwork is a 3D infinity symbol (black left loop + blue→purple→pink→orange
+  gradient right loop) on a white background, with the "Spark Tool" wordmark and the
+  "Create · Inspire · Output" tagline. The wordmark is too small to be legible at icon
+  sizes, so:
+
+    - icon.png / icon.ico / icon.icns use the full original (with wordmark).
+    - taskbarIcon.png / trayIconWin.png / trayTemplate.png use only the symbol.
+    - src/renderer/assets/spark-logo.png mirrors taskbarIcon.png for the in-app
+      title bar.
+
+  Regenerate everything by running:  python scripts/use-original-logo.py
+  Source PNG: G:\spark\spark-edugen\edu-web\public\7C730BC306E0F0EE19B94F87926C53EF.png
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <image href="icon.png" x="0" y="0" width="1024" height="1024" />
 </svg>

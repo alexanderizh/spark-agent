@@ -270,6 +270,80 @@
 }
 .checkpoint .pill .actions .icon-btn svg { width: 11px; height: 11px; }
 
+/* === Turn File Summary Card (本次修改完成) === */
+.turn-summary-card {
+  overflow: hidden;
+}
+.turn-summary-files {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.turn-summary-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: var(--r-sm);
+  font-size: 11.5px;
+  transition: background 0.12s ease;
+}
+.turn-summary-file-row:hover {
+  background: var(--hover);
+}
+.turn-summary-file-row .file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+.turn-summary-file-row .file-icon svg { width: 12px; height: 12px; }
+.turn-summary-file-row .file-path {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--text);
+  background: transparent;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.turn-summary-file-row .file-stats {
+  display: inline-flex;
+  gap: 6px;
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-size: 10.5px;
+  flex-shrink: 0;
+}
+.turn-summary-file-row .file-stats .add { color: var(--success); }
+.turn-summary-file-row .file-stats .del { color: var(--danger); }
+.turn-summary-file-row .file-actions {
+  display: inline-flex;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.turn-summary-file-row:hover .file-actions,
+.turn-summary-file-row:focus-within .file-actions {
+  opacity: 1;
+}
+.turn-summary-file-row .file-action-btn {
+  width: 22px;
+  height: 22px;
+  color: var(--text-muted);
+}
+.turn-summary-file-row .file-action-btn:hover {
+  color: var(--primary);
+  background: var(--selected);
+}
+.turn-summary-file-row .file-action-btn svg { width: 12px; height: 12px; }
+
 /* === Plan / Todo list === */
 .plan-card {
   border: 1px solid var(--border);
@@ -392,13 +466,23 @@
 
 /* === Subagent spawn card === */
 .subagent-card {
-  display: flex; align-items: center; gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--bg-soft);
   margin: 8px 0;
   font-size: var(--font-sm);
+}
+.subagent-card.clickable {
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.subagent-card.clickable:hover {
+  border-color: var(--primary);
+  background: var(--bg-hover);
+}
+.subagent-card-header {
+  display: flex; align-items: center; gap: 10px;
 }
 .subagent-card .ico {
   width: 28px; height: 28px;
@@ -408,14 +492,41 @@
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.subagent-card .body { flex: 1; }
-.subagent-card .title { font-weight: 600; color: var(--text-strong); }
-.subagent-card .meta { font-size: var(--font-xs); color: var(--text-muted); }
+.subagent-card .body { flex: 1; min-width: 0; }
+.subagent-card .title {
+  font-weight: 600; color: var(--text-strong);
+  display: flex; align-items: center; gap: 4px;
+}
+.subagent-card .title .expand-hint {
+  opacity: 0.5;
+  display: inline-flex;
+}
+.subagent-card .meta {
+  font-size: var(--font-xs); color: var(--text-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .subagent-card .live {
   display: inline-flex; align-items: center; gap: 5px;
   font-size: var(--font-xs);
   color: var(--info);
   margin-left: auto;
+  flex-shrink: 0;
+}
+.subagent-card .subagent-output {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+.subagent-card .subagent-output-content {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-muted);
+  max-height: 300px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
 }
 
 /* === MCP tool call (with server tag) === */
@@ -714,3 +825,253 @@
 }
 .keymap .km-row:hover .km-action,
 .keymap .km-row:hover .km-keys { background: var(--hover); }
+
+/* ─── Browser Automation Panel (side panel in chat view) ──────────────── */
+
+.browser-panel {
+  display: flex;
+  flex-direction: column;
+  width: 360px;
+  min-width: 280px;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  height: 100%;
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Left-edge draggable resize handle */
+.browser-panel-resize-handle {
+  position: absolute;
+  left: -3px;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+  transition: background 120ms ease;
+}
+.browser-panel-resize-handle:hover,
+.browser-panel-resize-handle:active {
+  background: var(--primary);
+  opacity: 0.5;
+}
+/* Full-screen overlay while resizing — captures mouse events that would
+   otherwise be swallowed by the <webview> guest process. */
+.browser-panel-drag-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  cursor: col-resize;
+  background: transparent;
+  user-select: none;
+}
+.browser-panel.is-dragging .browser-panel-webview {
+  pointer-events: none;
+}
+.browser-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+.browser-panel-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+.browser-panel-title .badge.small {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+.browser-panel-actions {
+  display: flex;
+  gap: 4px;
+}
+.browser-panel-urlbar {
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+.browser-panel-urlbar input {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--text);
+  min-width: 0;
+}
+.browser-panel-urlbar input:disabled {
+  opacity: 0.5;
+}
+.browser-panel-urlbar button {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+}
+.browser-panel-urlbar button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.browser-panel-viewport {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #1a1a1a;
+  position: relative;
+  min-height: 200px;
+}
+.browser-panel-snapshot {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.browser-panel-webview {
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  border: none;
+  display: flex;
+}
+.browser-panel-placeholder {
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+.browser-panel-placeholder .hint {
+  font-size: 11px;
+  opacity: 0.7;
+  max-width: 240px;
+  line-height: 1.5;
+}
+.browser-panel-footer {
+  padding: 6px 12px;
+  border-top: 1px solid var(--divider);
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.browser-panel-pagetitle {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.browser-panel-error {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  background: rgba(220, 38, 38, 0.1);
+  color: var(--danger);
+  font-size: 11px;
+  border-top: 1px solid rgba(220, 38, 38, 0.2);
+}
+
+/* ─── Playwright Settings Card ───────────────────────────────────────── */
+
+.settings-card {
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.settings-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--divider);
+  gap: 16px;
+}
+.settings-card-row:last-child {
+  border-bottom: none;
+}
+.settings-card-row.error {
+  background: rgba(220, 38, 38, 0.05);
+}
+.settings-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+.settings-card-desc {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+.btn-tab {
+  font-size: 11px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 4px;
+}
+.btn-tab.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.btn-tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.btn-primary {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--primary);
+  background: var(--primary);
+  color: #fff;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-secondary {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  border-radius: 6px;
+  cursor: pointer;
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.btn-ghost {
+  font-size: 12px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  border-radius: 6px;
+}
+.btn-ghost:hover {
+  background: var(--hover);
+}

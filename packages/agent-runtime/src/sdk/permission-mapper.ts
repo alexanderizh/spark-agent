@@ -21,6 +21,13 @@ const ALWAYS_DENIED_PATTERNS = [
   'Bash(:(){ :|:& };::*)',
   'Bash(mkfs:*)',
   'Bash(dd if=/dev/zero:*)',
+  // The Claude Code preset registers a built-in `Skill` tool that loads
+  // Anthropic-shipped skills from disk. Spark ships its OWN skill system —
+  // selected skills are inlined into the system prompt directly. If the LLM
+  // calls Skill('builtin:browser-automation') it dispatches to the preset's
+  // registry which doesn't know our ids and returns "Unknown skill: ...".
+  // Deny outright so the agent never wastes a turn on that dead-end.
+  'Skill',
 ]
 
 export function mapPermissionMode(sparkMode: SparkPermissionMode): SDKPermissionConfig {

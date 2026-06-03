@@ -47,6 +47,12 @@ interface IpcResult<T> {
  *   console.error(err.code, err.message)
  * }
  */
+/**
+ * 渲染进程可识别的运行平台。
+ * 取自 `process.platform`，可能值：'darwin' | 'win32' | 'linux' | 其他 Node.js 平台字符串。
+ */
+export type SparkPlatform = typeof process.platform
+
 export interface SparkApi {
   /**
    * 类型安全的双向 IPC 调用（renderer → main → response）
@@ -71,6 +77,11 @@ export interface SparkApi {
     channel: C,
     callback: (payload: IpcStreamPayload<C>) => void,
   ) => () => void
+
+  /**
+   * 当前运行平台（同步常量，渲染进程不需要 IPC 即可读取）
+   */
+  platform: SparkPlatform
 }
 
 /**
@@ -123,6 +134,9 @@ contextBridge.exposeInMainWorld('spark', {
       ipcRenderer.off(channel, listener)
     }
   },
+
+  // 同步暴露平台标识，用于渲染进程在首次渲染时决定 UI（无需 IPC 等待）
+  platform: process.platform,
 } satisfies SparkApi)
 
 // 为渲染进程提供 TypeScript 类型支持，通过 declare global 扩展 Window 接口

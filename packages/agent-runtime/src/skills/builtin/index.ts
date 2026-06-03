@@ -10,6 +10,7 @@ import { summarizeSkill } from './summarize.js'
 import { testGenSkill } from './test-gen.js'
 import { refactorSkill } from './refactor.js'
 import { superpowersSkill } from './superpowers.js'
+import { browserAutomationSkill } from './browser-automation.js'
 
 /** 所有内置 Skill 定义 */
 export const BUILTIN_SKILLS: SkillDefinition[] = [
@@ -19,6 +20,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
   testGenSkill,
   refactorSkill,
   superpowersSkill,
+  browserAutomationSkill,
 ]
 
 /** 按 ID 获取内置 Skill 定义 */

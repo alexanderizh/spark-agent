@@ -18,19 +18,16 @@ export const RuleIdSchema = z.string().uuid()
 
 export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
 export const RuntimeConfigScopeSchema = z.enum(['system', 'agent', 'project', 'session'])
-export const LocalSkillSourceSchema = z.enum(['claude', 'codex', 'agents', 'custom'])
+export const LocalSkillSourceSchema = z.enum(['claude', 'agents', 'custom'])
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
-export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk', 'codex'])
+export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk'])
 export const SessionPermissionModeSchema = z.enum([
   'claude-ask',
   'claude-auto-edits',
   'claude-plan',
   'claude-auto',
   'claude-bypass',
-  'codex-default',
-  'codex-auto-review',
-  'codex-full-access',
 ])
 
 // ─── Session Schema ───────────────────────────────────────────────────────────
@@ -120,15 +117,6 @@ export const SessionSetMaxIterationsRequestSchema = z.object({
 
 const ProviderKindSchema = z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
 
-/**
- * 对 OpenAI 兼容后端而言，agent 可以使用两种 API：
- *   - 'chat'      使用传统 chat.completions（最广兼容性，DeepSeek/Ollama/智谱等）
- *   - 'responses' 使用 OpenAI Responses API（gpt-5-codex 等需要，支持 reasoning items 持久化、原生 apply_patch）
- *
- * 默认 'chat'。仅在 provider 是 'openai' 时切换到 'responses' 才有意义。
- */
-export const CodexApiKindSchema = z.enum(['chat', 'responses']).optional()
-
 export const ProviderCreateRequestSchema = z.object({
   name: z.string().min(1).max(100),
   provider: ProviderKindSchema,
@@ -138,7 +126,6 @@ export const ProviderCreateRequestSchema = z.object({
   apiEndpoint: z.string().min(1).max(500).optional(),
   apiKey: z.string().min(1).max(500),
   isDefault: z.boolean().optional().default(false),
-  codexApiKind: CodexApiKindSchema,
   supportsMillionContext: z.boolean().optional().default(false),
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
@@ -158,7 +145,6 @@ export const ProviderUpdateRequestSchema = z.object({
   apiEndpoint: z.string().min(1).max(500).nullable().optional(),
   apiKey: z.string().min(1).max(500).optional(),
   isDefault: z.boolean().optional(),
-  codexApiKind: CodexApiKindSchema,
   supportsMillionContext: z.boolean().optional(),
 })
 
@@ -443,4 +429,23 @@ export const IpcSchemaRegistry = {
   'sdk:integrity-install': z.object({
     packageName: z.string().min(1).max(200),
   }),
+
+  // Playwright Browser Automation
+  'playwright:status': z.object({}),
+  'playwright:install': z.object({
+    target: z.enum(['mcp', 'browser']),
+  }),
+  'playwright:reset-config': z.object({}),
+  'playwright:set-mode': z.object({
+    /** "headful" shows the embedded browser window; "headless" runs invisibly. */
+    mode: z.enum(['headful', 'headless']),
+  }),
+  'playwright:set-enabled': z.object({
+    enabled: z.boolean(),
+  }),
+  'playwright:open-view': z.object({
+    url: z.string().min(1).max(2000).optional(),
+  }),
+  'playwright:close-view': z.object({}),
+  'playwright:capture-view': z.object({}),
 } as const

@@ -159,4 +159,68 @@ describe('MessageBuilder', () => {
       },
     ])
   })
+
+  it('creates subagent UIBlock on subagent_started event', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      role: 'Finds bugs',
+      task: 'Search for null pointer issues',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'subagent',
+        toolCallId: 'sa-1',
+        name: 'Researcher',
+        role: 'Finds bugs',
+        task: 'Search for null pointer issues',
+        status: 'running',
+        tokens: '',
+      },
+    ])
+  })
+
+  it('updates subagent UIBlock on subagent_completed event', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('subagent_started'),
+      type: 'subagent_started',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      role: 'Finds bugs',
+      task: 'Search for null pointer issues',
+    })
+    builder.processEvent({
+      ...baseEvent('subagent_completed'),
+      type: 'subagent_completed',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      status: 'success',
+      resultSummary: 'Found 3 issues',
+      output: 'Found 3 null pointer issues in auth module.',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    const block = message.blocks.find((b) => b.kind === 'subagent')
+    expect(block).toMatchObject({
+      kind: 'subagent',
+      toolCallId: 'sa-1',
+      name: 'Researcher',
+      status: 'done',
+      output: 'Found 3 null pointer issues in auth module.',
+    })
+  })
 })

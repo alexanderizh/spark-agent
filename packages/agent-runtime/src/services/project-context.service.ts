@@ -31,6 +31,10 @@ export type ContextMode = 'minimal' | 'project-smart' | 'deep-research' | 'revie
 export interface ProjectContextOptions {
   mode?: ContextMode
   budgetTokens?: number
+  /** File paths (posix-relative to root) to always include, overriding budget exclusion */
+  pinnedPaths?: Set<string>
+  /** File paths (posix-relative to root) to exclude even if they would be discovered */
+  excludedPaths?: Set<string>
 }
 
 export interface ProjectSkillSummary {
@@ -100,13 +104,48 @@ export class ProjectContextService {
     const root = resolve(rootPath)
     if (!safeStat(root)?.isDirectory()) return emptyContext()
 
-    const ruleDocs = discoverRuleDocs(root)
-    const skillDocs = discoverSkillDocs(root)
-    const agentDocs = discoverAgentDocs(root)
+    let ruleDocs = discoverRuleDocs(root)
+    let skillDocs = discoverSkillDocs(root)
+    let agentDocs = discoverAgentDocs(root)
+
+    // Apply file pin/exclude overrides
+    const pinnedPaths = options.pinnedPaths ?? new Set<string>()
+    const excludedPaths = options.excludedPaths ?? new Set<string>()
+
+    // Exclude files matching excludedPaths
+    if (excludedPaths.size > 0) {
+      ruleDocs = ruleDocs.filter((doc) => !excludedPaths.has(doc.relativePath))
+      skillDocs = skillDocs.filter((doc) => !excludedPaths.has(doc.relativePath))
+      agentDocs = agentDocs.filter((doc) => !excludedPaths.has(doc.relativePath))
+    }
+
+    // Discover pinned files that were not auto-discovered
+    const allDiscoveredPaths = new Set([
+      ...ruleDocs.map((d) => d.relativePath),
+      ...skillDocs.map((d) => d.relativePath),
+      ...agentDocs.map((d) => d.relativePath),
+    ])
+    const pinnedExtraDocs: Array<MarkdownDoc & { relativePath: string; content: string }> = []
+    for (const relPath of pinnedPaths) {
+      if (allDiscoveredPaths.has(relPath)) continue
+      if (excludedPaths.has(relPath)) continue
+      const absPath = resolve(root, relPath)
+      if (!isInsideRoot(root, absPath)) continue
+      const doc = toProjectDoc(root, absPath, basename(relPath, extname(relPath)))
+      if (doc != null) {
+        pinnedExtraDocs.push({
+          ...doc,
+          content: `[${doc.relativePath}]\n${doc.body}`,
+        })
+      }
+    }
+
+    // Prepend pinned extras to ruleDocs so they have highest priority
+    ruleDocs = [...pinnedExtraDocs, ...ruleDocs]
 
     const mode = options.mode ?? 'project-smart'
     const budgetTokens = options.budgetTokens ?? DEFAULT_BUDGET_BY_MODE[mode]
-    const budgeted = applyContextBudget(ruleDocs, skillDocs, agentDocs, budgetTokens)
+    const budgeted = applyContextBudget(ruleDocs, skillDocs, agentDocs, budgetTokens, pinnedPaths)
 
     const systemSections = [
       formatRulePrompt(budgeted.ruleDocs),
@@ -265,6 +304,7 @@ function applyContextBudget(
   skillDocs: ProjectDoc[],
   agentDocs: ProjectDoc[],
   budgetTokens: number,
+  pinnedPaths: Set<string> = new Set(),
 ): {
   ruleDocs: RuleDoc[]
   skillDocs: ProjectDoc[]
@@ -285,6 +325,14 @@ function applyContextBudget(
       name: doc.name,
       path: doc.relativePath,
       estimatedTokens: doc.estimatedTokens,
+    }
+    // Pinned files are always included regardless of budget
+    const isPinned = pinnedPaths.has(doc.relativePath)
+    if (isPinned) {
+      usedTokens += doc.estimatedTokens
+      // Do not deduct from remaining for pinned files — they bypass budget
+      sources.push({ ...sourceBase, included: true, reason: 'pinned', ...(doc.truncated ? { truncated: true } : {}) })
+      return { ...doc, included: true, reason: 'pinned' }
     }
     if (doc.estimatedTokens <= remaining) {
       remaining -= doc.estimatedTokens

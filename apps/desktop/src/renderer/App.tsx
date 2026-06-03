@@ -15,24 +15,20 @@ import { McpView } from './design/views/McpView'
 import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProviderEditPanel, ProfileEditModal } from './design/views/SettingsView'
+import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { Icons } from './design/Icons'
+import sparkLogo from './assets/spark-logo.png'
 
 function SparkLogoMark() {
   return (
-    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-      <defs>
-        <linearGradient id="spark-logo-gradient" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="var(--primary)" />
-          <stop offset="100%" stopColor="var(--primary-hover)" />
-        </linearGradient>
-      </defs>
-      <rect x="4" y="4" width="16" height="16" rx="5" fill="url(#spark-logo-gradient)" />
-      <path
-        d="M9 14.8 12.2 7.8c.2-.5.9-.5 1.1 0l1.1 2.4h2.3c.5 0 .8.6.4 1l-3.1 3.2.8 1.8c.2.5-.3 1-.8.8l-2-1-2 1c-.5.2-1-.3-.8-.8l.8-1.7-1.3-1.4c-.4-.4-.1-1 .4-1h1.7Z"
-        fill="#fff"
-      />
-    </svg>
+    <img
+      src={sparkLogo}
+      alt=""
+      aria-hidden="true"
+      draggable={false}
+      style={{ width: '100%', height: '100%', display: 'block' }}
+    />
   )
 }
 
@@ -46,15 +42,13 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
       chatMode === 'workspace'
         ? { title: 'Chat', sub: 'Workspace mode' }
         : { title: 'Chat', sub: 'Vibe mode · Streaming chat & tool calls' },
-    workflows: { title: 'Workflows', sub: 'DAG orchestration' },
     agents: { title: 'Agents', sub: 'Multi-agent collaboration' },
     skills: { title: 'Skills', sub: 'Reusable agent capabilities' },
     'skill-store': { title: 'Skill 商店', sub: 'Discover, install and manage AI Skills' },
-    mcp: { title: 'MCP', sub: 'Tool servers & data sources' },
     settings: { title: 'Settings', sub: 'App & team configuration' },
   }
   const meta = viewMeta[view] ?? { title: view, sub: '' }
-  const isCompact = view === 'chat' || view === 'workflows'
+  const isCompact = view === 'chat'
 
   const paletteHint = getShortcutLabel('openPalette')
 
@@ -69,6 +63,7 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
       </div>
       {view === 'chat' && (
         <div className="row" style={{ marginLeft: 16, gap: 8 }}>
+          {/* Vibe / Workspace switcher - hidden while workspace mode is not ready
           <div className="seg-control">
             <button
               className={chatMode === 'vibe' ? 'active' : ''}
@@ -87,6 +82,14 @@ function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
               </span>
             </button>
           </div>
+          */}
+          <button
+            className={`btn ghost sm${t.browserPanelOpen ? ' active' : ''}`}
+            onClick={() => setTweak('browserPanelOpen', !t.browserPanelOpen)}
+            title={t.browserPanelOpen ? '隐藏浏览器面板' : '显示浏览器面板'}
+          >
+            <Icons.Globe size={12} /> 浏览器
+          </button>
         </div>
       )}
       <div className="view-header-actions">
@@ -211,9 +214,7 @@ function Shell() {
     chat: t.chatMode === 'workspace'
       ? ProjectView
       : () => <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />,
-    workflows: WorkflowView,
     agents: AgentsView,
-    mcp: McpView,
     skills: SkillsView,
     'skill-store': SkillStoreView,
     settings: SettingsView,
@@ -229,7 +230,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
     <div
       ref={scaleRef}
-      className={`app window theme-${t.theme} density-${t.density}`}
+      className={`app window theme-${t.theme} density-${t.density} platform-${window.spark.platform}`}
       style={
         {
           '--primary': primary,
@@ -309,6 +310,7 @@ function Shell() {
               )}
             </button>
 
+            {/* Workflows menu item - hidden
             <button
               className={`nav-item ${t.view === 'workflows' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'workflows')}
@@ -321,6 +323,7 @@ function Shell() {
                 <span className="nav-label">Workflows</span>
               )}
             </button>
+            */}
             <button
               className={`nav-item ${t.view === 'agents' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'agents')}
@@ -349,6 +352,7 @@ function Shell() {
                 <span className="nav-label">Skills</span>
               )}
             </button>
+            {/* MCP menu item - hidden
             <button
               className={`nav-item ${t.view === 'mcp' ? 'active' : ''}`}
               onClick={() => setTweak('view', 'mcp')}
@@ -361,6 +365,7 @@ function Shell() {
                 <span className="nav-label">MCP</span>
               )}
             </button>
+            */}
           </div>
 
           {/* Settings */}
@@ -418,6 +423,8 @@ function Shell() {
             <View />
           </div>
         </div>
+        {/* Browser automation side panel — chat view only, default closed */}
+        {t.view === 'chat' && <BrowserPanelView />}
       </div>
 
       {/* Overlays */}

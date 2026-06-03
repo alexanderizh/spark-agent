@@ -79,6 +79,10 @@ Desktop.ini
 .cache/
 electron-builder-cache/
 
+# Bundled Playwright chromium browser (~150 MB per platform)
+# Downloaded by apps/desktop/scripts/download-browser.js before packaging
+apps/desktop/browsers/
+
 # ---- 日志 --------------------------------
 *.log
 logs/

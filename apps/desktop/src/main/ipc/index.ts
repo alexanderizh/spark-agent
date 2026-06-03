@@ -13,6 +13,7 @@
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { app, dialog, shell, Notification } from 'electron'
 import { execFile } from 'node:child_process'
+import crypto from 'node:crypto'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
@@ -28,6 +29,7 @@ import {
   SkillRepository,
   SettingsRepository,
   UsageLedgerRepository,
+  ContextPreferenceRepository,
 } from '@spark/storage'
 import {
   ProviderService,
@@ -66,7 +68,33 @@ import {
   getShellEnvironmentStatus,
   recheckRuntimeTools,
 } from '../services/ShellEnvironmentService.js'
+import {
+  detectIntegrity,
+  installMcp,
+  installBrowser,
+  invalidateCache,
+} from '../services/PlaywrightIntegrityService.js'
+import {
+  ensureRegistered,
+  readRegistration,
+  setEnabled as setPlaywrightEnabled,
+} from '../services/PlaywrightMcpRegistration.js'
+import {
+  openView,
+  closeView,
+  setVisible,
+  captureView,
+  isViewOpen,
+  getCdpEndpoint,
+  bindLifecycle as bindBrowserViewLifecycle,
+} from '../services/BrowserAutomationViewService.js'
+import {
+  openPopOutWindow,
+  closePopOutWindow,
+  isPopOutOpen,
+} from '../services/PopOutBrowserService.js'
 import { getDatabase } from '../db.js'
+import { applyHunkPatch } from '../services/FilePatchService.js'
 
 const log = createLogger('ipc:register')
 const execFileAsync = promisify(execFile)
@@ -605,6 +633,20 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
+  typedIpcHandle('dialog:open-file', async (req) => {
+    const result = await dialog.showOpenDialog({
+      title: req.title ?? '选择文件',
+      ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
+      properties: ['openFile'],
+      ...(req.filters ? { filters: req.filters } : {}),
+    })
+
+    return {
+      canceled: result.canceled,
+      ...(result.filePaths[0] === undefined ? {} : { filePath: result.filePaths[0] }),
+    }
+  })
+
   // ─── App Info Handlers ─────────────────────────────────────────────────────
 
   typedIpcHandle('app:get-info', async () => {
@@ -901,9 +943,10 @@ export function registerAllIpcHandlers(): void {
     return { categories }
   })
 
-  typedIpcHandle('skill:import-file', async (_req) => {
-    // TODO: T-12 Skill 包导入/导出
-    throw new Error('Not implemented yet: skill:import-file')
+  typedIpcHandle('skill:import-file', async (req) => {
+    log.info(`skill:import-file requested, filePath=${req.filePath}`)
+    const skill = getSkillService().importFile(req.filePath)
+    return { skill }
   })
 
   typedIpcHandle('skill:import-directory', async (req) => {
@@ -1182,6 +1225,180 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
+  // ─── Context Governor Handlers ─────────────────────────────────────────
+
+  typedIpcHandle('context:list-preferences', async (req) => {
+    log.info(`context:list-preferences requested, workspaceId=${req.workspaceId}`)
+    const repo = new ContextPreferenceRepository(getDatabase())
+    const rows = repo.list({ workspaceId: req.workspaceId, action: req.action, enabledOnly: false })
+    const preferences = rows.map((row) => ({
+      id: row.id,
+      workspaceId: row.workspace_id,
+      filePath: row.file_path,
+      action: row.action,
+      enabled: row.enabled === 1,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+    return { preferences }
+  })
+
+  typedIpcHandle('context:set-preference', async (req) => {
+    log.info(`context:set-preference requested, workspaceId=${req.workspaceId}, filePath=${req.filePath}, action=${req.action}`)
+    const repo = new ContextPreferenceRepository(getDatabase())
+    const row = repo.upsert({
+      id: crypto.randomUUID(),
+      workspaceId: req.workspaceId,
+      filePath: req.filePath,
+      action: req.action,
+      enabled: req.enabled,
+    })
+    return {
+      preference: {
+        id: row.id,
+        workspaceId: row.workspace_id,
+        filePath: row.file_path,
+        action: row.action,
+        enabled: row.enabled === 1,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    }
+  })
+
+  typedIpcHandle('context:delete-preference', async (req) => {
+    log.info(`context:delete-preference requested, id=${req.id}`)
+    const repo = new ContextPreferenceRepository(getDatabase())
+    const deleted = repo.delete(req.id)
+    return { deleted }
+  })
+
+  // ─── File Patch Handlers ─────────────────────────────────────────────
+
+  typedIpcHandle('file:apply-hunk-patch', async (req) => {
+    log.info(`file:apply-hunk-patch requested, path=${req.filePath}, direction=${req.direction}`)
+    const result = applyHunkPatch({
+      workspaceRootPath: req.workspaceRootPath,
+      filePath: req.filePath,
+      hunkDiff: req.hunkDiff,
+      direction: req.direction,
+    })
+    return result
+  })
+
+  // ─── File Open Handler ───────────────────────────────────────────────
+
+  typedIpcHandle('file:open', async (req) => {
+    const filePath = req.filePath
+    if (!filePath || typeof filePath !== 'string') {
+      return { opened: false, error: 'filePath is required' }
+    }
+
+    log.info(`file:open requested, path=${filePath}`)
+
+    // shell.openPath opens the file with the OS default application based on
+    // its extension/association. It returns a Promise that resolves to an
+    // empty string on success, or an error message on failure.
+    const errorMessage = await shell.openPath(filePath)
+    if (errorMessage) {
+      log.warn(`file:open failed, path=${filePath}, error=${errorMessage}`)
+      return { opened: false, error: errorMessage }
+    }
+    return { opened: true }
+  })
+
+  // ─── Playwright Browser Automation Handlers ──────────────────────────
+
+  typedIpcHandle('playwright:status', async () => {
+    return buildPlaywrightStatus()
+  })
+
+  typedIpcHandle('playwright:install', async (req) => {
+    log.info(`playwright:install requested, target=${req.target}`)
+    const onLog = (line: string) => {
+      log.info(`[playwright-install] ${line.trim()}`)
+    }
+    const result =
+      req.target === 'mcp'
+        ? await installMcp(onLog)
+        : await installBrowser(onLog)
+    // Refresh state after install completes
+    detectIntegrity()
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return result
+  })
+
+  typedIpcHandle('playwright:reset-config', async () => {
+    log.info('playwright:reset-config requested')
+    // Don't wire Electron CDP into MCP — Electron exposes multiple targets
+    // (main window + side-panel webview + automation view) and Playwright
+    // can't reliably pick the right one. Let MCP launch its own Chromium.
+    ensureRegistered(getDatabase(), { force: true, cdpEndpoint: null })
+    invalidateCache()
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return { success: true }
+  })
+
+  typedIpcHandle('playwright:set-mode', async (req) => {
+    log.info(`playwright:set-mode requested, mode=${req.mode}`)
+    ensureRegistered(getDatabase(), {
+      mode: req.mode,
+      cdpEndpoint: null,
+    })
+    // headless mode hides the embedded window if it's currently open
+    if (req.mode === 'headless' && isViewOpen()) {
+      setVisible(false)
+    } else if (req.mode === 'headful' && isViewOpen()) {
+      setVisible(true)
+    }
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return { success: true, mode: req.mode }
+  })
+
+  typedIpcHandle('playwright:set-enabled', async (req) => {
+    log.info(`playwright:set-enabled requested, enabled=${req.enabled}`)
+    setPlaywrightEnabled(getDatabase(), req.enabled)
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return { success: true, enabled: req.enabled }
+  })
+
+  typedIpcHandle('playwright:open-view', async (req) => {
+    log.info(`playwright:open-view requested, url=${req.url ?? '(default)'}`)
+    const result = await openView(req.url != null ? { url: req.url } : {})
+    // Embedded view is a manual user feature — do NOT wire its CDP into MCP
+    // (Electron CDP target selection is unreliable). Agent uses its own browser.
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return { success: true, cdpEndpoint: result.cdpEndpoint }
+  })
+
+  typedIpcHandle('playwright:close-view', async () => {
+    log.info('playwright:close-view requested (hiding window)')
+    // Hide instead of destroy — the embedded view stays alive so MCP keeps
+    // connected via CDP. Window is destroyed only on app quit (bindLifecycle).
+    setVisible(false)
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return { success: true }
+  })
+
+  typedIpcHandle('playwright:capture-view', async () => {
+    return captureView()
+  })
+
+  // ─── Pop-out Browser Window Handlers ──────────────────────────────
+  typedIpcHandle('browser:pop-out', async (req) => {
+    log.info('browser:pop-out requested')
+    await openPopOutWindow(req.url != null ? { url: req.url } : {})
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return { success: true }
+  })
+
+  typedIpcHandle('browser:pop-in', async () => {
+    log.info('browser:pop-in requested')
+    closePopOutWindow()
+    pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
+    return { success: true }
+  })
+
   log.info('All IPC handlers registered')
 }
 
@@ -1315,4 +1532,27 @@ function showSystemNotification(title: string, body: string): void {
   })
 
   notification.show()
+}
+
+// ─── Playwright Status Builder ───────────────────────────────────────────
+
+/**
+ * Build a full Playwright status response by combining integrity detection,
+ * MCP registration state, and browser view runtime state.
+ */
+function buildPlaywrightStatus(): import('@spark/protocol').PlaywrightStatusResponse {
+  const integrity = detectIntegrity()
+  const registration = readRegistration(getDatabase())
+  return {
+    mcpInstalled: integrity.mcpInstalled,
+    mcpVersion: integrity.mcpVersion,
+    playwrightInstalled: integrity.playwrightInstalled,
+    browserReady: integrity.browserReady,
+    mcpRegistered: registration.registered,
+    mcpEnabled: registration.enabled,
+    mode: registration.mode,
+    viewOpen: isViewOpen(),
+    cdpEndpoint: getCdpEndpoint(),
+    lastError: integrity.lastError,
+  }
 }

@@ -50,7 +50,7 @@ function renderStars(rating: number): string {
 }
 
 // ─── Main View ────────────────────────────────────────────────────────
-type TabType = 'store' | 'installed'
+type TabType = 'store' | 'installed' | 'create'
 
 export function SkillStoreView() {
   const [activeTab, setActiveTab] = useState<TabType>('store')
@@ -81,13 +81,22 @@ export function SkillStoreView() {
             <Icons.Package size={13} />
             已安装
           </button>
+          <button
+            className={`store-tab ${activeTab === 'create' ? 'active' : ''}`}
+            onClick={() => setActiveTab('create')}
+          >
+            <Icons.Plus size={13} />
+            创建
+          </button>
         </div>
 
         {/* ── Tab content ── */}
         {activeTab === 'store' ? (
           <StoreTab key={`store-${refreshKey}`} onShowDetail={setDetailSkill} />
-        ) : (
+        ) : activeTab === 'installed' ? (
           <InstalledTab key={`installed-${refreshKey}`} />
+        ) : (
+          <CreateTab key={`create-${refreshKey}`} onCreated={handleInstallChange} />
         )}
       </div>
 
@@ -99,6 +108,9 @@ export function SkillStoreView() {
           onInstallChange={handleInstallChange}
         />
       )}
+
+      {/* ── Floating Skill Assistant ── */}
+      <SkillAssistant onRefresh={handleInstallChange} />
     </div>
   )
 }
@@ -1038,5 +1050,754 @@ function SkillDetailPanel({
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── Create Tab (New Skill Creation Form) ─────────────────────────────
+
+function CreateTab({ onCreated }: { onCreated: () => void }) {
+  const [name, setName] = useState('')
+  const [version, setVersion] = useState('1.0.0')
+  const [description, setDescription] = useState('')
+  const [author, setAuthor] = useState('')
+  const [category, setCategory] = useState('utility')
+  const [tagsInput, setTagsInput] = useState('')
+  const [content, setContent] = useState('')
+  const [requiredTools, setRequiredTools] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [importMode, setImportMode] = useState<'none' | 'file' | 'directory'>('none')
+  const { toast } = useToast()
+  const { invoke: createSkill } = useIpcInvoke('skill:create')
+  const { invoke: importFile } = useIpcInvoke('skill:import-file')
+  const { invoke: importDirectory } = useIpcInvoke('skill:import-directory')
+  const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+
+  const resetForm = useCallback(() => {
+    setName('')
+    setVersion('1.0.0')
+    setDescription('')
+    setAuthor('')
+    setCategory('utility')
+    setTagsInput('')
+    setContent('')
+    setRequiredTools('')
+  }, [])
+
+  const handleCreate = useCallback(async () => {
+    if (!name.trim()) {
+      toast.error('请输入 Skill 名称')
+      return
+    }
+    if (!content.trim() && !description.trim()) {
+      toast.error('请输入 Skill 描述或详细内容')
+      return
+    }
+
+    setCreating(true)
+    try {
+      const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean)
+      const tools = requiredTools.split(',').map((t) => t.trim()).filter(Boolean)
+      const id = `user:${name.trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/g, '-')}`
+
+      const manifest = {
+        desc: description.trim() || content.trim().slice(0, 100),
+        description: description.trim(),
+        source: '用户创建',
+        author: author.trim() || 'User',
+        category,
+        tags,
+        systemPrompt: content.trim(),
+        requiredTools: tools,
+        parameters: [],
+      }
+
+      await createSkill({
+        id,
+        scope: 'user',
+        name: name.trim(),
+        version: version.trim() || '1.0.0',
+        rootPath: `user://${id}`,
+        manifestJson: JSON.stringify(manifest),
+        enabled: true,
+      })
+
+      toast.success(`Skill「${name.trim()}」创建成功`)
+      resetForm()
+      onCreated()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建失败')
+    } finally {
+      setCreating(false)
+    }
+  }, [name, version, description, author, category, tagsInput, content, requiredTools, createSkill, toast, resetForm, onCreated])
+
+  const handleImportFile = useCallback(async () => {
+    try {
+      const picked = await openFileDialog({
+        title: '选择 Skill 文件（SKILL.md 或 .md）',
+        filters: [{ name: 'Markdown', extensions: ['md'] }],
+      })
+      if (picked.canceled || picked.filePath == null) return
+
+      setCreating(true)
+      try {
+        const res = await importFile({ filePath: picked.filePath })
+        toast.success(`已导入 Skill：${res.skill.name}`)
+        onCreated()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '导入文件失败')
+      } finally {
+        setCreating(false)
+      }
+    } catch {
+      // dialog cancelled
+    }
+  }, [openFileDialog, importFile, toast, onCreated])
+
+  const handleImportDirectory = useCallback(async () => {
+    try {
+      const picked = await openDirectoryDialog({
+        title: '选择包含 SKILL.md 的 Skill 目录',
+      })
+      if (picked.canceled || picked.filePath == null) return
+
+      setCreating(true)
+      try {
+        await importDirectory({ directoryPath: picked.filePath, source: 'custom' })
+        toast.success('已导入本地 Skill 目录')
+        onCreated()
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : '导入目录失败')
+      } finally {
+        setCreating(false)
+      }
+    } catch {
+      // dialog cancelled
+    }
+  }, [openDirectoryDialog, importDirectory, toast, onCreated])
+
+  return (
+    <div className="create-skill-layout">
+      {/* Mode selector */}
+      <div className="create-mode-bar">
+        <button
+          className={`store-tab ${importMode === 'none' ? 'active' : ''}`}
+          onClick={() => setImportMode('none')}
+        >
+          <Icons.Edit size={13} />
+          手动创建
+        </button>
+        <button
+          className={`store-tab ${importMode === 'file' ? 'active' : ''}`}
+          onClick={() => setImportMode('file')}
+        >
+          <Icons.File size={13} />
+          文件导入
+        </button>
+        <button
+          className={`store-tab ${importMode === 'directory' ? 'active' : ''}`}
+          onClick={() => setImportMode('directory')}
+        >
+          <Icons.FolderOpen size={13} />
+          目录导入
+        </button>
+      </div>
+
+      {importMode === 'none' ? (
+        /* ── Manual Creation Form ── */
+        <div className="create-skill-form">
+          <div className="create-form-section">
+            <div className="create-section-title">基本信息</div>
+            <div className="create-form-grid">
+              <div className="form-field">
+                <label className="form-label">
+                  名称 <span className="required">*</span>
+                </label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="例如：代码审查助手"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label">版本</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="1.0.0"
+                  value={version}
+                  onChange={(e) => setVersion(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label">作者</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="作者名称"
+                  value={author}
+                  onChange={(e) => setAuthor(e.target.value)}
+                />
+              </div>
+              <div className="form-field">
+                <label className="form-label">分类</label>
+                <select
+                  className="form-select"
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                >
+                  <option value="utility">通用</option>
+                  <option value="code-generation">代码生成</option>
+                  <option value="code-review">代码审查</option>
+                  <option value="testing">测试</option>
+                  <option value="documentation">文档</option>
+                  <option value="data-analysis">数据分析</option>
+                  <option value="web-development">Web 开发</option>
+                  <option value="api-development">API 开发</option>
+                  <option value="devops">DevOps</option>
+                  <option value="security">安全</option>
+                  <option value="ai-ml">AI/ML</option>
+                  <option value="automation">自动化</option>
+                  <option value="database">数据库</option>
+                  <option value="frontend">前端</option>
+                  <option value="backend">后端</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="create-form-section">
+            <div className="create-section-title">描述与标签</div>
+            <div className="form-field">
+              <label className="form-label">
+                简短描述 <span className="required">*</span>
+              </label>
+              <textarea
+                className="form-textarea"
+                rows={3}
+                placeholder="一句话描述 Skill 的功能，例如：自动化代码审查，检测潜在 Bug 和安全问题"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label">标签（逗号分隔）</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="code-review, security, quality"
+                value={tagsInput}
+                onChange={(e) => setTagsInput(e.target.value)}
+              />
+            </div>
+            <div className="form-field">
+              <label className="form-label">所需工具（逗号分隔）</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="例如：Bash, Read, Edit"
+                value={requiredTools}
+                onChange={(e) => setRequiredTools(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="create-form-section">
+            <div className="create-section-title">Skill 详细内容</div>
+            <div className="form-field">
+              <label className="form-label">
+                System Prompt / 指令内容 <span className="required">*</span>
+              </label>
+              <textarea
+                className="form-textarea form-textarea-lg"
+                rows={12}
+                placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+              />
+              <div className="form-hint">
+                支持 Markdown 格式。此内容将作为 Skill 的 System Prompt，在 Agent 运行时注入。
+              </div>
+            </div>
+          </div>
+
+          <div className="create-form-actions">
+            <button className="btn" onClick={resetForm}>
+              重置
+            </button>
+            <button
+              className="btn primary"
+              disabled={creating || !name.trim()}
+              onClick={() => void handleCreate()}
+            >
+              {creating ? '创建中...' : '创建 Skill'}
+            </button>
+          </div>
+        </div>
+      ) : importMode === 'file' ? (
+        /* ── File Import ── */
+        <div className="create-import-panel">
+          <div className="import-panel-icon">
+            <Icons.File size={48} />
+          </div>
+          <div className="import-panel-title">导入 Skill 文件</div>
+          <div className="import-panel-desc">
+            选择一个 SKILL.md 或 Markdown 文件，系统会自动解析文件中的 frontmatter（名称、描述、版本等）和内容，创建为本地 Skill。
+          </div>
+          <div className="import-panel-supported">
+            <span className="badge">SKILL.md</span>
+            <span className="badge">.md</span>
+          </div>
+          <div className="import-panel-format">
+            <div className="import-format-title">支持的文件格式：</div>
+            <pre className="import-format-code">{`---
+name: 我的 Skill
+description: 描述文字
+version: 1.0.0
+author: 作者名
+category: utility
+tags: [tag1, tag2]
+---
+
+# Skill 指令内容
+
+这里是 Skill 的详细指令...`}</pre>
+          </div>
+          <button
+            className="btn primary lg"
+            disabled={creating}
+            onClick={() => void handleImportFile()}
+          >
+            <Icons.Upload size={14} />
+            {creating ? '导入中...' : '选择文件并导入'}
+          </button>
+        </div>
+      ) : (
+        /* ── Directory Import ── */
+        <div className="create-import-panel">
+          <div className="import-panel-icon">
+            <Icons.FolderOpen size={48} />
+          </div>
+          <div className="import-panel-title">导入 Skill 目录</div>
+          <div className="import-panel-desc">
+            选择一个包含 SKILL.md 文件的目录。目录中的所有文件将被作为 Skill 内容导入。
+          </div>
+          <div className="import-panel-supported">
+            <span className="badge">SKILL.md</span>
+            <span className="badge">目录</span>
+          </div>
+          <div className="import-panel-format">
+            <div className="import-format-title">目录结构示例：</div>
+            <pre className="import-format-code">{`my-skill/
+├── SKILL.md          ← 必须包含
+├── scripts/
+│   └── helper.ts     ← 辅助脚本
+└── templates/
+    └── output.md     ← 模板文件`}</pre>
+          </div>
+          <button
+            className="btn primary lg"
+            disabled={creating}
+            onClick={() => void handleImportDirectory()}
+          >
+            <Icons.Upload size={14} />
+            {creating ? '导入中...' : '选择目录并导入'}
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Floating Skill Assistant ─────────────────────────────────────────
+
+interface AssistantMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  actions?: Array<{
+    label: string
+    action: () => void
+  }>
+}
+
+type SkillAction = 'list' | 'search' | 'install' | 'uninstall' | 'enable' | 'disable' | 'help' | 'unknown'
+
+function parseSkillCommand(input: string): { action: SkillAction; target: string } {
+  const text = input.trim().toLowerCase()
+
+  // Help
+  if (/^(帮助|help|怎么用|使用说明|你能做什么|功能)/.test(text)) {
+    return { action: 'help', target: '' }
+  }
+
+  // List
+  if (/^(列出|列表|显示所有|查看所有|全部技能|列出技能|有什么|有哪些|installed|list all|show all)/.test(text)) {
+    return { action: 'list', target: '' }
+  }
+
+  // Search
+  const searchMatch = text.match(/(?:搜索|查找|找|search)\s*(.+?)(?:的?技能)?$/)
+  if (searchMatch) {
+    return { action: 'search', target: searchMatch[1]! }
+  }
+
+  // Uninstall
+  const uninstallMatch = text.match(/(?:卸载|删除|移除|卸下|uninstall|remove|delete)\s*(.+?)(?:的?技能)?$/)
+  if (uninstallMatch) {
+    return { action: 'uninstall', target: uninstallMatch[1]! }
+  }
+
+  // Disable
+  const disableMatch = text.match(/(?:禁用|关闭|停用|隐藏|disable|turn off|hide)\s*(.+?)(?:的?技能)?$/)
+  if (disableMatch) {
+    return { action: 'disable', target: disableMatch[1]! }
+  }
+
+  // Enable
+  const enableMatch = text.match(/(?:启用|开启|激活|显示|enable|turn on|activate)\s*(.+?)(?:的?技能)?$/)
+  if (enableMatch) {
+    return { action: 'enable', target: enableMatch[1]! }
+  }
+
+  // Install
+  const installMatch = text.match(/(?:安装|install|添加|下载)\s*(.+?)(?:的?技能)?$/)
+  if (installMatch) {
+    return { action: 'install', target: installMatch[1]! }
+  }
+
+  return { action: 'unknown', target: input.trim() }
+}
+
+function findSkillByName(skills: SkillItem[], query: string): SkillItem | undefined {
+  const q = query.toLowerCase()
+  return skills.find((s) => s.name.toLowerCase() === q)
+    ?? skills.find((s) => s.name.toLowerCase().includes(q))
+    ?? skills.find((s) => {
+      try {
+        const manifest = JSON.parse(s.manifestJson)
+        return (manifest.tags as string[] ?? []).some((t: string) => t.toLowerCase().includes(q))
+      } catch { return false }
+    })
+}
+
+function SkillAssistant({ onRefresh }: { onRefresh: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [messages, setMessages] = useState<AssistantMessage[]>([
+    {
+      id: 'welcome',
+      role: 'assistant',
+      content: '你好！我是 Skill 管理助手。你可以用自然语言告诉我你想做什么，例如：\n\n• 安装 代码审查助手\n• 禁用 测试生成器\n• 列出所有技能\n• 搜索 文档\n\n输入"帮助"查看完整指令列表。',
+    },
+  ])
+  const [input, setInput] = useState('')
+  const [processing, setProcessing] = useState(false)
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const { toast } = useToast()
+
+  // IPC hooks
+  const { invoke: listSkills } = useIpcInvoke('skill:list')
+  const { invoke: toggleSkill } = useIpcInvoke('skill:toggle')
+  const { invoke: deleteSkill } = useIpcInvoke('skill:delete')
+  const { invoke: searchRegistry } = useIpcInvoke('skill-registry:search')
+  const { invoke: installSkill } = useIpcInvoke('skill-registry:install')
+
+  const addMessage = useCallback((role: 'user' | 'assistant', content: string, actions?: AssistantMessage['actions']) => {
+    const msg: AssistantMessage = { id: `msg-${Date.now()}-${Math.random()}`, role, content, ...(actions ? { actions } : {}) }
+    setMessages((prev) => [...prev, msg])
+    return msg
+  }, [])
+
+  // Auto-scroll
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  const executeAction = useCallback(async (action: SkillAction, target: string) => {
+    setProcessing(true)
+    try {
+      switch (action) {
+        case 'help': {
+          addMessage('assistant', '我可以帮你管理 Skill，支持的指令：\n\n' +
+            '• **安装 [名称]** — 从商店搜索并安装技能\n' +
+            '• **卸载 [名称]** — 删除已安装的技能\n' +
+            '• **启用 [名称]** — 启用已安装的技能\n' +
+            '• **禁用 [名称]** — 禁用已安装的技能\n' +
+            '• **列出所有** — 显示已安装的所有技能\n' +
+            '• **搜索 [关键词]** — 在商店中搜索技能\n\n' +
+            '你也可以直接描述需求，我会帮你找到合适的技能。')
+          break
+        }
+
+        case 'list': {
+          const res = await listSkills({})
+          const skills = res.skills as SkillItem[]
+          if (skills.length === 0) {
+            addMessage('assistant', '当前没有已安装的技能。你可以说"安装 [名称]"来安装新技能。')
+          } else {
+            const lines = skills.map((s, i) => {
+              const meta = parseSkillManifest(s.manifestJson)
+              const status = s.enabled ? '✓ 已启用' : '✗ 已禁用'
+              return `${i + 1}. **${s.name}** — ${meta.desc || '无描述'} [${status}]`
+            })
+            addMessage('assistant', `已安装 ${skills.length} 个技能：\n\n${lines.join('\n')}`)
+          }
+          break
+        }
+
+        case 'search': {
+          const res = await searchRegistry({ query: target, limit: 8 })
+          const results = res.skills as RemoteSkillItem[]
+          if (results.length === 0) {
+            addMessage('assistant', `未找到与"${target}"相关的技能。试试其他关键词？`)
+          } else {
+            const lines = results.map((s, i) => {
+              const installed = s.installed ? ' [已安装]' : ''
+              return `${i + 1}. **${s.name}** by ${s.author} — ${s.description.slice(0, 60)}${installed}`
+            })
+            const actions = results.filter((s) => !s.installed).slice(0, 3).map((s) => ({
+              label: `安装 ${s.name}`,
+              action: () => { void handleInstallFromSearch(s) },
+            }))
+            addMessage('assistant', `找到 ${results.length} 个与"${target}"相关的技能：\n\n${lines.join('\n')}`, actions)
+          }
+          break
+        }
+
+        case 'install': {
+          // First search in registry, then install
+          const searchRes = await searchRegistry({ query: target, limit: 5 })
+          const remoteSkills = searchRes.skills as RemoteSkillItem[]
+          if (remoteSkills.length === 0) {
+            addMessage('assistant', `在商店中未找到"${target}"。请检查名称是否正确，或尝试使用"搜索"指令查找。`)
+          } else if (remoteSkills.length === 1) {
+            // Auto install the only result
+            const skill = remoteSkills[0]!
+            if (skill.installed) {
+              addMessage('assistant', `**${skill.name}** 已经安装过了。`)
+            } else {
+              try {
+                await installSkill({ remoteSkillId: skill.id, registryId: skill.registryId })
+                addMessage('assistant', `已成功安装 **${skill.name}** v${skill.version}！`)
+                onRefresh()
+              } catch (err) {
+                addMessage('assistant', `安装失败：${err instanceof Error ? err.message : '未知错误'}`)
+              }
+            }
+          } else {
+            // Multiple results, let user choose
+            const lines = remoteSkills.map((s, i) => `${i + 1}. **${s.name}** by ${s.author} — ${s.description.slice(0, 50)}`)
+            const actions = remoteSkills.slice(0, 3).map((s) => ({
+              label: `安装 ${s.name}`,
+              action: () => { void handleInstallFromSearch(s) },
+            }))
+            addMessage('assistant', `找到多个匹配的技能，请选择要安装的：\n\n${lines.join('\n')}`, actions)
+          }
+          break
+        }
+
+        case 'uninstall': {
+          const listRes = await listSkills({})
+          const skills = listRes.skills as SkillItem[]
+          const skill = findSkillByName(skills, target)
+          if (!skill) {
+            addMessage('assistant', `未找到名为"${target}"的已安装技能。说"列出所有"查看已安装列表。`)
+          } else {
+            try {
+              await deleteSkill({ id: skill.id })
+              addMessage('assistant', `已卸载 **${skill.name}**。`)
+              onRefresh()
+            } catch (err) {
+              addMessage('assistant', `卸载失败：${err instanceof Error ? err.message : '未知错误'}`)
+            }
+          }
+          break
+        }
+
+        case 'enable':
+        case 'disable': {
+          const listRes = await listSkills({})
+          const skills = listRes.skills as SkillItem[]
+          const skill = findSkillByName(skills, target)
+          if (!skill) {
+            addMessage('assistant', `未找到名为"${target}"的已安装技能。说"列出所有"查看已安装列表。`)
+          } else if (action === 'enable' && skill.enabled) {
+            addMessage('assistant', `**${skill.name}** 已经是启用状态。`)
+          } else if (action === 'disable' && !skill.enabled) {
+            addMessage('assistant', `**${skill.name}** 已经是禁用状态。`)
+          } else {
+            try {
+              await toggleSkill({ id: skill.id })
+              const newState = action === 'enable' ? '启用' : '禁用'
+              addMessage('assistant', `已${newState} **${skill.name}**。`)
+              onRefresh()
+            } catch (err) {
+              addMessage('assistant', `操作失败：${err instanceof Error ? err.message : '未知错误'}`)
+            }
+          }
+          break
+        }
+
+        default:
+          addMessage('assistant', '抱歉，我没有理解你的意思。你可以试试：\n\n• "列出所有" — 查看已安装技能\n• "安装 [名称]" — 安装新技能\n• "帮助" — 查看完整指令')
+      }
+    } catch (err) {
+      addMessage('assistant', `出错了：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setProcessing(false)
+    }
+  }, [listSkills, searchRegistry, installSkill, deleteSkill, toggleSkill, addMessage, onRefresh])
+
+  const handleInstallFromSearch = useCallback(async (skill: RemoteSkillItem) => {
+    setProcessing(true)
+    try {
+      await installSkill({ remoteSkillId: skill.id, registryId: skill.registryId })
+      addMessage('assistant', `已成功安装 **${skill.name}** v${skill.version}！`)
+      onRefresh()
+    } catch (err) {
+      addMessage('assistant', `安装失败：${err instanceof Error ? err.message : '未知错误'}`)
+    } finally {
+      setProcessing(false)
+    }
+  }, [installSkill, addMessage, onRefresh])
+
+  const handleSend = useCallback(() => {
+    const text = input.trim()
+    if (!text || processing) return
+
+    addMessage('user', text)
+    setInput('')
+
+    const { action, target } = parseSkillCommand(text)
+    void executeAction(action, target)
+  }, [input, processing, addMessage, executeAction])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      handleSend()
+    }
+  }, [handleSend])
+
+  // Quick action buttons for the welcome state
+  const quickActions = [
+    { label: '列出所有技能', command: '列出所有' },
+    { label: '搜索技能', command: '搜索 ' },
+    { label: '安装技能', command: '安装 ' },
+    { label: '帮助', command: '帮助' },
+  ]
+
+  return (
+    <>
+      {/* Floating button */}
+      {!open && (
+        <button
+          className="skill-assistant-fab"
+          onClick={() => setOpen(true)}
+          title="Skill 管理助手"
+        >
+          <Icons.Bot size={20} />
+        </button>
+      )}
+
+      {/* Assistant panel */}
+      {open && (
+        <div className="skill-assistant-panel">
+          {/* Header */}
+          <div className="sa-header">
+            <div className="sa-header-info">
+              <Icons.Bot size={16} />
+              <span className="sa-header-title">Skill 助手</span>
+            </div>
+            <button className="icon-btn" onClick={() => setOpen(false)}>
+              <Icons.X size={14} />
+            </button>
+          </div>
+
+          {/* Messages */}
+          <div className="sa-messages">
+            {messages.map((msg) => (
+              <div key={msg.id} className={`sa-msg sa-msg-${msg.role}`}>
+                {msg.role === 'assistant' && (
+                  <div className="sa-msg-avatar">
+                    <Icons.Bot size={14} />
+                  </div>
+                )}
+                <div className="sa-msg-body">
+                  <div className="sa-msg-text">{msg.content}</div>
+                  {msg.actions && msg.actions.length > 0 && (
+                    <div className="sa-msg-actions">
+                      {msg.actions.map((act, i) => (
+                        <button key={i} className="btn sm primary" onClick={act.action} disabled={processing}>
+                          {act.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            {processing && (
+              <div className="sa-msg sa-msg-assistant">
+                <div className="sa-msg-avatar"><Icons.Bot size={14} /></div>
+                <div className="sa-msg-body">
+                  <div className="sa-typing">
+                    <span /><span /><span />
+                  </div>
+                </div>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {/* Quick actions */}
+          {messages.length <= 1 && (
+            <div className="sa-quick-actions">
+              {quickActions.map((qa) => (
+                <button
+                  key={qa.label}
+                  className="sa-quick-btn"
+                  onClick={() => {
+                    if (qa.command.endsWith(' ')) {
+                      setInput(qa.command)
+                    } else {
+                      setInput(qa.command)
+                      const { action, target } = parseSkillCommand(qa.command)
+                      addMessage('user', qa.command)
+                      void executeAction(action, target)
+                    }
+                  }}
+                >
+                  {qa.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Input */}
+          <div className="sa-input-bar">
+            <input
+              className="sa-input"
+              type="text"
+              placeholder="输入指令，如：安装 代码审查助手"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              disabled={processing}
+            />
+            <button
+              className="sa-send-btn"
+              onClick={handleSend}
+              disabled={processing || !input.trim()}
+            >
+              <Icons.Send size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   )
 }

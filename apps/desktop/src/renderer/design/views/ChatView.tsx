@@ -128,11 +128,26 @@ const SIDEBAR_MIN_WIDTH = 180
 const SIDEBAR_MAX_WIDTH = 480
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
+// “不使用项目” 特殊 workspace：始终指向 os-temp/spark-agent-projects/no-project，
+// 不属于用户任何真实项目目录，但能复用 session/workspace 数据模型，
+// 让用户在没有项目时也能正常开 session。
+export const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
+export const NO_PROJECT_WORKSPACE_ROOT_SUFFIX = '/no-project'
+
+/** 根据 tempDir 拼出 “不使用项目” workspace 的 rootPath */
+function getNoProjectRootPath(tempDir: string): string {
+  const sep = tempDir.includes('\\') ? '\\' : '/'
+  return `${tempDir.replace(/[\\/]$/, '')}${sep}no-project`
+}
+
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
   const [active, setActive] = useState<SessionId | null>(() => {
     const stored = window.localStorage.getItem(LAST_SESSION_KEY)
     return stored == null ? null : (stored as SessionId)
   })
+  // 标记刚通过 handleNewSession 主动创建的 session，避免下面那个校验 useEffect
+  // 在 refreshProjectsAndSessions 完成前看到 sessions 列表里没有它就 setActive(null) 把 active 清掉
+  const justCreatedSessionRef = useRef<SessionId | null>(null)
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
@@ -168,6 +183,10 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
+  // “不使用项目” 特殊 workspace 的 id；启动时懒初始化
+  const [noProjectWorkspaceId, setNoProjectWorkspaceId] = useState<string | null>(null)
+  // ProjectPicker 下拉打开状态（受控，让外部点击其他位置时能关掉）
+  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
   const [projectName, setProjectName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [notice, setNotice] = useState('')
@@ -304,6 +323,64 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       .catch(console.error)
   }, [active, clearEvents, refreshSessions])
 
+  /**
+   * 确保 “不使用项目” 这个特殊 workspace 存在并返回它的 id。
+   * 由于 rootPath 固定，第一次调用后后端会记住，后续调用直接返回现有记录。
+   */
+  const ensureNoProjectWorkspace = useCallback(async (): Promise<string | null> => {
+    if (noProjectWorkspaceId) return noProjectWorkspaceId
+    try {
+      const { tempDir } = await getTempProjectDir({})
+      const rootPath = getNoProjectRootPath(tempDir)
+      const res = await openWorkspace({
+        create: { name: NO_PROJECT_WORKSPACE_NAME, rootPath },
+      })
+      setNoProjectWorkspaceId(res.workspace.id)
+      // 顺手加入 workspaces 列表以便侧边栏可显示（但默认会被去重过滤）
+      setWorkspaces((prev) => {
+        if (prev.some((w) => w.id === res.workspace.id)) return prev
+        return [...prev, res.workspace]
+      })
+      return res.workspace.id
+    } catch (err) {
+      console.error('创建 “不使用项目” workspace 失败', err)
+      toast.error(err instanceof Error ? err.message : '创建临时项目目录失败')
+      return null
+    }
+  }, [getTempProjectDir, noProjectWorkspaceId, openWorkspace, toast])
+
+  /**
+   * 把当前 active workspace 切到 “不使用项目”。
+   * 首次切换会先确保 no-project workspace 存在。
+   */
+  const useNoProject = useCallback(async () => {
+    const id = await ensureNoProjectWorkspace()
+    if (id) setActiveWorkspaceId(id)
+  }, [ensureNoProjectWorkspace])
+
+  /**
+   * 弹文件夹选择对话框，选中后打开（创建）该 workspace 并设为 active。
+   */
+  const pickProjectFolder = useCallback(async () => {
+    try {
+      const selected = await openDirectoryDialog({ title: '选择项目文件夹' })
+      if (selected.canceled || selected.filePath == null) return
+      const res = await openWorkspace({ rootPath: selected.filePath })
+      setActiveWorkspaceId(res.workspace.id)
+      await refreshProjectsAndSessions()
+    } catch (err) {
+      console.error('选择项目文件夹失败', err)
+      toast.error(err instanceof Error ? err.message : '选择项目文件夹失败')
+    }
+  }, [openDirectoryDialog, openWorkspace, refreshProjectsAndSessions, toast])
+
+  /**
+   * 在 workspaces 列表中点某个项目，切到那个项目。
+   */
+  const switchToWorkspace = useCallback((workspaceId: string) => {
+    setActiveWorkspaceId(workspaceId)
+  }, [])
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       refreshProjectsAndSessions().catch(console.error)
@@ -323,6 +400,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   // Validate restored session exists after sessions load; restore workspace if needed
   useEffect(() => {
     if (!active || sessions.length === 0) return
+    // 跳过刚刚由 handleNewSession 主动创建的 session（sessions 列表还没刷新到）
+    if (justCreatedSessionRef.current === active) {
+      justCreatedSessionRef.current = null
+      return
+    }
     const found = sessions.find((s) => s.id === active)
     if (!found) {
       setActive(null)
@@ -376,14 +458,17 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       chatMode?: SessionChatMode
       reasoningEffort?: SessionReasoningEffort
       activate?: boolean
+      skipRefresh?: boolean
     } = {},
   ): Promise<SessionId | null> => {
     try {
       setNotice('')
       if (workspaceId == null) {
-        setProjectDialog('create')
-        toast.warning('请先创建或打开一个项目，然后再在项目下新建会话。')
-        return null
+        // 没选项目：自动走 “不使用项目” 临时目录，让用户无需先建项目也能开 session
+        const noProjectId = await ensureNoProjectWorkspace()
+        if (noProjectId == null) return null
+        workspaceId = noProjectId
+        setActiveWorkspaceId(noProjectId)
       }
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
@@ -416,10 +501,16 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         reasoningEffort: options.reasoningEffort ?? prefs.reasoningEffort ?? 'medium',
         workspaceId,
       })
-      await refreshProjectsAndSessions()
+      // 标记这是刚主动创建的 session，避免下面 useEffect 把它清掉
+      justCreatedSessionRef.current = res.sessionId
+      // 先设 active 和 workspaceId，确保立即跳转到新会话
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(workspaceId)
+      // 然后再刷新列表（除非明确跳过）
+      if (options.skipRefresh !== true) {
+        await refreshProjectsAndSessions()
+      }
       writeComposerPrefs({
         adapter: agentAdapter,
         providerProfileId: profile.id,
@@ -484,10 +575,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       setProjectName('')
       setProjectPath('')
       setActiveWorkspaceId(res.workspace.id)
-      await refreshProjectsAndSessions()
       toast.success(`项目已创建于：${rootPath}`)
-      // 新建项目后自动新建一个会话并选中
-      await handleNewSession(res.workspace.id)
+      // 新建项目后自动新建一个会话并选中（跳过内部刷新，统一在外部刷新）
+      await handleNewSession(res.workspace.id, { skipRefresh: true })
+      // 统一刷新一次
+      await refreshProjectsAndSessions()
     } catch (err) {
       console.error('创建项目失败', err)
       toast.error(err instanceof Error ? err.message : '创建项目失败')
@@ -670,6 +762,11 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
   )
+  // 决定右侧是显示 hero 居中布局还是活动对话布局（tabbar + chat-stream + 底部 composer）
+  // 规则：没有 active session 时、或者 active session 还没有任何消息时，都显示 hero 居中布局
+  // —— 任何"空对话"（无论是否在项目下、无论 session 是新创建还是历史切回的）都按 hero 展示
+  // —— 只有当消息列表非空（至少已经产生了 user/agent message）才切到活动布局
+  const showEmptyHero = active == null || activeMessages.length === 0
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
@@ -855,25 +952,68 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         )}
       </div>
 
-      <div className="chat-main">
-        <ChatTabbar
-          session={activeSession}
-          workspace={activeWorkspace}
-          agentStatus={agentStatus}
-          showInspector={showInspector}
-          setShowInspector={(v: boolean) => {
-            setShowInspector(v)
-            if (v) setShowConfigPanel(false)
-          }}
-          showConfigPanel={showConfigPanel}
-          setShowConfigPanel={(v: boolean) => {
-            setShowConfigPanel(v)
-            if (v) setShowInspector(false)
-          }}
-          {...(active ? { onClearMessages: handleClearMessages } : {})}
-        />
-        {active ? (
+      <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}>
+        {/* hero 模式（active 为 null 或消息为空）：渐变网格背景 + 居中标题 */}
+        {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
+        {showEmptyHero && (
+          <h1 className="chat-hero-title">Spark Agent，让工作更简单。</h1>
+        )}
+
+        {active == null ? (
+          /* 没有任何 active session：纯 hero 居中（不需要订阅 agent event） */
+          <div className="chat-hero-composer">
+            <ComposerV2
+              session={activeSession}
+              workspace={activeWorkspace}
+              activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
+              providers={providers}
+              selectedProviderId={selectedProviderId}
+              setSelectedProviderId={setSelectedProviderId}
+              branchState={branchState}
+              contextInputTokens={contextInputTokens}
+              contextUsage={contextUsage}
+              isWorking={activeSession?.status === 'running'}
+              approvalRequest={approvalRequest}
+              {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+              onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+              onUpdateSession={handleUpdateActiveSession}
+              onSwitchBranch={handleSwitchBranch}
+              onCancelSession={handleCancelSession}
+              onSent={(sessionId) => {
+                setSessionStatus(sessionId, 'running')
+              }}
+              showProjectPicker
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              onPickProject={pickProjectFolder}
+              onUseNoProject={() => void useNoProject()}
+              onSwitchWorkspace={switchToWorkspace}
+            />
+          </div>
+        ) : (
+          /* active != null：始终渲染 ChatStream（保持 event 订阅）
+             视觉上根据 showEmptyHero 切换：
+             - 空消息：hero 风格（无 tabbar、隐藏 stream empty state、composer 居中）
+             - 有消息：active 风格（tabbar + stream + 底部 composer） */
           <>
+            {!showEmptyHero && (
+              <ChatTabbar
+                session={activeSession}
+                workspace={activeWorkspace}
+                agentStatus={agentStatus}
+                showInspector={showInspector}
+                setShowInspector={(v: boolean) => {
+                  setShowInspector(v)
+                  if (v) setShowConfigPanel(false)
+                }}
+                showConfigPanel={showConfigPanel}
+                setShowConfigPanel={(v: boolean) => {
+                  setShowConfigPanel(v)
+                  if (v) setShowInspector(false)
+                }}
+                {...(active ? { onClearMessages: handleClearMessages } : {})}
+              />
+            )}
             <ChatStream
               sessionId={active}
               onStatusChange={setAgentStatus}
@@ -889,39 +1029,35 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
             />
+            <ComposerV2
+              session={activeSession}
+              workspace={activeWorkspace}
+              activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
+              providers={providers}
+              selectedProviderId={selectedProviderId}
+              setSelectedProviderId={setSelectedProviderId}
+              branchState={branchState}
+              contextInputTokens={contextInputTokens}
+              contextUsage={contextUsage}
+              isWorking={activeSession?.status === 'running'}
+              approvalRequest={approvalRequest}
+              {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+              onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+              onUpdateSession={handleUpdateActiveSession}
+              onSwitchBranch={handleSwitchBranch}
+              onCancelSession={handleCancelSession}
+              onSent={(sessionId) => {
+                setSessionStatus(sessionId, 'running')
+              }}
+              showProjectPicker={showEmptyHero}
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              onPickProject={pickProjectFolder}
+              onUseNoProject={() => void useNoProject()}
+              onSwitchWorkspace={switchToWorkspace}
+            />
           </>
-        ) : (
-          <div className="chat-stream chat-stream-empty">
-            <div className="empty-state">
-              <div className="empty-icon">
-                <Icons.Sparkles size={24} />
-              </div>
-              <div className="empty-title">先选择项目</div>
-              <div className="empty-desc">再选择或新建一个会话开始对话</div>
-            </div>
-          </div>
         )}
-        <ComposerV2
-          session={activeSession}
-          workspace={activeWorkspace}
-          activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
-          providers={providers}
-          selectedProviderId={selectedProviderId}
-          setSelectedProviderId={setSelectedProviderId}
-          branchState={branchState}
-          contextInputTokens={contextInputTokens}
-          contextUsage={contextUsage}
-          isWorking={activeSession?.status === 'running'}
-          approvalRequest={approvalRequest}
-          {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-          onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
-          onUpdateSession={handleUpdateActiveSession}
-          onSwitchBranch={handleSwitchBranch}
-          onCancelSession={handleCancelSession}
-          onSent={(sessionId) => {
-            setSessionStatus(sessionId, 'running')
-          }}
-        />
       </div>
 
       {showConfigPanel && (
@@ -1345,6 +1481,45 @@ function ChatListItem({
 
 // ─── Tool Dropdown (IDE / Terminal open) ─────────────────────────────────
 
+/** Map iconHint to the corresponding Icons component */
+function getToolIcon(iconHint?: string, kind?: 'ide' | 'terminal'): JSX.Element {
+  const size = 13
+  const fallback = kind === 'ide' ? <Icons.Code size={size} /> : <Icons.Terminal size={size} />
+  if (!iconHint) return fallback
+
+  // Map iconHint to Icons component
+  const iconMap: Record<string, (() => JSX.Element) | undefined> = {
+    VSCode: () => <Icons.VSCode size={size} />,
+    Cursor: () => <Icons.Cursor size={size} />,
+    Zed: () => <Icons.Zed size={size} />,
+    WebStorm: () => <Icons.WebStorm size={size} />,
+    Sublime: () => <Icons.Sublime size={size} />,
+    Vim: () => <Icons.Vim size={size} />,
+    Neovim: () => <Icons.Neovim size={size} />,
+    Windsurf: () => <Icons.Windsurf size={size} />,
+    Trae: () => <Icons.Trae size={size} />,
+    CodeBuddy: () => <Icons.CodeBuddy size={size} />,
+    Kiro: () => <Icons.Kiro size={size} />,
+    Qoder: () => <Icons.Qoder size={size} />,
+    IntelliJ: () => <Icons.IntelliJ size={size} />,
+    PyCharm: () => <Icons.PyCharm size={size} />,
+    ITerm2: () => <Icons.ITerm2 size={size} />,
+    TerminalApp: () => <Icons.TerminalApp size={size} />,
+    Warp: () => <Icons.Warp size={size} />,
+    Alacritty: () => <Icons.Alacritty size={size} />,
+    Kitty: () => <Icons.Kitty size={size} />,
+    Hyper: () => <Icons.Hyper size={size} />,
+    Tabby: () => <Icons.Tabby size={size} />,
+    PowerShell: () => <Icons.PowerShell size={size} />,
+    WindowsTerminal: () => <Icons.WindowsTerminal size={size} />,
+    GitBash: () => <Icons.GitBash size={size} />,
+    CMD: () => <Icons.CMD size={size} />,
+  }
+
+  const iconFn = iconMap[iconHint]
+  return iconFn ? iconFn() : fallback
+}
+
 function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: string }) {
   const [open, setOpen] = useState(false)
   const [tools, setTools] = useState<ExternalToolInfo[]>([])
@@ -1424,7 +1599,7 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
                 onClick={() => handleSelect(tool)}
               >
                 <span className="tool-dropdown-item-icon">
-                  {tool.kind === 'ide' ? <Icons.Code size={13} /> : <Icons.Terminal size={13} />}
+                  {getToolIcon(tool.iconHint, tool.kind)}
                 </span>
                 <span className="tool-dropdown-item-name">{tool.name}</span>
               </button>
@@ -1733,13 +1908,9 @@ function ChatStream({
       setAgentIsRunning(cached.status === 'running')
       usageRef.current = cached.usage
       onUsageDataChange(cached.usage)
-    } else {
-      // 首次进入的会话，短暂延迟后清空再加载
-      setMessages([])
-      onMessagesChange([])
-      onStatusChange('')
-      setAgentIsRunning(false)
     }
+    // 首次进入的会话，不立即清空消息，等待历史加载完成后再更新
+    // 这样可以避免闪屏：新会话历史为空会设置为 []，有历史的会话会显示加载的内容
 
     isStreamingRef.current = false
     userScrolledRef.current = false
@@ -2381,6 +2552,7 @@ function renderBlocks(
               task={block.task}
               status={block.status}
               tokens={block.tokens}
+              output={block.output}
             />
           </div>
         )
@@ -2404,9 +2576,20 @@ function renderBlocks(
         )
       }
       case 'context_ledger': {
+        // Context Ledger 不在消息流中渲染 — 上下文信息已在底部 ComposerV2 的 ContextMeterWithPopup 中显示
+        return null
+      }
+      case 'context_summarized': {
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-            <ContextLedgerCard block={block} />
+            <ContextSummarizedCard block={block} />
+          </div>
+        )
+      }
+      case 'retry_trail': {
+        return (
+          <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
+            <RetryTrailCard block={block} />
           </div>
         )
       }
@@ -2910,19 +3093,189 @@ function ContextLedgerCard({
   )
 }
 
-/** HunkDiff wrapper that provides toast feedback on accept/reject actions */
+/** Inline card showing context summarization stats */
+function ContextSummarizedCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'context_summarized' }>
+}) {
+  return (
+    <div
+      style={{
+        padding: '8px 12px',
+        borderRadius: 8,
+        background: 'var(--c-surface, #1e1e2e)',
+        border: '1px solid var(--c-border, #333)',
+        fontSize: 12,
+        color: 'var(--c-text, #ccc)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+      }}
+    >
+      <Icons.File size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
+      <span style={{ opacity: 0.7 }}>
+        Context Governor summarized {block.summarizedEntryCount} older exchanges
+        (saved ~{block.tokensSaved.toLocaleString()} tokens)
+      </span>
+    </div>
+  )
+}
+
+/** Inline card showing a self-correction retry trail */
+function RetryTrailCard({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'retry_trail' }>
+}) {
+  const outcomeColor =
+    block.finalOutcome === 'success'
+      ? 'var(--c-ok, #22c55e)'
+      : block.finalOutcome === 'failure'
+        ? 'var(--c-err, #ef4444)'
+        : 'var(--c-warn, #f59e0b)'
+
+  return (
+    <div
+      style={{
+        padding: '10px 12px',
+        borderRadius: 8,
+        background: 'var(--c-surface, #1e1e2e)',
+        border: '1px solid var(--c-border, #333)',
+        fontSize: 12,
+        color: 'var(--c-text, #ccc)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <Icons.Refresh size={14} style={{ opacity: 0.6 }} />
+        <span style={{ fontWeight: 600 }}>Self-correction: {block.target}</span>
+        <span
+          style={{
+            marginLeft: 'auto',
+            padding: '2px 8px',
+            borderRadius: 4,
+            background: outcomeColor,
+            color: '#fff',
+            fontSize: 11,
+            fontWeight: 600,
+          }}
+        >
+          {block.finalOutcome.toUpperCase()}
+        </span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        {block.attempts.map((attempt, idx) => {
+          const icon =
+            attempt.result === 'success' ? (
+              <Icons.Check size={11} style={{ color: 'var(--c-ok, #22c55e)' }} />
+            ) : attempt.result === 'failure' ? (
+              <Icons.X size={11} style={{ color: 'var(--c-err, #ef4444)' }} />
+            ) : (
+              <Icons.AlertTriangle size={11} style={{ color: 'var(--c-warn, #f59e0b)' }} />
+            )
+
+          return (
+            <div
+              key={idx}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '3px 8px',
+                borderRadius: 4,
+                background: 'rgba(255,255,255,0.03)',
+              }}
+            >
+              <span
+                style={{
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.1)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 10,
+                  fontWeight: 700,
+                  flexShrink: 0,
+                }}
+              >
+                {attempt.attempt}
+              </span>
+              {icon}
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {attempt.action}
+              </span>
+              {attempt.durationMs != null && (
+                <span style={{ opacity: 0.5, fontSize: 10 }}>{attempt.durationMs}ms</span>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      {block.attempts.some((a) => a.failureSummary) && (
+        <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 4, background: 'rgba(239,68,68,0.08)', fontSize: 11 }}>
+          {block.attempts
+            .filter((a) => a.failureSummary)
+            .map((a, idx) => (
+              <div key={idx} style={{ opacity: 0.7 }}>
+                Attempt {a.attempt}: {a.failureSummary}
+              </div>
+            ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** HunkDiff wrapper that provides real file I/O on accept/reject actions */
 function HunkDiffWithFeedback({ path, hunks }: { path: string; hunks: Array<DiffHunk> }) {
   const { toast } = useToast()
+  const [processing, setProcessing] = React.useState<number | null>(null)
 
   const handleAcceptAll = () => {
     toast.success(`已采纳全部变更: ${path}`)
   }
 
-  const handleHunkAction = (index: number, action: 'accepted' | 'rejected') => {
+  const handleHunkAction = async (index: number, action: 'accepted' | 'rejected') => {
     if (action === 'accepted') {
       toast.success(`Hunk #${index + 1} 已采纳`)
-    } else {
-      toast.info(`Hunk #${index + 1} 已拒绝`)
+      return
+    }
+
+    // Reject: reverse-apply the hunk to restore original content
+    setProcessing(index)
+    try {
+      const hunk = hunks[index]
+      if (hunk == null) return
+
+      // Reconstruct the unified diff hunk text from parsed hunk data
+      const hunkDiff = reconstructHunkDiff(hunk)
+
+      // Get workspace root path
+      const wsRes = await window.spark.invoke('workspace:get-current', {})
+      const workspaceRootPath = wsRes?.workspace?.rootPath
+      if (!workspaceRootPath) {
+        toast.error('无法确定工作区路径')
+        return
+      }
+
+      const result = await window.spark.invoke('file:apply-hunk-patch', {
+        workspaceRootPath,
+        filePath: path,
+        hunkDiff,
+        direction: 'reverse',
+      })
+
+      if (result?.applied) {
+        toast.success(`Hunk #${index + 1} 已拒绝并还原: ${path}`)
+      } else {
+        toast.error(`还原失败: ${result?.error ?? '未知错误'}`)
+      }
+    } catch (err) {
+      toast.error(`还原异常: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setProcessing(null)
     }
   }
 
@@ -2934,6 +3287,18 @@ function HunkDiffWithFeedback({ path, hunks }: { path: string; hunks: Array<Diff
       onHunkAction={handleHunkAction}
     />
   )
+}
+
+/** Reconstruct unified diff text from a parsed DiffHunk object */
+function reconstructHunkDiff(hunk: DiffHunk): string {
+  const header = `@@ ${hunk.range} @@${hunk.note ? ` ${hunk.note}` : ''}`
+  const lines = hunk.lines.map((line) => {
+    if (line.t === 'add') return `+${line.s}`
+    if (line.t === 'del') return `-${line.s}`
+    if (line.t === 'ctx') return ` ${line.s}`
+    return line.s
+  })
+  return [header, ...lines].join('\n')
 }
 
 type MarkdownBlock =
@@ -4272,6 +4637,10 @@ function ContextMeterWithPopup({
   )
 }
 
+/**
+ * EmptyChatHero — 空对话欢迎页（仅在还没有 active session 时显示）
+ * 设计：渐变消失的网格背景 + 居中标题 + 居中输入区
+ */
 function ComposerV2({
   session,
   workspace,
@@ -4290,6 +4659,12 @@ function ComposerV2({
   onSwitchBranch,
   onCancelSession,
   onSent,
+  showProjectPicker,
+  workspaces,
+  activeWorkspaceId,
+  onPickProject,
+  onUseNoProject,
+  onSwitchWorkspace,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -4323,6 +4698,13 @@ function ComposerV2({
   onSwitchBranch: (branch: string) => Promise<void>
   onCancelSession: (sessionId: SessionId) => void | Promise<void>
   onSent: (sessionId: SessionId) => void
+  // 项目选择器相关（仅在空会话下使用）
+  showProjectPicker?: boolean
+  workspaces: WorkspaceInfo[]
+  activeWorkspaceId: string | null
+  onPickProject?: () => void
+  onUseNoProject?: () => void
+  onSwitchWorkspace?: (workspaceId: string) => void
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -4389,7 +4771,7 @@ function ComposerV2({
   const permissionOptions = getPermissionModeOptions(adapter)
   const sessionPermissionMode = session?.permissionMode
   const draftEffectivePermissionMode = sessionPermissionMode ?? draftPermissionMode
-  const defaultPermissionMode = permissionOptions[0]?.value ?? 'codex-default'
+  const defaultPermissionMode = permissionOptions[0]?.value ?? 'claude-ask'
   const effectivePermissionMode = permissionOptions.some(
     (option) => option.value === draftEffectivePermissionMode,
   )
@@ -4407,11 +4789,13 @@ function ComposerV2({
       ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
       : 0
   const isBusy = sending || isWorking
+  // 发送前置条件：用户输入了内容、供应商 + 模型已选好。
+  // session / workspace 不在这里卡—— handleNewSession 内部对 null 做了 no-project fallback，
+  // 真正发送时再做详细校验（toast 提示）
   const canSubmit =
     value.trim().length > 0 &&
     selectedProvider != null &&
-    effectiveModelId.length > 0 &&
-    (session != null || workspace != null)
+    effectiveModelId.length > 0
   const visibleActiveTaskText = queueRunning ? activeTaskText : null
   const showTaskQueue = visibleActiveTaskText != null || queuedMessages.length > 0
 
@@ -4536,7 +4920,7 @@ function ComposerV2({
     const fallbackProvider = getPreferredProvider(providers, initialPrefs, draftAdapter)
     if (fallbackProvider == null) return
     const nextAdapter = getProviderAdapterKind(fallbackProvider)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
     const nextModel = fallbackProvider.defaultModel || fallbackProvider.modelIds[0] || ''
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
@@ -4576,24 +4960,35 @@ function ComposerV2({
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
-    // 高度范围：collapsed=102-168px, expanded=270-320px
-    const minHeight = manualExpanded ? 270 : 102
-    const maxHeight = manualExpanded ? 320 : 168
+    // 高度范围：折叠态 60-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
+    // 展开态 220-400px
+    // 关键点：minHeight 留一个能容纳一行文字 + 一点 padding 的值，
+    // 避免空 textarea 看起来永远是一坨；maxHeight 给得宽一些，常规长 prompt 都能直接展示完，
+    // 不需要靠滚动条来回看。
+    const minHeight = manualExpanded ? 220 : 60
+    const maxHeight = manualExpanded ? 400 : 280
 
-    // 临时禁用 transition 以准确测量 scrollHeight
-    const transition = el.style.transition
+    // 用 'auto' 临时高度测量内容真实高度，再 clamp 到区间内
+    // 之前用 '0px' 临时归零在某些渲染时机下会触发 textarea 高度抖动，体感是"打不出字"
+    const prevHeight = el.style.height
+    const prevTransition = el.style.transition
     el.style.transition = 'none'
-    el.style.height = '0px'
-    // 强制回流以应用 height: 0
+    el.style.height = 'auto'
+    // 强制回流以让浏览器按 auto 重新计算 scrollHeight
     void el.offsetHeight
+    const scrollH = el.scrollHeight
 
-    const nextHeight = Math.max(minHeight, Math.min(el.scrollHeight, maxHeight))
+    const nextHeight = Math.max(minHeight, Math.min(scrollH, maxHeight))
     el.style.height = `${nextHeight}px`
-    el.style.overflowY = el.scrollHeight > maxHeight ? 'auto' : 'hidden'
 
-    // 恢复 transition（下一帧生效）
+    // 滚动条统一交给 CSS（scrollbar-width: none + ::-webkit-scrollbar { display: none }），
+    // 这里不要再去切换 overflowY，避免 inline style 跟 CSS 互相覆盖
     requestAnimationFrame(() => {
-      el.style.transition = transition
+      el.style.transition = prevTransition || ''
+      // 防御性：保证 height 永远不是空 / auto
+      if (el.style.height === 'auto' || el.style.height === '') {
+        el.style.height = prevHeight || `${minHeight}px`
+      }
     })
   }, [manualExpanded, value])
 
@@ -4898,7 +5293,7 @@ function ComposerV2({
     const provider = providers.find((item) => item.id === providerId)
     if (provider == null) return
     const nextAdapter = getProviderAdapterKind(provider)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(providerId)
@@ -4927,7 +5322,7 @@ function ComposerV2({
     const nextPermissionMode =
       adapter === nextAdapter
         ? effectivePermissionMode
-        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default')
+        : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask')
     const nextModel =
       normalizeModelForProvider(modelId, provider) ||
       provider.defaultModel ||
@@ -4957,7 +5352,7 @@ function ComposerV2({
   const handleAdapterChange = async (nextAdapter: AgentAdapter) => {
     if (nextAdapter === adapter) return
     setDraftAdapter(nextAdapter)
-    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'codex-default'
+    const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
     setDraftPermissionMode(nextPermissionMode)
     const nextProvider = providers.find(
       (provider) => getProviderAdapterKind(provider) === nextAdapter,
@@ -5091,7 +5486,7 @@ function ComposerV2({
           <textarea
             ref={textareaRef}
             rows={1}
-            placeholder={workspace ? '询问、修改、运行任务…  ↵ 发送' : '请先选择或新建一个项目'}
+            placeholder="询问、修改、运行任务…  ↵ 发送"
             value={value}
             onChange={(event) => handleValueChange(event.target.value)}
             onCompositionStart={() => {
@@ -5101,7 +5496,6 @@ function ComposerV2({
               composingRef.current = false
             }}
             onKeyDown={handleKeyDown}
-            disabled={!workspace}
           />
           <button
             className="composer-expand-btn"
@@ -5134,15 +5528,6 @@ function ComposerV2({
           <button className="icon-btn" title="工具">
             <Icons.Wrench />
           </button>
-          <ComposerMenuSelect
-            icon={<AdapterIcon adapter={adapter} />}
-            value={adapter}
-            label={ADAPTER_LABELS[adapter]}
-            disabled={providers.length === 0}
-            title="适配器"
-            onChange={(value) => handleAdapterChange(value as AgentAdapter)}
-            options={ADAPTER_OPTIONS}
-          />
           <ProviderModelPicker
             icon={<ModelIcon />}
             providers={compatibleProviders}
@@ -5213,6 +5598,15 @@ function ComposerV2({
             </button>
           )}
           <div className="spacer" />
+          {showProjectPicker && (
+            <ProjectPicker
+              workspaces={workspaces}
+              activeWorkspaceId={activeWorkspaceId}
+              {...(onPickProject !== undefined ? { onPickProject } : {})}
+              {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
+              {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
+            />
+          )}
           {showBranchSelect && (
             <ComposerMenuSelect
               icon={<Icons.GitBranch size={13} />}
@@ -5314,6 +5708,146 @@ function ComposerMenuSelect({
               {option.value === value && <Icons.Check size={14} />}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * ProjectPicker — 项目选择器（下拉）
+ * 位置：composer 工具栏中，分支选择器左边
+ * 下拉内容：
+ *   - "最近" 分组：用户最近的项目（最多 5 个），当前选中的打勾
+ *   - "选择新项目"：从文件夹选择
+ *   - "不需要项目"：使用临时会话目录（"不使用项目" workspace）
+ * 显示：
+ *   - 选中某项目：显示该项目名（带文件夹图标）
+ *   - 选中"不需要项目"：显示"不需要项目"（带叉号图标）
+ *   - 没选：显示"选择项目"（带加号图标）
+ */
+function ProjectPicker({
+  workspaces,
+  activeWorkspaceId,
+  onPickProject,
+  onUseNoProject,
+  onSwitchWorkspace,
+}: {
+  workspaces: WorkspaceInfo[]
+  activeWorkspaceId: string | null
+  onPickProject?: () => void
+  onUseNoProject?: () => void
+  onSwitchWorkspace?: (workspaceId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement | null>(null)
+  useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  // 最近项目：按更新时间倒序，最多 5 个，且不包括 "不使用项目"
+  const recent = useMemo(() => {
+    return workspaces
+      .filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME)
+      .sort((a, b) => {
+        const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime()
+        const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime()
+        return tb - ta
+      })
+      .slice(0, 5)
+  }, [workspaces])
+
+  const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
+  const isNoProject = activeWorkspaceId != null && noProjectWorkspace?.id === activeWorkspaceId
+  const selectedProject = isNoProject
+    ? null
+    : workspaces.find((w) => w.id === activeWorkspaceId) ?? null
+
+  const triggerLabel = selectedProject?.name ?? (isNoProject ? NO_PROJECT_WORKSPACE_NAME : '选择项目')
+  const triggerIcon = selectedProject ? (
+    <Icons.Folder size={13} />
+  ) : isNoProject ? (
+    <Icons.FolderX size={13} />
+  ) : (
+    <Icons.Plus size={13} />
+  )
+  const triggerTitle = selectedProject
+    ? `项目：${selectedProject.name}\n${selectedProject.rootPath}`
+    : isNoProject
+      ? '当前不使用项目，session 数据走临时目录'
+      : '选择项目'
+
+  return (
+    <div
+      ref={rootRef}
+      className="composer-select composer-project-picker"
+      title={triggerTitle}
+    >
+      <span className="composer-select-icon">{triggerIcon}</span>
+      <button
+        type="button"
+        className="composer-select-trigger"
+        onClick={() => setOpen((prev) => !prev)}
+      >
+        <span>{triggerLabel}</span>
+        <Icons.ChevronDown size={12} />
+      </button>
+      {open && (
+        <div className="composer-menu composer-project-menu right">
+          {recent.length > 0 && (
+            <>
+              <div className="composer-project-group-header">最近</div>
+              {recent.map((w) => (
+                <button
+                  key={w.id}
+                  type="button"
+                  className={`composer-menu-item${selectedProject?.id === w.id ? ' active' : ''}`}
+                  onClick={() => {
+                    setOpen(false)
+                    onSwitchWorkspace?.(w.id)
+                  }}
+                >
+                  <span className="composer-menu-item-copy">
+                    <span className="composer-menu-item-label">
+                      <Icons.Folder size={13} />
+                      <span>{w.name}</span>
+                    </span>
+                  </span>
+                  {selectedProject?.id === w.id && <Icons.Check size={14} />}
+                </button>
+              ))}
+              <div className="composer-project-divider" />
+            </>
+          )}
+          <button
+            type="button"
+            className="composer-menu-item"
+            onClick={() => {
+              setOpen(false)
+              onPickProject?.()
+            }}
+          >
+            <span className="composer-menu-item-copy">
+              <span className="composer-menu-item-label">
+                <Icons.FolderPlus size={13} />
+                <span>选择新项目</span>
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`composer-menu-item${isNoProject ? ' active' : ''}`}
+            onClick={() => {
+              setOpen(false)
+              onUseNoProject?.()
+            }}
+          >
+            <span className="composer-menu-item-copy">
+              <span className="composer-menu-item-label">
+                <Icons.FolderX size={13} />
+                <span>不需要项目</span>
+              </span>
+            </span>
+            {isNoProject && <Icons.Check size={14} />}
+          </button>
         </div>
       )}
     </div>
@@ -5446,7 +5980,6 @@ function ModelIcon() {
 
 const ADAPTER_OPTIONS: Array<{ value: AgentAdapter; label: string }> = [
   { value: 'claude-sdk', label: 'Claude SDK' },
-  { value: 'codex', label: 'Codex' },
 ]
 
 const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
@@ -5454,7 +5987,6 @@ const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
 const ADAPTER_LABELS: Record<AgentAdapter, string> = {
   'claude-sdk': 'Claude SDK',
   claude: 'Claude API',
-  codex: 'Codex',
 }
 
 const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
@@ -5481,26 +6013,12 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
     },
   ]
 
-const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
-  { value: 'codex-default', label: '默认权限', description: '按默认策略请求确认' },
-  {
-    value: 'codex-auto-review',
-    label: '自动审查',
-    description: '自动处理低风险审查动作',
-    tone: 'auto',
-  },
-  {
-    value: 'codex-full-access',
-    label: '完全访问',
-    description: '危险：完全听从 agent 执行',
-    tone: 'danger',
-  },
-]
+// Codex 权限选项已移除，项目仅支持 Claude SDK
 
 function getPermissionModeOptions(
   adapter: AgentAdapter,
 ): Array<ComposerMenuOption & { value: PermissionModeChoice }> {
-  return isClaudeAdapter(adapter) ? CLAUDE_PERMISSION_MODE_OPTIONS : CODEX_PERMISSION_MODE_OPTIONS
+  return CLAUDE_PERMISSION_MODE_OPTIONS
 }
 
 function getValidPermissionMode(
@@ -5510,7 +6028,7 @@ function getValidPermissionMode(
   const options = getPermissionModeOptions(adapter)
   return options.some((option) => option.value === value)
     ? (value as PermissionModeChoice)
-    : (options[0]?.value ?? (isClaudeAdapter(adapter) ? 'claude-ask' : 'codex-default'))
+    : (options[0]?.value ?? 'claude-ask')
 }
 
 function normalizeRuntimePermissionPrefs(value: unknown): {
@@ -5519,7 +6037,7 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
 } {
   const source = value != null && typeof value === 'object' ? (value as ComposerPrefs) : {}
   const adapter =
-    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
+    source.adapter === 'claude' || source.adapter === 'claude-sdk'
       ? source.adapter
       : DEFAULT_AGENT_ADAPTER
   return {
@@ -5582,7 +6100,8 @@ function getPreferredProvider(
 }
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
-  return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
+  // 仅支持 Claude SDK
+  return DEFAULT_AGENT_ADAPTER
 }
 
 function isControlApprovalRequest(request: PermissionApprovalRequest): boolean {
@@ -6105,6 +6624,7 @@ function ChatInspector({
   onOpenProjectFolder: () => void
 }) {
   const plans = extractPlans(messages)
+  const subagents = extractInspectorSubagents(messages)
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
   const fileChangeSummaries = extractInspectorFileChanges(messages)
@@ -6290,6 +6810,35 @@ function ChatInspector({
                     {change.checkpointIds.length > 0
                       ? ` · checkpoint ${change.checkpointIds.join(', ')}`
                       : ''}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {subagents.length > 0 && (
+        <div className="inspector-section">
+          <h4>
+            <Icons.Bot size={11} /> 子 Agent
+            <span className="inspector-count">{subagents.length}</span>
+          </h4>
+          <div className="runtime-skill-list">
+            {subagents.map((sa, idx) => (
+              <div
+                className={`runtime-skill-row${sa.status === 'running' ? ' running' : ''}`}
+                key={`${sa.toolCallId}-${idx}`}
+                title={sa.output ? '点击查看输出' : undefined}
+                style={sa.output ? { cursor: 'pointer' } : undefined}
+              >
+                <div className="runtime-skill-main min-w-0">
+                  <div className="runtime-skill-name truncate">
+                    {sa.status === 'running' ? <Icons.Spinner size={10} className="thinking-spinner" /> : <Icons.Check size={10} style={{ color: 'var(--c-ok, #22c55e)' }} />}
+                    {' '}{sa.name}
+                  </div>
+                  <div className="runtime-skill-desc truncate">
+                    {sa.task || sa.role || '-'}
                   </div>
                 </div>
               </div>
@@ -6800,6 +7349,33 @@ function countDiffLines(diff: string | undefined): { adds: number; dels: number 
   return { adds, dels }
 }
 
+interface InspectorSubagent {
+  toolCallId: string
+  name: string
+  role: string
+  task: string
+  status: 'running' | 'done'
+  output?: string | undefined
+}
+
+function extractInspectorSubagents(messages: UIMessage[]): InspectorSubagent[] {
+  const seen = new Map<string, InspectorSubagent>()
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== 'subagent') continue
+      seen.set(block.toolCallId, {
+        toolCallId: block.toolCallId,
+        name: block.name,
+        role: block.role,
+        task: block.task,
+        status: block.status,
+        output: block.output,
+      })
+    }
+  }
+  return Array.from(seen.values())
+}
+
 function formatCheckpointReference(checkpointId: string): string {
   return checkpointId.length > 8 ? checkpointId.slice(-6) : checkpointId
 }
@@ -6878,7 +7454,9 @@ function buildProjectGroups(
   workspaces: WorkspaceInfo[],
   sessions: SessionSummary[],
 ): ProjectGroup[] {
-  return workspaces.map((workspace) => ({
+  // 过滤掉 “不使用项目” 这种系统内置 workspace，不在侧边栏项目组里展示
+  const userWorkspaces = workspaces.filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME)
+  return userWorkspaces.map((workspace) => ({
     workspace,
     sessions: sessions.filter((session) => session.workspaceIds.includes(workspace.id)),
   }))
@@ -6903,9 +7481,10 @@ function getLatestInputTokens(events: AgentEvent[]): number {
 }
 
 function getBasename(value: string): string {
-  const trimmed = value.trim().replace(/\/+$/, '')
+  // 兼容 POSIX (/Users/foo/bar) 与 Windows (C:\foo\bar、\\server\share\bar、混合写法) 两种路径
+  const trimmed = value.trim().replace(/[\\/]+$/, '')
   if (!trimmed) return '新项目'
-  return trimmed.split('/').filter(Boolean).at(-1) ?? '新项目'
+  return trimmed.split(/[\\/]/).filter(Boolean).at(-1) ?? '新项目'
 }
 
 function formatRelativeTime(value: string): string {

@@ -16,6 +16,21 @@
 
 import { app, BrowserWindow, Menu, Tray, nativeImage, shell } from 'electron'
 import { join } from 'path'
+
+// ─── CDP endpoint for Playwright MCP browser automation ──────────────────────
+// MUST be set before app.whenReady() fires. Allocate a fixed port in the
+// 9222-9230 range; if collision is detected at runtime we fall back to
+// `webContents.debugger.attach` (in-process CDP, see BrowserAutomationViewService).
+//
+// Security: restrict to loopback + a single explicit origin.
+//   - `--remote-debugging-port=0` would auto-pick, but a fixed port is easier
+//     for the MCP server config (saved in DB once).
+//   - `--remote-allow-origins=*` is needed because Playwright sends its own
+//     Origin header; the CDP server rejects mismatched origins by default.
+//     Loopback binding keeps the surface local-only.
+app.commandLine.appendSwitch('remote-debugging-port', '9223')
+app.commandLine.appendSwitch('remote-allow-origins', '*')
+
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { registerAllIpcHandlers } from './ipc/index.js'
@@ -24,6 +39,11 @@ import { getFileWatcherService } from './services/FileWatcherService.js'
 import { getUpdateService } from './services/UpdateService.js'
 import { checkSdkIntegrity } from './services/SdkIntegrityService.js'
 import { initializeShellEnvironment, getShellEnvironmentStatus } from './services/ShellEnvironmentService.js'
+import { ensureRegistered as ensurePlaywrightRegistered, readRegistration as readPlaywrightRegistration } from './services/PlaywrightMcpRegistration.js'
+import { detectIntegrity as detectPlaywrightIntegrity, installBrowser as autoInstallBrowser, invalidateCache as invalidatePlaywrightCache } from './services/PlaywrightIntegrityService.js'
+import { isViewOpen as isBrowserViewOpen, getCdpEndpoint as getBrowserCdpEndpoint, bindLifecycle as bindBrowserViewLifecycle } from './services/BrowserAutomationViewService.js'
+import { ensureBundledBrowserEnv, resetBundledBrowsersPathCache } from './services/PlaywrightEnvironment.js'
+import { getDatabase } from './db.js'
 import { createLogger } from '@spark/shared'
 import type { UpdateStatus } from '@spark/protocol'
 
@@ -100,16 +120,14 @@ function createWindow(): BrowserWindow {
       sandbox: true, // 必须：renderer 进程沙盒化（contextBridge 在 sandbox 下完全可用）
       webSecurity: true,
       allowRunningInsecureContent: false,
+      webviewTag: true, // 侧边栏嵌入式浏览器
     },
   })
 
   // 窗口准备好后再显示，避免白屏闪烁
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    // 开发模式下自动打开开发者工具
-    if (is.dev) {
-      mainWindow.webContents.openDevTools()
-    }
+    // DevTools 不再自动打开，使用 F12 / Ctrl+Shift+I 手动开启
   })
 
   mainWindow.on('close', (event) => {
@@ -139,6 +157,31 @@ function createWindow(): BrowserWindow {
 }
 
 /**
+ * 推送 Playwright 完整性状态到渲染进程。
+ * 抽取为独立函数避免重复代码。
+ */
+function pushPlaywrightStatus(): void {
+  try {
+    const integrity = detectPlaywrightIntegrity()
+    const registration = readPlaywrightRegistration(getDatabase())
+    sendToMainWindow('stream:playwright:status', {
+      mcpInstalled: integrity.mcpInstalled,
+      mcpVersion: integrity.mcpVersion,
+      playwrightInstalled: integrity.playwrightInstalled,
+      browserReady: integrity.browserReady,
+      mcpRegistered: registration.registered,
+      mcpEnabled: registration.enabled,
+      mode: registration.mode,
+      viewOpen: isBrowserViewOpen(),
+      cdpEndpoint: getBrowserCdpEndpoint(),
+      lastError: integrity.lastError,
+    })
+  } catch (err) {
+    log.warn(`Failed to push Playwright status: ${String(err)}`)
+  }
+}
+
+/**
  * 初始化主进程核心服务
  *
  * 启动顺序：
@@ -148,6 +191,13 @@ function createWindow(): BrowserWindow {
  */
 async function initializeApp(): Promise<void> {
   log.info('Initializing Spark Agent...')
+
+  // 0a. Configure bundled chromium env (must be BEFORE any playwright MCP subprocess starts)
+  try {
+    ensureBundledBrowserEnv()
+  } catch (err) {
+    log.warn(`Failed to set up bundled browser env (non-fatal): ${String(err)}`)
+  }
 
   // 0. 修复 PATH（必须在所有子进程创建之前执行）
   // Electron 从桌面启动时继承的是 Explorer 环境，缺少 node/python 等 PATH 条目
@@ -186,6 +236,23 @@ async function initializeApp(): Promise<void> {
   // 3. 创建主窗口
   createWindow()
   createTray()
+
+  // 3.5 注册 Playwright MCP（不在启动时打开嵌入式视图 / 不复用 Electron CDP）
+  //
+  // 之前的设计是启动时打开隐藏的自动化窗口并把 Electron 的 --remote-debugging-port
+  // 作为 --cdp-endpoint 注入 Playwright MCP，但 Electron 的 CDP 会同时暴露主窗口、
+  // 侧边栏 webview、自动化窗口等多个 target，Playwright 经常挑错目标导致 agent
+  // 无法控制浏览器。改为：MCP 直接拉起自己的 Chromium（headful），拥有完整权限。
+  // 侧边栏 / 弹出窗口作为用户手动浏览的独立 UI 功能，不再与 agent 共享会话。
+  try {
+    ensurePlaywrightRegistered(getDatabase(), {
+      force: true,
+      cdpEndpoint: null,
+    })
+    bindBrowserViewLifecycle()
+  } catch (err) {
+    log.warn(`Failed to register Playwright MCP: ${String(err)}`)
+  }
 
   // 4. 初始化自动更新服务
   const updateService = getUpdateService()
@@ -237,6 +304,38 @@ async function initializeApp(): Promise<void> {
       log.warn(`Failed to push shell environment status: ${String(err)}`)
     })
   }, 3_000)
+
+  // 7. 检测 Playwright 完整性并推送状态（延迟 6 秒，与 SDK 自检错开）
+  setTimeout(() => {
+    pushPlaywrightStatus()
+
+    // 7.5 如果浏览器未就绪，自动在后台下载到内置目录
+    // 仅在 dev 模式下自动下载（打包模式下浏览器应已内置）
+    if (is.dev) {
+      const integrity = detectPlaywrightIntegrity()
+      if (!integrity.browserReady && integrity.playwrightInstalled) {
+        log.info('Browser not ready — auto-downloading chromium to bundled directory...')
+        autoInstallBrowser((line) => {
+          log.info(`[auto-download] ${line.trim()}`)
+        }).then((result) => {
+          if (result.success) {
+            log.info('Auto-download completed successfully')
+            // Reset caches and update env
+            resetBundledBrowsersPathCache()
+            invalidatePlaywrightCache()
+            ensureBundledBrowserEnv()
+            pushPlaywrightStatus()
+          } else {
+            log.warn(`Auto-download failed: ${result.message}`)
+            pushPlaywrightStatus()
+          }
+        }).catch((err) => {
+          log.warn(`Auto-download error: ${String(err)}`)
+          pushPlaywrightStatus()
+        })
+      }
+    }
+  }, 6_000)
 
   log.info('Spark Agent initialized')
 }

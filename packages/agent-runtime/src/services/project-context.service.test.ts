@@ -107,4 +107,87 @@ describe('ProjectContextService', () => {
       sources: [],
     })
   })
+
+  describe('file pin/exclude overrides', () => {
+    it('excludes files matching excludedPaths', () => {
+      const root = mkdtempSync(join(tmpdir(), 'spark-ctx-exclude-'))
+      roots.push(root)
+      writeFileSync(join(root, 'AGENTS.md'), 'Keep this rule.')
+      writeFileSync(join(root, 'CLAUDE.md'), 'Exclude this rule.')
+
+      const result = new ProjectContextService().discover(root, {
+        excludedPaths: new Set(['CLAUDE.md']),
+      })
+
+      expect(result.sources).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: 'AGENTS.md', included: true }),
+      ]))
+      expect(result.sources).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: 'CLAUDE.md' }),
+      ]))
+    })
+
+    it('pins extra files not auto-discovered', () => {
+      const root = mkdtempSync(join(tmpdir(), 'spark-ctx-pin-extra-'))
+      roots.push(root)
+      mkdirSync(join(root, 'docs'), { recursive: true })
+      writeFileSync(join(root, 'docs', 'architecture.md'), '# Architecture\nUse microservices.')
+      // docs/architecture.md is not a standard rule/agent/skill path — not auto-discovered
+
+      const result = new ProjectContextService().discover(root, {
+        pinnedPaths: new Set(['docs/architecture.md']),
+      })
+
+      expect(result.sources).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: 'docs/architecture.md', included: true, reason: 'pinned' }),
+      ]))
+      expect(result.systemPrompt).toContain('Use microservices.')
+    })
+
+    it('pins a file that would otherwise be excluded by budget', () => {
+      const root = mkdtempSync(join(tmpdir(), 'spark-ctx-pin-budget-'))
+      roots.push(root)
+      writeFileSync(join(root, 'AGENTS.md'), 'A'.repeat(3000))
+      mkdirSync(join(root, '.claude', 'agents'), { recursive: true })
+      writeFileSync(join(root, '.claude', 'agents', 'architect.md'), 'B'.repeat(3000))
+
+      const result = new ProjectContextService().discover(root, {
+        budgetTokens: 500,
+        pinnedPaths: new Set(['.claude/agents/architect.md']),
+      })
+
+      // The pinned file should be included even though budget is tiny
+      const architectSource = result.sources.find((s) => s.path === '.claude/agents/architect.md')
+      expect(architectSource).toEqual(expect.objectContaining({ included: true, reason: 'pinned' }))
+    })
+
+    it('excluded takes priority over pinned for the same file', () => {
+      const root = mkdtempSync(join(tmpdir(), 'spark-ctx-pin-exclude-conflict-'))
+      roots.push(root)
+      writeFileSync(join(root, 'AGENTS.md'), 'Some rule content.')
+
+      const result = new ProjectContextService().discover(root, {
+        pinnedPaths: new Set(['AGENTS.md']),
+        excludedPaths: new Set(['AGENTS.md']),
+      })
+
+      // excluded wins — the file should not appear
+      expect(result.sources).not.toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: 'AGENTS.md' }),
+      ]))
+    })
+
+    it('returns empty context with empty overrides', () => {
+      const root = mkdtempSync(join(tmpdir(), 'spark-ctx-empty-overrides-'))
+      roots.push(root)
+
+      const result = new ProjectContextService().discover(root, {
+        pinnedPaths: new Set(),
+        excludedPaths: new Set(),
+      })
+
+      expect(result.rules).toEqual([])
+      expect(result.sources).toEqual([])
+    })
+  })
 })

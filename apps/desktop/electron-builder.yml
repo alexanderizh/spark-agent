@@ -23,11 +23,15 @@ asarUnpack:
   - '**/*.node'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude'
   - '**/node_modules/@anthropic-ai/claude-agent-sdk-*/claude.exe'
+  - '**/node_modules/playwright/**'
+  - '**/node_modules/@playwright/mcp/**'
+  - '**/node_modules/playwright-core/**'
 files:
   - out/**/*
   - '!**/.DS_Store'
   - '!src/**'
   - '!e2e/**'
+  - '!browsers/**'
 extraResources:
   - from: out/main/migrations
     to: migrations
@@ -41,6 +45,14 @@ extraResources:
     to: trayIconWin.png
   - from: resources/taskbarIcon.png
     to: taskbarIcon.png
+  # Bundled Playwright chromium browser (~150 MB).
+  # Downloaded pre-build by `pnpm download-browser` into apps/desktop/browsers/.
+  # At runtime, BrowserAutomationViewService points PLAYWRIGHT_BROWSERS_PATH
+  # at <resourcesPath>/browsers so playwright finds the bundled binary.
+  - from: browsers
+    to: browsers
+    filter:
+      - '**/*'
 publish:
   provider: generic
   url: https://releases.spark-agent.dev/${os}/

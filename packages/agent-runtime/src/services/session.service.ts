@@ -11,6 +11,7 @@ import {
   McpServerRepository,
   SettingsRepository,
   SkillRepository,
+  ContextPreferenceRepository,
 } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type {
@@ -44,6 +45,7 @@ import { SkillLoader } from '../skills/skill-loader.js'
 import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
+import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
 import {
   createLogger,
   resolveProviderContextWindow,
@@ -516,7 +518,9 @@ export class SessionService {
     }
 
     const existingEventCount = eventRepo.countBySession(sessionId)
-    const conversationHistoryPrompt = buildConversationHistoryPrompt(eventRepo, sessionId)
+    const currentSeq = this.seqCounters.get(sessionId) ?? existingEventCount
+    const { prompt: conversationHistoryPrompt, summarization: summarizationStats } =
+      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq)
     if (existingEventCount === 0 && shouldDeriveSessionTitle(session.title)) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
@@ -629,9 +633,14 @@ export class SessionService {
       if (ws != null) {
         workspaceRootPath = ws.root_path
         workspaceInfo = { name: ws.name, rootPath: ws.root_path, projectKind: ws.project_kind }
+        // Load Context Governor pin/exclude overrides for this workspace
+        const ctxPrefRepo = new ContextPreferenceRepository(this.db)
+        const { pinnedPaths, excludedPaths } = ctxPrefRepo.getOverrides(primaryWorkspaceId ?? '')
         projectContext = projectContextService.discover(ws.root_path, {
           mode: 'project-smart',
           budgetTokens: projectContextBudgetTokens,
+          pinnedPaths,
+          excludedPaths,
         })
       }
     }
@@ -838,6 +847,28 @@ export class SessionService {
             softContextLimitTokens > 0
               ? Math.round((totalEstimatedTokens / softContextLimitTokens) * 100)
               : 0,
+        },
+        eventRepo,
+      )
+    }
+
+    // ── Context Summarization Event ───────────────────────────────────────
+    if (summarizationStats != null) {
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          id: crypto.randomUUID(),
+          type: 'context_summarized',
+          sessionId,
+          turnId,
+          timestamp: new Date().toISOString(),
+          seq: 0,
+          summarizedEntryCount: summarizationStats.summarizedEntryCount,
+          fromSeq: summarizationStats.fromSeq,
+          toSeq: summarizationStats.toSeq,
+          tokensSaved: summarizationStats.tokensSaved,
+          summaryTokens: summarizationStats.summaryTokens,
         },
         eventRepo,
       )
@@ -2058,9 +2089,15 @@ function joinPromptSections(...sections: Array<string | undefined>): string | un
 }
 
 function formatSelectedSkillPrompt(skillId: string, prompt: string): string {
+  // IMPORTANT: do NOT use the word "Skill" as a label here. The Claude Code SDK
+  // preset registers a built-in `Skill` tool (for loading Anthropic-shipped
+  // skills from disk); if the LLM sees "[Selected Skill: <id>]" it will try
+  // to call that tool with our custom id, which fails with "Unknown skill".
+  // Our custom skills are already fully expanded into the system prompt
+  // below — the agent should act on them directly, not via any tool dispatch.
   return [
-    `[Selected Skill: ${skillId}]`,
-    'This skill was explicitly selected for this turn; its full instructions are loaded below.',
+    `## Active capability: ${skillId}`,
+    'The full instructions for this capability are inlined below. Follow them directly. Do NOT call the built-in `Skill` tool to load it — it is already loaded.',
     prompt,
   ].join('\n\n')
 }

@@ -26,6 +26,10 @@ export { SettingsRepository } from './settings.repository.js'
 export type { SettingsRow } from './settings.repository.js'
 export { UsageLedgerRepository } from './usage-ledger.repository.js'
 export type { UsageLedgerRow, RecordUsageParams, UsageSummary, ModelUsageGroup, DailyUsageGroup } from './usage-ledger.repository.js'
+export { ContextPreferenceRepository } from './context-preference.repository.js'
+export type { ContextPreferenceRow, UpsertContextPreferenceParams, ListContextPreferencesParams } from './context-preference.repository.js'
+export { SessionSummaryRepository } from './session-summary.repository.js'
+export type { SessionSummaryRow, CreateSessionSummaryParams } from './session-summary.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'
