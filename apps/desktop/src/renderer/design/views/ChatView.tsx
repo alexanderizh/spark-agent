@@ -313,9 +313,12 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
     <div className="chat-layout chat-layout-no-sidebar">
 
       <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}>
-        {t.sidebarHidden && showEmptyHero && (
-          <div className="chat-sidebar-topbar">
-            <SidebarExpandButton />
+        {showEmptyHero && (
+          <div
+            className="chat-sidebar-topbar"
+            onDoubleClick={() => { window.spark.invoke('window:maximize', {}).catch(() => {}) }}
+          >
+            {t.sidebarHidden && <SidebarExpandButton />}
           </div>
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
