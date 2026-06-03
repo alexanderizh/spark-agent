@@ -2062,6 +2062,17 @@ export interface BrowserPopInResponse {
   success: boolean
 }
 
+// ─── Window Control Channels ───────────────────────────────────────────────────
+
+export interface WindowMinimizeRequest {}
+export interface WindowMinimizeResponse { success: boolean }
+export interface WindowMaximizeRequest {}
+export interface WindowMaximizeResponse { success: boolean; maximized: boolean }
+export interface WindowCloseRequest {}
+export interface WindowCloseResponse { success: boolean }
+export interface WindowIsMaximizedRequest {}
+export interface WindowIsMaximizedResponse { maximized: boolean }
+
 // ─── File Patch Channels ───────────────────────────────────────────────────────
 
 export interface FileApplyHunkPatchRequest {
@@ -2385,6 +2396,12 @@ export interface IpcChannelMap {
   // Pop-out Browser Window
   'browser:pop-out': [BrowserPopOutRequest, BrowserPopOutResponse]
   'browser:pop-in': [BrowserPopInRequest, BrowserPopInResponse]
+
+  // Window Controls (renderer → main process)
+  'window:minimize': [WindowMinimizeRequest, WindowMinimizeResponse]
+  'window:maximize': [WindowMaximizeRequest, WindowMaximizeResponse]
+  'window:close': [WindowCloseRequest, WindowCloseResponse]
+  'window:is-maximized': [WindowIsMaximizedRequest, WindowIsMaximizedResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */

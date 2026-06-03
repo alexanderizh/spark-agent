@@ -239,7 +239,7 @@ describe('Renderer Smoke Tests', () => {
     expect(container.textContent).toContain('当前默认策略会跳过人工审批')
   })
 
-  it('toggles the primary sidebar from the bottom control and persists the state', async () => {
+  it('renders the floating sidebar panel with navigation items', async () => {
     const { App } = await import('../App')
 
     act(() => {
@@ -247,33 +247,22 @@ describe('Renderer Smoke Tests', () => {
       root.render(React.createElement(App))
     })
 
-    const sidebar = container.querySelector('.sidebar')
-    expect(sidebar?.classList.contains('collapsed')).toBe(true)
+    // Sidebar is always visible (non-collapsible floating panel)
+    const sidebar = container.querySelector('.floating-sidebar')
+    expect(sidebar).not.toBeNull()
 
-    const toggle = container.querySelector<HTMLButtonElement>('.sidebar-bottom [aria-label="Expand sidebar"]')
-    expect(toggle).not.toBeNull()
+    // Navigation items are always present with labels
+    const navLabels = sidebar?.querySelectorAll('.nav-label')
+    expect(navLabels?.length).toBeGreaterThan(0)
 
-    act(() => {
-      toggle!.click()
-    })
-
-    expect(sidebar?.classList.contains('expanded')).toBe(true)
-    expect(localStorage.getItem('spark-agent:sidebar')).toBe('expanded')
+    // "新建任务" (new task) button is present in the sidebar nav
+    const newTaskBtn = Array.from(sidebar?.querySelectorAll('.nav-label') ?? [])
+      .find(el => el.textContent === '新建任务')
+    expect(newTaskBtn).toBeDefined()
 
     act(() => {
       root!.unmount()
-      root = createRoot(container)
-      root.render(React.createElement(App))
     })
-
-    expect(container.querySelector('.sidebar')?.classList.contains('expanded')).toBe(true)
-
-    act(() => {
-      container.querySelector<HTMLButtonElement>('.sidebar-bottom [aria-label="Collapse sidebar"]')!.click()
-    })
-
-    expect(container.querySelector('.sidebar')?.classList.contains('collapsed')).toBe(true)
-    expect(localStorage.getItem('spark-agent:sidebar')).toBe('collapsed')
   })
 
   it('shows running sessions in the list and allows stopping the active session', async () => {
@@ -346,7 +335,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -467,7 +456,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -568,7 +557,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -641,7 +630,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -722,7 +711,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -779,6 +768,7 @@ describe('Renderer Smoke Tests', () => {
       }>
       root.render(
         React.createElement(ToastProvider, null,
+          React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
           React.createElement(ChatViewWithApproval, {
             approvalRequest: {
               requestId: 'req-1',
@@ -789,8 +779,9 @@ describe('Renderer Smoke Tests', () => {
               riskLevel: 'high',
               persistentScopes: ['project', 'global'],
             },
-            onApprovalClose,
-          }),
+             onApprovalClose,
+           }),
+          ),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -947,6 +938,7 @@ describe('Renderer Smoke Tests', () => {
       }>
       root.render(
         React.createElement(ToastProvider, null,
+          React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
           React.createElement(ChatViewWithApproval, {
             approvalRequest: {
               requestId: 'req-plan',
@@ -957,8 +949,9 @@ describe('Renderer Smoke Tests', () => {
               riskLevel: 'low',
               persistentScopes: ['project', 'global'],
             },
-            onApprovalClose,
-          }),
+             onApprovalClose,
+           }),
+          ),
         ),
       )
       await new Promise((resolve) => setTimeout(resolve, 0))
@@ -1118,7 +1111,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -1274,7 +1267,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -1423,7 +1416,7 @@ describe('Renderer Smoke Tests', () => {
 
       await act(async () => {
         root = createRoot(container)
-        root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+        root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
         await new Promise((resolve) => setTimeout(resolve, 0))
       })
 
@@ -1539,7 +1532,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
@@ -1679,7 +1672,7 @@ describe('Renderer Smoke Tests', () => {
 
     await act(async () => {
       root = createRoot(container)
-      root.render(React.createElement(ToastProvider, null, React.createElement(ChatView)))
+      root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 

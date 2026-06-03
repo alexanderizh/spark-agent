@@ -96,3 +96,5 @@ pnpm-debug.log*
 .teamagentx-output/
 
 .opencode
+# Mavis Team 内部状态
+.mavis/

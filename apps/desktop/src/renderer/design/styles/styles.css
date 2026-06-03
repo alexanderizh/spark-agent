@@ -37,6 +37,7 @@
   --bg: #fdfdfc;
   --bg-soft: #fefefe;
   --bg-sunken: #f7f6f4;
+  --composer-toolbar-bg: #f8f7f5;
   --panel: #ffffff;
   --panel-elev: #ffffff;
   --hover: rgba(36, 32, 27, 0.045);
@@ -83,6 +84,7 @@
   --bg: #0d0d10;
   --bg-soft: #131318;
   --bg-sunken: #0a0a0d;
+  --composer-toolbar-bg: #1e1e24;
   --panel: #16161b;
   --panel-elev: #1c1c22;
   --hover: rgba(255, 255, 255, 0.04);
@@ -200,7 +202,6 @@ button { font-family: inherit; }
   min-height: 100%;
   background: var(--bg);
   color: var(--text);
-  /* border-radius: 14px; */
   overflow: hidden;
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.05),
@@ -212,110 +213,141 @@ button { font-family: inherit; }
   position: relative;
 }
 
-.titlebar {
-  height: 38px;
-  flex-shrink: 0;
+/* ============================================================
+   FLOATING SIDEBAR PANEL
+   ============================================================ */
+.floating-sidebar {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  bottom: 4px;
+  width: var(--sidebar-w, 210px);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+}
+.platform-darwin .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
+}
+/* Prevent text selection during resize drag */
+body.floating-sidebar-resizing { user-select: none; cursor: col-resize; }
+body.floating-sidebar-resizing * { pointer-events: none !important; }
+
+/* Invisible drag region at top of panel for window dragging */
+.floating-sidebar-drag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  -webkit-app-region: drag;
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+}
+
+/* Panel header: hide button + logo */
+.floating-sidebar-header {
   display: flex;
   align-items: center;
-  gap: var(--pad-md);
-  padding: 0 12px;
-  background: var(--bg-soft);
-  border-bottom: 1px solid var(--border);
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px 4px;
+  position: relative;
+  z-index: 1;
   -webkit-app-region: drag;
-  user-select: none;
 }
-/* macOS 自绘标题栏需要为红绿黄三色按钮预留左侧空间；Windows / Linux 无原生按钮，紧贴 logo 即可 */
-.platform-darwin .titlebar { padding-left: 84px; }
-.titlebar-brand {
+.platform-darwin .floating-sidebar-header {
+  padding-top: 8px;
+}
+.sidebar-hide-btn {
+  -webkit-app-region: no-drag;
+}
+.floating-sidebar-brand {
   display: flex;
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1;
 }
-.titlebar-logo {
-  width: 22px;
-  height: 22px;
+.sidebar-logo {
+  width: 24px;
+  height: 24px;
   border-radius: 7px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--primary-fg);
-}
-.titlebar-logo svg {
-  width: 100%;
-  height: 100%;
-  display: block;
-}
-.titlebar-title {
-  font-size: var(--font-lg);
-  font-weight: 500;
-  color: var(--text-strong);
+  overflow: hidden;
 }
 
-.titlebar-spacer { flex: 1; }
-.titlebar-center {
-  font-size: var(--font-sm);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
-}
-.titlebar-center strong { color: var(--text-strong); font-weight: 600; }
-.titlebar-actions {
-  display: flex;
-  gap: 6px;
-  -webkit-app-region: no-drag;
+/* Resize handle on the right edge */
+.floating-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  z-index: 10;
 }
 
-/* ============================================================
-   APP BODY
-   ============================================================ */
-.app-body {
-  flex: 1;
-  display: flex;
-  min-height: 0;
-  background: var(--bg);
-}
-
-/* ============================================================
-   SIDEBAR
-   ============================================================ */
-.sidebar {
-  flex-shrink: 0;
-  background: var(--bg-soft);
-  border-right: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  transition: width 0.18s ease;
-}
-.sidebar.expanded { width: 180px; }
-.sidebar.collapsed { width: 56px; }
-.sidebar-top {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 2px;
-  padding: var(--pad-sm);
-}
-
-.sidebar-section {
-  padding: var(--pad-sm);
+/* ─── Sidebar nav sections ─── */
+.sidebar-nav-section {
+  padding: 4px 8px;
   display: flex;
   flex-direction: column;
   gap: 1px;
-}
-.sidebar-section + .sidebar-section { border-top: 1px solid var(--divider); }
-.sidebar-section-label {
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-faint);
-  padding: var(--pad-sm) var(--pad-md) 4px;
+  -webkit-app-region: no-drag;
 }
 
+/* Divider between nav and session list */
+.sidebar-session-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 4px 12px;
+  flex-shrink: 0;
+}
+
+/* Session list container — fills remaining space */
+.sidebar-session-list {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  -webkit-app-region: no-drag;
+}
+
+/* Expand button when sidebar is hidden */
+.sidebar-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  transition: background 0.12s, color 0.12s;
+}
+.sidebar-expand-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* When sidebar is hidden on macOS, no more view-header padding needed */
+
+/* Nav item buttons */
 .nav-item {
   display: flex;
   align-items: center;
@@ -324,7 +356,6 @@ button { font-family: inherit; }
   height: var(--nav-row-h);
   border-radius: var(--r-md);
   color: var(--text-muted);
-  cursor: default;
   font-size: var(--font-base);
   font-weight: 500;
   border: none;
@@ -333,6 +364,8 @@ button { font-family: inherit; }
   text-align: left;
   position: relative;
   cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  -webkit-app-region: no-drag;
 }
 .nav-item:hover { background: var(--hover); color: var(--text); }
 .nav-item.active {
@@ -352,41 +385,36 @@ button { font-family: inherit; }
   text-overflow: ellipsis;
   font-size: var(--font-base);
 }
-.sidebar.collapsed .nav-label,
-.sidebar.collapsed .nav-badge,
-.sidebar.collapsed .sidebar-section-label { display: none; }
-.sidebar.collapsed .nav-item { justify-content: center; padding: 0; }
 
-.nav-badge {
-  font-size: 10px;
-  background: var(--border);
-  color: var(--text-muted);
-  padding: 1px 6px;
-  border-radius: 8px;
-  font-weight: 600;
-  min-width: 18px;
-  text-align: center;
+/* "新建任务" was previously styled with a special trigger look; it now uses
+   the standard .nav-item style shared with Workflows/Agents/Skills/Providers. */
+
+.nav-kbd {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--text-faint);
+  white-space: nowrap;
 }
-.nav-item.active .nav-badge { background: var(--primary); color: var(--primary-fg); }
 
+/* ─── Sidebar bottom ─── */
 .sidebar-bottom {
   margin-top: auto;
-  padding: var(--pad-sm);
+  padding: 2px 8px;
   border-top: 1px solid var(--divider);
-}
-.sidebar.collapsed .sidebar-bottom {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
 }
 .sidebar-user {
-  display: flex; align-items: center; gap: 10px;
-  padding: var(--pad-sm); border-radius: var(--r-md);
-}
-.sidebar.collapsed .sidebar-user {
-  justify-content: center;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  padding-inline: 0;
+  padding: var(--pad-sm);
+  border-radius: var(--r-md);
+  position: relative;
 }
 .sidebar-user:hover { background: var(--hover); }
 .avatar {
@@ -401,43 +429,92 @@ button { font-family: inherit; }
 .sidebar-user-info { flex: 1; min-width: 0; }
 .sidebar-user-info .name { font-size: var(--font-sm); font-weight: 600; color: var(--text); }
 .sidebar-user-info .meta { font-size: 10px; color: var(--text-muted); }
-.sidebar.collapsed .sidebar-user-info,
-.sidebar.collapsed .sidebar-user .chev { display: none; }
 
-/* Sidebar toggle button */
-.sidebar-toggle-btn {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--r-sm);
-  flex-shrink: 0;
-  opacity: 0;
-  transition: opacity 0.15s, background 0.12s;
-}
-.sidebar-user:hover .sidebar-toggle-btn,
-.sidebar-bottom:hover .sidebar-toggle-btn {
-  opacity: 1;
-}
-.sidebar-toggle-btn:hover {
-  background: var(--hover);
-}
-.sidebar-toggle-btn svg {
-  width: 14px;
-  height: 14px;
-}
-.collapsed-toggle {
-  opacity: 0.6;
-  width: 32px;
-  height: 32px;
-  margin-top: 4px;
+/* User dropdown menu */
+.user-menu {
+  position: absolute;
+  bottom: 100%;
+  left: 4px;
+  right: 4px;
+  background: var(--panel-elev);
+  border: 1px solid var(--border);
   border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  z-index: 20;
 }
-.collapsed-toggle:hover {
-  opacity: 1;
+.user-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.user-menu button:hover {
   background: var(--hover);
 }
-.collapsed-toggle svg {
-  width: 16px;
-  height: 16px;
+
+/* ─── Window Controls (Windows/Linux only) ─── */
+.window-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 4px 0 2px;
+  width: 100%;
+}
+.win-ctrl-btn {
+  width: 28px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--r-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+.win-ctrl-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.win-ctrl-btn.close:hover {
+  background: var(--danger);
+  color: white;
+}
+.win-ctrl-btn svg {
+  width: 10px;
+  height: 10px;
+}
+/* Hide window controls on macOS (uses native traffic lights) */
+.platform-darwin .window-controls { display: none; }
+
+/* ─── Main content area — offset to the right of the sidebar ─── */
+.main-content-area {
+  margin-left: var(--sidebar-offset, 210px);
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  background: var(--bg);
+  transition:
+    margin-left 0.18s ease,
+    padding-left 0.18s ease,
+    padding-right 0.18s ease;
+}
+
+/* Sidebar hidden: inset all page content with horizontal breathing room */
+.app.sidebar-hidden .main-content-area {
+  padding-left: 80px;
+  padding-right: 80px;
 }
 
 /* ============================================================
@@ -447,35 +524,24 @@ button { font-family: inherit; }
   flex: 1;
   display: flex;
   flex-direction: column;
+  position: relative;
   min-width: 0;
   min-height: 0;
   background: var(--bg);
 }
-/* .main > * removed — ViewHeader + view-body handle their own sizing */
+/* .main > * removed — view-body handles its own sizing */
 
-.view-header {
-  padding: var(--pad-md) var(--pad-xl);
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  gap: var(--pad-md);
+.transparent-header {
   flex-shrink: 0;
-  min-height: 52px;
-  background: var(--bg);
-}
-.view-title {
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--text-strong);
+  height: 55px;
   display: flex;
   align-items: center;
   gap: 8px;
+  -webkit-app-region: drag;
 }
-.view-subtitle {
-  font-size: var(--font-sm);
-  color: var(--text-muted);
+.transparent-header .sidebar-expand-btn {
+  -webkit-app-region: no-drag;
 }
-.view-header-actions { display: flex; gap: 6px; margin-left: auto; align-items: center; }
 
 .view-body {
   flex: 1;

@@ -145,7 +145,7 @@ type ShortcutActions = {
 }
 
 const VIEW_INDEX_MAP: Record<string, ViewId> = {
-  '1': 'home',
+  '1': 'chat',
   '2': 'chat',
   '3': 'workflows',
   '4': 'agents',

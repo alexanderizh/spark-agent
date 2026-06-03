@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Background,
@@ -37,6 +37,7 @@ import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
+type WorkflowScreen = 'list' | 'detail'
 
 export function WorkflowView() {
   return (
@@ -59,6 +60,9 @@ function WorkflowViewInner() {
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [paletteOpen, setPaletteOpen] = useState(true)
+  const [screen, setScreen] = useState<WorkflowScreen>('list')
+  const activeIdRef = useRef<string | null>(null)
+  const screenRef = useRef<WorkflowScreen>('list')
 
   const [nodes, setNodes, onNodesChange] = useNodesState<SparkFlowNode>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
@@ -107,14 +111,25 @@ function WorkflowViewInner() {
       setMcpServers(mcpRes.servers)
       setRules(ruleRes.rules)
       setAgents(agentRes.agents ?? [])
-      const active =
-        workflowRes.workflows.find((item) => item.id === activeId) ?? workflowRes.workflows[0] ?? null
-      if (active != null) {
-        setActiveId(active.id)
-        loadWorkflowIntoCanvas(active)
-      } else {
+      const active = workflowRes.workflows.find((item) => item.id === activeIdRef.current) ?? null
+      if (screenRef.current === 'detail') {
+        if (active != null) {
+          activeIdRef.current = active.id
+          setActiveId(active.id)
+          loadWorkflowIntoCanvas(active)
+        } else {
+          activeIdRef.current = null
+          screenRef.current = 'list'
+          setActiveId(null)
+          setScreen('list')
+          loadWorkflowIntoCanvas(null)
+        }
+      } else if (active == null) {
+        activeIdRef.current = null
         setActiveId(null)
         loadWorkflowIntoCanvas(null)
+      } else {
+        setActiveId(active.id)
       }
     } finally {
       setLoading(false)
@@ -152,9 +167,17 @@ function WorkflowViewInner() {
     [selectedNodeId, setNodes],
   )
 
-  const selectWorkflow = (workflow: WorkflowItem) => {
+  const openWorkflow = (workflow: WorkflowItem) => {
+    screenRef.current = 'detail'
+    activeIdRef.current = workflow.id
+    setScreen('detail')
     setActiveId(workflow.id)
     loadWorkflowIntoCanvas(workflow)
+  }
+
+  const showWorkflowList = () => {
+    screenRef.current = 'list'
+    setScreen('list')
   }
 
   const createNewWorkflow = async () => {
@@ -167,8 +190,8 @@ function WorkflowViewInner() {
       })
     ).workflow
     toast.success('工作流已创建')
-    setActiveId(workflow.id)
-    loadWorkflowIntoCanvas(workflow)
+    setWorkflows((prev) => [workflow, ...prev.filter((item) => item.id !== workflow.id)])
+    openWorkflow(workflow)
     await refresh()
   }
 
@@ -186,7 +209,8 @@ function WorkflowViewInner() {
       })
     ).workflow
     toast.success('工作流已保存')
-    setActiveId(saved.id)
+    activeIdRef.current = saved.id
+    setWorkflows((prev) => prev.map((item) => (item.id === saved.id ? saved : item)))
     loadWorkflowIntoCanvas(saved)
     await refresh()
   }
@@ -196,7 +220,11 @@ function WorkflowViewInner() {
     const res = await deleteWorkflow({ id: draft.id })
     if (res.deleted) {
       toast.success('工作流已删除')
+      activeIdRef.current = null
+      screenRef.current = 'list'
+      setWorkflows((prev) => prev.filter((item) => item.id !== draft.id))
       setActiveId(null)
+      setScreen('list')
       loadWorkflowIntoCanvas(null)
       await refresh()
     }
@@ -242,160 +270,201 @@ function WorkflowViewInner() {
     if (nodeId != null) setSelectedNodeId(nodeId)
   }, [])
 
-  return (
-    <div className="workflow-layout workflow-builder workflow-builder-v2">
-      <aside className="workflow-list-panel">
-        <div className="workflow-list-head">
+  if (screen === 'list' || draft == null) {
+    return (
+      <div className="workflow-layout workflow-home">
+        <div className="workflow-home-head">
           <div>
             <div className="agents-title-lg">Workflows</div>
-            <div className="agents-desc">拖动节点端点连线，定义 Agent 的优先执行流程。</div>
+            <div className="agents-desc">管理可复用的 Agent 执行流程。</div>
           </div>
-          <button className="icon-btn" title="新建工作流" onClick={() => void createNewWorkflow()}>
-            <Icons.Plus size={14} />
-          </button>
-        </div>
-        <div className="wf-list">
-          {workflows.map((workflow) => (
-            <button
-              key={workflow.id}
-              className={`wf-list-item wf-list-button ${workflow.id === activeId ? 'active' : ''}`}
-              onClick={() => selectWorkflow(workflow)}
-            >
-              <span className="wf-list-icon">
-                <Icons.Workflow size={14} />
-              </span>
-              <span className="wf-list-body">
-                <span className="wf-list-name">{workflow.name}</span>
-                <span className="wf-list-meta">
-                  {workflow.graph.nodes.length} 节点 · {workflow.status}
-                </span>
-              </span>
+          <div className="agents-actions">
+            <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
+              {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
             </button>
-          ))}
-          {!loading && workflows.length === 0 && (
-            <div className="agents-empty-mini">暂无工作流</div>
-          )}
-        </div>
-      </aside>
-
-      {draft == null ? (
-        <div className="wf-empty-state">
-          <div className="empty-state">
-            <div className="empty-icon">
-              <Icons.Workflow size={24} />
-            </div>
-            <div className="empty-title">创建第一个工作流</div>
-            <div className="empty-actions">
-              <button className="btn primary" onClick={() => void createNewWorkflow()}>
-                <Icons.Plus size={12} /> 创建工作流
-              </button>
-            </div>
+            <button className="btn primary sm" onClick={() => void createNewWorkflow()}>
+              <Icons.Plus size={12} /> 新建工作流
+            </button>
           </div>
         </div>
-      ) : (
-        <>
-          <div className="wf-stage">
-            <div className="wf-toolbar">
-              <input
-                className="wf-title-input"
-                value={draft.name}
-                onChange={(event) => patchDraftMeta({ name: event.target.value })}
-                placeholder="工作流名称"
-              />
-              <select
-                className="wf-status-select"
-                value={draft.status}
-                onChange={(event) => patchDraftMeta({ status: event.target.value as WorkflowStatus })}
-              >
-                <option value="draft">draft</option>
-                <option value="active">active</option>
-                <option value="archived">archived</option>
-              </select>
-              <div className="wf-toolbar-spacer" />
-              <button
-                className="btn ghost sm"
-                onClick={() => setPaletteOpen((open) => !open)}
-                title="节点面板"
-              >
-                <Icons.Plus size={12} /> 节点
-              </button>
-              <button className="btn ghost sm danger" onClick={() => void removeWorkflow()}>
-                <Icons.Trash size={12} /> 删除
-              </button>
-              <button className="btn primary sm" onClick={() => void saveWorkflow()}>
-                <Icons.Check size={12} /> 保存
-              </button>
-            </div>
-
-            <div className="wf-canvas-wrap">
-              {paletteOpen && (
-                <div className="wf-palette">
-                  <div className="wf-palette-title">节点类型</div>
-                  {NODE_KIND_ORDER.map((kind) => {
-                    const meta = NODE_KIND_META[kind]
-                    return (
-                      <button
-                        key={kind}
-                        className="wf-palette-item"
-                        onClick={() => addNode(kind)}
-                        style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
-                      >
-                        <span className="wf-palette-icon">{meta.icon}</span>
-                        <span className="wf-palette-body">
-                          <span className="wf-palette-label">{meta.label}</span>
-                          <span className="wf-palette-hint">{meta.hint}</span>
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-              )}
-
-              <div className="wf-flow">
-                <ReactFlow
-                  nodes={nodes}
-                  edges={edges}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onConnect={onConnect}
-                  onSelectionChange={onSelectionChange}
-                  nodeTypes={NODE_TYPES}
-                  fitView
-                  fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
-                  defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
-                  proOptions={{ hideAttribution: true }}
-                  deleteKeyCode={['Delete', 'Backspace']}
+        {workflows.length > 0 ? (
+          <div className="workflow-card-grid">
+            {workflows.map((workflow) => {
+              const visibleNodes = workflow.graph.nodes.slice(0, 4)
+              return (
+                <button
+                  key={workflow.id}
+                  className={`workflow-card ${workflow.id === activeId ? 'active' : ''}`}
+                  onClick={() => openWorkflow(draft?.id === workflow.id ? draft : workflow)}
                 >
-                  <Background gap={20} size={1} />
-                  <MiniMap pannable zoomable className="wf-minimap" />
-                  <Controls showInteractive={false} />
-                </ReactFlow>
+                  <span className="workflow-card-head">
+                    <span className="workflow-card-icon">
+                      <Icons.Workflow size={18} />
+                    </span>
+                    <span className={`wf-list-status status-${workflow.status}`}>{workflow.status}</span>
+                  </span>
+                  <span className="workflow-card-name">{workflow.name}</span>
+                  <span className="workflow-card-desc">
+                    {workflow.description || '自定义 Agent 执行流程'}
+                  </span>
+                  <span className="workflow-card-meta">
+                    <span>{workflow.graph.nodes.length} 节点</span>
+                    <span className="wf-list-dot" />
+                    <span>{workflow.graph.edges.length} 连线</span>
+                  </span>
+                  <span className="workflow-card-route">
+                    {visibleNodes.length > 0 ? (
+                      visibleNodes.map((node) => {
+                        const meta = getNodeKindMeta(node.kind)
+                        return (
+                          <span
+                            key={node.id}
+                            className="workflow-card-node"
+                            style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
+                            title={node.title}
+                          >
+                            {meta.icon}
+                          </span>
+                        )
+                      })
+                    ) : (
+                      <span className="agents-empty-mini">暂无节点</span>
+                    )}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          !loading && (
+            <div className="wf-empty-state">
+              <div className="empty-state">
+                <div className="empty-icon">
+                  <Icons.Workflow size={24} />
+                </div>
+                <div className="empty-title">创建第一个工作流</div>
+                <div className="empty-actions">
+                  <button className="btn primary" onClick={() => void createNewWorkflow()}>
+                    <Icons.Plus size={12} /> 创建工作流
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
+          )
+        )}
+      </div>
+    )
+  }
 
-          <WorkflowInspector
-            node={selectedNode}
-            providers={providers}
-            modelOptions={modelOptions}
-            skills={skills}
-            rules={rules}
-            mcpServers={mcpServers}
-            agents={agents}
-            currentWorkflowId={draft.id}
-            onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
-            onPatch={(patch) =>
-              patchSelectedNodeData((node) => ({ ...node, data: { ...node.data, ...patch } }))
-            }
-            onPatchConfig={(patch) =>
-              patchSelectedNodeData((node) => ({
-                ...node,
-                data: { ...node.data, config: { ...node.data.config, ...patch } },
-              }))
-            }
+  return (
+    <div className="workflow-layout workflow-builder workflow-builder-v2">
+      <div className="wf-stage">
+        <div className="wf-toolbar">
+          <button
+            className="btn ghost sm"
+            onClick={showWorkflowList}
+            title="返回列表"
+          >
+            <Icons.ArrowLeft size={12} /> 列表
+          </button>
+          <input
+            className="wf-title-input"
+            value={draft.name}
+            onChange={(event) => patchDraftMeta({ name: event.target.value })}
+            placeholder="工作流名称"
           />
-        </>
-      )}
+          <select
+            className="wf-status-select"
+            value={draft.status}
+            onChange={(event) => patchDraftMeta({ status: event.target.value as WorkflowStatus })}
+          >
+            <option value="draft">draft</option>
+            <option value="active">active</option>
+            <option value="archived">archived</option>
+          </select>
+          <div className="wf-toolbar-spacer" />
+          <button
+            className="btn ghost sm"
+            onClick={() => setPaletteOpen((open) => !open)}
+            title="节点面板"
+          >
+            <Icons.Plus size={12} /> 节点
+          </button>
+          <button className="btn ghost sm danger" onClick={() => void removeWorkflow()}>
+            <Icons.Trash size={12} /> 删除
+          </button>
+          <button className="btn primary sm" onClick={() => void saveWorkflow()}>
+            <Icons.Check size={12} /> 保存
+          </button>
+        </div>
+
+        <div className="wf-canvas-wrap">
+          {paletteOpen && (
+            <div className="wf-palette">
+              <div className="wf-palette-title">节点类型</div>
+              {NODE_KIND_ORDER.map((kind) => {
+                const meta = NODE_KIND_META[kind]
+                return (
+                  <button
+                    key={kind}
+                    className="wf-palette-item"
+                    onClick={() => addNode(kind)}
+                    style={{ ['--node-accent' as string]: `var(${meta.accent})` }}
+                  >
+                    <span className="wf-palette-icon">{meta.icon}</span>
+                    <span className="wf-palette-body">
+                      <span className="wf-palette-label">{meta.label}</span>
+                      <span className="wf-palette-hint">{meta.hint}</span>
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
+          <div className="wf-flow">
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onSelectionChange={onSelectionChange}
+              nodeTypes={NODE_TYPES}
+              fitView
+              fitViewOptions={{ padding: 0.2, maxZoom: 1 }}
+              defaultEdgeOptions={{ type: 'smoothstep', animated: true }}
+              proOptions={{ hideAttribution: true }}
+              deleteKeyCode={['Delete', 'Backspace']}
+            >
+              <Background gap={20} size={1} />
+              <MiniMap pannable zoomable className="wf-minimap" />
+              <Controls showInteractive={false} />
+            </ReactFlow>
+          </div>
+        </div>
+      </div>
+
+      <WorkflowInspector
+        node={selectedNode}
+        providers={providers}
+        modelOptions={modelOptions}
+        skills={skills}
+        rules={rules}
+        mcpServers={mcpServers}
+        agents={agents}
+        currentWorkflowId={draft.id}
+        onDelete={() => selectedNodeId != null && removeNode(selectedNodeId)}
+        onPatch={(patch) =>
+          patchSelectedNodeData((node) => ({ ...node, data: { ...node.data, ...patch } }))
+        }
+        onPatchConfig={(patch) =>
+          patchSelectedNodeData((node) => ({
+            ...node,
+            data: { ...node.data, config: { ...node.data.config, ...patch } },
+          }))
+        }
+      />
     </div>
   )
 }

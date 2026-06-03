@@ -411,6 +411,20 @@ export const Icons = {
       <path d="M15 4v16" />
     </IconBase>
   ),
+  SidebarHide: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="M16 9l-3 3 3 3" />
+    </IconBase>
+  ),
+  SidebarShow: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M9 4v16" />
+      <path d="M13 9l3 3-3 3" />
+    </IconBase>
+  ),
   More: (p: IconProps) => (
     <IconBase {...p}>
       <circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none" />

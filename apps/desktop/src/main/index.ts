@@ -107,14 +107,22 @@ function createTray(): void {
  */
 function createWindow(): BrowserWindow {
   const iconPath = getResourcePath(process.platform === 'win32' ? 'taskbarIcon.png' : 'icon.png')
+
+  // macOS: hiddenInset + trafficLightPosition places native traffic lights
+  // inside the floating sidebar panel area (top-left corner).
+  // The panel sits at left:12px, so traffic lights at x:22 land inside it.
+  // Windows/Linux: frameless window with custom HTML window controls.
+  const isDarwin = process.platform === 'darwin'
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    minWidth: 1000,
-    minHeight: 700,
+    minWidth: 900,
+    minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: 'hiddenInset', // macOS 原生红绿灯按钮
+    titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
+    ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
     icon: iconPath,
     webPreferences: {
       // ADR-003 安全约束：三项强制配置，不可协商

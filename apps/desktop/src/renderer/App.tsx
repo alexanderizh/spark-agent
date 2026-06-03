@@ -1,12 +1,17 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react'
-import { AppProvider, useApp, PRIMARIES } from './design/AppContext'
+import {
+  AppProvider,
+  useApp,
+  PRIMARIES,
+  FLOATING_SIDEBAR_WIDTH_MIN,
+  FLOATING_SIDEBAR_WIDTH_MAX,
+} from './design/AppContext'
+import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
-import { SparkInput } from './design/components/FormControls'
 import type { PermissionApprovalRequest } from '@spark/protocol'
-import { useGlobalShortcuts, getShortcutLabel } from './design/hooks/useKeyboard'
+import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 
-import { HomeView } from './design/views/HomeView'
 import { ChatView } from './design/views/ChatView'
 import { ProjectView } from './design/views/ProjectView'
 import { WorkflowView } from './design/views/WorkflowView'
@@ -18,8 +23,12 @@ import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
 import ProvidersView from './design/views/ProvidersView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
+import { SidebarExpandButton } from './design/SidebarExpandButton'
+import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
 import sparkLogo from './assets/spark-logo.png'
+
+const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
 
 function SparkLogoMark() {
   return (
@@ -33,79 +42,204 @@ function SparkLogoMark() {
   )
 }
 
-/* ---------- ViewHeader — per-view title bar (matches design spec) ---------- */
-function ViewHeader({ view, chatMode }: { view: string; chatMode: string }) {
+/* ---------- WindowControls — custom title bar buttons (Windows/Linux only) ---------- */
+function WindowControls() {
+  const [isMaximized, setIsMaximized] = useState(false)
+
+  useEffect(() => {
+    window.spark.invoke('window:is-maximized', {}).then((res) => {
+      setIsMaximized(res.maximized)
+    }).catch(() => {})
+  }, [])
+
+  const handleMinimize = useCallback(() => {
+    window.spark.invoke('window:minimize', {}).catch(() => {})
+  }, [])
+
+  const handleMaximize = useCallback(async () => {
+    try {
+      const res = await window.spark.invoke('window:maximize', {})
+      setIsMaximized(res.maximized)
+    } catch { /* ignore */ }
+  }, [])
+
+  const handleClose = useCallback(() => {
+    window.spark.invoke('window:close', {}).catch(() => {})
+  }, [])
+
+  return (
+    <div className="window-controls">
+      <button className="win-ctrl-btn minimize" onClick={handleMinimize} title="Minimize">
+        <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor" /></svg>
+      </button>
+      <button className="win-ctrl-btn maximize" onClick={handleMaximize} title={isMaximized ? 'Restore' : 'Maximize'}>
+        {isMaximized ? (
+          <svg width="10" height="10" viewBox="0 0 10 10">
+            <rect x="2" y="0" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1" />
+            <rect x="0" y="2" width="8" height="8" fill="var(--panel-elev)" stroke="currentColor" strokeWidth="1" />
+          </svg>
+        ) : (
+          <svg width="10" height="10" viewBox="0 0 10 10">
+            <rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" strokeWidth="1" />
+          </svg>
+        )}
+      </button>
+      <button className="win-ctrl-btn close" onClick={handleClose} title="Close">
+        <svg width="10" height="10" viewBox="0 0 10 10">
+          <line x1="0" y1="0" x2="10" y2="10" stroke="currentColor" strokeWidth="1.2" />
+          <line x1="10" y1="0" x2="0" y2="10" stroke="currentColor" strokeWidth="1.2" />
+        </svg>
+      </button>
+    </div>
+  )
+}
+
+/* ---------- FloatingSidebar — navigation menu + full session list ---------- */
+function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef<HTMLDivElement>(null)
+  const isResizing = useRef(false)
 
-  const viewMeta: Record<string, { title: string; sub: string }> = {
-    home: { title: 'Home', sub: 'Sessions, projects & running tasks' },
-    chat:
-      chatMode === 'workspace'
-        ? { title: 'Chat', sub: 'Workspace mode' }
-        : { title: 'Chat', sub: 'Vibe mode · Streaming chat & tool calls' },
-    workflows: { title: 'Workflows', sub: 'Visual workflow builder' },
-    agents: { title: 'Agents', sub: 'Multi-agent collaboration' },
-    skills: { title: 'Skills', sub: 'Reusable agent capabilities' },
-    'skill-store': { title: 'Skill 商店', sub: 'Discover, install and manage AI Skills' },
-    providers: { title: 'Providers', sub: '模型供应商与协议配置' },
-    settings: { title: 'Settings', sub: 'App & team configuration' },
+  // Close user menu on outside click
+  useEffect(() => {
+    if (!userMenuOpen) return
+    const handler = (e: MouseEvent) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target as Node)) setUserMenuOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [userMenuOpen])
+
+  const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
+    const isActive = t.view === viewId
+    return (
+      <button
+        className={`nav-item ${isActive ? 'active' : ''}`}
+        onClick={() => setTweak('view', viewId as typeof t.view)}
+        title={title}
+      >
+        <span className="nav-icon"><Icon /></span>
+        <span className="nav-label">{title}</span>
+      </button>
+    )
   }
-  const meta = viewMeta[view] ?? { title: view, sub: '' }
-  const isCompact = view === 'chat'
 
-  const paletteHint = getShortcutLabel('openPalette')
+  // Resize handlers
+  const handleResizeStart = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault()
+      isResizing.current = true
+      const startX = e.clientX
+      const startWidth = t.floatingSidebarWidth
+      document.body.classList.add('floating-sidebar-resizing')
+
+      const handleMouseMove = (ev: MouseEvent) => {
+        if (!isResizing.current) return
+        const delta = ev.clientX - startX
+        const next = Math.min(
+          FLOATING_SIDEBAR_WIDTH_MAX,
+          Math.max(FLOATING_SIDEBAR_WIDTH_MIN, startWidth + delta),
+        )
+        setTweak('floatingSidebarWidth', next)
+      }
+
+      const handleMouseUp = () => {
+        isResizing.current = false
+        document.body.classList.remove('floating-sidebar-resizing')
+        document.removeEventListener('mousemove', handleMouseMove)
+        document.removeEventListener('mouseup', handleMouseUp)
+      }
+
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    },
+    [t.floatingSidebarWidth, setTweak],
+  )
+
+  const handleHideSidebar = useCallback(() => {
+    setTweak('sidebarHidden', true)
+  }, [setTweak])
+
+  if (t.sidebarHidden) return null
 
   return (
     <div
-      className="view-header"
-      style={isCompact ? { minHeight: 46, paddingBlock: 8 } : undefined}
+      className="floating-sidebar"
+      style={{ '--sidebar-w': `${t.floatingSidebarWidth}px` } as React.CSSProperties}
     >
-      <div>
-        <div className="view-title">{meta!.title}</div>
-        <div className="view-subtitle truncate">{meta!.sub}</div>
-      </div>
-      {view === 'chat' && (
-        <div className="row" style={{ marginLeft: 16, gap: 8 }}>
-          {/* Vibe / Workspace switcher - hidden while workspace mode is not ready
-          <div className="seg-control">
-            <button
-              className={chatMode === 'vibe' ? 'active' : ''}
-              onClick={() => setTweak('chatMode', 'vibe')}
-            >
-              <span className="row" style={{ gap: 5, alignItems: 'center' }}>
-                <Icons.Sparkles size={11} /> Vibe
-              </span>
-            </button>
-            <button
-              className={chatMode === 'workspace' ? 'active' : ''}
-              onClick={() => setTweak('chatMode', 'workspace')}
-            >
-              <span className="row" style={{ gap: 5, alignItems: 'center' }}>
-                <Icons.Code size={11} /> Workspace
-              </span>
-            </button>
-          </div>
-          */}
-          <button
-            className={`btn ghost sm${t.browserPanelOpen ? ' active' : ''}`}
-            onClick={() => setTweak('browserPanelOpen', !t.browserPanelOpen)}
-            title={t.browserPanelOpen ? '隐藏浏览器面板' : '显示浏览器面板'}
-          >
-            <Icons.Globe size={12} /> 浏览器
-          </button>
-        </div>
-      )}
-      <div className="view-header-actions">
-        {!isCompact && (
-          <div className="search-input">
-            <Icons.Search />
-            <SparkInput placeholder="Search this view..." />
-          </div>
-        )}
-        <button className="btn ghost sm" onClick={() => setTweak('showPalette', true)}>
-          <Icons.Command size={12} /> {paletteHint}
+      {/* Drag region */}
+      <div className="floating-sidebar-drag" />
+
+      {/* Panel header: logo + hide button, right-aligned */}
+      <div className="floating-sidebar-header">
+        <div className="floating-sidebar-brand" />
+        {/* <div className="sidebar-logo"><SparkLogoMark /></div> */}
+        <button
+          className="icon-btn sidebar-hide-btn"
+          onClick={handleHideSidebar}
+          title="隐藏菜单栏"
+        >
+          <Icons.SidebarHide size={15} />
         </button>
       </div>
+
+      {/* New Task button — replaces the previous search/command bar.
+          Clicking it clears the active session/workspace and enters chat in fresh
+          "new conversation" state. Styled as a regular nav item to stay
+          consistent with Workflows/Agents/Skills/Providers. */}
+      <div className="sidebar-nav-section">
+        <button
+          className="nav-item"
+          onClick={onNewTask}
+          title="新建任务"
+        >
+          <span className="nav-icon"><Icons.Plus /></span>
+          <span className="nav-label">新建任务</span>
+        </button>
+      </div>
+
+      {/* ── Navigation items (no Chat, no dividers between) ── */}
+      <div className="sidebar-nav-section">
+        {navItem('workflows', 'Workflows', Icons.Workflow)}
+        {navItem('agents', 'Agents', Icons.Bot)}
+        {navItem('skill-store', 'Skills', Icons.Skills)}
+        {navItem('providers', 'Providers', Icons.Server)}
+      </div>
+
+      {/* ── Divider between nav and session list ── */}
+      <div className="sidebar-session-divider" />
+
+      {/* ── Full session list (exact same functionality as original ChatView sidebar) ── */}
+      <div className="sidebar-session-list">
+        <SidebarSessionList />
+      </div>
+
+      {/* Bottom area: user + window controls */}
+      <div className="sidebar-bottom">
+        <div className="sidebar-user" ref={userMenuRef} style={{ cursor: 'pointer' }} onClick={() => setUserMenuOpen(prev => !prev)}>
+          <div className="avatar">U</div>
+          <div className="sidebar-user-info">
+            <div className="name">User</div>
+            <div className="meta">Local · Desktop</div>
+          </div>
+          <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+          {userMenuOpen && (
+            <div className="user-menu" onClick={e => e.stopPropagation()}>
+              <button onClick={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
+                <Icons.Settings size={14} /> Settings
+              </button>
+            </div>
+          )}
+        </div>
+        {!isPlatformDarwin && <WindowControls />}
+      </div>
+
+      {/* Resize handle on the right edge */}
+      <div
+        className="floating-sidebar-resize-handle"
+        onMouseDown={handleResizeStart}
+      />
     </div>
   )
 }
@@ -116,7 +250,19 @@ function Shell() {
   const scaleRef = useRef<HTMLDivElement>(null)
   const [approvalRequest, setApprovalRequest] = useState<PermissionApprovalRequest | null>(null)
 
-  // Global error handlers: unhandledrejection + window.onerror → toast
+  // Shared "start a brand new conversation" handler.
+  // - Clears any active session/workspace so the chat view renders in fresh
+  //   "new conversation" state.
+  // - Used by both the sidebar "新建任务" button and the Cmd+N keyboard
+  //   shortcut so they stay in lockstep.
+  const sessionCtx = useSessionSidebar()
+  const handleNewBlankSession = useCallback(() => {
+    sessionCtx.setActiveSession(null)
+    sessionCtx.setActiveWorkspace(null)
+    setTweak('view', 'chat')
+  }, [sessionCtx, setTweak])
+
+  // Global error handlers
   useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       const message = event.reason instanceof Error
@@ -130,7 +276,6 @@ function Shell() {
     }
 
     const handleWindowError = (event: ErrorEvent) => {
-      // Ignore ResizeObserver loop errors (benign)
       if (event.message?.includes('ResizeObserver loop')) return
       const message = event.message || 'Unknown error'
       toast.error(`运行时错误: ${message}`, {
@@ -159,7 +304,7 @@ function Shell() {
     }
   }, [toast])
 
-  // Auto-scale 1440×900 → viewport
+  // Auto-scale 1440x900 -> viewport
   useEffect(() => {
     const el = scaleRef.current
     if (!el) return
@@ -175,33 +320,20 @@ function Shell() {
 
   // Navigation handler for command palette
   const handleNavigate = useCallback((view: string) => {
-    if (view === '__toggleSidebar') {
-      setTweak('sidebar', t.sidebar === 'expanded' ? 'collapsed' : 'expanded')
-    } else {
-      setTweak('view', view as typeof t.view)
-    }
-  }, [setTweak, t.sidebar])
-
-  // New session handler
-  const handleNewSession = useCallback(() => {
-    setTweak('view', 'chat')
+    if (view === '__toggleSidebar') return
+    setTweak('view', view as typeof t.view)
   }, [setTweak])
 
-  // Global keyboard shortcuts
+  // Global keyboard shortcuts.
+  // The "newSession" shortcut (Cmd/Ctrl+N) now behaves the same as the sidebar
+  // "新建任务" button: it clears the active session and enters a fresh chat.
   useGlobalShortcuts({
     setTweak: setTweak as (key: string, val: unknown) => void,
-    onSearchFocus: () => {
-      // Focus the search input in the current view if possible
-      const searchInput = document.querySelector('.search-input input, .search-input .spark-input') as HTMLElement | null
-      if (searchInput) {
-        searchInput.focus()
-      }
-    },
-    onNewSession: handleNewSession,
+    onNewSession: handleNewBlankSession,
     hasOverlayOpen: () => t.showPalette || t.showPerm || t.showProviderEdit || t.showProfileEdit,
   })
 
-  // Listen for tool approval requests from main process
+  // Listen for tool approval requests
   useEffect(() => {
     return window.spark.on('stream:permission:approval-request', (req) => {
       setApprovalRequest(req)
@@ -212,233 +344,66 @@ function Shell() {
   const info = PRIMARIES[primary]
 
   const showInlineApproval = t.view === 'chat' && t.chatMode !== 'workspace'
-  const ViewMap: Record<string, () => React.ReactElement> = {
-    home: HomeView,
-    chat: t.chatMode === 'workspace'
-      ? ProjectView
-      : () => <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />,
-    workflows: WorkflowView,
-    agents: AgentsView,
-    skills: SkillsView,
-    'skill-store': SkillStoreView,
-    providers: ProvidersView,
-    settings: SettingsView,
-  }
-  const View = ViewMap[t.view] ?? HomeView
+  // Default view is chat (no more home). Render elements directly so the chat
+  // tree keeps a stable component identity across Shell re-renders.
+  const viewElement = (() => {
+    switch (t.view) {
+      case 'chat':
+        return t.chatMode === 'workspace'
+          ? <ProjectView />
+          : <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />
+      case 'workflows':
+        return <WorkflowView />
+      case 'agents':
+        return <AgentsView />
+      case 'skills':
+        return <SkillsView />
+      case 'skill-store':
+        return <SkillStoreView />
+      case 'providers':
+        return <ProvidersView />
+      case 'settings':
+        return <SettingsView />
+      default:
+        return <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />
+    }
+  })()
 
-  const isExpanded = t.sidebar === 'expanded'
-
-  const paletteHint = getShortcutLabel('openPalette')
-  const sidebarHint = getShortcutLabel('toggleSidebar')
+  // Compute dynamic margin for main content area based on sidebar state
+  const sidebarOffset = t.sidebarHidden
+    ? 0
+    : t.floatingSidebarWidth + 10 // sidebar width + left-gap(5px) + right-gap(5px)
 
   return (
     <ErrorBoundary level="global" name="Shell">
     <div
       ref={scaleRef}
-      className={`app window theme-${t.theme} density-${t.density} platform-${window.spark.platform}`}
+      className={`app window theme-${t.theme} density-${t.density} platform-${window.spark.platform}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
       style={
         {
           '--primary': primary,
           '--primary-hover': info?.hover ?? primary,
           '--primary-soft': info?.soft ?? 'rgba(99,102,241,0.12)',
+          '--sidebar-offset': `${sidebarOffset}px`,
         } as React.CSSProperties
       }
     >
-      {/* Titlebar */}
-      <div className="titlebar">
-        <div className="titlebar-brand" aria-label="Spark Agent">
-          <div className="titlebar-logo" aria-hidden="true">
-            <SparkLogoMark />
-          </div>
-          <div className="titlebar-title">Spark Agent</div>
-        </div>
-        <div className="titlebar-spacer" />
-        <div className="titlebar-actions">
-          <button className="icon-btn" onClick={() => setTweak('showPalette', true)} title={paletteHint}>
-            <Icons.Search size={14} />
-          </button>
-          <button className="icon-btn" onClick={() => setTweak('showPerm', true)}>
-            <Icons.Shield size={14} />
-          </button>
-        </div>
-      </div>
+      <FloatingSidebar onNewTask={handleNewBlankSession} />
 
-      {/* Body */}
-      <div className="app-body">
-        {/* Sidebar */}
-        <div className={`sidebar ${isExpanded ? 'expanded' : 'collapsed'}`}>
-          {/* Search / Command bar */}
-          <div className="sidebar-section" style={{ paddingTop: 10 }}>
-            <button
-              className="nav-item"
-              onClick={() => setTweak('showPalette', true)}
-              style={{ background: 'var(--bg)', border: '1px solid var(--border)' }}
-            >
-              <span className="nav-icon">
-                <Icons.Search />
-              </span>
-              {isExpanded && (
-                <>
-                  <span className="nav-label">Search / Command</span>
-                  <span style={{ display: 'flex', gap: 2 }}>
-                    <span className="kbd">{paletteHint}</span>
-                  </span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {/* Primary navigation */}
-          <div className="sidebar-section">
-            <button
-              className={`nav-item ${t.view === 'home' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'home')}
-              title="Home"
-            >
-              <span className="nav-icon">
-                <Icons.Home />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">Home</span>
-              )}
-            </button>
-            <button
-              className={`nav-item ${t.view === 'chat' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'chat')}
-              title="Chat"
-            >
-              <span className="nav-icon">
-                <Icons.Chat />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">Chat</span>
-              )}
-            </button>
-
-            <button
-              className={`nav-item ${t.view === 'workflows' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'workflows')}
-              title="Workflows"
-            >
-              <span className="nav-icon">
-                <Icons.Workflow />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">Workflows</span>
-              )}
-            </button>
-            <button
-              className={`nav-item ${t.view === 'agents' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'agents')}
-              title="Agents"
-            >
-              <span className="nav-icon">
-                <Icons.Bot />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">Agents</span>
-              )}
-            </button>
-          </div>
-
-          {/* Secondary navigation */}
-          <div className="sidebar-section">
-            <button
-              className={`nav-item ${t.view === 'skills' || t.view === 'skill-store' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'skill-store')}
-              title="Skill 商店"
-            >
-              <span className="nav-icon">
-                <Icons.Skills />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">Skills</span>
-              )}
-            </button>
-            {/* MCP menu item - hidden
-            <button
-              className={`nav-item ${t.view === 'mcp' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'mcp')}
-              title="MCP"
-            >
-              <span className="nav-icon">
-                <Icons.MCP />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">MCP</span>
-              )}
-            </button>
-            */}
-          </div>
-
-          {/* Settings */}
-          <div className="sidebar-section">
-            <button
-              className={`nav-item ${t.view === 'providers' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'providers')}
-              title="Providers"
-            >
-              <span className="nav-icon">
-                <Icons.Server />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">Providers</span>
-              )}
-            </button>
-            <button
-              className={`nav-item ${t.view === 'settings' ? 'active' : ''}`}
-              onClick={() => setTweak('view', 'settings')}
-              title="Settings"
-            >
-              <span className="nav-icon">
-                <Icons.Settings />
-              </span>
-              {isExpanded && (
-                <span className="nav-label">Settings</span>
-              )}
-            </button>
-          </div>
-
-          {/* User info + sidebar toggle */}
-          <div className="sidebar-bottom">
-            <div className="sidebar-user">
-              <div className="avatar">U</div>
-              <div className="sidebar-user-info">
-                <div className="name">User</div>
-                <div className="meta">Local · Desktop</div>
-              </div>
-              {isExpanded && (
-                <button
-                  className="icon-btn sidebar-toggle-btn"
-                  onClick={() => setTweak('sidebar', 'collapsed')}
-                  aria-label="Collapse sidebar"
-                  title={`Collapse sidebar (${sidebarHint})`}
-                >
-                  <Icons.ChevronLeft size={14} />
-                </button>
-              )}
-            </div>
-            {!isExpanded && (
-              <button
-                className="icon-btn sidebar-toggle-btn collapsed-toggle"
-                onClick={() => setTweak('sidebar', 'expanded')}
-                aria-label="Expand sidebar"
-                title={`Expand sidebar (${sidebarHint})`}
-              >
-                <Icons.PanelLeft size={16} />
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Main content */}
+      <div className="main-content-area">
         <div className="main">
-          <ViewHeader view={t.view} chatMode={t.chatMode} />
+          {t.view !== 'chat' && (
+            <div
+              className="transparent-header"
+              onDoubleClick={() => { window.spark.invoke('window:maximize', {}).catch(() => {}) }}
+            >
+              {t.sidebarHidden && <SidebarExpandButton />}
+            </div>
+          )}
           <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-            <View />
+            {viewElement}
           </div>
         </div>
-        {/* Browser automation side panel — chat view only, default closed */}
         {t.view === 'chat' && <BrowserPanelView />}
       </div>
 
@@ -447,7 +412,7 @@ function Shell() {
         <CommandPalette
           onClose={() => setTweak('showPalette', false)}
           onNavigate={handleNavigate}
-          onNewSession={handleNewSession}
+          onNewSession={handleNewBlankSession}
         />
       )}
       {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', action: 'file_write', toolInput: {}, riskLevel: 'medium', persistentScopes: ['global'] }} onClose={() => setTweak('showPerm', false)} />}
@@ -455,7 +420,6 @@ function Shell() {
 
       {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}
 
-      {/* Global toast notifications */}
       <ToastContainer />
     </div>
     </ErrorBoundary>
@@ -466,7 +430,9 @@ export function App() {
   return (
     <AppProvider>
       <ToastProvider>
-        <Shell />
+        <SessionSidebarProvider>
+          <Shell />
+        </SessionSidebarProvider>
       </ToastProvider>
     </AppProvider>
   )

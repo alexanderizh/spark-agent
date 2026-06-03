@@ -1,9 +1,19 @@
 /**
  * ChatView — 真实 IPC 驱动的会话视图
+ *
+ * NOTE: Session sidebar has been moved to the primary FloatingSidebar.
+ * This component only renders the main chat area (hero/composer/stream).
+ * Session/workspace/provider data is read from SessionSidebarContext.
  */
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
+import { useApp } from '../AppContext'
+import {
+  useSessionSidebar,
+  type SessionSummary,
+  NO_PROJECT_WORKSPACE_NAME,
+} from '../SessionSidebarContext'
 import {
   ErrorCard,
   FilePermCard,
@@ -19,6 +29,7 @@ import {
   TurnFileSummaryCard,
 } from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
+import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
@@ -39,7 +50,6 @@ import type {
   PromptConfigGetResponse,
   SessionId,
   SessionReasoningEffort,
-  SessionSearchResult,
   SessionGetQueueResponse,
   SkillConfigGetResponse,
   WorkspaceInfo,
@@ -49,14 +59,6 @@ import type {
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
-type SessionSummary = SessionListResponse['sessions'][number]
-
-type ProjectGroup = {
-  workspace: WorkspaceInfo
-  sessions: SessionSummary[]
-}
-
-type TimeFilter = 'all' | '1d' | '3d' | '7d' | '10d'
 type BranchState = { currentBranch: string | null; branches: string[] }
 type AgentAdapter = SessionAgentAdapter
 type PermissionModeChoice = SessionPermissionMode
@@ -125,52 +127,30 @@ const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const SESSION_HISTORY_PAGE_SIZE = 500
 const LAST_SESSION_KEY = 'spark-agent:last-active-session'
-const SIDEBAR_WIDTH_KEY = 'spark-agent:sidebar-width'
-const SIDEBAR_DEFAULT_WIDTH = 254
-const SIDEBAR_MIN_WIDTH = 180
-const SIDEBAR_MAX_WIDTH = 480
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
-// “不使用项目” 特殊 workspace：始终指向 os-temp/spark-agent-projects/no-project，
-// 不属于用户任何真实项目目录，但能复用 session/workspace 数据模型，
-// 让用户在没有项目时也能正常开 session。
-export const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
-export const NO_PROJECT_WORKSPACE_ROOT_SUFFIX = '/no-project'
-
-/** 根据 tempDir 拼出 “不使用项目” workspace 的 rootPath */
-function getNoProjectRootPath(tempDir: string): string {
-  const sep = tempDir.includes('\\') ? '\\' : '/'
-  return `${tempDir.replace(/[\\/]$/, '')}${sep}no-project`
-}
-
 export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
-  const [active, setActive] = useState<SessionId | null>(() => {
-    const stored = window.localStorage.getItem(LAST_SESSION_KEY)
-    return stored == null ? null : (stored as SessionId)
-  })
-  // 标记刚通过 handleNewSession 主动创建的 session，避免下面那个校验 useEffect
-  // 在 refreshProjectsAndSessions 完成前看到 sessions 列表里没有它就 setActive(null) 把 active 清掉
-  const justCreatedSessionRef = useRef<SessionId | null>(null)
+  const { t } = useApp()
+  // ── Shared state from SessionSidebarContext ──
+  const sessionCtx = useSessionSidebar()
+  const active = sessionCtx.activeSessionId
+  const setActive = sessionCtx.setActiveSession
+  const activeWorkspaceId = sessionCtx.activeWorkspaceId
+  const setActiveWorkspaceId = sessionCtx.setActiveWorkspace
+  const justCreatedSessionRef = sessionCtx.justCreatedSessionRef
+  // Read data lists from context (single source of truth)
+  const sessions = sessionCtx.sessions
+  const workspaces = sessionCtx.workspaces
+  const providers = sessionCtx.providers
+  const agents = sessionCtx.agents
+  const selectedProviderId = sessionCtx.selectedProviderId
+  const setSelectedProviderId = sessionCtx.setSelectedProviderId
+
+  // ── Local UI/runtime state ──
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
-  const [sidebarWidth, setSidebarWidth] = useState(() => {
-    const stored = window.localStorage.getItem(SIDEBAR_WIDTH_KEY)
-    if (stored) {
-      const parsed = parseInt(stored, 10)
-      if (!isNaN(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) {
-        return parsed
-      }
-    }
-    return SIDEBAR_DEFAULT_WIDTH
-  })
-  const [sessions, setSessions] = useState<SessionSummary[]>([])
-  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
-  const [providers, setProviders] = useState<ProviderProfile[]>([])
-  const [agents, setAgents] = useState<ManagedAgent[]>([])
-  const [selectedProviderId, setSelectedProviderId] = useState<string>('')
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
-  const [agentStatus, setAgentStatus] = useState<string>('')
+  const [agentStatus, setAgentStatus] = useState('')
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [contextInputTokens, setContextInputTokens] = useState(0)
   const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
@@ -186,20 +166,19 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [proposedPlan, setProposedPlan] = useState<string | null>(null)
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
-  const [projectDialog, setProjectDialog] = useState<'create' | null>(null)
-  // “不使用项目” 特殊 workspace 的 id；启动时懒初始化
-  const [noProjectWorkspaceId, setNoProjectWorkspaceId] = useState<string | null>(null)
-  // ProjectPicker 下拉打开状态（受控，让外部点击其他位置时能关掉）
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false)
-  const [projectName, setProjectName] = useState('')
-  const [projectPath, setProjectPath] = useState('')
-  const [notice, setNotice] = useState('')
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
   const [clearTrigger, setClearTrigger] = useState(0)
   const { toast } = useToast()
-  const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
 
-  // User question state (AskUserQuestion tool)
+  // ── IPC hooks (only those NOT duplicated in context) ──
+  const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
+  const { invoke: updateSession } = useIpcInvoke('session:update')
+  const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
+  const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
+  const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
+  const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+
+  // ── User question state (AskUserQuestion tool) ──
   type UserQuestionData = {
     questionId: string
     sessionId: string
@@ -212,12 +191,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const [userQuestion, setUserQuestion] = useState<UserQuestionData | null>(null)
   const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
 
-  // Listen for user questions from backend
   useIpcStream(
     'stream:session:user-question',
-    (data) => {
-      setUserQuestion(data)
-    },
+    (data) => { setUserQuestion(data) },
     [],
   )
 
@@ -232,512 +208,42 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
 
   const handleCancelQuestion = useCallback(() => {
     if (userQuestion == null) return
-    // Send empty answers to indicate cancellation
-    answerQuestion({ questionId: userQuestion.questionId, answers: { cancelled: true } }).catch(
-      console.error,
-    )
+    answerQuestion({ questionId: userQuestion.questionId, answers: { cancelled: true } }).catch(console.error)
     setUserQuestion(null)
   }, [userQuestion, answerQuestion])
 
-  // Search state
-  const [searchQuery, setSearchQuery] = useState('')
-  const [searchResults, setSearchResults] = useState<SessionSearchResult[]>([])
-  const [isSearching, setIsSearching] = useState(false)
-  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // ── Session status updates via context ──
+  const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
+    sessionCtx.updateSessionInList(sessionId, { status })
+  }, [sessionCtx])
 
-  // Sidebar resize
-  const sidebarDragRef = useRef<{ startX: number; startWidth: number } | null>(null)
-
-  const handleSidebarResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
-    sidebarDragRef.current = { startX: event.clientX, startWidth: sidebarWidth }
-    event.currentTarget.setPointerCapture(event.pointerId)
-    document.body.classList.add('sidebar-resizing')
-  }
-
-  const handleSidebarResizeMove = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (sidebarDragRef.current == null) return
-    const delta = event.clientX - sidebarDragRef.current.startX
-    const newWidth = Math.max(
-      SIDEBAR_MIN_WIDTH,
-      Math.min(SIDEBAR_MAX_WIDTH, sidebarDragRef.current.startWidth + delta),
-    )
-    setSidebarWidth(newWidth)
-  }
-
-  const handleSidebarResizeEnd = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (sidebarDragRef.current != null) {
-      window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth))
-    }
-    sidebarDragRef.current = null
-    event.currentTarget.releasePointerCapture(event.pointerId)
-    document.body.classList.remove('sidebar-resizing')
-  }
-
-  const { invoke: listSessions } = useIpcInvoke('session:list')
-  const { invoke: createSession } = useIpcInvoke('session:create')
-  const { invoke: listProviders } = useIpcInvoke('provider:list')
-  const { invoke: listAgents } = useIpcInvoke('agent:list')
-  const { invoke: searchSessions } = useIpcInvoke('session:search')
-  const { invoke: updateSession } = useIpcInvoke('session:update')
-  const { invoke: deleteSession } = useIpcInvoke('session:delete')
-  const { invoke: cancelSessionTurn } = useIpcInvoke('session:cancel')
-  const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
-  const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
-  const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
-  const { invoke: deleteWorkspace } = useIpcInvoke('workspace:delete')
-  const { invoke: openWorkspaceFolder } = useIpcInvoke('workspace:open-folder')
-  const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
-  const { invoke: listBranches } = useIpcInvoke('workspace:list-branches')
-  const { invoke: switchBranch } = useIpcInvoke('workspace:switch-branch')
-  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
-  const { invoke: getTempProjectDir } = useIpcInvoke('app:get-temp-project-dir')
-
-  const refreshProjectsAndSessions = useCallback(async () => {
-    const [workspaceRes, sessionRes, currentRes, providerRes, agentRes] = await Promise.all([
-      listWorkspaces({ limit: 100 }),
-      listSessions({ limit: 200 }),
-      getCurrentWorkspace({}),
-      listProviders({}),
-      listAgents({}).catch(() => ({ agents: [] })),
-    ])
-    setWorkspaces(workspaceRes.workspaces)
-    setSessions(sessionRes.sessions)
-    setProviders(providerRes.profiles)
-    setAgents(Array.isArray(agentRes.agents) ? agentRes.agents : [])
-    setSelectedProviderId(
-      (prev) =>
-        prev ||
-        getPreferredProvider(providerRes.profiles, readComposerPrefs(), DEFAULT_AGENT_ADAPTER)
-          ?.id ||
-        '',
-    )
-    setActiveWorkspaceId(
-      (prev) => currentRes.workspace?.id ?? prev ?? workspaceRes.workspaces[0]?.id ?? null,
-    )
-  }, [getCurrentWorkspace, listAgents, listProviders, listSessions, listWorkspaces])
-
-  const refreshSessions = () => {
-    refreshProjectsAndSessions().catch(console.error)
-  }
-
+  // ── Handlers ──
   const handleClearMessages = useCallback(() => {
     if (!active) return
     clearEvents({ sessionId: active })
       .then(() => {
         setClearTrigger((prev) => prev + 1)
-        refreshSessions()
+        sessionCtx.refreshData().catch(console.error)
       })
       .catch(console.error)
-  }, [active, clearEvents, refreshSessions])
+  }, [active, clearEvents, sessionCtx])
 
-  /**
-   * 确保 “不使用项目” 这个特殊 workspace 存在并返回它的 id。
-   * 由于 rootPath 固定，第一次调用后后端会记住，后续调用直接返回现有记录。
-   */
-  const ensureNoProjectWorkspace = useCallback(async (): Promise<string | null> => {
-    if (noProjectWorkspaceId) return noProjectWorkspaceId
-    // 若已有同名 workspace（包括历史上指向旧临时目录的记录），优先复用，避免每次升级路径都生成孤儿记录
-    const existing = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
-    if (existing) {
-      setNoProjectWorkspaceId(existing.id)
-      return existing.id
-    }
-    try {
-      const { tempDir } = await getTempProjectDir({})
-      const rootPath = getNoProjectRootPath(tempDir)
-      const res = await openWorkspace({
-        create: { name: NO_PROJECT_WORKSPACE_NAME, rootPath },
-      })
-      setNoProjectWorkspaceId(res.workspace.id)
-      // 顺手加入 workspaces 列表以便侧边栏可显示（但默认会被去重过滤）
-      setWorkspaces((prev) => {
-        if (prev.some((w) => w.id === res.workspace.id)) return prev
-        return [...prev, res.workspace]
-      })
-      return res.workspace.id
-    } catch (err) {
-      console.error('创建 “不使用项目” workspace 失败', err)
-      toast.error(err instanceof Error ? err.message : '创建临时项目目录失败')
-      return null
-    }
-  }, [getTempProjectDir, noProjectWorkspaceId, openWorkspace, toast, workspaces])
-
-  /**
-   * 把当前 active workspace 切到 “不使用项目”。
-   * 首次切换会先确保 no-project workspace 存在。
-   */
-  const useNoProject = useCallback(async () => {
-    const id = await ensureNoProjectWorkspace()
-    if (id) setActiveWorkspaceId(id)
-  }, [ensureNoProjectWorkspace])
-
-  /**
-   * 弹文件夹选择对话框，选中后打开（创建）该 workspace 并设为 active。
-   */
   const pickProjectFolder = useCallback(async () => {
     try {
       const selected = await openDirectoryDialog({ title: '选择项目文件夹' })
       if (selected.canceled || selected.filePath == null) return
       const res = await openWorkspace({ rootPath: selected.filePath })
       setActiveWorkspaceId(res.workspace.id)
-      await refreshProjectsAndSessions()
+      await sessionCtx.refreshData()
     } catch (err) {
       console.error('选择项目文件夹失败', err)
       toast.error(err instanceof Error ? err.message : '选择项目文件夹失败')
     }
-  }, [openDirectoryDialog, openWorkspace, refreshProjectsAndSessions, toast])
+  }, [openDirectoryDialog, openWorkspace, sessionCtx, setActiveWorkspaceId, toast])
 
-  /**
-   * 在 workspaces 列表中点某个项目，切到那个项目。
-   */
   const switchToWorkspace = useCallback((workspaceId: string) => {
     setActiveWorkspaceId(workspaceId)
-  }, [])
-
-  useEffect(() => {
-    const timer = window.setTimeout(() => {
-      refreshProjectsAndSessions().catch(console.error)
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [refreshProjectsAndSessions])
-
-  // Persist active session to localStorage
-  useEffect(() => {
-    if (active) {
-      window.localStorage.setItem(LAST_SESSION_KEY, active)
-    } else {
-      window.localStorage.removeItem(LAST_SESSION_KEY)
-    }
-  }, [active])
-
-  // Validate restored session exists after sessions load; restore workspace if needed
-  useEffect(() => {
-    if (!active || sessions.length === 0) return
-    // 跳过刚刚由 handleNewSession 主动创建的 session（sessions 列表还没刷新到）
-    if (justCreatedSessionRef.current === active) {
-      justCreatedSessionRef.current = null
-      return
-    }
-    const found = sessions.find((s) => s.id === active)
-    if (!found) {
-      setActive(null)
-    } else if (activeWorkspaceId == null && found.workspaceIds.length > 0) {
-      setActiveWorkspaceId(found.workspaceIds[0] ?? null)
-    }
-  }, [active, activeWorkspaceId, sessions])
-
-  // Debounced search handler
-  const handleSearchChange = useCallback(
-    (value: string) => {
-      setSearchQuery(value)
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
-
-      if (!value.trim()) {
-        setSearchResults([])
-        setIsSearching(false)
-        return
-      }
-
-      setIsSearching(true)
-      searchTimerRef.current = setTimeout(async () => {
-        try {
-          const res = await searchSessions({ query: value.trim(), limit: 20 })
-          setSearchResults(res.results)
-        } catch (err) {
-          console.error('搜索失败', err)
-          setSearchResults([])
-        } finally {
-          setIsSearching(false)
-        }
-      }, 300)
-    },
-    [searchSessions],
-  )
-
-  // Clean up timer on unmount
-  useEffect(() => {
-    return () => {
-      if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
-    }
-  }, [])
-
-  const handleNewSession = async (
-    workspaceId = activeWorkspaceId,
-    options: {
-      providerProfileId?: string
-      modelId?: string
-      agentAdapter?: AgentAdapter
-      agentId?: string
-      permissionMode?: PermissionModeChoice
-      chatMode?: SessionChatMode
-      reasoningEffort?: SessionReasoningEffort
-      activate?: boolean
-      skipRefresh?: boolean
-    } = {},
-  ): Promise<SessionId | null> => {
-    try {
-      setNotice('')
-      if (workspaceId == null) {
-        // 没选项目：自动走 “不使用项目” 临时目录，让用户无需先建项目也能开 session
-        const noProjectId = await ensureNoProjectWorkspace()
-        if (noProjectId == null) return null
-        workspaceId = noProjectId
-        setActiveWorkspaceId(noProjectId)
-      }
-      const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
-      if (providers.length === 0) setProviders(knownProviders)
-      const prefs = readComposerPrefs()
-      const selectedAgent = agents.find((agent) => agent.id === options.agentId) ??
-        agents.find((agent) => agent.id === prefs.agentId) ??
-        agents.find((agent) => agent.id === 'code-agent')
-      const preferredAdapter =
-        options.agentAdapter ?? selectedAgent?.agentAdapter ?? prefs.adapter ?? DEFAULT_AGENT_ADAPTER
-      const profile =
-        knownProviders.find((item) => item.id === options.providerProfileId) ??
-        knownProviders.find((item) => item.id === selectedAgent?.providerProfileId) ??
-        knownProviders.find(
-          (item) =>
-            item.id === selectedProviderId &&
-            isProviderCompatibleWithAdapter(item, preferredAdapter),
-        ) ??
-        getPreferredProvider(knownProviders, prefs, preferredAdapter)
-      if (!profile) {
-        alert('请先在设置中配置 Provider')
-        return null
-      }
-      const agentAdapter = options.agentAdapter ?? selectedAgent?.agentAdapter ?? getProviderAdapterKind(profile)
-      const permissionMode =
-        options.permissionMode ??
-        selectedAgent?.permissionMode ??
-        getValidPermissionMode(prefs.permissionMode, agentAdapter)
-      const modelId =
-        options.modelId ??
-        selectedAgent?.modelId ??
-        (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
-      const res = await createSession({
-        providerProfileId: profile.id,
-        ...(modelId !== undefined ? { modelId } : {}),
-        agentId: options.agentId ?? selectedAgent?.id ?? 'code-agent',
-        agentAdapter,
-        permissionMode,
-        ...(options.chatMode !== undefined ? { chatMode: options.chatMode } : {}),
-        reasoningEffort: options.reasoningEffort ?? prefs.reasoningEffort ?? 'medium',
-        workspaceId,
-      })
-      // 标记这是刚主动创建的 session，避免下面 useEffect 把它清掉
-      justCreatedSessionRef.current = res.sessionId
-      // 先设 active 和 workspaceId，确保立即跳转到新会话
-      if (options.activate !== false) setActive(res.sessionId)
-      setSelectedProviderId(profile.id)
-      setActiveWorkspaceId(workspaceId)
-      // 然后再刷新列表（除非明确跳过）
-      if (options.skipRefresh !== true) {
-        await refreshProjectsAndSessions()
-      }
-      writeComposerPrefs({
-        adapter: agentAdapter,
-        agentId: options.agentId ?? selectedAgent?.id ?? 'code-agent',
-        providerProfileId: profile.id,
-        ...(modelId !== undefined ? { modelId } : {}),
-        permissionMode,
-      })
-      return res.sessionId
-    } catch (err) {
-      console.error('创建会话失败', err)
-      toast.error(err instanceof Error ? err.message : '创建会话失败')
-    }
-    return null
-  }
-
-  const handlePickProjectPath = async () => {
-    try {
-      const selected = await openDirectoryDialog({ title: '选择或创建项目文件夹' })
-      if (selected.canceled || selected.filePath == null) return
-      setProjectPath(selected.filePath)
-      if (!projectName.trim()) setProjectName(getBasename(selected.filePath))
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '选择项目路径失败')
-    }
-  }
-
-  const handleCreateProject = async (useTempDir = false) => {
-    let rootPath = projectPath.trim()
-    let name = projectName.trim() || getBasename(rootPath) || '新项目'
-
-    // 如果选择使用临时目录，则自动生成路径
-    if (useTempDir || !rootPath) {
-      try {
-        const { tempDir } = await getTempProjectDir({})
-        const timestamp = Date.now()
-        const safeName = name.replace(/[^a-zA-Z0-9一-龥_-]/g, '_') || 'project'
-        rootPath = `${tempDir}/${safeName}-${timestamp}`
-      } catch (err) {
-        console.error('获取临时目录失败', err)
-        toast.error('获取临时目录失败')
-        return
-      }
-    }
-
-    try {
-      setNotice('')
-      const res = await openWorkspace({ create: { name, rootPath } })
-      setProjectDialog(null)
-      setProjectName('')
-      setProjectPath('')
-      setActiveWorkspaceId(res.workspace.id)
-      toast.success(`项目已创建于：${rootPath}`)
-      // 新建项目后自动新建一个会话并选中（跳过内部刷新，统一在外部刷新）
-      await handleNewSession(res.workspace.id, { skipRefresh: true })
-      // 统一刷新一次
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      console.error('创建项目失败', err)
-      toast.error(err instanceof Error ? err.message : '创建项目失败')
-    }
-  }
-
-  const handleSelectSearchResult = (sessionId: SessionId) => {
-    setActive(sessionId)
-    setSearchQuery('')
-    setSearchResults([])
-  }
-
-  const handleRenameProject = async (workspace: WorkspaceInfo) => {
-    const name = window.prompt('重命名项目', workspace.name)?.trim()
-    if (!name || name === workspace.name) return
-    try {
-      await updateWorkspace({ workspaceId: workspace.id, name })
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '重命名项目失败')
-    }
-  }
-
-  const handleToggleProjectPinned = async (workspace: WorkspaceInfo) => {
-    try {
-      await updateWorkspace({ workspaceId: workspace.id, pinned: workspace.pinnedAt == null })
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '更新项目置顶失败')
-    }
-  }
-
-  const handleArchiveProject = async (workspace: WorkspaceInfo) => {
-    if (!window.confirm(`归档项目「${workspace.name}」？归档后会从当前列表隐藏。`)) return
-    try {
-      await updateWorkspace({ workspaceId: workspace.id, archived: true })
-      if (activeWorkspaceId === workspace.id) {
-        setActiveWorkspaceId(null)
-        setActive(null)
-      }
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '归档项目失败')
-    }
-  }
-
-  const handleDeleteProject = async (workspace: WorkspaceInfo) => {
-    if (!window.confirm(`删除项目「${workspace.name}」及其会话记录？本地文件夹不会被删除。`)) return
-    try {
-      const res = await deleteWorkspace({ workspaceId: workspace.id })
-      if (
-        activeWorkspaceId === workspace.id ||
-        (active != null && res.deletedSessionIds.includes(active))
-      ) {
-        setActiveWorkspaceId(null)
-        setActive(null)
-      }
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除项目失败')
-    }
-  }
-
-  const handleOpenProjectFolder = async (workspace: WorkspaceInfo) => {
-    try {
-      await openWorkspaceFolder({ workspaceId: workspace.id })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '打开文件夹失败')
-    }
-  }
-
-  const handleRenameSession = async (session: SessionSummary) => {
-    const title = window.prompt('重命名会话', session.title || '新会话')?.trim()
-    if (!title || title === session.title) return
-    try {
-      await updateSession({ sessionId: session.id, title })
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '重命名会话失败')
-    }
-  }
-
-  const handleToggleSessionPinned = async (session: SessionSummary) => {
-    try {
-      await updateSession({ sessionId: session.id, pinned: session.pinnedAt == null })
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '更新会话置顶失败')
-    }
-  }
-
-  const handleArchiveSession = async (session: SessionSummary) => {
-    if (!window.confirm(`归档会话「${session.title || '新会话'}」？归档后会从当前列表隐藏。`))
-      return
-    try {
-      await updateSession({ sessionId: session.id, archived: true })
-      if (active === session.id) setActive(null)
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '归档会话失败')
-    }
-  }
-
-  const handleDeleteSession = async (session: SessionSummary) => {
-    if (!window.confirm(`删除会话「${session.title || '新会话'}」？`)) return
-    try {
-      await deleteSession({ sessionId: session.id })
-      if (active === session.id) setActive(null)
-      await refreshProjectsAndSessions()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '删除会话失败')
-    }
-  }
-
-  const handleOpenSessionFolder = async (session: SessionSummary) => {
-    const workspaceId = session.workspaceIds[0]
-    if (workspaceId == null) {
-      toast.warning('该会话未关联项目文件夹。')
-      return
-    }
-
-    try {
-      await openWorkspaceFolder({ workspaceId })
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : '打开文件夹失败')
-    }
-  }
-
-  const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
-    setSessions((prev) => prev.map((item) => (item.id === sessionId ? { ...item, status } : item)))
-  }, [])
-
-  const applySessionQueueState = useCallback((snapshot: SessionGetQueueResponse) => {
-    setSessions((prev) =>
-      prev.map((item) => {
-        if (item.id !== snapshot.sessionId) return item
-        if (snapshot.running)
-          return item.status === 'running' ? item : { ...item, status: 'running' }
-        return item.status === 'running' ? { ...item, status: 'idle' } : item
-      }),
-    )
-  }, [])
-
-  useEffect(() => {
-    return window.spark.on('stream:session:queue-changed', (snapshot) => {
-      applySessionQueueState(snapshot)
-    })
-  }, [applySessionQueueState])
+  }, [setActiveWorkspaceId])
 
   const handleCancelSession = useCallback(
     async (sessionId: SessionId) => {
@@ -745,28 +251,18 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
         const res = await cancelSessionTurn({ sessionId })
         setAgentStatus('')
         setSessionStatus(sessionId, 'idle')
-        await refreshProjectsAndSessions()
-        if (res.cancelled) {
-          toast.success('已停止会话')
-        } else {
-          toast.info('该会话当前没有运行中的任务')
-        }
+        await sessionCtx.refreshData()
+        if (res.cancelled) toast.success('已停止会话')
+        else toast.info('该会话当前没有运行中的任务')
       } catch (err) {
         console.error('停止会话失败', err)
         toast.error(err instanceof Error ? err.message : '停止会话失败')
       }
     },
-    [cancelSessionTurn, refreshProjectsAndSessions, setSessionStatus, toast],
+    [cancelSessionTurn, sessionCtx, setSessionStatus, toast],
   )
 
-  const showSearchResults = searchQuery.trim().length > 0
-  const visibleSessions = filterSessionsByTime(sessions, timeFilter)
-  const projectGroups = buildProjectGroups(workspaces, visibleSessions)
-  const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
-  const noProjectSessions = noProjectWorkspace
-    ? visibleSessions.filter((session) => session.workspaceIds.includes(noProjectWorkspace.id))
-    : []
-  const ungroupedSessions = visibleSessions.filter((session) => session.workspaceIds.length === 0)
+  // ── Computed values ──
   const activeSession = sessions.find((s) => s.id === active) ?? null
   const activeWorkspace =
     activeWorkspaceId == null
@@ -776,49 +272,30 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
   )
-  // 决定右侧是显示 hero 居中布局还是活动对话布局（tabbar + chat-stream + 底部 composer）
-  // 规则：没有 active session 时、或者 active session 还没有任何消息时，都显示 hero 居中布局
-  // —— 任何"空对话"（无论是否在项目下、无论 session 是新创建还是历史切回的）都按 hero 展示
-  // —— 只有当消息列表非空（至少已经产生了 user/agent message）才切到活动布局
   const showEmptyHero = active == null || activeMessages.length === 0
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
       setSelectedProviderId(activeSession.providerProfileId)
     }
-  }, [activeSession?.providerProfileId])
+  }, [activeSession?.providerProfileId, setSelectedProviderId])
 
   useEffect(() => {
-    if (activeWorkspace == null) {
+    if (activeWorkspaceId == null) {
       setBranchState({ currentBranch: null, branches: [] })
       return
     }
-
     let cancelled = false
-    listBranches({ workspaceId: activeWorkspace.id })
-      .then((res) => {
-        if (!cancelled) setBranchState(res)
-      })
-      .catch(() => {
-        if (!cancelled) setBranchState({ currentBranch: null, branches: [] })
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [activeWorkspace, listBranches])
+    listBranches({ workspaceId: activeWorkspaceId })
+      .then((res) => { if (!cancelled) setBranchState(res) })
+      .catch(() => { if (!cancelled) setBranchState({ currentBranch: null, branches: [] }) })
+    return () => { cancelled = true }
+  }, [activeWorkspaceId, listBranches])
 
-  const handleUpdateActiveSession = async (patch: {
-    providerProfileId?: string
-    modelId?: string | null
-    agentId?: string
-    agentAdapter?: AgentAdapter
-    permissionMode?: PermissionModeChoice
-    chatMode?: SessionChatMode
-    reasoningEffort?: SessionReasoningEffort
-  }) => {
+  const handleUpdateActiveSession = async (patch: SessionRuntimePatch) => {
     if (active == null) return
     const res = await updateSession({ sessionId: active, ...patch })
-    setSessions((prev) => prev.map((item) => (item.id === active ? res.session : item)))
+    sessionCtx.updateSessionInList(active, res.session)
   }
 
   const handleSwitchBranch = async (branch: string) => {
@@ -833,177 +310,20 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   }
 
   return (
-    <div className="chat-layout">
-      <div
-        className="chat-sidebar"
-        style={{ '--sidebar-width': `${sidebarWidth}px` } as React.CSSProperties}
-      >
-        <div
-          className="sidebar-resize-handle"
-          title="拖拽调整侧边栏宽度"
-          onPointerDown={handleSidebarResizeStart}
-          onPointerMove={handleSidebarResizeMove}
-          onPointerUp={handleSidebarResizeEnd}
-          onPointerCancel={handleSidebarResizeEnd}
-        />
-        <div className="chat-sidebar-head">
-          <div className="search-input">
-            <Icons.Search />
-            <SparkInput
-              placeholder="搜索会话..."
-              value={searchQuery}
-              onChange={(e) => handleSearchChange(e.target.value)}
-            />
-            {isSearching && <Icons.Spinner size={12} className="search-spinner" />}
-            {searchQuery && !isSearching && (
-              <button className="icon-btn search-clear-btn" onClick={() => handleSearchChange('')}>
-                <Icons.X size={10} />
-              </button>
-            )}
-          </div>
-          <button className="icon-btn" title="新建项目" onClick={() => setProjectDialog('create')}>
-            <Icons.Folder />
-          </button>
-          <button
-            className="icon-btn"
-            title="新建空白对话"
-            onClick={() => {
-              setActive(null)
-              setActiveWorkspaceId(null)
-            }}
-          >
-            <Icons.Plus />
-          </button>
-        </div>
-
-        {showSearchResults ? (
-          <div className="chat-list scroll">
-            {searchResults.length === 0 && !isSearching ? (
-              <div className="empty-compact">
-                <div className="empty-icon">
-                  <Icons.Search size={18} />
-                </div>
-                <div className="empty-title">未找到匹配的会话</div>
-                <div className="empty-desc">尝试其他关键词</div>
-              </div>
-            ) : (
-              searchResults.map((r) => (
-                <SearchResultItem
-                  key={r.sessionId}
-                  result={r}
-                  query={searchQuery.trim()}
-                  active={active}
-                  onClick={handleSelectSearchResult}
-                />
-              ))
-            )}
-          </div>
-        ) : (
-          <>
-            <TimeFilterDropdown value={timeFilter} onChange={setTimeFilter} />
-
-            <div className="chat-list scroll">
-              {notice && (
-                <div className="session-notice">
-                  <Icons.AlertTriangle size={12} />
-                  <span>{notice}</span>
-                  <button className="icon-btn" onClick={() => setNotice('')}>
-                    <Icons.X size={10} />
-                  </button>
-                </div>
-              )}
-              {workspaces.length === 0 && sessions.length === 0 ? (
-                <div className="empty-compact">
-                  <div className="empty-icon">
-                    <Icons.Folder size={18} />
-                  </div>
-                  <div className="empty-title">还没有项目</div>
-                  <div className="empty-desc">先打开已有文件夹，或新建一个项目文件夹</div>
-                </div>
-              ) : (
-                <>
-                  {projectGroups.map((group) => (
-                    <ProjectSessionGroup
-                      key={group.workspace.id}
-                      group={group}
-                      activeSessionId={active}
-                      activeWorkspaceId={activeWorkspaceId}
-                      onSelectWorkspace={async (workspace) => {
-                        setActiveWorkspaceId(workspace.id)
-                        await openWorkspace({ rootPath: workspace.rootPath })
-                      }}
-                      onSelectSession={(session) => {
-                        setActive(session.id)
-                        setActiveWorkspaceId(group.workspace.id)
-                      }}
-                      onNewSession={(workspaceId) => void handleNewSession(workspaceId)}
-                      onRenameProject={handleRenameProject}
-                      onToggleProjectPinned={handleToggleProjectPinned}
-                      onArchiveProject={handleArchiveProject}
-                      onDeleteProject={handleDeleteProject}
-                      onOpenProjectFolder={handleOpenProjectFolder}
-                      onRenameSession={handleRenameSession}
-                      onToggleSessionPinned={handleToggleSessionPinned}
-                      onArchiveSession={handleArchiveSession}
-                      onDeleteSession={handleDeleteSession}
-                      onOpenSessionFolder={handleOpenSessionFolder}
-                    />
-                  ))}
-                  {noProjectSessions.length > 0 && (
-                    <div className="proj-group">
-                      <div className="chat-list-section-h">无项目对话</div>
-                      {noProjectSessions.map((session) => (
-                        <ChatListItem
-                          key={session.id}
-                          session={session}
-                          active={active}
-                          onClick={(id) => {
-                            setActive(id)
-                            if (noProjectWorkspace) setActiveWorkspaceId(noProjectWorkspace.id)
-                          }}
-                          onRename={handleRenameSession}
-                          onTogglePinned={handleToggleSessionPinned}
-                          onArchive={handleArchiveSession}
-                          onDelete={handleDeleteSession}
-                          onOpenFolder={handleOpenSessionFolder}
-                        />
-                      ))}
-                    </div>
-                  )}
-                  {ungroupedSessions.length > 0 && (
-                    <div className="proj-group">
-                      <div className="chat-list-section-h">未归属会话</div>
-                      {ungroupedSessions.map((session) => (
-                        <ChatListItem
-                          key={session.id}
-                          session={session}
-                          active={active}
-                          onClick={setActive}
-                          onRename={handleRenameSession}
-                          onTogglePinned={handleToggleSessionPinned}
-                          onArchive={handleArchiveSession}
-                          onDelete={handleDeleteSession}
-                          onOpenFolder={handleOpenSessionFolder}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
-          </>
-        )}
-      </div>
+    <div className="chat-layout chat-layout-no-sidebar">
 
       <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}>
-        {/* hero 模式（active 为 null 或消息为空）：渐变网格背景 + 居中标题 */}
+        {t.sidebarHidden && showEmptyHero && (
+          <div className="chat-sidebar-topbar">
+            <SidebarExpandButton />
+          </div>
+        )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
         {showEmptyHero && (
           <h1 className="chat-hero-title">Spark Agent，让工作更简单。</h1>
         )}
 
         {active == null ? (
-          /* 没有任何 active session：纯 hero 居中（不需要订阅 agent event） */
           <div className="chat-hero-composer">
             <ComposerV2
               session={activeSession}
@@ -1019,26 +339,20 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               isWorking={activeSession?.status === 'running'}
               approvalRequest={approvalRequest}
               {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-              onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+              onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
               onUpdateSession={handleUpdateActiveSession}
               onSwitchBranch={handleSwitchBranch}
               onCancelSession={handleCancelSession}
-              onSent={(sessionId) => {
-                setSessionStatus(sessionId, 'running')
-              }}
+              onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
               showProjectPicker
               workspaces={workspaces}
               activeWorkspaceId={activeWorkspaceId}
               onPickProject={pickProjectFolder}
-              onUseNoProject={() => void useNoProject()}
+              onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
             />
           </div>
         ) : (
-          /* active != null：始终渲染 ChatStream（保持 event 订阅）
-             视觉上根据 showEmptyHero 切换：
-             - 空消息：hero 风格（无 tabbar、隐藏 stream empty state、composer 居中）
-             - 有消息：active 风格（tabbar + stream + 底部 composer） */
           <>
             {!showEmptyHero && (
               <ChatTabbar
@@ -1046,15 +360,9 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
                 workspace={activeWorkspace}
                 agentStatus={agentStatus}
                 showInspector={showInspector}
-                setShowInspector={(v: boolean) => {
-                  setShowInspector(v)
-                  if (v) setShowConfigPanel(false)
-                }}
+                setShowInspector={(v: boolean) => { setShowInspector(v); if (v) setShowConfigPanel(false) }}
                 showConfigPanel={showConfigPanel}
-                setShowConfigPanel={(v: boolean) => {
-                  setShowConfigPanel(v)
-                  if (v) setShowInspector(false)
-                }}
+                setShowConfigPanel={(v: boolean) => { setShowConfigPanel(v); if (v) setShowInspector(false) }}
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
               />
             )}
@@ -1064,9 +372,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               onUsageChange={setContextInputTokens}
               onUsageDataChange={setSessionUsageData}
               onMessagesChange={setActiveMessages}
-              onSessionStatusChange={(status) => {
-                setSessionStatus(active, status)
-              }}
+              onSessionStatusChange={(status) => { setSessionStatus(active, status) }}
               onContextUsageChange={setContextUsage}
               onProjectContextChange={setProjectContext}
               onPlanProposed={setProposedPlan}
@@ -1087,18 +393,16 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               isWorking={activeSession?.status === 'running'}
               approvalRequest={approvalRequest}
               {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-              onCreateSession={(options) => handleNewSession(activeWorkspaceId, options)}
+              onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
               onUpdateSession={handleUpdateActiveSession}
               onSwitchBranch={handleSwitchBranch}
               onCancelSession={handleCancelSession}
-              onSent={(sessionId) => {
-                setSessionStatus(sessionId, 'running')
-              }}
+              onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
               showProjectPicker={showEmptyHero}
               workspaces={workspaces}
               activeWorkspaceId={activeWorkspaceId}
               onPickProject={pickProjectFolder}
-              onUseNoProject={() => void useNoProject()}
+              onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
             />
           </>
@@ -1128,24 +432,8 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
           onOpenProjectFolder={() => {
-            if (activeWorkspace) void handleOpenProjectFolder(activeWorkspace)
+            if (activeWorkspace) void sessionCtx.handleOpenProjectFolder(activeWorkspace)
           }}
-        />
-      )}
-
-      {projectDialog === 'create' && (
-        <CreateProjectModal
-          name={projectName}
-          path={projectPath}
-          notice={notice}
-          setName={setProjectName}
-          setPath={setProjectPath}
-          onPickPath={handlePickProjectPath}
-          onCancel={() => {
-            setProjectDialog(null)
-            setNotice('')
-          }}
-          onCreate={() => void handleCreateProject()}
         />
       )}
 
@@ -1164,362 +452,6 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           onCancel={handleCancelQuestion}
         />
       )}
-    </div>
-  )
-}
-
-function SearchResultItem({
-  result,
-  query,
-  active,
-  onClick,
-}: {
-  result: SessionSearchResult
-  query: string
-  active: SessionId | null
-  onClick: (id: SessionId) => void
-}) {
-  return (
-    <div
-      className={`chat-item proj-session ${active === result.sessionId ? 'active' : ''}`}
-      onClick={() => onClick(result.sessionId)}
-    >
-      <div className="chat-item-title">
-        <Icons.Search size={11} className="search-result-icon" />
-        <span className="truncate flex1 search-result-title">
-          <HighlightText text={result.title} query={query} />
-        </span>
-      </div>
-      {result.snippet && (
-        <div className="chat-item-snippet search-result-snippet">
-          <HighlightText text={result.snippet.slice(0, 120)} query={query} />
-        </div>
-      )}
-      <div className="chat-item-meta">
-        <span className="badge search-match-badge">
-          {result.matchType === 'title' ? '标题匹配' : '内容匹配'}
-        </span>
-        <span className="chat-item-time">{new Date(result.updatedAt).toLocaleDateString()}</span>
-      </div>
-    </div>
-  )
-}
-
-function HighlightText({ text, query }: { text: string; query: string }) {
-  if (!query) return <>{text}</>
-  const parts: ReactNode[] = []
-  const lowerText = text.toLowerCase()
-  const lowerQuery = query.toLowerCase()
-  let lastIndex = 0
-  let searchFrom = 0
-
-  while (searchFrom < lowerText.length) {
-    const idx = lowerText.indexOf(lowerQuery, searchFrom)
-    if (idx === -1) break
-    if (idx > lastIndex) {
-      parts.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex, idx)}</span>)
-    }
-    parts.push(
-      <mark key={`h-${idx}`} className="highlight-mark">
-        {text.slice(idx, idx + query.length)}
-      </mark>,
-    )
-    lastIndex = idx + query.length
-    searchFrom = lastIndex
-  }
-  if (lastIndex < text.length) {
-    parts.push(<span key={`t-${lastIndex}`}>{text.slice(lastIndex)}</span>)
-  }
-  return <>{parts}</>
-}
-
-function TimeFilterDropdown({
-  value,
-  onChange,
-}: {
-  value: TimeFilter
-  onChange: (value: TimeFilter) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  const options: Array<{ value: TimeFilter; label: string }> = [
-    { value: 'all', label: '全部会话' },
-    { value: '1d', label: '最近 1 天' },
-    { value: '3d', label: '最近 3 天' },
-    { value: '7d', label: '最近 7 天' },
-    { value: '10d', label: '最近 10 天' },
-  ]
-
-  const currentLabel = options.find((o) => o.value === value)?.label ?? '全部会话'
-
-  useEffect(() => {
-    if (!open) return
-    const handleClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [open])
-
-  return (
-    <div className="session-filter-bar" ref={ref}>
-      <button
-        className={`filter-trigger${value !== 'all' ? ' has-filter' : ''}`}
-        onClick={() => setOpen((prev) => !prev)}
-        aria-label="筛选会话"
-      >
-        <span>{currentLabel}</span>
-        <Icons.ChevronDown size={12} className={`filter-chevron${open ? ' open' : ''}`} />
-      </button>
-      {open && (
-        <div className="filter-dropdown">
-          {options.map((option) => (
-            <button
-              key={option.value}
-              className={`filter-option${value === option.value ? ' active' : ''}`}
-              onClick={() => {
-                onChange(option.value)
-                setOpen(false)
-              }}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ProjectSessionGroup({
-  group,
-  activeSessionId,
-  activeWorkspaceId,
-  onSelectWorkspace,
-  onSelectSession,
-  onNewSession,
-  onRenameProject,
-  onToggleProjectPinned,
-  onArchiveProject,
-  onDeleteProject,
-  onOpenProjectFolder,
-  onRenameSession,
-  onToggleSessionPinned,
-  onArchiveSession,
-  onDeleteSession,
-  onOpenSessionFolder,
-}: {
-  group: ProjectGroup
-  activeSessionId: SessionId | null
-  activeWorkspaceId: string | null
-  onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
-  onSelectSession: (session: SessionSummary) => void
-  onNewSession: (workspaceId: string) => void
-  onRenameProject: (workspace: WorkspaceInfo) => void
-  onToggleProjectPinned: (workspace: WorkspaceInfo) => void
-  onArchiveProject: (workspace: WorkspaceInfo) => void
-  onDeleteProject: (workspace: WorkspaceInfo) => void
-  onOpenProjectFolder: (workspace: WorkspaceInfo) => void
-  onRenameSession: (session: SessionSummary) => void
-  onToggleSessionPinned: (session: SessionSummary) => void
-  onArchiveSession: (session: SessionSummary) => void
-  onDeleteSession: (session: SessionSummary) => void
-  onOpenSessionFolder: (session: SessionSummary) => void
-}) {
-  const [open, setOpen] = useState(true)
-  const [menuOpen, setMenuOpen] = useState(false)
-  const isActiveProject = activeWorkspaceId === group.workspace.id
-
-  return (
-    <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
-      <div
-        className="proj-head"
-        onClick={() => {
-          setOpen((prev) => !prev)
-          void onSelectWorkspace(group.workspace)
-        }}
-      >
-        <span className="proj-toggle">
-          {open ? (
-            <Icons.ChevronDown className="chev" size={12} />
-          ) : (
-            <Icons.ChevronRight className="chev" size={12} />
-          )}
-        </span>
-        {open ? (
-          <Icons.FolderOpen size={15} className="proj-folder-icon" />
-        ) : (
-          <Icons.ProjectFolder size={15} className="proj-folder-icon" />
-        )}
-        {group.workspace.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
-        <span className="proj-name">{group.workspace.name}</span>
-        <span className="proj-count">{group.sessions.length}</span>
-        <button
-          className="icon-btn proj-add-session-btn"
-          title="新建此项目的会话"
-          onClick={(event) => {
-            event.stopPropagation()
-            onNewSession(group.workspace.id)
-          }}
-        >
-          <Icons.Plus size={12} />
-        </button>
-        <div className="item-menu-wrap">
-          <button
-            className="icon-btn item-menu-btn"
-            title="项目操作"
-            onClick={(event) => {
-              event.stopPropagation()
-              setMenuOpen((prev) => !prev)
-            }}
-          >
-            <Icons.More size={12} />
-          </button>
-          {menuOpen && (
-            <ActionMenu
-              items={[
-                {
-                  icon: <Icons.Pin size={14} />,
-                  label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶',
-                  onClick: () => onToggleProjectPinned(group.workspace),
-                },
-                {
-                  icon: <Icons.Folder size={14} />,
-                  label: '在文件夹中打开',
-                  onClick: () => onOpenProjectFolder(group.workspace),
-                },
-                {
-                  icon: <Icons.Edit size={14} />,
-                  label: '重命名项目',
-                  onClick: () => onRenameProject(group.workspace),
-                },
-                {
-                  icon: <Icons.Box size={14} />,
-                  label: '归档项目',
-                  onClick: () => onArchiveProject(group.workspace),
-                },
-                {
-                  icon: <Icons.Trash size={14} />,
-                  label: '删除项目',
-                  danger: true,
-                  onClick: () => onDeleteProject(group.workspace),
-                },
-              ]}
-              onClose={() => setMenuOpen(false)}
-            />
-          )}
-        </div>
-      </div>
-      {open && (
-        <div className="proj-sessions">
-          {group.sessions.length === 0 ? (
-            <button className="proj-session-empty" onClick={() => onNewSession(group.workspace.id)}>
-              <Icons.Plus size={12} />
-              新建此项目的会话
-            </button>
-          ) : (
-            group.sessions.map((session) => (
-              <ChatListItem
-                key={session.id}
-                session={session}
-                active={activeSessionId}
-                onClick={() => onSelectSession(session)}
-                onRename={onRenameSession}
-                onTogglePinned={onToggleSessionPinned}
-                onArchive={onArchiveSession}
-                onDelete={onDeleteSession}
-                onOpenFolder={onOpenSessionFolder}
-              />
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
-
-function ChatListItem({
-  session: s,
-  active,
-  onClick,
-  onRename,
-  onTogglePinned,
-  onArchive,
-  onDelete,
-  onOpenFolder,
-}: {
-  session: SessionSummary
-  active: SessionId | null
-  onClick: (id: SessionId) => void
-  onRename?: (session: SessionSummary) => void
-  onTogglePinned?: (session: SessionSummary) => void
-  onArchive?: (session: SessionSummary) => void
-  onDelete?: (session: SessionSummary) => void
-  onOpenFolder?: (session: SessionSummary) => void
-}) {
-  const [menuOpen, setMenuOpen] = useState(false)
-  const isRunning = s.status === 'running'
-  return (
-    <div
-      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${isRunning ? 'is-running' : ''}`}
-      onClick={() => onClick(s.id)}
-    >
-      <div className="chat-item-row">
-        <div className="chat-item-title-compact">
-          {s.pinnedAt != null && <Icons.Pin size={10} className="pinned-icon" />}
-          <span className="truncate">{s.title || '新会话'}</span>
-        </div>
-        {isRunning ? (
-          <span className="session-running-badge" title="运行中">
-            <Icons.Spinner size={10} />
-            <span>运行中</span>
-          </span>
-        ) : (
-          <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
-        )}
-        <div className="item-menu-wrap">
-          <button
-            className="icon-btn item-menu-btn"
-            title="会话操作"
-            onClick={(event) => {
-              event.stopPropagation()
-              setMenuOpen((prev) => !prev)
-            }}
-          >
-            <Icons.More size={12} />
-          </button>
-          {menuOpen && (
-            <ActionMenu
-              items={[
-                {
-                  icon: <Icons.Pin size={14} />,
-                  label: s.pinnedAt == null ? '置顶会话' : '取消置顶',
-                  onClick: () => onTogglePinned?.(s),
-                },
-                {
-                  icon: <Icons.Folder size={14} />,
-                  label: '在文件夹中打开',
-                  onClick: () => onOpenFolder?.(s),
-                },
-                {
-                  icon: <Icons.Edit size={14} />,
-                  label: '重命名会话',
-                  onClick: () => onRename?.(s),
-                },
-                { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
-                {
-                  icon: <Icons.Trash size={14} />,
-                  label: '删除会话',
-                  danger: true,
-                  onClick: () => onDelete?.(s),
-                },
-              ]}
-              onClose={() => setMenuOpen(false)}
-            />
-          )}
-        </div>
-      </div>
     </div>
   )
 }
@@ -1664,44 +596,6 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
   )
 }
 
-function ActionMenu({
-  items,
-  onClose,
-}: {
-  items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
-  onClose: () => void
-}) {
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) {
-        onClose()
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [onClose])
-
-  return (
-    <div ref={ref} className="action-menu" onClick={(event) => event.stopPropagation()}>
-      {items.map((item) => (
-        <button
-          key={item.label}
-          className={item.danger ? 'danger' : ''}
-          onClick={() => {
-            onClose()
-            item.onClick()
-          }}
-        >
-          {item.icon}
-          <span>{item.label}</span>
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function ChatTabbar({
   session,
   workspace,
@@ -1721,6 +615,7 @@ function ChatTabbar({
   setShowConfigPanel: (v: boolean) => void
   onClearMessages?: () => void
 }) {
+  const { t, setTweak } = useApp()
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const handleClearClick = () => {
@@ -1733,7 +628,11 @@ function ChatTabbar({
   }
 
   return (
-    <div className="chat-tabbar">
+    <div
+      className="chat-tabbar"
+      onDoubleClick={() => { window.spark.invoke('window:maximize', {}).catch(() => {}) }}
+    >
+      {t.sidebarHidden && <SidebarExpandButton />}
       <div className="chat-title-block">
         {session ? (
           <>
@@ -1755,6 +654,13 @@ function ChatTabbar({
         )}
       </div>
       <div className="row tabbar-actions">
+        <button
+          className={`btn ghost sm${t.browserPanelOpen ? ' active' : ''}`}
+          onClick={() => setTweak('browserPanelOpen', !t.browserPanelOpen)}
+          title={t.browserPanelOpen ? '隐藏浏览器面板' : '显示浏览器面板'}
+        >
+          <Icons.Globe size={12} />
+        </button>
         {workspace && (
           <>
             <ToolDropdown kind="ide" rootPath={workspace.rootPath} />
@@ -1796,86 +702,6 @@ function ChatTabbar({
         >
           <Icons.More />
         </button>
-      </div>
-    </div>
-  )
-}
-
-function CreateProjectModal({
-  name,
-  path,
-  notice,
-  setName,
-  setPath,
-  onPickPath,
-  onCancel,
-  onCreate,
-}: {
-  name: string
-  path: string
-  notice: string
-  setName: (value: string) => void
-  setPath: (value: string) => void
-  onPickPath: () => void
-  onCancel: () => void
-  onCreate: (useTempDir?: boolean) => void
-}) {
-  return (
-    <div className="modal-backdrop">
-      <div className="modal project-modal">
-        <div className="modal-h">
-          <div className="modal-h-icon">
-            <Icons.Folder size={17} />
-          </div>
-          <div>
-            <div className="modal-title">新建项目</div>
-            <div className="modal-subtitle">
-              选择一个本地文件夹作为项目地址，或直接创建一个空项目。
-            </div>
-          </div>
-        </div>
-        <div className="modal-body">
-          {notice && (
-            <div className="session-notice in-modal">
-              <Icons.AlertTriangle size={12} />
-              <span>{notice}</span>
-            </div>
-          )}
-          <label className="field">
-            <span>项目名称</span>
-            <SparkInput
-              value={name}
-              placeholder="例如 Spark-Agent"
-              onChange={(event) => setName(event.target.value)}
-            />
-          </label>
-          <label className="field">
-            <span>项目文件夹地址（可选）</span>
-            <div className="path-picker">
-              <SparkInput
-                value={path}
-                placeholder="/Users/you/projects/my-agent"
-                onChange={(event) => setPath(event.target.value)}
-              />
-              <button className="btn ghost sm" onClick={onPickPath}>
-                选择
-              </button>
-            </div>
-            <div className="field-hint">留空则自动在临时目录创建项目文件夹</div>
-          </label>
-        </div>
-        <div className="modal-foot">
-          <button className="btn ghost sm" onClick={() => onCreate(true)}>
-            新建空项目
-          </button>
-          <div className="spacer" />
-          <button className="btn ghost sm" onClick={onCancel}>
-            取消
-          </button>
-          <button className="btn primary sm" onClick={() => onCreate(false)}>
-            创建项目
-          </button>
-        </div>
       </div>
     </div>
   )
@@ -5000,12 +3826,12 @@ function ComposerV2({
   useEffect(() => {
     const el = textareaRef.current
     if (!el) return
-    // 高度范围：折叠态 60-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
+    // 高度范围：折叠态 92-280px（hero 状态下 padding 上下会撑出更大的视觉高度），
     // 展开态 220-400px
     // 关键点：minHeight 留一个能容纳一行文字 + 一点 padding 的值，
     // 避免空 textarea 看起来永远是一坨；maxHeight 给得宽一些，常规长 prompt 都能直接展示完，
     // 不需要靠滚动条来回看。
-    const minHeight = manualExpanded ? 220 : 60
+    const minHeight = manualExpanded ? 220 : 92
     const maxHeight = manualExpanded ? 400 : 280
 
     // 用 'auto' 临时高度测量内容真实高度，再 clamp 到区间内
@@ -5558,31 +4384,11 @@ function ComposerV2({
             })()}
           </div>
         )}
-        {(showProjectPicker || showBranchSelect) && (
-          <div className="composer-top-row">
-            {showProjectPicker && (
-              <ProjectPicker
-                workspaces={workspaces}
-                activeWorkspaceId={activeWorkspaceId}
-                {...(onPickProject !== undefined ? { onPickProject } : {})}
-                {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
-                {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
-              />
-            )}
-            {showBranchSelect && (
-              <ComposerMenuSelect
-                icon={<Icons.GitBranch size={13} />}
-                value={branchState.currentBranch ?? ''}
-                label={branchState.currentBranch ?? ''}
-                title="分支"
-                align="right"
-                onChange={onSwitchBranch}
-                options={branchOptions}
-              />
-            )}
-          </div>
-        )}
-        <div className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''}`}>
+        <div
+          className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''} ${
+            showProjectPicker || showBranchSelect ? 'has-workspace-picks' : ''
+          }`}
+        >
           <textarea
             ref={textareaRef}
             rows={1}
@@ -5605,6 +4411,30 @@ function ComposerV2({
             {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
           </button>
           <div className="composer-submit-row">
+            {(showProjectPicker || showBranchSelect) && (
+              <div className="composer-submit-picks">
+                {showProjectPicker && (
+                  <ProjectPicker
+                    workspaces={workspaces}
+                    activeWorkspaceId={activeWorkspaceId}
+                    {...(onPickProject !== undefined ? { onPickProject } : {})}
+                    {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
+                    {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
+                  />
+                )}
+                {showBranchSelect && (
+                  <ComposerMenuSelect
+                    icon={<Icons.GitBranch size={13} />}
+                    value={branchState.currentBranch ?? ''}
+                    label={branchState.currentBranch ?? ''}
+                    title="分支"
+                    align="right"
+                    onChange={onSwitchBranch}
+                    options={branchOptions}
+                  />
+                )}
+              </div>
+            )}
             <button
               className={`composer-send-round ${sending ? 'is-sending' : ''} ${isWorking ? 'is-stopping' : ''}`}
               title={isWorking ? '停止会话' : '发送'}
@@ -5801,7 +4631,7 @@ function ComposerMenuSelect({
 
 /**
  * ProjectPicker — 项目选择器（下拉）
- * 位置：composer 工具栏中，分支选择器左边
+ * 位置：输入框内部右下角，靠近发送按钮
  * 下拉内容：
  *   - "最近" 分组：用户最近的项目（最多 5 个），当前选中的打勾
  *   - "选择新项目"：从文件夹选择
@@ -6208,13 +5038,27 @@ function readComposerPrefs(): ComposerPrefs {
 
 function writeComposerPrefs(patch: ComposerPrefs): void {
   if (typeof window === 'undefined') return
-  const next: ComposerPrefs = { ...readComposerPrefs(), ...patch }
+  const prev = readComposerPrefs()
+  const next: ComposerPrefs = { ...prev, ...patch }
   for (const key of Object.keys(next) as Array<keyof ComposerPrefs>) {
     if (next[key] === undefined) delete next[key]
   }
+  const keys = new Set<keyof ComposerPrefs>([
+    ...(Object.keys(prev) as Array<keyof ComposerPrefs>),
+    ...(Object.keys(next) as Array<keyof ComposerPrefs>),
+  ])
+  const changed = Array.from(keys).some((key) => prev[key] !== next[key])
+  if (!changed) return
   window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(next))
   if (patch.adapter !== undefined || patch.permissionMode !== undefined) {
+    const previousRuntimePrefs = normalizeRuntimePermissionPrefs(prev)
     const runtimePrefs = normalizeRuntimePermissionPrefs(next)
+    if (
+      previousRuntimePrefs.adapter === runtimePrefs.adapter &&
+      previousRuntimePrefs.permissionMode === runtimePrefs.permissionMode
+    ) {
+      return
+    }
     void window.spark
       ?.invoke('settings:set', {
         category: RUNTIME_PERMISSION_SETTINGS_CATEGORY,
@@ -7596,28 +6440,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value))
-}
-
-function buildProjectGroups(
-  workspaces: WorkspaceInfo[],
-  sessions: SessionSummary[],
-): ProjectGroup[] {
-  // 过滤掉 “不使用项目” 这种系统内置 workspace，不在侧边栏项目组里展示
-  const userWorkspaces = workspaces.filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME)
-  return userWorkspaces.map((workspace) => ({
-    workspace,
-    sessions: sessions.filter((session) => session.workspaceIds.includes(workspace.id)),
-  }))
-}
-
-function filterSessionsByTime(sessions: SessionSummary[], filter: TimeFilter): SessionSummary[] {
-  if (filter === 'all') return sessions
-  const days = Number.parseInt(filter, 10)
-  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
-  return sessions.filter((session) => {
-    const updatedAt = new Date(session.updatedAt).getTime()
-    return Number.isFinite(updatedAt) && updatedAt >= cutoff
-  })
 }
 
 function getLatestInputTokens(events: AgentEvent[]): number {

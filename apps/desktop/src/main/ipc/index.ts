@@ -102,6 +102,7 @@ import {
   isPopOutOpen,
 } from '../services/PopOutBrowserService.js'
 import { getDatabase, getDatabasePath } from '../db.js'
+import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
 
 const log = createLogger('ipc:register')
@@ -1861,6 +1862,38 @@ export function registerAllIpcHandlers(): void {
     return { success: true }
   })
 
+  // ─── Window Control Handlers ─────────────────────────────────────────────
+
+  typedIpcHandle('window:minimize', async () => {
+    const win = getMainWindow()
+    if (win) win.minimize()
+    return { success: !!win }
+  })
+
+  typedIpcHandle('window:maximize', async () => {
+    const win = getMainWindow()
+    if (win) {
+      if (win.isMaximized()) {
+        win.unmaximize()
+        return { success: true, maximized: false }
+      }
+      win.maximize()
+      return { success: true, maximized: true }
+    }
+    return { success: false, maximized: false }
+  })
+
+  typedIpcHandle('window:close', async () => {
+    const win = getMainWindow()
+    if (win) win.close()
+    return { success: !!win }
+  })
+
+  typedIpcHandle('window:is-maximized', async () => {
+    const win = getMainWindow()
+    return { maximized: win ? win.isMaximized() : false }
+  })
+
   log.info('All IPC handlers registered')
 }
 
@@ -2080,7 +2113,6 @@ function showSystemNotification(title: string, body: string): void {
 
   notification.on('click', () => {
     // 点击通知时聚焦窗口
-    const { getMainWindow } = require('../windows/index.js')
     const mainWindow = getMainWindow()
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore()

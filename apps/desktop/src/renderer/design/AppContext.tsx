@@ -11,7 +11,7 @@ export type NavGuard = () => boolean
 export type ThemeMode = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
-export type ViewId = 'home' | 'chat' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
+export type ViewId = 'chat' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
 export type ChatMode = 'vibe' | 'workspace'
 
 export type Tweaks = {
@@ -30,6 +30,10 @@ export type Tweaks = {
   browserPanelOpen: boolean
   /** Browser panel width in pixels, persisted across sessions. */
   browserPanelWidth: number
+  /** Floating sidebar width in pixels, persisted across sessions. */
+  floatingSidebarWidth: number
+  /** Whether the floating sidebar is completely hidden. */
+  sidebarHidden: boolean
 }
 
 export const DEFAULT_TWEAKS: Tweaks = {
@@ -46,11 +50,19 @@ export const DEFAULT_TWEAKS: Tweaks = {
   showProfileEdit: false,
   browserPanelOpen: false,
   browserPanelWidth: 380,
+  floatingSidebarWidth: 200,
+  sidebarHidden: false,
 }
+
+/** Min/max bounds for the floating sidebar width (px). */
+export const FLOATING_SIDEBAR_WIDTH_MIN = 170
+export const FLOATING_SIDEBAR_WIDTH_MAX = 420
 
 const SIDEBAR_STORAGE_KEY = 'spark-agent:sidebar'
 const BROWSER_PANEL_OPEN_KEY = 'spark-agent:browser-panel-open'
 const BROWSER_PANEL_WIDTH_KEY = 'spark-agent:browser-panel-width'
+const FLOATING_SIDEBAR_WIDTH_KEY = 'spark-agent:floating-sidebar-width'
+const SIDEBAR_HIDDEN_KEY = 'spark-agent:sidebar-hidden'
 
 /** Min/max bounds for the browser panel width (px). */
 export const BROWSER_PANEL_WIDTH_MIN = 280
@@ -80,6 +92,23 @@ function readInitialTweaks(): Tweaks {
     ) {
       tweaks = { ...tweaks, browserPanelWidth: parsed }
     }
+  }
+
+  const savedSidebarWidth = window.localStorage.getItem(FLOATING_SIDEBAR_WIDTH_KEY)
+  if (savedSidebarWidth != null) {
+    const parsed = Number.parseInt(savedSidebarWidth, 10)
+    if (
+      Number.isFinite(parsed) &&
+      parsed >= FLOATING_SIDEBAR_WIDTH_MIN &&
+      parsed <= FLOATING_SIDEBAR_WIDTH_MAX
+    ) {
+      tweaks = { ...tweaks, floatingSidebarWidth: parsed }
+    }
+  }
+
+  const savedSidebarHidden = window.localStorage.getItem(SIDEBAR_HIDDEN_KEY)
+  if (savedSidebarHidden === 'true') {
+    tweaks = { ...tweaks, sidebarHidden: true }
   }
 
   return tweaks
@@ -120,6 +149,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       window.localStorage.setItem(BROWSER_PANEL_OPEN_KEY, String(val))
     } else if (key === 'browserPanelWidth') {
       window.localStorage.setItem(BROWSER_PANEL_WIDTH_KEY, String(val))
+    } else if (key === 'floatingSidebarWidth') {
+      window.localStorage.setItem(FLOATING_SIDEBAR_WIDTH_KEY, String(val))
+    } else if (key === 'sidebarHidden') {
+      window.localStorage.setItem(SIDEBAR_HIDDEN_KEY, String(val))
     }
     setT((prev) => {
       if (prev[key] === val) return prev

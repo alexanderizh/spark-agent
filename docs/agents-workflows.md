@@ -25,6 +25,13 @@ Workflows are stored in `workflows.graph_json` as:
 
 Node configuration supports prompts, provider/model preference, skill IDs, rule IDs, built-in tool IDs, MCP server IDs, permission mode, retry count, and phase metadata. The visual editor lets users drag nodes, add node kinds, connect nodes, and edit node configuration.
 
+The Workflows view is split into two surfaces:
+
+- a card list page for creating, refreshing, and selecting workflows
+- a detail orchestration page for editing one workflow graph with the node palette, canvas, and inspector
+
+This keeps workflow selection out of the graph editor, so the canvas has enough space for practical node arrangement.
+
 ## Runtime Behavior
 
 If an agent has a workflow, the runtime injects a `[Workflow Execution Plan]` section into the system prompt. Nodes are topologically ordered from the graph edges. Node-level model, skill, rule, tool, MCP, and permission settings are treated as preferred phase configuration.
