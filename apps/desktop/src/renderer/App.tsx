@@ -35,6 +35,7 @@ import {
 } from '@spark/ui-kit'
 
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
+const isPlatformWin32 = typeof window !== 'undefined' && window.spark.platform === 'win32'
 
 function SparkLogoMark() {
   return (
@@ -234,7 +235,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {!isPlatformDarwin && <WindowControls />}
+        {/* Windows uses the system-native title bar; the custom HTML
+            controls below are only needed on Linux (frameless window). */}
+        {!isPlatformDarwin && !isPlatformWin32 && <WindowControls />}
       </div>
 
       {/* Resize handle on the right edge */}

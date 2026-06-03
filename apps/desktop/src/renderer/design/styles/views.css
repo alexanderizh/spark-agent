@@ -817,7 +817,7 @@ body.sidebar-resizing {
 }
 .proj-head:hover .item-menu-btn,
 .chat-item:hover .item-menu-btn,
-.item-menu-btn:focus,
+.item-menu-btn:focus-visible,
 .item-menu-btn[data-state="open"],
 .proj-head:hover .proj-add-session-btn {
   opacity: 1;
