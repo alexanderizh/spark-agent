@@ -534,9 +534,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .transparent-header {
   flex-shrink: 0;
   height: 55px;
+  width: 100%;
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
+  box-sizing: border-box;
+  padding: 0 var(--pad-md);
   -webkit-app-region: drag;
 }
 .transparent-header .sidebar-expand-btn {

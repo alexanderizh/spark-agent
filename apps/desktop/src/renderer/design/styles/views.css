@@ -967,6 +967,16 @@ body.sidebar-resizing {
   gap: 8px;
   -webkit-app-region: drag;
 }
+/* Empty hero centers its children; pin expand control to the top drag strip */
+.chat-main-empty .chat-sidebar-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  width: 100%;
+  box-sizing: border-box;
+}
 .chat-sidebar-topbar .sidebar-expand-btn {
   -webkit-app-region: no-drag;
 }
