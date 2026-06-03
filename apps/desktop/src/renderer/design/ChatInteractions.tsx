@@ -203,37 +203,7 @@ type Hunk = {
   lines: { t: 'add' | 'del' | 'ctx' | 'hunk'; n: number | string; s: string }[]
 }
 
-export function HunkDiff({
-  path,
-  hunks,
-  onAcceptAll,
-  onHunkAction,
-}: {
-  path: string
-  hunks: Hunk[]
-  onAcceptAll?: () => void
-  onHunkAction?: (index: number, action: 'accepted' | 'rejected') => void
-}) {
-  const [states, setStates] = useState<('pending' | 'accepted' | 'rejected')[]>(
-    hunks.map(() => 'pending'),
-  )
-  const acceptedCount = states.filter((s) => s === 'accepted').length
-
-  const setOne = (i: number, v: 'pending' | 'accepted' | 'rejected') => {
-    const ns = [...states]
-    ns[i] = v
-    setStates(ns)
-    if (v === 'accepted' || v === 'rejected') {
-      onHunkAction?.(i, v)
-    }
-  }
-
-  const acceptRemaining = () => {
-    const ns = states.map((s) => (s === 'pending' ? ('accepted' as const) : s))
-    setStates(ns)
-    onAcceptAll?.()
-  }
-
+export function HunkDiff({ path, hunks }: { path: string; hunks: Hunk[] }) {
   return (
     <div className="diff hunk-mode">
       <div className="diff-head">
@@ -243,44 +213,12 @@ export function HunkDiff({
           <span className="add">+{hunks.reduce((s, h) => s + h.adds, 0)}</span>
           <span className="del">−{hunks.reduce((s, h) => s + h.dels, 0)}</span>
         </span>
-        <button className="btn ghost sm" style={{ height: 22, padding: '0 8px', fontSize: 11 }}>
-          {acceptedCount}/{hunks.length} 已采纳
-        </button>
-        <button
-          className="btn sm primary"
-          style={{ height: 24, padding: '0 10px', fontSize: 11 }}
-          onClick={acceptRemaining}
-        >
-          <Icons.Check size={11} /> 接受剩余
-        </button>
       </div>
       {hunks.map((h, i) => (
-        <div key={i} className={`hunk-wrap ${states[i]}`}>
+        <div key={i} className="hunk-wrap">
           <div className="hunk-bar">
             <span className="label">@@ {h.range} @@</span>
             <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{h.note}</span>
-            <div className="hunk-actions">
-              {states[i] === 'pending' && (
-                <>
-                  <button className="btn ghost" onClick={() => setOne(i, 'rejected')}>
-                    <Icons.X size={11} /> 拒绝
-                  </button>
-                  <button className="btn primary" onClick={() => setOne(i, 'accepted')}>
-                    <Icons.Check size={11} /> 采纳
-                  </button>
-                </>
-              )}
-              {states[i] === 'accepted' && (
-                <span className="badge success" style={{ fontSize: 10 }}>
-                  已采纳
-                </span>
-              )}
-              {states[i] === 'rejected' && (
-                <span className="badge danger" style={{ fontSize: 10 }}>
-                  已拒绝
-                </span>
-              )}
-            </div>
           </div>
           <div className="diff-body" style={{ maxHeight: 200, padding: '4px 0' }}>
             {h.lines.map((l, j) => (
@@ -386,15 +324,54 @@ export function TurnFileSummaryCard({
   files,
   totalAdds,
   totalDels,
+  onUndo,
+  onReapply,
 }: {
   files: FileChangeSummaryItem[]
   totalAdds: number
   totalDels: number
+  onUndo?: () => Promise<void> | void
+  onReapply?: () => Promise<void> | void
 }) {
   const [expanded, setExpanded] = useState(true)
+  const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone' | 'reapplying'>('idle')
   const { invoke: openFile } = useIpcInvoke('file:open')
   const { toast } = useToast()
   const fileCount = files.length
+
+  const handleUndo = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (onUndo == null || undoState !== 'idle') return
+      setUndoState('undoing')
+      try {
+        await onUndo()
+        setUndoState('undone')
+        toast.success('已撤销本次修改')
+      } catch (err) {
+        setUndoState('idle')
+        toast.error(err instanceof Error ? err.message : '撤销失败')
+      }
+    },
+    [onUndo, toast, undoState],
+  )
+
+  const handleReapply = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation()
+      if (onReapply == null || undoState !== 'undone') return
+      setUndoState('reapplying')
+      try {
+        await onReapply()
+        setUndoState('idle')
+        toast.success('已重新应用')
+      } catch (err) {
+        setUndoState('undone')
+        toast.error(err instanceof Error ? err.message : '重新应用失败')
+      }
+    },
+    [onReapply, toast, undoState],
+  )
 
   const handleOpen = useCallback(
     async (e: React.MouseEvent, filePath: string) => {
@@ -431,6 +408,31 @@ export function TurnFileSummaryCard({
           {fileCount} 个文件
         </span>
         <span className="spacer" />
+        {onUndo != null && undoState !== 'undone' && undoState !== 'reapplying' && (
+          <button
+            type="button"
+            className="btn ghost sm"
+            style={{ height: 22, padding: '0 8px', fontSize: 11, gap: 4 }}
+            onClick={handleUndo}
+            disabled={undoState === 'undoing'}
+            title="将这次修改还原到执行前的状态"
+          >
+            <Icons.RotateCcw size={11} /> {undoState === 'undoing' ? '撤销中…' : '撤销'}
+          </button>
+        )}
+        {onReapply != null && (undoState === 'undone' || undoState === 'reapplying') && (
+          <button
+            type="button"
+            className="btn ghost sm"
+            style={{ height: 22, padding: '0 8px', fontSize: 11, gap: 4 }}
+            onClick={handleReapply}
+            disabled={undoState === 'reapplying'}
+            title="重新应用本次修改"
+          >
+            <Icons.RotateCw size={11} />{' '}
+            {undoState === 'reapplying' ? '应用中…' : '重新应用'}
+          </button>
+        )}
         <button className="btn ghost sm" style={{ height: 20, padding: '0 6px' }}>
           {expanded ? <Icons.ChevronDown size={12} /> : <Icons.ChevronRight size={12} />}
         </button>

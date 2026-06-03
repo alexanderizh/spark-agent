@@ -24,7 +24,7 @@ import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
-import type { UIMessage, UIBlock } from '../services/event-mapper'
+import type { UIMessage, UIBlock, FileChangeSummary } from '../services/event-mapper'
 import type {
   AgentEvent,
   AgentStatusValue,
@@ -336,6 +336,12 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
    */
   const ensureNoProjectWorkspace = useCallback(async (): Promise<string | null> => {
     if (noProjectWorkspaceId) return noProjectWorkspaceId
+    // 若已有同名 workspace（包括历史上指向旧临时目录的记录），优先复用，避免每次升级路径都生成孤儿记录
+    const existing = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
+    if (existing) {
+      setNoProjectWorkspaceId(existing.id)
+      return existing.id
+    }
     try {
       const { tempDir } = await getTempProjectDir({})
       const rootPath = getNoProjectRootPath(tempDir)
@@ -354,7 +360,7 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
       toast.error(err instanceof Error ? err.message : '创建临时项目目录失败')
       return null
     }
-  }, [getTempProjectDir, noProjectWorkspaceId, openWorkspace, toast])
+  }, [getTempProjectDir, noProjectWorkspaceId, openWorkspace, toast, workspaces])
 
   /**
    * 把当前 active workspace 切到 “不使用项目”。
@@ -2523,7 +2529,7 @@ function renderBlocks(
           if (hunks.length > 0) {
             return (
               <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-                <HunkDiffWithFeedback path={block.path} hunks={hunks} />
+                <HunkDiff path={block.path} hunks={hunks} />
               </div>
             )
           }
@@ -2597,12 +2603,27 @@ function renderBlocks(
         )
       }
       case 'turn_file_summary': {
+        const sid = options.sessionId
+        const cpId = block.latestCheckpointId
+        const canUndo = sid != null && cpId != null
+        const filesWithDiff = block.files.filter(
+          (f): f is FileChangeSummary & { diff: string } =>
+            typeof f.diff === 'string' && f.diff.length > 0,
+        )
+        const canReapply = filesWithDiff.length > 0
         return (
           <div key={i} style={{ marginTop: 8, marginBottom: 8 }}>
             <TurnFileSummaryCard
               files={block.files}
               totalAdds={block.totalAdds}
               totalDels={block.totalDels}
+              {...(canUndo
+                ? {
+                    onUndo: () =>
+                      executeCheckpointRestore(sid as SessionId, cpId as string),
+                  }
+                : {})}
+              {...(canReapply ? { onReapply: () => reapplyTurnFiles(filesWithDiff) } : {})}
             />
           </div>
         )
@@ -3267,65 +3288,32 @@ function RetryTrailCard({
   )
 }
 
-/** HunkDiff wrapper that provides real file I/O on accept/reject actions */
-function HunkDiffWithFeedback({ path, hunks }: { path: string; hunks: Array<DiffHunk> }) {
-  const { toast } = useToast()
-  const [processing, setProcessing] = React.useState<number | null>(null)
+/**
+ * 重新正向应用一组文件的 unified diff（每个文件可包含多个 hunk）。
+ * 用于 TurnFileSummaryCard 在「撤销」后的「重新应用」。
+ */
+async function reapplyTurnFiles(
+  files: Array<FileChangeSummary & { diff: string }>,
+): Promise<void> {
+  const wsRes = await window.spark.invoke('workspace:get-current', {})
+  const workspaceRootPath = wsRes?.workspace?.rootPath
+  if (workspaceRootPath == null) throw new Error('无法确定工作区路径')
 
-  const handleAcceptAll = () => {
-    toast.success(`已采纳全部变更: ${path}`)
-  }
-
-  const handleHunkAction = async (index: number, action: 'accepted' | 'rejected') => {
-    if (action === 'accepted') {
-      toast.success(`Hunk #${index + 1} 已采纳`)
-      return
-    }
-
-    // Reject: reverse-apply the hunk to restore original content
-    setProcessing(index)
-    try {
-      const hunk = hunks[index]
-      if (hunk == null) return
-
-      // Reconstruct the unified diff hunk text from parsed hunk data
+  for (const file of files) {
+    const hunks = parseUnifiedDiff(file.diff)
+    for (const hunk of hunks) {
       const hunkDiff = reconstructHunkDiff(hunk)
-
-      // Get workspace root path
-      const wsRes = await window.spark.invoke('workspace:get-current', {})
-      const workspaceRootPath = wsRes?.workspace?.rootPath
-      if (!workspaceRootPath) {
-        toast.error('无法确定工作区路径')
-        return
-      }
-
       const result = await window.spark.invoke('file:apply-hunk-patch', {
         workspaceRootPath,
-        filePath: path,
+        filePath: file.path,
         hunkDiff,
-        direction: 'reverse',
+        direction: 'forward',
       })
-
-      if (result?.applied) {
-        toast.success(`Hunk #${index + 1} 已拒绝并还原: ${path}`)
-      } else {
-        toast.error(`还原失败: ${result?.error ?? '未知错误'}`)
+      if (!result?.applied) {
+        throw new Error(`${file.path}: ${result?.error ?? '未知错误'}`)
       }
-    } catch (err) {
-      toast.error(`还原异常: ${err instanceof Error ? err.message : String(err)}`)
-    } finally {
-      setProcessing(null)
     }
   }
-
-  return (
-    <HunkDiff
-      path={path}
-      hunks={hunks}
-      onAcceptAll={handleAcceptAll}
-      onHunkAction={handleHunkAction}
-    />
-  )
 }
 
 /** Reconstruct unified diff text from a parsed DiffHunk object */

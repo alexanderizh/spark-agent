@@ -17,6 +17,8 @@ export interface FileChangeSummary {
   changeType: 'create' | 'modify' | 'delete'
   adds: number
   dels: number
+  /** 原始 unified diff，用于「重新应用」时正向 patch */
+  diff?: string
 }
 
 export type UIBlock =
@@ -77,7 +79,14 @@ export type UIBlock =
       /** Full output (available when status=done) */
       output?: string
     }
-  | { kind: 'turn_file_summary'; files: FileChangeSummary[]; totalAdds: number; totalDels: number }
+  | {
+      kind: 'turn_file_summary'
+      files: FileChangeSummary[]
+      totalAdds: number
+      totalDels: number
+      /** 该 turn 内最近一次 checkpoint，用于「撤销」 */
+      latestCheckpointId: string | undefined
+    }
   | {
       kind: 'user_question'
       toolCallId: string
@@ -130,6 +139,8 @@ export class MessageBuilder {
   private turnPromptSnapshots: TurnPromptSnapshotEvent[] = []
   /** 追踪当前 turn 的文件变更，用于生成汇总 */
   private currentTurnFileChanges: FileChangeSummary[] = []
+  /** 当前 turn 内最近一次 checkpoint id，用于「撤销」 */
+  private currentTurnCheckpointId: string | undefined
   /** 是否已经为当前 turn 生成了汇总 */
   private turnSummaryEmitted = false
 
@@ -380,13 +391,20 @@ export class MessageBuilder {
 
         // 追踪文件变更用于生成汇总
         const stats = event.diff ? parseDiffStats(event.diff) : { adds: 0, dels: 0 }
-        // 避免重复添加同一文件
-        if (!this.currentTurnFileChanges.some((f) => f.path === event.path)) {
+        const existingIdx = this.currentTurnFileChanges.findIndex((f) => f.path === event.path)
+        if (existingIdx >= 0) {
+          // 同一文件多次修改：累加 stats 并覆盖最新 diff（用于反向/正向 patch）
+          const existing = this.currentTurnFileChanges[existingIdx]!
+          existing.adds += stats.adds
+          existing.dels += stats.dels
+          if (event.diff != null) existing.diff = event.diff
+        } else {
           this.currentTurnFileChanges.push({
             path: event.path,
             changeType: event.changeType as 'create' | 'modify' | 'delete',
             adds: stats.adds,
             dels: stats.dels,
+            ...(event.diff != null ? { diff: event.diff } : {}),
           })
         }
         break
@@ -401,6 +419,8 @@ export class MessageBuilder {
           path: event.path,
           filePaths: event.filePaths,
         })
+        // 记录该 turn 内最近的 checkpoint id，用于「撤销」
+        this.currentTurnCheckpointId = event.checkpointId
         break
       }
 
@@ -550,6 +570,7 @@ export class MessageBuilder {
     this.currentAssistantId = null
     this.turnPromptSnapshots = []
     this.currentTurnFileChanges = []
+    this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
   }
 
@@ -576,6 +597,7 @@ export class MessageBuilder {
     this.currentAssistantId = msg.id
     // 新消息开始时重置 turn 追踪状态
     this.currentTurnFileChanges = []
+    this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
     return msg
   }
@@ -593,6 +615,7 @@ export class MessageBuilder {
       files: [...this.currentTurnFileChanges],
       totalAdds,
       totalDels,
+      latestCheckpointId: this.currentTurnCheckpointId,
     })
   }
 
