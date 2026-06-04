@@ -441,8 +441,7 @@ export const Icons = {
   ),
   Pin: (p: IconProps) => (
     <IconBase {...p}>
-      <path d="M13.5 3.5l7 7-6 6-3.5.5-5-5 .5-3.5 6-6z" />
-      <path d="M3.5 20.5l5-5" />
+      <path d="M12 17v5M9 10.8V4h6v6.8c.6.4 3 2 3 4.2H6c0-2.2 2.4-3.8 3-4.2z" />
     </IconBase>
   ),
   Star: (p: IconProps) => (

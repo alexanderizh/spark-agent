@@ -11,13 +11,6 @@ import type { LocalSkillCandidate, RemoteSkillItem, SkillItem, SkillRegistry } f
 import { Icons } from '../Icons'
 import { SparkInput } from '../components/FormControls'
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@spark/ui-kit'
-import {
   useSkills,
   parseSkillManifest,
   filterSkills,
@@ -1277,31 +1270,27 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">分类</label>
-                <Select
+                <select
+                  className="form-select"
                   value={category}
-                  onValueChange={(v) => setCategory(v)}
+                  onChange={(e) => setCategory(e.target.value)}
                 >
-                  <SelectTrigger className="form-select" selectSize="sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="utility">通用</SelectItem>
-                    <SelectItem value="code-generation">代码生成</SelectItem>
-                    <SelectItem value="code-review">代码审查</SelectItem>
-                    <SelectItem value="testing">测试</SelectItem>
-                    <SelectItem value="documentation">文档</SelectItem>
-                    <SelectItem value="data-analysis">数据分析</SelectItem>
-                    <SelectItem value="web-development">Web 开发</SelectItem>
-                    <SelectItem value="api-development">API 开发</SelectItem>
-                    <SelectItem value="devops">DevOps</SelectItem>
-                    <SelectItem value="security">安全</SelectItem>
-                    <SelectItem value="ai-ml">AI/ML</SelectItem>
-                    <SelectItem value="automation">自动化</SelectItem>
-                    <SelectItem value="database">数据库</SelectItem>
-                    <SelectItem value="frontend">前端</SelectItem>
-                    <SelectItem value="backend">后端</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <option value="utility">通用</option>
+                  <option value="code-generation">代码生成</option>
+                  <option value="code-review">代码审查</option>
+                  <option value="testing">测试</option>
+                  <option value="documentation">文档</option>
+                  <option value="data-analysis">数据分析</option>
+                  <option value="web-development">Web 开发</option>
+                  <option value="api-development">API 开发</option>
+                  <option value="devops">DevOps</option>
+                  <option value="security">安全</option>
+                  <option value="ai-ml">AI/ML</option>
+                  <option value="automation">自动化</option>
+                  <option value="database">数据库</option>
+                  <option value="frontend">前端</option>
+                  <option value="backend">后端</option>
+                </select>
               </div>
             </div>
           </div>

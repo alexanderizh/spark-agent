@@ -108,20 +108,6 @@ export function BrowserPanelView(): ReactElement | null {
     }
   }, [open, poppedOut])
 
-  // ─── Clamp panel width when container is too narrow ─────────────────
-  // If the stored browserPanelWidth exceeds the available space, shrink it
-  // so the panel always fits without overflowing.
-  useEffect(() => {
-    if (!open) return
-    const panel = panelRef.current
-    if (panel == null) return
-    const containerWidth = panel.parentElement?.clientWidth ?? window.innerWidth
-    const maxWidth = containerWidth - 100 // leave at least 100px for chat
-    if (maxWidth > 0 && maxWidth < t.browserPanelWidth) {
-      setTweak('browserPanelWidth', Math.max(BROWSER_PANEL_WIDTH_MIN, maxWidth))
-    }
-  }, [open])
-
   // ─── Resize handle ──────────────────────────────────────────────────
   // Two tricks to make this smooth:
   //   1. While dragging, render a full-screen invisible overlay that captures
@@ -131,35 +117,29 @@ export function BrowserPanelView(): ReactElement | null {
   //   2. Throttle width updates via requestAnimationFrame instead of writing
   //      on every mousemove. setTweak triggers re-render of the whole shell.
   const [dragging, setDragging] = useState(false)
-  const panelRef = useRef<HTMLElement | null>(null)
   const dragState = useRef<{
     startX: number
     startWidth: number
     latestWidth: number
     rafId: number | null
-    containerWidth: number
   } | null>(null)
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
       e.preventDefault()
-      // Capture parent container width to clamp panel so it never overflows
-      const containerWidth = (panelRef.current?.parentElement?.clientWidth ?? window.innerWidth)
       dragState.current = {
         startX: e.clientX,
         startWidth: t.browserPanelWidth,
         latestWidth: t.browserPanelWidth,
         rafId: null,
-        containerWidth,
       }
       setDragging(true)
       const onMove = (ev: MouseEvent): void => {
         const s = dragState.current
         if (s == null) return
         const delta = s.startX - ev.clientX
-        const maxAllowed = Math.min(BROWSER_PANEL_WIDTH_MAX, s.containerWidth - 100)
         const next = Math.max(
           BROWSER_PANEL_WIDTH_MIN,
-          Math.min(maxAllowed, s.startWidth + delta),
+          Math.min(BROWSER_PANEL_WIDTH_MAX, s.startWidth + delta),
         )
         s.latestWidth = next
         if (s.rafId == null) {
@@ -225,9 +205,8 @@ export function BrowserPanelView(): ReactElement | null {
 
   return (
     <aside
-      ref={panelRef}
       className={`browser-panel${dragging ? ' is-dragging' : ''}`}
-      style={{ width: t.browserPanelWidth, maxWidth: '100%' }}
+      style={{ width: t.browserPanelWidth }}
     >
       {/* Left-edge resize handle */}
       <div

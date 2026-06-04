@@ -35,13 +35,6 @@ import type {
 import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workflow/graph-adapter'
 import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
-import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from '@spark/ui-kit'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
 type WorkflowScreen = 'list' | 'detail'
@@ -393,19 +386,15 @@ function WorkflowViewInner() {
             onChange={(event) => patchDraftMeta({ name: event.target.value })}
             placeholder="工作流名称"
           />
-          <Select
+          <select
+            className="wf-status-select"
             value={draft.status}
-            onValueChange={(v) => patchDraftMeta({ status: v as WorkflowStatus })}
+            onChange={(event) => patchDraftMeta({ status: event.target.value as WorkflowStatus })}
           >
-            <SelectTrigger className="wf-status-select" selectSize="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="draft">draft</SelectItem>
-              <SelectItem value="active">active</SelectItem>
-              <SelectItem value="archived">archived</SelectItem>
-            </SelectContent>
-          </Select>
+            <option value="draft">draft</option>
+            <option value="active">active</option>
+            <option value="archived">archived</option>
+          </select>
           <div className="wf-toolbar-spacer" />
           <button
             className="btn ghost sm"
@@ -589,80 +578,62 @@ function WorkflowInspector(props: InspectorProps) {
           <input value={node.data.title} onChange={(event) => props.onPatch({ title: event.target.value })} />
         </InspectorField>
         <InspectorField label="节点类型">
-          <Select
+          <select
             value={node.data.kind}
-            onValueChange={(v) => props.onPatch({ kind: v as WorkflowNodeKind })}
+            onChange={(event) => props.onPatch({ kind: event.target.value as WorkflowNodeKind })}
           >
-            <SelectTrigger selectSize="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {NODE_KIND_ORDER.map((kind) => (
-                <SelectItem key={kind} value={kind}>
-                  {NODE_KIND_META[kind].label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            {NODE_KIND_ORDER.map((kind) => (
+              <option key={kind} value={kind}>
+                {NODE_KIND_META[kind].label}
+              </option>
+            ))}
+          </select>
         </InspectorField>
         <InspectorField label="Provider">
-          <Select
-            value={config.providerProfileId || '__empty__'}
-            onValueChange={(v) =>
-              props.onPatchConfig({ providerProfileId: v === '__empty__' ? null : v })
+          <select
+            value={String(config.providerProfileId ?? '')}
+            onChange={(event) =>
+              props.onPatchConfig({ providerProfileId: event.target.value || null })
             }
           >
-            <SelectTrigger selectSize="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__empty__">继承 Agent</SelectItem>
-              {providers.map((provider) => (
-                <SelectItem key={provider.id} value={provider.id}>
-                  {provider.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <option value="">继承 Agent</option>
+            {providers.map((provider) => (
+              <option key={provider.id} value={provider.id}>
+                {provider.name}
+              </option>
+            ))}
+          </select>
         </InspectorField>
         <InspectorField label="模型">
-          <Select
-            value={config.modelId || '__empty__'}
-            onValueChange={(v) =>
-              props.onPatchConfig({ modelId: v === '__empty__' ? null : v })
-            }
+          <select
+            value={String(config.modelId ?? '')}
+            onChange={(event) => props.onPatchConfig({ modelId: event.target.value || null })}
           >
-            <SelectTrigger selectSize="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__empty__">继承 Agent</SelectItem>
-              {modelOptions.map((model) => (
-                <SelectItem key={model} value={model}>
-                  {model}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <option value="">继承 Agent</option>
+            {modelOptions.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
+          </select>
         </InspectorField>
         <InspectorField label="权限">
-          <Select
-            value={config.permissionMode || '__empty__'}
-            onValueChange={(v) =>
-              props.onPatchConfig(v === '__empty__' ? {} : { permissionMode: v as SessionPermissionMode })
+          <select
+            value={String(config.permissionMode ?? '')}
+            onChange={(event) =>
+              props.onPatchConfig(
+                event.target.value
+                  ? { permissionMode: event.target.value as SessionPermissionMode }
+                  : {},
+              )
             }
           >
-            <SelectTrigger selectSize="sm">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__empty__">继承 Agent</SelectItem>
-              <SelectItem value="claude-ask">询问</SelectItem>
-              <SelectItem value="claude-auto-edits">自动编辑</SelectItem>
-              <SelectItem value="claude-plan">计划模式</SelectItem>
-              <SelectItem value="claude-bypass">绕过权限</SelectItem>
-            </SelectContent>
-          </Select>
+            <option value="">继承 Agent</option>
+            <option value="claude-ask">询问</option>
+            <option value="claude-auto-edits">自动编辑</option>
+            <option value="claude-plan">计划模式</option>
+            <option value="claude-bypass">绕过权限</option>
+          </select>
         </InspectorField>
         <InspectorField label="节点提示词">
           <textarea
@@ -674,26 +645,19 @@ function WorkflowInspector(props: InspectorProps) {
         {isSubagent && (
           <>
             <InspectorField label="子代理">
-              <Select
-                value={config.agentId || '__empty__'}
-                onValueChange={(v) =>
-                  props.onPatchConfig({ agentId: v === '__empty__' ? null : v })
-                }
+              <select
+                value={String(config.agentId ?? '')}
+                onChange={(event) => props.onPatchConfig({ agentId: event.target.value || null })}
               >
-                <SelectTrigger selectSize="sm">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__empty__">选择子代理</SelectItem>
-                  {agents
-                    .filter((agent) => agent.workflowId !== currentWorkflowId)
-                    .map((agent) => (
-                      <SelectItem key={agent.id} value={agent.id}>
-                        {agent.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
+                <option value="">选择子代理</option>
+                {agents
+                  .filter((agent) => agent.workflowId !== currentWorkflowId)
+                  .map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+              </select>
             </InspectorField>
             <InspectorField label="并发数">
               <input
