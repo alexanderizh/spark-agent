@@ -876,6 +876,7 @@
   flex-direction: column;
   width: 360px;
   min-width: 280px;
+  max-width: 100%;
   border-left: 1px solid var(--border);
   background: var(--panel);
   height: 100%;

@@ -562,6 +562,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   display: flex;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
   background: var(--bg);
   transition:
     margin-left 0.18s ease,
