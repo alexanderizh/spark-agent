@@ -302,10 +302,11 @@ export class ClaudeSDKExecutor {
         includePartialMessages: true,
         enableFileCheckpointing: config.enableCheckpoints ?? false,
 
-        // Map Spark approval callback to SDK permission callback when Spark needs
-        // extra policy on top of the SDK's native permission mode.
-        ...(config.approvalCallback != null &&
-        shouldUseSparkPermissionCallback(config.permissionMode)
+        // Map Spark callbacks to SDK permission callback when Spark needs extra
+        // policy, or when AskUserQuestion needs to pause for user answers.
+        ...((config.questionCallback != null ||
+          (config.approvalCallback != null &&
+            shouldUseSparkPermissionCallback(config.permissionMode)))
           ? {
               canUseTool: async (
                 toolName: string,
@@ -321,8 +322,12 @@ export class ClaudeSDKExecutor {
                       const questions = extractQuestionsFromInput(input)
                       // Wait for user to answer questions
                       const answers = await questionCallback(sessionId, questions)
-                      // Return the answers as updated input
-                      return allowTool(answers, callbackOptions.toolUseID, 'user_temporary')
+                      // Return SDK-compatible answers keyed by question text.
+                      return allowTool(
+                        buildAskUserQuestionInputWithAnswers(input, questions, answers),
+                        callbackOptions.toolUseID,
+                        'user_temporary',
+                      )
                     }
                     // If no questionCallback, deny with helpful message
                     return denyTool(
@@ -332,6 +337,9 @@ export class ClaudeSDKExecutor {
                   }
 
                   if (isAlwaysAllowedControlTool(toolName)) {
+                    return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
+                  }
+                  if (!shouldUseSparkPermissionCallback(config.permissionMode)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
                   if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
@@ -673,6 +681,116 @@ function extractQuestionsFromInput(input: Record<string, unknown>): UserQuestion
       return normalizeQuestionPrompt(q as Record<string, unknown>)
     })
     .filter((q): q is NonNullable<typeof q> => q != null)
+}
+
+function buildAskUserQuestionInputWithAnswers(
+  input: Record<string, unknown>,
+  questions: UserQuestionPrompt[],
+  answerPayload: Record<string, unknown>,
+): Record<string, unknown> {
+  const answerMap = normalizeAskUserQuestionAnswers(questions, answerPayload)
+  const annotations = normalizeAskUserQuestionAnnotations(questions, answerPayload)
+
+  return {
+    ...input,
+    answers: answerMap,
+    ...(Object.keys(annotations).length > 0 ? { annotations } : {}),
+    ...(answerPayload.cancelled === true ? { cancelled: true } : {}),
+    ...(answerPayload.declined === true ? { declined: true } : {}),
+    ...(typeof answerPayload.reason === 'string' ? { reason: answerPayload.reason } : {}),
+  }
+}
+
+function normalizeAskUserQuestionAnswers(
+  questions: UserQuestionPrompt[],
+  answerPayload: Record<string, unknown>,
+): Record<string, string> {
+  const answers: Record<string, string> = {}
+  const rawAnswers = answerPayload.answers
+
+  for (const [index, question] of questions.entries()) {
+    const rawAnswer = findRawQuestionAnswer(rawAnswers, question, index)
+    const answerText = extractQuestionAnswerText(rawAnswer)
+    const fallbackText =
+      answerPayload.cancelled === true || answerPayload.declined === true || isSkippedAnswer(rawAnswer)
+        ? '用户拒绝回答'
+        : ''
+    answers[question.question] = answerText || fallbackText
+  }
+
+  return answers
+}
+
+function normalizeAskUserQuestionAnnotations(
+  questions: UserQuestionPrompt[],
+  answerPayload: Record<string, unknown>,
+): Record<string, { preview?: string; notes?: string }> {
+  const annotations: Record<string, { preview?: string; notes?: string }> = {}
+  const rawAnswers = answerPayload.answers
+
+  for (const [index, question] of questions.entries()) {
+    const rawAnswer = findRawQuestionAnswer(rawAnswers, question, index)
+    if (typeof rawAnswer !== 'object' || rawAnswer == null) continue
+    const answer = rawAnswer as Record<string, unknown>
+    const annotation: { preview?: string; notes?: string } = {}
+    if (typeof answer.preview === 'string') annotation.preview = answer.preview
+    if (typeof answer.otherText === 'string' && answer.otherText.trim().length > 0) {
+      annotation.notes = answer.otherText
+    } else if (answer.skipped === true || answer.declined === true) {
+      annotation.notes = '用户跳过或拒绝回答该问题。'
+    }
+    if (Object.keys(annotation).length > 0) annotations[question.question] = annotation
+  }
+
+  return annotations
+}
+
+function findRawQuestionAnswer(
+  rawAnswers: unknown,
+  question: UserQuestionPrompt,
+  index: number,
+): unknown {
+  if (Array.isArray(rawAnswers)) {
+    return rawAnswers.find((rawAnswer, rawIndex) => {
+      if (typeof rawAnswer !== 'object' || rawAnswer == null) return rawIndex === index
+      const answer = rawAnswer as Record<string, unknown>
+      return (
+        answer.id === question.id ||
+        answer.question === question.question ||
+        answer.index === index ||
+        rawIndex === index
+      )
+    })
+  }
+
+  if (typeof rawAnswers === 'object' && rawAnswers != null) {
+    const answerMap = rawAnswers as Record<string, unknown>
+    return (
+      answerMap[question.question] ??
+      (question.id != null ? answerMap[question.id] : undefined) ??
+      answerMap[String(index)]
+    )
+  }
+
+  return undefined
+}
+
+function extractQuestionAnswerText(rawAnswer: unknown): string {
+  if (typeof rawAnswer === 'string') return rawAnswer
+  if (typeof rawAnswer !== 'object' || rawAnswer == null) return ''
+
+  const answer = rawAnswer as Record<string, unknown>
+  const candidates = [answer.answer, answer.text, answer.optionLabel, answer.optionValue, answer.value]
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim().length > 0) return candidate
+  }
+  return ''
+}
+
+function isSkippedAnswer(rawAnswer: unknown): boolean {
+  if (typeof rawAnswer !== 'object' || rawAnswer == null) return false
+  const answer = rawAnswer as Record<string, unknown>
+  return answer.skipped === true || answer.declined === true
 }
 
 function normalizeQuestionOptions(

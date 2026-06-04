@@ -31,6 +31,12 @@ export interface FileChangeSummary {
   diff?: string
 }
 
+export interface UserQuestionAnswerSummary {
+  question: string
+  answer: string
+  skipped?: boolean
+}
+
 export type UIBlock =
   | { kind: 'text'; content: string; isStreaming: boolean }
   | { kind: 'thinking'; content: string; isStreaming: boolean }
@@ -102,6 +108,7 @@ export type UIBlock =
       toolCallId: string
       questions: UserQuestionPrompt[]
       answered: boolean
+      answerSummary?: UserQuestionAnswerSummary[]
     }
   | {
       kind: 'context_ledger'
@@ -307,6 +314,10 @@ export class MessageBuilder {
           ) as Extract<UIBlock, { kind: 'user_question' }> | undefined
           if (questionBlock) {
             questionBlock.answered = true
+            questionBlock.answerSummary = extractQuestionAnswerSummary(
+              event.output,
+              questionBlock.questions,
+            )
           }
           // Update tool_call block
           const block = msg.blocks.find(
@@ -699,6 +710,82 @@ function extractQuestions(
 
   const normalized = normalizeQuestionPrompt(toolInput)
   return normalized == null ? [] : [normalized]
+}
+
+function extractQuestionAnswerSummary(
+  output: unknown,
+  questions: UserQuestionPrompt[],
+): UserQuestionAnswerSummary[] {
+  const parsed = parseQuestionOutput(output)
+  const rawAnswers = parsed?.answers
+
+  if (typeof rawAnswers === 'object' && rawAnswers != null && !Array.isArray(rawAnswers)) {
+    const answerMap = rawAnswers as Record<string, unknown>
+    return questions
+      .map((question, index) => {
+        const rawAnswer =
+          answerMap[question.question] ??
+          (question.id != null ? answerMap[question.id] : undefined) ??
+          answerMap[String(index)]
+        const answerText = stringifyQuestionAnswer(rawAnswer)
+        if (!answerText) return null
+
+        return {
+          question: question.question,
+          answer: answerText,
+          ...(answerText === '用户拒绝回答' ? { skipped: true } : {}),
+        }
+      })
+      .filter((item): item is UserQuestionAnswerSummary => item != null)
+  }
+
+  const answerList = Array.isArray(rawAnswers) ? rawAnswers : []
+  if (answerList.length === 0) return []
+
+  return answerList
+    .map((rawAnswer, index) => {
+      if (typeof rawAnswer !== 'object' || rawAnswer == null) return null
+      const answer = rawAnswer as Record<string, unknown>
+      const questionText =
+        typeof answer.question === 'string'
+          ? answer.question
+          : questions[index]?.question ?? `问题 ${index + 1}`
+      const answerText =
+        typeof answer.answer === 'string'
+          ? answer.answer
+          : typeof answer.text === 'string'
+            ? answer.text
+            : typeof answer.optionLabel === 'string'
+              ? answer.optionLabel
+              : ''
+
+      return {
+        question: questionText,
+        answer: answerText,
+        ...(answer.skipped === true ? { skipped: true } : {}),
+      }
+    })
+    .filter((item): item is UserQuestionAnswerSummary => item != null)
+}
+
+function stringifyQuestionAnswer(rawAnswer: unknown): string {
+  if (typeof rawAnswer === 'string') return rawAnswer
+  if (typeof rawAnswer === 'number' || typeof rawAnswer === 'boolean') return String(rawAnswer)
+  return ''
+}
+
+function parseQuestionOutput(output: unknown): { answers?: unknown } | null {
+  if (typeof output === 'object' && output != null) {
+    return output as { answers?: unknown }
+  }
+  if (typeof output !== 'string' || output.trim().length === 0) return null
+
+  try {
+    const parsed = JSON.parse(output) as unknown
+    return typeof parsed === 'object' && parsed != null ? (parsed as { answers?: unknown }) : null
+  } catch {
+    return null
+  }
 }
 
 function normalizeOptions(options: unknown): UserQuestionOption[] {

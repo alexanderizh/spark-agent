@@ -314,6 +314,70 @@ describe('ClaudeSDKExecutor', () => {
     ])
   })
 
+  it('registers AskUserQuestion callback even without Spark approval callback', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const questionCallback = vi.fn(async () => ({ answers: [{ question: 'Proceed?', answer: 'Yes' }] }))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      questionCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const result = await options.canUseTool?.('AskUserQuestion', {
+      questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+    }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-question',
+    })
+
+    expect(result).toEqual(expect.objectContaining({
+      behavior: 'allow',
+      updatedInput: {
+        questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+        answers: { 'Proceed?': 'Yes' },
+      },
+    }))
+    expect(questionCallback).toHaveBeenCalledOnce()
+  })
+
+  it('maps cancelled AskUserQuestion answers to SDK-native refusal text', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const questionCallback = vi.fn(async () => ({
+      cancelled: true,
+      declined: true,
+      reason: '用户取消了问答弹窗，拒绝回答这些问题。',
+      answers: [{ question: 'Proceed?', answer: '用户拒绝回答', skipped: true, declined: true }],
+    }))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      questionCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const result = await options.canUseTool?.('AskUserQuestion', {
+      questions: [{ question: 'Proceed?', header: 'Confirm', options: [{ label: 'Yes' }] }],
+    }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-question',
+    })
+
+    expect(result).toEqual(expect.objectContaining({
+      behavior: 'allow',
+      updatedInput: expect.objectContaining({
+        cancelled: true,
+        declined: true,
+        answers: { 'Proceed?': '用户拒绝回答' },
+        reason: '用户取消了问答弹窗，拒绝回答这些问题。',
+      }),
+    }))
+  })
+
   it('normalizes text and custom-choice AskUserQuestion prompts before invoking the callback', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

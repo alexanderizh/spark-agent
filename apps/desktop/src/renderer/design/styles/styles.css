@@ -594,8 +594,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 
 .transparent-header {
   flex-shrink: 0;
-  height: 55px;
-  width: 100%;
+  height: 35px;
+  width: 100vw;
+  margin-left: -235px;
   display: flex;
   align-items: center;
   justify-content: flex-start;

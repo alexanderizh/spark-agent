@@ -251,7 +251,10 @@ export function ChatView({
 
   const handleCancelQuestion = useCallback(() => {
     if (userQuestion == null) return
-    answerQuestion({ questionId: userQuestion.questionId, answers: { cancelled: true } }).catch(console.error)
+    answerQuestion({
+      questionId: userQuestion.questionId,
+      answers: buildQuestionCancelAnswer(userQuestion.questions),
+    }).catch(console.error)
     onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
   }, [answerQuestion, onUserQuestionClose, userQuestion])
 
@@ -374,7 +377,6 @@ export function ChatView({
             <ComposerV2
               session={activeSession}
               workspace={activeWorkspace}
-              activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
               providers={providers}
               agents={agents}
               selectedProviderId={selectedProviderId}
@@ -436,7 +438,6 @@ export function ChatView({
             <ComposerV2
               session={activeSession}
               workspace={activeWorkspace}
-              activeTaskText={getActiveTaskText(activeMessages, activeSession?.status === 'running')}
               providers={providers}
               agents={agents}
               selectedProviderId={selectedProviderId}
@@ -1885,6 +1886,20 @@ function InlineQuestionCard({
         <div style={{ fontSize: 13, color: 'var(--c-text)' }}>
           {first?.question}
         </div>
+        {block.answerSummary != null && block.answerSummary.length > 0 && (
+          <div className="inline-question-answers">
+            {block.answerSummary.map((item, index) => (
+              <div className="inline-question-answer" key={`${item.question}-${index}`}>
+                <div className="inline-question-answer-q">
+                  {index + 1}. {item.question}
+                </div>
+                <div className="inline-question-answer-a">
+                  {item.skipped ? '已跳过' : item.answer || '未填写'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span
             style={{
@@ -4041,7 +4056,6 @@ function ContextMeterWithPopup({
 function ComposerV2({
   session,
   workspace,
-  activeTaskText,
   providers,
   agents,
   selectedProviderId,
@@ -4067,7 +4081,6 @@ function ComposerV2({
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
-  activeTaskText: string | null
   providers: ProviderProfile[]
   agents: ManagedAgent[]
   selectedProviderId: string
@@ -4116,7 +4129,6 @@ function ComposerV2({
   const [drafts, setDrafts] = useState<Record<string, ComposerDraftSnapshot>>(() => readComposerDrafts())
   const [sending, setSending] = useState(false)
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
-  const [queueRunning, setQueueRunning] = useState(false)
   const [queueVisible, setQueueVisible] = useState(true)
   const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
   const [slashFilter, setSlashFilter] = useState('')
@@ -4215,8 +4227,7 @@ function ComposerV2({
     (value.trim().length > 0 || attachments.length > 0) &&
     selectedProvider != null &&
     effectiveModelId.length > 0
-  const visibleActiveTaskText = queueRunning ? activeTaskText : null
-  const showTaskQueue = visibleActiveTaskText != null || queuedMessages.length > 0
+  const showTaskQueue = queuedMessages.length > 0
 
   const updateDraft = useCallback(
     (updater: (draft: ComposerDraftSnapshot) => ComposerDraftSnapshot) => {
@@ -4310,7 +4321,6 @@ function ComposerV2({
   const applyQueueState = useCallback(
     (snapshot: SessionGetQueueResponse | null | undefined) => {
       if (snapshot == null || snapshot.sessionId !== session?.id) return
-      setQueueRunning(snapshot.running)
       setQueuedMessages(
         snapshot.queuedTurns.map((turn) => ({
           id: turn.turnId,
@@ -4327,14 +4337,12 @@ function ComposerV2({
     async (sessionId: SessionId | null | undefined) => {
       if (sessionId == null) {
         setQueuedMessages([])
-        setQueueRunning(false)
         return
       }
       try {
         applyQueueState(await getQueue({ sessionId }))
       } catch {
         setQueuedMessages([])
-        setQueueRunning(false)
       }
     },
     [applyQueueState, getQueue],
@@ -5070,13 +5078,6 @@ function ComposerV2({
         )}
         {showTaskQueue && queueVisible && (
           <div className="composer-queue-panel">
-            {visibleActiveTaskText != null && (
-              <div className="composer-queue-item active">
-                <Icons.Spinner size={15} className="composer-queue-icon" />
-                <span className="composer-queue-text">{visibleActiveTaskText}</span>
-                <span className="composer-queue-status">执行中</span>
-              </div>
-            )}
             {queuedMessages.map((message) => (
               <div key={message.id} className="composer-queue-item">
                 <Icons.Clock size={15} className="composer-queue-icon" />
@@ -5334,7 +5335,7 @@ function ComposerV2({
               onClick={() => setQueueVisible((prev) => !prev)}
             >
               {queueVisible ? '隐藏队列' : '显示队列'} ·{' '}
-              {(visibleActiveTaskText != null ? 1 : 0) + queuedMessages.length}
+              {queuedMessages.length}
             </button>
           )}
           <div className="spacer" />
@@ -6269,21 +6270,6 @@ function normalizePromptLayer(value: unknown): PromptConfigGetResponse['system']
 
 function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? (value as T[]) : []
-}
-
-function getActiveTaskText(messages: UIMessage[], isRunning: boolean): string | null {
-  if (!isRunning) return null
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i]
-    if (message?.role !== 'user') continue
-    const text = message.blocks
-      .filter((block): block is Extract<UIBlock, { kind: 'text' }> => block.kind === 'text')
-      .map((block) => block.content)
-      .join('\n')
-      .trim()
-    if (text.length > 0) return text
-  }
-  return '正在执行当前任务'
 }
 
 function ChatConfigPanel({
@@ -7474,22 +7460,25 @@ function UserQuestionWizard({
   data,
   onAnswer,
   onCancel,
+  currentIndex,
+  onCurrentIndexChange,
 }: {
   data: UserQuestionData
   onAnswer: (answers: Record<string, unknown>) => void
   onCancel: () => void
+  currentIndex: number
+  onCurrentIndexChange: React.Dispatch<React.SetStateAction<number>>
 }) {
-  const [currentIndex, setCurrentIndex] = useState(0)
   const [drafts, setDrafts] = useState<Record<number, UserQuestionDraft>>({})
   const [submitted, setSubmitted] = useState(false)
   const currentQuestion = data.questions[currentIndex]
   const currentDraft = drafts[currentIndex] ?? {}
 
   useEffect(() => {
-    setCurrentIndex(0)
+    onCurrentIndexChange(0)
     setDrafts({})
     setSubmitted(false)
-  }, [data.questions])
+  }, [data.questions, onCurrentIndexChange])
 
   if (currentQuestion == null) return null
 
@@ -7498,7 +7487,9 @@ function UserQuestionWizard({
   const canGoBack = currentIndex > 0
   const canGoNext = currentIndex < total - 1
   const canSubmit = data.questions.every((question, index) => isQuestionReadyForSubmit(question, drafts[index]))
-  const showOtherInput = shouldShowOtherInput(currentQuestion, currentDraft)
+  const choiceOptions = getChoiceOptions(currentQuestion)
+  const otherLabel = getOtherOptionLabel(currentQuestion)
+  const otherInputPlaceholder = getOtherPlaceholder(currentQuestion)
 
   const updateDraft = (patch: Partial<UserQuestionDraft>) => {
     setDrafts((prev) => ({
@@ -7518,10 +7509,23 @@ function UserQuestionWizard({
       ...(option.allowsFreeText ? {} : { otherText: '' }),
       text: '',
     })
+    if (!option.allowsFreeText && canGoNext) {
+      onCurrentIndexChange((prev) => Math.min(prev + 1, total - 1))
+    }
   }
 
   const handleTextChange = (value: string) => {
     updateDraft({ skipped: false, text: value })
+  }
+
+  const handleOtherTextChange = (value: string) => {
+    updateDraft({
+      skipped: false,
+      selectedLabel: otherLabel,
+      selectedValue: otherLabel,
+      otherText: value,
+      text: '',
+    })
   }
 
   const handleSkip = () => {
@@ -7533,7 +7537,7 @@ function UserQuestionWizard({
       text: '',
     })
     if (canGoNext) {
-      setCurrentIndex((prev) => Math.min(prev + 1, total - 1))
+      onCurrentIndexChange((prev) => Math.min(prev + 1, total - 1))
     }
   }
 
@@ -7557,16 +7561,6 @@ function UserQuestionWizard({
 
   return (
     <>
-      <div className="user-question-progress">
-        <div className="user-question-kicker">问题 {currentIndex + 1} / {total}</div>
-        <div className="user-question-progressbar" aria-hidden="true">
-          <div
-            className="user-question-progressbar-fill"
-            style={{ width: `${Math.max((currentIndex + 1) / Math.max(total, 1) * 100, 8)}%` }}
-          />
-        </div>
-      </div>
-
       <div className="user-question-body">
         <div className="question-item">
           <div className="question-text">{currentQuestion.question}</div>
@@ -7574,7 +7568,7 @@ function UserQuestionWizard({
           {isChoiceQuestion(currentQuestion) ? (
             <>
               <div className="question-options">
-                {(currentQuestion.options ?? []).map((opt, optIndex) => {
+                {choiceOptions.map((opt, optIndex) => {
                   const selected = currentDraft.selectedLabel === opt.label
                   const tooltipText = opt.description ? `${opt.label}\n${opt.description}` : opt.label
                   return (
@@ -7587,17 +7581,25 @@ function UserQuestionWizard({
                     >
                       <div className="option-label">{opt.label}</div>
                       {opt.description && <div className="option-desc">{opt.description}</div>}
+                      {selected && (
+                        <span className="question-option-check" aria-hidden="true">
+                          <Icons.Check size={11} />
+                        </span>
+                      )}
                     </button>
                   )
                 })}
               </div>
-              <div className="user-question-input-wrap">
-                <SparkInput
-                  value={currentDraft.otherText ?? ''}
-                  onChange={(event) => updateDraft({ skipped: false, otherText: event.target.value })}
-                  placeholder="补充其他内容（可选）"
-                  disabled={submitted}
-                />
+              <div className="user-question-other">
+                <div className="user-question-other-label">{otherLabel}</div>
+                <div className="user-question-input-wrap">
+                  <SparkInput
+                    value={currentDraft.otherText ?? ''}
+                    onChange={(event) => handleOtherTextChange(event.target.value)}
+                    placeholder={otherInputPlaceholder}
+                    disabled={submitted}
+                  />
+                </div>
               </div>
             </>
           ) : (
@@ -7630,45 +7632,54 @@ function UserQuestionWizard({
         </div>
       </div>
 
-      <div className="user-question-actions">
-        <button className="btn ghost sm" onClick={handleCancel} disabled={submitted}>
-          取消
-        </button>
-        <button className="btn ghost sm" onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))} disabled={submitted || !canGoBack}>
-          上一题
-        </button>
-        <button
-          className="btn ghost sm"
-          onClick={handleSkip}
-          disabled={submitted || currentQuestion.allowSkip === false}
-        >
-          跳过
-        </button>
-        <div className="spacer" />
-        {canGoNext ? (
-          <button className="btn primary sm" onClick={() => setCurrentIndex((prev) => Math.min(prev + 1, total - 1))} disabled={submitted}>
-            下一题
-          </button>
-        ) : (
-          <button className="btn primary sm" onClick={handleSubmit} disabled={submitted || !canSubmit}>
-            {submitted ? <Icons.Spinner size={12} /> : null}
-            提交答案
-          </button>
-        )}
-      </div>
+      <div className="user-question-footer">
+        <div className="user-question-pagination">
+          {data.questions.map((question, index) => (
+            <button
+              key={question.id ?? `${question.question}-${index}`}
+              className={`user-question-dot ${index === currentIndex ? 'active' : ''} ${isQuestionAnswered(question, drafts[index]) ? 'done' : ''}`}
+              onClick={() => onCurrentIndexChange(index)}
+              disabled={submitted}
+              title={`第 ${index + 1} 题`}
+            >
+              {index + 1}
+            </button>
+          ))}
+        </div>
 
-      <div className="user-question-pagination">
-        {data.questions.map((question, index) => (
+        <div className="user-question-actions">
           <button
-            key={question.id ?? `${question.question}-${index}`}
-            className={`user-question-dot ${index === currentIndex ? 'active' : ''} ${isQuestionAnswered(question, drafts[index]) ? 'done' : ''}`}
-            onClick={() => setCurrentIndex(index)}
-            disabled={submitted}
-            title={`第 ${index + 1} 题`}
+            className="user-question-btn secondary"
+            onClick={handleSkip}
+            disabled={submitted || currentQuestion.allowSkip === false}
           >
-            {index + 1}
+            跳过
           </button>
-        ))}
+          <button className="user-question-btn secondary" onClick={handleCancel} disabled={submitted}>
+            取消
+          </button>
+          <button
+            className="user-question-btn secondary"
+            onClick={() => onCurrentIndexChange((prev) => Math.max(prev - 1, 0))}
+            disabled={submitted || !canGoBack}
+          >
+            上一题
+          </button>
+          {canGoNext ? (
+            <button
+              className="user-question-btn primary"
+              onClick={() => onCurrentIndexChange((prev) => Math.min(prev + 1, total - 1))}
+              disabled={submitted}
+            >
+              下一题
+            </button>
+          ) : (
+            <button className="user-question-btn primary" onClick={handleSubmit} disabled={submitted || !canSubmit}>
+              {submitted ? <Icons.Spinner size={12} /> : null}
+              提交答案
+            </button>
+          )}
+        </div>
       </div>
     </>
   )
@@ -7690,17 +7701,17 @@ function getOtherPlaceholder(question: UserQuestionPrompt): string {
   return question.otherPlaceholder?.trim() || '请输入其他内容'
 }
 
-function shouldShowOtherInput(question: UserQuestionPrompt, draft: UserQuestionDraft): boolean {
-  if (!isChoiceQuestion(question)) return false
-  const matchedOption = (question.options ?? []).find((option) => option.label === draft.selectedLabel)
-  if (matchedOption?.allowsFreeText) return true
-  return question.allowOther === true && draft.selectedLabel === getOtherOptionLabel(question)
+function getChoiceOptions(question: UserQuestionPrompt): UserQuestionOption[] {
+  return question.options ?? []
 }
 
 function isQuestionAnswered(question: UserQuestionPrompt, draft: UserQuestionDraft | undefined): boolean {
   if (draft?.skipped) return true
   if (draft == null) return false
   if (isChoiceQuestion(question)) {
+    if (draft.selectedLabel === getOtherOptionLabel(question)) {
+      return (draft.otherText?.trim().length ?? 0) > 0
+    }
     return !!draft.selectedLabel || (draft.otherText?.trim().length ?? 0) > 0
   }
   return (draft.text?.trim().length ?? 0) > 0
@@ -7722,6 +7733,7 @@ function buildQuestionAnswer(
   const answerValue = isChoiceQuestion(question)
     ? (() => {
         const selected = draft?.selectedValue ?? draft?.selectedLabel ?? ''
+        if (selected === getOtherOptionLabel(question)) return otherText
         if (otherText && selected) return `${selected} | ${otherText}`
         return otherText || selected
       })()
@@ -7742,10 +7754,30 @@ function buildQuestionAnswer(
   }
 }
 
+function buildQuestionCancelAnswer(questions: UserQuestionPrompt[]): Record<string, unknown> {
+  return {
+    cancelled: true,
+    declined: true,
+    reason: '用户取消了问答弹窗，拒绝回答这些问题。',
+    questionCount: questions.length,
+    answeredCount: 0,
+    answers: questions.map((question, index) => ({
+      index,
+      id: question.id ?? `question-${index + 1}`,
+      header: question.header,
+      question: question.question,
+      type: question.type ?? (isChoiceQuestion(question) ? 'single_choice' : 'text'),
+      skipped: true,
+      declined: true,
+      answer: '用户拒绝回答',
+    })),
+  }
+}
+
 /** Sticky reply panel for AskUserQuestion so users always have an in-context reply path */
-function UserQuestionDock(props: Parameters<typeof UserQuestionWizard>[0]) {
+function UserQuestionDock(props: Omit<Parameters<typeof UserQuestionWizard>[0], 'currentIndex' | 'onCurrentIndexChange'>) {
+  const [currentIndex, setCurrentIndex] = useState(0)
   const total = props.data.questions.length
-  const hasTextQuestion = props.data.questions.some((question) => !isChoiceQuestion(question))
 
   return (
     <div className="user-question-dock">
@@ -7760,11 +7792,15 @@ function UserQuestionDock(props: Parameters<typeof UserQuestionWizard>[0]) {
           </div>
         </div>
         <div className="user-question-dock-badge">
-          {total} 题{hasTextQuestion ? ' · 含输入题' : ''}
+          {Math.min(currentIndex + 1, total)} / {total}
         </div>
       </div>
       <div className="user-question-dock-panel">
-        <UserQuestionWizard {...props} />
+        <UserQuestionWizard
+          {...props}
+          currentIndex={currentIndex}
+          onCurrentIndexChange={setCurrentIndex}
+        />
       </div>
     </div>
   )
