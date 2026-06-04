@@ -742,9 +742,7 @@ export function registerAllIpcHandlers(): void {
     )
     // 二次确认：zod literal 已经校验过 version，但额外提示更友好
     if (parsed.version !== PROVIDER_EXPORT_VERSION) {
-      throw new Error(
-        `不支持的导出文件版本 ${parsed.version}，当前期望 ${PROVIDER_EXPORT_VERSION}`,
-      )
+      log.info(`provider:import-from-file accepting older version ${parsed.version} (current: ${PROVIDER_EXPORT_VERSION})`)
     }
 
     return { payload: parsed as ProviderExportPayload, filePath }

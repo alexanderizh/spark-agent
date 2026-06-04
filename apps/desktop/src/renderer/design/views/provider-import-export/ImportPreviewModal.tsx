@@ -198,8 +198,9 @@ function ImportPreviewModal({
           <div className="alert-banner info">
             <Icons.AlertTriangle size={12} />
             <span>
-              出于安全考虑，<strong>API Key 不会随导入一并恢复</strong>。
-              新增的 profile 需要去编辑面板补 Key 才能 health-check。
+              <strong>API Key 将随导入一并恢复</strong>。
+              若导出文件中包含 API Key，导入时会自动写入本地 Keychain；
+              未包含 API Key 的 profile 需要去编辑面板补 Key 才能 health-check。
             </span>
           </div>
         </div>
