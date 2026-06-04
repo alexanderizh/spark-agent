@@ -20,6 +20,11 @@ export interface TeamInspectorAgent {
   name: string
   description: string
   builtIn: boolean
+  /** 只读详情（点击成员行展开）：供应商/模型/技能数/MCP 数 */
+  providerProfileId?: string | null
+  modelId?: string | null
+  skillCount?: number
+  mcpCount?: number
 }
 
 export interface TeamInspectorSectionProps {
@@ -43,6 +48,7 @@ export function TeamInspectorSection({ config, agents, onToggleMember, onChangeC
   const [collapsed, setCollapsed] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const host = agents.find((a) => a.id === config.hostAgentId)
   const memberSet = new Set(config.memberAgentIds)
@@ -73,24 +79,52 @@ export function TeamInspectorSection({ config, agents, onToggleMember, onChangeC
             </div>
           )}
 
-          {/* 成员行：toggle 控制是否允许被调 */}
+          {/* 成员行：点击行展开只读详情；toggle 控制是否允许被调 */}
           {members.map((agent) => (
-            <div key={agent.id} className="team-roster-row">
-              <AgentAvatar id={agent.id} name={agent.name} builtIn={agent.builtIn} />
-              <span className="team-roster-info">
-                <span className="team-roster-name">{agent.name}</span>
-                {agent.description && <span className="team-roster-desc">{agent.description.slice(0, 40)}</span>}
-              </span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={true}
-                className="team-roster-toggle on"
-                title="允许在本会话被调用"
-                onClick={() => onToggleMember(agent.id, false)}
+            <div key={agent.id}>
+              <div
+                className="team-roster-row team-roster-row-clickable"
+                onClick={() => setExpandedId((prev) => (prev === agent.id ? null : agent.id))}
               >
-                <span className="team-roster-toggle-knob" />
-              </button>
+                <AgentAvatar id={agent.id} name={agent.name} builtIn={agent.builtIn} />
+                <span className="team-roster-info">
+                  <span className="team-roster-name">{agent.name}</span>
+                  {agent.description && <span className="team-roster-desc">{agent.description.slice(0, 40)}</span>}
+                </span>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={true}
+                  className="team-roster-toggle on"
+                  title="允许在本会话被调用"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleMember(agent.id, false)
+                  }}
+                >
+                  <span className="team-roster-toggle-knob" />
+                </button>
+              </div>
+              {expandedId === agent.id && (
+                <div className="team-roster-detail">
+                  <div className="team-roster-detail-row">
+                    <span className="team-roster-detail-k">模型</span>
+                    <span className="team-roster-detail-v">{agent.modelId || '会话默认'}</span>
+                  </div>
+                  <div className="team-roster-detail-row">
+                    <span className="team-roster-detail-k">供应商</span>
+                    <span className="team-roster-detail-v">{agent.providerProfileId || '会话默认'}</span>
+                  </div>
+                  <div className="team-roster-detail-row">
+                    <span className="team-roster-detail-k">Skills</span>
+                    <span className="team-roster-detail-v">{agent.skillCount ?? 0}</span>
+                  </div>
+                  <div className="team-roster-detail-row">
+                    <span className="team-roster-detail-k">MCP</span>
+                    <span className="team-roster-detail-v">{agent.mcpCount ?? 0}</span>
+                  </div>
+                </div>
+              )}
             </div>
           ))}
 

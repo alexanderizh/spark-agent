@@ -12573,3 +12573,32 @@ body.inspector-resizing {
 .team-roster-advanced-row select {
   margin-left: auto;
 }
+
+/* Team Inspector：成员行点击展开的只读详情（Phase 4） */
+.team-roster-row-clickable {
+  cursor: pointer;
+}
+.team-roster-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0 8px 6px 40px;
+  padding: 6px 10px;
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+}
+.team-roster-detail-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-xs);
+}
+.team-roster-detail-k {
+  color: var(--text-faint);
+}
+.team-roster-detail-v {
+  color: var(--text-muted);
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

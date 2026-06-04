@@ -1504,6 +1504,8 @@ export class SessionService {
     teamConfig: TeamModeConfig
     workspaceRootPath: string
     eventRepo: EventRepository
+    /** 本层 dispatch 的深度（Host=0，嵌套时递增） */
+    currentDepth?: number
   }): Promise<SDKMcpServerConfig | null> {
     const factory = await loadSdkMcpFactory()
     if (factory == null) return null
@@ -1545,9 +1547,9 @@ export class SessionService {
           hostAgentId: ctx.hostAgent.id,
           members: ctx.members,
           teamConfig: ctx.teamConfig,
-          currentDepth: 0,
+          currentDepth: ctx.currentDepth ?? 0,
           emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
-          executeMember: ({ member, task: memberTask, dispatchId, signal }) =>
+          executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth }) =>
             this.executeMemberTurn({
               member,
               task: memberTask,
@@ -1557,6 +1559,9 @@ export class SessionService {
               workspaceRootPath: ctx.workspaceRootPath,
               eventRepo: ctx.eventRepo,
               signal,
+              memberDepth,
+              members: ctx.members,
+              teamConfig: ctx.teamConfig,
             }),
         })
         return {
@@ -1579,8 +1584,13 @@ export class SessionService {
     workspaceRootPath: string
     eventRepo: EventRepository
     signal: AbortSignal
+    /** member 自身 dispatch 的深度（用于嵌套判定） */
+    memberDepth: number
+    members: AgentItem[]
+    teamConfig: TeamModeConfig
   }): Promise<TeamMemberExecutionResult> {
-    const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal } = args
+    const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal, memberDepth, members, teamConfig } =
+      args
 
     // 解析 member 的 provider/apiKey/model；member 未配置 provider 时回落到会话 provider。
     const sessionRepo = new SessionRepository(this.db)
@@ -1606,6 +1616,26 @@ export class SessionService {
     const memberSystemPrompt = buildManagedAgentSystemPrompt(member, null)
     const userMessage = buildMemberUserMessage(task)
 
+    // Member 自身的 MCP 工具
+    const memberMcpServers = this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
+    // 嵌套：仅当 allowNesting 且 member 的 dispatch 深度仍 < maxDepth 时，给 member 注入
+    // spark_team 工具（深度 = memberDepth），使其可再调用下一层成员。
+    let nestedTeamServer: SDKMcpServerConfig | undefined
+    if (teamConfig.allowNesting && memberDepth < teamConfig.maxDepth) {
+      nestedTeamServer =
+        (await this.createTeamMcpServer({
+          sessionId,
+          turnId,
+          hostAgent: member,
+          members,
+          teamConfig,
+          workspaceRootPath,
+          eventRepo,
+          currentDepth: memberDepth,
+        })) ?? undefined
+      if (nestedTeamServer != null) memberMcpServers.spark_team = nestedTeamServer
+    }
+
     const sdkConfig: SDKExecutorConfig = {
       apiKey,
       model,
@@ -1616,10 +1646,14 @@ export class SessionService {
       ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
       ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
-      // Member 默认不可再 dispatch（防递归）；嵌套放开留待 Phase 4。
+      ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
+      // 嵌套时预批准 dispatch 工具；始终禁用内置 Task（§7.4）。
+      ...(nestedTeamServer != null ? { allowedTools: ['mcp__spark_team__agent_dispatch'] } : {}),
       disallowedTools: ['Task'],
       enableCheckpoints: false,
       continueSession: false,
+      ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
+      ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
     }
 
     const executor = new ClaudeSDKExecutor()

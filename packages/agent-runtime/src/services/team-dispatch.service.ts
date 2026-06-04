@@ -45,6 +45,8 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
     task: TeamA2ATask
     dispatchId: string
     signal: AbortSignal
+    /** member 自身发起的 dispatch 将处于的深度（= 本 dispatch 深度 + 1），用于嵌套判定 */
+    memberDepth: number
   }) => Promise<TeamMemberExecutionResult>
 }
 
@@ -138,7 +140,13 @@ export class TeamDispatchService {
     const startedAt = Date.now()
 
     try {
-      const result = await ctx.executeMember({ member, task, dispatchId, signal: controller.signal })
+      const result = await ctx.executeMember({
+        member,
+        task,
+        dispatchId,
+        signal: controller.signal,
+        memberDepth: ctx.currentDepth + 1,
+      })
       const durationMs = Date.now() - startedAt
       const reply: TeamA2AReply = {
         taskId: task.taskId,

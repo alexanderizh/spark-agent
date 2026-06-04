@@ -6826,6 +6826,10 @@ function ChatInspector({
             name: a.name,
             description: a.description,
             builtIn: a.builtIn,
+            providerProfileId: a.providerProfileId ?? null,
+            modelId: a.modelId ?? null,
+            skillCount: a.skillIds.length,
+            mcpCount: a.mcpServerIds.length,
           }))}
           onToggleMember={(agentId, enabled) =>
             onChangeTeamConfig({
