@@ -27,7 +27,7 @@ import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { sep } from 'node:path'
-import type { AgentEvent, AgentStatusValue } from '@spark/protocol'
+import type { AgentEvent, AgentStatusValue, UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import {
   createLogger,
   resolveModelContextWindow,
@@ -55,7 +55,8 @@ const log = createLogger('claude-sdk-executor')
 
 const SDK_HOST_TOOL_INSTRUCTIONS = [
   'SDK host tool rules:',
-  '- When using AskUserQuestion, every question must include an options array with 2-4 choices. Each option must include label and description. Do not ask open-ended questions through AskUserQuestion.',
+  '- When using AskUserQuestion, prefer structured prompts. Use `type: "single_choice"` with 2-5 clear options for fast decisions, or `type: "text"` when the user must type a custom answer.',
+  '- For single-choice questions, include concise labels and descriptions. If canned options may not fit, set `allowOther: true` or mark an option with `allowsFreeText: true`.',
   '- AskUserQuestion option previews may be HTML fragments; keep them self-contained when included.',
   '- ExitPlanMode plans are rendered as Markdown for the user, so provide the plan text directly in the plan field.',
 ].join('\n')
@@ -659,39 +660,24 @@ function isAskUserQuestionTool(toolName: string): boolean {
  * The input format follows SDK's AskUserQuestion schema:
  * { questions: [{ question, header, options: [{ label, description, preview }] }] }
  */
-function extractQuestionsFromInput(input: Record<string, unknown>): Array<{
-  question: string
-  header: string
-  options: Array<{ label: string; description?: string; preview?: string }>
-}> {
+function extractQuestionsFromInput(input: Record<string, unknown>): UserQuestionPrompt[] {
   const questions = input.questions
   if (!Array.isArray(questions)) {
-    // Single question format: { question, header, options }
-    const question = typeof input.question === 'string' ? input.question : ''
-    const header = typeof input.header === 'string' ? input.header : ''
-    const options = normalizeQuestionOptions(input.options)
-    if (question && options.length > 0) {
-      return [{ question, header, options }]
-    }
-    return []
+    const normalized = normalizeQuestionPrompt(input)
+    return normalized == null ? [] : [normalized]
   }
 
   return questions
     .map((q: unknown) => {
       if (typeof q !== 'object' || q == null) return null
-      const qObj = q as Record<string, unknown>
-      const question = typeof qObj.question === 'string' ? qObj.question : ''
-      const header = typeof qObj.header === 'string' ? qObj.header : ''
-      const options = normalizeQuestionOptions(qObj.options)
-      if (!question || options.length === 0) return null
-      return { question, header, options }
+      return normalizeQuestionPrompt(q as Record<string, unknown>)
     })
     .filter((q): q is NonNullable<typeof q> => q != null)
 }
 
 function normalizeQuestionOptions(
   options: unknown,
-): Array<{ label: string; description?: string; preview?: string }> {
+): UserQuestionOption[] {
   if (!Array.isArray(options)) return []
   return options
     .map((opt: unknown) => {
@@ -705,9 +691,49 @@ function normalizeQuestionOptions(
         label,
         ...(hasDescription ? { description: optObj.description as string } : {}),
         ...(hasPreview ? { preview: optObj.preview as string } : {}),
+        ...(typeof optObj.value === 'string' ? { value: optObj.value } : {}),
+        ...(optObj.allowsFreeText === true ? { allowsFreeText: true } : {}),
+        ...(typeof optObj.freeTextPlaceholder === 'string'
+          ? { freeTextPlaceholder: optObj.freeTextPlaceholder }
+          : {}),
       }
     })
     .filter((opt): opt is NonNullable<typeof opt> => opt != null)
+}
+
+function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQuestionPrompt | null {
+  const question = typeof questionInput.question === 'string' ? questionInput.question : ''
+  if (!question) return null
+
+  const rawType = questionInput.type
+  const normalizedType =
+    rawType === 'text' || rawType === 'single_choice'
+      ? rawType
+      : Array.isArray(questionInput.options)
+        ? 'single_choice'
+        : 'text'
+
+  const options = normalizeQuestionOptions(questionInput.options)
+  if (normalizedType === 'single_choice' && options.length === 0) return null
+
+  return {
+    ...(typeof questionInput.id === 'string' ? { id: questionInput.id } : {}),
+    question,
+    header: typeof questionInput.header === 'string' ? questionInput.header : '',
+    type: normalizedType,
+    ...(questionInput.required === false ? { required: false } : { required: true }),
+    ...(typeof questionInput.placeholder === 'string' ? { placeholder: questionInput.placeholder } : {}),
+    ...(questionInput.multiline === true ? { multiline: true } : {}),
+    ...(questionInput.allowSkip === true ? { allowSkip: true } : {}),
+    ...(questionInput.allowOther === true ? { allowOther: true } : {}),
+    ...(typeof questionInput.otherOptionLabel === 'string'
+      ? { otherOptionLabel: questionInput.otherOptionLabel }
+      : {}),
+    ...(typeof questionInput.otherPlaceholder === 'string'
+      ? { otherPlaceholder: questionInput.otherPlaceholder }
+      : {}),
+    ...(options.length > 0 ? { options } : {}),
+  }
 }
 
 function shouldUseSparkPermissionCallback(

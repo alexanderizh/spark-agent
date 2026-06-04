@@ -28,7 +28,7 @@ import {
   ToolChooser,
   TurnFileSummaryCard,
 } from '../ChatInteractions'
-import { SparkInput } from '../components/FormControls'
+import { SparkInput, SparkTextarea } from '../components/FormControls'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
 import { SidebarExpandButton } from '../SidebarExpandButton'
@@ -59,6 +59,8 @@ import type {
   TurnPromptSnapshotEvent,
   ManagedAgent,
   SessionAttachment,
+  UserQuestionPrompt,
+  UserQuestionOption,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
@@ -97,10 +99,32 @@ type ComposerAttachment = SessionAttachment & {
   previewPath?: string
   previewUrl?: string
 }
+type ComposerDraftSnapshot = {
+  value: string
+  attachments: ComposerAttachment[]
+  manualExpanded: boolean
+}
+const EMPTY_COMPOSER_DRAFT: ComposerDraftSnapshot = {
+  value: '',
+  attachments: [],
+  manualExpanded: false,
+}
 type MessageAttachment = {
   type: 'image' | 'file'
   path: string
   name?: string
+}
+type UserQuestionData = {
+  questionId: string
+  sessionId: string
+  questions: UserQuestionPrompt[]
+}
+type UserQuestionDraft = {
+  skipped?: boolean
+  selectedLabel?: string
+  selectedValue?: string
+  otherText?: string
+  text?: string
 }
 type ContextMenuItem = {
   key: string
@@ -112,7 +136,9 @@ type ContextMenuItem = {
 }
 type ChatViewProps = {
   approvalRequest?: PermissionApprovalRequest | null
-  onApprovalClose?: () => void
+  onApprovalClose?: (sessionId: string, requestId?: string) => void
+  userQuestion?: UserQuestionData | null
+  onUserQuestionClose?: (sessionId: string, questionId?: string) => void
 }
 
 const SAFE_FILE_SCHEME = 'safe-file'
@@ -147,21 +173,24 @@ type ContextUsageState = {
 type ProjectContextState = Extract<AgentEvent, { type: 'project_context_loaded' }>
 
 const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
+const COMPOSER_DRAFTS_KEY = 'spark-agent:composer-drafts'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const SESSION_HISTORY_PAGE_SIZE = 500
-const LAST_SESSION_KEY = 'spark-agent:last-active-session'
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
-export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewProps = {}) {
+export function ChatView({
+  approvalRequest = null,
+  onApprovalClose,
+  userQuestion = null,
+  onUserQuestionClose,
+}: ChatViewProps = {}) {
   const { t } = useApp()
   // ── Shared state from SessionSidebarContext ──
   const sessionCtx = useSessionSidebar()
   const active = sessionCtx.activeSessionId
-  const setActive = sessionCtx.setActiveSession
   const activeWorkspaceId = sessionCtx.activeWorkspaceId
   const setActiveWorkspaceId = sessionCtx.setActiveWorkspace
-  const justCreatedSessionRef = sessionCtx.justCreatedSessionRef
   // Read data lists from context (single source of truth)
   const sessions = sessionCtx.sessions
   const workspaces = sessionCtx.workspaces
@@ -202,39 +231,22 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
 
-  // ── User question state (AskUserQuestion tool) ──
-  type UserQuestionData = {
-    questionId: string
-    sessionId: string
-    questions: Array<{
-      question: string
-      header: string
-      options: Array<{ label: string; description?: string; preview?: string }>
-    }>
-  }
-  const [userQuestion, setUserQuestion] = useState<UserQuestionData | null>(null)
   const { invoke: answerQuestion } = useIpcInvoke('session:answer-question')
-
-  useIpcStream(
-    'stream:session:user-question',
-    (data) => { setUserQuestion(data) },
-    [],
-  )
 
   const handleAnswerQuestion = useCallback(
     async (answers: Record<string, unknown>) => {
       if (userQuestion == null) return
       await answerQuestion({ questionId: userQuestion.questionId, answers })
-      setUserQuestion(null)
+      onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
     },
-    [userQuestion, answerQuestion],
+    [answerQuestion, onUserQuestionClose, userQuestion],
   )
 
   const handleCancelQuestion = useCallback(() => {
     if (userQuestion == null) return
     answerQuestion({ questionId: userQuestion.questionId, answers: { cancelled: true } }).catch(console.error)
-    setUserQuestion(null)
-  }, [userQuestion, answerQuestion])
+    onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
+  }, [answerQuestion, onUserQuestionClose, userQuestion])
 
   // ── Session status updates via context ──
   const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
@@ -407,6 +419,13 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
             />
+            {userQuestion != null && (
+              <UserQuestionDock
+                data={userQuestion}
+                onAnswer={handleAnswerQuestion}
+                onCancel={handleCancelQuestion}
+              />
+            )}
             <ComposerV2
               session={activeSession}
               workspace={activeWorkspace}
@@ -471,14 +490,6 @@ export function ChatView({ approvalRequest = null, onApprovalClose }: ChatViewPr
           sessionId={active}
           plan={proposedPlan}
           onClose={() => setProposedPlan(null)}
-        />
-      )}
-
-      {userQuestion != null && (
-        <UserQuestionModal
-          data={userQuestion}
-          onAnswer={handleAnswerQuestion}
-          onCancel={handleCancelQuestion}
         />
       )}
     </div>
@@ -1844,6 +1855,9 @@ function InlineQuestionCard({
 }) {
   if (block.questions.length === 0) return null
 
+  const first = block.questions[0]
+  const total = block.questions.length
+
   return (
     <div className="chat-card">
       <div className="chat-card-h info">
@@ -1855,37 +1869,33 @@ function InlineQuestionCard({
           </span>
         )}
       </div>
-      <div className="chat-card-body" style={{ gap: 12 }}>
-        {block.questions.map((q, qi) => (
-          <div key={qi} className="question-item" style={{ padding: '8px 0' }}>
-            {q.header && (
-              <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4, color: 'var(--c-text)' }}>
-                {q.header}
-              </div>
-            )}
-            <div style={{ fontSize: 13, marginBottom: 8, color: 'var(--c-text)' }}>{q.question}</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {q.options.map((opt, oi) => (
-                <div
-                  key={oi}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 6,
-                    border: '1px solid var(--c-border)',
-                    fontSize: 12,
-                  }}
-                >
-                  <div style={{ fontWeight: 500 }}>{opt.label}</div>
-                  {opt.description && (
-                    <div style={{ color: 'var(--c-dim)', marginTop: 2, fontSize: 11 }}>
-                      {opt.description}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+      <div className="chat-card-body" style={{ gap: 10 }}>
+        {first?.header && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text)' }}>
+            {first.header}
           </div>
-        ))}
+        )}
+        <div style={{ fontSize: 13, color: 'var(--c-text)' }}>
+          {first?.question}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span
+            style={{
+              fontSize: 12,
+              color: 'var(--c-dim)',
+              padding: '4px 8px',
+              borderRadius: 999,
+              background: 'var(--c-bg-soft)',
+            }}
+          >
+            共 {total} 题
+          </span>
+          {!block.answered && (
+            <span style={{ fontSize: 12, color: 'var(--c-dim)' }}>
+              请在底部问答面板中逐题作答
+            </span>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -3977,7 +3987,7 @@ function ComposerV2({
   contextUsage: ContextUsageState | null
   isWorking: boolean
   approvalRequest?: PermissionApprovalRequest | null
-  onApprovalClose?: () => void
+  onApprovalClose?: (sessionId: string, requestId?: string) => void
   onCreateSession: (options: {
     providerProfileId?: string
     modelId?: string
@@ -4013,13 +4023,11 @@ function ComposerV2({
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
   if (initialPrefsRef.current == null) initialPrefsRef.current = readComposerPrefs()
   const initialPrefs = initialPrefsRef.current
-  const [value, setValue] = useState('')
-  const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  const [drafts, setDrafts] = useState<Record<string, ComposerDraftSnapshot>>(() => readComposerDrafts())
   const [sending, setSending] = useState(false)
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueRunning, setQueueRunning] = useState(false)
   const [queueVisible, setQueueVisible] = useState(true)
-  const [manualExpanded, setManualExpanded] = useState(false)
   const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
   const [slashFilter, setSlashFilter] = useState('')
   const [slashOpen, setSlashOpen] = useState(false)
@@ -4097,6 +4105,11 @@ function ComposerV2({
   const contextWindow = resolveProviderContextWindow(
     selectedProvider?.supportsMillionContext === true,
   )
+  const draftBucketKey = session?.id ?? `draft:new:${activeWorkspaceId ?? 'none'}`
+  const draftState = drafts[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT
+  const value = draftState.value
+  const attachments = draftState.attachments
+  const manualExpanded = draftState.manualExpanded
   const contextUsedTokens = contextUsage?.estimatedTokens ?? contextInputTokens
   const contextRatio =
     contextWindow > 0
@@ -4112,6 +4125,47 @@ function ComposerV2({
     effectiveModelId.length > 0
   const visibleActiveTaskText = queueRunning ? activeTaskText : null
   const showTaskQueue = visibleActiveTaskText != null || queuedMessages.length > 0
+
+  const updateDraft = useCallback(
+    (updater: (draft: ComposerDraftSnapshot) => ComposerDraftSnapshot) => {
+      setDrafts((current) => {
+        const base = current[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT
+        const next = updater(base)
+        if (
+          next.value === base.value &&
+          next.attachments === base.attachments &&
+          next.manualExpanded === base.manualExpanded
+        ) {
+          return current
+        }
+        const nextDrafts = { ...current, [draftBucketKey]: next }
+        writeComposerDrafts(nextDrafts)
+        return nextDrafts
+      })
+    },
+    [draftBucketKey],
+  )
+
+  const setValue = useCallback((next: React.SetStateAction<string>) => {
+    updateDraft((draft) => ({
+      ...draft,
+      value: typeof next === 'function' ? next(draft.value) : next,
+    }))
+  }, [updateDraft])
+
+  const setAttachments = useCallback((next: React.SetStateAction<ComposerAttachment[]>) => {
+    updateDraft((draft) => ({
+      ...draft,
+      attachments: typeof next === 'function' ? next(draft.attachments) : next,
+    }))
+  }, [updateDraft])
+
+  const setManualExpanded = useCallback((next: React.SetStateAction<boolean>) => {
+    updateDraft((draft) => ({
+      ...draft,
+      manualExpanded: typeof next === 'function' ? next(draft.manualExpanded) : next,
+    }))
+  }, [updateDraft])
 
   const rememberRuntimePatch = useCallback((patch: SessionRuntimePatch) => {
     pendingRuntimePatchRef.current = { ...pendingRuntimePatchRef.current, ...patch }
@@ -4877,7 +4931,17 @@ function ComposerV2({
         {visibleApprovalRequest && (
           <InlineApprovalRequest
             request={visibleApprovalRequest}
-            {...(onApprovalClose !== undefined ? { onClose: onApprovalClose } : {})}
+            {...(
+              onApprovalClose !== undefined
+                ? {
+                    onClose: () =>
+                      onApprovalClose(
+                        visibleApprovalRequest.sessionId,
+                        visibleApprovalRequest.requestId,
+                      ),
+                  }
+                : {}
+            )}
           />
         )}
         {showTaskQueue && queueVisible && (
@@ -5847,6 +5911,27 @@ function writeComposerPrefs(patch: ComposerPrefs): void {
       .catch(() => {
         /* settings persistence is best-effort from the renderer */
       })
+  }
+}
+
+function readComposerDrafts(): Record<string, ComposerDraftSnapshot> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(COMPOSER_DRAFTS_KEY)
+    if (raw == null) return {}
+    const parsed = JSON.parse(raw) as Record<string, ComposerDraftSnapshot>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeComposerDrafts(drafts: Record<string, ComposerDraftSnapshot>): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(COMPOSER_DRAFTS_KEY, JSON.stringify(drafts))
+  } catch {
+    // Ignore local persistence failures and keep in-memory drafts usable.
   }
 }
 
@@ -7254,47 +7339,82 @@ function formatRelativeTime(value: string): string {
   return `${Math.floor(diffMs / week)} 周`
 }
 
-/** Modal for AskUserQuestion tool - displays questions and collects user answers */
-function UserQuestionModal({
+function UserQuestionWizard({
   data,
   onAnswer,
   onCancel,
 }: {
-  data: {
-    questionId: string
-    sessionId: string
-    questions: Array<{
-      question: string
-      header: string
-      options: Array<{ label: string; description?: string; preview?: string }>
-    }>
-  }
+  data: UserQuestionData
   onAnswer: (answers: Record<string, unknown>) => void
   onCancel: () => void
 }) {
-  const [selections, setSelections] = useState<Record<number, string>>({})
+  const [currentIndex, setCurrentIndex] = useState(0)
+  const [drafts, setDrafts] = useState<Record<number, UserQuestionDraft>>({})
   const [submitted, setSubmitted] = useState(false)
+  const currentQuestion = data.questions[currentIndex]
+  const currentDraft = drafts[currentIndex] ?? {}
 
-  // Initialize selections with first option for each question
   useEffect(() => {
-    const initial: Record<number, string> = {}
-    data.questions.forEach((q, i) => {
-      if (q.options.length > 0) {
-        initial[i] = q.options[0]!.label
-      }
-    })
-    setSelections(initial)
+    setCurrentIndex(0)
+    setDrafts({})
+    setSubmitted(false)
   }, [data.questions])
 
+  if (currentQuestion == null) return null
+
+  const total = data.questions.length
+  const answeredCount = data.questions.filter((_, index) => isQuestionAnswered(data.questions[index]!, drafts[index])).length
+  const canGoBack = currentIndex > 0
+  const canGoNext = currentIndex < total - 1
+  const canSubmit = data.questions.every((question, index) => isQuestionReadyForSubmit(question, drafts[index]))
+  const showOtherInput = shouldShowOtherInput(currentQuestion, currentDraft)
+
+  const updateDraft = (patch: Partial<UserQuestionDraft>) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [currentIndex]: {
+        ...prev[currentIndex],
+        ...patch,
+      },
+    }))
+  }
+
+  const handleSelectOption = (option: UserQuestionOption) => {
+    updateDraft({
+      skipped: false,
+      selectedLabel: option.label,
+      selectedValue: option.value ?? option.label,
+      ...(option.allowsFreeText ? {} : { otherText: '' }),
+      text: '',
+    })
+  }
+
+  const handleTextChange = (value: string) => {
+    updateDraft({ skipped: false, text: value })
+  }
+
+  const handleSkip = () => {
+    updateDraft({
+      skipped: true,
+      selectedLabel: '',
+      selectedValue: '',
+      otherText: '',
+      text: '',
+    })
+    if (canGoNext) {
+      setCurrentIndex((prev) => Math.min(prev + 1, total - 1))
+    }
+  }
+
   const handleSubmit = () => {
-    if (submitted) return
+    if (submitted || !canSubmit) return
     setSubmitted(true)
-    // Format answers as expected by SDK
     const answers: Record<string, unknown> = {
-      answers: data.questions.map((q, i) => ({
-        question: q.question,
-        answer: selections[i] ?? '',
-      })),
+      answers: data.questions.map((question, index) =>
+        buildQuestionAnswer(question, drafts[index], index),
+      ),
+      questionCount: total,
+      answeredCount,
     }
     onAnswer(answers)
   }
@@ -7305,52 +7425,237 @@ function UserQuestionModal({
   }
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal user-question-modal">
-        <div className="modal-h">
-          <div className="modal-h-icon">
-            <Icons.HelpCircle size={17} />
-          </div>
-          <div>
-            <div className="modal-title">需要您的选择</div>
-            <div className="modal-subtitle">Agent 正在等待您的回答以继续执行任务</div>
-          </div>
+    <>
+      <div className="user-question-progress">
+        <div>
+          <div className="user-question-kicker">问题 {currentIndex + 1} / {total}</div>
+          <div className="user-question-progress-text">已准备 {answeredCount} / {total}</div>
         </div>
-        <div className="modal-body">
-          {data.questions.map((q, qIndex) => (
-            <div key={qIndex} className="question-item">
-              {q.header && <div className="question-header">{q.header}</div>}
-              <div className="question-text">{q.question}</div>
+        <div className="user-question-progressbar" aria-hidden="true">
+          <div
+            className="user-question-progressbar-fill"
+            style={{ width: `${Math.max((currentIndex + 1) / Math.max(total, 1) * 100, 8)}%` }}
+          />
+        </div>
+      </div>
+
+      <div className="user-question-body">
+        <div className="question-item">
+          {currentQuestion.header && <div className="question-header">{currentQuestion.header}</div>}
+          <div className="question-text">{currentQuestion.question}</div>
+          <div className="question-meta">
+            <span>{getQuestionTypeLabel(currentQuestion)}</span>
+            <span>{currentQuestion.allowSkip === false ? '需完成' : '可跳过'}</span>
+          </div>
+
+          {isChoiceQuestion(currentQuestion) ? (
+            <>
               <div className="question-options">
-                {q.options.map((opt, optIndex) => (
+                {(currentQuestion.options ?? []).map((opt, optIndex) => {
+                  const selected = currentDraft.selectedLabel === opt.label
+                  return (
+                    <button
+                      key={`${opt.label}-${optIndex}`}
+                      className={`question-option ${selected ? 'selected' : ''}`}
+                      onClick={() => handleSelectOption(opt)}
+                      disabled={submitted}
+                    >
+                      <div className="option-label">{opt.label}</div>
+                      {opt.description && <div className="option-desc">{opt.description}</div>}
+                    </button>
+                  )
+                })}
+                {currentQuestion.allowOther && (
                   <button
-                    key={optIndex}
-                    className={`question-option ${selections[qIndex] === opt.label ? 'selected' : ''}`}
-                    onClick={() => setSelections((prev) => ({ ...prev, [qIndex]: opt.label }))}
+                    className={`question-option ${currentDraft.selectedLabel === getOtherOptionLabel(currentQuestion) ? 'selected' : ''}`}
+                    onClick={() =>
+                      updateDraft({
+                        skipped: false,
+                        selectedLabel: getOtherOptionLabel(currentQuestion),
+                        selectedValue: 'other',
+                        text: '',
+                      })}
                     disabled={submitted}
                   >
-                    <div className="option-label">{opt.label}</div>
-                    {opt.description && <div className="option-desc">{opt.description}</div>}
+                    <div className="option-label">{getOtherOptionLabel(currentQuestion)}</div>
+                    <div className="option-desc">输入不在预设选项中的答案</div>
                   </button>
-                ))}
+                )}
               </div>
+              {showOtherInput && (
+                <div className="user-question-input-wrap">
+                  <SparkInput
+                    value={currentDraft.otherText ?? ''}
+                    onChange={(event) => updateDraft({ skipped: false, otherText: event.target.value })}
+                    placeholder={getOtherPlaceholder(currentQuestion)}
+                    disabled={submitted}
+                    autoFocus
+                  />
+                </div>
+              )}
+            </>
+          ) : (
+            <div className="user-question-input-wrap">
+              {currentQuestion.multiline ? (
+                <SparkTextarea
+                  value={currentDraft.text ?? ''}
+                  onChange={(event) => handleTextChange(event.target.value)}
+                  placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
+                  disabled={submitted}
+                  rows={5}
+                  autoSize={{ minRows: 4, maxRows: 8 }}
+                  autoFocus
+                />
+              ) : (
+                <SparkInput
+                  value={currentDraft.text ?? ''}
+                  onChange={(event) => handleTextChange(event.target.value)}
+                  placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
+                  disabled={submitted}
+                  autoFocus
+                />
+              )}
             </div>
-          ))}
+          )}
+
+          {currentDraft.skipped && (
+            <div className="question-skip-note">这一题已标记为跳过，您仍可返回修改。</div>
+          )}
         </div>
-        <div className="modal-foot">
-          <button className="btn ghost sm" onClick={handleCancel} disabled={submitted}>
-            取消
+      </div>
+
+      <div className="user-question-actions">
+        <button className="btn ghost sm" onClick={handleCancel} disabled={submitted}>
+          取消
+        </button>
+        <button className="btn ghost sm" onClick={() => setCurrentIndex((prev) => Math.max(prev - 1, 0))} disabled={submitted || !canGoBack}>
+          上一题
+        </button>
+        <button
+          className="btn ghost sm"
+          onClick={handleSkip}
+          disabled={submitted || currentQuestion.allowSkip === false}
+        >
+          跳过
+        </button>
+        <div className="spacer" />
+        {canGoNext ? (
+          <button className="btn primary sm" onClick={() => setCurrentIndex((prev) => Math.min(prev + 1, total - 1))} disabled={submitted}>
+            下一题
           </button>
-          <div className="spacer" />
-          <button
-            className="btn primary sm"
-            onClick={handleSubmit}
-            disabled={submitted || Object.keys(selections).length < data.questions.length}
-          >
+        ) : (
+          <button className="btn primary sm" onClick={handleSubmit} disabled={submitted || !canSubmit}>
             {submitted ? <Icons.Spinner size={12} /> : null}
             提交答案
           </button>
+        )}
+      </div>
+
+      <div className="user-question-pagination">
+        {data.questions.map((question, index) => (
+          <button
+            key={question.id ?? `${question.question}-${index}`}
+            className={`user-question-dot ${index === currentIndex ? 'active' : ''} ${isQuestionAnswered(question, drafts[index]) ? 'done' : ''}`}
+            onClick={() => setCurrentIndex(index)}
+            disabled={submitted}
+            title={`第 ${index + 1} 题`}
+          >
+            {index + 1}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
+function isChoiceQuestion(question: UserQuestionPrompt): boolean {
+  return (question.type ?? 'single_choice') === 'single_choice'
+}
+
+function getQuestionTypeLabel(question: UserQuestionPrompt): string {
+  return isChoiceQuestion(question) ? '选择题' : question.multiline ? '长文本输入' : '输入题'
+}
+
+function getOtherOptionLabel(question: UserQuestionPrompt): string {
+  return question.otherOptionLabel?.trim() || '其他'
+}
+
+function getOtherPlaceholder(question: UserQuestionPrompt): string {
+  return question.otherPlaceholder?.trim() || '请输入其他内容'
+}
+
+function shouldShowOtherInput(question: UserQuestionPrompt, draft: UserQuestionDraft): boolean {
+  if (!isChoiceQuestion(question)) return false
+  const matchedOption = (question.options ?? []).find((option) => option.label === draft.selectedLabel)
+  if (matchedOption?.allowsFreeText) return true
+  return question.allowOther === true && draft.selectedLabel === getOtherOptionLabel(question)
+}
+
+function isQuestionAnswered(question: UserQuestionPrompt, draft: UserQuestionDraft | undefined): boolean {
+  if (draft?.skipped) return true
+  if (draft == null) return false
+  if (isChoiceQuestion(question)) {
+    if (!draft.selectedLabel) return false
+    return !shouldShowOtherInput(question, draft) || (draft.otherText?.trim().length ?? 0) > 0
+  }
+  return (draft.text?.trim().length ?? 0) > 0
+}
+
+function isQuestionReadyForSubmit(question: UserQuestionPrompt, draft: UserQuestionDraft | undefined): boolean {
+  if (draft?.skipped) return true
+  return isQuestionAnswered(question, draft)
+}
+
+function buildQuestionAnswer(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+  index: number,
+) {
+  const isSkipped = draft?.skipped === true
+  const otherText = draft?.otherText?.trim() ?? ''
+  const text = draft?.text?.trim() ?? ''
+  const answerValue = isChoiceQuestion(question)
+    ? shouldShowOtherInput(question, draft ?? {}) ? otherText : (draft?.selectedValue ?? draft?.selectedLabel ?? '')
+    : text
+
+  return {
+    index,
+    id: question.id ?? `question-${index + 1}`,
+    header: question.header,
+    question: question.question,
+    type: question.type ?? (isChoiceQuestion(question) ? 'single_choice' : 'text'),
+    skipped: isSkipped,
+    answer: isSkipped ? '' : answerValue,
+    ...(draft?.selectedLabel ? { optionLabel: draft.selectedLabel } : {}),
+    ...(draft?.selectedValue ? { optionValue: draft.selectedValue } : {}),
+    ...(otherText ? { otherText } : {}),
+    ...(text ? { text } : {}),
+  }
+}
+
+/** Sticky reply panel for AskUserQuestion so users always have an in-context reply path */
+function UserQuestionDock(props: Parameters<typeof UserQuestionWizard>[0]) {
+  const total = props.data.questions.length
+  const hasTextQuestion = props.data.questions.some((question) => !isChoiceQuestion(question))
+
+  return (
+    <div className="user-question-dock">
+      <div className="user-question-dock-head">
+        <div className="user-question-dock-icon">
+          <Icons.HelpCircle size={17} />
         </div>
+        <div style={{ minWidth: 0 }}>
+          <div className="user-question-dock-title">Agent 正在等您回复</div>
+          <div className="user-question-dock-subtitle">
+            逐题作答，支持回退、跳过，以及输入自定义答案
+          </div>
+        </div>
+        <div className="user-question-dock-badge">
+          {total} 题{hasTextQuestion ? ' · 含输入题' : ''}
+        </div>
+      </div>
+      <div className="user-question-dock-panel">
+        <UserQuestionWizard {...props} />
       </div>
     </div>
   )

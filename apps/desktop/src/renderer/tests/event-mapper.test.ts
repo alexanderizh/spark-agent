@@ -189,6 +189,69 @@ describe('MessageBuilder', () => {
     ])
   })
 
+  it('normalizes mixed AskUserQuestion prompt types into a user_question block', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'question-1',
+      toolName: 'AskUserQuestion',
+      toolInput: {
+        questions: [
+          {
+            id: 'style',
+            question: '希望我怎么协助？',
+            header: '协作方式',
+            allowOther: true,
+            options: [{ label: '直接帮我写', description: '你来直接改代码' }],
+          },
+          {
+            id: 'extra',
+            question: '补充一点背景',
+            header: '额外信息',
+            type: 'text',
+            multiline: true,
+            placeholder: '输入当前上下文',
+          },
+        ],
+      },
+      source: 'builtin',
+    })
+
+    const message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.blocks).toMatchObject([
+      {
+        kind: 'user_question',
+        toolCallId: 'question-1',
+        answered: false,
+        questions: [
+          {
+            id: 'style',
+            question: '希望我怎么协助？',
+            header: '协作方式',
+            type: 'single_choice',
+            required: true,
+            allowOther: true,
+            options: [{ label: '直接帮我写', description: '你来直接改代码' }],
+          },
+          {
+            id: 'extra',
+            question: '补充一点背景',
+            header: '额外信息',
+            type: 'text',
+            required: true,
+            multiline: true,
+            placeholder: '输入当前上下文',
+          },
+        ],
+      },
+    ])
+  })
+
   it('updates subagent UIBlock on subagent_completed event', () => {
     const builder = new MessageBuilder()
 

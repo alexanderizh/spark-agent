@@ -9,7 +9,7 @@ import {
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
-import type { PermissionApprovalRequest } from '@spark/protocol'
+import type { PermissionApprovalRequest, SessionId, UserQuestionPrompt } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 
 import { ChatView } from './design/views/ChatView'
@@ -36,6 +36,12 @@ import {
 
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
 const isPlatformWin32 = typeof window !== 'undefined' && window.spark.platform === 'win32'
+
+type UserQuestionRequest = {
+  questionId: string
+  sessionId: string
+  questions: UserQuestionPrompt[]
+}
 
 function SparkLogoMark() {
   return (
@@ -253,7 +259,8 @@ function Shell() {
   const { t, setTweak } = useApp()
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
-  const [approvalRequest, setApprovalRequest] = useState<PermissionApprovalRequest | null>(null)
+  const [approvalRequests, setApprovalRequests] = useState<Record<string, PermissionApprovalRequest>>({})
+  const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
 
   // Shared "start a brand new conversation" handler.
   // - Clears any active session/workspace so the chat view renders in fresh
@@ -261,11 +268,55 @@ function Shell() {
   // - Used by both the sidebar "新建任务" button and the Cmd+N keyboard
   //   shortcut so they stay in lockstep.
   const sessionCtx = useSessionSidebar()
+  const activeSessionRef = useRef(sessionCtx.activeSessionId)
+  const viewRef = useRef(t.view)
+  const chatModeRef = useRef(t.chatMode)
+
+  useEffect(() => {
+    activeSessionRef.current = sessionCtx.activeSessionId
+  }, [sessionCtx.activeSessionId])
+
+  useEffect(() => {
+    viewRef.current = t.view
+    chatModeRef.current = t.chatMode
+  }, [t.chatMode, t.view])
+
   const handleNewBlankSession = useCallback(() => {
     sessionCtx.setActiveSession(null)
     sessionCtx.setActiveWorkspace(null)
     setTweak('view', 'chat')
   }, [sessionCtx, setTweak])
+
+  const navigateToSession = useCallback((sessionId: string) => {
+    const targetSession = sessionCtx.sessions.find((session) => session.id === sessionId) ?? null
+    sessionCtx.setActiveSession(sessionId as SessionId)
+    if (targetSession?.workspaceIds?.[0] != null) {
+      sessionCtx.setActiveWorkspace(targetSession.workspaceIds[0])
+    }
+    setTweak('view', 'chat')
+  }, [sessionCtx, setTweak])
+
+  const dismissApprovalRequest = useCallback((sessionId: string, requestId?: string) => {
+    setApprovalRequests((current) => {
+      const existing = current[sessionId]
+      if (existing == null) return current
+      if (requestId != null && existing.requestId !== requestId) return current
+      const next = { ...current }
+      delete next[sessionId]
+      return next
+    })
+  }, [])
+
+  const dismissUserQuestion = useCallback((sessionId: string, questionId?: string) => {
+    setUserQuestions((current) => {
+      const existing = current[sessionId]
+      if (existing == null) return current
+      if (questionId != null && existing.questionId !== questionId) return current
+      const next = { ...current }
+      delete next[sessionId]
+      return next
+    })
+  }, [])
 
   // Global error handlers
   useEffect(() => {
@@ -341,12 +392,51 @@ function Shell() {
   // Listen for tool approval requests
   useEffect(() => {
     return window.spark.on('stream:permission:approval-request', (req) => {
-      setApprovalRequest(req)
+      setApprovalRequests((current) => ({ ...current, [req.sessionId]: req }))
+      window.spark.invoke('hook:trigger', {
+        sessionId: req.sessionId,
+        node: 'permission_request',
+        title: 'Spark Agent - 权限请求',
+        body: 'Agent 正在等待您的审批',
+      }).catch(() => {})
+
+      const isVisibleInCurrentSession =
+        viewRef.current === 'chat' &&
+        chatModeRef.current !== 'workspace' &&
+        activeSessionRef.current === req.sessionId
+      if (isVisibleInCurrentSession) return
+
+      toast.warning('有新的权限审批等待处理', {
+        duration: 8000,
+        actions: [{ label: '前往审批', onClick: () => navigateToSession(req.sessionId) }],
+      })
     })
-  }, [])
+  }, [navigateToSession, toast])
+
+  useEffect(() => {
+    return window.spark.on('stream:session:user-question', (req) => {
+      setUserQuestions((current) => ({ ...current, [req.sessionId]: req }))
+
+      const isVisibleInCurrentSession =
+        viewRef.current === 'chat' &&
+        chatModeRef.current !== 'workspace' &&
+        activeSessionRef.current === req.sessionId
+      if (isVisibleInCurrentSession) return
+
+      toast.info('有会话需要您补充信息', {
+        duration: 8000,
+        actions: [{ label: '前往回答', onClick: () => navigateToSession(req.sessionId) }],
+      })
+    })
+  }, [navigateToSession, toast])
 
   const primary = t.primary
   const info = PRIMARIES[primary]
+
+  const activeApprovalRequest =
+    sessionCtx.activeSessionId != null ? approvalRequests[sessionCtx.activeSessionId] ?? null : null
+  const activeUserQuestion =
+    sessionCtx.activeSessionId != null ? userQuestions[sessionCtx.activeSessionId] ?? null : null
 
   const showInlineApproval = t.view === 'chat' && t.chatMode !== 'workspace'
   // Default view is chat (no more home). Render elements directly so the chat
@@ -356,7 +446,14 @@ function Shell() {
       case 'chat':
         return t.chatMode === 'workspace'
           ? <ProjectView />
-          : <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />
+          : (
+            <ChatView
+              approvalRequest={activeApprovalRequest}
+              onApprovalClose={dismissApprovalRequest}
+              userQuestion={activeUserQuestion}
+              onUserQuestionClose={dismissUserQuestion}
+            />
+          )
       case 'workflows':
         return <WorkflowView />
       case 'agents':
@@ -370,7 +467,14 @@ function Shell() {
       case 'settings':
         return <SettingsView />
       default:
-        return <ChatView approvalRequest={approvalRequest} onApprovalClose={() => setApprovalRequest(null)} />
+        return (
+          <ChatView
+            approvalRequest={activeApprovalRequest}
+            onApprovalClose={dismissApprovalRequest}
+            userQuestion={activeUserQuestion}
+            onUserQuestionClose={dismissUserQuestion}
+          />
+        )
     }
   })()
 
@@ -421,7 +525,6 @@ function Shell() {
         />
       )}
       {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', action: 'file_write', toolInput: {}, riskLevel: 'medium', persistentScopes: ['global'] }} onClose={() => setTweak('showPerm', false)} />}
-      {approvalRequest && !showInlineApproval && <PermissionModal request={approvalRequest} onClose={() => setApprovalRequest(null)} />}
 
       {t.showProfileEdit && <ProfileEditModal onClose={() => setTweak('showProfileEdit', false)} />}
 

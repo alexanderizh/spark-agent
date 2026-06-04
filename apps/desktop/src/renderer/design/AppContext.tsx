@@ -219,6 +219,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--primary', primary)
     root.style.setProperty('--primary-hover', info?.hover ?? primary)
     root.style.setProperty('--primary-soft', info?.soft ?? 'rgba(99,102,241,0.12)')
+    // Sync Arco Design dark mode
+    if (t.theme === 'dark') {
+      document.body.setAttribute('arco-theme', 'dark')
+    } else {
+      document.body.removeAttribute('arco-theme')
+    }
   }, [t.theme, t.primary])
   const value = useMemo<AppCtx>(
     () => ({ t, setTweak, registerNavGuard, requestConfirm, requestPrompt }),

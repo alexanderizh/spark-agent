@@ -303,7 +303,75 @@ describe('ClaudeSDKExecutor', () => {
       toolUseID: 'tool-question',
     })).resolves.toEqual(expect.objectContaining({ behavior: 'allow' }))
     expect(approvalCallback).not.toHaveBeenCalled()
-    expect(questionCallback).toHaveBeenCalled()
+    expect(questionCallback).toHaveBeenCalledWith('sess-1', [
+      {
+        question: 'Proceed?',
+        header: 'Confirm',
+        type: 'single_choice',
+        required: true,
+        options: [{ label: 'Yes', description: 'Proceed' }],
+      },
+    ])
+  })
+
+  it('normalizes text and custom-choice AskUserQuestion prompts before invoking the callback', async () => {
+    queryMock.mockReturnValue(messages([
+      { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },
+    ]))
+    const approvalCallback = vi.fn(async () => false)
+    const questionCallback = vi.fn(async () => ({ answers: [] }))
+
+    await new ClaudeSDKExecutor().executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      approvalCallback,
+      questionCallback,
+    })
+
+    const options = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    await options.canUseTool?.('AskUserQuestion', {
+      questions: [
+        {
+          id: 'role',
+          question: '你的角色是什么？',
+          header: '角色',
+          type: 'single_choice',
+          allowOther: true,
+          options: [{ label: '开发者', description: '偏实现' }],
+        },
+        {
+          id: 'context',
+          question: '补充一下当前上下文',
+          header: '补充信息',
+          type: 'text',
+          multiline: true,
+          placeholder: '例如：报错、预期行为、复现步骤',
+        },
+      ],
+    }, {
+      signal: new AbortController().signal,
+      toolUseID: 'tool-question-2',
+    })
+
+    expect(questionCallback).toHaveBeenLastCalledWith('sess-1', [
+      {
+        id: 'role',
+        question: '你的角色是什么？',
+        header: '角色',
+        type: 'single_choice',
+        required: true,
+        allowOther: true,
+        options: [{ label: '开发者', description: '偏实现' }],
+      },
+      {
+        id: 'context',
+        question: '补充一下当前上下文',
+        header: '补充信息',
+        type: 'text',
+        required: true,
+        multiline: true,
+        placeholder: '例如：报错、预期行为、复现步骤',
+      },
+    ])
   })
 
   it('lets SDK-native auto and bypass modes own tool permissions without Spark canUseTool', async () => {

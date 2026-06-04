@@ -51,6 +51,7 @@ describe('Renderer Smoke Tests', () => {
       root = null
     }
     container.remove()
+    vi.resetModules()
     vi.unstubAllGlobals()
   })
 
@@ -754,6 +755,7 @@ describe('Renderer Smoke Tests', () => {
     })
 
     const { ChatView } = await import('../design/views/ChatView')
+    const { AppProvider } = await import('../design/AppContext')
 
     await act(async () => {
       root = createRoot(container)
@@ -770,20 +772,22 @@ describe('Renderer Smoke Tests', () => {
         onApprovalClose: () => void
       }>
       root.render(
-        React.createElement(ToastProvider, null,
-          React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
-          React.createElement(ChatViewWithApproval, {
-            approvalRequest: {
-              requestId: 'req-1',
-              sessionId: '42e5391d-session',
-              toolName: 'bash',
-              action: 'command_exec',
-              toolInput: { command: 'git log --oneline -20' },
-              riskLevel: 'high',
-              persistentScopes: ['project', 'global'],
-            },
-             onApprovalClose,
-           }),
+        React.createElement(AppProvider, null,
+          React.createElement(ToastProvider, null,
+            React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
+              React.createElement(ChatViewWithApproval, {
+                approvalRequest: {
+                  requestId: 'req-1',
+                  sessionId: '42e5391d-session',
+                  toolName: 'bash',
+                  action: 'command_exec',
+                  toolInput: { command: 'git log --oneline -20' },
+                  riskLevel: 'high',
+                  persistentScopes: ['project', 'global'],
+                },
+                onApprovalClose,
+              }),
+            ),
           ),
         ),
       )
@@ -811,6 +815,342 @@ describe('Renderer Smoke Tests', () => {
       decision: 'allow-once',
     })
     expect(onApprovalClose).toHaveBeenCalled()
+  })
+
+  it('routes background approval requests to the target session instead of popping in the current one', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const listeners = new Map<string, Array<(payload: unknown) => void>>()
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'window:is-maximized') return { maximized: false }
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Current session',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 1,
+            },
+            {
+              id: 'session-2',
+              title: 'Target session',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
+          total: 2,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [{
+            id: 'provider-1',
+            name: 'Claude',
+            provider: 'anthropic',
+            defaultModel: 'claude-3-5-sonnet',
+            modelIds: ['claude-3-5-sonnet'],
+            apiEndpoint: 'https://api.example.com',
+            keystoreRef: 'provider-1',
+            isDefault: true,
+            createdAt: '2026-05-28T00:00:00.000Z',
+          }],
+        }
+      }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'playwright:status') return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
+      if (channel === 'hook:trigger') return { triggered: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn((channel: string, callback: (payload: unknown) => void) => {
+        const arr = listeners.get(channel) ?? []
+        arr.push(callback)
+        listeners.set(channel, arr)
+        return vi.fn()
+      }),
+    })
+
+    vi.doMock('../design/views/WorkflowView', () => ({ WorkflowView: () => React.createElement('div') }))
+    vi.doMock('../design/views/AgentsView', () => ({ AgentsView: () => React.createElement('div') }))
+    vi.doMock('../design/views/McpView', () => ({ McpView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SkillsView', () => ({ SkillsView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SkillStoreView', () => ({ SkillStoreView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SettingsView', () => ({
+      SettingsView: () => React.createElement('div'),
+      ProfileEditModal: () => null,
+    }))
+    vi.doMock('../design/views/ProvidersView', () => ({ default: () => React.createElement('div') }))
+    vi.doMock('../design/views/BrowserPanelView', () => ({ BrowserPanelView: () => null }))
+    vi.doMock('../design/views/ProjectView', () => ({ ProjectView: () => React.createElement('div') }))
+    vi.doMock('../design/views/overlays', () => ({
+      CommandPalette: () => null,
+      PermissionModal: () => null,
+    }))
+
+    const { App } = await import('../App')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(App))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      listeners.get('stream:permission:approval-request')?.forEach((handler) => {
+        handler({
+          requestId: 'req-background',
+          sessionId: 'session-2',
+          toolName: 'bash',
+          action: 'command_exec',
+          toolInput: { command: 'git status' },
+          riskLevel: 'high',
+          persistentScopes: ['project', 'global'],
+        })
+      })
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(container.querySelector('.modal-backdrop')).toBeNull()
+    expect(container.querySelector('.composer-approval-card')).toBeNull()
+    expect(container.textContent).toContain('有新的权限审批等待处理')
+    expect(invoke).toHaveBeenCalledWith('hook:trigger', {
+      sessionId: 'session-2',
+      node: 'permission_request',
+      title: 'Spark Agent - 权限请求',
+      body: 'Agent 正在等待您的审批',
+    })
+
+    const jumpButton = Array.from(container.querySelectorAll<HTMLButtonElement>('.toast-actions button'))
+      .find((button) => button.textContent?.includes('前往审批'))
+    expect(jumpButton).toBeDefined()
+
+    await act(async () => {
+      jumpButton?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    expect(container.textContent).toContain('Target session')
+    expect(container.querySelector('.composer-approval-card')).not.toBeNull()
+  })
+
+  it('keeps unsent composer drafts isolated per session', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'window:is-maximized') return { maximized: false }
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [
+            {
+              id: 'session-1',
+              title: 'Draft session one',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 1,
+            },
+            {
+              id: 'session-2',
+              title: 'Draft session two',
+              projectId: 'workspace-1',
+              workspaceIds: ['workspace-1'],
+              providerProfileId: 'provider-1',
+              modelId: 'claude-3-5-sonnet',
+              agentAdapter: 'claude',
+              permissionMode: 'claude-ask',
+              chatMode: 'agent',
+              reasoningEffort: 'medium',
+              status: 'idle',
+              pinnedAt: null,
+              archivedAt: null,
+              createdAt: '2026-05-28T00:00:00.000Z',
+              updatedAt: '2026-05-28T00:00:00.000Z',
+              messageCount: 1,
+            },
+          ],
+          total: 2,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [{
+            id: 'provider-1',
+            name: 'Claude',
+            provider: 'anthropic',
+            defaultModel: 'claude-3-5-sonnet',
+            modelIds: ['claude-3-5-sonnet'],
+            apiEndpoint: 'https://api.example.com',
+            keystoreRef: 'provider-1',
+            isDefault: true,
+            createdAt: '2026-05-28T00:00:00.000Z',
+          }],
+        }
+      }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      if (channel === 'playwright:status') return { installed: false, enabled: false, viewOpen: false, mode: 'off' }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    vi.doMock('../design/views/WorkflowView', () => ({ WorkflowView: () => React.createElement('div') }))
+    vi.doMock('../design/views/AgentsView', () => ({ AgentsView: () => React.createElement('div') }))
+    vi.doMock('../design/views/McpView', () => ({ McpView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SkillsView', () => ({ SkillsView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SkillStoreView', () => ({ SkillStoreView: () => React.createElement('div') }))
+    vi.doMock('../design/views/SettingsView', () => ({
+      SettingsView: () => React.createElement('div'),
+      ProfileEditModal: () => null,
+    }))
+    vi.doMock('../design/views/ProvidersView', () => ({ default: () => React.createElement('div') }))
+    vi.doMock('../design/views/BrowserPanelView', () => ({ BrowserPanelView: () => null }))
+    vi.doMock('../design/views/ProjectView', () => ({ ProjectView: () => React.createElement('div') }))
+    vi.doMock('../design/views/overlays', () => ({
+      CommandPalette: () => null,
+      PermissionModal: () => null,
+    }))
+
+    const { App } = await import('../App')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(React.createElement(App))
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const setTextareaValue = (element: HTMLTextAreaElement | null, value: string) => {
+      expect(element).not.toBeNull()
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
+      expect(setter).toBeDefined()
+      if (setter == null || element == null) throw new Error('textarea setter unavailable')
+      setter.call(element, value)
+      element.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+
+    const composerInput = () => container.querySelector<HTMLTextAreaElement>('.composer-input')
+
+    await act(async () => {
+      setTextareaValue(composerInput(), 'draft for session one')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const sessionTwoItem = Array.from(container.querySelectorAll<HTMLElement>('.chat-item-compact'))
+      .find((item) => item.textContent?.includes('Draft session two'))
+    expect(sessionTwoItem).toBeDefined()
+
+    await act(async () => {
+      sessionTwoItem?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(composerInput()?.value).toBe('')
+    })
+
+    await act(async () => {
+      setTextareaValue(composerInput(), 'draft for session two')
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    const sessionOneItem = Array.from(container.querySelectorAll<HTMLElement>('.chat-item-compact'))
+      .find((item) => item.textContent?.includes('Draft session one'))
+    expect(sessionOneItem).toBeDefined()
+
+    await act(async () => {
+      sessionOneItem?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(composerInput()?.value).toBe('draft for session one')
+    })
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLElement>('.chat-item-compact'))
+        .find((item) => item.textContent?.includes('Draft session two'))
+        ?.click()
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await vi.waitFor(() => {
+      expect(composerInput()?.value).toBe('draft for session two')
+    })
   })
 
   it('renders plan approval as the only approval surface for control tools', async () => {

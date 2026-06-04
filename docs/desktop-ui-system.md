@@ -23,6 +23,8 @@ Avoid adding a heavyweight UI framework unless a future feature needs a large co
 - For destructive actions, prefer `useApp().requestConfirm(...)` over native `window.confirm`.
 - For short text input prompts, prefer `useApp().requestPrompt(...)` over native `window.prompt`.
 - Use `ConfirmDialog` directly only for local component state that needs a custom confirmation flow.
+- Approval requests, structured user questions, and unsent composer drafts must be scoped by `sessionId` instead of a single app-global renderer state. Background sessions may raise toast/notification attention, but the actionable UI should render only after the user enters the target session.
+- Cross-session reminders should deep-link back into the target session. If a hook or toast is triggered for a background task, the CTA should switch the active session first and only then reveal the approval/question surface.
 
 ## Tailwind
 

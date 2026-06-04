@@ -31,6 +31,7 @@ import type {
   AssistantMessageEvent,
   HookNode,
   SessionAttachment,
+  UserQuestionPrompt,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
@@ -79,11 +80,7 @@ export type HookTriggerHandler = (
 /** Handler for AskUserQuestion tool - returns user's answers */
 export type QuestionHandler = (
   sessionId: string,
-  questions: Array<{
-    question: string
-    header: string
-    options: Array<{ label: string; description?: string; preview?: string }>
-  }>,
+  questions: UserQuestionPrompt[],
 ) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = { cancel(): void }

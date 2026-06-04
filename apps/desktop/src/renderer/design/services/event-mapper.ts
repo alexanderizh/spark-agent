@@ -1,4 +1,9 @@
-import type { AgentEvent, TurnPromptSnapshotEvent } from '@spark/protocol'
+import type {
+  AgentEvent,
+  TurnPromptSnapshotEvent,
+  UserQuestionOption,
+  UserQuestionPrompt,
+} from '@spark/protocol'
 
 export interface UIMessage {
   id: string
@@ -95,11 +100,7 @@ export type UIBlock =
   | {
       kind: 'user_question'
       toolCallId: string
-      questions: Array<{
-        question: string
-        header: string
-        options: Array<{ label: string; description?: string; preview?: string }>
-      }>
+      questions: UserQuestionPrompt[]
       answered: boolean
     }
   | {
@@ -682,48 +683,25 @@ function parseDiffStats(diff: string): { adds: number; dels: number } {
 /** Extract question data from AskUserQuestion tool input */
 function extractQuestions(
   toolInput: Record<string, unknown>,
-): Array<{
-  question: string
-  header: string
-  options: Array<{ label: string; description?: string; preview?: string }>
-}> {
+): UserQuestionPrompt[] {
   // Support both single-question and multi-question formats
   const raw = toolInput.questions ?? toolInput
   if (Array.isArray(raw)) {
     return raw
       .map((q: unknown) => {
         if (typeof q !== 'object' || q == null) return null
-        const obj = q as Record<string, unknown>
-        return {
-          question: typeof obj.question === 'string' ? obj.question : '',
-          header: typeof obj.header === 'string' ? obj.header : '',
-          options: normalizeOptions(obj.options),
-        }
+        return normalizeQuestionPrompt(q as Record<string, unknown>)
       })
       .filter(
-        (
-          q,
-        ): q is NonNullable<{
-          question: string
-          header: string
-          options: Array<{ label: string; description?: string; preview?: string }>
-        }> => q != null && q.question.length > 0 && q.options.length > 0,
+        (q): q is NonNullable<UserQuestionPrompt> => q != null,
       )
   }
 
-  // Single question in top-level input
-  const question = typeof toolInput.question === 'string' ? toolInput.question : ''
-  const header = typeof toolInput.header === 'string' ? toolInput.header : ''
-  const options = normalizeOptions(toolInput.options)
-  if (question && options.length > 0) {
-    return [{ question, header, options }]
-  }
-  return []
+  const normalized = normalizeQuestionPrompt(toolInput)
+  return normalized == null ? [] : [normalized]
 }
 
-function normalizeOptions(
-  options: unknown,
-): Array<{ label: string; description?: string; preview?: string }> {
+function normalizeOptions(options: unknown): UserQuestionOption[] {
   if (!Array.isArray(options)) return []
   return options
     .map((opt: unknown) => {
@@ -735,7 +713,47 @@ function normalizeOptions(
         label,
         ...(typeof obj.description === 'string' ? { description: obj.description } : {}),
         ...(typeof obj.preview === 'string' ? { preview: obj.preview } : {}),
+        ...(typeof obj.value === 'string' ? { value: obj.value } : {}),
+        ...(obj.allowsFreeText === true ? { allowsFreeText: true } : {}),
+        ...(typeof obj.freeTextPlaceholder === 'string'
+          ? { freeTextPlaceholder: obj.freeTextPlaceholder }
+          : {}),
       }
     })
     .filter((opt): opt is NonNullable<typeof opt> => opt != null)
+}
+
+function normalizeQuestionPrompt(questionInput: Record<string, unknown>): UserQuestionPrompt | null {
+  const question = typeof questionInput.question === 'string' ? questionInput.question : ''
+  if (!question) return null
+
+  const rawType = questionInput.type
+  const normalizedType =
+    rawType === 'text' || rawType === 'single_choice'
+      ? rawType
+      : Array.isArray(questionInput.options)
+        ? 'single_choice'
+        : 'text'
+
+  const options = normalizeOptions(questionInput.options)
+  if (normalizedType === 'single_choice' && options.length === 0) return null
+
+  return {
+    ...(typeof questionInput.id === 'string' ? { id: questionInput.id } : {}),
+    question,
+    header: typeof questionInput.header === 'string' ? questionInput.header : '',
+    type: normalizedType,
+    ...(questionInput.required === false ? { required: false } : { required: true }),
+    ...(typeof questionInput.placeholder === 'string' ? { placeholder: questionInput.placeholder } : {}),
+    ...(questionInput.multiline === true ? { multiline: true } : {}),
+    ...(questionInput.allowSkip === true ? { allowSkip: true } : {}),
+    ...(questionInput.allowOther === true ? { allowOther: true } : {}),
+    ...(typeof questionInput.otherOptionLabel === 'string'
+      ? { otherOptionLabel: questionInput.otherOptionLabel }
+      : {}),
+    ...(typeof questionInput.otherPlaceholder === 'string'
+      ? { otherPlaceholder: questionInput.otherPlaceholder }
+      : {}),
+    ...(options.length > 0 ? { options } : {}),
+  }
 }

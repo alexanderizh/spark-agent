@@ -32,7 +32,8 @@
   --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
 }
 
-/* ---------- THEME: LIGHT (default) ---------- */
+/* ---------- THEME: LIGHT (default) — also on html for Arco popups outside .app ---------- */
+html[data-theme="light"],
 .app.theme-light {
   --bg: #fdfdfc;
   --bg-soft: #fefefe;
@@ -79,7 +80,8 @@
   --term-fg: #d4d4d8;
 }
 
-/* ---------- THEME: DARK ---------- */
+/* ---------- THEME: DARK — also on html for Arco popups outside .app ---------- */
+html[data-theme="dark"],
 .app.theme-dark {
   --bg: #0d0d10;
   --bg-soft: #131318;
@@ -1068,6 +1070,38 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   color: var(--primary);
   font-weight: 500;
 }
+/* Arco Select popup — scrollbar & empty state */
+.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar {
+  width: 6px;
+}
+.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-track {
+  background: transparent;
+}
+.spark-select-arco-popup .arco-select-option-disabled {
+  color: var(--text-faint) !important;
+}
+.spark-select-arco-popup .arco-select-group-title {
+  color: var(--text-muted) !important;
+  font-size: var(--font-xs);
+}
+.spark-select-arco-popup .arco-select-empty {
+  color: var(--text-muted) !important;
+}
+/* Arco Select popup — virtual list scrollbar */
+.spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar {
+  width: 6px;
+}
+.spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+.spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar-track {
+  background: transparent;
+}
 
 /* ============================================================
    SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
@@ -1102,8 +1136,16 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   border-color: var(--primary) !important;
   box-shadow: 0 0 0 3px var(--primary-soft) !important;
 }
-
-/* 裸 textarea 通用主题（尚未迁移的） */
+.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar {
+  width: 6px;
+}
+.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}
+.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
 .app textarea:not(.arco-textarea):not(.composer-input):not(.plan-approval-textarea) {
   width: 100%;
   min-width: 0;

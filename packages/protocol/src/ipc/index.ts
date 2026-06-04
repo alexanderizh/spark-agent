@@ -188,6 +188,32 @@ export interface SessionDeleteMessageResponse {
   deleted: number
 }
 
+export type UserQuestionKind = 'single_choice' | 'text'
+
+export interface UserQuestionOption {
+  label: string
+  description?: string
+  preview?: string
+  value?: string
+  allowsFreeText?: boolean
+  freeTextPlaceholder?: string
+}
+
+export interface UserQuestionPrompt {
+  id?: string
+  question: string
+  header: string
+  type?: UserQuestionKind
+  required?: boolean
+  placeholder?: string
+  multiline?: boolean
+  allowSkip?: boolean
+  allowOther?: boolean
+  otherOptionLabel?: string
+  otherPlaceholder?: string
+  options?: UserQuestionOption[]
+}
+
 /** Answer to an AskUserQuestion tool call */
 export interface SessionAnswerQuestionRequest {
   questionId: string
@@ -2530,11 +2556,7 @@ export interface IpcStreamChannelMap {
   'stream:session:user-question': {
     questionId: string
     sessionId: string
-    questions: Array<{
-      question: string
-      header: string
-      options: Array<{ label: string; description?: string; preview?: string }>
-    }>
+    questions: UserQuestionPrompt[]
   }
   /** 连接状态变化 */
   'stream:provider:status-changed': {
