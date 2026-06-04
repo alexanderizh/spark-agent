@@ -16,7 +16,7 @@
  * 注：P0-07 中旭阳-高级开发将基于此类型实现 typesafe invoke/handle 封装
  */
 
-import type { AgentEvent, SessionId } from '../events/index.js'
+import type { AgentEvent, SessionId, TurnId, TeamA2ATask, TeamA2AReply } from '../events/index.js'
 import type { HookNode } from '../hooks.js'
 import type {
   ProviderExportPayload,
@@ -82,6 +82,8 @@ export interface SessionSendTurnRequest {
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
+  /** 团队模式配置：仅在 Team Mode 下随 turn 提交，主进程据此分支到 runHostTurn */
+  teamConfig?: TeamModeConfig
 }
 
 export interface SessionSendTurnResponse {
@@ -1384,6 +1386,74 @@ export interface AgentDeleteResponse {
   deleted: boolean
 }
 
+// ─── Team Mode Channels ────────────────────────────────────────────────────
+
+/**
+ * 会话级团队模式配置。持久化在 sessions.metadata.team（JSON），
+ * 不在 agents 表新增字段——「是否允许被 dispatch」是会话级而非 Agent 全局级决策。
+ */
+export interface TeamModeConfig {
+  enabled: boolean
+  /** 主持 Agent（用户直接对话的 Agent） */
+  hostAgentId: string
+  /** 当前会话授权可被 dispatch 的成员 Agent 集合（不含 Host 自身） */
+  memberAgentIds: string[]
+  /** 最大链式 dispatch 深度，默认 1 */
+  maxDepth: number
+  /** 是否允许 Member 嵌套调用 dispatch，默认 false */
+  allowNesting: boolean
+}
+
+/** 从 ManagedAgent 投影出的团队成员卡片（借鉴 Google A2A 的 AgentCard） */
+export interface TeamMemberCard {
+  agentId: string
+  name: string
+  description: string
+  builtIn: boolean
+  providerProfileId?: string | null
+  modelId?: string | null
+  /** 头像（派生）：基于 agentId hash 生成首字母 + 配色 */
+  avatar: { type: 'initial'; text: string; color: string }
+  /** 用于 system prompt 中的简略能力说明 */
+  capabilitiesSummary: string
+}
+
+export interface TeamUpdateRequest {
+  sessionId: SessionId
+  config: TeamModeConfig
+}
+export interface TeamUpdateResponse {
+  config: TeamModeConfig
+}
+
+export interface TeamListMembersRequest {
+  sessionId: SessionId
+}
+export interface TeamListMembersResponse {
+  hostAgentId: string
+  members: TeamMemberCard[]
+  /** 当前未加入但可用的 Agent（用于「邀请成员」面板） */
+  candidates: TeamMemberCard[]
+}
+
+export interface TeamListDispatchesRequest {
+  sessionId: SessionId
+  turnId?: TurnId
+  limit?: number
+}
+export interface TeamListDispatchesResponse {
+  dispatches: Array<{
+    id: string
+    state: TeamA2AReply['state'] | 'pending' | 'working'
+    hostAgentId: string
+    memberAgentId: string
+    task: TeamA2ATask
+    reply?: TeamA2AReply
+    startedAt: string
+    endedAt?: string
+  }>
+}
+
 // ─── Workflow Channels ─────────────────────────────────────────────────────
 
 export type WorkflowStatus = 'draft' | 'active' | 'archived'
@@ -2428,6 +2498,11 @@ export interface IpcChannelMap {
   'agent:create': [AgentCreateRequest, AgentCreateResponse]
   'agent:update': [AgentUpdateRequest, AgentUpdateResponse]
   'agent:delete': [AgentDeleteRequest, AgentDeleteResponse]
+
+  // Team Mode
+  'team:update': [TeamUpdateRequest, TeamUpdateResponse]
+  'team:list-members': [TeamListMembersRequest, TeamListMembersResponse]
+  'team:list-dispatches': [TeamListDispatchesRequest, TeamListDispatchesResponse]
 
   // Workflows
   'workflow:list': [WorkflowListRequest, WorkflowListResponse]

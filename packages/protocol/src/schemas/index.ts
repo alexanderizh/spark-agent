@@ -34,6 +34,31 @@ export const SessionPermissionModeSchema = z.enum([
   'claude-bypass',
 ])
 
+// ─── Team Mode Schema ─────────────────────────────────────────────────────────
+
+export const TeamModeConfigSchema = z.object({
+  enabled: z.boolean(),
+  hostAgentId: z.string().min(1).max(160),
+  memberAgentIds: z.array(z.string().min(1).max(160)).max(20),
+  maxDepth: z.number().int().min(1).max(3),
+  allowNesting: z.boolean(),
+})
+
+export const TeamUpdateRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  config: TeamModeConfigSchema,
+})
+
+export const TeamListMembersRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
+export const TeamListDispatchesRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  turnId: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(200).optional().default(50),
+})
+
 // ─── Session Schema ───────────────────────────────────────────────────────────
 
 export const SessionCreateRequestSchema = z.object({
@@ -69,6 +94,7 @@ export const SessionSendTurnRequestSchema = z.object({
     )
     .max(20)
     .optional(),
+  teamConfig: TeamModeConfigSchema.optional(),
 })
 
 export const DialogOpenDirectoryRequestSchema = z.object({
@@ -320,6 +346,10 @@ export const IpcSchemaRegistry = {
   'session:update': SessionUpdateRequestSchema,
   'session:delete': SessionDeleteRequestSchema,
   'session:set-max-iterations': SessionSetMaxIterationsRequestSchema,
+  // Team Mode
+  'team:update': TeamUpdateRequestSchema,
+  'team:list-members': TeamListMembersRequestSchema,
+  'team:list-dispatches': TeamListDispatchesRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,

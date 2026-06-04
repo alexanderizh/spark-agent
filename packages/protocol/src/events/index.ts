@@ -153,6 +153,102 @@ export interface SubagentCompletedEvent extends BaseEvent {
   durationMs?: number
 }
 
+// ─── Team Mode (A2A) 事件 ─────────────────────────────────────────────────────
+//
+// 团队模式：主 Agent（Host）通过 agent_team_dispatch 工具调用成员 Agent（Member）。
+// A2A 调用的 Task / Reply 结构定义在事件层（被事件引用），ipc 层从此处复用，
+// 以保持 ipc → events 的单向依赖（ipc/index.ts 已 import 本模块）。
+//
+// 注意：这些事件与 SDK 内置的 subagent_started/completed 是**两套独立抽象**。
+// Team Member 的渲染粒度、审计、配色与 Claude SDK 内置 subagent 不同，
+// 因此使用专属 team_dispatch_* / team_member_* 事件，详见「团队模式开发」设计文档 §3.4。
+
+/** 一次 A2A 调用的任务描述（Host → Member 投递的工作单元） */
+export interface TeamA2ATask {
+  /** 任务唯一 ID（uuid） */
+  taskId: string
+  /** 发起调用的主持 Agent ID */
+  hostAgentId: string
+  /** 被调用的成员 Agent ID */
+  memberAgentId: string
+  /** 触发本次 dispatch 的用户 turn ID（用于审计；可能为空） */
+  rootTurnId: string
+  /** Host 想让 Member 做什么的自然语言描述（自包含） */
+  instruction: string
+  /** 可选的结构化输入 */
+  inputs?: Record<string, unknown>
+  /** 引用的产物（来自 Host 之前一步的输出，按 ID 或内联） */
+  attachments?: Array<{
+    type: 'text' | 'file_ref' | 'image_ref'
+    value: string
+  }>
+  /** Host 期望的输出形态提示 */
+  expectedOutput?: 'text' | 'json' | 'code' | 'mixed'
+  /** 此次调用超时（ms），默认 120_000 */
+  timeoutMs?: number
+}
+
+/** Member 完成 A2A 调用后返回给 Host 的结构化回复 */
+export interface TeamA2AReply {
+  taskId: string
+  state: 'completed' | 'failed' | 'canceled'
+  /** 主要文本输出（给 Host LLM 看的） */
+  content: string
+  /** 结构化产物（可选） */
+  artifacts?: Array<{
+    type: 'text' | 'file' | 'image' | 'json'
+    name?: string
+    /** file/image: 路径；json: stringified */
+    value: string
+  }>
+  /** 用量 */
+  usage?: {
+    inputTokens?: number
+    outputTokens?: number
+    durationMs: number
+  }
+  error?: {
+    code: 'timeout' | 'denied' | 'depth_exceeded' | 'member_disabled' | 'invalid_member' | 'internal'
+    message: string
+  }
+}
+
+/** Host 发起一次 dispatch（UI: 出现「Host → Member」调用卡片） */
+export interface TeamDispatchRequestedEvent extends BaseEvent {
+  type: 'team_dispatch_requested'
+  dispatchId: string
+  hostAgentId: string
+  memberAgentId: string
+  task: TeamA2ATask
+}
+
+/** Member 的流式/完整文本输出（复用 AssistantMessageEvent 的 mode/content 语义） */
+export interface TeamMemberMessageEvent extends BaseEvent {
+  type: 'team_member_message'
+  dispatchId: string
+  memberAgentId: string
+  mode: 'delta' | 'complete'
+  content: string
+  isFinal: boolean
+}
+
+/** Member 在一次 dispatch 内的状态流转 */
+export interface TeamMemberStatusEvent extends BaseEvent {
+  type: 'team_member_status'
+  dispatchId: string
+  memberAgentId: string
+  status: 'pending' | 'working' | 'idle' | 'completed' | 'failed'
+}
+
+/** 一次 dispatch 收尾，附带 Member 的结构化回复（UI: 收口 status chip） */
+export interface TeamDispatchCompletedEvent extends BaseEvent {
+  type: 'team_dispatch_completed'
+  dispatchId: string
+  hostAgentId: string
+  memberAgentId: string
+  reply: TeamA2AReply
+}
+
 // ─── 权限类事件 ──────────────────────────────────────────────────────────────
 
 export type PermissionRiskLevel = 'safe' | 'moderate' | 'high' | 'critical'
@@ -508,6 +604,10 @@ export type AgentEvent =
   | RetryTrailEvent
   | SubagentStartedEvent
   | SubagentCompletedEvent
+  | TeamDispatchRequestedEvent
+  | TeamMemberMessageEvent
+  | TeamMemberStatusEvent
+  | TeamDispatchCompletedEvent
 
 /** AgentEvent 的 type 字段联合 */
 export type AgentEventType = AgentEvent['type']
