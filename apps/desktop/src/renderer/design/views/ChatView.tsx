@@ -220,7 +220,11 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
-  // Team Mode 配置（Phase 1：localStorage 本地持久化；Phase 2 起改走 session.metadata + IPC）
+  // Team Mode 配置。
+  // 双层持久化（设计文档 §5.1）：
+  //   - composer-prefs(localStorage)：全局「上次使用」默认，新会话/无会话时回落。
+  //   - sessions.metadata.team(IPC team:update)：会话级权威来源，Phase 3 运行时读取。
+  const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
   const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(() => {
     const prefs = readComposerPrefs()
     return {
@@ -231,17 +235,24 @@ export function ChatView({
       allowNesting: false,
     }
   })
-  const updateTeamConfig = useCallback((patch: Partial<TeamModeConfig>) => {
-    setTeamConfig((prev) => {
-      const next = { ...prev, ...patch }
-      writeComposerPrefs({
-        teamMode: next.enabled,
-        teamHostAgentId: next.hostAgentId,
-        teamMemberAgentIds: next.memberAgentIds,
+  const updateTeamConfig = useCallback(
+    (patch: Partial<TeamModeConfig>) => {
+      setTeamConfig((prev) => {
+        const next = { ...prev, ...patch }
+        writeComposerPrefs({
+          teamMode: next.enabled,
+          teamHostAgentId: next.hostAgentId,
+          teamMemberAgentIds: next.memberAgentIds,
+        })
+        // 有活跃会话时，把配置写入该会话 metadata（供运行时与重开会话恢复）
+        if (active != null) {
+          void persistTeamConfig({ sessionId: active as SessionId, config: next }).catch(() => {})
+        }
+        return next
       })
-      return next
-    })
-  }, [])
+    },
+    [active, persistTeamConfig],
+  )
   const [agentStatus, setAgentStatus] = useState('')
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [contextInputTokens, setContextInputTokens] = useState(0)

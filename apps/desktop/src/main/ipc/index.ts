@@ -17,7 +17,7 @@ import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { createLogger } from '@spark/shared'
+import { createLogger, deriveTeamAvatar } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
   EventRepository,
@@ -34,6 +34,7 @@ import {
   ContextPreferenceRepository,
   AgentRepository,
   WorkflowRepository,
+  TeamDispatchRepository,
 } from '@spark/storage'
 import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem } from '@spark/storage'
 import {
@@ -62,6 +63,10 @@ import type {
   WorkflowItem as ProtocolWorkflowItem,
   WorkflowGraph,
   ProviderExportPayload,
+  TeamModeConfig,
+  TeamMemberCard,
+  TeamA2ATask,
+  TeamA2AReply,
 } from '@spark/protocol'
 import type {
   SessionEventHandler,
@@ -1373,6 +1378,52 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('agent:delete', async (req) => {
     const deleted = getAgentRepository().delete(req.id)
     return { deleted }
+  })
+
+  // ─── Team Mode Handlers ───────────────────────────────────────────────
+
+  typedIpcHandle('team:update', async (req) => {
+    log.info(`team:update requested, sessionId=${req.sessionId}, enabled=${req.config.enabled}`)
+    new SessionRepository(getDatabase()).patchMetadata(req.sessionId, { team: req.config })
+    return { config: req.config }
+  })
+
+  typedIpcHandle('team:list-members', async (req) => {
+    const metadata = new SessionRepository(getDatabase()).getMetadata(req.sessionId)
+    const team = (metadata.team ?? {}) as Partial<TeamModeConfig>
+    const hostAgentId = team.hostAgentId ?? 'code-agent'
+    const memberIds = new Set(team.memberAgentIds ?? [])
+    const agents = getAgentRepository().list({}).map(toManagedAgent)
+    const toCard = (a: ManagedAgent): TeamMemberCard => ({
+      agentId: a.id,
+      name: a.name,
+      description: a.description,
+      builtIn: a.builtIn,
+      providerProfileId: a.providerProfileId ?? null,
+      modelId: a.modelId ?? null,
+      avatar: deriveTeamAvatar(a.id, a.name),
+      capabilitiesSummary: a.description.slice(0, 240),
+    })
+    const members = agents.filter((a) => a.id !== hostAgentId && memberIds.has(a.id)).map(toCard)
+    const candidates = agents.filter((a) => a.id !== hostAgentId && !memberIds.has(a.id)).map(toCard)
+    return { hostAgentId, members, candidates }
+  })
+
+  typedIpcHandle('team:list-dispatches', async (req) => {
+    const repo = new TeamDispatchRepository(getDatabase())
+    const rows =
+      req.turnId != null ? repo.listByTurn(req.turnId) : repo.listBySession(req.sessionId, req.limit ?? 50)
+    const dispatches = rows.map((row) => ({
+      id: row.id,
+      state: row.state,
+      hostAgentId: row.host_agent_id,
+      memberAgentId: row.member_agent_id,
+      task: JSON.parse(row.task_json) as TeamA2ATask,
+      ...(row.reply_json != null ? { reply: JSON.parse(row.reply_json) as TeamA2AReply } : {}),
+      startedAt: row.started_at,
+      ...(row.ended_at != null ? { endedAt: row.ended_at } : {}),
+    }))
+    return { dispatches }
   })
 
   // ─── Workflow Handlers ────────────────────────────────────────────────
