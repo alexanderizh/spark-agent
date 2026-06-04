@@ -2022,6 +2022,7 @@ body.sidebar-resizing {
   grid-template-columns: 44px 1fr;
   padding: 0;
   line-height: 1.6;
+  min-width: max-content;
 }
 .diff-line .ln {
   color: var(--text-faint);
