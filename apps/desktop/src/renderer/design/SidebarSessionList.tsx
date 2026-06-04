@@ -49,7 +49,7 @@ function ActionMenu({
   items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
 }) {
   return (
-    <DropdownMenuContent align="end" side="bottom" className="action-menu action-menu-portal">
+    <DropdownMenuContent align="end" side="bottom" className="action-menu">
       {items.map(item => (
         <DropdownMenuItem
           key={item.label}
@@ -89,7 +89,7 @@ function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: 
         <DropdownMenuContent
           align="start"
           side="bottom"
-          className="filter-dropdown filter-dropdown-portal"
+          className="filter-dropdown"
           style={{ minWidth: 'var(--radix-dropdown-menu-trigger-width)' }}
         >
           <DropdownMenuRadioGroup value={value} onValueChange={(next) => onChange(next as TimeFilter)}>
@@ -119,7 +119,6 @@ function ChatListItem({
   onTogglePinned,
   onArchive,
   onDelete,
-  onOpenFolder,
 }: {
   session: SessionSummary
   active: SessionId | null
@@ -128,7 +127,6 @@ function ChatListItem({
   onTogglePinned?: (session: SessionSummary) => void
   onArchive?: (session: SessionSummary) => void
   onDelete?: (session: SessionSummary) => void
-  onOpenFolder?: (session: SessionSummary) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const isRunning = s.status === 'running'
@@ -157,7 +155,6 @@ function ChatListItem({
             <ActionMenu
               items={[
                 { icon: <Icons.Pin size={14} />, label: s.pinnedAt == null ? '置顶会话' : '取消置顶', onClick: () => onTogglePinned?.(s) },
-                { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenFolder?.(s) },
                 { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
                 { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
                 { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
@@ -187,7 +184,6 @@ function ProjectSessionGroup({
   onToggleSessionPinned,
   onArchiveSession,
   onDeleteSession,
-  onOpenSessionFolder,
 }: {
   group: ProjectGroup
   activeSessionId: SessionId | null
@@ -204,7 +200,6 @@ function ProjectSessionGroup({
   onToggleSessionPinned: (session: SessionSummary) => void
   onArchiveSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
-  onOpenSessionFolder: (session: SessionSummary) => void
 }) {
   const [open, setOpen] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -270,7 +265,6 @@ function ProjectSessionGroup({
                 onTogglePinned={onToggleSessionPinned}
                 onArchive={onArchiveSession}
                 onDelete={onDeleteSession}
-                onOpenFolder={onOpenSessionFolder}
               />
             ))
           )}
@@ -424,7 +418,6 @@ export function SidebarSessionList() {
                     onToggleSessionPinned={ctx.handleToggleSessionPinned}
                     onArchiveSession={ctx.handleArchiveSession}
                     onDeleteSession={ctx.handleDeleteSession}
-                    onOpenSessionFolder={ctx.handleOpenSessionFolder}
                   />
                 ))}
                 {noProjectSessions.length > 0 && (
@@ -444,7 +437,6 @@ export function SidebarSessionList() {
                         onTogglePinned={ctx.handleToggleSessionPinned}
                         onArchive={ctx.handleArchiveSession}
                         onDelete={ctx.handleDeleteSession}
-                        onOpenFolder={ctx.handleOpenSessionFolder}
                       />
                     ))}
                   </div>
@@ -462,7 +454,6 @@ export function SidebarSessionList() {
                         onTogglePinned={ctx.handleToggleSessionPinned}
                         onArchive={ctx.handleArchiveSession}
                         onDelete={ctx.handleDeleteSession}
-                        onOpenFolder={ctx.handleOpenSessionFolder}
                       />
                     ))}
                   </div>

@@ -4536,9 +4536,6 @@ function ComposerV2({
           >
             <Icons.Upload />
           </button>
-          <button className="icon-btn" title="工具">
-            <Icons.Wrench />
-          </button>
           <AgentPicker
             agents={agents}
             selectedAgentId={effectiveAgentId}
