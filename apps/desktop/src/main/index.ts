@@ -44,6 +44,10 @@ import { detectIntegrity as detectPlaywrightIntegrity, installBrowser as autoIns
 import { isViewOpen as isBrowserViewOpen, getCdpEndpoint as getBrowserCdpEndpoint, bindLifecycle as bindBrowserViewLifecycle } from './services/BrowserAutomationViewService.js'
 import { bindLifecycle as bindPopOutBrowserLifecycle } from './services/PopOutBrowserService.js'
 import { ensureBundledBrowserEnv, resetBundledBrowsersPathCache } from './services/PlaywrightEnvironment.js'
+import {
+  registerSafeFileProtocol,
+  registerSafeFileSchemes,
+} from './services/SafeFileProtocol.js'
 import { getDatabase } from './db.js'
 import { createLogger } from '@spark/shared'
 import type { UpdateStatus } from '@spark/protocol'
@@ -51,6 +55,11 @@ import type { UpdateStatus } from '@spark/protocol'
 const log = createLogger('main')
 let tray: Tray | null = null
 let isQuitting = false
+
+// ─── Custom protocol registration ───────────────────────────────────────────
+// `safe-file://` 让渲染进程能读取 userData 下的本地图片（生成的图、附件等），
+// 必须在 app.whenReady() 之前调用，否则特权声明会失效。
+registerSafeFileSchemes()
 
 function getResourcePath(fileName: string): string {
   return is.dev
@@ -365,6 +374,10 @@ async function initializeApp(): Promise<void> {
 
 // Electron 生命周期：所有窗口就绪时初始化应用
 app.whenReady().then(() => {
+  // 必须在 createWindow() 之前注册协议 handler，
+  // 否则首次加载的 HTML 里的 <img src="safe-file://..."> 会得到 ERR_UNKNOWN_URL_SCHEME
+  registerSafeFileProtocol()
+
   initializeApp().catch((err) => {
     log.error(`Failed to initialize app: ${String(err)}`)
     app.quit()

@@ -29,6 +29,8 @@ import {
   TurnFileSummaryCard,
 } from '../ChatInteractions'
 import { SparkInput } from '../components/FormControls'
+import { ImagePreviewModal } from '../components/ImagePreviewModal'
+import { MarkdownImage } from '../components/MarkdownImage'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
@@ -89,11 +91,26 @@ type SessionRuntimePatch = {
   reasoningEffort?: SessionReasoningEffort
 }
 type QueuedMessage = { id: string; turnId: string; content: string; enqueuedAt: string }
-type ComposerAttachment = SessionAttachment & { id: string; name: string }
+type ComposerAttachment = SessionAttachment & {
+  id: string
+  name: string
+  previewPath?: string
+  previewUrl?: string
+}
+type ContextMenuItem = {
+  key: string
+  label: string
+  icon?: ReactNode
+  danger?: boolean
+  disabled?: boolean
+  onClick?: () => void
+}
 type ChatViewProps = {
   approvalRequest?: PermissionApprovalRequest | null
   onApprovalClose?: () => void
 }
+
+const SAFE_FILE_SCHEME = 'safe-file'
 
 /** Per-turn token usage snapshot */
 type UsageSnapshot = {
@@ -2441,15 +2458,17 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     const key = `${match.index}-${token}`
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
     if (link) {
-      nodes.push(
-        link[1] === '!' ? (
-          <img key={key} src={link[3]} alt={link[2]} />
-        ) : (
-          <a key={key} href={link[3]} target="_blank" rel="noreferrer">
-            {link[2]}
-          </a>
-        ),
-      )
+      // 图片走 MarkdownImage 组件：自动把本地路径转 safe-file:// 协议，
+      // 并支持点击预览 / 复制 / 下载 / 失败占位
+      if (link[1] === '!') {
+        nodes.push(<MarkdownImage key={key} src={link[3] ?? ''} alt={link[2] ?? ''} />)
+      } else {
+        nodes.push(
+          <a key={key} href={link[3] ?? '#'} target="_blank" rel="noreferrer">
+            {link[2] ?? ''}
+          </a>,
+        )
+      }
     } else if (token.startsWith('`')) {
       nodes.push(<code key={key}>{token.slice(1, -1)}</code>)
     } else if (token.startsWith('**') || token.startsWith('__')) {
@@ -2528,6 +2547,62 @@ function MessageHoverBar({
   )
 }
 
+function InlineContextMenu({
+  x,
+  y,
+  items,
+  onClose,
+}: {
+  x: number
+  y: number
+  items: ContextMenuItem[]
+  onClose: () => void
+}) {
+  const ref = useRef<HTMLDivElement | null>(null)
+
+  useEffect(() => {
+    const handlePointerDown = (event: MouseEvent) => {
+      if (ref.current != null && !ref.current.contains(event.target as Node)) onClose()
+    }
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    document.addEventListener('mousedown', handlePointerDown)
+    window.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [onClose])
+
+  return (
+    <div
+      ref={ref}
+      className="action-menu context-action-menu"
+      style={{ position: 'fixed', left: x, top: y, zIndex: 10000 }}
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      {items.map((item) => (
+        <button
+          key={item.key}
+          type="button"
+          className={`action-menu-item${item.danger ? ' danger' : ''}`}
+          disabled={item.disabled}
+          onClick={() => {
+            if (item.disabled) return
+            onClose()
+            item.onClick?.()
+          }}
+        >
+          {item.icon ?? <span className="action-menu-item-spacer" />}
+          <span>{item.label}</span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 /** 从 blocks 中提取纯文本内容（用于复制） */
 function extractTextFromBlocks(blocks: UIBlock[]): string {
   return blocks
@@ -2549,9 +2624,26 @@ function UserMsg({
   onDelete?: () => void
 }) {
   const textContent = extractTextFromBlocks(blocks)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    imageSrc?: string
+  } | null>(null)
+
+  const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const target = event.target as HTMLElement | null
+    const image = target?.closest('img') as HTMLImageElement | null
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+    })
+  }, [])
+
   return (
     <div className="msg msg-user">
-      <div className="msg-bubble msg-bubble-user">
+      <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
         <div className="msg-content">{children}</div>
       </div>
       <MessageHoverBar
@@ -2560,6 +2652,47 @@ function UserMsg({
         position="right"
         {...(onDelete ? { onDelete } : {})}
       />
+      {contextMenu != null && (
+        <InlineContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              key: 'copy-text',
+              label: '复制内容',
+              icon: <Icons.Copy size={14} />,
+              disabled: textContent.length === 0,
+              onClick: () => {
+                void navigator.clipboard.writeText(textContent)
+              },
+            },
+            {
+              key: 'copy-image',
+              label: '复制图片',
+              icon: <Icons.Image size={14} />,
+              disabled: contextMenu.imageSrc == null,
+              onClick: () => {
+                if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+              },
+            },
+            {
+              key: 'delete',
+              label: '删除',
+              icon: <Icons.Trash size={14} />,
+              danger: true,
+              disabled: onDelete == null,
+              ...(onDelete != null ? { onClick: onDelete } : {}),
+            },
+            {
+              key: 'edit',
+              label: '编辑（待开发）',
+              icon: <Icons.Edit size={14} />,
+              disabled: true,
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }
@@ -2605,12 +2738,28 @@ function AgentMsg({
 
   // 提取纯文本用于复制
   const textContent = extractTextFromBlocks(blocks)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    imageSrc?: string
+  } | null>(null)
+
+  const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault()
+    const target = event.target as HTMLElement | null
+    const image = target?.closest('img') as HTMLImageElement | null
+    setContextMenu({
+      x: event.clientX,
+      y: event.clientY,
+      ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+    })
+  }, [])
 
   return (
     <div
       className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}
     >
-      <div className="msg-bubble msg-bubble-agent">
+      <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
         {isStreaming && !hasContent && (
           <div className="agent-running-tail agent-running-tail-empty" aria-label="正在运行">
             <span>正在运行</span>
@@ -2667,6 +2816,47 @@ function AgentMsg({
           />
         )}
       </div>
+      {contextMenu != null && (
+        <InlineContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+          items={[
+            {
+              key: 'copy-text',
+              label: '复制内容',
+              icon: <Icons.Copy size={14} />,
+              disabled: textContent.length === 0,
+              onClick: () => {
+                void navigator.clipboard.writeText(textContent)
+              },
+            },
+            {
+              key: 'copy-image',
+              label: '复制图片',
+              icon: <Icons.Image size={14} />,
+              disabled: contextMenu.imageSrc == null,
+              onClick: () => {
+                if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+              },
+            },
+            {
+              key: 'delete',
+              label: '删除',
+              icon: <Icons.Trash size={14} />,
+              danger: true,
+              disabled: onDelete == null,
+              ...(onDelete != null ? { onClick: onDelete } : {}),
+            },
+            {
+              key: 'edit',
+              label: '编辑（待开发）',
+              icon: <Icons.Edit size={14} />,
+              disabled: true,
+            },
+          ]}
+        />
+      )}
     </div>
   )
 }
@@ -3603,11 +3793,14 @@ function ComposerV2({
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(
     initialPrefs.reasoningEffort ?? 'medium',
   )
+  const [previewAttachment, setPreviewAttachment] = useState<ComposerAttachment | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
   const runtimeSettingsHydratedRef = useRef(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
+  const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
+  const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
@@ -3842,7 +4035,7 @@ function ComposerV2({
     // 关键点：minHeight 留一个能容纳一行文字 + 一点 padding 的值，
     // 避免空 textarea 看起来永远是一坨；maxHeight 给得宽一些，常规长 prompt 都能直接展示完，
     // 不需要靠滚动条来回看。
-    const minHeight = manualExpanded ? 220 : 92
+    const minHeight = manualExpanded ? 220 : 126
     const maxHeight = manualExpanded ? 400 : 280
 
     // 用 'auto' 临时高度测量内容真实高度，再 clamp 到区间内
@@ -4000,6 +4193,26 @@ function ComposerV2({
     ],
   )
 
+  const appendAttachments = useCallback((nextAttachments: ComposerAttachment[]) => {
+    let truncated = false
+    let added = 0
+    setAttachments((current) => {
+      const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
+      for (const attachment of nextAttachments) {
+        if (byPath.size >= 20) {
+          truncated = true
+          break
+        }
+        if (byPath.has(attachment.path)) continue
+        byPath.set(attachment.path, attachment)
+        added += 1
+      }
+      return Array.from(byPath.values())
+    })
+    if (truncated) toast.info('单轮最多添加 20 个附件。')
+    return added
+  }, [toast])
+
   const handleAddAttachments = useCallback(async () => {
     try {
       const selected = await openFileDialog({
@@ -4008,30 +4221,73 @@ function ComposerV2({
       })
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
-      let truncated = false
-      setAttachments((current) => {
-        const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
-        for (const filePath of filePaths) {
-          if (byPath.size >= 20) {
-            truncated = true
-            break
-          }
-          if (byPath.has(filePath)) continue
-          byPath.set(filePath, {
-            id: `${Date.now()}-${byPath.size}-${filePath}`,
-            type: isImageAttachmentPath(filePath) ? 'image' : 'file',
+      const newAttachments = await Promise.all(
+        filePaths.map(async (filePath, index) => {
+          const type = isImageAttachmentPath(filePath) ? 'image' : 'file'
+          const base: ComposerAttachment = {
+            id: `${Date.now()}-${index}-${filePath}`,
+            type,
             path: filePath,
             name: getFileNameFromPath(filePath),
-          })
-        }
-        return Array.from(byPath.values())
-      })
-      if (truncated) toast.info('单轮最多添加 20 个附件。')
+          }
+          if (type !== 'image') return base
+          try {
+            const preview = await prepareImagePreview({ sourcePath: filePath })
+            return { ...base, previewPath: preview.filePath, previewUrl: preview.fileUrl }
+          } catch {
+            return base
+          }
+        }),
+      )
+      appendAttachments(newAttachments)
     } catch (err) {
       console.error('添加附件失败', err)
       toast.error(err instanceof Error ? err.message : '添加附件失败')
     }
-  }, [openFileDialog, toast])
+  }, [appendAttachments, openFileDialog, prepareImagePreview, toast])
+
+  const handlePaste = useCallback(
+    async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = Array.from(event.clipboardData?.items ?? [])
+      const imageItems = items.filter((item) => item.type.startsWith('image/'))
+      if (imageItems.length === 0) return
+
+      event.preventDefault()
+      try {
+        const pastedAttachmentsRaw = await Promise.all(
+          imageItems.map(async (item, index) => {
+            const file = item.getAsFile()
+            if (file == null) return null
+            const dataUrl = await readBlobAsDataUrl(file)
+            const result = await savePastedImage({
+              dataUrl,
+              suggestedBaseName: `pasted-image-${index + 1}`,
+              ...(file.type ? { mimeType: file.type } : {}),
+            })
+            return {
+              id: `${Date.now()}-${index}-${result.filePath}`,
+              type: 'image' as const,
+              path: result.filePath,
+              name: result.fileName,
+              previewPath: result.filePath,
+              previewUrl: resolveComposerImageSrc(result.filePath),
+            }
+          }),
+        )
+        const pastedAttachments: ComposerAttachment[] = pastedAttachmentsRaw.filter(
+          (attachment): attachment is NonNullable<(typeof pastedAttachmentsRaw)[number]> =>
+            attachment != null,
+        )
+
+        const added = appendAttachments(pastedAttachments)
+        if (added > 0) toast.success(`已粘贴 ${added} 张图片`)
+      } catch (err) {
+        console.error('粘贴图片失败', err)
+        toast.error(err instanceof Error ? err.message : '粘贴图片失败')
+      }
+    },
+    [appendAttachments, savePastedImage, toast],
+  )
 
   const handleRemoveAttachment = useCallback((id: string) => {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
@@ -4365,6 +4621,8 @@ function ComposerV2({
   const showBranchSelect = branchOptions.length > 0 && branchState.currentBranch != null
   const visibleApprovalRequest =
     approvalRequest != null && !isControlApprovalRequest(approvalRequest) ? approvalRequest : null
+  const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
+  const fileAttachments = attachments.filter((attachment) => attachment.type === 'file')
 
   return (
     <div className="composer-wrap">
@@ -4442,28 +4700,52 @@ function ComposerV2({
             })()}
           </div>
         )}
-        {attachments.length > 0 && (
-          <div className="composer-attachment-strip">
-            {attachments.map((attachment) => (
-              <div key={attachment.id} className="composer-attachment-chip">
-                {attachment.type === 'image' ? <Icons.Image size={13} /> : <Icons.File size={13} />}
-                <span>{attachment.name}</span>
-                <button
-                  type="button"
-                  title="移除附件"
-                  onClick={() => handleRemoveAttachment(attachment.id)}
-                >
-                  <Icons.X size={12} />
-                </button>
-              </div>
-            ))}
-          </div>
+        {previewAttachment != null && (
+          <ImagePreviewModal
+            src={resolveComposerImageSrc(previewAttachment.previewPath ?? previewAttachment.path)}
+            alt={previewAttachment.name}
+            fileName={previewAttachment.name}
+            onClose={() => setPreviewAttachment(null)}
+          />
         )}
         <div
           className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''} ${
             showProjectPicker || showBranchSelect ? 'has-workspace-picks' : ''
           }`}
         >
+          {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
+            <div className="composer-attachments-inside">
+              {imageAttachments.length > 0 && (
+                <div className="composer-attachment-gallery">
+                  {imageAttachments.map((attachment) => (
+                    <ComposerImageCard
+                      key={attachment.id}
+                      attachment={attachment}
+                      onPreview={() => setPreviewAttachment(attachment)}
+                      onRemove={() => handleRemoveAttachment(attachment.id)}
+                    />
+                  ))}
+                </div>
+              )}
+              {fileAttachments.length > 0 && (
+                <div className="composer-attachment-strip">
+                  {fileAttachments.map((attachment) => (
+                    <div key={attachment.id} className="composer-attachment-chip">
+                      <Icons.File size={13} />
+                      <span>{attachment.name}</span>
+                      <button
+                        type="button"
+                        title="移除附件"
+                        onClick={() => handleRemoveAttachment(attachment.id)}
+                      >
+                        <Icons.X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           <textarea
             className="composer-input"
             ref={textareaRef}
@@ -4476,6 +4758,9 @@ function ComposerV2({
             }}
             onCompositionEnd={() => {
               composingRef.current = false
+            }}
+            onPaste={(event) => {
+              void handlePaste(event)
             }}
             onKeyDown={handleKeyDown}
           />
@@ -5087,6 +5372,146 @@ const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
 function isImageAttachmentPath(filePath: string): boolean {
   const extension = getFileNameFromPath(filePath).split('.').pop()?.toLowerCase()
   return extension != null && IMAGE_ATTACHMENT_EXTENSIONS.has(extension)
+}
+
+function encodeToSafeFileUrl(absolutePath: string): string {
+  const encoded = btoa(unescape(encodeURIComponent(absolutePath)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `${SAFE_FILE_SCHEME}://x/${encoded}`
+}
+
+function resolveComposerImageSrc(filePath: string): string {
+  if (!filePath) return filePath
+  const trimmed = filePath.trim()
+  const lower = trimmed.toLowerCase()
+  if (
+    lower.startsWith('http://') ||
+    lower.startsWith('https://') ||
+    lower.startsWith('data:') ||
+    lower.startsWith('blob:') ||
+    lower.startsWith(`${SAFE_FILE_SCHEME}:`)
+  ) {
+    return trimmed
+  }
+  if (lower.startsWith('file://')) {
+    try {
+      const decoded = decodeURI(trimmed.replace(/^file:\/\//, ''))
+      return encodeToSafeFileUrl(decoded.startsWith('/') ? decoded : `/${decoded}`)
+    } catch {
+      return trimmed
+    }
+  }
+  return trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)
+    ? encodeToSafeFileUrl(trimmed)
+    : trimmed
+}
+
+function ComposerImageCard({
+  attachment,
+  onPreview,
+  onRemove,
+}: {
+  attachment: ComposerAttachment
+  onPreview: () => void
+  onRemove: () => void
+}) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+  const [imgError, setImgError] = useState(false)
+  const resolvedSrc = attachment.previewUrl ?? resolveComposerImageSrc(attachment.previewPath ?? attachment.path)
+
+  useEffect(() => {
+    setImgError(false)
+  }, [resolvedSrc])
+
+  return (
+    <div
+      className="composer-image-card"
+      onContextMenu={(event) => {
+        event.preventDefault()
+        setMenu({ x: event.clientX, y: event.clientY })
+      }}
+    >
+      <button type="button" className="composer-image-card-button" onClick={onPreview}>
+        {imgError ? (
+          <div className="composer-image-card-fallback" aria-hidden="true">
+            <Icons.Image size={18} />
+          </div>
+        ) : (
+          <img
+            src={resolvedSrc}
+            alt={attachment.name}
+            className="composer-image-card-thumb"
+            onError={() => setImgError(true)}
+            draggable={false}
+          />
+        )}
+      </button>
+      <button
+        type="button"
+        className="composer-image-card-remove"
+        title="移除图片"
+        onClick={onRemove}
+      >
+        <Icons.X size={12} />
+      </button>
+      {menu != null && (
+        <InlineContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              key: 'preview',
+              label: '预览图片',
+              icon: <Icons.Maximize size={14} />,
+              onClick: onPreview,
+            },
+            {
+              key: 'copy',
+              label: '复制图片',
+              icon: <Icons.Copy size={14} />,
+              onClick: () => {
+                void copyImageFromSrc(resolvedSrc).catch(() => {})
+              },
+            },
+            {
+              key: 'remove',
+              label: '移除图片',
+              icon: <Icons.Trash size={14} />,
+              danger: true,
+              onClick: onRemove,
+            },
+          ]}
+        />
+      )}
+    </div>
+  )
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read pasted image'))
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Failed to read pasted image'))
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+async function copyImageFromSrc(src: string): Promise<void> {
+  const response = await fetch(src)
+  if (!response.ok) throw new Error('无法读取图片数据')
+  const blob = await response.blob()
+  const ClipboardItemCtor = (window as unknown as { ClipboardItem?: typeof ClipboardItem })
+    .ClipboardItem
+  if (typeof ClipboardItemCtor !== 'function') {
+    throw new Error('当前环境不支持复制图片')
+  }
+  await navigator.clipboard.write([new ClipboardItemCtor({ [blob.type || 'image/png']: blob })])
 }
 
 function getFileNameFromPath(filePath: string): string {

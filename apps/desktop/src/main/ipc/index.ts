@@ -72,6 +72,7 @@ import type {
   SessionRenamedHandler,
 } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
+import { toSafeFileUrl } from '../services/SafeFileProtocol.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
@@ -1817,6 +1818,154 @@ export function registerAllIpcHandlers(): void {
       return { opened: false, error: errorMessage }
     }
     return { opened: true }
+  })
+
+  // ─── File Save Image Handler ──────────────────────────────────────────
+  //
+  // 让用户把生成的图片（路径在 userData/.spark-artifacts/...）另存到本地。
+  // 源文件必须在 safe-file 白名单目录下，与 safe-file 协议保持一致的安全约束。
+
+  typedIpcHandle('file:save-image', async (req) => {
+    const sourcePath = req.sourcePath
+    if (!sourcePath || typeof sourcePath !== 'string') {
+      return { saved: false, savedPath: '', error: 'sourcePath is required' }
+    }
+
+    log.info(`file:save-image requested, sourcePath=${sourcePath}`)
+
+    // 源文件必须存在
+    if (!(await pathExists(sourcePath))) {
+      return { saved: false, savedPath: '', error: '源文件不存在' }
+    }
+
+    // 源文件必须在 safe-file 白名单内（userData / temp）
+    const resolvedSource = path.resolve(sourcePath)
+    const userDataRoot = path.resolve(app.getPath('userData'))
+    const tempRoot = path.resolve(app.getPath('temp'))
+    const allowed =
+      resolvedSource === userDataRoot ||
+      resolvedSource.startsWith(userDataRoot + path.sep) ||
+      resolvedSource === tempRoot ||
+      resolvedSource.startsWith(tempRoot + path.sep)
+    if (!allowed) {
+      log.warn(`file:save-image rejected: source outside allowed roots, path=${sourcePath}`)
+      return { saved: false, savedPath: '', error: '源文件不在允许范围内' }
+    }
+
+    // 弹保存对话框
+    const sourceBaseName = path.basename(sourcePath)
+    const suggestedName = req.suggestedFileName ?? sourceBaseName
+    const defaultDir = req.defaultDirectory ?? app.getPath('downloads')
+
+    const result = await dialog.showSaveDialog({
+      title: '保存图片',
+      defaultPath: path.join(defaultDir, suggestedName),
+      filters: [
+        { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || !result.filePath) {
+      return { saved: false, savedPath: '' }
+    }
+
+    try {
+      // 用 copyFile 而不是 rename，源文件不应该被搬走
+      await fs.copyFile(sourcePath, result.filePath)
+      log.info(`file:save-image wrote ${sourcePath} -> ${result.filePath}`)
+      return { saved: true, savedPath: result.filePath }
+    } catch (err) {
+      log.error(`file:save-image failed, source=${sourcePath}, err=${String(err)}`)
+      return { saved: false, savedPath: '', error: String(err) }
+    }
+  })
+
+  typedIpcHandle('file:save-pasted-image', async (req) => {
+    const dataUrl = req.dataUrl?.trim()
+    if (!dataUrl) {
+      throw new Error('dataUrl is required')
+    }
+
+    const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/)
+    if (match == null) {
+      throw new Error('Invalid image data URL')
+    }
+
+    const mimeType = (match[1] ?? req.mimeType ?? 'image/png').toLowerCase()
+    const base64Payload = match[2]
+    if (base64Payload == null || base64Payload.length === 0) {
+      throw new Error('Clipboard image is empty')
+    }
+    const buffer = Buffer.from(base64Payload, 'base64')
+    if (buffer.length === 0) {
+      throw new Error('Clipboard image is empty')
+    }
+
+    const extension =
+      mimeType === 'image/jpeg'
+        ? 'jpg'
+        : mimeType === 'image/webp'
+          ? 'webp'
+          : mimeType === 'image/gif'
+            ? 'gif'
+            : mimeType === 'image/bmp'
+              ? 'bmp'
+              : mimeType === 'image/tiff'
+                ? 'tiff'
+                : mimeType === 'image/heic'
+                  ? 'heic'
+                  : mimeType === 'image/heif'
+                    ? 'heif'
+                    : 'png'
+
+    const rootDir = path.join(app.getPath('temp'), 'spark-agent-pasted-images')
+    await fs.mkdir(rootDir, { recursive: true })
+    const baseName = (req.suggestedBaseName?.trim() || 'pasted-image').replace(/[^a-zA-Z0-9._-]+/g, '-')
+    const fileName = `${baseName}-${crypto.randomUUID()}.${extension}`
+    const filePath = path.join(rootDir, fileName)
+    await fs.writeFile(filePath, buffer)
+    return { filePath, fileName }
+  })
+
+  typedIpcHandle('file:prepare-image-preview', async (req) => {
+    const sourcePath = req.sourcePath?.trim()
+    if (!sourcePath) {
+      throw new Error('sourcePath is required')
+    }
+    if (!(await pathExists(sourcePath))) {
+      throw new Error('源文件不存在')
+    }
+
+    const resolvedSource = path.resolve(sourcePath)
+    const userDataRoot = path.resolve(app.getPath('userData'))
+    const tempRoot = path.resolve(app.getPath('temp'))
+    const alreadyAllowed =
+      resolvedSource === userDataRoot ||
+      resolvedSource.startsWith(userDataRoot + path.sep) ||
+      resolvedSource === tempRoot ||
+      resolvedSource.startsWith(tempRoot + path.sep)
+
+    if (alreadyAllowed) {
+      return {
+        filePath: resolvedSource,
+        fileName: path.basename(resolvedSource),
+        fileUrl: toSafeFileUrl(resolvedSource),
+      }
+    }
+
+    const previewRoot = path.join(app.getPath('temp'), 'spark-agent-image-previews')
+    await fs.mkdir(previewRoot, { recursive: true })
+    const extension = path.extname(resolvedSource) || '.png'
+    const baseName = path.basename(resolvedSource, extension).replace(/[^a-zA-Z0-9._-]+/g, '-')
+    const fileName = `${baseName || 'preview'}-${crypto.randomUUID()}${extension}`
+    const filePath = path.join(previewRoot, fileName)
+    await fs.copyFile(resolvedSource, filePath)
+    return {
+      filePath,
+      fileName,
+      fileUrl: toSafeFileUrl(filePath),
+    }
   })
 
   // ─── Playwright Browser Automation Handlers ──────────────────────────

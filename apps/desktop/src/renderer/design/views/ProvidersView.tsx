@@ -367,24 +367,17 @@ function ProvidersView() {
     [profiles],
   )
 
-  /** 点击 vendor 卡片 → 选择格式 → 打开编辑面板 */
+  /** 点击 vendor 卡片 → 直接以 Anthropic 格式打开编辑面板 */
   const handleSelectVendor = (vendorId: string) => {
     const presets = getPresetsByVendor(vendorId)
-    if (presets.length >= 1 && presets[0]) {
-      // 只有一种格式，直接打开
-      setInitialPresetId(presets[0].id)
+    // 优先查找 anthropic 格式，否则取第一个
+    const preset = presets.find((p) => p.provider === 'anthropic') ?? presets[0]
+    if (preset) {
+      setInitialPresetId(preset.id)
       setEditingId(null)
       setShowPresetCatalog(false)
       setTweak('showProviderEdit', true)
     }
-    // 多种格式时在 VendorPresetCard 内部处理
-  }
-
-  const handleSelectPreset = (presetId: string) => {
-    setInitialPresetId(presetId)
-    setEditingId(null)
-    setShowPresetCatalog(false)
-    setTweak('showProviderEdit', true)
   }
 
   /** 已配置的 vendor 名称集合（用于标记已添加） */
@@ -487,16 +480,13 @@ function ProvidersView() {
               {getUniqueVendorIds().map((vendorId) => {
                 const meta = getVendorMeta(vendorId)
                 if (!meta) return null
-                const presets = getPresetsByVendor(vendorId)
                 const isAdded = configuredNames.has(meta.name)
                 return (
                   <VendorPresetCard
                     key={vendorId}
                     vendor={meta}
-                    presets={presets}
                     isAdded={isAdded}
                     onSelectVendor={handleSelectVendor}
-                    onSelectPreset={handleSelectPreset}
                   />
                 )
               })}
@@ -598,30 +588,16 @@ function guessVendorByName(name: string, vendorIds: string[]): VendorMeta | null
 /* ─── VENDOR PRESET CARD（模板目录卡片） ─── */
 function VendorPresetCard({
   vendor,
-  presets,
   isAdded,
   onSelectVendor,
-  onSelectPreset,
 }: {
   vendor: VendorMeta
-  presets: ProviderPreset[]
   isAdded: boolean
   onSelectVendor: (vendorId: string) => void
-  onSelectPreset: (presetId: string) => void
 }) {
-  const [expanded, setExpanded] = useState(false)
-
-  const handleClick = () => {
-    if (presets.length === 1) {
-      onSelectVendor(vendor.id)
-    } else {
-      setExpanded((prev) => !prev)
-    }
-  }
-
   return (
     <div className={`preset-card${isAdded ? ' preset-added' : ''}`}>
-      <div className="preset-card-main" onClick={handleClick}>
+      <div className="preset-card-main" onClick={() => onSelectVendor(vendor.id)}>
         <ProviderLogo vendor={vendor} size={32} shape="rounded" />
         <div className="preset-card-info">
           <div className="preset-card-name">
@@ -630,26 +606,7 @@ function VendorPresetCard({
           </div>
           <div className="preset-card-desc">{vendor.desc}</div>
         </div>
-        {presets.length > 1 && <span className="preset-card-formats">{presets.length} 种格式</span>}
       </div>
-      {expanded && presets.length > 1 && (
-        <div className="preset-card-formats-list">
-          {presets.map((preset) => (
-            <button
-              key={preset.id}
-              className="preset-format-btn"
-              onClick={(e) => {
-                e.stopPropagation()
-                onSelectPreset(preset.id)
-              }}
-            >
-              <span className={`preset-format-dot ${preset.provider}`} />
-              {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
-              <span className="preset-format-model">{preset.defaultModel}</span>
-            </button>
-          ))}
-        </div>
-      )}
     </div>
   )
 }
@@ -1036,6 +993,29 @@ export function ProviderEditPanel({
               基本信息
             </div>
             <div className="form-grid">
+              <label>模型类型</label>
+              <SparkSelect
+                value={form.modelType}
+                onChange={(e) => {
+                  const modelType = e.target.value as ProviderModelType
+                  setForm((prev) => ({
+                    ...prev,
+                    modelType,
+                    presetId: 'custom',
+                    provider: modelType === 'image' ? 'openai' : prev.provider,
+                    codexApiKind: modelType === 'image' ? 'chat' : prev.codexApiKind,
+                    imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
+                    imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
+                  }))
+                }}
+              >
+                <option value="image">生图模型</option>
+                <option value="text">文本（含编码）模型</option>
+                <option value="multimodal">多模态（含编码、生图）模型</option>
+                <option value="voice">语音模型</option>
+                <option value="video">视频模型</option>
+              </SparkSelect>
+
               <label>
                 供应商模板
                 <span className="sub">基于官方公开文档预填，后续仍可修改</span>
@@ -1055,16 +1035,16 @@ export function ProviderEditPanel({
                   }}
                 >
                   <option value="custom">自定义</option>
-                  {PROVIDER_PRESETS.map((preset) => {
+                  {PROVIDER_PRESETS.filter((preset) =>
+                    form.modelType === 'image' ? preset.modelType === 'image' : preset.modelType !== 'image'
+                  ).map((preset) => {
                     const meta = getVendorMeta(preset.vendorId)
                     // 同一 vendor 可能对应多个 preset（如 openai-official / openai-images / apimart-images），
                     // 这里显示 preset 自己的 name 让用户能区分；带 image 类型的 preset 追加提示。
                     const baseName = preset.name || meta?.name || preset.vendorId
-                    const tag = preset.modelType === 'image' ? ' · 生图' : ''
                     return (
                       <option key={preset.id} value={preset.id}>
                         {baseName}
-                        {tag}
                       </option>
                     )
                   })}
@@ -1084,6 +1064,7 @@ export function ProviderEditPanel({
                 placeholder="例：Anthropic · Claude"
               />
 
+              {form.modelType !== 'image' && (<>
               <label>
                 API 协议格式
                 <span className="sub">决定 Provider 请求格式；Claude 执行统一使用 Claude Agent SDK</span>
@@ -1103,28 +1084,7 @@ export function ProviderEditPanel({
                 <option value="anthropic">Anthropic 格式</option>
                 <option value="openai">OpenAI 格式</option>
               </SparkSelect>
-
-              <label>模型类型</label>
-              <SparkSelect
-                value={form.modelType}
-                onChange={(e) => {
-                  const modelType = e.target.value as ProviderModelType
-                  setForm((prev) => ({
-                    ...prev,
-                    modelType,
-                    provider: modelType === 'image' ? 'openai' : prev.provider,
-                    codexApiKind: modelType === 'image' ? 'chat' : prev.codexApiKind,
-                    imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
-                    imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
-                  }))
-                }}
-              >
-                <option value="image">生图模型</option>
-                <option value="text">文本（含编码）模型</option>
-                <option value="multimodal">多模态（含编码、生图）模型</option>
-                <option value="voice">语音模型</option>
-                <option value="video">视频模型</option>
-              </SparkSelect>
+              </>)}
 
               {form.modelType === 'image' && (
                 <>
@@ -1217,6 +1177,7 @@ export function ProviderEditPanel({
                 className="mono-sm"
               />
 
+              {form.modelType !== 'image' && (<>
               <label>
                 支持 1M 上下文
                 <span className="sub">开启后该 Provider 默认按 1M token 计算；关闭时默认 200K</span>
@@ -1232,8 +1193,9 @@ export function ProviderEditPanel({
                   {form.supportsMillionContext ? '已开启' : '关闭'}
                 </span>
               </div>
+              </>)}
 
-              <label>默认 Provider</label>
+              <label>{form.modelType === 'image' ? '默认生图模型' : '默认 Provider'}</label>
               <div className="control">
                 <div
                   className={`switch ${form.isDefault ? 'on' : ''}`}
@@ -1242,7 +1204,9 @@ export function ProviderEditPanel({
                   aria-checked={form.isDefault}
                 />
                 <span className="muted" style={{ fontSize: 'var(--font-xs)' }}>
-                  {form.isDefault ? '系统默认' : '备选 Provider'}
+                  {form.isDefault
+                    ? (form.modelType === 'image' ? '默认生图' : '系统默认')
+                    : (form.modelType === 'image' ? '备选生图' : '备选 Provider')}
                 </span>
               </div>
             </div>
@@ -1271,6 +1235,7 @@ export function ProviderEditPanel({
             </div>
           </div>
 
+          {form.modelType !== 'image' && (<>
           {/* ─── 可用模型 ─── */}
           <div className="provider-form-section">
             <div className="provider-form-section-title">
@@ -1376,6 +1341,7 @@ export function ProviderEditPanel({
               </div>
             </div>
           </div>
+          </>)}
         </div>
 
         <div className="slide-panel-foot">

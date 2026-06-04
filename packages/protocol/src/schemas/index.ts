@@ -91,6 +91,16 @@ export const DialogOpenFileRequestSchema = z.object({
     .optional(),
 })
 
+export const FileSavePastedImageRequestSchema = z.object({
+  dataUrl: z.string().min(1).max(40_000_000),
+  mimeType: z.string().min(1).max(120).optional(),
+  suggestedBaseName: z.string().min(1).max(120).optional(),
+})
+
+export const FilePrepareImagePreviewRequestSchema = z.object({
+  sourcePath: z.string().min(1),
+})
+
 export const SessionCancelRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
@@ -337,6 +347,8 @@ export const IpcSchemaRegistry = {
   }),
   'dialog:open-directory': DialogOpenDirectoryRequestSchema,
   'dialog:open-file': DialogOpenFileRequestSchema,
+  'file:save-pasted-image': FileSavePastedImageRequestSchema,
+  'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
   'rules:list': RulesListRequestSchema,
   'rules:create': RulesCreateRequestSchema,
   'rules:update': RulesUpdateRequestSchema,

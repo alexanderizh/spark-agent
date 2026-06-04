@@ -1338,6 +1338,259 @@ body.sidebar-resizing {
   border: 1px solid var(--border);
   margin: 8px 0;
 }
+
+/* ============================================================
+   MarkdownImage — inline image with hover toolbar + lightbox
+   ============================================================ */
+.md-image {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+  margin: 6px 0;
+  /* block-level 默认行为：图片在段落里 inline-block 即可，宽度不超过父容器 */
+  vertical-align: top;
+}
+
+.md-image-img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  max-height: 420px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  cursor: zoom-in;
+  background: var(--bg-soft);
+  /* 重要：覆盖 .md-surface img 的 margin，避免双重间距 */
+  margin: 0;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.md-image-img:hover {
+  border-color: var(--primary, #6366f1);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.md-image-toolbar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  gap: 1px;
+  padding: 2px 3px;
+  background: rgba(20, 20, 24, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  border-radius: var(--r-sm);
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  pointer-events: none;
+}
+
+.md-image:hover .md-image-toolbar,
+.md-image-toolbar:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+.md-image-tool {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: #f1f1f3;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.md-image-tool:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.md-image-tool:active:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.md-image-tool:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* 失败占位：让用户看到这是个图片 + 文件名 + 文件名可点击下载（如果路径有效） */
+.md-image-placeholder {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-soft);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-muted);
+  font-size: var(--font-xs, 12px);
+  line-height: 1.4;
+}
+
+.md-image-placeholder-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--r-sm);
+  background: var(--panel, #fff);
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.md-image-placeholder-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.md-image-placeholder-name {
+  color: var(--text);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+
+.md-image-placeholder-hint {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+/* ============================================================
+   ImagePreviewModal — lightbox-style full-size preview
+   ============================================================ */
+.image-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 9, 12, 0.86);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.15s ease;
+}
+
+.image-lightbox-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  color: #f1f1f3;
+  background: rgba(20, 20, 24, 0.5);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+  /* 让顶栏可拖拽窗口（macOS 习惯），按钮单独禁用 */
+  -webkit-app-region: drag;
+}
+
+/* macOS hiddenInset 标题栏的红黄绿按钮在 x=22 起、约 60px 宽；
+   预览层通过 portal 挂到 body，需要由组件自身显式带上安全区类。 */
+.image-lightbox-topbar.platform-darwin-safe-area {
+  padding-left: 80px;
+  padding-top: 14px;
+}
+
+.image-lightbox-topbar > * {
+  -webkit-app-region: no-drag;
+}
+
+.image-lightbox-title {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--font-sm, 13px);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
+}
+
+.image-lightbox-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--r-sm);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f1f1f3;
+  font-size: var(--font-xs, 12px);
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.image-lightbox-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.image-lightbox-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.image-lightbox-close {
+  width: 30px;
+  padding: 0;
+  justify-content: center;
+}
+
+.image-lightbox-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow: auto;
+}
+
+.image-lightbox-img {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: var(--r-sm);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.image-lightbox-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 48px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: var(--r-md);
+  color: rgba(241, 241, 243, 0.8);
+  font-size: var(--font-sm, 13px);
+}
+
+.image-lightbox-error-path {
+  color: rgba(241, 241, 243, 0.45);
+  font-size: var(--font-xs, 12px);
+  font-family: 'Geist Mono', ui-monospace, monospace;
+  max-width: 480px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .md-surface .md-code {
   margin: 0;
   padding: 10px 12px;
@@ -1790,6 +2043,7 @@ body.sidebar-resizing {
   background: var(--bg);
   padding: 0;
   z-index: 5;
+  padding-top: 4px;
 }
 .composer-inner {
   max-width: 900px;
@@ -1799,12 +2053,12 @@ body.sidebar-resizing {
   padding: 0 var(--pad-xl) var(--pad-lg);
 }
 .composer {
-  border: 1px solid var(--border);
+  border: 0.5px solid var(--border);
   border-radius: var(--r-lg);
   background: var(--panel);
   /* 悬浮阴影 — 上方加阴影增强浮起感 */
   box-shadow:
-    0 -4px 16px rgba(0, 0, 0, 0.06),
+    0 -2px 8px rgba(0, 0, 0, 0.06),
     0 0 0 1px rgba(0, 0, 0, 0.03),
     var(--shadow-sm);
 }
@@ -1818,8 +2072,8 @@ body.sidebar-resizing {
 .composer-inner > .composer-param-bar {
   position: relative;
   z-index: auto;
-  margin-top: -14px;
-  padding: 22px 12px 5px;
+  margin-top: -16px;
+  padding: 22px 12px 4px;
   min-height: 40px;
   border: none;
   box-shadow: none;
@@ -2266,7 +2520,90 @@ body.sidebar-resizing {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 0 2px 8px;
+  padding: 0 0 10px;
+}
+
+.composer-attachment-gallery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 0 12px;
+}
+
+.composer-image-card {
+  position: relative;
+  width: 76px;
+  padding-top: 4px;
+}
+
+.composer-image-card-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 1px solid #efefef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: transparent;
+  cursor: pointer;
+}
+
+.composer-image-card-thumb {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--bg-soft);
+  box-shadow: 0 1px 3px color-mix(in srgb, black 10%, transparent);
+}
+
+.composer-image-card-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 90%, var(--bg-soft));
+  color: var(--text-faint);
+  box-shadow: 0 1px 3px color-mix(in srgb, black 10%, transparent);
+}
+
+.composer-image-card-remove {
+  position: absolute;
+  top: -3px;
+  right: -6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--panel) 82%, black 18%);
+  color: #fff;
+  box-shadow: 0 8px 18px color-mix(in srgb, black 18%, transparent);
+  cursor: pointer;
+}
+
+.composer-image-card-remove:hover {
+  background: var(--danger);
+}
+
+.context-action-menu {
+  min-width: 156px;
+}
+
+.context-action-menu .action-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.action-menu-item-spacer {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 
 .composer-attachment-chip {
@@ -2459,6 +2796,12 @@ body.sidebar-resizing {
 .composer-v2 {
   position: relative;
   overflow: visible;
+}
+.composer-attachments-inside {
+  padding: 8px 10px 0;
+  background: color-mix(in srgb, var(--panel) 94%, var(--bg-soft));
+  border-top-left-radius: inherit;
+  border-top-right-radius: inherit;
 }
 .composer-v2 textarea {
   padding: 14px 70px 48px 16px;

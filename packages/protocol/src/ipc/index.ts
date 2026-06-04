@@ -2134,6 +2134,75 @@ export interface FileOpenResponse {
   error?: string
 }
 
+// ─── File Save / Download Channels ────────────────────────────────────────────
+
+/**
+ * `file:save-image` — 让用户把生成的图片 / 附件另存到本地。
+ *
+ * 使用场景：
+ *   - 会话里 agent 生成的图片（路径在 userData/.spark-artifacts 下），
+ *     用户想保存到自己的下载目录或桌面。
+ *   - 附件中的图片想"另存为"。
+ *
+ * 行为：
+ *   - 主进程会调 `dialog.showSaveDialog` 让用户选择目标位置 + 文件名，
+ *     然后把源文件复制过去。如果用户取消对话框，返回 saved:false 且无 error。
+ *   - 源文件必须在 safe-file 白名单目录（userData / temp）下，
+ *     与协议保持一致的安全约束。
+ */
+export interface FileSaveImageRequest {
+  /** 源文件绝对路径（必须在 safe-file 白名单内） */
+  sourcePath: string
+  /**
+   * 推荐的默认文件名（不含目录），例如 "cat.png"。
+   * 可选；省略时取源文件的 basename。
+   */
+  suggestedFileName?: string
+  /**
+   * 推荐的默认保存目录。可选；省略时用系统 Downloads 目录。
+   */
+  defaultDirectory?: string
+}
+
+export interface FileSaveImageResponse {
+  /** 用户确认后实际写入的目标绝对路径（用户取消时为空字符串） */
+  savedPath: string
+  /** 是否真的写盘成功（用户取消对话框 = false） */
+  saved: boolean
+  /** 写入失败时的错误信息 */
+  error?: string
+}
+
+/**
+ * `file:save-pasted-image` — 把渲染进程剪贴板里的图片数据写入本地临时目录，
+ * 返回绝对路径，供会话附件继续复用现有的 `SessionAttachment` 流程。
+ */
+export interface FileSavePastedImageRequest {
+  /** `data:image/png;base64,...` 形式的数据 URL */
+  dataUrl: string
+  /** 可选 MIME 类型；主进程会优先从 dataUrl 中解析 */
+  mimeType?: string
+  /** 可选建议文件名前缀，不含扩展名 */
+  suggestedBaseName?: string
+}
+
+export interface FileSavePastedImageResponse {
+  /** 写入后的绝对路径 */
+  filePath: string
+  /** 根据 MIME / 文件名推导出的 basename */
+  fileName: string
+}
+
+export interface FilePrepareImagePreviewRequest {
+  sourcePath: string
+}
+
+export interface FilePrepareImagePreviewResponse {
+  filePath: string
+  fileName: string
+  fileUrl: string
+}
+
 // ─── Context Governor Channels ───────────────────────────────────────────────
 
 export interface ContextPreferenceItem {
@@ -2407,6 +2476,11 @@ export interface IpcChannelMap {
 
   // File Open — open a file with the OS default application
   'file:open': [FileOpenRequest, FileOpenResponse]
+
+  // File Save Image — show save dialog and copy a local image to the user's chosen path
+  'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
+  'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
+  'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
 
   // Playwright Browser Automation
   'playwright:status': [PlaywrightStatusRequest, PlaywrightStatusResponse]
