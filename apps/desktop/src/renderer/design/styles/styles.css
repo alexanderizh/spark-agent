@@ -609,6 +609,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   -webkit-app-region: no-drag;
 }
 
+.app.sidebar-hidden .transparent-header {
+  margin-left: 0;
+  padding-left: 20px;
+  padding-top: 12px;
+  height: 45px;
+}
+
 .view-body {
   flex: 1;
   overflow: auto;
