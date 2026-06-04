@@ -3679,7 +3679,41 @@ body.sidebar-resizing {
   margin: 0;
   font-size: 11px;
   white-space: pre-wrap;
+  overflow-x: auto;
 }
+
+/* Git diff styling in tool output */
+.tool-output-pre .diff-header {
+  color: var(--primary);
+  font-weight: 500;
+}
+.tool-output-pre .diff-add {
+  color: var(--success);
+  background: rgba(34, 197, 94, 0.08);
+  display: block;
+}
+.tool-output-pre .diff-remove {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.08);
+  display: block;
+}
+.tool-output-pre .diff-context {
+  color: var(--text-muted);
+}
+.tool-output-pre .diff-hunk {
+  color: var(--warning);
+  font-weight: 500;
+}
+
+/* Git diff file headers */
+.tool-output-pre .diff-file-header {
+  color: var(--text);
+  font-weight: 500;
+  margin: 8px 0 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
 .tool-error-span {
   color: var(--danger);
   font-size: 11px;

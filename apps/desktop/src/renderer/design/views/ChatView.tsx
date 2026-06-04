@@ -1320,6 +1320,7 @@ function renderBlocks(
               ? ('error' as const)
               : null
         const toolArg = JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
+        const fullToolArg = JSON.stringify(block.toolInput)
         const isPending = block.status === 'pending' || block.status === 'running'
         const isTodoWrite = block.toolName === 'todo_write'
         // 把 todo_write 的输入直接作为预览，避免折叠后还要展开看（todos 数组本身就是状态）
@@ -1331,15 +1332,12 @@ function renderBlocks(
             key={i}
             name={block.toolName}
             arg={isTodoWrite ? '' : toolArg}
+            fullArg={isTodoWrite ? '' : fullToolArg}
             status={toolStatus}
             durationMs={block.durationMs}
           >
             {todoListBody}
-            {!isTodoWrite && block.output && (
-              <div className="tool-output-pre md-surface">
-                <MarkdownText content={block.output} />
-              </div>
-            )}
+            {!isTodoWrite && block.output && <GitDiffContent content={block.output} />}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         ) : (
@@ -1347,15 +1345,12 @@ function renderBlocks(
             key={i}
             name={block.toolName}
             arg={isTodoWrite ? '' : toolArg}
+            fullArg={isTodoWrite ? '' : fullToolArg}
             pending={isPending}
             durationMs={block.durationMs}
           >
             {todoListBody}
-            {!isTodoWrite && block.output && (
-              <div className="tool-output-pre md-surface">
-                <MarkdownText content={block.output} />
-              </div>
-            )}
+            {!isTodoWrite && block.output && <GitDiffContent content={block.output} />}
             {block.error && <span className="tool-error-span">{block.error}</span>}
           </ToolCall>
         )
@@ -2994,6 +2989,7 @@ function CollapsibleContent({
 function ToolCall({
   name,
   arg,
+  fullArg,
   status,
   pending,
   durationMs,
@@ -3001,6 +2997,7 @@ function ToolCall({
 }: {
   name: string
   arg: string
+  fullArg?: string
   status?: 'ok' | 'error'
   pending?: boolean
   durationMs?: number | undefined
@@ -3048,7 +3045,7 @@ function ToolCall({
       <div className="tool-call-head" onClick={() => setOpen(!open)}>
         {iconMap[name] || <Icons.Wrench className="tool-icon" />}
         <span className="tool-name">{name}</span>
-        <span className="tool-arg">{arg}</span>
+        <span className="tool-arg" title={fullArg || arg}>{arg}</span>
         <span className="tool-call-actions">
           {pending && <Icons.Spinner size={12} className="tool-status spinner" />}
           {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
@@ -3367,6 +3364,101 @@ function formatDuration(ms: number): string {
   const min = Math.floor(ms / 60_000)
   const sec = Math.round((ms % 60_000) / 1000)
   return `${min}m ${sec}s`
+}
+
+/**
+ * Format git diff content with syntax highlighting
+ * Detects git diff patterns and wraps them with appropriate CSS classes
+ */
+function formatGitDiffContent(content: string): string {
+  const lines = content.split('\n')
+  let isDiffMode = false
+  let formattedLines: string[] = []
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? ''
+
+    // Detect diff start (diff --git or --- a/ or +++ b/)
+    if (line.startsWith('diff --git') || line.match(/^---\s+a\//) || line.match(/^\+\+\+\s+b\//)) {
+      isDiffMode = true
+      formattedLines.push(`<span class="diff-file-header">${escapeHtml(line)}</span>`)
+      continue
+    }
+
+    // Exit diff mode when we see non-diff content after diff
+    if (isDiffMode && line.trim() && !line.startsWith('diff') && !line.startsWith('index') &&
+        !line.startsWith('---') && !line.startsWith('+++') && !line.startsWith('@@') &&
+        !line.startsWith('+') && !line.startsWith('-') && !line.startsWith(' ')) {
+      isDiffMode = false
+    }
+
+    if (!isDiffMode) {
+      formattedLines.push(escapeHtml(line))
+      continue
+    }
+
+    // Git diff hunk header (@@ -x,y +a,b @@)
+    if (line.startsWith('@@')) {
+      formattedLines.push(`<span class="diff-hunk">${escapeHtml(line)}</span>`)
+      continue
+    }
+
+    // Added line
+    if (line.startsWith('+')) {
+      formattedLines.push(`<span class="diff-add">${escapeHtml(line)}</span>`)
+      continue
+    }
+
+    // Removed line
+    if (line.startsWith('-')) {
+      formattedLines.push(`<span class="diff-remove">${escapeHtml(line)}</span>`)
+      continue
+    }
+
+    // Context line
+    if (line.startsWith(' ')) {
+      formattedLines.push(`<span class="diff-context">${escapeHtml(line)}</span>`)
+      continue
+    }
+
+    // Other diff metadata (index, etc.)
+    formattedLines.push(escapeHtml(line))
+  }
+
+  return formattedLines.join('\n')
+}
+
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+/**
+ * GitDiffContent - renders git diff content with syntax highlighting
+ * Detects if the content contains git diff patterns and formats accordingly
+ */
+function GitDiffContent({ content }: { content: string }) {
+  // Check if content looks like git diff
+  const isGitDiff = content.includes('diff --git') || content.includes('@@') || content.match(/^[\+\-]/m)
+
+  if (!isGitDiff) {
+    // Not a git diff, render as regular markdown
+    return <MarkdownText content={content} />
+  }
+
+  // Format as git diff
+  const formattedContent = formatGitDiffContent(content)
+
+  return (
+    <pre
+      className="tool-output-pre md-surface"
+      dangerouslySetInnerHTML={{ __html: formattedContent }}
+    />
+  )
 }
 
 function InlineApprovalRequest({
