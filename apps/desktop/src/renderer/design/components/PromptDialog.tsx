@@ -52,7 +52,7 @@ export function PromptDialog({
         </DialogHeader>
         <SparkInput
           value={draft}
-          placeholder={placeholder}
+          placeholder={placeholder ?? ''}
           autoFocus
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {

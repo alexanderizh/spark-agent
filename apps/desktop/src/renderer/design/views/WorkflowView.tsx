@@ -35,6 +35,7 @@ import type {
 import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workflow/graph-adapter'
 import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
+import { Select as ArcoSelect } from '@arco-design/web-react'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
 type WorkflowScreen = 'list' | 'detail'
@@ -386,15 +387,19 @@ function WorkflowViewInner() {
             onChange={(event) => patchDraftMeta({ name: event.target.value })}
             placeholder="工作流名称"
           />
-          <select
-            className="wf-status-select"
+          <ArcoSelect
+            className="wf-status-select spark-select-arco"
+            dropdownMenuClassName="spark-select-arco-popup"
             value={draft.status}
-            onChange={(event) => patchDraftMeta({ status: event.target.value as WorkflowStatus })}
+            onChange={(v: string) => patchDraftMeta({ status: v as WorkflowStatus })}
+            size="small"
+            bordered={false}
+            getPopupContainer={() => document.body}
           >
-            <option value="draft">draft</option>
-            <option value="active">active</option>
-            <option value="archived">archived</option>
-          </select>
+            <ArcoSelect.Option value="draft">draft</ArcoSelect.Option>
+            <ArcoSelect.Option value="active">active</ArcoSelect.Option>
+            <ArcoSelect.Option value="archived">archived</ArcoSelect.Option>
+          </ArcoSelect>
           <div className="wf-toolbar-spacer" />
           <button
             className="btn ghost sm"
@@ -578,62 +583,82 @@ function WorkflowInspector(props: InspectorProps) {
           <input value={node.data.title} onChange={(event) => props.onPatch({ title: event.target.value })} />
         </InspectorField>
         <InspectorField label="节点类型">
-          <select
+          <ArcoSelect
+            className="spark-select-arco"
+            dropdownMenuClassName="spark-select-arco-popup"
             value={node.data.kind}
-            onChange={(event) => props.onPatch({ kind: event.target.value as WorkflowNodeKind })}
+            onChange={(v: string) => props.onPatch({ kind: v as WorkflowNodeKind })}
+            size="small"
+            bordered={false}
+            getPopupContainer={() => document.body}
           >
             {NODE_KIND_ORDER.map((kind) => (
-              <option key={kind} value={kind}>
+              <ArcoSelect.Option key={kind} value={kind}>
                 {NODE_KIND_META[kind].label}
-              </option>
+              </ArcoSelect.Option>
             ))}
-          </select>
+          </ArcoSelect>
         </InspectorField>
         <InspectorField label="Provider">
-          <select
+          <ArcoSelect
+            className="spark-select-arco"
+            dropdownMenuClassName="spark-select-arco-popup"
             value={String(config.providerProfileId ?? '')}
-            onChange={(event) =>
-              props.onPatchConfig({ providerProfileId: event.target.value || null })
+            onChange={(v: string) =>
+              props.onPatchConfig({ providerProfileId: v || null })
             }
+            size="small"
+            bordered={false}
+            getPopupContainer={() => document.body}
           >
-            <option value="">继承 Agent</option>
+            <ArcoSelect.Option value="">继承 Agent</ArcoSelect.Option>
             {providers.map((provider) => (
-              <option key={provider.id} value={provider.id}>
+              <ArcoSelect.Option key={provider.id} value={provider.id}>
                 {provider.name}
-              </option>
+              </ArcoSelect.Option>
             ))}
-          </select>
+          </ArcoSelect>
         </InspectorField>
         <InspectorField label="模型">
-          <select
+          <ArcoSelect
+            className="spark-select-arco"
+            dropdownMenuClassName="spark-select-arco-popup"
             value={String(config.modelId ?? '')}
-            onChange={(event) => props.onPatchConfig({ modelId: event.target.value || null })}
+            onChange={(v: string) => props.onPatchConfig({ modelId: v || null })}
+            size="small"
+            bordered={false}
+            getPopupContainer={() => document.body}
           >
-            <option value="">继承 Agent</option>
+            <ArcoSelect.Option value="">继承 Agent</ArcoSelect.Option>
             {modelOptions.map((model) => (
-              <option key={model} value={model}>
+              <ArcoSelect.Option key={model} value={model}>
                 {model}
-              </option>
+              </ArcoSelect.Option>
             ))}
-          </select>
+          </ArcoSelect>
         </InspectorField>
         <InspectorField label="权限">
-          <select
+          <ArcoSelect
+            className="spark-select-arco"
+            dropdownMenuClassName="spark-select-arco-popup"
             value={String(config.permissionMode ?? '')}
-            onChange={(event) =>
+            onChange={(v: string) =>
               props.onPatchConfig(
-                event.target.value
-                  ? { permissionMode: event.target.value as SessionPermissionMode }
+                v
+                  ? { permissionMode: v as SessionPermissionMode }
                   : {},
               )
             }
+            size="small"
+            bordered={false}
+            getPopupContainer={() => document.body}
           >
-            <option value="">继承 Agent</option>
-            <option value="claude-ask">询问</option>
-            <option value="claude-auto-edits">自动编辑</option>
-            <option value="claude-plan">计划模式</option>
-            <option value="claude-bypass">绕过权限</option>
-          </select>
+            <ArcoSelect.Option value="">继承 Agent</ArcoSelect.Option>
+            <ArcoSelect.Option value="claude-ask">询问</ArcoSelect.Option>
+            <ArcoSelect.Option value="claude-auto-edits">自动编辑</ArcoSelect.Option>
+            <ArcoSelect.Option value="claude-plan">计划模式</ArcoSelect.Option>
+            <ArcoSelect.Option value="claude-bypass">绕过权限</ArcoSelect.Option>
+          </ArcoSelect>
         </InspectorField>
         <InspectorField label="节点提示词">
           <textarea
@@ -645,19 +670,24 @@ function WorkflowInspector(props: InspectorProps) {
         {isSubagent && (
           <>
             <InspectorField label="子代理">
-              <select
+              <ArcoSelect
+                className="spark-select-arco"
+                dropdownMenuClassName="spark-select-arco-popup"
                 value={String(config.agentId ?? '')}
-                onChange={(event) => props.onPatchConfig({ agentId: event.target.value || null })}
+                onChange={(v: string) => props.onPatchConfig({ agentId: v || null })}
+                size="small"
+                bordered={false}
+                getPopupContainer={() => document.body}
               >
-                <option value="">选择子代理</option>
+                <ArcoSelect.Option value="">选择子代理</ArcoSelect.Option>
                 {agents
                   .filter((agent) => agent.workflowId !== currentWorkflowId)
                   .map((agent) => (
-                    <option key={agent.id} value={agent.id}>
+                    <ArcoSelect.Option key={agent.id} value={agent.id}>
                       {agent.name}
-                    </option>
+                    </ArcoSelect.Option>
                   ))}
-              </select>
+              </ArcoSelect>
             </InspectorField>
             <InspectorField label="并发数">
               <input

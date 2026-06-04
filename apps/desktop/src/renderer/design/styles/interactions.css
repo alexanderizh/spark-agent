@@ -655,10 +655,10 @@
 }
 .form-grid > textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
 .form-grid > .spark-input:hover,
-.form-grid > .spark-select-wrap:hover .spark-select,
+.form-grid > .spark-select-wrap:hover .spark-select-arco.arco-select,
 .form-grid > textarea:hover { border-color: var(--text-faint); }
 .form-grid > .spark-input:focus,
-.form-grid > .spark-select-wrap .spark-select:focus,
+.form-grid > .spark-select-wrap .spark-select-arco.arco-select:focus-within,
 .form-grid > textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
@@ -822,7 +822,7 @@
 .perm-rule .select-full {
   width: 110px;
 }
-.perm-rule .spark-select {
+.perm-rule .spark-select-arco.arco-select {
    height: 26px;
    padding: 0 24px 0 6px;
    background: var(--panel);

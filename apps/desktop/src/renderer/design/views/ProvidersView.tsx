@@ -47,6 +47,7 @@ import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 
 type ProviderKind = 'anthropic' | 'openai'
+type ProviderModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
 type ProviderForm = {
   presetId: string
   name: string
@@ -63,6 +64,8 @@ type ProviderForm = {
   haikuModel: string
   sonnetModel: string
   opusModel: string
+  /** 模型能力类型 */
+  modelType: ProviderModelType
 }
 
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
@@ -768,6 +771,7 @@ export function ProviderEditPanel({
     apiKey: '',
     isDefault: false,
     ...EMPTY_TIER_MODELS,
+    modelType: 'multimodal',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -796,6 +800,7 @@ export function ProviderEditPanel({
               apiKey: '',
               isDefault: false,
               ...EMPTY_TIER_MODELS,
+              modelType: preset.modelType ?? 'multimodal',
             })
           }, 0)
           return () => window.clearTimeout(id)
@@ -814,6 +819,7 @@ export function ProviderEditPanel({
           apiKey: '',
           isDefault: false,
           ...EMPTY_TIER_MODELS,
+          modelType: 'multimodal',
         })
       }, 0)
       return () => window.clearTimeout(id)
@@ -836,6 +842,7 @@ export function ProviderEditPanel({
             haikuModel: p.haikuModel ?? '',
             sonnetModel: p.sonnetModel ?? '',
             opusModel: p.opusModel ?? '',
+            modelType: (p.modelType as ProviderModelType) ?? 'multimodal',
           })
         }
       })
@@ -886,6 +893,7 @@ export function ProviderEditPanel({
           haikuModel: haiku.length > 0 ? haiku : null,
           sonnetModel: sonnet.length > 0 ? sonnet : null,
           opusModel: opus.length > 0 ? opus : null,
+          modelType: form.modelType,
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
         if (form.apiKey.trim()) req.apiKey = form.apiKey
@@ -904,6 +912,7 @@ export function ProviderEditPanel({
           ...(haiku.length > 0 && { haikuModel: haiku }),
           ...(sonnet.length > 0 && { sonnetModel: sonnet }),
           ...(opus.length > 0 && { opusModel: opus }),
+          modelType: form.modelType,
         })
       }
       onClose()
@@ -930,6 +939,7 @@ export function ProviderEditPanel({
       codexApiKind: 'chat',
       supportsMillionContext: false,
       ...EMPTY_TIER_MODELS,
+      modelType: preset.modelType ?? 'multimodal',
     }))
   }
 
@@ -996,12 +1006,11 @@ export function ProviderEditPanel({
                   }}
                 >
                   <option value="custom">自定义</option>
-                  {PROVIDER_PRESETS.map((preset) => {
+                  {PROVIDER_PRESETS.filter((p) => p.provider === 'anthropic').map((preset) => {
                     const meta = getVendorMeta(preset.vendorId)
                     return (
                       <option key={preset.id} value={preset.id}>
-                        {(meta?.name ?? preset.vendorId)} ·{' '}
-                        {preset.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
+                        {meta?.name ?? preset.vendorId}
                       </option>
                     )
                   })}
@@ -1035,10 +1044,22 @@ export function ProviderEditPanel({
                     codexApiKind: 'chat',
                   }))
                 }
-                disabled={!!profileId}
+                disabled={true}
               >
                 <option value="anthropic">Anthropic 格式</option>
                 <option value="openai">OpenAI 格式</option>
+              </SparkSelect>
+
+              <label>模型类型</label>
+              <SparkSelect
+                value={form.modelType}
+                onChange={(e) => set('modelType', e.target.value as ProviderModelType)}
+              >
+                <option value="image">生图模型</option>
+                <option value="text">文本（含编码）模型</option>
+                <option value="multimodal">多模态（含编码、生图）模型</option>
+                <option value="voice">语音模型</option>
+                <option value="video">视频模型</option>
               </SparkSelect>
 
               {form.provider === 'openai' && (

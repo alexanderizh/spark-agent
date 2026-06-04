@@ -841,6 +841,11 @@ body.sidebar-resizing {
 .action-menu {
   min-width: 176px;
   padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown, 100);
 }
 .action-menu button,
 .action-menu [role="menuitem"] {
@@ -9652,7 +9657,7 @@ body.inspector-resizing {
   grid-column: 1 / -1;
 }
 .agent-field input:not(.spark-input),
-.agent-field select:not(.spark-select),
+.agent-field select:not(.spark-select-arco),
 .agent-field textarea:not(.spark-textarea),
 .workflow-builder input,
 .workflow-builder select,

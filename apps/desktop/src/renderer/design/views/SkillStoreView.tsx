@@ -10,6 +10,7 @@ import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { LocalSkillCandidate, RemoteSkillItem, SkillItem, SkillRegistry } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput } from '../components/FormControls'
+import { Select as ArcoSelect } from '@arco-design/web-react'
 import {
   useSkills,
   parseSkillManifest,
@@ -1270,27 +1271,31 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">分类</label>
-                <select
-                  className="form-select"
+                <ArcoSelect
+                  className="spark-select-arco"
+                  dropdownMenuClassName="spark-select-arco-popup"
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
+                  onChange={(v: string) => setCategory(v)}
+                  size="small"
+                  bordered={false}
+                  getPopupContainer={() => document.body}
                 >
-                  <option value="utility">通用</option>
-                  <option value="code-generation">代码生成</option>
-                  <option value="code-review">代码审查</option>
-                  <option value="testing">测试</option>
-                  <option value="documentation">文档</option>
-                  <option value="data-analysis">数据分析</option>
-                  <option value="web-development">Web 开发</option>
-                  <option value="api-development">API 开发</option>
-                  <option value="devops">DevOps</option>
-                  <option value="security">安全</option>
-                  <option value="ai-ml">AI/ML</option>
-                  <option value="automation">自动化</option>
-                  <option value="database">数据库</option>
-                  <option value="frontend">前端</option>
-                  <option value="backend">后端</option>
-                </select>
+                  <ArcoSelect.Option value="utility">通用</ArcoSelect.Option>
+                  <ArcoSelect.Option value="code-generation">代码生成</ArcoSelect.Option>
+                  <ArcoSelect.Option value="code-review">代码审查</ArcoSelect.Option>
+                  <ArcoSelect.Option value="testing">测试</ArcoSelect.Option>
+                  <ArcoSelect.Option value="documentation">文档</ArcoSelect.Option>
+                  <ArcoSelect.Option value="data-analysis">数据分析</ArcoSelect.Option>
+                  <ArcoSelect.Option value="web-development">Web 开发</ArcoSelect.Option>
+                  <ArcoSelect.Option value="api-development">API 开发</ArcoSelect.Option>
+                  <ArcoSelect.Option value="devops">DevOps</ArcoSelect.Option>
+                  <ArcoSelect.Option value="security">安全</ArcoSelect.Option>
+                  <ArcoSelect.Option value="ai-ml">AI/ML</ArcoSelect.Option>
+                  <ArcoSelect.Option value="automation">自动化</ArcoSelect.Option>
+                  <ArcoSelect.Option value="database">数据库</ArcoSelect.Option>
+                  <ArcoSelect.Option value="frontend">前端</ArcoSelect.Option>
+                  <ArcoSelect.Option value="backend">后端</ArcoSelect.Option>
+                </ArcoSelect>
               </div>
             </div>
           </div>

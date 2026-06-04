@@ -24,6 +24,7 @@
     "lint": "eslint src --ext .ts,.tsx"
   },
   "dependencies": {
+    "@arco-design/web-react": "^2.66.15",
     "@playwright/mcp": "^0.0.30",
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",

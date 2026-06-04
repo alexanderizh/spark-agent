@@ -1,68 +1,196 @@
 /**
- * FormControls — 自定义主题化的 Input 和 Select 组件
+ * FormControls — 基于 @arco-design/web-react 的主题化表单组件
  *
- * 替代原生 <input> 和 <select>，提供与应用主题一致的外观：
- * - 自定义边框、背景、圆角
- * - focus 状态使用 primary 色调
- * - Select 使用自定义下拉箭头 SVG
- * - 支持 disabled / readonly / password / number / range 等原生类型
- * - 支持 mono-sm / flex1 / input-w-sm / input-max-sm 等原有 className
+ * SparkInput    → Arco Input
+ * SparkSelect   → Arco Select（保持 <option> 子元素 API）
+ * SparkTextarea → Arco Input.TextArea
+ * SparkCheckbox → Arco Checkbox
  */
-import { forwardRef } from 'react'
-import type { InputHTMLAttributes, SelectHTMLAttributes, TextareaHTMLAttributes, ReactNode } from 'react'
+import { forwardRef, Children, isValidElement, useMemo } from 'react'
+import type { ReactNode, CSSProperties } from 'react'
+import { Input, Select, Checkbox } from '@arco-design/web-react'
+
+const { TextArea } = Input
 
 /* ============================================================
    SparkInput
    ============================================================ */
 
-type SparkInputProps = InputHTMLAttributes<HTMLInputElement> & {
-  /** 左侧图标 */
+export interface SparkInputProps {
+  value?: string | number
+  defaultValue?: string
+  onChange?: (event: { target: { value: string } }) => void
+  placeholder?: string
+  disabled?: boolean
+  readOnly?: boolean
+  type?: string
+  className?: string
   icon?: ReactNode
+  autoFocus?: boolean
+  maxLength?: number
+  name?: string
+  min?: string | number
+  max?: string | number
+  step?: string | number
+  checked?: boolean
+  autoComplete?: string
+  onFocus?: (e: React.FocusEvent<HTMLInputElement>) => void
+  onBlur?: (e: React.FocusEvent<HTMLInputElement>) => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLInputElement>) => void
+  onKeyUp?: (e: React.KeyboardEvent<HTMLInputElement>) => void
 }
 
-export const SparkInput = forwardRef<HTMLInputElement, SparkInputProps>(
-  function SparkInput({ className = '', icon, ...rest }, ref) {
-    if (icon) {
+export const SparkInput = forwardRef<any, SparkInputProps>(
+  function SparkInput({
+    className = '',
+    icon,
+    onChange,
+    type,
+    readOnly,
+    value,
+    defaultValue,
+    placeholder,
+    disabled,
+    autoFocus,
+    maxLength,
+    name,
+    min,
+    max,
+    step,
+    checked,
+    autoComplete,
+    onFocus,
+    onBlur,
+    onKeyDown,
+    onKeyUp,
+  }, ref) {
+    // range / checkbox 保持原生（Arco 不支持）
+    if (type === 'range') {
       return (
-        <span className={`spark-input-wrap ${className}`}>
-          <span className="spark-input-icon">{icon}</span>
-          <input ref={ref} className="spark-input spark-input-has-icon" {...rest} />
-        </span>
+        <input
+          ref={ref as any}
+          type="range"
+          className={`spark-input ${className}`}
+          value={value as string}
+          defaultValue={defaultValue}
+          onChange={(e) => onChange?.({ target: { value: e.target.value } })}
+          disabled={disabled}
+          name={name}
+          min={min}
+          max={max}
+          step={step}
+        />
       )
     }
-    return <input ref={ref} className={`spark-input ${className}`} {...rest} />
+
+    if (type === 'checkbox' || type === 'radio') {
+      return (
+        <input
+          ref={ref as any}
+          type={type}
+          className={className}
+          checked={checked}
+          value={value as string}
+          onChange={(e) => onChange?.({ target: { value: e.target.value } })}
+          disabled={disabled}
+          readOnly={readOnly}
+          name={name}
+          autoComplete={autoComplete}
+          onFocus={onFocus}
+          onBlur={onBlur}
+          onKeyDown={onKeyDown}
+        />
+      )
+    }
+
+    const isPassword = type === 'password'
+
+    return (
+      <span className={`spark-input-wrap ${className}`}>
+        {icon && <span className="spark-input-icon">{icon}</span>}
+        <Input
+          ref={ref}
+          className={`spark-input-arco${icon ? ' spark-input-has-icon' : ''}`}
+          type={isPassword ? 'password' : 'text'}
+          {...(readOnly !== undefined ? { readOnly } : {})}
+          {...(value !== undefined ? { value: String(value) } : {})}
+          {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
+          onChange={(v: string) => {
+            onChange?.({ target: { value: v } })
+          }}
+          {...(placeholder !== undefined ? { placeholder } : {})}
+          disabled={disabled ?? false}
+          {...(autoFocus !== undefined ? { autoFocus } : {})}
+          {...(maxLength !== undefined ? { maxLength } : {})}
+          {...(name !== undefined ? { name } : {})}
+          onFocus={onFocus as any}
+          onBlur={onBlur as any}
+          onKeyDown={onKeyDown as any}
+          onKeyUp={onKeyUp as any}
+          size="small"
+        />
+      </span>
+    )
   },
 )
 
 /* ============================================================
-   SparkSelect
+   SparkSelect — Arco Select，保持 <option> 子元素 API
    ============================================================ */
 
-type SparkSelectProps = SelectHTMLAttributes<HTMLSelectElement> & {
-  /** 自定义下拉箭头（默认使用 ChevronDown SVG） */
+function extractOptions(children: ReactNode): { value: string; label: string }[] {
+  const result: { value: string; label: string }[] = []
+  Children.forEach(children, (child) => {
+    if (!isValidElement(child)) return
+    const props = child.props as { value?: string; children?: ReactNode }
+    const value = props.value ?? ''
+    const label = typeof props.children === 'string'
+      ? props.children
+      : String(props.children ?? value)
+    result.push({ value, label })
+  })
+  return result
 }
 
-export const SparkSelect = forwardRef<HTMLSelectElement, SparkSelectProps>(
-  function SparkSelect({ className = '', children, ...rest }, ref) {
+export interface SparkSelectProps {
+  value?: string
+  defaultValue?: string
+  onChange?: (event: { target: { value: string } }) => void
+  disabled?: boolean
+  className?: string
+  children?: ReactNode
+}
+
+export const SparkSelect = forwardRef<any, SparkSelectProps>(
+  function SparkSelect({ className = '', children, value, defaultValue, onChange, disabled }, _ref) {
+    const options = useMemo(() => extractOptions(children), [children])
+
     return (
-      <span className={`spark-select-wrap ${className}`}>
-        <select ref={ref} className="spark-select" {...rest}>
-          {children}
-        </select>
-        <svg
-          className="spark-select-arrow"
-          width="12"
-          height="12"
-          viewBox="0 0 12 12"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      <div className={`spark-select-wrap ${className}`}>
+        <Select
+          className="spark-select-arco"
+          dropdownMenuClassName="spark-select-arco-popup"
+          {...(value !== undefined ? { value } : {})}
+          {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
+          onChange={(v: string | number) => {
+            onChange?.({ target: { value: String(v) } })
+          }}
+          disabled={disabled ?? false}
+          size="small"
+          getPopupContainer={() => document.body}
+          triggerProps={{
+            autoAlignPopupWidth: true,
+            autoAlignPopupMinWidth: true,
+            position: 'bl' as const,
+          }}
         >
-          <path d="M3 4.5L6 7.5L9 4.5" />
-        </svg>
-      </span>
+          {options.map((opt) => (
+            <Select.Option key={opt.value} value={opt.value}>
+              {opt.label}
+            </Select.Option>
+          ))}
+        </Select>
+      </div>
     )
   },
 )
@@ -71,11 +199,65 @@ export const SparkSelect = forwardRef<HTMLSelectElement, SparkSelectProps>(
    SparkTextarea
    ============================================================ */
 
-type SparkTextareaProps = TextareaHTMLAttributes<HTMLTextAreaElement>
+export interface SparkTextareaProps {
+  value?: string
+  defaultValue?: string
+  onChange?: (event: { target: { value: string } }) => void
+  placeholder?: string
+  disabled?: boolean
+  readOnly?: boolean
+  rows?: number
+  className?: string
+  autoFocus?: boolean
+  maxLength?: number
+  name?: string
+  style?: CSSProperties
+  onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
+  onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
+  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+}
 
-export const SparkTextarea = forwardRef<HTMLTextAreaElement, SparkTextareaProps>(
-  function SparkTextarea({ className = '', ...rest }, ref) {
-    return <textarea ref={ref} className={`spark-textarea ${className}`} {...rest} />
+export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
+  function SparkTextarea({
+    className = '',
+    onChange,
+    value,
+    defaultValue,
+    placeholder,
+    disabled,
+    readOnly,
+    rows,
+    autoFocus,
+    maxLength,
+    name,
+    style,
+    onFocus,
+    onBlur,
+    onKeyDown,
+  }, ref) {
+    return (
+      <TextArea
+        ref={ref}
+        className={`spark-textarea-arco ${className}`}
+        {...(value !== undefined ? { value } : {})}
+        {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
+        onChange={(v: string) => {
+          onChange?.({ target: { value: v } })
+        }}
+        {...(placeholder !== undefined ? { placeholder } : {})}
+        disabled={disabled ?? false}
+        {...(readOnly !== undefined ? { readOnly } : {})}
+        {...(rows !== undefined ? { rows } : {})}
+        {...(autoFocus !== undefined ? { autoFocus } : {})}
+        {...(maxLength !== undefined ? { maxLength } : {})}
+        {...(name !== undefined ? { name } : {})}
+        {...(style !== undefined ? { style } : {})}
+        onFocus={onFocus as any}
+        onBlur={onBlur as any}
+        onKeyDown={onKeyDown as any}
+        autoSize={false}
+      />
+    )
   },
 )
 
@@ -83,18 +265,32 @@ export const SparkTextarea = forwardRef<HTMLTextAreaElement, SparkTextareaProps>
    SparkCheckbox
    ============================================================ */
 
-type SparkCheckboxProps = InputHTMLAttributes<HTMLInputElement> & {
+export interface SparkCheckboxProps {
+  checked?: boolean
+  defaultChecked?: boolean
+  onChange?: (event: { target: { checked: boolean } }) => void
+  disabled?: boolean
+  className?: string
   label?: ReactNode
+  name?: string
+  style?: CSSProperties
 }
 
-export const SparkCheckbox = forwardRef<HTMLInputElement, SparkCheckboxProps>(
-  function SparkCheckbox({ className = '', label, ...rest }, ref) {
+export const SparkCheckbox = forwardRef<any, SparkCheckboxProps>(
+  function SparkCheckbox({ className = '', label, onChange, checked, defaultChecked, disabled, ...rest }, ref) {
     return (
-      <label className={`spark-checkbox ${className}`}>
-        <input ref={ref} type="checkbox" {...rest} />
-        <span className="spark-checkbox-box" aria-hidden="true" />
-        {label != null && <span className="spark-checkbox-label">{label}</span>}
-      </label>
+      <Checkbox
+        ref={ref}
+        className={`spark-checkbox-arco ${className}`}
+        {...(checked !== undefined ? { checked } : {})}
+        {...(defaultChecked !== undefined ? { defaultChecked } : {})}
+        disabled={disabled ?? false}
+        onChange={(val: boolean) => {
+          onChange?.({ target: { checked: val } })
+        }}
+      >
+        {label}
+      </Checkbox>
     )
   },
 )

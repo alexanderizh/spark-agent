@@ -809,77 +809,17 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 
 /* ============================================================
-   SPARK INPUT — themed text input
+   SPARK INPUT — 基于 Arco Input 的主题化输入框
    ============================================================ */
-.spark-input {
-  height: 36px;
-  padding: 0 12px;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-  width: 100%;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.spark-input::placeholder { color: var(--text-faint); }
-.spark-input:hover { border-color: var(--text-faint); }
-.spark-input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-soft); background: var(--panel); }
-.spark-input:disabled {
-  opacity: 0.55;
-  cursor: default;
-  background: var(--bg-soft);
-}
-.spark-input[readonly] {
-  color: var(--text-muted);
-  background: var(--bg-soft);
-}
-.spark-input.mono-sm { font-family: 'Geist Mono', ui-monospace, monospace; font-size: var(--font-sm); }
 
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.spark-input):not(.composer-input),
-.app select:not(.spark-select) {
-  height: 36px;
-  min-width: 0;
-  padding: 0 12px;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.app select:not(.spark-select) {
-  padding-right: 30px;
-}
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.spark-input):not(.composer-input):hover,
-.app select:not(.spark-select):hover {
-  border-color: var(--text-faint);
-}
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.spark-input):not(.composer-input):focus,
-.app select:not(.spark-select):focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--panel);
-}
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):disabled,
-.app select:disabled {
-  opacity: 0.55;
-  cursor: default;
-  background: var(--bg-soft);
-}
-
-/* Input wrapper with icon */
+/* Input wrapper */
 .spark-input-wrap {
   position: relative;
   display: inline-flex;
   align-items: center;
   width: 100%;
 }
-.spark-input-wrap .spark-input { width: 100%; }
+.spark-input-wrap .spark-input-arco { width: 100%; }
 .spark-input-icon {
   position: absolute;
   left: 11px;
@@ -891,17 +831,43 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .spark-input-icon svg { width: 14px; height: 14px; }
 .spark-input-has-icon { padding-left: 32px !important; }
 
-/* Size variants */
-.spark-input.sm, .select-sm .spark-select {
-  height: 28px;
-  padding: 0 8px;
-  font-size: var(--font-xs);
-  border-radius: var(--r-sm);
+/* Arco Input 主题覆盖 */
+.spark-input-arco.arco-input-wrapper {
+  height: 36px;
+  background: var(--panel) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--r-md) !important;
+  color: var(--text) !important;
+  font-size: var(--font-sm) !important;
+  font-family: inherit !important;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.input-w-sm { width: 80px; }
-.input-max-sm { max-width: 120px; }
+.spark-input-arco.arco-input-wrapper .arco-input {
+  color: var(--text) !important;
+  font-size: var(--font-sm) !important;
+  font-family: inherit !important;
+}
+.spark-input-arco.arco-input-wrapper .arco-input::placeholder {
+  color: var(--text-faint);
+}
+.spark-input-arco.arco-input-wrapper:hover {
+  border-color: var(--text-faint) !important;
+}
+.spark-input-arco.arco-input-wrapper.arco-input-focus,
+.spark-input-arco.arco-input-wrapper:focus-within {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+.spark-input-arco.arco-input-wrapper.arco-input-disabled {
+  opacity: 0.55;
+  cursor: default;
+  background: var(--bg-soft) !important;
+}
+.spark-input-arco.arco-input-wrapper .arco-input[readonly] {
+  color: var(--text-muted);
+}
 
-/* Range input */
+/* 原生 range input 保留 */
 .spark-input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -911,6 +877,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   border-radius: 3px;
   background: var(--border);
   cursor: pointer;
+  width: 100%;
 }
 .spark-input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -930,18 +897,50 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   box-shadow: none;
 }
 
-/* Number input */
-.spark-input[type="number"] {
-  -moz-appearance: textfield;
+/* 裸 input/select 通用主题（尚未迁移到 Arco 的元素） */
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input),
+.app select:not(.spark-select-arco) {
+  height: 36px;
+  min-width: 0;
+  padding: 0 12px;
+  background: var(--panel);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-md);
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
-.spark-input[type="number"]::-webkit-inner-spin-button,
-.spark-input[type="number"]::-webkit-outer-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
+.app select:not(.spark-select-arco) {
+  padding-right: 30px;
 }
-.spark-input[type="number"]:focus::-webkit-inner-spin-button {
-  -webkit-appearance: none;
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input):hover,
+.app select:not(.spark-select-arco):hover {
+  border-color: var(--text-faint);
 }
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input):focus,
+.app select:not(.spark-select-arco):focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+  background: var(--panel);
+}
+.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):disabled,
+.app select:disabled {
+  opacity: 0.55;
+  cursor: default;
+  background: var(--bg-soft);
+}
+
+/* Size variants */
+.spark-input-arco.sm.arco-input-wrapper,
+.select-sm .spark-select-arco.arco-select {
+  height: 28px;
+  font-size: var(--font-xs);
+  border-radius: var(--r-sm);
+}
+.input-w-sm { width: 80px; }
+.input-max-sm { max-width: 120px; }
 
 /* ============================================================
    SPARK SELECT — Arco Design based dropdown select
@@ -1022,9 +1021,40 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 
 /* ============================================================
-   SPARK TEXTAREA / CHECKBOX — themed form primitives
+   SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
    ============================================================ */
-.spark-textarea,
+.spark-textarea-arco.arco-textarea-wrapper {
+  width: 100%;
+  min-height: 96px;
+  background: var(--panel) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--r-md) !important;
+  color: var(--text) !important;
+  font-size: var(--font-sm) !important;
+  font-family: inherit !important;
+  line-height: 1.5 !important;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  resize: vertical;
+}
+.spark-textarea-arco.arco-textarea-wrapper .arco-textarea {
+  color: var(--text) !important;
+  font-size: var(--font-sm) !important;
+  font-family: inherit !important;
+  line-height: 1.5 !important;
+}
+.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::placeholder {
+  color: var(--text-faint);
+}
+.spark-textarea-arco.arco-textarea-wrapper:hover {
+  border-color: var(--text-faint) !important;
+}
+.spark-textarea-arco.arco-textarea-wrapper.arco-textarea-focus,
+.spark-textarea-arco.arco-textarea-wrapper:focus-within {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--primary-soft) !important;
+}
+
+/* 裸 textarea 通用主题（尚未迁移的） */
 .app textarea:not(.composer-input):not(.plan-approval-textarea) {
   width: 100%;
   min-width: 0;
@@ -1040,73 +1070,50 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
-.spark-textarea::placeholder,
 .app textarea:not(.composer-input)::placeholder {
   color: var(--text-faint);
 }
-.spark-textarea:hover,
 .app textarea:not(.composer-input):hover {
   border-color: var(--text-faint);
 }
-.spark-textarea:focus,
 .app textarea:not(.composer-input):focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
   background: var(--panel);
 }
-.spark-checkbox {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
+
+/* ============================================================
+   SPARK CHECKBOX — Arco Checkbox 主题覆盖
+   ============================================================ */
+.spark-checkbox-arco.arco-checkbox {
   color: var(--text);
-  cursor: pointer;
-  user-select: none;
+  font-size: var(--font-sm);
 }
-.spark-checkbox input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
+.spark-checkbox-arco .arco-checkbox-icon {
+  border-color: var(--border-strong) !important;
+  background: var(--panel) !important;
 }
-.spark-checkbox-box {
-  width: 16px;
-  height: 16px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  border: 1.5px solid var(--border-strong);
-  border-radius: var(--r-xs);
-  background: var(--panel);
-  transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
+.spark-checkbox-arco.arco-checkbox-checked .arco-checkbox-icon,
+.spark-checkbox-arco.arco-checkbox-indeterminate .arco-checkbox-icon {
+  background: var(--primary) !important;
+  border-color: var(--primary) !important;
 }
-.spark-checkbox input:checked + .spark-checkbox-box {
-  background: var(--primary);
-  border-color: var(--primary);
+.spark-checkbox-arco.arco-checkbox-checked .arco-checkbox-icon .arco-checkbox-icon-check {
+  color: #fff;
 }
-.spark-checkbox input:checked + .spark-checkbox-box::after {
-  content: '';
-  width: 5px;
-  height: 9px;
-  border: solid var(--primary-fg);
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
-  margin-top: -2px;
+.spark-checkbox-arco.arco-checkbox-hover .arco-checkbox-icon {
+  border-color: var(--text-faint) !important;
 }
-.spark-checkbox input:focus-visible + .spark-checkbox-box {
-  box-shadow: 0 0 0 3px var(--primary-soft);
+.spark-checkbox-arco.arco-checkbox-disabled {
+  opacity: 0.55;
+  cursor: default;
 }
-.spark-checkbox-label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
+
 .spark-confirm-dialog {
   width: min(420px, calc(100vw - 32px));
   max-width: 420px;
 }
-.spark-confirm-dialog .spark-input {
+.spark-confirm-dialog .spark-input-arco {
   margin-top: -2px;
 }
 
