@@ -180,7 +180,7 @@
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  cursor: default;
+  cursor: pointer;
   background: var(--panel);
 }
 .tool-choose .choice:hover { background: var(--hover); border-color: var(--border-strong); }
@@ -425,7 +425,7 @@
   font-size: var(--font-sm);
   color: var(--text);
   font-weight: 500;
-  cursor: default;
+  cursor: pointer;
 }
 .quick-actions .chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .quick-actions .chip svg { width: 12px; height: 12px; color: var(--text-muted); }

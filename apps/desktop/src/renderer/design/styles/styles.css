@@ -169,7 +169,7 @@ code, pre, .mono {
   font-family: var(--font-mono);
   font-feature-settings: 'zero', 'ss02';
 }
-button { font-family: inherit; }
+button { font-family: inherit; cursor: pointer; }
 
 /* ── Global focus reset: remove browser-default yellow/blue outline on click ── */
 button:focus,
@@ -1200,7 +1200,7 @@ input.spark-checkbox {
   border: 1.5px solid var(--border-strong);
   border-radius: 3px;
   flex-shrink: 0;
-  cursor: default;
+  cursor: pointer;
   position: relative;
   margin: 2px 0 0;
   transition: background 0.12s, border-color 0.12s;
