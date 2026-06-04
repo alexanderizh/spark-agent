@@ -1055,6 +1055,70 @@ body.sidebar-resizing {
   align-items: flex-end;
   padding-left: 48px;
 }
+
+.msg-user-attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(80%, 100%);
+  margin-bottom: 8px;
+}
+
+.msg-user-image-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.msg-user-image-card {
+  width: 92px;
+}
+
+.msg-user-image-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: transparent;
+  cursor: pointer;
+}
+
+.msg-user-image-thumb,
+.msg-user-image-fallback {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg-soft));
+  box-shadow: 0 1px 3px color-mix(in srgb, black 10%, transparent);
+}
+
+.msg-user-image-thumb {
+  object-fit: cover;
+}
+
+.msg-user-image-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.msg-user-file-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.msg-user-file-chip {
+  max-width: 320px;
+}
+
 .msg-agent {
   justify-content: flex-start;
   padding-right: 0;

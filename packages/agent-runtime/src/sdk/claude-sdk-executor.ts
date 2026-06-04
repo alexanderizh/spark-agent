@@ -157,7 +157,6 @@ export class ClaudeSDKExecutor {
     this.abortController = new AbortController()
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
     const promptWithAttachments = buildPromptWithAttachments(userMessage, config.attachments)
-    const displayUserMessage = buildDisplayUserMessage(userMessage, config.attachments)
     const makeBase = () => ({
       id: randomUUID(),
       sessionId,
@@ -170,7 +169,16 @@ export class ClaudeSDKExecutor {
     this.emitter.emit({
       ...makeBase(),
       type: 'user_message',
-      content: displayUserMessage,
+      content: userMessage,
+      ...(config.attachments != null && config.attachments.length > 0
+        ? {
+            attachments: config.attachments.map((attachment) => ({
+              type: attachment.type,
+              path: attachment.path,
+              name: attachment.name,
+            })),
+          }
+        : {}),
     })
 
     this.emitter.emit({
@@ -605,15 +613,6 @@ function buildPromptWithAttachments(
     'Use the Read tool to inspect these file paths when they are relevant to the request.',
     'For image attachments, use Read on the path so the SDK can inspect the image content.',
   ].join('\n')
-}
-
-function buildDisplayUserMessage(
-  userMessage: string,
-  attachments: SDKExecutorConfig['attachments'],
-): string {
-  if (attachments == null || attachments.length === 0) return userMessage
-  const names = attachments.map((attachment) => `${attachment.type}: ${attachment.name}`)
-  return [userMessage, '', `Attachments: ${names.join(', ')}`].join('\n')
 }
 
 function allowTool(

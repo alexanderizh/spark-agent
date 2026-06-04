@@ -5,6 +5,11 @@ export interface UIMessage {
   role: 'user' | 'assistant'
   status: 'streaming' | 'completed' | 'error'
   blocks: UIBlock[]
+  attachments?: Array<{
+    type: 'image' | 'file'
+    path: string
+    name?: string
+  }>
   usage: { inputTokens: number; outputTokens: number; estimatedCostUsd: number | undefined } | null
   /** 消息创建时间（ISO 8601），取自事件 timestamp */
   timestamp?: string | undefined
@@ -167,6 +172,9 @@ export class MessageBuilder {
           role: 'user',
           status: 'completed',
           blocks: [{ kind: 'text', content: event.content, isStreaming: false }],
+          ...(event.attachments != null && event.attachments.length > 0
+            ? { attachments: event.attachments }
+            : {}),
           usage: null,
           timestamp: event.timestamp,
           eventIds: [event.id],

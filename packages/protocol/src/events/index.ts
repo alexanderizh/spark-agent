@@ -67,6 +67,7 @@ export interface UserMessageEvent extends BaseEvent {
   attachments?: Array<{
     type: 'image' | 'file'
     path: string
+    name?: string
     mimeType?: string
   }>
 }
