@@ -817,6 +817,111 @@ describe('Renderer Smoke Tests', () => {
     expect(onApprovalClose).toHaveBeenCalled()
   })
 
+  it('places the composer caret at the end of a restored session draft', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    localStorage.setItem('spark-agent:composer-drafts', JSON.stringify({
+      'session-1': {
+        value: 'restored draft text',
+        attachments: [],
+        manualExpanded: false,
+      },
+    }))
+
+    const invoke = vi.fn(async (channel: string) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Draft session',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-28T00:00:00.000Z',
+            updatedAt: '2026-05-28T00:00:00.000Z',
+            messageCount: 1,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [{
+            id: 'provider-1',
+            name: 'Claude',
+            provider: 'anthropic',
+            defaultModel: 'claude-3-5-sonnet',
+            modelIds: ['claude-3-5-sonnet'],
+            apiEndpoint: 'https://api.example.com',
+            keystoreRef: 'provider-1',
+            isDefault: true,
+            createdAt: '2026-05-28T00:00:00.000Z',
+          }],
+        }
+      }
+      if (channel === 'agent:list') return { agents: [] }
+      if (channel === 'settings:get') return { value: null }
+      if (channel === 'workspace:list-branches') return { currentBranch: 'main', branches: ['main'] }
+      if (channel === 'session:get-history') return { events: [], hasMore: false }
+      if (channel === 'session:get-queue') return { sessionId: 'session-1', running: false, queuedTurns: [] }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const { ChatView } = await import('../design/views/ChatView')
+    const { AppProvider } = await import('../design/AppContext')
+    const { ToastProvider: LocalToastProvider } = await import('../design/components/Toast')
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(AppProvider, null,
+          React.createElement(LocalToastProvider, null,
+            React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null,
+              React.createElement(ChatView),
+            ),
+          ),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+    })
+
+    await vi.waitFor(() => {
+      const textarea = container.querySelector<HTMLTextAreaElement>('.composer-input')
+      expect(textarea).not.toBeNull()
+      expect(textarea?.value).toBe('restored draft text')
+      expect(textarea?.selectionStart).toBe('restored draft text'.length)
+      expect(textarea?.selectionEnd).toBe('restored draft text'.length)
+    })
+  })
+
   it('routes background approval requests to the target session instead of popping in the current one', async () => {
     localStorage.setItem('spark-agent:last-active-session', 'session-1')
     const listeners = new Map<string, Array<(payload: unknown) => void>>()

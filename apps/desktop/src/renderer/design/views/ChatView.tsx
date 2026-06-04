@@ -4051,6 +4051,7 @@ function ComposerV2({
   const [previewAttachment, setPreviewAttachment] = useState<ComposerAttachment | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
+  const lastFocusedDraftBucketRef = useRef<string | null>(null)
   const runtimeSettingsHydratedRef = useRef(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
@@ -4364,8 +4365,19 @@ function ComposerV2({
   }, [manualExpanded, value])
 
   useEffect(() => {
-    textareaRef.current?.focus()
-  }, [session?.id])
+    const el = textareaRef.current
+    if (el == null) return
+
+    const bucketChanged = lastFocusedDraftBucketRef.current !== draftBucketKey
+    lastFocusedDraftBucketRef.current = draftBucketKey
+    if (!bucketChanged) return
+
+    requestAnimationFrame(() => {
+      el.focus()
+      const end = el.value.length
+      el.setSelectionRange(end, end)
+    })
+  }, [draftBucketKey])
 
   const dispatchMessage = useCallback(
     async (text: string, turnAttachments: ComposerAttachment[]) => {
