@@ -211,6 +211,8 @@ export function ChatView({
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
   const [agentStatus, setAgentStatus] = useState('')
+  const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
+  const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [contextInputTokens, setContextInputTokens] = useState(0)
   const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
@@ -338,6 +340,19 @@ export function ChatView({
     return () => { cancelled = true }
   }, [activeWorkspaceId, listBranches])
 
+  // Listen for Ctrl/Cmd+L focus-composer event from global shortcut handler
+  useEffect(() => {
+    const handler = () => {
+      // Scroll chat area to bottom
+      const scrollEl = chatAreaRef.current?.querySelector('.chat-stream')
+      if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
+      // Trigger composer focus (increment counter → ComposerV2 reacts)
+      setComposerFocusTrigger((n) => n + 1)
+    }
+    window.addEventListener('spark:focus-composer', handler)
+    return () => window.removeEventListener('spark:focus-composer', handler)
+  }, [])
+
   const handleUpdateActiveSession = async (patch: SessionRuntimePatch) => {
     if (active == null) return
     const res = await updateSession({ sessionId: active, ...patch })
@@ -358,7 +373,7 @@ export function ChatView({
   return (
     <div className="chat-layout chat-layout-no-sidebar">
 
-      <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}>
+      <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`} ref={chatAreaRef}>
         {showEmptyHero && (
           <div
             className="chat-sidebar-topbar"
@@ -394,6 +409,7 @@ export function ChatView({
               onCancelSession={handleCancelSession}
               onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
               showProjectPicker
+              focusTrigger={composerFocusTrigger}
               workspaces={workspaces}
               activeWorkspaceId={activeWorkspaceId}
               onPickProject={pickProjectFolder}
@@ -455,6 +471,7 @@ export function ChatView({
               onCancelSession={handleCancelSession}
               onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
               showProjectPicker={showEmptyHero}
+              focusTrigger={composerFocusTrigger}
               workspaces={workspaces}
               activeWorkspaceId={activeWorkspaceId}
               onPickProject={pickProjectFolder}
@@ -4078,6 +4095,7 @@ function ComposerV2({
   onPickProject,
   onUseNoProject,
   onSwitchWorkspace,
+  focusTrigger = 0,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -4121,6 +4139,8 @@ function ComposerV2({
   onPickProject?: () => void
   onUseNoProject?: () => void
   onSwitchWorkspace?: (workspaceId: string) => void
+  // Focus trigger from Ctrl/Cmd+L global shortcut (incremented counter)
+  focusTrigger?: number
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -4156,6 +4176,13 @@ function ComposerV2({
   const composingRef = useRef(false)
   const lastFocusedDraftBucketRef = useRef<string | null>(null)
   const runtimeSettingsHydratedRef = useRef(false)
+  // ── Input history (↑↓) ──
+  const sentHistoryRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const historyDraftRef = useRef('') // preserves the in-progress draft when user starts browsing history
+  // ── Escape double-press interrupt ──
+  const escapeTimestampRef = useRef(0)
+  const [escapeConfirm, setEscapeConfirm] = useState(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
   const { invoke: savePastedImage } = useIpcInvoke('file:save-pasted-image')
@@ -4715,6 +4742,13 @@ function ComposerV2({
     setTextEditMenu(null)
     const text = value.trim() || '请查看附件。'
     const turnAttachments = attachments
+    // Record to input history (deduplicate consecutive identical entries)
+    const history = sentHistoryRef.current
+    if (text !== history[history.length - 1]) {
+      history.push(text)
+    }
+    historyIndexRef.current = -1
+    historyDraftRef.current = ''
     setValue('')
     setAttachments([])
     await dispatchMessage(text, turnAttachments)
@@ -4834,6 +4868,8 @@ function ComposerV2({
     (next: string) => {
       setTextEditMenu(null)
       setValue(next)
+      // Reset history browsing when user types manually
+      historyIndexRef.current = -1
       if (next.startsWith('/')) {
         setSlashFilter(next.slice(1))
         void openSlashPopup()
@@ -4869,6 +4905,7 @@ function ComposerV2({
     const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean }
     if (nativeEvent.isComposing || composingRef.current || event.keyCode === 229) return
 
+    // ── Slash command popup navigation ──
     if (slashOpen) {
       if (event.key === 'ArrowDown') {
         event.preventDefault()
@@ -4898,11 +4935,105 @@ function ComposerV2({
       }
     }
 
+    // ── Shift+Tab: cycle permission mode ──
+    if (event.key === 'Tab' && event.shiftKey) {
+      event.preventDefault()
+      const idx = permissionOptions.findIndex((o) => o.value === effectivePermissionMode)
+      if (idx !== -1) {
+        const nextOption = permissionOptions[(idx + 1) % permissionOptions.length]!
+        const nextMode = nextOption.value
+        setDraftPermissionMode(nextMode)
+        writeComposerPrefs({ permissionMode: nextMode })
+        if (session != null) void persistRuntimePatch({ permissionMode: nextMode })
+        toast.info(`权限模式: ${nextOption.label}`)
+      }
+      return
+    }
+
+    // ── ↑↓ input history navigation (only when input is empty or matches a history entry) ──
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+      const history = sentHistoryRef.current
+      if (history.length === 0) return // let native cursor movement work
+
+      const el = textareaRef.current
+      const atStart = el != null && el.selectionStart === 0 && el.selectionEnd === 0
+      const atEnd = el != null && el.selectionStart === el.value.length && el.selectionEnd === el.value.length
+
+      if (event.key === 'ArrowUp' && atStart) {
+        event.preventDefault()
+        const currentIdx = historyIndexRef.current
+        // Save draft on first entry into history
+        if (currentIdx === -1) {
+          historyDraftRef.current = value
+        }
+        const nextIdx = currentIdx + 1
+        if (nextIdx < history.length) {
+          historyIndexRef.current = nextIdx
+          setValue(history[history.length - 1 - nextIdx] ?? '')
+        }
+        return
+      }
+
+      if (event.key === 'ArrowDown' && atEnd) {
+        const currentIdx = historyIndexRef.current
+        if (currentIdx === -1) return // not browsing history, let native work
+        event.preventDefault()
+        const prevIdx = currentIdx - 1
+        if (prevIdx >= 0) {
+          historyIndexRef.current = prevIdx
+          setValue(history[history.length - 1 - prevIdx] ?? '')
+        } else {
+          // Restored to bottom — show the saved draft (or empty)
+          historyIndexRef.current = -1
+          setValue(historyDraftRef.current)
+        }
+        return
+      }
+    }
+
+    // ── Escape: double-press to interrupt generation ──
+    if (event.key === 'Escape') {
+      const isBusy = sending || isWorking
+      if (isBusy && session?.id != null) {
+        const now = Date.now()
+        const elapsed = now - escapeTimestampRef.current
+        if (escapeConfirm && elapsed < 3000) {
+          // Second press — actually cancel
+          setEscapeConfirm(false)
+          escapeTimestampRef.current = 0
+          void handleCancelActiveSession()
+        } else {
+          // First press — show confirmation hint
+          setEscapeConfirm(true)
+          escapeTimestampRef.current = now
+          toast.info('再按一次 Escape 中断生成')
+        }
+        event.preventDefault()
+        return
+      }
+      // Not busy — dismiss escape confirm if shown
+      if (escapeConfirm) setEscapeConfirm(false)
+    }
+
+    // ── Enter: send message ──
     if (event.key === 'Enter' && !event.shiftKey && !event.metaKey && !event.ctrlKey) {
       event.preventDefault()
       void handleSend()
     }
   }
+
+  // Auto-dismiss Escape confirmation after 3 seconds
+  useEffect(() => {
+    if (!escapeConfirm) return
+    const timer = setTimeout(() => setEscapeConfirm(false), 3000)
+    return () => clearTimeout(timer)
+  }, [escapeConfirm])
+
+  // React to Ctrl/Cmd+L focus trigger from global shortcut
+  useEffect(() => {
+    if (focusTrigger === 0) return
+    textareaRef.current?.focus()
+  }, [focusTrigger])
 
   const handleProviderChange = async (providerId: string) => {
     const provider = providers.find((item) => item.id === providerId)
@@ -5340,8 +5471,7 @@ function ComposerV2({
           )}
           <div className="spacer" />
           <span className="composer-hint">
-            <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span>
-            <span className="kbd">↵</span> 换行
+            <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行 &nbsp;<span className="kbd">⇧Tab</span> 权限 &nbsp;<span className="kbd">↑↓</span> 历史
           </span>
           <button
             className="btn primary sm composer-send-btn"
@@ -6215,8 +6345,7 @@ function Composer({ sessionId, onSent }: { sessionId: SessionId | null; onSent: 
             </div>
             <div className="spacer" />
             <span className="composer-hint">
-              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧</span>
-              <span className="kbd">↵</span> 换行
+              <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行
             </span>
             <button
               className="btn primary sm composer-send-btn"
