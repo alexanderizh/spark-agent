@@ -203,7 +203,13 @@ function ProjectSessionGroup({
 }) {
   const [open, setOpen] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showAllSessions, setShowAllSessions] = useState(false)
   const isActiveProject = activeWorkspaceId === group.workspace.id
+
+  const MAX_VISIBLE = 8
+  const sessions = group.sessions
+  const hasMore = sessions.length > MAX_VISIBLE
+  const visibleSessions = showAllSessions ? sessions : sessions.slice(0, MAX_VISIBLE)
 
   return (
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
@@ -363,17 +369,7 @@ export function SidebarSessionList() {
 
   return (
     <div className="sidebar-session-list-inner">
-      {/* Header: filter + action buttons on one row */}
-      <div className="chat-sidebar-head">
-        
-        <button className="icon-btn" title="新建项目" onClick={() => ctx.setProjectDialog('create')}>
-          <Icons.Folder />
-        </button>
-        <button className="icon-btn" title="新建会话" onClick={handleNewBlankSession}>
-          <Icons.Plus />
-        </button>
-        <TimeFilterDropdown value={timeFilter} onChange={setTimeFilter} />
-      </div>
+      {/* Header: filter + action buttons — hidden */}
 
       {/* Session list */}
       <div className="chat-list scroll">
