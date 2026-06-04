@@ -7,8 +7,8 @@ import { buildSkillSystemPrompt } from '../../skills/types.js'
 import type { SkillDefinition } from '../../skills/types.js'
 
 describe('Builtin Skills', () => {
-  it('should have 7 builtin skills', () => {
-    expect(BUILTIN_SKILLS).toHaveLength(7)
+  it('should have 8 builtin skills', () => {
+    expect(BUILTIN_SKILLS).toHaveLength(8)
   })
 
   it('each skill should have required fields', () => {
@@ -46,6 +46,7 @@ describe('Builtin Skills', () => {
     expect(getBuiltinSkill('builtin:refactor')).toBeDefined()
     expect(getBuiltinSkill('builtin:superpowers')).toBeDefined()
     expect(getBuiltinSkill('builtin:browser-automation')).toBeDefined()
+    expect(getBuiltinSkill('builtin:edu-explain')).toBeDefined()
   })
 
   it('getBuiltinSkill should return undefined for unknown IDs', () => {

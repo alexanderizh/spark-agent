@@ -42,6 +42,7 @@ const DialogOverlay = forwardRef<
       'bg-black/60',
       'data-[state=open]:animate-in data-[state=open]:fade-in-0',
       'data-[state=closed]:animate-out data-[state=closed]:fade-out-0',
+      'spark-dialog-overlay',
       className,
     )}
     {...props}
@@ -67,6 +68,7 @@ const DialogContent = forwardRef<
         'p-5',
         'data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
         'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+        'spark-dialog-content',
         className,
       )}
       {...props}
@@ -79,6 +81,7 @@ const DialogContent = forwardRef<
           'text-text-muted',
           'transition-colors hover:text-text',
           'focus-ring',
+          'spark-dialog-close',
         )}
       >
         <X size={14} />
@@ -96,7 +99,7 @@ function DialogHeader({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('flex flex-col gap-1.5 pb-4', className)}
+    className={cn('flex flex-col gap-1.5 pb-4 spark-dialog-header', className)}
       {...props}
     />
   )
@@ -109,7 +112,7 @@ function DialogFooter({
 }: React.HTMLAttributes<HTMLDivElement>) {
   return (
     <div
-      className={cn('flex items-center justify-end gap-2 pt-4', className)}
+    className={cn('flex items-center justify-end gap-2 pt-4 spark-dialog-footer', className)}
       {...props}
     />
   )
@@ -124,6 +127,7 @@ const DialogTitle = forwardRef<
     ref={ref}
     className={cn(
       'text-[var(--font-lg)] font-semibold text-text-strong',
+      'spark-dialog-title',
       className,
     )}
     {...props}
@@ -138,7 +142,7 @@ const DialogDescription = forwardRef<
 >(({ className, ...props }, ref) => (
   <DialogPrimitive.Description
     ref={ref}
-    className={cn('text-[var(--font-sm)] text-text-muted', className)}
+    className={cn('text-[var(--font-sm)] text-text-muted spark-dialog-description', className)}
     {...props}
   />
 ))

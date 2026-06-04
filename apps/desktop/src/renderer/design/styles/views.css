@@ -810,6 +810,9 @@ body.sidebar-resizing {
 .chat-item-compact:hover .item-menu-wrap {
   display: flex;
 }
+.chat-item-compact .item-menu-wrap.menu-open {
+  display: flex;
+}
 .chat-item-compact .item-menu-wrap {
   display: none;
 }
@@ -835,6 +838,7 @@ body.sidebar-resizing {
 .chat-item:hover .item-menu-btn,
 .item-menu-btn:focus-visible,
 .item-menu-btn[data-state="open"],
+.item-menu-wrap.menu-open .item-menu-btn,
 .proj-head:hover .proj-add-session-btn {
   opacity: 1;
 }
@@ -846,11 +850,7 @@ body.sidebar-resizing {
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown, 100);
-  position: absolute !important;
-  right: 0 !important;
-  top: 100% !important;
-  left: auto !important;
-  bottom: auto !important;
+  overflow: hidden;
 }
 .action-menu-item {
   display: flex;
@@ -861,18 +861,24 @@ body.sidebar-resizing {
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
+  color: var(--text);
   font-size: var(--font-sm);
   text-align: left;
+  cursor: default;
 }
-.action-menu-item:hover {
+.action-menu-item:hover,
+.action-menu-item:focus-visible {
   background: var(--hover);
+  outline: none;
 }
 .action-menu-item.danger {
   color: var(--danger) !important;
 }
-.action-menu-item.danger:hover {
+.action-menu-item.danger:hover,
+.action-menu-item.danger:focus-visible {
   background: color-mix(in srgb, var(--danger) 10%, transparent) !important;
   color: var(--danger) !important;
+  outline: none;
 }
 .pinned-icon {
   color: var(--primary);
@@ -2019,7 +2025,8 @@ body.sidebar-resizing {
   line-height: 1.6;
 }
 .chat-main-empty .composer-v2.has-workspace-picks textarea {
-  padding-right: min(48vw, 360px);
+  padding-right: 80px;
+  padding-bottom: 88px;
 }
 
 /* 渐变消失的网格背景（用双层 linear-gradient + radial mask 营造从中心向四周淡出的效果） */
@@ -2521,8 +2528,8 @@ body.sidebar-resizing {
   max-width: 120px;
 }
 .composer-v2.has-workspace-picks textarea {
-  padding-right: min(46vw, 340px);
-  padding-bottom: 48px;
+  padding-right: 70px;
+  padding-bottom: 84px;
 }
 .composer-send-round {
   display: inline-flex;
@@ -9657,14 +9664,14 @@ body.inspector-resizing {
 .agent-field.wide {
   grid-column: 1 / -1;
 }
-.agent-field input:not(.spark-input),
+.agent-field input:not(.arco-input):not(.spark-input),
 .agent-field select:not(.spark-select-arco),
-.agent-field textarea:not(.spark-textarea),
-.workflow-builder input,
+.agent-field textarea:not(.arco-textarea):not(.spark-textarea),
+.workflow-builder input:not(.arco-input),
 .workflow-builder select,
-.wf-inspector input,
+.wf-inspector input:not(.arco-input),
 .wf-inspector select,
-.wf-inspector textarea {
+.wf-inspector textarea:not(.arco-textarea) {
   width: 100%;
   min-width: 0;
   border: 1px solid var(--border);
@@ -9675,7 +9682,7 @@ body.inspector-resizing {
   font: inherit;
 }
 .agent-field textarea,
-.wf-inspector textarea {
+.wf-inspector textarea:not(.arco-textarea) {
   resize: vertical;
   line-height: 1.45;
 }
@@ -10331,6 +10338,12 @@ body.inspector-resizing {
   transition: background 0.12s, border-color 0.12s;
 }
 .chip:hover { background: var(--hover); }
+.chip-clickable { cursor: pointer; user-select: none; }
+.chip-clickable.chip-locked { cursor: default; }
+.chip-clickable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .chip-label {
   white-space: nowrap;
   overflow: hidden;
@@ -10891,6 +10904,12 @@ body.inspector-resizing {
   transition: background 0.12s, border-color 0.12s;
 }
 .chip:hover { background: var(--hover); }
+.chip-clickable { cursor: pointer; user-select: none; }
+.chip-clickable.chip-locked { cursor: default; }
+.chip-clickable:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
 .chip-label {
   white-space: nowrap;
   overflow: hidden;

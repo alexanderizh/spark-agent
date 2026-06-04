@@ -435,7 +435,8 @@ print(f'sin(60°) = {result:.6f}')
 - 长页默认 max-width: min(92vw, 1440px)
 - 侧栏布局：main flex:1 占满剩余宽度
 
-### 推荐使用的技能
+### 推荐可能使用的技能
+- /ui-ux-pro-max
 - /html-ppt：HTML 幻灯片主设计
 - /pptx-generator：PPTX 布局防溢出
 - /mck-ppt-design：Python PPTX 布局方法库

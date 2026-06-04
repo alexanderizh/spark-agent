@@ -36,6 +36,11 @@ export interface CreateWorkspaceParams {
   relocatedFrom?: string[]
 }
 
+export interface RelocateWorkspaceParams {
+  rootPath: string
+  relocatedFrom?: string[]
+}
+
 /**
  * Workspace Repository
  *
@@ -94,6 +99,26 @@ export class WorkspaceRepository extends BaseRepository {
     const now = new Date().toISOString()
     const stmt = this.raw.prepare('UPDATE workspaces SET name = ?, updated_at = ? WHERE id = ?')
     stmt.run(name, now, id)
+  }
+
+  /** 迁移工作区根目录 */
+  relocate(id: string, params: RelocateWorkspaceParams): void {
+    const now = new Date().toISOString()
+    const current = this.findByIdOrFail(id)
+    const relocatedFrom = params.relocatedFrom ?? this.fromJson<string[]>(current.relocated_from_json, [])
+    const stmt = this.raw.prepare(`
+      UPDATE workspaces
+      SET root_path = ?, spark_config_path = ?, agent_runtime_path = ?, relocated_from_json = ?, updated_at = ?
+      WHERE id = ?
+    `)
+    stmt.run(
+      params.rootPath,
+      `${params.rootPath}/.spark`,
+      `${params.rootPath}/.agent_spark`,
+      this.toJson(relocatedFrom),
+      now,
+      id,
+    )
   }
 
   /** 更新工作区元数据 */

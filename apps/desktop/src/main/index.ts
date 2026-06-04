@@ -75,8 +75,12 @@ function createTray(): void {
   const iconPath = getResourcePath(process.platform === 'darwin' ? 'trayTemplate.png' : 'trayIconWin.png')
   let image = nativeImage.createFromPath(iconPath)
   if (process.platform === 'darwin') {
-    image = image.resize({ width: 16, height: 16 })
+    image = image.resize({ width: 18, height: 18, quality: 'best' })
     image.setTemplateImage(true)
+  } else if (process.platform === 'win32') {
+    image = image.resize({ width: 24, height: 24, quality: 'best' })
+  } else {
+    image = image.resize({ width: 22, height: 22, quality: 'best' })
   }
 
   tray = new Tray(image)

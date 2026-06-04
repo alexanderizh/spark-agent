@@ -59,6 +59,14 @@ function makeRepo() {
       if (params.name !== undefined) row.name = params.name
       if (params.projectKind !== undefined) row.project_kind = params.projectKind
     }),
+    relocate: vi.fn((id: string, params: { rootPath: string; relocatedFrom?: string[] }) => {
+      const row = rows.get(id)
+      if (row === undefined) return
+      row.root_path = params.rootPath
+      row.spark_config_path = `${params.rootPath}/.spark`
+      row.agent_runtime_path = `${params.rootPath}/.agent_spark`
+      row.relocated_from_json = JSON.stringify(params.relocatedFrom ?? [])
+    }),
   }
 }
 
@@ -171,6 +179,24 @@ describe('WorkspaceService', () => {
 
     expect(service.getCurrent()).toBe(workspace)
     expect(service.getCurrent()?.name).not.toBe('Other')
+  })
+
+  it('relocateWorkspace moves the workspace root and records the previous path', async () => {
+    const workspace = await service.openWorkspace(tempDir)
+    const relocatedRoot = path.join(tempDir, 'persistent-no-project')
+
+    const relocated = await service.relocateWorkspace(workspace.id, { rootPath: relocatedRoot })
+
+    expect(repo.relocate).toHaveBeenCalledWith(
+      workspace.id,
+      expect.objectContaining({
+        rootPath: relocatedRoot,
+        relocatedFrom: [tempDir],
+      }),
+    )
+    expect(relocated.root_path).toBe(relocatedRoot)
+    expect(relocated.spark_config_path).toBe(`${relocatedRoot}/.spark`)
+    expect(service.getCurrent()?.root_path).toBe(relocatedRoot)
   })
 
   it('listWorkspaces delegates to repository listAll', () => {

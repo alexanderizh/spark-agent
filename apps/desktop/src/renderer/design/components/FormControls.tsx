@@ -103,15 +103,13 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
       )
     }
 
-    const isPassword = type === 'password'
-
     return (
       <span className={`spark-input-wrap ${className}`}>
         {icon && <span className="spark-input-icon">{icon}</span>}
         <Input
           ref={ref}
           className={`spark-input-arco${icon ? ' spark-input-has-icon' : ''}`}
-          type={isPassword ? 'password' : 'text'}
+          type={type ?? 'text'}
           {...(readOnly !== undefined ? { readOnly } : {})}
           {...(value !== undefined ? { value: String(value) } : {})}
           {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
@@ -170,6 +168,7 @@ export const SparkSelect = forwardRef<any, SparkSelectProps>(
         <Select
           className="spark-select-arco"
           dropdownMenuClassName="spark-select-arco-popup"
+          bordered={false}
           {...(value !== undefined ? { value } : {})}
           {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
           onChange={(v: string | number) => {
@@ -212,6 +211,7 @@ export interface SparkTextareaProps {
   maxLength?: number
   name?: string
   style?: CSSProperties
+  autoSize?: boolean | { minRows?: number; maxRows?: number }
   onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
   onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
@@ -231,6 +231,7 @@ export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
     maxLength,
     name,
     style,
+    autoSize,
     onFocus,
     onBlur,
     onKeyDown,
@@ -255,7 +256,7 @@ export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
         onFocus={onFocus as any}
         onBlur={onBlur as any}
         onKeyDown={onKeyDown as any}
-        autoSize={false}
+        autoSize={autoSize ?? false}
       />
     )
   },

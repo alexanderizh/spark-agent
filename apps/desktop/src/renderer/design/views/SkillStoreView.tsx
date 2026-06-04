@@ -9,8 +9,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
 import type { LocalSkillCandidate, RemoteSkillItem, SkillItem, SkillRegistry } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { SparkInput } from '../components/FormControls'
-import { Select as ArcoSelect } from '@arco-design/web-react'
+import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import {
   useSkills,
   parseSkillManifest,
@@ -1241,9 +1240,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
                 <label className="form-label">
                   名称 <span className="required">*</span>
                 </label>
-                <input
-                  className="form-input"
-                  type="text"
+                <SparkInput
                   placeholder="例如：代码审查助手"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -1251,9 +1248,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">版本</label>
-                <input
-                  className="form-input"
-                  type="text"
+                <SparkInput
                   placeholder="1.0.0"
                   value={version}
                   onChange={(e) => setVersion(e.target.value)}
@@ -1261,9 +1256,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">作者</label>
-                <input
-                  className="form-input"
-                  type="text"
+                <SparkInput
                   placeholder="作者名称"
                   value={author}
                   onChange={(e) => setAuthor(e.target.value)}
@@ -1271,31 +1264,26 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">分类</label>
-                <ArcoSelect
-                  className="spark-select-arco"
-                  dropdownMenuClassName="spark-select-arco-popup"
+                <SparkSelect
                   value={category}
-                  onChange={(v: string) => setCategory(v)}
-                  size="small"
-                  bordered={false}
-                  getPopupContainer={() => document.body}
+                  onChange={(e) => setCategory(e.target.value)}
                 >
-                  <ArcoSelect.Option value="utility">通用</ArcoSelect.Option>
-                  <ArcoSelect.Option value="code-generation">代码生成</ArcoSelect.Option>
-                  <ArcoSelect.Option value="code-review">代码审查</ArcoSelect.Option>
-                  <ArcoSelect.Option value="testing">测试</ArcoSelect.Option>
-                  <ArcoSelect.Option value="documentation">文档</ArcoSelect.Option>
-                  <ArcoSelect.Option value="data-analysis">数据分析</ArcoSelect.Option>
-                  <ArcoSelect.Option value="web-development">Web 开发</ArcoSelect.Option>
-                  <ArcoSelect.Option value="api-development">API 开发</ArcoSelect.Option>
-                  <ArcoSelect.Option value="devops">DevOps</ArcoSelect.Option>
-                  <ArcoSelect.Option value="security">安全</ArcoSelect.Option>
-                  <ArcoSelect.Option value="ai-ml">AI/ML</ArcoSelect.Option>
-                  <ArcoSelect.Option value="automation">自动化</ArcoSelect.Option>
-                  <ArcoSelect.Option value="database">数据库</ArcoSelect.Option>
-                  <ArcoSelect.Option value="frontend">前端</ArcoSelect.Option>
-                  <ArcoSelect.Option value="backend">后端</ArcoSelect.Option>
-                </ArcoSelect>
+                  <option value="utility">通用</option>
+                  <option value="code-generation">代码生成</option>
+                  <option value="code-review">代码审查</option>
+                  <option value="testing">测试</option>
+                  <option value="documentation">文档</option>
+                  <option value="data-analysis">数据分析</option>
+                  <option value="web-development">Web 开发</option>
+                  <option value="api-development">API 开发</option>
+                  <option value="devops">DevOps</option>
+                  <option value="security">安全</option>
+                  <option value="ai-ml">AI/ML</option>
+                  <option value="automation">自动化</option>
+                  <option value="database">数据库</option>
+                  <option value="frontend">前端</option>
+                  <option value="backend">后端</option>
+                </SparkSelect>
               </div>
             </div>
           </div>
@@ -1306,8 +1294,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               <label className="form-label">
                 简短描述 <span className="required">*</span>
               </label>
-              <textarea
-                className="form-textarea"
+              <SparkTextarea
                 rows={3}
                 placeholder="一句话描述 Skill 的功能，例如：自动化代码审查，检测潜在 Bug 和安全问题"
                 value={description}
@@ -1316,9 +1303,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
             </div>
             <div className="form-field">
               <label className="form-label">标签（逗号分隔）</label>
-              <input
-                className="form-input"
-                type="text"
+              <SparkInput
                 placeholder="code-review, security, quality"
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
@@ -1326,9 +1311,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
             </div>
             <div className="form-field">
               <label className="form-label">所需工具（逗号分隔）</label>
-              <input
-                className="form-input"
-                type="text"
+              <SparkInput
                 placeholder="例如：Bash, Read, Edit"
                 value={requiredTools}
                 onChange={(e) => setRequiredTools(e.target.value)}
@@ -1342,8 +1325,8 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               <label className="form-label">
                 System Prompt / 指令内容 <span className="required">*</span>
               </label>
-              <textarea
-                className="form-textarea form-textarea-lg"
+              <SparkTextarea
+                className="form-textarea-lg"
                 rows={12}
                 placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
                 value={content}

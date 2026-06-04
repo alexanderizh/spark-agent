@@ -50,6 +50,7 @@ import { ClaudeSDKExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
+import { generateSessionTitle } from './session-title-generator.js'
 import {
   createLogger,
   resolveProviderContextWindow,
@@ -60,6 +61,7 @@ const log = createLogger('session.service')
 
 export type SessionEventHandler = (event: AgentEvent) => void
 export type SessionQueueChangedHandler = (snapshot: SessionGetQueueResponse) => void
+export type SessionRenamedHandler = (sessionId: string, title: string) => void
 export type ApprovalHandler = (
   sessionId: string,
   toolName: string,
@@ -84,6 +86,17 @@ export type QuestionHandler = (
 ) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = { cancel(): void }
+interface FirstTurnTitleContext {
+  providerType: string
+  apiKey: string
+  apiEndpoint?: string
+  model: string
+  userMessage: string
+}
+interface TryStartSDKTurnOptions {
+  allowedMcpServerIds?: Set<string>
+  firstTurnTitleContext?: FirstTurnTitleContext
+}
 type SessionRuntimePatch = {
   providerProfileId?: string
   modelId?: string | null
@@ -130,6 +143,7 @@ export class SessionService {
     private readonly onQueueChanged?: SessionQueueChangedHandler,
     private readonly onQuestion?: QuestionHandler,
     private readonly onHookTrigger?: HookTriggerHandler,
+    private readonly onSessionRenamed?: SessionRenamedHandler,
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
     this.recoverInterruptedSessions()
@@ -543,7 +557,8 @@ export class SessionService {
     const currentSeq = this.seqCounters.get(sessionId) ?? existingEventCount
     const { prompt: conversationHistoryPrompt, summarization: summarizationStats } =
       buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq)
-    if (existingEventCount === 0 && shouldDeriveSessionTitle(session.title)) {
+    const isFirstTurn = existingEventCount === 0 && shouldDeriveSessionTitle(session.title)
+    if (isFirstTurn) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
     const provider = providerRepo.get(session.provider_profile_id)
@@ -950,6 +965,18 @@ export class SessionService {
         ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
       }
       const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
+      const turnOptions: TryStartSDKTurnOptions = {
+        ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
+      }
+      if (isFirstTurn) {
+        turnOptions.firstTurnTitleContext = {
+          providerType: provider.provider_type,
+          apiKey,
+          model,
+          ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+          userMessage: message,
+        }
+      }
       await this.tryStartSDKTurn(
         sessionId,
         turnId,
@@ -957,7 +984,7 @@ export class SessionService {
         eventRepo,
         sessionRepo,
         sdkConfig,
-        allowedMcpServerIds != null ? { allowedMcpServerIds } : {},
+        turnOptions,
       )
       return
     }
@@ -1042,7 +1069,7 @@ export class SessionService {
     eventRepo: EventRepository,
     sessionRepo: SessionRepository,
     config: SDKExecutorConfig,
-    options: { allowedMcpServerIds?: Set<string> } = {},
+    options: TryStartSDKTurnOptions = {},
   ): Promise<void> {
     const makeBase = () => ({
       id: crypto.randomUUID(),
@@ -1172,11 +1199,22 @@ export class SessionService {
       )
     }
 
+    let firstAssistantText = ''
+    const collectAssistantText = options.firstTurnTitleContext != null
     executor.onEvent((event) => {
       if (event.type === 'file_change') changedFiles.add(event.path)
       this.emitAndPersist(sessionId, turnId, event, eventRepo)
       if (event.type === 'agent_status' && event.status === 'completed') {
         maybeEmitValidationSuggestion()
+      }
+      if (
+        collectAssistantText &&
+        event.type === 'assistant_message' &&
+        event.mode === 'complete' &&
+        typeof event.content === 'string'
+      ) {
+        // Keep only the first complete assistant message of this turn
+        if (firstAssistantText.length === 0) firstAssistantText = event.content
       }
     })
 
@@ -1197,6 +1235,13 @@ export class SessionService {
         sessionRepo.updateStatus(sessionId, 'idle')
         // Reset resume circuit breaker on successful turn completion
         getResumeCircuitBreaker().recordSuccess(sessionId)
+        const titleCtx = options.firstTurnTitleContext
+        if (titleCtx != null) {
+          void this.refineSessionTitleAsync(sessionId, sessionRepo, {
+            ...titleCtx,
+            assistantMessage: firstAssistantText,
+          })
+        }
       })
       .catch(() => {
         sessionRepo.updateStatus(sessionId, 'error')
@@ -1207,6 +1252,35 @@ export class SessionService {
           this.startNextQueuedTurn(sessionId)
         }
       })
+  }
+
+  private async refineSessionTitleAsync(
+    sessionId: string,
+    sessionRepo: SessionRepository,
+    ctx: FirstTurnTitleContext & { assistantMessage: string },
+  ): Promise<void> {
+    try {
+      const current = sessionRepo.get(sessionId)
+      if (current == null) return
+      // Skip if user has manually renamed the session in the meantime
+      const derivedFromFirst = deriveSessionTitle(ctx.userMessage)
+      if (current.title !== derivedFromFirst && !shouldDeriveSessionTitle(current.title)) {
+        return
+      }
+      const refined = await generateSessionTitle({
+        providerType: ctx.providerType,
+        apiKey: ctx.apiKey,
+        ...(ctx.apiEndpoint != null ? { apiEndpoint: ctx.apiEndpoint } : {}),
+        model: ctx.model,
+        userMessage: ctx.userMessage,
+        assistantMessage: ctx.assistantMessage,
+      })
+      if (refined == null || refined.length === 0 || refined === current.title) return
+      sessionRepo.updateTitle(sessionId, refined)
+      this.onSessionRenamed?.(sessionId, refined)
+    } catch (err) {
+      log.warn(`refineSessionTitleAsync failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   /**

@@ -38,6 +38,7 @@ export type {
   SessionQueueChangedHandler,
   QuestionHandler,
   HookTriggerHandler,
+  SessionRenamedHandler,
 } from './services/session.service.js'
 export { WorkspaceService, detectProjectKind } from './services/workspace.service.js'
 export type { UpdateWorkspaceParams } from './services/workspace.service.js'

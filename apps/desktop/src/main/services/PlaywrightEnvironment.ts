@@ -25,6 +25,52 @@ const log = createLogger('playwright-env')
 
 let cachedBrowsersPath: string | null | undefined = undefined
 
+function getMonorepoRootCandidates(): string[] {
+  const candidates: string[] = []
+
+  candidates.push(process.cwd())
+  candidates.push(resolve(__dirname, '..', '..', '..', '..'))
+  candidates.push(resolve(__dirname, '..', '..', '..'))
+
+  try {
+    const appPath = app.getAppPath()
+    if (appPath) {
+      candidates.push(appPath)
+      candidates.push(resolve(appPath, '..'))
+      candidates.push(resolve(appPath, '..', '..'))
+    }
+  } catch {
+    // app may not be ready in tests or very early startup
+  }
+
+  return [...new Set(candidates)]
+}
+
+function getBundledBrowserDirCandidates(): string[] {
+  const candidates: string[] = []
+
+  if (process.env.PLAYWRIGHT_BROWSERS_PATH != null) {
+    candidates.push(process.env.PLAYWRIGHT_BROWSERS_PATH)
+  }
+
+  if (app.isPackaged) {
+    candidates.push(join(process.resourcesPath, 'browsers'))
+  }
+
+  // Keep the direct __dirname-derived guesses first for the common dev case,
+  // then fall back to monorepo-root-derived locations when the runtime layout
+  // differs from what electron-vite produced.
+  candidates.push(resolve(__dirname, '..', '..', '..', '..', 'browsers'))
+  candidates.push(resolve(__dirname, '..', '..', '..', 'browsers'))
+
+  for (const root of getMonorepoRootCandidates()) {
+    candidates.push(join(root, 'browsers'))
+    candidates.push(join(root, 'apps', 'desktop', 'browsers'))
+  }
+
+  return [...new Set(candidates)]
+}
+
 /**
  * Resolve the bundled chromium directory.
  *
@@ -39,15 +85,7 @@ let cachedBrowsersPath: string | null | undefined = undefined
 export function getBundledBrowsersPath(): string | null {
   if (cachedBrowsersPath !== undefined) return cachedBrowsersPath
 
-  const candidates: string[] = []
-
-  if (app.isPackaged) {
-    candidates.push(join(process.resourcesPath, 'browsers'))
-  } else {
-    // Dev: __dirname → out/main/services/ → 4 levels up to monorepo root
-    candidates.push(resolve(__dirname, '..', '..', '..', '..', 'browsers'))
-    candidates.push(resolve(__dirname, '..', '..', '..', 'browsers'))
-  }
+  const candidates = getBundledBrowserDirCandidates()
 
   for (const dir of candidates) {
     if (existsSync(dir) && hasUsableChromium(dir)) {
@@ -58,7 +96,7 @@ export function getBundledBrowsersPath(): string | null {
   }
 
   log.warn(
-    'No usable bundled chromium found. Will fall back to system Chrome or Playwright default cache.',
+    `No usable bundled chromium found in candidates: ${candidates.join(', ')}. Will fall back to system Chrome or Playwright default cache.`,
   )
   cachedBrowsersPath = null
   return null

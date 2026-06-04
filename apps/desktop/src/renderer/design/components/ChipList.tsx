@@ -35,6 +35,15 @@ type ChipListProps = {
   validate?: (raw: string) => boolean
   /** 整体 className */
   className?: string
+  /**
+   * 点击 chip（默认模型切换）回调：
+   * - 传入时，chip 会变成可点击的"切换默认"按钮。
+   * - 父组件拿到被点击的 id 后通常将其设为 defaultModel（并把该 id 排在 modelIds 最前）。
+   * - 默认模型自身再次点击不会有任何副作用（已经是默认）。
+   */
+  onSelectDefault?: (id: string) => void
+  /** 可点击 chip 的提示文本（仅 onSelectDefault 存在时生效） */
+  selectHint?: string
 }
 
 export function ChipList({
@@ -50,6 +59,8 @@ export function ChipList({
   removeLabel = '删除',
   validate,
   className = '',
+  onSelectDefault,
+  selectHint = '点击切换为默认模型',
 }: ChipListProps) {
   const [draft, setDraft] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
@@ -141,11 +152,34 @@ export function ChipList({
           <div className="chip-list-chips">
             {value.map((id) => {
               const isLocked = lockedSet.has(id)
+              const clickable = !!onSelectDefault
               return (
                 <span
                   key={id}
-                  className={`chip ${isLocked ? 'chip-locked' : ''}`}
-                  title={id}
+                  className={`chip ${isLocked ? 'chip-locked' : ''} ${clickable ? 'chip-clickable' : ''}`}
+                  title={clickable ? (isLocked ? `${id}（默认模型）` : `${selectHint}: ${id}`) : id}
+                  role={clickable ? 'button' : undefined}
+                  tabIndex={clickable ? 0 : undefined}
+                  aria-pressed={clickable ? isLocked : undefined}
+                  onClick={
+                    clickable
+                      ? (e) => {
+                          // remove 按钮的 click 会 stopPropagation，所以这里只处理"切换默认"
+                          if (isLocked) return
+                          onSelectDefault!(id)
+                        }
+                      : undefined
+                  }
+                  onKeyDown={
+                    clickable
+                      ? (e) => {
+                          if ((e.key === 'Enter' || e.key === ' ') && !isLocked) {
+                            e.preventDefault()
+                            onSelectDefault!(id)
+                          }
+                        }
+                      : undefined
+                  }
                 >
                   {isLocked && (
                     <span className="chip-locked-star" aria-hidden>

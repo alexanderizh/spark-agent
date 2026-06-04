@@ -77,6 +77,18 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
   const events: AgentEvent[] = []
   const content = msg.message.content
 
+  // Subagent assistant messages carry parent_tool_use_id pointing to the
+  // Agent tool_use that spawned them. Accumulate their usage so we can attach
+  // it to the eventual subagent_completed event.
+  if (msg.parent_tool_use_id != null && msg.message.usage) {
+    const acc = getSubagentUsage(ctx)
+    const prev = acc.get(msg.parent_tool_use_id) ?? { inputTokens: 0, outputTokens: 0 }
+    acc.set(msg.parent_tool_use_id, {
+      inputTokens: prev.inputTokens + (msg.message.usage.input_tokens ?? 0),
+      outputTokens: prev.outputTokens + (msg.message.usage.output_tokens ?? 0),
+    })
+  }
+
   for (const block of content) {
     events.push(...mapContentBlock(block, ctx))
   }
@@ -336,6 +348,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
         const subagentInput = getToolInputs(ctx).get(block.tool_use_id)
         const name = typeof subagentInput?.agent === 'string' ? subagentInput.agent : 'Subagent'
         const summary = content.length > 200 ? `${content.slice(0, 197)}...` : content
+        const usage = getSubagentUsage(ctx).get(block.tool_use_id)
         return [
           {
             ...baseEvent(ctx),
@@ -345,6 +358,9 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
             status: isError ? 'error' : 'success',
             resultSummary: isError ? (content || 'Subagent failed') : summary,
             output: content || '',
+            ...(usage != null
+              ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens }
+              : {}),
           },
         ]
       }
@@ -605,6 +621,16 @@ function getToolResults(ctx: EventContext): Map<string, string> {
   const record = ctx as EventContext & { toolResultsById?: Map<string, string> }
   if (record.toolResultsById == null) record.toolResultsById = new Map()
   return record.toolResultsById
+}
+
+function getSubagentUsage(
+  ctx: EventContext,
+): Map<string, { inputTokens: number; outputTokens: number }> {
+  const record = ctx as EventContext & {
+    subagentUsageById?: Map<string, { inputTokens: number; outputTokens: number }>
+  }
+  if (record.subagentUsageById == null) record.subagentUsageById = new Map()
+  return record.subagentUsageById
 }
 
 /**

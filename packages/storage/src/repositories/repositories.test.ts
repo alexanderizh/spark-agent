@@ -103,6 +103,20 @@ describe('WorkspaceRepository', () => {
     const updated = repo.get('ws-1')
     expect(updated!.name).toBe('new-name')
   })
+
+  it('should relocate workspace root paths and keep relocation history', () => {
+    repo.create({ id: 'ws-1', name: 'old-name', rootPath: '/tmp/test', relocatedFrom: ['/tmp/legacy'] })
+    repo.relocate('ws-1', {
+      rootPath: '/tmp/persistent',
+      relocatedFrom: ['/tmp/legacy', '/tmp/test'],
+    })
+
+    const updated = repo.get('ws-1')
+    expect(updated!.root_path).toBe('/tmp/persistent')
+    expect(updated!.spark_config_path).toBe('/tmp/persistent/.spark')
+    expect(updated!.agent_runtime_path).toBe('/tmp/persistent/.agent_spark')
+    expect(updated!.relocated_from_json).toBe(JSON.stringify(['/tmp/legacy', '/tmp/test']))
+  })
 })
 
 // ─── RulesRepository ──────────────────────────────────────────────────

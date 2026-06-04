@@ -1141,6 +1141,29 @@ export function ProviderEditPanel({
             </div>
           </div>
 
+          {/* ─── 鉴权（API Key）放在可用模型上方 ─── */}
+          <div className="provider-form-section">
+            <div className="provider-form-section-title">
+              <span className="icon">
+                <Icons.Lock size={11} />
+              </span>
+              鉴权
+            </div>
+            <div className="form-grid">
+              <label>
+                API Key
+                {profileId && <span className="sub">留空则不更新当前 key</span>}
+              </label>
+              <SparkInput
+                type="password"
+                value={form.apiKey}
+                onChange={(e) => set('apiKey', e.target.value)}
+                placeholder={profileId ? '••••••••（留空不更新）' : 'sk-ant-...'}
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+
           {/* ─── 可用模型 ─── */}
           <div className="provider-form-section">
             <div className="provider-form-section-title">
@@ -1148,11 +1171,36 @@ export function ProviderEditPanel({
                 <Icons.Box size={11} />
               </span>
               可用模型
+              <span
+                className="muted"
+                style={{
+                  marginLeft: 'auto',
+                  fontSize: 'var(--font-xs)',
+                  fontWeight: 400,
+                  textTransform: 'none',
+                  letterSpacing: 0,
+                }}
+              >
+                点击 chip 即可切换为默认模型（带星标）
+              </span>
             </div>
             <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
               <ChipList
                 value={form.modelIds}
                 onChange={(ids) => set('modelIds', ids)}
+                onSelectDefault={(id) => {
+                  // 把 id 设为默认模型：从 modelIds 里把它放到最前
+                  setForm((prev) => {
+                    const trimmed = id.trim()
+                    if (!trimmed) return prev
+                    const rest = prev.modelIds.filter((m) => m !== trimmed)
+                    return {
+                      ...prev,
+                      defaultModel: trimmed,
+                      modelIds: uniqPreserveOrder([trimmed, ...rest]),
+                    }
+                  })
+                }}
                 locked={form.defaultModel.trim() ? [form.defaultModel.trim()] : []}
                 placeholder="输入模型 ID 后按 Enter 添加…"
                 emptyText="尚未添加任何模型（默认模型会自动加入）"
@@ -1219,29 +1267,6 @@ export function ProviderEditPanel({
                   className="mono-sm"
                 />
               </div>
-            </div>
-          </div>
-
-          {/* ─── 鉴权 ─── */}
-          <div className="provider-form-section">
-            <div className="provider-form-section-title">
-              <span className="icon">
-                <Icons.Lock size={11} />
-              </span>
-              鉴权
-            </div>
-            <div className="form-grid">
-              <label>
-                API Key
-                {profileId && <span className="sub">留空则不更新当前 key</span>}
-              </label>
-              <SparkInput
-                type="password"
-                value={form.apiKey}
-                onChange={(e) => set('apiKey', e.target.value)}
-                placeholder={profileId ? '••••••••（留空不更新）' : 'sk-ant-...'}
-                autoComplete="new-password"
-              />
             </div>
           </div>
         </div>

@@ -75,9 +75,16 @@ export interface ButtonProps
 const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, ...props }, ref) => {
     const Comp = asChild ? Slot : 'button'
+    const variantName = variant ?? 'primary'
+    const sizeName = size ?? 'md'
     return (
       <Comp
-        className={cn(buttonVariants({ variant, size, className }))}
+        className={cn(
+          'spark-button',
+          `spark-button-${variantName}`,
+          `spark-button-${sizeName}`,
+          buttonVariants({ variant, size, className }),
+        )}
         ref={ref}
         {...props}
       />

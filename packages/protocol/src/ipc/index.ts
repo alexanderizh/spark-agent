@@ -2438,6 +2438,8 @@ export interface IpcStreamChannelMap {
   'stream:session:agent-event': AgentEvent
   /** Session 后端排队状态变化 */
   'stream:session:queue-changed': SessionGetQueueResponse
+  /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/
+  'stream:session:renamed': { sessionId: string; title: string }
   /** 用户问题请求（AskUserQuestion 工具，主进程推送，渲染进程显示选择界面）*/
   'stream:session:user-question': {
     questionId: string

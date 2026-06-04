@@ -2,17 +2,15 @@
  * SidebarSessionList — Complete conversation list extracted from ChatView.
  * Renders search, time filter, project groups, session items, and all context menus.
  */
-import React, { useState, useCallback } from 'react'
+import React, { useRef, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@spark/ui-kit'
-import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { Icons } from './Icons'
 import { SparkInput } from './components/FormControls'
 import {
@@ -62,32 +60,57 @@ function formatRelativeTime(value: string): string {
   return `${Math.floor(diffMs / week)} 周`
 }
 
-/* ─── ActionMenu (inline, no Portal — avoids broken portal positioning) ─── */
+/* ─── ActionMenu ─── */
 function ActionMenu({
   items,
+  onAction,
 }: {
   items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
+  onAction?: () => void
 }) {
+  const actionQueuedRef = useRef(false)
+  const runAction = (item: { onClick: () => void }) => {
+    if (actionQueuedRef.current) return
+    actionQueuedRef.current = true
+    onAction?.()
+    window.setTimeout(() => {
+      actionQueuedRef.current = false
+      item.onClick()
+    }, 0)
+  }
+
   return (
-    <DropdownMenuPrimitive.Content
-      align="end"
-      side="bottom"
+    <DropdownMenuContent
+      align="start"
+      side="right"
+      sideOffset={4}
+      alignOffset={4}
+      collisionPadding={10}
       className="action-menu"
+      avoidCollisions
       onCloseAutoFocus={(e) => e.preventDefault()}
+      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
     >
       {items.map(item => (
-        <DropdownMenuPrimitive.Item
+        <button
+          type="button"
           key={item.label}
           className={`action-menu-item${item.danger ? ' danger' : ''}`}
-          onSelect={() => {
-            item.onClick()
+          onPointerDown={(e) => {
+            e.stopPropagation()
+            runAction(item)
+          }}
+          onClick={(e) => {
+            e.stopPropagation()
+            runAction(item)
           }}
         >
           {item.icon}
           <span>{item.label}</span>
-        </DropdownMenuPrimitive.Item>
+        </button>
       ))}
-    </DropdownMenuPrimitive.Content>
+    </DropdownMenuContent>
   )
 }
 
@@ -170,14 +193,20 @@ function ChatListItem({
         ) : (
           <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         )}
-        <div className="item-menu-wrap">
+        <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <button className="icon-btn item-menu-btn" title="会话操作" onClick={e => e.stopPropagation()}>
+              <button
+                className="icon-btn item-menu-btn"
+                title="会话操作"
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+              >
                 <Icons.More size={13} />
               </button>
             </DropdownMenuTrigger>
             <ActionMenu
+              onAction={() => setMenuOpen(false)}
               items={[
                 { icon: <Icons.Pin size={14} />, label: s.pinnedAt == null ? '置顶会话' : '取消置顶', onClick: () => onTogglePinned?.(s) },
                 { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
@@ -263,14 +292,20 @@ function ProjectSessionGroup({
         >
           <Icons.Plus size={12} />
         </button>
-        <div className="item-menu-wrap">
+        <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
-              <button className="icon-btn item-menu-btn" title="项目操作" onClick={e => e.stopPropagation()}>
+              <button
+                className="icon-btn item-menu-btn"
+                title="项目操作"
+                onPointerDown={e => e.stopPropagation()}
+                onClick={e => e.stopPropagation()}
+              >
                 <Icons.More size={13} />
               </button>
             </DropdownMenuTrigger>
             <ActionMenu
+              onAction={() => setMenuOpen(false)}
               items={[
                 { icon: <Icons.Pin size={14} />, label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶', onClick: () => onToggleProjectPinned(group.workspace) },
                 { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenProjectFolder(group.workspace) },

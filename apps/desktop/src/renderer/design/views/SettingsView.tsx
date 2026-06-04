@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
-import { SparkInput, SparkSelect } from '../components/FormControls'
+import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
@@ -1577,7 +1577,7 @@ function RuleEditPanel({
             />
 
             <label>内容</label>
-            <textarea
+            <SparkTextarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="输入要注入到 Agent prompt 的规则内容"
@@ -2527,8 +2527,8 @@ function SystemPromptSection() {
         </div>
 
         <div className={`prompt-editor-body ${!systemPromptEnabled ? 'disabled' : ''}`}>
-          <textarea
-            className="spark-textarea prompt-textarea"
+          <SparkTextarea
+            className="prompt-textarea"
             value={systemPrompt}
             onChange={(event) => setSystemPrompt(event.target.value)}
             placeholder="输入全局系统提示词...&#10;&#10;例如：你是一个专业的编程助手，请用中文回复。"

@@ -14,6 +14,8 @@ import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { app, dialog, shell, Notification } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
+import * as fs from 'node:fs/promises'
+import path from 'node:path'
 import { promisify } from 'node:util'
 import { createLogger } from '@spark/shared'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
@@ -67,6 +69,7 @@ import type {
   SessionQueueChangedHandler,
   QuestionHandler,
   HookTriggerHandler,
+  SessionRenamedHandler,
 } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
 import { getUpdateService } from '../services/UpdateService.js'
@@ -109,6 +112,7 @@ const log = createLogger('ipc:register')
 const execFileAsync = promisify(execFile)
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
+const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
@@ -116,6 +120,69 @@ function getProviderService(): ProviderService {
 
 function getModelService(): ModelService {
   return new ModelService(new ModelProfileRepository(getDatabase()))
+}
+
+function getPersistentProjectsDir(): string {
+  return path.join(app.getPath('userData'), 'projects')
+}
+
+function getPersistentNoProjectRootPath(): string {
+  return path.join(getPersistentProjectsDir(), 'no-project')
+}
+
+function isWithinDirectory(targetPath: string, directory: string): boolean {
+  const relative = path.relative(directory, targetPath)
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+function isTemporaryWorkspaceRoot(rootPath: string): boolean {
+  const resolved = path.resolve(rootPath)
+  const appTempDir = path.resolve(app.getPath('temp'))
+  return isWithinDirectory(resolved, appTempDir)
+}
+
+async function pathExists(targetPath: string): Promise<boolean> {
+  try {
+    await fs.stat(targetPath)
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function ensureNoProjectWorkspacePath(workspaceId: string): Promise<void> {
+  const repo = new WorkspaceRepository(getDatabase())
+  const workspace = repo.get(workspaceId)
+  if (workspace == null || workspace.name !== NO_PROJECT_WORKSPACE_NAME) return
+
+  const workspaceService = getWorkspaceService()
+  const currentRoot = path.resolve(workspace.root_path)
+  const desiredRoot = getPersistentNoProjectRootPath()
+  const currentExists = await pathExists(currentRoot)
+  const shouldRelocate = currentRoot !== desiredRoot && (!currentExists || isTemporaryWorkspaceRoot(currentRoot))
+
+  if (shouldRelocate) {
+    await fs.mkdir(getPersistentProjectsDir(), { recursive: true })
+    const updated = await workspaceService.relocateWorkspace(workspace.id, {
+      rootPath: desiredRoot,
+      relocatedFrom: [currentRoot],
+    })
+    log.info(`Relocated no-project workspace ${workspace.id} to persistent path ${updated.root_path}`)
+    return
+  }
+
+  if (!currentExists) {
+    await fs.mkdir(currentRoot, { recursive: true })
+    log.info(`Recreated missing no-project workspace directory: ${currentRoot}`)
+  }
+}
+
+async function ensureSessionWorkspacePaths(sessionId: string): Promise<void> {
+  const sessionRepo = new SessionRepository(getDatabase())
+  const session = sessionRepo.get(sessionId)
+  if (session == null) return
+  const workspaceIds = sessionRepo.getWorkspaceIds(sessionId)
+  await Promise.all(workspaceIds.map((workspaceId) => ensureNoProjectWorkspacePath(workspaceId)))
 }
 
 let _mcpService: McpService | null = null
@@ -319,6 +386,9 @@ function getSessionService(): SessionService {
         log.warn(`Failed to trigger hook: ${String(err)}`)
       })
     }
+    const onSessionRenamed: SessionRenamedHandler = (sessionId, title) => {
+      pushStreamEvent('stream:session:renamed', { sessionId, title })
+    }
     _sessionService = new SessionService(
       getDatabase(),
       onEvent,
@@ -327,6 +397,7 @@ function getSessionService(): SessionService {
       onQueueChanged,
       onQuestion,
       onHookTrigger,
+      onSessionRenamed,
     )
   }
   return _sessionService
@@ -417,6 +488,7 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:send-turn', async (req) => {
     log.info(`session:send-turn requested, sessionId=${req.sessionId}`)
+    await ensureSessionWorkspacePaths(req.sessionId)
     return getSessionService().sendTurn({
       sessionId: req.sessionId,
       message: req.message,
@@ -671,7 +743,11 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('workspace:get-current', async (_req) => {
     log.info('workspace:get-current requested')
     const workspace = getWorkspaceService().getCurrent()
-    return { workspace: workspace == null ? null : toWorkspaceInfo(workspace) }
+    if (workspace != null) {
+      await ensureNoProjectWorkspacePath(workspace.id)
+    }
+    const refreshed = workspace == null ? null : new WorkspaceRepository(getDatabase()).get(workspace.id)
+    return { workspace: refreshed == null ? null : toWorkspaceInfo(refreshed) }
   })
 
   typedIpcHandle('workspace:list', async (req) => {
@@ -679,8 +755,11 @@ export function registerAllIpcHandlers(): void {
     const service = getWorkspaceService()
     const listParams =
       req.includeArchived === undefined ? {} : { includeArchived: req.includeArchived }
+    const listed = service.listWorkspaces(req.limit, req.offset, listParams)
+    await Promise.all(listed.map((workspace) => ensureNoProjectWorkspacePath(workspace.id)))
+    const refreshed = service.listWorkspaces(req.limit, req.offset, listParams)
     return {
-      workspaces: service.listWorkspaces(req.limit, req.offset, listParams).map(toWorkspaceInfo),
+      workspaces: refreshed.map(toWorkspaceInfo),
       total: service.countWorkspaces(listParams),
     }
   })

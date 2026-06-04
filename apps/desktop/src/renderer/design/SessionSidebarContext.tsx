@@ -259,6 +259,15 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // Real-time session title updates (async LLM rename after first turn)
+  useEffect(() => {
+    return window.spark.on('stream:session:renamed', (payload: { sessionId: string; title: string }) => {
+      setSessions(prev => prev.map(item =>
+        item.id === payload.sessionId ? { ...item, title: payload.title } : item,
+      ))
+    })
+  }, [])
+
   useEffect(() => {
     if (active) window.localStorage.setItem(LAST_SESSION_KEY, active)
     else window.localStorage.removeItem(LAST_SESSION_KEY)

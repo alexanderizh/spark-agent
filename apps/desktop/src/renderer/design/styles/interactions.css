@@ -612,6 +612,9 @@
 .tier-grid > .tier-cell > .spark-input {
   width: 100%;
 }
+.tier-grid > .tier-cell > .spark-input-wrap {
+  width: 100%;
+}
 .form-grid > label {
   font-size: var(--font-sm);
   font-weight: 500;
@@ -628,6 +631,7 @@
 }
 .form-grid > .control,
 .form-grid > .spark-input,
+.form-grid > .spark-input-wrap,
 .form-grid > .spark-select-wrap,
 .form-grid > textarea {
   height: 36px;
@@ -643,26 +647,45 @@
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
 .form-grid > .spark-input,
+.form-grid > .spark-input-wrap,
 .form-grid > .spark-select-wrap {
   /* 让 SparkInput/SparkSelect 自己的 .spark-input / .spark-select 样式生效，不被覆盖 */
   padding: 0;
   border: none;
   background: none;
-  height: auto;
+  height: 36px;
 }
 .form-grid > .spark-select-wrap {
   display: flex;
 }
+.form-grid > .spark-select-wrap .spark-select-arco.arco-select {
+  height: 36px !important;
+  min-height: 36px !important;
+  width: 100% !important;
+}
+.form-grid > .spark-select-wrap .spark-select-arco.arco-select .arco-select-view {
+  height: 100%;
+  padding: 0 34px 0 12px !important;
+}
 .form-grid > textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
 .form-grid > .spark-input:hover,
+.form-grid > .spark-input-wrap:hover .spark-input-arco.arco-input-wrapper,
 .form-grid > .spark-select-wrap:hover .spark-select-arco.arco-select,
 .form-grid > textarea:hover { border-color: var(--text-faint); }
 .form-grid > .spark-input:focus,
+.form-grid > .spark-input-wrap .spark-input-arco.arco-input-wrapper:focus-within,
 .form-grid > .spark-select-wrap .spark-select-arco.arco-select:focus-within,
 .form-grid > textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
   background: var(--panel);
+}
+.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled,
+.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled:hover,
+.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled:focus-within {
+  background: var(--bg-soft) !important;
+  border-color: var(--border) !important;
+  box-shadow: none !important;
 }
 
 .form-grid > .control { display: flex; align-items: center; gap: 8px; padding: 0; background: none; border: none; }
@@ -823,14 +846,17 @@
   width: 110px;
 }
 .perm-rule .spark-select-arco.arco-select {
-   height: 26px;
-   padding: 0 24px 0 6px;
-   background: var(--panel);
-   border: 1px solid var(--border);
-   border-radius: var(--r-sm);
-   font-size: var(--font-xs);
-   color: var(--text);
+   height: 26px !important;
+   min-height: 26px !important;
+   background: var(--panel) !important;
+   border: 1px solid var(--border) !important;
+   border-radius: var(--r-sm) !important;
+   font-size: var(--font-xs) !important;
+   color: var(--text) !important;
  }
+.perm-rule .spark-select-arco.arco-select .arco-select-view {
+  padding: 0 24px 0 6px !important;
+}
 
 /* Keymap table */
 .keymap {

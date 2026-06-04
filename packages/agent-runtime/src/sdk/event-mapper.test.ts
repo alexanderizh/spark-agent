@@ -179,6 +179,83 @@ describe('mapSDKMessageToEvents', () => {
     ])
   })
 
+  it('accumulates subagent token usage from parent_tool_use_id messages and attaches to subagent_completed', () => {
+    const toolNamesById = new Map<string, string>()
+    toolNamesById.set('agent-tool-usage', 'subagent')
+    const ctx = { sessionId: 'session-1', turnId: 'turn-1', toolNamesById }
+
+    // Main agent spawns the subagent
+    const spawn: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'assistant-spawn',
+      session_id: 'sdk-session',
+      parent_tool_use_id: null,
+      message: {
+        role: 'assistant',
+        content: [{
+          type: 'tool_use',
+          id: 'agent-tool-usage',
+          name: 'Agent',
+          input: { agent: 'Researcher', description: 'Find news', prompt: 'Search news' },
+        }],
+      },
+    }
+    mapSDKMessageToEvents(spawn, ctx)
+
+    // Subagent emits two internal assistant messages (each carries parent_tool_use_id + usage)
+    const inner1: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'inner-1',
+      session_id: 'sdk-session',
+      parent_tool_use_id: 'agent-tool-usage',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'searching...' }],
+        usage: { input_tokens: 1200, output_tokens: 80 },
+      },
+    }
+    const inner2: SDKAssistantMessage = {
+      type: 'assistant',
+      uuid: 'inner-2',
+      session_id: 'sdk-session',
+      parent_tool_use_id: 'agent-tool-usage',
+      message: {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'summarizing...' }],
+        usage: { input_tokens: 800, output_tokens: 120 },
+      },
+    }
+    mapSDKMessageToEvents(inner1, ctx)
+    mapSDKMessageToEvents(inner2, ctx)
+
+    // tool_result returns to main agent
+    const result: SDKUserMessage = {
+      type: 'user',
+      uuid: 'user-1',
+      session_id: 'sdk-session',
+      message: {
+        role: 'user',
+        content: [{
+          type: 'tool_result',
+          tool_use_id: 'agent-tool-usage',
+          content: 'Headlines: A, B, C',
+        }],
+      },
+    }
+    const events = mapSDKMessageToEvents(result, ctx)
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'subagent_completed',
+        toolCallId: 'agent-tool-usage',
+        name: 'Researcher',
+        status: 'success',
+        inputTokens: 2000,
+        outputTokens: 200,
+      }),
+    ])
+  })
+
   it('emits subagent_completed with error status on failed tool_result', () => {
     const toolNamesById = new Map<string, string>()
     toolNamesById.set('agent-tool-2', 'subagent')

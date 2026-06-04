@@ -80,6 +80,11 @@ export interface OpenWorkspaceParams {
   create?: boolean
 }
 
+export interface RelocateWorkspaceParams {
+  rootPath: string
+  relocatedFrom?: string[]
+}
+
 const DEFAULT_TREE_DEPTH = 3
 const MAX_TREE_DEPTH = 5
 const MAX_TREE_ENTRIES = 1000
@@ -203,6 +208,34 @@ export class WorkspaceService {
     this.currentWorkspace = updated
     return updated
   }
+
+  async relocateWorkspace(id: string, params: RelocateWorkspaceParams): Promise<WorkspaceRow> {
+    const resolved = path.resolve(params.rootPath)
+    await fs.mkdir(resolved, { recursive: true })
+    await assertDirectory(resolved)
+
+    const current = this.repo.findByIdOrFail(id)
+    const previousRoot = path.resolve(current.root_path)
+    if (previousRoot === resolved) {
+      if (this.currentWorkspace?.id === id) this.currentWorkspace = current
+      return current
+    }
+
+    const relocatedFrom = Array.from(new Set([
+      ...('relocated_from_json' in current
+        ? parseRelocatedFrom(current.relocated_from_json)
+        : []),
+      previousRoot,
+      ...(params.relocatedFrom ?? []),
+    ]))
+    this.repo.relocate(id, { rootPath: resolved, relocatedFrom })
+    const updated = this.repo.findByIdOrFail(id)
+
+    if (this.currentWorkspace?.id === id) {
+      this.currentWorkspace = updated
+    }
+    return updated
+  }
 }
 
 function clampDepth(value: number): number {
@@ -247,6 +280,16 @@ async function readVisibleChildren(dirPath: string): Promise<import('node:fs').D
 
 function toPosixPath(value: string): string {
   return value.replace(/\\/g, '/')
+}
+
+function parseRelocatedFrom(value: string | null): string[] {
+  if (value == null || value.trim() === '') return []
+  try {
+    const parsed = JSON.parse(value) as unknown
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : []
+  } catch {
+    return []
+  }
 }
 
 async function assertDirectory(rootPath: string): Promise<void> {

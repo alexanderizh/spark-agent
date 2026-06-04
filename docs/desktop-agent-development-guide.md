@@ -1706,6 +1706,8 @@ Workspace 功能:
 
 - 多项目打开。
 - 文件树。
+- “不使用项目” 会话使用 `userData/projects/no-project` 这样的持久目录，而不是系统 `/tmp` / `/var/folders`。
+- 发现历史 no-project workspace 仍指向已失效的临时目录时，主进程应在会话发送前自动迁移到持久目录；若目录缺失则自动重建，避免 `WORKSPACE_UNAVAILABLE`。
 - Git 状态。
 - 代码搜索。
 - 终端。
