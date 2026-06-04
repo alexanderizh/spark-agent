@@ -12,6 +12,10 @@ import * as keystore from '@spark/shared/keystore'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('provider.service')
+type ProviderModelType = NonNullable<ProviderProfile['modelType']>
+type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
+const PROVIDER_MODEL_TYPES = new Set<ProviderModelType>(['image', 'text', 'multimodal', 'voice', 'video'])
+const IMAGE_API_TYPES = new Set<ImageGenApiType>(['sync', 'async', 'auto'])
 
 function rowToProfile(row: {
   id: string
@@ -35,7 +39,9 @@ function rowToProfile(row: {
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
-    ...(config.modelType !== undefined && { modelType: config.modelType }),
+    modelType: normalizeModelType(config.modelType),
+    ...(config.imageProvider !== undefined && { imageProvider: config.imageProvider }),
+    ...(config.imageApiType !== undefined && { imageApiType: config.imageApiType }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -62,6 +68,8 @@ export class ProviderService {
     sonnetModel?: string
     opusModel?: string
     modelType?: string
+    imageProvider?: string | null
+    imageApiType?: 'sync' | 'async' | 'auto' | null
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -95,7 +103,9 @@ export class ProviderService {
         ...(params.haikuModel !== undefined && params.haikuModel.trim().length > 0 && { haikuModel: params.haikuModel.trim() }),
         ...(params.sonnetModel !== undefined && params.sonnetModel.trim().length > 0 && { sonnetModel: params.sonnetModel.trim() }),
         ...(params.opusModel !== undefined && params.opusModel.trim().length > 0 && { opusModel: params.opusModel.trim() }),
-        ...(params.modelType !== undefined && { modelType: params.modelType }),
+        ...(params.modelType !== undefined && { modelType: normalizeModelType(params.modelType) }),
+        ...(params.imageProvider !== undefined && { imageProvider: params.imageProvider }),
+        ...(params.imageApiType !== undefined && { imageApiType: params.imageApiType }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
@@ -122,6 +132,8 @@ export class ProviderService {
     sonnetModel?: string | null
     opusModel?: string | null
     modelType?: string
+    imageProvider?: string | null
+    imageApiType?: 'sync' | 'async' | 'auto' | null
     apiKey?: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -147,7 +159,9 @@ export class ProviderService {
       params.codexApiKind !== undefined ||
       params.supportsMillionContext !== undefined ||
       tierTouched ||
-      params.modelType !== undefined
+      params.modelType !== undefined ||
+      params.imageProvider !== undefined ||
+      params.imageApiType !== undefined
         ? { ...existingConfig }
         : undefined
 
@@ -192,7 +206,16 @@ export class ProviderService {
       else delete newConfig.opusModel
     }
     if (newConfig !== undefined && params.modelType !== undefined) {
-      newConfig.modelType = params.modelType
+      newConfig.modelType = normalizeModelType(params.modelType)
+    }
+    if (newConfig !== undefined && params.imageProvider !== undefined) {
+      const v = params.imageProvider?.trim()
+      if (v != null && v.length > 0) newConfig.imageProvider = v
+      else delete newConfig.imageProvider
+    }
+    if (newConfig !== undefined && params.imageApiType !== undefined) {
+      if (params.imageApiType != null) newConfig.imageApiType = params.imageApiType
+      else delete newConfig.imageApiType
     }
 
     this.repo.update(params.id, {
@@ -366,7 +389,9 @@ interface ProviderConfig {
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
-  modelType?: string
+  modelType?: ProviderModelType
+  imageProvider?: string | null
+  imageApiType?: ImageGenApiType | null
 }
 
 function normalizeProviderType(providerType: string): 'anthropic' | 'openai' {
@@ -380,13 +405,40 @@ function normalizeModelIds(defaultModel: string, modelIds?: string[]): string[] 
   return [...new Set(normalized)]
 }
 
-function normalizeProviderConfig(config: ProviderConfig): Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> & Omit<ProviderConfig, 'defaultModel' | 'modelIds'> {
+type NormalizedProviderConfig = Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> & Omit<ProviderConfig, 'defaultModel' | 'modelIds'>
+
+function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConfig {
   const defaultModel = (config.defaultModel ?? config.model ?? '').trim()
-  return {
+  const modelType = config.modelType !== undefined ? normalizeModelType(config.modelType) : undefined
+  const imageProvider = modelType === 'image'
+    ? (config.imageProvider?.trim() || 'openai')
+    : undefined
+  const imageApiType = modelType === 'image'
+    ? normalizeImageApiType(config.imageApiType)
+    : undefined
+  const normalized: NormalizedProviderConfig = {
     ...config,
     defaultModel,
     modelIds: normalizeModelIds(defaultModel, config.modelIds),
   }
+  if (modelType !== undefined) normalized.modelType = modelType
+  if (imageProvider !== undefined) normalized.imageProvider = imageProvider
+  else delete normalized.imageProvider
+  if (imageApiType !== undefined) normalized.imageApiType = imageApiType
+  else delete normalized.imageApiType
+  return normalized
+}
+
+function normalizeModelType(value: unknown): ProviderModelType {
+  return typeof value === 'string' && PROVIDER_MODEL_TYPES.has(value as ProviderModelType)
+    ? value as ProviderModelType
+    : 'multimodal'
+}
+
+function normalizeImageApiType(value: unknown): ImageGenApiType {
+  return typeof value === 'string' && IMAGE_API_TYPES.has(value as ImageGenApiType)
+    ? value as ImageGenApiType
+    : 'sync'
 }
 
 function getHealthCheckEndpoint(providerType: string, apiEndpoint?: string): string {
@@ -443,7 +495,9 @@ function rowToExportProfile(row: {
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
-    ...(config.modelType !== undefined && { modelType: config.modelType }),
+    modelType: normalizeModelType(config.modelType),
+    ...(config.imageProvider !== undefined && { imageProvider: config.imageProvider }),
+    ...(config.imageApiType !== undefined && { imageApiType: config.imageApiType }),
   }
 }
 
@@ -462,7 +516,9 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
-  modelType?: string
+  modelType?: ProviderModelType
+  imageProvider?: string | null
+  imageApiType?: ImageGenApiType | null
 } {
   return {
     defaultModel: profile.defaultModel,
@@ -474,5 +530,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.sonnetModel != null && profile.sonnetModel.length > 0 && { sonnetModel: profile.sonnetModel }),
     ...(profile.opusModel != null && profile.opusModel.length > 0 && { opusModel: profile.opusModel }),
     ...(profile.modelType !== undefined && { modelType: profile.modelType }),
+    ...(profile.imageProvider !== undefined && { imageProvider: profile.imageProvider }),
+    ...(profile.imageApiType !== undefined && { imageApiType: profile.imageApiType }),
   }
 }

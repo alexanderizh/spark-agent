@@ -152,6 +152,7 @@ const ProviderKindSchema = z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 
 
 export const ProviderModelTypeSchema = z.enum(['image', 'text', 'multimodal', 'voice', 'video'])
 export type ProviderModelType = z.infer<typeof ProviderModelTypeSchema>
+export const ImageGenApiTypeSchema = z.enum(['sync', 'async', 'auto'])
 
 export const ProviderCreateRequestSchema = z.object({
   name: z.string().min(1).max(100),
@@ -171,6 +172,10 @@ export const ProviderCreateRequestSchema = z.object({
   opusModel: z.string().min(1).max(200).optional(),
   /** 模型能力类型 */
   modelType: ProviderModelTypeSchema.optional().default('multimodal'),
+  /** 图片模型供应商类型 */
+  imageProvider: z.string().min(1).max(80).nullable().optional(),
+  /** 图片模型调用方式 */
+  imageApiType: ImageGenApiTypeSchema.nullable().optional(),
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
   ctx.addIssue({
@@ -196,6 +201,10 @@ export const ProviderUpdateRequestSchema = z.object({
   opusModel: z.string().min(1).max(200).nullable().optional(),
   /** 模型能力类型 */
   modelType: ProviderModelTypeSchema.optional(),
+  /** 图片模型供应商类型 */
+  imageProvider: z.string().min(1).max(80).nullable().optional(),
+  /** 图片模型调用方式 */
+  imageApiType: ImageGenApiTypeSchema.nullable().optional(),
 })
 
 export const ProviderDeleteRequestSchema = z.object({

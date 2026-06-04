@@ -87,6 +87,34 @@ describe('ProviderService', () => {
     expect(profile.modelIds).toEqual(['gpt-4o-mini'])
   })
 
+  it('createProvider stores image provider routing fields', async () => {
+    const profile = await service.createProvider({
+      name: 'APIMart Images',
+      provider: 'openai',
+      defaultModel: 'gpt-image-2',
+      modelIds: ['gpt-image-2'],
+      apiEndpoint: 'https://api.apimart.ai/v1',
+      apiKey: 'sk-image',
+      modelType: 'image',
+      imageProvider: 'apimart',
+      imageApiType: 'async',
+    })
+
+    expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
+      config: {
+        defaultModel: 'gpt-image-2',
+        modelIds: ['gpt-image-2'],
+        apiEndpoint: 'https://api.apimart.ai/v1',
+        modelType: 'image',
+        imageProvider: 'apimart',
+        imageApiType: 'async',
+      },
+    }))
+    expect(profile.modelType).toBe('image')
+    expect(profile.imageProvider).toBe('apimart')
+    expect(profile.imageApiType).toBe('async')
+  })
+
   it('createProvider stores custom apiEndpoint in config and returned profile', async () => {
     const profile = await service.createProvider({
       name: 'OpenAI Compatible',

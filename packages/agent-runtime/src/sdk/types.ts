@@ -286,6 +286,7 @@ export interface SDKExecutorConfig {
   workspaceRootPath: string
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
+  imageGenerationMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined

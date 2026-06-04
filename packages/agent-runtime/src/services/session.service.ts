@@ -1,6 +1,7 @@
 import crypto from 'node:crypto'
 import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { stat } from 'node:fs/promises'
 import {
   EventRepository,
@@ -86,6 +87,10 @@ export type QuestionHandler = (
 ) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
 type ActiveExecution = { cancel(): void }
+type ImageGenerationRuntimeContext = {
+  mcpServer: SDKMcpServerConfig
+  systemPrompt: string
+}
 interface FirstTurnTitleContext {
   providerType: string
   apiKey: string
@@ -738,6 +743,7 @@ export class SessionService {
         agentDisabledSkillIds: agent.disabledSkillIds,
       },
     )
+    const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
@@ -749,6 +755,7 @@ export class SessionService {
     const composedSkillSystemPrompt = joinPromptSections(
       runtimeContext.skillSystemPrompt,
       projectContext.skillSystemPrompt,
+      imageGenerationContext?.systemPrompt,
     )
 
     // Initialize seq counter from existing event count
@@ -949,6 +956,9 @@ export class SessionService {
         ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
         ...(composedSkillSystemPrompt != null
           ? { skillSystemPrompt: composedSkillSystemPrompt }
+          : {}),
+        ...(imageGenerationContext != null
+          ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
           : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
@@ -1173,6 +1183,9 @@ export class SessionService {
 
     // Build MCP server config from our McpService for the SDK
     const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
+    if (config.imageGenerationMcpServer != null) {
+      mcpServers.spark_image = config.imageGenerationMcpServer
+    }
 
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
@@ -1225,6 +1238,9 @@ export class SessionService {
     const sdkConfig: SDKExecutorConfig = {
       ...config,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
+      ...(config.imageGenerationMcpServer != null
+        ? { allowedTools: mergeUniqueStrings(config.allowedTools, ['mcp__spark_image__generate_image']) }
+        : {}),
     }
 
     // Fire-and-forget
@@ -1315,6 +1331,73 @@ export class SessionService {
       }
     }
     return result
+  }
+
+  private async resolveImageGenerationContext(workspaceRootPath: string): Promise<ImageGenerationRuntimeContext | null> {
+    const providerRepo = new ProviderProfileRepository(this.db)
+    if (typeof providerRepo.listAll !== 'function') return null
+    const imageProvider = providerRepo
+      .listAll()
+      .find((row) => {
+        if (row.enabled !== 1) return false
+        try {
+          const config = JSON.parse(row.config_json) as { modelType?: string }
+          return config.modelType === 'image'
+        } catch {
+          return false
+        }
+      })
+    if (imageProvider == null || imageProvider.keystore_ref == null) return null
+
+    const apiKey = await keystore.getSecret(imageProvider.keystore_ref as keystore.KeystoreRef)
+    if (apiKey == null || apiKey.trim().length === 0) return null
+
+    const config = JSON.parse(imageProvider.config_json) as {
+      defaultModel?: string
+      model?: string
+      apiEndpoint?: string
+      imageProvider?: string | null
+      imageApiType?: 'sync' | 'async' | 'auto' | null
+    }
+    const model = (config.defaultModel ?? config.model ?? '').trim()
+    if (!model) return null
+
+    const serverPath = resolveImageGenerationMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Image generation provider configured but MCP server script was not found')
+      return null
+    }
+
+    const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'images')
+    const providerName = config.imageProvider?.trim() || 'openai'
+    const apiType = config.imageApiType ?? 'sync'
+    return {
+      mcpServer: {
+        type: 'stdio',
+        command: process.execPath,
+        args: [serverPath],
+        cwd: workspaceRootPath,
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          SPARK_IMAGE_API_KEY: apiKey,
+          SPARK_IMAGE_MODEL: model,
+          SPARK_IMAGE_PROVIDER: providerName,
+          SPARK_IMAGE_API_TYPE: apiType,
+          SPARK_IMAGE_OUTPUT_DIR: outputDir,
+          ...(config.apiEndpoint != null && config.apiEndpoint.trim().length > 0
+            ? { SPARK_IMAGE_BASE_URL: config.apiEndpoint.trim() }
+            : {}),
+        },
+      },
+      systemPrompt: buildImageGenerationSystemPrompt({
+        name: imageProvider.name,
+        model,
+        provider: providerName,
+        apiType,
+        outputDir,
+        ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
+      }),
+    }
   }
 
   private resolveAgent(agentId: string | undefined): AgentItem {
@@ -2231,6 +2314,48 @@ function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem 
   const workflowPrompt = workflow != null ? buildWorkflowSystemPrompt(workflow) : ''
   if (workflowPrompt.trim().length > 0) sections.push(workflowPrompt)
   return sections.join('\n\n')
+}
+
+function resolveImageGenerationMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/image-generation-mcp-server.mjs'),
+    path.resolve(here, '../tools/image-generation-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/image-generation-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function buildImageGenerationSystemPrompt(input: {
+  name: string
+  model: string
+  provider: string
+  apiType: string
+  outputDir: string
+  apiEndpoint?: string
+}): string {
+  return [
+    '## Image Generation Capability',
+    'The current Spark Agent runtime has a configured image generation model.',
+    '',
+    `- Configuration name: ${input.name}`,
+    `- Model ID: ${input.model}`,
+    `- Image provider: ${input.provider}`,
+    `- Invocation mode: ${input.apiType}`,
+    `- API base URL: ${input.apiEndpoint ?? '(provider default)'}`,
+    `- Output directory: ${input.outputDir}`,
+    '',
+    'Use `mcp__spark_image__generate_image` when the user explicitly asks to create an image, poster, illustration, visual draft, icon, cover, or other generated image asset.',
+    'Do not ask for or reveal API keys. Credentials are injected only into the local Spark image MCP server.',
+    'If the user gives semantic sizing such as square, portrait, landscape, poster, or banner, translate it to an appropriate `size` value before calling the tool.',
+    'Pass provider-specific fields through `extraJson` only when they are relevant and reasonably supported by the configured provider.',
+    'After success, show the generated `urls` or `files` from the structured result. Local file paths can be shown directly as Markdown image links.',
+    'Do not auto-retry image generation after a provider failure; report the error and suggest model, prompt, size, or provider-configuration adjustments.',
+  ].join('\n')
+}
+
+function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
+  return [...new Set([...(a ?? []), ...b])]
 }
 
 function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {

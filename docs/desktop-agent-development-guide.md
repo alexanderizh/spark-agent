@@ -959,6 +959,8 @@ Spark 的 agent 不应被绑定为“只能文本”或“只能代码”。模�
 - Embedding/Rerank: 本地索引、语义检索、上下文召回。
 - Video: 视频理解或生成，后续扩展。
 
+当前实现: 生图模型配置已支持 `modelType=image` + `imageProvider` + `imageApiType`，并在 Claude SDK turn 中通过内部 `spark_image` MCP server 暴露 `mcp__spark_image__generate_image`。配置与运行细节见 [Image Generation Providers](./image-generation-providers.md)。
+
 多模态路由规则:
 
 - 如果用户输入包含图片，优先选择 `visionUnderstanding=true` 的模型。

@@ -281,6 +281,10 @@ export interface ProviderProfile {
   opusModel?: string
   /** 模型能力类型 */
   modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
+  /** 图片模型供应商类型，例如 openai、apimart、openrouter、gemini、seeddance */
+  imageProvider?: string | null
+  /** 图片模型调用方式 */
+  imageApiType?: 'sync' | 'async' | 'auto' | null
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -310,6 +314,10 @@ export interface ProviderCreateRequest {
   opusModel?: string
   /** 模型能力类型 */
   modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
+  /** 图片模型供应商类型，仅 modelType=image 时使用 */
+  imageProvider?: string | null
+  /** 图片模型调用方式，仅 modelType=image 时使用 */
+  imageApiType?: 'sync' | 'async' | 'auto' | null
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -339,6 +347,10 @@ export interface ProviderUpdateRequest {
   isDefault?: boolean
   /** 模型能力类型 */
   modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
+  /** 图片模型供应商类型，仅 modelType=image 时使用 */
+  imageProvider?: string | null
+  /** 图片模型调用方式，仅 modelType=image 时使用 */
+  imageApiType?: 'sync' | 'async' | 'auto' | null
 }
 
 export interface ProviderUpdateResponse {

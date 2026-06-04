@@ -17,7 +17,7 @@ export interface CreateProviderParams {
   id: string
   providerType: string
   name: string
-  config: { defaultModel: string; modelIds: string[]; apiEndpoint?: string; codexApiKind?: 'chat' | 'responses'; supportsMillionContext?: boolean; maxTokens?: number; temperature?: number }
+  config: { defaultModel: string; modelIds: string[]; apiEndpoint?: string; codexApiKind?: 'chat' | 'responses'; supportsMillionContext?: boolean; maxTokens?: number; temperature?: number; modelType?: string; imageProvider?: string | null; imageApiType?: 'sync' | 'async' | 'auto' | null }
   keystoreRef: string
   isDefault?: boolean
 }

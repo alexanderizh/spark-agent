@@ -27,11 +27,28 @@ function copyMigrationsPlugin() {
   }
 }
 
+function copyRuntimeToolsPlugin() {
+  return {
+    name: 'copy-runtime-tools',
+    closeBundle() {
+      const srcDir = resolve(__dirname, '../../packages/agent-runtime/src/tools')
+      const destDir = resolve(__dirname, 'out/main/tools')
+      mkdirSync(destDir, { recursive: true })
+      for (const file of readdirSync(srcDir)) {
+        if (file.endsWith('.mjs')) {
+          copyFileSync(resolve(srcDir, file), resolve(destDir, file))
+        }
+      }
+    },
+  }
+}
+
 export default defineConfig({
   main: {
     plugins: [
       externalizeDepsPlugin({ exclude: ['@spark/protocol', '@spark/storage', '@spark/shared', '@spark/agent-runtime'] }),
       copyMigrationsPlugin(),
+      copyRuntimeToolsPlugin(),
     ],
     resolve: {
       alias: {

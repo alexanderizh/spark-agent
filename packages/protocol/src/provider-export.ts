@@ -46,6 +46,10 @@ export const ProviderExportProfileSchema = z.object({
   codexApiKind: z.enum(['chat', 'responses']).optional(),
   /** 模型能力类型 */
   modelType: z.enum(['image', 'text', 'multimodal', 'voice', 'video']).optional().default('multimodal'),
+  /** 图片模型供应商类型 */
+  imageProvider: z.string().min(1).max(80).nullable().optional(),
+  /** 图片模型调用方式 */
+  imageApiType: z.enum(['sync', 'async', 'auto']).nullable().optional(),
 })
 
 export type ProviderExportProfile = z.infer<typeof ProviderExportProfileSchema>

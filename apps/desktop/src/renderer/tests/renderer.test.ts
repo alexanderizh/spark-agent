@@ -134,7 +134,10 @@ describe('Renderer Smoke Tests', () => {
     })
 
     let selects = container.querySelectorAll<HTMLSelectElement>('select')
-    expect(selects.length).toBe(2)
+    await vi.waitFor(() => {
+      selects = container.querySelectorAll<HTMLSelectElement>('select')
+      expect(selects.length).toBe(3)
+    })
 
     await act(async () => {
       const providerSelect = selects[1]
@@ -144,10 +147,10 @@ describe('Renderer Smoke Tests', () => {
     })
 
     selects = container.querySelectorAll<HTMLSelectElement>('select')
-    expect(selects.length).toBeGreaterThanOrEqual(3)
+    expect(selects.length).toBeGreaterThanOrEqual(4)
 
     await act(async () => {
-      const codexKindSelect = selects[2]
+      const codexKindSelect = selects[3]
       expect(codexKindSelect).toBeDefined()
       if (codexKindSelect == null) throw new Error('Codex API kind select missing')
       setSelectValue(codexKindSelect, 'responses')
