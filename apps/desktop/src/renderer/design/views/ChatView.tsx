@@ -97,6 +97,11 @@ type ComposerAttachment = SessionAttachment & {
   previewPath?: string
   previewUrl?: string
 }
+type MessageAttachment = {
+  type: 'image' | 'file'
+  path: string
+  name?: string
+}
 type ContextMenuItem = {
   key: string
   label: string
@@ -1117,6 +1122,7 @@ function ChatStream({
               key={msg.id}
               timestamp={msg.timestamp}
               blocks={msg.blocks}
+              {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
               onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
             >
               {renderBlocks(msg.blocks)}
@@ -1319,8 +1325,11 @@ function renderBlocks(
             : block.status === 'error'
               ? ('error' as const)
               : null
-        const toolArg = JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
-        const fullToolArg = JSON.stringify(block.toolInput)
+        // 对于 Bash 相关工具，优先显示 command 字段作为完整内容
+        const isBashLike = block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
+        const commandValue = isBashLike && typeof block.toolInput.command === 'string' ? block.toolInput.command : null
+        const toolArg = commandValue ? commandValue.slice(0, surface === 'main' ? 48 : 80) : JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
+        const fullToolArg = commandValue || JSON.stringify(block.toolInput)
         const isPending = block.status === 'pending' || block.status === 'running'
         const isTodoWrite = block.toolName === 'todo_write'
         // 把 todo_write 的输入直接作为预览，避免折叠后还要展开看（todos 数组本身就是状态）
@@ -2611,11 +2620,13 @@ function UserMsg({
   children,
   timestamp,
   blocks,
+  attachments = [],
   onDelete,
 }: {
   children: ReactNode
   timestamp?: string | undefined
   blocks: UIBlock[]
+  attachments?: MessageAttachment[]
   onDelete?: () => void
 }) {
   const textContent = extractTextFromBlocks(blocks)
@@ -2638,6 +2649,7 @@ function UserMsg({
 
   return (
     <div className="msg msg-user">
+      {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
       <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
         <div className="msg-content">{children}</div>
       </div>
@@ -2689,6 +2701,149 @@ function UserMsg({
         />
       )}
     </div>
+  )
+}
+
+function UserMessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
+  const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
+  const fileAttachments = attachments.filter((attachment) => attachment.type === 'file')
+
+  return (
+    <div className="msg-user-attachments">
+      {imageAttachments.length > 0 && (
+        <div className="msg-user-image-row">
+          {imageAttachments.map((attachment) => (
+            <UserMessageImageAttachment
+              key={`${attachment.path}:${attachment.name ?? ''}`}
+              attachment={attachment}
+            />
+          ))}
+        </div>
+      )}
+      {fileAttachments.length > 0 && (
+        <div className="msg-user-file-row">
+          {fileAttachments.map((attachment) => (
+            <div
+              key={`${attachment.path}:${attachment.name ?? ''}`}
+              className="composer-file-chip msg-user-file-chip"
+              title={attachment.name ?? getFileNameFromPath(attachment.path)}
+            >
+              <Icons.File size={14} />
+              <span>{attachment.name ?? getFileNameFromPath(attachment.path)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachment }) {
+  const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
+  const [resolvedSrc, setResolvedSrc] = useState(() => resolveComposerImageSrc(attachment.path))
+  const [imgError, setImgError] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    const initialSrc = resolveComposerImageSrc(attachment.path)
+    setResolvedSrc(initialSrc)
+    setImgError(false)
+
+    const trimmedPath = attachment.path.trim()
+    const lower = trimmedPath.toLowerCase()
+    const needsPreparedPreview =
+      trimmedPath.length > 0 &&
+      !lower.startsWith('http://') &&
+      !lower.startsWith('https://') &&
+      !lower.startsWith('data:') &&
+      !lower.startsWith('blob:') &&
+      !lower.startsWith(`${SAFE_FILE_SCHEME}:`)
+
+    if (!needsPreparedPreview) return () => { cancelled = true }
+
+    void prepareImagePreview({ sourcePath: attachment.path })
+      .then((preview) => {
+        if (!cancelled) setResolvedSrc(preview.fileUrl)
+      })
+      .catch(() => {})
+
+    return () => {
+      cancelled = true
+    }
+  }, [attachment.path, prepareImagePreview])
+
+  const fileName = attachment.name ?? getFileNameFromPath(attachment.path)
+
+  return (
+    <>
+      <div
+        className="msg-user-image-card"
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setMenu({ x: event.clientX, y: event.clientY })
+        }}
+      >
+        <button
+          type="button"
+          className="msg-user-image-button"
+          onClick={() => {
+            if (!imgError) setPreviewOpen(true)
+          }}
+          title={fileName}
+        >
+          {imgError ? (
+            <div className="msg-user-image-fallback" aria-hidden="true">
+              <Icons.Image size={18} />
+            </div>
+          ) : (
+            <img
+              src={resolvedSrc}
+              alt={fileName}
+              className="msg-user-image-thumb"
+              onError={() => setImgError(true)}
+              draggable={false}
+            />
+          )}
+        </button>
+      </div>
+      {previewOpen && !imgError && (
+        <ImagePreviewModal
+          src={resolvedSrc}
+          alt={fileName}
+          fileName={fileName}
+          onClose={() => setPreviewOpen(false)}
+        />
+      )}
+      {menu != null && (
+        <InlineContextMenu
+          x={menu.x}
+          y={menu.y}
+          onClose={() => setMenu(null)}
+          items={[
+            {
+              key: 'preview',
+              label: '预览图片',
+              icon: <Icons.Maximize size={14} />,
+              disabled: imgError,
+              onClick: () => {
+                if (!imgError) setPreviewOpen(true)
+              },
+            },
+            {
+              key: 'copy',
+              label: '复制图片',
+              icon: <Icons.Copy size={14} />,
+              disabled: imgError,
+              onClick: () => {
+                if (!imgError) void copyImageFromSrc(resolvedSrc).catch(() => {})
+              },
+            },
+          ]}
+        />
+      )}
+    </>
   )
 }
 
