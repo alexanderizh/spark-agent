@@ -261,7 +261,7 @@ function ProjectSessionGroup({
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button className="icon-btn item-menu-btn" title="项目操作" onClick={e => e.stopPropagation()}>
-                <Icons.More size={12} />
+                <Icons.More size={13} />
               </button>
             </DropdownMenuTrigger>
             <ActionMenu
