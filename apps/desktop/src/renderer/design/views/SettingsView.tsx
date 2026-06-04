@@ -2565,20 +2565,6 @@ function SystemPromptSection() {
         </div>
       </div>
 
-      {/* ── Tips ── */}
-      <div className="prompt-tips">
-        <div className="prompt-tip-item">
-          <Icons.Zap size={13} className="color-primary" />
-          <span>
-            系统提示词对每个会话生效，可在会话内用{' '}
-            <code className="prompt-code">.spark/prompt.md</code> 覆盖。
-          </span>
-        </div>
-        <div className="prompt-tip-item">
-          <Icons.Zap size={13} className="color-primary" />
-          <span>Agent 级提示词会在多 Agent 配置功能中开放，届时可按角色定制。</span>
-        </div>
-      </div>
     </div>
   )
 }
@@ -4721,6 +4707,13 @@ const HOOK_NODE_LABELS: Record<HookNodeType, { label: string; desc: string }> = 
   session_fail: { label: '任务失败', desc: '任务执行出错' },
 }
 
+const HOOK_NODE_ICONS: Record<HookNodeType, (p: { size?: number; className?: string }) => React.JSX.Element> = {
+  permission_request: Icons.Shield,
+  ask_user_question: Icons.Chat,
+  session_end: Icons.CheckCircle,
+  session_fail: Icons.AlertTriangle,
+}
+
 function HooksSection() {
   const [config, setConfig] = usePersistedSettings(SETTINGS_HOOKS_KEY, DEFAULT_HOOK_CONFIG)
   const [testing, setTesting] = useState<string | null>(null)
@@ -4742,9 +4735,7 @@ function HooksSection() {
   const testHook = async (node: HookNodeType) => {
     setTesting(node)
     try {
-      // 测试播放声音
       await window.spark?.invoke('hook:play-sound', {})
-      // 测试显示通知
       const nodeInfo = HOOK_NODE_LABELS[node]
       await window.spark?.invoke('hook:show-notification', {
         title: `测试：${nodeInfo.label}`,
@@ -4760,55 +4751,67 @@ function HooksSection() {
 
   return (
     <div className="settings-section">
-      <h2>Hooks</h2>
-      <div className="lede">
-        在会话关键节点触发提示音和系统通知，帮助您及时响应 Agent 的状态变化。
-      </div>
-
-      <div className="subsec-h">总开关</div>
-      <div className="settings-card">
-        <SettingsRow
-          title="启用 Hooks"
-          desc="开启后，在关键节点会触发提示音和系统通知"
-          right={
-            <div
-              className={`switch ${config.enabled ? 'on' : ''}`}
-              onClick={() => setConfig({ ...config, enabled: !config.enabled })}
-            />
-          }
+      <div className="row section-header-row">
+        <div className="flex1">
+          <h2 className="section-h2">Hooks</h2>
+          <div className="lede section-lede">
+            在会话关键节点触发提示音和系统通知，帮助您及时响应 Agent 的状态变化。
+          </div>
+        </div>
+        <div
+          className={`switch ${config.enabled ? 'on' : ''}`}
+          onClick={() => setConfig({ ...config, enabled: !config.enabled })}
         />
       </div>
 
       {config.enabled && (
         <>
           <div className="subsec-h">节点配置</div>
-          <div className="settings-card">
+          <div className="hook-nodes-list">
             {(Object.keys(HOOK_NODE_LABELS) as HookNodeType[]).map((node) => {
               const info = HOOK_NODE_LABELS[node]
               const nodeConfig = config.nodes[node]
+              const Icon = HOOK_NODE_ICONS[node]
+              const anyEnabled = nodeConfig.sound || nodeConfig.notification
               return (
-                <div key={node} className="hook-node-row">
-                  <div className="hook-node-info">
-                    <div className="hook-node-label">{info.label}</div>
-                    <div className="hook-node-desc">{info.desc}</div>
+                <div key={node} className="hook-node-card">
+                  <div className="hook-node-header">
+                    <div className="hook-node-icon-wrap">
+                      <Icon size={14} />
+                    </div>
+                    <div className="hook-node-meta flex1 min-w-0">
+                      <div className="hook-node-label">{info.label}</div>
+                      <div className="hook-node-desc">{info.desc}</div>
+                    </div>
+                    <span className={`badge dot ${anyEnabled ? 'success' : ''}`}>
+                      {anyEnabled ? '已启用' : '已关闭'}
+                    </span>
                   </div>
-                  <div className="hook-node-actions">
-                    <label className="hook-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={nodeConfig.sound}
-                        onChange={(e) => updateNodeConfig(node, 'sound', e.target.checked)}
+                  <div className="hook-node-toggles">
+                    <div className="hook-toggle-row">
+                      <div className="hook-toggle-info">
+                        <Icons.Bell size={13} className="hook-toggle-icon" />
+                        <span className="hook-toggle-label">系统通知</span>
+                        <span className="hook-toggle-hint">原生横幅通知，点击聚焦窗口</span>
+                      </div>
+                      <div
+                        className={`switch ${nodeConfig.notification ? 'on' : ''}`}
+                        onClick={() => updateNodeConfig(node, 'notification', !nodeConfig.notification)}
                       />
-                      <span className="hook-checkbox-label">🔊 提示音</span>
-                    </label>
-                    <label className="hook-checkbox">
-                      <input
-                        type="checkbox"
-                        checked={nodeConfig.notification}
-                        onChange={(e) => updateNodeConfig(node, 'notification', e.target.checked)}
+                    </div>
+                    <div className="hook-toggle-row">
+                      <div className="hook-toggle-info">
+                        <Icons.Activity size={13} className="hook-toggle-icon" />
+                        <span className="hook-toggle-label">提示音</span>
+                        <span className="hook-toggle-hint">系统默认提示音</span>
+                      </div>
+                      <div
+                        className={`switch ${nodeConfig.sound ? 'on' : ''}`}
+                        onClick={() => updateNodeConfig(node, 'sound', !nodeConfig.sound)}
                       />
-                      <span className="hook-checkbox-label">🔔 通知</span>
-                    </label>
+                    </div>
+                  </div>
+                  <div className="hook-node-footer">
                     <button
                       className="btn ghost sm"
                       onClick={() => void testHook(node)}
@@ -4828,20 +4831,6 @@ function HooksSection() {
                 </div>
               )
             })}
-          </div>
-
-          <div className="subsec-h">说明</div>
-          <div className="card">
-            <SettingsRow
-              title="提示音"
-              desc="使用系统默认提示音（Windows/macOS 均支持）"
-              right={<span className="badge">系统声音</span>}
-            />
-            <SettingsRow
-              title="系统通知"
-              desc="显示 macOS/Windows 原生横幅通知，点击可聚焦窗口"
-              right={<span className="badge">原生通知</span>}
-            />
           </div>
         </>
       )}

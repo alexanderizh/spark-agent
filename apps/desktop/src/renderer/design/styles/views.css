@@ -10615,6 +10615,97 @@ body.inspector-resizing {
   gap: 4px;
 }
 
+/* ── Hooks settings node cards ── */
+.hook-nodes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.hook-node-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+.hook-node-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--divider);
+}
+.hook-node-icon-wrap {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.hook-node-meta {
+  /* inherits flex1 min-w-0 */
+}
+.hook-node-label {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text);
+  line-height: 1.3;
+}
+.hook-node-desc {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.hook-node-toggles {
+  display: flex;
+  flex-direction: column;
+}
+.hook-toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pad-md);
+  padding: 8px 14px;
+}
+.hook-toggle-row + .hook-toggle-row {
+  border-top: 1px solid color-mix(in srgb, var(--divider) 50%, transparent);
+}
+.hook-toggle-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.hook-toggle-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.hook-toggle-label {
+  font-size: var(--font-sm);
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+}
+.hook-toggle-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hook-node-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 14px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--divider) 40%, transparent);
+  background: color-mix(in srgb, var(--bg-soft) 40%, transparent);
+}
+
 /* Workflow builder */
 .workflow-home {
   flex-direction: column;
