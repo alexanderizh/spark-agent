@@ -16,6 +16,7 @@ import { ChatView } from './design/views/ChatView'
 import { ProjectView } from './design/views/ProjectView'
 import { WorkflowView } from './design/views/WorkflowView'
 import { AgentsView } from './design/views/AgentsView'
+import { BoardView } from './design/views/BoardView'
 import { McpView } from './design/views/McpView'
 import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
@@ -24,7 +25,6 @@ import ProvidersView from './design/views/ProvidersView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
-import { GlobalAssistant } from './design/components/GlobalAssistant'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
 import sparkLogo from './assets/spark-logo.png'
@@ -221,6 +221,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       <div className="sidebar-nav-section">
         {navItem('workflows', 'Workflows', Icons.Workflow)}
         {navItem('agents', 'Agents', Icons.Bot)}
+        {navItem('board', 'Board', Icons.Board)}
         {navItem('skill-store', 'Skills', Icons.Skills)}
         {navItem('providers', 'Providers', Icons.Server)}
       </div>
@@ -499,6 +500,8 @@ function Shell() {
         return <WorkflowView />
       case 'agents':
         return <AgentsView />
+      case 'board':
+        return <BoardView />
       case 'skills':
         return <SkillsView />
       case 'skill-store':
@@ -556,8 +559,6 @@ function Shell() {
         </div>
         {t.view === 'chat' && <BrowserPanelView />}
       </div>
-
-      <GlobalAssistant />
 
       {/* Overlays */}
       {t.showPalette && (

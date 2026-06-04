@@ -289,6 +289,8 @@ export interface SDKExecutorConfig {
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
   imageGenerationMcpServer?: SDKMcpServerConfig | undefined
+  /** Platform management MCP server (auto-injected for all sessions) */
+  platformManagementMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined

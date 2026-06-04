@@ -87,7 +87,13 @@ function InstalledTab() {
   const { toast } = useToast()
 
   const dedupedSkills = useMemo(() => deduplicateSkills(skills), [skills])
-  const filtered = useMemo(() => filterSkills(dedupedSkills, search), [dedupedSkills, search])
+  const filtered = useMemo(() => {
+    const list = filterSkills(dedupedSkills, search)
+    return [
+      ...list.filter((s) => s.id.startsWith('builtin:')),
+      ...list.filter((s) => !s.id.startsWith('builtin:')),
+    ]
+  }, [dedupedSkills, search])
   const visibleInstalled = useMemo(
     () => paginate(filtered, installedPage, SKILL_PAGE_SIZE),
     [filtered, installedPage],

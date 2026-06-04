@@ -82,6 +82,14 @@ export const Icons = {
       <path d="M15.2 15.2 18.8 17 15.2 18.8" />
     </IconBase>
   ),
+  Board: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+    </IconBase>
+  ),
   Workflow: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="3" width="6" height="6" rx="1.5" />

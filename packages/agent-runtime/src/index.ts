@@ -32,6 +32,8 @@ export type {
   UpdateRuleFields,
 } from './services/rules.service.js'
 export { SessionService } from './services/session.service.js'
+export { PlatformBridgeService } from './services/platform-bridge.service.js'
+export type { PlatformBridgeDeps } from './services/platform-bridge.service.js'
 export type {
   ApprovalHandler,
   SessionEventHandler,
