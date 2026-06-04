@@ -4502,6 +4502,8 @@ function ComposerV2({
       selectedProvider,
       sendTurn,
       session?.id,
+      setAttachments,
+      setValue,
       toast,
     ],
   )
@@ -4524,7 +4526,7 @@ function ComposerV2({
     })
     if (truncated) toast.info('单轮最多添加 20 个附件。')
     return added
-  }, [toast])
+  }, [setAttachments, toast])
 
   const handleAddAttachments = useCallback(async () => {
     try {
@@ -4602,9 +4604,12 @@ function ComposerV2({
     [appendAttachments, savePastedImage, toast],
   )
 
-  const handleRemoveAttachment = useCallback((id: string) => {
-    setAttachments((current) => current.filter((attachment) => attachment.id !== id))
-  }, [])
+  const handleRemoveAttachment = useCallback(
+    (id: string) => {
+      setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+    },
+    [setAttachments],
+  )
 
   const handleSend = async () => {
     if (!canSubmit) return
@@ -4722,7 +4727,7 @@ function ComposerV2({
       closeSlashPopup()
       setValue(`/${cmd.name} `)
     },
-    [closeSlashPopup],
+    [closeSlashPopup, setValue],
   )
 
   const handleValueChange = useCallback(
@@ -4735,7 +4740,7 @@ function ComposerV2({
         if (slashOpen) closeSlashPopup()
       }
     },
-    [slashOpen, openSlashPopup, closeSlashPopup],
+    [setValue, slashOpen, openSlashPopup, closeSlashPopup],
   )
 
   // scroll selected item into view
