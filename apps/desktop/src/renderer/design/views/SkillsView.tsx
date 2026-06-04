@@ -144,12 +144,11 @@ function SkillCard({
           {meta.source} · {skill.version}
         </span>
         <div className="flex1" />
-        <button className="icon-btn skill-card-detail-btn">
-          <Icons.Play size={11} />
-        </button>
-        <button className="icon-btn skill-card-toggle">
-          <Icons.More size={11} />
-        </button>
+        {!skill.id.startsWith('builtin:') && (
+          <button className="icon-btn skill-card-toggle">
+            <Icons.More size={11} />
+          </button>
+        )}
       </div>
     </div>
   )

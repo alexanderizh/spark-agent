@@ -310,12 +310,11 @@ function InstalledSkillCard({
           <div className="foot">
             <span>{meta.source} · {skill.version}</span>
             <div className="flex1" />
-            <button className="icon-btn" title="导出">
-              <Icons.Download size={11} />
-            </button>
-            <button className="icon-btn" title="删除" onClick={() => onDelete(skill.id)}>
-              <Icons.Trash size={11} />
-            </button>
+            {!skill.id.startsWith('builtin:') && (
+              <button className="icon-btn" title="删除" onClick={() => onDelete(skill.id)}>
+                <Icons.Trash size={11} />
+              </button>
+            )}
           </div>
         </>
       )}
