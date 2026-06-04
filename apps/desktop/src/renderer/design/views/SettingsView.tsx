@@ -3603,7 +3603,7 @@ function StorageSection() {
               used={formatBytes(stats.cacheBytes)}
               pct={percent(stats.cacheBytes, stats.totalBytes)}
             />
-            <div className="field-hint" style={{ marginTop: 8 }}>
+            <div className="usage-total-hint">
               合计：{formatBytes(stats.totalBytes)} · 数据库位置：{stats.databasePath}
             </div>
           </>

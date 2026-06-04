@@ -7935,10 +7935,12 @@ body.inspector-resizing {
 }
 
 /* ── Settings: Usage row ── */
-.usage-row {
+.usage-row,
+.settings-card-row.usage-row {
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  text-align: left;
   gap: 6px;
 }
 .usage-bar-track {
@@ -7950,6 +7952,12 @@ body.inspector-resizing {
 .usage-bar-fill {
   height: 100%;
   background: var(--primary);
+}
+.usage-total-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  padding: 6px var(--pad-lg) var(--pad-md);
+  border-top: 1px solid color-mix(in srgb, var(--divider) 72%, transparent);
 }
 
 /* ── Settings: Usage Dashboard ── */
