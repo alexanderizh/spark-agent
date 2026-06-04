@@ -134,6 +134,13 @@ type ContextMenuItem = {
   disabled?: boolean
   onClick?: () => void
 }
+type TextEditMenuState = {
+  x: number
+  y: number
+  target: HTMLTextAreaElement | HTMLInputElement
+  hasSelection: boolean
+  isEditable: boolean
+}
 type ChatViewProps = {
   approvalRequest?: PermissionApprovalRequest | null
   onApprovalClose?: (sessionId: string, requestId?: string) => void
@@ -2617,6 +2624,91 @@ function InlineContextMenu({
   )
 }
 
+function TextEditContextMenu({
+  menu,
+  onClose,
+}: {
+  menu: TextEditMenuState
+  onClose: () => void
+}) {
+  const { target, hasSelection, isEditable } = menu
+  const items = useMemo<ContextMenuItem[]>(() => {
+    const result: ContextMenuItem[] = []
+    if (isEditable) {
+      result.push(
+        {
+          key: 'cut',
+          label: '剪切',
+          icon: <Icons.Edit size={14} />,
+          disabled: !hasSelection,
+          onClick: () => editTextSelection(target, 'cut'),
+        },
+        {
+          key: 'copy',
+          label: '复制',
+          icon: <Icons.Copy size={14} />,
+          disabled: !hasSelection,
+          onClick: () => editTextSelection(target, 'copy'),
+        },
+        {
+          key: 'paste',
+          label: '粘贴',
+          icon: <Icons.FilePlus size={14} />,
+          onClick: () => {
+            void editTextSelection(target, 'paste')
+          },
+        },
+      )
+    } else if (hasSelection) {
+      result.push({
+        key: 'copy',
+        label: '复制',
+        icon: <Icons.Copy size={14} />,
+        onClick: () => editTextSelection(target, 'copy'),
+      })
+    }
+    result.push({
+      key: 'select-all',
+      label: '全选',
+      icon: <Icons.CheckSquare size={14} />,
+      onClick: () => {
+        target.focus()
+        target.select()
+      },
+    })
+    return result
+  }, [hasSelection, isEditable, target])
+
+  return <InlineContextMenu x={menu.x} y={menu.y} items={items} onClose={onClose} />
+}
+
+async function editTextSelection(
+  target: HTMLTextAreaElement | HTMLInputElement,
+  action: 'cut' | 'copy' | 'paste',
+): Promise<void> {
+  target.focus()
+  if (action === 'paste') {
+    try {
+      const text = await navigator.clipboard.readText()
+      insertTextIntoControl(target, text)
+    } catch {
+      document.execCommand('paste')
+    }
+    return
+  }
+  document.execCommand(action)
+}
+
+function insertTextIntoControl(
+  target: HTMLTextAreaElement | HTMLInputElement,
+  text: string,
+): void {
+  const start = target.selectionStart ?? target.value.length
+  const end = target.selectionEnd ?? start
+  target.setRangeText(text, start, end, 'end')
+  target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+}
+
 /** 从 blocks 中提取纯文本内容（用于复制） */
 function extractTextFromBlocks(blocks: UIBlock[]): string {
   return blocks
@@ -2657,6 +2749,40 @@ function UserMsg({
     })
   }, [])
 
+  const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
+    if (contextMenu == null) return []
+    const items: ContextMenuItem[] = []
+    if (contextMenu.imageSrc != null) {
+      items.push({
+        key: 'copy-image',
+        label: '复制图片',
+        icon: <Icons.Image size={14} />,
+        onClick: () => {
+          if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+        },
+      })
+    } else if (textContent.length > 0) {
+      items.push({
+        key: 'copy-text',
+        label: '复制内容',
+        icon: <Icons.Copy size={14} />,
+        onClick: () => {
+          void navigator.clipboard.writeText(textContent)
+        },
+      })
+    }
+    if (onDelete != null) {
+      items.push({
+        key: 'delete',
+        label: '删除',
+        icon: <Icons.Trash size={14} />,
+        danger: true,
+        onClick: onDelete,
+      })
+    }
+    return items
+  }, [contextMenu, onDelete, textContent])
+
   return (
     <div className="msg msg-user">
       {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
@@ -2669,45 +2795,12 @@ function UserMsg({
         position="right"
         {...(onDelete ? { onDelete } : {})}
       />
-      {contextMenu != null && (
+      {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            {
-              key: 'copy-text',
-              label: '复制内容',
-              icon: <Icons.Copy size={14} />,
-              disabled: textContent.length === 0,
-              onClick: () => {
-                void navigator.clipboard.writeText(textContent)
-              },
-            },
-            {
-              key: 'copy-image',
-              label: '复制图片',
-              icon: <Icons.Image size={14} />,
-              disabled: contextMenu.imageSrc == null,
-              onClick: () => {
-                if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
-              },
-            },
-            {
-              key: 'delete',
-              label: '删除',
-              icon: <Icons.Trash size={14} />,
-              danger: true,
-              disabled: onDelete == null,
-              ...(onDelete != null ? { onClick: onDelete } : {}),
-            },
-            {
-              key: 'edit',
-              label: '编辑（待开发）',
-              icon: <Icons.Edit size={14} />,
-              disabled: true,
-            },
-          ]}
+          items={contextMenuItems}
         />
       )}
     </div>
@@ -2826,7 +2919,7 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
           onClose={() => setPreviewOpen(false)}
         />
       )}
-      {menu != null && (
+      {menu != null && !imgError && (
         <InlineContextMenu
           x={menu.x}
           y={menu.y}
@@ -2836,18 +2929,14 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
               key: 'preview',
               label: '预览图片',
               icon: <Icons.Maximize size={14} />,
-              disabled: imgError,
-              onClick: () => {
-                if (!imgError) setPreviewOpen(true)
-              },
+              onClick: () => setPreviewOpen(true),
             },
             {
               key: 'copy',
               label: '复制图片',
               icon: <Icons.Copy size={14} />,
-              disabled: imgError,
               onClick: () => {
-                if (!imgError) void copyImageFromSrc(resolvedSrc).catch(() => {})
+                void copyImageFromSrc(resolvedSrc).catch(() => {})
               },
             },
           ]}
@@ -2915,6 +3004,40 @@ function AgentMsg({
     })
   }, [])
 
+  const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
+    if (contextMenu == null) return []
+    const items: ContextMenuItem[] = []
+    if (contextMenu.imageSrc != null) {
+      items.push({
+        key: 'copy-image',
+        label: '复制图片',
+        icon: <Icons.Image size={14} />,
+        onClick: () => {
+          if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+        },
+      })
+    } else if (textContent.length > 0) {
+      items.push({
+        key: 'copy-text',
+        label: '复制内容',
+        icon: <Icons.Copy size={14} />,
+        onClick: () => {
+          void navigator.clipboard.writeText(textContent)
+        },
+      })
+    }
+    if (onDelete != null) {
+      items.push({
+        key: 'delete',
+        label: '删除',
+        icon: <Icons.Trash size={14} />,
+        danger: true,
+        onClick: onDelete,
+      })
+    }
+    return items
+  }, [contextMenu, onDelete, textContent])
+
   return (
     <div
       className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}
@@ -2976,45 +3099,12 @@ function AgentMsg({
           />
         )}
       </div>
-      {contextMenu != null && (
+      {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu
           x={contextMenu.x}
           y={contextMenu.y}
           onClose={() => setContextMenu(null)}
-          items={[
-            {
-              key: 'copy-text',
-              label: '复制内容',
-              icon: <Icons.Copy size={14} />,
-              disabled: textContent.length === 0,
-              onClick: () => {
-                void navigator.clipboard.writeText(textContent)
-              },
-            },
-            {
-              key: 'copy-image',
-              label: '复制图片',
-              icon: <Icons.Image size={14} />,
-              disabled: contextMenu.imageSrc == null,
-              onClick: () => {
-                if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
-              },
-            },
-            {
-              key: 'delete',
-              label: '删除',
-              icon: <Icons.Trash size={14} />,
-              danger: true,
-              disabled: onDelete == null,
-              ...(onDelete != null ? { onClick: onDelete } : {}),
-            },
-            {
-              key: 'edit',
-              label: '编辑（待开发）',
-              icon: <Icons.Edit size={14} />,
-              disabled: true,
-            },
-          ]}
+          items={contextMenuItems}
         />
       )}
     </div>
@@ -4049,6 +4139,7 @@ function ComposerV2({
     initialPrefs.reasoningEffort ?? 'medium',
   )
   const [previewAttachment, setPreviewAttachment] = useState<ComposerAttachment | null>(null)
+  const [textEditMenu, setTextEditMenu] = useState<TextEditMenuState | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
   const lastFocusedDraftBucketRef = useRef<string | null>(null)
@@ -4613,6 +4704,7 @@ function ComposerV2({
 
   const handleSend = async () => {
     if (!canSubmit) return
+    setTextEditMenu(null)
     const text = value.trim() || '请查看附件。'
     const turnAttachments = attachments
     setValue('')
@@ -4732,6 +4824,7 @@ function ComposerV2({
 
   const handleValueChange = useCallback(
     (next: string) => {
+      setTextEditMenu(null)
       setValue(next)
       if (next.startsWith('/')) {
         setSlashFilter(next.slice(1))
@@ -4742,6 +4835,20 @@ function ComposerV2({
     },
     [setValue, slashOpen, openSlashPopup, closeSlashPopup],
   )
+
+  const handleTextContextMenu = useCallback((event: React.MouseEvent<HTMLTextAreaElement>) => {
+    event.preventDefault()
+    const target = event.currentTarget
+    const start = target.selectionStart ?? 0
+    const end = target.selectionEnd ?? start
+    setTextEditMenu({
+      x: event.clientX,
+      y: event.clientY,
+      target,
+      hasSelection: end > start,
+      isEditable: !target.disabled && !target.readOnly,
+    })
+  }, [])
 
   // scroll selected item into view
   useEffect(() => {
@@ -5091,7 +5198,14 @@ function ComposerV2({
               void handlePaste(event)
             }}
             onKeyDown={handleKeyDown}
+            onContextMenu={handleTextContextMenu}
           />
+          {textEditMenu != null && (
+            <TextEditContextMenu
+              menu={textEditMenu}
+              onClose={() => setTextEditMenu(null)}
+            />
+          )}
           <button
             className="composer-expand-btn"
             title={manualExpanded ? '折叠输入框' : '展开输入框'}
