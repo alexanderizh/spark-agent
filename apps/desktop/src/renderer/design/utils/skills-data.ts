@@ -195,8 +195,13 @@ export function useSkills(): UseSkillsResult {
 
   const deleteSkill = useCallback(
     async (id: string) => {
-      await removeSkill({ id })
-      refresh()
+      // Optimistic update: remove from local state immediately to avoid flash/scroll reset
+      setSkills((prev) => prev.filter((s) => s.id !== id))
+      try {
+        await removeSkill({ id })
+      } catch {
+        refresh() // restore correct state on error
+      }
     },
     [removeSkill, refresh]
   )
