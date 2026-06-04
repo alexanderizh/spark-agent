@@ -1,5 +1,7 @@
 import type {
   AgentEvent,
+  TeamA2ATask,
+  TeamA2AReply,
   TurnPromptSnapshotEvent,
   UserQuestionOption,
   UserQuestionPrompt,
@@ -135,6 +137,24 @@ export type UIBlock =
         durationMs?: number
       }>
       finalOutcome: 'success' | 'failure' | 'abandoned'
+    }
+  | {
+      /** Team Mode：Host 调用 Member 的调用卡片（team_dispatch_requested/completed） */
+      kind: 'team_dispatch'
+      dispatchId: string
+      hostAgentId: string
+      memberAgentId: string
+      task: TeamA2ATask
+      state: 'pending' | 'working' | 'completed' | 'failed' | 'canceled'
+      reply?: TeamA2AReply
+    }
+  | {
+      /** Team Mode：被调用 Member 的消息气泡（team_member_message） */
+      kind: 'team_member_message'
+      dispatchId: string
+      memberAgentId: string
+      content: string
+      isStreaming: boolean
     }
 
 export interface ContextUsageSnapshot {
@@ -569,6 +589,99 @@ export class MessageBuilder {
           command: event.command,
           domains: event.domains,
         })
+        break
+      }
+
+      // ─── Team Mode (A2A) ───────────────────────────────────────────────
+      // 所有事件按 seq 全局有序渲染，不分泳道（设计文档 §5.2.2）。Host 调用与
+      // Member 输出都作为 block 追加到当前 Host assistant 消息的时间线中。
+
+      case 'team_dispatch_requested': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        msg.blocks.push({
+          kind: 'team_dispatch',
+          dispatchId: event.dispatchId,
+          hostAgentId: event.hostAgentId,
+          memberAgentId: event.memberAgentId,
+          task: event.task,
+          state: 'working',
+        })
+        break
+      }
+
+      case 'team_member_message': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        // 找到该 dispatch 仍在流式的 member 气泡；delta 追加，complete 收尾
+        let block = [...msg.blocks]
+          .reverse()
+          .find(
+            (b) => b.kind === 'team_member_message' && b.dispatchId === event.dispatchId && b.isStreaming,
+          ) as Extract<UIBlock, { kind: 'team_member_message' }> | undefined
+
+        if (event.mode === 'complete') {
+          if (block) {
+            block.content = event.content
+            block.isStreaming = false
+          } else if (event.content.length > 0) {
+            msg.blocks.push({
+              kind: 'team_member_message',
+              dispatchId: event.dispatchId,
+              memberAgentId: event.memberAgentId,
+              content: event.content,
+              isStreaming: false,
+            })
+          }
+          break
+        }
+
+        if (block) {
+          block.content += event.content
+        } else {
+          msg.blocks.push({
+            kind: 'team_member_message',
+            dispatchId: event.dispatchId,
+            memberAgentId: event.memberAgentId,
+            content: event.content,
+            isStreaming: true,
+          })
+        }
+        break
+      }
+
+      case 'team_member_status': {
+        // 更新对应 dispatch 卡片状态（working/failed 等）
+        for (const msg of this.messages) {
+          const block = msg.blocks.find(
+            (b) => b.kind === 'team_dispatch' && b.dispatchId === event.dispatchId,
+          ) as Extract<UIBlock, { kind: 'team_dispatch' }> | undefined
+          if (block) {
+            if (event.status === 'failed') block.state = 'failed'
+            else if (event.status === 'completed') block.state = 'completed'
+            else if (event.status === 'working' || event.status === 'pending') block.state = 'working'
+            if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+            break
+          }
+        }
+        break
+      }
+
+      case 'team_dispatch_completed': {
+        for (const msg of this.messages) {
+          const block = msg.blocks.find(
+            (b) => b.kind === 'team_dispatch' && b.dispatchId === event.dispatchId,
+          ) as Extract<UIBlock, { kind: 'team_dispatch' }> | undefined
+          if (block) {
+            block.state = event.reply.state
+            block.reply = event.reply
+            if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+          }
+          // 收尾该 dispatch 仍在流式的 member 气泡
+          for (const b of msg.blocks) {
+            if (b.kind === 'team_member_message' && b.dispatchId === event.dispatchId) {
+              b.isStreaming = false
+            }
+          }
+        }
         break
       }
     }

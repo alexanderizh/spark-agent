@@ -31,6 +31,9 @@ import {
 import { SparkInput, SparkTextarea } from '../components/FormControls'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
+import { TeamDispatchCard } from '../components/TeamDispatchCard'
+import { TeamMemberBubble } from '../components/TeamMemberBubble'
+import { TeamInspectorSection } from '../components/TeamInspectorSection'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
@@ -61,6 +64,7 @@ import type {
   SessionAttachment,
   UserQuestionPrompt,
   UserQuestionOption,
+  TeamModeConfig,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
@@ -81,6 +85,12 @@ type ComposerPrefs = {
   permissionMode?: PermissionModeChoice
   reasoningEffort?: SessionReasoningEffort
   agentId?: string
+  /** Team Mode：是否启用团队模式（设计文档 §5.1 持久化到 composer-prefs） */
+  teamMode?: boolean
+  /** Team Mode：上次使用的 Host Agent */
+  teamHostAgentId?: string
+  /** Team Mode：上次勾选的成员 Agent */
+  teamMemberAgentIds?: string[]
 }
 
 type SessionRuntimePatch = {
@@ -210,6 +220,28 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
+  // Team Mode 配置（Phase 1：localStorage 本地持久化；Phase 2 起改走 session.metadata + IPC）
+  const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(() => {
+    const prefs = readComposerPrefs()
+    return {
+      enabled: prefs.teamMode ?? false,
+      hostAgentId: prefs.teamHostAgentId ?? prefs.agentId ?? 'code-agent',
+      memberAgentIds: prefs.teamMemberAgentIds ?? [],
+      maxDepth: 1,
+      allowNesting: false,
+    }
+  })
+  const updateTeamConfig = useCallback((patch: Partial<TeamModeConfig>) => {
+    setTeamConfig((prev) => {
+      const next = { ...prev, ...patch }
+      writeComposerPrefs({
+        teamMode: next.enabled,
+        teamHostAgentId: next.hostAgentId,
+        teamMemberAgentIds: next.memberAgentIds,
+      })
+      return next
+    })
+  }, [])
   const [agentStatus, setAgentStatus] = useState('')
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [contextInputTokens, setContextInputTokens] = useState(0)
@@ -399,6 +431,9 @@ export function ChatView({
               onPickProject={pickProjectFolder}
               onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
+              teamConfig={teamConfig}
+              onChangeTeamConfig={updateTeamConfig}
+              onOpenTeamInspector={() => setShowInspector(true)}
             />
           </div>
         ) : (
@@ -460,6 +495,9 @@ export function ChatView({
               onPickProject={pickProjectFolder}
               onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
+              teamConfig={teamConfig}
+              onChangeTeamConfig={updateTeamConfig}
+              onOpenTeamInspector={() => setShowInspector(true)}
             />
           </>
         )}
@@ -487,6 +525,9 @@ export function ChatView({
           turnPromptSnapshots={turnPromptSnapshots}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
+          teamConfig={teamConfig}
+          agents={agents}
+          onChangeTeamConfig={updateTeamConfig}
           onOpenProjectFolder={() => {
             if (activeWorkspace) void sessionCtx.handleOpenProjectFolder(activeWorkspace)
           }}
@@ -1526,10 +1567,46 @@ function renderBlocks(
           </div>
         )
       }
+      case 'team_dispatch': {
+        return <TeamDispatchBlockView key={i} block={block} />
+      }
+      case 'team_member_message': {
+        return <TeamMemberMessageBlockView key={i} block={block} />
+      }
       default:
         return null
     }
   })
+}
+
+/** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
+function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
+  const { agents } = useSessionSidebar()
+  const memberName = agents.find((a) => a.id === block.memberAgentId)?.name ?? block.memberAgentId
+  const hostName = agents.find((a) => a.id === block.hostAgentId)?.name ?? block.hostAgentId
+  return (
+    <TeamDispatchCard
+      task={block.task}
+      memberName={memberName}
+      hostName={hostName}
+      state={block.state}
+      {...(block.reply != null ? { reply: block.reply } : {})}
+    />
+  )
+}
+
+function TeamMemberMessageBlockView({
+  block,
+}: {
+  block: Extract<UIBlock, { kind: 'team_member_message' }>
+}) {
+  const { agents } = useSessionSidebar()
+  const memberName = agents.find((a) => a.id === block.memberAgentId)?.name ?? block.memberAgentId
+  return (
+    <TeamMemberBubble memberAgentId={block.memberAgentId} memberName={memberName}>
+      <MarkdownText content={block.content} isStreaming={block.isStreaming} />
+    </TeamMemberBubble>
+  )
 }
 
 function ValidationSuggestionCard({
@@ -4078,6 +4155,9 @@ function ComposerV2({
   onPickProject,
   onUseNoProject,
   onSwitchWorkspace,
+  teamConfig,
+  onChangeTeamConfig,
+  onOpenTeamInspector,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -4085,6 +4165,9 @@ function ComposerV2({
   agents: ManagedAgent[]
   selectedProviderId: string
   setSelectedProviderId: (providerId: string) => void
+  teamConfig: TeamModeConfig
+  onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
+  onOpenTeamInspector: () => void
   branchState: BranchState
   contextInputTokens: number
   contextUsage: ContextUsageState | null
@@ -5268,6 +5351,13 @@ function ComposerV2({
             agents={agents}
             selectedAgentId={effectiveAgentId}
             onChange={(agentId) => void handleAgentChange(agentId)}
+            teamConfig={teamConfig}
+            onEnableTeamMode={() =>
+              onChangeTeamConfig({ enabled: true, hostAgentId: effectiveAgentId })
+            }
+            onDisableTeamMode={() => onChangeTeamConfig({ enabled: false })}
+            onChangeHost={(agentId) => onChangeTeamConfig({ hostAgentId: agentId })}
+            onOpenMembers={onOpenTeamInspector}
           />
           <ProviderModelPicker
             icon={<ModelIcon />}
@@ -5579,23 +5669,44 @@ function AgentPicker({
   agents,
   selectedAgentId,
   onChange,
+  teamConfig,
+  onEnableTeamMode,
+  onDisableTeamMode,
+  onChangeHost,
+  onOpenMembers,
 }: {
   agents: ManagedAgent[]
   selectedAgentId: string
   onChange: (agentId: string) => void | Promise<void>
+  teamConfig: TeamModeConfig
+  onEnableTeamMode: () => void
+  onDisableTeamMode: () => void
+  onChangeHost: (agentId: string) => void
+  onOpenMembers: () => void
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  const teamMode = teamConfig.enabled
+  // 团队模式下，选择器代表 Host；否则代表当前对话 Agent。
+  const activeId = teamMode ? teamConfig.hostAgentId : selectedAgentId
   const selected =
-    agents.find((agent) => agent.id === selectedAgentId) ??
+    agents.find((agent) => agent.id === activeId) ??
     agents.find((agent) => agent.id === 'code-agent') ??
     agents[0]
+  const memberCount = teamConfig.memberAgentIds.length
 
   return (
-    <div ref={rootRef} className="composer-select composer-agent-picker" title="Agent">
+    <div ref={rootRef} className="composer-select composer-agent-picker" title={teamMode ? '团队模式' : 'Agent'}>
       <span className="composer-select-icon">
-        {selected?.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
+        {teamMode ? (
+          <Icons.Team size={13} />
+        ) : selected?.builtIn ? (
+          <Icons.Code size={13} />
+        ) : (
+          <Icons.Bot size={13} />
+        )}
       </span>
       <button
         type="button"
@@ -5603,9 +5714,16 @@ function AgentPicker({
         disabled={agents.length === 0}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{selected?.name ?? '编码 Agent'}</span>
+        <span>{teamMode ? `团队模式 · ${selected?.name ?? '编码 Agent'}` : selected?.name ?? '编码 Agent'}</span>
         <Icons.ChevronDown size={12} />
       </button>
+      {teamMode && (
+        <span className="composer-team-chips">
+          <button type="button" className="composer-team-chip" onClick={onOpenMembers} title="管理团队成员">
+            <Icons.Team size={11} /> 成员 {memberCount}
+          </button>
+        </span>
+      )}
       {open && (
         <div className="composer-menu composer-agent-menu">
           {agents.map((agent) => (
@@ -5615,7 +5733,8 @@ function AgentPicker({
               className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
               onClick={() => {
                 setOpen(false)
-                void onChange(agent.id)
+                if (teamMode) onChangeHost(agent.id)
+                else void onChange(agent.id)
               }}
             >
               <span className="composer-menu-item-copy">
@@ -5631,6 +5750,41 @@ function AgentPicker({
               {agent.id === selected?.id && <Icons.Check size={14} />}
             </button>
           ))}
+          <div className="composer-menu-group-title">团队模式</div>
+          {teamMode ? (
+            <button
+              type="button"
+              className="composer-menu-item team-mode-entry"
+              onClick={() => {
+                setOpen(false)
+                onDisableTeamMode()
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  <Icons.X size={13} />
+                  <span>退出团队模式</span>
+                </span>
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="composer-menu-item team-mode-entry"
+              onClick={() => {
+                setOpen(false)
+                onEnableTeamMode()
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  <Icons.Team size={13} />
+                  <span>团队模式（多 Agent 协作）</span>
+                </span>
+                <span className="composer-menu-item-desc">让主持 Agent 调用其他成员协作</span>
+              </span>
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -6582,6 +6736,9 @@ function ChatInspector({
   turnPromptSnapshots,
   width,
   onWidthChange,
+  teamConfig,
+  agents,
+  onChangeTeamConfig,
   onOpenProjectFolder,
 }: {
   session: SessionSummary | null
@@ -6595,6 +6752,9 @@ function ChatInspector({
   turnPromptSnapshots: TurnPromptSnapshotEvent[]
   width: number
   onWidthChange: (width: number) => void
+  teamConfig: TeamModeConfig
+  agents: ManagedAgent[]
+  onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
   onOpenProjectFolder: () => void
 }) {
   const plans = extractPlans(messages)
@@ -6644,6 +6804,25 @@ function ChatInspector({
         onPointerUp={handleResizeEnd}
         onPointerCancel={handleResizeEnd}
       />
+      {teamConfig.enabled && (
+        <TeamInspectorSection
+          config={teamConfig}
+          agents={agents.map((a) => ({
+            id: a.id,
+            name: a.name,
+            description: a.description,
+            builtIn: a.builtIn,
+          }))}
+          onToggleMember={(agentId, enabled) =>
+            onChangeTeamConfig({
+              memberAgentIds: enabled
+                ? [...teamConfig.memberAgentIds, agentId]
+                : teamConfig.memberAgentIds.filter((id) => id !== agentId),
+            })
+          }
+          onChangeConfig={onChangeTeamConfig}
+        />
+      )}
       <div className="inspector-section">
         <h4>会话信息</h4>
         {session ? (

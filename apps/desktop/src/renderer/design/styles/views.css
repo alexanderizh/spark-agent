@@ -12250,3 +12250,326 @@ body.inspector-resizing {
   border-radius: 50%;
   display: inline-block;
 }
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Team Mode（团队模式）群聊式时间线 + Inspector 团队成员
+   设计文档 §5.2 / §5.3。--member-accent 由组件按 agentId hash 注入。
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* AgentPicker 团队模式入口 */
+.composer-agent-menu .composer-menu-group-title {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  padding: 6px 10px 2px;
+  text-transform: none;
+}
+.composer-menu-item.team-mode-entry .composer-menu-item-label {
+  font-weight: 600;
+}
+.composer-team-chips {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.composer-team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 2px 7px;
+  cursor: pointer;
+}
+.composer-team-chip:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* Dispatch 调用卡片 */
+.team-dispatch-card {
+  margin: 8px 0 8px 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--member-accent, var(--primary));
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+}
+.team-dispatch-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+.team-dispatch-card-arrow {
+  color: var(--member-accent, var(--primary));
+}
+.team-dispatch-card-arrow-text {
+  color: var(--text-faint);
+  margin: 0 2px;
+}
+.team-dispatch-card-member {
+  font-weight: 600;
+  color: var(--member-accent, var(--text-strong));
+}
+.team-dispatch-card-task {
+  margin-top: 6px;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.team-dispatch-card-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+.team-dispatch-card-attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 1px 6px;
+}
+.team-dispatch-card-status {
+  margin-top: 8px;
+}
+.team-dispatch-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-xs);
+  border-radius: var(--r-sm);
+  padding: 2px 8px;
+}
+.team-dispatch-chip-running {
+  color: var(--text-muted);
+  background: var(--bg-soft);
+}
+.team-dispatch-chip-running svg {
+  animation: spin 1s linear infinite;
+}
+.team-dispatch-chip-done {
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+.team-dispatch-chip-failed {
+  color: var(--danger);
+  background: var(--danger-bg, color-mix(in srgb, var(--danger) 12%, transparent));
+}
+.team-dispatch-chip-meta {
+  color: var(--text-faint);
+  margin-left: 4px;
+}
+
+/* Member 消息气泡：缩进 32px + 左色条 */
+.team-member-bubble {
+  margin: 6px 0 6px 32px;
+  padding-left: 12px;
+  border-left: 4px solid var(--member-accent, var(--primary));
+}
+.team-member-bubble-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 4px;
+}
+.team-member-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.team-member-name {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-strong);
+}
+.team-member-badge {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+}
+.team-member-bubble-body {
+  font-size: var(--font-sm);
+  color: var(--text);
+}
+
+/* Inspector 团队成员区块 */
+.team-inspector-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.team-inspector-count {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border-radius: 999px;
+  padding: 0 7px;
+  margin-left: 4px;
+}
+.team-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+.team-roster-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+}
+.team-roster-row:hover {
+  background: var(--hover);
+}
+.team-roster-row-host {
+  opacity: 0.85;
+}
+.team-roster-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  flex-shrink: 0;
+}
+.team-roster-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.team-roster-name {
+  font-size: var(--font-sm);
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-roster-desc {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.team-roster-host-badge {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border-radius: var(--r-sm);
+  padding: 1px 7px;
+}
+.team-roster-toggle {
+  width: 34px;
+  height: 18px;
+  border-radius: 999px;
+  border: none;
+  background: var(--border-strong, var(--border));
+  position: relative;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+.team-roster-toggle.on {
+  background: var(--primary);
+}
+.team-roster-toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.team-roster-toggle.on .team-roster-toggle-knob {
+  transform: translateX(16px);
+}
+.team-roster-empty {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  padding: 6px 8px;
+}
+.team-roster-invite,
+.team-roster-advanced-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 8px;
+  align-self: flex-start;
+}
+.team-roster-invite:hover,
+.team-roster-advanced-toggle:hover {
+  color: var(--primary);
+}
+.team-roster-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--divider);
+  margin-left: 8px;
+}
+.team-roster-candidate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: none;
+  background: none;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  text-align: left;
+}
+.team-roster-candidate:hover {
+  background: var(--hover);
+}
+.team-roster-candidate-add {
+  margin-left: auto;
+  color: var(--text-faint);
+}
+.team-roster-advanced {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 8px;
+}
+.team-roster-advanced-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+}
+.team-roster-advanced-row select {
+  margin-left: auto;
+}
