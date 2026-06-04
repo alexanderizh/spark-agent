@@ -10,6 +10,7 @@ import '@spark/ui-kit/styles'
 import './design/styles/styles.css'
 import './design/styles/views.css'
 import './design/styles/interactions.css'
+import './design/styles/board.css'
 
 const rootElement = document.getElementById('root')
 if (rootElement == null) {
