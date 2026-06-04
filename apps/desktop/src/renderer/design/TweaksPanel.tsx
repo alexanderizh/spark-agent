@@ -175,7 +175,7 @@ export function TweaksPanel() {
       <div className="twk-body">
         <Section label="主题" />
         <Row label="模式">
-          <Seg value={t.theme} options={['light', 'dark']} onChange={(v) => setTweak('theme', v)} />
+          <Seg value={t.theme} options={['light', 'dark', 'system']} onChange={(v) => setTweak('theme', v)} />
         </Row>
         <Row label="主色">
           <div className="twk-chips" role="radiogroup">

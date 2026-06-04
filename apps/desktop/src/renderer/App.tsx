@@ -24,6 +24,7 @@ import ProvidersView from './design/views/ProvidersView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
+import { GlobalAssistant } from './design/components/GlobalAssistant'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
 import sparkLogo from './assets/spark-logo.png'
@@ -32,6 +33,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
 } from '@spark/ui-kit'
 
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
@@ -116,7 +123,11 @@ function WindowControls() {
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [themeValue, setThemeValue] = useState(t.theme)
   const isResizing = useRef(false)
+
+  // Sync local state if theme changes externally
+  useEffect(() => { setThemeValue(t.theme) }, [t.theme])
 
   const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
     const isActive = t.view === viewId
@@ -236,6 +247,31 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="top" className="user-menu user-menu-portal">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="user-menu-theme-trigger">
+                <Icons.Sun size={14} /> Theme
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="user-menu user-menu-theme-sub flex">
+                <DropdownMenuRadioGroup
+                  value={themeValue}
+                  onValueChange={(v) => {
+                    setThemeValue(v as typeof t.theme)
+                    setTweak('theme', v as typeof t.theme)
+                  }}
+                >
+                  <DropdownMenuRadioItem value="light">
+                    <Icons.Sun size={14} /> Light
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="dark">
+                    <Icons.Moon size={14} /> Dark
+                  </DropdownMenuRadioItem>
+                  <DropdownMenuRadioItem value="system">
+                    <Icons.Monitor size={14} /> System
+                  </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSeparator />
             <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
               <Icons.Settings size={14} /> Settings
             </DropdownMenuItem>
@@ -433,6 +469,11 @@ function Shell() {
   const primary = t.primary
   const info = PRIMARIES[primary]
 
+  // Resolve the effective theme for CSS class (system → light/dark)
+  const resolvedTheme = t.theme === 'system'
+    ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : t.theme
+
   const activeApprovalRequest =
     sessionCtx.activeSessionId != null ? approvalRequests[sessionCtx.activeSessionId] ?? null : null
   const activeUserQuestion =
@@ -487,7 +528,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
     <div
       ref={scaleRef}
-      className={`app window theme-${t.theme} density-${t.density} platform-${window.spark.platform}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
+      className={`app window theme-${resolvedTheme} density-${t.density} platform-${window.spark.platform}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
       style={
         {
           '--primary': primary,
@@ -515,6 +556,8 @@ function Shell() {
         </div>
         {t.view === 'chat' && <BrowserPanelView />}
       </div>
+
+      <GlobalAssistant />
 
       {/* Overlays */}
       {t.showPalette && (

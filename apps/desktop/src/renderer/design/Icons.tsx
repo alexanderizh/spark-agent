@@ -829,6 +829,24 @@ export const Icons = {
     </IconBase>
   ),
 
+  Sun: (p: IconProps) => (
+    <IconBase {...p}>
+      <circle cx="12" cy="12" r="4.5" />
+      <path d="M12 2v2M12 20v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M2 12h2M20 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4" />
+    </IconBase>
+  ),
+  Moon: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z" />
+    </IconBase>
+  ),
+  Monitor: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="2" y="3" width="20" height="13" rx="2" />
+      <path d="M8 21h8M12 16v5" />
+    </IconBase>
+  ),
+
   CMD: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="4" width="18" height="16" rx="2" fill="#0C0C0C" stroke="none" />

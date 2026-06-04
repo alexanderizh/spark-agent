@@ -10,7 +10,9 @@ import { PromptDialog } from './components/PromptDialog'
 
 export type NavGuard = () => boolean | Promise<boolean>
 
-export type ThemeMode = 'light' | 'dark'
+export type ThemeMode = 'light' | 'dark' | 'system'
+/** The resolved (actual) theme after resolving 'system' → 'light' | 'dark'. */
+export type ResolvedTheme = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
 export type ViewId = 'chat' | 'workflows' | 'agents' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
@@ -77,6 +79,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
 export const FLOATING_SIDEBAR_WIDTH_MIN = 170
 export const FLOATING_SIDEBAR_WIDTH_MAX = 420
 
+const THEME_STORAGE_KEY = 'spark-agent:theme'
 const SIDEBAR_STORAGE_KEY = 'spark-agent:sidebar'
 const BROWSER_PANEL_OPEN_KEY = 'spark-agent:browser-panel-open'
 const BROWSER_PANEL_WIDTH_KEY = 'spark-agent:browser-panel-width'
@@ -91,6 +94,11 @@ function readInitialTweaks(): Tweaks {
   if (typeof window === 'undefined') return DEFAULT_TWEAKS
 
   let tweaks = DEFAULT_TWEAKS
+
+  const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY)
+  if (savedTheme === 'light' || savedTheme === 'dark' || savedTheme === 'system') {
+    tweaks = { ...tweaks, theme: savedTheme }
+  }
 
   const savedSidebar = window.localStorage.getItem(SIDEBAR_STORAGE_KEY)
   if (savedSidebar === 'collapsed' || savedSidebar === 'expanded') {
@@ -175,7 +183,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     })
   ), [])
   const applyTweak = useCallback<AppCtx['setTweak']>((key, val) => {
-    if (key === 'sidebar') {
+    if (key === 'theme') {
+      window.localStorage.setItem(THEME_STORAGE_KEY, val as ThemeMode)
+    } else if (key === 'sidebar') {
       window.localStorage.setItem(SIDEBAR_STORAGE_KEY, val as SidebarState)
     } else if (key === 'browserPanelOpen') {
       window.localStorage.setItem(BROWSER_PANEL_OPEN_KEY, String(val))
@@ -215,16 +225,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const root = document.documentElement
     const primary = t.primary
     const info = PRIMARIES[primary]
-    root.dataset.theme = t.theme
     root.style.setProperty('--primary', primary)
     root.style.setProperty('--primary-hover', info?.hover ?? primary)
     root.style.setProperty('--primary-soft', info?.soft ?? 'rgba(99,102,241,0.12)')
-    // Sync Arco Design dark mode
-    if (t.theme === 'dark') {
-      document.body.setAttribute('arco-theme', 'dark')
-    } else {
-      document.body.removeAttribute('arco-theme')
+    // Resolve the actual theme from the user preference
+    const applyResolvedTheme = (resolved: ResolvedTheme) => {
+      root.dataset.theme = resolved
+      if (resolved === 'dark') {
+        document.body.setAttribute('arco-theme', 'dark')
+      } else {
+        document.body.removeAttribute('arco-theme')
+      }
     }
+    if (t.theme === 'system') {
+      const mq = window.matchMedia('(prefers-color-scheme: dark)')
+      applyResolvedTheme(mq.matches ? 'dark' : 'light')
+      const handler = (e: MediaQueryListEvent) => {
+        applyResolvedTheme(e.matches ? 'dark' : 'light')
+      }
+      mq.addEventListener('change', handler)
+      return () => mq.removeEventListener('change', handler)
+    }
+    applyResolvedTheme(t.theme)
   }, [t.theme, t.primary])
   const value = useMemo<AppCtx>(
     () => ({ t, setTweak, registerNavGuard, requestConfirm, requestPrompt }),

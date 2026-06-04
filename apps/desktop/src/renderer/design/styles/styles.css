@@ -520,6 +520,45 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   background: var(--hover);
 }
 
+/* Theme submenu inside user menu */
+.user-menu-theme-trigger {
+  justify-content: flex-start;
+}
+.user-menu-theme-trigger:hover {
+  background: var(--hover);
+}
+.user-menu-theme-sub {
+  min-width: 152px;
+  margin-left: -4px;
+}
+.user-menu-theme-sub [role="menuitemradio"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px 6px 28px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  position: relative;
+}
+.user-menu-theme-sub [role="menuitemradio"]:hover {
+  background: var(--hover);
+}
+.user-menu-theme-sub [role="menuitemradio"] > span:first-child {
+  position: absolute;
+  left: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--primary);
+}
+
 /* ─── Window Controls (Windows/Linux only) ─── */
 .window-controls {
   display: flex;
