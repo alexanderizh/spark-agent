@@ -10227,10 +10227,6 @@ body.inspector-resizing {
   padding: 0;
   display: block;
 }
-/* 部分 SVG 资源是深色实心 logo，在深底上反差不够 — 用 mix-blend 让白色块透明化 */
-.theme-light .provider-logo-img {
-  mix-blend-mode: multiply;
-}
 .provider-logo-fallback {
   font-size: 0.6em;
   font-weight: 700;
@@ -10792,10 +10788,6 @@ body.inspector-resizing {
   object-fit: contain;
   padding: 0;
   display: block;
-}
-/* 部分 SVG 资源是深色实心 logo，在深底上反差不够 — 用 mix-blend 让白色块透明化 */
-.theme-light .provider-logo-img {
-  mix-blend-mode: multiply;
 }
 .provider-logo-fallback {
   font-size: 0.6em;

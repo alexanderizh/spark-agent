@@ -1,6 +1,7 @@
 export type ProviderPresetKind = 'anthropic' | 'openai'
 
-export type ProviderModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
+export type ProviderPresetModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
+export type ImageGenApiType = 'sync' | 'async' | 'auto'
 
 export interface ProviderPreset {
   id: string
@@ -11,7 +12,9 @@ export interface ProviderPreset {
   defaultModel: string
   modelIds: string[]
   sourceUrls: string[]
-  modelType?: ProviderModelType
+  modelType?: ProviderPresetModelType
+  imageProvider?: string
+  imageApiType?: ImageGenApiType
 }
 
 /* ─── Vendor 元数据（用于 UI 展示：emoji logo + 颜色 + 描述） ─── */
@@ -34,33 +37,33 @@ export const VENDOR_CATALOG: VendorMeta[] = [
   { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-4.1 / o4 / DALL-E',  logoPath: 'providers/openai.svg' },
   { id: 'anthropic',        name: 'Anthropic',       emoji: 'A',   color: '#d4a574', desc: 'Claude Sonnet 4 / Opus 4 / Haiku', logoPath: 'providers/anthropic.svg' },
   { id: 'google-gemini',    name: 'Google Gemini',   emoji: 'G',   color: '#4285f4', desc: 'Gemini 2.5 Pro / Flash', logoPath: 'providers/google-gemini.svg' },
-  { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合', logoPath: 'providers/tencent-coding-plan.svg' },
+  { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合', logoPath: 'providers/tencent-coding-plan.png' },
   { id: 'aliyun-bailian-coding-plan', name: '阿里云百炼 Coding Plan', emoji: 'AL', color: '#ff6a00', desc: 'Qwen3 / GLM / Kimi / MiniMax 聚合', logoPath: 'providers/aliyun-bailian-coding-plan.svg' },
-  { id: 'zhipu-glm-coding-plan', name: '智谱 GLM Coding Plan', emoji: 'GL', color: '#3b5cff', desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air', logoPath: 'providers/zhipu-glm-coding-plan.svg' },
-  { id: 'qwen-standard',    name: '通义千问',         emoji: 'QW',  color: '#6f42c1', desc: 'Qwen3 / Qwen3-Coder 系列模型', logoPath: 'providers/qwen-standard.svg' },
+  { id: 'zhipu-glm-coding-plan', name: '智谱 GLM Coding Plan', emoji: 'GL', color: '#3b5cff', desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air', logoPath: 'providers/zhipu-glm-coding-plan.png' },
+  { id: 'qwen-standard',    name: '通义千问',         emoji: 'QW',  color: '#6f42c1', desc: 'Qwen3 / Qwen3-Coder 系列模型', logoPath: 'providers/qwen-standard.png' },
   { id: 'deepseek-api',     name: 'DeepSeek',        emoji: 'DS',  color: '#4d6bfe', desc: 'DeepSeek-V4 Flash / Pro', logoPath: 'providers/deepseek-api.svg' },
-  { id: 'minimax',          name: 'MiniMax',         emoji: 'MM',  color: '#6c5ce7', desc: 'MiniMax-M2.7 / M2.5 系列', logoPath: 'providers/minimax.svg' },
-  { id: 'kimi',             name: 'Kimi',            emoji: 'KM',  color: '#1a1a2e', desc: 'Kimi-K2.6 / K2.5 / K2-Thinking', logoPath: 'providers/kimi.svg' },
+  { id: 'minimax',          name: 'MiniMax',         emoji: 'MM',  color: '#6c5ce7', desc: 'MiniMax-M2.7 / M2.5 系列', logoPath: 'providers/minimax.png' },
+  { id: 'kimi',             name: 'Kimi',            emoji: 'KM',  color: '#1a1a2e', desc: 'Kimi-K2.6 / K2.5 / K2-Thinking', logoPath: 'providers/kimi.png' },
   { id: 'siliconflow',      name: '硅基流动',        emoji: 'SF',  color: '#7c3aed', desc: 'DeepSeek / Qwen / Kimi 聚合', logoPath: 'providers/siliconflow.svg' },
   { id: 'openrouter',       name: 'OpenRouter',      emoji: 'OR',  color: '#6d28d9', desc: 'GPT-4.1 / Claude / Gemini 聚合', logoPath: 'providers/openrouter.svg' },
   { id: 'ollama',           name: 'Ollama',          emoji: 'OL',  color: '#6366f1', desc: '本地模型 · Llama / Qwen / DeepSeek', logoPath: 'providers/ollama.svg' },
 
-  /* ─── 新增 15 个 ─── */
-  { id: 'xiaomi-mimo',      name: '小米 MiMo',       emoji: 'MM',  color: '#ff6900', desc: 'MiMo-V2-Pro / V2-Omni / V2-TTS', logoPath: 'providers/xiaomi-mimo.svg' },
-  { id: 'xfyun',            name: '讯飞星火',         emoji: 'SF',  color: '#1e88e5', desc: 'Spark X2 / X1.5 / Ultra / Pro', logoPath: 'providers/xfyun.svg' },
-  { id: 'jdcloud',          name: '京东云 JoyBuilder', emoji: 'JD',  color: '#e1251b', desc: 'JoyAI-LLM / JoyAI-M3 / Coding Plan', logoPath: 'providers/jdcloud.svg' },
+  /* ─── 新增 15 个（图标来自 coding.mcppla.net 官方平台图标）─── */
+  { id: 'xiaomi-mimo',      name: '小米 MiMo',       emoji: 'MM',  color: '#ff6900', desc: 'MiMo-V2-Pro / V2-Omni / V2-TTS', logoPath: 'providers/xiaomi-mimo.png' },
+  { id: 'xfyun',            name: '讯飞星火',         emoji: 'SF',  color: '#1e88e5', desc: 'Spark X2 / X1.5 / Ultra / Pro', logoPath: 'providers/xfyun.png' },
+  { id: 'jdcloud',          name: '京东云 JoyBuilder', emoji: 'JD',  color: '#e1251b', desc: 'JoyAI-LLM / JoyAI-M3 / Coding Plan', logoPath: 'providers/jdcloud.png' },
   { id: 'ctyun',            name: '天翼云息壤',       emoji: 'CT',  color: '#cf0a2c', desc: '息壤 Tokens · DeepSeek / Qwen / GLM 聚合', logoPath: 'providers/ctyun.svg' },
-  { id: 'baidu',            name: '百度千帆',         emoji: 'BD',  color: '#2932e1', desc: 'ERNIE-4.5 / Qianfan-VL / 文心系列', logoPath: 'providers/baidu.svg' },
-  { id: 'volcengine',       name: '火山方舟',         emoji: 'VK',  color: '#1a73e8', desc: 'Doubao-pro / Doubao-Seed / Seedance', logoPath: 'providers/volcengine.svg' },
-  { id: 'huaweicloud',      name: '华为云盘古',       emoji: 'HW',  color: '#c7000b', desc: 'Pangu-NLP-N4 718B / Pangu Pro MoE', logoPath: 'providers/huaweicloud.svg' },
-  { id: 'unicom',           name: '联通云',           emoji: 'UC',  color: '#003c8f', desc: '元景 32B / 编码助手 AISP', logoPath: 'providers/unicom.svg' },
-  { id: 'ucloud',           name: 'UCloud UModelVerse', emoji: 'UC', color: '#0052d9', desc: 'DeepSeek / Qwen / 文心 / 阶跃 聚合', logoPath: 'providers/ucloud.svg' },
-  { id: 'infini-ai',        name: '无问芯穹 Infini-AI', emoji: 'IA', color: '#0d47a1', desc: 'DeepSeek / Qwen / 20+ 模型 · 多芯异构', logoPath: 'providers/infini-ai.svg' },
+  { id: 'baidu',            name: '百度千帆',         emoji: 'BD',  color: '#2932e1', desc: 'ERNIE-4.5 / Qianfan-VL / 文心系列', logoPath: 'providers/baidu.png' },
+  { id: 'volcengine',       name: '火山方舟',         emoji: 'VK',  color: '#1a73e8', desc: 'Doubao-pro / Doubao-Seed / Seedance', logoPath: 'providers/volcengine.png' },
+  { id: 'huaweicloud',      name: '华为云盘古',       emoji: 'HW',  color: '#c7000b', desc: 'Pangu-NLP-N4 718B / Pangu Pro MoE', logoPath: 'providers/huaweicloud.png' },
+  { id: 'unicom',           name: '联通云',           emoji: 'UC',  color: '#003c8f', desc: '元景 32B / 编码助手 AISP', logoPath: 'providers/unicom.png' },
+  { id: 'ucloud',           name: 'UCloud UModelVerse', emoji: 'UC', color: '#0052d9', desc: 'DeepSeek / Qwen / 文心 / 阶跃 聚合', logoPath: 'providers/ucloud.png' },
+  { id: 'infini-ai',        name: '无问芯穹 Infini-AI', emoji: 'IA', color: '#0d47a1', desc: 'DeepSeek / Qwen / 20+ 模型 · 多芯异构', logoPath: 'providers/infini-ai.png' },
   { id: 'alaya',            name: '九章云极 Alaya Code', emoji: 'AC', color: '#ff5722', desc: 'Kimi / Qwen3.5 / GLM-5 / MiniMax 聚合', logoPath: 'providers/alaya.svg' },
-  { id: 'mthreads',         name: '摩尔线程',         emoji: 'MT',  color: '#00a86b', desc: '夸娥 GPU · Qwen / DeepSeek / MiniMax', logoPath: 'providers/mthreads.svg' },
-  { id: 'kuaishou',         name: '快手可灵',         emoji: 'KS',  color: '#ff6633', desc: '可灵 Kling V1.6 / 视频生成', logoPath: 'providers/kuaishou.svg' },
+  { id: 'mthreads',         name: '摩尔线程',         emoji: 'MT',  color: '#00a86b', desc: '夸娥 GPU · Qwen / DeepSeek / MiniMax', logoPath: 'providers/mthreads.png' },
+  { id: 'kuaishou',         name: '快手可灵',         emoji: 'KS',  color: '#ff6633', desc: '可灵 Kling V1.6 / 视频生成', logoPath: 'providers/kuaishou.png' },
   { id: 'trae',             name: 'Trae (字节)',     emoji: 'TR',  color: '#5b21b6', desc: 'Trae IDE · Doubao-1.5 / DeepSeek', logoPath: 'providers/trae.svg' },
-  { id: 'qwen-tongyi',      name: '阿里通义',         emoji: 'QY',  color: '#ff6a00', desc: 'Qwen3.5 / Qwen3-Max / Qwen-Coder', logoPath: 'providers/qwen-tongyi.svg' },
+  { id: 'qwen-tongyi',      name: '阿里通义',         emoji: 'QY',  color: '#ff6a00', desc: 'Qwen3.5 / Qwen3-Max / Qwen-Coder', logoPath: 'providers/qwen-tongyi.png' },
 ]
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -76,6 +79,88 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     sourceUrls: [
       'https://platform.openai.com/docs/models',
       'https://platform.openai.com/docs/api-reference/chat',
+    ],
+  },
+  {
+    id: 'openai-images',
+    vendorId: 'openai',
+    name: 'OpenAI Images',
+    provider: 'openai',
+    apiEndpoint: 'https://api.openai.com/v1',
+    defaultModel: 'gpt-image-1',
+    modelIds: ['gpt-image-1', 'dall-e-3'],
+    modelType: 'image',
+    imageProvider: 'openai',
+    imageApiType: 'sync',
+    sourceUrls: [
+      'https://platform.openai.com/docs/guides/image-generation',
+      'https://platform.openai.com/docs/api-reference/images',
+    ],
+  },
+  {
+    id: 'apimart-images',
+    vendorId: 'openai',
+    name: 'APIMart Images',
+    provider: 'openai',
+    apiEndpoint: 'https://api.apimart.ai/v1',
+    defaultModel: 'gpt-image-2',
+    modelIds: ['gpt-image-2', 'gpt-image-1'],
+    modelType: 'image',
+    imageProvider: 'apimart',
+    imageApiType: 'async',
+    sourceUrls: [
+      'https://docs.apimart.ai/en/api-reference/images/gpt-image-2/official',
+      'https://docs.apimart.ai/en/api-reference/images/gpt-image-1/generation',
+    ],
+  },
+  {
+    id: 'openrouter-images',
+    vendorId: 'openrouter',
+    name: 'OpenRouter Images',
+    provider: 'openai',
+    apiEndpoint: 'https://openrouter.ai/api/v1',
+    defaultModel: 'google/gemini-2.5-flash-image-preview',
+    modelIds: [
+      'google/gemini-2.5-flash-image-preview',
+      'black-forest-labs/flux.1-kontext-pro',
+      'recraft/recraft-v3',
+    ],
+    modelType: 'image',
+    imageProvider: 'openrouter',
+    imageApiType: 'sync',
+    sourceUrls: [
+      'https://openrouter.ai/docs/guides/overview/multimodal/image-generation',
+    ],
+  },
+  {
+    id: 'google-gemini-images',
+    vendorId: 'google-gemini',
+    name: 'Google Gemini Images',
+    provider: 'openai',
+    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    defaultModel: 'gemini-2.5-flash-image-preview',
+    modelIds: ['gemini-2.5-flash-image-preview', 'imagen-4.0-generate-001'],
+    modelType: 'image',
+    imageProvider: 'gemini',
+    imageApiType: 'sync',
+    sourceUrls: [
+      'https://ai.google.dev/gemini-api/docs/image-generation',
+      'https://ai.google.dev/gemini-api/docs/imagen',
+    ],
+  },
+  {
+    id: 'volcengine-seedream-images',
+    vendorId: 'volcengine',
+    name: '火山方舟 Seedream',
+    provider: 'openai',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+    defaultModel: 'doubao-seedream-4-0-250828',
+    modelIds: ['doubao-seedream-4-0-250828', 'doubao-seedream-3-0-t2i-250415'],
+    modelType: 'image',
+    imageProvider: 'seeddance',
+    imageApiType: 'sync',
+    sourceUrls: [
+      'https://www.volcengine.com/docs/82379/1666945',
     ],
   },
 

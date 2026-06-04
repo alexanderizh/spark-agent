@@ -42,12 +42,14 @@ import type {
   ProviderUpdateRequest,
   ProviderExportPayload,
   ProviderImportMode,
+  ImageGenApiType,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
 
 type ProviderKind = 'anthropic' | 'openai'
 type ProviderModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
+type ImageProviderKind = 'openai' | 'apimart' | 'openrouter' | 'gemini' | 'seeddance' | 'bailian' | 'zhipu' | 'xai' | 'custom'
 type ProviderForm = {
   presetId: string
   name: string
@@ -66,9 +68,40 @@ type ProviderForm = {
   opusModel: string
   /** 模型能力类型 */
   modelType: ProviderModelType
+  /** 图片模型供应商类型 */
+  imageProvider: ImageProviderKind
+  /** 图片模型调用方式 */
+  imageApiType: ImageGenApiType
 }
 
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
+const IMAGE_PROVIDER_OPTIONS: Array<{ value: ImageProviderKind; label: string; endpoint: string; mode: ImageGenApiType }> = [
+  { value: 'openai', label: 'OpenAI Images', endpoint: 'https://api.openai.com/v1', mode: 'sync' },
+  { value: 'apimart', label: 'APIMart', endpoint: 'https://api.apimart.ai/v1', mode: 'async' },
+  { value: 'openrouter', label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1', mode: 'sync' },
+  { value: 'gemini', label: 'Gemini / Imagen', endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai', mode: 'sync' },
+  { value: 'seeddance', label: 'Seedream / Seedance', endpoint: 'https://ark.cn-beijing.volces.com/api/v3', mode: 'sync' },
+  { value: 'bailian', label: '阿里百炼', endpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc', mode: 'async' },
+  { value: 'zhipu', label: '智谱 GLM Image', endpoint: 'https://open.bigmodel.cn/api/paas/v4', mode: 'sync' },
+  { value: 'xai', label: 'xAI Imagine', endpoint: 'https://api.x.ai/v1', mode: 'sync' },
+  { value: 'custom', label: '自定义兼容接口', endpoint: '', mode: 'sync' },
+]
+
+function normalizeImageProvider(value: unknown): ImageProviderKind {
+  const normalized = typeof value === 'string' ? value.trim().toLowerCase() : ''
+  return IMAGE_PROVIDER_OPTIONS.some((option) => option.value === normalized)
+    ? normalized as ImageProviderKind
+    : 'openai'
+}
+
+function normalizeImageApiType(value: unknown): ImageGenApiType {
+  return value === 'async' || value === 'auto' ? value : 'sync'
+}
+
+function imageProviderDefaults(provider: ImageProviderKind): { endpoint: string; mode: ImageGenApiType } {
+  const option = IMAGE_PROVIDER_OPTIONS.find((item) => item.value === provider)
+  return { endpoint: option?.endpoint ?? '', mode: option?.mode ?? 'sync' }
+}
 
 function ProvidersView() {
   const { setTweak, t, requestConfirm } = useApp()
@@ -772,6 +805,8 @@ export function ProviderEditPanel({
     isDefault: false,
     ...EMPTY_TIER_MODELS,
     modelType: 'multimodal',
+    imageProvider: 'openai',
+    imageApiType: 'sync',
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -801,6 +836,8 @@ export function ProviderEditPanel({
               isDefault: false,
               ...EMPTY_TIER_MODELS,
               modelType: preset.modelType ?? 'multimodal',
+              imageProvider: normalizeImageProvider(preset.imageProvider),
+              imageApiType: normalizeImageApiType(preset.imageApiType),
             })
           }, 0)
           return () => window.clearTimeout(id)
@@ -820,6 +857,8 @@ export function ProviderEditPanel({
           isDefault: false,
           ...EMPTY_TIER_MODELS,
           modelType: 'multimodal',
+          imageProvider: 'openai',
+          imageApiType: 'sync',
         })
       }, 0)
       return () => window.clearTimeout(id)
@@ -843,6 +882,8 @@ export function ProviderEditPanel({
             sonnetModel: p.sonnetModel ?? '',
             opusModel: p.opusModel ?? '',
             modelType: (p.modelType as ProviderModelType) ?? 'multimodal',
+            imageProvider: normalizeImageProvider(p.imageProvider),
+            imageApiType: normalizeImageApiType(p.imageApiType),
           })
         }
       })
@@ -894,6 +935,8 @@ export function ProviderEditPanel({
           sonnetModel: sonnet.length > 0 ? sonnet : null,
           opusModel: opus.length > 0 ? opus : null,
           modelType: form.modelType,
+          imageProvider: form.modelType === 'image' ? form.imageProvider : null,
+          imageApiType: form.modelType === 'image' ? form.imageApiType : null,
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
         if (form.apiKey.trim()) req.apiKey = form.apiKey
@@ -913,6 +956,8 @@ export function ProviderEditPanel({
           ...(sonnet.length > 0 && { sonnetModel: sonnet }),
           ...(opus.length > 0 && { opusModel: opus }),
           modelType: form.modelType,
+          imageProvider: form.modelType === 'image' ? form.imageProvider : null,
+          imageApiType: form.modelType === 'image' ? form.imageApiType : null,
         })
       }
       onClose()
@@ -940,6 +985,8 @@ export function ProviderEditPanel({
       supportsMillionContext: false,
       ...EMPTY_TIER_MODELS,
       modelType: preset.modelType ?? 'multimodal',
+      imageProvider: normalizeImageProvider(preset.imageProvider),
+      imageApiType: normalizeImageApiType(preset.imageApiType),
     }))
   }
 
@@ -952,7 +999,9 @@ export function ProviderEditPanel({
           <div className="flex1">
             <div className="h-title">{profileId ? '编辑 Provider' : '添加 Provider'}</div>
             <div className="h-sub">
-              {form.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
+              {form.modelType === 'image'
+                ? `生图模型 · ${form.imageProvider}/${form.imageApiType}`
+                : form.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
               <span className="dot" />
               API Key 鉴权
               {form.presetId !== 'custom' && (
@@ -1006,11 +1055,16 @@ export function ProviderEditPanel({
                   }}
                 >
                   <option value="custom">自定义</option>
-                  {PROVIDER_PRESETS.filter((p) => p.provider === 'anthropic').map((preset) => {
+                  {PROVIDER_PRESETS.map((preset) => {
                     const meta = getVendorMeta(preset.vendorId)
+                    // 同一 vendor 可能对应多个 preset（如 openai-official / openai-images / apimart-images），
+                    // 这里显示 preset 自己的 name 让用户能区分；带 image 类型的 preset 追加提示。
+                    const baseName = preset.name || meta?.name || preset.vendorId
+                    const tag = preset.modelType === 'image' ? ' · 生图' : ''
                     return (
                       <option key={preset.id} value={preset.id}>
-                        {meta?.name ?? preset.vendorId}
+                        {baseName}
+                        {tag}
                       </option>
                     )
                   })}
@@ -1053,7 +1107,17 @@ export function ProviderEditPanel({
               <label>模型类型</label>
               <SparkSelect
                 value={form.modelType}
-                onChange={(e) => set('modelType', e.target.value as ProviderModelType)}
+                onChange={(e) => {
+                  const modelType = e.target.value as ProviderModelType
+                  setForm((prev) => ({
+                    ...prev,
+                    modelType,
+                    provider: modelType === 'image' ? 'openai' : prev.provider,
+                    codexApiKind: modelType === 'image' ? 'chat' : prev.codexApiKind,
+                    imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
+                    imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
+                  }))
+                }}
               >
                 <option value="image">生图模型</option>
                 <option value="text">文本（含编码）模型</option>
@@ -1062,7 +1126,48 @@ export function ProviderEditPanel({
                 <option value="video">视频模型</option>
               </SparkSelect>
 
-              {form.provider === 'openai' && (
+              {form.modelType === 'image' && (
+                <>
+                  <label>
+                    生图接口来源
+                    <span className="sub">决定图片请求 body、路径、尺寸参数和轮询策略</span>
+                  </label>
+                  <SparkSelect
+                    value={form.imageProvider}
+                    onChange={(e) => {
+                      const imageProvider = normalizeImageProvider(e.target.value)
+                      const defaults = imageProviderDefaults(imageProvider)
+                      setForm((prev) => ({
+                        ...prev,
+                        provider: 'openai',
+                        imageProvider,
+                        imageApiType: defaults.mode,
+                        endpoint: defaults.endpoint || prev.endpoint,
+                        codexApiKind: 'chat',
+                      }))
+                    }}
+                  >
+                    {IMAGE_PROVIDER_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </SparkSelect>
+
+                  <label>
+                    生图调用方式
+                    <span className="sub">同步直接返回图片；异步会提交任务并轮询；auto 可兼容混合响应</span>
+                  </label>
+                  <SparkSelect
+                    value={form.imageApiType}
+                    onChange={(e) => set('imageApiType', normalizeImageApiType(e.target.value))}
+                  >
+                    <option value="sync">sync · 同步返回</option>
+                    <option value="async">async · 任务轮询</option>
+                    <option value="auto">auto · 自动兼容</option>
+                  </SparkSelect>
+                </>
+              )}
+
+              {form.provider === 'openai' && form.modelType !== 'image' && (
                 <>
                   <label>
                     Codex API 类型
@@ -1103,7 +1208,9 @@ export function ProviderEditPanel({
                 value={form.endpoint}
                 onChange={(e) => set('endpoint', e.target.value)}
                 placeholder={
-                  form.provider === 'anthropic'
+                  form.modelType === 'image'
+                    ? imageProviderDefaults(form.imageProvider).endpoint || 'https://api.example.com/v1'
+                    : form.provider === 'anthropic'
                     ? 'https://api.anthropic.com'
                     : 'https://api.openai.com/v1'
                 }

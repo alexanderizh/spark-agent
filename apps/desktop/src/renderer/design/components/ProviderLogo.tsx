@@ -1,9 +1,9 @@
 /**
- * ProviderLogo — 统一渲染供应商真实 SVG logo，失败时回退到 emoji + vendor 颜色
+ * ProviderLogo — 统一渲染供应商真实 logo（SVG / PNG），失败时回退到 emoji + vendor 颜色
  *
  * 设计要点
  * ─────────
- * - 使用 Vite `import.meta.glob` 在构建期把所有 providers/*.svg 全部注册为静态资源，
+ * - 使用 Vite `import.meta.glob` 在构建期把所有 providers/*.{svg,png} 全部注册为静态资源，
  *   运行时按 vendor.logoPath 字符串（来自 protocol 的 VENDOR_CATALOG）查表拿到 URL。
  * - 加载失败 / 路径缺失时，渲染 emoji 文字并使用 vendor 颜色作为底色，确保 C 端
  *   视觉不出现"破图"。
@@ -16,10 +16,12 @@ import type { VendorMeta } from '@spark/protocol'
 /**
  * Vite 在 build 时把这段 glob 展开成 `{ '../assets/providers/openai.svg': 'data-url', ... }`。
  * 路径相对于本文件（components/ProviderLogo.tsx）—— 从 components/ 出发上溯两层到 renderer/，
- * 再进 assets/providers/。Vite 用 eager:true 把所有 SVG 直接打进 bundle，不需要运行时动态 import。
+ * 再进 assets/providers/。Vite 用 eager:true 把所有资源直接打进 bundle，不需要运行时动态 import。
+ *
+ * 支持 svg / png 两种格式（从 mcppla.net 抓的官方图标是 png）。
  */
-const svgModules = import.meta.glob<string>(
-  '../../assets/providers/*.svg',
+const assetModules = import.meta.glob<string>(
+  '../../assets/providers/*.{svg,png}',
   { eager: true, query: '?url', import: 'default' },
 )
 
@@ -28,7 +30,7 @@ function resolveLogo(logoPath: string | undefined): string | null {
   if (!logoPath) return null
   // logoPath 不含 ../../assets/ 前缀，需要补齐
   const key = `../../assets/providers/${logoPath.replace(/^providers\//, '')}`
-  return svgModules[key] ?? null
+  return assetModules[key] ?? null
 }
 
 type LogoSize = 'sm' | 'md' | 'lg' | 'xl'
@@ -78,12 +80,14 @@ export function ProviderLogo({
 
   return (
     <span
-      className={`provider-logo provider-logo-${shape} ${className}`}
+      className={`provider-logo provider-logo-${shape} ${showImage ? 'provider-logo-has-image' : ''} ${className}`}
       style={{
         width: px,
         height: px,
         borderRadius: radius,
-        background: vendor?.color ?? 'var(--bg-soft)',
+        // 有真实 logo 时背景透明，让 PNG 自身的色彩完整呈现；
+        // 没有 logo 时用 vendor 颜色作为底色（fallback 文字可读）。
+        background: showImage ? 'transparent' : (vendor?.color ?? 'var(--bg-soft)'),
         color: '#fff',
         ...style,
       }}

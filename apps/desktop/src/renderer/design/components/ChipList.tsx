@@ -163,10 +163,10 @@ export function ChipList({
                   aria-pressed={clickable ? isLocked : undefined}
                   onClick={
                     clickable
-                      ? (e) => {
+                      ? () => {
                           // remove 按钮的 click 会 stopPropagation，所以这里只处理"切换默认"
                           if (isLocked) return
-                          onSelectDefault!(id)
+                          onSelectDefault(id)
                         }
                       : undefined
                   }
@@ -175,7 +175,7 @@ export function ChipList({
                       ? (e) => {
                           if ((e.key === 'Enter' || e.key === ' ') && !isLocked) {
                             e.preventDefault()
-                            onSelectDefault!(id)
+                            onSelectDefault(id)
                           }
                         }
                       : undefined
