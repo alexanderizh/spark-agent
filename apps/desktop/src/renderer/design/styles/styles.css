@@ -311,6 +311,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .platform-win32 .floating-sidebar-header {
   justify-content: flex-start;
 }
+.platform-win32 .floating-sidebar-header .sidebar-hide-btn {
+  order: -1;
+}
 .sidebar-hide-btn {
   -webkit-app-region: no-drag;
 }
@@ -1117,6 +1120,10 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   padding: 0 24px 0 8px;
   font-size: var(--font-xs);
   border-radius: var(--r-sm);
+}
+.select-sm .spark-select-arco.arco-select .arco-select-view,
+.spark-select.sm .spark-select-arco.arco-select .arco-select-view {
+  height: 100%;
 }
 .select-full .spark-select-wrap,
 .spark-select-wrap.full {
