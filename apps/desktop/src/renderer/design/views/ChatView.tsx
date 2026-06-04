@@ -34,6 +34,7 @@ import { MarkdownImage } from '../components/MarkdownImage'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
+import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
@@ -1612,11 +1613,33 @@ function TeamMemberMessageBlockView({
   block: Extract<UIBlock, { kind: 'team_member_message' }>
 }) {
   const { agents } = useSessionSidebar()
-  const memberName = agents.find((a) => a.id === block.memberAgentId)?.name ?? block.memberAgentId
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const member = agents.find((a) => a.id === block.memberAgentId)
+  const memberName = member?.name ?? block.memberAgentId
   return (
-    <TeamMemberBubble memberAgentId={block.memberAgentId} memberName={memberName}>
-      <MarkdownText content={block.content} isStreaming={block.isStreaming} />
-    </TeamMemberBubble>
+    <>
+      <TeamMemberBubble
+        memberAgentId={block.memberAgentId}
+        memberName={memberName}
+        onOpenDetail={() => setDrawerOpen(true)}
+      >
+        <MarkdownText content={block.content} isStreaming={block.isStreaming} />
+      </TeamMemberBubble>
+      {drawerOpen && (
+        <TeamMemberDrawer
+          member={{
+            agentId: block.memberAgentId,
+            name: memberName,
+            description: member?.description ?? '',
+            providerProfileId: member?.providerProfileId ?? null,
+            modelId: member?.modelId ?? null,
+            skillCount: member?.skillIds.length ?? 0,
+            mcpCount: member?.mcpServerIds.length ?? 0,
+          }}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
+    </>
   )
 }
 

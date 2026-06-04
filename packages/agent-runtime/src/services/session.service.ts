@@ -2616,7 +2616,7 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
 }
 
 /** 构建团队花名册 system prompt 段，附加在 [Agent Instructions] 之后（设计文档 §8.2.3） */
-function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
+export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
   if (members.length === 0) return ''
   const lines: string[] = [
     '[Team Roster]',

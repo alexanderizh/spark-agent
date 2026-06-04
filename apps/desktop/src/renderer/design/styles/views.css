@@ -12602,3 +12602,103 @@ body.inspector-resizing {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Team Member 详情抽屉（Phase 5 · §5.5） */
+.team-member-drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.28);
+  display: flex;
+  justify-content: flex-end;
+}
+.team-member-drawer {
+  width: 340px;
+  max-width: 90vw;
+  height: 100%;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+.team-member-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.team-member-drawer-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.team-member-drawer-title {
+  font-size: var(--font-base);
+  font-weight: 600;
+  color: var(--text-strong);
+  flex: 1;
+}
+.team-member-drawer-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+}
+.team-member-drawer-close:hover {
+  color: var(--text);
+}
+.team-member-drawer-desc {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  margin: 0;
+}
+.team-member-drawer-config {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+}
+.team-member-drawer-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--font-sm);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.team-member-drawer-row dt {
+  color: var(--text-faint);
+}
+.team-member-drawer-row dd {
+  color: var(--text);
+  margin: 0;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-member-drawer-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  font-size: var(--font-sm);
+  color: var(--primary);
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.team-member-drawer-edit:hover {
+  background: var(--hover);
+}
