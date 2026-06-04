@@ -1794,7 +1794,7 @@ body.sidebar-resizing {
 }
 .composer-inner > .composer-param-bar {
   position: relative;
-  z-index: 1;
+  z-index: auto;
   margin-top: -14px;
   padding: 22px 12px 5px;
   min-height: 40px;
