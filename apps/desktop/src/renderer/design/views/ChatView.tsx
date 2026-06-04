@@ -7444,10 +7444,7 @@ function UserQuestionWizard({
   return (
     <>
       <div className="user-question-progress">
-        <div>
-          <div className="user-question-kicker">问题 {currentIndex + 1} / {total}</div>
-          <div className="user-question-progress-text">已准备 {answeredCount} / {total}</div>
-        </div>
+        <div className="user-question-kicker">问题 {currentIndex + 1} / {total}</div>
         <div className="user-question-progressbar" aria-hidden="true">
           <div
             className="user-question-progressbar-fill"
@@ -7458,58 +7455,36 @@ function UserQuestionWizard({
 
       <div className="user-question-body">
         <div className="question-item">
-          {currentQuestion.header && <div className="question-header">{currentQuestion.header}</div>}
           <div className="question-text">{currentQuestion.question}</div>
-          <div className="question-meta">
-            <span>{getQuestionTypeLabel(currentQuestion)}</span>
-            <span>{currentQuestion.allowSkip === false ? '需完成' : '可跳过'}</span>
-          </div>
 
           {isChoiceQuestion(currentQuestion) ? (
             <>
               <div className="question-options">
                 {(currentQuestion.options ?? []).map((opt, optIndex) => {
                   const selected = currentDraft.selectedLabel === opt.label
+                  const tooltipText = opt.description ? `${opt.label}\n${opt.description}` : opt.label
                   return (
                     <button
                       key={`${opt.label}-${optIndex}`}
                       className={`question-option ${selected ? 'selected' : ''}`}
                       onClick={() => handleSelectOption(opt)}
                       disabled={submitted}
+                      title={tooltipText}
                     >
                       <div className="option-label">{opt.label}</div>
                       {opt.description && <div className="option-desc">{opt.description}</div>}
                     </button>
                   )
                 })}
-                {currentQuestion.allowOther && (
-                  <button
-                    className={`question-option ${currentDraft.selectedLabel === getOtherOptionLabel(currentQuestion) ? 'selected' : ''}`}
-                    onClick={() =>
-                      updateDraft({
-                        skipped: false,
-                        selectedLabel: getOtherOptionLabel(currentQuestion),
-                        selectedValue: 'other',
-                        text: '',
-                      })}
-                    disabled={submitted}
-                  >
-                    <div className="option-label">{getOtherOptionLabel(currentQuestion)}</div>
-                    <div className="option-desc">输入不在预设选项中的答案</div>
-                  </button>
-                )}
               </div>
-              {showOtherInput && (
-                <div className="user-question-input-wrap">
-                  <SparkInput
-                    value={currentDraft.otherText ?? ''}
-                    onChange={(event) => updateDraft({ skipped: false, otherText: event.target.value })}
-                    placeholder={getOtherPlaceholder(currentQuestion)}
-                    disabled={submitted}
-                    autoFocus
-                  />
-                </div>
-              )}
+              <div className="user-question-input-wrap">
+                <SparkInput
+                  value={currentDraft.otherText ?? ''}
+                  onChange={(event) => updateDraft({ skipped: false, otherText: event.target.value })}
+                  placeholder="补充其他内容（可选）"
+                  disabled={submitted}
+                />
+              </div>
             </>
           ) : (
             <div className="user-question-input-wrap">
@@ -7612,8 +7587,7 @@ function isQuestionAnswered(question: UserQuestionPrompt, draft: UserQuestionDra
   if (draft?.skipped) return true
   if (draft == null) return false
   if (isChoiceQuestion(question)) {
-    if (!draft.selectedLabel) return false
-    return !shouldShowOtherInput(question, draft) || (draft.otherText?.trim().length ?? 0) > 0
+    return !!draft.selectedLabel || (draft.otherText?.trim().length ?? 0) > 0
   }
   return (draft.text?.trim().length ?? 0) > 0
 }
@@ -7632,7 +7606,11 @@ function buildQuestionAnswer(
   const otherText = draft?.otherText?.trim() ?? ''
   const text = draft?.text?.trim() ?? ''
   const answerValue = isChoiceQuestion(question)
-    ? shouldShowOtherInput(question, draft ?? {}) ? otherText : (draft?.selectedValue ?? draft?.selectedLabel ?? '')
+    ? (() => {
+        const selected = draft?.selectedValue ?? draft?.selectedLabel ?? ''
+        if (otherText && selected) return `${selected} | ${otherText}`
+        return otherText || selected
+      })()
     : text
 
   return {
