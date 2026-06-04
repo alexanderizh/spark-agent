@@ -780,7 +780,7 @@ body.sidebar-resizing {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 27px;
+  height: 30px;
   padding: 0 7px 0 22px;
 }
 .chat-item-compact .chat-item-title-compact {
@@ -880,6 +880,7 @@ body.sidebar-resizing {
 .pinned-icon {
   color: var(--primary);
   flex-shrink: 0;
+  transform: rotate(20deg);
 }
 
 /* ---------- TOOL DROPDOWN (IDE / Terminal open) ---------- */
