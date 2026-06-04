@@ -846,9 +846,13 @@ body.sidebar-resizing {
   border-radius: var(--r-md);
   box-shadow: var(--shadow-lg);
   z-index: var(--z-dropdown, 100);
+  position: absolute !important;
+  right: 0 !important;
+  top: 100% !important;
+  left: auto !important;
+  bottom: auto !important;
 }
-.action-menu button,
-.action-menu [role="menuitem"] {
+.action-menu-item {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -860,16 +864,13 @@ body.sidebar-resizing {
   font-size: var(--font-sm);
   text-align: left;
 }
-.action-menu button:hover,
-.action-menu [role="menuitem"]:hover {
+.action-menu-item:hover {
   background: var(--hover);
 }
-.action-menu button.danger,
-.action-menu [data-danger="true"] {
+.action-menu-item.danger {
   color: var(--danger) !important;
 }
-.action-menu button.danger:hover,
-.action-menu [data-danger="true"]:hover {
+.action-menu-item.danger:hover {
   background: color-mix(in srgb, var(--danger) 10%, transparent) !important;
   color: var(--danger) !important;
 }

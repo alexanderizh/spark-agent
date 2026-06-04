@@ -12,6 +12,7 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@spark/ui-kit'
+import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu'
 import { Icons } from './Icons'
 import { SparkInput } from './components/FormControls'
 import {
@@ -61,27 +62,32 @@ function formatRelativeTime(value: string): string {
   return `${Math.floor(diffMs / week)} 周`
 }
 
-/* ─── ActionMenu ─── */
+/* ─── ActionMenu (inline, no Portal — avoids broken portal positioning) ─── */
 function ActionMenu({
   items,
 }: {
   items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
 }) {
   return (
-    <DropdownMenuContent align="end" side="bottom" className="action-menu">
+    <DropdownMenuPrimitive.Content
+      align="end"
+      side="bottom"
+      className="action-menu"
+      onCloseAutoFocus={(e) => e.preventDefault()}
+    >
       {items.map(item => (
-        <DropdownMenuItem
+        <DropdownMenuPrimitive.Item
           key={item.label}
-          danger={item.danger}
+          className={`action-menu-item${item.danger ? ' danger' : ''}`}
           onSelect={() => {
             item.onClick()
           }}
         >
           {item.icon}
           <span>{item.label}</span>
-        </DropdownMenuItem>
+        </DropdownMenuPrimitive.Item>
       ))}
-    </DropdownMenuContent>
+    </DropdownMenuPrimitive.Content>
   )
 }
 
@@ -295,7 +301,6 @@ function ProjectSessionGroup({
                   onTogglePinned={onToggleSessionPinned}
                   onArchive={onArchiveSession}
                   onDelete={onDeleteSession}
-                  onOpenFolder={onOpenSessionFolder}
                 />
               ))}
               {hasMore && !showAllSessions && (
