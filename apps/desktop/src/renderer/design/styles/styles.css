@@ -240,9 +240,9 @@ a:focus-visible,
    ============================================================ */
 .floating-sidebar {
   position: absolute;
-  top: 4px;
-  left: 4px;
-  bottom: 4px;
+  top: 10px;
+  left: 10px;
+  bottom: 10px;
   width: var(--sidebar-w, 210px);
   z-index: 50;
   display: flex;

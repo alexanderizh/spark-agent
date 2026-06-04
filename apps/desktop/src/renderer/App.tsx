@@ -377,7 +377,7 @@ function Shell() {
   // Compute dynamic margin for main content area based on sidebar state
   const sidebarOffset = t.sidebarHidden
     ? 0
-    : t.floatingSidebarWidth + 10 // sidebar width + left-gap(5px) + right-gap(5px)
+    : t.floatingSidebarWidth + 16 // sidebar width + left-gap(10px) + right-gap(6px)
 
   return (
     <ErrorBoundary level="global" name="Shell">

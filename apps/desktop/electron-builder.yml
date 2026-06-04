@@ -14,6 +14,7 @@ mac:
         - universal
   hardenedRuntime: true
   gatekeeperAssess: false
+  x64ArchFiles: '**/browsers/**'
 win:
   icon: resources/icon.ico
 linux:
