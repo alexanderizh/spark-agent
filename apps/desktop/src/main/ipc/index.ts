@@ -178,6 +178,30 @@ async function ensureNoProjectWorkspacePath(workspaceId: string): Promise<void> 
   }
 }
 
+/**
+ * Ensure the persistent no-project workspace directory exists on disk,
+ * even if no no-project workspace record has been created in the DB yet.
+ * This prevents "directory does not exist" errors on first app launch.
+ *
+ * Uses a module-level flag to skip redundant fs.mkdir calls after the first
+ * successful invocation — safe because ensureNoProjectWorkspacePath() still
+ * guards against runtime directory deletion for existing DB workspaces.
+ */
+let _noProjectDirEnsured = false
+export async function ensureNoProjectDirectoryExists(): Promise<void> {
+  if (_noProjectDirEnsured) return
+  const projectsDir = getPersistentProjectsDir()
+  const noProjectDir = getPersistentNoProjectRootPath()
+  try {
+    await fs.mkdir(projectsDir, { recursive: true })
+    await fs.mkdir(noProjectDir, { recursive: true })
+    _noProjectDirEnsured = true
+    log.info(`Ensured no-project directory: ${noProjectDir}`)
+  } catch (err) {
+    log.warn(`Failed to ensure no-project directory: ${err instanceof Error ? err.message : String(err)}`)
+  }
+}
+
 async function ensureSessionWorkspacePaths(sessionId: string): Promise<void> {
   const sessionRepo = new SessionRepository(getDatabase())
   const session = sessionRepo.get(sessionId)
@@ -484,11 +508,13 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:create', async (req) => {
     log.info(`session:create requested, providerProfileId=${req.providerProfileId}`)
+    await ensureNoProjectDirectoryExists()
     return getSessionService().createSession(applyRuntimePermissionDefaults(req))
   })
 
   typedIpcHandle('session:send-turn', async (req) => {
     log.info(`session:send-turn requested, sessionId=${req.sessionId}`)
+    await ensureNoProjectDirectoryExists()
     await ensureSessionWorkspacePaths(req.sessionId)
     return getSessionService().sendTurn({
       sessionId: req.sessionId,

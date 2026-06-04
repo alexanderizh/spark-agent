@@ -33,7 +33,7 @@ app.commandLine.appendSwitch('remote-allow-origins', '*')
 
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
-import { registerAllIpcHandlers } from './ipc/index.js'
+import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
 import { setMainWindow, sendToMainWindow } from './windows/index.js'
 import { getFileWatcherService } from './services/FileWatcherService.js'
 import { getUpdateService } from './services/UpdateService.js'
@@ -260,6 +260,9 @@ async function initializeApp(): Promise<void> {
 
   // 2. 注册 IPC handlers
   registerAllIpcHandlers()
+
+  // 2.5 确保无项目会话目录已初始化（避免首次启动时目录不存在导致错误）
+  await ensureNoProjectDirectoryExists()
 
   // 3. 创建主窗口
   createWindow()
