@@ -17,6 +17,8 @@ import type {
   WorkflowItem,
 } from '@spark/protocol'
 
+type AgentScreen = 'list' | 'detail'
+
 type AgentDraft = {
   id?: string
   name: string
@@ -71,8 +73,6 @@ const EMPTY_DRAFT: AgentDraft = {
   workflowId: '',
 }
 
-const NEW_AGENT_ID = '__new_agent__'
-
 export function AgentsView() {
   const { toast } = useToast()
   const { registerNavGuard, requestConfirm } = useApp()
@@ -82,15 +82,17 @@ export function AgentsView() {
   const [mcpServers, setMcpServers] = useState<McpServerItem[]>([])
   const [rules, setRules] = useState<RuleItem[]>([])
   const [workflows, setWorkflows] = useState<WorkflowItem[]>([])
-  const [selectedId, setSelectedId] = useState<string>('code-agent')
+  const [screen, setScreen] = useState<AgentScreen>('list')
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [draft, setDraft] = useState<AgentDraft>(EMPTY_DRAFT)
   const [baseline, setBaseline] = useState<AgentDraft>(EMPTY_DRAFT)
   const [pendingNew, setPendingNew] = useState(false)
   const [loading, setLoading] = useState(true)
   const dirty = useMemo(() => pendingNew || JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline, pendingNew])
   const dirtyRef = useRef(dirty)
-  const selectedIdRef = useRef(selectedId)
+  const selectedIdRef = useRef<string | null>(selectedId)
   const pendingNewRef = useRef(pendingNew)
+  const screenRef = useRef<AgentScreen>('list')
 
   useEffect(() => {
     dirtyRef.current = dirty
@@ -103,6 +105,10 @@ export function AgentsView() {
   useEffect(() => {
     pendingNewRef.current = pendingNew
   }, [pendingNew])
+
+  useEffect(() => {
+    screenRef.current = screen
+  }, [screen])
 
   const { invoke: listAgents } = useIpcInvoke('agent:list')
   const { invoke: createAgent } = useIpcInvoke('agent:create')
@@ -133,13 +139,20 @@ export function AgentsView() {
       setWorkflows(workflowRes.workflows)
       if (pendingNewRef.current) return
       const currentId = selectedIdRef.current
-      const selected = agentRes.agents.find((agent) => agent.id === currentId) ?? agentRes.agents[0]
-      if (selected != null) {
-        setSelectedId(selected.id)
-        const next = agentToDraft(selected)
-        setDraft(next)
-        setBaseline(next)
-        setPendingNew(false)
+      if (currentId != null) {
+        const selected = agentRes.agents.find((agent) => agent.id === currentId)
+        if (selected != null) {
+          setSelectedId(selected.id)
+          const next = agentToDraft(selected)
+          setDraft(next)
+          setBaseline(next)
+        } else {
+          // Agent was deleted, go back to list
+          selectedIdRef.current = null
+          screenRef.current = 'list'
+          setSelectedId(null)
+          setScreen('list')
+        }
       }
     } finally {
       setLoading(false)
@@ -177,27 +190,32 @@ export function AgentsView() {
     setDraft((prev) => ({ ...prev, [key]: value }))
   }
 
-  const selectAgent = (agent: ManagedAgent) => {
+  const openAgent = (agent: ManagedAgent) => {
+    screenRef.current = 'detail'
+    selectedIdRef.current = agent.id
     setSelectedId(agent.id)
+    setScreen('detail')
     const next = agentToDraft(agent)
     setDraft(next)
     setBaseline(next)
     setPendingNew(false)
   }
 
-  const handleSelect = async (agent: ManagedAgent) => {
-    if (agent.id === selectedId) return
-    if (dirty) {
+  const showList = async () => {
+    if (dirtyRef.current) {
       const confirmed = await requestConfirm({
         title: '放弃未保存的修改？',
-        description: '切换 Agent 后，当前编辑内容会恢复到上次保存的状态。',
-        confirmText: '切换',
+        description: '返回列表后，当前编辑内容会恢复到上次保存的状态。',
+        confirmText: '返回',
       })
       if (!confirmed) return
-      selectAgent(agent)
-      return
     }
-    selectAgent(agent)
+    screenRef.current = 'list'
+    setScreen('list')
+    if (pendingNewRef.current) {
+      pendingNewRef.current = false
+      setPendingNew(false)
+    }
   }
 
   const createDraft = () => {
@@ -207,7 +225,10 @@ export function AgentsView() {
       providerProfileId: provider?.id ?? '',
       modelId: provider?.defaultModel ?? provider?.modelIds[0] ?? '',
     }
-    setSelectedId(NEW_AGENT_ID)
+    screenRef.current = 'detail'
+    selectedIdRef.current = null
+    setSelectedId(null)
+    setScreen('detail')
     setDraft(next)
     setBaseline(next)
     setPendingNew(true)
@@ -221,8 +242,6 @@ export function AgentsView() {
         confirmText: '新建',
       })
       if (!confirmed) return
-      createDraft()
-      return
     }
     createDraft()
   }
@@ -263,193 +282,249 @@ export function AgentsView() {
       return
     }
     toast.success('Agent 已删除')
-    selectedIdRef.current = 'code-agent'
+    selectedIdRef.current = null
+    screenRef.current = 'list'
     pendingNewRef.current = false
-    setSelectedId('code-agent')
+    setSelectedId(null)
+    setScreen('list')
     setPendingNew(false)
     await refresh()
   }
 
-  return (
-    <div className="agents-layout agents-manager">
-      <div className="agents-run-header">
-        <div>
-          <div className="agents-desc">配置可在对话中选择的智能体、默认模型、提示词、规则、Skill、MCP 和工作流。</div>
-        </div>
-        <div className="agents-actions ">
-          <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
-            {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
-          </button>
-          <button className="btn primary sm" onClick={() => void handleNew()}>
-            <Icons.Plus size={12} /> 新建 Agent
-          </button>
-        </div>
-      </div>
-
-      <div className="agents-manager-grid">
-        <aside className="agents-list-panel">
-          <div className="agents-list">
-            {agents.map((agent) => (
-              <button
-                key={agent.id}
-                className={`agent-list-item ${agent.id === selectedId ? 'active' : ''}`}
-                onClick={() => void handleSelect(agent)}
-              >
-                <span className="agent-list-icon">
-                  {agent.builtIn ? <Icons.Code size={15} /> : <Icons.Bot size={15} />}
-                </span>
-                <span className="agent-list-copy">
-                  <span className="agent-list-name">{agent.name}</span>
-                  <span className="agent-list-meta">
-                    {agent.builtIn ? '内置' : '自定义'} · {agent.enabled ? '启用' : '停用'}
-                  </span>
-                </span>
-                {agent.workflowId && <Icons.Workflow size={14} />}
-              </button>
-            ))}
-            {pendingNew && (
-              <button className={`agent-list-item ${selectedId === NEW_AGENT_ID ? 'active' : ''}`}>
-                <span className="agent-list-icon"><Icons.Bot size={15} /></span>
-                <span className="agent-list-copy">
-                  <span className="agent-list-name">{draft.name || '新 Agent'}</span>
-                  <span className="agent-list-meta">自定义 · 未保存</span>
-                </span>
-              </button>
-            )}
+  // ── List screen ──
+  if (screen === 'list') {
+    return (
+      <div className="agents-layout agents-home">
+        <div className="agents-home-head">
+          <div>
+            <div className="agents-title-lg">Agents</div>
+            <div className="agents-desc">配置可在对话中选择的智能体、默认模型、提示词、规则、Skill、MCP 和工作流。</div>
           </div>
-        </aside>
-
-        <main className="agent-editor-panel">
-          <section className="agent-editor-main">
-            <div className="agent-editor-head">
-              <div>
-                <div className="agent-editor-title">{draft.id ? draft.name : '新建 Agent'}</div>
-                <div className="agent-editor-subtitle">
-                  {draft.builtIn ? '内置 Agent 可调整提示词和运行配置，但不可删除。' : '自定义 Agent 会出现在对话输入栏的 Agent 选择器中。'}
-                </div>
+          <div className="agents-actions">
+            <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
+              {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
+            </button>
+            <button className="btn primary sm" onClick={() => void handleNew()}>
+              <Icons.Plus size={12} /> 新建 Agent
+            </button>
+          </div>
+        </div>
+        {agents.length > 0 ? (
+          <div className="agents-card-grid">
+            {agents.map((agent) => {
+              const wf = workflows.find((w) => w.id === agent.workflowId)
+              const provider = providers.find((p) => p.id === agent.providerProfileId)
+              return (
+                <button
+                  key={agent.id}
+                  className="agents-card"
+                  onClick={() => openAgent(agent)}
+                >
+                  <span className="agents-card-head">
+                    <span className="agents-card-icon">
+                      {agent.builtIn ? <Icons.Code size={18} /> : <Icons.Bot size={18} />}
+                    </span>
+                    <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
+                      {agent.enabled ? '启用' : '停用'}
+                    </span>
+                  </span>
+                  <span className="agents-card-name">{agent.name}</span>
+                  <span className="agents-card-desc">
+                    {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
+                  </span>
+                  <span className="agents-card-meta">
+                    <span>{agent.builtIn ? '内置' : '自定义'}</span>
+                    {provider && (
+                      <>
+                        <span className="agents-card-dot" />
+                        <span>{provider.name}</span>
+                      </>
+                    )}
+                    {wf && (
+                      <>
+                        <span className="agents-card-dot" />
+                        <span>{wf.name}</span>
+                      </>
+                    )}
+                  </span>
+                  <span className="agents-card-tags">
+                    {agent.skillIds.length > 0 && (
+                      <span className="agents-card-tag">{agent.skillIds.length} Skills</span>
+                    )}
+                    {agent.mcpServerIds.length > 0 && (
+                      <span className="agents-card-tag">{agent.mcpServerIds.length} MCP</span>
+                    )}
+                    {agent.ruleIds.length > 0 && (
+                      <span className="agents-card-tag">{agent.ruleIds.length} 规则</span>
+                    )}
+                    {agent.workflowId && (
+                      <span className="agents-card-tag workflow-tag"><Icons.Workflow size={10} /> 工作流</span>
+                    )}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        ) : (
+          !loading && (
+            <div className="agents-empty-state">
+              <div className="agents-empty-icon">
+                <Icons.Bot size={24} />
               </div>
-              <div className="agents-actions">
-                {dirty && <span className="agent-dirty-badge">已编辑未保存</span>}
-                {draft.id != null && !draft.builtIn && (
-                  <button className="btn ghost sm danger" onClick={() => void handleDelete()}>
-                    <Icons.Trash size={12} /> 删除
-                  </button>
-                )}
-                <button className="btn primary sm" onClick={() => void handleSave()}>
-                  <Icons.Check size={12} /> 保存
+              <div className="agents-empty-title">创建第一个 Agent</div>
+              <div className="agents-empty-desc">智能体可在对话中选择，配置独立的模型、提示词、工具和工作流。</div>
+              <div style={{ marginTop: 8 }}>
+                <button className="btn primary" onClick={() => void handleNew()}>
+                  <Icons.Plus size={12} /> 创建 Agent
                 </button>
               </div>
             </div>
+          )
+        )}
+      </div>
+    )
+  }
 
-            <div className="agent-form-grid">
-              <Field label="名称">
-                <SparkInput value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} />
-              </Field>
-              <Field label="状态">
-                <SparkSelect value={draft.enabled ? 'enabled' : 'disabled'} onChange={(event) => updateDraft('enabled', event.target.value === 'enabled')}>
-                  <option value="enabled">启用</option>
-                  <option value="disabled">停用</option>
-                </SparkSelect>
-              </Field>
-              <Field label="说明" wide>
-                <SparkInput value={draft.description} onChange={(event) => updateDraft('description', event.target.value)} />
-              </Field>
-              <Field label="Provider">
-                <SparkSelect
-                  value={draft.providerProfileId}
-                  onChange={(event) => {
-                    const provider = providers.find((item) => item.id === event.target.value)
-                    updateDraft('providerProfileId', event.target.value)
-                    updateDraft('modelId', provider?.defaultModel ?? provider?.modelIds[0] ?? '')
-                  }}
-                >
-                  <option value="">跟随会话</option>
-                  {providers.map((provider) => (
-                    <option key={provider.id} value={provider.id}>{provider.name}</option>
-                  ))}
-                </SparkSelect>
-              </Field>
-              <Field label="默认模型">
-                <SparkSelect value={draft.modelId} onChange={(event) => updateDraft('modelId', event.target.value)}>
-                  <option value="">Provider 默认</option>
-                  {modelOptions.map((model) => (
-                    <option key={model} value={model}>{model}</option>
-                  ))}
-                </SparkSelect>
-              </Field>
-              <Field label="权限">
-                <SparkSelect value={draft.permissionMode} onChange={(event) => updateDraft('permissionMode', event.target.value as SessionPermissionMode)}>
-                  {PERMISSION_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>{option.label}</option>
-                  ))}
-                </SparkSelect>
-              </Field>
-              <Field label="推理强度">
-                <SparkSelect value={draft.reasoningEffort} onChange={(event) => updateDraft('reasoningEffort', event.target.value as SessionReasoningEffort)}>
-                  <option value="low">low</option>
-                  <option value="medium">medium</option>
-                  <option value="high">high</option>
-                  <option value="xhigh">xhigh</option>
-                </SparkSelect>
-              </Field>
-              <Field label="工作流" wide>
-                <SparkSelect value={draft.workflowId} onChange={(event) => updateDraft('workflowId', event.target.value)}>
-                  <option value="">不使用工作流</option>
-                  {workflows.map((workflow) => (
-                    <option key={workflow.id} value={workflow.id}>{workflow.name}</option>
-                  ))}
-                </SparkSelect>
-              </Field>
-              <Field label="提示词" wide>
-                <SparkTextarea rows={8} value={draft.prompt} onChange={(event) => updateDraft('prompt', event.target.value)} />
-              </Field>
-            </div>
-          </section>
+  // ── Detail / editor screen ──
+  return (
+    <div className="agents-layout agents-detail">
+      <div className="agents-detail-toolbar">
+        <button className="btn ghost sm" onClick={() => void showList()} title="返回列表">
+          <Icons.ArrowLeft size={12} /> 列表
+        </button>
+        <div className="agents-detail-title">
+          {draft.id ? draft.name : '新建 Agent'}
+          {dirty && <span className="agent-dirty-badge">已编辑未保存</span>}
+        </div>
+        <div className="agents-detail-spacer" />
+        {draft.id != null && !draft.builtIn && (
+          <button className="btn ghost sm danger" onClick={() => void handleDelete()}>
+            <Icons.Trash size={12} /> 删除
+          </button>
+        )}
+        <button className="btn primary sm" onClick={() => void handleSave()}>
+          <Icons.Check size={12} /> 保存
+        </button>
+      </div>
 
-          <aside className="agent-config-panel">
-            <ConfigSection title="Skills" count={draft.skillIds.length}>
-              <PickList
-                items={skills.map((skill) => ({ id: skill.id, label: skill.name }))}
-                selected={draft.skillIds}
-                onChange={(ids) => updateDraft('skillIds', ids)}
-              />
-            </ConfigSection>
-            <ConfigSection title="禁用 Skills" count={draft.disabledSkillIds.length}>
-              <PickList
-                items={skills.map((skill) => ({ id: skill.id, label: skill.name }))}
-                selected={draft.disabledSkillIds}
-                onChange={(ids) => updateDraft('disabledSkillIds', ids)}
-              />
-            </ConfigSection>
-            <ConfigSection title="MCP" count={draft.mcpServerIds.length}>
-              <PickList
-                items={mcpServers.map((server) => ({ id: server.id, label: server.name }))}
-                selected={draft.mcpServerIds}
-                onChange={(ids) => updateDraft('mcpServerIds', ids)}
-              />
-            </ConfigSection>
-            <ConfigSection title="规则" count={draft.ruleIds.length}>
-              <PickList
-                items={rules.map((rule) => ({ id: rule.id, label: rule.name }))}
-                selected={draft.ruleIds}
-                onChange={(ids) => updateDraft('ruleIds', ids)}
-              />
-            </ConfigSection>
-            <ConfigSection title="Hook" count={draft.hookConfig.enabled ? 1 : 0}>
-              <HookEditor
-                value={draft.hookConfig}
-                onChange={(hookConfig) => updateDraft('hookConfig', hookConfig)}
-              />
-            </ConfigSection>
-            <div className="agent-workflow-card">
-              <div className="agent-workflow-icon"><Icons.Workflow size={16} /></div>
-              <div>
-                <div className="strong">{activeWorkflow?.name ?? '未绑定工作流'}</div>
-                <div className="muted">{activeWorkflow ? `${activeWorkflow.graph.nodes.length} 节点 · ${activeWorkflow.status}` : 'Agent 会按普通编码流程执行'}</div>
+      <div className="agents-detail-grid">
+        <section className="agent-editor-main">
+          <div className="agent-editor-head">
+            <div>
+              <div className="agent-editor-subtitle">
+                {draft.builtIn ? '内置 Agent 可调整提示词和运行配置，但不可删除。' : '自定义 Agent 会出现在对话输入栏的 Agent 选择器中。'}
               </div>
             </div>
-          </aside>
-        </main>
+          </div>
+
+          <div className="agent-form-grid">
+            <Field label="名称">
+              <SparkInput value={draft.name} onChange={(event) => updateDraft('name', event.target.value)} />
+            </Field>
+            <Field label="状态">
+              <SparkSelect value={draft.enabled ? 'enabled' : 'disabled'} onChange={(event) => updateDraft('enabled', event.target.value === 'enabled')}>
+                <option value="enabled">启用</option>
+                <option value="disabled">停用</option>
+              </SparkSelect>
+            </Field>
+            <Field label="说明" wide>
+              <SparkInput value={draft.description} onChange={(event) => updateDraft('description', event.target.value)} />
+            </Field>
+            <Field label="Provider">
+              <SparkSelect
+                value={draft.providerProfileId}
+                onChange={(event) => {
+                  const provider = providers.find((item) => item.id === event.target.value)
+                  updateDraft('providerProfileId', event.target.value)
+                  updateDraft('modelId', provider?.defaultModel ?? provider?.modelIds[0] ?? '')
+                }}
+              >
+                <option value="">跟随会话</option>
+                {providers.map((provider) => (
+                  <option key={provider.id} value={provider.id}>{provider.name}</option>
+                ))}
+              </SparkSelect>
+            </Field>
+            <Field label="默认模型">
+              <SparkSelect value={draft.modelId} onChange={(event) => updateDraft('modelId', event.target.value)}>
+                <option value="">Provider 默认</option>
+                {modelOptions.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </SparkSelect>
+            </Field>
+            <Field label="权限">
+              <SparkSelect value={draft.permissionMode} onChange={(event) => updateDraft('permissionMode', event.target.value as SessionPermissionMode)}>
+                {PERMISSION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </SparkSelect>
+            </Field>
+            <Field label="推理强度">
+              <SparkSelect value={draft.reasoningEffort} onChange={(event) => updateDraft('reasoningEffort', event.target.value as SessionReasoningEffort)}>
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high">high</option>
+                <option value="xhigh">xhigh</option>
+              </SparkSelect>
+            </Field>
+            <Field label="工作流" wide>
+              <SparkSelect value={draft.workflowId} onChange={(event) => updateDraft('workflowId', event.target.value)}>
+                <option value="">不使用工作流</option>
+                {workflows.map((workflow) => (
+                  <option key={workflow.id} value={workflow.id}>{workflow.name}</option>
+                ))}
+              </SparkSelect>
+            </Field>
+            <Field label="提示词" wide>
+              <SparkTextarea rows={8} value={draft.prompt} onChange={(event) => updateDraft('prompt', event.target.value)} />
+            </Field>
+          </div>
+        </section>
+
+        <aside className="agent-config-panel">
+          <ConfigSection title="Skills" count={draft.skillIds.length}>
+            <PickList
+              items={skills.map((skill) => ({ id: skill.id, label: skill.name }))}
+              selected={draft.skillIds}
+              onChange={(ids) => updateDraft('skillIds', ids)}
+            />
+          </ConfigSection>
+          <ConfigSection title="禁用 Skills" count={draft.disabledSkillIds.length}>
+            <PickList
+              items={skills.map((skill) => ({ id: skill.id, label: skill.name }))}
+              selected={draft.disabledSkillIds}
+              onChange={(ids) => updateDraft('disabledSkillIds', ids)}
+            />
+          </ConfigSection>
+          <ConfigSection title="MCP" count={draft.mcpServerIds.length}>
+            <PickList
+              items={mcpServers.map((server) => ({ id: server.id, label: server.name }))}
+              selected={draft.mcpServerIds}
+              onChange={(ids) => updateDraft('mcpServerIds', ids)}
+            />
+          </ConfigSection>
+          <ConfigSection title="规则" count={draft.ruleIds.length}>
+            <PickList
+              items={rules.map((rule) => ({ id: rule.id, label: rule.name }))}
+              selected={draft.ruleIds}
+              onChange={(ids) => updateDraft('ruleIds', ids)}
+            />
+          </ConfigSection>
+          <ConfigSection title="Hook" count={draft.hookConfig.enabled ? 1 : 0}>
+            <HookEditor
+              value={draft.hookConfig}
+              onChange={(hookConfig) => updateDraft('hookConfig', hookConfig)}
+            />
+          </ConfigSection>
+          <div className="agent-workflow-card">
+            <div className="agent-workflow-icon"><Icons.Workflow size={16} /></div>
+            <div>
+              <div className="strong">{activeWorkflow?.name ?? '未绑定工作流'}</div>
+              <div className="muted">{activeWorkflow ? `${activeWorkflow.graph.nodes.length} 节点 · ${activeWorkflow.status}` : 'Agent 会按普通编码流程执行'}</div>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   )

@@ -52,3 +52,17 @@ export {
   DialogDescription,
   DialogClose,
 } from './components/dialog'
+export {
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
+  SelectScrollUpButton,
+  SelectScrollDownButton,
+  triggerVariants,
+  type SelectTriggerProps,
+} from './components/select'

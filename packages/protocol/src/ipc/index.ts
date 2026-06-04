@@ -2116,6 +2116,29 @@ export interface FileOpenResponse {
   error?: string
 }
 
+// ─── File Read Image Data URL Channel ────────────────────────────────────────
+//
+// Used by the chat composer to render image attachments as small previews
+// inside the input box. The main process reads the file from disk and returns
+// a base64-encoded data URL (the renderer cannot reliably use file:// URLs
+// because webSecurity is enabled). The original file path remains the source
+// of truth on the SessionAttachment protocol; this channel is purely a
+// preview helper scoped to UI rendering.
+
+export interface FileReadImageDataUrlRequest {
+  /** Absolute path to the image file. */
+  filePath: string
+}
+
+export interface FileReadImageDataUrlResponse {
+  /** data:image/...;base64,... URL. Empty string when error is set. */
+  dataUrl: string
+  /** Detected MIME type (e.g. "image/png"). */
+  mimeType: string
+  /** Populated with a human-readable error when the file cannot be read. */
+  error?: string
+}
+
 // ─── Context Governor Channels ───────────────────────────────────────────────
 
 export interface ContextPreferenceItem {
@@ -2389,6 +2412,10 @@ export interface IpcChannelMap {
 
   // File Open — open a file with the OS default application
   'file:open': [FileOpenRequest, FileOpenResponse]
+
+  // File Read Image Data URL — read an image file and return a base64 data URL
+  // for use as a preview thumbnail in the chat composer.
+  'file:read-image-data-url': [FileReadImageDataUrlRequest, FileReadImageDataUrlResponse]
 
   // Playwright Browser Automation
   'playwright:status': [PlaywrightStatusRequest, PlaywrightStatusResponse]

@@ -306,7 +306,7 @@
   font-size: var(--font-sm);
   font-weight: 500;
   font-family: inherit;
-  cursor: default;
+  cursor: pointer;
   border: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
@@ -491,9 +491,6 @@ body.sidebar-resizing {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 .filter-dropdown-portal {
-  position: static;
-  top: auto;
-  right: auto;
   z-index: var(--z-dropdown, 100);
 }
 
@@ -535,8 +532,8 @@ body.sidebar-resizing {
   align-items: center;
   gap: 7px;
   width: 100%;
-  min-height: 26px;
-  padding: 1px 8px 2px;
+  min-height: 32px;
+  padding: 4px 8px 4px;
   background: transparent;
   border: none;
   border-radius: 0;
@@ -656,6 +653,25 @@ body.sidebar-resizing {
   border-color: var(--primary);
   background: var(--primary-soft);
 }
+.proj-show-more-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 6px 4px 22px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s;
+}
+.proj-show-more-btn:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
 .proj-add {
   display: flex;
   align-items: center;
@@ -668,7 +684,7 @@ body.sidebar-resizing {
   border-radius: 0;
   color: var(--text-faint);
   font-size: var(--font-sm);
-  cursor: default;
+  cursor: pointer;
 }
 .proj-add:hover {
   color: var(--primary);
@@ -761,7 +777,7 @@ body.sidebar-resizing {
   display: flex;
   align-items: center;
   gap: 7px;
-  height: 27px;
+  height: 30px;
   padding: 0 7px 0 22px;
 }
 .chat-item-compact .chat-item-title-compact {
@@ -824,17 +840,7 @@ body.sidebar-resizing {
 }
 .action-menu {
   min-width: 176px;
-  padding: 6px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  box-shadow: var(--shadow-lg);
-}
-.action-menu-portal {
-  position: static;
-  right: auto;
-  top: auto;
-  z-index: var(--z-dropdown, 100);
+  padding: 4px;
 }
 .action-menu button,
 .action-menu [role="menuitem"] {
@@ -846,7 +852,6 @@ body.sidebar-resizing {
   border: 0;
   border-radius: var(--r-sm);
   background: transparent;
-  color: var(--text);
   font-size: var(--font-sm);
   text-align: left;
 }
@@ -856,11 +861,17 @@ body.sidebar-resizing {
 }
 .action-menu button.danger,
 .action-menu [data-danger="true"] {
-  color: var(--danger);
+  color: var(--danger) !important;
+}
+.action-menu button.danger:hover,
+.action-menu [data-danger="true"]:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent) !important;
+  color: var(--danger) !important;
 }
 .pinned-icon {
   color: var(--primary);
   flex-shrink: 0;
+  transform: rotate(20deg);
 }
 
 /* ---------- TOOL DROPDOWN (IDE / Terminal open) ---------- */
@@ -1794,7 +1805,7 @@ body.sidebar-resizing {
 }
 .composer-inner > .composer-param-bar {
   position: relative;
-  z-index: 1;
+  z-index: auto;
   margin-top: -14px;
   padding: 22px 12px 5px;
   min-height: 40px;
@@ -2285,6 +2296,203 @@ body.sidebar-resizing {
 .composer-attachment-chip button:hover {
   background: var(--hover);
   color: var(--danger);
+}
+
+/* ---- Image attachment thumbnail (per-image card with preview) ---- */
+.composer-attachment-thumb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 84px;
+  padding: 4px 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+
+.composer-attachment-thumb-image {
+  position: relative;
+  display: block;
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg);
+  overflow: hidden;
+  cursor: pointer;
+  color: var(--text-faint);
+  transition: transform 0.12s ease;
+}
+
+.composer-attachment-thumb-image:hover {
+  transform: scale(1.02);
+}
+
+.composer-attachment-thumb-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  /* Prevent the browser's native image drag-preview from looking broken
+     when users drag an attachment thumbnail out of the composer. */
+  -webkit-user-drag: none;
+  user-select: none;
+}
+
+.composer-attachment-thumb-loading {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    var(--bg-soft) 0%,
+    var(--hover) 50%,
+    var(--bg-soft) 100%
+  );
+  background-size: 200% 100%;
+  animation: composerThumbShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes composerThumbShimmer {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+.composer-attachment-thumb-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.composer-attachment-thumb-name {
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-muted);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-attachment-thumb-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease, background 0.12s ease;
+}
+
+.composer-attachment-thumb:hover .composer-attachment-thumb-remove,
+.composer-attachment-thumb-remove:focus-visible {
+  opacity: 1;
+}
+
+.composer-attachment-thumb-remove:hover {
+  background: var(--danger);
+}
+
+/* ---- Image lightbox (full-screen preview overlay) ---- */
+.composer-attachment-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.78);
+  padding: 32px;
+  animation: composerLightboxFade 0.15s ease-out;
+}
+
+@keyframes composerLightboxFade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.composer-attachment-lightbox-stage {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  max-width: min(90vw, 1200px);
+  max-height: 90vh;
+}
+
+.composer-attachment-lightbox-stage img {
+  max-width: 100%;
+  max-height: calc(90vh - 48px);
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+  background: var(--bg);
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.composer-attachment-lightbox-loading {
+  width: 240px;
+  height: 240px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-soft);
+  border-radius: 8px;
+  color: var(--text-muted);
+}
+
+.composer-attachment-lightbox-caption {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border-radius: 999px;
+  font-size: var(--font-xs);
+  max-width: 100%;
+}
+
+.composer-attachment-lightbox-name {
+  max-width: min(60vw, 720px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-attachment-lightbox-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.composer-attachment-lightbox-close:hover {
+  background: rgba(255, 255, 255, 0.24);
 }
 
 .composer-approval-card {
@@ -3360,7 +3568,7 @@ body.sidebar-resizing {
   border-radius: var(--r-sm);
   color: var(--text-faint);
   font-size: var(--font-xs);
-  cursor: default;
+  cursor: pointer;
   font-family: inherit;
 }
 .proj-session-empty:hover {
@@ -4764,7 +4972,7 @@ body.inspector-resizing {
   padding: 0 10px;
   height: 24px;
   border-radius: 4px;
-  cursor: default;
+  cursor: pointer;
   font-weight: 500;
   font-family: inherit;
 }
@@ -5611,7 +5819,7 @@ body.inspector-resizing {
   border-radius: var(--r-sm);
   font-size: var(--font-base);
   color: var(--text);
-  cursor: default;
+  cursor: pointer;
 }
 .palette-item:hover,
 .palette-item.sel {
@@ -8481,7 +8689,7 @@ body.inspector-resizing {
   background: transparent;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  cursor: default;
+  cursor: pointer;
   transition:
     color 0.15s,
     border-color 0.15s;
@@ -8530,7 +8738,7 @@ body.inspector-resizing {
   font-size: var(--font-sm);
   font-weight: 500;
   text-align: left;
-  cursor: default;
+  cursor: pointer;
   transition:
     background 0.12s,
     color 0.12s;
@@ -8577,7 +8785,7 @@ body.inspector-resizing {
   color: var(--text-muted);
   font-size: 11.5px;
   font-weight: 500;
-  cursor: default;
+  cursor: pointer;
   transition: all 0.12s;
 }
 .store-cat-pill:hover {
@@ -9428,99 +9636,196 @@ body.inspector-resizing {
 }
 
 /* Agent manager */
-.agents-manager {
+/* ── Agents home (card list) ── */
+.agents-home {
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px;
+  overflow: auto;
+  background: var(--bg-soft);
+}
+.agents-home-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-shrink: 0;
+}
+.agents-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  align-content: start;
+}
+.agents-card {
+  min-height: 180px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 18px;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+}
+.agents-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 36%, transparent);
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
+}
+.agents-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.agents-card-icon {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--primary-soft);
+  color: var(--primary);
+}
+.agents-card-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 10px;
+  line-height: 1.4;
+}
+.agents-card-status.enabled {
+  color: var(--success, #10b981);
+  background: rgba(16, 185, 129, 0.12);
+}
+.agents-card-status.disabled {
+  color: var(--text-muted);
+  background: var(--bg-soft);
+}
+.agents-card-name {
+  min-width: 0;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 650;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agents-card-desc {
+  min-height: 32px;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow: hidden;
+}
+.agents-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.agents-card-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  opacity: 0.5;
+}
+.agents-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: auto;
+}
+.agents-card-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.agents-card-tag.workflow-tag {
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+/* ── Agents detail (config editor) ── */
+.agents-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
   overflow: hidden;
   background: var(--bg-soft);
 }
-.agents-manager-grid {
-  display: grid;
-  grid-template-columns: minmax(220px, 268px) minmax(0, 1fr);
-  gap: 14px;
-  min-height: 0;
+.agents-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  min-height: 48px;
+  flex-shrink: 0;
+}
+.agents-detail-title {
+  font-weight: 650;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.agents-detail-spacer {
   flex: 1;
 }
-.agents-list-panel,
-.agent-editor-panel,
-.agent-config-panel,
-.workflow-list-panel {
+.agents-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.agents-detail-grid .agent-config-panel,
+.agents-detail-grid .agent-editor-main {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
   min-height: 0;
   box-shadow: var(--shadow-xs);
+  margin: 14px;
 }
-.agents-list-panel {
-  display: flex;
-  flex-direction: column;
-  padding: 12px;
+.agents-detail-grid .agent-config-panel {
+  border-width: 0 0 0 1px;
+  border-radius: 0;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-soft) 55%, var(--panel));
+  margin: 0;
 }
-.agents-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow: auto;
-  min-height: 0;
-}
-.agent-list-item,
-.wf-list-button {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text);
-  text-align: left;
-  cursor: pointer;
-  border-radius: 6px;
-}
-.agent-list-item:hover,
-.wf-list-button:hover {
-  background: var(--bg-soft);
-}
-.agent-list-item.active,
-.wf-list-button.active {
-  background: var(--primary-soft);
-  border-color: color-mix(in srgb, var(--primary) 28%, transparent);
-}
-.agent-list-icon,
-.wf-list-icon {
-  width: 28px;
-  height: 28px;
-  display: grid;
-  place-items: center;
-  border-radius: 6px;
-  background: var(--bg-soft);
-  color: var(--primary);
-  flex-shrink: 0;
-}
-.agent-list-copy {
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  flex: 1;
-}
-.agent-list-name,
+
+/* ── Shared agent classes ── */
 .agent-editor-title {
   font-weight: 650;
   color: var(--text);
 }
-.agent-list-meta,
 .agent-editor-subtitle,
 .agents-empty-mini {
   color: var(--text-muted);
   font-size: 12px;
 }
-.agent-editor-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
-  overflow: hidden;
-}
+
+/* ── Agent editor (shared) ── */
 .agent-editor-main {
   display: flex;
   flex-direction: column;
@@ -9551,7 +9856,7 @@ body.inspector-resizing {
   grid-column: 1 / -1;
 }
 .agent-field input:not(.spark-input),
-.agent-field select:not(.spark-select),
+.agent-field select:not(.spark-select-trigger),
 .agent-field textarea:not(.spark-textarea),
 .workflow-builder input,
 .workflow-builder select,
@@ -10060,8 +10365,7 @@ body.inspector-resizing {
 }
 
 @media (max-width: 980px) {
-  .agents-manager-grid,
-  .agent-editor-panel,
+  .agents-detail-grid,
   .workflow-builder {
     grid-template-columns: 1fr;
   }

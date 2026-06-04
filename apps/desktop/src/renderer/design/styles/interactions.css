@@ -180,7 +180,7 @@
   padding: 8px 10px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  cursor: default;
+  cursor: pointer;
   background: var(--panel);
 }
 .tool-choose .choice:hover { background: var(--hover); border-color: var(--border-strong); }
@@ -425,7 +425,7 @@
   font-size: var(--font-sm);
   color: var(--text);
   font-weight: 500;
-  cursor: default;
+  cursor: pointer;
 }
 .quick-actions .chip:hover { border-color: var(--primary); background: var(--primary-soft); color: var(--primary); }
 .quick-actions .chip svg { width: 12px; height: 12px; color: var(--text-muted); }
@@ -644,7 +644,7 @@
 }
 .form-grid > .spark-input,
 .form-grid > .spark-select-wrap {
-  /* 让 SparkInput/SparkSelect 自己的 .spark-input / .spark-select 样式生效，不被覆盖 */
+  /* 让 SparkInput/SparkSelect 自己的样式生效，不被覆盖 */
   padding: 0;
   border: none;
   background: none;
@@ -655,10 +655,10 @@
 }
 .form-grid > textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
 .form-grid > .spark-input:hover,
-.form-grid > .spark-select-wrap:hover .spark-select,
+.form-grid > .spark-select-wrap:hover .spark-select-trigger,
 .form-grid > textarea:hover { border-color: var(--text-faint); }
 .form-grid > .spark-input:focus,
-.form-grid > .spark-select-wrap .spark-select:focus,
+.form-grid > .spark-select-wrap .spark-select-trigger:focus,
 .form-grid > textarea:focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
@@ -822,7 +822,7 @@
 .perm-rule .select-full {
   width: 110px;
 }
-.perm-rule .spark-select {
+.perm-rule .spark-select-trigger {
    height: 26px;
    padding: 0 24px 0 6px;
    background: var(--panel);
@@ -830,7 +830,7 @@
    border-radius: var(--r-sm);
    font-size: var(--font-xs);
    color: var(--text);
- }
+  }
 
 /* Keymap table */
 .keymap {
@@ -876,6 +876,7 @@
   flex-direction: column;
   width: 360px;
   min-width: 280px;
+  max-width: 100%;
   border-left: 1px solid var(--border);
   background: var(--panel);
   height: 100%;

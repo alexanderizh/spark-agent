@@ -25,6 +25,24 @@ import {
 import type { SessionId, WorkspaceInfo } from '@spark/protocol'
 import { useApp } from './AppContext'
 
+const PROJECT_COLLAPSED_KEY = 'spark-agent:project-collapsed'
+
+function getCollapsedProjects(): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(PROJECT_COLLAPSED_KEY)
+    return raw ? new Set(JSON.parse(raw) as string[]) : new Set()
+  } catch {
+    return new Set()
+  }
+}
+
+function setProjectCollapsed(workspaceId: string, collapsed: boolean): void {
+  const set = getCollapsedProjects()
+  if (collapsed) set.add(workspaceId)
+  else set.delete(workspaceId)
+  try { window.localStorage.setItem(PROJECT_COLLAPSED_KEY, JSON.stringify([...set])) } catch { /* */ }
+}
+
 /* ─── Helper ─── */
 function formatRelativeTime(value: string): string {
   const then = new Date(value).getTime()
@@ -49,7 +67,7 @@ function ActionMenu({
   items: Array<{ icon: ReactNode; label: string; danger?: boolean; onClick: () => void }>
 }) {
   return (
-    <DropdownMenuContent align="end" side="bottom" className="action-menu action-menu-portal">
+    <DropdownMenuContent align="end" side="bottom" className="action-menu">
       {items.map(item => (
         <DropdownMenuItem
           key={item.label}
@@ -139,11 +157,11 @@ function ChatListItem({
     >
       <div className="chat-item-row">
         <div className="chat-item-title-compact">
-          {s.pinnedAt != null && <Icons.Pin size={10} className="pinned-icon" />}
+          {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
           <span className="truncate">{s.title || '新会话'}</span>
         </div>
         {isRunning ? (
-          <span className="session-running-badge" title="运行中"><Icons.Spinner size={10} /><span>运行中</span></span>
+          <span className="session-running-badge" title="运行中"><Icons.Spinner size={11} /><span>运行中</span></span>
         ) : (
           <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         )}
@@ -151,13 +169,12 @@ function ChatListItem({
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button className="icon-btn item-menu-btn" title="会话操作" onClick={e => e.stopPropagation()}>
-                <Icons.More size={12} />
+                <Icons.More size={13} />
               </button>
             </DropdownMenuTrigger>
             <ActionMenu
               items={[
                 { icon: <Icons.Pin size={14} />, label: s.pinnedAt == null ? '置顶会话' : '取消置顶', onClick: () => onTogglePinned?.(s) },
-                { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenFolder?.(s) },
                 { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
                 { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
                 { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
@@ -206,24 +223,34 @@ function ProjectSessionGroup({
   onDeleteSession: (session: SessionSummary) => void
   onOpenSessionFolder: (session: SessionSummary) => void
 }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(() => !getCollapsedProjects().has(group.workspace.id))
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showAllSessions, setShowAllSessions] = useState(false)
   const isActiveProject = activeWorkspaceId === group.workspace.id
+
+  const MAX_VISIBLE = 8
+  const sessions = group.sessions
+  const hasMore = sessions.length > MAX_VISIBLE
+  const visibleSessions = showAllSessions ? sessions : sessions.slice(0, MAX_VISIBLE)
 
   return (
     <div className={`proj-group ${isActiveProject ? 'active-project' : ''}`}>
       <div
         className="proj-head"
         onClick={() => {
-          setOpen(prev => !prev)
+          setOpen(prev => {
+            const next = !prev
+            setProjectCollapsed(group.workspace.id, !next)
+            return next
+          })
           void onSelectWorkspace(group.workspace)
         }}
       >
         <span className="proj-toggle">
           {open ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />}
         </span>
-        {open ? <Icons.FolderOpen size={15} className="proj-folder-icon" /> : <Icons.ProjectFolder size={15} className="proj-folder-icon" />}
-        {group.workspace.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
+        {open ? <Icons.FolderOpen size={17} className="proj-folder-icon" /> : <Icons.ProjectFolder size={17} className="proj-folder-icon" />}
+        {group.workspace.pinnedAt != null && <Icons.Pin size={12} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
         <span className="proj-count">{group.sessions.length}</span>
         <button
@@ -237,7 +264,7 @@ function ProjectSessionGroup({
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
               <button className="icon-btn item-menu-btn" title="项目操作" onClick={e => e.stopPropagation()}>
-                <Icons.More size={12} />
+                <Icons.More size={13} />
               </button>
             </DropdownMenuTrigger>
             <ActionMenu
@@ -254,25 +281,35 @@ function ProjectSessionGroup({
       </div>
       {open && (
         <div className="proj-sessions">
-          {group.sessions.length === 0 ? (
+          {sessions.length === 0 ? (
             <button className="proj-session-empty" onClick={() => onNewSession(group.workspace.id)}>
               <Icons.Plus size={12} />
               新建此项目的会话
             </button>
           ) : (
-            group.sessions.map(session => (
-              <ChatListItem
-                key={session.id}
-                session={session}
-                active={activeSessionId}
-                onClick={() => onSelectSession(session)}
-                onRename={onRenameSession}
-                onTogglePinned={onToggleSessionPinned}
-                onArchive={onArchiveSession}
-                onDelete={onDeleteSession}
-                onOpenFolder={onOpenSessionFolder}
-              />
-            ))
+            <>
+              {visibleSessions.map(session => (
+                <ChatListItem
+                  key={session.id}
+                  session={session}
+                  active={activeSessionId}
+                  onClick={() => onSelectSession(session)}
+                  onRename={onRenameSession}
+                  onTogglePinned={onToggleSessionPinned}
+                  onArchive={onArchiveSession}
+                  onDelete={onDeleteSession}
+                  onOpenFolder={onOpenSessionFolder}
+                />
+              ))}
+              {hasMore && !showAllSessions && (
+                <button
+                  className="proj-show-more-btn"
+                  onClick={() => setShowAllSessions(true)}
+                >
+                  ...更多 {sessions.length - MAX_VISIBLE}
+                </button>
+              )}
+            </>
           )}
         </div>
       )}
@@ -369,17 +406,7 @@ export function SidebarSessionList() {
 
   return (
     <div className="sidebar-session-list-inner">
-      {/* Header: filter + action buttons on one row */}
-      <div className="chat-sidebar-head">
-        
-        <button className="icon-btn" title="新建项目" onClick={() => ctx.setProjectDialog('create')}>
-          <Icons.Folder />
-        </button>
-        <button className="icon-btn" title="新建会话" onClick={handleNewBlankSession}>
-          <Icons.Plus />
-        </button>
-        <TimeFilterDropdown value={timeFilter} onChange={setTimeFilter} />
-      </div>
+      {/* Header: filter + action buttons — hidden */}
 
       {/* Session list */}
       <div className="chat-list scroll">

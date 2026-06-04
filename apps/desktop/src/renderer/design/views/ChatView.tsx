@@ -89,7 +89,20 @@ type SessionRuntimePatch = {
   reasoningEffort?: SessionReasoningEffort
 }
 type QueuedMessage = { id: string; turnId: string; content: string; enqueuedAt: string }
-type ComposerAttachment = SessionAttachment & { id: string; name: string }
+type ComposerAttachment = SessionAttachment & {
+  id: string
+  name: string
+  /**
+   * Base64 data URL for image previews in the composer. Populated lazily
+   * by handleEnsureImagePreview after the attachment is added. This is a
+   * UI-only field; the SessionAttachment protocol still carries the path.
+   */
+  previewUrl?: string
+  /** Set while the preview is being loaded from disk. */
+  previewLoading?: boolean
+  /** Set when the preview failed to load (e.g. unreadable file). */
+  previewError?: string
+}
 type ChatViewProps = {
   approvalRequest?: PermissionApprovalRequest | null
   onApprovalClose?: () => void
@@ -3578,6 +3591,10 @@ function ComposerV2({
   const initialPrefs = initialPrefsRef.current
   const [value, setValue] = useState('')
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([])
+  // Currently-open lightbox for an image attachment, or null when closed.
+  // Stored at component scope (not per-attachment) because at most one is
+  // visible at a time.
+  const [lightboxAttachment, setLightboxAttachment] = useState<ComposerAttachment | null>(null)
   const [sending, setSending] = useState(false)
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueRunning, setQueueRunning] = useState(false)
@@ -3608,6 +3625,7 @@ function ComposerV2({
   const runtimeSettingsHydratedRef = useRef(false)
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: openFileDialog } = useIpcInvoke('dialog:open-file')
+  const { invoke: readImageDataUrl } = useIpcInvoke('file:read-image-data-url')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
@@ -4009,6 +4027,9 @@ function ComposerV2({
       const filePaths = selected.filePaths ?? (selected.filePath != null ? [selected.filePath] : [])
       if (selected.canceled || filePaths.length === 0) return
       let truncated = false
+      // Build the new attachment list outside setState so we can also kick
+      // off preview loading for any newly-added image attachments.
+      const newImageAttachments: ComposerAttachment[] = []
       setAttachments((current) => {
         const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
         for (const filePath of filePaths) {
@@ -4017,25 +4038,103 @@ function ComposerV2({
             break
           }
           if (byPath.has(filePath)) continue
-          byPath.set(filePath, {
+          const next: ComposerAttachment = {
             id: `${Date.now()}-${byPath.size}-${filePath}`,
             type: isImageAttachmentPath(filePath) ? 'image' : 'file',
             path: filePath,
             name: getFileNameFromPath(filePath),
-          })
+          }
+          byPath.set(filePath, next)
+          if (next.type === 'image') newImageAttachments.push(next)
         }
         return Array.from(byPath.values())
       })
       if (truncated) toast.info('单轮最多添加 20 个附件。')
+      // Trigger thumbnail load for each newly-added image attachment.
+      for (const attachment of newImageAttachments) {
+        void handleEnsureImagePreview(attachment)
+      }
     } catch (err) {
       console.error('添加附件失败', err)
       toast.error(err instanceof Error ? err.message : '添加附件失败')
     }
   }, [openFileDialog, toast])
 
+  /**
+   * Load the dataURL preview for an image attachment and patch the state.
+   * Idempotent: skips if the attachment already has a previewUrl or is
+   * currently loading. Errors are surfaced on the attachment so the UI can
+   * fall back to a generic icon.
+   */
+  const handleEnsureImagePreview = useCallback(
+    async (attachment: ComposerAttachment) => {
+      if (attachment.type !== 'image') return
+      // Mark as loading so the UI can show a placeholder.
+      setAttachments((current) => {
+        const existing = current.find((entry) => entry.id === attachment.id)
+        if (!existing || existing.previewUrl != null || existing.previewLoading) return current
+        return current.map((entry) =>
+          entry.id === attachment.id ? { ...entry, previewLoading: true } : entry,
+        )
+      })
+
+      try {
+        const result = await readImageDataUrl({ filePath: attachment.path })
+        if (result.error || !result.dataUrl) {
+          setAttachments((current) =>
+            current.map((entry) =>
+              entry.id === attachment.id
+                ? { ...entry, previewLoading: false, previewError: result.error ?? 'failed' }
+                : entry,
+            ),
+          )
+          return
+        }
+        setAttachments((current) =>
+          current.map((entry) =>
+            entry.id === attachment.id
+              ? { ...entry, previewLoading: false, previewUrl: result.dataUrl }
+              : entry,
+          ),
+        )
+        // If the user has already opened this attachment in the lightbox,
+        // refresh its reference so the freshly-loaded image shows up.
+        setLightboxAttachment((current) =>
+          current && current.id === attachment.id
+            ? { ...current, previewUrl: result.dataUrl }
+            : current,
+        )
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'preview load failed'
+        setAttachments((current) =>
+          current.map((entry) =>
+            entry.id === attachment.id
+              ? { ...entry, previewLoading: false, previewError: message }
+              : entry,
+          ),
+        )
+      }
+    },
+    [readImageDataUrl],
+  )
+
   const handleRemoveAttachment = useCallback((id: string) => {
     setAttachments((current) => current.filter((attachment) => attachment.id !== id))
+    setLightboxAttachment((current) => (current && current.id === id ? null : current))
   }, [])
+
+  // Close the lightbox when the user presses Escape.
+  useEffect(() => {
+    if (lightboxAttachment == null) return
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.stopPropagation()
+        setLightboxAttachment(null)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [lightboxAttachment])
 
   const handleSend = async () => {
     if (!canSubmit) return
@@ -4444,19 +4543,62 @@ function ComposerV2({
         )}
         {attachments.length > 0 && (
           <div className="composer-attachment-strip">
-            {attachments.map((attachment) => (
-              <div key={attachment.id} className="composer-attachment-chip">
-                {attachment.type === 'image' ? <Icons.Image size={13} /> : <Icons.File size={13} />}
-                <span>{attachment.name}</span>
-                <button
-                  type="button"
-                  title="移除附件"
-                  onClick={() => handleRemoveAttachment(attachment.id)}
-                >
-                  <Icons.X size={12} />
-                </button>
-              </div>
-            ))}
+            {attachments.map((attachment) =>
+              attachment.type === 'image' ? (
+                <div key={attachment.id} className="composer-attachment-thumb">
+                  <button
+                    type="button"
+                    className="composer-attachment-thumb-image"
+                    title={attachment.previewUrl ? `查看 ${attachment.name}` : attachment.name}
+                    onClick={() => {
+                      if (attachment.previewUrl) {
+                        setLightboxAttachment(attachment)
+                      } else {
+                        // Preview not ready yet — kick off a load (or retry).
+                        void handleEnsureImagePreview(attachment)
+                      }
+                    }}
+                  >
+                    {attachment.previewUrl ? (
+                      <img
+                        src={attachment.previewUrl}
+                        alt={attachment.name}
+                        draggable={false}
+                      />
+                    ) : attachment.previewError ? (
+                      <span className="composer-attachment-thumb-fallback" aria-hidden="true">
+                        <Icons.Image size={18} />
+                      </span>
+                    ) : (
+                      <span className="composer-attachment-thumb-loading" aria-hidden="true" />
+                    )}
+                  </button>
+                  <span className="composer-attachment-thumb-name" title={attachment.name}>
+                    {attachment.name}
+                  </span>
+                  <button
+                    type="button"
+                    className="composer-attachment-thumb-remove"
+                    title="移除附件"
+                    onClick={() => handleRemoveAttachment(attachment.id)}
+                  >
+                    <Icons.X size={11} />
+                  </button>
+                </div>
+              ) : (
+                <div key={attachment.id} className="composer-attachment-chip">
+                  <Icons.File size={13} />
+                  <span>{attachment.name}</span>
+                  <button
+                    type="button"
+                    title="移除附件"
+                    onClick={() => handleRemoveAttachment(attachment.id)}
+                  >
+                    <Icons.X size={12} />
+                  </button>
+                </div>
+              ),
+            )}
           </div>
         )}
         <div
@@ -4535,9 +4677,6 @@ function ComposerV2({
             onClick={() => void handleAddAttachments()}
           >
             <Icons.Upload />
-          </button>
-          <button className="icon-btn" title="工具">
-            <Icons.Wrench />
           </button>
           <AgentPicker
             agents={agents}
@@ -4634,6 +4773,45 @@ function ComposerV2({
           </button>
         </div>
       </div>
+      {lightboxAttachment && (
+        <div
+          className="composer-attachment-lightbox"
+          role="dialog"
+          aria-modal="true"
+          aria-label={lightboxAttachment.name}
+          onClick={() => setLightboxAttachment(null)}
+        >
+          <div
+            className="composer-attachment-lightbox-stage"
+            onClick={(event) => event.stopPropagation()}
+          >
+            {lightboxAttachment.previewUrl ? (
+              <img
+                src={lightboxAttachment.previewUrl}
+                alt={lightboxAttachment.name}
+                draggable={false}
+              />
+            ) : (
+              <div className="composer-attachment-lightbox-loading">
+                <Icons.Spinner size={20} />
+              </div>
+            )}
+            <div className="composer-attachment-lightbox-caption">
+              <span className="composer-attachment-lightbox-name">
+                {lightboxAttachment.name}
+              </span>
+              <button
+                type="button"
+                className="composer-attachment-lightbox-close"
+                title="关闭"
+                onClick={() => setLightboxAttachment(null)}
+              >
+                <Icons.X size={14} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

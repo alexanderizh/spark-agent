@@ -1740,6 +1740,59 @@ export function registerAllIpcHandlers(): void {
     return { opened: true }
   })
 
+  // ─── File Read Image Data URL Handler ────────────────────────────────
+  //
+  // Reads an image file from disk and returns a base64 data URL. Used by the
+  // chat composer to render small preview thumbnails for image attachments.
+  // The renderer cannot use file:// URLs directly (webSecurity is enabled),
+  // so we surface the bytes through this dedicated, request-scoped channel.
+  //
+  // The MIME type is detected from the file's magic number (first 12 bytes)
+  // rather than the extension — callers may pass us anything they selected
+  // from a file dialog, and we want a truthful value for the data URL.
+
+  typedIpcHandle('file:read-image-data-url', async (req) => {
+    const filePath = req.filePath
+    if (!filePath || typeof filePath !== 'string') {
+      return { dataUrl: '', mimeType: '', error: 'filePath is required' }
+    }
+
+    log.info(`file:read-image-data-url requested, path=${filePath}`)
+
+    try {
+      const fs = await import('node:fs/promises')
+      // Read only the first 12 bytes for magic-number sniffing, then the
+      // rest separately. This keeps the sniff step cheap for large files.
+      const handle = await fs.open(filePath, 'r')
+      try {
+        const sniffBuf = Buffer.alloc(12)
+        await handle.read(sniffBuf, 0, 12, 0)
+        const mimeType = detectImageMimeType(sniffBuf)
+
+        if (!mimeType) {
+          return {
+            dataUrl: '',
+            mimeType: '',
+            error: 'file is not a recognised image format',
+          }
+        }
+
+        // Now read the full file. For typical screenshots (a few hundred KB
+        // to a few MB) this is fine; the composer caps at 20 attachments per
+        // turn so worst-case memory is bounded.
+        const fileBuf = await handle.readFile()
+        const dataUrl = `data:${mimeType};base64,${fileBuf.toString('base64')}`
+        return { dataUrl, mimeType }
+      } finally {
+        await handle.close()
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`file:read-image-data-url failed, path=${filePath}, error=${message}`)
+      return { dataUrl: '', mimeType: '', error: message }
+    }
+  })
+
   // ─── Playwright Browser Automation Handlers ──────────────────────────
 
   typedIpcHandle('playwright:status', async () => {
@@ -2155,4 +2208,75 @@ function buildPlaywrightStatus(): import('@spark/protocol').PlaywrightStatusResp
     cdpEndpoint: getCdpEndpoint(),
     lastError: integrity.lastError,
   }
+}
+
+/**
+ * Detect image MIME type from a buffer's first few bytes (magic number).
+ * Returns the canonical MIME type string, or empty string when the buffer
+ * doesn't look like a supported image format.
+ *
+ * Supported formats (matches IMAGE_ATTACHMENT_EXTENSIONS in the renderer):
+ *   - PNG:  89 50 4E 47 0D 0A 1A 0A
+ *   - JPEG: FF D8 FF
+ *   - GIF:  47 49 46 38 (37|39) 61
+ *   - WEBP: 52 49 46 46 ?? ?? ?? ?? 57 45 42 50
+ *   - BMP:  42 4D
+ *   - TIFF: 49 49 2A 00  (little-endian) or 4D 4D 00 2A (big-endian)
+ *   - HEIC/HEIF: ?? ?? ?? ?? 66 74 79 70 68 65 69 63 / 68 65 69 73
+ */
+function detectImageMimeType(head: Buffer): string {
+  if (head.length < 4) return ''
+
+  // PNG
+  if (
+    head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+  ) {
+    return 'image/png'
+  }
+
+  // JPEG
+  if (head[0] === 0xff && head[1] === 0xd8 && head[2] === 0xff) {
+    return 'image/jpeg'
+  }
+
+  // GIF87a / GIF89a
+  if (
+    head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x38
+  ) {
+    return 'image/gif'
+  }
+
+  // BMP
+  if (head[0] === 0x42 && head[1] === 0x4d) {
+    return 'image/bmp'
+  }
+
+  // TIFF (little- or big-endian)
+  if (
+    (head[0] === 0x49 && head[1] === 0x49 && head[2] === 0x2a && head[3] === 0x00) ||
+    (head[0] === 0x4d && head[1] === 0x4d && head[2] === 0x00 && head[3] === 0x2a)
+  ) {
+    return 'image/tiff'
+  }
+
+  // WEBP (RIFF....WEBP) — needs at least 12 bytes
+  if (
+    head.length >= 12 &&
+    head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46 &&
+    head[8] === 0x57 && head[9] === 0x45 && head[10] === 0x42 && head[11] === 0x50
+  ) {
+    return 'image/webp'
+  }
+
+  // HEIC/HEIF (ISO BMFF: ftyp box at offset 4)
+  if (
+    head.length >= 12 &&
+    head[4] === 0x66 && head[5] === 0x74 && head[6] === 0x79 && head[7] === 0x70 &&
+    head[8] === 0x68 && head[9] === 0x65 && head[10] === 0x69
+  ) {
+    // 68 65 69 63 = heic, 68 65 69 73 = heis (still images)
+    return 'image/heic'
+  }
+
+  return ''
 }
