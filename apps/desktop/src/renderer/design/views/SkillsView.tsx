@@ -53,9 +53,6 @@ export function SkillsView() {
             )}
           </div>
 
-          <button className="btn" onClick={() => setTweak('view', 'skill-store')}>
-            <Icons.Globe size={12} /> Skill 商店
-          </button>
           <button className="btn primary" onClick={() => setTweak('view', 'skill-store')}>
             <Icons.Plus size={12} /> 创建 Skill
           </button>
