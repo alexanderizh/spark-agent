@@ -1,5 +1,7 @@
 export type ProviderPresetKind = 'anthropic' | 'openai'
 
+export type ProviderModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
+
 export interface ProviderPreset {
   id: string
   vendorId: string
@@ -9,6 +11,7 @@ export interface ProviderPreset {
   defaultModel: string
   modelIds: string[]
   sourceUrls: string[]
+  modelType?: ProviderModelType
 }
 
 /* ─── Vendor 元数据（用于 UI 展示：emoji logo + 颜色 + 描述） ─── */
@@ -554,6 +557,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     apiEndpoint: 'https://api.klingai.com/v1',
     defaultModel: 'kling-v1-6',
     modelIds: ['kling-v1-6', 'kling-v1-5', 'kling-v1', 'kling-virtual-try-on'],
+    modelType: 'video',
     sourceUrls: [
       'https://klingai.kuaishou.com/',
       'https://platform.klingai.com/',

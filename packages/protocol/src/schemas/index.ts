@@ -150,6 +150,9 @@ export const SessionSetMaxIterationsRequestSchema = z.object({
 
 const ProviderKindSchema = z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
 
+export const ProviderModelTypeSchema = z.enum(['image', 'text', 'multimodal', 'voice', 'video'])
+export type ProviderModelType = z.infer<typeof ProviderModelTypeSchema>
+
 export const ProviderCreateRequestSchema = z.object({
   name: z.string().min(1).max(100),
   provider: ProviderKindSchema,
@@ -166,6 +169,8 @@ export const ProviderCreateRequestSchema = z.object({
   sonnetModel: z.string().min(1).max(200).optional(),
   /** Plan/Review 等高能力 agent；可选。留空则回落 defaultModel。 */
   opusModel: z.string().min(1).max(200).optional(),
+  /** 模型能力类型 */
+  modelType: ProviderModelTypeSchema.optional().default('multimodal'),
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
   ctx.addIssue({
@@ -189,6 +194,8 @@ export const ProviderUpdateRequestSchema = z.object({
   haikuModel: z.string().min(1).max(200).nullable().optional(),
   sonnetModel: z.string().min(1).max(200).nullable().optional(),
   opusModel: z.string().min(1).max(200).nullable().optional(),
+  /** 模型能力类型 */
+  modelType: ProviderModelTypeSchema.optional(),
 })
 
 export const ProviderDeleteRequestSchema = z.object({

@@ -279,6 +279,8 @@ export interface ProviderProfile {
   sonnetModel?: string
   /** Opus 档（Plan/Review 等高能力 agent）；为空时回落 defaultModel */
   opusModel?: string
+  /** 模型能力类型 */
+  modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -306,6 +308,8 @@ export interface ProviderCreateRequest {
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
+  /** 模型能力类型 */
+  modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -333,6 +337,8 @@ export interface ProviderUpdateRequest {
   /** 更新 API Key 时传入，不更新则不传 */
   apiKey?: string
   isDefault?: boolean
+  /** 模型能力类型 */
+  modelType?: 'image' | 'text' | 'multimodal' | 'voice' | 'video'
 }
 
 export interface ProviderUpdateResponse {

@@ -35,6 +35,7 @@ function rowToProfile(row: {
     ...(config.haikuModel !== undefined && { haikuModel: config.haikuModel }),
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
+    ...(config.modelType !== undefined && { modelType: config.modelType }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -60,6 +61,7 @@ export class ProviderService {
     haikuModel?: string
     sonnetModel?: string
     opusModel?: string
+    modelType?: string
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -93,6 +95,7 @@ export class ProviderService {
         ...(params.haikuModel !== undefined && params.haikuModel.trim().length > 0 && { haikuModel: params.haikuModel.trim() }),
         ...(params.sonnetModel !== undefined && params.sonnetModel.trim().length > 0 && { sonnetModel: params.sonnetModel.trim() }),
         ...(params.opusModel !== undefined && params.opusModel.trim().length > 0 && { opusModel: params.opusModel.trim() }),
+        ...(params.modelType !== undefined && { modelType: params.modelType }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
@@ -118,6 +121,7 @@ export class ProviderService {
     haikuModel?: string | null
     sonnetModel?: string | null
     opusModel?: string | null
+    modelType?: string
     apiKey?: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -142,7 +146,8 @@ export class ProviderService {
       params.apiEndpoint !== undefined ||
       params.codexApiKind !== undefined ||
       params.supportsMillionContext !== undefined ||
-      tierTouched
+      tierTouched ||
+      params.modelType !== undefined
         ? { ...existingConfig }
         : undefined
 
@@ -185,6 +190,9 @@ export class ProviderService {
       const v = params.opusModel?.trim()
       if (v != null && v.length > 0) newConfig.opusModel = v
       else delete newConfig.opusModel
+    }
+    if (newConfig !== undefined && params.modelType !== undefined) {
+      newConfig.modelType = params.modelType
     }
 
     this.repo.update(params.id, {
@@ -358,6 +366,7 @@ interface ProviderConfig {
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
+  modelType?: string
 }
 
 function normalizeProviderType(providerType: string): 'anthropic' | 'openai' {
@@ -434,6 +443,7 @@ function rowToExportProfile(row: {
     ...(config.sonnetModel !== undefined && { sonnetModel: config.sonnetModel }),
     ...(config.opusModel !== undefined && { opusModel: config.opusModel }),
     ...(config.codexApiKind !== undefined && { codexApiKind: config.codexApiKind }),
+    ...(config.modelType !== undefined && { modelType: config.modelType }),
   }
 }
 
@@ -452,6 +462,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   haikuModel?: string
   sonnetModel?: string
   opusModel?: string
+  modelType?: string
 } {
   return {
     defaultModel: profile.defaultModel,
@@ -462,5 +473,6 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.haikuModel != null && profile.haikuModel.length > 0 && { haikuModel: profile.haikuModel }),
     ...(profile.sonnetModel != null && profile.sonnetModel.length > 0 && { sonnetModel: profile.sonnetModel }),
     ...(profile.opusModel != null && profile.opusModel.length > 0 && { opusModel: profile.opusModel }),
+    ...(profile.modelType !== undefined && { modelType: profile.modelType }),
   }
 }

@@ -44,6 +44,8 @@ export const ProviderExportProfileSchema = z.object({
   opusModel: z.string().min(1).max(200).nullable().optional(),
   /** OpenAI/Codex API 风格 */
   codexApiKind: z.enum(['chat', 'responses']).optional(),
+  /** 模型能力类型 */
+  modelType: z.enum(['image', 'text', 'multimodal', 'voice', 'video']).optional().default('multimodal'),
 })
 
 export type ProviderExportProfile = z.infer<typeof ProviderExportProfileSchema>
