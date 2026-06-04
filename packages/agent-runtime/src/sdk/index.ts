@@ -1,4 +1,5 @@
-export { ClaudeSDKExecutor, isSDKAvailable, resetSDKLoadState, SDKNotAvailableError, getResumeCircuitBreaker } from './claude-sdk-executor.js'
+export { ClaudeSDKExecutor, isSDKAvailable, resetSDKLoadState, SDKNotAvailableError, getResumeCircuitBreaker, loadSdkMcpFactory } from './claude-sdk-executor.js'
+export type { SdkMcpToolResult } from './claude-sdk-executor.js'
 export { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 export type { SDKPermissionConfig } from './permission-mapper.js'
 export { mapSDKMessageToEvents } from './event-mapper.js'

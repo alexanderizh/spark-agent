@@ -40,6 +40,8 @@ export type {
   HookTriggerHandler,
   SessionRenamedHandler,
 } from './services/session.service.js'
+export { TeamDispatchService } from './services/team-dispatch.service.js'
+export type { TeamDispatchRunContext, TeamMemberExecutionResult } from './services/team-dispatch.service.js'
 export { WorkspaceService, detectProjectKind } from './services/workspace.service.js'
 export type { UpdateWorkspaceParams } from './services/workspace.service.js'
 export {

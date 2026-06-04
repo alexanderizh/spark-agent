@@ -534,6 +534,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.skillId != null ? { skillId: req.skillId } : {}),
       ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
       ...(req.attachments != null ? { attachments: req.attachments } : {}),
+      ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
     })
   })
 

@@ -119,13 +119,17 @@ export type SDKMessage =
 // ── SDK Query API ───────────────────────────────────────────────────────────
 
 export interface SDKMcpServerConfig {
-  type?: 'stdio' | 'sse' | 'http'
+  type?: 'stdio' | 'sse' | 'http' | 'sdk'
   command?: string
   args?: string[]
   env?: Record<string, string>
   cwd?: string
   url?: string
   headers?: Record<string, string>
+  /** in-process MCP server (type='sdk')：createSdkMcpServer 返回的 name/instance。
+   *  config.mcpServers 原样传给 SDK query()，SDK 原生支持同进程实例。 */
+  name?: string
+  instance?: unknown
 }
 
 export type SDKPermissionMode =
@@ -289,6 +293,8 @@ export interface SDKExecutorConfig {
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
   imageGenerationMcpServer?: SDKMcpServerConfig | undefined
+  /** Team Mode：in-process spark_team MCP server（Host 调用成员的 agent_dispatch 工具） */
+  teamMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined

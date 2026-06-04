@@ -39,6 +39,7 @@ import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 import type {
   SDKExecutorConfig,
+  SDKMcpServerConfig,
   SDKMessage,
   SDKPermissionResult,
   SDKQueryFunction,
@@ -126,6 +127,41 @@ export async function isSDKAvailable(): Promise<boolean> {
 export function resetSDKLoadState(): void {
   sdkLoadAttempted = false
   sdkModule = null
+}
+
+/** in-process MCP 工具定义的处理器返回值（CallToolResult 的子集） */
+export interface SdkMcpToolResult {
+  content: Array<{ type: 'text'; text: string }>
+  structuredContent?: unknown
+  isError?: boolean
+}
+
+/** 从已加载的 Claude Agent SDK 暴露 in-process MCP server 工厂（createSdkMcpServer + tool）。
+ *  用于 Team Mode 的 spark_team 工具——它需要在同进程内直接回调 dispatcher，
+ *  因此必须用 SDK 的 in-process server（区别于 spark_image 的 stdio 子进程）。
+ *  SDK 不可用时返回 null。 */
+export async function loadSdkMcpFactory(): Promise<{
+  createSdkMcpServer: (opts: { name: string; version?: string; tools: unknown[] }) => SDKMcpServerConfig
+  tool: (
+    name: string,
+    description: string,
+    inputSchema: Record<string, unknown>,
+    handler: (args: Record<string, unknown>, extra: unknown) => Promise<SdkMcpToolResult>,
+  ) => unknown
+} | null> {
+  const sdk = (await loadSDK()) as
+    | (SDKModule & {
+        createSdkMcpServer?: (opts: { name: string; version?: string; tools: unknown[] }) => SDKMcpServerConfig
+        tool?: (
+          name: string,
+          description: string,
+          inputSchema: Record<string, unknown>,
+          handler: (args: Record<string, unknown>, extra: unknown) => Promise<SdkMcpToolResult>,
+        ) => unknown
+      })
+    | null
+  if (sdk?.createSdkMcpServer == null || sdk.tool == null) return null
+  return { createSdkMcpServer: sdk.createSdkMcpServer, tool: sdk.tool }
 }
 
 export class ClaudeSDKExecutor {

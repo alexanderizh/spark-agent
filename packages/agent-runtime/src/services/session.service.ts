@@ -15,6 +15,7 @@ import {
   ContextPreferenceRepository,
   AgentRepository,
   WorkflowRepository,
+  TeamDispatchRepository,
 } from '@spark/storage'
 import type { AgentItem, WorkflowItem } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
@@ -32,8 +33,14 @@ import type {
   HookNode,
   SessionAttachment,
   UserQuestionPrompt,
+  TeamModeConfig,
+  TeamA2ATask,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
+import { TeamDispatchService } from './team-dispatch.service.js'
+import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { loadSdkMcpFactory } from '../sdk/index.js'
+import { z } from 'zod'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
 import type {
@@ -136,6 +143,14 @@ export class SessionService {
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
+  private teamDispatchService: TeamDispatchService | null = null
+
+  private getTeamDispatchService(): TeamDispatchService {
+    if (this.teamDispatchService == null) {
+      this.teamDispatchService = new TeamDispatchService(new TeamDispatchRepository(this.db))
+    }
+    return this.teamDispatchService
+  }
 
   constructor(
     private readonly db: SparkDatabase,
@@ -506,11 +521,18 @@ export class SessionService {
     /** 可选：Skill 参数 */
     skillParams?: Record<string, unknown>
     attachments?: SessionAttachment[]
+    /** 可选：团队模式配置（Team Mode 下随 turn 提交） */
+    teamConfig?: TeamModeConfig
   }): Promise<{ turnId: string; started: boolean }> {
     const { sessionId, message, skillId, skillParams } = params
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
+    // 团队配置随 turn 提交时，写入 session.metadata.team（startTurn 以此为单一真相源，
+    // 无需穿过排队路径）。
+    if (params.teamConfig != null) {
+      new SessionRepository(this.db).patchMetadata(sessionId, { team: params.teamConfig })
+    }
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
@@ -742,8 +764,29 @@ export class SessionService {
     )
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
+
+    // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
+    const teamConfig = readSessionTeamConfig(session)
+    let teamMcpServer: SDKMcpServerConfig | undefined
+    let teamRosterPrompt = ''
+    if (teamConfig?.enabled) {
+      const members = this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
+      teamRosterPrompt = buildTeamRosterPrompt(agent, members, teamConfig)
+      teamMcpServer =
+        (await this.createTeamMcpServer({
+          sessionId,
+          turnId,
+          hostAgent: agent,
+          members,
+          teamConfig,
+          workspaceRootPath,
+          eventRepo,
+        })) ?? undefined
+    }
+
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
+      teamRosterPrompt,
       runtimeRulesPrompt,
       runtimeContext.systemPrompt,
       projectContext.systemPrompt,
@@ -957,6 +1000,7 @@ export class SessionService {
         ...(imageGenerationContext != null
           ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
           : {}),
+        ...(teamMcpServer != null ? { teamMcpServer } : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
@@ -1183,6 +1227,9 @@ export class SessionService {
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
+    if (config.teamMcpServer != null) {
+      mcpServers.spark_team = config.teamMcpServer
+    }
 
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
@@ -1232,11 +1279,22 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
+    const allowedToolAdditions: string[] = []
+    if (config.imageGenerationMcpServer != null) {
+      allowedToolAdditions.push('mcp__spark_image__generate_image')
+    }
+    if (config.teamMcpServer != null) {
+      allowedToolAdditions.push('mcp__spark_team__agent_dispatch')
+    }
     const sdkConfig: SDKExecutorConfig = {
       ...config,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
-      ...(config.imageGenerationMcpServer != null
-        ? { allowedTools: mergeUniqueStrings(config.allowedTools, ['mcp__spark_image__generate_image']) }
+      ...(allowedToolAdditions.length > 0
+        ? { allowedTools: mergeUniqueStrings(config.allowedTools, allowedToolAdditions) }
+        : {}),
+      // Team Mode 下禁用 SDK 内置 Task 工具，强制 A2A 走 spark_team.agent_dispatch（§7.4）
+      ...(config.teamMcpServer != null
+        ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ['Task']) }
         : {}),
     }
 
@@ -1423,6 +1481,198 @@ export class SessionService {
     }
   }
 
+  // ── Team Mode (A2A) ────────────────────────────────────────────────────────
+
+  /** 解析会话启用的成员 Agent（排除 Host 自身、不存在或已禁用的 Agent） */
+  private resolveTeamMembers(memberAgentIds: string[], hostAgentId: string): AgentItem[] {
+    const repo = new AgentRepository(this.db)
+    const members: AgentItem[] = []
+    for (const id of memberAgentIds) {
+      if (id === hostAgentId) continue
+      const agent = repo.get(id)
+      if (agent != null && agent.enabled) members.push(agent)
+    }
+    return members
+  }
+
+  /** 构建 spark_team in-process MCP server（agent_dispatch 工具）。SDK 不可用时返回 null。 */
+  private async createTeamMcpServer(ctx: {
+    sessionId: string
+    turnId: string
+    hostAgent: AgentItem
+    members: AgentItem[]
+    teamConfig: TeamModeConfig
+    workspaceRootPath: string
+    eventRepo: EventRepository
+  }): Promise<SDKMcpServerConfig | null> {
+    const factory = await loadSdkMcpFactory()
+    if (factory == null) return null
+    const { createSdkMcpServer, tool } = factory
+
+    const dispatchTool = tool(
+      'agent_dispatch',
+      TEAM_DISPATCH_TOOL_DESCRIPTION,
+      {
+        targetAgentId: z.string().describe('One of the team member IDs visible to you. Use the exact id.'),
+        instruction: z.string().max(8000).describe('Clear, self-contained description of what the member should do.'),
+        inputs: z.record(z.unknown()).optional(),
+        attachments: z
+          .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
+          .max(10)
+          .optional(),
+        expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
+        timeoutMs: z.number().int().min(5000).max(600_000).optional(),
+      } as Record<string, unknown>,
+      async (args: Record<string, unknown>) => {
+        const task: TeamA2ATask = {
+          taskId: crypto.randomUUID(),
+          hostAgentId: ctx.hostAgent.id,
+          memberAgentId: String(args.targetAgentId ?? ''),
+          rootTurnId: ctx.turnId,
+          instruction: String(args.instruction ?? ''),
+          ...(args.inputs != null ? { inputs: args.inputs as Record<string, unknown> } : {}),
+          ...(Array.isArray(args.attachments)
+            ? { attachments: args.attachments as NonNullable<TeamA2ATask['attachments']> }
+            : {}),
+          ...(args.expectedOutput != null
+            ? { expectedOutput: args.expectedOutput as NonNullable<TeamA2ATask['expectedOutput']> }
+            : {}),
+          ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+        }
+        const reply = await this.getTeamDispatchService().run(task, {
+          sessionId: ctx.sessionId,
+          turnId: ctx.turnId,
+          hostAgentId: ctx.hostAgent.id,
+          members: ctx.members,
+          teamConfig: ctx.teamConfig,
+          currentDepth: 0,
+          emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
+          executeMember: ({ member, task: memberTask, dispatchId, signal }) =>
+            this.executeMemberTurn({
+              member,
+              task: memberTask,
+              dispatchId,
+              sessionId: ctx.sessionId,
+              turnId: ctx.turnId,
+              workspaceRootPath: ctx.workspaceRootPath,
+              eventRepo: ctx.eventRepo,
+              signal,
+            }),
+        })
+        return {
+          content: [{ type: 'text' as const, text: formatReplyForHost(reply) }],
+          structuredContent: reply as unknown,
+        }
+      },
+    )
+
+    return createSdkMcpServer({ name: 'spark_team', version: '0.1.0', tools: [dispatchTool] }) as SDKMcpServerConfig
+  }
+
+  /** 用某个成员 Agent 的配置运行一次 one-shot turn，流式输出 rebrand 为 team_member_message。 */
+  private async executeMemberTurn(args: {
+    member: AgentItem
+    task: TeamA2ATask
+    dispatchId: string
+    sessionId: string
+    turnId: string
+    workspaceRootPath: string
+    eventRepo: EventRepository
+    signal: AbortSignal
+  }): Promise<TeamMemberExecutionResult> {
+    const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal } = args
+
+    // 解析 member 的 provider/apiKey/model；member 未配置 provider 时回落到会话 provider。
+    const sessionRepo = new SessionRepository(this.db)
+    const providerRepo = new ProviderProfileRepository(this.db)
+    const session = sessionRepo.findByIdOrFail(sessionId)
+    const providerProfileId = member.providerProfileId ?? session.provider_profile_id
+    if (providerProfileId == null) throw new Error('Member has no provider profile and session has none')
+    const provider = providerRepo.get(providerProfileId)
+    if (provider?.keystore_ref == null) throw new Error('Member provider has no keystore ref')
+    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
+    if (apiKey == null) throw new Error('Member provider API key not found')
+    const providerConfig = JSON.parse(provider.config_json) as {
+      defaultModel?: string
+      model?: string
+      apiEndpoint?: string
+      haikuModel?: string
+      sonnetModel?: string
+      opusModel?: string
+    }
+    const model = (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '').trim()
+    if (!model) throw new Error('Member has no resolvable model')
+
+    const memberSystemPrompt = buildManagedAgentSystemPrompt(member, null)
+    const userMessage = buildMemberUserMessage(task)
+
+    const sdkConfig: SDKExecutorConfig = {
+      apiKey,
+      model,
+      workspaceRootPath,
+      permissionMode: member.permissionMode as SDKExecutorConfig['permissionMode'],
+      ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
+      ...(providerConfig.haikuModel != null ? { haikuModel: providerConfig.haikuModel } : {}),
+      ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
+      ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
+      ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
+      // Member 默认不可再 dispatch（防递归）；嵌套放开留待 Phase 4。
+      disallowedTools: ['Task'],
+      enableCheckpoints: false,
+      continueSession: false,
+    }
+
+    const executor = new ClaudeSDKExecutor()
+    const onAbort = () => executor.cancel()
+    signal.addEventListener('abort', onAbort)
+
+    let finalText = ''
+    let inputTokens: number | undefined
+    let outputTokens: number | undefined
+    const makeBase = () => ({
+      id: crypto.randomUUID(),
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+    })
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeBase(),
+            type: 'team_member_message',
+            dispatchId,
+            memberAgentId: member.id,
+            mode: event.mode,
+            content: event.content,
+            isFinal: event.isFinal,
+          },
+          eventRepo,
+        )
+        if (event.mode === 'complete' && event.content.length > 0) finalText = event.content
+      } else if (event.type === 'usage_update') {
+        inputTokens = event.inputTokens
+        outputTokens = event.outputTokens
+      }
+      // 其他事件（tool_call/file_change 等）在 MVP 阶段不转发，避免污染 Host 时间线。
+    })
+
+    try {
+      await executor.executeTurn(sessionId, `${turnId}:${dispatchId}`, userMessage, sdkConfig)
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+    }
+
+    return {
+      content: finalText,
+      ...(inputTokens != null ? { inputTokens } : {}),
+      ...(outputTokens != null ? { outputTokens } : {}),
+    }
+  }
+
   private emitAndPersist(
     sessionId: string,
     turnId: string,
@@ -1590,6 +1840,8 @@ export class SessionService {
     this.pendingTurns.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
+    // 取消所有进行中的 team dispatch（连同其 member 执行器）
+    this.teamDispatchService?.cancelAll()
     if (loop == null) {
       if (hadQueuedTurns) this.emitQueueChanged(sessionId)
       return { cancelled: false }
@@ -2298,6 +2550,101 @@ function normalizeReasoningEffort(
 ): 'low' | 'medium' | 'high' | 'xhigh' {
   if (value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh') return value
   return 'medium'
+}
+
+// ── Team Mode helpers ────────────────────────────────────────────────────────
+
+const TEAM_DISPATCH_TOOL_DESCRIPTION = [
+  'Delegate a focused subtask to a teammate agent.',
+  'When to use: the task is outside your domain, another member is clearly better suited, or the user explicitly asks for a member by name.',
+  'When NOT to use: you can answer the user directly, or the subtask needs the user to clarify something (ask the user instead).',
+  'Returns a structured reply with the member content. You decide whether to call again or synthesize the final answer.',
+  'The member cannot call back to you or chain to another member by default.',
+].join('\n')
+
+/** 从 SessionRow.metadata_json 读取团队配置（不存在/无效返回 null） */
+function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeConfig | null {
+  if (session.metadata_json == null || session.metadata_json === '') return null
+  try {
+    const meta = JSON.parse(session.metadata_json) as { team?: Partial<TeamModeConfig> }
+    const team = meta.team
+    if (team == null || typeof team !== 'object') return null
+    return {
+      enabled: team.enabled === true,
+      hostAgentId: typeof team.hostAgentId === 'string' ? team.hostAgentId : 'code-agent',
+      memberAgentIds: Array.isArray(team.memberAgentIds) ? team.memberAgentIds.filter((id) => typeof id === 'string') : [],
+      maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
+      allowNesting: team.allowNesting === true,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 构建团队花名册 system prompt 段，附加在 [Agent Instructions] 之后（设计文档 §8.2.3） */
+function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
+  if (members.length === 0) return ''
+  const lines: string[] = [
+    '[Team Roster]',
+    `You are ${host.name} (${host.id}), the host of a multi-agent team.`,
+    'Use the tool `mcp__spark_team__agent_dispatch` to delegate a task to a member when:',
+    '  - the task is outside your primary expertise, or',
+    '  - the user explicitly asks to involve a specific member.',
+    '',
+    'Members available to you in this session:',
+  ]
+  for (const m of members) {
+    const summary = m.description.trim().slice(0, 240)
+    lines.push(`- id: ${m.id}`)
+    lines.push(`  name: ${m.name}`)
+    if (summary) lines.push(`  description: ${summary}`)
+  }
+  lines.push('')
+  lines.push('Rules:')
+  lines.push('- Call dispatch with a clear instruction and the minimum context the member needs (paste code/snippets into `attachments` instead of relying on shared memory).')
+  lines.push('- After receiving the member reply, decide whether to: (a) call another member, (b) refine and call the same member again, or (c) finish with a synthesized answer for the user.')
+  lines.push(`- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`)
+  lines.push('- Do NOT call dispatch if you can answer the user directly.')
+  return lines.join('\n')
+}
+
+/** 把 task 拼成传给 member 的 user message（instruction + attachments + expectedOutput） */
+function buildMemberUserMessage(task: TeamA2ATask): string {
+  const parts: string[] = [task.instruction]
+  if (task.attachments != null && task.attachments.length > 0) {
+    parts.push('', '[Attachments]')
+    for (const att of task.attachments) {
+      parts.push(att.type === 'text' ? att.value : `${att.type}: ${att.value}`)
+    }
+  }
+  if (task.expectedOutput != null) {
+    parts.push('', `[Expected output] ${task.expectedOutput}`)
+  }
+  return parts.join('\n')
+}
+
+/** 把 member 的结构化回复格式化成给 Host LLM 看的工具结果文本（UI 不渲染此文本） */
+function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply): string {
+  const usage = reply.usage
+  const meta = [
+    `state=${reply.state}`,
+    usage?.durationMs != null ? `${usage.durationMs}ms` : null,
+    usage?.inputTokens != null && usage?.outputTokens != null
+      ? `${usage.inputTokens}→${usage.outputTokens} tok`
+      : null,
+    reply.error != null ? `code=${reply.error.code}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const header = `[Member Reply · ${meta}]`
+  if (reply.state !== 'completed') {
+    return `${header}\n${reply.error?.message ?? '(no content)'}`
+  }
+  const artifactsLine =
+    reply.artifacts != null && reply.artifacts.length > 0
+      ? `\n(artifacts: ${reply.artifacts.map((a) => a.name ?? a.type).join(', ')})`
+      : ''
+  return `${header}\n${reply.content}${artifactsLine}`
 }
 
 function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem | null): string {

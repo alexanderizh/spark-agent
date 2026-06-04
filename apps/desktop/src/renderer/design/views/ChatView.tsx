@@ -4612,6 +4612,7 @@ function ComposerV2({
               message: text,
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
               ...getCurrentRuntimePatch(),
+              ...(teamConfig.enabled ? { teamConfig, agentId: teamConfig.hostAgentId } : {}),
             })
             if (!sendRes.started) {
               setQueueVisible(true)
@@ -4662,6 +4663,7 @@ function ComposerV2({
           message: text,
           ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
           ...getCurrentRuntimePatch(),
+          ...(teamConfig.enabled ? { teamConfig, agentId: teamConfig.hostAgentId } : {}),
         })
         if (!res.started) {
           setQueueVisible(true)
@@ -4697,6 +4699,7 @@ function ComposerV2({
       session?.id,
       setAttachments,
       setValue,
+      teamConfig,
       toast,
     ],
   )
