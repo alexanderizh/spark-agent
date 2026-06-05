@@ -12437,6 +12437,84 @@ body.inspector-resizing {
   font-weight: 650;
   color: var(--text-strong);
 }
+.team-member-running,
+.team-roster-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.team-member-running-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 35%, transparent);
+  animation: team-member-running-pulse 1.2s ease-out infinite;
+}
+@keyframes team-member-running-pulse {
+  0% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--primary) 35%, transparent);
+  }
+  70% {
+    opacity: 0.65;
+    box-shadow: 0 0 0 6px transparent;
+  }
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+.team-member-log-panel {
+  margin-bottom: 10px;
+}
+.team-member-log-panel summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  padding: 2px 0;
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.team-member-log-panel summary::-webkit-details-marker {
+  display: none;
+}
+.team-member-log-panel summary::after {
+  content: '›';
+  color: var(--text-faint);
+  font-size: 16px;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.15s ease;
+}
+.team-member-log-panel[open] summary::after {
+  transform: rotate(90deg);
+}
+.team-member-log-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: var(--text-faint);
+}
+.team-member-log-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 0 4px;
+}
 /* member 输出与主 agent 保持一致的字号 / 行高 / markdown 视觉规则
    （等同 .msg-content：var(--font-base) + 1.65 line-height），
    极淡纯色底气泡区分于 Host 主流，无边框、无色条、无阴影。 */
@@ -12444,6 +12522,8 @@ body.inspector-resizing {
   font-size: var(--font-base);
   line-height: 1.65;
   color: var(--text);
+  width: fit-content;
+  min-width: 120px;
   max-width: 100%;
   /* 用 text 颜色混入 4%，dark/light 主题都能得到与背景拉开一档的极淡灰；
      不依赖主题色，避免抢戏。 */
@@ -12466,6 +12546,9 @@ body.inspector-resizing {
   background: color-mix(in srgb, var(--text) 4%, transparent);
   border-radius: var(--r-lg);
   padding: 10px 14px;
+  width: fit-content;
+  min-width: 120px;
+  max-width: 100%;
 }
 .team-member-message-main {
   min-width: 0;
@@ -12522,12 +12605,21 @@ body.inspector-resizing {
   min-width: 0;
   flex: 1;
 }
+.team-roster-name-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
 .team-roster-name {
   font-size: var(--font-sm);
   color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.team-roster-running {
+  margin-top: 1px;
 }
 .team-roster-desc {
   font-size: var(--font-xs);

@@ -2,6 +2,7 @@ import type {
   AgentEvent,
   TeamA2ATask,
   TeamA2AReply,
+  TeamMemberEventContext,
   TurnPromptSnapshotEvent,
   UserQuestionOption,
   UserQuestionPrompt,
@@ -51,9 +52,16 @@ export type UIBlock =
       output: string | undefined
       error: string | undefined
       durationMs: number | undefined
+      teamMemberContext?: TeamMemberEventContext
     }
   | { kind: 'error'; code: string; message: string; retryable: boolean }
-  | { kind: 'file_change'; changeType: string; path: string; diff: string | undefined }
+  | {
+      kind: 'file_change'
+      changeType: string
+      path: string
+      diff: string | undefined
+      teamMemberContext?: TeamMemberEventContext
+    }
   | {
       kind: 'checkpoint'
       checkpointId: string
@@ -74,6 +82,7 @@ export type UIBlock =
       stderr: string
       isStreaming: boolean
       exitCode: number | undefined
+      teamMemberContext?: TeamMemberEventContext
     }
   | { kind: 'plan_proposed'; plan: string }
   | {
@@ -317,6 +326,7 @@ export class MessageBuilder {
             output: undefined,
             error: undefined,
             durationMs: undefined,
+            ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
           })
         }
         break
@@ -348,6 +358,7 @@ export class MessageBuilder {
             block.output = formatToolOutput(event.output)
             block.error = event.error
             block.durationMs = event.durationMs
+            if (event.teamMemberContext != null) block.teamMemberContext = event.teamMemberContext
           }
         }
         break
@@ -399,6 +410,7 @@ export class MessageBuilder {
           if (block) {
             if (event.stream === 'stdout') block.stdout += event.data
             else block.stderr += event.data
+            if (event.teamMemberContext != null) block.teamMemberContext = event.teamMemberContext
             if (event.isFinal) {
               block.isStreaming = false
               block.exitCode = event.exitCode ?? undefined
@@ -414,6 +426,7 @@ export class MessageBuilder {
               stderr: event.stream === 'stderr' ? event.data : '',
               isStreaming: !event.isFinal,
               exitCode,
+              ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
             })
           }
         }
@@ -427,6 +440,7 @@ export class MessageBuilder {
           changeType: event.changeType,
           path: event.path,
           diff: event.diff ?? undefined,
+          ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
         })
 
         // 追踪文件变更用于生成汇总

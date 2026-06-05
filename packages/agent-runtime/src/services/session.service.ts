@@ -1839,8 +1839,6 @@ export class SessionService {
       timestamp: new Date().toISOString(),
       seq: 0,
     })
-    // member 自身的工具/文件事件透传给 Host 时间线（保持可见），其余事件忽略以免污染。
-    const FORWARDED_MEMBER_EVENTS = new Set(['tool_call', 'tool_result', 'file_change', 'terminal_output'])
     executor.onEvent((event) => {
       if (event.type === 'assistant_message') {
         this.emitAndPersist(
@@ -1862,9 +1860,25 @@ export class SessionService {
       } else if (event.type === 'usage_update') {
         inputTokens = event.inputTokens
         outputTokens = event.outputTokens
-      } else if (FORWARDED_MEMBER_EVENTS.has(event.type)) {
+      } else if (
+        event.type === 'tool_call' ||
+        event.type === 'tool_result' ||
+        event.type === 'file_change' ||
+        event.type === 'terminal_output'
+      ) {
         // 透传时重写 base 字段（seq 由 emitAndPersist 覆盖），保留原事件 payload
-        this.emitAndPersist(sessionId, turnId, { ...event, sessionId, turnId, seq: 0 }, eventRepo)
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...event,
+            sessionId,
+            turnId,
+            seq: 0,
+            teamMemberContext: { dispatchId, memberAgentId: member.id },
+          },
+          eventRepo,
+        )
       }
     })
 

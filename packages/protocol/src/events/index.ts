@@ -100,6 +100,8 @@ export interface ToolCallEvent extends BaseEvent {
   source: 'builtin' | 'mcp'
   /** MCP Server 标识（仅 source=mcp 时） */
   mcpServerId?: string
+  /** Team Mode：该工具调用来自某个被调度成员 Agent 时的归属信息 */
+  teamMemberContext?: TeamMemberEventContext
 }
 
 /** 工具执行结果 */
@@ -116,6 +118,8 @@ export interface ToolResultEvent extends BaseEvent {
   error?: string
   /** 执行耗时 ms */
   durationMs?: number
+  /** Team Mode：该工具结果来自某个被调度成员 Agent 时的归属信息 */
+  teamMemberContext?: TeamMemberEventContext
 }
 
 // ─── 子 Agent 事件 ──────────────────────────────────────────────────────────
@@ -232,6 +236,11 @@ export interface TeamMemberMessageEvent extends BaseEvent {
   isFinal: boolean
 }
 
+export interface TeamMemberEventContext {
+  dispatchId: string
+  memberAgentId: string
+}
+
 /** Member 在一次 dispatch 内的状态流转 */
 export interface TeamMemberStatusEvent extends BaseEvent {
   type: 'team_member_status'
@@ -298,6 +307,8 @@ export interface FileChangeEvent extends BaseEvent {
   diff?: string
   /** 文件大小（bytes） */
   sizeBytes?: number
+  /** Team Mode：该文件变更来自某个被调度成员 Agent 时的归属信息 */
+  teamMemberContext?: TeamMemberEventContext
 }
 
 /** Checkpoint metadata emitted by SDK-backed agent turns. */
@@ -338,6 +349,8 @@ export interface TerminalOutputEvent extends BaseEvent {
   isFinal: boolean
   /** 退出码（仅 isFinal=true 时） */
   exitCode?: number
+  /** Team Mode：该终端输出来自某个被调度成员 Agent 时的归属信息 */
+  teamMemberContext?: TeamMemberEventContext
 }
 
 // ─── 状态类事件 ──────────────────────────────────────────────────────────────

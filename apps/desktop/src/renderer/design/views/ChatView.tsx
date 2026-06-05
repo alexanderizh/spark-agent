@@ -68,6 +68,7 @@ import type {
   UserQuestionPrompt,
   UserQuestionOption,
   TeamModeConfig,
+  TeamMemberEventContext,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
@@ -1673,12 +1674,14 @@ function TeamMemberMessageBlockView({
   const member = agents.find((a) => a.id === block.memberAgentId)
   const memberName = member?.name ?? block.memberAgentId
   const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
+  const running = block.isStreaming
   return (
     <>
       <TeamMemberBubble
         memberAgentId={block.memberAgentId}
         memberName={memberName}
         avatarSrc={resolveAvatarSrc(avatar)}
+        running={running}
         onOpenDetail={() => setDrawerOpen(true)}
       >
         <MarkdownText content={block.content} isStreaming={block.isStreaming} />
@@ -1700,6 +1703,102 @@ function TeamMemberMessageBlockView({
       )}
     </>
   )
+}
+
+function TeamMemberActivityBlockView({
+  memberAgentId,
+  blocks,
+  running,
+  sessionId,
+}: {
+  memberAgentId: string
+  blocks: UIBlock[]
+  running: boolean
+  sessionId: SessionId
+}) {
+  const { agents } = useSessionSidebar()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const member = agents.find((a) => a.id === memberAgentId)
+  const memberName = member?.name ?? memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
+
+  return (
+    <>
+      <TeamMemberBubble
+        memberAgentId={memberAgentId}
+        memberName={memberName}
+        avatarSrc={resolveAvatarSrc(avatar)}
+        running={running}
+        onOpenDetail={() => setDrawerOpen(true)}
+      >
+        {renderTeamMemberActivityBlocks(blocks, { sessionId })}
+      </TeamMemberBubble>
+      {drawerOpen && (
+        <TeamMemberDrawer
+          member={{
+            agentId: memberAgentId,
+            name: memberName,
+            description: member?.description ?? '',
+            providerProfileId: member?.providerProfileId ?? null,
+            modelId: member?.modelId ?? null,
+            skillCount: member?.skillIds.length ?? 0,
+            mcpCount: member?.mcpServerIds.length ?? 0,
+            avatarSrc: resolveAvatarSrc(avatar),
+          }}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function renderTeamMemberActivityBlocks(
+  blocks: UIBlock[],
+  options: { sessionId: SessionId },
+): ReactNode {
+  const logBlocks = blocks.filter(isTeamMemberLogBlock)
+  const resultBlocks = blocks.filter((block) => !isTeamMemberLogBlock(block))
+
+  return (
+    <>
+      {logBlocks.length > 0 && (
+        <details className="team-member-log-panel">
+          <summary>
+            <Icons.Wrench size={12} />
+            <span>执行日志</span>
+            <span className="team-member-log-count">{logBlocks.length}</span>
+          </summary>
+          <div className="team-member-log-body">
+            {renderBlocks(logBlocks, { ...options, surface: 'inspector' })}
+          </div>
+        </details>
+      )}
+      {resultBlocks.map((block, index) => {
+        if (block.kind === 'team_member_message') {
+          if (block.content.trim().length === 0) return null
+          return (
+            <div key={index} className="md-surface">
+              <MarkdownText content={block.content} isStreaming={block.isStreaming} />
+            </div>
+          )
+        }
+        return renderBlocks([block], options)
+      })}
+    </>
+  )
+}
+
+function isTeamMemberLogBlock(block: UIBlock): boolean {
+  return block.kind === 'tool_call' || block.kind === 'terminal' || block.kind === 'file_change'
+}
+
+function isTeamMemberActivityRunning(blocks: UIBlock[]): boolean {
+  return blocks.some((block) => {
+    if (block.kind === 'team_member_message') return block.isStreaming
+    if (block.kind === 'tool_call') return block.status === 'pending' || block.status === 'running'
+    if (block.kind === 'terminal') return block.isStreaming
+    return false
+  })
 }
 
 function ValidationSuggestionCard({
@@ -3213,6 +3312,18 @@ function AssistantMessageRows({
             </div>
           )
         }
+        if (segment.kind === 'team_member_activity') {
+          return (
+            <div key={`team-member-activity-${index}`} className="team-timeline-segment">
+              <TeamMemberActivityBlockView
+                memberAgentId={segment.memberContext.memberAgentId}
+                blocks={segment.blocks}
+                running={segment.running}
+                sessionId={sessionId}
+              />
+            </div>
+          )
+        }
         return (
           <AgentMsg
             key={`agent-${index}`}
@@ -3233,33 +3344,85 @@ function AssistantMessageRows({
   )
 }
 
-function splitAssistantMessageBlocks(
-  blocks: UIBlock[],
-): Array<{ kind: 'agent' | 'team'; blocks: UIBlock[] }> {
-  const segments: Array<{ kind: 'agent' | 'team'; blocks: UIBlock[] }> = []
-  let agentBlocks: UIBlock[] = []
+type AssistantMessageSegment =
+  | { kind: 'agent'; blocks: UIBlock[] }
+  | { kind: 'team'; blocks: UIBlock[] }
+  | {
+      kind: 'team_member_activity'
+      memberContext: TeamMemberEventContext
+      blocks: UIBlock[]
+      running: boolean
+    }
 
-  const flushAgent = () => {
-    if (agentBlocks.length === 0) return
-    segments.push({ kind: 'agent', blocks: agentBlocks })
-    agentBlocks = []
-  }
+function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment[] {
+  const segments: AssistantMessageSegment[] = []
+  const teamMemberSegments = new Map<
+    string,
+    Extract<AssistantMessageSegment, { kind: 'team_member_activity' }>
+  >()
+  const runningDispatches = new Set<string>()
+  let currentAgentSegment: Extract<AssistantMessageSegment, { kind: 'agent' }> | null = null
 
   for (const block of blocks) {
     if (isHiddenTimelineBlock(block)) continue
-    if (block.kind === 'team_dispatch' || block.kind === 'team_member_message') {
-      flushAgent()
+    if (block.kind === 'team_dispatch') {
+      const key = teamMemberContextKey({
+        dispatchId: block.dispatchId,
+        memberAgentId: block.memberAgentId,
+      })
+      const isRunning = block.state === 'pending' || block.state === 'working'
+      if (isRunning) runningDispatches.add(key)
+      else runningDispatches.delete(key)
+      const segment = teamMemberSegments.get(key)
+      if (segment != null) segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
       segments.push({ kind: 'team', blocks: [block] })
+      currentAgentSegment = null
       continue
     }
-    agentBlocks.push(block)
+    const memberContext = getBlockTeamMemberContext(block)
+    if (memberContext != null) {
+      const key = teamMemberContextKey(memberContext)
+      let segment = teamMemberSegments.get(key)
+      if (segment == null) {
+        segment = {
+          kind: 'team_member_activity',
+          memberContext,
+          blocks: [],
+          running: runningDispatches.has(key),
+        }
+        teamMemberSegments.set(key, segment)
+        segments.push(segment)
+      }
+      segment.blocks.push(block)
+      segment.running = runningDispatches.has(key) || isTeamMemberActivityRunning(segment.blocks)
+      currentAgentSegment = null
+      continue
+    }
+    if (currentAgentSegment == null) {
+      currentAgentSegment = { kind: 'agent', blocks: [] }
+      segments.push(currentAgentSegment)
+    }
+    currentAgentSegment.blocks.push(block)
   }
-  flushAgent()
   return segments
+}
+
+function teamMemberContextKey(context: TeamMemberEventContext): string {
+  return `${context.dispatchId}:${context.memberAgentId}`
 }
 
 function isHiddenTimelineBlock(block: UIBlock): boolean {
   return block.kind === 'tool_call' && block.toolName === 'mcp__spark_team__agent_dispatch'
+}
+
+function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | undefined {
+  if (block.kind === 'team_member_message') {
+    return { dispatchId: block.dispatchId, memberAgentId: block.memberAgentId }
+  }
+  if (block.kind === 'tool_call' || block.kind === 'terminal' || block.kind === 'file_change') {
+    return block.teamMemberContext
+  }
+  return undefined
 }
 
 function AgentMsg({
@@ -3288,7 +3451,7 @@ function AgentMsg({
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
-  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking' && !isHiddenTimelineBlock(b))
+  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking' && b.kind !== 'error' && b.kind !== 'terminal' && !isHiddenTimelineBlock(b))
   const toolCallBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
       b.kind === 'tool_call' && !isHiddenTimelineBlock(b),
@@ -7118,6 +7281,7 @@ function ChatInspector({
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
   const fileChangeSummaries = extractInspectorFileChanges(messages)
+  const runningTeamAgentIds = extractRunningTeamMemberIds(messages)
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -7174,6 +7338,7 @@ function ChatInspector({
             mcpCount: a.mcpServerIds.length,
             metadata: a.metadata,
           }))}
+          runningAgentIds={runningTeamAgentIds}
           onToggleMember={(agentId, enabled) =>
             onChangeTeamConfig({
               memberAgentIds: enabled
@@ -7861,6 +8026,31 @@ function countDiffLines(diff: string | undefined): { adds: number; dels: number 
     if (line.startsWith('-')) dels += 1
   }
   return { adds, dels }
+}
+
+function extractRunningTeamMemberIds(messages: UIMessage[]): string[] {
+  const running = new Set<string>()
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind === 'team_dispatch') {
+        if (block.state === 'pending' || block.state === 'working') running.add(block.memberAgentId)
+        continue
+      }
+      if (block.kind === 'team_member_message') {
+        if (block.isStreaming) running.add(block.memberAgentId)
+        continue
+      }
+      const memberContext = getBlockTeamMemberContext(block)
+      if (memberContext == null) continue
+      if (block.kind === 'tool_call' && (block.status === 'pending' || block.status === 'running')) {
+        running.add(memberContext.memberAgentId)
+      }
+      if (block.kind === 'terminal' && block.isStreaming) {
+        running.add(memberContext.memberAgentId)
+      }
+    }
+  }
+  return Array.from(running)
 }
 
 interface InspectorSubagent {

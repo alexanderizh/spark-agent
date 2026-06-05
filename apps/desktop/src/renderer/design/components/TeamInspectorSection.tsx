@@ -35,6 +35,7 @@ export interface TeamInspectorSectionProps {
   config: TeamModeConfig
   /** 所有可选 Agent（含当前对话 Agent；本组件内部会单列） */
   agents: TeamInspectorAgent[]
+  runningAgentIds?: string[]
   onToggleMember: (agentId: string, enabled: boolean) => void
   onChangeConfig: (patch: Partial<TeamModeConfig>) => void
 }
@@ -59,7 +60,13 @@ function AgentAvatar({
   )
 }
 
-export function TeamInspectorSection({ config, agents, onToggleMember, onChangeConfig }: TeamInspectorSectionProps) {
+export function TeamInspectorSection({
+  config,
+  agents,
+  runningAgentIds = [],
+  onToggleMember,
+  onChangeConfig,
+}: TeamInspectorSectionProps) {
   const [collapsed, setCollapsed] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
@@ -68,6 +75,7 @@ export function TeamInspectorSection({ config, agents, onToggleMember, onChangeC
 
   const host = agents.find((a) => a.id === config.hostAgentId)
   const memberSet = new Set(config.memberAgentIds)
+  const runningSet = new Set(runningAgentIds)
   const members = agents.filter((a) => a.id !== config.hostAgentId && memberSet.has(a.id))
   const candidates = agents.filter((a) => a.id !== config.hostAgentId && !memberSet.has(a.id))
 
@@ -151,7 +159,15 @@ export function TeamInspectorSection({ config, agents, onToggleMember, onChangeC
               >
                 <AgentAvatar id={agent.id} name={agent.name} builtIn={agent.builtIn} metadata={agent.metadata} />
                 <span className="team-roster-info">
-                  <span className="team-roster-name">{agent.name}</span>
+                  <span className="team-roster-name-line">
+                    <span className="team-roster-name">{agent.name}</span>
+                    {runningSet.has(agent.id) && (
+                      <span className="team-roster-running" aria-label="正在执行任务">
+                        <span className="team-member-running-dot" />
+                        <span>执行中</span>
+                      </span>
+                    )}
+                  </span>
                   {agent.description && <span className="team-roster-desc">{agent.description.slice(0, 40)}</span>}
                 </span>
                 <button

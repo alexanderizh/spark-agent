@@ -197,4 +197,39 @@ describe('MessageBuilder · Team Mode', () => {
 
     expect(findBlock(b, 'team_dispatch')?.state).toBe('failed')
   })
+
+  it('preserves member ownership on forwarded tool activity', () => {
+    const b = new MessageBuilder()
+    b.processEvent({
+      ...base('team_dispatch_requested'),
+      type: 'team_dispatch_requested',
+      dispatchId: 'd1',
+      hostAgentId: 'code-agent',
+      memberAgentId: 'reviewer',
+      task,
+    } as AgentEvent)
+    b.processEvent({
+      ...base('tool_call'),
+      type: 'tool_call',
+      toolCallId: 'tool-1',
+      toolName: 'read_file',
+      toolInput: { file_path: '/tmp/a.ts' },
+      source: 'builtin',
+      teamMemberContext: { dispatchId: 'd1', memberAgentId: 'reviewer' },
+    } as AgentEvent)
+    b.processEvent({
+      ...base('tool_result'),
+      type: 'tool_result',
+      toolCallId: 'tool-1',
+      toolName: 'read_file',
+      status: 'success',
+      output: 'ok',
+      teamMemberContext: { dispatchId: 'd1', memberAgentId: 'reviewer' },
+    } as AgentEvent)
+
+    const block = findBlock(b, 'tool_call')
+    expect(block?.teamMemberContext).toEqual({ dispatchId: 'd1', memberAgentId: 'reviewer' })
+    expect(block?.status).toBe('success')
+    expect(block?.output).toBe('ok')
+  })
 })

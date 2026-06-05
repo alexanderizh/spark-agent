@@ -15,11 +15,12 @@ export interface TeamMemberBubbleProps {
   memberName: string
   avatarSrc: string
   children: ReactNode
+  running?: boolean
   /** 点击头像查看该 Member 的本次 dispatch 详情 */
   onOpenDetail?: () => void
 }
 
-export function TeamMemberBubble({ memberAgentId, memberName, avatarSrc, children, onOpenDetail }: TeamMemberBubbleProps) {
+export function TeamMemberBubble({ memberAgentId, memberName, avatarSrc, children, running = false, onOpenDetail }: TeamMemberBubbleProps) {
   const avatar = deriveTeamAvatar(memberAgentId, memberName)
 
   return (
@@ -36,6 +37,12 @@ export function TeamMemberBubble({ memberAgentId, memberName, avatarSrc, childre
       <div className="team-member-message-main">
         <div className="team-member-bubble-head">
           <span className="team-member-name">{memberName}</span>
+          {running && (
+            <span className="team-member-running" aria-label="正在执行任务">
+              <span className="team-member-running-dot" />
+              <span>执行中</span>
+            </span>
+          )}
         </div>
         {/* 复用 msg-content 的 markdown 排版（段落/代码/列表），与主 agent 输出一致 */}
         <div className="team-member-bubble-body msg-content">{children}</div>
