@@ -51,6 +51,7 @@ import type {
 } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { McpService } from './mcp-server.service.js'
+import { PlatformBridgeService } from './platform-bridge.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
@@ -144,6 +145,7 @@ export class SessionService {
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
+  private readonly platformBridge: PlatformBridgeService
 
   private getTeamDispatchService(): TeamDispatchService {
     if (this.teamDispatchService == null) {
@@ -163,6 +165,7 @@ export class SessionService {
     private readonly onSessionRenamed?: SessionRenamedHandler,
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
+    this.platformBridge = new PlatformBridgeService()
     this.recoverInterruptedSessions()
   }
 
@@ -773,6 +776,7 @@ export class SessionService {
       },
     )
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
+    const platformMcpServer = await this.resolvePlatformManagementMcpServer()
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
@@ -806,6 +810,7 @@ export class SessionService {
       runtimeContext.skillSystemPrompt,
       projectContext.skillSystemPrompt,
       imageGenerationContext?.systemPrompt,
+      platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
     )
 
     // Initialize seq counter from existing event count
@@ -1011,6 +1016,9 @@ export class SessionService {
           ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
           : {}),
         ...(teamMcpServer != null ? { teamMcpServer } : {}),
+        ...(platformMcpServer != null
+          ? { platformManagementMcpServer: platformMcpServer }
+          : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
@@ -1241,6 +1249,11 @@ export class SessionService {
       mcpServers.spark_team = config.teamMcpServer
     }
 
+    // Platform management MCP server — auto-registered for all sessions
+    if (config.platformManagementMcpServer != null) {
+      mcpServers.spark_platform = config.platformManagementMcpServer
+    }
+
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
     let validationSuggestionEmitted = false
@@ -1289,19 +1302,22 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
-    const allowedToolAdditions: string[] = []
+    // Compute allowed tools: merge image-gen / team / platform tools into config defaults
+    let sdkAllowedTools = config.allowedTools
     if (config.imageGenerationMcpServer != null) {
-      allowedToolAdditions.push('mcp__spark_image__generate_image')
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, ['mcp__spark_image__generate_image'])
     }
     if (config.teamMcpServer != null) {
-      allowedToolAdditions.push('mcp__spark_team__agent_dispatch')
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, ['mcp__spark_team__agent_dispatch'])
     }
+    if (config.platformManagementMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PLATFORM_TOOL_NAMES)
+    }
+
     const sdkConfig: SDKExecutorConfig = {
       ...config,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
-      ...(allowedToolAdditions.length > 0
-        ? { allowedTools: mergeUniqueStrings(config.allowedTools, allowedToolAdditions) }
-        : {}),
+      ...(sdkAllowedTools != null ? { allowedTools: sdkAllowedTools } : {}),
       // Team Mode 下禁用 SDK 内置 Task 工具，强制 A2A 走 spark_team.agent_dispatch（§7.4）
       ...(config.teamMcpServer != null
         ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ['Task']) }
@@ -1398,6 +1414,71 @@ export class SessionService {
       }
     }
     return result
+  }
+
+  /**
+   * Ensure the Platform Bridge HTTP server is running.
+   * The bridge is long-lived (shared across all sessions) and lazily started.
+   */
+  private async ensurePlatformBridge(): Promise<number> {
+    if (this.platformBridge.isRunning()) {
+      return this.platformBridge.getPort()
+    }
+
+    const { SkillService } = await import('./skill.service.js')
+    const { SkillLoader } = await import('../skills/skill-loader.js')
+    const { SkillRegistryService } = await import('./skill-registry/index.js')
+    const { SkillRepository, SettingsRepository } = await import('@spark/storage')
+
+    const skillRepo = new SkillRepository(this.db)
+    const settingsRepo = new SettingsRepository(this.db)
+    const skillLoader = new SkillLoader(skillRepo)
+    const skillRegistryService = new SkillRegistryService(this.db)
+
+    // Initialize skill registry adapters (loads marketplace sources)
+    try { skillRegistryService.initialize() } catch { /* non-critical */ }
+
+    const deps = {
+      skillService: new SkillService(skillRepo),
+      skillLoader,
+      skillRegistryService,
+      mcpService: this.mcpService,
+      mcpRepo: new McpServerRepository(this.db),
+      providerRepo: new ProviderProfileRepository(this.db),
+      workflowRepo: new WorkflowRepository(this.db),
+      agentRepo: new AgentRepository(this.db),
+      settingsRepo,
+    }
+
+    return this.platformBridge.start(deps)
+  }
+
+  /**
+   * Resolve the Platform Management MCP server config.
+   * Returns null if the MCP server script cannot be found or the bridge fails to start.
+   */
+  private async resolvePlatformManagementMcpServer(): Promise<SDKMcpServerConfig | null> {
+    const serverPath = resolvePlatformManagementMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Platform management MCP server script not found')
+      return null
+    }
+
+    try {
+      const port = await this.ensurePlatformBridge()
+      return {
+        type: 'stdio',
+        command: process.execPath,
+        args: [serverPath],
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          SPARK_PLATFORM_BRIDGE_PORT: String(port),
+        },
+      }
+    } catch (err) {
+      log.warn(`Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`)
+      return null
+    }
   }
 
   private async resolveImageGenerationContext(workspaceRootPath: string): Promise<ImageGenerationRuntimeContext | null> {
@@ -1768,6 +1849,14 @@ export class SessionService {
         })
       }
     }
+  }
+
+  /**
+   * Clean up resources held by SessionService (platform bridge, etc.).
+   * Call on application shutdown.
+   */
+  async dispose(): Promise<void> {
+    await this.platformBridge.stop()
   }
 
   getQueueState(params: { sessionId: string }): SessionGetQueueResponse {
@@ -2754,6 +2843,69 @@ function buildImageGenerationSystemPrompt(input: {
 function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
   return [...new Set([...(a ?? []), ...b])]
 }
+
+/** All 25 platform management tool names (SDK namespace: mcp__spark_platform__) */
+const PLATFORM_TOOL_NAMES: string[] = [
+  'mcp__spark_platform__skills_list',
+  'mcp__spark_platform__skills_search',
+  'mcp__spark_platform__skills_install',
+  'mcp__spark_platform__skills_uninstall',
+  'mcp__spark_platform__skills_toggle',
+  'mcp__spark_platform__mcp_list',
+  'mcp__spark_platform__mcp_create',
+  'mcp__spark_platform__mcp_update',
+  'mcp__spark_platform__mcp_delete',
+  'mcp__spark_platform__mcp_status',
+  'mcp__spark_platform__providers_list',
+  'mcp__spark_platform__providers_create',
+  'mcp__spark_platform__providers_update',
+  'mcp__spark_platform__providers_delete',
+  'mcp__spark_platform__providers_health_check',
+  'mcp__spark_platform__workflows_list',
+  'mcp__spark_platform__workflows_get',
+  'mcp__spark_platform__workflows_create',
+  'mcp__spark_platform__workflows_update',
+  'mcp__spark_platform__workflows_delete',
+  'mcp__spark_platform__agents_list',
+  'mcp__spark_platform__agents_get',
+  'mcp__spark_platform__agents_create',
+  'mcp__spark_platform__agents_update',
+  'mcp__spark_platform__agents_delete',
+  'mcp__spark_platform__settings_get',
+  'mcp__spark_platform__settings_set',
+  'mcp__spark_platform__settings_get_category',
+  'mcp__spark_platform__settings_get_all',
+]
+
+function resolvePlatformManagementMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/platform-management-mcp-server.mjs'),
+    path.resolve(here, '../tools/platform-management-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/platform-management-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+/**
+ * System prompt section injected when the Platform Management MCP server is available.
+ * Brief — the full instructions live in the `builtin:platform-manager` skill definition.
+ */
+const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
+  '## Platform Management Capability',
+  'You can manage this Spark Agent platform using `mcp__spark_platform__*` tools.',
+  'Available capabilities:',
+  '- **Skills**: list, search, install, uninstall, toggle',
+  '- **MCP Servers**: list, create, update, delete, status',
+  '- **Providers**: list, create, update, delete, health_check',
+  '- **Workflows**: list, get, create, update, delete',
+  '- **Agents**: list, get, create, update, delete',
+  '- **Settings**: get, set, get_category, get_all',
+  '',
+  'When the user asks to manage any of these, use the corresponding tool directly.',
+  'For destructive operations (delete, uninstall), always confirm with the user first.',
+  'Never reveal or ask for full API keys — only show whether a key is configured.',
+].join('\n')
 
 function buildWorkflowSystemPrompt(workflow: WorkflowItem): string {
   const graph = normalizeWorkflowGraph(workflow.graph)

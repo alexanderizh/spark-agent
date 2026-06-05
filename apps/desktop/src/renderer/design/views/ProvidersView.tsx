@@ -17,7 +17,7 @@
  *   - 顶部"导入/导出"按钮组：写文件 + 复制到剪贴板
  *   - 多选模式：勾选卡片 → 批量导出 / 删除
  *   - 导入预览 Modal：显示 conflict、模式 merge/replace
- *   - API Key 永不出库（安全）
+ *   - API Key 随导入导出一并处理（方便迁移备份）
  */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Icons } from '../Icons'

@@ -9,6 +9,7 @@ import { useState, useCallback, useEffect, useMemo } from 'react'
 import type { LocalSkillCandidate, SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { useApp } from '../AppContext'
 import {
   useSkills,
   parseSkillManifest,
@@ -77,6 +78,7 @@ export function SkillStoreView() {
 
 function InstalledTab() {
   const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount, refresh } = useSkills()
+  const { requestConfirm } = useApp()
   const [search, setSearch] = useState('')
   // Pagination for installed skills
   const [installedPage, setInstalledPage] = useState(1)
@@ -87,7 +89,13 @@ function InstalledTab() {
   const { toast } = useToast()
 
   const dedupedSkills = useMemo(() => deduplicateSkills(skills), [skills])
-  const filtered = useMemo(() => filterSkills(dedupedSkills, search), [dedupedSkills, search])
+  const filtered = useMemo(() => {
+    const list = filterSkills(dedupedSkills, search)
+    return [
+      ...list.filter((s) => s.id.startsWith('builtin:')),
+      ...list.filter((s) => !s.id.startsWith('builtin:')),
+    ]
+  }, [dedupedSkills, search])
   const visibleInstalled = useMemo(
     () => paginate(filtered, installedPage, SKILL_PAGE_SIZE),
     [filtered, installedPage],
@@ -127,8 +135,29 @@ function InstalledTab() {
     }
   }, [selectedDeleteIds.size, filtered])
 
+  // ── Single delete with confirm ──
+  const handleDeleteSkill = useCallback(async (id: string) => {
+    const confirmed = await requestConfirm({
+      title: '删除 Skill？',
+      description: '删除后该 Skill 将从本地移除，相关能力将不再可用。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
+    await deleteSkill(id)
+    toast.success('已删除 Skill')
+  }, [requestConfirm, deleteSkill, toast])
+
+  // ── Batch delete with confirm ──
   const handleBatchDelete = useCallback(async () => {
     if (selectedDeleteIds.size === 0) return
+    const confirmed = await requestConfirm({
+      title: `批量删除 ${selectedDeleteIds.size} 个 Skill？`,
+      description: '删除后所选 Skill 将从本地移除，相关能力将不再可用。',
+      confirmText: '全部删除',
+      danger: true,
+    })
+    if (!confirmed) return
     setDeleting(true)
     try {
       let successCount = 0
@@ -147,11 +176,10 @@ function InstalledTab() {
         toast.success(`已批量删除 ${successCount} 个 Skill`)
       }
       exitManagement()
-      refresh()
     } finally {
       setDeleting(false)
     }
-  }, [selectedDeleteIds, deleteSkill, exitManagement, refresh, toast])
+  }, [selectedDeleteIds, requestConfirm, deleteSkill, exitManagement, toast])
 
   return (
     <div>
@@ -224,7 +252,7 @@ function InstalledTab() {
                 key={s.id}
                 skill={s}
                 onToggle={toggleSkill}
-                onDelete={deleteSkill}
+                onDelete={handleDeleteSkill}
                 managementMode={managementMode}
                 selected={selectedDeleteIds.has(s.id)}
                 onToggleSelect={toggleDeleteSelect}
@@ -310,12 +338,11 @@ function InstalledSkillCard({
           <div className="foot">
             <span>{meta.source} · {skill.version}</span>
             <div className="flex1" />
-            <button className="icon-btn" title="导出">
-              <Icons.Download size={11} />
-            </button>
-            <button className="icon-btn" title="删除" onClick={() => onDelete(skill.id)}>
-              <Icons.Trash size={11} />
-            </button>
+            {!skill.id.startsWith('builtin:') && (
+              <button className="icon-btn" title="删除" onClick={() => onDelete(skill.id)}>
+                <Icons.Trash size={11} />
+              </button>
+            )}
           </div>
         </>
       )}

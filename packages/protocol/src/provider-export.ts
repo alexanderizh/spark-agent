@@ -5,7 +5,7 @@
  *
  * 核心设计：
  *   - version 字段允许未来 schema 演进；导入端做版本校验
- *   - 导出 payload 显式不包含 apiKey（避免泄露到 .json 文件）
+ *   - 导出 payload 包含 apiKey（方便迁移备份，导入时自动恢复）
  *   - 导入端对每个 profile 按 name 决定冲突处理（merge 跳过 / replace 覆盖）
  *   - 档位映射（haikuModel/sonnetModel/opusModel）随 profile 一起导出，
  *     导入时同样保留
@@ -14,15 +14,16 @@
 import { z } from 'zod'
 
 /** 当前 schema 版本。导入时校验；不匹配则拒绝 */
-export const PROVIDER_EXPORT_VERSION = 1 as const
+export const PROVIDER_EXPORT_VERSION = 2 as const
 
-export const ProviderExportVersionSchema = z.literal(PROVIDER_EXPORT_VERSION)
+/** 支持的版本范围：v1（不含 apiKey）和 v2（含 apiKey）均可导入 */
+export const ProviderExportVersionSchema = z.union([z.literal(1), z.literal(PROVIDER_EXPORT_VERSION)])
 
 /**
  * 导出文件中单个 profile 的 schema。
  *
  * 注意：与运行时 ProviderProfile 的差别：
- *   - 不导出 apiKey（写入 Keychain，不进 .json）
+ *   - apiKey 随 profile 一起导出（方便迁移备份）
  *   - 不导出 keystoreRef（导入时新建）
  *   - 不导出 createdAt（导入时新生成）
  *   - provider 仅允许 'anthropic' | 'openai'（与 VENDOR 目录保持一致）
@@ -50,6 +51,8 @@ export const ProviderExportProfileSchema = z.object({
   imageProvider: z.string().min(1).max(80).nullable().optional(),
   /** 图片模型调用方式 */
   imageApiType: z.enum(['sync', 'async', 'auto']).nullable().optional(),
+  /** API Key（导出时从 Keychain 读取；导入时写入 Keychain） */
+  apiKey: z.string().min(1).max(500).optional(),
 })
 
 export type ProviderExportProfile = z.infer<typeof ProviderExportProfileSchema>
@@ -59,10 +62,10 @@ export type ProviderExportProfile = z.infer<typeof ProviderExportProfileSchema>
  *
  * 格式示例：
  * {
- *   "version": 1,
+ *   "version": 2,
  *   "exportedAt": "2026-06-03T12:00:00.000Z",
  *   "exportedBy": "spark-agent",
- *   "profiles": [ { ... }, ... ]
+ *   "profiles": [ { ..., "apiKey": "sk-..." }, ... ]
  * }
  */
 export const ProviderExportPayloadSchema = z.object({

@@ -287,10 +287,11 @@ export class ProviderService {
   }
 
   /**
-   * 导出 provider 配置为 ExportPayload（不含 apiKey）。
+   * 导出 provider 配置为 ExportPayload（含 apiKey）。
    *
    * - ids 为空时导出全部
    * - id 不存在时静默跳过（不抛错），方便前端多选时无需严格校验
+   * - apiKey 从 Keychain 读取后附带到导出 profile 中
    */
   async exportProviders(ids: string[] = []): Promise<ProviderExportPayload> {
     const rows = this.repo.listAll()
@@ -298,7 +299,10 @@ export class ProviderService {
     const profiles: ProviderExportProfile[] = []
     for (const row of rows) {
       if (idSet !== null && !idSet.has(row.id)) continue
-      profiles.push(rowToExportProfile(row))
+      const apiKey = row.keystore_ref
+        ? await keystore.getSecret(row.keystore_ref as keystore.KeystoreRef)
+        : null
+      profiles.push(rowToExportProfile(row, apiKey ?? undefined))
     }
     return {
       version: PROVIDER_EXPORT_VERSION,
@@ -312,10 +316,11 @@ export class ProviderService {
    * 导入 ExportPayload 到数据库。
    *
    * - 模式 merge：按 name 去重，已存在则跳过（计入 skipped）
-   * - 模式 replace：按 name 去重，已存在则更新（保留本地 keystoreRef）
+   * - 模式 replace：按 name 去重，已存在则更新（保留本地 keystoreRef，更新 apiKey）
    * - 单个 profile 失败不中断整体流程；错误累加到 errors
    * - 导入新建的 profile 强制 isDefault=false（避免覆盖本地默认）
    * - 导入更新的 profile 保留原 isDefault 标志
+   * - 若 payload 中包含 apiKey，写入 Keychain；否则保留本地已有的 key
    */
   async importProviders(
     payload: ProviderExportPayload,
@@ -338,6 +343,14 @@ export class ProviderService {
             continue
           }
           // replace: 更新已存在的（保留 keystoreRef、本地 isDefault）
+          // 若导入数据包含 apiKey，则更新 Keychain 中的 key
+          if (profile.apiKey && match.keystore_ref) {
+            await keystore.setSecret(
+              match.keystore_ref as keystore.KeystoreRef,
+              profile.apiKey,
+            )
+            log.info(`Updated API key during import for id=${match.id} name=${profile.name}`)
+          }
           this.repo.update(match.id, {
             name: profile.name,
             config: buildConfigFromExport(profile),
@@ -346,14 +359,18 @@ export class ProviderService {
           continue
         }
 
-        // 新建：apiKey 不在 payload 中，本地创建时 keystoreRef 占位空串，
-        // 提示用户后续在编辑面板补 API Key
+        // 新建：创建 keystoreRef，apiKey 写入 Keychain
         const newId = crypto.randomUUID()
         const providerType = profile.provider
         const ref = keystore.makeKeystoreRef(providerType, newId)
-        // 写入一个空 key 占位（用户需要去编辑面板补 key 才能 healthCheck）
-        await keystore.setSecret(ref, '')
-        log.info(`Imported provider placeholder keystore for id=${newId} name=${profile.name}`)
+        if (profile.apiKey) {
+          await keystore.setSecret(ref, profile.apiKey)
+          log.info(`Imported provider with API key for id=${newId} name=${profile.name}`)
+        } else {
+          // 无 apiKey：不写入 keychain（keytar 不接受空密码），
+          // 用户需要在编辑面板补 Key 才能 healthCheck
+          log.info(`Imported provider without API key for id=${newId} name=${profile.name}`)
+        }
 
         this.repo.create({
           id: newId,
@@ -472,15 +489,19 @@ function getAnthropicMessagesEndpoint(apiEndpoint?: string): string {
  * 故意丢弃：
  *   - keystoreRef（导入时不复用；新建时会生成新 ref）
  *   - createdAt（导入时由 DB 自动生成）
- *   - apiKey（永不出库）
+ *
+ * apiKey 通过参数传入（从 Keychain 读取），非空时附带到导出数据中。
  */
-function rowToExportProfile(row: {
-  id: string
-  provider_type: string
-  name: string
-  config_json: string
-  is_default: number
-}): ProviderExportProfile {
+function rowToExportProfile(
+  row: {
+    id: string
+    provider_type: string
+    name: string
+    config_json: string
+    is_default: number
+  },
+  apiKey?: string,
+): ProviderExportProfile {
   const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
   return {
     id: row.id,
@@ -498,6 +519,7 @@ function rowToExportProfile(row: {
     modelType: normalizeModelType(config.modelType),
     ...(config.imageProvider !== undefined && { imageProvider: config.imageProvider }),
     ...(config.imageApiType !== undefined && { imageApiType: config.imageApiType }),
+    ...(apiKey && apiKey.length > 0 && { apiKey }),
   }
 }
 

@@ -16,6 +16,7 @@ import { ChatView } from './design/views/ChatView'
 import { ProjectView } from './design/views/ProjectView'
 import { WorkflowView } from './design/views/WorkflowView'
 import { AgentsView } from './design/views/AgentsView'
+import { BoardView } from './design/views/BoardView'
 import { McpView } from './design/views/McpView'
 import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
@@ -220,6 +221,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       <div className="sidebar-nav-section">
         {navItem('workflows', 'Workflows', Icons.Workflow)}
         {navItem('agents', 'Agents', Icons.Bot)}
+        {navItem('board', 'Board', Icons.Board)}
         {navItem('skill-store', 'Skills', Icons.Skills)}
         {navItem('providers', 'Providers', Icons.Server)}
       </div>
@@ -498,6 +500,8 @@ function Shell() {
         return <WorkflowView />
       case 'agents':
         return <AgentsView />
+      case 'board':
+        return <BoardView />
       case 'skills':
         return <SkillsView />
       case 'skill-store':

@@ -295,6 +295,8 @@ export interface SDKExecutorConfig {
   imageGenerationMcpServer?: SDKMcpServerConfig | undefined
   /** Team Mode：in-process spark_team MCP server（Host 调用成员的 agent_dispatch 工具） */
   teamMcpServer?: SDKMcpServerConfig | undefined
+  /** Platform management MCP server (auto-injected for all sessions) */
+  platformManagementMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined

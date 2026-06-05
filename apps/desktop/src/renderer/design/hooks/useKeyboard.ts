@@ -47,6 +47,7 @@ export type ShortcutId =
   | 'toggleSidebar'
   | 'search'
   | 'escape'
+  | 'focusComposer'
 
 export type ShortcutBinding = {
   id: ShortcutId
@@ -83,6 +84,7 @@ export const DEFAULT_SHORTCUTS: ShortcutBinding[] = [
   { id: 'toggleSidebar', label: '切换侧边栏',    key: 'b', mod: true,  shift: false, description: '折叠/展开侧边栏',               group: 'action' },
   { id: 'search',        label: '搜索',           key: 'f', mod: true,  shift: false, description: '聚焦搜索框（Chat 页面）',        group: 'action' },
   { id: 'escape',        label: '关闭',           key: 'Escape', mod: false, shift: false, description: '关闭当前对话框/面板/命令面板', group: 'action' },
+  { id: 'focusComposer', label: '聚焦输入框',     key: 'l', mod: true,  shift: false, description: '聚焦聊天输入框并滚动到底部',     group: 'action' },
 ]
 
 /* ============================================================
@@ -233,6 +235,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
             if (onSearchFocus) {
               onSearchFocus()
             }
+            break
+          case 'focusComposer':
+            window.dispatchEvent(new CustomEvent('spark:focus-composer'))
             break
           case 'escape': {
             const anyOpen = hasOverlayOpen ? hasOverlayOpen() : true

@@ -527,6 +527,10 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .user-menu-theme-trigger:hover {
   background: var(--hover);
 }
+/* Force the chevron arrow to the far right */
+.user-menu-theme-trigger > svg:last-child {
+  margin-left: auto;
+}
 .user-menu-theme-sub {
   min-width: 152px;
   margin-left: -4px;

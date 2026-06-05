@@ -12,6 +12,7 @@ import { refactorSkill } from './refactor.js'
 import { superpowersSkill } from './superpowers.js'
 import { browserAutomationSkill } from './browser-automation.js'
 import { eduExplainSkill } from './edu-explain.js'
+import { platformManagerSkill } from './platform-manager.js'
 
 /** 所有内置 Skill 定义 */
 export const BUILTIN_SKILLS: SkillDefinition[] = [
@@ -23,6 +24,7 @@ export const BUILTIN_SKILLS: SkillDefinition[] = [
   superpowersSkill,
   browserAutomationSkill,
   eduExplainSkill,
+  platformManagerSkill,
 ]
 
 /** 按 ID 获取内置 Skill 定义 */
