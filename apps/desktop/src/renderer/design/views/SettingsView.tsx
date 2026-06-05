@@ -1,5 +1,5 @@
 /**
- * SettingsView — 多分类设置（通用/外观/快捷键/模型/规则/权限/MCP/Skills/工作流/遥测/存储/更新）
+ * SettingsView — 多分类设置（通用/外观/快捷键/模型/规则/权限/MCP/工作流/遥测/存储/更新）
  *
  * 包含：左侧分组导航 + 右侧多 section 内容。Profile 编辑使用 Modal。
  * 注意：Provider 配置 UI 已抽到 ProvidersView.tsx（侧边栏一级菜单）。
@@ -13,7 +13,6 @@ import { createDefaultAvatar, getUserAvatarConfig, type SparkAvatarConfig } from
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
-import { parseSkillManifest } from '../utils/skills-data'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 // Provider 相关 UI 已抽到 ProvidersView；保留 ProviderEditPanel 的 re-export
@@ -32,7 +31,6 @@ import type {
   ProviderProfile,
   // MCP 设置暂未完全实现，保留类型导入以便后续启用
   McpServerItem,
-  SkillItem,
   UpdateStatus,
   SdkIntegrityItem,
   RuntimeToolStatus,
@@ -296,7 +294,6 @@ export function SettingsView() {
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
         { id: 'system-prompt', icon: <Icons.Chat />, label: '系统提示词' },
-        { id: 'skills-settings', icon: <Icons.Skills />, label: 'Skills' },
         // 工作流模板暂未实现，隐藏导航项
         // { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
       ],
@@ -326,7 +323,6 @@ export function SettingsView() {
     // MCP 设置暂未完全实现，隐藏
     // 'mcp-settings': McpSection,
     'system-prompt': SystemPromptSection,
-    'skills-settings': SkillsSection,
     // 工作流模板暂未实现，隐藏
     // workflows: WorkflowTemplatesSection,
     integrity: IntegritySection,
@@ -2574,73 +2570,6 @@ function SystemPromptSection() {
   )
 }
 
-/* ───────── SKILLS ───────── */
-function SkillsSection() {
-  const [skills, setSkills] = useState<SkillItem[]>([])
-  const [error, setError] = useState('')
-  const { invoke: listSkills, loading } = useIpcInvoke('skill:list')
-  const { invoke: updateSkill } = useIpcInvoke('skill:update')
-
-  const refresh = useCallback(() => {
-    setError('')
-    listSkills({})
-      .then((res) => setSkills(res.skills))
-      .catch((err) => setError(err instanceof Error ? err.message : '加载 Skills 失败'))
-  }, [listSkills])
-
-  useEffect(() => {
-    return deferEffect(refresh)
-  }, [refresh])
-
-  const toggleSkill = async (skill: SkillItem) => {
-    await updateSkill({ id: skill.id, enabled: !skill.enabled })
-    refresh()
-  }
-
-  return (
-    <div className="settings-section">
-      <h2>Skills</h2>
-      <div className="lede">
-        管理系统级可见 Skill。系统隐藏的 Skill 不会进入任何 Agent 的可见列表。
-      </div>
-
-      {error && <div className="alert-banner">{error}</div>}
-
-      <div className="card">
-        {loading ? (
-          <div className="loading-card">正在加载 Skills...</div>
-        ) : (
-          skills.map((skill) => {
-            const meta = parseSkillManifest(skill.manifestJson)
-            return (
-              <SettingsRow
-                key={skill.id}
-                title={skill.name}
-                desc={`${meta.desc} · ${meta.source} · ${skill.version}`}
-                right={
-                  <div className="row row-gap-xs">
-                    {skill.id === 'builtin:superpowers' && <span className="badge">内置</span>}
-                    <span className={`badge ${skill.enabled ? 'success' : ''}`}>
-                      {skill.enabled ? '系统可见' : '系统隐藏'}
-                    </span>
-                    <div
-                      className={`switch ${skill.enabled ? 'on' : ''}`}
-                      onClick={() => void toggleSkill(skill)}
-                    />
-                  </div>
-                }
-              />
-            )
-          })
-        )}
-      </div>
-
-      <div className="skills-hint">
-        已安装不代表会被强制使用；Agent 会从系统/项目/会话合并后的可见列表中自行判断是否应用。
-      </div>
-    </div>
-  )
-}
 
 /* ───────── WORKFLOW TEMPLATES ───────── */
 // 工作流模板暂未实现，从导航和 Section 映射中移除
