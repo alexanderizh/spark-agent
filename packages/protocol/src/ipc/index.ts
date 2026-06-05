@@ -1434,6 +1434,9 @@ export interface TeamListMembersResponse {
   members: TeamMemberCard[]
   /** 当前未加入但可用的 Agent（用于「邀请成员」面板） */
   candidates: TeamMemberCard[]
+  /** 当前会话的完整团队配置（来自 sessions.metadata.team）；
+   *  团队模式未启用时该字段为 null，调用方可据此恢复或新建配置。 */
+  config: TeamModeConfig | null
 }
 
 export interface TeamListDispatchesRequest {

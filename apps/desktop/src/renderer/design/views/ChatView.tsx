@@ -230,7 +230,8 @@ export function ChatView({
   //   - composer-prefs(localStorage)：全局「上次使用」默认，新会话/无会话时回落。
   //   - sessions.metadata.team(IPC team:update)：会话级权威来源，Phase 3 运行时读取。
   const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
-  const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(() => {
+  const { invoke: listTeamMembers } = useIpcInvoke('team:list-members')
+  const defaultTeamConfig = useCallback((): TeamModeConfig => {
     const prefs = readComposerPrefs()
     return {
       enabled: prefs.teamMode ?? false,
@@ -239,7 +240,8 @@ export function ChatView({
       maxDepth: 1,
       allowNesting: false,
     }
-  })
+  }, [])
+  const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(defaultTeamConfig)
   const updateTeamConfig = useCallback(
     (patch: Partial<TeamModeConfig>) => {
       setTeamConfig((prev) => {
@@ -258,6 +260,27 @@ export function ChatView({
     },
     [active, persistTeamConfig],
   )
+  // 切换 active session 时从 metadata 拉取会话级 team config 回显；
+  // 历史团队会话能正常恢复底部参数与右侧 Inspector 的团队信息。
+  useEffect(() => {
+    if (active == null) {
+      setTeamConfig(defaultTeamConfig())
+      return
+    }
+    let cancelled = false
+    void listTeamMembers({ sessionId: active as SessionId })
+      .then((res) => {
+        if (cancelled) return
+        if (res.config != null) setTeamConfig(res.config)
+        else setTeamConfig(defaultTeamConfig())
+      })
+      .catch(() => {
+        if (!cancelled) setTeamConfig(defaultTeamConfig())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, listTeamMembers, defaultTeamConfig])
   const [agentStatus, setAgentStatus] = useState('')
   const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
@@ -419,7 +442,7 @@ export function ChatView({
   }
 
   return (
-    <div className="chat-layout chat-layout-no-sidebar">
+    <div className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}>
 
       <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`} ref={chatAreaRef}>
         {showEmptyHero && (

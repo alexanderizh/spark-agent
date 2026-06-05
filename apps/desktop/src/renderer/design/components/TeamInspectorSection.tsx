@@ -63,12 +63,24 @@ export function TeamInspectorSection({ config, agents, onToggleMember, onChangeC
   const [collapsed, setCollapsed] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
+  const [hostPickerOpen, setHostPickerOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const host = agents.find((a) => a.id === config.hostAgentId)
   const memberSet = new Set(config.memberAgentIds)
   const members = agents.filter((a) => a.id !== config.hostAgentId && memberSet.has(a.id))
   const candidates = agents.filter((a) => a.id !== config.hostAgentId && !memberSet.has(a.id))
+
+  // 切换 Host：旧 Host 自动成为可被调用成员（保留可见性），新 Host 从成员中移除。
+  // 一步原子更新，避免父组件先后 setState 触发重复 IPC 持久化。
+  const handleSelectHost = (nextHostId: string) => {
+    setHostPickerOpen(false)
+    if (nextHostId === config.hostAgentId) return
+    const nextMembers = new Set(config.memberAgentIds)
+    nextMembers.delete(nextHostId) // 新 Host 不再算成员
+    if (config.hostAgentId) nextMembers.add(config.hostAgentId) // 旧 Host 转为成员
+    onChangeConfig({ hostAgentId: nextHostId, memberAgentIds: Array.from(nextMembers) })
+  }
 
   return (
     <div className="inspector-section team-inspector-section">
@@ -82,16 +94,52 @@ export function TeamInspectorSection({ config, agents, onToggleMember, onChangeC
 
       {!collapsed && (
         <div className="team-roster">
-          {/* 当前对话 Agent 行：不可关 */}
+          {/* Host 行：点击展开 Agent 列表切换主持人 */}
           {host != null && (
-            <div className="team-roster-row team-roster-row-host">
-              <AgentAvatar id={host.id} name={host.name} builtIn={host.builtIn} metadata={host.metadata} />
-              <span className="team-roster-info">
-                <span className="team-roster-name">{host.name}</span>
-                {host.description && <span className="team-roster-desc">{host.description.slice(0, 40)}</span>}
-              </span>
-              <span className="team-roster-host-badge">当前对话</span>
-            </div>
+            <>
+              <div
+                className="team-roster-row team-roster-row-host team-roster-row-clickable"
+                onClick={() => setHostPickerOpen((prev) => !prev)}
+                title="点击切换主持人"
+              >
+                <AgentAvatar id={host.id} name={host.name} builtIn={host.builtIn} metadata={host.metadata} />
+                <span className="team-roster-info">
+                  <span className="team-roster-name">{host.name}</span>
+                  {host.description && <span className="team-roster-desc">{host.description.slice(0, 40)}</span>}
+                </span>
+                <span className="team-roster-host-badge">主持人</span>
+                {hostPickerOpen ? (
+                  <Icons.ChevronDown size={12} className="team-roster-host-chev" />
+                ) : (
+                  <Icons.ChevronRight size={12} className="team-roster-host-chev" />
+                )}
+              </div>
+              {hostPickerOpen && (
+                <div className="team-roster-host-picker">
+                  {agents.length === 0 && <div className="team-roster-empty">没有可选 Agent</div>}
+                  {agents.map((agent) => {
+                    const isHost = agent.id === config.hostAgentId
+                    return (
+                      <button
+                        key={agent.id}
+                        type="button"
+                        className={`team-roster-host-option${isHost ? ' active' : ''}`}
+                        onClick={() => handleSelectHost(agent.id)}
+                      >
+                        <AgentAvatar
+                          id={agent.id}
+                          name={agent.name}
+                          builtIn={agent.builtIn}
+                          metadata={agent.metadata}
+                        />
+                        <span className="team-roster-name">{agent.name}</span>
+                        {isHost && <Icons.Check size={13} />}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </>
           )}
 
           {/* 成员行：点击行展开只读详情；toggle 控制是否允许被调 */}

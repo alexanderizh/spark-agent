@@ -12399,19 +12399,6 @@ body.inspector-resizing {
 .team-dispatch-chip-running svg {
   animation: spin 1s linear infinite;
 }
-.team-dispatch-chip-done {
-  color: var(--success);
-  background: color-mix(in srgb, var(--success) 12%, transparent);
-}
-.team-dispatch-chip-failed {
-  color: var(--danger);
-  background: var(--danger-bg, color-mix(in srgb, var(--danger) 12%, transparent));
-}
-.team-dispatch-chip-meta {
-  color: var(--text-faint);
-  margin-left: 4px;
-}
-
 /* Member 消息：平级群聊式行布局 */
 .team-timeline-segment {
   width: 100%;
@@ -12462,11 +12449,20 @@ body.inspector-resizing {
   padding: 10px 14px;
 }
 /* 气泡内的首/尾段落不需要额外外边距，避免双倍间距 */
-.team-member-bubble-body > :first-child {
+.team-member-bubble-body > :first-child,
+.team-mode-active .msg-bubble-agent .msg-content > :first-child {
   margin-top: 0;
 }
-.team-member-bubble-body > :last-child {
+.team-member-bubble-body > :last-child,
+.team-mode-active .msg-bubble-agent .msg-content > :last-child {
   margin-bottom: 0;
+}
+/* 团队模式下 Host 的主输出也加同款气泡，与 member 视觉一致；
+   只在 team-mode-active 时生效，单 Agent 模式保持透明无气泡。 */
+.team-mode-active .msg-bubble-agent .msg-content {
+  background: color-mix(in srgb, var(--text) 4%, transparent);
+  border-radius: var(--r-lg);
+  padding: 10px 14px;
 }
 .team-member-message-main {
   min-width: 0;
@@ -12543,6 +12539,49 @@ body.inspector-resizing {
   background: var(--bg-soft);
   border-radius: var(--r-sm);
   padding: 1px 7px;
+}
+.team-roster-host-chev {
+  color: var(--text-faint);
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+/* 切换主持人下拉面板 */
+.team-roster-host-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 8px 6px;
+  padding: 4px;
+  background: var(--bg-soft);
+  border-radius: var(--r-md);
+}
+.team-roster-host-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-sm);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.team-roster-host-option:hover {
+  background: var(--hover);
+}
+.team-roster-host-option.active {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+.team-roster-host-option .team-roster-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .team-roster-toggle {
   width: 34px;

@@ -1389,9 +1389,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('team:list-members', async (req) => {
     const metadata = new SessionRepository(getDatabase()).getMetadata(req.sessionId)
-    const team = (metadata.team ?? {}) as Partial<TeamModeConfig>
-    const hostAgentId = team.hostAgentId ?? 'code-agent'
-    const memberIds = new Set(team.memberAgentIds ?? [])
+    const team = (metadata.team ?? null) as Partial<TeamModeConfig> | null
+    const hostAgentId = team?.hostAgentId ?? 'code-agent'
+    const memberIds = new Set(team?.memberAgentIds ?? [])
     const agents = getAgentRepository().list({}).map(toManagedAgent)
     const toCard = (a: ManagedAgent): TeamMemberCard => ({
       agentId: a.id,
@@ -1405,7 +1405,18 @@ export function registerAllIpcHandlers(): void {
     })
     const members = agents.filter((a) => a.id !== hostAgentId && memberIds.has(a.id)).map(toCard)
     const candidates = agents.filter((a) => a.id !== hostAgentId && !memberIds.has(a.id)).map(toCard)
-    return { hostAgentId, members, candidates }
+    // 顺带返回完整 TeamModeConfig 供前端恢复会话状态（团队模式开关 / 嵌套深度等）
+    const config: TeamModeConfig | null =
+      team != null
+        ? {
+            enabled: team.enabled === true,
+            hostAgentId,
+            memberAgentIds: Array.from(memberIds),
+            maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
+            allowNesting: team.allowNesting === true,
+          }
+        : null
+    return { hostAgentId, members, candidates, config }
   })
 
   typedIpcHandle('team:list-dispatches', async (req) => {
