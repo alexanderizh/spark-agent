@@ -12057,26 +12057,34 @@ body.inspector-resizing {
 .composer-menu-item.team-mode-entry .composer-menu-item-label {
   font-weight: 600;
 }
-.composer-team-chips {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
+/* 团队模式：紧凑成员 chip（紧贴 AgentPicker 右侧，单行不挤压不换行） */
 .composer-team-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+  flex-shrink: 0;
+  white-space: nowrap;
   font-size: var(--font-xs);
+  line-height: 1;
   color: var(--text-muted);
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
-  padding: 2px 7px;
+  height: 22px;
+  padding: 0 8px;
+  margin-left: 4px;
   cursor: pointer;
+}
+.composer-team-chip-count {
+  font-weight: 600;
+  color: var(--text);
 }
 .composer-team-chip:hover {
   background: var(--hover);
   color: var(--text);
+}
+.composer-team-chip:hover .composer-team-chip-count {
+  color: var(--primary);
 }
 
 /* Dispatch 调用卡片 */

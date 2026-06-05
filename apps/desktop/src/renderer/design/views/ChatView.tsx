@@ -5879,17 +5879,22 @@ function AgentPicker({
         type="button"
         className="composer-select-trigger"
         disabled={agents.length === 0}
+        title={teamMode ? `团队模式（主持人：${selected?.name ?? '编码 Agent'}）` : selected?.name ?? '编码 Agent'}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{teamMode ? `团队模式 · ${selected?.name ?? '编码 Agent'}` : selected?.name ?? '编码 Agent'}</span>
+        <span>{selected?.name ?? '编码 Agent'}</span>
         <Icons.ChevronDown size={12} />
       </button>
       {teamMode && (
-        <span className="composer-team-chips">
-          <button type="button" className="composer-team-chip" onClick={onOpenMembers} title="管理团队成员">
-            <Icons.Team size={11} /> 成员 {memberCount}
-          </button>
-        </span>
+        <button
+          type="button"
+          className="composer-team-chip"
+          onClick={onOpenMembers}
+          title="管理团队成员"
+        >
+          <Icons.Team size={11} />
+          <span className="composer-team-chip-count">{memberCount}</span>
+        </button>
       )}
       {open && (
         <div className="composer-menu composer-agent-menu">
