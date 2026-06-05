@@ -75,6 +75,8 @@ describe('TeamDispatchService', () => {
     const reply = await service.run(makeTask(), ctx)
 
     expect(reply.state).toBe('completed')
+    expect(reply.memberAgentId).toBe('reviewer')
+    expect(reply.memberName).toBe('Reviewer')
     expect(reply.content).toBe('looks good')
     expect(reply.usage?.inputTokens).toBe(100)
     expect(reply.usage?.outputTokens).toBe(200)

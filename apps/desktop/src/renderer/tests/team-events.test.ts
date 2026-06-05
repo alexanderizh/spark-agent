@@ -159,6 +159,8 @@ describe('MessageBuilder · Team Mode', () => {
 
     const reply: TeamA2AReply = {
       taskId: 'task-1',
+      memberAgentId: 'reviewer',
+      memberName: 'Reviewer',
       state: 'completed',
       content: 'done',
       usage: { durationMs: 1200, outputTokens: 480 },

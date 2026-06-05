@@ -1709,11 +1709,12 @@ export class SessionService {
         // parallel=true 绕过 turn 串行队列，items 真正并发执行；
         // Promise.allSettled 保证一个失败不影响其他（service.run 自身已把失败转 reply，几乎总 fulfilled）。
         const settled = await Promise.allSettled(items.map((item) => runSingleDispatch(item, true)))
-        const replies = settled.map((s) =>
+        const replies = settled.map((s, index) =>
           s.status === 'fulfilled'
             ? s.value
             : ({
                 taskId: crypto.randomUUID(),
+                memberAgentId: String(items[index]?.targetAgentId ?? ''),
                 state: 'failed' as const,
                 content: '',
                 error: { code: 'internal' as const, message: s.reason instanceof Error ? s.reason.message : String(s.reason) },
@@ -1832,6 +1833,7 @@ export class SessionService {
     let deltaText = ''
     let inputTokens: number | undefined
     let outputTokens: number | undefined
+    let memberError: string | undefined
     const makeBase = () => ({
       id: crypto.randomUUID(),
       sessionId,
@@ -1860,6 +1862,8 @@ export class SessionService {
       } else if (event.type === 'usage_update') {
         inputTokens = event.inputTokens
         outputTokens = event.outputTokens
+      } else if (event.type === 'agent_error') {
+        memberError = event.message
       } else if (
         event.type === 'tool_call' ||
         event.type === 'tool_result' ||
@@ -1891,6 +1895,9 @@ export class SessionService {
     }
 
     // 优先用 complete 文本；provider 只发 delta 时回落到累积的 delta 文本。
+    if (memberError != null) {
+      throw new Error(memberError)
+    }
     return {
       content: completeText || deltaText,
       ...(inputTokens != null ? { inputTokens } : {}),
@@ -2869,9 +2876,10 @@ function buildMemberUserMessage(task: TeamA2ATask): string {
 }
 
 /** 把 member 的结构化回复格式化成给 Host LLM 看的工具结果文本（UI 不渲染此文本） */
-function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply): string {
+export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply): string {
   const usage = reply.usage
   const meta = [
+    `member=${reply.memberName != null ? `${reply.memberName} (${reply.memberAgentId})` : reply.memberAgentId}`,
     `state=${reply.state}`,
     usage?.durationMs != null ? `${usage.durationMs}ms` : null,
     usage?.inputTokens != null && usage?.outputTokens != null

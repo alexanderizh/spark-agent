@@ -80,7 +80,13 @@ export class TeamDispatchService {
     const fail = (
       code: NonNullable<TeamA2AReply['error']>['code'],
       message: string,
-    ): TeamA2AReply => ({ taskId: task.taskId, state: 'failed', content: '', error: { code, message } })
+    ): TeamA2AReply => ({
+      taskId: task.taskId,
+      memberAgentId: task.memberAgentId,
+      state: 'failed',
+      content: '',
+      error: { code, message },
+    })
 
     // ── 校验 ──────────────────────────────────────────────────────────────
     if (member == null || !ctx.teamConfig.memberAgentIds.includes(task.memberAgentId)) {
@@ -160,6 +166,8 @@ export class TeamDispatchService {
         const durationMs = Date.now() - startedAt
         const reply: TeamA2AReply = {
           taskId: task.taskId,
+          memberAgentId: member.id,
+          memberName: member.name,
           state: 'completed',
           content: result.content,
           usage: {
@@ -203,6 +211,8 @@ export class TeamDispatchService {
               : String(err)
         const reply: TeamA2AReply = {
           taskId: task.taskId,
+          memberAgentId: member.id,
+          memberName: member.name,
           state: canceled && !timedOut ? 'canceled' : 'failed',
           content: '',
           error: { code, message },

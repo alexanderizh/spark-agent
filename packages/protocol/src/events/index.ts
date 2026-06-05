@@ -195,6 +195,10 @@ export interface TeamA2ATask {
 /** Member 完成 A2A 调用后返回给 Host 的结构化回复 */
 export interface TeamA2AReply {
   taskId: string
+  /** 返回该结果的成员 Agent ID；Host 用它对应 batch 中每个 dispatch */
+  memberAgentId: string
+  /** 返回该结果的成员显示名（可选，用于 Host/日志可读性） */
+  memberName?: string
   state: 'completed' | 'failed' | 'canceled'
   /** 主要文本输出（给 Host LLM 看的） */
   content: string
