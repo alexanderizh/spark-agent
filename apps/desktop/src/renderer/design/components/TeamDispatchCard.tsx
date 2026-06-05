@@ -18,17 +18,11 @@ export interface TeamDispatchCardProps {
   memberName: string
   /** dispatch 当前状态 */
   state: 'pending' | 'working' | 'completed' | 'failed' | 'canceled'
-  /** 完成后的回复（用于收尾 chip：用量 / 错误） */
+  /** 完成后的回复，保留给调用方传递完整事件数据 */
   reply?: TeamA2AReply
 }
 
-function formatDuration(ms?: number): string {
-  if (ms == null) return ''
-  if (ms < 1000) return `${ms}ms`
-  return `${(ms / 1000).toFixed(1)}s`
-}
-
-export function TeamDispatchCard({ task, memberName, state, reply }: TeamDispatchCardProps) {
+export function TeamDispatchCard({ task, memberName, state }: TeamDispatchCardProps) {
   const memberAvatar = deriveTeamAvatar(task.memberAgentId, memberName)
   const isDone = state === 'completed'
   const isFailed = state === 'failed' || state === 'canceled'
@@ -59,6 +53,20 @@ export function TeamDispatchCard({ task, memberName, state, reply }: TeamDispatc
         <Icons.Send size={13} className="team-dispatch-card-arrow" />
         <span className="team-dispatch-card-title">
           <span className="team-dispatch-card-member">{memberName}</span>
+          {isDone && (
+            <Icons.CheckCircle
+              size={13}
+              className="team-dispatch-card-result team-dispatch-card-result-done"
+              aria-label="已返回"
+            />
+          )}
+          {isFailed && (
+            <Icons.XCircle
+              size={13}
+              className="team-dispatch-card-result team-dispatch-card-result-failed"
+              aria-label={state === 'canceled' ? '已取消' : '失败'}
+            />
+          )}
           {collapsible && !expanded ? (
             <>
               {' · '}
@@ -88,30 +96,13 @@ export function TeamDispatchCard({ task, memberName, state, reply }: TeamDispatc
         </>
       )}
 
-      <div className="team-dispatch-card-status">
-        {isRunning && (
+      {isRunning && (
+        <div className="team-dispatch-card-status">
           <span className="team-dispatch-chip team-dispatch-chip-running">
             <Icons.Spinner size={12} /> 等待 {memberName} 响应…
           </span>
-        )}
-        {isDone && (
-          <span className="team-dispatch-chip team-dispatch-chip-done">
-            <Icons.CheckCircle size={12} /> 已返回
-            {reply?.usage != null && (
-              <span className="team-dispatch-chip-meta">
-                {formatDuration(reply.usage.durationMs)}
-                {reply.usage.outputTokens != null ? ` · ${reply.usage.outputTokens} tok` : ''}
-              </span>
-            )}
-          </span>
-        )}
-        {isFailed && (
-          <span className="team-dispatch-chip team-dispatch-chip-failed">
-            <Icons.XCircle size={12} /> {state === 'canceled' ? '已取消' : '失败'}
-            {reply?.error != null && <span className="team-dispatch-chip-meta">{reply.error.message}</span>}
-          </span>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   )
 }
