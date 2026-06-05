@@ -11,6 +11,7 @@
  * Phase 2 起回调改为走 team:update IPC。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import './TeamInspectorSection.less'
 import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'

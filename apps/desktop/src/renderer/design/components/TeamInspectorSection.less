@@ -1,0 +1,381 @@
+/**
+ * TeamInspectorSection 样式（从 views.css 抽出，组件级 less）
+ *
+ * 命名约定：所有选择器 .team-inspector-* / .team-roster-*。
+ * 由 TeamInspectorSection.tsx 顶部 import。
+ */
+
+@accent: var(--accent, var(--primary));
+
+.team-inspector-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.team-inspector-count {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border-radius: 999px;
+  padding: 0 7px;
+  margin-left: 4px;
+}
+
+.team-roster {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+
+  // ── 来源徽章：会话由长期团队应用而来时显示 ──
+  &-source {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 6px 8px;
+    margin-bottom: 6px;
+    border-radius: var(--r-sm);
+    background: var(--bg-hover);
+    font-size: 11px;
+    color: var(--text-muted);
+
+    &-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      color: var(--text-faint);
+    }
+    &-name {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 500;
+      color: var(--text-default);
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    &-tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 0 5px;
+      height: 14px;
+      border-radius: 7px;
+      background: var(--bg-soft);
+      color: var(--text-faint);
+      font-size: 9px;
+      font-weight: 500;
+    }
+    &-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 2px 8px;
+      border: 1px solid var(--border-soft);
+      border-radius: 10px;
+      background: var(--bg-soft);
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+      transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+
+      &:hover:not(:disabled) {
+        background: var(--bg-default);
+        color: var(--text-default);
+        border-color: var(--border-default);
+      }
+      &.ghost {
+        background: transparent;
+        border-color: transparent;
+      }
+      &:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  // ── 临时团队的"保存为长期团队" CTA + inline form ──
+  &-save-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0;
+    padding: 6px 8px;
+    border: 1px dashed var(--border-soft);
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+
+    &:hover {
+      border-color: @accent;
+      color: @accent;
+      background: var(--bg-hover);
+    }
+  }
+  &-save-form {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin: 6px 0;
+    padding: 8px;
+    border-radius: var(--r-sm);
+    background: var(--bg-hover);
+
+    &-title {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 2px;
+    }
+    &-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      margin-top: 2px;
+    }
+  }
+
+  // ── 行 ──
+  &-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--r-sm);
+
+    &:hover {
+      background: var(--hover);
+    }
+    &-host {
+      opacity: 0.85;
+    }
+    &-clickable {
+      cursor: pointer;
+    }
+  }
+
+  &-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    overflow: hidden;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-soft);
+    flex-shrink: 0;
+  }
+
+  &-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+  }
+  &-name-line {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+  &-name {
+    font-size: var(--font-sm);
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  &-running {
+    margin-top: 1px;
+  }
+  &-desc {
+    font-size: var(--font-xs);
+    color: var(--text-faint);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  // ── Host 行专属：徽章 + 切换图标 + 下拉面板 ──
+  &-host-badge {
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    background: var(--bg-soft);
+    border-radius: var(--r-sm);
+    padding: 1px 7px;
+  }
+  &-host-chev {
+    color: var(--text-faint);
+    margin-left: 4px;
+    flex-shrink: 0;
+  }
+  &-host-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin: 2px 8px 6px;
+    padding: 4px;
+    background: var(--bg-soft);
+    border-radius: var(--r-md);
+  }
+  &-host-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 8px;
+    background: transparent;
+    border: none;
+    border-radius: var(--r-sm);
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    font-size: var(--font-sm);
+
+    &:hover {
+      background: var(--hover);
+    }
+    &.active {
+      color: var(--primary);
+      background: var(--primary-soft);
+    }
+    .team-roster-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  // ── 成员 toggle 开关 ──
+  &-toggle {
+    width: 34px;
+    height: 18px;
+    border-radius: 999px;
+    border: none;
+    background: var(--border-strong, var(--border));
+    position: relative;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s ease;
+
+    &.on {
+      background: var(--primary);
+
+      .team-roster-toggle-knob {
+        transform: translateX(16px);
+      }
+    }
+    &-knob {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.15s ease;
+    }
+  }
+
+  &-empty {
+    font-size: var(--font-xs);
+    color: var(--text-faint);
+    padding: 6px 8px;
+  }
+
+  &-invite,
+  &-advanced-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 8px;
+    align-self: flex-start;
+
+    &:hover {
+      color: var(--primary);
+    }
+  }
+  &-candidates {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 0 2px 8px;
+    border-left: 2px solid var(--divider);
+    margin-left: 8px;
+  }
+  &-candidate {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border: none;
+    background: none;
+    border-radius: var(--r-sm);
+    cursor: pointer;
+    text-align: left;
+
+    &:hover {
+      background: var(--hover);
+    }
+    &-add {
+      margin-left: auto;
+      color: var(--text-faint);
+    }
+  }
+  &-advanced {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 4px 8px 8px;
+
+    &-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: var(--font-sm);
+      color: var(--text-muted);
+    }
+  }
+
+  // ── 成员点击展开的只读详情 ──
+  &-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin: 0 8px 6px 40px;
+    padding: 6px 10px;
+    background: var(--bg-soft);
+    border-radius: var(--r-sm);
+
+    &-row {
+      display: flex;
+      justify-content: space-between;
+      font-size: var(--font-xs);
+    }
+    &-k {
+      color: var(--text-faint);
+    }
+    &-v {
+      color: var(--text-muted);
+      max-width: 60%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+}

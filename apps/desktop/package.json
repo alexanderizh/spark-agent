@@ -1,6 +1,6 @@
 {
-  "name": "@spark/desktop-dev",
-  "version": "0.1.6",
+  "name": "@spark/desktop",
+  "version": "0.1.7",
   "description": "Spark Agent desktop application — Electron + React + TypeScript",
   "author": "Spark Agent Team",
   "private": true,
@@ -59,6 +59,7 @@
     "eslint": "^10.4.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
+    "less": "^4.6.4",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.60.0",

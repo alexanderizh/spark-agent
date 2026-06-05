@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import './AgentsView.less'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
