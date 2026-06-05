@@ -52,7 +52,9 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
 
 const DEFAULT_DISPATCH_TIMEOUT_MS = 120_000
 const MAX_DISPATCH_TIMEOUT_MS = 600_000
-const DEFAULT_MAX_DISPATCHES_PER_TURN = 5
+// 单 turn dispatch 预算。Host 用 agent_dispatch_batch 一次提交多个并行任务时
+// 计数仍按"每个 task 一次"累加（保护循环），所以上限要能覆盖典型 batch（≤10）。
+const DEFAULT_MAX_DISPATCHES_PER_TURN = 10
 
 export class TeamDispatchService {
   /** turnId → 该 turn 已发起的 dispatch 次数（循环/预算检测） */
@@ -70,6 +72,7 @@ export class TeamDispatchService {
   async run<M extends { id: string; name: string }>(
     task: TeamA2ATask,
     ctx: TeamDispatchRunContext<M>,
+    options: { parallel?: boolean } = {},
   ): Promise<TeamA2AReply> {
     const dispatchId = crypto.randomUUID()
     const member = ctx.members.find((m) => m.id === task.memberAgentId)
@@ -133,7 +136,8 @@ export class TeamDispatchService {
     this.controllers.set(dispatchId, controller)
     const onParentAbort = () => controller.abort()
     ctx.signal?.addEventListener('abort', onParentAbort)
-    return await this.enqueueTurnExecution(ctx.turnId, async () => {
+    // parallel=true 时绕过 turn 串行队列（agent_dispatch_batch 显式并行场景）。
+    const runMember = async (): Promise<TeamA2AReply> => {
       const timeoutMs = Math.min(task.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS)
       let timedOut = false
       const timer = setTimeout(() => {
@@ -224,7 +228,8 @@ export class TeamDispatchService {
         ctx.signal?.removeEventListener('abort', onParentAbort)
         this.controllers.delete(dispatchId)
       }
-    })
+    }
+    return options.parallel === true ? runMember() : this.enqueueTurnExecution(ctx.turnId, runMember)
   }
 
   /** 取消所有进行中的 dispatch（session cancel 时调用） */

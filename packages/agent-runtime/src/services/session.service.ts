@@ -1308,7 +1308,10 @@ export class SessionService {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, ['mcp__spark_image__generate_image'])
     }
     if (config.teamMcpServer != null) {
-      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, ['mcp__spark_team__agent_dispatch'])
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
+        'mcp__spark_team__agent_dispatch',
+        'mcp__spark_team__agent_dispatch_batch',
+      ])
     }
     if (config.platformManagementMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PLATFORM_TOOL_NAMES)
@@ -1604,37 +1607,30 @@ export class SessionService {
     if (factory == null) return null
     const { createSdkMcpServer, tool } = factory
 
-    const dispatchTool = tool(
-      'agent_dispatch',
-      TEAM_DISPATCH_TOOL_DESCRIPTION,
-      {
-        targetAgentId: z.string().describe('One of the team member IDs visible to you. Use the exact id.'),
-        instruction: z.string().max(8000).describe('Clear, self-contained description of what the member should do.'),
-        inputs: z.record(z.unknown()).optional(),
-        attachments: z
-          .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
-          .max(10)
-          .optional(),
-        expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
-        timeoutMs: z.number().int().min(5000).max(600_000).optional(),
-      } as Record<string, unknown>,
-      async (args: Record<string, unknown>) => {
-        const task: TeamA2ATask = {
-          taskId: crypto.randomUUID(),
-          hostAgentId: ctx.hostAgent.id,
-          memberAgentId: String(args.targetAgentId ?? ''),
-          rootTurnId: ctx.turnId,
-          instruction: String(args.instruction ?? ''),
-          ...(args.inputs != null ? { inputs: args.inputs as Record<string, unknown> } : {}),
-          ...(Array.isArray(args.attachments)
-            ? { attachments: args.attachments as NonNullable<TeamA2ATask['attachments']> }
-            : {}),
-          ...(args.expectedOutput != null
-            ? { expectedOutput: args.expectedOutput as NonNullable<TeamA2ATask['expectedOutput']> }
-            : {}),
-          ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
-        }
-        const reply = await this.getTeamDispatchService().run(task, {
+    // 单次 dispatch 的实际执行：构造 task 并交给 TeamDispatchService。
+    // parallel=true 时绕过 turn 串行队列，由 batch 工具使用。
+    const runSingleDispatch = async (
+      args: Record<string, unknown>,
+      parallel = false,
+    ): Promise<import('@spark/protocol').TeamA2AReply> => {
+      const task: TeamA2ATask = {
+        taskId: crypto.randomUUID(),
+        hostAgentId: ctx.hostAgent.id,
+        memberAgentId: String(args.targetAgentId ?? ''),
+        rootTurnId: ctx.turnId,
+        instruction: String(args.instruction ?? ''),
+        ...(args.inputs != null ? { inputs: args.inputs as Record<string, unknown> } : {}),
+        ...(Array.isArray(args.attachments)
+          ? { attachments: args.attachments as NonNullable<TeamA2ATask['attachments']> }
+          : {}),
+        ...(args.expectedOutput != null
+          ? { expectedOutput: args.expectedOutput as NonNullable<TeamA2ATask['expectedOutput']> }
+          : {}),
+        ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+      }
+      return this.getTeamDispatchService().run(
+        task,
+        {
           sessionId: ctx.sessionId,
           turnId: ctx.turnId,
           hostAgentId: ctx.hostAgent.id,
@@ -1656,7 +1652,28 @@ export class SessionService {
               members: ctx.members,
               teamConfig: ctx.teamConfig,
             }),
-        })
+        },
+        { parallel },
+      )
+    }
+
+    // 单次 dispatch 工具：串行场景（前一结果决定下一步）
+    const dispatchTool = tool(
+      'agent_dispatch',
+      TEAM_DISPATCH_TOOL_DESCRIPTION,
+      {
+        targetAgentId: z.string().describe('One of the team member IDs visible to you. Use the exact id.'),
+        instruction: z.string().max(8000).describe('Clear, self-contained description of what the member should do.'),
+        inputs: z.record(z.unknown()).optional(),
+        attachments: z
+          .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
+          .max(10)
+          .optional(),
+        expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
+        timeoutMs: z.number().int().min(5000).max(600_000).optional(),
+      } as Record<string, unknown>,
+      async (args: Record<string, unknown>) => {
+        const reply = await runSingleDispatch(args)
         return {
           content: [{ type: 'text' as const, text: formatReplyForHost(reply) }],
           structuredContent: reply as unknown,
@@ -1664,7 +1681,59 @@ export class SessionService {
       },
     )
 
-    return createSdkMcpServer({ name: 'spark_team', version: '0.1.0', tools: [dispatchTool] }) as SDKMcpServerConfig
+    // 批量 dispatch 工具：并行场景（多个相互独立的任务）
+    const dispatchBatchTool = tool(
+      'agent_dispatch_batch',
+      TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION,
+      {
+        dispatches: z
+          .array(
+            z.object({
+              targetAgentId: z.string(),
+              instruction: z.string().max(8000),
+              inputs: z.record(z.unknown()).optional(),
+              attachments: z
+                .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
+                .max(10)
+                .optional(),
+              expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
+              timeoutMs: z.number().int().min(5000).max(600_000).optional(),
+            }),
+          )
+          .min(1)
+          .max(10)
+          .describe('A list of independent tasks to run in parallel. Each item is one dispatch.'),
+      } as Record<string, unknown>,
+      async (args: Record<string, unknown>) => {
+        const items = Array.isArray(args.dispatches) ? (args.dispatches as Array<Record<string, unknown>>) : []
+        // parallel=true 绕过 turn 串行队列，items 真正并发执行；
+        // Promise.allSettled 保证一个失败不影响其他（service.run 自身已把失败转 reply，几乎总 fulfilled）。
+        const settled = await Promise.allSettled(items.map((item) => runSingleDispatch(item, true)))
+        const replies = settled.map((s) =>
+          s.status === 'fulfilled'
+            ? s.value
+            : ({
+                taskId: crypto.randomUUID(),
+                state: 'failed' as const,
+                content: '',
+                error: { code: 'internal' as const, message: s.reason instanceof Error ? s.reason.message : String(s.reason) },
+              } satisfies import('@spark/protocol').TeamA2AReply),
+        )
+        const text = replies
+          .map((r, i) => `[${i + 1}/${replies.length}] ${formatReplyForHost(r)}`)
+          .join('\n\n---\n\n')
+        return {
+          content: [{ type: 'text' as const, text }],
+          structuredContent: { replies } as unknown,
+        }
+      },
+    )
+
+    return createSdkMcpServer({
+      name: 'spark_team',
+      version: '0.2.0',
+      tools: [dispatchTool, dispatchBatchTool],
+    }) as SDKMcpServerConfig
   }
 
   /** 用某个成员 Agent 的配置运行一次 one-shot turn，流式输出 rebrand 为 team_member_message。 */
@@ -1708,9 +1777,9 @@ export class SessionService {
 
     const memberSystemPrompt = buildManagedAgentSystemPrompt(member, null)
     const userMessage = buildMemberUserMessage(task)
-    const memberSdkSessionId = [sessionId, 'team', turnId, dispatchId, member.id]
-      .map((part) => part.replace(/[^A-Za-z0-9._:-]/g, '-'))
-      .join(':')
+    // Claude Code SDK 要求 session_id 必须是合法 UUID，给每次 dispatch 全新 UUID
+    // 避免与 Host 的 SDK session 冲突；member 不需要跨 dispatch 续会话。
+    const memberSdkSessionId = crypto.randomUUID()
 
     // Member 自身的 MCP 工具
     const memberMcpServers = this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
@@ -1744,7 +1813,9 @@ export class SessionService {
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
       // 嵌套时预批准 dispatch 工具；始终禁用内置 Task（§7.4）。
-      ...(nestedTeamServer != null ? { allowedTools: ['mcp__spark_team__agent_dispatch'] } : {}),
+      ...(nestedTeamServer != null
+        ? { allowedTools: ['mcp__spark_team__agent_dispatch', 'mcp__spark_team__agent_dispatch_batch'] }
+        : {}),
       disallowedTools: ['Task'],
       enableCheckpoints: false,
       sdkSessionId: memberSdkSessionId,
@@ -1798,7 +1869,9 @@ export class SessionService {
     })
 
     try {
-      await executor.executeTurn(sessionId, `${turnId}:${dispatchId}`, userMessage, sdkConfig)
+      // 第二参数是 Spark 内部 turnId（仅用于 executor 内部日志/事件归属），不传给 SDK；
+      // 用全新 UUID 避免与 Host 的 turnId 冲突（emit 时仍用 host turnId，见 makeBase）。
+      await executor.executeTurn(sessionId, crypto.randomUUID(), userMessage, sdkConfig)
     } finally {
       signal.removeEventListener('abort', onAbort)
     }
@@ -2701,11 +2774,18 @@ function normalizeReasoningEffort(
 // ── Team Mode helpers ────────────────────────────────────────────────────────
 
 const TEAM_DISPATCH_TOOL_DESCRIPTION = [
-  'Delegate a focused subtask to a teammate agent.',
-  'When to use: the task is outside your domain, another member is clearly better suited, or the user explicitly asks for a member by name.',
-  'When NOT to use: you can answer the user directly, or the subtask needs the user to clarify something (ask the user instead).',
+  'Delegate ONE focused subtask to a teammate agent (serial).',
+  'When to use: the next step depends on the previous member reply, or only one member needs to act.',
+  'When NOT to use: you can answer the user directly, or the user asks several members in parallel (use agent_dispatch_batch instead).',
   'Returns a structured reply with the member content. You decide whether to call again or synthesize the final answer.',
-  'The member cannot call back to you or chain to another member by default.',
+].join('\n')
+
+const TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION = [
+  'Delegate multiple INDEPENDENT subtasks to teammate agents IN PARALLEL.',
+  'When to use: the user explicitly asks several members (e.g. "ask all agents", "have docs and qa each draft X"), or you have multiple unrelated tasks that can run concurrently.',
+  'When NOT to use: tasks depend on each other (use agent_dispatch one at a time), or the user only mentioned one member.',
+  'Each item is one independent dispatch; tasks may target the same or different members.',
+  'Returns an array of structured replies in the same order as the input. A failure in one item does not abort the others.',
 ].join('\n')
 
 /** 从 SessionRow.metadata_json 读取团队配置（不存在/无效返回 null） */
@@ -2733,9 +2813,9 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
   const lines: string[] = [
     '[Team Roster]',
     `You are ${host.name} (${host.id}), the host of a multi-agent team.`,
-    'Use the tool `mcp__spark_team__agent_dispatch` to delegate a task to a member when:',
-    '  - the task is outside your primary expertise, or',
-    '  - the user explicitly asks to involve a specific member.',
+    'You have TWO dispatch tools:',
+    '  - `mcp__spark_team__agent_dispatch` — delegate ONE subtask (serial; use when the next step depends on the previous reply).',
+    '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, e.g. "let all members introduce themselves", or when tasks are unrelated).',
     '',
     'Members available to you in this session:',
   ]

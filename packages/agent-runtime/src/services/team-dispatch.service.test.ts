@@ -185,4 +185,26 @@ describe('TeamDispatchService', () => {
     ])
     expect(executeMember).toHaveBeenCalledTimes(2)
   })
+
+  it('with options.parallel=true bypasses the turn serialization queue', async () => {
+    const order: string[] = []
+    const executeMember = vi.fn(async ({ member }: Parameters<TeamDispatchRunContext<Member>['executeMember']>[0]) => {
+      order.push(`start:${member.id}`)
+      // 两个 member 同时进入；如果是串行，第二个会等第一个 await 才进入
+      await new Promise((r) => setTimeout(r, 10))
+      order.push(`end:${member.id}`)
+      return { content: `${member.name} done` }
+    })
+    const { ctx } = makeCtx({ executeMember })
+
+    const both = await Promise.all([
+      service.run(makeTask('reviewer'), ctx, { parallel: true }),
+      service.run(makeTask('rust-coder', { taskId: 't2' }), ctx, { parallel: true }),
+    ])
+
+    expect(both.every((r) => r.state === 'completed')).toBe(true)
+    // 并行：两个 start 都先于任何 end 发生
+    expect(order.slice(0, 2).every((entry) => entry.startsWith('start:'))).toBe(true)
+    expect(order.slice(2).every((entry) => entry.startsWith('end:'))).toBe(true)
+  })
 })
