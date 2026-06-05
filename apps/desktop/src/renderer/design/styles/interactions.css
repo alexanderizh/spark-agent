@@ -609,12 +609,6 @@
   line-height: 1.4;
   min-height: 2.6em;
 }
-.tier-grid > .tier-cell > .spark-input {
-  width: 100%;
-}
-.tier-grid > .tier-cell > .spark-input-wrap {
-  width: 100%;
-}
 .form-grid > label {
   font-size: var(--font-sm);
   font-weight: 500;
@@ -629,48 +623,12 @@
   margin-top: 2px;
   line-height: 1.45;
 }
-.form-grid > .control,
-.form-grid > .spark-input,
-.form-grid > .spark-input-wrap,
-.form-grid > .spark-select-wrap,
-.form-grid > textarea {
-  height: 36px;
-  padding: 0 12px;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-  width: 100%;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.form-grid > .spark-input,
-.form-grid > .spark-input-wrap,
-.form-grid > .spark-select-wrap {
-  /* 让 SparkInput/SparkSelect 自己的 .spark-input / .spark-select 样式生效，不被覆盖 */
-  padding: 0;
-  border: none;
-  background: none;
-  height: 36px;
-}
-.form-grid > .spark-select-wrap {
-  display: flex;
-  width: 100%;
-}
+
 /* 不再为 .form-grid 下的 SparkSelect 重画外观 —— 完全交给 Arco Design 默认下拉弹窗 */
 .form-grid > textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
 .form-grid > .spark-input:hover,
 .form-grid > .spark-input-wrap:hover .spark-input-arco.arco-input-wrapper,
 .form-grid > textarea:hover { border-color: var(--text-faint); }
-.form-grid > .spark-input:focus,
-.form-grid > .spark-input-wrap .spark-input-arco.arco-input-wrapper:focus-within,
-.form-grid > textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--panel);
-}
 
 .form-grid > .control { display: flex; align-items: center; gap: 8px; padding: 0; background: none; border: none; }
 

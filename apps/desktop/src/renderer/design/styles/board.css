@@ -496,33 +496,6 @@
 .bqc-row { display: flex; gap: 10px; }
 .bqc-field-sm { flex: 1; }
 
-/* ── 截止日期 (Arco DatePicker) ──
-   DatePicker 内部 <input> 没有 .arco-input 类，会被全局 input:focus 规则接管，
-   出现意料之外的高亮边框/阴影。这里把它打回 Arco 自带的 focus 行为。 */
-.bqc-field .arco-picker {
-  background: var(--bg) !important;
-  border: 1px solid var(--border) !important;
-  border-radius: var(--r-sm) !important;
-  box-shadow: none !important;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.bqc-field .arco-picker:hover {
-  border-color: var(--text-faint) !important;
-  background: var(--bg) !important;
-}
-.bqc-field .arco-picker-focused,
-.bqc-field .arco-picker:focus-within {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 2px var(--primary-soft) !important;
-  background: var(--bg) !important;
-}
-.bqc-field .arco-picker input,
-.bqc-field .arco-picker input:focus {
-  border: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-}
-
 /* ── 优先级 tag（dropDown 选项渲染） ──
    替代原来用 emoji dot 表达优先级的方式；用 <span class="*-priority-tag">
    在选项里渲染带底色的 tag，整体更精致。 */

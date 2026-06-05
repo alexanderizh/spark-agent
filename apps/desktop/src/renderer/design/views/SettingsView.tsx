@@ -2904,7 +2904,7 @@ export function PermissionsSection() {
             </div>
           }
         />
-        <div className="runtime-permission-grid">
+        <div className="runtime-permission-grid p-[10px]">
           {runtimeOptions.map((option) => (
             <button
               key={option.value}

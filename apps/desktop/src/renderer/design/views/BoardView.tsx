@@ -209,6 +209,7 @@ function QuickCreateModal({
                 {...(dueDate ? { value: dueDate } : {})}
                 onChange={(dateString) => setDueDate(dateString ?? '')}
                 placeholder="年/月/日"
+                size='small'
                 style={{ width: '100%' }}
                 allowClear
               />

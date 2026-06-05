@@ -107,7 +107,7 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
     }
 
     return (
-      <span className={`spark-input-wrap ${className}`}>
+      <span >
         {icon && <span className="spark-input-icon">{icon}</span>}
         <Input
           ref={ref}
@@ -189,10 +189,8 @@ export const SparkSelect = forwardRef<any, SparkSelectProps>(
     const options = useMemo(() => extractOptions(children), [children])
 
     return (
-      <div className={`spark-select-wrap ${className}`}>
+      <div>
         <Select
-          className="spark-select-arco"
-          dropdownMenuClassName="spark-select-arco-popup"
           // Arco 自带的下拉弹窗样式已经够完整了，不要再用 bordered={false} 把外壳抹掉再自己画。
           {...(placeholder !== undefined ? { placeholder } : {})}
           {...(allowClear !== undefined ? { allowClear } : {})}

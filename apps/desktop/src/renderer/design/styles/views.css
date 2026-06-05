@@ -10467,13 +10467,7 @@ body.inspector-resizing {
   width: 100%;
   min-width: 0;
 }
-/* Agent 编辑页的 <label> 包装了 select：label 元素本身是 grid item，
-   弹窗的 getPopupContainer 已经挂在 document.body，理论上不受影响；
-   这里只是再保险一次，保证 select 容器能撑开并有正确的层级。 */
-.agent-field > .spark-select-wrap {
-  display: flex;
-  align-items: center;
-}
+
 .agent-config-panel {
   display: flex;
   flex-direction: column;
@@ -11381,7 +11375,6 @@ body.inspector-resizing {
   gap: 10px;
   width: 100%;
 }
-.provider-form-select-row .spark-select-wrap { flex: 1; }
 .provider-form-select-preview {
   flex-shrink: 0;
   transition: opacity 0.15s;
@@ -11943,7 +11936,6 @@ body.inspector-resizing {
   gap: 10px;
   width: 100%;
 }
-.provider-form-select-row .spark-select-wrap { flex: 1; }
 .provider-form-select-preview {
   flex-shrink: 0;
   transition: opacity 0.15s;
@@ -12670,10 +12662,6 @@ body.inspector-resizing {
   gap: 8px;
   font-size: var(--font-sm);
   color: var(--text-muted);
-}
-.team-roster-advanced-row select,
-.team-roster-advanced-row .spark-select-wrap {
-  margin-left: auto;
 }
 
 /* Team Inspector：成员行点击展开的只读详情（Phase 4） */

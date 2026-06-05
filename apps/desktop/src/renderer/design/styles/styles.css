@@ -816,10 +816,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   font-size: var(--font-sm);
   min-width: 200px;
 }
-.search-input .spark-input-wrap {
-  flex: 1;
-  min-width: 0;
-}
+ 
 .search-input .spark-input-arco.arco-input-wrapper,
 .search-input input {
   background: transparent;
@@ -892,14 +889,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    SPARK INPUT — 基于 Arco Input 的主题化输入框
    ============================================================ */
 
-/* Input wrapper */
-.spark-input-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-}
-.spark-input-wrap .spark-input-arco { width: 100%; }
+ 
 .spark-input-icon {
   position: absolute;
   left: 11px;
@@ -908,102 +898,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   pointer-events: none;
   z-index: 1;
 }
-.spark-input-icon svg { width: 14px; height: 14px; }
-.spark-input-has-icon { padding-left: 32px !important; }
 
-/* Arco Input 主题覆盖 */
-.spark-input-arco.arco-input-wrapper {
-  height: 36px;
-  background: var(--panel) !important;
-  border: 1px solid var(--border-strong) !important;
-  border-radius: var(--r-md) !important;
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.spark-input-arco.arco-input-wrapper .arco-input {
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-}
-.spark-input-arco.arco-input-wrapper .arco-input::placeholder {
-  color: var(--text-faint);
-}
-.spark-input-arco.arco-input-wrapper:hover {
-  border-color: var(--text-faint) !important;
-}
-.spark-input-arco.arco-input-wrapper.arco-input-focus,
-.spark-input-arco.arco-input-wrapper:focus-within {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px var(--primary-soft) !important;
-}
-.spark-input-arco.arco-input-wrapper.arco-input-disabled {
-  opacity: 0.55;
-  cursor: default;
-  background: var(--bg-soft) !important;
-}
-.spark-input-arco.arco-input-wrapper .arco-input[readonly] {
-  color: var(--text-muted);
-}
-
-/* 原生 range input 保留 */
-.spark-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 6px;
-  padding: 0;
-  border: none;
-  border-radius: 3px;
-  background: var(--border);
-  cursor: pointer;
-  width: 100%;
-}
-.spark-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: 2px solid var(--panel);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  transition: transform 0.12s;
-}
-.spark-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-.spark-input[type="range"]:focus {
-  box-shadow: none;
-}
-
-/* 裸 input/select 通用主题（尚未迁移到 Arco 的元素） */
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input),
-.app select:not(.spark-select-arco) {
-  height: 36px;
-  min-width: 0;
-  padding: 0 12px;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
 .app select:not(.spark-select-arco) {
   padding-right: 30px;
 }
 .app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input):hover,
 .app select:not(.spark-select-arco):hover {
   border-color: var(--text-faint);
-}
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input):focus,
-.app select:not(.spark-select-arco):focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--panel);
 }
 .app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):disabled,
 .app select:disabled {
@@ -1021,22 +922,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .input-w-sm { width: 80px; }
 .input-max-sm { max-width: 120px; }
-
-/* ============================================================
-   SPARK SELECT — Arco Design 默认下拉弹窗
-   规则：只做最小限度的 layout 兜底（让 Arco Select 在父容器里能占满宽高），
-   外观/弹窗主题一律交给 Arco 自带 CSS。
-   ============================================================ */
-.spark-select-wrap {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-}
-/* 默认 Arco Select 是 inline-block + width:100%；在非 flex/form-grid 容器里需要再保证一次占满 */
-.spark-select-wrap > .spark-select-arco.arco-select {
-  width: 100%;
-}
 
 /* ============================================================
    SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
@@ -1319,37 +1204,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .form-grid > .spark-textarea-arco {
   width: 100%;
 }
-.form-grid > .spark-input-wrap .spark-input-arco.arco-input-wrapper {
-  height: 36px;
-}
-.form-grid > .spark-select-wrap {
-  width: 100%;
-  display: flex;
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select {
-  height: 36px;
-  width: 100%;
-  border-color: var(--border-strong);
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select:focus-within,
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-focused {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-/* disabled 状态下不允许触发 focus 高亮（API 协议格式等不可编辑字段，
-   即使被键盘 focus 也不应该出现可点击的视觉错觉） */
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled,
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select:disabled {
-  border-color: var(--border) !important;
-  background-color: var(--bg-soft) !important;
-  cursor: not-allowed;
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled:focus-within,
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled.arco-select-focused,
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select:disabled:focus-within {
-  border-color: var(--border) !important;
-  box-shadow: none !important;
-}
+ 
 
 /* Radio button styling (for sandbox level) */
 .spark-radio {
