@@ -2,9 +2,12 @@
  * FormControls — 基于 @arco-design/web-react 的主题化表单组件
  *
  * SparkInput    → Arco Input
- * SparkSelect   → Arco Select（保持 <option> 子元素 API）
+ * SparkSelect   → Arco Select（保持 <option> 子元素 API；弹层使用 Arco 默认下拉弹窗）
  * SparkTextarea → Arco Input.TextArea
  * SparkCheckbox → Arco Checkbox
+ *
+ * 规则：所有下拉/弹窗类控件必须使用 Arco Design 提供的基础组件，**不要**自己手写
+ *       <select> / <ul role="listbox"> / 自定义 popup。详见 AGENTS.md。
  */
 import { forwardRef, Children, isValidElement, useMemo } from 'react'
 import type { ReactNode, CSSProperties } from 'react'
@@ -133,7 +136,8 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
 )
 
 /* ============================================================
-   SparkSelect — Arco Select，保持 <option> 子元素 API
+   SparkSelect — Arco Design 下拉弹窗（Select 组件）
+   保持 <option> 子元素 API；不允许再用原生 <select>。
    ============================================================ */
 
 function extractOptions(children: ReactNode): { value: string; label: string }[] {
@@ -157,10 +161,31 @@ export interface SparkSelectProps {
   disabled?: boolean
   className?: string
   children?: ReactNode
+  placeholder?: string
+  size?: 'mini' | 'small' | 'default' | 'large'
+  allowClear?: boolean
+  showSearch?: boolean
+  /** 透传到 Arco Select 的 triggerProps，覆盖默认行为（一般不需要） */
+  triggerProps?: Record<string, unknown>
 }
 
 export const SparkSelect = forwardRef<any, SparkSelectProps>(
-  function SparkSelect({ className = '', children, value, defaultValue, onChange, disabled }, _ref) {
+  function SparkSelect(
+    {
+      className = '',
+      children,
+      value,
+      defaultValue,
+      onChange,
+      disabled,
+      placeholder,
+      size = 'small',
+      allowClear,
+      showSearch,
+      triggerProps,
+    },
+    _ref,
+  ) {
     const options = useMemo(() => extractOptions(children), [children])
 
     return (
@@ -168,19 +193,23 @@ export const SparkSelect = forwardRef<any, SparkSelectProps>(
         <Select
           className="spark-select-arco"
           dropdownMenuClassName="spark-select-arco-popup"
-          bordered={false}
+          // Arco 自带的下拉弹窗样式已经够完整了，不要再用 bordered={false} 把外壳抹掉再自己画。
+          {...(placeholder !== undefined ? { placeholder } : {})}
+          {...(allowClear !== undefined ? { allowClear } : {})}
+          {...(showSearch !== undefined ? { showSearch } : {})}
           {...(value !== undefined ? { value } : {})}
           {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
           onChange={(v: string | number) => {
             onChange?.({ target: { value: String(v) } })
           }}
           disabled={disabled ?? false}
-          size="small"
+          size={size}
           getPopupContainer={() => document.body}
           triggerProps={{
             autoAlignPopupWidth: true,
             autoAlignPopupMinWidth: true,
             position: 'bl' as const,
+            ...(triggerProps ?? {}),
           }}
         >
           {options.map((opt) => (

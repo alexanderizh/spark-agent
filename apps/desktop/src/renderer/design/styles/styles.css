@@ -1023,114 +1023,95 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .input-max-sm { max-width: 120px; }
 
 /* ============================================================
-   SPARK SELECT — Arco Design based dropdown select
+   SPARK SELECT — Arco Design 下拉弹窗（Select 组件）
+   规则：直接用 Arco 自带的下拉弹窗，仅做轻量主题贴合，不重新画外观。
    ============================================================ */
 .spark-select-wrap {
   display: flex;
   align-items: center;
   width: 100%;
   min-width: 0;
-  height: 36px;
 }
 
-/* Arco Select 自定义主题覆盖 */
+/* —— 外壳：继承 Arco 自带外观，只贴齐 app 主题色（避免与 Arco 暗色变量打架） —— */
 .spark-select-arco.arco-select {
-  width: 100% !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  background: var(--panel) !important;
+  background-color: var(--panel) !important;
+  color: var(--text) !important;
+  font-family: inherit !important;
+  border-radius: var(--r-md) !important;
+}
+.spark-select-arco.arco-select .arco-select-view {
+  background-color: var(--panel) !important;
   border: 1px solid var(--border-strong) !important;
   border-radius: var(--r-md) !important;
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
+  box-shadow: none !important;
   font-family: inherit !important;
-  box-shadow: none !important;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-/* 垂直居中 — Arco 内部 view 容器 */
-.spark-select-arco.arco-select .arco-select-view {
-  height: 100%;
-  min-height: 0 !important;
-  padding: 0 34px 0 12px !important;
-  display: flex !important;
-  align-items: center !important;
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
+  transition: border-color 0.15s, box-shadow 0.15s, background-color 0.15s;
 }
 .spark-select-arco.arco-select .arco-select-view-value {
   color: var(--text) !important;
-  font-size: var(--font-sm) !important;
   font-family: inherit !important;
   display: flex;
   align-items: center;
-  line-height: 1.3 !important;
 }
-.spark-select-arco.arco-select .arco-select-view-suffix .arco-select-view-icon {
+/* 下拉箭头 —— Arco 实际类名是 arco-select-arrow-icon（不是 arco-select-view-icon） */
+.spark-select-arco.arco-select .arco-select-arrow-icon,
+.spark-select-arco.arco-select .arco-select-suffix-icon,
+.spark-select-arco.arco-select .arco-select-expand-icon,
+.spark-select-arco.arco-select .arco-select-search-icon {
   color: var(--text-muted) !important;
 }
-.spark-select-arco.arco-select:hover {
+.spark-select-arco.arco-select:hover .arco-select-view {
   border-color: var(--text-faint) !important;
+  background-color: var(--panel) !important;
 }
-.spark-select-arco.arco-select.arco-select-focus,
-.spark-select-arco.arco-select:focus-within {
+.spark-select-arco.arco-select.arco-select-focused .arco-select-view,
+.spark-select-arco.arco-select:focus-within .arco-select-view {
   border-color: var(--primary) !important;
   box-shadow: 0 0 0 3px var(--primary-soft) !important;
+  background-color: var(--panel) !important;
 }
-.spark-select-arco.arco-select.arco-select-disabled {
-  opacity: 1 !important;
-  cursor: default;
-  background: var(--bg-soft) !important;
+.spark-select-arco.arco-select.arco-select-disabled .arco-select-view {
+  background-color: var(--bg-soft) !important;
   border-color: var(--border) !important;
   box-shadow: none !important;
-}
-.spark-select-arco.arco-select.arco-select-disabled:hover,
-.spark-select-arco.arco-select.arco-select-disabled:focus-within {
-  border-color: var(--border) !important;
-  box-shadow: none !important;
+  cursor: not-allowed;
 }
 .spark-select-arco.arco-select.arco-select-disabled .arco-select-view-value {
   color: var(--text-muted) !important;
 }
-.spark-select-arco.arco-select.arco-select-disabled .arco-select-view-suffix .arco-select-view-icon {
+.spark-select-arco.arco-select.arco-select-disabled .arco-select-arrow-icon,
+.spark-select-arco.arco-select.arco-select-disabled .arco-select-suffix-icon,
+.spark-select-arco.arco-select.arco-select-disabled .arco-select-expand-icon {
   color: var(--text-faint) !important;
 }
 
-/* Arco Select 弹出面板主题 */
+/* —— 下拉弹窗（Arco 默认外观，叠 app 主题） —— */
 .spark-select-arco-popup.arco-select-popup {
-  border-radius: var(--r-md, 6px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+  border-radius: var(--r-md) !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18) !important;
+  border: 1px solid var(--border-strong) !important;
+  background-color: var(--panel) !important;
+  padding: 4px 0 !important;
 }
 .spark-select-arco-popup .arco-select-popup-inner {
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md, 6px);
+  background: transparent !important;
 }
 .spark-select-arco-popup .arco-select-option {
-  color: var(--text);
+  color: var(--text) !important;
   font-size: var(--font-sm);
   padding: 6px 12px;
+  background-color: transparent;
 }
 .spark-select-arco-popup .arco-select-option:hover,
 .spark-select-arco-popup .arco-select-option.arco-select-option-hover {
-  background: var(--bg-soft);
-  color: var(--text-strong);
+  background-color: var(--bg-soft) !important;
+  color: var(--text-strong) !important;
 }
 .spark-select-arco-popup .arco-select-option.arco-select-option-selected {
-  background: var(--primary-soft);
-  color: var(--primary);
+  background-color: var(--primary-soft) !important;
+  color: var(--primary) !important;
   font-weight: 500;
-}
-/* Arco Select popup — scrollbar & empty state */
-.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar {
-  width: 6px;
-}
-.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
-}
-.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-track {
-  background: transparent;
 }
 .spark-select-arco-popup .arco-select-option-disabled {
   color: var(--text-faint) !important;
@@ -1142,14 +1123,17 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .spark-select-arco-popup .arco-select-empty {
   color: var(--text-muted) !important;
 }
-/* Arco Select popup — virtual list scrollbar */
+/* 滚动条（弹窗 + 虚拟列表） */
+.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar,
 .spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar {
   width: 6px;
 }
+.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-thumb,
 .spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar-thumb {
   background: var(--border-strong);
   border-radius: 3px;
 }
+.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-track,
 .spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar-track {
   background: transparent;
 }

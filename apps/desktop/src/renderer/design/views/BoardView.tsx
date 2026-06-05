@@ -18,6 +18,7 @@ import {
   useState,
 } from 'react'
 import type { DragEvent } from 'react'
+import { Badge, Button, Input, Select, Space } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
@@ -675,37 +676,43 @@ export function BoardView() {
           <h1 className="board-title">任务看板</h1>
           <span className="board-count">{totalActive} 个任务</span>
         </div>
-        <div className="board-header-right">
-          <div className="board-search">
-            <Icons.Search size={14} />
-            <SparkInput
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索任务…"
-              className="board-search-input"
-            />
+        <div className="board-header-right" aria-label="任务筛选和操作">
+          <div className="board-toolbar">
+            <div className="board-search">
+              <Input
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="搜索任务…"
+                className="board-search-input"
+                prefix={<Icons.Search size={15} />}
+                allowClear
+              />
+            </div>
+            <Space size={6} className="board-filter-group" aria-label="筛选条件">
+              <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select board-filter-priority" size="small">
+                <Select.Option value="all">全部优先级</Select.Option>
+                <Select.Option value="urgent">🔴 紧急</Select.Option>
+                <Select.Option value="high">🟡 高</Select.Option>
+                <Select.Option value="medium">🔵 中</Select.Option>
+                <Select.Option value="low">⚪ 低</Select.Option>
+              </Select>
+              <Select value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select board-filter-status" size="small">
+                <Select.Option value="all">全部状态</Select.Option>
+                <Select.Option value="todo">📋 待办</Select.Option>
+                <Select.Option value="in-progress">🔄 进行中</Select.Option>
+                <Select.Option value="done">✅ 已完成</Select.Option>
+                <Select.Option value="closed">📦 已关闭</Select.Option>
+              </Select>
+            </Space>
+            <Space size={6} className="board-action-group">
+              <Badge count={totalDeleted} className="board-recycle-badge-arco">
+                <Button className="board-recycle-arco-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
+              </Badge>
+              <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => { setCreateDefaultStatus('todo'); setShowCreate(true) }}>
+                新建任务
+              </Button>
+            </Space>
           </div>
-          <SparkSelect value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as Priority | 'all')} className="board-filter-select">
-            <option value="all">全部优先级</option>
-            <option value="urgent">🔴 紧急</option>
-            <option value="high">🟡 高</option>
-            <option value="medium">🔵 中</option>
-            <option value="low">⚪ 低</option>
-          </SparkSelect>
-          <SparkSelect value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as TaskStatus | 'all')} className="board-filter-select">
-            <option value="all">全部状态</option>
-            <option value="todo">📋 待办</option>
-            <option value="in-progress">🔄 进行中</option>
-            <option value="done">✅ 已完成</option>
-            <option value="closed">📦 已关闭</option>
-          </SparkSelect>
-          <button className="board-btn board-btn-ghost board-btn-sm" onClick={() => setShowRecycle(true)} title="回收站">
-            <Icons.Archive size={15} />
-            {totalDeleted > 0 && <span className="board-recycle-badge">{totalDeleted}</span>}
-          </button>
-          <button className="board-btn board-btn-primary board-btn-sm" onClick={() => { setCreateDefaultStatus('todo'); setShowCreate(true) }}>
-            <Icons.Plus size={14} /> 新建任务
-          </button>
         </div>
       </div>
 
