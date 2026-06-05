@@ -6,7 +6,12 @@ import type {
   ProviderImportMode,
   ProviderImportResult,
 } from '@spark/protocol'
-import { PROVIDER_EXPORT_VERSION } from '@spark/protocol'
+import {
+  PROVIDER_EXPORT_VERSION,
+  LOCAL_CLI_PROVIDER_ID,
+  LOCAL_CLI_PROVIDER_NAME,
+  LOCAL_CLI_DEFAULT_MODEL,
+} from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
 import { createLogger } from '@spark/shared'
@@ -55,6 +60,35 @@ export class ProviderService {
     return this.repo.listAll().map(rowToProfile)
   }
 
+  /**
+   * 幂等保证内置 "本地 CLI" provider 存在。
+   *
+   * 这是默认 provider，类似 ccswitch 的 "system" 配置：不需要填 Key/Endpoint，
+   * 选中后 SDK 会沿用宿主机本地 claude CLI 配置（OAuth credentials、ANTHROPIC_* 环境变量）。
+   *
+   * - id 固定为 LOCAL_CLI_PROVIDER_ID，保证整库唯一
+   * - keystore_ref 留空，不进 Keychain
+   * - 不强制设为 isDefault，避免覆盖用户已有的默认选择
+   */
+  async ensureLocalCliProvider(): Promise<ProviderProfile> {
+    const existing = this.repo.get(LOCAL_CLI_PROVIDER_ID)
+    if (existing != null) return rowToProfile(existing)
+
+    const row = this.repo.create({
+      id: LOCAL_CLI_PROVIDER_ID,
+      providerType: 'anthropic',
+      name: LOCAL_CLI_PROVIDER_NAME,
+      config: normalizeProviderConfig({
+        defaultModel: LOCAL_CLI_DEFAULT_MODEL,
+        modelIds: [LOCAL_CLI_DEFAULT_MODEL],
+      }),
+      keystoreRef: '',
+      isDefault: false,
+    })
+    log.info(`Seeded built-in local CLI provider id=${LOCAL_CLI_PROVIDER_ID}`)
+    return rowToProfile(row)
+  }
+
   async createProvider(params: {
     name: string
     provider: string
@@ -79,9 +113,14 @@ export class ProviderService {
     if (defaultModel == null || defaultModel.trim().length === 0) {
       throw new Error('Provider defaultModel is required')
     }
-    const ref = keystore.makeKeystoreRef(providerType, id)
-    await keystore.setSecret(ref, params.apiKey)
-    log.info(`Stored API key for provider=${providerType} id=${id} key=${keystore.maskSecret(params.apiKey)}`)
+    const hasApiKey = params.apiKey != null && params.apiKey.length > 0
+    const ref = hasApiKey ? keystore.makeKeystoreRef(providerType, id) : ''
+    if (hasApiKey) {
+      await keystore.setSecret(ref as keystore.KeystoreRef, params.apiKey)
+      log.info(`Stored API key for provider=${providerType} id=${id} key=${keystore.maskSecret(params.apiKey)}`)
+    } else {
+      log.info(`Created provider without API key (local CLI / pending key): provider=${providerType} id=${id}`)
+    }
 
     if (params.isDefault) {
       // clear existing defaults first
@@ -232,6 +271,9 @@ export class ProviderService {
   }
 
   async deleteProvider(id: string): Promise<void> {
+    if (id === LOCAL_CLI_PROVIDER_ID) {
+      throw new Error('Cannot delete the built-in local CLI provider')
+    }
     const row = this.repo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
 
@@ -244,6 +286,10 @@ export class ProviderService {
   async healthCheck(id: string): Promise<ProviderHealthCheckResponse> {
     const row = this.repo.get(id)
     if (!row) return { healthy: false, errorMessage: `Provider not found: ${id}` }
+
+    // Local CLI provider 走宿主 claude CLI 的本地凭证，没有可检测的 endpoint —
+    // 视为始终可用；真正的鉴权失败会在 turn 启动时由 SDK 抛错。
+    if (id === LOCAL_CLI_PROVIDER_ID) return { healthy: true, latencyMs: 0 }
 
     if (!row.keystore_ref) return { healthy: false, errorMessage: 'No API key configured' }
 

@@ -38,6 +38,7 @@ import type {
   TeamA2ATask,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
+import { LOCAL_CLI_PROVIDER_ID } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
@@ -603,12 +604,15 @@ export class SessionService {
     if (provider == null) {
       throw new Error(`Provider profile not found: ${session.provider_profile_id}`)
     }
-    if (provider.keystore_ref == null) {
+    const isLocalCli = provider.id === LOCAL_CLI_PROVIDER_ID
+    if (!isLocalCli && provider.keystore_ref == null) {
       throw new Error(`Provider ${provider.id} has no keystore ref`)
     }
 
-    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
-    if (apiKey == null) {
+    const apiKey = isLocalCli
+      ? ''
+      : (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? ''
+    if (!isLocalCli && apiKey.length === 0) {
       throw new Error(`API key not found for provider ${provider.id}`)
     }
 
@@ -1017,6 +1021,7 @@ export class SessionService {
       const iterationOverride = this.iterationOverrides.get(sessionId)
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
+        ...(isLocalCli ? { useLocalConfig: true } : {}),
         model,
         workspaceRootPath,
         permissionMode,
@@ -1053,7 +1058,9 @@ export class SessionService {
       const turnOptions: TryStartSDKTurnOptions = {
         ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
       }
-      if (isFirstTurn) {
+      // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
+      // 仍保留首轮触发的简单本地标题（deriveSessionTitle）。
+      if (isFirstTurn && !isLocalCli) {
         turnOptions.firstTurnTitleContext = {
           providerType: provider.provider_type,
           apiKey,

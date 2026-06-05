@@ -511,6 +511,12 @@ function readAgentHookConfig(sessionId: string): HookConfigInternal {
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
 
+  // 启动时幂等保证内置 "本地 CLI" provider 存在 —— 用户无需任何配置即可立即用宿主
+  // 机的 Claude Code OAuth/环境变量开聊。失败仅记日志，不阻塞后续注册。
+  void getProviderService()
+    .ensureLocalCliProvider()
+    .catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
+
   // ─── Session Handlers ──────────────────────────────────────────────────
 
   typedIpcHandle('session:create', async (req) => {
@@ -610,7 +616,9 @@ export function registerAllIpcHandlers(): void {
   // P1-09 完整实现，当前为骨架
 
   typedIpcHandle('provider:list', async (_req) => {
-    const profiles = await getProviderService().listProviders()
+    const svc = getProviderService()
+    await svc.ensureLocalCliProvider()
+    const profiles = await svc.listProviders()
     return { profiles }
   })
 

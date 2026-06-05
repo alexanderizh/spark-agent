@@ -83,12 +83,19 @@ function buildIsolatedRuntimeEnv(
   model: string,
   apiEndpoint?: string,
   tierModels?: { haiku?: string | undefined; sonnet?: string | undefined; opus?: string | undefined },
+  useLocalConfig?: boolean,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value == null) continue
-    if (ENV_BLOCKLIST_PREFIXES.some((prefix) => key.startsWith(prefix))) continue
+    // Local CLI 模式下保留宿主机的 ANTHROPIC_*/CLAUDE_* 环境，让 SDK 透明继承
+    // OAuth 凭证、自定义 base url、模型偏好等本地 claude CLI 配置。
+    if (!useLocalConfig && ENV_BLOCKLIST_PREFIXES.some((prefix) => key.startsWith(prefix))) continue
     env[key] = value
+  }
+  if (useLocalConfig === true) {
+    // 不覆写任何 ANTHROPIC_*；SDK 会回落到 ~/.claude/.credentials.json 或宿主环境。
+    return env
   }
   env.ANTHROPIC_API_KEY = apiKey
   if (apiEndpoint != null) env.ANTHROPIC_BASE_URL = apiEndpoint
@@ -255,11 +262,17 @@ export class ClaudeSDKExecutor {
     }
 
     // Build SDK options
-    const runtimeEnv = buildIsolatedRuntimeEnv(config.apiKey, config.model, config.apiEndpoint, {
-      haiku: config.haikuModel,
-      sonnet: config.sonnetModel,
-      opus: config.opusModel,
-    })
+    const runtimeEnv = buildIsolatedRuntimeEnv(
+      config.apiKey,
+      config.model,
+      config.apiEndpoint,
+      {
+        haiku: config.haikuModel,
+        sonnet: config.sonnetModel,
+        opus: config.opusModel,
+      },
+      config.useLocalConfig === true,
+    )
     const settings: SDKSettings = {
       model: config.model,
       env: runtimeEnv,
