@@ -11,6 +11,9 @@
  * no business logic is duplicated.
  */
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, dirname } from 'node:path'
+import { homedir } from 'node:os'
 import { createLogger } from '@spark/shared'
 import type { SkillService } from './skill.service.js'
 import type { SkillLoader } from '../skills/skill-loader.js'
@@ -203,6 +206,18 @@ export class PlatformBridgeService {
       case 'settings.set': return this.settingsSet(d, params)
       case 'settings.get_category': return this.settingsGetCategory(d, params)
       case 'settings.get_all': return this.settingsGetAll(d, params)
+
+      // ── Board Tasks ──
+      case 'board.list': return this.boardList(params)
+      case 'board.get': return this.boardGet(params)
+      case 'board.create': return this.boardCreate(params)
+      case 'board.update': return this.boardUpdate(params)
+      case 'board.delete': return this.boardDelete(params)
+      case 'board.batch_create': return this.boardBatchCreate(params)
+      case 'board.batch_update': return this.boardBatchUpdate(params)
+      case 'board.batch_delete': return this.boardBatchDelete(params)
+      case 'board.restore': return this.boardRestore(params)
+      case 'board.permanent_delete': return this.boardPermanentDelete(params)
 
       default:
         throw new Error(`Unknown method: ${method}`)
@@ -554,5 +569,173 @@ export class PlatformBridgeService {
   private settingsGetAll(d: PlatformBridgeDeps, _params: Record<string, unknown>) {
     const settings = d.settingsRepo.getAll()
     return { settings }
+  }
+
+  // ── Board Task handlers (file-backed store) ──
+
+  private boardFilePath = join(homedir(), '.spark-agent', 'board-tasks.json')
+
+  private readBoardTasks(): any[] {
+    try {
+      if (!existsSync(this.boardFilePath)) return []
+      return JSON.parse(readFileSync(this.boardFilePath, 'utf-8'))
+    } catch { return [] }
+  }
+
+  private writeBoardTasks(tasks: any[]): void {
+    const dir = dirname(this.boardFilePath)
+    if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+    writeFileSync(this.boardFilePath, JSON.stringify(tasks), 'utf-8')
+  }
+
+  private boardList(params: Record<string, unknown>) {
+    let tasks = this.readBoardTasks()
+    const includeDeleted = params.includeDeleted === true
+    if (!includeDeleted) tasks = tasks.filter((t: any) => !t.deletedAt)
+    if (params.status) tasks = tasks.filter((t: any) => t.status === params.status)
+    if (params.priority) tasks = tasks.filter((t: any) => t.priority === params.priority)
+    if (params.assignee) {
+      const a = String(params.assignee).toLowerCase()
+      tasks = tasks.filter((t: any) => t.assignee?.toLowerCase().includes(a))
+    }
+    if (params.query) {
+      const q = String(params.query).toLowerCase()
+      tasks = tasks.filter((t: any) =>
+        t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
+      )
+    }
+    return { tasks, total: tasks.length }
+  }
+
+  private boardGet(params: Record<string, unknown>) {
+    const tasks = this.readBoardTasks()
+    const task = tasks.find((t: any) => t.id === params.id)
+    if (!task) throw new Error(`Task not found: ${params.id}`)
+    return { task }
+  }
+
+  private boardCreate(params: Record<string, unknown>) {
+    const tasks = this.readBoardTasks()
+    const now = new Date().toISOString()
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    const task = {
+      id,
+      title: String(params.title ?? ''),
+      description: String(params.description ?? ''),
+      status: String(params.status ?? 'todo'),
+      priority: String(params.priority ?? 'medium'),
+      assignee: String(params.assignee ?? ''),
+      tags: Array.isArray(params.tags) ? params.tags : [],
+      dueDate: String(params.dueDate ?? ''),
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    }
+    tasks.push(task)
+    this.writeBoardTasks(tasks)
+    return { task }
+  }
+
+  private boardUpdate(params: Record<string, unknown>) {
+    const tasks = this.readBoardTasks()
+    const idx = tasks.findIndex((t: any) => t.id === params.id)
+    if (idx === -1) throw new Error(`Task not found: ${params.id}`)
+    const now = new Date().toISOString()
+    const updated = { ...tasks[idx], updatedAt: now }
+    for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate']) {
+      if (params[key] !== undefined) updated[key] = String(params[key])
+    }
+    if (params.tags !== undefined) updated.tags = Array.isArray(params.tags) ? params.tags : []
+    tasks[idx] = updated
+    this.writeBoardTasks(tasks)
+    return { task: updated }
+  }
+
+  private boardDelete(params: Record<string, unknown>) {
+    const tasks = this.readBoardTasks()
+    const idx = tasks.findIndex((t: any) => t.id === params.id)
+    if (idx === -1) throw new Error(`Task not found: ${params.id}`)
+    tasks[idx] = { ...tasks[idx], deletedAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+    this.writeBoardTasks(tasks)
+    return { success: true }
+  }
+
+  private boardBatchCreate(params: Record<string, unknown>) {
+    const items = Array.isArray(params.tasks) ? params.tasks : []
+    const tasks = this.readBoardTasks()
+    const created: any[] = []
+    for (const item of items) {
+      const now = new Date().toISOString()
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+      const task = {
+        id,
+        title: String(item.title ?? ''),
+        description: String(item.description ?? ''),
+        status: String(item.status ?? 'todo'),
+        priority: String(item.priority ?? 'medium'),
+        assignee: String(item.assignee ?? ''),
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        dueDate: String(item.dueDate ?? ''),
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+      tasks.push(task)
+      created.push(task)
+    }
+    this.writeBoardTasks(tasks)
+    return { created: created.length, tasks: created }
+  }
+
+  private boardBatchUpdate(params: Record<string, unknown>) {
+    const updates = Array.isArray(params.updates) ? params.updates : []
+    const tasks = this.readBoardTasks()
+    const updated: any[] = []
+    for (const upd of updates) {
+      const idx = tasks.findIndex((t: any) => t.id === upd.id)
+      if (idx === -1) continue
+      const now = new Date().toISOString()
+      const task = { ...tasks[idx], updatedAt: now }
+      for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate']) {
+        if (upd[key] !== undefined) task[key] = String(upd[key])
+      }
+      if (upd.tags !== undefined) task.tags = Array.isArray(upd.tags) ? upd.tags : []
+      tasks[idx] = task
+      updated.push(task)
+    }
+    this.writeBoardTasks(tasks)
+    return { updated: updated.length, tasks: updated }
+  }
+
+  private boardBatchDelete(params: Record<string, unknown>) {
+    const ids = Array.isArray(params.ids) ? params.ids.map(String) : []
+    const tasks = this.readBoardTasks()
+    const now = new Date().toISOString()
+    let count = 0
+    for (const id of ids) {
+      const idx = tasks.findIndex((t: any) => t.id === id)
+      if (idx !== -1) {
+        tasks[idx] = { ...tasks[idx], deletedAt: now, updatedAt: now }
+        count++
+      }
+    }
+    this.writeBoardTasks(tasks)
+    return { deleted: count }
+  }
+
+  private boardRestore(params: Record<string, unknown>) {
+    const tasks = this.readBoardTasks()
+    const idx = tasks.findIndex((t: any) => t.id === params.id)
+    if (idx === -1) throw new Error(`Task not found: ${params.id}`)
+    tasks[idx] = { ...tasks[idx], deletedAt: null, updatedAt: new Date().toISOString() }
+    this.writeBoardTasks(tasks)
+    return { task: tasks[idx] }
+  }
+
+  private boardPermanentDelete(params: Record<string, unknown>) {
+    const tasks = this.readBoardTasks()
+    const filtered = tasks.filter((t: any) => t.id !== params.id)
+    this.writeBoardTasks(filtered)
+    return { success: true }
   }
 }

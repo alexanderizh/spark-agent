@@ -397,6 +397,181 @@ function toolDefinitions() {
         },
       },
     },
+
+    // ── Board Tasks ──
+    {
+      name: 'board_list',
+      description: '列出看板任务。可按状态、优先级、负责人等条件过滤。返回匹配的任务列表。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', description: '按状态过滤：todo/in-progress/done/closed', enum: ['todo', 'in-progress', 'done', 'closed'] },
+          priority: { type: 'string', description: '按优先级过滤：low/medium/high/urgent', enum: ['low', 'medium', 'high', 'urgent'] },
+          assignee: { type: 'string', description: '按负责人过滤（模糊匹配）' },
+          query: { type: 'string', description: '搜索关键词（匹配标题、描述）' },
+          includeDeleted: { type: 'boolean', description: '是否包含已删除的任务（回收站），默认 false' },
+        },
+      },
+    },
+    {
+      name: 'board_get',
+      description: '获取单个看板任务的详情。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '任务 ID' },
+        },
+      },
+    },
+    {
+      name: 'board_create',
+      description: '创建一个新的看板任务。标题是必填的。',
+      inputSchema: {
+        type: 'object',
+        required: ['title'],
+        properties: {
+          title: { type: 'string', description: '任务标题' },
+          description: { type: 'string', description: '任务描述' },
+          status: { type: 'string', description: '状态，默认 todo', enum: ['todo', 'in-progress', 'done', 'closed'] },
+          priority: { type: 'string', description: '优先级，默认 medium', enum: ['low', 'medium', 'high', 'urgent'] },
+          assignee: { type: 'string', description: '负责人' },
+          tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
+          dueDate: { type: 'string', description: '截止日期（ISO 格式，如 2025-12-31）' },
+        },
+      },
+    },
+    {
+      name: 'board_update',
+      description: '更新看板任务。可修改标题、描述、状态、优先级等字段。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '任务 ID' },
+          title: { type: 'string', description: '新标题' },
+          description: { type: 'string', description: '新描述' },
+          status: { type: 'string', description: '新状态', enum: ['todo', 'in-progress', 'done', 'closed'] },
+          priority: { type: 'string', description: '新优先级', enum: ['low', 'medium', 'high', 'urgent'] },
+          assignee: { type: 'string', description: '新负责人' },
+          tags: { type: 'array', items: { type: 'string' }, description: '新标签列表（完全替换）' },
+          dueDate: { type: 'string', description: '新截止日期' },
+        },
+      },
+    },
+    {
+      name: 'board_delete',
+      description: '删除看板任务（移至回收站）。这是破坏性操作，建议先向用户确认。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '要删除的任务 ID' },
+        },
+      },
+    },
+    {
+      name: 'board_batch_create',
+      description: '批量创建看板任务。接收任务数组，一次性创建多个任务。',
+      inputSchema: {
+        type: 'object',
+        required: ['tasks'],
+        properties: {
+          tasks: {
+            type: 'array',
+            description: '任务列表，每个元素至少包含 title',
+            items: {
+              type: 'object',
+              required: ['title'],
+              properties: {
+                title: { type: 'string', description: '任务标题' },
+                description: { type: 'string', description: '任务描述' },
+                status: { type: 'string', description: '状态', enum: ['todo', 'in-progress', 'done', 'closed'] },
+                priority: { type: 'string', description: '优先级', enum: ['low', 'medium', 'high', 'urgent'] },
+                assignee: { type: 'string', description: '负责人' },
+                tags: { type: 'array', items: { type: 'string' }, description: '标签' },
+                dueDate: { type: 'string', description: '截止日期' },
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      name: 'board_batch_update',
+      description: '批量更新看板任务。接收更新数组，每个元素需包含 id 和要修改的字段。',
+      inputSchema: {
+        type: 'object',
+        required: ['updates'],
+        properties: {
+          updates: {
+            type: 'array',
+            description: '更新列表，每个元素需包含 id',
+            items: {
+              type: 'object',
+              required: ['id'],
+              properties: {
+                id: { type: 'string', description: '任务 ID' },
+                title: { type: 'string' },
+                description: { type: 'string' },
+                status: { type: 'string', enum: ['todo', 'in-progress', 'done', 'closed'] },
+                priority: { type: 'string', enum: ['low', 'medium', 'high', 'urgent'] },
+                assignee: { type: 'string' },
+                tags: { type: 'array', items: { type: 'string' } },
+                dueDate: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    {
+      name: 'board_batch_delete',
+      description: '批量删除看板任务（移至回收站）。这是破坏性操作，建议先向用户确认。',
+      inputSchema: {
+        type: 'object',
+        required: ['ids'],
+        properties: {
+          ids: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '要删除的任务 ID 列表',
+          },
+        },
+      },
+    },
+    {
+      name: 'board_restore',
+      description: '从回收站恢复已删除的任务。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '要恢复的任务 ID' },
+        },
+      },
+    },
+    {
+      name: 'board_permanent_delete',
+      description: '彻底永久删除任务（从回收站清除，不可恢复）。这是破坏性操作。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '要彻底删除的任务 ID' },
+        },
+      },
+    },
+      description: '获取单个设置项的值。需要提供分类和键名。',
+      inputSchema: {
+        type: 'object',
+        required: ['key'],
+        properties: {
+          category: { type: 'string', description: '设置分类，默认 "general"' },
+          key: { type: 'string', description: '设置键名' },
+        },
+      },
+    },
     {
       name: 'settings_set',
       description: '修改设置项的值。需要提供分类、键名和新值。',
@@ -466,6 +641,16 @@ async function handleToolCall(name, args) {
     settings_set: 'settings.set',
     settings_get_category: 'settings.get_category',
     settings_get_all: 'settings.get_all',
+    board_list: 'board.list',
+    board_get: 'board.get',
+    board_create: 'board.create',
+    board_update: 'board.update',
+    board_delete: 'board.delete',
+    board_batch_create: 'board.batch_create',
+    board_batch_update: 'board.batch_update',
+    board_batch_delete: 'board.batch_delete',
+    board_restore: 'board.restore',
+    board_permanent_delete: 'board.permanent_delete',
   }
 
   const method = methodMap[name]
