@@ -169,6 +169,16 @@ export class SessionService {
   recoverInterruptedSessions(): { recovered: number } {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+
+    // 回收上次进程残留的、卡在 pending/working 的 team dispatch（设计文档 §15）。
+    // 单进程应用启动时不会有真正进行中的 dispatch，因此 now 之前的全部回收。
+    try {
+      const reclaimed = new TeamDispatchRepository(this.db).markStaleAsFailed(new Date().toISOString())
+      if (reclaimed > 0) log.info(`Reclaimed ${reclaimed} stale team dispatch(es) after app restart`)
+    } catch {
+      // 团队功能未启用/表不存在时忽略
+    }
+
     const { sessions } = sessionRepo.list({
       status: 'running',
       includeArchived: true,
@@ -1318,6 +1328,8 @@ export class SessionService {
         sessionRepo.updateStatus(sessionId, 'error')
       })
       .finally(() => {
+        // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
+        this.teamDispatchService?.clearTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
           this.startNextQueuedTurn(sessionId)
@@ -1660,7 +1672,8 @@ export class SessionService {
     const onAbort = () => executor.cancel()
     signal.addEventListener('abort', onAbort)
 
-    let finalText = ''
+    let completeText = ''
+    let deltaText = ''
     let inputTokens: number | undefined
     let outputTokens: number | undefined
     const makeBase = () => ({
@@ -1670,6 +1683,8 @@ export class SessionService {
       timestamp: new Date().toISOString(),
       seq: 0,
     })
+    // member 自身的工具/文件事件透传给 Host 时间线（保持可见），其余事件忽略以免污染。
+    const FORWARDED_MEMBER_EVENTS = new Set(['tool_call', 'tool_result', 'file_change', 'terminal_output'])
     executor.onEvent((event) => {
       if (event.type === 'assistant_message') {
         this.emitAndPersist(
@@ -1686,12 +1701,15 @@ export class SessionService {
           },
           eventRepo,
         )
-        if (event.mode === 'complete' && event.content.length > 0) finalText = event.content
+        if (event.mode === 'complete' && event.content.length > 0) completeText = event.content
+        else if (event.mode === 'delta') deltaText += event.content
       } else if (event.type === 'usage_update') {
         inputTokens = event.inputTokens
         outputTokens = event.outputTokens
+      } else if (FORWARDED_MEMBER_EVENTS.has(event.type)) {
+        // 透传时重写 base 字段（seq 由 emitAndPersist 覆盖），保留原事件 payload
+        this.emitAndPersist(sessionId, turnId, { ...event, sessionId, turnId, seq: 0 }, eventRepo)
       }
-      // 其他事件（tool_call/file_change 等）在 MVP 阶段不转发，避免污染 Host 时间线。
     })
 
     try {
@@ -1700,8 +1718,9 @@ export class SessionService {
       signal.removeEventListener('abort', onAbort)
     }
 
+    // 优先用 complete 文本；provider 只发 delta 时回落到累积的 delta 文本。
     return {
-      content: finalText,
+      content: completeText || deltaText,
       ...(inputTokens != null ? { inputTokens } : {}),
       ...(outputTokens != null ? { outputTokens } : {}),
     }
