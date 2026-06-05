@@ -266,6 +266,15 @@ export type SparkPermissionMode =
 
 export interface SDKExecutorConfig {
   apiKey: string
+  /**
+   * 当为 true 时，executor 不向子进程注入 ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL /
+   * ANTHROPIC_MODEL 等覆盖，而是把宿主进程现有的 ANTHROPIC_ 与 CLAUDE_ 前缀的环境变量
+   * 全部透传给 SDK。
+   *
+   * 用于内置 "本地 CLI" provider —— SDK 会沿用宿主机 Claude Code 的本地配置
+   * （OAuth credentials、用户已设的 ANTHROPIC_BASE_URL 等），用户无需重复填一份。
+   */
+  useLocalConfig?: boolean | undefined
   model: string
   /** Haiku 档（SDK 派生子 agent 用）；缺省回落 model */
   haikuModel?: string | undefined
