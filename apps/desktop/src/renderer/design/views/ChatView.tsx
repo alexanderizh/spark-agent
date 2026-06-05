@@ -64,6 +64,7 @@ import type {
   CommandListItem,
   TurnPromptSnapshotEvent,
   ManagedAgent,
+  ManagedTeam,
   SessionAttachment,
   UserQuestionPrompt,
   UserQuestionOption,
@@ -5876,11 +5877,25 @@ function ComposerV2({
             onChange={(agentId) => void handleAgentChange(agentId)}
             teamConfig={teamConfig}
             onEnableTeamMode={() =>
-              onChangeTeamConfig({ enabled: true, hostAgentId: effectiveAgentId })
+              onChangeTeamConfig({ enabled: true, hostAgentId: effectiveAgentId, teamId: undefined })
             }
-            onDisableTeamMode={() => onChangeTeamConfig({ enabled: false })}
-            onChangeHost={(agentId) => onChangeTeamConfig({ hostAgentId: agentId })}
+            onDisableTeamMode={() =>
+              onChangeTeamConfig({ enabled: false, teamId: undefined })
+            }
+            onChangeHost={(agentId) =>
+              onChangeTeamConfig({ hostAgentId: agentId, teamId: undefined })
+            }
             onOpenMembers={onOpenTeamInspector}
+            onApplyTeam={(team) =>
+              onChangeTeamConfig({
+                enabled: true,
+                hostAgentId: team.hostAgentId,
+                memberAgentIds: team.memberAgentIds,
+                maxDepth: team.maxDepth,
+                allowNesting: team.allowNesting,
+                teamId: team.id,
+              })
+            }
           />
           <ComposerMenuSelect
             icon={
@@ -6188,6 +6203,7 @@ function AgentPicker({
   onDisableTeamMode,
   onChangeHost,
   onOpenMembers,
+  onApplyTeam,
 }: {
   agents: ManagedAgent[]
   selectedAgentId: string
@@ -6197,10 +6213,29 @@ function AgentPicker({
   onDisableTeamMode: () => void
   onChangeHost: (agentId: string) => void
   onOpenMembers: () => void
+  onApplyTeam: (team: ManagedTeam) => void
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  // 长期团队列表（用于「选择团队」分组）。打开下拉时按需加载，避免每次会话切换都拉。
+  const { invoke: listTeamDefs } = useIpcInvoke('team:list-defs')
+  const [teams, setTeams] = useState<ManagedTeam[]>([])
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void listTeamDefs({})
+      .then((res) => {
+        if (!cancelled) setTeams(res.teams)
+      })
+      .catch(() => {
+        // 列表加载失败时静默：用户仍可走「团队模式」走临时团队路径
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, listTeamDefs])
 
   const teamMode = teamConfig.enabled
   // 团队模式下，选择器代表 Host；否则代表当前对话 Agent。
@@ -6210,6 +6245,10 @@ function AgentPicker({
     agents.find((agent) => agent.id === 'code-agent') ??
     agents[0]
   const memberCount = teamConfig.memberAgentIds.length
+  const activeTeam =
+    teamMode && teamConfig.teamId != null
+      ? teams.find((t) => t.id === teamConfig.teamId)
+      : undefined
 
   return (
     <div ref={rootRef} className="composer-select composer-agent-picker" title={teamMode ? '团队模式' : 'Agent'}>
@@ -6226,10 +6265,16 @@ function AgentPicker({
         type="button"
         className="composer-select-trigger"
         disabled={agents.length === 0}
-        title={teamMode ? `团队模式（当前对话：${selected?.name ?? '编码 Agent'}）` : selected?.name ?? '编码 Agent'}
+        title={
+          teamMode
+            ? activeTeam != null
+              ? `团队：${activeTeam.name}（主持：${selected?.name ?? '编码 Agent'}）`
+              : `团队模式（当前对话：${selected?.name ?? '编码 Agent'}）`
+            : selected?.name ?? '编码 Agent'
+        }
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{selected?.name ?? '编码 Agent'}</span>
+        <span>{activeTeam != null ? activeTeam.name : selected?.name ?? '编码 Agent'}</span>
         <Icons.ChevronDown size={12} />
       </button>
       {teamMode && (
@@ -6278,6 +6323,43 @@ function AgentPicker({
                 <span className="composer-menu-item-desc">让当前对话 Agent 调用其他成员协作</span>
               </span>
             </button>
+          )}
+          {teams.length > 0 && (
+            <>
+              <div className="composer-menu-divider" />
+              <div className="composer-menu-group-title">已保存团队</div>
+              {teams.map((team) => {
+                const host = agents.find((a) => a.id === team.hostAgentId)
+                const active = teamMode && teamConfig.teamId === team.id
+                return (
+                  <button
+                    key={team.id}
+                    type="button"
+                    className={`composer-menu-item ${active ? 'active' : ''}`}
+                    onClick={() => {
+                      setOpen(false)
+                      onApplyTeam(team)
+                    }}
+                  >
+                    <span className="composer-menu-item-copy">
+                      <span className="composer-menu-item-label">
+                        <Icons.Team size={13} />
+                        <span>{team.name}</span>
+                        {team.builtIn && <span className="composer-menu-item-tag">内置</span>}
+                      </span>
+                      <span className="composer-menu-item-desc">
+                        {host ? `主持：${host.name}` : ''}
+                        {host && team.memberAgentIds.length > 0 ? ' · ' : ''}
+                        {team.memberAgentIds.length > 0
+                          ? `${team.memberAgentIds.length} 成员`
+                          : ''}
+                      </span>
+                    </span>
+                    {active && <Icons.Check size={14} />}
+                  </button>
+                )
+              })}
+            </>
           )}
           <div className="composer-menu-divider" />
           <div className="composer-menu-group-title">{teamMode ? '当前对话 Agent' : '选择 Agent'}</div>

@@ -1403,8 +1403,9 @@ export interface TeamModeConfig {
   /** 是否允许 Member 嵌套调用 dispatch，默认 false */
   allowNesting: boolean
   /** 当本配置由某个长期团队（ManagedTeam）应用而来时，此字段指向 ManagedTeam.id。
-   *  会话仍以本配置为运行时权威；Inspector 可据此提供「保存修改回团队」入口。 */
-  teamId?: string
+   *  会话仍以本配置为运行时权威；Inspector 可据此提供「保存修改回团队」入口。
+   *  允许显式 undefined，便于 patch 风格的"解除关联"。 */
+  teamId?: string | undefined
 }
 
 /**

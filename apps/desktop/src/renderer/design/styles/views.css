@@ -3261,6 +3261,18 @@ body.sidebar-resizing {
   font-size: var(--font-xs);
   line-height: 1.25;
 }
+.composer-menu-item-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 6px;
+  height: 16px;
+  margin-left: 4px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+  color: var(--text-faint);
+  font-size: 10px;
+  font-weight: 500;
+}
 .composer-menu-item span {
   min-width: 0;
   overflow: hidden;
@@ -10211,6 +10223,50 @@ body.inspector-resizing {
   align-items: center;
 }
 
+/* ── AgentsView Tabs (Agents / Teams) ── */
+.agents-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.agents-view-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 20px 0;
+  border-bottom: 1px solid var(--border-soft);
+  flex-shrink: 0;
+}
+.agents-view-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  border-bottom: 2px solid transparent;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.agents-view-tab:hover {
+  color: var(--text-default);
+  background: var(--bg-hover);
+}
+.agents-view-tab.active {
+  color: var(--text-default);
+  border-bottom-color: var(--accent);
+}
+.agents-view > .agents-home,
+.agents-view > .agents-detail {
+  flex: 1;
+  min-height: 0;
+}
+
 /* ── Agents card list ── */
 .agents-home {
   display: flex;
@@ -12573,6 +12629,113 @@ body.inspector-resizing {
   flex-direction: column;
   gap: 2px;
   padding: 4px 0;
+}
+.team-roster-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.team-roster-source-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-faint);
+}
+.team-roster-source-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 500;
+  color: var(--text-default);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.team-roster-source-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 5px;
+  height: 14px;
+  border-radius: 7px;
+  background: var(--bg-soft);
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 500;
+}
+.team-roster-source-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.team-roster-source-action:hover:not(:disabled) {
+  background: var(--bg-default);
+  color: var(--text-default);
+  border-color: var(--border-default);
+}
+.team-roster-source-action.ghost {
+  background: transparent;
+  border-color: transparent;
+}
+.team-roster-source-action:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.team-roster-save-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 6px 0;
+  padding: 6px 8px;
+  border: 1px dashed var(--border-soft);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.team-roster-save-cta:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+.team-roster-save-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 6px 0;
+  padding: 8px;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+}
+.team-roster-save-form-title {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+.team-roster-save-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 2px;
 }
 .team-roster-row {
   display: flex;

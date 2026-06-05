@@ -16,6 +16,7 @@ import {
   AgentRepository,
   WorkflowRepository,
   TeamDispatchRepository,
+  TeamDefinitionRepository,
 } from '@spark/storage'
 import type { AgentItem, WorkflowItem } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
@@ -783,9 +784,23 @@ export class SessionService {
     const teamConfig = readSessionTeamConfig(session)
     let teamMcpServer: SDKMcpServerConfig | undefined
     let teamRosterPrompt = ''
+    let teamInstructionsPrompt = ''
     if (teamConfig?.enabled) {
       const members = this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
       teamRosterPrompt = buildTeamRosterPrompt(agent, members, teamConfig)
+      // 若会话由某个长期团队（ManagedTeam）应用而来，则把团队专属 prompt 作为
+      // [Team Instructions] 段注入，紧跟在 [Team Roster] 之后。即使长期团队被删除
+      // 或被禁用，此处也按当前 DB 状态读取一次：缺失则跳过，不报错。
+      if (teamConfig.teamId != null) {
+        try {
+          const team = new TeamDefinitionRepository(this.db).get(teamConfig.teamId)
+          if (team != null && team.prompt.trim().length > 0) {
+            teamInstructionsPrompt = `[Team Instructions]\n${team.prompt.trim()}`
+          }
+        } catch {
+          // 静默：长期团队 prompt 是可选增强，DB 读取失败时降级为无 prompt 模式
+        }
+      }
       teamMcpServer =
         (await this.createTeamMcpServer({
           sessionId,
@@ -801,6 +816,7 @@ export class SessionService {
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
       teamRosterPrompt,
+      teamInstructionsPrompt,
       runtimeRulesPrompt,
       runtimeContext.systemPrompt,
       projectContext.systemPrompt,

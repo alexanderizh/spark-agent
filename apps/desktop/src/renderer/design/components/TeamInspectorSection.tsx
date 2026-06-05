@@ -10,13 +10,15 @@
  * 本组件纯受控（props + 回调）。Phase 1 由 ChatView 本地 state 驱动；
  * Phase 2 起回调改为走 team:update IPC。
  */
-import { useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
-import { SparkSelect } from './FormControls'
-import type { TeamModeConfig } from '@spark/protocol'
+import { SparkInput, SparkSelect, SparkTextarea } from './FormControls'
+import { useIpcInvoke } from '../hooks/useIpc'
+import { useToast } from './Toast'
+import type { ManagedTeam, TeamModeConfig } from '@spark/protocol'
 
 export interface TeamInspectorAgent {
   id: string
@@ -67,11 +69,117 @@ export function TeamInspectorSection({
   onToggleMember,
   onChangeConfig,
 }: TeamInspectorSectionProps) {
+  const { toast } = useToast()
+  const { invoke: getTeamDef } = useIpcInvoke('team:get-def')
+  const { invoke: createTeamDef } = useIpcInvoke('team:create-def')
+  const { invoke: updateTeamDef } = useIpcInvoke('team:update-def')
+
   const [collapsed, setCollapsed] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [hostPickerOpen, setHostPickerOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+
+  // 当 config.teamId 命中长期团队时，缓存该团队定义用于：
+  // 1) 显示「来自团队：<名称>」徽章
+  // 2) 比较 live config 与 stored，决定是否显示「同步到团队」
+  const [sourceTeam, setSourceTeam] = useState<ManagedTeam | null>(null)
+  useEffect(() => {
+    if (config.teamId == null) {
+      setSourceTeam(null)
+      return
+    }
+    let cancelled = false
+    void getTeamDef({ id: config.teamId })
+      .then((res) => {
+        if (!cancelled) setSourceTeam(res.team)
+      })
+      .catch(() => {
+        if (!cancelled) setSourceTeam(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [config.teamId, getTeamDef])
+
+  const dirtyVsTeam = useMemo(() => {
+    if (sourceTeam == null) return false
+    const sameMembers =
+      sourceTeam.memberAgentIds.length === config.memberAgentIds.length &&
+      new Set(sourceTeam.memberAgentIds).size ===
+        new Set([...sourceTeam.memberAgentIds, ...config.memberAgentIds]).size
+    return (
+      sourceTeam.hostAgentId !== config.hostAgentId ||
+      !sameMembers ||
+      sourceTeam.maxDepth !== config.maxDepth ||
+      sourceTeam.allowNesting !== config.allowNesting
+    )
+  }, [sourceTeam, config])
+
+  // ── 保存为长期团队 / 同步回团队 表单 ──
+  const [saveFormOpen, setSaveFormOpen] = useState(false)
+  const [saveDraftName, setSaveDraftName] = useState('')
+  const [saveDraftDesc, setSaveDraftDesc] = useState('')
+  const [saveDraftPrompt, setSaveDraftPrompt] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const handleSaveAsTeam = useCallback(async () => {
+    if (saveDraftName.trim().length === 0) {
+      toast.warning('请填写团队名称')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await createTeamDef({
+        name: saveDraftName.trim(),
+        description: saveDraftDesc.trim(),
+        hostAgentId: config.hostAgentId,
+        memberAgentIds: config.memberAgentIds,
+        maxDepth: config.maxDepth,
+        allowNesting: config.allowNesting,
+        prompt: saveDraftPrompt,
+        enabled: true,
+      })
+      toast.success(`团队「${res.team.name}」已保存`)
+      onChangeConfig({ teamId: res.team.id })
+      setSaveFormOpen(false)
+      setSaveDraftName('')
+      setSaveDraftDesc('')
+      setSaveDraftPrompt('')
+    } catch (err) {
+      toast.error('保存失败：' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSaving(false)
+    }
+  }, [createTeamDef, config, saveDraftName, saveDraftDesc, saveDraftPrompt, onChangeConfig, toast])
+
+  const handleSyncToTeam = useCallback(async () => {
+    if (sourceTeam == null) return
+    if (sourceTeam.builtIn) {
+      toast.warning('内置团队不可修改成员配置，请「另存为」新团队')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await updateTeamDef({
+        id: sourceTeam.id,
+        hostAgentId: config.hostAgentId,
+        memberAgentIds: config.memberAgentIds,
+        maxDepth: config.maxDepth,
+        allowNesting: config.allowNesting,
+      })
+      setSourceTeam(res.team)
+      toast.success(`已同步到团队「${res.team.name}」`)
+    } catch (err) {
+      toast.error('同步失败：' + (err instanceof Error ? err.message : String(err)))
+    } finally {
+      setSaving(false)
+    }
+  }, [sourceTeam, updateTeamDef, config, toast])
+
+  const handleDetach = useCallback(() => {
+    onChangeConfig({ teamId: undefined })
+  }, [onChangeConfig])
 
   const host = agents.find((a) => a.id === config.hostAgentId)
   const memberSet = new Set(config.memberAgentIds)
@@ -102,6 +210,89 @@ export function TeamInspectorSection({
 
       {!collapsed && (
         <div className="team-roster">
+          {/* 团队来源徽章：当 config.teamId 命中长期团队时显示 */}
+          {sourceTeam != null && (
+            <div className="team-roster-source">
+              <span className="team-roster-source-label">
+                <Icons.Team size={12} /> 来自团队
+              </span>
+              <span className="team-roster-source-name" title={sourceTeam.description}>
+                {sourceTeam.name}
+                {sourceTeam.builtIn && <span className="team-roster-source-tag">内置</span>}
+              </span>
+              {dirtyVsTeam && !sourceTeam.builtIn && (
+                <button
+                  type="button"
+                  className="team-roster-source-action"
+                  onClick={() => void handleSyncToTeam()}
+                  disabled={saving}
+                  title="把会话当前的成员/嵌套配置写回团队"
+                >
+                  {saving ? <Icons.Spinner size={11} /> : <Icons.Check size={11} />}
+                  同步
+                </button>
+              )}
+              <button
+                type="button"
+                className="team-roster-source-action ghost"
+                onClick={handleDetach}
+                title="解除会话与团队的关联，会话变为临时团队"
+              >
+                解除
+              </button>
+            </div>
+          )}
+
+          {/* 临时团队：提供「保存为长期团队」入口 */}
+          {sourceTeam == null && config.memberAgentIds.length > 0 && !saveFormOpen && (
+            <button
+              type="button"
+              className="team-roster-save-cta"
+              onClick={() => setSaveFormOpen(true)}
+            >
+              <Icons.Plus size={12} /> 保存为长期团队…
+            </button>
+          )}
+          {sourceTeam == null && saveFormOpen && (
+            <div className="team-roster-save-form">
+              <div className="team-roster-save-form-title">保存为长期团队</div>
+              <SparkInput
+                value={saveDraftName}
+                onChange={(e) => setSaveDraftName(e.target.value)}
+                placeholder="团队名称（必填）"
+              />
+              <SparkInput
+                value={saveDraftDesc}
+                onChange={(e) => setSaveDraftDesc(e.target.value)}
+                placeholder="一句话描述（可选）"
+              />
+              <SparkTextarea
+                value={saveDraftPrompt}
+                onChange={(e) => setSaveDraftPrompt(e.target.value)}
+                placeholder="团队专属规则（可选，作为 [Team Instructions] 注入到主持人）"
+                rows={3}
+              />
+              <div className="team-roster-save-form-actions">
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  onClick={() => setSaveFormOpen(false)}
+                  disabled={saving}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="btn primary sm"
+                  onClick={() => void handleSaveAsTeam()}
+                  disabled={saving}
+                >
+                  {saving ? <Icons.Spinner size={11} /> : <Icons.Check size={11} />} 保存
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Host 行：点击展开 Agent 列表切换主持人 */}
           {host != null && (
             <>

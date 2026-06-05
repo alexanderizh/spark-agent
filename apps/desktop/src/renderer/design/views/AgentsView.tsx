@@ -8,6 +8,7 @@ import { SparkCheckbox, SparkInput, SparkMultiSelect, SparkSelect, SparkTextarea
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { generateDefaultAvatarUrl, getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
+import { TeamsPanel } from './TeamsPanel'
 import type {
   ManagedAgent,
   McpServerItem,
@@ -80,7 +81,43 @@ const EMPTY_DRAFT: AgentDraft = {
   avatar: { kind: 'url', url: generateDefaultAvatarUrl('新 Agent') },
 }
 
+/**
+ * AgentsView 外壳：Agents / Teams 两个 Tab。
+ *
+ * 复用同一个 agents 数据源，避免 TeamsPanel 重复 list。
+ * Agents Tab 渲染 AgentsTabContent，Teams Tab 渲染 TeamsPanel。
+ */
 export function AgentsView() {
+  const [tab, setTab] = useState<'agents' | 'teams'>('agents')
+  const [agentsForTeams, setAgentsForTeams] = useState<ManagedAgent[]>([])
+  return (
+    <div className="agents-view">
+      <div className="agents-view-tabs">
+        <button
+          type="button"
+          className={`agents-view-tab${tab === 'agents' ? ' active' : ''}`}
+          onClick={() => setTab('agents')}
+        >
+          <Icons.Bot size={13} /> Agents
+        </button>
+        <button
+          type="button"
+          className={`agents-view-tab${tab === 'teams' ? ' active' : ''}`}
+          onClick={() => setTab('teams')}
+        >
+          <Icons.Team size={13} /> Teams
+        </button>
+      </div>
+      {tab === 'agents' ? (
+        <AgentsTabContent onAgentsChange={setAgentsForTeams} />
+      ) : (
+        <TeamsPanel agents={agentsForTeams} />
+      )}
+    </div>
+  )
+}
+
+function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: ManagedAgent[]) => void }) {
   const { toast } = useToast()
   const { registerNavGuard, requestConfirm } = useApp()
   const [agents, setAgents] = useState<ManagedAgent[]>([])
@@ -128,6 +165,7 @@ export function AgentsView() {
         listWorkflows({ includeArchived: true }),
       ])
       setAgents(agentRes.agents)
+      onAgentsChange?.(agentRes.agents)
       setProviders(providerRes.profiles)
       setSkills(skillRes.skills)
       setMcpServers(mcpRes.servers)
@@ -152,7 +190,7 @@ export function AgentsView() {
     } finally {
       setLoading(false)
     }
-  }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows])
+  }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows, onAgentsChange])
 
   useEffect(() => {
     const id = window.setTimeout(() => { void refresh() }, 0)
