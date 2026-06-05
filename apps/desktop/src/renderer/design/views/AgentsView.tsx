@@ -434,18 +434,45 @@ export function AgentsView() {
         </section>
 
         <aside className="agent-config-panel">
-          <ConfigSection title="Skills" count={draft.skillIds.length}>
+          <ConfigSection
+            title="启用 Skills"
+            count={draft.skillIds.length}
+            description="勾选后，该 Agent 在运行时会主动加载这些 Skill 作为可用能力。"
+          >
             <PickList
               items={skills.map((s) => ({ id: s.id, label: s.name }))}
               selected={draft.skillIds}
-              onChange={(ids) => updateDraft('skillIds', ids)}
+              disabledIds={draft.disabledSkillIds}
+              onChange={(ids) => {
+                const idSet = new Set(ids)
+                setDraft((prev) => ({
+                  ...prev,
+                  skillIds: ids,
+                  // 启用某个 skill 时，把它从「禁用」中移除，避免冲突
+                  disabledSkillIds: prev.disabledSkillIds.filter((id) => !idSet.has(id)),
+                }))
+              }}
             />
           </ConfigSection>
-          <ConfigSection title="禁用 Skills" count={draft.disabledSkillIds.length}>
+          <ConfigSection
+            title="禁用 Skills"
+            count={draft.disabledSkillIds.length}
+            description="勾选后，即使这些 Skill 来自全局/项目默认配置，也会被该 Agent 强制屏蔽。"
+          >
             <PickList
+              tone="danger"
               items={skills.map((s) => ({ id: s.id, label: s.name }))}
               selected={draft.disabledSkillIds}
-              onChange={(ids) => updateDraft('disabledSkillIds', ids)}
+              disabledIds={draft.skillIds}
+              onChange={(ids) => {
+                const idSet = new Set(ids)
+                setDraft((prev) => ({
+                  ...prev,
+                  disabledSkillIds: ids,
+                  // 禁用某个 skill 时，把它从「启用」中移除，避免冲突
+                  skillIds: prev.skillIds.filter((id) => !idSet.has(id)),
+                }))
+              }}
             />
           </ConfigSection>
           <ConfigSection title="MCP" count={draft.mcpServerIds.length}>
@@ -489,29 +516,62 @@ function Field({ label, wide, children }: { label: string; wide?: boolean; child
   )
 }
 
-function ConfigSection({ title, count, children }: { title: string; count: number; children: ReactNode }) {
+function ConfigSection({
+  title,
+  count,
+  description,
+  children,
+}: {
+  title: string
+  count: number
+  description?: string
+  children: ReactNode
+}) {
   return (
     <section className="agent-config-section">
       <div className="agent-config-head">
         <span>{title}</span>
         <span className="badge">{count}</span>
       </div>
+      {description != null && <p className="agent-config-desc">{description}</p>}
       {children}
     </section>
   )
 }
 
-function PickList({ items, selected, onChange }: { items: Array<{ id: string; label: string }>; selected: string[]; onChange: (ids: string[]) => void }) {
+function PickList({
+  items,
+  selected,
+  onChange,
+  tone = 'default',
+  disabledIds,
+}: {
+  items: Array<{ id: string; label: string }>
+  selected: string[]
+  onChange: (ids: string[]) => void
+  /** 'danger' 用于「禁用」列表，把 active 项以红色高亮以区别于「启用」 */
+  tone?: 'default' | 'danger'
+  /** 已被互斥配置占用的 id：在本列表中显示为灰色不可点 */
+  disabledIds?: string[]
+}) {
   const selectedSet = useMemo(() => new Set(selected), [selected])
+  const disabledSet = useMemo(() => new Set(disabledIds ?? []), [disabledIds])
   if (items.length === 0) return <div className="agents-empty-mini">暂无可选项</div>
   return (
     <div className="agent-pick-list">
       {items.map((item) => {
         const active = selectedSet.has(item.id)
+        const blocked = !active && disabledSet.has(item.id)
+        const cls = ['agent-pick-item']
+        if (active) cls.push('active')
+        if (tone === 'danger') cls.push('tone-danger')
+        if (blocked) cls.push('blocked')
         return (
           <button
             key={item.id}
-            className={`agent-pick-item ${active ? 'active' : ''}`}
+            className={cls.join(' ')}
+            disabled={blocked}
+            title={blocked ? '已在互斥列表中配置' : undefined}
             onClick={() => onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])}
           >
             <span>{item.label}</span>

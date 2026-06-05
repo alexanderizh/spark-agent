@@ -10340,6 +10340,28 @@ body.inspector-resizing {
   border-color: color-mix(in srgb, var(--primary) 35%, transparent);
   background: var(--primary-soft);
 }
+/* 禁用 Skills 面板：active 项用 danger 配色，区别于启用面板的主题色 */
+.agent-pick-item.tone-danger.active {
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
+  background: var(--danger-bg, color-mix(in srgb, var(--danger) 12%, transparent));
+}
+/* 已在互斥列表中配置的项：灰色不可点 */
+.agent-pick-item.blocked {
+  opacity: 0.45;
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+.agent-pick-item.blocked:hover {
+  background: var(--panel);
+}
+/* ConfigSection 下方的语义说明文字 */
+.agent-config-desc {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  line-height: 1.5;
+}
 .agent-workflow-card {
   display: flex;
   gap: 10px;
