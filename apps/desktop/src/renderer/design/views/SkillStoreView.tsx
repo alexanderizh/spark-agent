@@ -327,13 +327,15 @@ function InstalledSkillCard({
       {!managementMode && (
         <>
           <div className="row skill-scope-row skill-tools-row">
-            <span
-              className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}
-              onClick={() => onToggle(skill)}
-            >
+            <span className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}>
               {skill.enabled ? '系统可见' : '系统隐藏'}
             </span>
             {skill.id === 'builtin:superpowers' && <span className="badge">内置工作流</span>}
+            <div className="flex1" />
+            <div
+              className={`switch ${skill.enabled ? 'on' : ''}`}
+              onClick={() => void onToggle(skill)}
+            />
           </div>
           <div className="foot">
             <span>{meta.source} · {skill.version}</span>
