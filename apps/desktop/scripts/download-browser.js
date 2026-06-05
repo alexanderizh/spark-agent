@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
  * download-browser.js — Pre-download chromium into apps/desktop/browsers/ for
- * bundled use. Invoked manually by `pnpm download-browser` when a packaged app
- * should include Chromium.
+ * local use. Invoked manually by `pnpm download-browser` when Chromium should
+ * be downloaded into apps/desktop/browsers/.
  *
  * Why a local path?
- *   - Bundles chromium with the app via electron-builder `extraResources`
+ *   - Keeps chromium out of Playwright's per-user `~/.cache/ms-playwright/`
  *   - Avoids the per-user `~/.cache/ms-playwright/` shared cache, which
  *     would be missing on end-user machines
  *
@@ -279,7 +279,7 @@ async function main() {
     const cli = findPlaywrightCli()
     if (cli == null) {
       log('playwright CLI not found — skipping (likely running before install).')
-      log('You can manually run: pnpm --filter @spark/desktop-dev download-browser')
+      log('You can manually run: pnpm --filter @spark/desktop download-browser')
       process.exit(0)
     }
 

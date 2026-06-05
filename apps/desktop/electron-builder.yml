@@ -14,7 +14,6 @@ mac:
         - universal
   hardenedRuntime: true
   gatekeeperAssess: false
-  x64ArchFiles: '**/browsers/**'
 win:
   icon: resources/icon.ico
 linux:
@@ -46,16 +45,6 @@ extraResources:
     to: trayIconWin.png
   - from: resources/taskbarIcon.png
     to: taskbarIcon.png
-  # Optional Playwright chromium browser (~150 MB).
-  # Build scripts no longer download it automatically. If
-  # `pnpm download-browser` was run before packaging, this copies
-  # apps/desktop/browsers/ into resources/browsers; otherwise the
-  # prepare-browser-resource script leaves an empty directory and runtime
-  # falls back to system Chrome/Edge or Playwright's default cache.
-  - from: browsers
-    to: browsers
-    filter:
-      - '**/*'
 publish:
   provider: generic
   url: https://releases.spark-agent.dev/${os}/

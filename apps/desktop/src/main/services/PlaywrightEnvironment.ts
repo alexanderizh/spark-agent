@@ -2,9 +2,9 @@
  * PlaywrightEnvironment — Resolve + configure the bundled chromium path.
  *
  * Chromium can be downloaded into `apps/desktop/browsers/` via the
- * `download-browser.js` script. When present during packaging, that directory
- * is bundled into the packaged app's `resources/browsers/` via electron-builder
- * `extraResources`.
+ * `download-browser.js` script for local use. Packaged builds no longer bundle
+ * this directory by default; runtime falls back to system Chrome / Edge or
+ * Playwright's default cache when no bundled Chromium exists.
  *
  * At runtime this module:
  *   1. Resolves the absolute browsers path (dev vs. packaged)
@@ -76,7 +76,7 @@ function getBundledBrowserDirCandidates(): string[] {
  * Resolve the bundled chromium directory.
  *
  * - Dev mode: `apps/desktop/browsers/` (relative to the monorepo root)
- * - Packaged: `process.resourcesPath/browsers/` (electron-builder extraResources)
+ * - Packaged: `process.resourcesPath/browsers/` if a custom build includes it
  *
  * Returns null if neither location contains a chromium-* subdirectory — this
  * indicates Chromium was not downloaded into the optional bundled browser
@@ -264,7 +264,7 @@ export function resolveBrowserStrategy(): {
   type: 'system'
   channel: 'chrome' | 'msedge'
 } | null {
-  // 1. App-bundled chromium (apps/desktop/browsers or resources/browsers) — best
+  // 1. Locally downloaded chromium (or app-bundled chromium in custom builds) — best
   const bundledPath = getBundledBrowsersPath()
   if (bundledPath != null) {
     return { type: 'bundled', browserPath: bundledPath }
