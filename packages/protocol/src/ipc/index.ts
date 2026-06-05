@@ -1402,6 +1402,74 @@ export interface TeamModeConfig {
   maxDepth: number
   /** 是否允许 Member 嵌套调用 dispatch，默认 false */
   allowNesting: boolean
+  /** 当本配置由某个长期团队（ManagedTeam）应用而来时，此字段指向 ManagedTeam.id。
+   *  会话仍以本配置为运行时权威；Inspector 可据此提供「保存修改回团队」入口。 */
+  teamId?: string
+}
+
+/**
+ * 长期团队定义（Long-lived Team）。
+ * 用户在 AgentsView「Teams」Tab 维护；持久化在 agent_teams 表。
+ * 会话可一键应用某个 ManagedTeam 得到 TeamModeConfig（teamId 指向此处的 id）。
+ */
+export interface ManagedTeam {
+  id: string
+  name: string
+  description: string
+  builtIn: boolean
+  enabled: boolean
+  hostAgentId: string
+  memberAgentIds: string[]
+  maxDepth: number
+  allowNesting: boolean
+  /** 团队专属 system prompt 段，附加在 [Team Roster] 之后作为 [Team Instructions] 注入 */
+  prompt: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TeamListDefsRequest {
+  includeDisabled?: boolean
+}
+export interface TeamListDefsResponse {
+  teams: ManagedTeam[]
+}
+
+export interface TeamGetDefRequest {
+  id: string
+}
+export interface TeamGetDefResponse {
+  team: ManagedTeam | null
+}
+
+export interface TeamCreateDefRequest {
+  name: string
+  description?: string
+  hostAgentId: string
+  memberAgentIds?: string[]
+  maxDepth?: number
+  allowNesting?: boolean
+  prompt?: string
+  enabled?: boolean
+  metadata?: Record<string, unknown>
+}
+export interface TeamCreateDefResponse {
+  team: ManagedTeam
+}
+
+export interface TeamUpdateDefRequest extends Partial<TeamCreateDefRequest> {
+  id: string
+}
+export interface TeamUpdateDefResponse {
+  team: ManagedTeam
+}
+
+export interface TeamDeleteDefRequest {
+  id: string
+}
+export interface TeamDeleteDefResponse {
+  deleted: boolean
 }
 
 /** 从 ManagedAgent 投影出的团队成员卡片（借鉴 Google A2A 的 AgentCard） */
@@ -2506,6 +2574,12 @@ export interface IpcChannelMap {
   'team:update': [TeamUpdateRequest, TeamUpdateResponse]
   'team:list-members': [TeamListMembersRequest, TeamListMembersResponse]
   'team:list-dispatches': [TeamListDispatchesRequest, TeamListDispatchesResponse]
+  // 长期团队定义（agent_teams）CRUD
+  'team:list-defs': [TeamListDefsRequest, TeamListDefsResponse]
+  'team:get-def': [TeamGetDefRequest, TeamGetDefResponse]
+  'team:create-def': [TeamCreateDefRequest, TeamCreateDefResponse]
+  'team:update-def': [TeamUpdateDefRequest, TeamUpdateDefResponse]
+  'team:delete-def': [TeamDeleteDefRequest, TeamDeleteDefResponse]
 
   // Workflows
   'workflow:list': [WorkflowListRequest, WorkflowListResponse]

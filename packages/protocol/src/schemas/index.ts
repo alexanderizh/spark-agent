@@ -42,6 +42,48 @@ export const TeamModeConfigSchema = z.object({
   memberAgentIds: z.array(z.string().min(1).max(160)).max(20),
   maxDepth: z.number().int().min(1).max(3),
   allowNesting: z.boolean(),
+  /** 来源长期团队 ID，可选 */
+  teamId: z.string().min(1).max(160).optional(),
+})
+
+// ── 长期团队定义（agent_teams）CRUD 请求 ────────────────────────────────────
+export const TeamListDefsRequestSchema = z.object({
+  includeDisabled: z.boolean().optional(),
+})
+
+export const TeamGetDefRequestSchema = z.object({
+  id: z.string().min(1).max(160),
+})
+
+const TeamDefBaseFields = {
+  name: z.string().min(1).max(120),
+  description: z.string().max(400).optional(),
+  hostAgentId: z.string().min(1).max(160),
+  memberAgentIds: z.array(z.string().min(1).max(160)).max(20).optional(),
+  maxDepth: z.number().int().min(1).max(3).optional(),
+  allowNesting: z.boolean().optional(),
+  prompt: z.string().max(8_000).optional(),
+  enabled: z.boolean().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}
+
+export const TeamCreateDefRequestSchema = z.object(TeamDefBaseFields)
+
+export const TeamUpdateDefRequestSchema = z.object({
+  id: z.string().min(1).max(160),
+  name: TeamDefBaseFields.name.optional(),
+  description: TeamDefBaseFields.description,
+  hostAgentId: TeamDefBaseFields.hostAgentId.optional(),
+  memberAgentIds: TeamDefBaseFields.memberAgentIds,
+  maxDepth: TeamDefBaseFields.maxDepth,
+  allowNesting: TeamDefBaseFields.allowNesting,
+  prompt: TeamDefBaseFields.prompt,
+  enabled: TeamDefBaseFields.enabled,
+  metadata: TeamDefBaseFields.metadata,
+})
+
+export const TeamDeleteDefRequestSchema = z.object({
+  id: z.string().min(1).max(160),
 })
 
 export const TeamUpdateRequestSchema = z.object({
@@ -350,6 +392,11 @@ export const IpcSchemaRegistry = {
   'team:update': TeamUpdateRequestSchema,
   'team:list-members': TeamListMembersRequestSchema,
   'team:list-dispatches': TeamListDispatchesRequestSchema,
+  'team:list-defs': TeamListDefsRequestSchema,
+  'team:get-def': TeamGetDefRequestSchema,
+  'team:create-def': TeamCreateDefRequestSchema,
+  'team:update-def': TeamUpdateDefRequestSchema,
+  'team:delete-def': TeamDeleteDefRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,

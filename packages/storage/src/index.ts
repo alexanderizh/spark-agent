@@ -40,6 +40,7 @@ export {
   AgentRepository,
   WorkflowRepository,
   TeamDispatchRepository,
+  TeamDefinitionRepository,
 } from './repositories/index.js'
 
 export type {
@@ -89,4 +90,9 @@ export type {
   TeamDispatchState,
   CreateTeamDispatchParams,
   UpdateTeamDispatchParams,
+  AgentTeamRow,
+  AgentTeamItem,
+  CreateAgentTeamParams,
+  UpdateAgentTeamParams,
+  ListAgentTeamsParams,
 } from './repositories/index.js'

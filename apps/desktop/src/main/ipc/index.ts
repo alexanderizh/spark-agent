@@ -35,8 +35,9 @@ import {
   AgentRepository,
   WorkflowRepository,
   TeamDispatchRepository,
+  TeamDefinitionRepository,
 } from '@spark/storage'
-import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem } from '@spark/storage'
+import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem, AgentTeamItem as StorageAgentTeamItem } from '@spark/storage'
 import {
   ProviderService,
   RulesService,
@@ -65,6 +66,7 @@ import type {
   ProviderExportPayload,
   TeamModeConfig,
   TeamMemberCard,
+  ManagedTeam,
   TeamA2ATask,
   TeamA2AReply,
 } from '@spark/protocol'
@@ -1436,6 +1438,76 @@ export function registerAllIpcHandlers(): void {
     return { dispatches }
   })
 
+  // ─── 长期团队定义 CRUD ──────────────────────────────────────────────────
+
+  typedIpcHandle('team:list-defs', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const teams = repo
+      .list(req.includeDisabled !== undefined ? { includeDisabled: req.includeDisabled } : {})
+      .map(toManagedTeam)
+    return { teams }
+  })
+
+  typedIpcHandle('team:get-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const team = repo.get(req.id)
+    return { team: team != null ? toManagedTeam(team) : null }
+  })
+
+  typedIpcHandle('team:create-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    // 自动剔除 hostAgentId 也在 memberAgentIds 中的情况（防"自调用自"）
+    const memberIds = (req.memberAgentIds ?? []).filter((id) => id !== req.hostAgentId)
+    const team = repo.create({
+      name: req.name,
+      ...(req.description !== undefined ? { description: req.description } : {}),
+      hostAgentId: req.hostAgentId,
+      memberAgentIds: memberIds,
+      ...(req.maxDepth !== undefined ? { maxDepth: req.maxDepth } : {}),
+      ...(req.allowNesting !== undefined ? { allowNesting: req.allowNesting } : {}),
+      ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
+      ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
+      ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
+    })
+    return { team: toManagedTeam(team) }
+  })
+
+  typedIpcHandle('team:update-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const existing = repo.get(req.id)
+    if (existing == null) throw new Error(`Team ${req.id} not found`)
+    // 解析新 host / members 后剔除 host 重叠
+    const nextHost = req.hostAgentId ?? existing.hostAgentId
+    let nextMembers: string[] | undefined
+    if (req.memberAgentIds !== undefined) {
+      nextMembers = req.memberAgentIds.filter((id) => id !== nextHost)
+    } else if (req.hostAgentId !== undefined && req.hostAgentId !== existing.hostAgentId) {
+      // 仅改 host 时也要把新 host 从原成员中移除
+      nextMembers = existing.memberAgentIds.filter((id) => id !== nextHost)
+    }
+    const team = repo.update(req.id, {
+      ...(req.name !== undefined ? { name: req.name } : {}),
+      ...(req.description !== undefined ? { description: req.description } : {}),
+      ...(req.hostAgentId !== undefined ? { hostAgentId: req.hostAgentId } : {}),
+      ...(nextMembers !== undefined ? { memberAgentIds: nextMembers } : {}),
+      ...(req.maxDepth !== undefined ? { maxDepth: req.maxDepth } : {}),
+      ...(req.allowNesting !== undefined ? { allowNesting: req.allowNesting } : {}),
+      ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
+      ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
+      ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
+    })
+    if (team == null) throw new Error(`Team ${req.id} not found after update`)
+    return { team: toManagedTeam(team) }
+  })
+
+  typedIpcHandle('team:delete-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const existing = repo.get(req.id)
+    if (existing == null) return { deleted: false }
+    if (existing.builtIn) throw new Error('内置团队不可删除，可在编辑面板停用或修改配置')
+    return { deleted: repo.delete(req.id) }
+  })
+
   // ─── Workflow Handlers ────────────────────────────────────────────────
 
   typedIpcHandle('workflow:list', async (req) => {
@@ -2263,6 +2335,24 @@ function toWorkflowItem(workflow: StorageWorkflowItem): ProtocolWorkflowItem {
   return {
     ...workflow,
     graph: toWorkflowGraph(workflow.graph),
+  }
+}
+
+function toManagedTeam(team: StorageAgentTeamItem): ManagedTeam {
+  return {
+    id: team.id,
+    name: team.name,
+    description: team.description,
+    builtIn: team.builtIn,
+    enabled: team.enabled,
+    hostAgentId: team.hostAgentId,
+    memberAgentIds: team.memberAgentIds,
+    maxDepth: team.maxDepth,
+    allowNesting: team.allowNesting,
+    prompt: team.prompt,
+    metadata: team.metadata,
+    createdAt: team.createdAt,
+    updatedAt: team.updatedAt,
   }
 }
 

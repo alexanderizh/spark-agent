@@ -36,6 +36,14 @@ export { WorkflowRepository } from './workflow.repository.js'
 export type { CreateWorkflowParams, UpdateWorkflowParams, WorkflowItem, WorkflowRow, WorkflowStatus } from './workflow.repository.js'
 export { TeamDispatchRepository } from './team-dispatch.repository.js'
 export type { TeamDispatchRow, TeamDispatchState, CreateTeamDispatchParams, UpdateTeamDispatchParams } from './team-dispatch.repository.js'
+export { TeamDefinitionRepository } from './team-definition.repository.js'
+export type {
+  AgentTeamRow,
+  AgentTeamItem,
+  CreateAgentTeamParams,
+  UpdateAgentTeamParams,
+  ListAgentTeamsParams,
+} from './team-definition.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'
