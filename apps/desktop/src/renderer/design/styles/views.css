@@ -1056,6 +1056,13 @@ body.sidebar-resizing {
   align-items: flex-end;
   padding-left: 48px;
 }
+.msg-user-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 10px;
+  max-width: 86%;
+}
 
 .msg-user-attachments {
   display: flex;
@@ -1123,6 +1130,10 @@ body.sidebar-resizing {
 .msg-agent {
   justify-content: flex-start;
   padding-right: 0;
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
 }
 
 .msg-bubble {
@@ -1134,7 +1145,7 @@ body.sidebar-resizing {
   background: var(--primary-soft);
   border-radius: var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);
   padding: 8px 14px;
-  max-width: 80%;
+  max-width: 100%;
 }
 
 .msg-bubble-user .msg-content {
@@ -1148,6 +1159,39 @@ body.sidebar-resizing {
   padding: 0;
   width: 100%;
   min-width: 60px;
+}
+.msg-agent-avatar,
+.msg-user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  overflow: hidden;
+  flex-shrink: 0;
+  background: var(--bg-soft);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-xs);
+}
+.msg-agent-main {
+  min-width: 0;
+}
+.msg-agent-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+  margin-bottom: 2px;
+}
+.msg-agent-name {
+  font-size: var(--font-sm);
+  font-weight: 650;
+  color: var(--text-strong);
+}
+.msg-agent-role {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px 6px;
+  line-height: 1.35;
 }
 
 /* Streaming indicator (shown before any content arrives) */
@@ -2935,6 +2979,11 @@ body.sidebar-resizing {
 }
 .composer-submit-picks .composer-select-trigger span {
   max-width: 120px;
+}
+/* 模型选择器移入输入框内部底部后，菜单较宽，向右对齐避免溢出右边缘 */
+.composer-submit-picks .composer-model-menu {
+  right: 0;
+  left: auto;
 }
 .composer-v2.has-workspace-picks textarea {
   padding-right: 70px;
@@ -5778,6 +5827,117 @@ body.inspector-resizing {
 }
 .settings-card-row .row-action {
   margin-left: auto;
+}
+
+/* Avatar picker */
+.avatar-picker {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.avatar-picker-preview {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--bg-soft);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-xs);
+  flex-shrink: 0;
+}
+.avatar-picker-preview img,
+.avatar-picker-preview .spark-avatar-fallback,
+.team-member-avatar img,
+.team-member-avatar .spark-avatar-fallback,
+.team-roster-avatar img,
+.team-roster-avatar .spark-avatar-fallback,
+.msg-agent-avatar img,
+.msg-agent-avatar .spark-avatar-fallback,
+.msg-user-avatar img,
+.msg-user-avatar .spark-avatar-fallback,
+.team-member-drawer-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+.team-member-drawer-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+}
+.spark-avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 750;
+  font-size: 13px;
+  line-height: 1;
+  user-select: none;
+}
+.avatar-picker-main {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.avatar-picker-title {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-strong);
+}
+.avatar-picker-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.avatar-picker-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.avatar-picker-file {
+  display: none;
+}
+.avatar-cropper {
+  display: grid;
+  gap: 16px;
+}
+.avatar-crop-stage {
+  width: 240px;
+  height: 240px;
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--bg-soft);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.avatar-crop-stage img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 100%;
+  min-height: 100%;
+  max-width: none;
+  transform-origin: center;
+  user-select: none;
+}
+.avatar-crop-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42), inset 0 0 0 999px rgba(0, 0, 0, 0.02);
+  pointer-events: none;
+}
+.avatar-crop-controls {
+  display: grid;
+  gap: 10px;
+}
+.avatar-crop-controls label {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 /* Archived Item Row */
@@ -10098,7 +10258,7 @@ body.inspector-resizing {
   justify-content: space-between;
   gap: 10px;
 }
-.agents-card-icon {
+.agents-card-avatar {
   width: 36px;
   height: 36px;
   display: grid;
@@ -10106,6 +10266,15 @@ body.inspector-resizing {
   border-radius: 8px;
   background: var(--primary-soft);
   color: var(--primary);
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--border) 70%, transparent);
+}
+.agents-card-avatar img,
+.agents-card-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 .agents-card-status {
   font-size: 11px;
@@ -10245,7 +10414,7 @@ body.inspector-resizing {
 .agent-editor-head {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -10259,6 +10428,12 @@ body.inspector-resizing {
   gap: 6px;
   font-size: 12px;
   color: var(--text-muted);
+}
+.agent-field-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
 }
 .agent-field.wide {
   grid-column: 1 / -1;
@@ -10289,6 +10464,14 @@ body.inspector-resizing {
 .agent-field .spark-input,
 .agent-field .spark-textarea {
   width: 100%;
+  min-width: 0;
+}
+/* Agent 编辑页的 <label> 包装了 select：label 元素本身是 grid item，
+   弹窗的 getPopupContainer 已经挂在 document.body，理论上不受影响；
+   这里只是再保险一次，保证 select 容器能撑开并有正确的层级。 */
+.agent-field > .spark-select-wrap {
+  display: flex;
+  align-items: center;
 }
 .agent-config-panel {
   display: flex;
@@ -12057,6 +12240,11 @@ body.inspector-resizing {
 .composer-menu-item.team-mode-entry .composer-menu-item-label {
   font-weight: 600;
 }
+.composer-agent-menu .composer-menu-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 6px 8px;
+}
 /* 团队模式：紧凑成员 chip（紧贴 AgentPicker 右侧，单行不挤压不换行） */
 .composer-team-chip {
   display: inline-flex;
@@ -12089,19 +12277,18 @@ body.inspector-resizing {
 
 /* Dispatch 调用卡片 */
 .team-dispatch-card {
-  margin: 8px 0 8px 16px;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--member-accent, var(--primary));
-  border-radius: var(--r-md);
-  background: var(--bg-soft);
+  margin: 8px 0 6px 46px;
+  padding: 6px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 .team-dispatch-card-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: var(--font-sm);
-  color: var(--text);
+  font-size: var(--font-xs);
+  color: var(--text-faint);
 }
 .team-dispatch-card-arrow {
   color: var(--member-accent, var(--primary));
@@ -12112,14 +12299,15 @@ body.inspector-resizing {
 }
 .team-dispatch-card-member {
   font-weight: 600;
-  color: var(--member-accent, var(--text-strong));
+  color: var(--text-muted);
 }
 .team-dispatch-card-task {
-  margin-top: 6px;
-  font-size: var(--font-sm);
+  margin-top: 4px;
+  font-size: var(--font-xs);
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
+  max-width: 72ch;
 }
 .team-dispatch-card-attachments {
   display: flex;
@@ -12139,15 +12327,15 @@ body.inspector-resizing {
   padding: 1px 6px;
 }
 .team-dispatch-card-status {
-  margin-top: 8px;
+  margin-top: 5px;
 }
 .team-dispatch-chip {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: var(--font-xs);
-  border-radius: var(--r-sm);
-  padding: 2px 8px;
+  border-radius: 999px;
+  padding: 2px 7px;
 }
 .team-dispatch-chip-running {
   color: var(--text-muted);
@@ -12169,44 +12357,47 @@ body.inspector-resizing {
   margin-left: 4px;
 }
 
-/* Member 消息气泡：缩进 32px + 左色条 */
+/* Member 消息：平级群聊式行布局 */
+.team-timeline-segment {
+  width: 100%;
+}
 .team-member-bubble {
-  margin: 6px 0 6px 32px;
-  padding-left: 12px;
-  border-left: 4px solid var(--member-accent, var(--primary));
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  margin: 8px 0;
 }
 .team-member-bubble-head {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-bottom: 4px;
+  gap: 6px;
+  min-height: 22px;
+  margin-bottom: 2px;
 }
 .team-member-avatar {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  overflow: hidden;
+  padding: 0;
+  background: var(--bg-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--member-accent, var(--border)) 32%, var(--border)), var(--shadow-xs);
   border: none;
   cursor: pointer;
-  flex-shrink: 0;
 }
 .team-member-name {
   font-size: var(--font-sm);
-  font-weight: 600;
+  font-weight: 650;
   color: var(--text-strong);
-}
-.team-member-badge {
-  font-size: var(--font-xs);
-  color: var(--text-faint);
 }
 .team-member-bubble-body {
   font-size: var(--font-sm);
   color: var(--text);
+  max-width: 100%;
+}
+.team-member-message-main {
+  min-width: 0;
 }
 
 /* Inspector 团队成员区块 */
@@ -12243,15 +12434,15 @@ body.inspector-resizing {
   opacity: 0.85;
 }
 .team-roster-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: #fff;
+  background: var(--bg-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--member-accent, var(--border)) 28%, var(--border));
   flex-shrink: 0;
 }
 .team-roster-info {
@@ -12369,7 +12560,8 @@ body.inspector-resizing {
   font-size: var(--font-sm);
   color: var(--text-muted);
 }
-.team-roster-advanced-row select {
+.team-roster-advanced-row select,
+.team-roster-advanced-row .spark-select-wrap {
   margin-left: auto;
 }
 
@@ -12430,14 +12622,15 @@ body.inspector-resizing {
   gap: 10px;
 }
 .team-member-drawer-avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  overflow: hidden;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-weight: 600;
+  background: var(--bg-soft);
+  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-xs);
   flex-shrink: 0;
 }
 .team-member-drawer-title {

@@ -35,12 +35,14 @@ import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
 import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
+import { AvatarImage } from '../components/AvatarImage'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
+import { getAgentAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from '../avatar'
 import type { UIMessage, UIBlock, FileChangeSummary } from '../services/event-mapper'
 import type {
   AgentEvent,
@@ -68,6 +70,8 @@ import type {
   TeamModeConfig,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
+
+const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 
 type BranchState = { currentBranch: string | null; branches: string[] }
 type AgentAdapter = SessionAgentAdapter
@@ -490,6 +494,7 @@ export function ChatView({
               onPlanProposed={setProposedPlan}
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
+              teamConfig={teamConfig}
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -837,6 +842,7 @@ function ChatStream({
   onPlanProposed,
   onTurnPromptSnapshotsChange,
   clearTrigger,
+  teamConfig,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -850,6 +856,7 @@ function ChatStream({
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
+  teamConfig: TeamModeConfig
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -871,6 +878,14 @@ function ChatStream({
   })
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
   const { invoke: deleteMessageEvents } = useIpcInvoke('session:delete-message')
+  const userAvatarSrc = useUserAvatarSrc()
+  const { sessions, agents } = useSessionSidebar()
+  const session = sessions.find((item) => item.id === sessionId)
+  const assistantAgentId = teamConfig.enabled ? teamConfig.hostAgentId : (session?.agentId ?? 'code-agent')
+  const assistantAgent = agents.find((item) => item.id === assistantAgentId)
+  const assistantName = assistantAgent?.name ?? 'Spark Agent'
+  const assistantAvatar = getAgentAvatarConfig(assistantAgent?.metadata, assistantAgentId, assistantName)
+  const assistantAvatarSrc = resolveAvatarSrc(assistantAvatar)
 
   // ── 会话消息缓存：避免切换时从空白开始 ──
   // 缓存每个会话最后渲染的消息列表，切回时立即显示缓存内容，再异步更新
@@ -1211,30 +1226,27 @@ function ChatStream({
               key={msg.id}
               timestamp={msg.timestamp}
               blocks={msg.blocks}
+              avatarSrc={userAvatarSrc}
               {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
               onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
             >
               {renderBlocks(msg.blocks)}
             </UserMsg>
-          ) : msg.status === 'streaming' ? (
-            <AgentMsg
-              key={msg.id}
-              sessionId={sessionId}
-              status="running"
-              blocks={msg.blocks}
-              messageStatus={msg.status}
-              isLatest={index === messages.length - 1}
-              timestamp={msg.timestamp}
-            />
           ) : (
-            <AgentMsg
+            <AssistantMessageRows
               key={msg.id}
               sessionId={sessionId}
               blocks={msg.blocks}
               messageStatus={msg.status}
               isLatest={index === messages.length - 1}
-              timestamp={msg.timestamp}
-              onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+              assistantId={assistantAgentId}
+              assistantName={assistantName}
+              assistantAvatarSrc={assistantAvatarSrc}
+              {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+              {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+              {...(msg.status !== 'streaming'
+                ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                : {})}
             />
           ),
         )}
@@ -1246,6 +1258,9 @@ function ChatStream({
             blocks={[]}
             messageStatus="streaming"
             isLatest
+            assistantId={assistantAgentId}
+            assistantName={assistantName}
+            assistantAvatarSrc={assistantAvatarSrc}
           />
         )}
         {messages.length === 0 && !showWaitingAgent && (
@@ -1408,6 +1423,9 @@ function renderBlocks(
           </details>
         )
       case 'tool_call': {
+        if (isHiddenTimelineBlock(block)) {
+          return null
+        }
         const toolStatus =
           block.status === 'success'
             ? ('ok' as const)
@@ -1612,12 +1630,10 @@ function renderBlocks(
 function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
   const { agents } = useSessionSidebar()
   const memberName = agents.find((a) => a.id === block.memberAgentId)?.name ?? block.memberAgentId
-  const hostName = agents.find((a) => a.id === block.hostAgentId)?.name ?? block.hostAgentId
   return (
     <TeamDispatchCard
       task={block.task}
       memberName={memberName}
-      hostName={hostName}
       state={block.state}
       {...(block.reply != null ? { reply: block.reply } : {})}
     />
@@ -1633,11 +1649,13 @@ function TeamMemberMessageBlockView({
   const [drawerOpen, setDrawerOpen] = useState(false)
   const member = agents.find((a) => a.id === block.memberAgentId)
   const memberName = member?.name ?? block.memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
   return (
     <>
       <TeamMemberBubble
         memberAgentId={block.memberAgentId}
         memberName={memberName}
+        avatarSrc={resolveAvatarSrc(avatar)}
         onOpenDetail={() => setDrawerOpen(true)}
       >
         <MarkdownText content={block.content} isStreaming={block.isStreaming} />
@@ -1652,6 +1670,7 @@ function TeamMemberMessageBlockView({
             modelId: member?.modelId ?? null,
             skillCount: member?.skillIds.length ?? 0,
             mcpCount: member?.mcpServerIds.length ?? 0,
+            avatarSrc: resolveAvatarSrc(avatar),
           }}
           onClose={() => setDrawerOpen(false)}
         />
@@ -2865,12 +2884,14 @@ function UserMsg({
   children,
   timestamp,
   blocks,
+  avatarSrc,
   attachments = [],
   onDelete,
 }: {
   children: ReactNode
   timestamp?: string | undefined
   blocks: UIBlock[]
+  avatarSrc: string
   attachments?: MessageAttachment[]
   onDelete?: () => void
 }) {
@@ -2929,8 +2950,13 @@ function UserMsg({
   return (
     <div className="msg msg-user">
       {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
-      <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
-        <div className="msg-content">{children}</div>
+      <div className="msg-user-line">
+        <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
+          <div className="msg-content">{children}</div>
+        </div>
+        <div className="msg-user-avatar">
+          <AvatarImage src={avatarSrc} seed="spark-user" name="User" alt="用户头像" />
+        </div>
       </div>
       <MessageHoverBar
         timestamp={timestamp}
@@ -2948,6 +2974,44 @@ function UserMsg({
       )}
     </div>
   )
+}
+
+function useUserAvatarSrc(): string {
+  const readLocal = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
+      if (raw == null) return resolveAvatarSrc(getUserAvatarConfig(null))
+      return resolveAvatarSrc(getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar))
+    } catch {
+      return resolveAvatarSrc(getUserAvatarConfig(null))
+    }
+  }, [])
+  const [src, setSrc] = useState(readLocal)
+
+  useEffect(() => {
+    let cancelled = false
+    setSrc(readLocal())
+    window.spark
+      ?.invoke('settings:get', { category: 'general', key: 'data' })
+      .then((res) => {
+        if (cancelled) return
+        const value = res.value != null && typeof res.value === 'object'
+          ? (res.value as Record<string, unknown>).userAvatar
+          : null
+        setSrc(resolveAvatarSrc(getUserAvatarConfig(value)))
+      })
+      .catch(() => {})
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_GENERAL_KEY) setSrc(readLocal())
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => {
+      cancelled = true
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [readLocal])
+
+  return src
 }
 
 function UserMessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
@@ -3089,13 +3153,16 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
   )
 }
 
-function AgentMsg({
+function AssistantMessageRows({
   sessionId,
   status,
   blocks,
   messageStatus,
   isLatest,
   timestamp,
+  assistantId,
+  assistantName,
+  assistantAvatarSrc,
   onDelete,
 }: {
   sessionId: SessionId
@@ -3104,14 +3171,104 @@ function AgentMsg({
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
+  onDelete?: () => void
+}) {
+  const segments = splitAssistantMessageBlocks(blocks)
+  if (segments.length === 0) return null
+
+  return (
+    <>
+      {segments.map((segment, index) => {
+        const segmentIsLatest = isLatest === true && index === segments.length - 1
+        if (segment.kind === 'team') {
+          return (
+            <div key={`team-${index}`} className="team-timeline-segment">
+              {renderBlocks(segment.blocks, { sessionId })}
+            </div>
+          )
+        }
+        return (
+          <AgentMsg
+            key={`agent-${index}`}
+            sessionId={sessionId}
+            blocks={segment.blocks}
+            isLatest={segmentIsLatest}
+            assistantId={assistantId}
+            assistantName={assistantName}
+            assistantAvatarSrc={assistantAvatarSrc}
+            {...(status != null ? { status } : {})}
+            {...(messageStatus != null ? { messageStatus } : {})}
+            {...(timestamp != null ? { timestamp } : {})}
+            {...(onDelete != null ? { onDelete } : {})}
+          />
+        )
+      })}
+    </>
+  )
+}
+
+function splitAssistantMessageBlocks(
+  blocks: UIBlock[],
+): Array<{ kind: 'agent' | 'team'; blocks: UIBlock[] }> {
+  const segments: Array<{ kind: 'agent' | 'team'; blocks: UIBlock[] }> = []
+  let agentBlocks: UIBlock[] = []
+
+  const flushAgent = () => {
+    if (agentBlocks.length === 0) return
+    segments.push({ kind: 'agent', blocks: agentBlocks })
+    agentBlocks = []
+  }
+
+  for (const block of blocks) {
+    if (isHiddenTimelineBlock(block)) continue
+    if (block.kind === 'team_dispatch' || block.kind === 'team_member_message') {
+      flushAgent()
+      segments.push({ kind: 'team', blocks: [block] })
+      continue
+    }
+    agentBlocks.push(block)
+  }
+  flushAgent()
+  return segments
+}
+
+function isHiddenTimelineBlock(block: UIBlock): boolean {
+  return block.kind === 'tool_call' && block.toolName === 'mcp__spark_team__agent_dispatch'
+}
+
+function AgentMsg({
+  sessionId,
+  status,
+  blocks,
+  messageStatus,
+  isLatest,
+  timestamp,
+  assistantId,
+  assistantName,
+  assistantAvatarSrc,
+  onDelete,
+}: {
+  sessionId: SessionId
+  status?: 'running'
+  blocks: UIBlock[]
+  messageStatus?: UIMessage['status']
+  isLatest?: boolean
+  timestamp?: string | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
   onDelete?: () => void
 }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
-  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking')
+  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking' && !isHiddenTimelineBlock(b))
   const toolCallBlocks = blocks.filter(
-    (b): b is Extract<UIBlock, { kind: 'tool_call' }> => b.kind === 'tool_call',
+    (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
+      b.kind === 'tool_call' && !isHiddenTimelineBlock(b),
   )
   const errorBlocks = blocks.filter((b) => b.kind === 'error')
   const isStreaming = status === 'running'
@@ -3185,7 +3342,14 @@ function AgentMsg({
     <div
       className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}
     >
-      <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
+      <div className="msg-agent-avatar">
+        <AvatarImage src={assistantAvatarSrc} seed={assistantId} name={assistantName} />
+      </div>
+      <div className="msg-agent-main">
+        <div className="msg-agent-head">
+          <span className="msg-agent-name">{assistantName}</span>
+        </div>
+        <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
         {isStreaming && !hasContent && (
           <div className="agent-running-tail agent-running-tail-empty" aria-label="正在运行">
             <span>正在运行</span>
@@ -3241,6 +3405,7 @@ function AgentMsg({
             {...(onDelete ? { onDelete } : {})}
           />
         )}
+      </div>
       </div>
       {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu
@@ -5396,9 +5561,7 @@ function ComposerV2({
           />
         )}
         <div
-          className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''} ${
-            showProjectPicker || showBranchSelect ? 'has-workspace-picks' : ''
-          }`}
+          className={`composer composer-v2 has-workspace-picks ${manualExpanded ? 'expanded' : ''}`}
         >
           {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
             <div className="composer-attachments-inside">
@@ -5466,30 +5629,36 @@ function ComposerV2({
             {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
           </button>
           <div className="composer-submit-row">
-            {(showProjectPicker || showBranchSelect) && (
-              <div className="composer-submit-picks">
-                {showProjectPicker && (
-                  <ProjectPicker
-                    workspaces={workspaces}
-                    activeWorkspaceId={activeWorkspaceId}
-                    {...(onPickProject !== undefined ? { onPickProject } : {})}
-                    {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
-                    {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
-                  />
-                )}
-                {showBranchSelect && (
-                  <ComposerMenuSelect
-                    icon={<Icons.GitBranch size={13} />}
-                    value={branchState.currentBranch ?? ''}
-                    label={branchState.currentBranch ?? ''}
-                    title="分支"
-                    align="right"
-                    onChange={onSwitchBranch}
-                    options={branchOptions}
-                  />
-                )}
-              </div>
-            )}
+            <div className="composer-submit-picks">
+              <ProviderModelPicker
+                icon={<ModelIcon />}
+                providers={compatibleProviders}
+                selectedProviderId={selectedProvider?.id ?? ''}
+                selectedModelId={effectiveModelId}
+                disabled={compatibleProviders.length === 0}
+                onChange={handleProviderModelChange}
+              />
+              {showProjectPicker && (
+                <ProjectPicker
+                  workspaces={workspaces}
+                  activeWorkspaceId={activeWorkspaceId}
+                  {...(onPickProject !== undefined ? { onPickProject } : {})}
+                  {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
+                  {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
+                />
+              )}
+              {showBranchSelect && (
+                <ComposerMenuSelect
+                  icon={<Icons.GitBranch size={13} />}
+                  value={branchState.currentBranch ?? ''}
+                  label={branchState.currentBranch ?? ''}
+                  title="分支"
+                  align="right"
+                  onChange={onSwitchBranch}
+                  options={branchOptions}
+                />
+              )}
+            </div>
             <button
               className={`composer-send-round ${sending ? 'is-sending' : ''} ${isWorking ? 'is-stopping' : ''}`}
               title={isWorking ? '停止会话' : '发送'}
@@ -5526,14 +5695,6 @@ function ComposerV2({
             onDisableTeamMode={() => onChangeTeamConfig({ enabled: false })}
             onChangeHost={(agentId) => onChangeTeamConfig({ hostAgentId: agentId })}
             onOpenMembers={onOpenTeamInspector}
-          />
-          <ProviderModelPicker
-            icon={<ModelIcon />}
-            providers={compatibleProviders}
-            selectedProviderId={selectedProvider?.id ?? ''}
-            selectedModelId={effectiveModelId}
-            disabled={compatibleProviders.length === 0}
-            onChange={handleProviderModelChange}
           />
           <ComposerMenuSelect
             icon={
@@ -5879,7 +6040,7 @@ function AgentPicker({
         type="button"
         className="composer-select-trigger"
         disabled={agents.length === 0}
-        title={teamMode ? `团队模式（主持人：${selected?.name ?? '编码 Agent'}）` : selected?.name ?? '编码 Agent'}
+        title={teamMode ? `团队模式（当前对话：${selected?.name ?? '编码 Agent'}）` : selected?.name ?? '编码 Agent'}
         onClick={() => setOpen((prev) => !prev)}
       >
         <span>{selected?.name ?? '编码 Agent'}</span>
@@ -5898,31 +6059,6 @@ function AgentPicker({
       )}
       {open && (
         <div className="composer-menu composer-agent-menu">
-          {agents.map((agent) => (
-            <button
-              key={agent.id}
-              type="button"
-              className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
-              onClick={() => {
-                setOpen(false)
-                if (teamMode) onChangeHost(agent.id)
-                else void onChange(agent.id)
-              }}
-            >
-              <span className="composer-menu-item-copy">
-                <span className="composer-menu-item-label">
-                  {agent.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
-                  <span>{agent.name}</span>
-                </span>
-                {agent.description && (
-                  <span className="composer-menu-item-desc">{agent.description}</span>
-                )}
-              </span>
-              {agent.workflowId && <Icons.Workflow size={13} />}
-              {agent.id === selected?.id && <Icons.Check size={14} />}
-            </button>
-          ))}
-          <div className="composer-menu-group-title">团队模式</div>
           {teamMode ? (
             <button
               type="button"
@@ -5953,10 +6089,36 @@ function AgentPicker({
                   <Icons.Team size={13} />
                   <span>团队模式（多 Agent 协作）</span>
                 </span>
-                <span className="composer-menu-item-desc">让主持 Agent 调用其他成员协作</span>
+                <span className="composer-menu-item-desc">让当前对话 Agent 调用其他成员协作</span>
               </span>
             </button>
           )}
+          <div className="composer-menu-divider" />
+          <div className="composer-menu-group-title">{teamMode ? '当前对话 Agent' : '选择 Agent'}</div>
+          {agents.map((agent) => (
+            <button
+              key={agent.id}
+              type="button"
+              className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
+              onClick={() => {
+                setOpen(false)
+                if (teamMode) onChangeHost(agent.id)
+                else void onChange(agent.id)
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  {agent.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
+                  <span>{agent.name}</span>
+                </span>
+                {agent.description && (
+                  <span className="composer-menu-item-desc">{agent.description}</span>
+                )}
+              </span>
+              {agent.workflowId && <Icons.Workflow size={13} />}
+              {agent.id === selected?.id && <Icons.Check size={14} />}
+            </button>
+          ))}
         </div>
       )}
     </div>
@@ -6987,6 +7149,7 @@ function ChatInspector({
             modelId: a.modelId ?? null,
             skillCount: a.skillIds.length,
             mcpCount: a.mcpServerIds.length,
+            metadata: a.metadata,
           }))}
           onToggleMember={(agentId, enabled) =>
             onChangeTeamConfig({

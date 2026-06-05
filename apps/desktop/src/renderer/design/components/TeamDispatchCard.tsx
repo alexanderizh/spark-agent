@@ -1,9 +1,8 @@
 /**
- * TeamDispatchCard — 群聊时间线中「Host 调用 Member」的调用卡片
+ * TeamDispatchCard — 群聊时间线中 Agent 分工的轻量状态行
  *
  * 对应事件 team_dispatch_requested（设计文档 §5.2.1）。
- * 展示：Host → Member 的指向、任务指令摘要、附件列表，以及收尾状态 chip
- * （已返回 / 失败），收尾信息来自配套的 team_dispatch_completed 事件。
+ * 展示：Member 收到任务、附件列表，以及收尾状态 chip（已返回 / 失败）。
  */
 import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
@@ -13,8 +12,6 @@ export interface TeamDispatchCardProps {
   task: TeamA2ATask
   /** 被调用成员的展示名（解析自 memberAgentId） */
   memberName: string
-  /** 主持人展示名 */
-  hostName: string
   /** dispatch 当前状态 */
   state: 'pending' | 'working' | 'completed' | 'failed' | 'canceled'
   /** 完成后的回复（用于收尾 chip：用量 / 错误） */
@@ -27,7 +24,7 @@ function formatDuration(ms?: number): string {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-export function TeamDispatchCard({ task, memberName, hostName, state, reply }: TeamDispatchCardProps) {
+export function TeamDispatchCard({ task, memberName, state, reply }: TeamDispatchCardProps) {
   const memberAvatar = deriveTeamAvatar(task.memberAgentId, memberName)
   const isDone = state === 'completed'
   const isFailed = state === 'failed' || state === 'canceled'
@@ -38,8 +35,7 @@ export function TeamDispatchCard({ task, memberName, hostName, state, reply }: T
       <div className="team-dispatch-card-head">
         <Icons.Send size={13} className="team-dispatch-card-arrow" />
         <span className="team-dispatch-card-title">
-          {hostName} <span className="team-dispatch-card-arrow-text">→</span> 调用{' '}
-          <span className="team-dispatch-card-member">{memberName}</span>
+          <span className="team-dispatch-card-member">{memberName}</span> 收到任务
         </span>
       </div>
 

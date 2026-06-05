@@ -55,9 +55,16 @@ Team config is stored per session in `sessions.metadata.team` (`enabled / hostAg
 ### How dispatch works
 
 1. The Host turn injects an in-process MCP server `spark_team` exposing the tool `mcp__spark_team__agent_dispatch`, plus a `[Team Roster]` system-prompt section listing available members. The built-in `Task` tool is disabled so all A2A goes through the dispatcher.
-2. When the Host calls `agent_dispatch`, `TeamDispatchService` validates (member enabled, depth, per-turn budget of 5), persists a `team_dispatches` row, and emits `team_dispatch_requested`.
-3. The member runs a one-shot turn with its own provider/model/skills/MCP. Its streaming `assistant_message` events are rebranded to `team_member_message` (tagged with `dispatchId`) so the UI renders them as an indented, color-barred member bubble.
+2. When the Host calls `agent_dispatch`, `TeamDispatchService` validates (member enabled, depth, per-turn budget of 5), persists a `team_dispatches` row, emits `team_dispatch_requested`, and queues member execution per turn. This keeps multiple member calls from racing the same workspace/session files.
+3. The member runs a one-shot turn with its own provider/model/skills/MCP and an isolated Claude SDK `sdkSessionId`. Its streaming `assistant_message` events are rebranded to `team_member_message` (tagged with `dispatchId`) so the UI renders every member as a peer message row with its own square avatar, name, and content.
 4. On completion, a structured `TeamA2AReply` is returned to the Host (and emitted as `team_dispatch_completed`). The Host decides whether to dispatch again or synthesize a final answer.
+
+### Avatars & timeline UI
+
+- Agent avatars are stored in `agents.metadata.avatar`; user avatars are stored in the `general.data.userAvatar` setting.
+- The default avatar source is a DiceBear URL (`https://api.dicebear.com/9.x/{style}/svg?seed={nickname}`), and users can upload a local image that is cropped client-side to a 256px square data URL.
+- Team member output is no longer visually nested under the Host. Dispatch events appear as lightweight status rows, raw `mcp__spark_team__agent_dispatch` tool JSON is hidden from the main timeline, and each `team_member_message` renders as an independent chat row: avatar on the left, agent name above the message body.
+- `team_member_message` deltas and completes are merged by `dispatchId`, so a final complete event cannot duplicate an already-streamed answer.
 
 ### Nesting & limits
 

@@ -57,6 +57,8 @@ const DEFAULT_MAX_DISPATCHES_PER_TURN = 5
 export class TeamDispatchService {
   /** turnId → 该 turn 已发起的 dispatch 次数（循环/预算检测） */
   private readonly dispatchCountByTurn = new Map<string, number>()
+  /** turnId → 同一 turn 内 member 执行队列，避免多个 Claude SDK 进程并发抢同一 cwd/session */
+  private readonly executionQueueByTurn = new Map<string, Promise<unknown>>()
   /** dispatchId → AbortController（取消传播） */
   private readonly controllers = new Map<string, AbortController>()
 
@@ -131,93 +133,98 @@ export class TeamDispatchService {
     this.controllers.set(dispatchId, controller)
     const onParentAbort = () => controller.abort()
     ctx.signal?.addEventListener('abort', onParentAbort)
-    const timeoutMs = Math.min(task.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS)
-    let timedOut = false
-    const timer = setTimeout(() => {
-      timedOut = true
-      controller.abort()
-    }, timeoutMs)
-    const startedAt = Date.now()
+    return await this.enqueueTurnExecution(ctx.turnId, async () => {
+      const timeoutMs = Math.min(task.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS)
+      let timedOut = false
+      const timer = setTimeout(() => {
+        timedOut = true
+        controller.abort()
+      }, timeoutMs)
+      const startedAt = Date.now()
 
-    try {
-      const result = await ctx.executeMember({
-        member,
-        task,
-        dispatchId,
-        signal: controller.signal,
-        memberDepth: ctx.currentDepth + 1,
-      })
-      const durationMs = Date.now() - startedAt
-      const reply: TeamA2AReply = {
-        taskId: task.taskId,
-        state: 'completed',
-        content: result.content,
-        usage: {
+      try {
+        if (controller.signal.aborted) {
+          throw new Error('Dispatch was canceled.')
+        }
+        const result = await ctx.executeMember({
+          member,
+          task,
+          dispatchId,
+          signal: controller.signal,
+          memberDepth: ctx.currentDepth + 1,
+        })
+        const durationMs = Date.now() - startedAt
+        const reply: TeamA2AReply = {
+          taskId: task.taskId,
+          state: 'completed',
+          content: result.content,
+          usage: {
+            ...(result.inputTokens != null ? { inputTokens: result.inputTokens } : {}),
+            ...(result.outputTokens != null ? { outputTokens: result.outputTokens } : {}),
+            durationMs,
+          },
+          ...(result.artifacts != null ? { artifacts: result.artifacts } : {}),
+        }
+        this.dispatches.update(dispatchId, {
+          state: 'completed',
+          replyJson: JSON.stringify(reply),
           ...(result.inputTokens != null ? { inputTokens: result.inputTokens } : {}),
           ...(result.outputTokens != null ? { outputTokens: result.outputTokens } : {}),
           durationMs,
-        },
-        ...(result.artifacts != null ? { artifacts: result.artifacts } : {}),
+          endedAt: new Date().toISOString(),
+        })
+        ctx.emitEvent({
+          ...base(),
+          type: 'team_dispatch_completed',
+          dispatchId,
+          hostAgentId: ctx.hostAgentId,
+          memberAgentId: member.id,
+          reply,
+        })
+        return reply
+      } catch (err) {
+        const durationMs = Date.now() - startedAt
+        const canceled = controller.signal.aborted
+        const code: NonNullable<TeamA2AReply['error']>['code'] = timedOut
+          ? 'timeout'
+          : canceled
+            ? 'denied'
+            : 'internal'
+        const message = timedOut
+          ? `Member timed out after ${timeoutMs}ms.`
+          : canceled
+            ? 'Dispatch was canceled.'
+            : err instanceof Error
+              ? err.message
+              : String(err)
+        const reply: TeamA2AReply = {
+          taskId: task.taskId,
+          state: canceled && !timedOut ? 'canceled' : 'failed',
+          content: '',
+          error: { code, message },
+        }
+        this.dispatches.update(dispatchId, {
+          state: reply.state,
+          replyJson: JSON.stringify(reply),
+          errorMessage: message,
+          durationMs,
+          endedAt: new Date().toISOString(),
+        })
+        ctx.emitEvent({
+          ...base(),
+          type: 'team_dispatch_completed',
+          dispatchId,
+          hostAgentId: ctx.hostAgentId,
+          memberAgentId: member.id,
+          reply,
+        })
+        return reply
+      } finally {
+        clearTimeout(timer)
+        ctx.signal?.removeEventListener('abort', onParentAbort)
+        this.controllers.delete(dispatchId)
       }
-      this.dispatches.update(dispatchId, {
-        state: 'completed',
-        replyJson: JSON.stringify(reply),
-        ...(result.inputTokens != null ? { inputTokens: result.inputTokens } : {}),
-        ...(result.outputTokens != null ? { outputTokens: result.outputTokens } : {}),
-        durationMs,
-        endedAt: new Date().toISOString(),
-      })
-      ctx.emitEvent({
-        ...base(),
-        type: 'team_dispatch_completed',
-        dispatchId,
-        hostAgentId: ctx.hostAgentId,
-        memberAgentId: member.id,
-        reply,
-      })
-      return reply
-    } catch (err) {
-      const durationMs = Date.now() - startedAt
-      const canceled = controller.signal.aborted
-      const code: NonNullable<TeamA2AReply['error']>['code'] = timedOut
-        ? 'timeout'
-        : canceled
-          ? 'denied'
-          : 'internal'
-      const message = timedOut
-        ? `Member timed out after ${timeoutMs}ms.`
-        : canceled
-          ? 'Dispatch was canceled.'
-          : err instanceof Error
-            ? err.message
-            : String(err)
-      const reply: TeamA2AReply = {
-        taskId: task.taskId,
-        state: canceled && !timedOut ? 'canceled' : 'failed',
-        content: '',
-        error: { code, message },
-      }
-      this.dispatches.update(dispatchId, {
-        state: reply.state,
-        replyJson: JSON.stringify(reply),
-        errorMessage: message,
-        durationMs,
-        endedAt: new Date().toISOString(),
-      })
-      ctx.emitEvent({
-        ...base(),
-        type: 'team_dispatch_completed',
-        dispatchId,
-        hostAgentId: ctx.hostAgentId,
-        memberAgentId: member.id,
-        reply,
-      })
-      return reply
-    } finally {
-      clearTimeout(timer)
-      ctx.signal?.removeEventListener('abort', onParentAbort)
-      this.controllers.delete(dispatchId)
-    }
+    })
   }
 
   /** 取消所有进行中的 dispatch（session cancel 时调用） */
@@ -229,5 +236,21 @@ export class TeamDispatchService {
   /** turn 结束后清理预算计数 */
   clearTurn(turnId: string): void {
     this.dispatchCountByTurn.delete(turnId)
+    this.executionQueueByTurn.delete(turnId)
+  }
+
+  private async enqueueTurnExecution<T>(turnId: string, task: () => Promise<T>): Promise<T> {
+    const previous = this.executionQueueByTurn.get(turnId) ?? Promise.resolve()
+    const current = previous.catch(() => undefined).then(task)
+    const marker = current.catch(() => undefined)
+    this.executionQueueByTurn.set(turnId, marker)
+
+    try {
+      return await current
+    } finally {
+      if (this.executionQueueByTurn.get(turnId) === marker) {
+        this.executionQueueByTurn.delete(turnId)
+      }
+    }
   }
 }

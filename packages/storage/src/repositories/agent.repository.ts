@@ -85,6 +85,7 @@ export class AgentRepository extends BaseRepository {
   create(params: CreateAgentParams): AgentItem {
     const id = params.id ?? randomUUID()
     const now = new Date().toISOString()
+    const metadata = withDefaultAvatar(params.metadata, params.name)
     this.raw
       .prepare(
         `INSERT INTO agents (
@@ -111,7 +112,7 @@ export class AgentRepository extends BaseRepository {
         this.toJson(params.mcpServerIds ?? []),
         this.toJson(params.hookConfig ?? {}),
         params.workflowId ?? null,
-        this.toJson(params.metadata ?? {}),
+        this.toJson(metadata),
         now,
         now,
       )
@@ -185,4 +186,30 @@ export class AgentRepository extends BaseRepository {
       updatedAt: row.updated_at,
     }
   }
+}
+
+function withDefaultAvatar(metadata: Record<string, unknown> | undefined, name: string): Record<string, unknown> {
+  const next = { ...(metadata ?? {}) }
+  if (next.avatar == null) {
+    next.avatar = {
+      kind: 'url',
+      url: generateDefaultAvatarUrl(name),
+    }
+  }
+  return next
+}
+
+function generateDefaultAvatarUrl(seed: string): string {
+  const styles = ['adventurer', 'avataaars', 'bottts', 'lorelei', 'micah', 'notionists', 'pixel-art']
+  const normalized = seed.trim() || 'Agent'
+  const style = styles[hashString(normalized) % styles.length]!
+  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(normalized)}`
+}
+
+function hashString(value: string): number {
+  let hash = 5381
+  for (let i = 0; i < value.length; i++) {
+    hash = (hash * 33) ^ value.charCodeAt(i)
+  }
+  return hash >>> 0
 }

@@ -40,6 +40,19 @@ function findBlock<K extends UIBlock['kind']>(
   return undefined
 }
 
+function findBlocks<K extends UIBlock['kind']>(
+  builder: MessageBuilder,
+  kind: K,
+): Array<Extract<UIBlock, { kind: K }>> {
+  const blocks: Array<Extract<UIBlock, { kind: K }>> = []
+  for (const msg of builder.getAllMessages()) {
+    for (const block of msg.blocks) {
+      if (block.kind === kind) blocks.push(block as Extract<UIBlock, { kind: K }>)
+    }
+  }
+  return blocks
+}
+
 describe('MessageBuilder · Team Mode', () => {
   it('team_dispatch_requested creates a team_dispatch block in working state', () => {
     const b = new MessageBuilder()
@@ -104,6 +117,33 @@ describe('MessageBuilder · Team Mode', () => {
     block = findBlock(b, 'team_member_message')
     expect(block?.content).toBe('looks good, ship it')
     expect(block?.isStreaming).toBe(false)
+  })
+
+  it('merges member complete events by dispatchId instead of duplicating the answer', () => {
+    const b = new MessageBuilder()
+    b.processEvent({
+      ...base('team_member_message', 'd1-delta'),
+      type: 'team_member_message',
+      dispatchId: 'd1',
+      memberAgentId: 'reviewer',
+      mode: 'delta',
+      content: 'hello',
+      isFinal: false,
+    } as AgentEvent)
+    b.processEvent({
+      ...base('team_member_message', 'd1-complete'),
+      type: 'team_member_message',
+      dispatchId: 'd1',
+      memberAgentId: 'reviewer',
+      mode: 'complete',
+      content: 'hello',
+      isFinal: true,
+    } as AgentEvent)
+
+    const blocks = findBlocks(b, 'team_member_message')
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0]?.content).toBe('hello')
+    expect(blocks[0]?.isStreaming).toBe(false)
   })
 
   it('team_dispatch_completed updates dispatch block with reply + final state', () => {

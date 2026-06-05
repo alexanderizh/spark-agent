@@ -147,4 +147,42 @@ describe('TeamDispatchService', () => {
     const reply = await service.run(makeTask(), ctx)
     expect(reply.state).toBe('completed')
   })
+
+  it('serializes member executions within the same turn', async () => {
+    const order: string[] = []
+    let releaseFirst: (() => void) | undefined
+    let markFirstStarted: (() => void) | undefined
+    const firstStarted = new Promise<void>((resolve) => {
+      markFirstStarted = resolve
+    })
+    const executeMember = vi.fn(async ({ member }: Parameters<TeamDispatchRunContext<Member>['executeMember']>[0]) => {
+      order.push(`start:${member.id}`)
+      if (member.id === 'reviewer') {
+        markFirstStarted?.()
+        await new Promise<void>((resolve) => {
+          releaseFirst = resolve
+        })
+      }
+      order.push(`end:${member.id}`)
+      return { content: `${member.name} done` }
+    })
+    const { ctx } = makeCtx({ executeMember })
+
+    const first = service.run(makeTask('reviewer'), ctx)
+    await firstStarted
+    const second = service.run(makeTask('rust-coder', { taskId: 't2' }), ctx)
+    await Promise.resolve()
+
+    expect(order).toEqual(['start:reviewer'])
+    releaseFirst?.()
+    await Promise.all([first, second])
+
+    expect(order).toEqual([
+      'start:reviewer',
+      'end:reviewer',
+      'start:rust-coder',
+      'end:rust-coder',
+    ])
+    expect(executeMember).toHaveBeenCalledTimes(2)
+  })
 })

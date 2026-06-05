@@ -610,13 +610,14 @@ export class MessageBuilder {
       }
 
       case 'team_member_message': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
-        // 找到该 dispatch 仍在流式的 member 气泡；delta 追加，complete 收尾
-        let block = [...msg.blocks]
-          .reverse()
-          .find(
-            (b) => b.kind === 'team_member_message' && b.dispatchId === event.dispatchId && b.isStreaming,
-          ) as Extract<UIBlock, { kind: 'team_member_message' }> | undefined
+        const existing = this.findTeamMemberMessageBlock(event.dispatchId)
+        const msg = existing?.msg ?? this.getOrCreateAssistant(event.id, event.timestamp)
+        if (!msg.eventIds.includes(event.id)) {
+          msg.eventIds.push(event.id)
+        }
+        // 找到该 dispatch 已存在的 member 气泡；delta 追加，complete 收尾。
+        // complete 与 delta 通常有不同 event id，必须按 dispatchId 跨消息合并，避免重复显示完整回复。
+        let block = existing?.block
 
         if (event.mode === 'complete') {
           if (block) {
@@ -733,6 +734,18 @@ export class MessageBuilder {
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
     return msg
+  }
+
+  private findTeamMemberMessageBlock(
+    dispatchId: string,
+  ): { msg: UIMessage; block: Extract<UIBlock, { kind: 'team_member_message' }> } | undefined {
+    for (const msg of this.messages) {
+      const block = msg.blocks.find(
+        (b) => b.kind === 'team_member_message' && b.dispatchId === dispatchId,
+      ) as Extract<UIBlock, { kind: 'team_member_message' }> | undefined
+      if (block) return { msg, block }
+    }
+    return undefined
   }
 
   /** 在消息末尾追加文件变更汇总块 */

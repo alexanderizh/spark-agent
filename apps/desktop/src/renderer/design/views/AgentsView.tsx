@@ -5,6 +5,9 @@ import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { AvatarPicker } from '../components/AvatarPicker'
+import { AvatarImage } from '../components/AvatarImage'
+import { generateDefaultAvatarUrl, getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import type {
   ManagedAgent,
   McpServerItem,
@@ -37,6 +40,8 @@ type AgentDraft = {
   ruleIds: string[]
   hookConfig: AgentHookConfig
   workflowId: string
+  metadata: Record<string, unknown>
+  avatar: SparkAvatarConfig
 }
 
 type AgentHookConfig = {
@@ -71,6 +76,8 @@ const EMPTY_DRAFT: AgentDraft = {
     },
   },
   workflowId: '',
+  metadata: {},
+  avatar: { kind: 'url', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=%E6%96%B0%20Agent' },
 }
 
 export function AgentsView() {
@@ -204,8 +211,10 @@ export function AgentsView() {
 
   const createDraft = () => {
     const provider = providers[0]
+    const defaultName = EMPTY_DRAFT.name
     const next: AgentDraft = {
       ...EMPTY_DRAFT,
+      avatar: getAgentAvatarConfig(undefined, '', defaultName),
       providerProfileId: provider?.id ?? '',
       modelId: provider?.defaultModel ?? provider?.modelIds[0] ?? '',
     }
@@ -297,11 +306,12 @@ export function AgentsView() {
             {agents.map((agent) => {
               const wf = workflows.find((w) => w.id === agent.workflowId)
               const provider = providers.find((p) => p.id === agent.providerProfileId)
+              const avatar = getAgentAvatarConfig(agent.metadata, agent.id, agent.name)
               return (
                 <button key={agent.id} className="agents-card" onClick={() => openAgent(agent)}>
                   <span className="agents-card-head">
-                    <span className="agents-card-icon">
-                      {agent.builtIn ? <Icons.Code size={18} /> : <Icons.Bot size={18} />}
+                    <span className="agents-card-avatar">
+                      <AvatarImage src={resolveAvatarSrc(avatar)} seed={agent.id} name={agent.name} alt={agent.name} />
                     </span>
                     <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
                       {agent.enabled ? '启用' : '停用'}
@@ -369,6 +379,13 @@ export function AgentsView() {
       <div className="agents-detail-grid">
         <section className="agent-editor-main">
           <div className="agent-editor-head">
+            <AvatarPicker
+              value={draft.avatar}
+              defaultSeed={draft.id || draft.name || 'agent'}
+              title="Agent 头像"
+              description="用于团队模式消息流和成员列表。"
+              onChange={(avatar) => updateDraft('avatar', avatar)}
+            />
             <div>
               <div className="agent-editor-subtitle">
                 {draft.builtIn ? '内置 Agent 可调整提示词和运行配置，但不可删除。' : '自定义 Agent 会出现在对话输入栏的 Agent 选择器中。'}
@@ -508,11 +525,13 @@ export function AgentsView() {
 }
 
 function Field({ label, wide, children }: { label: string; wide?: boolean; children: ReactNode }) {
+  // 不用 <label> 包 children：label 元素会拦截内部 click，
+  // 在一些 select / popover / date-picker 控件里会导致下拉/弹窗"点不出来"。
   return (
-    <label className={`agent-field ${wide ? 'wide' : ''}`}>
-      <span>{label}</span>
+    <div className={`agent-field ${wide ? 'wide' : ''}`}>
+      <span className="agent-field-label">{label}</span>
       {children}
-    </label>
+    </div>
   )
 }
 
@@ -602,6 +621,8 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
     ruleIds: agent.ruleIds,
     hookConfig: normalizeAgentHookConfig(agent.hookConfig),
     workflowId: agent.workflowId ?? '',
+    metadata: agent.metadata,
+    avatar: getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
   }
 }
 
@@ -622,7 +643,17 @@ function draftToPayload(draft: AgentDraft) {
     ruleIds: draft.ruleIds,
     hookConfig: draft.hookConfig,
     workflowId: draft.workflowId || null,
+    metadata: {
+      ...draft.metadata,
+      avatar: normalizeDraftAvatar(draft),
+    },
   }
+}
+
+function normalizeDraftAvatar(draft: AgentDraft): SparkAvatarConfig {
+  const config = draft.avatar
+  if (config.kind === 'url' || config.kind === 'upload') return config
+  return { kind: 'url', url: generateDefaultAvatarUrl(config.seed || draft.name, config.style) }
 }
 
 function HookEditor({ value, onChange }: { value: AgentHookConfig; onChange: (v: AgentHookConfig) => void }) {

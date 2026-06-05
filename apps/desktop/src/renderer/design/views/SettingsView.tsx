@@ -8,6 +8,8 @@ import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { AvatarPicker } from '../components/AvatarPicker'
+import { createDefaultAvatar, getUserAvatarConfig, type SparkAvatarConfig } from '../avatar'
 import { useApp, PRIMARIES } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
@@ -74,6 +76,7 @@ function localStorageKeyToCategory(key: string): string {
 }
 
 type GeneralSettings = {
+  userAvatar?: SparkAvatarConfig
   language: string
   startupBehavior: string
   defaultWorkspace: string
@@ -137,6 +140,7 @@ type RuntimePermissionModeOption = {
 }
 
 const DEFAULT_GENERAL: GeneralSettings = {
+  userAvatar: createDefaultAvatar('User'),
   language: 'zh-CN',
   startupBehavior: 'last',
   defaultWorkspace: '',
@@ -368,6 +372,7 @@ export function SettingsView() {
 function GeneralSection() {
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
+  const userAvatar = getUserAvatarConfig(s.userAvatar)
 
   const handleBrowseWorkspace = async () => {
     try {
@@ -386,6 +391,17 @@ function GeneralSection() {
       <div className="lede">应用启动、语言、默认行为。</div>
 
       <div className="form-grid">
+        <label>
+          用户头像<span className="sub">显示在会话区的用户消息旁</span>
+        </label>
+        <AvatarPicker
+          value={userAvatar}
+          defaultSeed="spark-user"
+          title="我的头像"
+          description="默认使用 Dicebear，也可以上传并裁剪本地图片。"
+          onChange={(avatar) => set({ userAvatar: avatar })}
+        />
+
         <label>
           语言<span className="sub">界面文案语言</span>
         </label>

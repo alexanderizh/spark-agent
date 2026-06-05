@@ -1708,6 +1708,9 @@ export class SessionService {
 
     const memberSystemPrompt = buildManagedAgentSystemPrompt(member, null)
     const userMessage = buildMemberUserMessage(task)
+    const memberSdkSessionId = [sessionId, 'team', turnId, dispatchId, member.id]
+      .map((part) => part.replace(/[^A-Za-z0-9._:-]/g, '-'))
+      .join(':')
 
     // Member 自身的 MCP 工具
     const memberMcpServers = this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
@@ -1744,6 +1747,7 @@ export class SessionService {
       ...(nestedTeamServer != null ? { allowedTools: ['mcp__spark_team__agent_dispatch'] } : {}),
       disallowedTools: ['Task'],
       enableCheckpoints: false,
+      sdkSessionId: memberSdkSessionId,
       continueSession: false,
       ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
       ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),

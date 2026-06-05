@@ -5,7 +5,7 @@
  * 并提供跳转到 AgentsView 编辑该 Agent 的入口。纯受控组件（open + onClose）。
  */
 import { Icons } from '../Icons'
-import { deriveTeamAvatar } from '../teamAvatar'
+import { AvatarImage } from './AvatarImage'
 
 export interface TeamMemberDrawerInfo {
   agentId: string
@@ -15,6 +15,7 @@ export interface TeamMemberDrawerInfo {
   modelId?: string | null
   skillCount: number
   mcpCount: number
+  avatarSrc: string
 }
 
 export interface TeamMemberDrawerProps {
@@ -25,7 +26,6 @@ export interface TeamMemberDrawerProps {
 }
 
 export function TeamMemberDrawer({ member, onClose, onEditAgent }: TeamMemberDrawerProps) {
-  const avatar = deriveTeamAvatar(member.agentId, member.name)
   return (
     <div className="team-member-drawer-backdrop" onClick={onClose}>
       <aside
@@ -35,8 +35,8 @@ export function TeamMemberDrawer({ member, onClose, onEditAgent }: TeamMemberDra
         onClick={(e) => e.stopPropagation()}
       >
         <header className="team-member-drawer-head">
-          <span className="team-member-drawer-avatar" style={{ backgroundColor: avatar.color }}>
-            {avatar.text}
+          <span className="team-member-drawer-avatar">
+            <AvatarImage src={member.avatarSrc} seed={member.agentId} name={member.name} />
           </span>
           <span className="team-member-drawer-title">{member.name}</span>
           <button type="button" className="team-member-drawer-close" onClick={onClose} aria-label="关闭">
