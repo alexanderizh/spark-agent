@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'fs'
 import {
   createDefaultAvatar,
+  generateDefaultAvatarUrl,
   getAgentAvatarConfig,
   getUserAvatarConfig,
   normalizeAvatarConfig,
@@ -29,5 +31,19 @@ describe('avatar config', () => {
     const avatar = createDefaultAvatar('Agent One')
 
     expect(resolveAvatarSrc(avatar)).toContain('seed=Agent%20One')
+  })
+
+  it('generates a fully composed DiceBear URL from the agent name', () => {
+    const url = generateDefaultAvatarUrl('编码 Agent')
+
+    expect(url).toMatch(/^https:\/\/api\.dicebear\.com\/9\.x\/[^/]+\/svg\?seed=/)
+    expect(url).toContain('seed=%E7%BC%96%E7%A0%81%20Agent')
+  })
+
+  it('allows DiceBear default avatars through the renderer CSP', () => {
+    const html = readFileSync(new URL('../index.html', import.meta.url), 'utf-8')
+
+    expect(html).toContain('img-src')
+    expect(html).toContain('https://api.dicebear.com')
   })
 })

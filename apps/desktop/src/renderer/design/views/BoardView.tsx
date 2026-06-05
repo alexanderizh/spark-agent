@@ -18,7 +18,7 @@ import {
   useState,
 } from 'react'
 import type { DragEvent } from 'react'
-import { Badge, Button, Input, Select, Space } from '@arco-design/web-react'
+import { Badge, Button, DatePicker, Input, Select, Space } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
@@ -187,10 +187,14 @@ function QuickCreateModal({
             <div className="bqc-field bqc-field-sm">
               <label>优先级</label>
               <SparkSelect value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="bqc-select">
-                <option value="low">⚪ 低</option>
-                <option value="medium">🔵 中</option>
-                <option value="high">🟡 高</option>
-                <option value="urgent">🔴 紧急</option>
+                {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
+                  const cfg = PRIORITY_CONFIG[p]
+                  return (
+                    <option key={p} value={p}>
+                      <span className="bqc-priority-tag" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                    </option>
+                  )
+                })}
               </SparkSelect>
             </div>
           </div>
@@ -201,7 +205,13 @@ function QuickCreateModal({
             </div>
             <div className="bqc-field bqc-field-sm">
               <label>截止日期</label>
-              <SparkInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bqc-input" />
+              <DatePicker
+                {...(dueDate ? { value: dueDate } : {})}
+                onChange={(dateString) => setDueDate(dateString ?? '')}
+                placeholder="年/月/日"
+                style={{ width: '100%' }}
+                allowClear
+              />
             </div>
           </div>
           <div className="bqc-field">
@@ -312,10 +322,14 @@ function DetailPanel({
             <div className="bdp-field">
               <label className="bdp-label">优先级</label>
               <SparkSelect value={priority} onChange={(e) => markDirty(e.target.value as Priority, setPriority)} className="bdp-select">
-                <option value="low">⚪ 低</option>
-                <option value="medium">🔵 中</option>
-                <option value="high">🟡 高</option>
-                <option value="urgent">🔴 紧急</option>
+                {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
+                  const cfg = PRIORITY_CONFIG[p]
+                  return (
+                    <option key={p} value={p}>
+                      <span className="bdp-priority-tag" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
+                    </option>
+                  )
+                })}
               </SparkSelect>
             </div>
           </div>
@@ -327,7 +341,13 @@ function DetailPanel({
             </div>
             <div className="bdp-field">
               <label className="bdp-label">截止日期</label>
-              <SparkInput type="date" value={dueDate} onChange={(e) => markDirty(e.target.value, setDueDate)} className="bdp-input" />
+              <DatePicker
+                {...(dueDate ? { value: dueDate } : {})}
+                onChange={(dateString) => markDirty(dateString ?? '', setDueDate)}
+                placeholder="年/月/日"
+                style={{ width: '100%' }}
+                allowClear
+              />
             </div>
           </div>
 

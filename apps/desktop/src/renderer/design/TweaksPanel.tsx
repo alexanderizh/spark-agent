@@ -41,12 +41,7 @@ const PANEL_CSS = `
   .twk-sect:first-child{padding-top:0}
   .twk-field{width:100%}
   .twk-field.spark-select-wrap{height:26px;min-width:0}
-  .twk-field .spark-select-arco.arco-select{box-sizing:border-box;width:100%;min-width:0;height:26px!important;min-height:26px!important;
-    border:.5px solid rgba(0,0,0,.1)!important;border-radius:7px!important;
-    background:rgba(255,255,255,.6)!important;color:inherit!important;font:inherit!important;outline:none}
-  .twk-field .spark-select-arco .arco-select-view{padding:0 24px 0 8px!important}
-  .twk-field .spark-select-arco .arco-select-view-value{font:inherit!important;color:inherit!important}
-  .twk-field .spark-select-arco .arco-select-view-suffix .arco-select-view-icon{right:6px;width:10px;height:10px}
+  /* 不再为 .twk-field 下的 SparkSelect 重画外观 —— 完全交给 Arco Design 默认下拉弹窗 */
   .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
     background:rgba(0,0,0,.06);user-select:none}
   .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;

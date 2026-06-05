@@ -77,7 +77,7 @@ const EMPTY_DRAFT: AgentDraft = {
   },
   workflowId: '',
   metadata: {},
-  avatar: { kind: 'url', url: 'https://api.dicebear.com/9.x/bottts/svg?seed=%E6%96%B0%20Agent' },
+  avatar: { kind: 'url', url: generateDefaultAvatarUrl('新 Agent') },
 }
 
 export function AgentsView() {
@@ -381,7 +381,7 @@ export function AgentsView() {
           <div className="agent-editor-head">
             <AvatarPicker
               value={draft.avatar}
-              defaultSeed={draft.id || draft.name || 'agent'}
+              defaultSeed={draft.name || 'agent'}
               title="Agent 头像"
               description="用于团队模式消息流和成员列表。"
               onChange={(avatar) => updateDraft('avatar', avatar)}

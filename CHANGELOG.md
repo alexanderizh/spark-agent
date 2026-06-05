@@ -6,6 +6,13 @@
 
 ## [Unreleased] - Skill 商店开发中
 
+### UI 统一 — 全量下拉弹窗迁移到 Arco Design（2026-06-05）
+
+- **`SparkSelect` 重写**：去掉 `bordered={false}` + 重画外观的做法，改为直接复用 Arco `Select` 自带的下拉弹窗，CSS 只做轻量主题贴合（颜色/圆角/边框/箭头），视觉与 Arco 默认一致。
+- **修复无效选择器**：`styles.css` 中 `.arco-select-view-icon` 实际在 Arco v2.66 已重命名为 `.arco-select-arrow-icon`，旧规则 0 命中；改用真实类名覆盖箭头 / 后缀图标。
+- **清理原生 `<select>`**：`TeamInspectorSection.tsx` 「最大深度」原本是裸 `<select>`，已替换为 `SparkSelect`；同步更新 `views.css` 里的 `.team-roster-advanced-row select` 规则以适配新结构。
+- **规则写入**：`AGENTS.md` 新增「Arco Design 优先」强制规则，明确禁止原生 `<select>`、自写 popup、自写表单拼接；所有下拉必须走 `SparkSelect`。
+
 ### 新功能 — 团队模式（Team Agent Mode / A2A，2026-06-05）
 
 - **团队模式**: 底部 Agent 选择器新增「团队模式」，主持 Agent(Host) 可在对话中通过 `agent_team_dispatch` 工具动态调用被授权的成员 Agent(Member)，以类 IM 群聊形式展示多 Agent 协作。仅在显式启用时进入新分支，旧 Session 行为零回归。

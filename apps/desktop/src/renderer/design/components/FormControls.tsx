@@ -140,15 +140,15 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
    保持 <option> 子元素 API；不允许再用原生 <select>。
    ============================================================ */
 
-function extractOptions(children: ReactNode): { value: string; label: string }[] {
-  const result: { value: string; label: string }[] = []
+function extractOptions(children: ReactNode): { value: string; label: ReactNode }[] {
+  const result: { value: string; label: ReactNode }[] = []
   Children.forEach(children, (child) => {
     if (!isValidElement(child)) return
     const props = child.props as { value?: string; children?: ReactNode }
     const value = props.value ?? ''
-    const label = typeof props.children === 'string'
-      ? props.children
-      : String(props.children ?? value)
+    // 保留原始 ReactNode 作为 label（不再强制 String()），调用方可以传 <span> 自定义样式
+    // （如：带背景色的 tag、icon + 文字组合等）。dropDown 中 Arco 会原样渲染这些节点。
+    const label = props.children ?? value
     result.push({ value, label })
   })
   return result
