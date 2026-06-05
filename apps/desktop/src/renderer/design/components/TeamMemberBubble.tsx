@@ -37,7 +37,8 @@ export function TeamMemberBubble({ memberAgentId, memberName, avatarSrc, childre
         <div className="team-member-bubble-head">
           <span className="team-member-name">{memberName}</span>
         </div>
-        <div className="team-member-bubble-body">{children}</div>
+        {/* 复用 msg-content 的 markdown 排版（段落/代码/列表），与主 agent 输出一致 */}
+        <div className="team-member-bubble-body msg-content">{children}</div>
       </div>
     </div>
   )

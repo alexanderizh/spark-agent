@@ -1168,7 +1168,8 @@ body.sidebar-resizing {
   overflow: hidden;
   flex-shrink: 0;
   background: var(--bg-soft);
-  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-xs);
+  /* 去除内描边，仅保留轻阴影以保持卡片层次 */
+  box-shadow: var(--shadow-xs);
 }
 .msg-agent-main {
   min-width: 0;
@@ -12289,6 +12290,49 @@ body.inspector-resizing {
   gap: 6px;
   font-size: var(--font-xs);
   color: var(--text-faint);
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+.team-dispatch-card-head:disabled {
+  cursor: default;
+}
+.team-dispatch-card-head:hover:not(:disabled) {
+  color: var(--text-muted);
+}
+.team-dispatch-card-chevron {
+  margin-left: auto;
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+/* 折叠时把任务 instruction 预览塞到 head 行，超出省略号 */
+.team-dispatch-card-task-preview {
+  font-weight: 400;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60ch;
+}
+/* 折叠态把 head 与 status chip 放同一行，更紧凑 */
+.team-dispatch-card.is-collapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 4px 0;
+}
+.team-dispatch-card.is-collapsed .team-dispatch-card-head {
+  width: auto;
+  flex: 1;
+  min-width: 0;
+}
+.team-dispatch-card.is-collapsed .team-dispatch-card-status {
+  margin-top: 0;
+  flex-shrink: 0;
 }
 .team-dispatch-card-arrow {
   color: var(--member-accent, var(--primary));
@@ -12382,7 +12426,8 @@ body.inspector-resizing {
   overflow: hidden;
   padding: 0;
   background: var(--bg-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--member-accent, var(--border)) 32%, var(--border)), var(--shadow-xs);
+  /* 去除内描边，仅保留轻阴影；成员配色已通过头像背景/fallback 体现 */
+  box-shadow: var(--shadow-xs);
   border: none;
   cursor: pointer;
 }
@@ -12391,8 +12436,11 @@ body.inspector-resizing {
   font-weight: 650;
   color: var(--text-strong);
 }
+/* member 输出与主 agent 保持一致的字号 / 行高 / markdown 视觉规则
+   （等同 .msg-content：var(--font-base) + 1.65 line-height） */
 .team-member-bubble-body {
-  font-size: var(--font-sm);
+  font-size: var(--font-base);
+  line-height: 1.65;
   color: var(--text);
   max-width: 100%;
 }
@@ -12442,7 +12490,7 @@ body.inspector-resizing {
   align-items: center;
   justify-content: center;
   background: var(--bg-soft);
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--member-accent, var(--border)) 28%, var(--border));
+  /* 去除内描边，与会话气泡头像保持一致 */
   flex-shrink: 0;
 }
 .team-roster-info {
@@ -12630,7 +12678,8 @@ body.inspector-resizing {
   align-items: center;
   justify-content: center;
   background: var(--bg-soft);
-  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-xs);
+  /* 去除内描边，与会话气泡头像保持一致 */
+  box-shadow: var(--shadow-xs);
   flex-shrink: 0;
 }
 .team-member-drawer-title {

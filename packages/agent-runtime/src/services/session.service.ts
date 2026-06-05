@@ -2828,9 +2828,14 @@ export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], tea
   lines.push('')
   lines.push('Rules:')
   lines.push('- Call dispatch with a clear instruction and the minimum context the member needs (paste code/snippets into `attachments` instead of relying on shared memory).')
-  lines.push('- After receiving the member reply, decide whether to: (a) call another member, (b) refine and call the same member again, or (c) finish with a synthesized answer for the user.')
   lines.push(`- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`)
   lines.push('- Do NOT call dispatch if you can answer the user directly.')
+  lines.push('')
+  lines.push('IMPORTANT — avoid duplicating member output:')
+  lines.push('- Member replies are streamed directly to the user in the chat UI. The user already sees them in full.')
+  lines.push('- After dispatch(es) return, do NOT repeat, paraphrase, restate, summarize, or list out the member replies.')
+  lines.push('- Default behavior: stay silent and end the turn. The dispatch cards plus member bubbles ARE the answer.')
+  lines.push('- Only speak again if (a) the user explicitly asked you to compare/synthesize multiple members, or (b) you need to ask the user a follow-up question, or (c) a dispatch failed and you must report what is missing. In those cases, write only the synthesis / question / failure note — never the members\' content.')
   return lines.join('\n')
 }
 
