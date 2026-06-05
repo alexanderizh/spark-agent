@@ -12437,12 +12437,28 @@ body.inspector-resizing {
   color: var(--text-strong);
 }
 /* member 输出与主 agent 保持一致的字号 / 行高 / markdown 视觉规则
-   （等同 .msg-content：var(--font-base) + 1.65 line-height） */
+   （等同 .msg-content：var(--font-base) + 1.65 line-height），
+   并以浅底气泡区分于 Host 主流输出。 */
 .team-member-bubble-body {
   font-size: var(--font-base);
   line-height: 1.65;
   color: var(--text);
   max-width: 100%;
+  /* 浅底气泡：var(--bg-soft) 比 panel 微深一档，dark/light 主题都自适配；
+     非对称圆角与用户气泡（右下小圆角）镜像呼应，左下小圆角指向头像。 */
+  background: var(--bg-soft);
+  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
+  border-radius: var(--r-lg) var(--r-lg) var(--r-lg) var(--r-xs);
+  padding: 10px 14px;
+  /* 左侧 2px 色条作成员身份标识（替代之前去掉的头像描边） */
+  box-shadow: inset 2px 0 0 var(--member-accent, var(--primary));
+}
+/* 气泡内的首/尾段落不需要额外外边距，避免双倍间距 */
+.team-member-bubble-body > :first-child {
+  margin-top: 0;
+}
+.team-member-bubble-body > :last-child {
+  margin-bottom: 0;
 }
 .team-member-message-main {
   min-width: 0;
