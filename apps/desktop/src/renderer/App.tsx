@@ -24,7 +24,6 @@ import ProvidersView from './design/views/ProvidersView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
-import { GlobalAssistant } from './design/components/GlobalAssistant'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
 import sparkLogo from './assets/spark-logo.png'
@@ -556,8 +555,6 @@ function Shell() {
         </div>
         {t.view === 'chat' && <BrowserPanelView />}
       </div>
-
-      <GlobalAssistant />
 
       {/* Overlays */}
       {t.showPalette && (
