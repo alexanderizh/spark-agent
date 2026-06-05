@@ -9,6 +9,8 @@ import {
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
+import { AvatarImage } from './design/components/AvatarImage'
+import { getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
 import type { PermissionApprovalRequest, SessionId, UserQuestionPrompt } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 
@@ -43,6 +45,8 @@ import {
 
 const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
 const isPlatformWin32 = typeof window !== 'undefined' && window.spark.platform === 'win32'
+const SETTINGS_GENERAL_KEY = 'spark-settings-general'
+const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 
 type UserQuestionRequest = {
   questionId: string
@@ -60,6 +64,52 @@ function SparkLogoMark() {
       style={{ width: '100%', height: '100%', display: 'block' }}
     />
   )
+}
+
+function useSidebarUserAvatarSrc(): string {
+  const readLocal = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
+      if (raw == null) return resolveAvatarSrc(getUserAvatarConfig(null))
+      return resolveAvatarSrc(getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar))
+    } catch {
+      return resolveAvatarSrc(getUserAvatarConfig(null))
+    }
+  }, [])
+  const [src, setSrc] = useState(readLocal)
+
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('settings:get', { category: 'general', key: 'data' })
+      .then((res) => {
+        if (cancelled) return
+        const value = res.value != null && typeof res.value === 'object'
+          ? (res.value as Record<string, unknown>).userAvatar
+          : null
+        setSrc(resolveAvatarSrc(getUserAvatarConfig(value)))
+      })
+      .catch(() => {})
+
+    const refresh = () => setSrc(readLocal())
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+    const handleSettingsUpdated = (event: Event) => {
+      const { detail } = event as CustomEvent<{ key?: string }>
+      if (detail?.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    return () => {
+      cancelled = true
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    }
+  }, [readLocal])
+
+  return src
 }
 
 /* ---------- WindowControls — custom title bar buttons (Windows/Linux only) ---------- */
@@ -123,11 +173,8 @@ function WindowControls() {
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [themeValue, setThemeValue] = useState(t.theme)
+  const userAvatarSrc = useSidebarUserAvatarSrc()
   const isResizing = useRef(false)
-
-  // Sync local state if theme changes externally
-  useEffect(() => { setThemeValue(t.theme) }, [t.theme])
 
   const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
     const isActive = t.view === viewId
@@ -239,7 +286,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button className="sidebar-user" style={{ cursor: 'pointer' }}>
-              <div className="avatar">U</div>
+              <div className="avatar sidebar-user-avatar">
+                <AvatarImage
+                  src={userAvatarSrc}
+                  seed="spark-user"
+                  name="User"
+                  alt="用户头像"
+                  className="sidebar-user-avatar-image"
+                />
+              </div>
               <div className="sidebar-user-info">
                 <div className="name">User</div>
                 <div className="meta">Local · Desktop</div>
@@ -254,9 +309,8 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent className="user-menu user-menu-theme-sub flex">
                 <DropdownMenuRadioGroup
-                  value={themeValue}
+                  value={t.theme}
                   onValueChange={(v) => {
-                    setThemeValue(v as typeof t.theme)
                     setTweak('theme', v as typeof t.theme)
                   }}
                 >

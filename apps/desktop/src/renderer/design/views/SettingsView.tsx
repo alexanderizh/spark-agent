@@ -64,6 +64,7 @@ function deferEffect(task: () => void | Promise<void>): () => void {
 
 /* ─── Settings persistence keys ─── */
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
+const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
 const SETTINGS_TELEMETRY_KEY = 'spark-settings-telemetry'
 const SETTINGS_UPDATES_KEY = 'spark-settings-updates'
@@ -265,6 +266,7 @@ function readStoredJson<T>(key: string, fallback: T): T {
 
 function writeStoredJson<T>(key: string, value: T) {
   window.localStorage.setItem(key, JSON.stringify(value))
+  window.dispatchEvent(new CustomEvent(SETTINGS_UPDATED_EVENT, { detail: { key } }))
 }
 
 export function SettingsView() {
@@ -388,7 +390,7 @@ function GeneralSection() {
 
       <div className="form-grid">
         <label>
-          用户头像<span className="sub">显示在会话区的用户消息旁</span>
+          用户头像<span className="sub">显示在会话区和侧边栏用户区域</span>
         </label>
         <AvatarPicker
           value={userAvatar}

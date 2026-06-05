@@ -481,6 +481,15 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   font-weight: 600; font-size: 11px;
   flex-shrink: 0;
 }
+.sidebar-user-avatar { overflow: hidden; padding: 0; }
+.sidebar-user-avatar-image,
+.sidebar-user-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  display: block;
+  object-fit: cover;
+}
 .sidebar-user-info { flex: 1; min-width: 0; }
 .sidebar-user-info .name { font-size: var(--font-sm); font-weight: 600; color: var(--text); }
 .sidebar-user-info .meta { font-size: 10px; color: var(--text-muted); }
