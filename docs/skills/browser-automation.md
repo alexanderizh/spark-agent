@@ -36,7 +36,7 @@ Spark Agent 内置注册了一个 **managed MCP server**（名称固定为 `play
 2. 点 **下载浏览器** —— 等待 `playwright install chromium` 完成（约 150 MB）
 
 > 两个步骤只做一次。状态徽章会变绿。
-> 如果状态显示“使用系统浏览器”，说明当前只找到了本机 Chrome/Edge 回退，不代表安装包内已经包含 Chromium；请重新点 **下载浏览器** 或使用 `pnpm --filter @spark/desktop-dev download-browser`。
+> 如果状态显示“使用系统浏览器”，说明当前只找到了本机 Chrome/Edge 回退，不代表安装包内已经包含 Chromium；请重新点 **下载浏览器** 或在打包前手动运行 `pnpm --filter @spark/desktop download-browser`。
 > 下载过程中设置页会显示当前阶段、百分比（当 Playwright 输出提供时）和最近一行安装日志。
 
 ### 2. 启用 MCP
@@ -119,7 +119,7 @@ Agent 会按以下步骤操作：
 |------|------|
 | **MCP 工具未在 Agent 工具列表出现** | Settings → 浏览器自动化：确认"MCP 已启用"按钮亮起；重启会话 |
 | **`browser_navigate` 报错"Failed to launch browser"** | 没下载浏览器。点"下载浏览器" |
-| **日志提示 `No chromium found, falling back to system chrome`** | 安装包内未检测到可用 Chromium。打包前确认 `apps/desktop/browsers/` 内有 Chromium 可执行文件；`build:*` 和 `pack` 脚本会先运行 `download-browser` 并把目录打进 `resources/browsers/` |
+| **日志提示 `No chromium found, falling back to system chrome`** | 安装包内未检测到可用 Chromium。如果希望随包内置浏览器，请在打包前手动运行 `pnpm --filter @spark/desktop download-browser`，确认 `apps/desktop/browsers/` 内有 Chromium 可执行文件后再执行 `build:*` 或 `pack` |
 | **Agent 调用 `browser_*` 卡住不动** | 可能是前一个会话没 `browser_close`。重启应用 |
 | **嵌入式窗口里网页加载不出** | 检查 CDP 端口 9223 是否被其他进程占用：`netstat -ano \| findstr 9223` |
 | **playwright install 失败** | 国内网络可设镜像：`set PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright/` 后重试 |

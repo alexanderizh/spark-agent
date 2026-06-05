@@ -1022,6 +1022,7 @@ export function ProviderEditPanel({
               </label>
               <div className="provider-form-select-row">
                 <SparkSelect
+                  style={{width: 200}}
                   value={form.presetId}
                   disabled={!!profileId}
                   onChange={(e) => {

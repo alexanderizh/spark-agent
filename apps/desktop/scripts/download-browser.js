@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * download-browser.js — Pre-download chromium into apps/desktop/browsers/ for
- * bundled use. Invoked by `pnpm download-browser` (postinstall + pre-build).
+ * bundled use. Invoked manually by `pnpm download-browser` when a packaged app
+ * should include Chromium.
  *
  * Why a local path?
  *   - Bundles chromium with the app via electron-builder `extraResources`

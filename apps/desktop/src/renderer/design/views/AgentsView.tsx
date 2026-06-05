@@ -4,7 +4,7 @@ import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
-import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { SparkCheckbox, SparkInput, SparkMultiSelect, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { generateDefaultAvatarUrl, getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
@@ -456,10 +456,11 @@ export function AgentsView() {
             count={draft.skillIds.length}
             description="勾选后，该 Agent 在运行时会主动加载这些 Skill 作为可用能力。"
           >
-            <PickList
+            <SkillMultiSelect
               items={skills.map((s) => ({ id: s.id, label: s.name }))}
               selected={draft.skillIds}
-              disabledIds={draft.disabledSkillIds}
+              excludedIds={draft.disabledSkillIds}
+              placeholder="选择要启用的 Skills"
               onChange={(ids) => {
                 const idSet = new Set(ids)
                 setDraft((prev) => ({
@@ -476,11 +477,11 @@ export function AgentsView() {
             count={draft.disabledSkillIds.length}
             description="勾选后，即使这些 Skill 来自全局/项目默认配置，也会被该 Agent 强制屏蔽。"
           >
-            <PickList
-              tone="danger"
+            <SkillMultiSelect
               items={skills.map((s) => ({ id: s.id, label: s.name }))}
               selected={draft.disabledSkillIds}
-              disabledIds={draft.skillIds}
+              excludedIds={draft.skillIds}
+              placeholder="选择要禁用的 Skills"
               onChange={(ids) => {
                 const idSet = new Set(ids)
                 setDraft((prev) => ({
@@ -555,6 +556,42 @@ function ConfigSection({
       {description != null && <p className="agent-config-desc">{description}</p>}
       {children}
     </section>
+  )
+}
+
+function SkillMultiSelect({
+  items,
+  selected,
+  excludedIds,
+  placeholder,
+  onChange,
+}: {
+  items: Array<{ id: string; label: string }>
+  selected: string[]
+  excludedIds?: string[]
+  placeholder: string
+  onChange: (ids: string[]) => void
+}) {
+  const excludedSet = useMemo(() => new Set(excludedIds ?? []), [excludedIds])
+  const availableItems = useMemo(
+    () => items.filter((item) => selected.includes(item.id) || !excludedSet.has(item.id)),
+    [excludedSet, items, selected],
+  )
+  if (items.length === 0) return <div className="agents-empty-mini">暂无可选 Skills</div>
+
+  return (
+    <SparkMultiSelect
+      className="agent-skills-select full"
+      value={selected}
+      placeholder={placeholder}
+      allowClear
+      showSearch
+      onChange={(event) => onChange(event.target.value)}
+    >
+      {availableItems.map((item) => (
+        <option key={item.id} value={item.id}>{item.label}</option>
+      ))}
+    </SparkMultiSelect>
   )
 }
 

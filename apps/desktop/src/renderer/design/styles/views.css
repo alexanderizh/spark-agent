@@ -10533,6 +10533,17 @@ body.inspector-resizing {
 .agent-pick-item.blocked:hover {
   background: var(--panel);
 }
+.agent-skills-select,
+.agent-skills-select .spark-select-arco.arco-select {
+  width: 100%;
+}
+.agent-skills-select .arco-select-view {
+  min-height: 32px;
+}
+.agent-skills-select .arco-select-view-multiple {
+  max-height: 88px;
+  overflow-y: auto;
+}
 /* ConfigSection 下方的语义说明文字 */
 .agent-config-desc {
   margin: 0;

@@ -34,7 +34,7 @@ export interface VendorMeta {
 
 export const VENDOR_CATALOG: VendorMeta[] = [
   /* ─── 现有 13 个 ─── */
-  { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-4.1 / o4 / DALL-E',  logoPath: 'providers/openai.svg' },
+  // { id: 'openai',           name: 'OpenAI',          emoji: 'OA',  color: '#10a37f', desc: 'GPT-4.1 / o4 / DALL-E',  logoPath: 'providers/openai.svg' },
   { id: 'anthropic',        name: 'Anthropic',       emoji: 'A',   color: '#d4a574', desc: 'Claude Sonnet 4 / Opus 4 / Haiku', logoPath: 'providers/anthropic.svg' },
   { id: 'google-gemini',    name: 'Google Gemini',   emoji: 'G',   color: '#4285f4', desc: 'Gemini 2.5 Pro / Flash', logoPath: 'providers/google-gemini.svg' },
   { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合', logoPath: 'providers/tencent-coding-plan.png' },
@@ -68,101 +68,101 @@ export const VENDOR_CATALOG: VendorMeta[] = [
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
   /* ─── OpenAI 官方 ─── */
-  {
-    id: 'openai-official',
-    vendorId: 'openai',
-    name: 'OpenAI',
-    provider: 'openai',
-    apiEndpoint: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-4.1',
-    modelIds: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o4-mini', 'o3', 'gpt-4o'],
-    sourceUrls: [
-      'https://platform.openai.com/docs/models',
-      'https://platform.openai.com/docs/api-reference/chat',
-    ],
-  },
-  {
-    id: 'openai-images',
-    vendorId: 'openai',
-    name: 'OpenAI Images',
-    provider: 'openai',
-    apiEndpoint: 'https://api.openai.com/v1',
-    defaultModel: 'gpt-image-1',
-    modelIds: ['gpt-image-1', 'dall-e-3'],
-    modelType: 'image',
-    imageProvider: 'openai',
-    imageApiType: 'sync',
-    sourceUrls: [
-      'https://platform.openai.com/docs/guides/image-generation',
-      'https://platform.openai.com/docs/api-reference/images',
-    ],
-  },
-  {
-    id: 'apimart-images',
-    vendorId: 'openai',
-    name: 'APIMart Images',
-    provider: 'openai',
-    apiEndpoint: 'https://api.apimart.ai/v1',
-    defaultModel: 'gpt-image-2',
-    modelIds: ['gpt-image-2', 'gpt-image-1'],
-    modelType: 'image',
-    imageProvider: 'apimart',
-    imageApiType: 'async',
-    sourceUrls: [
-      'https://docs.apimart.ai/en/api-reference/images/gpt-image-2/official',
-      'https://docs.apimart.ai/en/api-reference/images/gpt-image-1/generation',
-    ],
-  },
-  {
-    id: 'openrouter-images',
-    vendorId: 'openrouter',
-    name: 'OpenRouter Images',
-    provider: 'openai',
-    apiEndpoint: 'https://openrouter.ai/api/v1',
-    defaultModel: 'google/gemini-2.5-flash-image-preview',
-    modelIds: [
-      'google/gemini-2.5-flash-image-preview',
-      'black-forest-labs/flux.1-kontext-pro',
-      'recraft/recraft-v3',
-    ],
-    modelType: 'image',
-    imageProvider: 'openrouter',
-    imageApiType: 'sync',
-    sourceUrls: [
-      'https://openrouter.ai/docs/guides/overview/multimodal/image-generation',
-    ],
-  },
-  {
-    id: 'google-gemini-images',
-    vendorId: 'google-gemini',
-    name: 'Google Gemini Images',
-    provider: 'openai',
-    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-2.5-flash-image-preview',
-    modelIds: ['gemini-2.5-flash-image-preview', 'imagen-4.0-generate-001'],
-    modelType: 'image',
-    imageProvider: 'gemini',
-    imageApiType: 'sync',
-    sourceUrls: [
-      'https://ai.google.dev/gemini-api/docs/image-generation',
-      'https://ai.google.dev/gemini-api/docs/imagen',
-    ],
-  },
-  {
-    id: 'volcengine-seedream-images',
-    vendorId: 'volcengine',
-    name: '火山方舟 Seedream',
-    provider: 'openai',
-    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
-    defaultModel: 'doubao-seedream-4-0-250828',
-    modelIds: ['doubao-seedream-4-0-250828', 'doubao-seedream-3-0-t2i-250415'],
-    modelType: 'image',
-    imageProvider: 'seeddance',
-    imageApiType: 'sync',
-    sourceUrls: [
-      'https://www.volcengine.com/docs/82379/1666945',
-    ],
-  },
+  // {
+  //   id: 'openai-official',
+  //   vendorId: 'openai',
+  //   name: 'OpenAI',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.openai.com/v1',
+  //   defaultModel: 'gpt-4.1',
+  //   modelIds: ['gpt-4.1', 'gpt-4.1-mini', 'gpt-4.1-nano', 'o4-mini', 'o3', 'gpt-4o'],
+  //   sourceUrls: [
+  //     'https://platform.openai.com/docs/models',
+  //     'https://platform.openai.com/docs/api-reference/chat',
+  //   ],
+  // },
+  // {
+  //   id: 'openai-images',
+  //   vendorId: 'openai',
+  //   name: 'OpenAI Images',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.openai.com/v1',
+  //   defaultModel: 'gpt-image-1',
+  //   modelIds: ['gpt-image-1', 'dall-e-3'],
+  //   modelType: 'image',
+  //   imageProvider: 'openai',
+  //   imageApiType: 'sync',
+  //   sourceUrls: [
+  //     'https://platform.openai.com/docs/guides/image-generation',
+  //     'https://platform.openai.com/docs/api-reference/images',
+  //   ],
+  // },
+  // {
+  //   id: 'apimart-images',
+  //   vendorId: 'openai',
+  //   name: 'APIMart Images',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.apimart.ai/v1',
+  //   defaultModel: 'gpt-image-2',
+  //   modelIds: ['gpt-image-2', 'gpt-image-1'],
+  //   modelType: 'image',
+  //   imageProvider: 'apimart',
+  //   imageApiType: 'async',
+  //   sourceUrls: [
+  //     'https://docs.apimart.ai/en/api-reference/images/gpt-image-2/official',
+  //     'https://docs.apimart.ai/en/api-reference/images/gpt-image-1/generation',
+  //   ],
+  // },
+  // {
+  //   id: 'openrouter-images',
+  //   vendorId: 'openrouter',
+  //   name: 'OpenRouter Images',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://openrouter.ai/api/v1',
+  //   defaultModel: 'google/gemini-2.5-flash-image-preview',
+  //   modelIds: [
+  //     'google/gemini-2.5-flash-image-preview',
+  //     'black-forest-labs/flux.1-kontext-pro',
+  //     'recraft/recraft-v3',
+  //   ],
+  //   modelType: 'image',
+  //   imageProvider: 'openrouter',
+  //   imageApiType: 'sync',
+  //   sourceUrls: [
+  //     'https://openrouter.ai/docs/guides/overview/multimodal/image-generation',
+  //   ],
+  // },
+  // {
+  //   id: 'google-gemini-images',
+  //   vendorId: 'google-gemini',
+  //   name: 'Google Gemini Images',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  //   defaultModel: 'gemini-2.5-flash-image-preview',
+  //   modelIds: ['gemini-2.5-flash-image-preview', 'imagen-4.0-generate-001'],
+  //   modelType: 'image',
+  //   imageProvider: 'gemini',
+  //   imageApiType: 'sync',
+  //   sourceUrls: [
+  //     'https://ai.google.dev/gemini-api/docs/image-generation',
+  //     'https://ai.google.dev/gemini-api/docs/imagen',
+  //   ],
+  // },
+  // {
+  //   id: 'volcengine-seedream-images',
+  //   vendorId: 'volcengine',
+  //   name: '火山方舟 Seedream',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+  //   defaultModel: 'doubao-seedream-4-0-250828',
+  //   modelIds: ['doubao-seedream-4-0-250828', 'doubao-seedream-3-0-t2i-250415'],
+  //   modelType: 'image',
+  //   imageProvider: 'seeddance',
+  //   imageApiType: 'sync',
+  //   sourceUrls: [
+  //     'https://www.volcengine.com/docs/82379/1666945',
+  //   ],
+  // },
 
   /* ─── Anthropic 官方 ─── */
   {
@@ -180,19 +180,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
 
   /* ─── Google Gemini ─── */
-  {
-    id: 'google-gemini',
-    vendorId: 'google-gemini',
-    name: 'Google Gemini',
-    provider: 'openai',
-    apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
-    defaultModel: 'gemini-2.5-pro',
-    modelIds: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
-    sourceUrls: [
-      'https://ai.google.dev/gemini-api/docs/models',
-      'https://ai.google.dev/gemini-api/docs/openai',
-    ],
-  },
+  // {
+  //   id: 'google-gemini',
+  //   vendorId: 'google-gemini',
+  //   name: 'Google Gemini',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/openai',
+  //   defaultModel: 'gemini-2.5-pro',
+  //   modelIds: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
+  //   sourceUrls: [
+  //     'https://ai.google.dev/gemini-api/docs/models',
+  //     'https://ai.google.dev/gemini-api/docs/openai',
+  //   ],
+  // },
 
   /* ─── 腾讯云 Coding Plan ─── */
   {
@@ -207,18 +207,18 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://cloud.tencent.com/document/product/1823/130092',
     ],
   },
-  {
-    id: 'tencent-coding-plan-openai',
-    vendorId: 'tencent-coding-plan',
-    name: '腾讯云 Coding Plan',
-    provider: 'openai',
-    apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/v3',
-    defaultModel: 'tc-code-latest',
-    modelIds: ['tc-code-latest', 'hunyuan-2.0-instruct', 'hunyuan-2.0-thinking', 'minimax-m2.5', 'kimi-k2.5', 'glm-5'],
-    sourceUrls: [
-      'https://cloud.tencent.com/document/product/1823/130092',
-    ],
-  },
+  // {
+  //   id: 'tencent-coding-plan-openai',
+  //   vendorId: 'tencent-coding-plan',
+  //   name: '腾讯云 Coding Plan',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/v3',
+  //   defaultModel: 'tc-code-latest',
+  //   modelIds: ['tc-code-latest', 'hunyuan-2.0-instruct', 'hunyuan-2.0-thinking', 'minimax-m2.5', 'kimi-k2.5', 'glm-5'],
+  //   sourceUrls: [
+  //     'https://cloud.tencent.com/document/product/1823/130092',
+  //   ],
+  // },
 
   /* ─── 阿里云百炼 Coding Plan ─── */
   {
@@ -235,20 +235,20 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://help.aliyun.com/zh/model-studio/opencode',
     ],
   },
-  {
-    id: 'aliyun-bailian-coding-plan-openai',
-    vendorId: 'aliyun-bailian-coding-plan',
-    name: '阿里云百炼 Coding Plan',
-    provider: 'openai',
-    apiEndpoint: 'https://coding.dashscope.aliyuncs.com/v1',
-    defaultModel: 'qwen3.6-plus',
-    modelIds: ['qwen3.6-plus', 'qwen3.5-plus', 'qwen3-coder-plus', 'glm-5', 'kimi-k2.5', 'MiniMax-M2.5'],
-    sourceUrls: [
-      'https://help.aliyun.com/zh/model-studio/coding-plan-faq',
-      'https://help.aliyun.com/zh/model-studio/text-generation-model/',
-      'https://help.aliyun.com/zh/model-studio/opencode',
-    ],
-  },
+  // {
+  //   id: 'aliyun-bailian-coding-plan-openai',
+  //   vendorId: 'aliyun-bailian-coding-plan',
+  //   name: '阿里云百炼 Coding Plan',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://coding.dashscope.aliyuncs.com/v1',
+  //   defaultModel: 'qwen3.6-plus',
+  //   modelIds: ['qwen3.6-plus', 'qwen3.5-plus', 'qwen3-coder-plus', 'glm-5', 'kimi-k2.5', 'MiniMax-M2.5'],
+  //   sourceUrls: [
+  //     'https://help.aliyun.com/zh/model-studio/coding-plan-faq',
+  //     'https://help.aliyun.com/zh/model-studio/text-generation-model/',
+  //     'https://help.aliyun.com/zh/model-studio/opencode',
+  //   ],
+  // },
 
   /* ─── 智谱 GLM Coding Plan ─── */
   {
@@ -265,34 +265,34 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://bigmodel.cn/claude-code',
     ],
   },
-  {
-    id: 'zhipu-glm-coding-plan-openai',
-    vendorId: 'zhipu-glm-coding-plan',
-    name: '智谱 GLM Coding Plan',
-    provider: 'openai',
-    apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
-    defaultModel: 'glm-4.7',
-    modelIds: ['glm-4.7', 'glm-4.5-air', 'glm-5-turbo', 'glm-5.1'],
-    sourceUrls: [
-      'https://docs.bigmodel.cn/cn/coding-plan/tool/kilo',
-      'https://bigmodel.cn/claude-code',
-    ],
-  },
+  // {
+  //   id: 'zhipu-glm-coding-plan-openai',
+  //   vendorId: 'zhipu-glm-coding-plan',
+  //   name: '智谱 GLM Coding Plan',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://open.bigmodel.cn/api/coding/paas/v4',
+  //   defaultModel: 'glm-4.7',
+  //   modelIds: ['glm-4.7', 'glm-4.5-air', 'glm-5-turbo', 'glm-5.1'],
+  //   sourceUrls: [
+  //     'https://docs.bigmodel.cn/cn/coding-plan/tool/kilo',
+  //     'https://bigmodel.cn/claude-code',
+  //   ],
+  // },
 
   /* ─── 通义千问标准版 ─── */
-  {
-    id: 'qwen-standard-openai',
-    vendorId: 'qwen-standard',
-    name: '通义千问',
-    provider: 'openai',
-    apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    defaultModel: 'qwen3-235b-a22b',
-    modelIds: ['qwen3-235b-a22b', 'qwen3-30b-a3b', 'qwen3-coder-plus', 'qwen-plus-latest', 'qwen-turbo-latest'],
-    sourceUrls: [
-      'https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api',
-      'https://help.aliyun.com/zh/model-studio/getting-started/models',
-    ],
-  },
+  // {
+  //   id: 'qwen-standard-openai',
+  //   vendorId: 'qwen-standard',
+  //   name: '通义千问',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  //   defaultModel: 'qwen3-235b-a22b',
+  //   modelIds: ['qwen3-235b-a22b', 'qwen3-30b-a3b', 'qwen3-coder-plus', 'qwen-plus-latest', 'qwen-turbo-latest'],
+  //   sourceUrls: [
+  //     'https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api',
+  //     'https://help.aliyun.com/zh/model-studio/getting-started/models',
+  //   ],
+  // },
 
   /* ─── DeepSeek API ─── */
   {
@@ -307,18 +307,18 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://api-docs.deepseek.com/quick_start/pricing',
     ],
   },
-  {
-    id: 'deepseek-api-openai',
-    vendorId: 'deepseek-api',
-    name: 'DeepSeek API',
-    provider: 'openai',
-    apiEndpoint: 'https://api.deepseek.com',
-    defaultModel: 'deepseek-v4-flash',
-    modelIds: ['deepseek-v4-flash', 'deepseek-v4-pro'],
-    sourceUrls: [
-      'https://api-docs.deepseek.com/quick_start/pricing',
-    ],
-  },
+  // {
+  //   id: 'deepseek-api-openai',
+  //   vendorId: 'deepseek-api',
+  //   name: 'DeepSeek API',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.deepseek.com',
+  //   defaultModel: 'deepseek-v4-flash',
+  //   modelIds: ['deepseek-v4-flash', 'deepseek-v4-pro'],
+  //   sourceUrls: [
+  //     'https://api-docs.deepseek.com/quick_start/pricing',
+  //   ],
+  // },
 
   /* ─── MiniMax ─── */
   {
@@ -335,176 +335,176 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://platform.minimaxi.com/docs/api-reference/text-ai-sdk',
     ],
   },
-  {
-    id: 'minimax-openai',
-    vendorId: 'minimax',
-    name: 'MiniMax',
-    provider: 'openai',
-    apiEndpoint: 'https://api.minimaxi.com/v1',
-    defaultModel: 'MiniMax-M2.7',
-    modelIds: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
-    sourceUrls: [
-      'https://platform.minimaxi.com/docs/api-reference/api-overview',
-      'https://platform.minimaxi.com/docs/api-reference/text-ai-sdk',
-    ],
-  },
+  // {
+  //   id: 'minimax-openai',
+  //   vendorId: 'minimax',
+  //   name: 'MiniMax',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.minimaxi.com/v1',
+  //   defaultModel: 'MiniMax-M2.7',
+  //   modelIds: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+  //   sourceUrls: [
+  //     'https://platform.minimaxi.com/docs/api-reference/api-overview',
+  //     'https://platform.minimaxi.com/docs/api-reference/text-ai-sdk',
+  //   ],
+  // },
 
   /* ─── Kimi (Moonshot) ─── */
-  {
-    id: 'kimi-openai',
-    vendorId: 'kimi',
-    name: 'Kimi',
-    provider: 'openai',
-    apiEndpoint: 'https://api.moonshot.cn/v1',
-    defaultModel: 'kimi-k2.6',
-    modelIds: ['kimi-k2.6', 'kimi-k2.5', 'kimi-k2-thinking', 'kimi-k2-thinking-turbo'],
-    sourceUrls: [
-      'https://platform.moonshot.cn/',
-      'https://platform.moonshot.cn/docs/intro',
-      'https://platform.moonshot.cn/docs/guide/kimi-k2-5-quickstart',
-    ],
-  },
+  // {
+  //   id: 'kimi-openai',
+  //   vendorId: 'kimi',
+  //   name: 'Kimi',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.moonshot.cn/v1',
+  //   defaultModel: 'kimi-k2.6',
+  //   modelIds: ['kimi-k2.6', 'kimi-k2.5', 'kimi-k2-thinking', 'kimi-k2-thinking-turbo'],
+  //   sourceUrls: [
+  //     'https://platform.moonshot.cn/',
+  //     'https://platform.moonshot.cn/docs/intro',
+  //     'https://platform.moonshot.cn/docs/guide/kimi-k2-5-quickstart',
+  //   ],
+  // },
 
   /* ─── 硅基流动 ─── */
-  {
-    id: 'siliconflow-openai',
-    vendorId: 'siliconflow',
-    name: '硅基流动',
-    provider: 'openai',
-    apiEndpoint: 'https://api.siliconflow.cn/v1',
-    defaultModel: 'deepseek-ai/DeepSeek-V3.1-Terminus',
-    modelIds: ['deepseek-ai/DeepSeek-V3.1-Terminus', 'moonshotai/Kimi-K2-Instruct-0905', 'Qwen/Qwen3-30B-A3B-Instruct'],
-    sourceUrls: [
-      'https://docs.siliconflow.cn/en/userguide/quickstart',
-      'https://docs.siliconflow.cn/en/api-reference/models/get-model-list',
-      'https://docs.siliconflow.cn/api-reference/chat-completions/chat-completions',
-    ],
-  },
+  // {
+  //   id: 'siliconflow-openai',
+  //   vendorId: 'siliconflow',
+  //   name: '硅基流动',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.siliconflow.cn/v1',
+  //   defaultModel: 'deepseek-ai/DeepSeek-V3.1-Terminus',
+  //   modelIds: ['deepseek-ai/DeepSeek-V3.1-Terminus', 'moonshotai/Kimi-K2-Instruct-0905', 'Qwen/Qwen3-30B-A3B-Instruct'],
+  //   sourceUrls: [
+  //     'https://docs.siliconflow.cn/en/userguide/quickstart',
+  //     'https://docs.siliconflow.cn/en/api-reference/models/get-model-list',
+  //     'https://docs.siliconflow.cn/api-reference/chat-completions/chat-completions',
+  //   ],
+  // },
 
   /* ─── OpenRouter ─── */
-  {
-    id: 'openrouter-openai',
-    vendorId: 'openrouter',
-    name: 'OpenRouter',
-    provider: 'openai',
-    apiEndpoint: 'https://openrouter.ai/api/v1',
-    defaultModel: 'openai/gpt-4.1',
-    modelIds: ['openai/gpt-4.1', 'anthropic/claude-sonnet-4', 'google/gemini-2.5-pro-preview'],
-    sourceUrls: [
-      'https://openrouter.ai/docs/api/reference/overview',
-      'https://openrouter.ai/docs/api/api-reference/models/get-models',
-      'https://openrouter.ai/docs/guides/overview/models',
-    ],
-  },
+  // {
+  //   id: 'openrouter-openai',
+  //   vendorId: 'openrouter',
+  //   name: 'OpenRouter',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://openrouter.ai/api/v1',
+  //   defaultModel: 'openai/gpt-4.1',
+  //   modelIds: ['openai/gpt-4.1', 'anthropic/claude-sonnet-4', 'google/gemini-2.5-pro-preview'],
+  //   sourceUrls: [
+  //     'https://openrouter.ai/docs/api/reference/overview',
+  //     'https://openrouter.ai/docs/api/api-reference/models/get-models',
+  //     'https://openrouter.ai/docs/guides/overview/models',
+  //   ],
+  // },
 
   /* ─── Ollama 本地 ─── */
-  {
-    id: 'ollama-local',
-    vendorId: 'ollama',
-    name: 'Ollama 本地',
-    provider: 'openai',
-    apiEndpoint: 'http://localhost:11434/v1',
-    defaultModel: 'qwen3:14b',
-    modelIds: ['qwen3:14b', 'deepseek-r1:14b', 'llama3.1:8b', 'codellama:13b', 'gemma3:12b'],
-    sourceUrls: [
-      'https://ollama.com/library',
-      'https://github.com/ollama/ollama/blob/main/docs/openai.md',
-    ],
-  },
+  // {
+  //   id: 'ollama-local',
+  //   vendorId: 'ollama',
+  //   name: 'Ollama 本地',
+  //   provider: 'openai',
+  //   apiEndpoint: 'http://localhost:11434/v1',
+  //   defaultModel: 'qwen3:14b',
+  //   modelIds: ['qwen3:14b', 'deepseek-r1:14b', 'llama3.1:8b', 'codellama:13b', 'gemma3:12b'],
+  //   sourceUrls: [
+  //     'https://ollama.com/library',
+  //     'https://github.com/ollama/ollama/blob/main/docs/openai.md',
+  //   ],
+  // },
 
   /* ════════════════════════════════════════════════════════════════ */
   /* ─── 新增 vendor 模板（14+） ───                                  */
   /* ════════════════════════════════════════════════════════════════ */
 
   /* ─── 小米 MiMo ─── */
-  {
-    id: 'xiaomi-mimo-openai',
-    vendorId: 'xiaomi-mimo',
-    name: '小米 MiMo',
-    provider: 'openai',
-    apiEndpoint: 'https://api.xiaomimimo.com/v1',
-    defaultModel: 'mimo-v2-flash',
-    modelIds: ['mimo-v2-flash', 'MiMo-V2-Pro', 'MiMo-V2-Omni', 'MiMo-Coder', 'MiMo-V2-7B-Instruct'],
-    sourceUrls: [
-      'https://platform.xiaomimimo.com/',
-      'https://aistudio.xiaomimimo.com/',
-    ],
-  },
+  // {
+  //   id: 'xiaomi-mimo-openai',
+  //   vendorId: 'xiaomi-mimo',
+  //   name: '小米 MiMo',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.xiaomimimo.com/v1',
+  //   defaultModel: 'mimo-v2-flash',
+  //   modelIds: ['mimo-v2-flash', 'MiMo-V2-Pro', 'MiMo-V2-Omni', 'MiMo-Coder', 'MiMo-V2-7B-Instruct'],
+  //   sourceUrls: [
+  //     'https://platform.xiaomimimo.com/',
+  //     'https://aistudio.xiaomimimo.com/',
+  //   ],
+  // },
 
   /* ─── 讯飞星火（Spark）─── */
-  {
-    id: 'xfyun-spark-openai',
-    vendorId: 'xfyun',
-    name: '讯飞星火 Spark',
-    provider: 'openai',
-    apiEndpoint: 'https://spark-api.xf-yun.com/v4.0/chat',
-    defaultModel: 'general',
-    modelIds: ['general', '4.0Ultra', 'max-32k', 'pro-128k', 'lite'],
-    sourceUrls: [
-      'https://www.xfyun.cn/doc/spark/Web.html',
-      'https://xinghuo.xfyun.cn/sparkapi',
-    ],
-  },
+  // {
+  //   id: 'xfyun-spark-openai',
+  //   vendorId: 'xfyun',
+  //   name: '讯飞星火 Spark',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://spark-api.xf-yun.com/v4.0/chat',
+  //   defaultModel: 'general',
+  //   modelIds: ['general', '4.0Ultra', 'max-32k', 'pro-128k', 'lite'],
+  //   sourceUrls: [
+  //     'https://www.xfyun.cn/doc/spark/Web.html',
+  //     'https://xinghuo.xfyun.cn/sparkapi',
+  //   ],
+  // },
 
   /* ─── 京东云 JoyBuilder ─── */
-  {
-    id: 'jdcloud-joybuilder-openai',
-    vendorId: 'jdcloud',
-    name: '京东云 JoyBuilder',
-    provider: 'openai',
-    apiEndpoint: 'https://aiapi.jdcloud.com/v1',
-    defaultModel: 'JoyAI-LLM-Flash',
-    modelIds: ['JoyAI-LLM-Flash', 'JoyAI-LLM-Pro', 'JoyAI-M3', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5'],
-    sourceUrls: [
-      'https://www.jdcloud.com/cn/products/jdcloud-joybuilder',
-      'https://lavm-console.jdcloud.com/lavm/create',
-    ],
-  },
+  // {
+  //   id: 'jdcloud-joybuilder-openai',
+  //   vendorId: 'jdcloud',
+  //   name: '京东云 JoyBuilder',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://aiapi.jdcloud.com/v1',
+  //   defaultModel: 'JoyAI-LLM-Flash',
+  //   modelIds: ['JoyAI-LLM-Flash', 'JoyAI-LLM-Pro', 'JoyAI-M3', 'kimi-k2.5', 'glm-5', 'MiniMax-M2.5'],
+  //   sourceUrls: [
+  //     'https://www.jdcloud.com/cn/products/jdcloud-joybuilder',
+  //     'https://lavm-console.jdcloud.com/lavm/create',
+  //   ],
+  // },
 
   /* ─── 天翼云息壤（中国电信）─── */
-  {
-    id: 'ctyun-xirang-openai',
-    vendorId: 'ctyun',
-    name: '天翼云息壤',
-    provider: 'openai',
-    apiEndpoint: 'https://wishub-x1.ctyun.cn/v1/chat/completions',
-    defaultModel: 'Qwen3.5-397B-A17B',
-    modelIds: ['Qwen3.5-397B-A17B', 'DeepSeek-V3.2', 'Doubao-Seed-2.0-pro', 'GLM-5', 'TeleChat-12B', 'kimi-k2.5'],
-    sourceUrls: [
-      'https://www.ctyun.cn/h5/huiju/',
-      'https://huiju.ctyun.cn/modelSquare',
-    ],
-  },
+  // {
+  //   id: 'ctyun-xirang-openai',
+  //   vendorId: 'ctyun',
+  //   name: '天翼云息壤',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://wishub-x1.ctyun.cn/v1/chat/completions',
+  //   defaultModel: 'Qwen3.5-397B-A17B',
+  //   modelIds: ['Qwen3.5-397B-A17B', 'DeepSeek-V3.2', 'Doubao-Seed-2.0-pro', 'GLM-5', 'TeleChat-12B', 'kimi-k2.5'],
+  //   sourceUrls: [
+  //     'https://www.ctyun.cn/h5/huiju/',
+  //     'https://huiju.ctyun.cn/modelSquare',
+  //   ],
+  // },
 
   /* ─── 百度千帆 ─── */
-  {
-    id: 'baidu-qianfan-openai',
-    vendorId: 'baidu',
-    name: '百度千帆',
-    provider: 'openai',
-    apiEndpoint: 'https://qianfan.baidubce.com/v2',
-    defaultModel: 'ernie-4.5-8k',
-    modelIds: ['ernie-4.5-8k', 'ernie-4.0-8k', 'ernie-3.5-128k', 'ernie-speed-8k', 'ernie-lite-8k', 'Qianfan-VL-72B'],
-    sourceUrls: [
-      'https://cloud.baidu.com/doc/qianfan/s/hlrk4akp7',
-      'https://console.bce.baidu.com/qianfan/modelcenter/model/buildIn/list',
-    ],
-  },
+  // {
+  //   id: 'baidu-qianfan-openai',
+  //   vendorId: 'baidu',
+  //   name: '百度千帆',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://qianfan.baidubce.com/v2',
+  //   defaultModel: 'ernie-4.5-8k',
+  //   modelIds: ['ernie-4.5-8k', 'ernie-4.0-8k', 'ernie-3.5-128k', 'ernie-speed-8k', 'ernie-lite-8k', 'Qianfan-VL-72B'],
+  //   sourceUrls: [
+  //     'https://cloud.baidu.com/doc/qianfan/s/hlrk4akp7',
+  //     'https://console.bce.baidu.com/qianfan/modelcenter/model/buildIn/list',
+  //   ],
+  // },
 
   /* ─── 火山方舟（字节）─── */
-  {
-    id: 'volcengine-ark-openai',
-    vendorId: 'volcengine',
-    name: '火山方舟',
-    provider: 'openai',
-    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
-    defaultModel: 'doubao-pro-32k',
-    modelIds: ['doubao-pro-32k', 'doubao-pro-256k', 'doubao-lite-32k', 'doubao-seed-1-6-250615', 'deepseek-v3-1-250821', 'kimi-k2-250711'],
-    sourceUrls: [
-      'https://www.volcengine.com/docs/82379/1356615',
-      'https://www.volcengine.com/product/ark',
-    ],
-  },
+  // {
+  //   id: 'volcengine-ark-openai',
+  //   vendorId: 'volcengine',
+  //   name: '火山方舟',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://ark.cn-beijing.volces.com/api/v3',
+  //   defaultModel: 'doubao-pro-32k',
+  //   modelIds: ['doubao-pro-32k', 'doubao-pro-256k', 'doubao-lite-32k', 'doubao-seed-1-6-250615', 'deepseek-v3-1-250821', 'kimi-k2-250711'],
+  //   sourceUrls: [
+  //     'https://www.volcengine.com/docs/82379/1356615',
+  //     'https://www.volcengine.com/product/ark',
+  //   ],
+  // },
   /* 火山方舟 Coding Plan：anthropic 协议（Claude Code） */
   {
     id: 'volcengine-ark-anthropic',
@@ -520,19 +520,19 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
   },
 
   /* ─── 华为云盘古 ─── */
-  {
-    id: 'huaweicloud-pangu-openai',
-    vendorId: 'huaweicloud',
-    name: '华为云盘古',
-    provider: 'openai',
-    apiEndpoint: 'https://api.modelarts-maas.com/v1',
-    defaultModel: 'Pangu-NLP-N4-718B',
-    modelIds: ['Pangu-NLP-N4-718B', 'Pangu-NLP-N2-128K', 'Pangu-NLP-N1-32K', 'Pangu-Pro-MoE-72B', 'DeepSeek-V3', 'Qwen3-32B'],
-    sourceUrls: [
-      'https://support.huaweicloud.com/api-pangulm/pangulm_05_0011.html',
-      'https://www.huaweicloud.com/product/pangu.html',
-    ],
-  },
+  // {
+  //   id: 'huaweicloud-pangu-openai',
+  //   vendorId: 'huaweicloud',
+  //   name: '华为云盘古',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.modelarts-maas.com/v1',
+  //   defaultModel: 'Pangu-NLP-N4-718B',
+  //   modelIds: ['Pangu-NLP-N4-718B', 'Pangu-NLP-N2-128K', 'Pangu-NLP-N1-32K', 'Pangu-Pro-MoE-72B', 'DeepSeek-V3', 'Qwen3-32B'],
+  //   sourceUrls: [
+  //     'https://support.huaweicloud.com/api-pangulm/pangulm_05_0011.html',
+  //     'https://www.huaweicloud.com/product/pangu.html',
+  //   ],
+  // },
 
   /* ─── 联通云 ─── */
   {
@@ -548,48 +548,48 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://www.cucloud.cn/',
     ],
   },
-  {
-    id: 'unicom-aisp-openai',
-    vendorId: 'unicom',
-    name: '联通云 AISP',
-    provider: 'openai',
-    apiEndpoint: 'https://aigw-sh22.cucloud.cn/v1',
-    defaultModel: 'Qwen3-235B',
-    modelIds: ['Qwen3-235B', 'DeepSeek-V3.1', 'MiniMax-M2.5', 'Qwen3.5', 'GLM-5', 'kimi-k2.5'],
-    sourceUrls: [
-      'https://www.cucloud.cn/product/aisp',
-    ],
-  },
+  // {
+  //   id: 'unicom-aisp-openai',
+  //   vendorId: 'unicom',
+  //   name: '联通云 AISP',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://aigw-sh22.cucloud.cn/v1',
+  //   defaultModel: 'Qwen3-235B',
+  //   modelIds: ['Qwen3-235B', 'DeepSeek-V3.1', 'MiniMax-M2.5', 'Qwen3.5', 'GLM-5', 'kimi-k2.5'],
+  //   sourceUrls: [
+  //     'https://www.cucloud.cn/product/aisp',
+  //   ],
+  // },
 
   /* ─── UCloud UModelVerse ─── */
-  {
-    id: 'ucloud-modelverse-openai',
-    vendorId: 'ucloud',
-    name: 'UCloud UModelVerse',
-    provider: 'openai',
-    apiEndpoint: 'https://api.modelverse.ucloud.cn/v1',
-    defaultModel: 'DeepSeek-R1',
-    modelIds: ['DeepSeek-R1', 'DeepSeek-V3', 'Qwen/Qwen2.5-14B-Instruct', 'Qwen/Qwen2.5-7B-Instruct', 'meta-llama/Meta-Llama-3.1-8B-Instruct', 'Qwen/Qwen1.5-14B-Chat'],
-    sourceUrls: [
-      'https://www.ucloud.cn/site/product/modelverse.html',
-      'https://doc.ucloud.cn/api/uai-modelverse-api/README',
-    ],
-  },
+  // {
+  //   id: 'ucloud-modelverse-openai',
+  //   vendorId: 'ucloud',
+  //   name: 'UCloud UModelVerse',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.modelverse.ucloud.cn/v1',
+  //   defaultModel: 'DeepSeek-R1',
+  //   modelIds: ['DeepSeek-R1', 'DeepSeek-V3', 'Qwen/Qwen2.5-14B-Instruct', 'Qwen/Qwen2.5-7B-Instruct', 'meta-llama/Meta-Llama-3.1-8B-Instruct', 'Qwen/Qwen1.5-14B-Chat'],
+  //   sourceUrls: [
+  //     'https://www.ucloud.cn/site/product/modelverse.html',
+  //     'https://doc.ucloud.cn/api/uai-modelverse-api/README',
+  //   ],
+  // },
 
   /* ─── 无问芯穹 Infini-AI ─── */
-  {
-    id: 'infini-ai-maas-openai',
-    vendorId: 'infini-ai',
-    name: '无问芯穹 Infini-AI',
-    provider: 'openai',
-    apiEndpoint: 'https://cloud.infini-ai.com/maas/v1',
-    defaultModel: 'deepseek-r1',
-    modelIds: ['deepseek-r1', 'deepseek-v3', 'deepseek-r1-distill-qwen-32b', 'Qwen/Qwen2.5-72B-Instruct', 'meta-llama/Meta-Llama-3.1-70B-Instruct', 'Megrez-3B-Omni'],
-    sourceUrls: [
-      'https://cloud.infini-ai.com/genstudio',
-      'https://docs.infini-ai.com/',
-    ],
-  },
+  // {
+  //   id: 'infini-ai-maas-openai',
+  //   vendorId: 'infini-ai',
+  //   name: '无问芯穹 Infini-AI',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://cloud.infini-ai.com/maas/v1',
+  //   defaultModel: 'deepseek-r1',
+  //   modelIds: ['deepseek-r1', 'deepseek-v3', 'deepseek-r1-distill-qwen-32b', 'Qwen/Qwen2.5-72B-Instruct', 'meta-llama/Meta-Llama-3.1-70B-Instruct', 'Megrez-3B-Omni'],
+  //   sourceUrls: [
+  //     'https://cloud.infini-ai.com/genstudio',
+  //     'https://docs.infini-ai.com/',
+  //   ],
+  // },
 
   /* ─── 九章云极 Alaya Code ─── */
   {
@@ -605,49 +605,49 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://www.alayacode.com/',
     ],
   },
-  {
-    id: 'alaya-code-openai',
-    vendorId: 'alaya',
-    name: '九章云极 Alaya Code',
-    provider: 'openai',
-    apiEndpoint: 'https://api.alayacode.com/v1',
-    defaultModel: 'kimi-k2.5',
-    modelIds: ['kimi-k2.5', 'Qwen3.5-Plus', 'GLM-5', 'MiniMax-M2.5', 'deepseek-v4-pro'],
-    sourceUrls: [
-      'https://www.datacanvas.com/',
-    ],
-  },
+  // {
+  //   id: 'alaya-code-openai',
+  //   vendorId: 'alaya',
+  //   name: '九章云极 Alaya Code',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.alayacode.com/v1',
+  //   defaultModel: 'kimi-k2.5',
+  //   modelIds: ['kimi-k2.5', 'Qwen3.5-Plus', 'GLM-5', 'MiniMax-M2.5', 'deepseek-v4-pro'],
+  //   sourceUrls: [
+  //     'https://www.datacanvas.com/',
+  //   ],
+  // },
 
   /* ─── 摩尔线程（夸娥 GPU + 多模型推理）─── */
-  {
-    id: 'mthreads-kuae-openai',
-    vendorId: 'mthreads',
-    name: '摩尔线程夸娥',
-    provider: 'openai',
-    apiEndpoint: 'https://api.mthreads.com/v1',
-    defaultModel: 'Qwen3-32B',
-    modelIds: ['Qwen3-32B', 'Qwen3-14B', 'DeepSeek-V4', 'MiniMax-M2.7', 'MiniMax-M2.5', 'GLM-5'],
-    sourceUrls: [
-      'https://www.mthreads.com/',
-      'https://developer.mthreads.com/',
-    ],
-  },
+  // {
+  //   id: 'mthreads-kuae-openai',
+  //   vendorId: 'mthreads',
+  //   name: '摩尔线程夸娥',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.mthreads.com/v1',
+  //   defaultModel: 'Qwen3-32B',
+  //   modelIds: ['Qwen3-32B', 'Qwen3-14B', 'DeepSeek-V4', 'MiniMax-M2.7', 'MiniMax-M2.5', 'GLM-5'],
+  //   sourceUrls: [
+  //     'https://www.mthreads.com/',
+  //     'https://developer.mthreads.com/',
+  //   ],
+  // },
 
   /* ─── 快手可灵（视频/图像）─── */
-  {
-    id: 'kuaishou-kling-openai',
-    vendorId: 'kuaishou',
-    name: '快手可灵 Kling',
-    provider: 'openai',
-    apiEndpoint: 'https://api.klingai.com/v1',
-    defaultModel: 'kling-v1-6',
-    modelIds: ['kling-v1-6', 'kling-v1-5', 'kling-v1', 'kling-virtual-try-on'],
-    modelType: 'video',
-    sourceUrls: [
-      'https://klingai.kuaishou.com/',
-      'https://platform.klingai.com/',
-    ],
-  },
+  // {
+  //   id: 'kuaishou-kling-openai',
+  //   vendorId: 'kuaishou',
+  //   name: '快手可灵 Kling',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.klingai.com/v1',
+  //   defaultModel: 'kling-v1-6',
+  //   modelIds: ['kling-v1-6', 'kling-v1-5', 'kling-v1', 'kling-virtual-try-on'],
+  //   modelType: 'video',
+  //   sourceUrls: [
+  //     'https://klingai.kuaishou.com/',
+  //     'https://platform.klingai.com/',
+  //   ],
+  // },
 
   /* ─── Trae IDE（字节 AI 原生 IDE）─── */
   {
@@ -662,33 +662,33 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       'https://www.trae.cn/',
     ],
   },
-  {
-    id: 'trae-global-openai',
-    vendorId: 'trae',
-    name: 'Trae 国际版',
-    provider: 'openai',
-    apiEndpoint: 'https://api.trae.ai/v1',
-    defaultModel: 'claude-3-5-sonnet',
-    modelIds: ['claude-3-5-sonnet', 'claude-3-7-sonnet', 'gpt-4o', 'gpt-4.1'],
-    sourceUrls: [
-      'https://www.trae.ai/',
-    ],
-  },
+  // {
+  //   id: 'trae-global-openai',
+  //   vendorId: 'trae',
+  //   name: 'Trae 国际版',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://api.trae.ai/v1',
+  //   defaultModel: 'claude-3-5-sonnet',
+  //   modelIds: ['claude-3-5-sonnet', 'claude-3-7-sonnet', 'gpt-4o', 'gpt-4.1'],
+  //   sourceUrls: [
+  //     'https://www.trae.ai/',
+  //   ],
+  // },
 
   /* ─── 阿里通义（qwen-tongyi）─── */
-  {
-    id: 'qwen-tongyi-openai',
-    vendorId: 'qwen-tongyi',
-    name: '阿里通义',
-    provider: 'openai',
-    apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    defaultModel: 'qwen3-max',
-    modelIds: ['qwen3-max', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-235b-a22b', 'qwen3-vl-plus', 'qwen-long'],
-    sourceUrls: [
-      'https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api',
-      'https://tongyi.aliyun.com/',
-    ],
-  },
+  // {
+  //   id: 'qwen-tongyi-openai',
+  //   vendorId: 'qwen-tongyi',
+  //   name: '阿里通义',
+  //   provider: 'openai',
+  //   apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+  //   defaultModel: 'qwen3-max',
+  //   modelIds: ['qwen3-max', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-235b-a22b', 'qwen3-vl-plus', 'qwen-long'],
+  //   sourceUrls: [
+  //     'https://help.aliyun.com/zh/model-studio/developer-reference/use-qwen-by-calling-api',
+  //     'https://tongyi.aliyun.com/',
+  //   ],
+  // },
   {
     id: 'qwen-tongyi-anthropic',
     vendorId: 'qwen-tongyi',
