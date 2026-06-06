@@ -822,7 +822,7 @@ async function handleRemoteInboundMessage(message: RemoteInboundMessage): Promis
 
   const result = await getSessionService().sendTurn({
     sessionId,
-    message: `[${message.senderName}] ${message.text}`,
+    message: message.text,
     ...(message.connection.defaultProviderProfileId != null ? { providerProfileId: message.connection.defaultProviderProfileId } : {}),
     ...(message.connection.defaultModelId != null ? { modelId: message.connection.defaultModelId } : {}),
     ...(message.connection.defaultAgentId != null ? { agentId: message.connection.defaultAgentId } : {}),
