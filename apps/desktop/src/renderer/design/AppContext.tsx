@@ -64,7 +64,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   sidebar: 'collapsed',
   view: 'chat',
   chatMode: 'vibe',
-  settingsSection: 'providers',
+  settingsSection: 'general',
   showPalette: false,
   showPerm: false,
   showProviderEdit: false,

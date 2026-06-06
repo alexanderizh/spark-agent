@@ -74,8 +74,7 @@ export function HomeView() {
     const provider = providers.find((item) => item.isDefault) ?? providers[0]
     if (provider === undefined) {
       setNotice('请先在设置中配置 Provider')
-      setTweak('view', 'settings')
-      setTweak('settingsSection', 'providers')
+      setTweak('view', 'providers')
       return
     }
 
@@ -166,7 +165,7 @@ export function HomeView() {
         <div>
           <div className="section-h">
             Provider 状态
-            <span className="link" onClick={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}>设置</span>
+            <span className="link" onClick={() => { setTweak('view', 'providers') }}>设置</span>
           </div>
           <div className="card">
             <div className="card-body home-card-body-sm">
@@ -176,7 +175,7 @@ export function HomeView() {
                   title="未配置 Provider"
                   desc="配置至少一个 AI Provider 才能开始使用"
                   actionLabel="前往设置"
-                  onAction={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}
+                  onAction={() => { setTweak('view', 'providers') }}
                 />
               ) : (
                 <div className="health-list">
