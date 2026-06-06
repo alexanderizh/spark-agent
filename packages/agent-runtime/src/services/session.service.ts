@@ -108,6 +108,13 @@ interface FirstTurnTitleContext {
 interface TryStartSDKTurnOptions {
   allowedMcpServerIds?: Set<string>
   firstTurnTitleContext?: FirstTurnTitleContext
+  /**
+   * 团队模式 @ 路由：当前 turn 实际由该 Member 直接响应。
+   * 设置后：
+   *  - 流式 assistant_message 会重写为 team_member_message（驱动 TeamMemberBubble）
+   *  - emit user_message 时附带 mentionAgentId 字段
+   */
+  mentionAgentId?: string
 }
 type SessionRuntimePatch = {
   providerProfileId?: string
@@ -126,6 +133,8 @@ type PendingTurn = {
   runtimePatch?: SessionRuntimePatch
   skillId?: string
   skillParams?: Record<string, unknown>
+  /** 团队模式：用户通过 @ 指定的直接处理 Agent ID（mention routing） */
+  mentionAgentId?: string
 }
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
@@ -538,8 +547,10 @@ export class SessionService {
     attachments?: SessionAttachment[]
     /** 可选：团队模式配置（Team Mode 下随 turn 提交） */
     teamConfig?: TeamModeConfig
+    /** 可选：团队模式 @ 路由——用户指定由该 Member 直接响应（替代 Host 主循环） */
+    mentionAgentId?: string
   }): Promise<{ turnId: string; started: boolean }> {
-    const { sessionId, message, skillId, skillParams } = params
+    const { sessionId, message, skillId, skillParams, mentionAgentId } = params
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
@@ -551,12 +562,12 @@ export class SessionService {
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments),
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
       )
       return { turnId, started: false }
     }
 
-    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams, attachments)
+    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId)
     return { turnId, started: true }
   }
 
@@ -568,11 +579,12 @@ export class SessionService {
     skillId?: string,
     skillParams?: Record<string, unknown>,
     attachments?: SessionAttachment[],
+    mentionAgentId?: string,
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments),
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
       )
       return
     }
@@ -586,23 +598,51 @@ export class SessionService {
     }
 
     const session = sessionRepo.findByIdOrFail(sessionId)
-    const agent = this.resolveAgent(session.agent_id)
+    // ── Mention 路由：解析"实际执行 turn 的 agent"。
+    // mentionAgentId 必须命中当前会话团队成员（hostAgentId 等同未指定，回退主循环）。
+    const sessionTeamConfig = readSessionTeamConfig(session)
+    const isMentionTurn =
+      mentionAgentId != null &&
+      sessionTeamConfig?.enabled === true &&
+      mentionAgentId !== sessionTeamConfig.hostAgentId &&
+      sessionTeamConfig.memberAgentIds.includes(mentionAgentId)
+    const agent = isMentionTurn
+      ? this.resolveAgent(mentionAgentId)
+      : this.resolveAgent(session.agent_id)
     const workflow = agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
-    if (session.provider_profile_id == null) {
+    // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
+    const effectiveProviderProfileId = isMentionTurn
+      ? agent.providerProfileId ?? session.provider_profile_id
+      : session.provider_profile_id
+    if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
 
     const existingEventCount = eventRepo.countBySession(sessionId)
     const currentSeq = this.seqCounters.get(sessionId) ?? existingEventCount
+    // Team Mode：构造 agentId→displayName 映射，让 conversation history 把 team_member_message
+    // 也纳入历史（每条 member 发言前缀 [<name>]）。Mention 路径继承上下文的关键步骤。
+    const agentNameById: Record<string, string> = {}
+    if (sessionTeamConfig?.enabled === true) {
+      const agentRepo = new AgentRepository(this.db)
+      const hostAgent = agentRepo.get(sessionTeamConfig.hostAgentId)
+      if (hostAgent != null) agentNameById[hostAgent.id] = hostAgent.name
+      for (const memberId of sessionTeamConfig.memberAgentIds) {
+        const m = agentRepo.get(memberId)
+        if (m != null) agentNameById[m.id] = m.name
+      }
+    }
     const { prompt: conversationHistoryPrompt, summarization: summarizationStats } =
-      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq)
+      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq, {
+        agentNameById,
+      })
     const isFirstTurn = existingEventCount === 0 && shouldDeriveSessionTitle(session.title)
     if (isFirstTurn) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
-    const provider = providerRepo.get(session.provider_profile_id)
+    const provider = providerRepo.get(effectiveProviderProfileId)
     if (provider == null) {
-      throw new Error(`Provider profile not found: ${session.provider_profile_id}`)
+      throw new Error(`Provider profile not found: ${effectiveProviderProfileId}`)
     }
     const isLocalCli = provider.id === LOCAL_CLI_PROVIDER_ID
     if (!isLocalCli && provider.keystore_ref == null) {
@@ -631,24 +671,23 @@ export class SessionService {
       opusModel?: string
     }
 
-    const model = session.model_id ?? config.defaultModel ?? config.model
+    const model = (isMentionTurn ? agent.modelId : null) ?? session.model_id ?? config.defaultModel ?? config.model
     if (model == null || model.length === 0) {
       throw new Error(`Provider ${provider.id} has no default model configured`)
     }
 
     const agentAdapter = getAgentAdapterFromSession(
-      session.agent_adapter,
+      isMentionTurn ? agent.agentAdapter ?? session.agent_adapter : session.agent_adapter,
       session.chat_mode,
       provider.provider_type,
     )
     const adapterKind =
       agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? 'claude-sdk' : 'codex'
-    const stableSdkSessionId = makeSdkRuntimeSessionId(
-      sessionId,
-      session.provider_profile_id,
-      model,
-      agentAdapter,
-    )
+    // 非 mention turn 保持现有 hash（向后兼容续会话）；
+    // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
+    const stableSdkSessionId = isMentionTurn
+      ? makeSdkRuntimeSessionId(sessionId, effectiveProviderProfileId, model, agentAdapter, `mention:${agent.id}`)
+      : makeSdkRuntimeSessionId(sessionId, effectiveProviderProfileId, model, agentAdapter)
     const sdkResumeSafe = isSdkResumeSafe({
       providerType: provider.provider_type,
       model,
@@ -661,12 +700,20 @@ export class SessionService {
       previousPromptSnapshot != null &&
       previousPromptSnapshot.adapterKind === adapterKind &&
       previousPromptSnapshot.model === model &&
-      previousPromptSnapshot.providerProfileId === session.provider_profile_id &&
+      previousPromptSnapshot.providerProfileId === effectiveProviderProfileId &&
       previousPromptSnapshot.sdkSessionId === stableSdkSessionId
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
-      : makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter, turnId)
-    const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
+      : makeSdkRuntimeSessionId(
+          sessionId,
+          effectiveProviderProfileId,
+          model,
+          agentAdapter,
+          isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
+        )
+    const storedPermissionMode = isMentionTurn
+      ? normalizePermissionMode(agent.permissionMode)
+      : getPermissionModeFromSession(session.permission_mode, agentAdapter)
     const permissionMode = this.getEffectivePermissionMode(
       sessionId,
       agentAdapter,
@@ -785,11 +832,12 @@ export class SessionService {
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
-    const teamConfig = readSessionTeamConfig(session)
+    // Mention 路由：被 @ 的 Member 直接响应，不注入 spark_team（不允许它再 dispatch，符合"互调暂缓"原则）。
+    const teamConfig = sessionTeamConfig
     let teamMcpServer: SDKMcpServerConfig | undefined
     let teamRosterPrompt = ''
     let teamInstructionsPrompt = ''
-    if (teamConfig?.enabled) {
+    if (teamConfig?.enabled && !isMentionTurn) {
       const members = this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
       teamRosterPrompt = buildTeamRosterPrompt(agent, members, teamConfig)
       // 若会话由某个长期团队（ManagedTeam）应用而来，则把团队专属 prompt 作为
@@ -816,9 +864,21 @@ export class SessionService {
           eventRepo,
         })) ?? undefined
     }
+    // Mention 路由：注入"被 @ 的 Member 视角"，告诉它自己身份 + 上下文继承策略。
+    let teamMemberContextPrompt = ''
+    if (isMentionTurn && teamConfig?.enabled) {
+      const hostName = agentNameById[teamConfig.hostAgentId] ?? teamConfig.hostAgentId
+      teamMemberContextPrompt = [
+        '[Team Member Context]',
+        `You are ${agent.name} (${agent.id}), a member of the team led by ${hostName}.`,
+        'The user explicitly @-mentioned you in the latest message — respond as yourself, inheriting the prior session context (including conversations with the host and other members above).',
+        'Stay in character: do NOT impersonate the host or other members; do NOT prefix replies with their names. End the turn after addressing what the user asked you.',
+      ].join('\n')
+    }
 
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
+      teamMemberContextPrompt,
       teamRosterPrompt,
       teamInstructionsPrompt,
       runtimeRulesPrompt,
@@ -908,7 +968,7 @@ export class SessionService {
           userMessage: buildUserMessageSnapshot(message, turnAttachments),
           systemPromptSections: promptSections,
           model,
-          providerProfileId: session.provider_profile_id,
+          providerProfileId: effectiveProviderProfileId,
           adapterKind,
           permissionMode,
           toolCount: toolCountEstimate,
@@ -1057,10 +1117,12 @@ export class SessionService {
       const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
       const turnOptions: TryStartSDKTurnOptions = {
         ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
+        ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
       }
       // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
       // 仍保留首轮触发的简单本地标题（deriveSessionTitle）。
-      if (isFirstTurn && !isLocalCli) {
+      // Mention turn 不参与首轮标题精炼（会话已有上下文）。
+      if (isFirstTurn && !isLocalCli && !isMentionTurn) {
         turnOptions.firstTurnTitleContext = {
           providerType: provider.provider_type,
           apiKey,
@@ -1304,9 +1366,32 @@ export class SessionService {
 
     let firstAssistantText = ''
     const collectAssistantText = options.firstTurnTitleContext != null
+    // Mention 路由：把 assistant_message 重写为 team_member_message（驱动 TeamMemberBubble + 进入历史时带 [name]）。
+    // dispatchId 复用 turnId（mention 没有 dispatch 概念，UI 只需稳定标识对 delta 流聚合）。
+    const mentionAgentId = options.mentionAgentId
     executor.onEvent((event) => {
       if (event.type === 'file_change') changedFiles.add(event.path)
-      this.emitAndPersist(sessionId, turnId, event, eventRepo)
+      let outgoing: AgentEvent = event
+      if (mentionAgentId != null) {
+        if (event.type === 'assistant_message' && typeof event.content === 'string') {
+          outgoing = {
+            id: event.id,
+            type: 'team_member_message',
+            sessionId: event.sessionId,
+            turnId: event.turnId,
+            timestamp: event.timestamp,
+            seq: event.seq,
+            dispatchId: `mention:${turnId}`,
+            memberAgentId: mentionAgentId,
+            mode: event.mode,
+            content: event.content,
+            isFinal: event.isFinal,
+          }
+        } else if (event.type === 'user_message') {
+          outgoing = { ...event, mentionAgentId }
+        }
+      }
+      this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
       if (event.type === 'agent_status' && event.status === 'completed') {
         maybeEmitValidationSuggestion()
       }
@@ -2011,6 +2096,7 @@ export class SessionService {
     skillId?: string,
     skillParams?: Record<string, unknown>,
     attachments?: SessionAttachment[],
+    mentionAgentId?: string,
   ): PendingTurn {
     return {
       turnId,
@@ -2020,6 +2106,7 @@ export class SessionService {
       ...(runtimePatch != null ? { runtimePatch } : {}),
       ...(skillId != null ? { skillId } : {}),
       ...(skillParams != null ? { skillParams } : {}),
+      ...(mentionAgentId != null ? { mentionAgentId } : {}),
     }
   }
 
@@ -2041,6 +2128,7 @@ export class SessionService {
       next.skillId,
       next.skillParams,
       next.attachments,
+      next.mentionAgentId,
     )
   }
 

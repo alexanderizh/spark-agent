@@ -84,6 +84,12 @@ export interface SessionSendTurnRequest {
   attachments?: SessionAttachment[]
   /** 团队模式配置：仅在 Team Mode 下随 turn 提交，主进程据此分支到 runHostTurn */
   teamConfig?: TeamModeConfig
+  /**
+   * 团队模式：用户在 Composer 中通过 @ 指定的直接处理 Agent。
+   * - 未填或等于 hostAgentId → 走 Host 主循环（保持原行为）
+   * - 命中 memberAgentIds 中的某个 Member → 跳过 Host，直接由该 Member 响应
+   */
+  mentionAgentId?: string
 }
 
 export interface SessionSendTurnResponse {

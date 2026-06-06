@@ -137,6 +137,7 @@ export const SessionSendTurnRequestSchema = z.object({
     .max(20)
     .optional(),
   teamConfig: TeamModeConfigSchema.optional(),
+  mentionAgentId: z.string().min(1).max(160).optional(),
 })
 
 export const DialogOpenDirectoryRequestSchema = z.object({

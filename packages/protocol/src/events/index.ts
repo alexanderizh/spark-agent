@@ -70,6 +70,8 @@ export interface UserMessageEvent extends BaseEvent {
     name?: string
     mimeType?: string
   }>
+  /** 团队模式：用户通过 @ 指定的直接处理 Agent ID（未填 → 走 Host 主循环） */
+  mentionAgentId?: string
 }
 
 /** Assistant 文本消息（流式：delta 模式；完整：complete 模式） */

@@ -23,6 +23,8 @@ export interface UIMessage {
   timestamp?: string | undefined
   /** 参与构建此消息的所有事件 ID（用于删除时定位数据库事件） */
   eventIds: string[]
+  /** 团队模式：该用户消息通过 @ 指定的 Agent ID（未填 → Host 主循环） */
+  mentionAgentId?: string
 }
 
 export interface FileChangeSummary {
@@ -215,6 +217,7 @@ export class MessageBuilder {
           usage: null,
           timestamp: event.timestamp,
           eventIds: [event.id],
+          ...(event.mentionAgentId != null ? { mentionAgentId: event.mentionAgentId } : {}),
         })
         break
       }

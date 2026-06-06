@@ -35,6 +35,7 @@ import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
 import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
+import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
 import { AvatarImage } from '../components/AvatarImage'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
@@ -1253,6 +1254,12 @@ function ChatStream({
               blocks={msg.blocks}
               avatarSrc={userAvatarSrc}
               {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+              {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                ? {
+                    mentionAgentName:
+                      agents.find((a) => a.id === msg.mentionAgentId)?.name ?? msg.mentionAgentId,
+                  }
+                : {})}
               onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
             >
               {renderBlocks(msg.blocks)}
@@ -3010,6 +3017,7 @@ function UserMsg({
   avatarSrc,
   attachments = [],
   onDelete,
+  mentionAgentName,
 }: {
   children: ReactNode
   timestamp?: string | undefined
@@ -3017,6 +3025,8 @@ function UserMsg({
   avatarSrc: string
   attachments?: MessageAttachment[]
   onDelete?: () => void
+  /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
+  mentionAgentName?: string | undefined
 }) {
   const textContent = extractTextFromBlocks(blocks)
   const [contextMenu, setContextMenu] = useState<{
@@ -3081,6 +3091,11 @@ function UserMsg({
           <AvatarImage src={avatarSrc} seed="spark-user" name="User" alt="用户头像" />
         </div>
       </div>
+      {mentionAgentName != null && mentionAgentName.length > 0 && (
+        <div className="msg-user-mention-hint">
+          → 已直接由 <strong>@{mentionAgentName}</strong> 处理
+        </div>
+      )}
       <MessageHoverBar
         timestamp={timestamp}
         textContent={textContent}
@@ -4644,6 +4659,15 @@ function ComposerV2({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
   const lastFocusedDraftBucketRef = useRef<string | null>(null)
+  // ── Mention (@) 状态：仅团队模式启用时生效 ──
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionAnchor, setMentionAnchor] = useState<{ left: number; top: number } | null>(null)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionIndex, setMentionIndex] = useState(0)
+  /** `@` 字符在 textarea value 中的索引（含 @ 本身）。-1 表示未激活 */
+  const mentionStartRef = useRef<number>(-1)
+  /** 已选择的 mention：name 用于校验文本是否仍含该片段；agentId 用于 sendTurn 时携带 */
+  const [pendingMention, setPendingMention] = useState<{ agentId: string; name: string } | null>(null)
   const runtimeSettingsHydratedRef = useRef(false)
   // ── Input history (↑↓) ──
   const sentHistoryRef = useRef<string[]>([])
@@ -5015,6 +5039,12 @@ function ComposerV2({
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
               ...getCurrentRuntimePatch(),
               ...(teamConfig.enabled ? { teamConfig, agentId: teamConfig.hostAgentId } : {}),
+          ...(teamConfig.enabled &&
+          pendingMention != null &&
+          text.includes(`@${pendingMention.name}`) &&
+          pendingMention.agentId !== teamConfig.hostAgentId
+            ? { mentionAgentId: pendingMention.agentId }
+            : {}),
             })
             if (!sendRes.started) {
               setQueueVisible(true)
@@ -5066,6 +5096,12 @@ function ComposerV2({
           ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
           ...getCurrentRuntimePatch(),
           ...(teamConfig.enabled ? { teamConfig, agentId: teamConfig.hostAgentId } : {}),
+          ...(teamConfig.enabled &&
+          pendingMention != null &&
+          text.includes(`@${pendingMention.name}`) &&
+          pendingMention.agentId !== teamConfig.hostAgentId
+            ? { mentionAgentId: pendingMention.agentId }
+            : {}),
         })
         if (!res.started) {
           setQueueVisible(true)
@@ -5103,6 +5139,7 @@ function ComposerV2({
       setValue,
       teamConfig,
       toast,
+      pendingMention,
     ],
   )
 
@@ -5223,6 +5260,8 @@ function ComposerV2({
     historyDraftRef.current = ''
     setValue('')
     setAttachments([])
+    // 发送后清除 pending mention（避免下一条消息误带）；dispatchMessage 内已通过 text 计算用过
+    setPendingMention(null)
     await dispatchMessage(text, turnAttachments)
   }
 
@@ -5336,6 +5375,123 @@ function ComposerV2({
     [closeSlashPopup, setValue],
   )
 
+  // ── Mention 候选构造：Host 优先，其次启用的 Members ──
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
+    if (!teamConfig.enabled) return []
+    const list: MentionCandidate[] = []
+    const hostAgent = agents.find((a) => a.id === teamConfig.hostAgentId)
+    if (hostAgent != null) {
+      list.push({
+        agentId: hostAgent.id,
+        name: hostAgent.name,
+        description: hostAgent.description ?? '',
+        isHost: true,
+        avatarSrc: resolveAvatarSrc(
+          getAgentAvatarConfig(hostAgent.metadata, hostAgent.id, hostAgent.name),
+        ),
+        builtIn: hostAgent.builtIn,
+      })
+    }
+    for (const memberId of teamConfig.memberAgentIds) {
+      if (memberId === teamConfig.hostAgentId) continue
+      const m = agents.find((a) => a.id === memberId)
+      if (m == null) continue
+      list.push({
+        agentId: m.id,
+        name: m.name,
+        description: m.description ?? '',
+        isHost: false,
+        avatarSrc: resolveAvatarSrc(getAgentAvatarConfig(m.metadata, m.id, m.name)),
+        builtIn: m.builtIn,
+      })
+    }
+    return list
+  }, [teamConfig.enabled, teamConfig.hostAgentId, teamConfig.memberAgentIds, agents])
+
+  // 过滤后的候选列表（用于键盘导航边界）
+  const filteredMentionCandidates = useMemo(() => {
+    const q = mentionQuery.trim().toLowerCase()
+    if (q.length === 0) return mentionCandidates
+    return mentionCandidates.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q) ||
+        c.agentId.toLowerCase().includes(q),
+    )
+  }, [mentionCandidates, mentionQuery])
+
+  const closeMentionPopup = useCallback(() => {
+    setMentionOpen(false)
+    setMentionQuery('')
+    setMentionIndex(0)
+    mentionStartRef.current = -1
+  }, [])
+
+  /**
+   * 计算 textarea 中指定字符索引的视口坐标（用于 mention popover 定位）。
+   * 用一个不可见的镜像 div 复刻 textarea 的字体/边距/换行，把字符放进 <span>，取其 rect。
+   */
+  const computeCaretViewportPosition = useCallback(
+    (textarea: HTMLTextAreaElement, charIndex: number): { left: number; top: number } => {
+      const taRect = textarea.getBoundingClientRect()
+      const style = window.getComputedStyle(textarea)
+      const mirror = document.createElement('div')
+      const props = [
+        'boxSizing',
+        'width',
+        'paddingTop',
+        'paddingRight',
+        'paddingBottom',
+        'paddingLeft',
+        'borderTopWidth',
+        'borderRightWidth',
+        'borderBottomWidth',
+        'borderLeftWidth',
+        'fontFamily',
+        'fontSize',
+        'fontWeight',
+        'fontStyle',
+        'lineHeight',
+        'letterSpacing',
+        'textTransform',
+        'whiteSpace',
+        'wordBreak',
+        'wordSpacing',
+      ] as const
+      for (const p of props) {
+        const v = style[p as never] as unknown as string | undefined
+        mirror.style[p as never] = (v ?? '') as never
+      }
+      mirror.style.position = 'absolute'
+      mirror.style.top = '-9999px'
+      mirror.style.left = '-9999px'
+      mirror.style.visibility = 'hidden'
+      mirror.style.whiteSpace = 'pre-wrap'
+      mirror.style.wordWrap = 'break-word'
+      mirror.style.overflowWrap = 'break-word'
+      mirror.style.overflow = 'hidden'
+      mirror.style.height = 'auto'
+
+      const before = textarea.value.slice(0, charIndex)
+      const marker = document.createElement('span')
+      marker.textContent = '​'
+      mirror.appendChild(document.createTextNode(before))
+      mirror.appendChild(marker)
+      mirror.appendChild(document.createTextNode(textarea.value.slice(charIndex) || ' '))
+      document.body.appendChild(mirror)
+
+      const markerRect = marker.getBoundingClientRect()
+      const mirrorRect = mirror.getBoundingClientRect()
+      // 把 mirror 内的相对偏移映射回 textarea 视口位置（减去 mirror 偏移再加上 textarea 偏移，
+      // 并对 textarea 滚动量做修正）
+      const left = taRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft
+      const top = taRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop + markerRect.height + 4
+      document.body.removeChild(mirror)
+      return { left, top }
+    },
+    [],
+  )
+
   const handleValueChange = useCallback(
     (next: string) => {
       setTextEditMenu(null)
@@ -5348,8 +5504,78 @@ function ComposerV2({
       } else {
         if (slashOpen) closeSlashPopup()
       }
+
+      // ── Mention 检测：仅团队模式启用时生效 ──
+      if (!teamConfig.enabled) {
+        if (mentionOpen) closeMentionPopup()
+        return
+      }
+      const el = textareaRef.current
+      if (el == null) return
+      const caret = el.selectionStart ?? next.length
+      // 从光标向前找最近的 `@`，要求其前面是行首/空白；中间不能含空白
+      const upto = next.slice(0, caret)
+      const match = upto.match(/(?:^|\s)@([^\s@]*)$/)
+      if (match == null) {
+        if (mentionOpen) closeMentionPopup()
+        return
+      }
+      const queryPart = match[1] ?? ''
+      // `@` 索引：upto 末端往前数 1 + queryPart.length
+      const atIndex = upto.length - 1 - queryPart.length
+      mentionStartRef.current = atIndex
+      setMentionQuery(queryPart)
+      setMentionIndex(0)
+      // 计算 caret 坐标并打开浮层
+      try {
+        const pos = computeCaretViewportPosition(el, atIndex)
+        setMentionAnchor(pos)
+      } catch {
+        // 镜像 div 偶发失败时退化为 textarea 左下角
+        const r = el.getBoundingClientRect()
+        setMentionAnchor({ left: r.left, top: r.bottom + 4 })
+      }
+      setMentionOpen(true)
     },
-    [setValue, slashOpen, openSlashPopup, closeSlashPopup],
+    [
+      setValue,
+      slashOpen,
+      openSlashPopup,
+      closeSlashPopup,
+      teamConfig.enabled,
+      mentionOpen,
+      closeMentionPopup,
+      computeCaretViewportPosition,
+    ],
+  )
+
+  /** 用户选中候选 Agent：用 `@<name> ` 替换 `@<query>` 段，并记录 pendingMention */
+  const handleMentionSelect = useCallback(
+    (candidate: MentionCandidate) => {
+      const el = textareaRef.current
+      const atIndex = mentionStartRef.current
+      if (el == null || atIndex < 0) {
+        closeMentionPopup()
+        return
+      }
+      const before = value.slice(0, atIndex)
+      const afterStart = atIndex + 1 + mentionQuery.length
+      const after = value.slice(afterStart)
+      const insertText = `@${candidate.name} `
+      const nextValue = `${before}${insertText}${after}`
+      setValue(nextValue)
+      setPendingMention({ agentId: candidate.agentId, name: candidate.name })
+      closeMentionPopup()
+      // 把光标移到 mention 后
+      requestAnimationFrame(() => {
+        const el2 = textareaRef.current
+        if (el2 == null) return
+        const caretPos = before.length + insertText.length
+        el2.focus()
+        el2.setSelectionRange(caretPos, caretPos)
+      })
+    },
+    [value, mentionQuery, setValue, closeMentionPopup],
   )
 
   const handleTextContextMenu = useCallback((event: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -5376,6 +5602,34 @@ function ComposerV2({
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean }
     if (nativeEvent.isComposing || composingRef.current || event.keyCode === 229) return
+
+    // ── Mention popup navigation（优先级高于 Slash，因 @ 弹窗只在团队模式生效） ──
+    if (mentionOpen) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setMentionIndex((i) => Math.min(i + 1, Math.max(0, filteredMentionCandidates.length - 1)))
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setMentionIndex((i) => Math.max(i - 1, 0))
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeMentionPopup()
+        return
+      }
+      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+        if (filteredMentionCandidates.length > 0) {
+          event.preventDefault()
+          const candidate = filteredMentionCandidates[mentionIndex] ?? filteredMentionCandidates[0]
+          if (candidate != null) handleMentionSelect(candidate)
+          return
+        }
+        closeMentionPopup()
+      }
+    }
 
     // ── Slash command popup navigation ──
     if (slashOpen) {
@@ -5801,6 +6055,10 @@ function ComposerV2({
             }}
             onKeyDown={handleKeyDown}
             onContextMenu={handleTextContextMenu}
+            onBlur={() => {
+              // 失焦时延迟关闭 mention 弹窗，让 onClick 先执行
+              setTimeout(() => closeMentionPopup(), 150)
+            }}
           />
           {textEditMenu != null && (
             <TextEditContextMenu
@@ -5808,6 +6066,15 @@ function ComposerV2({
               onClose={() => setTextEditMenu(null)}
             />
           )}
+          <MentionPopover
+            open={mentionOpen && filteredMentionCandidates.length > 0 && teamConfig.enabled}
+            anchor={mentionAnchor}
+            query={mentionQuery}
+            candidates={mentionCandidates}
+            activeIndex={mentionIndex}
+            onHover={setMentionIndex}
+            onSelect={handleMentionSelect}
+          />
           <button
             className="composer-expand-btn"
             title={manualExpanded ? '折叠输入框' : '展开输入框'}
