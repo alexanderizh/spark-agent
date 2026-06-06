@@ -150,6 +150,8 @@ const ENABLE_CLAUDE_SDK_RESUME = false
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
+  /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
+  private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
   private approvalOverrides = new Map<string, boolean>() // sessionId → approval enabled
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
@@ -559,6 +561,9 @@ export class SessionService {
     if (params.teamConfig != null) {
       new SessionRepository(this.db).patchMetadata(sessionId, { team: params.teamConfig })
     }
+    // 用户提交新 turn = 已对计划做出响应（批准/继续提问/拒绝后再次发送）。
+    // 解除 plan 审批闸门，让被阻塞的队列后续可以恢复自动起跑。
+    this.pendingPlanApprovals.delete(sessionId)
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
@@ -2122,6 +2127,12 @@ export class SessionService {
   }
 
   private startNextQueuedTurn(sessionId: string): void {
+    // Plan 模式审批未完成前，队列暂停自动起跑：用户必须先批准/拒绝/切换权限模式，
+    // 否则后续 turn 会跨越审批弹窗自行执行，破坏用户预期。
+    if (this.pendingPlanApprovals.has(sessionId)) {
+      this.emitQueueChanged(sessionId)
+      return
+    }
     const queue = this.pendingTurns.get(sessionId)
     const next = queue?.shift()
     if (queue == null || next == null) {
@@ -2200,6 +2211,7 @@ export class SessionService {
     const loop = this.activeLoops.get(sessionId)
     const hadQueuedTurns = (this.pendingTurns.get(sessionId)?.length ?? 0) > 0
     this.pendingTurns.delete(sessionId)
+    this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
     // 取消所有进行中的 team dispatch（连同其 member 执行器）
@@ -2223,6 +2235,7 @@ export class SessionService {
   private clearSessionMemory(sessionId: string): void {
     this.activeLoops.delete(sessionId)
     this.pendingTurns.delete(sessionId)
+    this.pendingPlanApprovals.delete(sessionId)
     this.seqCounters.delete(sessionId)
     this.approvalOverrides.delete(sessionId)
     this.iterationOverrides.delete(sessionId)
@@ -2372,6 +2385,15 @@ export class SessionService {
           ? { archivedAt: params.archived ? new Date().toISOString() : null }
           : {}),
       })
+    }
+
+    // 切换 permissionMode 通常意味着用户对 plan 模式审批弹窗做了选择
+    // （批准会切到 claude-auto-edits）。此时解除闸门，让被阻塞的队列恢复推进。
+    if (params.permissionMode !== undefined && this.pendingPlanApprovals.has(params.sessionId)) {
+      this.pendingPlanApprovals.delete(params.sessionId)
+      if (!this.activeLoops.has(params.sessionId)) {
+        this.startNextQueuedTurn(params.sessionId)
+      }
     }
 
     if (
