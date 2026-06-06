@@ -33,6 +33,48 @@ export const SessionPermissionModeSchema = z.enum([
   'claude-auto',
   'claude-bypass',
 ])
+export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
+export const RemotePairingModeSchema = z.enum(['code', 'qr'])
+
+const RemoteCredentialsSchema = z.object({
+  botToken: z.string().max(400).optional(),
+  appId: z.string().max(200).optional(),
+  appSecret: z.string().max(400).optional(),
+  webhookUrl: z.string().max(2000).optional(),
+  qqBotAppId: z.string().max(200).optional(),
+  qqBotToken: z.string().max(400).optional(),
+  qqBotSecret: z.string().max(400).optional(),
+  clawEndpoint: z.string().max(2000).optional(),
+  clawAccessToken: z.string().max(400).optional(),
+})
+
+const RemoteCapabilitiesSchema = z.object({
+  sendMessages: z.boolean(),
+  switchModel: z.boolean(),
+  switchSession: z.boolean(),
+  switchAgent: z.boolean(),
+  manageWorkspace: z.boolean(),
+  runCommands: z.boolean(),
+  approvePermissions: z.boolean(),
+})
+
+const RemoteConnectionPatchSchema = z.object({
+  id: z.string().min(1).max(160).optional(),
+  channel: RemoteChannelTypeSchema,
+  name: z.string().min(1).max(120),
+  enabled: z.boolean().optional(),
+  status: z.enum(['disabled', 'draft', 'pending-pairing', 'connected', 'error']).optional(),
+  credentials: RemoteCredentialsSchema.optional(),
+  commandPrefix: z.string().min(1).max(4).optional(),
+  allowedUserIds: z.array(z.string().min(1).max(160)).max(200).optional(),
+  allowedChatIds: z.array(z.string().min(1).max(160)).max(200).optional(),
+  defaultSessionId: z.string().min(1).max(160).optional(),
+  defaultProviderProfileId: z.string().min(1).max(160).optional(),
+  defaultModelId: z.string().min(1).max(200).optional(),
+  defaultAgentId: z.string().min(1).max(160).optional(),
+  telegramCommands: z.array(z.string().min(1).max(80)).max(80).optional(),
+  capabilities: RemoteCapabilitiesSchema.optional(),
+})
 
 // ─── Team Mode Schema ─────────────────────────────────────────────────────────
 
@@ -426,6 +468,11 @@ export const IpcSchemaRegistry = {
   'dialog:open-file': DialogOpenFileRequestSchema,
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
+  'app:get-startup-settings': z.object({}),
+  'app:set-startup-settings': z.object({
+    openAtLogin: z.boolean(),
+    openAsHidden: z.boolean().optional(),
+  }),
   'rules:list': RulesListRequestSchema,
   'rules:create': RulesCreateRequestSchema,
   'rules:update': RulesUpdateRequestSchema,
@@ -535,6 +582,41 @@ export const IpcSchemaRegistry = {
     category: z.string().min(1).max(80),
   }),
   'settings:get-all': z.object({}),
+
+  // Remote Connections
+  'remote:list': z.object({}),
+  'remote:save': z.object({
+    connection: RemoteConnectionPatchSchema,
+  }),
+  'remote:delete': z.object({
+    id: z.string().min(1).max(160),
+  }),
+  'remote:test': z.object({
+    id: z.string().min(1).max(160),
+  }),
+  'remote:create-bot-draft': z.object({
+    channel: RemoteChannelTypeSchema,
+    name: z.string().min(1).max(120).optional(),
+    openConsole: z.boolean().optional(),
+  }),
+  'remote:generate-pairing': z.object({
+    id: z.string().min(1).max(160),
+    mode: RemotePairingModeSchema,
+  }),
+  'remote:confirm-pairing': z.object({
+    id: z.string().min(1).max(160),
+    code: z.string().min(4).max(20),
+    remoteUserId: z.string().min(1).max(160),
+    displayName: z.string().max(160).optional(),
+    channelThreadId: z.string().max(160).optional(),
+  }),
+  'remote:command-catalog': z.object({}),
+  'remote:execute-command': z.object({
+    id: z.string().min(1).max(160),
+    message: z.string().min(1).max(20_000),
+    sessionId: z.string().min(1).max(160).optional(),
+  }),
+  'remote:runtime-status': z.object({}),
 
   // Usage Ledger
   'usage:record': z.object({

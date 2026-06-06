@@ -6,6 +6,8 @@
  */
 import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
+import { Button, Modal, Tag } from '@arco-design/web-react'
+import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { AvatarPicker } from '../components/AvatarPicker'
@@ -35,6 +37,12 @@ import type {
   SdkIntegrityItem,
   RuntimeToolStatus,
   SessionListResponse,
+  RemoteChannelType,
+  RemoteCommandDefinition,
+  RemoteConnectionCapabilities,
+  RemoteConnectionConfig,
+  RemotePairingMode,
+  RemoteRuntimeStatusResponse,
 } from '@spark/protocol'
 
 
@@ -68,6 +76,21 @@ const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
 const SETTINGS_TELEMETRY_KEY = 'spark-settings-telemetry'
 const SETTINGS_UPDATES_KEY = 'spark-settings-updates'
+
+const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
+  telegram: 'Telegram',
+  feishu: '飞书机器人',
+  qq: 'QQ 机器人',
+  'wechat-claw': '微信 Claw',
+}
+
+const REMOTE_STATUS_LABELS: Record<RemoteConnectionConfig['status'], string> = {
+  disabled: '已停用',
+  draft: '草稿',
+  'pending-pairing': '等待配对',
+  connected: '已连接',
+  error: '错误',
+}
 
 /* ─── Category mapping (localStorage key → IPC category) ─── */
 function localStorageKeyToCategory(key: string): string {
@@ -295,6 +318,7 @@ export function SettingsView() {
       items: [
         // MCP 设置暂未完全实现，隐藏导航项
         // { id: 'mcp-settings', icon: <Icons.MCP />, label: 'MCP' },
+        { id: 'remote-connections', icon: <Icons.Globe />, label: '远程连接' },
         { id: 'system-prompt', icon: <Icons.Chat />, label: '系统提示词' },
         // 工作流模板暂未实现，隐藏导航项
         // { id: 'workflows', icon: <Icons.Workflow />, label: '工作流模板' },
@@ -324,6 +348,7 @@ export function SettingsView() {
     permissions: PermissionsSection,
     // MCP 设置暂未完全实现，隐藏
     // 'mcp-settings': McpSection,
+    'remote-connections': RemoteConnectionsSection,
     'system-prompt': SystemPromptSection,
     // 工作流模板暂未实现，隐藏
     // workflows: WorkflowTemplatesSection,
@@ -371,6 +396,27 @@ function GeneralSection() {
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
   const userAvatar = getUserAvatarConfig(s.userAvatar)
+  const [autoStartSupported, setAutoStartSupported] = useState(true)
+  const [autoStartBusy, setAutoStartBusy] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('app:get-startup-settings', {})
+      .then((res) => {
+        if (cancelled) return
+        setAutoStartSupported(res.supported)
+        if (res.openAtLogin !== s.autoStart) {
+          set({ autoStart: res.openAtLogin })
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setAutoStartSupported(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleBrowseWorkspace = async () => {
     try {
@@ -380,6 +426,25 @@ function GeneralSection() {
       }
     } catch {
       /* user cancelled */
+    }
+  }
+
+  const handleToggleAutoStart = async () => {
+    if (!autoStartSupported || autoStartBusy) return
+    const next = !s.autoStart
+    setAutoStartBusy(true)
+    set({ autoStart: next })
+    try {
+      const res = await window.spark.invoke('app:set-startup-settings', {
+        openAtLogin: next,
+        openAsHidden: true,
+      })
+      setAutoStartSupported(res.supported)
+      set({ autoStart: res.openAtLogin })
+    } catch {
+      set({ autoStart: !next })
+    } finally {
+      setAutoStartBusy(false)
     }
   }
 
@@ -445,10 +510,15 @@ function GeneralSection() {
           onClick={() => set({ systemTray: !s.systemTray })}
         />
 
-        <label>开机自启动</label>
+        <label>
+          开机自启动
+          <span className="sub">
+            {autoStartSupported ? '登录系统后自动启动 Spark Agent' : '当前系统环境不支持读取登录项'}
+          </span>
+        </label>
         <div
-          className={`switch ${s.autoStart ? 'on' : ''}`}
-          onClick={() => set({ autoStart: !s.autoStart })}
+          className={`switch ${s.autoStart ? 'on' : ''} ${autoStartBusy || !autoStartSupported ? 'disabled' : ''}`}
+          onClick={() => void handleToggleAutoStart()}
         />
 
         <label>新会话默认沙箱</label>
@@ -570,6 +640,629 @@ function GeneralSection() {
         />
       </div>
     </div>
+  )
+}
+
+/* ───────── REMOTE CONNECTIONS ───────── */
+const DEFAULT_REMOTE_CAPABILITIES: RemoteConnectionCapabilities = {
+  sendMessages: true,
+  switchModel: true,
+  switchSession: true,
+  switchAgent: true,
+  manageWorkspace: true,
+  runCommands: true,
+  approvePermissions: false,
+}
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(/[\n,]/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function joinCsv(value: string[] | undefined): string {
+  return (value ?? []).join(', ')
+}
+
+function createRemoteDraft(channel: RemoteChannelType): RemoteConnectionConfig {
+  const now = new Date().toISOString()
+  return {
+    id: '',
+    channel,
+    name: REMOTE_CHANNEL_LABELS[channel],
+    enabled: false,
+    status: 'draft',
+    credentials: {},
+    commandPrefix: '/',
+    allowedUserIds: [],
+    allowedChatIds: [],
+    telegramCommands: ['help', 'sessions', 'models', 'agents', 'status'],
+    capabilities: { ...DEFAULT_REMOTE_CAPABILITIES },
+    pairedDevices: [],
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function RemoteConnectionsSection() {
+  const { toast } = useToast()
+  const [connections, setConnections] = useState<RemoteConnectionConfig[]>([])
+  const [commands, setCommands] = useState<RemoteCommandDefinition[]>([])
+  const [sessions, setSessions] = useState<SessionListResponse['sessions']>([])
+  const [runtimeStatus, setRuntimeStatus] = useState<RemoteRuntimeStatusResponse>({
+    running: false,
+    port: null,
+    localBaseUrl: null,
+    polling: [],
+    longConnections: [],
+  })
+  const [selectedId, setSelectedId] = useState<string>('')
+  const [draft, setDraft] = useState<RemoteConnectionConfig>(() => createRemoteDraft('telegram'))
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState<string | null>(null)
+  const [manualPairUser, setManualPairUser] = useState('')
+  const [manualPairName, setManualPairName] = useState('')
+
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    try {
+      const res = await window.spark.invoke('remote:list', {})
+      setConnections(res.connections)
+      setCommands(res.commandCatalog)
+      const [runtime, sessionRes] = await Promise.all([
+        window.spark.invoke('remote:runtime-status', {}),
+        window.spark.invoke('session:list', { includeArchived: false, limit: 60 }),
+      ])
+      setRuntimeStatus(runtime)
+      setSessions(sessionRes.sessions)
+      if (res.connections.length > 0) {
+        const next = res.connections.find((item) => item.id === selectedId) ?? res.connections[0]
+        if (next == null) return
+        setSelectedId(next.id)
+        setDraft(next)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '加载远程连接失败')
+    } finally {
+      setLoading(false)
+    }
+  }, [selectedId, toast])
+
+  useEffect(() => {
+    return deferEffect(refresh)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    return window.spark.on('stream:remote:changed', () => {
+      void refresh()
+    })
+  }, [refresh])
+
+  const refreshRuntime = useCallback(async () => {
+    try {
+      const status = await window.spark.invoke('remote:runtime-status', {})
+      setRuntimeStatus(status)
+    } catch {
+      setRuntimeStatus({ running: false, port: null, localBaseUrl: null, polling: [], longConnections: [] })
+    }
+  }, [])
+
+  const updateDraft = (patch: Partial<RemoteConnectionConfig>) => {
+    setDraft((prev) => ({ ...prev, ...patch }))
+  }
+
+  const updateCredential = (key: keyof RemoteConnectionConfig['credentials'], value: string) => {
+    setDraft((prev) => ({ ...prev, credentials: { ...prev.credentials, [key]: value } }))
+  }
+
+  const updateCapability = (key: keyof RemoteConnectionCapabilities, value: boolean) => {
+    setDraft((prev) => ({
+      ...prev,
+      capabilities: { ...prev.capabilities, [key]: value },
+    }))
+  }
+
+  const saveDraft = async () => {
+    setBusy('save')
+    try {
+      const payload: Partial<RemoteConnectionConfig> & Pick<RemoteConnectionConfig, 'channel' | 'name'> = {
+        ...draft,
+        status: draft.enabled ? draft.status : 'disabled',
+      }
+      if (draft.id) payload.id = draft.id
+      const res = await window.spark.invoke('remote:save', { connection: payload })
+      setConnections((prev) => {
+        const exists = prev.some((item) => item.id === res.connection.id)
+        return exists
+          ? prev.map((item) => (item.id === res.connection.id ? res.connection : item))
+          : [res.connection, ...prev]
+      })
+      setSelectedId(res.connection.id)
+      setDraft(res.connection)
+      setEditorOpen(true)
+      await refreshRuntime()
+      toast.success('远程连接已保存')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '保存失败')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const createBotDraft = async (channel: RemoteChannelType) => {
+    setBusy(`create:${channel}`)
+    try {
+      const res = await window.spark.invoke('remote:create-bot-draft', {
+        channel,
+        openConsole: true,
+      })
+      setConnections((prev) => [res.connection, ...prev])
+      setSelectedId(res.connection.id)
+      setDraft(res.connection)
+      setEditorOpen(true)
+      await refreshRuntime()
+      toast.success(`已创建 ${REMOTE_CHANNEL_LABELS[channel]} 草稿并打开平台入口`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建草稿失败')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const testConnection = async () => {
+    if (!draft.id) {
+      toast.error('请先保存连接')
+      return
+    }
+    setBusy('test')
+    try {
+      const res = await window.spark.invoke('remote:test', { id: draft.id })
+      toast[res.ok ? 'success' : 'error'](res.message)
+      await refresh()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '测试失败')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const generatePairing = async (mode: RemotePairingMode) => {
+    if (!draft.id) {
+      toast.error('请先保存连接')
+      return
+    }
+    setBusy(`pair:${mode}`)
+    try {
+      const res = await window.spark.invoke('remote:generate-pairing', { id: draft.id, mode })
+      setConnections((prev) => prev.map((item) => (item.id === res.connection.id ? res.connection : item)))
+      setDraft(res.connection)
+      await refreshRuntime()
+      toast.success(mode === 'qr' ? '二维码配对负载已生成' : '配对码已生成')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '生成配对失败')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const confirmPairing = async () => {
+    if (!draft.id || draft.pairing == null) return
+    if (manualPairUser.trim().length === 0) {
+      toast.error('请输入远程用户 ID')
+      return
+    }
+    setBusy('confirm-pair')
+    try {
+      const res = await window.spark.invoke('remote:confirm-pairing', {
+        id: draft.id,
+        code: draft.pairing.code,
+        remoteUserId: manualPairUser.trim(),
+        ...(manualPairName.trim().length > 0 ? { displayName: manualPairName.trim() } : {}),
+      })
+      setConnections((prev) => prev.map((item) => (item.id === res.connection.id ? res.connection : item)))
+      setDraft(res.connection)
+      await refreshRuntime()
+      toast.success('配对已确认')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '确认配对失败')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const deleteConnection = async () => {
+    if (!draft.id) {
+      setDraft(createRemoteDraft(draft.channel))
+      return
+    }
+    setBusy('delete')
+    try {
+      await window.spark.invoke('remote:delete', { id: draft.id })
+      const next = connections.filter((item) => item.id !== draft.id)
+      setConnections(next)
+      if (next[0] != null) {
+        setSelectedId(next[0].id)
+        setDraft(next[0])
+      } else {
+        setSelectedId('')
+        setDraft(createRemoteDraft('telegram'))
+      }
+      setEditorOpen(false)
+      await refreshRuntime()
+      toast.success('连接已删除')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除失败')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const webhookUrl = runtimeStatus.localBaseUrl != null && draft.id
+    ? `${runtimeStatus.localBaseUrl}/remote/webhook/${draft.channel}/${draft.id}`
+    : ''
+  const polling = runtimeStatus.polling.find((item) => item.connectionId === draft.id)
+  const longConnection = runtimeStatus.longConnections.find((item) => item.connectionId === draft.id)
+  const selectedSession = sessions.find((item) => item.id === draft.defaultSessionId)
+
+  return (
+    <div className="settings-section remote-settings">
+      <h2>远程连接</h2>
+      <div className="lede">通过 Telegram、飞书、QQ、微信 Claw 从远程桌面或移动端与 Spark Agent 通信。</div>
+
+      <div className="remote-create-strip">
+        {(Object.keys(REMOTE_CHANNEL_LABELS) as RemoteChannelType[]).map((channel) => (
+          <Button
+            key={channel}
+            size="small"
+            type={draft.channel === channel ? 'primary' : 'secondary'}
+            loading={busy === `create:${channel}`}
+            onClick={() => void createBotDraft(channel)}
+          >
+            一键创建 {REMOTE_CHANNEL_LABELS[channel]}
+          </Button>
+        ))}
+      </div>
+
+      <div className="remote-runtime-bar">
+        <div>
+          <strong>{runtimeStatus.running ? '运行中' : '未运行'}</strong>
+          <span>
+            {runtimeStatus.localBaseUrl != null
+              ? `本地入口 ${runtimeStatus.localBaseUrl}`
+              : '本地 webhook 服务未启动'}
+          </span>
+        </div>
+        <Button size="mini" onClick={() => void refreshRuntime()}>
+          刷新状态
+        </Button>
+      </div>
+
+      <div className="remote-card-grid">
+          <button
+            className={`remote-connection-card ${draft.id === '' ? 'active' : ''}`}
+            onClick={() => {
+              setSelectedId('')
+              setDraft(createRemoteDraft('telegram'))
+              setEditorOpen(true)
+            }}
+          >
+            <span className="remote-card-main">
+              <span className="remote-card-title">新建连接</span>
+              <span className="remote-card-desc">选择渠道后保存</span>
+            </span>
+            <Icons.Plus size={14} />
+          </button>
+          {loading && <div className="remote-muted-box">加载中...</div>}
+          {connections.map((item) => (
+            <button
+              key={item.id}
+              className={`remote-connection-card ${selectedId === item.id ? 'active' : ''}`}
+              onClick={() => {
+                setSelectedId(item.id)
+                setDraft(item)
+                setManualPairUser('')
+                setManualPairName('')
+                setEditorOpen(true)
+              }}
+            >
+              <span className="remote-card-main">
+                <span className="remote-card-title">{item.name}</span>
+                <span className="remote-card-desc">{REMOTE_CHANNEL_LABELS[item.channel]}</span>
+              </span>
+              <Tag size="small" color={item.status === 'connected' ? 'green' : item.status === 'error' ? 'red' : 'arcoblue'}>
+                {REMOTE_STATUS_LABELS[item.status]}
+              </Tag>
+            </button>
+          ))}
+      </div>
+
+      <Modal
+        visible={editorOpen}
+        title={draft.id ? `编辑 ${draft.name}` : '新建远程连接'}
+        footer={null}
+        onCancel={() => setEditorOpen(false)}
+        className="remote-editor-modal"
+        maskClosable={false}
+      >
+        <div className="remote-editor">
+          <div className="subsec-h">连接配置</div>
+          <div className="form-grid remote-form-grid">
+            <label>
+              渠道<span className="sub">同一时间可以启用多个渠道</span>
+            </label>
+            <SparkSelect
+              value={draft.channel}
+              onChange={(e) => {
+                const channel = e.target.value as RemoteChannelType
+                updateDraft({ channel, name: draft.name || REMOTE_CHANNEL_LABELS[channel] })
+              }}
+            >
+              <option value="telegram">Telegram</option>
+              <option value="feishu">飞书机器人</option>
+              <option value="qq">QQ 机器人</option>
+              <option value="wechat-claw">微信 Claw</option>
+            </SparkSelect>
+
+            <label>连接名称</label>
+            <SparkInput value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
+
+            <label>
+              启用连接<span className="sub">停用后不会接收远程消息</span>
+            </label>
+            <div className={`switch ${draft.enabled ? 'on' : ''}`} onClick={() => updateDraft({ enabled: !draft.enabled })} />
+
+            <label>
+              命令前缀<span className="sub">Telegram 可同步为 bot command</span>
+            </label>
+            <SparkInput value={draft.commandPrefix} onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })} />
+
+            <label>
+              默认会话<span className="sub">普通远程消息会投递到这里</span>
+            </label>
+            <SparkSelect
+              value={draft.defaultSessionId ?? ''}
+              onChange={(e) => {
+                const value = e.target.value
+                setDraft((prev) => {
+                  const next = { ...prev }
+                  if (value) next.defaultSessionId = value
+                  else delete next.defaultSessionId
+                  return next
+                })
+              }}
+            >
+              <option value="">未选择</option>
+              {sessions.map((session) => (
+                <option key={session.id} value={session.id}>
+                  {session.title || '新会话'} · {session.id}
+                </option>
+              ))}
+            </SparkSelect>
+
+            <RemoteCredentialFields draft={draft} updateCredential={updateCredential} />
+
+            <label>
+              允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
+            </label>
+            <SparkTextarea
+              value={joinCsv(draft.allowedUserIds)}
+              onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
+              rows={2}
+            />
+
+            <label>
+              允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
+            </label>
+            <SparkTextarea
+              value={joinCsv(draft.allowedChatIds)}
+              onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
+              rows={2}
+            />
+          </div>
+
+          {draft.channel === 'telegram' && (
+            <>
+              <div className="subsec-h">Telegram 命令</div>
+              <div className="remote-muted-box">
+                {polling?.running
+                  ? 'Telegram polling 已启动，无需公网 webhook；发送 /bind 配对码 后即可使用。'
+                  : polling?.lastError != null
+                    ? `Telegram polling 未启动：${polling.lastError}`
+                    : '保存并启用 Telegram Bot Token 后会自动启动 polling。'}
+              </div>
+              <SparkTextarea
+                value={draft.telegramCommands.join('\n')}
+                onChange={(e) => updateDraft({ telegramCommands: splitCsv(e.target.value) })}
+                rows={5}
+                placeholder="help&#10;sessions&#10;models&#10;agents"
+              />
+            </>
+          )}
+
+          {draft.channel === 'feishu' && (
+            <>
+              <div className="subsec-h">飞书长连接</div>
+              <div className="remote-muted-box">
+                {longConnection?.running
+                  ? '飞书 WebSocket 长连接已启动，无需公网 webhook；在飞书里发送 /bind 配对码 后即可使用。'
+                  : longConnection?.lastError != null
+                    ? `飞书长连接未启动：${longConnection.lastError}`
+                    : '保存并启用 App ID / App Secret 后会自动启动飞书长连接。'}
+              </div>
+            </>
+          )}
+
+          <div className="subsec-h">远程功能</div>
+          <div className="remote-cap-grid">
+            {(Object.entries(draft.capabilities) as Array<[keyof RemoteConnectionCapabilities, boolean]>).map(([key, value]) => (
+              <SettingsRow
+                key={key}
+                title={REMOTE_CAPABILITY_LABELS[key]}
+                desc={REMOTE_CAPABILITY_DESCS[key]}
+                right={<div className={`switch ${value ? 'on' : ''}`} onClick={() => updateCapability(key, !value)} />}
+              />
+            ))}
+          </div>
+
+          <div className="remote-actions">
+            <Button type="primary" size="small" loading={busy === 'save'} onClick={() => void saveDraft()}>
+              保存连接
+            </Button>
+            <Button size="small" loading={busy === 'test'} disabled={!draft.id} onClick={() => void testConnection()}>
+              测试配置
+            </Button>
+            <Button size="small" status="danger" loading={busy === 'delete'} onClick={() => void deleteConnection()}>
+              删除
+            </Button>
+          </div>
+
+          <div className="subsec-h">配对</div>
+          <div className="remote-pairing-panel">
+            {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
+              <div className="remote-webhook-box">
+                <span>{webhookUrl}</span>
+                <Button size="mini" onClick={() => void navigator.clipboard?.writeText(webhookUrl)}>
+                  复制 webhook
+                </Button>
+              </div>
+            )}
+            {selectedSession == null && draft.defaultSessionId != null && (
+              <div className="remote-muted-box">当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}</div>
+            )}
+            <div className="remote-pairing-actions">
+              <Button size="small" disabled={!draft.id} loading={busy === 'pair:code'} onClick={() => void generatePairing('code')}>
+                生成配对码
+              </Button>
+              <Button size="small" disabled={!draft.id} loading={busy === 'pair:qr'} onClick={() => void generatePairing('qr')}>
+                生成二维码配对
+              </Button>
+            </div>
+            {draft.pairing != null ? (
+              <div className="remote-pairing-body">
+                <div>
+                  <div className="remote-pair-code">{draft.pairing.code}</div>
+                  <div className="remote-pair-tip">
+                    在 {REMOTE_CHANNEL_LABELS[draft.channel]} 中发送 <code>/bind {draft.pairing.code}</code> 完成配对。
+                  </div>
+                  <div className="muted text-xs-12">过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}</div>
+                  <div className="remote-manual-pair">
+                    <SparkInput value={manualPairUser} onChange={(e) => setManualPairUser(e.target.value)} placeholder="远程用户 ID" />
+                    <SparkInput value={manualPairName} onChange={(e) => setManualPairName(e.target.value)} placeholder="显示名称（可选）" />
+                    <Button size="small" loading={busy === 'confirm-pair'} onClick={() => void confirmPairing()}>
+                      手动确认
+                    </Button>
+                  </div>
+                </div>
+                <QrPayloadPreview payload={draft.pairing.qrPayload} />
+              </div>
+            ) : (
+              <div className="remote-muted-box">连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。</div>
+            )}
+            {draft.pairedDevices.length > 0 && (
+              <div className="remote-paired-list">
+                {draft.pairedDevices.map((device) => (
+                  <Tag key={device.id} size="small" color="green">
+                    {device.displayName || device.remoteUserId}
+                  </Tag>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="subsec-h">内置远程命令</div>
+          <div className="remote-command-list">
+            {commands.map((cmd) => (
+              <div key={cmd.name} className="remote-command-row">
+                <code>{cmd.usage}</code>
+                <span>{cmd.description}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
+
+const REMOTE_CAPABILITY_LABELS: Record<keyof RemoteConnectionCapabilities, string> = {
+  sendMessages: '发送消息到会话',
+  switchModel: '切换模型 / Provider',
+  switchSession: '切换会话',
+  switchAgent: '切换 Agent',
+  manageWorkspace: '查看工作区',
+  runCommands: '运行内置命令',
+  approvePermissions: '远程审批权限',
+}
+
+const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string> = {
+  sendMessages: '允许远程端向默认会话提交 /send 或普通消息',
+  switchModel: '允许 /models、/providers、/use-model、/use-provider',
+  switchSession: '允许 /sessions 与 /use-session',
+  switchAgent: '允许 /agents 与 /use-agent',
+  manageWorkspace: '允许 /workspaces 查看项目入口',
+  runCommands: '允许解析命令前缀并执行命令目录',
+  approvePermissions: '预留给远程 allow/deny 审批，默认关闭',
+}
+
+function RemoteCredentialFields({
+  draft,
+  updateCredential,
+}: {
+  draft: RemoteConnectionConfig
+  updateCredential: (key: keyof RemoteConnectionConfig['credentials'], value: string) => void
+}) {
+  if (draft.channel === 'telegram') {
+    return (
+      <>
+        <label>Bot Token</label>
+        <SparkInput value={draft.credentials.botToken ?? ''} onChange={(e) => updateCredential('botToken', e.target.value)} placeholder="123456:ABC..." />
+      </>
+    )
+  }
+  if (draft.channel === 'feishu') {
+    return (
+      <>
+        <label>App ID</label>
+        <SparkInput value={draft.credentials.appId ?? ''} onChange={(e) => updateCredential('appId', e.target.value)} />
+        <label>App Secret</label>
+        <SparkInput value={draft.credentials.appSecret ?? ''} onChange={(e) => updateCredential('appSecret', e.target.value)} />
+      </>
+    )
+  }
+  if (draft.channel === 'qq') {
+    return (
+      <>
+        <label>机器人 AppID</label>
+        <SparkInput value={draft.credentials.qqBotAppId ?? ''} onChange={(e) => updateCredential('qqBotAppId', e.target.value)} />
+        <label>机器人 Token</label>
+        <SparkInput value={draft.credentials.qqBotToken ?? ''} onChange={(e) => updateCredential('qqBotToken', e.target.value)} />
+        <label>机器人 Secret</label>
+        <SparkInput value={draft.credentials.qqBotSecret ?? ''} onChange={(e) => updateCredential('qqBotSecret', e.target.value)} />
+      </>
+    )
+  }
+  return (
+    <>
+      <label>Claw Endpoint</label>
+      <SparkInput value={draft.credentials.clawEndpoint ?? ''} onChange={(e) => updateCredential('clawEndpoint', e.target.value)} placeholder="http://127.0.0.1:..." />
+      <label>Access Token</label>
+      <SparkInput value={draft.credentials.clawAccessToken ?? ''} onChange={(e) => updateCredential('clawAccessToken', e.target.value)} />
+    </>
+  )
+}
+
+function QrPayloadPreview({ payload }: { payload: string }) {
+  return (
+    <button
+      className="remote-qr"
+      title={payload}
+      onClick={() => void navigator.clipboard?.writeText(payload)}
+    >
+      <QRCodeSVG value={payload} size={128} level="M" includeMargin bgColor="transparent" fgColor="currentColor" />
+      <small>点击复制二维码负载</small>
+    </button>
   )
 }
 

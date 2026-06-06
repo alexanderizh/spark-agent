@@ -112,6 +112,8 @@ import {
   closePopOutWindow,
   isPopOutOpen,
 } from '../services/PopOutBrowserService.js'
+import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
+import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
@@ -252,6 +254,21 @@ function getSettingsService(): SettingsService {
   return _settingsService
 }
 
+let _remoteConnectionService: RemoteConnectionService | null = null
+let _remoteConnectionChangeHookRegistered = false
+function getRemoteConnectionService(): RemoteConnectionService {
+  if (_remoteConnectionService == null) {
+    _remoteConnectionService = new RemoteConnectionService(getSettingsService())
+  }
+  if (!_remoteConnectionChangeHookRegistered) {
+    _remoteConnectionChangeHookRegistered = true
+    _remoteConnectionService.onChange((event) => {
+      pushStreamEvent('stream:remote:changed', event)
+    })
+  }
+  return _remoteConnectionService
+}
+
 let _usageLedgerService: UsageLedgerService | null = null
 function getUsageLedgerService(): UsageLedgerService {
   if (_usageLedgerService == null) {
@@ -377,11 +394,58 @@ function getWorkspaceService(): WorkspaceService {
 
 let _sessionService: SessionService | null = null
 let pendingQuestionResolvers = new Map<string, (answers: Record<string, unknown>) => void>()
+const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
+
+function registerRemoteTurn(turnId: string, target: { connectionId: string; externalId: string }): void {
+  remoteTurnTargets.set(turnId, target)
+  if (remoteTurnTargets.size > 500) {
+    const oldest = remoteTurnTargets.keys().next().value
+    if (oldest != null) remoteTurnTargets.delete(oldest)
+  }
+}
+
+function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void {
+  const target = remoteTurnTargets.get(event.turnId)
+  if (target == null) return
+  if (event.type === 'assistant_message' && event.isFinal) {
+    remoteTurnTargets.delete(event.turnId)
+    const content = event.content.trim()
+    if (content.length === 0) return
+    void getRemoteConnectionService().sendReply(target.connectionId, target.externalId, content).catch((err) => {
+      log.warn(`Failed to send remote assistant reply: ${String(err)}`)
+    })
+  } else if (event.type === 'agent_error') {
+    remoteTurnTargets.delete(event.turnId)
+    void getRemoteConnectionService().sendReply(target.connectionId, target.externalId, `处理失败：${event.message}`).catch((err) => {
+      log.warn(`Failed to send remote error reply: ${String(err)}`)
+    })
+  }
+}
+
+async function sendRemoteTurnReplyFromHistory(
+  sessionId: string,
+  turnId: string,
+  target: { connectionId: string; externalId: string },
+): Promise<boolean> {
+  const history = await getSessionService().getHistory({ sessionId, limit: 200 })
+  const final = history.events.find((event) => (
+    event.turnId === turnId &&
+    event.type === 'assistant_message' &&
+    event.isFinal &&
+    event.content.trim().length > 0
+  ))
+  if (final == null || final.type !== 'assistant_message') return false
+  if (remoteTurnTargets.get(turnId) !== target) return true
+  remoteTurnTargets.delete(turnId)
+  await getRemoteConnectionService().sendReply(target.connectionId, target.externalId, final.content.trim())
+  return true
+}
 
 function getSessionService(): SessionService {
   if (_sessionService == null) {
     const onEvent: SessionEventHandler = (event) => {
       pushStreamEvent('stream:session:agent-event', event)
+      handleRemoteTurnEvent(event)
     }
     const onApproval: ApprovalHandler = (sessionId, toolName, toolInput) => {
       const permissionContext = getSessionPermissionContext(sessionId)
@@ -508,15 +572,286 @@ function readAgentHookConfig(sessionId: string): HookConfigInternal {
   return parseHookConfig(agent.hookConfig, { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false })
 }
 
+function getStartupSettings(): { supported: boolean; openAtLogin: boolean; openAsHidden: boolean } {
+  try {
+    const settings = app.getLoginItemSettings()
+    return {
+      supported: true,
+      openAtLogin: settings.openAtLogin,
+      openAsHidden: settings.openAsHidden,
+    }
+  } catch (err) {
+    log.warn(`Failed to read startup settings: ${String(err)}`)
+    return { supported: false, openAtLogin: false, openAsHidden: false }
+  }
+}
+
+function parseRemoteCommand(message: string, prefix: string): { name: string; args: string[]; text: string } {
+  const trimmed = message.trim()
+  const effectivePrefix = prefix.trim() || '/'
+  const body = trimmed.startsWith(effectivePrefix) ? trimmed.slice(effectivePrefix.length).trim() : `send ${trimmed}`
+  const [name = 'help', ...args] = body.split(/\s+/).filter(Boolean)
+  return { name: name.toLowerCase(), args, text: body }
+}
+
+function formatRows(rows: Array<{ id: string; label: string; meta?: string }>, empty: string): string {
+  if (rows.length === 0) return empty
+  return rows.map((row, index) => `${index + 1}. ${row.label}\n   ${row.id}${row.meta != null ? ` · ${row.meta}` : ''}`).join('\n')
+}
+
+async function createRemoteSession(connectionId: string, workspaceId?: string): Promise<{ sessionId: string; connectionName: string }> {
+  const remoteService = getRemoteConnectionService()
+  const connection = remoteService.list().connections.find((item) => item.id === connectionId)
+  if (connection == null) throw new Error('远程连接不存在')
+  const providers = await getProviderService().listProviders()
+  const provider = connection.defaultProviderProfileId != null
+    ? providers.find((item) => item.id === connection.defaultProviderProfileId)
+    : providers.find((item) => item.isDefault) ?? providers[0]
+  if (provider == null) {
+    throw new Error('没有可用 Provider，请先在设置中配置模型 Provider。')
+  }
+  await ensureNoProjectDirectoryExists()
+  const defaults = getRuntimePermissionDefaults()
+  const created = await getSessionService().createSession({
+    providerProfileId: provider.id,
+    ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
+    ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
+    agentAdapter: defaults.agentAdapter,
+    permissionMode: defaults.permissionMode,
+    ...(workspaceId != null ? { workspaceId } : {}),
+    title: `远程会话 · ${connection.name}`,
+  })
+  pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+  remoteService.updateConnectionDefaults(connection.id, {
+    defaultSessionId: created.sessionId,
+    defaultProviderProfileId: provider.id,
+  })
+  return { sessionId: created.sessionId, connectionName: connection.name }
+}
+
+async function executeRemoteCommand(connectionId: string, message: string, explicitSessionId?: string): Promise<{ ok: boolean; title: string; text: string }> {
+  const remoteService = getRemoteConnectionService()
+  const store = remoteService.list()
+  const connection = store.connections.find((item) => item.id === connectionId)
+  if (connection == null) return { ok: false, title: '连接不存在', text: '请先在设置中创建远程连接。' }
+  if (!connection.enabled) return { ok: false, title: '连接未启用', text: '请先启用该远程连接。' }
+
+  const command = parseRemoteCommand(message, connection.commandPrefix)
+  const sessionId = explicitSessionId ?? connection.defaultSessionId
+  const requireCapability = (capability: keyof typeof connection.capabilities): { ok: boolean; title: string; text: string } | null => {
+    if (connection.capabilities[capability]) return null
+    return { ok: false, title: '功能未授权', text: `该连接没有启用 ${capability} 能力。` }
+  }
+
+  if (command.name === 'help') {
+    return {
+      ok: true,
+      title: '远程命令',
+      text: remoteService
+        .getCommandCatalog()
+        .map((cmd) => `${cmd.usage} - ${cmd.description}`)
+        .join('\n'),
+    }
+  }
+
+  if (command.name === 'status') {
+    return {
+      ok: true,
+      title: connection.name,
+      text: `渠道：${connection.channel}\n状态：${connection.status}\n配对设备：${connection.pairedDevices.length}\n默认会话：${connection.defaultSessionId ?? '未设置'}`,
+    }
+  }
+
+  if (command.name === 'sessions') {
+    const blocked = requireCapability('switchSession')
+    if (blocked != null) return blocked
+    const result = await getSessionService().listSessions({ includeArchived: false, limit: 12 })
+    return {
+      ok: true,
+      title: '最近会话',
+      text: formatRows(
+        result.sessions.map((item) => ({
+          id: item.id,
+          label: item.title || '新会话',
+          meta: `${item.status} · ${item.messageCount} 条消息`,
+        })),
+        '暂无会话',
+      ),
+    }
+  }
+
+  if (command.name === 'use-session') {
+    const blocked = requireCapability('switchSession')
+    if (blocked != null) return blocked
+    const target = command.args[0]
+    if (target == null) return { ok: false, title: '缺少 sessionId', text: '用法：/use-session <sessionId>' }
+    remoteService.updateConnectionDefaults(connection.id, { defaultSessionId: target })
+    return { ok: true, title: '已切换默认会话', text: target }
+  }
+
+  if (command.name === 'models') {
+    const blocked = requireCapability('switchModel')
+    if (blocked != null) return blocked
+    const models = getModelService().list()
+    return {
+      ok: true,
+      title: '模型配置',
+      text: formatRows(
+        models.map((item) => ({ id: item.id, label: item.name, meta: item.enabled ? 'enabled' : 'disabled' })),
+        '暂无模型配置',
+      ),
+    }
+  }
+
+  if (command.name === 'providers') {
+    const blocked = requireCapability('switchModel')
+    if (blocked != null) return blocked
+    const providers = await getProviderService().listProviders()
+    return {
+      ok: true,
+      title: 'Provider 配置',
+      text: formatRows(
+        providers.map((item) => ({ id: item.id, label: item.name, meta: item.provider })),
+        '暂无 Provider',
+      ),
+    }
+  }
+
+  if (command.name === 'agents') {
+    const blocked = requireCapability('switchAgent')
+    if (blocked != null) return blocked
+    const agents = getAgentRepository().list({ includeDisabled: false }).map(toManagedAgent)
+    return {
+      ok: true,
+      title: 'Agent',
+      text: formatRows(
+        agents.map((item) => ({ id: item.id, label: item.name, meta: item.agentAdapter })),
+        '暂无 Agent',
+      ),
+    }
+  }
+
+  if (command.name === 'workspaces') {
+    const blocked = requireCapability('manageWorkspace')
+    if (blocked != null) return blocked
+    const list = getWorkspaceService().listWorkspaces(12, 0, { includeArchived: false }).map(toWorkspaceInfo)
+    return {
+      ok: true,
+      title: '工作区',
+      text: formatRows(
+        list.map((item) => ({ id: item.id, label: item.name, meta: item.rootPath })),
+        '暂无工作区',
+      ),
+    }
+  }
+
+  if (command.name === 'new-session') {
+    const blocked = requireCapability('switchSession')
+    if (blocked != null) return blocked
+    const workspaceId = command.args[0]
+    const created = await createRemoteSession(connection.id, workspaceId)
+    return { ok: true, title: '已新建默认会话', text: created.sessionId }
+  }
+
+  if (command.name === 'open-workspace') {
+    const blocked = requireCapability('manageWorkspace')
+    if (blocked != null) return blocked
+    const rootPath = command.text.replace(/^open-workspace\s*/i, '').trim()
+    if (rootPath.length === 0) return { ok: false, title: '缺少项目路径', text: '用法：/open-workspace <path>' }
+    const workspace = await getWorkspaceService().openWorkspace(rootPath, undefined, { create: false })
+    return { ok: true, title: '已打开项目', text: `${workspace.name}\n${workspace.id}\n${workspace.root_path}` }
+  }
+
+  if (command.name === 'use-model' || command.name === 'use-provider' || command.name === 'use-agent') {
+    const capability = command.name === 'use-agent' ? 'switchAgent' : 'switchModel'
+    const blocked = requireCapability(capability)
+    if (blocked != null) return blocked
+    const target = command.args[0]
+    if (target == null) return { ok: false, title: '缺少目标 ID', text: `用法：/${command.name} <id>` }
+    if (sessionId != null) {
+      await getSessionService().updateSession({
+        sessionId,
+        ...(command.name === 'use-model' ? { modelId: target } : {}),
+        ...(command.name === 'use-provider' ? { providerProfileId: target } : {}),
+        ...(command.name === 'use-agent' ? { agentId: target } : {}),
+      })
+    }
+    remoteService.updateConnectionDefaults(connection.id, {
+      ...(command.name === 'use-model' ? { defaultModelId: target } : {}),
+      ...(command.name === 'use-provider' ? { defaultProviderProfileId: target } : {}),
+      ...(command.name === 'use-agent' ? { defaultAgentId: target } : {}),
+    })
+    return { ok: true, title: '已切换', text: target }
+  }
+
+  if (command.name === 'send') {
+    const blocked = requireCapability('sendMessages')
+    if (blocked != null) return blocked
+    const text = command.text.replace(/^send\s*/i, '').trim()
+    if (sessionId == null) return { ok: false, title: '缺少默认会话', text: '请先使用 /use-session <sessionId> 绑定会话。' }
+    if (text.length === 0) return { ok: false, title: '消息为空', text: '用法：/send <message>' }
+    const result = await getSessionService().sendTurn({
+      sessionId,
+      message: text,
+      ...(connection.defaultProviderProfileId != null ? { providerProfileId: connection.defaultProviderProfileId } : {}),
+      ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
+      ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
+    })
+    return { ok: true, title: result.started ? '已发送' : '已加入队列', text: `turnId: ${result.turnId}` }
+  }
+
+  return { ok: false, title: '未知命令', text: '发送 /help 查看可用命令。' }
+}
+
+async function handleRemoteInboundMessage(message: RemoteInboundMessage): Promise<{ title: string; text: string } | void> {
+  const prefix = message.connection.commandPrefix.trim() || '/'
+  const isCommandMessage = message.text.trim().startsWith(prefix)
+  if (isCommandMessage) {
+    if (!message.connection.capabilities.runCommands) {
+      return { title: '功能未授权', text: '该连接没有启用远程命令能力。' }
+    }
+    const result = await executeRemoteCommand(message.connection.id, message.text, message.connection.defaultSessionId)
+    return { title: result.title, text: result.text }
+  }
+
+  if (!message.connection.capabilities.sendMessages) {
+    return { title: '功能未授权', text: '该连接没有启用消息投递能力。' }
+  }
+  const sessionId = message.connection.defaultSessionId ?? (await createRemoteSession(message.connection.id)).sessionId
+  await ensureSessionWorkspacePaths(sessionId)
+
+  const result = await getSessionService().sendTurn({
+    sessionId,
+    message: `[${message.senderName}] ${message.text}`,
+    ...(message.connection.defaultProviderProfileId != null ? { providerProfileId: message.connection.defaultProviderProfileId } : {}),
+    ...(message.connection.defaultModelId != null ? { modelId: message.connection.defaultModelId } : {}),
+    ...(message.connection.defaultAgentId != null ? { agentId: message.connection.defaultAgentId } : {}),
+  })
+  const target = {
+    connectionId: message.connection.id,
+    externalId: message.externalId,
+  }
+  registerRemoteTurn(result.turnId, target)
+  void sendRemoteTurnReplyFromHistory(sessionId, result.turnId, target).catch((err) => {
+    log.warn(`Failed to send remote reply from history: ${String(err)}`)
+  })
+  return undefined
+}
+
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
+  void getRemoteConnectionService().startRuntime(handleRemoteInboundMessage).catch((err) => {
+    log.warn(`Failed to start remote runtime: ${String(err)}`)
+  })
 
   // ─── Session Handlers ──────────────────────────────────────────────────
 
   typedIpcHandle('session:create', async (req) => {
     log.info(`session:create requested, providerProfileId=${req.providerProfileId}`)
     await ensureNoProjectDirectoryExists()
-    return getSessionService().createSession(applyRuntimePermissionDefaults(req))
+    const created = await getSessionService().createSession(applyRuntimePermissionDefaults(req))
+    pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+    return created
   })
 
   typedIpcHandle('session:send-turn', async (req) => {
@@ -921,6 +1256,23 @@ export function registerAllIpcHandlers(): void {
       nodeVersion: process.versions.node ?? 'unknown',
       platform: `${process.platform} ${process.arch}`,
     }
+  })
+
+  typedIpcHandle('app:get-startup-settings', async () => {
+    return getStartupSettings()
+  })
+
+  typedIpcHandle('app:set-startup-settings', async (req) => {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: req.openAtLogin,
+        openAsHidden: req.openAsHidden ?? true,
+      })
+    } catch (err) {
+      log.warn(`Failed to update startup settings: ${String(err)}`)
+      throw err
+    }
+    return getStartupSettings()
   })
 
   // ─── App Paths Handlers ─────────────────────────────────────────────────────
@@ -1696,6 +2048,73 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('settings:get-all', async (_req) => {
     const settings = getSettingsService().getAll()
     return { settings }
+  })
+
+  // ─── Remote Connection Handlers ───────────────────────────────────────────
+
+  typedIpcHandle('remote:list', async () => {
+    const remote = getRemoteConnectionService()
+    const store = remote.list()
+    return {
+      connections: store.connections,
+      global: store.global,
+      commandCatalog: remote.getCommandCatalog(),
+    }
+  })
+
+  typedIpcHandle('remote:save', async (req) => {
+    const remote = getRemoteConnectionService()
+    const connection = remote.save(req.connection)
+    remote.syncRuntime()
+    return { connection }
+  })
+
+  typedIpcHandle('remote:delete', async (req) => {
+    const remote = getRemoteConnectionService()
+    const deleted = remote.delete(req.id)
+    remote.syncRuntime()
+    return { deleted }
+  })
+
+  typedIpcHandle('remote:test', async (req) => {
+    const remote = getRemoteConnectionService()
+    const result = remote.test(req.id)
+    remote.syncRuntime()
+    return result
+  })
+
+  typedIpcHandle('remote:create-bot-draft', async (req) => {
+    const result = getRemoteConnectionService().createBotDraft(req.channel, req.name)
+    if (req.openConsole === true) {
+      await shell.openExternal(result.consoleUrl)
+    }
+    return result
+  })
+
+  typedIpcHandle('remote:generate-pairing', async (req) => {
+    const remote = getRemoteConnectionService()
+    const result = remote.generatePairing(req.id, req.mode)
+    remote.syncRuntime()
+    return result
+  })
+
+  typedIpcHandle('remote:confirm-pairing', async (req) => {
+    const remote = getRemoteConnectionService()
+    const result = remote.confirmPairing(req)
+    remote.syncRuntime()
+    return result
+  })
+
+  typedIpcHandle('remote:command-catalog', async () => {
+    return { commands: getRemoteConnectionService().getCommandCatalog() }
+  })
+
+  typedIpcHandle('remote:execute-command', async (req) => {
+    return executeRemoteCommand(req.id, req.message, req.sessionId)
+  })
+
+  typedIpcHandle('remote:runtime-status', async () => {
+    return getRemoteConnectionService().getRuntimeStatus()
   })
 
   // ─── Usage Ledger Handlers ────────────────────────────────────────────────

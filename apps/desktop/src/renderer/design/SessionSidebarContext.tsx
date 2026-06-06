@@ -249,24 +249,30 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   // Real-time session queue state updates
   useEffect(() => {
-    return window.spark.on('stream:session:queue-changed', (snapshot: SessionGetQueueResponse) => {
+    return window.spark?.on?.('stream:session:queue-changed', (snapshot: SessionGetQueueResponse) => {
       setSessions(prev => prev.map(item => {
         if (item.id !== snapshot.sessionId) return item
         if (snapshot.running)
           return item.status === 'running' ? item : { ...item, status: 'running' }
         return item.status === 'running' ? { ...item, status: 'idle' } : item
       }))
-    })
+    }) ?? (() => {})
   }, [])
 
   // Real-time session title updates (async LLM rename after first turn)
   useEffect(() => {
-    return window.spark.on('stream:session:renamed', (payload: { sessionId: string; title: string }) => {
+    return window.spark?.on?.('stream:session:renamed', (payload: { sessionId: string; title: string }) => {
       setSessions(prev => prev.map(item =>
         item.id === payload.sessionId ? { ...item, title: payload.title } : item,
       ))
-    })
+    }) ?? (() => {})
   }, [])
+
+  useEffect(() => {
+    return window.spark?.on?.('stream:session:created', () => {
+      refreshData().catch(console.error)
+    }) ?? (() => {})
+  }, [refreshData])
 
   useEffect(() => {
     if (active) window.localStorage.setItem(LAST_SESSION_KEY, active)

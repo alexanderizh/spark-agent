@@ -2370,6 +2370,201 @@ export interface FilePrepareImagePreviewResponse {
   fileUrl: string
 }
 
+// ─── Remote Connections Channels ────────────────────────────────────────────
+
+export type RemoteChannelType = 'telegram' | 'feishu' | 'qq' | 'wechat-claw'
+export type RemoteConnectionStatus = 'disabled' | 'draft' | 'pending-pairing' | 'connected' | 'error'
+export type RemotePairingMode = 'code' | 'qr'
+
+export interface RemoteConnectionCredentials {
+  botToken?: string
+  appId?: string
+  appSecret?: string
+  webhookUrl?: string
+  qqBotAppId?: string
+  qqBotToken?: string
+  qqBotSecret?: string
+  clawEndpoint?: string
+  clawAccessToken?: string
+}
+
+export interface RemoteConnectionCapabilities {
+  sendMessages: boolean
+  switchModel: boolean
+  switchSession: boolean
+  switchAgent: boolean
+  manageWorkspace: boolean
+  runCommands: boolean
+  approvePermissions: boolean
+}
+
+export interface RemotePairedDevice {
+  id: string
+  remoteUserId: string
+  displayName?: string
+  channelThreadId?: string
+  pairedAt: string
+  lastSeenAt?: string
+}
+
+export interface RemotePairingChallenge {
+  code: string
+  mode: RemotePairingMode
+  expiresAt: string
+  qrPayload: string
+}
+
+export interface RemoteConnectionConfig {
+  id: string
+  channel: RemoteChannelType
+  name: string
+  enabled: boolean
+  status: RemoteConnectionStatus
+  credentials: RemoteConnectionCredentials
+  commandPrefix: string
+  allowedUserIds: string[]
+  allowedChatIds: string[]
+  defaultSessionId?: string
+  defaultProviderProfileId?: string
+  defaultModelId?: string
+  defaultAgentId?: string
+  telegramCommands: string[]
+  capabilities: RemoteConnectionCapabilities
+  pairing?: RemotePairingChallenge
+  pairedDevices: RemotePairedDevice[]
+  createdAt: string
+  updatedAt: string
+  lastConnectedAt?: string
+  lastError?: string
+}
+
+export interface RemoteConnectionGlobalSettings {
+  enabled: boolean
+  requirePairing: boolean
+  allowQrPairing: boolean
+  pairingTtlMinutes: number
+  localWebhookPort: number
+  publicBaseUrl?: string
+}
+
+export interface RemoteCommandDefinition {
+  name: string
+  usage: string
+  description: string
+  capability: keyof RemoteConnectionCapabilities | 'system'
+}
+
+export interface RemoteListRequest {}
+export interface RemoteListResponse {
+  connections: RemoteConnectionConfig[]
+  global: RemoteConnectionGlobalSettings
+  commandCatalog: RemoteCommandDefinition[]
+}
+
+export interface RemoteSaveRequest {
+  connection: Partial<RemoteConnectionConfig> & Pick<RemoteConnectionConfig, 'channel' | 'name'>
+}
+export interface RemoteSaveResponse {
+  connection: RemoteConnectionConfig
+}
+
+export interface RemoteDeleteRequest {
+  id: string
+}
+export interface RemoteDeleteResponse {
+  deleted: boolean
+}
+
+export interface RemoteTestRequest {
+  id: string
+}
+export interface RemoteTestResponse {
+  ok: boolean
+  status: RemoteConnectionStatus
+  message: string
+}
+
+export interface RemoteCreateBotDraftRequest {
+  channel: RemoteChannelType
+  name?: string
+  openConsole?: boolean
+}
+export interface RemoteCreateBotDraftResponse {
+  connection: RemoteConnectionConfig
+  consoleUrl: string
+  instructions: string[]
+}
+
+export interface RemoteGeneratePairingRequest {
+  id: string
+  mode: RemotePairingMode
+}
+export interface RemoteGeneratePairingResponse {
+  connection: RemoteConnectionConfig
+  pairing: RemotePairingChallenge
+}
+
+export interface RemoteConfirmPairingRequest {
+  id: string
+  code: string
+  remoteUserId: string
+  displayName?: string
+  channelThreadId?: string
+}
+export interface RemoteConfirmPairingResponse {
+  ok: boolean
+  connection: RemoteConnectionConfig
+}
+
+export interface RemoteCommandCatalogRequest {}
+export interface RemoteCommandCatalogResponse {
+  commands: RemoteCommandDefinition[]
+}
+
+export interface RemoteExecuteCommandRequest {
+  id: string
+  message: string
+  sessionId?: string
+}
+export interface RemoteExecuteCommandResponse {
+  ok: boolean
+  title: string
+  text: string
+}
+
+export interface RemoteRuntimeStatusRequest {}
+export interface RemoteRuntimeStatusResponse {
+  running: boolean
+  port: number | null
+  localBaseUrl: string | null
+  polling: Array<{
+    connectionId: string
+    running: boolean
+    lastError?: string
+  }>
+  longConnections: Array<{
+    connectionId: string
+    channel: 'feishu'
+    running: boolean
+    lastError?: string
+  }>
+}
+
+// ─── App Startup Channels ────────────────────────────────────────────────────
+
+export interface AppStartupSettingsRequest {}
+export interface AppStartupSettingsResponse {
+  supported: boolean
+  openAtLogin: boolean
+  openAsHidden: boolean
+}
+
+export interface AppSetStartupSettingsRequest {
+  openAtLogin: boolean
+  openAsHidden?: boolean
+}
+export interface AppSetStartupSettingsResponse extends AppStartupSettingsResponse {}
+
 // ─── Context Governor Channels ───────────────────────────────────────────────
 
 export interface ContextPreferenceItem {
@@ -2509,6 +2704,8 @@ export interface IpcChannelMap {
   'app:get-storage-stats': [AppGetStorageStatsRequest, AppGetStorageStatsResponse]
   'app:clear-cache': [AppClearCacheRequest, AppClearCacheResponse]
   'app:open-data-dir': [AppOpenDataDirRequest, AppOpenDataDirResponse]
+  'app:get-startup-settings': [AppStartupSettingsRequest, AppStartupSettingsResponse]
+  'app:set-startup-settings': [AppSetStartupSettingsRequest, AppSetStartupSettingsResponse]
 
   // Rules
   'rules:list': [RulesListRequest, RulesListResponse]
@@ -2660,6 +2857,18 @@ export interface IpcChannelMap {
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
 
+  // Remote Connections
+  'remote:list': [RemoteListRequest, RemoteListResponse]
+  'remote:save': [RemoteSaveRequest, RemoteSaveResponse]
+  'remote:delete': [RemoteDeleteRequest, RemoteDeleteResponse]
+  'remote:test': [RemoteTestRequest, RemoteTestResponse]
+  'remote:create-bot-draft': [RemoteCreateBotDraftRequest, RemoteCreateBotDraftResponse]
+  'remote:generate-pairing': [RemoteGeneratePairingRequest, RemoteGeneratePairingResponse]
+  'remote:confirm-pairing': [RemoteConfirmPairingRequest, RemoteConfirmPairingResponse]
+  'remote:command-catalog': [RemoteCommandCatalogRequest, RemoteCommandCatalogResponse]
+  'remote:execute-command': [RemoteExecuteCommandRequest, RemoteExecuteCommandResponse]
+  'remote:runtime-status': [RemoteRuntimeStatusRequest, RemoteRuntimeStatusResponse]
+
   // Playwright Browser Automation
   'playwright:status': [PlaywrightStatusRequest, PlaywrightStatusResponse]
   'playwright:install': [PlaywrightInstallRequest, PlaywrightInstallResponse]
@@ -2704,6 +2913,8 @@ export interface IpcStreamChannelMap {
   'stream:session:queue-changed': SessionGetQueueResponse
   /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/
   'stream:session:renamed': { sessionId: string; title: string }
+  /** Session created outside the renderer session sidebar flow */
+  'stream:session:created': { sessionId: string }
   /** 用户问题请求（AskUserQuestion 工具，主进程推送，渲染进程显示选择界面）*/
   'stream:session:user-question': {
     questionId: string
@@ -2715,6 +2926,11 @@ export interface IpcStreamChannelMap {
     profileId: string
     status: 'connected' | 'disconnected' | 'error'
     message?: string
+  }
+  /** Remote connection config/runtime changed */
+  'stream:remote:changed': {
+    reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'
+    connectionId?: string
   }
   /** 工具审批请求（主进程推送，渲染进程弹窗）*/
   'stream:permission:approval-request': PermissionApprovalRequest

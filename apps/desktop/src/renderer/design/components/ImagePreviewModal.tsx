@@ -26,7 +26,7 @@ type Props = {
 }
 
 const SAFE_FILE_SCHEME = 'safe-file'
-const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
+const isPlatformDarwin = typeof window !== 'undefined' && window.spark?.platform === 'darwin'
 
 export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
   const { toast } = useToast()
@@ -56,6 +56,10 @@ export function ImagePreviewModal({ src, alt, fileName, onClose }: Props) {
         const sourcePath = decodeSafeFilePath(src)
         if (!sourcePath) {
           toast.error('下载失败：无法解析图片路径')
+          return
+        }
+        if (!window.spark?.invoke) {
+          toast.error('下载失败：桌面能力尚未就绪')
           return
         }
         const res = await window.spark.invoke('file:save-image', {

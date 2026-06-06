@@ -44,6 +44,7 @@ export function BrowserPanelView(): ReactElement | null {
   useEffect(() => {
     const loadStatus = async (): Promise<void> => {
       try {
+        if (!window.spark?.invoke) return
         const s = await window.spark.invoke('playwright:status', {})
         setStatus(s)
       } catch (err) {
@@ -51,7 +52,7 @@ export function BrowserPanelView(): ReactElement | null {
       }
     }
     void loadStatus()
-    const unsub = window.spark?.on(
+    const unsub = window.spark?.on?.(
       'stream:playwright:status',
       (payload: PlaywrightStatusResponse) => {
         setStatus(payload)
@@ -62,7 +63,7 @@ export function BrowserPanelView(): ReactElement | null {
 
   // Listen for pop-out window closing → restore sidebar
   useEffect(() => {
-    const unsub = window.spark?.on(
+    const unsub = window.spark?.on?.(
       'stream:playwright:status',
       (payload: PlaywrightStatusResponse) => {
         if (poppedOut && !payload.viewOpen) {
@@ -205,14 +206,14 @@ export function BrowserPanelView(): ReactElement | null {
       : (urlInput.trim().length > 0 ? normalizeUrl(urlInput.trim()) : undefined)
     setPoppedOut(true)
     setTweak('browserPanelOpen', false)
-    await window.spark.invoke('browser:pop-out', url != null ? { url } : {})
+    await window.spark?.invoke?.('browser:pop-out', url != null ? { url } : {})
   }
 
   /** Pop back in: close independent window, restore sidebar */
   const handlePopIn = async (): Promise<void> => {
     setPoppedOut(false)
     setTweak('browserPanelOpen', true)
-    await window.spark.invoke('browser:pop-in', {})
+    await window.spark?.invoke?.('browser:pop-in', {})
   }
 
   const handleTogglePanel = (): void => {
