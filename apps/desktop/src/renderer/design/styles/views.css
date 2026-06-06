@@ -6635,7 +6635,9 @@ body.inspector-resizing {
   bottom: 0;
   left: 50%;
   right: auto;
-  width: min(760px, calc(100% - 32px));
+  /* 与 .composer-inner（max-width: 900px; padding: 0 var(--pad-xl)）保持一致——
+     视觉上与输入框同宽，左右对齐。 */
+  width: min(calc(900px - 2 * var(--pad-xl)), calc(100% - 2 * var(--pad-xl)));
   transform: translateX(-50%);
   z-index: 60;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
@@ -10100,6 +10102,20 @@ body.inspector-resizing {
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.plan-approval-edited-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 1px 7px;
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.6;
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--primary) 32%, transparent);
+  border-radius: 999px;
+  vertical-align: middle;
 }
 
 /* ===== Tool call: todo_write specialized rendering ===== */

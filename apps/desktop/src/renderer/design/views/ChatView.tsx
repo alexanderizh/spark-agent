@@ -2140,8 +2140,16 @@ function InlineQuestionCard({
 }) {
   if (block.questions.length === 0) return null
 
-  const first = block.questions[0]
   const total = block.questions.length
+  const answerByQuestion = new Map<string, { answer: string; skipped?: boolean }>()
+  if (block.answerSummary != null) {
+    for (const item of block.answerSummary) {
+      answerByQuestion.set(item.question, {
+        answer: item.answer,
+        ...(item.skipped != null ? { skipped: item.skipped } : {}),
+      })
+    }
+  }
 
   return (
     <div className="chat-card">
@@ -2155,28 +2163,41 @@ function InlineQuestionCard({
         )}
       </div>
       <div className="chat-card-body" style={{ gap: 10 }}>
-        {first?.header && (
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text)' }}>
-            {first.header}
-          </div>
-        )}
-        <div style={{ fontSize: 13, color: 'var(--c-text)' }}>
-          {first?.question}
-        </div>
-        {block.answerSummary != null && block.answerSummary.length > 0 && (
-          <div className="inline-question-answers">
-            {block.answerSummary.map((item, index) => (
-              <div className="inline-question-answer" key={`${item.question}-${index}`}>
+        <div className="inline-question-answers">
+          {block.questions.map((question, index) => {
+            const summary =
+              answerByQuestion.get(question.question) ??
+              (block.answerSummary != null ? block.answerSummary[index] : undefined)
+            return (
+              <div className="inline-question-answer" key={`${question.question}-${index}`}>
+                {question.header && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: 'var(--c-dim)',
+                      marginBottom: 2,
+                    }}
+                  >
+                    {question.header}
+                  </div>
+                )}
                 <div className="inline-question-answer-q">
-                  {index + 1}. {item.question}
+                  {index + 1}. {question.question}
                 </div>
-                <div className="inline-question-answer-a">
-                  {item.skipped ? '已跳过' : item.answer || '未填写'}
-                </div>
+                {block.answered && (
+                  <div className="inline-question-answer-a">
+                    {summary?.skipped
+                      ? '已跳过'
+                      : summary?.answer && summary.answer.length > 0
+                        ? summary.answer
+                        : '未填写'}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+            )
+          })}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span
             style={{
@@ -4038,12 +4059,39 @@ function PlanApprovalModal({
   onClose: () => void
 }) {
   const { toast } = useToast()
+  // editing: 是否处于编辑态（textarea）
+  // draft: 当前已暂存的计划草稿（初始 = 原计划；保存编辑后 = 修改后的版本）
+  // editBuffer: 编辑过程中的临时缓冲（独立于 draft，避免一边编辑一边脏读 draft）
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(plan)
+  const [editBuffer, setEditBuffer] = useState(plan)
   const [busy, setBusy] = useState(false)
 
-  const approve = async (planText: string) => {
+  const isEdited = draft !== plan
+
+  const startEditing = () => {
+    setEditBuffer(draft)
+    setEditing(true)
+  }
+
+  const saveEdit = () => {
+    setDraft(editBuffer)
+    setEditing(false)
+  }
+
+  const discardEdit = () => {
+    setEditBuffer(draft)
+    setEditing(false)
+  }
+
+  const resetDraft = () => {
+    setDraft(plan)
+    setEditBuffer(plan)
+  }
+
+  const approve = async () => {
     if (busy) return
+    const planText = draft
     setBusy(true)
     try {
       await window.spark.invoke('session:update', {
@@ -4062,61 +4110,77 @@ function PlanApprovalModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
+    <div className="modal-backdrop" onClick={() => !busy && !editing && onClose()}>
       <div className="modal plan-approval-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
           <div className="modal-h-icon">
             <Icons.Check size={16} />
           </div>
           <div>
-            <div className="modal-title">计划已就绪，等待你审批</div>
-            <div className="modal-subtitle">Plan 模式 · 批准后会切换为 auto-edits 模式继续</div>
+            <div className="modal-title">
+              计划已就绪，等待你审批
+              {isEdited && !editing && (
+                <span className="plan-approval-edited-badge">已编辑</span>
+              )}
+            </div>
+            <div className="modal-subtitle">
+              {editing
+                ? '编辑模式 · 修改后点"保存编辑"暂存，可反复编辑后再批准'
+                : 'Plan 模式 · 批准后会切换为 auto-edits 模式继续'}
+            </div>
           </div>
         </div>
         <div className="modal-body">
           {editing ? (
             <textarea
               className="plan-approval-textarea"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={Math.min(20, Math.max(8, draft.split('\n').length + 1))}
+              value={editBuffer}
+              onChange={(e) => setEditBuffer(e.target.value)}
+              rows={Math.min(20, Math.max(8, editBuffer.split('\n').length + 1))}
               autoFocus
             />
           ) : (
             <div className="plan-approval-preview md-surface">
-              <MarkdownText content={plan} />
+              <MarkdownText content={draft} />
             </div>
           )}
         </div>
         <div className="modal-foot">
-          <button className="btn ghost sm" disabled={busy} onClick={onClose}>
-            拒绝
-          </button>
-          <div className="flex1" />
           {!editing && (
-            <button className="btn sm" disabled={busy} onClick={() => setEditing(true)}>
-              <Icons.Edit size={11} /> 编辑后批准
+            <button className="btn ghost sm" disabled={busy} onClick={onClose}>
+              拒绝
+            </button>
+          )}
+          <div className="flex1" />
+          {!editing && isEdited && (
+            <button className="btn ghost sm" disabled={busy} onClick={resetDraft}>
+              恢复原计划
+            </button>
+          )}
+          {!editing && (
+            <button className="btn sm" disabled={busy} onClick={startEditing}>
+              <Icons.Edit size={11} /> {isEdited ? '继续编辑' : '编辑计划'}
+            </button>
+          )}
+          {editing && (
+            <button className="btn ghost sm" onClick={discardEdit}>
+              放弃修改
             </button>
           )}
           {editing && (
             <button
               className="btn sm"
-              disabled={busy}
-              onClick={() => {
-                setDraft(plan)
-                setEditing(false)
-              }}
+              disabled={editBuffer === draft}
+              onClick={saveEdit}
             >
-              取消编辑
+              <Icons.Check size={11} /> 保存编辑
             </button>
           )}
-          <button
-            className="btn primary sm"
-            disabled={busy}
-            onClick={() => approve(editing ? draft : plan)}
-          >
-            {editing ? '批准（用编辑后）' : '批准并执行'}
-          </button>
+          {!editing && (
+            <button className="btn primary sm" disabled={busy} onClick={approve}>
+              {isEdited ? '批准（用编辑后）' : '批准并执行'}
+            </button>
+          )}
         </div>
       </div>
     </div>

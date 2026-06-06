@@ -1395,6 +1395,17 @@ export class SessionService {
       if (event.type === 'agent_status' && event.status === 'completed') {
         maybeEmitValidationSuggestion()
       }
+      // Plan 模式：agent 递交计划后，turn 即将完成。为避免 finally 里的
+      // startNextQueuedTurn 把"用户审批前残留在队列里的旧 turn"自动顶出来执行
+      // （这会让审批弹窗还没确认就执行了下一条用户消息），在这里同步把队列清空
+      // 并标记本 session 处于"等待计划审批"状态，阻断 startNextQueuedTurn 自动起跑。
+      if (event.type === 'plan_proposed') {
+        this.pendingPlanApprovals.add(sessionId)
+        if ((this.pendingTurns.get(sessionId)?.length ?? 0) > 0) {
+          this.pendingTurns.delete(sessionId)
+          this.emitQueueChanged(sessionId)
+        }
+      }
       if (
         collectAssistantText &&
         event.type === 'assistant_message' &&
