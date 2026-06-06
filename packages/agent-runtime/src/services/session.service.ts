@@ -23,6 +23,7 @@ import type { SparkDatabase } from '@spark/storage'
 import type {
   AgentEvent,
   SessionCancelQueuedTurnResponse,
+  SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
   SessionGetQueueResponse,
   SessionId,
@@ -1400,6 +1401,15 @@ export class SessionService {
       if (event.type === 'agent_status' && event.status === 'completed') {
         maybeEmitValidationSuggestion()
       }
+      // 立即更新 DB 中的 session status，不等 .then() 延迟。
+      // 避免在此窗口期内 refreshData() 从 DB 读到旧 status 覆盖前端状态。
+      if (event.type === 'agent_status') {
+        if (event.status === 'completed' || event.status === 'cancelled') {
+          sessionRepo.updateStatus(sessionId, 'idle')
+        } else if (event.status === 'error') {
+          sessionRepo.updateStatus(sessionId, 'error')
+        }
+      }
       // Plan 模式：agent 递交计划后，turn 即将完成。为避免 finally 里的
       // startNextQueuedTurn 把"用户审批前残留在队列里的旧 turn"自动顶出来执行
       // （这会让审批弹窗还没确认就执行了下一条用户消息），在这里同步把队列清空
@@ -2096,6 +2106,59 @@ export class SessionService {
       cancelled,
       queuedTurns: this.queueSnapshot(params.sessionId).queuedTurns,
     }
+  }
+
+  /**
+   * 立即执行队列中的某个 turn：中断当前任务，将该 turn 提到最前面执行，其余排队保持原序。
+   * 上下文（会话历史事件）天然保留在 DB 中，新 turn 的 startTurn 会正常读取。
+   */
+  async sendQueuedTurnNow(params: { sessionId: string; turnId: string }): Promise<SessionSendQueuedTurnNowResponse> {
+    const { sessionId, turnId } = params
+    const queue = this.pendingTurns.get(sessionId) ?? []
+    const targetIdx = queue.findIndex((t) => t.turnId === turnId)
+    if (targetIdx === -1) {
+      return { started: false, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
+    }
+    const targetTurn = queue.splice(targetIdx, 1)[0]!
+
+    // 没有正在执行的任务 → 直接启动
+    if (!this.activeLoops.has(sessionId)) {
+      if (queue.length === 0) this.pendingTurns.delete(sessionId)
+      else this.pendingTurns.set(sessionId, queue)
+      this.pendingPlanApprovals.delete(sessionId)
+      this.emitQueueChanged(sessionId)
+      await this.startTurn(
+        sessionId,
+        targetTurn.turnId,
+        targetTurn.message,
+        targetTurn.runtimePatch,
+        targetTurn.skillId,
+        targetTurn.skillParams,
+        targetTurn.attachments,
+        targetTurn.mentionAgentId,
+      )
+      return { started: true, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
+    }
+
+    // 中断当前正在执行的任务（不清理队列）
+    const loop = this.activeLoops.get(sessionId)!
+    this.onApprovalCancel?.(sessionId)
+    this.teamDispatchService?.cancelAll()
+    loop.cancel()
+    this.activeLoops.delete(sessionId)
+
+    // 将目标 turn 放回队首，其余保持原序
+    queue.unshift(targetTurn)
+    this.pendingTurns.set(sessionId, queue)
+    this.pendingPlanApprovals.delete(sessionId)
+
+    const sessionRepo = new SessionRepository(this.db)
+    sessionRepo.updateStatus(sessionId, 'idle')
+
+    // 队首 turn 立即启动（旧 executor 的 finally 里 activeLoops 已删除，
+    // 其 startNextQueuedTurn 不会重复触发）
+    this.startNextQueuedTurn(sessionId)
+    return { started: true, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
   }
 
   private enqueueTurn(sessionId: string, turn: PendingTurn): void {

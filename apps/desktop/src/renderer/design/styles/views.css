@@ -2626,6 +2626,9 @@ body.sidebar-resizing {
   height: 28px;
   border-radius: var(--r-md);
 }
+.composer-queue-send-btn:hover {
+  color: var(--primary);
+}
 
 .composer-attachment-strip {
   display: flex;

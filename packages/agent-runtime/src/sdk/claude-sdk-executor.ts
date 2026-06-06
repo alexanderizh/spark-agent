@@ -254,6 +254,7 @@ export class ClaudeSDKExecutor {
 
     let terminalStatusEmitted = false
     const emitTerminalStatus = (status: AgentStatusValue): void => {
+      if (terminalStatusEmitted) return
       terminalStatusEmitted = true
       this.emitter.emit({
         ...makeBase(),
@@ -261,6 +262,21 @@ export class ClaudeSDKExecutor {
         status,
       })
     }
+
+    // Immediately emit cancellation events when abort fires,
+    // so the UI updates instantly instead of waiting for the
+    // async generator to yield its next message.
+    const onAbort = (): void => {
+      this.emitter.emit({
+        ...makeBase(),
+        type: 'agent_error',
+        code: 'ABORTED',
+        message: 'Turn cancelled by user',
+        retryable: false,
+      })
+      emitTerminalStatus('cancelled')
+    }
+    this.abortController.signal.addEventListener('abort', onAbort, { once: true })
 
     // Build SDK options
     const runtimeEnv = buildIsolatedRuntimeEnv(
@@ -475,14 +491,7 @@ export class ClaudeSDKExecutor {
         }
 
         if (this.abortController.signal.aborted) {
-          this.emitter.emit({
-            ...makeBase(),
-            type: 'agent_error',
-            code: 'ABORTED',
-            message: 'Turn cancelled by user',
-            retryable: false,
-          })
-          if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+          // Cancellation events already emitted by the abort signal listener.
           return
         }
 
@@ -522,14 +531,7 @@ export class ClaudeSDKExecutor {
         return
       } catch (err) {
         if (this.abortController.signal.aborted) {
-          this.emitter.emit({
-            ...makeBase(),
-            type: 'agent_error',
-            code: 'ABORTED',
-            message: 'Turn cancelled by user',
-            retryable: false,
-          })
-          if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+          // Cancellation events already emitted by the abort signal listener.
           return
         }
 

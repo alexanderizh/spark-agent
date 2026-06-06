@@ -125,6 +125,16 @@ export interface SessionCancelQueuedTurnResponse {
   queuedTurns: SessionQueuedTurn[]
 }
 
+export interface SessionSendQueuedTurnNowRequest {
+  sessionId: SessionId
+  turnId: string
+}
+
+export interface SessionSendQueuedTurnNowResponse {
+  started: boolean
+  queuedTurns: SessionQueuedTurn[]
+}
+
 export interface SessionCancelRequest {
   sessionId: SessionId
 }
@@ -2662,6 +2672,7 @@ export interface IpcChannelMap {
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
   'session:get-queue': [SessionGetQueueRequest, SessionGetQueueResponse]
   'session:cancel-queued-turn': [SessionCancelQueuedTurnRequest, SessionCancelQueuedTurnResponse]
+  'session:send-queued-turn-now': [SessionSendQueuedTurnNowRequest, SessionSendQueuedTurnNowResponse]
   'session:cancel': [SessionCancelRequest, SessionCancelResponse]
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]
   'session:list': [SessionListRequest, SessionListResponse]

@@ -894,6 +894,13 @@ export function registerAllIpcHandlers(): void {
     return getSessionService().cancelQueuedTurn(req)
   })
 
+  typedIpcHandle('session:send-queued-turn-now', async (req) => {
+    log.info(
+      `session:send-queued-turn-now requested, sessionId=${req.sessionId}, turnId=${req.turnId}`,
+    )
+    return getSessionService().sendQueuedTurnNow(req)
+  })
+
   typedIpcHandle('session:cancel', async (req) => {
     log.info(`session:cancel requested, sessionId=${req.sessionId}`)
     return getSessionService().cancelTurn(req.sessionId)

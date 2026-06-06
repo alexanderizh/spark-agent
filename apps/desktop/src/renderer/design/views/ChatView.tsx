@@ -4746,6 +4746,7 @@ function ComposerV2({
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
+  const { invoke: sendQueuedTurnNow } = useIpcInvoke('session:send-queued-turn-now')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
   const pendingRuntimePatchRef = useRef<SessionRuntimePatch>({})
 
@@ -5348,6 +5349,22 @@ function ComposerV2({
         enqueuedAt: turn.enqueuedAt,
       })),
     )
+  }
+
+  const handleSendQueuedNow = async (message: QueuedMessage) => {
+    if (session?.id == null) return
+    const res = await sendQueuedTurnNow({ sessionId: session.id, turnId: message.turnId })
+    setQueuedMessages(
+      res.queuedTurns.map((turn) => ({
+        id: turn.turnId,
+        turnId: turn.turnId,
+        content: turn.message,
+        enqueuedAt: turn.enqueuedAt,
+      })),
+    )
+    if (res.started) {
+      onSent(session.id)
+    }
   }
 
   const handleCancelActiveSession = async () => {
@@ -6003,6 +6020,14 @@ function ComposerV2({
               <div key={message.id} className="composer-queue-item">
                 <Icons.Clock size={15} className="composer-queue-icon" />
                 <span className="composer-queue-text">{message.content}</span>
+                <button
+                  type="button"
+                  className="composer-queue-icon-btn composer-queue-send-btn"
+                  title="立即执行"
+                  onClick={() => void handleSendQueuedNow(message)}
+                >
+                  <Icons.Send size={14} />
+                </button>
                 <button
                   type="button"
                   className="composer-queue-icon-btn"
