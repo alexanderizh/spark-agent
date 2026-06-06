@@ -63,9 +63,10 @@ const SDK_HOST_TOOL_INSTRUCTIONS = [
 ].join('\n')
 
 const ENV_BLOCKLIST_PREFIXES = ['ANTHROPIC_', 'CLAUDE_'] as const
-const DEFAULT_SDK_MAX_TURNS = 80
-const DEFAULT_MAX_TURN_EXTENSION_RETRIES = 2
-const DEFAULT_MAX_TURN_EXTENSION_CAP = 500
+const DEFAULT_SDK_MAX_TURNS = 200
+const DEFAULT_MAX_TURN_EXTENSION_RETRIES = 6
+const DEFAULT_MAX_TURN_EXTENSION_CAP = 2000
+const MAX_TURNS_ERROR_PATTERN = /reached\s+maximum\s+number\s+of\s+turns/i
 
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
@@ -283,16 +284,16 @@ export class ClaudeSDKExecutor {
       },
     }
 
-    let maxTurns = normalizePositiveInt(config.maxTurnCount, DEFAULT_SDK_MAX_TURNS, 1000)
+    let maxTurns = normalizePositiveInt(config.maxTurnCount, DEFAULT_SDK_MAX_TURNS, 5000)
     const maxTurnExtensionRetries = normalizeNonNegativeInt(
       config.maxTurnExtensionRetries,
       DEFAULT_MAX_TURN_EXTENSION_RETRIES,
-      10,
+      20,
     )
     const maxTurnExtensionCap = normalizePositiveInt(
       config.maxTurnExtensionCap,
       DEFAULT_MAX_TURN_EXTENSION_CAP,
-      1000,
+      5000,
     )
     let extensionAttempts = 0
     let prompt = promptWithAttachments
@@ -529,6 +530,41 @@ export class ClaudeSDKExecutor {
             retryable: false,
           })
           if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+          return
+        }
+
+        // ── Max-Turns Exception Recovery ───────────────────────────────
+        // Some SDK paths surface `error_max_turns` as a thrown exception
+        // instead of an `error_max_turns` result message. Detect that here
+        // and run the same auto-extension logic so the user does not have
+        // to manually re-send the message.
+        const errMessage = err instanceof Error ? err.message : String(err)
+        if (MAX_TURNS_ERROR_PATTERN.test(errMessage)) {
+          const nextMaxTurns = Math.min(maxTurnExtensionCap, maxTurns * 2)
+          if (extensionAttempts < maxTurnExtensionRetries && nextMaxTurns > maxTurns) {
+            extensionAttempts += 1
+            this.emitter.emit({
+              ...makeBase(),
+              type: 'agent_status',
+              status: 'thinking',
+              message: `Reached maximum turns (${maxTurns}); automatically extending to ${nextMaxTurns} (retry ${extensionAttempts}/${maxTurnExtensionRetries}).`,
+            })
+            maxTurns = nextMaxTurns
+            prompt = buildMaxTurnContinuationPrompt()
+            resumeExistingSession = true
+            terminalStatusEmitted = false
+            continue
+          }
+
+          this.emitter.emit({
+            ...makeBase(),
+            type: 'agent_error',
+            code: 'MAX_ITERATIONS',
+            message: buildMaxTurnLimitMessage(maxTurns, extensionAttempts),
+            retryable: false,
+            rawError: errMessage,
+          })
+          if (!terminalStatusEmitted) emitTerminalStatus('error')
           return
         }
 

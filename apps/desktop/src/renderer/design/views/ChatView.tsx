@@ -3871,7 +3871,7 @@ function StreamingErrorCard({
     const m = /\((\d+)\)/.exec(message)
     return m ? Number(m[1]) : null
   })()
-  const proposedLimit = Math.min(Math.max((currentLimit ?? 100) * 2, 200), 500)
+  const proposedLimit = Math.min(Math.max((currentLimit ?? 200) * 2, 400), 2000)
 
   const [busy, setBusy] = useState(false)
   const [applied, setApplied] = useState<number | null>(null)
