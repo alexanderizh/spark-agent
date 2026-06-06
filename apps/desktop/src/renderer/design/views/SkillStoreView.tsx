@@ -5,10 +5,10 @@
  * 已安装 Tab：Skill 卡片网格 + 批量管理
  * 创建 Tab：手动创建 / 文件导入 / 目录导入 / 检测导入本地 Skill
  */
-import { useState, useCallback, useEffect, useMemo } from 'react'
+import { useState, useCallback, useMemo } from 'react'
 import type { LocalSkillCandidate, SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { useApp } from '../AppContext'
 import {
   useSkills,
@@ -18,18 +18,9 @@ import {
   getCandidateSources,
   deduplicateSkills,
   deduplicateCandidates,
-  SKILL_PAGE_SIZE,
-  paginate,
 } from '../utils/skills-data'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
-
-function deferEffect(task: () => void | Promise<void>): () => void {
-  const id = window.setTimeout(() => {
-    void task()
-  }, 0)
-  return () => window.clearTimeout(id)
-}
 
 // ─── Main View ────────────────────────────────────────────────────────
 type TabType = 'installed' | 'create'
@@ -80,8 +71,6 @@ function InstalledTab() {
   const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount, refresh } = useSkills()
   const { requestConfirm } = useApp()
   const [search, setSearch] = useState('')
-  // Pagination for installed skills
-  const [installedPage, setInstalledPage] = useState(1)
   // Management mode (multi-select for batch delete)
   const [managementMode, setManagementMode] = useState(false)
   const [selectedDeleteIds, setSelectedDeleteIds] = useState<Set<string>>(new Set())
@@ -96,16 +85,6 @@ function InstalledTab() {
       ...list.filter((s) => !s.id.startsWith('builtin:')),
     ]
   }, [dedupedSkills, search])
-  const visibleInstalled = useMemo(
-    () => paginate(filtered, installedPage, SKILL_PAGE_SIZE),
-    [filtered, installedPage],
-  )
-  const hasMoreInstalled = installedPage * SKILL_PAGE_SIZE < filtered.length
-
-  // Reset installed page when search changes
-  useEffect(() => {
-    return deferEffect(() => setInstalledPage(1))
-  }, [search])
 
   // ── Management mode: multi-select delete ──
   const enterManagement = useCallback(() => {
@@ -185,14 +164,12 @@ function InstalledTab() {
     <div>
       {/* Search bar */}
       <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
-        <div className="search-input" style={{ flex: 1 }}>
-          <Icons.Search />
-          <SparkInput
-            placeholder="搜索已安装的 Skill..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+        <SparkSearchInput
+          placeholder="搜索已安装的 Skill..."
+          value={search}
+          onChange={(v) => setSearch(v)}
+          style={{ flex: 1 }}
+        />
         {!managementMode && (
           <button
             className="btn"
@@ -247,7 +224,7 @@ function InstalledTab() {
       ) : (
         <>
           <div className="skill-grid">
-            {visibleInstalled.map((s) => (
+            {filtered.map((s) => (
               <InstalledSkillCard
                 key={s.id}
                 skill={s}
@@ -259,17 +236,6 @@ function InstalledTab() {
               />
             ))}
           </div>
-          {hasMoreInstalled && (
-            <div className="pagination-bar">
-              <span>已显示 {visibleInstalled.length} / {filtered.length} 个</span>
-              <button
-                className="btn sm"
-                onClick={() => setInstalledPage((p) => p + 1)}
-              >
-                加载更多
-              </button>
-            </div>
-          )}
         </>
       )}
 
@@ -904,19 +870,12 @@ tags: [tag1, tag2]
                     )
                   })}
                 </div>
-                <div className="search-input" style={{ width: '180px' }}>
-                  <Icons.Search />
-                  <SparkInput
-                    placeholder="搜索本地 Skill..."
-                    value={candidateSearch}
-                    onChange={(e) => setCandidateSearch(e.target.value)}
-                  />
-                  {candidateSearch && (
-                    <button className="icon-btn" onClick={() => setCandidateSearch('')}>
-                      <Icons.X size={10} />
-                    </button>
-                  )}
-                </div>
+                <SparkSearchInput
+                  placeholder="搜索本地 Skill..."
+                  value={candidateSearch}
+                  onChange={(v) => setCandidateSearch(v)}
+                  style={{ width: '180px' }}
+                />
               </div>
 
               <div className="local-skill-list">

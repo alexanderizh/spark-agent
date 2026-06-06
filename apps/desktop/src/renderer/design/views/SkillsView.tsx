@@ -6,7 +6,7 @@
 import { useState } from 'react'
 import type { SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { SparkInput } from '../components/FormControls'
+import { SparkSearchInput } from '../components/FormControls'
 import { useApp } from '../AppContext'
 import {
   useSkills,
@@ -36,22 +36,11 @@ export function SkillsView() {
             </div>
           </div>
 
-          <div className="search-input">
-            <Icons.Search />
-            <SparkInput
-              placeholder="搜索 Skill..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            {search && (
-              <button
-                className="icon-btn skills-spinner-sm"
-                onClick={() => setSearch('')}
-              >
-                <Icons.X size={10} />
-              </button>
-            )}
-          </div>
+          <SparkSearchInput
+            placeholder="搜索 Skill..."
+            value={search}
+            onChange={(v) => setSearch(v)}
+          />
 
           <button className="btn primary" onClick={() => setTweak('view', 'skill-store')}>
             <Icons.Plus size={12} /> 创建 Skill

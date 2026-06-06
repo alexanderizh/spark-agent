@@ -1,10 +1,11 @@
 /**
  * FormControls — 基于 @arco-design/web-react 的主题化表单组件
  *
- * SparkInput    → Arco Input
- * SparkSelect   → Arco Select（保持 <option> 子元素 API；弹层使用 Arco 默认下拉弹窗）
- * SparkTextarea → Arco Input.TextArea
- * SparkCheckbox → Arco Checkbox
+ * SparkInput        → Arco Input
+ * SparkSearchInput  → Arco Input.Search（带搜索图标、清除按钮）
+ * SparkSelect       → Arco Select（保持 <option> 子元素 API；弹层使用 Arco 默认下拉弹窗）
+ * SparkTextarea      → Arco Input.TextArea
+ * SparkCheckbox      → Arco Checkbox
  *
  * 规则：所有下拉/弹窗类控件必须使用 Arco Design 提供的基础组件，**不要**自己手写
  *       <select> / <ul role="listbox"> / 自定义 popup。详见 AGENTS.md。
@@ -12,8 +13,10 @@
 import { forwardRef, Children, isValidElement, useMemo } from 'react'
 import type { ReactNode, CSSProperties } from 'react'
 import { Input, Select, Checkbox } from '@arco-design/web-react'
+import './FormControls.less'
 
 const { TextArea } = Input
+const InputSearch = Input.Search
 
 /* ============================================================
    SparkInput
@@ -395,6 +398,79 @@ export const SparkCheckbox = forwardRef<any, SparkCheckboxProps>(
       >
         {label}
       </Checkbox>
+    )
+  },
+)
+
+/* ============================================================
+   SparkSearchInput — Arco Design 搜索输入框
+   基于 Input.Search，自带搜索图标和清除按钮
+   ============================================================ */
+
+export interface SparkSearchInputProps {
+  value?: string
+  defaultValue?: string
+  onChange?: (value: string) => void
+  onSearch?: (value: string) => void
+  onClear?: () => void
+  placeholder?: string
+  disabled?: boolean
+  readOnly?: boolean
+  className?: string
+  style?: CSSProperties
+  autoFocus?: boolean
+  maxLength?: number
+  allowClear?: boolean
+  searchButton?: boolean
+  size?: 'mini' | 'small' | 'default' | 'large'
+}
+
+export const SparkSearchInput = forwardRef<any, SparkSearchInputProps>(
+  function SparkSearchInput(
+    {
+      className = '',
+      style,
+      onChange,
+      onSearch,
+      onClear,
+      value,
+      defaultValue,
+      placeholder = '搜索...',
+      disabled,
+      readOnly,
+      autoFocus,
+      maxLength,
+      allowClear = true,
+      searchButton = false,
+      size = 'small',
+    },
+    ref,
+  ) {
+    return (
+      <InputSearch
+        ref={ref}
+        className={`spark-search-input ${className}`}
+        {...(style !== undefined ? { style } : {})}
+        {...(value !== undefined ? { value } : {})}
+        {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
+        onChange={(v: string) => {
+          onChange?.(v)
+        }}
+        onSearch={(v: string) => {
+          onSearch?.(v)
+        }}
+        onClear={() => {
+          onClear?.()
+        }}
+        placeholder={placeholder}
+        disabled={disabled ?? false}
+        {...(readOnly !== undefined ? { readOnly } : {})}
+        {...(autoFocus !== undefined ? { autoFocus } : {})}
+        {...(maxLength !== undefined ? { maxLength } : {})}
+        allowClear={allowClear}
+        searchButton={searchButton}
+        size={size}
+      />
     )
   },
 )

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { McpServerItem } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { SparkInput, SparkSelect } from '../components/FormControls'
+import { SparkInput, SparkSearchInput, SparkSelect } from '../components/FormControls'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useApp } from '../AppContext'
 
@@ -180,7 +180,7 @@ export function McpView() {
           <div className="strong header-title-lg">MCP 服务器</div>
           <div className="muted header-desc">{servers.length} 个服务器 · {totalTools} 个工具 · 配置保存在本地 SQLite</div>
         </div>
-        <div className="search-input"><Icons.Search /><SparkInput value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索服务器或工具..." /></div>
+        <SparkSearchInput value={query} onChange={(v) => setQuery(v)} placeholder="搜索服务器或工具..." />
         <button className="btn" onClick={refresh}><Icons.Refresh size={12} /> 刷新</button>
         <button className="btn primary" onClick={() => setShowForm(true)}><Icons.Plus size={12} /> 添加 MCP</button>
       </div>
