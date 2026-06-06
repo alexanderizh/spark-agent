@@ -25,8 +25,10 @@
   },
   "dependencies": {
     "@arco-design/web-react": "^2.66.15",
+    "@larksuiteoapi/node-sdk": "^1.66.1",
     "@lobehub/icons": "^5.10.0",
     "@playwright/mcp": "^0.0.30",
+    "@rc-component/qrcode": "^1.1.1",
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",
     "@spark/storage": "workspace:*",

@@ -43,8 +43,9 @@ import {
   DropdownMenuSeparator,
 } from '@spark/ui-kit'
 
-const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
-const isPlatformWin32 = typeof window !== 'undefined' && window.spark.platform === 'win32'
+const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
+const isPlatformDarwin = sparkPlatform === 'darwin'
+const isPlatformWin32 = sparkPlatform === 'win32'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 
@@ -119,7 +120,9 @@ function WindowControls() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await window.spark.invoke('window:is-maximized', {})
+        const api = window.spark
+        if (!api?.invoke) return
+        const res = await api.invoke('window:is-maximized', {})
         if (res?.maximized != null) setIsMaximized(res.maximized)
       } catch {
         // ignore window chrome state errors in test and preview environments
@@ -128,18 +131,18 @@ function WindowControls() {
   }, [])
 
   const handleMinimize = useCallback(() => {
-    window.spark.invoke('window:minimize', {}).catch(() => {})
+    window.spark?.invoke?.('window:minimize', {}).catch(() => {})
   }, [])
 
   const handleMaximize = useCallback(async () => {
     try {
-      const res = await window.spark.invoke('window:maximize', {})
-      setIsMaximized(res.maximized)
+      const res = await window.spark?.invoke?.('window:maximize', {})
+      if (res?.maximized != null) setIsMaximized(res.maximized)
     } catch { /* ignore */ }
   }, [])
 
   const handleClose = useCallback(() => {
-    window.spark.invoke('window:close', {}).catch(() => {})
+    window.spark?.invoke?.('window:close', {}).catch(() => {})
   }, [])
 
   return (
@@ -482,9 +485,11 @@ function Shell() {
 
   // Listen for tool approval requests
   useEffect(() => {
-    return window.spark.on('stream:permission:approval-request', (req) => {
+    const api = window.spark
+    if (!api?.on) return
+    return api.on('stream:permission:approval-request', (req) => {
       setApprovalRequests((current) => ({ ...current, [req.sessionId]: req }))
-      window.spark.invoke('hook:trigger', {
+      api.invoke?.('hook:trigger', {
         sessionId: req.sessionId,
         node: 'permission_request',
         title: 'Spark Agent - 权限请求',
@@ -505,7 +510,9 @@ function Shell() {
   }, [navigateToSession, toast])
 
   useEffect(() => {
-    return window.spark.on('stream:session:user-question', (req) => {
+    const api = window.spark
+    if (!api?.on) return
+    return api.on('stream:session:user-question', (req) => {
       setUserQuestions((current) => ({ ...current, [req.sessionId]: req }))
 
       const isVisibleInCurrentSession =
@@ -585,7 +592,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
     <div
       ref={scaleRef}
-      className={`app window theme-${resolvedTheme} density-${t.density} platform-${window.spark.platform}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
+      className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
       style={
         {
           '--primary': primary,
@@ -602,7 +609,7 @@ function Shell() {
           {t.view !== 'chat' && (
             <div
               className="transparent-header"
-              onDoubleClick={() => { window.spark.invoke('window:maximize', {}).catch(() => {}) }}
+              onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
             >
               {t.sidebarHidden && <SidebarExpandButton />}
             </div>
