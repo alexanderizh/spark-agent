@@ -99,6 +99,7 @@ function localStorageKeyToCategory(key: string): string {
 
 type GeneralSettings = {
   userAvatar?: SparkAvatarConfig
+  userName: string
   language: string
   startupBehavior: string
   defaultWorkspace: string
@@ -163,6 +164,7 @@ type RuntimePermissionModeOption = {
 
 const DEFAULT_GENERAL: GeneralSettings = {
   userAvatar: createDefaultAvatar('User'),
+  userName: 'User',
   language: 'zh-CN',
   startupBehavior: 'last',
   defaultWorkspace: '',
@@ -463,6 +465,15 @@ function GeneralSection() {
           title="我的头像"
           description="默认使用 Dicebear，也可以上传并裁剪本地图片。"
           onChange={(avatar) => set({ userAvatar: avatar })}
+        />
+
+        <label>
+          用户名称<span className="sub">显示在侧边栏底部用户区域</span>
+        </label>
+        <SparkInput
+          value={s.userName}
+          onChange={(e) => set({ userName: e.target.value })}
+          placeholder="输入用户名称"
         />
 
         <label>

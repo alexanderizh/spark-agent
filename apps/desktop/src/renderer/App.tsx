@@ -113,6 +113,55 @@ function useSidebarUserAvatarSrc(): string {
   return src
 }
 
+function useSidebarUserName(): string {
+  const readLocal = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
+      if (raw == null) return 'User'
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      return typeof parsed.userName === 'string' && parsed.userName.trim() ? parsed.userName : 'User'
+    } catch {
+      return 'User'
+    }
+  }, [])
+  const [name, setName] = useState(readLocal)
+
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('settings:get', { category: 'general', key: 'data' })
+      .then((res) => {
+        if (cancelled) return
+        if (res.value != null && typeof res.value === 'object') {
+          const userName = (res.value as Record<string, unknown>).userName
+          if (typeof userName === 'string' && userName.trim()) {
+            setName(userName)
+          }
+        }
+      })
+      .catch(() => {})
+
+    const refresh = () => setName(readLocal())
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+    const handleSettingsUpdated = (event: Event) => {
+      const { detail } = event as CustomEvent<{ key?: string }>
+      if (detail?.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    return () => {
+      cancelled = true
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    }
+  }, [readLocal])
+
+  return name
+}
+
 /* ---------- WindowControls — custom title bar buttons (Windows/Linux only) ---------- */
 function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false)
@@ -177,6 +226,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const userAvatarSrc = useSidebarUserAvatarSrc()
+  const userName = useSidebarUserName()
   const isResizing = useRef(false)
 
   const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
@@ -299,7 +349,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                 />
               </div>
               <div className="sidebar-user-info">
-                <div className="name">User</div>
+                <div className="name">{userName}</div>
                 <div className="meta">Local · Desktop</div>
               </div>
               <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
@@ -335,8 +385,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {/* Windows uses the system-native title bar; the custom HTML
-            controls below are only needed on Linux (frameless window). */}
+        {/* Linux: custom HTML controls in sidebar. Windows/macOS use their own title bars. */}
         {!isPlatformDarwin && !isPlatformWin32 && <WindowControls />}
       </div>
 
@@ -605,8 +654,17 @@ function Shell() {
       <FloatingSidebar onNewTask={handleNewBlankSession} />
 
       <div className="main-content-area">
+        {/* Windows: custom title bar spanning full width with drag region */}
+        {isPlatformWin32 && (
+          <div className="win-titlebar">
+            {t.sidebarHidden && <SidebarExpandButton />}
+            <div className="win-titlebar-controls">
+              <WindowControls />
+            </div>
+          </div>
+        )}
         <div className="main">
-          {t.view !== 'chat' && (
+          {t.view !== 'chat' && !isPlatformWin32 && (
             <div
               className="transparent-header"
               onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
