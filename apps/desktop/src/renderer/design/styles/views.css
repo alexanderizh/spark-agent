@@ -5986,6 +5986,68 @@ body.inspector-resizing {
   font-size: 12px;
 }
 
+/* ── V2 drag-to-move cropper ── */
+.avatar-cropper-v2 {
+  display: grid;
+  gap: 16px;
+}
+.avatar-crop-stage-v2 {
+  width: 280px;
+  height: 280px;
+  margin: 0 auto;
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--bg-soft);
+  cursor: grab;
+  touch-action: none;
+}
+.avatar-crop-stage-v2:active {
+  cursor: grabbing;
+}
+.avatar-crop-stage-v2 img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  user-select: none;
+  pointer-events: none;
+  max-width: none;
+}
+.avatar-crop-circle-mask {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle 120px at center,
+    transparent 118px,
+    rgba(0, 0, 0, 0.5) 120px
+  );
+  pointer-events: none;
+  border-radius: 16px;
+}
+.avatar-crop-hint {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.6);
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  white-space: nowrap;
+}
+.avatar-crop-controls-v2 {
+  display: grid;
+  gap: 10px;
+}
+.avatar-crop-controls-v2 label {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 /* Archived Item Row */
 .archived-item-row {
   align-items: flex-start;

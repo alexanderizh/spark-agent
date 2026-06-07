@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, Slider } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { createDefaultAvatar, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
@@ -15,55 +15,65 @@ export interface AvatarPickerProps {
 type CropState = {
   src: string
   zoom: number
-  x: number
-  y: number
+  offsetX: number
+  offsetY: number
+  imgW: number
+  imgH: number
 }
 
 const OUTPUT_SIZE = 256
+const STAGE_SIZE = 280
 
 export function AvatarPicker({ value, defaultSeed, title, description, onChange }: AvatarPickerProps) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const imageRef = useRef<HTMLImageElement>(null)
   const [crop, setCrop] = useState<CropState | null>(null)
-  const [imageReady, setImageReady] = useState(false)
   const src = useMemo(() => resolveAvatarSrc(value), [value])
-
-  useEffect(() => {
-    setImageReady(false)
-  }, [crop?.src])
 
   const handleFile = (file: File | undefined) => {
     if (file == null || !file.type.startsWith('image/')) return
     const reader = new FileReader()
     reader.onload = () => {
-      if (typeof reader.result === 'string') {
-        setCrop({ src: reader.result, zoom: 1, x: 0, y: 0 })
+      if (typeof reader.result !== 'string') return
+      const tmp = new Image()
+      tmp.onload = () => {
+        const scale = Math.max(STAGE_SIZE / tmp.naturalWidth, STAGE_SIZE / tmp.naturalHeight)
+        setCrop({
+          src: reader.result as string,
+          zoom: 1,
+          offsetX: 0,
+          offsetY: 0,
+          imgW: tmp.naturalWidth * scale,
+          imgH: tmp.naturalHeight * scale,
+        })
       }
+      tmp.src = reader.result as string
     }
     reader.readAsDataURL(file)
   }
 
-  const applyCrop = () => {
-    if (crop == null || imageRef.current == null) return
-    const img = imageRef.current
+  const applyCrop = useCallback(() => {
+    if (crop == null) return
     const canvas = document.createElement('canvas')
     canvas.width = OUTPUT_SIZE
     canvas.height = OUTPUT_SIZE
     const ctx = canvas.getContext('2d')
     if (ctx == null) return
 
-    ctx.clearRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
-    const scale = Math.max(OUTPUT_SIZE / img.naturalWidth, OUTPUT_SIZE / img.naturalHeight) * crop.zoom
-    const width = img.naturalWidth * scale
-    const height = img.naturalHeight * scale
-    const overflowX = Math.max(0, width - OUTPUT_SIZE)
-    const overflowY = Math.max(0, height - OUTPUT_SIZE)
-    const dx = (OUTPUT_SIZE - width) / 2 - (crop.x / 100) * (overflowX / 2)
-    const dy = (OUTPUT_SIZE - height) / 2 - (crop.y / 100) * (overflowY / 2)
-    ctx.drawImage(img, dx, dy, width, height)
-    onChange({ kind: 'upload', dataUrl: canvas.toDataURL('image/png') })
-    setCrop(null)
-  }
+    const img = new Image()
+    img.onload = () => {
+      ctx.clearRect(0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
+      const baseScale = Math.max(OUTPUT_SIZE / img.naturalWidth, OUTPUT_SIZE / img.naturalHeight)
+      const totalScale = baseScale * crop.zoom
+      const w = img.naturalWidth * totalScale
+      const h = img.naturalHeight * totalScale
+      const cx = OUTPUT_SIZE / 2 + crop.offsetX * (OUTPUT_SIZE / STAGE_SIZE)
+      const cy = OUTPUT_SIZE / 2 + crop.offsetY * (OUTPUT_SIZE / STAGE_SIZE)
+      ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h)
+      onChange({ kind: 'upload', dataUrl: canvas.toDataURL('image/png') })
+      setCrop(null)
+    }
+    img.src = crop.src
+  }, [crop, onChange])
 
   return (
     <div className="avatar-picker">
@@ -104,42 +114,95 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange 
         cancelText="取消"
         onOk={applyCrop}
         onCancel={() => setCrop(null)}
-        okButtonProps={{ disabled: !imageReady }}
         className="avatar-crop-modal"
         maskClosable={false}
       >
-        {crop != null && (
-          <div className="avatar-cropper">
-            <div className="avatar-crop-stage">
-              <img
-                ref={imageRef}
-                src={crop.src}
-                alt="待裁剪头像"
-                draggable={false}
-                onLoad={() => setImageReady(true)}
-                style={{
-                  transform: `translate(calc(-50% - ${crop.x}px), calc(-50% - ${crop.y}px)) scale(${crop.zoom})`,
-                }}
-              />
-              <div className="avatar-crop-mask" />
-            </div>
-            <div className="avatar-crop-controls">
-              <label>
-                <span>缩放</span>
-                <Slider min={1} max={3} step={0.05} value={crop.zoom} onChange={(v) => setCrop({ ...crop, zoom: Number(v) })} />
-              </label>
-              <label>
-                <span>水平</span>
-                <Slider min={-100} max={100} step={1} value={crop.x} onChange={(v) => setCrop({ ...crop, x: Number(v) })} />
-              </label>
-              <label>
-                <span>垂直</span>
-                <Slider min={-100} max={100} step={1} value={crop.y} onChange={(v) => setCrop({ ...crop, y: Number(v) })} />
-              </label>
-            </div>
-          </div>
-        )}
+        {crop != null && <DragCropper crop={crop} onChange={setCrop} />}
       </Modal>
+    </div>
+  )
+}
+
+/* ── Drag-to-move cropper ── */
+
+function DragCropper({ crop, onChange }: { crop: CropState; onChange: (c: CropState) => void }) {
+  const stageRef = useRef<HTMLDivElement>(null)
+  const dragging = useRef(false)
+  const start = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
+
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    e.preventDefault()
+    dragging.current = true
+    start.current = { x: e.clientX, y: e.clientY, ox: crop.offsetX, oy: crop.offsetY }
+    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+  }, [crop.offsetX, crop.offsetY])
+
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragging.current) return
+    const dx = e.clientX - start.current.x
+    const dy = e.clientY - start.current.y
+    const zoomedW = crop.imgW * crop.zoom
+    const zoomedH = crop.imgH * crop.zoom
+    const maxOX = Math.max(0, (zoomedW - STAGE_SIZE) / 2)
+    const maxOY = Math.max(0, (zoomedH - STAGE_SIZE) / 2)
+    onChange({
+      ...crop,
+      offsetX: Math.max(-maxOX, Math.min(maxOX, start.current.ox + dx)),
+      offsetY: Math.max(-maxOY, Math.min(maxOY, start.current.oy + dy)),
+    })
+  }, [crop, onChange])
+
+  const onPointerUp = useCallback(() => {
+    dragging.current = false
+  }, [])
+
+  // Clamp offset when zoom changes
+  const handleZoom = useCallback((val: number | number[]) => {
+    const zoom = Number(Array.isArray(val) ? val[0] : val)
+    const zoomedW = crop.imgW * zoom
+    const zoomedH = crop.imgH * zoom
+    const maxOX = Math.max(0, (zoomedW - STAGE_SIZE) / 2)
+    const maxOY = Math.max(0, (zoomedH - STAGE_SIZE) / 2)
+    onChange({
+      ...crop,
+      zoom,
+      offsetX: Math.max(-maxOX, Math.min(maxOX, crop.offsetX)),
+      offsetY: Math.max(-maxOY, Math.min(maxOY, crop.offsetY)),
+    })
+  }, [crop, onChange])
+
+  const zoomedW = crop.imgW * crop.zoom
+  const zoomedH = crop.imgH * crop.zoom
+
+  return (
+    <div className="avatar-cropper-v2">
+      <div
+        ref={stageRef}
+        className="avatar-crop-stage-v2"
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+      >
+        <img
+          src={crop.src}
+          alt="crop"
+          draggable={false}
+          style={{
+            width: zoomedW,
+            height: zoomedH,
+            transform: `translate(${(STAGE_SIZE - zoomedW) / 2 + crop.offsetX}px, ${(STAGE_SIZE - zoomedH) / 2 + crop.offsetY}px)`,
+          }}
+        />
+        {/* Circular mask overlay */}
+        <div className="avatar-crop-circle-mask" />
+        <div className="avatar-crop-hint">拖拽移动图片</div>
+      </div>
+      <div className="avatar-crop-controls-v2">
+        <label>
+          <span>缩放</span>
+          <Slider min={1} max={3} step={0.05} value={crop.zoom} onChange={handleZoom} />
+        </label>
+      </div>
     </div>
   )
 }
