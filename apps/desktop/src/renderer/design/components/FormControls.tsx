@@ -206,7 +206,7 @@ export const SparkSelect = forwardRef<any, SparkSelectProps>(
           {...(value !== undefined ? { value } : {})}
           {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
           onChange={(v: string | number) => {
-            onChange?.({ target: { value: String(v) } })
+            onChange?.({ target: { value: v != null ? String(v) : '' } })
           }}
           disabled={disabled ?? false}
           size={size}

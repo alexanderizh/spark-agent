@@ -21,6 +21,7 @@ import type { DragEvent } from 'react'
 import { Badge, Button, DatePicker, Select, Space } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
+import { useIpcInvoke } from '../hooks/useIpc'
 import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 
 /* ------------------------------------------------------------------ */
@@ -130,12 +131,16 @@ type CtxMenuState = {
 /*  Quick Create Modal                                                 */
 /* ------------------------------------------------------------------ */
 
+type AgentOption = { id: string; name: string }
+
 function QuickCreateModal({
   defaultStatus,
+  agents,
   onClose,
   onSubmit,
 }: {
   defaultStatus: TaskStatus
+  agents: AgentOption[]
   onClose: () => void
   onSubmit: (card: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
 }) {
@@ -228,7 +233,9 @@ function QuickCreateModal({
           <div className="bqc-row">
             <div className="bqc-field bqc-field-sm">
               <label>负责人</label>
-              <SparkInput value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="指定负责人" className="bqc-input" />
+              <SparkSelect value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="选择负责人" className="bqc-select" allowClear showSearch>
+                {agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+              </SparkSelect>
             </div>
             <div className="bqc-field bqc-field-sm">
               <label>截止日期</label>
@@ -265,11 +272,13 @@ function QuickCreateModal({
 
 function DetailPanel({
   card,
+  agents,
   onClose,
   onSave,
   onDelete,
 }: {
   card: TaskCard
+  agents: AgentOption[]
   onClose: () => void
   onSave: (updated: TaskCard) => void
   onDelete: (id: string) => void
@@ -365,7 +374,9 @@ function DetailPanel({
           <div className="bdp-field-row">
             <div className="bdp-field">
               <label className="bdp-label">负责人</label>
-              <SparkInput value={assignee} onChange={(e) => markDirty(e.target.value, setAssignee)} placeholder="未指定" className="bdp-input" />
+              <SparkSelect value={assignee} onChange={(e) => markDirty(e.target.value, setAssignee)} placeholder="未指定" className="bdp-select" allowClear showSearch>
+                {agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+              </SparkSelect>
             </div>
             <div className="bdp-field">
               <label className="bdp-label">截止日期</label>
@@ -600,7 +611,9 @@ function formatShortDate(iso: string): string {
 
 export function BoardView() {
   const { requestConfirm } = useApp()
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
   const [tasks, setTasks] = useState<TaskCard[]>([])
+  const [agents, setAgents] = useState<AgentOption[]>([])
   const [showCreate, setShowCreate] = useState(false)
   const [createDefaultStatus, setCreateDefaultStatus] = useState<TaskStatus>('todo')
   const [detailCard, setDetailCard] = useState<TaskCard | null>(null)
@@ -611,9 +624,15 @@ export function BoardView() {
   const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all')
   const dragCardRef = useRef<TaskCard | null>(null)
 
-  // Load tasks from IPC on mount
+  // Load tasks and agents from IPC on mount
   useEffect(() => {
     ipcLoadTasks().then(setTasks)
+    listAgents({ includeDisabled: false }).then((res: any) => {
+      const agentList: AgentOption[] = (res.agents ?? [])
+        .filter((a: any) => a.enabled)
+        .map((a: any) => ({ id: a.id, name: a.name }))
+      setAgents(agentList)
+    }).catch(() => {})
   }, [])
 
   // Derived
@@ -816,12 +835,12 @@ export function BoardView() {
 
       {/* Quick Create */}
       {showCreate && (
-        <QuickCreateModal defaultStatus={createDefaultStatus} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
+        <QuickCreateModal defaultStatus={createDefaultStatus} agents={agents} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
       )}
 
       {/* Detail Panel */}
       {detailCard && (
-        <DetailPanel card={detailCard} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} />
+        <DetailPanel card={detailCard} agents={agents} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} />
       )}
 
       {/* Context Menu */}
