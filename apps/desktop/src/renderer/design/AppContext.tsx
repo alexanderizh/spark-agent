@@ -228,6 +228,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--primary', primary)
     root.style.setProperty('--primary-hover', info?.hover ?? primary)
     root.style.setProperty('--primary-soft', info?.soft ?? 'rgba(99,102,241,0.12)')
+    // Sync Arco Design primary color series (1-9) with the app theme
+    root.style.setProperty('--arco-color-primary-6', primary)
+    root.style.setProperty('--arco-color-primary-5', `color-mix(in srgb, ${primary} 85%, white)`)
+    root.style.setProperty('--arco-color-primary-4', `color-mix(in srgb, ${primary} 65%, white)`)
+    root.style.setProperty('--arco-color-primary-3', `color-mix(in srgb, ${primary} 45%, white)`)
+    root.style.setProperty('--arco-color-primary-2', `color-mix(in srgb, ${primary} 25%, white)`)
+    root.style.setProperty('--arco-color-primary-1', `color-mix(in srgb, ${primary} 10%, white)`)
+    root.style.setProperty('--arco-color-primary-7', `color-mix(in srgb, ${primary} 80%, black)`)
+    root.style.setProperty('--arco-color-primary-8', `color-mix(in srgb, ${primary} 60%, black)`)
+    root.style.setProperty('--arco-color-primary-9', `color-mix(in srgb, ${primary} 40%, black)`)
     // Resolve the actual theme from the user preference
     const applyResolvedTheme = (resolved: ResolvedTheme) => {
       root.dataset.theme = resolved
