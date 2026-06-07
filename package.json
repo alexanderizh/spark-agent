@@ -9,7 +9,7 @@
     "pnpm": ">=10.0.0"
   },
   "scripts": {
-    "dev": "pnpm --filter @spark/desktop dev",
+    "dev": "cd apps/desktop && pnpm run dev",
     "build": "pnpm --filter @spark/desktop build",
     "test": "pnpm -r run test",
     "test:unit": "pnpm -r run test:unit",

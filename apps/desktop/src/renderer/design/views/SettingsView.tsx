@@ -121,10 +121,8 @@ type AppearanceSettings = {
   font: string
   fontSize: number
   codeLigature: boolean
-  sessionLayout: string
   windowCorners: string
   backdropBlur: boolean
-  animation: string
   autoCollapseTools: boolean
   inlineTokenCount: boolean
   syntaxHighlight: boolean
@@ -186,10 +184,8 @@ const DEFAULT_APPEARANCE: AppearanceSettings = {
   font: 'geist',
   fontSize: 13,
   codeLigature: false,
-  sessionLayout: 'vibe',
   windowCorners: 'soft',
   backdropBlur: false,
-  animation: 'full',
   autoCollapseTools: true,
   inlineTokenCount: false,
   syntaxHighlight: true,
@@ -1356,24 +1352,6 @@ function AppearanceSection() {
           </button>
         </div>
 
-        <label>
-          侧边栏<span className="sub">默认展开还是仅图标</span>
-        </label>
-        <div className="seg-control">
-          <button
-            className={t.sidebar === 'collapsed' ? 'active' : ''}
-            onClick={() => setTweak('sidebar', 'collapsed')}
-          >
-            图标
-          </button>
-          <button
-            className={t.sidebar === 'expanded' ? 'active' : ''}
-            onClick={() => setTweak('sidebar', 'expanded')}
-          >
-            展开
-          </button>
-        </div>
-
         <label>字体</label>
         <SparkSelect value={a.font} onChange={(e) => setA({ font: e.target.value })}>
           <option value="geist">Geist Sans + Geist Mono（推荐）</option>
@@ -1405,24 +1383,6 @@ function AppearanceSection() {
           onClick={() => setA({ codeLigature: !a.codeLigature })}
         />
 
-        <label>会话默认布局</label>
-        <div className="seg-control">
-          {(
-            [
-              ['Vibe（聊天）', 'vibe'],
-              ['Workspace（编辑器）', 'workspace'],
-            ] as [string, string][]
-          ).map(([label, mode]) => (
-            <button
-              key={mode}
-              className={a.sessionLayout === mode ? 'active' : ''}
-              onClick={() => setA({ sessionLayout: mode })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
         <label>窗口圆角</label>
         <div className="seg-control">
           {(
@@ -1449,25 +1409,6 @@ function AppearanceSection() {
           className={`switch ${a.backdropBlur ? 'on' : ''}`}
           onClick={() => setA({ backdropBlur: !a.backdropBlur })}
         />
-
-        <label>动画</label>
-        <div className="seg-control">
-          {(
-            [
-              ['禁用', 'none'],
-              ['仅过渡', 'transitions'],
-              ['完整', 'full'],
-            ] as [string, string][]
-          ).map(([label, mode]) => (
-            <button
-              key={mode}
-              className={a.animation === mode ? 'active' : ''}
-              onClick={() => setA({ animation: mode })}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="subsec-h">聊天显示</div>

@@ -123,11 +123,9 @@ function createWindow(): BrowserWindow {
 
   // macOS: hiddenInset + trafficLightPosition places native traffic lights
   // inside the floating sidebar panel area (top-left corner).
-  // The panel sits at left:12px, so traffic lights at x:22 land inside it.
-  // Windows: use the OS-native title bar (minimize/maximize/close built in).
-  // Linux: frameless window with custom HTML window controls in the sidebar.
+  // The Panel sits at left:12px, so traffic lights at x:22 land inside it.
+  // Windows & Linux: frameless window with custom HTML title bar and window controls.
   const isDarwin = process.platform === 'darwin'
-  const isWin32 = process.platform === 'win32'
 
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -136,7 +134,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: isDarwin ? 'hiddenInset' : isWin32 ? 'default' : 'hidden',
+    titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
     ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
     icon: iconPath,
     webPreferences: {

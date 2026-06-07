@@ -13,6 +13,7 @@ import { AvatarImage } from './design/components/AvatarImage'
 import { getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
 import type { PermissionApprovalRequest, SessionId, UserQuestionPrompt } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
+import { useAppearanceEffects } from './design/hooks/useAppearance'
 
 import { ChatView } from './design/views/ChatView'
 import { ProjectView } from './design/views/ProjectView'
@@ -402,6 +403,7 @@ function Shell() {
   const { t, setTweak } = useApp()
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
+  useAppearanceEffects()
   const [approvalRequests, setApprovalRequests] = useState<Record<string, PermissionApprovalRequest>>({})
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
 

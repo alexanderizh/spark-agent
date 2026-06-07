@@ -40,6 +40,7 @@ import { AvatarImage } from '../components/AvatarImage'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
+import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
@@ -211,6 +212,7 @@ export function ChatView({
   onUserQuestionClose,
 }: ChatViewProps = {}) {
   const { t } = useApp()
+  const appearance = useAppearanceSettings()
   // ── Shared state from SessionSidebarContext ──
   const sessionCtx = useSessionSidebar()
   const active = sessionCtx.activeSessionId
@@ -1274,6 +1276,7 @@ function ChatStream({
               assistantId={assistantAgentId}
               assistantName={assistantName}
               assistantAvatarSrc={assistantAvatarSrc}
+              usage={msg.usage}
               {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
               {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
               {...(msg.status !== 'streaming'
@@ -2530,6 +2533,7 @@ function MarkdownText({
   isStreaming?: boolean
 }) {
   const blocks = parseMarkdown(content)
+  const syntaxHighlight = readAppearance().syntaxHighlight
 
   return (
     <>
@@ -2544,7 +2548,7 @@ function MarkdownText({
             return <p key={index}>{renderInlineMarkdown(block.text)}</p>
           case 'code':
             return (
-              <div key={index} className="md-code-block">
+              <div key={index} className={`md-code-block${syntaxHighlight ? '' : ' no-syntax'}`}>
                 {block.lang && (
                   <div className="md-code-header">
                     <span className="md-code-lang">{block.lang}</span>
@@ -2831,13 +2835,22 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return rendered
 }
 
-/** 格式化时间戳为 HH:MM 格式 */
+/** 格式化时间戳 — 根据 timestampFormat 设置输出相对或绝对时间 */
 function formatMsgTime(timestamp?: string): string {
   if (!timestamp) return ''
   const d = new Date(timestamp)
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
+  const abs = `${hh}:${mm}`
+  const fmt = readAppearance().timestampFormat
+  if (fmt === 'abs') return abs
+  // relative time
+  const now = Date.now()
+  const diffMs = now - d.getTime()
+  if (diffMs < 60_000) return '刚刚'
+  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)} 分钟前`
+  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)} 小时前`
+  return abs
 }
 
 /** 消息悬浮操作栏：时间 + 复制按钮 + 删除按钮，放在气泡内部。position: left=agent消息(左下角), right=用户消息(右下角) */
@@ -2845,11 +2858,13 @@ function MessageHoverBar({
   timestamp,
   textContent,
   position,
+  usage,
   onDelete,
 }: {
   timestamp?: string | undefined
   textContent: string
   position: 'left' | 'right'
+  usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
 }) {
   const [copied, setCopied] = useState(false)
@@ -2865,10 +2880,16 @@ function MessageHoverBar({
   }, [textContent])
 
   const time = formatMsgTime(timestamp)
+  const showTokenCount = readAppearance().inlineTokenCount && usage != null
 
   return (
     <div className={`msg-hover-bar msg-hover-${position}`}>
       {time && <span className="msg-hover-time">{time}</span>}
+      {showTokenCount && (
+        <span className="msg-hover-tokens">
+          {usage.inputTokens + usage.outputTokens} tokens
+        </span>
+      )}
       <button className="msg-hover-copy" title="复制" onClick={handleCopy}>
         {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
       </button>
@@ -3322,6 +3343,7 @@ function AssistantMessageRows({
   assistantId,
   assistantName,
   assistantAvatarSrc,
+  usage,
   onDelete,
 }: {
   sessionId: SessionId
@@ -3333,6 +3355,7 @@ function AssistantMessageRows({
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
+  usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
@@ -3370,6 +3393,7 @@ function AssistantMessageRows({
             assistantId={assistantId}
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
+            usage={usage}
             {...(status != null ? { status } : {})}
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
@@ -3472,6 +3496,7 @@ function AgentMsg({
   assistantId,
   assistantName,
   assistantAvatarSrc,
+  usage,
   onDelete,
 }: {
   sessionId: SessionId
@@ -3483,6 +3508,7 @@ function AgentMsg({
   assistantId: string
   assistantName: string
   assistantAvatarSrc: string
+  usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
 }) {
   const thinkingBlocks = blocks.filter(
@@ -3625,6 +3651,7 @@ function AgentMsg({
             timestamp={timestamp}
             textContent={textContent}
             position="left"
+            usage={usage}
             {...(onDelete ? { onDelete } : {})}
           />
         )}
@@ -3802,9 +3829,9 @@ function ToolCall({
     Write: <Icons.File className="tool-icon" />,
   }
 
-  // Auto-collapse on completion — keep open only while pending/running
+  // Auto-collapse on completion — controlled by autoCollapseTools setting
   useEffect(() => {
-    if (status === 'ok' || status === 'error') {
+    if ((status === 'ok' || status === 'error') && readAppearance().autoCollapseTools) {
       setOpen(false)
     }
   }, [status])

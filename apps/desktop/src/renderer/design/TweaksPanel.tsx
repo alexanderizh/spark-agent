@@ -203,10 +203,6 @@ export function TweaksPanel() {
         <Row label="密度">
           <Seg value={t.density} options={['compact', 'regular', 'comfy']} onChange={(v) => setTweak('density', v)} />
         </Row>
-        <Row label="侧边栏">
-          <Seg value={t.sidebar} options={['collapsed', 'expanded']} onChange={(v) => setTweak('sidebar', v)} />
-        </Row>
-
         <Section label="视图" />
         <Row label="当前视图">
           <SparkSelect className="twk-field" value={t.view} onChange={(e) => setTweak('view', e.target.value as Tweaks['view'])}>

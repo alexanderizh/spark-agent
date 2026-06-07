@@ -1324,6 +1324,14 @@ body.sidebar-resizing {
   user-select: none;
 }
 
+.msg-hover-tokens {
+  font-size: 11px;
+  color: var(--text-faint);
+  line-height: 1;
+  user-select: none;
+  font-family: var(--font-mono);
+}
+
 .msg-hover-copy {
   display: inline-flex;
   align-items: center;
@@ -1747,6 +1755,11 @@ body.sidebar-resizing {
   background: var(--code-bg);
   border: 1px solid var(--border);
 }
+.md-code-block.no-syntax {
+  background: transparent;
+  border-color: var(--divider);
+}
+.md-code-block.no-syntax .md-code { font-family: var(--font-sans); }
 .md-code-header {
   display: flex;
   align-items: center;

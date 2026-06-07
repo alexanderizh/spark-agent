@@ -30,6 +30,11 @@
   --font-lg: 14px;
   --font-sans: "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
+
+  /* code ligature — overridden by useAppearance */
+  --code-ligature: normal;
+  /* backdrop blur — overridden by useAppearance */
+  --backdrop-blur: none;
 }
 
 /* ---------- THEME: LIGHT (default) — also on html for Arco popups outside .app ---------- */
@@ -160,6 +165,7 @@ html[data-theme="dark"],
 html, body, #root { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 body {
   font-family: var(--font-sans);
+  font-size: var(--font-base);
   font-feature-settings: 'cv11', 'ss01';
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -169,7 +175,7 @@ body {
 }
 code, pre, .mono {
   font-family: var(--font-mono);
-  font-feature-settings: 'zero', 'ss02';
+  font-feature-settings: var(--code-ligature);
 }
 button { font-family: inherit; cursor: pointer; }
 
@@ -227,6 +233,7 @@ a:focus-visible,
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
+  border-radius: var(--r-xl);
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.05),
     0 30px 80px rgba(0, 0, 0, 0.5),
@@ -254,8 +261,11 @@ a:focus-visible,
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+}
+html[data-backdrop-blur="1"] .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
 }
 .platform-darwin .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
@@ -288,11 +298,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   -webkit-app-region: drag;
   border-radius: var(--r-xl) var(--r-xl) 0 0;
 }
-/* Windows: native title bar handles dragging, so the invisible drag
-   region is unnecessary. Hide it to avoid stealing mouse events. */
-.platform-win32 .floating-sidebar-drag {
-  display: none;
-}
 
 /* Panel header: hide button + logo */
 .floating-sidebar-header {
@@ -307,14 +312,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .platform-darwin .floating-sidebar-header {
   padding-top: 8px;
-}
-/* Windows: hide button sits on the left, mirroring the left-aligned
-   expand button in the main content area. */
-.platform-win32 .floating-sidebar-header {
-  justify-content: flex-start;
-}
-.platform-win32 .floating-sidebar-header .sidebar-hide-btn {
-  order: -1;
 }
 .sidebar-hide-btn {
   -webkit-app-region: no-drag;
@@ -615,11 +612,51 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* Hide window controls on macOS (uses native traffic lights) */
 .platform-darwin .window-controls { display: none; }
 
+/* ─── Windows Custom Title Bar ─── */
+.platform-win32 .win-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0 0 0 8px;
+  -webkit-app-region: drag;
+}
+.platform-win32 .win-titlebar .sidebar-expand-btn {
+  -webkit-app-region: no-drag;
+}
+.platform-win32 .win-titlebar-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  -webkit-app-region: no-drag;
+}
+.platform-win32 .win-titlebar-controls .window-controls {
+  padding: 0;
+  width: auto;
+}
+
+/* Windows: enable sidebar drag region (frameless window) */
+.platform-win32 .floating-sidebar-drag {
+  display: block;
+}
+/* Windows: sidebar header also acts as drag region */
+.platform-win32 .floating-sidebar-header {
+  -webkit-app-region: drag;
+  justify-content: flex-start;
+}
+.platform-win32 .floating-sidebar-header .sidebar-hide-btn {
+  order: -1;
+  -webkit-app-region: no-drag;
+}
+
 /* ─── Main content area — offset to the right of the sidebar ─── */
 .main-content-area {
   margin-left: var(--sidebar-offset, 210px);
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
