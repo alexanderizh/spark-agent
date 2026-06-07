@@ -467,9 +467,9 @@
 
 /* ── Quick Create ── */
 .board-quick-create {
-  width: 440px;
+  width: 580px;
   max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 80px);
+  max-height: calc(100vh - 60px);
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -485,7 +485,7 @@
 }
 .bqc-header { display: flex; align-items: center; justify-content: space-between; padding: 14px 16px 10px; }
 .bqc-title { font-size: var(--font-lg); font-weight: 600; color: var(--text-strong); }
-.bqc-body { padding: 4px 16px 12px; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.bqc-body { padding: 4px 20px 14px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
 .bqc-footer { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-top: 1px solid var(--divider); background: var(--bg-soft); }
 .bqc-hint { font-size: var(--font-xs); color: var(--text-faint); }
 .bqc-actions { display: flex; gap: 6px; }

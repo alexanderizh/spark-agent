@@ -177,7 +177,7 @@ function QuickCreateModal({
   }, [handleSubmit, onClose])
 
   return (
-    <div className="board-modal-backdrop" onClick={onClose}>
+    <div className="board-modal-backdrop">
       <div className="board-quick-create" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
         <div className="bqc-header">
           <div className="bqc-title">快捷创建任务</div>
@@ -200,7 +200,7 @@ function QuickCreateModal({
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="输入任务描述（可选）…"
-              rows={3}
+              rows={5}
               className="bqc-textarea"
             />
           </div>
