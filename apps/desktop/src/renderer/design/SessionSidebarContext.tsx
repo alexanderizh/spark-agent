@@ -357,8 +357,9 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
       const prefs = readComposerPrefs()
+      const defaultAgent = agents.find(a => a.isDefault && a.enabled)
       const selectedAgent = agents.find(a => a.id === (options.agentId as string)) ??
-        agents.find(a => a.id === prefs.agentId) ?? agents[0]
+        agents.find(a => a.id === prefs.agentId) ?? defaultAgent ?? agents[0]
       const preferredAdapter = (options.agentAdapter as SessionAgentAdapter) ?? selectedAgent?.agentAdapter ?? prefs.adapter ?? DEFAULT_AGENT_ADAPTER
       const profile = knownProviders.find(p => p.id === (options.providerProfileId as string)) ??
         knownProviders.find(p => p.id === selectedAgent?.providerProfileId) ??

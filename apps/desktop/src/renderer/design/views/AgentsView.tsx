@@ -5,6 +5,7 @@ import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
+import { Switch } from '@arco-design/web-react'
 import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
@@ -30,6 +31,7 @@ type AgentDraft = {
   name: string
   description: string
   enabled: boolean
+  isDefault: boolean
   builtIn: boolean
   providerProfileId: string
   modelId: string
@@ -57,6 +59,7 @@ const EMPTY_DRAFT: AgentDraft = {
   name: '新 Agent',
   description: '',
   enabled: true,
+  isDefault: false,
   builtIn: false,
   providerProfileId: '',
   modelId: '',
@@ -366,6 +369,7 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
                     {wf && <><span className="agents-card-dot" /><span>{wf.name}</span></>}
                   </span>
                   <span className="agents-card-tags">
+                    {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
                     {agent.skillIds.length > 0 && <span className="agents-card-tag">{agent.skillIds.length} Skills</span>}
                     {agent.mcpServerIds.length > 0 && <span className="agents-card-tag">{agent.mcpServerIds.length} MCP</span>}
                     {agent.ruleIds.length > 0 && <span className="agents-card-tag">{agent.ruleIds.length} 规则</span>}
@@ -441,6 +445,15 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
                 <option value="enabled">启用</option>
                 <option value="disabled">停用</option>
               </SparkSelect>
+            </Field>
+            <Field label="默认 Agent">
+              <span className="agent-toggle-row">
+                <Switch
+                  checked={draft.isDefault}
+                  onChange={(checked: boolean) => updateDraft('isDefault', checked)}
+                />
+                <span className="agent-toggle-label">{draft.isDefault ? '新会话默认选择此 Agent' : '未设为默认'}</span>
+              </span>
             </Field>
             <Field label="说明" wide>
               <SparkInput value={draft.description} onChange={(e) => updateDraft('description', e.target.value)} />
@@ -645,6 +658,7 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
     name: agent.name,
     description: agent.description,
     enabled: agent.enabled,
+    isDefault: agent.isDefault,
     builtIn: agent.builtIn,
     providerProfileId: agent.providerProfileId ?? '',
     modelId: agent.modelId ?? '',
@@ -667,6 +681,7 @@ function draftToPayload(draft: AgentDraft) {
     name: draft.name.trim(),
     description: draft.description.trim(),
     enabled: draft.enabled,
+    isDefault: draft.isDefault,
     providerProfileId: draft.providerProfileId || null,
     modelId: draft.modelId || null,
     agentAdapter: draft.agentAdapter,

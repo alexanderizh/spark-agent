@@ -8,6 +8,7 @@ export interface AgentRow {
   description: string
   built_in: number
   enabled: number
+  is_default: number
   provider_profile_id: string | null
   model_id: string | null
   agent_adapter: string
@@ -47,6 +48,7 @@ export interface AgentItem extends AgentConfig {
   description: string
   builtIn: boolean
   enabled: boolean
+  isDefault: boolean
   createdAt: string
   updatedAt: string
 }
@@ -56,6 +58,7 @@ export interface CreateAgentParams extends Partial<AgentConfig> {
   name: string
   description?: string
   enabled?: boolean
+  isDefault?: boolean
 }
 
 export interface UpdateAgentParams extends Partial<CreateAgentParams> {}
@@ -86,20 +89,23 @@ export class AgentRepository extends BaseRepository {
     const id = params.id ?? randomUUID()
     const now = new Date().toISOString()
     const metadata = withDefaultAvatar(params.metadata, params.name)
+    const isDefault = params.isDefault === true ? 1 : 0
+    if (isDefault) this.clearDefaultFlag()
     this.raw
       .prepare(
         `INSERT INTO agents (
-          id, name, description, built_in, enabled, provider_profile_id, model_id,
+          id, name, description, built_in, enabled, is_default, provider_profile_id, model_id,
           agent_adapter, permission_mode, reasoning_effort, prompt, rule_ids_json,
           skill_ids_json, disabled_skill_ids_json, mcp_server_ids_json, hook_config_json,
           workflow_id, metadata_json, created_at, updated_at
-        ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         params.name,
         params.description ?? '',
         params.enabled === false ? 0 : 1,
+        isDefault,
         params.providerProfileId ?? null,
         params.modelId ?? null,
         params.agentAdapter ?? 'claude-sdk',
@@ -133,6 +139,10 @@ export class AgentRepository extends BaseRepository {
     if (fields.name !== undefined) add('name', fields.name)
     if (fields.description !== undefined) add('description', fields.description)
     if (fields.enabled !== undefined) add('enabled', fields.enabled ? 1 : 0)
+    if (fields.isDefault !== undefined) {
+      if (fields.isDefault) this.clearDefaultFlag()
+      add('is_default', fields.isDefault ? 1 : 0)
+    }
     if (fields.providerProfileId !== undefined) add('provider_profile_id', fields.providerProfileId)
     if (fields.modelId !== undefined) add('model_id', fields.modelId)
     if (fields.agentAdapter !== undefined) add('agent_adapter', fields.agentAdapter)
@@ -156,6 +166,17 @@ export class AgentRepository extends BaseRepository {
     return this.get(id)
   }
 
+  clearDefaultFlag(): void {
+    this.raw.prepare('UPDATE agents SET is_default = 0 WHERE is_default = 1').run()
+  }
+
+  getDefault(): AgentItem | null {
+    const row = this.raw
+      .prepare('SELECT * FROM agents WHERE is_default = 1 LIMIT 1')
+      .get() as AgentRow | undefined
+    return row ? this.toItem(row) : null
+  }
+
   delete(id: string): boolean {
     const row = this.getRow(id)
     if (row == null || row.built_in === 1) return false
@@ -169,6 +190,7 @@ export class AgentRepository extends BaseRepository {
       description: row.description,
       builtIn: row.built_in === 1,
       enabled: row.enabled === 1,
+      isDefault: row.is_default === 1,
       providerProfileId: row.provider_profile_id,
       modelId: row.model_id,
       agentAdapter: row.agent_adapter,

@@ -10646,6 +10646,15 @@ body.inspector-resizing {
   background: var(--primary-soft);
   border-color: color-mix(in srgb, var(--primary) 20%, transparent);
 }
+.agents-card-tag.default-tag {
+  color: var(--warning, #f59e0b);
+  background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
+  border-color: color-mix(in srgb, var(--warning, #f59e0b) 20%, transparent);
+}
+.agent-toggle-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
 
 /* ── Agents detail (config editor) ── */
 .agents-detail {

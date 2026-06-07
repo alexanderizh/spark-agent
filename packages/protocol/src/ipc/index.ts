@@ -1330,6 +1330,7 @@ export interface ManagedAgent {
   description: string
   builtIn: boolean
   enabled: boolean
+  isDefault: boolean
   providerProfileId?: string | null
   modelId?: string | null
   agentAdapter: SessionAgentAdapter
@@ -1367,6 +1368,7 @@ export interface AgentCreateRequest {
   name: string
   description?: string
   enabled?: boolean
+  isDefault?: boolean
   providerProfileId?: string | null
   modelId?: string | null
   agentAdapter?: SessionAgentAdapter
