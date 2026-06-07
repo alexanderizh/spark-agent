@@ -325,6 +325,8 @@ function DetailPanel({
   onSave,
   onDelete,
   onAddComment,
+  onDeleteComment,
+  onUpdateComment,
 }: {
   card: TaskCard
   agents: AgentOption[]
@@ -333,6 +335,8 @@ function DetailPanel({
   onSave: (updated: TaskCard) => void
   onDelete: (id: string) => void
   onAddComment: (taskId: string, author: string, content: string) => void
+  onDeleteComment: (taskId: string, commentId: string) => void
+  onUpdateComment: (taskId: string, commentId: string, content: string) => void
 }) {
   const [title, setTitle] = useState(card.title)
   const [description, setDescription] = useState(card.description)
@@ -344,6 +348,9 @@ function DetailPanel({
   const [dueDate, setDueDate] = useState(card.dueDate)
   const [isDirty, setIsDirty] = useState(false)
   const [newComment, setNewComment] = useState('')
+  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
+  const [replyingToId, setReplyingToId] = useState<string | null>(null)
 
   const markDirty = useCallback(<T,>(val: T, setter: (v: T) => void) => {
     setter(val)
@@ -371,11 +378,39 @@ function DetailPanel({
     onClose()
   }, [card.id, onDelete, onClose])
 
+  const handleDeleteComment = useCallback((commentId: string) => {
+    if (!window.confirm('确定删除该评论？')) return
+    onDeleteComment(card.id, commentId)
+  }, [card.id, onDeleteComment])
+
+  const handleStartEditComment = useCallback((commentId: string, content: string) => {
+    setEditingCommentId(commentId)
+    setEditContent(content)
+    setReplyingToId(null)
+  }, [])
+
+  const handleSaveEditComment = useCallback(() => {
+    if (!editingCommentId || !editContent.trim()) return
+    onUpdateComment(card.id, editingCommentId, editContent.trim())
+    setEditingCommentId(null)
+    setEditContent('')
+  }, [card.id, editingCommentId, editContent, onUpdateComment])
+
+  const handleCancelEdit = useCallback(() => {
+    setEditingCommentId(null)
+    setEditContent('')
+  }, [])
+
+  const handleReply = useCallback((commentId: string) => {
+    setReplyingToId(replyingToId === commentId ? null : commentId)
+    setEditingCommentId(null)
+  }, [replyingToId])
+
   const pCfg = PRIORITY_CONFIG[priority]
   const colCfg = COLUMNS.find(c => c.key === status)
 
   return (
-    <div className="board-detail-overlay" onClick={onClose}>
+    <div className="board-detail-overlay" onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
       <div className="board-detail-panel" onClick={(e) => e.stopPropagation()}>
         <div className="bdp-header">
           <div className="bdp-header-left">
@@ -475,9 +510,60 @@ function DetailPanel({
                 <div key={c.id} className="bdp-comment">
                   <div className="bdp-comment-head">
                     <span className="bdp-comment-author">{c.author || '用户'}</span>
-                    <span className="bdp-comment-time">{formatDate(c.createdAt)}</span>
+                    <div className="bdp-comment-head-right">
+                      <span className="bdp-comment-time">{formatDate(c.createdAt)}</span>
+                      <div className="bdp-comment-actions">
+                        <button className="bdp-comment-btn" onClick={() => handleReply(c.id)}>回复</button>
+                        <button className="bdp-comment-btn" onClick={() => handleStartEditComment(c.id, c.content)}>编辑</button>
+                        <button className="bdp-comment-btn bdp-comment-btn-danger" onClick={() => handleDeleteComment(c.id)}>删除</button>
+                      </div>
+                    </div>
                   </div>
-                  <div className="bdp-comment-body">{c.content}</div>
+                  {editingCommentId === c.id ? (
+                    <div className="bdp-comment-edit">
+                      <SparkTextarea
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        rows={2}
+                        className="bdp-comment-edit-input"
+                      />
+                      <div className="bdp-comment-edit-actions">
+                        <button className="board-btn board-btn-primary board-btn-xs" onClick={handleSaveEditComment} disabled={!editContent.trim()}>保存</button>
+                        <button className="board-btn board-btn-ghost board-btn-xs" onClick={handleCancelEdit}>取消</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bdp-comment-body">{c.content}</div>
+                  )}
+                  {replyingToId === c.id && (
+                    <div className="bdp-comment-reply-row">
+                      <SparkTextarea
+                        placeholder="输入回复…"
+                        className="bdp-comment-input"
+                        rows={2}
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) {
+                            onAddComment(card.id, '', newComment.trim())
+                            setNewComment('')
+                            setReplyingToId(null)
+                          }
+                        }}
+                      />
+                      <button
+                        className="board-btn board-btn-primary board-btn-xs"
+                        disabled={!newComment.trim()}
+                        onClick={() => {
+                          if (newComment.trim()) {
+                            onAddComment(card.id, '', newComment.trim())
+                            setNewComment('')
+                            setReplyingToId(null)
+                          }
+                        }}
+                      >发送</button>
+                    </div>
+                  )}
                 </div>
               ))}
               {(card.comments == null || card.comments.length === 0) && (
@@ -485,13 +571,14 @@ function DetailPanel({
               )}
             </div>
             <div className="bdp-comment-input-row">
-              <SparkInput
-                placeholder="输入评论…"
+              <SparkTextarea
+                placeholder="输入评论…（Ctrl+Enter 发送）"
                 className="bdp-comment-input"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
+                rows={2}
+                value={replyingToId ? '' : newComment}
+                onChange={(e) => { if (!replyingToId) setNewComment(e.target.value) }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newComment.trim()) {
+                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) {
                     onAddComment(card.id, '', newComment.trim())
                     setNewComment('')
                   }
@@ -827,6 +914,19 @@ export function BoardView() {
     setDetailCard(prev => prev && prev.id === taskId ? { ...prev, comments: [...(prev.comments ?? []), comment] } : prev)
   }, [])
 
+  const handleDeleteComment = useCallback(async (taskId: string, commentId: string) => {
+    await window.spark.invoke('board:comment:delete', { taskId, commentId })
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, comments: (t.comments ?? []).filter(c => c.id !== commentId) } : t))
+    setDetailCard(prev => prev && prev.id === taskId ? { ...prev, comments: (prev.comments ?? []).filter(c => c.id !== commentId) } : prev)
+  }, [])
+
+  const handleUpdateComment = useCallback(async (taskId: string, commentId: string, content: string) => {
+    const res = await window.spark.invoke('board:comment:update', { taskId, commentId, content })
+    const updated = res.comment as TaskComment
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, comments: (t.comments ?? []).map(c => c.id === commentId ? updated : c) } : t))
+    setDetailCard(prev => prev && prev.id === taskId ? { ...prev, comments: (prev.comments ?? []).map(c => c.id === commentId ? updated : c) } : prev)
+  }, [])
+
   // Drag & Drop
   const handleDragStart = useCallback((e: DragEvent, card: TaskCard) => {
     dragCardRef.current = card
@@ -976,7 +1076,7 @@ export function BoardView() {
 
       {/* Detail Panel */}
       {detailCard && (
-        <DetailPanel card={detailCard} agents={agents} projectOptions={projectOptions} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} onAddComment={handleAddComment} />
+        <DetailPanel card={detailCard} agents={agents} projectOptions={projectOptions} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} onAddComment={handleAddComment} onDeleteComment={handleDeleteComment} onUpdateComment={handleUpdateComment} />
       )}
 
       {/* Context Menu */}

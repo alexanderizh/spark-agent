@@ -1869,6 +1869,25 @@ export interface BoardCommentCreateResponse {
   comment: BoardComment
 }
 
+export interface BoardCommentDeleteRequest {
+  taskId: string
+  commentId: string
+}
+
+export interface BoardCommentDeleteResponse {
+  success: boolean
+}
+
+export interface BoardCommentUpdateRequest {
+  taskId: string
+  commentId: string
+  content: string
+}
+
+export interface BoardCommentUpdateResponse {
+  comment: BoardComment
+}
+
 // ─── Usage Ledger Channels ────────────────────────────────────────────────────
 
 export interface UsageRecordRequest {
@@ -2999,6 +3018,8 @@ export interface IpcChannelMap {
   'board:permanent-delete': [BoardPermanentDeleteRequest, BoardPermanentDeleteResponse]
   'board:comment:list': [BoardCommentListRequest, BoardCommentListResponse]
   'board:comment:create': [BoardCommentCreateRequest, BoardCommentCreateResponse]
+  'board:comment:delete': [BoardCommentDeleteRequest, BoardCommentDeleteResponse]
+  'board:comment:update': [BoardCommentUpdateRequest, BoardCommentUpdateResponse]
 
   // Usage Ledger
   'usage:record': [UsageRecordRequest, UsageRecordResponse]

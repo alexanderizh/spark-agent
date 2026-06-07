@@ -2315,6 +2315,38 @@ export function registerAllIpcHandlers(): void {
     return { comment }
   })
 
+  typedIpcHandle('board:comment:delete', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.taskId)
+    if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
+    const task = tasks[idx]!
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    const filtered = comments.filter((c) => c.id !== req.commentId)
+    task.commentsJson = JSON.stringify(filtered)
+    task.updatedAt = new Date().toISOString()
+    tasks[idx] = task
+    writeBoardTasks(tasks)
+    return { success: true }
+  })
+
+  typedIpcHandle('board:comment:update', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.taskId)
+    if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
+    const task = tasks[idx]!
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    const cmt = comments.find((c) => c.id === req.commentId)
+    if (!cmt) throw new Error(`Comment not found: ${req.commentId}`)
+    cmt.content = req.content
+    task.commentsJson = JSON.stringify(comments)
+    task.updatedAt = new Date().toISOString()
+    tasks[idx] = task
+    writeBoardTasks(tasks)
+    return { comment: cmt }
+  })
+
   // ─── Remote Connection Handlers ───────────────────────────────────────────
 
   typedIpcHandle('remote:list', async () => {

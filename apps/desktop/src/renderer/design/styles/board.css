@@ -618,11 +618,22 @@
 .bdp-comment { background: var(--bg-soft); border-radius: 6px; padding: 8px 10px; }
 .bdp-comment-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
 .bdp-comment-author { font-size: 12px; font-weight: 600; color: var(--text-default); }
+.bdp-comment-head-right { display: flex; align-items: center; gap: 8px; }
 .bdp-comment-time { font-size: 10px; color: var(--text-faint); }
+.bdp-comment-actions { display: flex; gap: 4px; opacity: 0; transition: opacity 0.15s; }
+.bdp-comment:hover .bdp-comment-actions { opacity: 1; }
+.bdp-comment-btn { background: none; border: none; font-size: 11px; color: var(--text-muted); cursor: pointer; padding: 0 4px; border-radius: 3px; }
+.bdp-comment-btn:hover { color: var(--primary); background: var(--hover); }
+.bdp-comment-btn-danger:hover { color: var(--danger); }
 .bdp-comment-body { font-size: 12px; color: var(--text-muted); line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .bdp-comment-empty { font-size: 12px; color: var(--text-faint); text-align: center; padding: 12px; }
-.bdp-comment-input-row { display: flex; gap: 8px; align-items: center; }
+.bdp-comment-input-row { display: flex; gap: 8px; align-items: flex-end; }
 .bdp-comment-input { flex: 1; min-width: 0; }
+.bdp-comment-edit { display: grid; gap: 6px; margin-top: 4px; }
+.bdp-comment-edit-input { width: 100%; }
+.bdp-comment-edit-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.bdp-comment-reply-row { display: flex; gap: 6px; align-items: flex-end; margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--border-soft); }
+.bdp-comment-reply-row .bdp-comment-input { flex: 1; min-width: 0; }
 
 /* Comment count on card */
 .bc-comment-count { font-size: 11px; color: var(--text-muted); }
