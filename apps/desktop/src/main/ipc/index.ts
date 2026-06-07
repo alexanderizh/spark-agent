@@ -170,12 +170,13 @@ interface BoardTaskRecord {
   id: string
   title: string
   description: string
-  status: 'todo' | 'in-progress' | 'done' | 'closed'
+  status: 'todo' | 'in-progress' | 'done' | 'closed' | 'bug-fix'
   priority: 'low' | 'medium' | 'high' | 'urgent'
   assignee: string
   project: string
   tags: string[]
   dueDate: string
+  commentsJson: string
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -2149,6 +2150,7 @@ export function registerAllIpcHandlers(): void {
       project: req.project ?? '',
       tags: req.tags ?? [],
       dueDate: req.dueDate ?? '',
+      commentsJson: '[]',
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -2174,6 +2176,7 @@ export function registerAllIpcHandlers(): void {
       project: req.project !== undefined ? req.project : base.project,
       tags: req.tags !== undefined ? req.tags : base.tags,
       dueDate: req.dueDate !== undefined ? req.dueDate : base.dueDate,
+      commentsJson: base.commentsJson ?? '[]',
       createdAt: base.createdAt,
       updatedAt: now,
       deletedAt: base.deletedAt,
@@ -2236,6 +2239,7 @@ export function registerAllIpcHandlers(): void {
         project: upd.project !== undefined ? upd.project : base.project,
         tags: upd.tags !== undefined ? upd.tags : base.tags,
         dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
+        commentsJson: base.commentsJson ?? '[]',
         createdAt: base.createdAt,
         updatedAt: now,
         deletedAt: base.deletedAt,
@@ -2276,6 +2280,39 @@ export function registerAllIpcHandlers(): void {
     const filtered = tasks.filter((t) => t.id !== req.id)
     writeBoardTasks(filtered)
     return { success: true }
+  })
+
+  // ─── Board Comments ──────────────────────────────────────────────────────
+
+  typedIpcHandle('board:comment:list', async (req) => {
+    const tasks = readBoardTasks()
+    const task = tasks.find((t) => t.id === req.taskId)
+    if (!task) throw new Error(`Task not found: ${req.taskId}`)
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    return { comments }
+  })
+
+  typedIpcHandle('board:comment:create', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.taskId)
+    if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
+    const task = tasks[idx]!
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    const comment = {
+      id: `cmt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      taskId: req.taskId,
+      author: req.author ?? '',
+      content: req.content,
+      createdAt: new Date().toISOString(),
+    }
+    comments.push(comment)
+    task.commentsJson = JSON.stringify(comments)
+    task.updatedAt = new Date().toISOString()
+    tasks[idx] = task
+    writeBoardTasks(tasks)
+    return { comment }
   })
 
   // ─── Remote Connection Handlers ───────────────────────────────────────────

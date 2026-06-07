@@ -30,7 +30,15 @@ import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../com
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 
-export type TaskStatus = 'todo' | 'in-progress' | 'done' | 'closed'
+export type TaskStatus = 'todo' | 'in-progress' | 'done' | 'closed' | 'bug-fix'
+
+export type TaskComment = {
+  id: string
+  taskId: string
+  author: string
+  content: string
+  createdAt: string
+}
 
 export type TaskCard = {
   id: string
@@ -42,6 +50,7 @@ export type TaskCard = {
   project: string
   tags: string[]
   dueDate: string
+  comments: TaskComment[]
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -56,6 +65,7 @@ export type TaskCard = {
 const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; headerBg: string; headerFg: string; colBg: string; colClass: string }[] = [
   { key: 'todo', label: '待办', color: '#6b7280', icon: '📋', headerBg: 'rgba(107,114,128,0.12)', headerFg: '#6b7280', colBg: 'rgba(107,114,128,0.04)', colClass: 'col-todo' },
   { key: 'in-progress', label: '进行中', color: '#3b82f6', icon: '🔄', headerBg: 'rgba(59,130,246,0.12)', headerFg: '#3b82f6', colBg: 'rgba(59,130,246,0.04)', colClass: 'col-in-progress' },
+  { key: 'bug-fix', label: 'Bug 修复', color: '#ef4444', icon: '🐛', headerBg: 'rgba(239,68,68,0.12)', headerFg: '#ef4444', colBg: 'rgba(239,68,68,0.04)', colClass: 'col-bug-fix' },
   { key: 'done', label: '已完成', color: '#10b981', icon: '✅', headerBg: 'rgba(16,185,129,0.12)', headerFg: '#10b981', colBg: 'rgba(16,185,129,0.04)', colClass: 'col-done' },
   { key: 'closed', label: '已关闭', color: '#9ca3af', icon: '📦', headerBg: 'rgba(156,163,175,0.12)', headerFg: '#9ca3af', colBg: 'rgba(156,163,175,0.04)', colClass: 'col-closed' },
 ]
@@ -82,8 +92,28 @@ function now(): string {
 async function ipcLoadTasks(): Promise<TaskCard[]> {
   try {
     const res = await window.spark.invoke('board:list', { includeDeleted: true })
-    return (res.tasks ?? []) as TaskCard[]
+    return ((res.tasks ?? []) as unknown as Array<Record<string, unknown>>).map(normalizeTask)
   } catch { return [] }
+}
+
+function normalizeTask(raw: Record<string, unknown>): TaskCard {
+  const commentsRaw = raw.commentsJson ?? raw.comments ?? '[]'
+  const comments = typeof commentsRaw === 'string' ? JSON.parse(commentsRaw) : (Array.isArray(commentsRaw) ? commentsRaw : [])
+  return {
+    id: raw.id as string,
+    title: raw.title as string,
+    description: raw.description as string,
+    status: raw.status as TaskStatus,
+    priority: raw.priority as Priority,
+    assignee: (raw.assignee as string) ?? '',
+    project: (raw.project as string) ?? '',
+    tags: (raw.tags as string[]) ?? [],
+    dueDate: (raw.dueDate as string) ?? '',
+    comments,
+    createdAt: raw.createdAt as string,
+    updatedAt: raw.updatedAt as string,
+    deletedAt: (raw.deletedAt as string | null) ?? null,
+  }
 }
 
 async function ipcCreateTask(partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<TaskCard> {
@@ -176,6 +206,7 @@ function QuickCreateModal({
       project: project.trim(),
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
+      comments: [],
     })
     onClose()
   }, [title, description, status, priority, assignee, project, tags, dueDate, onSubmit, onClose])
@@ -287,12 +318,14 @@ function DetailPanel({
   onClose,
   onSave,
   onDelete,
+  onAddComment,
 }: {
   card: TaskCard
   agents: AgentOption[]
   onClose: () => void
   onSave: (updated: TaskCard) => void
   onDelete: (id: string) => void
+  onAddComment: (taskId: string, author: string, content: string) => void
 }) {
   const [title, setTitle] = useState(card.title)
   const [description, setDescription] = useState(card.description)
@@ -303,6 +336,7 @@ function DetailPanel({
   const [tags, setTags] = useState(card.tags.join(', '))
   const [dueDate, setDueDate] = useState(card.dueDate)
   const [isDirty, setIsDirty] = useState(false)
+  const [newComment, setNewComment] = useState('')
 
   const markDirty = useCallback(<T,>(val: T, setter: (v: T) => void) => {
     setter(val)
@@ -423,6 +457,49 @@ function DetailPanel({
           <div className="bdp-meta">
             <span>创建于 {formatDate(card.createdAt)}</span>
             <span>更新于 {formatDate(card.updatedAt)}</span>
+          </div>
+
+          {/* Comments section */}
+          <div className="bdp-comments">
+            <label className="bdp-label">评论 ({card.comments?.length ?? 0})</label>
+            <div className="bdp-comment-list">
+              {(card.comments ?? []).map((c) => (
+                <div key={c.id} className="bdp-comment">
+                  <div className="bdp-comment-head">
+                    <span className="bdp-comment-author">{c.author || '用户'}</span>
+                    <span className="bdp-comment-time">{formatDate(c.createdAt)}</span>
+                  </div>
+                  <div className="bdp-comment-body">{c.content}</div>
+                </div>
+              ))}
+              {(card.comments == null || card.comments.length === 0) && (
+                <div className="bdp-comment-empty">暂无评论</div>
+              )}
+            </div>
+            <div className="bdp-comment-input-row">
+              <SparkInput
+                placeholder="输入评论…"
+                className="bdp-comment-input"
+                value={newComment}
+                onChange={(e) => setNewComment(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && newComment.trim()) {
+                    onAddComment(card.id, '', newComment.trim())
+                    setNewComment('')
+                  }
+                }}
+              />
+              <button
+                className="board-btn board-btn-primary board-btn-sm"
+                disabled={!newComment.trim()}
+                onClick={() => {
+                  if (newComment.trim()) {
+                    onAddComment(card.id, '', newComment.trim())
+                    setNewComment('')
+                  }
+                }}
+              >发送</button>
+            </div>
           </div>
         </div>
 
@@ -596,6 +673,9 @@ function KanbanCard({
               {card.assignee}
             </span>
           )}
+          {card.comments && card.comments.length > 0 && (
+            <span className="bc-comment-count">💬 {card.comments.length}</span>
+          )}
         </div>
         <div className="bc-meta-right">
           {card.dueDate && (
@@ -687,7 +767,7 @@ export function BoardView() {
   }, [activeTasks])
 
   const columnTasks = useMemo(() => {
-    const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'done': [], 'closed': [] }
+    const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'bug-fix': [], 'done': [], 'closed': [] }
     for (const t of filteredTasks) map[t.status].push(t)
     return map
   }, [filteredTasks])
@@ -727,6 +807,13 @@ export function BoardView() {
   const handleCopy = useCallback(async (card: TaskCard) => {
     const created = await ipcCreateTask({ ...card, title: `${card.title} (副本)` })
     setTasks(prev => [...prev, created])
+  }, [])
+
+  const handleAddComment = useCallback(async (taskId: string, author: string, content: string) => {
+    const res = await window.spark.invoke('board:comment:create', { taskId, author, content })
+    const comment = res.comment as TaskComment
+    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, comments: [...(t.comments ?? []), comment] } : t))
+    setDetailCard(prev => prev && prev.id === taskId ? { ...prev, comments: [...(prev.comments ?? []), comment] } : prev)
   }, [])
 
   // Drag & Drop
@@ -803,6 +890,7 @@ export function BoardView() {
                 <Select.Option value="all">全部状态</Select.Option>
                 <Select.Option value="todo">📋 待办</Select.Option>
                 <Select.Option value="in-progress">🔄 进行中</Select.Option>
+                <Select.Option value="bug-fix">🐛 Bug 修复</Select.Option>
                 <Select.Option value="done">✅ 已完成</Select.Option>
                 <Select.Option value="closed">📦 已关闭</Select.Option>
               </Select>
@@ -877,7 +965,7 @@ export function BoardView() {
 
       {/* Detail Panel */}
       {detailCard && (
-        <DetailPanel card={detailCard} agents={agents} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} />
+        <DetailPanel card={detailCard} agents={agents} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} onAddComment={handleAddComment} />
       )}
 
       {/* Context Menu */}

@@ -1719,8 +1719,16 @@ export interface SettingsGetAllResponse {
 
 // ─── Board Task Channels ──────────────────────────────────────────────────────
 
-export type BoardTaskStatus = 'todo' | 'in-progress' | 'done' | 'closed'
+export type BoardTaskStatus = 'todo' | 'in-progress' | 'done' | 'closed' | 'bug-fix'
 export type BoardTaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export interface BoardComment {
+  id: string
+  taskId: string
+  author: string
+  content: string
+  createdAt: string
+}
 
 export interface BoardTask {
   id: string
@@ -1732,6 +1740,7 @@ export interface BoardTask {
   project: string
   tags: string[]
   dueDate: string
+  comments: BoardComment[]
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -1838,6 +1847,26 @@ export interface BoardPermanentDeleteRequest {
 
 export interface BoardPermanentDeleteResponse {
   success: boolean
+}
+
+// ── Board Comments ──
+
+export interface BoardCommentListRequest {
+  taskId: string
+}
+
+export interface BoardCommentListResponse {
+  comments: BoardComment[]
+}
+
+export interface BoardCommentCreateRequest {
+  taskId: string
+  author: string
+  content: string
+}
+
+export interface BoardCommentCreateResponse {
+  comment: BoardComment
 }
 
 // ─── Usage Ledger Channels ────────────────────────────────────────────────────
@@ -2968,6 +2997,8 @@ export interface IpcChannelMap {
   'board:batch-delete': [BoardBatchDeleteRequest, BoardBatchDeleteResponse]
   'board:restore': [BoardRestoreRequest, BoardRestoreResponse]
   'board:permanent-delete': [BoardPermanentDeleteRequest, BoardPermanentDeleteResponse]
+  'board:comment:list': [BoardCommentListRequest, BoardCommentListResponse]
+  'board:comment:create': [BoardCommentCreateRequest, BoardCommentCreateResponse]
 
   // Usage Ledger
   'usage:record': [UsageRecordRequest, UsageRecordResponse]
