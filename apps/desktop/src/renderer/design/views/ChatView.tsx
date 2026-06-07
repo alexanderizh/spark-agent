@@ -6178,7 +6178,7 @@ function ComposerV2({
                 providers={compatibleProviders}
                 selectedProviderId={selectedProvider?.id ?? ''}
                 selectedModelId={effectiveModelId}
-                disabled={compatibleProviders.length === 0}
+                disabled={isBusy || compatibleProviders.length === 0}
                 onChange={handleProviderModelChange}
               />
               {showProjectPicker && (
@@ -6252,6 +6252,7 @@ function ComposerV2({
                 teamId: team.id,
               })
             }
+            disabled={isBusy}
           />
           <ComposerMenuSelect
             icon={
@@ -6267,6 +6268,7 @@ function ComposerV2({
             label={activePermissionOption?.label ?? '默认权限'}
             title="权限模式"
             tone={activePermissionOption?.tone ?? 'default'}
+            disabled={isBusy}
             onChange={(mode) => {
               const permissionMode = mode as PermissionModeChoice
               setDraftPermissionMode(permissionMode)
@@ -6283,6 +6285,7 @@ function ComposerV2({
                 ?.label ?? effectiveReasoning
             }
             title="推理强度"
+            disabled={isBusy}
             onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
             options={getReasoningOptions(adapter)}
           />
@@ -6366,14 +6369,15 @@ function ComposerMenuSelect({
   return (
     <div
       ref={rootRef}
-      className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}`}
-      title={title}
+      className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}${disabled ? ' is-disabled' : ''}`}
+      title={disabled ? '会话运行中不可切换' : title}
     >
       <span className="composer-select-icon">{icon}</span>
       <button
         type="button"
         className="composer-select-trigger"
         disabled={disabled || options.length === 0}
+        title={disabled ? '会话运行中不可切换' : undefined}
         onClick={() => setOpen((prev) => !prev)}
       >
         <span>{label || '未配置'}</span>
@@ -6560,6 +6564,7 @@ function AgentPicker({
   onChangeHost,
   onOpenMembers,
   onApplyTeam,
+  disabled,
 }: {
   agents: ManagedAgent[]
   selectedAgentId: string
@@ -6570,6 +6575,7 @@ function AgentPicker({
   onChangeHost: (agentId: string) => void
   onOpenMembers: () => void
   onApplyTeam: (team: ManagedTeam) => void
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -6607,7 +6613,7 @@ function AgentPicker({
       : undefined
 
   return (
-    <div ref={rootRef} className="composer-select composer-agent-picker" title={teamMode ? '团队模式' : 'Agent'}>
+    <div ref={rootRef} className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : teamMode ? '团队模式' : 'Agent'}>
       <span className="composer-select-icon">
         {teamMode ? (
           <Icons.Team size={13} />
@@ -6620,13 +6626,15 @@ function AgentPicker({
       <button
         type="button"
         className="composer-select-trigger"
-        disabled={agents.length === 0}
+        disabled={disabled || agents.length === 0}
         title={
-          teamMode
-            ? activeTeam != null
-              ? `团队：${activeTeam.name}（主持：${selected?.name ?? '编码 Agent'}）`
-              : `团队模式（当前对话：${selected?.name ?? '编码 Agent'}）`
-            : selected?.name ?? '编码 Agent'
+          disabled
+            ? '会话运行中不可切换'
+            : teamMode
+              ? activeTeam != null
+                ? `团队：${activeTeam.name}（主持：${selected?.name ?? '编码 Agent'}）`
+                : `团队模式（当前对话：${selected?.name ?? '编码 Agent'}）`
+              : selected?.name ?? '编码 Agent'
         }
         onClick={() => setOpen((prev) => !prev)}
       >
@@ -6637,8 +6645,9 @@ function AgentPicker({
         <button
           type="button"
           className="composer-team-chip"
+          disabled={disabled}
           onClick={onOpenMembers}
-          title="管理团队成员"
+          title={disabled ? '会话运行中不可操作' : '管理团队成员'}
         >
           <Icons.Team size={11} />
           <span className="composer-team-chip-count">{memberCount}</span>
@@ -6773,12 +6782,13 @@ function ProviderModelPicker({
     selectedModelId || selectedProvider?.defaultModel || selectedProvider?.name || '未配置'
 
   return (
-    <div ref={rootRef} className="composer-select composer-model-picker" title="供应商模型">
+    <div ref={rootRef} className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : '供应商模型'}>
       <span className="composer-select-icon">{icon}</span>
       <button
         type="button"
         className="composer-select-trigger"
         disabled={disabled || providers.length === 0}
+        title={disabled ? '会话运行中不可切换' : undefined}
         onClick={() => setOpen((prev) => !prev)}
       >
         <span>{label}</span>

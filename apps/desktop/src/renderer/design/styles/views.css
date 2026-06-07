@@ -3097,6 +3097,10 @@ body.sidebar-resizing {
   background: var(--hover);
   border-color: var(--border);
 }
+.composer-select.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
 .composer-select.tone-auto {
   color: color-mix(in srgb, var(--primary) 72%, var(--text));
 }
