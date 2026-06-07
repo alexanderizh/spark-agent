@@ -2,9 +2,9 @@
 /**
  * Platform Management MCP Server
  *
- * Exposes 25 tools for managing the Spark Agent platform:
+ * Exposes 34 tools for managing the Spark Agent platform:
  *   Skills (5), MCP Servers (5), Providers (5),
- *   Workflows (5), Agents (5), Settings (4)
+ *   Workflows (5), Agents (5), Settings (4), Board Tasks (11)
  *
  * Communicates with the main process via the PlatformBridge HTTP server
  * running on localhost. The bridge port is passed via SPARK_PLATFORM_BRIDGE_PORT.
@@ -384,20 +384,6 @@ function toolDefinitions() {
       },
     },
 
-    // ── Settings ──
-    {
-      name: 'settings_get',
-      description: '获取单个设置项的值。需要提供分类和键名。',
-      inputSchema: {
-        type: 'object',
-        required: ['key'],
-        properties: {
-          category: { type: 'string', description: '设置分类，默认 "general"' },
-          key: { type: 'string', description: '设置键名' },
-        },
-      },
-    },
-
     // ── Board Tasks ──
     {
       name: 'board_list',
@@ -562,6 +548,10 @@ function toolDefinitions() {
         },
       },
     },
+
+    // ── Settings ──
+    {
+      name: 'settings_get',
       description: '获取单个设置项的值。需要提供分类和键名。',
       inputSchema: {
         type: 'object',

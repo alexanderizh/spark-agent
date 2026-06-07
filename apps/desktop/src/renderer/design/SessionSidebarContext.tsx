@@ -20,6 +20,8 @@ import type {
   SessionChatMode,
   SessionPermissionMode,
   SessionReasoningEffort,
+  AgentEvent,
+  AgentStatusValue,
 } from '@spark/protocol'
 
 export type SessionSummary = SessionListResponse['sessions'][number]
@@ -133,6 +135,9 @@ type SessionSidebarCtx = {
   setActiveSession: (id: SessionId | null) => void
   setActiveWorkspace: (id: string | null) => void
 
+  // Agent status per session (fine-grained: waiting_permission, waiting_user, etc.)
+  sessionAgentStatuses: Record<string, AgentStatusValue>
+
   // Computed
   projectGroups: ProjectGroup[]
   noProjectWorkspace: WorkspaceInfo | null
@@ -200,6 +205,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [projectName, setProjectName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [projectNotice, setProjectNotice] = useState('')
+  const [sessionAgentStatuses, setSessionAgentStatuses] = useState<Record<string, AgentStatusValue>>({})
   const justCreatedSessionRef = useRef<SessionId | null>(null)
   const { toast } = useToast()
   const { requestConfirm, requestPrompt } = useApp()
@@ -256,6 +262,27 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
           return item.status === 'running' ? item : { ...item, status: 'running' }
         return item.status === 'running' ? { ...item, status: 'idle' } : item
       }))
+    }) ?? (() => {})
+  }, [])
+
+  // Real-time agent status tracking (waiting_permission / waiting_user)
+  useEffect(() => {
+    return window.spark?.on?.('stream:session:agent-event', (event: AgentEvent) => {
+      if (event.type !== 'agent_status') return
+      const status = (event as { status: AgentStatusValue }).status
+      const sessionId = event.sessionId
+      setSessionAgentStatuses(prev => {
+        const current = prev[sessionId]
+        // Clear on terminal states
+        if (status === 'idle' || status === 'completed' || status === 'cancelled' || status === 'error') {
+          if (!current) return prev
+          const { [sessionId]: _, ...rest } = prev
+          return rest
+        }
+        // Only update if changed
+        if (current === status) return prev
+        return { ...prev, [sessionId]: status }
+      })
     }) ?? (() => {})
   }, [])
 
@@ -556,6 +583,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     sessions, workspaces, providers, agents,
     activeSessionId: active, activeWorkspaceId,
     setActiveSession: setActive, setActiveWorkspace: setActiveWorkspaceId,
+    sessionAgentStatuses,
     projectGroups, noProjectWorkspace, noProjectSessions, ungroupedSessions,
     refreshData, updateSessionInList, handleNewSession,
     handleToggleSessionPinned, handleRenameSession, handleDeleteSession,
@@ -569,6 +597,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     justCreatedSessionRef, selectedProviderId, setSelectedProviderId,
   }), [
     sessions, workspaces, providers, agents, active, activeWorkspaceId,
+    sessionAgentStatuses,
     projectGroups, noProjectWorkspace, noProjectSessions, ungroupedSessions,
     refreshData, updateSessionInList, handleNewSession,
     handleToggleSessionPinned, handleRenameSession, handleDeleteSession,

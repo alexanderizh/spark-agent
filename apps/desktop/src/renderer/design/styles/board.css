@@ -50,6 +50,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 8px;
   width: min(100%, 720px);
   min-width: 0;

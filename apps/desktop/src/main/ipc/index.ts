@@ -117,6 +117,8 @@ import type { RemoteInboundMessage } from '../services/RemoteConnectionService.j
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
 const execFileAsync = promisify(execFile)
@@ -158,6 +160,41 @@ async function pathExists(targetPath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// ─── Board Task Store (shared with MCP platform bridge) ─────────────────────
+
+const BOARD_TASKS_FILE = path.join(homedir(), '.spark-agent', 'board-tasks.json')
+
+interface BoardTaskRecord {
+  id: string
+  title: string
+  description: string
+  status: 'todo' | 'in-progress' | 'done' | 'closed'
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  assignee: string
+  tags: string[]
+  dueDate: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+function readBoardTasks(): BoardTaskRecord[] {
+  try {
+    if (!existsSync(BOARD_TASKS_FILE)) return []
+    return JSON.parse(readFileSync(BOARD_TASKS_FILE, 'utf-8'))
+  } catch { return [] }
+}
+
+function writeBoardTasks(tasks: BoardTaskRecord[]): void {
+  const dir = path.dirname(BOARD_TASKS_FILE)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  writeFileSync(BOARD_TASKS_FILE, JSON.stringify(tasks), 'utf-8')
+}
+
+function boardTaskUid(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
 async function ensureNoProjectWorkspacePath(workspaceId: string): Promise<void> {
@@ -2064,6 +2101,173 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('settings:get-all', async (_req) => {
     const settings = getSettingsService().getAll()
     return { settings }
+  })
+
+  // ─── Board Task Handlers ────────────────────────────────────────────────────
+
+  typedIpcHandle('board:list', async (req) => {
+    let tasks = readBoardTasks()
+    const includeDeleted = req.includeDeleted === true
+    if (!includeDeleted) tasks = tasks.filter((t) => !t.deletedAt)
+    if (req.status) tasks = tasks.filter((t) => t.status === req.status)
+    if (req.priority) tasks = tasks.filter((t) => t.priority === req.priority)
+    if (req.assignee) {
+      const a = req.assignee.toLowerCase()
+      tasks = tasks.filter((t) => t.assignee?.toLowerCase().includes(a))
+    }
+    if (req.query) {
+      const q = req.query.toLowerCase()
+      tasks = tasks.filter((t) =>
+        t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
+      )
+    }
+    return { tasks, total: tasks.length }
+  })
+
+  typedIpcHandle('board:get', async (req) => {
+    const tasks = readBoardTasks()
+    const task = tasks.find((t) => t.id === req.id)
+    if (!task) throw new Error(`Task not found: ${req.id}`)
+    return { task }
+  })
+
+  typedIpcHandle('board:create', async (req) => {
+    const tasks = readBoardTasks()
+    const now = new Date().toISOString()
+    const task: BoardTaskRecord = {
+      id: boardTaskUid(),
+      title: req.title ?? '',
+      description: req.description ?? '',
+      status: req.status ?? 'todo',
+      priority: req.priority ?? 'medium',
+      assignee: req.assignee ?? '',
+      tags: req.tags ?? [],
+      dueDate: req.dueDate ?? '',
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    }
+    tasks.push(task)
+    writeBoardTasks(tasks)
+    return { task }
+  })
+
+  typedIpcHandle('board:update', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.id)
+    if (idx === -1) throw new Error(`Task not found: ${req.id}`)
+    const base = tasks[idx]!
+    const now = new Date().toISOString()
+    const updated: BoardTaskRecord = {
+      id: base.id,
+      title: req.title !== undefined ? req.title : base.title,
+      description: req.description !== undefined ? req.description : base.description,
+      status: req.status !== undefined ? req.status : base.status,
+      priority: req.priority !== undefined ? req.priority : base.priority,
+      assignee: req.assignee !== undefined ? req.assignee : base.assignee,
+      tags: req.tags !== undefined ? req.tags : base.tags,
+      dueDate: req.dueDate !== undefined ? req.dueDate : base.dueDate,
+      createdAt: base.createdAt,
+      updatedAt: now,
+      deletedAt: base.deletedAt,
+    }
+    tasks[idx] = updated
+    writeBoardTasks(tasks)
+    return { task: updated }
+  })
+
+  typedIpcHandle('board:delete', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.id)
+    if (idx === -1) throw new Error(`Task not found: ${req.id}`)
+    const now = new Date().toISOString()
+    tasks[idx] = { ...tasks[idx], deletedAt: now, updatedAt: now } as BoardTaskRecord
+    writeBoardTasks(tasks)
+    return { success: true }
+  })
+
+  typedIpcHandle('board:batch-create', async (req) => {
+    const tasks = readBoardTasks()
+    const created: BoardTaskRecord[] = []
+    for (const item of req.tasks ?? []) {
+      const now = new Date().toISOString()
+      const task: BoardTaskRecord = {
+        id: boardTaskUid(),
+        title: item.title ?? '',
+        description: item.description ?? '',
+        status: item.status ?? 'todo',
+        priority: item.priority ?? 'medium',
+        assignee: item.assignee ?? '',
+        tags: item.tags ?? [],
+        dueDate: item.dueDate ?? '',
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+      tasks.push(task)
+      created.push(task)
+    }
+    writeBoardTasks(tasks)
+    return { created: created.length, tasks: created }
+  })
+
+  typedIpcHandle('board:batch-update', async (req) => {
+    const tasks = readBoardTasks()
+    const updated: BoardTaskRecord[] = []
+    for (const upd of req.updates ?? []) {
+      const idx = tasks.findIndex((t) => t.id === upd.id)
+      if (idx === -1) continue
+      const now = new Date().toISOString()
+      const base = tasks[idx]!
+      const task: BoardTaskRecord = {
+        id: base.id,
+        title: upd.title !== undefined ? upd.title : base.title,
+        description: upd.description !== undefined ? upd.description : base.description,
+        status: upd.status !== undefined ? upd.status : base.status,
+        priority: upd.priority !== undefined ? upd.priority : base.priority,
+        assignee: upd.assignee !== undefined ? upd.assignee : base.assignee,
+        tags: upd.tags !== undefined ? upd.tags : base.tags,
+        dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
+        createdAt: base.createdAt,
+        updatedAt: now,
+        deletedAt: base.deletedAt,
+      }
+      tasks[idx] = task
+      updated.push(task)
+    }
+    writeBoardTasks(tasks)
+    return { updated: updated.length, tasks: updated }
+  })
+
+  typedIpcHandle('board:batch-delete', async (req) => {
+    const tasks = readBoardTasks()
+    const now = new Date().toISOString()
+    let count = 0
+    for (const id of req.ids ?? []) {
+      const idx = tasks.findIndex((t) => t.id === id)
+      if (idx !== -1) {
+        tasks[idx] = { ...tasks[idx], deletedAt: now, updatedAt: now } as BoardTaskRecord
+        count++
+      }
+    }
+    writeBoardTasks(tasks)
+    return { deleted: count }
+  })
+
+  typedIpcHandle('board:restore', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.id)
+    if (idx === -1) throw new Error(`Task not found: ${req.id}`)
+    tasks[idx] = { ...tasks[idx], deletedAt: null, updatedAt: new Date().toISOString() } as BoardTaskRecord
+    writeBoardTasks(tasks)
+    return { task: tasks[idx] }
+  })
+
+  typedIpcHandle('board:permanent-delete', async (req) => {
+    const tasks = readBoardTasks()
+    const filtered = tasks.filter((t) => t.id !== req.id)
+    writeBoardTasks(filtered)
+    return { success: true }
   })
 
   // ─── Remote Connection Handlers ───────────────────────────────────────────

@@ -1,0 +1,77 @@
+.skills-picker-modal {
+  width: 560px;
+
+  // 把 Arco 默认关闭按钮藏掉，用自定义 header 里的关闭按钮代替
+  .arco-modal-header {
+    display: none;
+  }
+
+  .arco-modal-body {
+    padding: 16px 20px 0;
+  }
+
+  .arco-modal-footer {
+    border-top: none;
+    padding: 8px 20px 16px;
+  }
+}
+
+.skills-picker-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.skills-picker-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+
+  svg {
+    color: rgb(var(--arcoblue-6));
+  }
+}
+
+.skills-picker-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.skills-picker-close-btn {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-text-2);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 16px;
+
+  &:hover {
+    background: var(--color-fill-3);
+    color: var(--color-text-1);
+  }
+}
+
+.skills-picker-table-wrap {
+  max-height: calc(80vh - 200px);
+  overflow-y: auto;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+}
+
+.skills-picker-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}

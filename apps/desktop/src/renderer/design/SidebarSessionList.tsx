@@ -162,6 +162,7 @@ function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: 
 function ChatListItem({
   session: s,
   active,
+  agentStatus,
   onClick,
   onRename,
   onTogglePinned,
@@ -170,6 +171,7 @@ function ChatListItem({
 }: {
   session: SessionSummary
   active: SessionId | null
+  agentStatus?: string | undefined
   onClick: (id: SessionId) => void
   onRename?: (session: SessionSummary) => void
   onTogglePinned?: (session: SessionSummary) => void
@@ -178,9 +180,11 @@ function ChatListItem({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const isRunning = s.status === 'running'
+  const isWaitingInput = agentStatus === 'waiting_permission' || agentStatus === 'waiting_user'
+  const badgeClass = isWaitingInput ? 'is-waiting-input' : isRunning ? 'is-running' : ''
   return (
     <div
-      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${isRunning ? 'is-running' : ''}`}
+      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${badgeClass}`}
       onClick={() => onClick(s.id)}
     >
       <div className="chat-item-row">
@@ -188,7 +192,12 @@ function ChatListItem({
           {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
           <span className="truncate">{s.title || '新会话'}</span>
         </div>
-        {isRunning ? (
+        {isWaitingInput ? (
+          <span className="session-waiting-badge" title="等待交互">
+            <Icons.Cursor size={10} />
+            <span>等待交互</span>
+          </span>
+        ) : isRunning ? (
           <span className="session-running-badge" title="运行中"><Icons.Spinner size={11} /><span>运行中</span></span>
         ) : (
           <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
@@ -226,6 +235,7 @@ function ProjectSessionGroup({
   group,
   activeSessionId,
   activeWorkspaceId,
+  sessionAgentStatuses,
   onSelectWorkspace,
   onSelectSession,
   onNewSession,
@@ -242,6 +252,7 @@ function ProjectSessionGroup({
   group: ProjectGroup
   activeSessionId: SessionId | null
   activeWorkspaceId: string | null
+  sessionAgentStatuses: Record<string, string>
   onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   onSelectSession: (session: SessionSummary) => void
   onNewSession: (workspaceId: string) => void
@@ -331,6 +342,7 @@ function ProjectSessionGroup({
                   key={session.id}
                   session={session}
                   active={activeSessionId}
+                  agentStatus={sessionAgentStatuses[session.id]}
                   onClick={() => onSelectSession(session)}
                   onRename={onRenameSession}
                   onTogglePinned={onToggleSessionPinned}
@@ -468,6 +480,7 @@ export function SidebarSessionList() {
                     group={group}
                     activeSessionId={ctx.activeSessionId}
                     activeWorkspaceId={ctx.activeWorkspaceId}
+                    sessionAgentStatuses={ctx.sessionAgentStatuses}
                     onSelectWorkspace={async (workspace) => {
                       ctx.setActiveWorkspace(workspace.id)
                       await ctx.handleOpenWorkspace(workspace)
@@ -498,6 +511,7 @@ export function SidebarSessionList() {
                         key={session.id}
                         session={session}
                         active={ctx.activeSessionId}
+                        agentStatus={ctx.sessionAgentStatuses[session.id]}
                         onClick={(id) => {
                           ctx.setActiveSession(id)
                           if (noProjectWorkspace) ctx.setActiveWorkspace(noProjectWorkspace.id)
@@ -519,6 +533,7 @@ export function SidebarSessionList() {
                         key={session.id}
                         session={session}
                         active={ctx.activeSessionId}
+                        agentStatus={ctx.sessionAgentStatuses[session.id]}
                         onClick={(id) => { ctx.setActiveSession(id); setTweak('view', 'chat') }}
                         onRename={ctx.handleRenameSession}
                         onTogglePinned={ctx.handleToggleSessionPinned}

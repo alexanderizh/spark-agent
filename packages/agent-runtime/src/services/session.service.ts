@@ -3193,6 +3193,16 @@ const PLATFORM_TOOL_NAMES: string[] = [
   'mcp__spark_platform__settings_set',
   'mcp__spark_platform__settings_get_category',
   'mcp__spark_platform__settings_get_all',
+  'mcp__spark_platform__board_list',
+  'mcp__spark_platform__board_get',
+  'mcp__spark_platform__board_create',
+  'mcp__spark_platform__board_update',
+  'mcp__spark_platform__board_delete',
+  'mcp__spark_platform__board_batch_create',
+  'mcp__spark_platform__board_batch_update',
+  'mcp__spark_platform__board_batch_delete',
+  'mcp__spark_platform__board_restore',
+  'mcp__spark_platform__board_permanent_delete',
 ]
 
 function resolvePlatformManagementMcpServerPath(): string | null {
@@ -3219,6 +3229,7 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '- **Workflows**: list, get, create, update, delete',
   '- **Agents**: list, get, create, update, delete',
   '- **Settings**: get, set, get_category, get_all',
+  '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
   '',
   'When the user asks to manage any of these, use the corresponding tool directly.',
   'For destructive operations (delete, uninstall), always confirm with the user first.',

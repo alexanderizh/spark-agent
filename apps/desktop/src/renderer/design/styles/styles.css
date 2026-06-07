@@ -543,12 +543,18 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .user-menu-theme-sub {
   min-width: 152px;
   margin-left: -4px;
+  padding: 4px;
+}
+.user-menu-theme-sub [role="radiogroup"] {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
 }
 .user-menu-theme-sub [role="menuitemradio"] {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  width: 100% !important;
   padding: 6px 8px 6px 28px;
   border: none;
   background: transparent;

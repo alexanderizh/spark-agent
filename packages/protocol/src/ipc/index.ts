@@ -1715,6 +1715,125 @@ export interface SettingsGetAllResponse {
   settings: Record<string, Record<string, unknown>>
 }
 
+// ─── Board Task Channels ──────────────────────────────────────────────────────
+
+export type BoardTaskStatus = 'todo' | 'in-progress' | 'done' | 'closed'
+export type BoardTaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export interface BoardTask {
+  id: string
+  title: string
+  description: string
+  status: BoardTaskStatus
+  priority: BoardTaskPriority
+  assignee: string
+  tags: string[]
+  dueDate: string
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface BoardListRequest {
+  status?: BoardTaskStatus
+  priority?: BoardTaskPriority
+  assignee?: string
+  query?: string
+  includeDeleted?: boolean
+}
+
+export interface BoardListResponse {
+  tasks: BoardTask[]
+  total: number
+}
+
+export interface BoardGetRequest {
+  id: string
+}
+
+export interface BoardGetResponse {
+  task: BoardTask
+}
+
+export interface BoardCreateRequest {
+  title: string
+  description?: string
+  status?: BoardTaskStatus
+  priority?: BoardTaskPriority
+  assignee?: string
+  tags?: string[]
+  dueDate?: string
+}
+
+export interface BoardCreateResponse {
+  task: BoardTask
+}
+
+export interface BoardUpdateRequest {
+  id: string
+  title?: string
+  description?: string
+  status?: BoardTaskStatus
+  priority?: BoardTaskPriority
+  assignee?: string
+  tags?: string[]
+  dueDate?: string
+}
+
+export interface BoardUpdateResponse {
+  task: BoardTask
+}
+
+export interface BoardDeleteRequest {
+  id: string
+}
+
+export interface BoardDeleteResponse {
+  success: boolean
+}
+
+export interface BoardBatchCreateRequest {
+  tasks: Omit<BoardCreateRequest, 'id'>[]
+}
+
+export interface BoardBatchCreateResponse {
+  created: number
+  tasks: BoardTask[]
+}
+
+export interface BoardBatchUpdateRequest {
+  updates: BoardUpdateRequest[]
+}
+
+export interface BoardBatchUpdateResponse {
+  updated: number
+  tasks: BoardTask[]
+}
+
+export interface BoardBatchDeleteRequest {
+  ids: string[]
+}
+
+export interface BoardBatchDeleteResponse {
+  deleted: number
+}
+
+export interface BoardRestoreRequest {
+  id: string
+}
+
+export interface BoardRestoreResponse {
+  task: BoardTask
+}
+
+export interface BoardPermanentDeleteRequest {
+  id: string
+}
+
+export interface BoardPermanentDeleteResponse {
+  success: boolean
+}
+
 // ─── Usage Ledger Channels ────────────────────────────────────────────────────
 
 export interface UsageRecordRequest {
@@ -2831,6 +2950,18 @@ export interface IpcChannelMap {
   'settings:set': [SettingsSetRequest, SettingsSetResponse]
   'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
   'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
+
+  // Board Tasks
+  'board:list': [BoardListRequest, BoardListResponse]
+  'board:get': [BoardGetRequest, BoardGetResponse]
+  'board:create': [BoardCreateRequest, BoardCreateResponse]
+  'board:update': [BoardUpdateRequest, BoardUpdateResponse]
+  'board:delete': [BoardDeleteRequest, BoardDeleteResponse]
+  'board:batch-create': [BoardBatchCreateRequest, BoardBatchCreateResponse]
+  'board:batch-update': [BoardBatchUpdateRequest, BoardBatchUpdateResponse]
+  'board:batch-delete': [BoardBatchDeleteRequest, BoardBatchDeleteResponse]
+  'board:restore': [BoardRestoreRequest, BoardRestoreResponse]
+  'board:permanent-delete': [BoardPermanentDeleteRequest, BoardPermanentDeleteResponse]
 
   // Usage Ledger
   'usage:record': [UsageRecordRequest, UsageRecordResponse]

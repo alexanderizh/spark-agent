@@ -3528,6 +3528,7 @@ export function PermissionsSection() {
             </div>
           }
         />
+        <SettingsRow title="默认权限策略" desc="新建会话时将优先使用此权限策略" />
         <div className="runtime-permission-grid p-[10px]">
           {runtimeOptions.map((option) => (
             <button

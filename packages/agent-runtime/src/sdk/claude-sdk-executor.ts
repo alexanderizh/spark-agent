@@ -347,6 +347,9 @@ export class ClaudeSDKExecutor {
             : { type: 'preset', preset: 'claude_code' },
 
         permissionMode: mergedPerms.permissionMode,
+        ...(mergedPerms.permissionMode === 'bypassPermissions'
+          ? { allowDangerouslySkipPermissions: true }
+          : {}),
         ...(mergedPerms.allowedTools.length > 0 ? { allowedTools: mergedPerms.allowedTools } : {}),
         ...(mergedPerms.disallowedTools.length > 0
           ? { disallowedTools: mergedPerms.disallowedTools }

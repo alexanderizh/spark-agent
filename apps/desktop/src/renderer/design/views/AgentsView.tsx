@@ -5,9 +5,10 @@ import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
-import { SparkCheckbox, SparkInput, SparkMultiSelect, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
+import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { generateDefaultAvatarUrl, getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { TeamsPanel } from './TeamsPanel'
 import type {
@@ -37,7 +38,6 @@ type AgentDraft = {
   reasoningEffort: SessionReasoningEffort
   prompt: string
   skillIds: string[]
-  disabledSkillIds: string[]
   mcpServerIds: string[]
   ruleIds: string[]
   hookConfig: AgentHookConfig
@@ -65,7 +65,6 @@ const EMPTY_DRAFT: AgentDraft = {
   reasoningEffort: 'medium',
   prompt: '',
   skillIds: [],
-  disabledSkillIds: [],
   mcpServerIds: [],
   ruleIds: [],
   hookConfig: {
@@ -133,6 +132,7 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
   const [baseline, setBaseline] = useState<AgentDraft>(EMPTY_DRAFT)
   const [pendingNew, setPendingNew] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [showSkillPicker, setShowSkillPicker] = useState(false)
   const dirty = useMemo(() => pendingNew || JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline, pendingNew])
   const dirtyRef = useRef(dirty)
   const selectedIdRef = useRef<string | null>(selectedId)
@@ -491,46 +491,32 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
 
         <aside className="agent-config-panel">
           <ConfigSection
-            title="启用 Skills"
+            title="Skills"
             count={draft.skillIds.length}
-            description="勾选后，该 Agent 在运行时会主动加载这些 Skill 作为可用能力。"
+            description="配置该 Agent 可使用的 Skills，未勾选的将不会被加载。"
           >
-            <SkillMultiSelect
-              items={skills.map((s) => ({ id: s.id, label: s.name }))}
-              selected={draft.skillIds}
-              excludedIds={draft.disabledSkillIds}
-              placeholder="选择要启用的 Skills"
-              onChange={(ids) => {
-                const idSet = new Set(ids)
-                setDraft((prev) => ({
-                  ...prev,
-                  skillIds: ids,
-                  // 启用某个 skill 时，把它从「禁用」中移除，避免冲突
-                  disabledSkillIds: prev.disabledSkillIds.filter((id) => !idSet.has(id)),
-                }))
-              }}
-            />
-          </ConfigSection>
-          <ConfigSection
-            title="禁用 Skills"
-            count={draft.disabledSkillIds.length}
-            description="勾选后，即使这些 Skill 来自全局/项目默认配置，也会被该 Agent 强制屏蔽。"
-          >
-            <SkillMultiSelect
-              items={skills.map((s) => ({ id: s.id, label: s.name }))}
-              selected={draft.disabledSkillIds}
-              excludedIds={draft.skillIds}
-              placeholder="选择要禁用的 Skills"
-              onChange={(ids) => {
-                const idSet = new Set(ids)
-                setDraft((prev) => ({
-                  ...prev,
-                  disabledSkillIds: ids,
-                  // 禁用某个 skill 时，把它从「启用」中移除，避免冲突
-                  skillIds: prev.skillIds.filter((id) => !idSet.has(id)),
-                }))
-              }}
-            />
+            <button
+              type="button"
+              className="btn ghost sm skill-picker-trigger"
+              onClick={() => setShowSkillPicker(true)}
+            >
+              <Icons.Skills size={12} /> 配置 Skills
+            </button>
+            {draft.skillIds.length > 0 && (
+              <div className="skill-selected-preview">
+                {draft.skillIds.slice(0, 5).map((id) => {
+                  const skill = skills.find((s) => s.id === id)
+                  return skill ? (
+                    <span key={id} className="skill-chip">
+                      {skill.name}
+                    </span>
+                  ) : null
+                })}
+                {draft.skillIds.length > 5 && (
+                  <span className="skill-chip more">+{draft.skillIds.length - 5}</span>
+                )}
+              </div>
+            )}
           </ConfigSection>
           <ConfigSection title="MCP" count={draft.mcpServerIds.length}>
             <PickList
@@ -560,6 +546,17 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
           </div>
         </aside>
       </div>
+      <SkillsPickerModal
+        visible={showSkillPicker}
+        skills={skills.map((s) => ({
+          id: s.id,
+          name: s.name,
+          enabled: s.enabled,
+        }))}
+        selectedIds={draft.skillIds}
+        onChange={(ids) => updateDraft('skillIds', ids)}
+        onClose={() => setShowSkillPicker(false)}
+      />
     </div>
   )
 }
@@ -595,42 +592,6 @@ function ConfigSection({
       {description != null && <p className="agent-config-desc">{description}</p>}
       {children}
     </section>
-  )
-}
-
-function SkillMultiSelect({
-  items,
-  selected,
-  excludedIds,
-  placeholder,
-  onChange,
-}: {
-  items: Array<{ id: string; label: string }>
-  selected: string[]
-  excludedIds?: string[]
-  placeholder: string
-  onChange: (ids: string[]) => void
-}) {
-  const excludedSet = useMemo(() => new Set(excludedIds ?? []), [excludedIds])
-  const availableItems = useMemo(
-    () => items.filter((item) => selected.includes(item.id) || !excludedSet.has(item.id)),
-    [excludedSet, items, selected],
-  )
-  if (items.length === 0) return <div className="agents-empty-mini">暂无可选 Skills</div>
-
-  return (
-    <SparkMultiSelect
-      className="agent-skills-select full"
-      value={selected}
-      placeholder={placeholder}
-      allowClear
-      showSearch
-      onChange={(event) => onChange(event.target.value)}
-    >
-      {availableItems.map((item) => (
-        <option key={item.id} value={item.id}>{item.label}</option>
-      ))}
-    </SparkMultiSelect>
   )
 }
 
@@ -692,7 +653,6 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
     reasoningEffort: agent.reasoningEffort,
     prompt: agent.prompt,
     skillIds: agent.skillIds,
-    disabledSkillIds: agent.disabledSkillIds,
     mcpServerIds: agent.mcpServerIds,
     ruleIds: agent.ruleIds,
     hookConfig: normalizeAgentHookConfig(agent.hookConfig),
@@ -714,7 +674,7 @@ function draftToPayload(draft: AgentDraft) {
     reasoningEffort: draft.reasoningEffort,
     prompt: draft.prompt,
     skillIds: draft.skillIds,
-    disabledSkillIds: draft.disabledSkillIds,
+    disabledSkillIds: [] as string[],
     mcpServerIds: draft.mcpServerIds,
     ruleIds: draft.ruleIds,
     hookConfig: draft.hookConfig,

@@ -18,10 +18,10 @@ import {
   useState,
 } from 'react'
 import type { DragEvent } from 'react'
-import { Badge, Button, DatePicker, Input, Select, Space } from '@arco-design/web-react'
+import { Badge, Button, DatePicker, Select, Space } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
-import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -49,7 +49,7 @@ export type TaskCard = {
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEY = 'spark-agent:board-tasks'
+/* Storage key kept for migration reference — data now lives in ~/.spark-agent/board-tasks.json via IPC */
 
 const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; headerBg: string; headerFg: string; colBg: string; colClass: string }[] = [
   { key: 'todo', label: '待办', color: '#6b7280', icon: '📋', headerBg: 'rgba(107,114,128,0.12)', headerFg: '#6b7280', colBg: 'rgba(107,114,128,0.04)', colClass: 'col-todo' },
@@ -74,19 +74,46 @@ function now(): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Persistence                                                        */
+/*  Persistence (IPC → main process → ~/.spark-agent/board-tasks.json) */
 /* ------------------------------------------------------------------ */
 
-function loadTasks(): TaskCard[] {
+async function ipcLoadTasks(): Promise<TaskCard[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    return JSON.parse(raw) as TaskCard[]
+    const res = await window.spark.invoke('board:list', { includeDeleted: true })
+    return (res.tasks ?? []) as TaskCard[]
   } catch { return [] }
 }
 
-function saveTasks(tasks: TaskCard[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
+async function ipcCreateTask(partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<TaskCard> {
+  const res = await window.spark.invoke('board:create', partial)
+  return res.task as TaskCard
+}
+
+async function ipcUpdateTask(updated: TaskCard): Promise<TaskCard> {
+  const res = await window.spark.invoke('board:update', {
+    id: updated.id,
+    title: updated.title,
+    description: updated.description,
+    status: updated.status,
+    priority: updated.priority,
+    assignee: updated.assignee,
+    tags: updated.tags,
+    dueDate: updated.dueDate,
+  })
+  return res.task as TaskCard
+}
+
+async function ipcDeleteTask(id: string): Promise<void> {
+  await window.spark.invoke('board:delete', { id })
+}
+
+async function ipcRestoreTask(id: string): Promise<TaskCard> {
+  const res = await window.spark.invoke('board:restore', { id })
+  return res.task as TaskCard
+}
+
+async function ipcPermanentDeleteTask(id: string): Promise<void> {
+  await window.spark.invoke('board:permanent-delete', { id })
 }
 
 /* ------------------------------------------------------------------ */
@@ -573,7 +600,7 @@ function formatShortDate(iso: string): string {
 
 export function BoardView() {
   const { requestConfirm } = useApp()
-  const [tasks, setTasks] = useState<TaskCard[]>(() => loadTasks())
+  const [tasks, setTasks] = useState<TaskCard[]>([])
   const [showCreate, setShowCreate] = useState(false)
   const [createDefaultStatus, setCreateDefaultStatus] = useState<TaskStatus>('todo')
   const [detailCard, setDetailCard] = useState<TaskCard | null>(null)
@@ -584,8 +611,10 @@ export function BoardView() {
   const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all')
   const dragCardRef = useRef<TaskCard | null>(null)
 
-  // Persist
-  useEffect(() => { saveTasks(tasks) }, [tasks])
+  // Load tasks from IPC on mount
+  useEffect(() => {
+    ipcLoadTasks().then(setTasks)
+  }, [])
 
   // Derived
   const activeTasks = useMemo(() => tasks.filter(t => !t.deletedAt), [tasks])
@@ -614,34 +643,40 @@ export function BoardView() {
   }, [filteredTasks])
 
   // Handlers
-  const handleCreate = useCallback((partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
-    setTasks(prev => [...prev, { ...partial, id: uid(), createdAt: now(), updatedAt: now(), deletedAt: null }])
+  const handleCreate = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
+    const created = await ipcCreateTask(partial)
+    setTasks(prev => [...prev, created])
   }, [])
 
-  const handleSave = useCallback((updated: TaskCard) => {
-    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
-    setDetailCard(updated)
+  const handleSave = useCallback(async (updated: TaskCard) => {
+    const saved = await ipcUpdateTask(updated)
+    setTasks(prev => prev.map(t => t.id === saved.id ? saved : t))
+    setDetailCard(saved)
   }, [])
 
   const handleSoftDelete = useCallback(async (id: string) => {
     const ok = await requestConfirm({ title: '删除任务', description: '任务将移至回收站，可以恢复。', confirmText: '删除', danger: true })
     if (!ok) return
+    await ipcDeleteTask(id)
     setTasks(prev => prev.map(t => t.id === id ? { ...t, deletedAt: now(), updatedAt: now() } : t))
     setDetailCard(null)
   }, [requestConfirm])
 
-  const handleRestore = useCallback((id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, deletedAt: null, updatedAt: now() } : t))
+  const handleRestore = useCallback(async (id: string) => {
+    const restored = await ipcRestoreTask(id)
+    setTasks(prev => prev.map(t => t.id === id ? restored : t))
   }, [])
 
   const handlePermanentDelete = useCallback(async (id: string) => {
     const ok = await requestConfirm({ title: '彻底删除', description: '此操作不可撤销，任务将被永久删除。', confirmText: '彻底删除', danger: true })
     if (!ok) return
+    await ipcPermanentDeleteTask(id)
     setTasks(prev => prev.filter(t => t.id !== id))
   }, [requestConfirm])
 
-  const handleCopy = useCallback((card: TaskCard) => {
-    setTasks(prev => [...prev, { ...card, id: uid(), title: `${card.title} (副本)`, createdAt: now(), updatedAt: now(), deletedAt: null }])
+  const handleCopy = useCallback(async (card: TaskCard) => {
+    const created = await ipcCreateTask({ ...card, title: `${card.title} (副本)` })
+    setTasks(prev => [...prev, created])
   }, [])
 
   // Drag & Drop
@@ -664,14 +699,15 @@ export function BoardView() {
     col?.classList.remove('board-col-drag-over')
   }, [])
 
-  const handleDrop = useCallback((e: DragEvent, targetStatus: TaskStatus) => {
+  const handleDrop = useCallback(async (e: DragEvent, targetStatus: TaskStatus) => {
     e.preventDefault()
     const col = (e.currentTarget as HTMLElement).closest('.board-col')
     col?.classList.remove('board-col-drag-over')
     const card = dragCardRef.current
     if (!card || card.status === targetStatus) return
-    setTasks(prev => prev.map(t => t.id === card.id ? { ...t, status: targetStatus, updatedAt: now() } : t))
     dragCardRef.current = null
+    const updated = await ipcUpdateTask({ ...card, status: targetStatus })
+    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
   }, [])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, card: TaskCard) => {
@@ -699,16 +735,12 @@ export function BoardView() {
         </div>
         <div className="board-header-right" aria-label="任务筛选和操作">
           <div className="board-toolbar">
-            <div className="board-search">
-              <Input
-                value={searchQuery}
-                onChange={setSearchQuery}
-                placeholder="搜索任务…"
-                className="board-search-input"
-                prefix={<Icons.Search size={15} />}
-                allowClear
-              />
-            </div>
+            <SparkSearchInput
+              value={searchQuery}
+              onChange={setSearchQuery}
+              placeholder="搜索任务…"
+              className="board-search-input"
+            />
             <Space size={6} className="board-filter-group" aria-label="筛选条件">
               <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select board-filter-priority" size="small">
                 <Select.Option value="all">全部优先级</Select.Option>
