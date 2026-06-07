@@ -21,6 +21,7 @@ import type { DragEvent } from 'react'
 import { Badge, Button, DatePicker, Select, Space } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
+import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 
@@ -168,11 +169,13 @@ type AgentOption = { id: string; name: string }
 function QuickCreateModal({
   defaultStatus,
   agents,
+  projectOptions,
   onClose,
   onSubmit,
 }: {
   defaultStatus: TaskStatus
   agents: AgentOption[]
+  projectOptions: { value: string; label: string }[]
   onClose: () => void
   onSubmit: (card: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
 }) {
@@ -287,7 +290,9 @@ function QuickCreateModal({
           <div className="bqc-row">
             <div className="bqc-field bqc-field-sm">
               <label>项目</label>
-              <SparkInput value={project} onChange={(e) => setProject(e.target.value)} placeholder="输入项目名称…" className="bqc-input" />
+              <SparkSelect value={project} onChange={(e) => setProject(e.target.value)} placeholder="选择项目" className="bqc-select" allowClear showSearch>
+                {projectOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </SparkSelect>
             </div>
             <div className="bqc-field bqc-field-sm" />
           </div>
@@ -315,6 +320,7 @@ function QuickCreateModal({
 function DetailPanel({
   card,
   agents,
+  projectOptions,
   onClose,
   onSave,
   onDelete,
@@ -322,6 +328,7 @@ function DetailPanel({
 }: {
   card: TaskCard
   agents: AgentOption[]
+  projectOptions: { value: string; label: string }[]
   onClose: () => void
   onSave: (updated: TaskCard) => void
   onDelete: (id: string) => void
@@ -439,7 +446,8 @@ function DetailPanel({
 
           <div className="bdp-field">
             <label className="bdp-label">项目</label>
-            <SparkInput value={project} onChange={(e) => markDirty(e.target.value, setProject)} placeholder="输入项目名称…" className="bdp-input" />
+            <SparkSelect value={project} onChange={(e) => markDirty(e.target.value, setProject)} placeholder="选择项目" className="bdp-select" allowClear showSearch>
+              {projectOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}            </SparkSelect>
           </div>
 
           <div className="bdp-field">
@@ -714,6 +722,7 @@ function formatShortDate(iso: string): string {
 
 export function BoardView() {
   const { requestConfirm } = useApp()
+  const sessionCtx = useSessionSidebar()
   const { invoke: listAgents } = useIpcInvoke('agent:list')
   const [tasks, setTasks] = useState<TaskCard[]>([])
   const [agents, setAgents] = useState<AgentOption[]>([])
@@ -762,9 +771,11 @@ export function BoardView() {
   }, [activeTasks, searchQuery, filterPriority, filterStatus, filterProject])
 
   const projectOptions = useMemo(() => {
-    const projects = [...new Set(activeTasks.map(t => t.project).filter(Boolean))]
-    return projects.sort()
-  }, [activeTasks])
+    return sessionCtx.projectGroups
+      .map(g => g.workspace)
+      .filter(w => w.name && w.name !== '不使用项目')
+      .map(w => ({ value: w.name, label: w.name }))
+  }, [sessionCtx.projectGroups])
 
   const columnTasks = useMemo(() => {
     const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'bug-fix': [], 'done': [], 'closed': [] }
@@ -897,7 +908,7 @@ export function BoardView() {
               {projectOptions.length > 0 && (
                 <Select value={filterProject} onChange={(value) => setFilterProject(value)} className="board-filter-select board-filter-project" size="small">
                   <Select.Option value="all">全部项目</Select.Option>
-                  {projectOptions.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+                  {projectOptions.map(p => <Select.Option key={p.value} value={p.value}>{p.label}</Select.Option>)}
                 </Select>
               )}
             </Space>
@@ -960,12 +971,12 @@ export function BoardView() {
 
       {/* Quick Create */}
       {showCreate && (
-        <QuickCreateModal defaultStatus={createDefaultStatus} agents={agents} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
+        <QuickCreateModal defaultStatus={createDefaultStatus} agents={agents} projectOptions={projectOptions} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
       )}
 
       {/* Detail Panel */}
       {detailCard && (
-        <DetailPanel card={detailCard} agents={agents} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} onAddComment={handleAddComment} />
+        <DetailPanel card={detailCard} agents={agents} projectOptions={projectOptions} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} onAddComment={handleAddComment} />
       )}
 
       {/* Context Menu */}
