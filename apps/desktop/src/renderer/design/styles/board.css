@@ -301,6 +301,22 @@
   -webkit-box-orient: vertical;
 }
 
+/* Card project tag */
+.bc-project {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-bg, rgba(59,130,246,0.1));
+  padding: 1px 6px;
+  border-radius: 3px;
+  display: inline-block;
+  margin-bottom: 4px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Card description */
 .bc-desc {
   font-size: var(--font-xs);

@@ -173,6 +173,7 @@ interface BoardTaskRecord {
   status: 'todo' | 'in-progress' | 'done' | 'closed'
   priority: 'low' | 'medium' | 'high' | 'urgent'
   assignee: string
+  project: string
   tags: string[]
   dueDate: string
   createdAt: string
@@ -2111,6 +2112,10 @@ export function registerAllIpcHandlers(): void {
     if (!includeDeleted) tasks = tasks.filter((t) => !t.deletedAt)
     if (req.status) tasks = tasks.filter((t) => t.status === req.status)
     if (req.priority) tasks = tasks.filter((t) => t.priority === req.priority)
+    if (req.project) {
+      const p = req.project.toLowerCase()
+      tasks = tasks.filter((t) => t.project?.toLowerCase() === p)
+    }
     if (req.assignee) {
       const a = req.assignee.toLowerCase()
       tasks = tasks.filter((t) => t.assignee?.toLowerCase().includes(a))
@@ -2141,6 +2146,7 @@ export function registerAllIpcHandlers(): void {
       status: req.status ?? 'todo',
       priority: req.priority ?? 'medium',
       assignee: req.assignee ?? '',
+      project: req.project ?? '',
       tags: req.tags ?? [],
       dueDate: req.dueDate ?? '',
       createdAt: now,
@@ -2165,6 +2171,7 @@ export function registerAllIpcHandlers(): void {
       status: req.status !== undefined ? req.status : base.status,
       priority: req.priority !== undefined ? req.priority : base.priority,
       assignee: req.assignee !== undefined ? req.assignee : base.assignee,
+      project: req.project !== undefined ? req.project : base.project,
       tags: req.tags !== undefined ? req.tags : base.tags,
       dueDate: req.dueDate !== undefined ? req.dueDate : base.dueDate,
       createdAt: base.createdAt,
@@ -2226,6 +2233,7 @@ export function registerAllIpcHandlers(): void {
         status: upd.status !== undefined ? upd.status : base.status,
         priority: upd.priority !== undefined ? upd.priority : base.priority,
         assignee: upd.assignee !== undefined ? upd.assignee : base.assignee,
+        project: upd.project !== undefined ? upd.project : base.project,
         tags: upd.tags !== undefined ? upd.tags : base.tags,
         dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
         createdAt: base.createdAt,

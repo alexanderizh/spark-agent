@@ -39,6 +39,7 @@ export type TaskCard = {
   status: TaskStatus
   priority: Priority
   assignee: string
+  project: string
   tags: string[]
   dueDate: string
   createdAt: string
@@ -98,6 +99,7 @@ async function ipcUpdateTask(updated: TaskCard): Promise<TaskCard> {
     status: updated.status,
     priority: updated.priority,
     assignee: updated.assignee,
+    project: updated.project,
     tags: updated.tags,
     dueDate: updated.dueDate,
   })
@@ -148,6 +150,7 @@ function QuickCreateModal({
   const [description, setDescription] = useState('')
   const [priority, setPriority] = useState<Priority>('medium')
   const [assignee, setAssignee] = useState('')
+  const [project, setProject] = useState('')
   const [tags, setTags] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [status, setStatus] = useState<TaskStatus>(defaultStatus)
@@ -170,11 +173,12 @@ function QuickCreateModal({
       status,
       priority,
       assignee: assignee.trim(),
+      project: project.trim(),
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
     })
     onClose()
-  }, [title, description, status, priority, assignee, tags, dueDate, onSubmit, onClose])
+  }, [title, description, status, priority, assignee, project, tags, dueDate, onSubmit, onClose])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
@@ -249,6 +253,13 @@ function QuickCreateModal({
               />
             </div>
           </div>
+          <div className="bqc-row">
+            <div className="bqc-field bqc-field-sm">
+              <label>项目</label>
+              <SparkInput value={project} onChange={(e) => setProject(e.target.value)} placeholder="输入项目名称…" className="bqc-input" />
+            </div>
+            <div className="bqc-field bqc-field-sm" />
+          </div>
           <div className="bqc-field">
             <label>标签</label>
             <SparkInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="bqc-input" />
@@ -288,6 +299,7 @@ function DetailPanel({
   const [priority, setPriority] = useState<Priority>(card.priority)
   const [status, setStatus] = useState<TaskStatus>(card.status)
   const [assignee, setAssignee] = useState(card.assignee)
+  const [project, setProject] = useState(card.project ?? '')
   const [tags, setTags] = useState(card.tags.join(', '))
   const [dueDate, setDueDate] = useState(card.dueDate)
   const [isDirty, setIsDirty] = useState(false)
@@ -305,12 +317,13 @@ function DetailPanel({
       priority,
       status,
       assignee,
+      project,
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
       updatedAt: now(),
     })
     setIsDirty(false)
-  }, [card, title, description, priority, status, assignee, tags, dueDate, onSave])
+  }, [card, title, description, priority, status, assignee, project, tags, dueDate, onSave])
 
   const handleDelete = useCallback(() => {
     onDelete(card.id)
@@ -388,6 +401,11 @@ function DetailPanel({
                 allowClear
               />
             </div>
+          </div>
+
+          <div className="bdp-field">
+            <label className="bdp-label">项目</label>
+            <SparkInput value={project} onChange={(e) => markDirty(e.target.value, setProject)} placeholder="输入项目名称…" className="bdp-input" />
           </div>
 
           <div className="bdp-field">
@@ -549,6 +567,11 @@ function KanbanCard({
       {/* Title */}
       <div className="bc-title">{card.title}</div>
 
+      {/* Project */}
+      {card.project && (
+        <div className="bc-project">{card.project}</div>
+      )}
+
       {/* Description preview */}
       {card.description && (
         <div className="bc-desc">{card.description}</div>
@@ -622,6 +645,7 @@ export function BoardView() {
   const [searchQuery, setSearchQuery] = useState('')
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all')
   const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all')
+  const [filterProject, setFilterProject] = useState<string>('all')
   const dragCardRef = useRef<TaskCard | null>(null)
 
   // Load tasks and agents from IPC on mount
@@ -647,13 +671,20 @@ export function BoardView() {
         t.title.toLowerCase().includes(q) ||
         t.description.toLowerCase().includes(q) ||
         t.assignee.toLowerCase().includes(q) ||
+        t.project?.toLowerCase().includes(q) ||
         t.tags.some(tag => tag.toLowerCase().includes(q))
       )
     }
     if (filterPriority !== 'all') result = result.filter(t => t.priority === filterPriority)
     if (filterStatus !== 'all') result = result.filter(t => t.status === filterStatus)
+    if (filterProject !== 'all') result = result.filter(t => (t.project ?? '') === filterProject)
     return result
-  }, [activeTasks, searchQuery, filterPriority, filterStatus])
+  }, [activeTasks, searchQuery, filterPriority, filterStatus, filterProject])
+
+  const projectOptions = useMemo(() => {
+    const projects = [...new Set(activeTasks.map(t => t.project).filter(Boolean))]
+    return projects.sort()
+  }, [activeTasks])
 
   const columnTasks = useMemo(() => {
     const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'done': [], 'closed': [] }
@@ -775,6 +806,12 @@ export function BoardView() {
                 <Select.Option value="done">✅ 已完成</Select.Option>
                 <Select.Option value="closed">📦 已关闭</Select.Option>
               </Select>
+              {projectOptions.length > 0 && (
+                <Select value={filterProject} onChange={(value) => setFilterProject(value)} className="board-filter-select board-filter-project" size="small">
+                  <Select.Option value="all">全部项目</Select.Option>
+                  {projectOptions.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+                </Select>
+              )}
             </Space>
             <Space size={6} className="board-action-group">
               <Badge count={totalDeleted} className="board-recycle-badge-arco">

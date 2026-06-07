@@ -1729,6 +1729,7 @@ export interface BoardTask {
   status: BoardTaskStatus
   priority: BoardTaskPriority
   assignee: string
+  project: string
   tags: string[]
   dueDate: string
   createdAt: string
@@ -1740,6 +1741,7 @@ export interface BoardListRequest {
   status?: BoardTaskStatus
   priority?: BoardTaskPriority
   assignee?: string
+  project?: string
   query?: string
   includeDeleted?: boolean
 }
@@ -1763,6 +1765,7 @@ export interface BoardCreateRequest {
   status?: BoardTaskStatus
   priority?: BoardTaskPriority
   assignee?: string
+  project?: string
   tags?: string[]
   dueDate?: string
 }
@@ -1778,6 +1781,7 @@ export interface BoardUpdateRequest {
   status?: BoardTaskStatus
   priority?: BoardTaskPriority
   assignee?: string
+  project?: string
   tags?: string[]
   dueDate?: string
 }
