@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Button, Input, Switch, Tag, Badge, Spin, Empty,
-  Select, InputNumber, Form, Space, Popconfirm,
+  Select, InputNumber, Form, Popconfirm,
   Message, Tooltip,
 } from '@arco-design/web-react'
 import {
@@ -389,8 +389,8 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
       {/* Header */}
       <div className="st-detail-header">
         <div className="st-detail-title-row">
-          <h3>{task.name}</h3>
-          <Space size={4}>
+          <h3 className="st-detail-title">{task.name}</h3>
+          <div className="st-detail-actions">
             <Tooltip content="立即执行">
               <Button size="mini" type="primary" icon={<IconPlayArrow />} onClick={onRunNow} />
             </Tooltip>
@@ -402,7 +402,7 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
                 <Button size="mini" status="danger" icon={<IconDelete />} />
               </Tooltip>
             </Popconfirm>
-          </Space>
+          </div>
         </div>
         {task.description && <p className="st-detail-desc">{task.description}</p>}
         <div className="st-detail-tags">
@@ -448,8 +448,8 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
         </div>
         {task.lastError && (
           <div className="st-detail-error">
-            <IconExclamationCircle style={{ color: 'var(--color-danger-6)', marginRight: 4 }} />
-            {task.lastError}
+            <IconExclamationCircle style={{ color: 'var(--color-danger-6)' }} />
+            <span>{task.lastError}</span>
           </div>
         )}
       </div>
