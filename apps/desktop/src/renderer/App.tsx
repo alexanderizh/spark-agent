@@ -20,6 +20,7 @@ import { ProjectView } from './design/views/ProjectView'
 import { WorkflowView } from './design/views/WorkflowView'
 import { AgentsView } from './design/views/AgentsView'
 import { BoardView } from './design/views/BoardView'
+import { ScheduledTasksView } from './design/views/ScheduledTasksView'
 import { McpView } from './design/views/McpView'
 import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
@@ -30,6 +31,7 @@ import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
+import './FloatingSidebar.less'
 import sparkLogo from './assets/spark-logo.png'
 import {
   DropdownMenu,
@@ -222,10 +224,20 @@ function WindowControls() {
   )
 }
 
+const NAV_ITEMS: Array<{ id: string; label: string; icon: React.FC<{ size?: number }> }> = [
+  { id: 'agents', label: 'Agents', icon: Icons.Bot },
+  { id: 'board', label: 'Board', icon: Icons.Board },
+  { id: 'providers', label: 'Providers', icon: Icons.Server },
+  { id: 'skill-store', label: 'Skills', icon: Icons.Skills },
+  { id: 'workflows', label: 'Workflows', icon: Icons.Workflow },
+  { id: 'scheduled-tasks', label: 'Tasks', icon: Icons.Clock },
+]
+
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [navExpanded, setNavExpanded] = useState(false)
   const userAvatarSrc = useSidebarUserAvatarSrc()
   const userName = useSidebarUserName()
   const isResizing = useRef(false)
@@ -243,6 +255,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       </button>
     )
   }
+
+  const VISIBLE_COUNT = 3 // nav items visible before fold (excludes "新建任务")
+  const visibleItems = NAV_ITEMS.slice(0, VISIBLE_COUNT)
+  const collapsedItems = NAV_ITEMS.slice(VISIBLE_COUNT)
+  const hasCollapsed = collapsedItems.length > 0
 
   // Resize handlers
   const handleResizeStart = useCallback(
@@ -320,11 +337,26 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
       {/* ── Navigation items (no Chat, no dividers between) ── */}
       <div className="sidebar-nav-section">
-        {navItem('workflows', 'Workflows', Icons.Workflow)}
-        {navItem('agents', 'Agents', Icons.Bot)}
-        {navItem('board', 'Board', Icons.Board)}
-        {navItem('skill-store', 'Skills', Icons.Skills)}
-        {navItem('providers', 'Providers', Icons.Server)}
+        {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
+        {hasCollapsed && (
+          <div className={`nav-collapsed${navExpanded ? ' nav-collapsed-expanded' : ''}`}>
+            <div className="nav-collapsed-inner">
+              {collapsedItems.map((item) => navItem(item.id, item.label, item.icon))}
+            </div>
+          </div>
+        )}
+        {hasCollapsed && (
+          <button
+            className="nav-expand-toggle"
+            onClick={() => setNavExpanded((v) => !v)}
+            title={navExpanded ? '收起' : '展开更多'}
+          >
+            <span className={`nav-expand-icon${navExpanded ? ' nav-expand-icon-up' : ''}`}>
+              <Icons.ChevronDown size={12} />
+            </span>
+            <span className="nav-label">{navExpanded ? '收起' : '展开更多'}</span>
+          </button>
+        )}
       </div>
 
       {/* ── Divider between nav and session list ── */}
@@ -614,6 +646,8 @@ function Shell() {
         return <AgentsView />
       case 'board':
         return <BoardView />
+      case 'scheduled-tasks':
+        return <ScheduledTasksView />
       case 'skills':
         return <SkillsView />
       case 'skill-store':

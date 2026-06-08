@@ -1,0 +1,60 @@
+/* FloatingSidebar — collapsible nav styles */
+
+.nav-collapsed {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.2s ease;
+}
+.nav-collapsed-expanded {
+  grid-template-rows: 1fr;
+}
+.nav-collapsed-inner {
+  overflow: hidden;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.nav-collapsed-inner > .nav-item {
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+.nav-collapsed-expanded .nav-collapsed-inner > .nav-item {
+  opacity: 1;
+}
+
+/* Expand/collapse toggle button */
+.nav-expand-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  height: var(--nav-row-h);
+  border-radius: var(--r-md);
+  color: var(--text-faint);
+  font-size: var(--font-base);
+  font-weight: 500;
+  border: none;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+  -webkit-app-region: no-drag;
+}
+.nav-expand-toggle:hover {
+  background: var(--hover);
+  color: var(--text-muted);
+}
+.nav-expand-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s ease;
+}
+.nav-expand-icon-up {
+  transform: rotate(180deg);
+}
