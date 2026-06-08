@@ -1,0 +1,46 @@
+{
+  "name": "@spark/server",
+  "version": "0.1.0",
+  "description": "Spark Agent server — Midway.js + TypeORM + PostgreSQL",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "midway-bin dev",
+    "build": "midway-bin build",
+    "start": "node ./dist/index.js",
+    "test": "vitest run",
+    "test:unit": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src --ext .ts",
+    "migration:generate": "typeorm-ts-node-esm migration:generate -d src/data-source.ts migrations/migration",
+    "migration:run": "typeorm-ts-node-esm migration:run -d src/data-source.ts",
+    "migration:revert": "typeorm-ts-node-esm migration:revert -d src/data-source.ts",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@midwayjs/bootstrap": "^3.20.24",
+    "@midwayjs/core": "^3.20.0",
+    "@midwayjs/jwt": "^3.20.0",
+    "@midwayjs/koa": "^3.20.0",
+    "@midwayjs/typeorm": "^3.20.0",
+    "@midwayjs/validate": "^3.20.0",
+    "@midwayjs/ws": "^3.20.0",
+    "bcryptjs": "^2.4.3",
+    "ioredis": "^5.6.0",
+    "pg": "^8.16.0",
+    "typeorm": "^0.3.22",
+    "uuid": "^11.0.0"
+  },
+  "devDependencies": {
+    "@midwayjs/mock": "^3.20.0",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.0.0",
+    "@types/uuid": "^10.0.0",
+    "midway-bin": "^1.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.0.0"
+  }
+}
