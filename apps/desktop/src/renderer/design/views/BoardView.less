@@ -1,30 +1,239 @@
-/* Board detail drawer overrides */
-.board-detail-drawer {
-  .arco-drawer-body {
-    padding: 0;
+/* Task Form Page — inline create/edit */
+.task-form-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.tfp-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+
+  .tfp-back-btn {
     display: flex;
-    flex-direction: column;
-    overflow-y: auto;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--text-secondary);
+    font-size: 13px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    transition: background 0.15s, color 0.15s;
+
+    &:hover {
+      background: var(--hover);
+      color: var(--text-primary);
+    }
   }
 
-  .arco-drawer-footer {
-    padding: 12px 16px;
-    border-top: 1px solid var(--divider);
-    position: sticky;
-    bottom: 0;
-    background: var(--bg);
+  .tfp-title {
+    flex: 1;
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    color: var(--text-primary);
+  }
+
+  .tfp-header-actions {
+    display: flex;
+    gap: 8px;
   }
 }
 
-.bdp-drawer-footer {
+.tfp-body {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+  gap: 24px;
+  padding: 20px;
+}
 
-  .board-btn {
-    padding: 6px 16px;
-    font-size: 13px;
-    min-height: 32px;
+.tfp-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 720px;
+}
+
+.tfp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tfp-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.tfp-input,
+.tfp-select,
+.tfp-textarea {
+  width: 100%;
+}
+
+.tfp-textarea {
+  resize: vertical;
+  min-height: 100px;
+}
+
+.tfp-row {
+  display: flex;
+  gap: 16px;
+
+  .tfp-field-half {
+    flex: 1;
+    min-width: 0;
   }
+}
+
+.tfp-tags-preview {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: -8px;
+}
+
+.tfp-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: 12px;
+  background: var(--hover);
+  color: var(--text-secondary);
+}
+
+.tfp-meta {
+  display: flex;
+  gap: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--divider);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Comments sidebar */
+.tfp-comments {
+  width: 320px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border-left: 1px solid var(--divider);
+  padding-left: 20px;
+}
+
+.tfp-comment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.tfp-comment {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--hover);
+}
+
+.tfp-comment-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.tfp-comment-author {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.tfp-comment-time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tfp-comment-body {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.tfp-comment-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tfp-comment-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.tfp-comment-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.tfp-comment-action-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-secondary);
+  padding: 2px 0;
+
+  &:hover {
+    color: var(--text-primary);
+  }
+}
+
+.tfp-comment-action-danger {
+  &:hover {
+    color: var(--danger);
+  }
+}
+
+.tfp-comment-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 13px;
+  padding: 20px 0;
+}
+
+.tfp-comment-input-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.tfp-comment-input {
+  width: 100%;
+}
+
+/* Delete bar at bottom of edit page */
+.tfp-delete-bar {
+  padding: 12px 20px;
+  border-top: 1px solid var(--divider);
+  display: flex;
+  justify-content: flex-end;
 }
