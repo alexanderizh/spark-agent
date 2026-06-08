@@ -459,7 +459,7 @@ function Shell() {
 
   const handleNewBlankSession = useCallback(() => {
     sessionCtx.setActiveSession(null)
-    sessionCtx.setActiveWorkspace(null)
+    // Keep current workspace so new session inherits the active project context
     setTweak('view', 'chat')
   }, [sessionCtx, setTweak])
 

@@ -929,6 +929,7 @@ function ChatStream({
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [agentIsRunning, setAgentIsRunning] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const builderRef = useRef(new MessageBuilder())
   const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
@@ -972,17 +973,19 @@ function ChatStream({
     // 1) 立即展示缓存，避免空白闪烁
     const cached = sessionCacheRef.current.get(sessionId)
     if (cached != null) {
-      const cachedBuilder = new MessageBuilder()
-      // 从缓存的 messages 无法精确重建 builder，但可以立即显示
       setMessages(cached.messages)
       onMessagesChange(cached.messages)
       onStatusChange(cached.status)
       setAgentIsRunning(cached.status === 'running')
       usageRef.current = cached.usage
       onUsageDataChange(cached.usage)
+      setIsLoadingHistory(false)
+    } else {
+      // 无缓存时立即清空旧消息并显示加载状态，避免 header 已变但内容仍为旧会话
+      setMessages([])
+      onMessagesChange([])
+      setIsLoadingHistory(true)
     }
-    // 首次进入的会话，不立即清空消息，等待历史加载完成后再更新
-    // 这样可以避免闪屏：新会话历史为空会设置为 []，有历史的会话会显示加载的内容
 
     isStreamingRef.current = false
     userScrolledRef.current = false
@@ -990,84 +993,82 @@ function ChatStream({
     onProjectContextChange(null)
     onTurnPromptSnapshotsChange([])
 
-    // 2) 异步从 SQLite 加载完整历史并更新
-    const timer = window.setTimeout(() => {
-      loadCompleteSessionHistory(getHistory, sessionId)
-        .then((historyEvents) => {
-          if (cancelled || historyLoadIdRef.current !== loadId) return
-          const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
-          const hydratedBuilder = new MessageBuilder()
-          for (const event of events) hydratedBuilder.processEvent(event)
-          builderRef.current = hydratedBuilder
-          const nextMessages = hydratedBuilder.getAllMessages()
-          setMessages(nextMessages)
-          onMessagesChange(nextMessages)
-          onUsageChange(getLatestInputTokens(events))
-          const historyUsage = buildUsageDataFromEvents(events)
-          usageRef.current = historyUsage
-          onUsageDataChange(historyUsage)
-          // 更新缓存
-          const latestStatus = getLatestAgentStatus(events)
-          const statusStr =
-            latestStatus != null
-              ? isRunningAgentStatus(latestStatus)
-                ? 'running'
-                : latestStatus === 'error'
-                  ? 'error'
-                  : ''
-              : ''
-          setAgentIsRunning(isRunningAgentStatus(latestStatus))
-          sessionCacheRef.current.set(sessionId, {
-            messages: nextMessages,
-            usage: historyUsage,
-            status: statusStr,
+    // 2) 立即开始异步加载（不再用 setTimeout(0) 延迟）
+    loadCompleteSessionHistory(getHistory, sessionId)
+      .then((historyEvents) => {
+        if (cancelled || historyLoadIdRef.current !== loadId) return
+        const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
+        const hydratedBuilder = new MessageBuilder()
+        for (const event of events) hydratedBuilder.processEvent(event)
+        builderRef.current = hydratedBuilder
+        const nextMessages = hydratedBuilder.getAllMessages()
+        setMessages(nextMessages)
+        onMessagesChange(nextMessages)
+        onUsageChange(getLatestInputTokens(events))
+        const historyUsage = buildUsageDataFromEvents(events)
+        usageRef.current = historyUsage
+        onUsageDataChange(historyUsage)
+        // 更新缓存
+        const latestStatus = getLatestAgentStatus(events)
+        const statusStr =
+          latestStatus != null
+            ? isRunningAgentStatus(latestStatus)
+              ? 'running'
+              : latestStatus === 'error'
+                ? 'error'
+                : ''
+            : ''
+        setAgentIsRunning(isRunningAgentStatus(latestStatus))
+        sessionCacheRef.current.set(sessionId, {
+          messages: nextMessages,
+          usage: historyUsage,
+          status: statusStr,
+        })
+        if (latestStatus != null)
+          applyAgentStatus(
+            latestStatus,
+            onStatusChange,
+            onSessionStatusChange,
+            isStreamingRef,
+            userScrolledRef,
+          )
+        const latestContext = getLatestContextUsageEvent(events)
+        if (latestContext != null) {
+          onContextUsageChange({
+            estimatedTokens: latestContext.estimatedTokens,
+            softLimitTokens: latestContext.softLimitTokens,
+            contextWindowTokens: latestContext.contextWindowTokens,
+            compactedThisTurn: latestContext.compacted,
           })
-          if (latestStatus != null)
-            applyAgentStatus(
-              latestStatus,
-              onStatusChange,
-              onSessionStatusChange,
-              isStreamingRef,
-              userScrolledRef,
-            )
-          const latestContext = getLatestContextUsageEvent(events)
-          if (latestContext != null) {
-            onContextUsageChange({
-              estimatedTokens: latestContext.estimatedTokens,
-              softLimitTokens: latestContext.softLimitTokens,
-              contextWindowTokens: latestContext.contextWindowTokens,
-              compactedThisTurn: latestContext.compacted,
-            })
+        }
+        onProjectContextChange(getLatestProjectContextEvent(events))
+        onTurnPromptSnapshotsChange(hydratedBuilder.getTurnPromptSnapshots())
+      })
+      .catch((err) => {
+        console.error('Failed to load session history:', err)
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          // 历史加载失败，使用缓冲的 live 事件回退
+          const bufferedEvents = bufferedEventsRef.current
+          if (bufferedEvents.length > 0) {
+            const fallbackBuilder = new MessageBuilder()
+            for (const event of bufferedEvents) fallbackBuilder.processEvent(event)
+            builderRef.current = fallbackBuilder
+            const fallbackMessages = fallbackBuilder.getAllMessages()
+            setMessages(fallbackMessages)
+            onMessagesChange(fallbackMessages)
           }
-          onProjectContextChange(getLatestProjectContextEvent(events))
-          onTurnPromptSnapshotsChange(hydratedBuilder.getTurnPromptSnapshots())
-        })
-        .catch((err) => {
-          console.error('Failed to load session history:', err)
-          if (!cancelled && historyLoadIdRef.current === loadId) {
-            // 历史加载失败，使用缓冲的 live 事件回退
-            const bufferedEvents = bufferedEventsRef.current
-            if (bufferedEvents.length > 0) {
-              const fallbackBuilder = new MessageBuilder()
-              for (const event of bufferedEvents) fallbackBuilder.processEvent(event)
-              builderRef.current = fallbackBuilder
-              const fallbackMessages = fallbackBuilder.getAllMessages()
-              setMessages(fallbackMessages)
-              onMessagesChange(fallbackMessages)
-            }
-          }
-        })
-        .finally(() => {
-          if (!cancelled && historyLoadIdRef.current === loadId) {
-            hydratingRef.current = false
-            bufferedEventsRef.current = []
-          }
-        })
-    }, 0)
+        }
+      })
+      .finally(() => {
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          hydratingRef.current = false
+          bufferedEventsRef.current = []
+          setIsLoadingHistory(false)
+        }
+      })
 
     return () => {
       cancelled = true
-      window.clearTimeout(timer)
       // 离开当前会话时，保存消息到缓存
       const currentMessages = builderRef.current.getAllMessages()
       if (currentMessages.length > 0) {
@@ -1341,11 +1342,22 @@ function ChatStream({
         {messages.length === 0 && !showWaitingAgent && (
           <div className="chat-stream-empty-state">
             <div className="empty-state">
-              <div className="empty-icon">
-                <Icons.Chat size={24} />
-              </div>
-              <div className="empty-title">开始对话</div>
-              <div className="empty-desc">发送消息开始与 AI 交互</div>
+              {isLoadingHistory ? (
+                <>
+                  <div className="empty-icon loading-icon">
+                    <Icons.Spinner size={24} />
+                  </div>
+                  <div className="empty-title">加载中…</div>
+                </>
+              ) : (
+                <>
+                  <div className="empty-icon">
+                    <Icons.Chat size={24} />
+                  </div>
+                  <div className="empty-title">开始对话</div>
+                  <div className="empty-desc">发送消息开始与 AI 交互</div>
+                </>
+              )}
             </div>
           </div>
         )}

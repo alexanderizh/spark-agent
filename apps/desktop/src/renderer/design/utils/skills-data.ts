@@ -187,10 +187,19 @@ export function useSkills(): UseSkillsResult {
 
   const toggleSkill = useCallback(
     async (skill: SkillItem) => {
-      await updateSkill({ id: skill.id, enabled: !skill.enabled })
-      refresh()
+      const nextEnabled = !skill.enabled
+      setSkills((prev) =>
+        prev.map((s) => (s.id === skill.id ? { ...s, enabled: nextEnabled } : s))
+      )
+      try {
+        await updateSkill({ id: skill.id, enabled: nextEnabled })
+      } catch {
+        setSkills((prev) =>
+          prev.map((s) => (s.id === skill.id ? { ...s, enabled: skill.enabled } : s))
+        )
+      }
     },
-    [updateSkill, refresh]
+    [updateSkill]
   )
 
   const deleteSkill = useCallback(

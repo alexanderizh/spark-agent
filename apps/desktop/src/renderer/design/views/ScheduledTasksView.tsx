@@ -7,16 +7,15 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Button, Input, Switch, Tag, Badge, Spin, Empty, Modal, Steps,
-  Select, DatePicker, InputNumber, Radio, Form, Space, Popconfirm,
-  Message, Tooltip, Divider, Progress,
+  Button, Input, Switch, Tag, Badge, Spin, Empty,
+  Select, InputNumber, Form, Space, Popconfirm,
+  Message, Tooltip,
 } from '@arco-design/web-react'
 import {
-  IconPlus, IconSearch, IconRefresh, IconPlayArrow, IconEdit,
+  IconPlus, IconSearch, IconPlayArrow, IconEdit,
   IconDelete, IconClockCircle, IconExclamationCircle, IconCheckCircle,
-  IconCloseCircle, IconLoading, IconCalendar,
+  IconCloseCircle, IconLoading, IconSync, IconSchedule, IconThunder,
 } from '@arco-design/web-react/icon'
-import { Icons } from '../Icons'
 import './ScheduledTasksView.less'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -221,14 +220,27 @@ export function ScheduledTasksView() {
 
   const handleFormClose = useCallback((success: boolean) => {
     setShowForm(false)
+    const wasEdit = editingTask != null
     setEditingTask(null)
     if (success) {
       setRefreshKey(k => k + 1)
-      Message.success(editingTask ? '任务已更新' : '任务已创建')
+      Message.success(wasEdit ? '任务已更新' : '任务已创建')
     }
-  }, [editingTask])
+  }, [])
 
   // ─── Render ───────────────────────────────────────────────────────────────
+
+  // Show form page when creating/editing
+  if (showForm) {
+    return (
+      <div className="scheduled-tasks-view">
+        <TaskFormPage
+          task={editingTask}
+          onClose={handleFormClose}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="scheduled-tasks-view">
@@ -355,14 +367,6 @@ export function ScheduledTasksView() {
           </>
         )}
       </div>
-
-      {/* Create/Edit Modal */}
-      {showForm && (
-        <TaskFormModal
-          task={editingTask}
-          onClose={handleFormClose}
-        />
-      )}
     </div>
   )
 }
@@ -484,13 +488,12 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
   )
 }
 
-// ─── Task Form Modal ────────────────────────────────────────────────────────
+// ─── Task Form Page (inline create/edit) ─────────────────────────────────────
 
-function TaskFormModal({ task, onClose }: {
+function TaskFormPage({ task, onClose }: {
   task: ScheduledTaskItem | null
   onClose: (success: boolean) => void
 }) {
-  const [step, setStep] = useState(1)
   const [saving, setSaving] = useState(false)
   const isEdit = task != null
 
@@ -498,23 +501,23 @@ function TaskFormModal({ task, onClose }: {
   const [name, setName] = useState(task?.name ?? '')
   const [description, setDescription] = useState(task?.description ?? '')
   const [triggerType, setTriggerType] = useState<'interval' | 'cron' | 'once'>(task?.triggerType ?? 'interval')
-  const [intervalSeconds, setIntervalSeconds] = useState(task?.intervalSeconds ?? 300)
+  const [intervalSeconds, setIntervalSeconds] = useState(task?.intervalSeconds ?? 3600)
   const [cronExpression, setCronExpression] = useState(task?.cronExpression ?? '0 */1 * * *')
   const [runAt, setRunAt] = useState(task?.runAt ?? '')
   const [agentId, setAgentId] = useState(task?.agentId ?? '')
+  const [teamId, setTeamId] = useState(task?.teamId ?? '')
+  const [modelId, setModelId] = useState(task?.modelId ?? '')
+  const [workspaceId, setWorkspaceId] = useState(task?.workspaceId ?? '')
   const [promptTemplate, setPromptTemplate] = useState(task?.promptTemplate ?? '')
   const [timeoutSeconds, setTimeoutSeconds] = useState(task?.timeoutSeconds ?? 300)
   const [maxRetries, setMaxRetries] = useState(task?.maxRetries ?? 0)
   const [tags, setTags] = useState<string[]>(task?.tags ?? [])
+  const [enabledOnCreate, setEnabledOnCreate] = useState(true)
 
-  const canProceed = () => {
-    if (step === 1) return name.trim().length > 0
-    if (step === 2) return triggerType === 'interval' ? intervalSeconds > 0 : triggerType === 'cron' ? cronExpression.length > 0 : runAt.length > 0
-    if (step === 3) return promptTemplate.trim().length > 0
-    return true
-  }
+  const canSave = name.trim().length > 0 && promptTemplate.trim().length > 0
 
   const handleSave = async () => {
+    if (!canSave) return
     setSaving(true)
     try {
       const payload = {
@@ -525,13 +528,17 @@ function TaskFormModal({ task, onClose }: {
         cronExpression: triggerType === 'cron' ? cronExpression : null,
         runAt: triggerType === 'once' ? runAt : null,
         agentId: agentId || null,
+        teamId: teamId || null,
+        modelId: modelId || null,
+        workspaceId: workspaceId || null,
         promptTemplate,
         timeoutSeconds,
         maxRetries,
         tags,
+        enabled: enabledOnCreate,
       }
       if (isEdit) {
-        await ipcInvoke('scheduled-task:update', { id: task.id, ...payload })
+        await ipcInvoke('scheduled-task:update', { id: task!.id, ...payload })
       } else {
         await ipcInvoke('scheduled-task:create', payload)
       }
@@ -544,65 +551,117 @@ function TaskFormModal({ task, onClose }: {
   }
 
   return (
-    <Modal
-      title={isEdit ? '编辑定时任务' : '新建定时任务'}
-      visible={true}
-      onCancel={() => onClose(false)}
-      footer={<></>}
-      style={{ width: 640 }}
-      className="st-form-modal"
-    >
-      <Steps current={step - 1} size="small" style={{ marginBottom: 24 }}>
-        <Steps.Step title="基础" />
-        <Steps.Step title="调度" />
-        <Steps.Step title="执行" />
-        <Steps.Step title="高级" />
-      </Steps>
+    <div className="st-form-page">
+      {/* Page Header */}
+      <div className="st-form-page-header">
+        <div className="st-form-page-title">
+          <Button
+            type="text"
+            size="small"
+            icon={<IconCloseCircle />}
+            onClick={() => onClose(false)}
+          />
+          <div className="st-form-page-title-text">
+            <span className="st-form-page-subtitle">CREATE AUTOMATION</span>
+            <h2>{isEdit ? '编辑定时任务' : '新建定时任务'}</h2>
+          </div>
+        </div>
+        <div className="st-form-page-actions">
+          <Button onClick={() => onClose(false)}>取消</Button>
+          <Button type="primary" loading={saving} disabled={!canSave} onClick={handleSave}>
+            {isEdit ? '保存修改' : '创建任务'}
+          </Button>
+        </div>
+      </div>
 
-      {/* Step 1: Basic */}
-      {step === 1 && (
-        <div className="st-form-step">
-          <Form layout="vertical">
-            <Form.Item label="任务名称" required>
+      {/* Form Body */}
+      <div className="st-form-page-body">
+        {/* Section 1: 基础信息 */}
+        <div className="st-form-section">
+          <div className="st-form-section-header">
+            <h3>基础信息</h3>
+            <p>先把任务的名字、用途和标签定清楚</p>
+          </div>
+          <Form layout="vertical" className="st-form-section-body">
+            <Form.Item label={<><span style={{ color: 'var(--color-danger-6)' }}>* </span>任务名称</>}>
               <Input value={name} onChange={setName} placeholder="例如：每日代码审查" />
             </Form.Item>
             <Form.Item label="描述">
-              <Input.TextArea value={description} onChange={setDescription} placeholder="任务描述..." rows={3} />
+              <Input.TextArea value={description} onChange={setDescription} placeholder="补充任务目标、产出格式和注意事项" rows={3} />
             </Form.Item>
             <Form.Item label="标签">
               <Select
                 mode="tags"
                 value={tags}
                 onChange={(v) => setTags(v as string[])}
-                placeholder="添加标签..."
+                placeholder="选择标签"
               />
+            </Form.Item>
+            <Form.Item label="创建后立即启用">
+              <div className="st-form-switch-row">
+                <Switch checked={enabledOnCreate} onChange={setEnabledOnCreate} />
+                <span className="st-form-switch-hint">任务创建后会进入调度</span>
+              </div>
             </Form.Item>
           </Form>
         </div>
-      )}
 
-      {/* Step 2: Schedule */}
-      {step === 2 && (
-        <div className="st-form-step">
-          <Form layout="vertical">
-            <Form.Item label="触发方式">
-              <Radio.Group value={triggerType} onChange={setTriggerType}>
-                <Radio value="interval">固定间隔</Radio>
-                <Radio value="cron">Cron 表达式</Radio>
-                <Radio value="once">一次执行</Radio>
-              </Radio.Group>
-            </Form.Item>
+        {/* Section 2: 调度策略 */}
+        <div className="st-form-section">
+          <div className="st-form-section-header">
+            <h3>调度策略</h3>
+            <p>决定它何时运行，尽量让规则一眼就能读懂</p>
+          </div>
+          <Form layout="vertical" className="st-form-section-body">
+            <div className="st-trigger-cards">
+              {([
+                {
+                  value: 'interval' as const,
+                  icon: <IconSync />,
+                  title: '固定间隔',
+                  desc: '每隔固定时间自动执行',
+                },
+                {
+                  value: 'cron' as const,
+                  icon: <IconSchedule />,
+                  title: 'Cron 表达式',
+                  desc: '用 cron 规则精确控制时间',
+                },
+                {
+                  value: 'once' as const,
+                  icon: <IconThunder />,
+                  title: '单次执行',
+                  desc: '在指定时间点执行一次',
+                },
+              ]).map(opt => (
+                <div
+                  key={opt.value}
+                  className={`st-trigger-card ${triggerType === opt.value ? 'active' : ''}`}
+                  onClick={() => setTriggerType(opt.value)}
+                >
+                  <div className="st-trigger-card-icon">{opt.icon}</div>
+                  <div className="st-trigger-card-text">
+                    <span className="st-trigger-card-title">{opt.title}</span>
+                    <span className="st-trigger-card-desc">{opt.desc}</span>
+                  </div>
+                  <div className="st-trigger-card-check">
+                    {triggerType === opt.value && <IconCheckCircle />}
+                  </div>
+                </div>
+              ))}
+            </div>
 
             {triggerType === 'interval' && (
               <Form.Item label="执行间隔（秒）">
                 <InputNumber
                   value={intervalSeconds}
-                  onChange={(v) => setIntervalSeconds(v ?? 300)}
+                  onChange={(v) => setIntervalSeconds(v ?? 3600)}
                   min={10}
                   max={86400}
                   suffix="秒"
+                  style={{ width: '100%' }}
                 />
-                <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-3)' }}>
+                <div className="st-form-hint">
                   {intervalSeconds < 60 ? `每 ${intervalSeconds} 秒`
                     : intervalSeconds < 3600 ? `每 ${Math.round(intervalSeconds / 60)} 分钟`
                     : `每 ${Math.round(intervalSeconds / 3600)} 小时`}
@@ -615,7 +674,7 @@ function TaskFormModal({ task, onClose }: {
                 <Input value={cronExpression} onChange={setCronExpression} placeholder="0 */2 * * *" />
                 <div style={{ marginTop: 8 }}>
                   <Space wrap size={4}>
-                    {['* * * * *', '*/5 * * * *', '0 */1 * * *', '0 9 * * MON-FRI', '0 0 1 * *'].map(expr => (
+                    {['*/5 * * * *', '0 */1 * * *', '0 9 * * MON-FRI', '0 0 1 * *'].map(expr => (
                       <Tag
                         key={expr}
                         size="small"
@@ -642,71 +701,62 @@ function TaskFormModal({ task, onClose }: {
             )}
           </Form>
         </div>
-      )}
 
-      {/* Step 3: Execution */}
-      {step === 3 && (
-        <div className="st-form-step">
-          <Form layout="vertical">
-            <Form.Item label="Agent">
-              <Input
-                value={agentId}
-                onChange={setAgentId}
-                placeholder="选择 Agent（可选）"
-              />
-              <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-3)' }}>
-                留空使用默认 Agent
-              </div>
-            </Form.Item>
-            <Form.Item label="Prompt 模板" required>
+        {/* Section 3: 执行配置 */}
+        <div className="st-form-section">
+          <div className="st-form-section-header">
+            <h3>执行配置</h3>
+            <p>指定由谁执行、用哪个模型和哪个工作区上下文</p>
+          </div>
+          <Form layout="vertical" className="st-form-section-body">
+            <div className="st-form-row-4">
+              <Form.Item label="Agent">
+                <Select
+                  value={agentId || ''}
+                  onChange={setAgentId}
+                  placeholder="选择"
+                  allowClear
+                />
+              </Form.Item>
+              <Form.Item label="Team">
+                <Select
+                  value={teamId || ''}
+                  onChange={setTeamId}
+                  placeholder="选择"
+                  allowClear
+                />
+              </Form.Item>
+              <Form.Item label="Model">
+                <Select
+                  value={modelId || ''}
+                  onChange={setModelId}
+                  placeholder="选择"
+                  allowClear
+                />
+              </Form.Item>
+              <Form.Item label="Workspace">
+                <Select
+                  value={workspaceId || ''}
+                  onChange={setWorkspaceId}
+                  placeholder="选择"
+                  allowClear
+                />
+              </Form.Item>
+            </div>
+            <Form.Item label={<><span style={{ color: 'var(--color-danger-6)' }}>* </span>Prompt 模板</>}>
               <Input.TextArea
                 value={promptTemplate}
                 onChange={setPromptTemplate}
-                placeholder="请输入任务执行时的 Prompt..."
+                placeholder="写清任务执行时需要产出的内容、格式和约束"
                 rows={6}
               />
-              <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-text-3)' }}>
+              <div className="st-form-hint">
                 可用变量: {'{{date}}'}, {'{{time}}'}, {'{{taskName}}'}, {'{{executionCount}}'}, {'{{interval}}'}
               </div>
             </Form.Item>
           </Form>
         </div>
-      )}
-
-      {/* Step 4: Advanced */}
-      {step === 4 && (
-        <div className="st-form-step">
-          <Form layout="vertical">
-            <Form.Item label="超时时间（秒）">
-              <InputNumber value={timeoutSeconds} onChange={(v) => setTimeoutSeconds(v ?? 300)} min={30} max={3600} suffix="秒" />
-            </Form.Item>
-            <Form.Item label="最大重试次数">
-              <InputNumber value={maxRetries} onChange={(v) => setMaxRetries(v ?? 0)} min={0} max={10} />
-            </Form.Item>
-          </Form>
-        </div>
-      )}
-
-      {/* Footer */}
-      <div className="st-form-footer">
-        <div>
-          {step > 1 && (
-            <Button onClick={() => setStep(s => s - 1)}>上一步</Button>
-          )}
-        </div>
-        <Space>
-          <Button onClick={() => onClose(false)}>取消</Button>
-          {step < 4 ? (
-            <Button type="primary" disabled={!canProceed()} onClick={() => setStep(s => s + 1)}>
-              下一步
-            </Button>
-          ) : (
-            <Button type="primary" loading={saving} onClick={handleSave}>
-              {isEdit ? '保存' : '创建并启用'}
-            </Button>
-          )}
-        </Space>
       </div>
-    </Modal>
+    </div>
   )
 }
