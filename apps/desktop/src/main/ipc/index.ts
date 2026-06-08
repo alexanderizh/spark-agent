@@ -36,6 +36,8 @@ import {
   WorkflowRepository,
   TeamDispatchRepository,
   TeamDefinitionRepository,
+  ScheduledTaskRepository,
+  TaskExecutionRepository,
 } from '@spark/storage'
 import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem, AgentTeamItem as StorageAgentTeamItem } from '@spark/storage'
 import {
@@ -53,6 +55,8 @@ import {
   UsageLedgerService,
   RuntimeCompositionService,
 } from '@spark/agent-runtime'
+import { ScheduledTaskService } from '@spark/agent-runtime'
+import type { TaskExecutorFn } from '@spark/agent-runtime'
 import type {
   CommandParseResponse,
   SessionAgentAdapter,
@@ -327,6 +331,56 @@ function getSkillRegistryService(): SkillRegistryService {
 
 function getRulesService(): RulesService {
   return new RulesService(new RulesRepository(getDatabase()))
+}
+
+let _scheduledTaskService: ScheduledTaskService | null = null
+export function getScheduledTaskService(): ScheduledTaskService {
+  if (_scheduledTaskService == null) {
+    _scheduledTaskService = new ScheduledTaskService(
+      new ScheduledTaskRepository(getDatabase()),
+      new TaskExecutionRepository(getDatabase()),
+    )
+    // Inject executor: creates a session and sends the prompt
+    _scheduledTaskService.setExecutor(scheduledTaskExecutor)
+  }
+  return _scheduledTaskService
+}
+
+/** Executor function injected into ScheduledTaskService for running tasks */
+const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
+  const sessionService = getSessionService()
+  // Find a suitable provider profile (use default)
+  const providerService = getProviderService()
+  const profiles = providerService.listProfiles()
+  const defaultProfile = profiles.find(p => p.isDefault) ?? profiles[0]
+  if (!defaultProfile) {
+    throw new Error('No provider profile available for scheduled task execution')
+  }
+
+  // Create a new session for this execution
+  const created = await sessionService.createSession({
+    providerProfileId: defaultProfile.id,
+    modelId: params.modelId ?? undefined,
+    agentId: params.agentId ?? undefined,
+    workspaceId: params.workspaceId ?? undefined,
+    permissionMode: (params.permissionMode as any) ?? undefined,
+    title: `[⏰] ${params.taskName}`,
+  })
+
+  // Send the prompt as a turn
+  const result = await sessionService.sendTurn({
+    sessionId: created.sessionId,
+    message: params.promptTemplate,
+    providerProfileId: defaultProfile.id,
+    modelId: params.modelId ?? undefined,
+    agentId: params.agentId ?? undefined,
+    permissionMode: (params.permissionMode as any) ?? undefined,
+  })
+
+  return {
+    sessionId: created.sessionId,
+    output: `Turn ${result.turnId} started`,
+  }
 }
 
 let _permissionService: PermissionService | null = null
@@ -2412,6 +2466,125 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('remote:runtime-status', async () => {
     return getRemoteConnectionService().getRuntimeStatus()
+  })
+
+  // ─── Scheduled Task Handlers ───────────────────────────────────────────────
+
+  typedIpcHandle('scheduled-task:list', async (req) => {
+    return { tasks: getScheduledTaskService().listTasks(req) }
+  })
+
+  typedIpcHandle('scheduled-task:get', async (req) => {
+    return { task: getScheduledTaskService().getTask(req.id) }
+  })
+
+  typedIpcHandle('scheduled-task:create', async (req) => {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    const task = getScheduledTaskService().createTask({
+      id,
+      name: req.name,
+      description: req.description ?? '',
+      enabled: req.enabled !== false,
+      trigger_type: req.triggerType,
+      interval_seconds: req.intervalSeconds ?? null,
+      cron_expression: req.cronExpression ?? null,
+      run_at: req.runAt ?? null,
+      timezone: req.timezone ?? 'system',
+      start_at: req.startAt ?? null,
+      end_at: req.endAt ?? null,
+      max_executions: req.maxExecutions ?? 0,
+      agent_id: req.agentId ?? null,
+      team_id: req.teamId ?? null,
+      model_id: req.modelId ?? null,
+      workspace_id: req.workspaceId ?? null,
+      prompt_template: req.promptTemplate,
+      permission_mode: req.permissionMode ?? 'ask',
+      permission_profile_id: req.permissionProfileId ?? null,
+      timeout_seconds: req.timeoutSeconds ?? 300,
+      max_retries: req.maxRetries ?? 0,
+      retry_delay_seconds: req.retryDelaySeconds ?? 60,
+      retry_backoff: req.retryBackoff ?? 'fixed',
+      notifications: req.notifications ?? [],
+      concurrency_policy: req.concurrencyPolicy ?? 'skip',
+      tags: req.tags ?? [],
+      history_retention_days: req.historyRetentionDays ?? 30,
+    } as any)
+    return { task }
+  })
+
+  typedIpcHandle('scheduled-task:update', async (req) => {
+    const updateFields: Record<string, unknown> = {}
+    const fieldMap: Record<string, unknown> = {
+      name: req.name,
+      description: req.description,
+      trigger_type: req.triggerType,
+      interval_seconds: req.intervalSeconds,
+      cron_expression: req.cronExpression,
+      run_at: req.runAt,
+      timezone: req.timezone,
+      start_at: req.startAt,
+      end_at: req.endAt,
+      max_executions: req.maxExecutions,
+      agent_id: req.agentId,
+      team_id: req.teamId,
+      model_id: req.modelId,
+      workspace_id: req.workspaceId,
+      prompt_template: req.promptTemplate,
+      permission_mode: req.permissionMode,
+      permission_profile_id: req.permissionProfileId,
+      timeout_seconds: req.timeoutSeconds,
+      max_retries: req.maxRetries,
+      retry_delay_seconds: req.retryDelaySeconds,
+      retry_backoff: req.retryBackoff,
+      concurrency_policy: req.concurrencyPolicy,
+      history_retention_days: req.historyRetentionDays,
+    }
+    for (const [k, v] of Object.entries(fieldMap)) {
+      if (v !== undefined) updateFields[k] = v
+    }
+    if (req.enabled !== undefined) updateFields.enabled = req.enabled
+    if (req.notifications !== undefined) updateFields.notifications = req.notifications
+    if (req.tags !== undefined) updateFields.tags = req.tags
+    const task = getScheduledTaskService().updateTask(req.id, updateFields)
+    return { task }
+  })
+
+  typedIpcHandle('scheduled-task:delete', async (req) => {
+    const success = getScheduledTaskService().deleteTask(req.id)
+    return { success }
+  })
+
+  typedIpcHandle('scheduled-task:toggle', async (req) => {
+    const task = req.enabled
+      ? getScheduledTaskService().enableTask(req.id)
+      : getScheduledTaskService().disableTask(req.id)
+    return { task }
+  })
+
+  typedIpcHandle('scheduled-task:run-now', async (req) => {
+    const execution = await getScheduledTaskService().runNow(req.id)
+    return { execution }
+  })
+
+  typedIpcHandle('task-execution:list', async (req) => {
+    return getScheduledTaskService().getExecutions(req.taskId, {
+      page: req.page,
+      pageSize: req.pageSize,
+      status: req.status,
+    })
+  })
+
+  typedIpcHandle('task-execution:get', async (req) => {
+    return { execution: getScheduledTaskService().getExecution(req.id) }
+  })
+
+  typedIpcHandle('task-execution:cancel', async (req) => {
+    const success = getScheduledTaskService().cancelExecution(req.id)
+    return { success }
+  })
+
+  typedIpcHandle('task-execution:stats', async (req) => {
+    return { stats: getScheduledTaskService().getExecutionStats(req.taskId) }
   })
 
   // ─── Usage Ledger Handlers ────────────────────────────────────────────────

@@ -77,6 +77,19 @@ export type {
   DailyUsageGroup,
   UsageLedgerRow,
 } from './services/usage-ledger.service.js'
+export { ScheduledTaskService } from './services/scheduled-task.service.js'
+export type {
+  ScheduledTaskItem,
+  TaskExecutionItem,
+  ExecutionStats,
+  TaskExecutorFn,
+  NotificationConfig as ScheduledTaskNotificationConfig,
+  TriggerType,
+  ConcurrencyPolicy,
+  RetryBackoff,
+  TaskStatus as ScheduledTaskStatus,
+  ExecutionStatus as TaskExecutionStatus,
+} from './services/scheduled-task.service.js'
 export { HookService } from './services/hook.service.js'
 export type { HookTriggerFn } from './services/hook.service.js'
 export type {

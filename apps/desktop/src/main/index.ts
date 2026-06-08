@@ -259,6 +259,19 @@ async function initializeApp(): Promise<void> {
   // 2. 注册 IPC handlers
   registerAllIpcHandlers()
 
+  // 2.1 启动定时任务调度器（使用 IPC 层的同一个 ScheduledTaskService 实例）
+  try {
+    const { getScheduledTaskService } = await import('./ipc/index.js')
+    const taskService = getScheduledTaskService()
+    taskService.startScheduler()
+    log.info('Scheduled task scheduler started')
+    app.on('before-quit', () => {
+      taskService.stopScheduler()
+    })
+  } catch (err) {
+    log.warn(`Failed to start scheduled task scheduler: ${String(err)}`)
+  }
+
   // 2.5 确保无项目会话目录已初始化（避免首次启动时目录不存在导致错误）
   await ensureNoProjectDirectoryExists()
 

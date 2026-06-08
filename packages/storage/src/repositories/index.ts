@@ -44,6 +44,20 @@ export type {
   UpdateAgentTeamParams,
   ListAgentTeamsParams,
 } from './team-definition.repository.js'
+export { ScheduledTaskRepository } from './scheduled-task.repository.js'
+export type {
+  ScheduledTaskRow,
+  CreateScheduledTaskParams,
+  UpdateScheduledTaskParams,
+  ScheduledTaskFilter,
+} from './scheduled-task.repository.js'
+export { TaskExecutionRepository } from './task-execution.repository.js'
+export type {
+  TaskExecutionRow,
+  CreateTaskExecutionParams,
+  ExecutionQueryOptions,
+  ExecutionStats,
+} from './task-execution.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

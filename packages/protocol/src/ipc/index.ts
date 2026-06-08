@@ -2560,6 +2560,235 @@ export interface FilePrepareImagePreviewResponse {
   fileUrl: string
 }
 
+// ─── Scheduled Task Channels ──────────────────────────────────────────────────
+
+export type ScheduledTaskTriggerType = 'interval' | 'cron' | 'once'
+export type ScheduledTaskStatus = 'idle' | 'running' | 'disabled' | 'error'
+export type ScheduledTaskConcurrencyPolicy = 'skip' | 'queue' | 'cancel'
+export type ScheduledTaskRetryBackoff = 'fixed' | 'linear' | 'exponential'
+
+export interface ScheduledTaskNotification {
+  id: string
+  url: string
+  triggers: ('onSuccess' | 'onFailure' | 'onRetry' | 'onDisabled')[]
+  headers?: Record<string, string>
+  bodyTemplate?: string
+}
+
+export interface ScheduledTaskItem {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  triggerType: ScheduledTaskTriggerType
+  intervalSeconds: number | null
+  cronExpression: string | null
+  runAt: string | null
+  timezone: string
+  startAt: string | null
+  endAt: string | null
+  maxExecutions: number
+  agentId: string | null
+  teamId: string | null
+  modelId: string | null
+  workspaceId: string | null
+  promptTemplate: string
+  permissionMode: string
+  permissionProfileId: string | null
+  timeoutSeconds: number
+  maxRetries: number
+  retryDelaySeconds: number
+  retryBackoff: ScheduledTaskRetryBackoff
+  notifications: ScheduledTaskNotification[]
+  concurrencyPolicy: ScheduledTaskConcurrencyPolicy
+  tags: string[]
+  historyRetentionDays: number
+  status: ScheduledTaskStatus
+  executionCount: number
+  successCount: number
+  failureCount: number
+  lastRunAt: string | null
+  nextRunAt: string | null
+  lastError: string | null
+  currentExecutionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ScheduledTaskCreateRequest {
+  name: string
+  description?: string
+  enabled?: boolean
+  triggerType: ScheduledTaskTriggerType
+  intervalSeconds?: number | null
+  cronExpression?: string | null
+  runAt?: string | null
+  timezone?: string
+  startAt?: string | null
+  endAt?: string | null
+  maxExecutions?: number
+  agentId?: string | null
+  teamId?: string | null
+  modelId?: string | null
+  workspaceId?: string | null
+  promptTemplate: string
+  permissionMode?: string
+  permissionProfileId?: string | null
+  timeoutSeconds?: number
+  maxRetries?: number
+  retryDelaySeconds?: number
+  retryBackoff?: ScheduledTaskRetryBackoff
+  notifications?: ScheduledTaskNotification[]
+  concurrencyPolicy?: ScheduledTaskConcurrencyPolicy
+  tags?: string[]
+  historyRetentionDays?: number
+}
+
+export interface ScheduledTaskCreateResponse {
+  task: ScheduledTaskItem
+}
+
+export interface ScheduledTaskUpdateRequest {
+  id: string
+  name?: string
+  description?: string
+  enabled?: boolean
+  triggerType?: ScheduledTaskTriggerType
+  intervalSeconds?: number | null
+  cronExpression?: string | null
+  runAt?: string | null
+  timezone?: string
+  startAt?: string | null
+  endAt?: string | null
+  maxExecutions?: number
+  agentId?: string | null
+  teamId?: string | null
+  modelId?: string | null
+  workspaceId?: string | null
+  promptTemplate?: string
+  permissionMode?: string
+  permissionProfileId?: string | null
+  timeoutSeconds?: number
+  maxRetries?: number
+  retryDelaySeconds?: number
+  retryBackoff?: ScheduledTaskRetryBackoff
+  notifications?: ScheduledTaskNotification[]
+  concurrencyPolicy?: ScheduledTaskConcurrencyPolicy
+  tags?: string[]
+  historyRetentionDays?: number
+}
+
+export interface ScheduledTaskUpdateResponse {
+  task: ScheduledTaskItem
+}
+
+export interface ScheduledTaskDeleteRequest {
+  id: string
+}
+
+export interface ScheduledTaskDeleteResponse {
+  success: boolean
+}
+
+export interface ScheduledTaskListRequest {
+  status?: string
+  enabled?: boolean
+  tags?: string[]
+  query?: string
+}
+
+export interface ScheduledTaskListResponse {
+  tasks: ScheduledTaskItem[]
+}
+
+export interface ScheduledTaskGetRequest {
+  id: string
+}
+
+export interface ScheduledTaskGetResponse {
+  task: ScheduledTaskItem | null
+}
+
+export interface ScheduledTaskToggleRequest {
+  id: string
+  enabled: boolean
+}
+
+export interface ScheduledTaskToggleResponse {
+  task: ScheduledTaskItem
+}
+
+export interface ScheduledTaskRunNowRequest {
+  id: string
+}
+
+export interface ScheduledTaskRunNowResponse {
+  execution: TaskExecutionItem
+}
+
+// ─── Task Execution ──────────────────────────────────────────────────────────
+
+export type TaskExecutionStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'timeout'
+
+export interface TaskExecutionItem {
+  id: string
+  taskId: string
+  sessionId: string | null
+  startedAt: string
+  completedAt: string | null
+  durationMs: number | null
+  status: TaskExecutionStatus
+  output: string | null
+  error: string | null
+  tokenUsage: unknown | null
+  retryAttempt: number
+  parentExecutionId: string | null
+  triggerType: string | null
+  createdAt: string
+}
+
+export interface TaskExecutionListRequest {
+  taskId: string
+  page?: number
+  pageSize?: number
+  status?: string
+}
+
+export interface TaskExecutionListResponse {
+  executions: TaskExecutionItem[]
+  total: number
+}
+
+export interface TaskExecutionGetRequest {
+  id: string
+}
+
+export interface TaskExecutionGetResponse {
+  execution: TaskExecutionItem | null
+}
+
+export interface TaskExecutionCancelRequest {
+  id: string
+}
+
+export interface TaskExecutionCancelResponse {
+  success: boolean
+}
+
+export interface TaskExecutionStatsRequest {
+  taskId: string
+}
+
+export interface TaskExecutionStatsResponse {
+  stats: {
+    total: number
+    completed: number
+    failed: number
+    avgDurationMs: number | null
+    totalTokenUsage: number
+  }
+}
+
 // ─── Remote Connections Channels ────────────────────────────────────────────
 
 export type RemoteChannelType = 'telegram' | 'feishu' | 'qq' | 'wechat-claw'
@@ -3095,6 +3324,19 @@ export interface IpcChannelMap {
   'window:maximize': [WindowMaximizeRequest, WindowMaximizeResponse]
   'window:close': [WindowCloseRequest, WindowCloseResponse]
   'window:is-maximized': [WindowIsMaximizedRequest, WindowIsMaximizedResponse]
+
+  // Scheduled Tasks
+  'scheduled-task:list': [ScheduledTaskListRequest, ScheduledTaskListResponse]
+  'scheduled-task:get': [ScheduledTaskGetRequest, ScheduledTaskGetResponse]
+  'scheduled-task:create': [ScheduledTaskCreateRequest, ScheduledTaskCreateResponse]
+  'scheduled-task:update': [ScheduledTaskUpdateRequest, ScheduledTaskUpdateResponse]
+  'scheduled-task:delete': [ScheduledTaskDeleteRequest, ScheduledTaskDeleteResponse]
+  'scheduled-task:toggle': [ScheduledTaskToggleRequest, ScheduledTaskToggleResponse]
+  'scheduled-task:run-now': [ScheduledTaskRunNowRequest, ScheduledTaskRunNowResponse]
+  'task-execution:list': [TaskExecutionListRequest, TaskExecutionListResponse]
+  'task-execution:get': [TaskExecutionGetRequest, TaskExecutionGetResponse]
+  'task-execution:cancel': [TaskExecutionCancelRequest, TaskExecutionCancelResponse]
+  'task-execution:stats': [TaskExecutionStatsRequest, TaskExecutionStatsResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -3165,6 +3407,15 @@ export interface IpcStreamChannelMap {
     url: string | null
     /** PNG screenshot encoded as base64 data URL (omitted when unchanged) */
     dataUrl?: string
+  }
+  /** Scheduled task execution event (main → renderer push) */
+  'stream:scheduled-task:execution': {
+    taskId: string
+    executionId: string
+    type: 'started' | 'completed' | 'failed' | 'timeout' | 'retrying'
+    durationMs?: number
+    error?: string
+    sessionId?: string
   }
 }
 

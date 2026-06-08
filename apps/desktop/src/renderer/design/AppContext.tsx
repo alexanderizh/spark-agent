@@ -15,7 +15,7 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
-export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
+export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
 export type ChatMode = 'vibe' | 'workspace'
 
 export type ConfirmOptions = {

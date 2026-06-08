@@ -41,6 +41,8 @@ export {
   WorkflowRepository,
   TeamDispatchRepository,
   TeamDefinitionRepository,
+  ScheduledTaskRepository,
+  TaskExecutionRepository,
 } from './repositories/index.js'
 
 export type {
@@ -95,4 +97,12 @@ export type {
   CreateAgentTeamParams,
   UpdateAgentTeamParams,
   ListAgentTeamsParams,
+  ScheduledTaskRow,
+  CreateScheduledTaskParams,
+  UpdateScheduledTaskParams,
+  ScheduledTaskFilter,
+  TaskExecutionRow,
+  CreateTaskExecutionParams,
+  ExecutionQueryOptions,
+  ExecutionStats,
 } from './repositories/index.js'

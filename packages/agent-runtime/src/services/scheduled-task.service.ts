@@ -1,0 +1,689 @@
+/**
+ * @module scheduled-task.service
+ *
+ * 定时任务服务 + 调度引擎
+ *
+ * 职责：
+ *   - 定时任务的 CRUD 操作
+ *   - 调度器主循环（tick-based 轮询）
+ *   - 任务执行（创建 Session → 发送 Prompt → 等待完成）
+ *   - 失败重试策略
+ *   - Webhook 通知
+ */
+
+import type { ScheduledTaskRepository, TaskExecutionRepository } from '@spark/storage'
+import type { ScheduledTaskRow, TaskExecutionRow } from '@spark/storage'
+import { createLogger } from '@spark/shared'
+
+const log = createLogger('scheduled-task:service')
+
+// ─── Types ──────────────────────────────────────────────────────────────────
+
+export type TriggerType = 'interval' | 'cron' | 'once'
+export type ConcurrencyPolicy = 'skip' | 'queue' | 'cancel'
+export type RetryBackoff = 'fixed' | 'linear' | 'exponential'
+export type TaskStatus = 'idle' | 'running' | 'disabled' | 'error'
+export type ExecutionStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'timeout'
+
+export interface ScheduledTaskItem {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  triggerType: TriggerType
+  intervalSeconds: number | null
+  cronExpression: string | null
+  runAt: string | null
+  timezone: string
+  startAt: string | null
+  endAt: string | null
+  maxExecutions: number
+  agentId: string | null
+  teamId: string | null
+  modelId: string | null
+  workspaceId: string | null
+  promptTemplate: string
+  permissionMode: string
+  permissionProfileId: string | null
+  timeoutSeconds: number
+  maxRetries: number
+  retryDelaySeconds: number
+  retryBackoff: RetryBackoff
+  notifications: NotificationConfig[]
+  concurrencyPolicy: ConcurrencyPolicy
+  tags: string[]
+  historyRetentionDays: number
+  status: TaskStatus
+  executionCount: number
+  successCount: number
+  failureCount: number
+  lastRunAt: string | null
+  nextRunAt: string | null
+  lastError: string | null
+  currentExecutionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface NotificationConfig {
+  id: string
+  url: string
+  triggers: ('onSuccess' | 'onFailure' | 'onRetry' | 'onDisabled')[]
+  headers?: Record<string, string>
+  bodyTemplate?: string
+}
+
+export interface TaskExecutionItem {
+  id: string
+  taskId: string
+  sessionId: string | null
+  startedAt: string
+  completedAt: string | null
+  durationMs: number | null
+  status: ExecutionStatus
+  output: string | null
+  error: string | null
+  tokenUsage: unknown | null
+  retryAttempt: number
+  parentExecutionId: string | null
+  triggerType: string | null
+  createdAt: string
+}
+
+export interface ExecutionStats {
+  total: number
+  completed: number
+  failed: number
+  avgDurationMs: number | null
+  totalTokenUsage: number
+}
+
+export type TaskExecutorFn = (params: {
+  agentId?: string | null
+  teamId?: string | null
+  modelId?: string | null
+  workspaceId?: string | null
+  promptTemplate: string
+  permissionMode?: string
+  timeoutSeconds?: number
+  taskName: string
+}) => Promise<{ sessionId?: string; output?: string; error?: string; tokenUsage?: unknown }>
+
+// ─── Service ────────────────────────────────────────────────────────────────
+
+export class ScheduledTaskService {
+  private schedulerTimer: ReturnType<typeof setInterval> | null = null
+  private executorFn: TaskExecutorFn | null = null
+
+  constructor(
+    private readonly taskRepo: ScheduledTaskRepository,
+    private readonly executionRepo: TaskExecutionRepository,
+  ) {}
+
+  /**
+   * 注入任务执行函数（由 IPC 层注入，调用 SessionService）
+   */
+  setExecutor(fn: TaskExecutorFn): void {
+    this.executorFn = fn
+  }
+
+  // ─── CRUD ──────────────────────────────────────────────────────────────────
+
+  listTasks(filter?: { status?: string; enabled?: boolean; tags?: string[]; query?: string }): ScheduledTaskItem[] {
+    const rows = this.taskRepo.listAll(filter)
+    return rows.map(toTaskItem)
+  }
+
+  getTask(id: string): ScheduledTaskItem | null {
+    const row = this.taskRepo.get(id)
+    return row ? toTaskItem(row) : null
+  }
+
+  createTask(params: Omit<ScheduledTaskRow, 'status' | 'execution_count' | 'success_count' | 'failure_count' | 'last_run_at' | 'next_run_at' | 'last_error' | 'current_execution_id' | 'created_at' | 'updated_at'> & {
+    id: string; name: string; trigger_type: TriggerType; prompt_template: string
+  }): ScheduledTaskItem {
+    const nextRunAt = this.calculateNextRunAt(params as unknown as ScheduledTaskRow)
+    const row = this.taskRepo.create({
+      ...params,
+      next_run_at: nextRunAt,
+    } as any)
+    return toTaskItem(row)
+  }
+
+  updateTask(id: string, params: Record<string, unknown>): ScheduledTaskItem | null {
+    const updated = this.taskRepo.update(id, params as any)
+    if (!updated) return null
+
+    // Recalculate nextRunAt if trigger config changed
+    const triggerFields = ['trigger_type', 'interval_seconds', 'cron_expression', 'run_at', 'start_at', 'end_at', 'enabled']
+    const shouldRecalc = triggerFields.some(f => f in params)
+    if (shouldRecalc && updated.enabled) {
+      const nextRunAt = this.calculateNextRunAt(updated)
+      this.taskRepo.update(id, { next_run_at: nextRunAt } as any)
+      const refreshed = this.taskRepo.get(id)
+      return refreshed ? toTaskItem(refreshed) : null
+    }
+
+    return toTaskItem(updated)
+  }
+
+  deleteTask(id: string): boolean {
+    return this.taskRepo.deleteById(id)
+  }
+
+  // ─── Execution Control ────────────────────────────────────────────────────
+
+  enableTask(id: string): ScheduledTaskItem | null {
+    const task = this.taskRepo.get(id)
+    if (!task) return null
+    const nextRunAt = this.calculateNextRunAt(task)
+    this.taskRepo.update(id, { enabled: true, status: 'idle', next_run_at: nextRunAt } as any)
+    return toTaskItem(this.taskRepo.get(id)!)
+  }
+
+  disableTask(id: string): ScheduledTaskItem | null {
+    const task = this.taskRepo.get(id)
+    if (!task) return null
+    this.taskRepo.update(id, { enabled: false, status: 'disabled' } as any)
+    return toTaskItem(this.taskRepo.get(id)!)
+  }
+
+  /**
+   * 立即执行任务
+   */
+  async runNow(id: string): Promise<TaskExecutionItem> {
+    const task = this.taskRepo.get(id)
+    if (!task) throw new Error(`Task not found: ${id}`)
+
+    const execution = this.executionRepo.create({
+      id: generateId(),
+      task_id: id,
+      trigger_type: 'manual',
+    })
+
+    // Run asynchronously — don't await completion
+    this.executeTask(task, execution.id, 'manual').catch((err) => {
+      log.error(`Manual execution failed for task ${id}: ${err}`)
+    })
+
+    return toExecutionItem(execution)
+  }
+
+  /**
+   * 取消执行中的任务
+   */
+  cancelExecution(executionId: string): boolean {
+    const execution = this.executionRepo.get(executionId)
+    if (!execution || execution.status !== 'running') return false
+
+    this.executionRepo.updateStatus(executionId, 'cancelled', {
+      completedAt: new Date().toISOString(),
+    })
+    // Reset task status
+    this.taskRepo.updateStatus(execution.task_id, 'idle')
+    this.taskRepo.setCurrentExecution(execution.task_id, null)
+    return true
+  }
+
+  // ─── Scheduler Engine ─────────────────────────────────────────────────────
+
+  startScheduler(intervalMs = 1000): void {
+    if (this.schedulerTimer) return
+    log.info(`Scheduler started (interval: ${intervalMs}ms)`)
+    this.schedulerTimer = setInterval(() => {
+      void this.tick().catch((err) => {
+        log.error(`Scheduler tick error: ${err}`)
+      })
+    }, intervalMs)
+  }
+
+  stopScheduler(): void {
+    if (this.schedulerTimer) {
+      clearInterval(this.schedulerTimer)
+      this.schedulerTimer = null
+      log.info('Scheduler stopped')
+    }
+  }
+
+  private async tick(): Promise<void> {
+    const dueTasks = this.taskRepo.findDueTasks()
+    for (const task of dueTasks) {
+      try {
+        // Check concurrency
+        const runningExecutions = this.executionRepo.findRunningByTaskId(task.id)
+        if (runningExecutions.length > 0) {
+          if (task.concurrency_policy === 'skip') {
+            // Skip this run, recalculate nextRunAt
+            const nextRunAt = this.calculateNextRunAt(task)
+            this.taskRepo.update(task.id, { next_run_at: nextRunAt } as any)
+            continue
+          } else if (task.concurrency_policy === 'cancel') {
+            // Cancel existing execution
+            for (const ex of runningExecutions) {
+              this.executionRepo.updateStatus(ex.id, 'cancelled', {
+                completedAt: new Date().toISOString(),
+                error: 'Cancelled by new scheduled execution',
+              })
+            }
+          }
+          // 'queue' policy: let the new execution start anyway
+        }
+
+        // Create execution record
+        const execution = this.executionRepo.create({
+          id: generateId(),
+          task_id: task.id,
+          trigger_type: 'scheduled',
+        })
+
+        // Update nextRunAt BEFORE executing (so it doesn't re-trigger)
+        const nextRunAt = this.calculateNextRunAt(task)
+        this.taskRepo.update(task.id, { next_run_at: nextRunAt } as any)
+
+        // Execute asynchronously
+        this.executeTask(task, execution.id, 'scheduled').catch((err) => {
+          log.error(`Scheduled execution failed for task ${task.id}: ${err}`)
+        })
+      } catch (err) {
+        log.error(`Error processing due task ${task.id}: ${err}`)
+      }
+    }
+  }
+
+  // ─── Task Execution ───────────────────────────────────────────────────────
+
+  private async executeTask(task: ScheduledTaskRow, executionId: string, _triggerType: string): Promise<void> {
+    const startTime = Date.now()
+
+    // Mark task as running
+    this.taskRepo.updateStatus(task.id, 'running')
+    this.taskRepo.setCurrentExecution(task.id, executionId)
+
+    try {
+      if (!this.executorFn) {
+        throw new Error('Task executor not configured. Call setExecutor() first.')
+      }
+
+      // Resolve prompt template variables
+      const prompt = this.resolveTemplate(task.prompt_template, task)
+
+      // Execute via injected executor
+      const result = await this.executeWithTimeout(
+        this.executorFn({
+          agentId: task.agent_id,
+          teamId: task.team_id,
+          modelId: task.model_id,
+          workspaceId: task.workspace_id,
+          promptTemplate: prompt,
+          permissionMode: task.permission_mode,
+          timeoutSeconds: task.timeout_seconds,
+          taskName: task.name,
+        }),
+        task.timeout_seconds * 1000,
+      )
+
+      const durationMs = Date.now() - startTime
+
+      // Update execution record
+      this.executionRepo.updateStatus(executionId, 'completed', {
+        completedAt: new Date().toISOString(),
+        durationMs,
+        output: result.output ?? undefined,
+        sessionId: result.sessionId ?? undefined,
+        tokenUsage: result.tokenUsage,
+      })
+
+      // Update task counts
+      this.taskRepo.incrementExecutionCount(task.id, true)
+      this.taskRepo.setLastError(task.id, null)
+
+      // Send success notifications
+      await this.sendNotifications(task, {
+        status: 'completed',
+        output: result.output,
+      })
+
+    } catch (err) {
+      const durationMs = Date.now() - startTime
+      const errorMessage = err instanceof Error ? err.message : String(err)
+      const isTimeout = errorMessage.includes('timeout') || errorMessage.includes('Timeout')
+
+      // Update execution record
+      this.executionRepo.updateStatus(executionId, isTimeout ? 'timeout' : 'failed', {
+        completedAt: new Date().toISOString(),
+        durationMs,
+        error: errorMessage,
+      })
+
+      // Update task counts
+      this.taskRepo.incrementExecutionCount(task.id, false)
+      this.taskRepo.setLastError(task.id, errorMessage)
+
+      // Send failure notifications
+      await this.sendNotifications(task, {
+        status: isTimeout ? 'timeout' : 'failed',
+        error: errorMessage,
+      })
+
+      // Handle retry
+      await this.handleRetry(task, executionId, errorMessage)
+
+    } finally {
+      // Reset task status
+      const currentTask = this.taskRepo.get(task.id)
+      if (currentTask?.enabled) {
+        this.taskRepo.updateStatus(task.id, 'idle')
+      }
+      this.taskRepo.setCurrentExecution(task.id, null)
+
+      // Check if max executions reached
+      if (currentTask && currentTask.max_executions > 0 && currentTask.execution_count >= currentTask.max_executions) {
+        this.taskRepo.updateStatus(task.id, 'disabled')
+      }
+
+      // Cleanup old executions
+      if (currentTask) {
+        this.executionRepo.cleanupOlderThan(task.id, currentTask.history_retention_days)
+      }
+    }
+  }
+
+  private async handleRetry(task: ScheduledTaskRow, failedExecutionId: string, _error: string): Promise<void> {
+    if (task.max_retries <= 0) return
+
+    const failedExecution = this.executionRepo.get(failedExecutionId)
+    if (!failedExecution) return
+
+    const currentAttempt = failedExecution.retry_attempt
+    if (currentAttempt >= task.max_retries) {
+      log.info(`Max retries (${task.max_retries}) reached for task ${task.id}`)
+      return
+    }
+
+    // Calculate retry delay based on backoff strategy
+    const delay = this.calculateRetryDelay(task.retry_delay_seconds, currentAttempt, task.retry_backoff)
+    log.info(`Scheduling retry #${currentAttempt + 1} for task ${task.id} in ${delay}ms`)
+
+    // Wait for the delay
+    await sleep(delay)
+
+    // Create retry execution
+    const retryExecution = this.executionRepo.create({
+      id: generateId(),
+      task_id: task.id,
+      trigger_type: 'retry',
+      retry_attempt: currentAttempt + 1,
+      parent_execution_id: failedExecutionId,
+    })
+
+    // Execute the retry
+    try {
+      await this.executeTask(task, retryExecution.id, 'retry')
+    } catch (retryErr) {
+      log.error(`Retry execution failed for task ${task.id}: ${retryErr}`)
+    }
+  }
+
+  private calculateRetryDelay(baseDelaySeconds: number, attempt: number, backoff: RetryBackoff): number {
+    const base = baseDelaySeconds * 1000
+    switch (backoff) {
+      case 'fixed':
+        return base
+      case 'linear':
+        return base * (attempt + 1)
+      case 'exponential':
+        return base * Math.pow(2, attempt)
+      default:
+        return base
+    }
+  }
+
+  private async executeWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return Promise.race([
+      promise,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Execution timed out after ${timeoutMs / 1000}s`)), timeoutMs)
+      ),
+    ])
+  }
+
+  // ─── Notifications ────────────────────────────────────────────────────────
+
+  private async sendNotifications(task: ScheduledTaskRow, event: { status: string; output?: string | undefined; error?: string | undefined }): Promise<void> {
+    const notifications = safeJsonParse<NotificationConfig[]>(task.notifications, [])
+    for (const notif of notifications) {
+      try {
+        const shouldSend =
+          (event.status === 'completed' && notif.triggers.includes('onSuccess')) ||
+          ((event.status === 'failed' || event.status === 'timeout') && notif.triggers.includes('onFailure'))
+
+        if (!shouldSend) continue
+
+        const body = notif.bodyTemplate
+          ? this.resolveTemplate(notif.bodyTemplate, task, event)
+          : JSON.stringify({
+              task: { id: task.id, name: task.name },
+              event: { status: event.status, output: event.output, error: event.error },
+              timestamp: new Date().toISOString(),
+            })
+
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          ...notif.headers,
+        }
+
+        await fetch(notif.url, {
+          method: 'POST',
+          headers,
+          body,
+          signal: AbortSignal.timeout(10000), // 10s timeout for webhook
+        })
+
+        log.info(`Webhook notification sent to ${notif.url} for task ${task.id}`)
+      } catch (err) {
+        log.warn(`Failed to send webhook notification for task ${task.id}: ${err}`)
+      }
+    }
+  }
+
+  // ─── Query ─────────────────────────────────────────────────────────────────
+
+  getExecutions(taskId: string, options?: { page?: number; pageSize?: number; status?: string }): { executions: TaskExecutionItem[]; total: number } {
+    const result = this.executionRepo.findByTaskId(taskId, options)
+    return {
+      executions: result.executions.map(toExecutionItem),
+      total: result.total,
+    }
+  }
+
+  getExecution(executionId: string): TaskExecutionItem | null {
+    const row = this.executionRepo.get(executionId)
+    return row ? toExecutionItem(row) : null
+  }
+
+  getExecutionStats(taskId: string): ExecutionStats {
+    return this.executionRepo.getStats(taskId)
+  }
+
+  // ─── Helpers ───────────────────────────────────────────────────────────────
+
+  private calculateNextRunAt(task: ScheduledTaskRow): string | null {
+    const now = new Date()
+
+    // Check if task has ended
+    if (task.end_at && new Date(task.end_at) <= now) return null
+    // Check if max executions reached
+    if (task.max_executions > 0 && task.execution_count >= task.max_executions) return null
+
+    switch (task.trigger_type) {
+      case 'interval': {
+        const seconds = task.interval_seconds ?? 60
+        const next = new Date(now.getTime() + seconds * 1000)
+        // If start_at is in the future, use that instead
+        if (task.start_at && new Date(task.start_at) > now) {
+          return new Date(task.start_at).toISOString()
+        }
+        return next.toISOString()
+      }
+      case 'cron': {
+        const expr = task.cron_expression ?? '* * * * *'
+        const next = this.parseCronNextRun(expr, now)
+        if (task.start_at && next && new Date(task.start_at) > next) {
+          return new Date(task.start_at).toISOString()
+        }
+        return next?.toISOString() ?? null
+      }
+      case 'once': {
+        if (!task.run_at) return null
+        const runAt = new Date(task.run_at)
+        return runAt > now ? runAt.toISOString() : null
+      }
+      default:
+        return null
+    }
+  }
+
+  /**
+   * Basic cron next-run calculator.
+   * For production use, replace with `cron-parser` package.
+   */
+  private parseCronNextRun(expression: string, from: Date): Date | null {
+    const parts = expression.trim().split(/\s+/)
+    if (parts.length < 5) return null
+
+    const minute = parts[0]!
+    const hour = parts[1]!
+
+    const next = new Date(from)
+
+    // Handle */N pattern for minutes
+    if (minute.startsWith('*/')) {
+      const interval = parseInt(minute.slice(2), 10)
+      if (!isNaN(interval) && interval > 0) {
+        next.setMinutes(next.getMinutes() + interval, 0, 0)
+        return next
+      }
+    }
+
+    // Handle */N pattern for hours
+    if (hour.startsWith('*/')) {
+      const interval = parseInt(hour.slice(2), 10)
+      if (!isNaN(interval) && interval > 0) {
+        next.setHours(next.getHours() + interval, 0, 0, 0)
+        return next
+      }
+    }
+
+    // Handle specific minute (e.g., "0")
+    const minuteNum = parseInt(minute, 10)
+    if (!isNaN(minuteNum) && minuteNum >= 0 && minuteNum < 60) {
+      next.setMinutes(minuteNum, 0, 0)
+      if (next <= from) {
+        next.setHours(next.getHours() + 1)
+      }
+      return next
+    }
+
+    // Default: next minute
+    next.setMinutes(next.getMinutes() + 1, 0, 0)
+    return next
+  }
+
+  private resolveTemplate(template: string, task: ScheduledTaskRow, extra?: Record<string, unknown>): string {
+    const now = new Date()
+    const vars: Record<string, string> = {
+      date: now.toISOString().split('T')[0] ?? '',
+      time: now.toTimeString().split(' ')[0] ?? '',
+      taskName: task.name,
+      executionCount: String(task.execution_count),
+      interval: String(task.interval_seconds ?? ''),
+    }
+    if (extra) {
+      for (const [k, v] of Object.entries(extra)) {
+        vars[k] = typeof v === 'string' ? v : JSON.stringify(v)
+      }
+    }
+
+    return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => vars[key] ?? `{{${key}}}`)
+  }
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+
+function toTaskItem(row: ScheduledTaskRow): ScheduledTaskItem {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    enabled: row.enabled === 1,
+    triggerType: row.trigger_type,
+    intervalSeconds: row.interval_seconds,
+    cronExpression: row.cron_expression,
+    runAt: row.run_at,
+    timezone: row.timezone,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    maxExecutions: row.max_executions,
+    agentId: row.agent_id,
+    teamId: row.team_id,
+    modelId: row.model_id,
+    workspaceId: row.workspace_id,
+    promptTemplate: row.prompt_template,
+    permissionMode: row.permission_mode,
+    permissionProfileId: row.permission_profile_id,
+    timeoutSeconds: row.timeout_seconds,
+    maxRetries: row.max_retries,
+    retryDelaySeconds: row.retry_delay_seconds,
+    retryBackoff: row.retry_backoff,
+    notifications: safeJsonParse<NotificationConfig[]>(row.notifications, []),
+    concurrencyPolicy: row.concurrency_policy,
+    tags: safeJsonParse<string[]>(row.tags, []),
+    historyRetentionDays: row.history_retention_days,
+    status: row.status,
+    executionCount: row.execution_count,
+    successCount: row.success_count,
+    failureCount: row.failure_count,
+    lastRunAt: row.last_run_at,
+    nextRunAt: row.next_run_at,
+    lastError: row.last_error,
+    currentExecutionId: row.current_execution_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }
+}
+
+function toExecutionItem(row: TaskExecutionRow): TaskExecutionItem {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    sessionId: row.session_id,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    durationMs: row.duration_ms,
+    status: row.status,
+    output: row.output,
+    error: row.error,
+    tokenUsage: row.token_usage ? safeJsonParse(row.token_usage, null) : null,
+    retryAttempt: row.retry_attempt,
+    parentExecutionId: row.parent_execution_id,
+    triggerType: row.trigger_type,
+    createdAt: row.created_at,
+  }
+}
+
+function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
+  if (json == null || json === '') return fallback
+  try {
+    return JSON.parse(json) as T
+  } catch {
+    return fallback
+  }
+}
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
