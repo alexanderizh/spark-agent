@@ -176,6 +176,13 @@ export class ClaudeSDKExecutor {
   private emitter = new AgentEventEmitter()
   private abortController: AbortController | null = null
 
+  /**
+   * Live permission mode — can be updated mid-turn via `setPermissionMode()`.
+   * The `canUseTool` callback reads this on every invocation so that a
+   * permission-mode switch in the UI takes effect immediately.
+   */
+  private livePermissionMode: SDKExecutorConfig['permissionMode'] | null = null
+
   onEvent(listener: (event: AgentEvent) => void): void {
     this.emitter.on(listener)
   }
@@ -186,6 +193,16 @@ export class ClaudeSDKExecutor {
 
   cancel(): void {
     this.abortController?.abort()
+  }
+
+  /**
+   * Hot-swap the permission mode for the **currently executing** turn.
+   * Takes effect on the next `canUseTool` callback — i.e. the very next
+   * tool invocation the SDK agent performs.
+   */
+  setPermissionMode(mode: SDKExecutorConfig['permissionMode']): void {
+    this.livePermissionMode = mode
+    log.info('Live permission mode updated', { mode })
   }
 
   async executeTurn(
@@ -200,6 +217,7 @@ export class ClaudeSDKExecutor {
     }
 
     this.abortController = new AbortController()
+    this.livePermissionMode = config.permissionMode
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
     const promptWithAttachments = buildPromptWithAttachments(userMessage, config.attachments)
     const makeBase = () => ({
@@ -373,6 +391,8 @@ export class ClaudeSDKExecutor {
 
         // Map Spark callbacks to SDK permission callback when Spark needs extra
         // policy, or when AskUserQuestion needs to pause for user answers.
+        // The callback reads `this.livePermissionMode` on every invocation so
+        // that a mid-turn permission-mode switch takes effect immediately.
         ...((config.questionCallback != null ||
           (config.approvalCallback != null &&
             shouldUseSparkPermissionCallback(config.permissionMode)))
@@ -382,6 +402,8 @@ export class ClaudeSDKExecutor {
                 input: Record<string, unknown>,
                 callbackOptions,
               ): Promise<SDKPermissionResult> => {
+                // Snapshot the live permission mode for this invocation
+                const currentMode = this.livePermissionMode ?? config.permissionMode
                 try {
                   // Handle AskUserQuestion specially - it needs user interaction
                   if (isAskUserQuestionTool(toolName)) {
@@ -408,10 +430,10 @@ export class ClaudeSDKExecutor {
                   if (isAlwaysAllowedControlTool(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
-                  if (!shouldUseSparkPermissionCallback(config.permissionMode)) {
+                  if (!shouldUseSparkPermissionCallback(currentMode)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
-                  if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
+                  if (currentMode === 'claude-auto-edits' && isEditTool(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
                   const approvalCallback = config.approvalCallback

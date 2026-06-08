@@ -94,7 +94,11 @@ export type QuestionHandler = (
   questions: UserQuestionPrompt[],
 ) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
-type ActiveExecution = { cancel(): void }
+type ActiveExecution = {
+  cancel(): void
+  /** Hot-swap the permission mode for the currently executing turn. */
+  setPermissionMode?(mode: SessionPermissionMode): void
+}
 type ImageGenerationRuntimeContext = {
   mcpServer: SDKMcpServerConfig
   systemPrompt: string
@@ -2466,6 +2470,13 @@ export class SessionService {
       if (!this.activeLoops.has(params.sessionId)) {
         this.startNextQueuedTurn(params.sessionId)
       }
+    }
+
+    // Hot-swap: propagate permission-mode change to the running executor so it
+    // takes effect on the very next tool call within the current turn.
+    if (params.permissionMode !== undefined) {
+      const active = this.activeLoops.get(params.sessionId)
+      active?.setPermissionMode?.(params.permissionMode)
     }
 
     if (
