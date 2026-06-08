@@ -101,11 +101,31 @@ function readBlobAsDataUrl(blob: Blob): Promise<string> {
   })
 }
 
+function encodeToSafeFileUrl(absolutePath: string): string {
+  const encoded = btoa(unescape(encodeURIComponent(absolutePath)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `safe-file://x/${encoded}`
+}
+
 function resolveImageSrc(filePath: string): string {
   if (!filePath) return filePath
-  const lower = filePath.toLowerCase()
-  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:')) return filePath
-  return `safe-file://${filePath.replace(/\\/g, '/')}`
+  const trimmed = filePath.trim()
+  const lower = trimmed.toLowerCase()
+  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:') || lower.startsWith('safe-file:') || lower.startsWith('blob:')) return trimmed
+  if (lower.startsWith('file://')) {
+    try {
+      const decoded = decodeURI(trimmed.replace(/^file:\/\//, ''))
+      return encodeToSafeFileUrl(decoded.startsWith('/') ? decoded : `/${decoded}`)
+    } catch {
+      return trimmed
+    }
+  }
+  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+    return encodeToSafeFileUrl(trimmed)
+  }
+  return trimmed
 }
 
 /* ------------------------------------------------------------------ */
