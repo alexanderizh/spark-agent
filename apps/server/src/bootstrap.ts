@@ -1,7 +1,11 @@
 import 'dotenv/config'
+import { join } from 'path'
 import { Bootstrap } from '@midwayjs/bootstrap'
-import { MainConfiguration as Configuration } from './configuration'
+import { MainConfiguration } from './configuration'
+
+const srcDir = join(import.meta.dirname || __dirname)
 
 Bootstrap.configure({
-  imports: [Configuration],
+  baseDir: srcDir,
+  imports: [MainConfiguration],
 }).run()

@@ -18,12 +18,13 @@ import {
   useState,
 } from 'react'
 import type { DragEvent } from 'react'
-import { Badge, Button, DatePicker, Select, Space } from '@arco-design/web-react'
+import { Badge, Button, DatePicker, Drawer, Select, Space } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import './BoardView.less'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -190,7 +191,14 @@ function QuickCreateModal({
   const titleRef = useRef<any>(null)
 
   useEffect(() => {
-    // Focus the title input after Arco mounts
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
+  useEffect(() => {
     const t = setTimeout(() => {
       const el = titleRef.current?.input ?? titleRef.current
       el?.focus?.()
@@ -216,8 +224,7 @@ function QuickCreateModal({
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
-    if (e.key === 'Escape') onClose()
-  }, [handleSubmit, onClose])
+  }, [handleSubmit])
 
   return (
     <div className="board-modal-backdrop">
@@ -410,24 +417,42 @@ function DetailPanel({
   const colCfg = COLUMNS.find(c => c.key === status)
 
   return (
-    <div className="board-detail-overlay" onClick={onClose} onKeyDown={(e) => { if (e.key === 'Escape') onClose() }}>
-      <div className="board-detail-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="bdp-header">
-          <div className="bdp-header-left">
-            <span className="bdp-priority-dot" style={{ background: pCfg.color }} />
-            <span className="bdp-status-tag" style={{ color: pCfg.color, background: pCfg.bg }}>
-              {colCfg?.icon} {colCfg?.label}
-            </span>
-          </div>
-          <div className="bdp-header-right">
-            {isDirty && (
-              <button className="board-btn board-btn-primary board-btn-sm" onClick={handleSave}>保存</button>
-            )}
-            <button className="board-icon-btn" onClick={onClose}><Icons.X size={16} /></button>
-          </div>
+    <Drawer
+      visible
+      placement="right"
+      width={440}
+      closable
+      maskClosable
+      escToExit
+      autoFocus={false}
+      title={null}
+      headerStyle={{ display: 'none' }}
+      className="board-detail-drawer"
+      onClose={onClose}
+      footer={
+        <div className="bdp-drawer-footer">
+          <button className="board-btn board-btn-danger-outline" onClick={handleDelete}>
+            <Icons.Trash size={14} /> 删除任务
+          </button>
+          <button
+            className={`board-btn ${isDirty ? 'board-btn-primary' : 'board-btn-ghost'}`}
+            onClick={handleSave}
+            disabled={!isDirty}
+            style={{ minWidth: '80px' }}
+          >保存</button>
         </div>
+      }
+    >
+      <div className="bdp-header">
+        <div className="bdp-header-left">
+          <span className="bdp-priority-dot" style={{ background: pCfg.color }} />
+          <span className="bdp-status-tag" style={{ color: pCfg.color, background: pCfg.bg }}>
+            {colCfg?.icon} {colCfg?.label}
+          </span>
+        </div>
+      </div>
 
-        <div className="bdp-body">
+      <div className="bdp-body">
           <div className="bdp-field">
             <label className="bdp-label">标题</label>
             <SparkInput value={title} onChange={(e) => markDirty(e.target.value, setTitle)} className="bdp-title-input" />
@@ -597,14 +622,7 @@ function DetailPanel({
             </div>
           </div>
         </div>
-
-        <div className="bdp-footer">
-          <button className="board-btn board-btn-danger-outline board-btn-sm" onClick={handleDelete}>
-            <Icons.Trash size={13} /> 删除任务
-          </button>
-        </div>
-      </div>
-    </div>
+    </Drawer>
   )
 }
 
@@ -623,6 +641,14 @@ function RecycleBinPanel({
   onPermanentDelete: (id: string) => void
   onClose: () => void
 }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
   return (
     <div className="board-modal-backdrop" onClick={onClose}>
       <div className="board-recycle-panel" onClick={(e) => e.stopPropagation()}>

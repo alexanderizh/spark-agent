@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { SkillCreateRequest } from '@spark/protocol'
 
-export type LocalSkillSource = 'claude' | 'codex' | 'agents' | 'custom'
+export type LocalSkillSource = 'claude' | 'agents' | 'custom'
 
 export interface LocalSkillCandidate {
   id: string

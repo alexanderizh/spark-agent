@@ -991,7 +991,7 @@ export interface LocalSkillCandidate {
   id: string
   name: string
   description: string
-  source: 'claude' | 'codex' | 'agents' | 'custom'
+  source: 'claude' | 'agents' | 'custom'
   rootPath: string
   skillFilePath: string
   installed: boolean
@@ -1236,7 +1236,7 @@ export interface SkillImportDirectoryResponse {
 export interface SkillImportBatchLocalRequest {
   candidates: Array<{
     rootPath: string
-    source: 'claude' | 'codex' | 'agents' | 'custom'
+    source: 'claude' | 'agents' | 'custom'
   }>
 }
 

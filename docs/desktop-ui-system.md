@@ -16,6 +16,7 @@ Avoid adding a heavyweight UI framework unless a future feature needs a large co
 
 - Use `@spark/ui-kit` for dialogs, dropdown menus, tabs, tooltips, cards, buttons, and inputs when available.
 - Use `apps/desktop/src/renderer/design/components/FormControls.tsx` for renderer-specific input wrappers such as `SparkInput`, `SparkSelect`, `SparkTextarea`, and `SparkCheckbox`. These wrappers are backed by Arco Design controls and keep the legacy native-like `onChange(event.target.value)` contract for renderer views.
+- Scheduled Tasks now follows a page-based flow: the overview page handles list/detail/metrics, and create/edit must open a dedicated editor page instead of a modal. Reuse this pattern for future multi-step operations that need richer context than a popup can comfortably hold.
 - Do not place a fully bordered input inside another bordered input shell. For composed search fields, the `.search-input` container owns the outer shape and the nested Spark/Arco input must render transparent and borderless.
 - For workflow, agents, skills, providers, and settings forms, prefer the Spark form wrappers over raw `input`, `select`, or `textarea`. Raw controls are only acceptable for specialized primitives such as range sliders, hidden/file inputs, or custom list-selection checkboxes with dedicated styling.
 - Floating UI inside sidebars or scroll containers must render through Radix Portal components such as `DropdownMenuContent` or `DialogContent`.

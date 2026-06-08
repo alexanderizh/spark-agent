@@ -1,7 +1,7 @@
 /**
  * Shared Skills data utilities
  *
- * Provides a unified data layer for SkillsView.
+ * Provides a unified data layer for skill management views.
  * All data flows through the real IPC layer (skill:list / skill:update / etc.).
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -163,7 +163,7 @@ export interface UseSkillsResult {
 
 /**
  * Reusable hook that wraps all skill IPC operations.
- * Used by SkillsView.
+ * Used by skill management views.
  */
 export function useSkills(): UseSkillsResult {
   const [skills, setSkills] = useState<SkillItem[]>([])

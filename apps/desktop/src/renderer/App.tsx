@@ -22,7 +22,6 @@ import { AgentsView } from './design/views/AgentsView'
 import { BoardView } from './design/views/BoardView'
 import { ScheduledTasksView } from './design/views/ScheduledTasksView'
 import { McpView } from './design/views/McpView'
-import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
 import ProvidersView from './design/views/ProvidersView'
@@ -649,7 +648,7 @@ function Shell() {
       case 'scheduled-tasks':
         return <ScheduledTasksView />
       case 'skills':
-        return <SkillsView />
+        return <SkillStoreView />
       case 'skill-store':
         return <SkillStoreView />
       case 'providers':

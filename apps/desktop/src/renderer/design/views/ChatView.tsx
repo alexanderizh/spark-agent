@@ -205,6 +205,15 @@ const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const SESSION_HISTORY_PAGE_SIZE = 500
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
+/**
+ * Cache for AskUserQuestion answers submitted by the user.
+ * Keyed by all question texts joined with NUL.
+ * Populated when the user clicks Submit in the dock, consumed by
+ * InlineQuestionCard as a fallback when the CLI tool_result output
+ * can't be parsed into structured answer summaries.
+ */
+const questionAnswerCache = new Map<string, Array<{ question: string; answer: string; skipped?: boolean }>>()
+
 export function ChatView({
   approvalRequest = null,
   onApprovalClose,
@@ -321,6 +330,37 @@ export function ChatView({
   const handleAnswerQuestion = useCallback(
     async (answers: Record<string, unknown>) => {
       if (userQuestion == null) return
+      // Build answer summaries from the submitted answers so the
+      // InlineQuestionCard can display them immediately, before the
+      // tool_result event arrives from the CLI.
+      const rawList = Array.isArray(answers.answers) ? answers.answers : []
+      const summaries = userQuestion.questions
+        .map((q, i) => {
+          const raw = rawList[i] as Record<string, unknown> | undefined
+          if (raw == null || typeof raw !== 'object') return null
+          const text =
+            typeof raw.answer === 'string'
+              ? raw.answer
+              : typeof raw.text === 'string'
+                ? raw.text
+                : ''
+          if (!text && raw.skipped !== true) return null
+          return {
+            question: q.question,
+            answer: text,
+            ...(raw.skipped === true ? { skipped: true } : {}),
+          }
+        })
+        .filter(
+          (item): item is { question: string; answer: string; skipped?: boolean } =>
+            item != null,
+        )
+      if (summaries.length > 0) {
+        questionAnswerCache.set(
+          userQuestion.questions.map((q) => q.question).join('\0'),
+          summaries,
+        )
+      }
       await answerQuestion({ questionId: userQuestion.questionId, answers })
       onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
     },
@@ -2145,12 +2185,28 @@ function InlineQuestionCard({
 
   const total = block.questions.length
   const answerByQuestion = new Map<string, { answer: string; skipped?: boolean }>()
-  if (block.answerSummary != null) {
+  if (block.answerSummary != null && block.answerSummary.length > 0) {
     for (const item of block.answerSummary) {
       answerByQuestion.set(item.question, {
         answer: item.answer,
         ...(item.skipped != null ? { skipped: item.skipped } : {}),
       })
+    }
+  } else if (block.answered) {
+    // Fallback: try the module-level cache populated when the user
+    // submitted answers via the dock.  The CLI tool_result output may
+    // not be in a parseable format, so the builder's answerSummary
+    // can be empty even though the user did answer.
+    const cacheKey = block.questions.map((q) => q.question).join('\0')
+    const cached = questionAnswerCache.get(cacheKey)
+    if (cached != null) {
+      for (const item of cached) {
+        answerByQuestion.set(item.question, {
+          answer: item.answer,
+          ...(item.skipped != null ? { skipped: item.skipped } : {}),
+        })
+      }
+      questionAnswerCache.delete(cacheKey)
     }
   }
 

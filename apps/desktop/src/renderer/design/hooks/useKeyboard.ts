@@ -151,7 +151,7 @@ const VIEW_INDEX_MAP: Record<string, ViewId> = {
   '2': 'chat',
   '3': 'workflows',
   '4': 'agents',
-  '5': 'skills',
+  '5': 'skill-store',
   '6': 'mcp',
   '7': 'settings',
 }

@@ -347,10 +347,17 @@ export class MessageBuilder {
           ) as Extract<UIBlock, { kind: 'user_question' }> | undefined
           if (questionBlock) {
             questionBlock.answered = true
-            questionBlock.answerSummary = extractQuestionAnswerSummary(
-              event.output,
-              questionBlock.questions,
-            )
+            // Only overwrite answerSummary if we don't already have one
+            // (answers may have been populated when the user submitted via the dock)
+            if (
+              !questionBlock.answerSummary ||
+              questionBlock.answerSummary.length === 0
+            ) {
+              questionBlock.answerSummary = extractQuestionAnswerSummary(
+                event.output,
+                questionBlock.questions,
+              )
+            }
           }
           // Update tool_call block
           const block = msg.blocks.find(
@@ -751,6 +758,34 @@ export class MessageBuilder {
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
     return msg
+  }
+
+  /**
+   * Populate answer summaries on a user_question block *before* the
+   * tool_result event arrives, so the UI can show the user's answers
+   * immediately even if the CLI tool_result output format can't be parsed.
+   */
+  setQuestionAnswerSummary(
+    questions: UserQuestionPrompt[],
+    summaries: UserQuestionAnswerSummary[],
+  ): boolean {
+    for (const msg of this.messages) {
+      for (const block of msg.blocks) {
+        if (block.kind !== 'user_question') continue
+        const qb = block as Extract<UIBlock, { kind: 'user_question' }>
+        if (qb.answered) continue
+        const bQuestions = qb.questions
+        if (
+          bQuestions.length === questions.length &&
+          bQuestions.every((q, i) => q.question === questions[i]?.question)
+        ) {
+          qb.answerSummary = summaries
+          qb.answered = true
+          return true
+        }
+      }
+    }
+    return false
   }
 
   private findTeamMemberMessageBlock(

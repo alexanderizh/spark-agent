@@ -6,8 +6,8 @@
   "type": "module",
   "main": "./src/index.ts",
   "scripts": {
-    "dev": "dotenv -e .env -- midway-bin dev",
-    "build": "midway-bin build",
+    "dev": "dotenv -e .env -- tsx watch src/bootstrap.ts",
+    "build": "tsc -p tsconfig.json",
     "start": "dotenv -e .env.production -- node ./bootstrap.js",
     "start:dev": "dotenv -e .env -- node ./bootstrap.js",
     "test": "vitest run",
@@ -28,9 +28,9 @@
     "@midwayjs/core": "^3.20.0",
     "@midwayjs/jwt": "^3.20.0",
     "@midwayjs/koa": "^3.20.0",
+    "@midwayjs/logger": "^4.0.1",
     "@midwayjs/typeorm": "^3.20.0",
     "@midwayjs/validate": "^3.20.0",
-    "@midwayjs/ws": "^3.20.0",
     "bcryptjs": "^2.4.3",
     "dotenv": "^17.4.2",
     "ioredis": "^5.6.0",
@@ -39,12 +39,11 @@
     "uuid": "^11.0.0"
   },
   "devDependencies": {
-    "@midwayjs/mock": "^3.20.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^22.0.0",
     "@types/uuid": "^10.0.0",
     "dotenv-cli": "^11.0.0",
-    "midway-bin": "^1.0.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
   }
