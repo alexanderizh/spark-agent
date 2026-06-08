@@ -325,6 +325,73 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
     await refresh()
   }
 
+  const handleCardCopy = async (agent: ManagedAgent) => {
+    try {
+      const cloned = agentToDraft(agent)
+      const payload = draftToPayload({ ...cloned, name: `${agent.name} 副本`, isDefault: false })
+      await createAgent(payload)
+      toast.success(`已复制「${agent.name}」`)
+      await refresh()
+    } catch {
+      toast.error(`复制「${agent.name}」失败`)
+    }
+  }
+
+  const handleCardDelete = async (agent: ManagedAgent) => {
+    if (agent.builtIn) return
+    const confirmed = await requestConfirm({
+      title: `删除 Agent「${agent.name}」？`,
+      description: '此操作不可撤销，删除后该 Agent 将从会话选择器中移除。',
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!confirmed) return
+    try {
+      const res = await deleteAgent({ id: agent.id })
+      if (!res.deleted) {
+        toast.warning('删除失败')
+        return
+      }
+      toast.success('Agent 已删除')
+      await refresh()
+    } catch {
+      toast.error(`删除「${agent.name}」失败`)
+    }
+  }
+
+  const handleCardToggle = async (agent: ManagedAgent) => {
+    try {
+      await updateAgent({ id: agent.id, enabled: !agent.enabled })
+      toast.success(agent.enabled ? `已停用「${agent.name}」` : `已启用「${agent.name}」`)
+      await refresh()
+    } catch {
+      toast.error(agent.enabled ? `停用「${agent.name}」失败` : `启用「${agent.name}」失败`)
+    }
+  }
+
+  const handleCardSetDefault = async (agent: ManagedAgent) => {
+    if (agent.isDefault) return
+    const currentDefault = agents.find((a) => a.isDefault)
+    try {
+      if (currentDefault) {
+        await updateAgent({ id: currentDefault.id, isDefault: false })
+      }
+      try {
+        await updateAgent({ id: agent.id, isDefault: true })
+      } catch {
+        // Rollback: restore the old default
+        if (currentDefault) {
+          await updateAgent({ id: currentDefault.id, isDefault: true }).catch(() => {})
+        }
+        throw new Error('set-default-failed')
+      }
+      toast.success(`已将「${agent.name}」设为默认`)
+      await refresh()
+    } catch {
+      toast.error(`设为默认失败`)
+    }
+  }
+
   // ── Card list screen ──
   if (screen === 'list') {
     return (
@@ -374,6 +441,43 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
                     {agent.mcpServerIds.length > 0 && <span className="agents-card-tag">{agent.mcpServerIds.length} MCP</span>}
                     {agent.ruleIds.length > 0 && <span className="agents-card-tag">{agent.ruleIds.length} 规则</span>}
                     {agent.workflowId && <span className="agents-card-tag workflow-tag"><Icons.Workflow size={10} /> 工作流</span>}
+                  </span>
+                  <span
+                    className="agents-card-actions"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      className="agents-card-action-btn"
+                      title="复制"
+                      onClick={() => void handleCardCopy(agent)}
+                    >
+                      <Icons.Copy size={13} />
+                    </button>
+                    {!agent.builtIn && (
+                      <button
+                        className="agents-card-action-btn danger"
+                        title="删除"
+                        onClick={() => void handleCardDelete(agent)}
+                      >
+                        <Icons.Trash size={13} />
+                      </button>
+                    )}
+                    <button
+                      className="agents-card-action-btn"
+                      title={agent.enabled ? '停用' : '启用'}
+                      onClick={() => void handleCardToggle(agent)}
+                    >
+                      {agent.enabled ? <Icons.Zap size={13} /> : <Icons.CheckCircle size={13} />}
+                    </button>
+                    {!agent.isDefault && (
+                      <button
+                        className="agents-card-action-btn"
+                        title="设为默认"
+                        onClick={() => void handleCardSetDefault(agent)}
+                      >
+                        <Icons.Star size={13} />
+                      </button>
+                    )}
                   </span>
                 </button>
               )
