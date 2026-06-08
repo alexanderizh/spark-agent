@@ -14,7 +14,7 @@ import {
 import {
   IconPlus, IconSearch, IconPlayArrow, IconEdit,
   IconDelete, IconClockCircle, IconExclamationCircle, IconCheckCircle,
-  IconCloseCircle, IconLoading, IconSync, IconSchedule, IconThunder,
+  IconCloseCircle, IconLoading, IconSync, IconSchedule, IconThunderbolt,
 } from '@arco-design/web-react/icon'
 import './ScheduledTasksView.less'
 
@@ -629,7 +629,7 @@ function TaskFormPage({ task, onClose }: {
                 },
                 {
                   value: 'once' as const,
-                  icon: <IconThunder />,
+                  icon: <IconThunderbolt />,
                   title: '单次执行',
                   desc: '在指定时间点执行一次',
                 },
