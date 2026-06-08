@@ -625,7 +625,7 @@ function getSkillSourcePath(rootPath: string): string {
 
 // ─── Create Tab (New Skill Creation / Import) ──────────────────────────
 
-type ImportMode = 'none' | 'file' | 'directory' | 'detect'
+type ImportMode = 'none' | 'file' | 'directory' | 'detect' | 'link'
 
 function CreateTab({ onCreated }: { onCreated: () => void }) {
   // ── Manual creation form state ──
@@ -649,6 +649,9 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const { invoke: detectLocalSkills } = useIpcInvoke('skill:detect-local')
   const { invoke: importBatchLocal } = useIpcInvoke('skill:import-batch-local')
+  const { invoke: installToApp } = useIpcInvoke('skill:install-to-app')
+  const { invoke: linkSkill } = useIpcInvoke('skill:link')
+  const { invoke: getAppPaths } = useIpcInvoke('skill:app-paths')
 
   // ── Local detection state ──
   const [localCandidates, setLocalCandidates] = useState<LocalSkillCandidate[]>([])
@@ -784,11 +787,9 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
     setCandidateSearch('')
     try {
       const res = await detectLocalSkills({})
-      // Only keep Claude skills, filter out codex and others
-      const claudeOnly = res.candidates.filter((c) => c.source === 'claude')
-      setLocalCandidates(claudeOnly)
-      if (claudeOnly.length > 0) {
-        toast.success(`检测到 ${claudeOnly.length} 个本地 Skill`)
+      setLocalCandidates(res.candidates)
+      if (res.candidates.length > 0) {
+        toast.success(`检测到 ${res.candidates.length} 个本地 Skill`)
       } else {
         toast.info('未检测到本地 Skill')
       }
@@ -802,7 +803,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
   const refreshCandidates = useCallback(async () => {
     try {
       const res = await detectLocalSkills({})
-      setLocalCandidates(res.candidates.filter((c) => c.source === 'claude'))
+      setLocalCandidates(res.candidates)
     } catch {
       // silent refresh
     }
@@ -812,12 +813,17 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
     const id = candidate.id
     setImportingIds((prev) => new Set(prev).add(id))
     try {
-      await importDirectory({ directoryPath: candidate.rootPath, source: candidate.source })
-      toast.success(`已导入 ${candidate.name}`)
+      // 软链接的技能直接注册，其他来源安装到应用内
+      if (candidate.source === 'linked') {
+        await importDirectory({ directoryPath: candidate.rootPath, source: 'linked' })
+      } else {
+        await installToApp({ sourcePath: candidate.rootPath })
+      }
+      toast.success(`已安装 ${candidate.name}`)
       onCreated()
       await refreshCandidates()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导入本地 Skill 失败')
+      toast.error(err instanceof Error ? err.message : '安装 Skill 失败')
     } finally {
       setImportingIds((prev) => {
         const next = new Set(prev)
@@ -825,7 +831,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
         return next
       })
     }
-  }, [importDirectory, onCreated, refreshCandidates, toast])
+  }, [installToApp, importDirectory, onCreated, refreshCandidates, toast])
 
   const handleBatchImport = useCallback(async () => {
     const toImport = importableCandidates.filter((c) => selectedIds.has(c.id))
@@ -909,6 +915,13 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
         >
           <Icons.Refresh size={13} />
           检测导入
+        </button>
+        <button
+          className={`store-tab ${importMode === 'link' ? 'active' : ''}`}
+          onClick={() => setImportMode('link')}
+        >
+          <Icons.ExternalLink size={13} />
+          软链接
         </button>
       </div>
 
@@ -1103,7 +1116,7 @@ tags: [tag1, tag2]
             {creating ? '导入中...' : '选择目录并导入'}
           </button>
         </div>
-      ) : (
+      ) : importMode === 'detect' ? (
         /* ── Detect & Import Local Skills ── */
         <div>
           <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
@@ -1223,6 +1236,159 @@ tags: [tag1, tag2]
               </div>
             </div>
           )}
+        </div>
+      ) : (
+        /* ── Link Host Skill Directory ── */
+        <LinkSkillPanel onCreated={onCreated} />
+      )}
+    </div>
+  )
+}
+
+/** 软链接技能面板 — 将宿主机上的技能目录通过软链接引入应用 */
+function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
+  const [linkTarget, setLinkTarget] = useState('')
+  const [linkName, setLinkName] = useState('')
+  const [linking, setLinking] = useState(false)
+  const [appPaths, setAppPaths] = useState<{
+    bundledDir: string
+    userDir: string
+    linksDir: string
+    linkedSkills: string[]
+  } | null>(null)
+  const { invoke: linkSkill } = useIpcInvoke('skill:link')
+  const { invoke: unlinkSkill } = useIpcInvoke('skill:unlink')
+  const { invoke: getAppPaths } = useIpcInvoke('skill:app-paths')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { toast } = useToast()
+
+  useEffect(() => {
+    getAppPaths({}).then(setAppPaths).catch(() => {})
+  }, [getAppPaths])
+
+  const handleLink = useCallback(async () => {
+    if (!linkTarget.trim()) {
+      toast.error('请输入或选择技能目录路径')
+      return
+    }
+    setLinking(true)
+    try {
+      await linkSkill({ targetPath: linkTarget.trim(), ...(linkName.trim() ? { name: linkName.trim() } : {}) })
+      toast.success('已创建软链接')
+      setLinkTarget('')
+      setLinkName('')
+      onCreated()
+      // 刷新路径信息
+      getAppPaths({}).then(setAppPaths).catch(() => {})
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建软链接失败')
+    } finally {
+      setLinking(false)
+    }
+  }, [linkTarget, linkName, linkSkill, onCreated, getAppPaths, toast])
+
+  const handleBrowse = useCallback(async () => {
+    try {
+      const picked = await openDirectoryDialog({
+        title: '选择要链接的技能目录（需包含 SKILL.md）',
+      })
+      if (!picked.canceled && picked.filePath) {
+        setLinkTarget(picked.filePath)
+        if (!linkName.trim()) {
+          setLinkName(picked.filePath.split('/').pop() || '')
+        }
+      }
+    } catch {
+      // dialog cancelled
+    }
+  }, [openDirectoryDialog, linkName])
+
+  const handleUnlink = useCallback(async (name: string) => {
+    try {
+      await unlinkSkill({ name })
+      toast.success(`已取消链接 ${name}`)
+      onCreated()
+      getAppPaths({}).then(setAppPaths).catch(() => {})
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '取消链接失败')
+    }
+  }, [unlinkSkill, onCreated, getAppPaths, toast])
+
+  return (
+    <div className="create-import-panel">
+      <div className="import-panel-icon">
+        <Icons.ExternalLink size={48} />
+      </div>
+      <div className="import-panel-title">软链接技能目录</div>
+      <div className="import-panel-desc">
+        将宿主机上的技能目录通过软链接引入应用。链接后技能文件保持原位，应用自动读取最新内容。适用于开发中的技能，无需每次手动复制。
+      </div>
+      <div className="import-panel-supported">
+        <span className="badge">软链接</span>
+        <span className="badge">SKILL.md</span>
+      </div>
+
+      <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="form-field">
+          <label className="form-label">技能目录路径 *</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ flex: 1 }}>
+              <SparkInput
+                placeholder="例如：/Users/you/.claude/skills/my-skill"
+                value={linkTarget}
+                onChange={(e) => setLinkTarget(e.target.value)}
+              />
+            </div>
+            <button className="btn" onClick={() => void handleBrowse()}>
+              浏览
+            </button>
+          </div>
+        </div>
+        <div className="form-field">
+          <label className="form-label">链接名称（可选，默认使用目录名）</label>
+          <SparkInput
+            placeholder="my-skill"
+            value={linkName}
+            onChange={(e) => setLinkName(e.target.value)}
+          />
+        </div>
+        <button
+          className="btn primary lg"
+          disabled={linking || !linkTarget.trim()}
+          onClick={() => void handleLink()}
+        >
+          <Icons.ExternalLink size={14} />
+          {linking ? '链接中...' : '创建软链接'}
+        </button>
+      </div>
+
+      {appPaths && appPaths.linkedSkills.length > 0 && (
+        <div style={{ marginTop: '20px' }}>
+          <div className="create-section-title">已链接的技能</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+            {appPaths.linkedSkills.map((name) => (
+              <div key={name} className="local-skill-row">
+                <div className="local-skill-icon">{name.charAt(0).toUpperCase()}</div>
+                <div className="flex1 min-w-0">
+                  <div className="strong truncate">{name}</div>
+                </div>
+                <span className="badge">链接</span>
+                <button
+                  className="btn sm"
+                  onClick={() => void handleUnlink(name)}
+                >
+                  取消链接
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {appPaths && (
+        <div style={{ marginTop: '16px', fontSize: '11px', color: 'var(--text-muted)' }}>
+          <div>链接目录：{appPaths.linksDir}</div>
+          <div>应用技能目录：{appPaths.userDir}</div>
         </div>
       )}
     </div>

@@ -991,7 +991,7 @@ export interface LocalSkillCandidate {
   id: string
   name: string
   description: string
-  source: 'claude' | 'agents' | 'custom'
+  source: 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
   rootPath: string
   skillFilePath: string
   installed: boolean
@@ -1225,7 +1225,7 @@ export interface SkillImportFileResponse {
 
 export interface SkillImportDirectoryRequest {
   directoryPath: string
-  source?: 'claude' | 'codex' | 'agents' | 'custom'
+  source?: 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
 }
 
 export interface SkillImportDirectoryResponse {
@@ -1236,7 +1236,7 @@ export interface SkillImportDirectoryResponse {
 export interface SkillImportBatchLocalRequest {
   candidates: Array<{
     rootPath: string
-    source: 'claude' | 'agents' | 'custom'
+    source: 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
   }>
 }
 
@@ -1263,6 +1263,52 @@ export interface SkillExportBatchRequest {
 export interface SkillExportBatchResponse {
   filePath: string
   count: number
+}
+
+export interface SkillInstallToAppRequest {
+  sourcePath: string
+}
+
+export interface SkillInstallToAppResponse {
+  skill: SkillItem
+  destPath: string
+}
+
+export interface SkillUninstallFromAppRequest {
+  name: string
+}
+
+export interface SkillUninstallFromAppResponse {
+  success: boolean
+}
+
+export interface SkillLinkRequest {
+  targetPath: string
+  name?: string
+}
+
+export interface SkillLinkResponse {
+  skill: SkillItem
+  linkPath: string
+}
+
+export interface SkillUnlinkRequest {
+  name: string
+}
+
+export interface SkillUnlinkResponse {
+  success: boolean
+}
+
+export interface SkillAppPathsRequest {}
+
+export interface SkillAppPathsResponse {
+  bundledDir: string
+  userDir: string
+  linksDir: string
+  bundledSkills: string[]
+  userSkills: string[]
+  linkedSkills: string[]
 }
 
 export interface SkillDetectLocalRequest {
@@ -3218,6 +3264,11 @@ export interface IpcChannelMap {
   'skill:import-batch-local': [SkillImportBatchLocalRequest, SkillImportBatchLocalResponse]
   'skill:export': [SkillExportRequest, SkillExportResponse]
   'skill:export-batch': [SkillExportBatchRequest, SkillExportBatchResponse]
+  'skill:install-to-app': [SkillInstallToAppRequest, SkillInstallToAppResponse]
+  'skill:uninstall-from-app': [SkillUninstallFromAppRequest, SkillUninstallFromAppResponse]
+  'skill:link': [SkillLinkRequest, SkillLinkResponse]
+  'skill:unlink': [SkillUnlinkRequest, SkillUnlinkResponse]
+  'skill:app-paths': [SkillAppPathsRequest, SkillAppPathsResponse]
 
   // External Tools (IDE / Terminal)
   'tool:detect': [ToolDetectRequest, ToolDetectResponse]

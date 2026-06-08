@@ -1,0 +1,40 @@
+{
+  "id": "builtin:spark-web-tool",
+  "category": "writing",
+  "requiredTools": ["Read", "Write", "Bash", "WebSearch", "WebFetch"],
+  "parameters": [
+    {
+      "name": "outputFormats",
+      "type": "select",
+      "label": "输出格式",
+      "description": "选择生成的内容产物格式，可多选（逗号分隔）",
+      "defaultValue": "html",
+      "options": [
+        { "label": "HTML 幻灯片", "value": "html" },
+        { "label": "自定义网页", "value": "custom_html" },
+        { "label": "PPTX 演示文稿", "value": "ppt" },
+        { "label": "DOCX 文档", "value": "docx" }
+      ],
+      "required": true
+    },
+    {
+      "name": "style",
+      "type": "select",
+      "label": "讲解风格",
+      "description": "选择讲解的风格模式",
+      "defaultValue": "standard",
+      "options": [
+        { "label": "标准讲解", "value": "standard" },
+        { "label": "启发引导", "value": "heuristic" },
+        { "label": "深度拓展", "value": "competition" }
+      ]
+    },
+    {
+      "name": "includeQuiz",
+      "type": "boolean",
+      "label": "包含测验题",
+      "description": "是否在讲解末尾追加测验题章节",
+      "defaultValue": false
+    }
+  ]
+}

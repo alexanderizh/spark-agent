@@ -392,22 +392,49 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               <DropdownMenuSubTrigger className="user-menu-theme-trigger">
                 <Icons.Sun size={14} /> Theme
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="user-menu user-menu-theme-sub flex">
+              <DropdownMenuSubContent className="user-menu user-menu-theme-sub">
                 <DropdownMenuRadioGroup
+                  className="user-menu-theme-radio-group"
                   value={t.theme}
                   onValueChange={(v) => {
                     setTweak('theme', v as typeof t.theme)
                   }}
                 >
-                  <DropdownMenuRadioItem value="light">
+                  <DropdownMenuRadioItem className="user-menu-theme-item" value="light">
                     <Icons.Sun size={14} /> Light
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark">
+                  <DropdownMenuRadioItem className="user-menu-theme-item" value="dark">
                     <Icons.Moon size={14} /> Dark
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system">
+                  <DropdownMenuRadioItem className="user-menu-theme-item" value="system">
                     <Icons.Monitor size={14} /> System
                   </DropdownMenuRadioItem>
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="user-menu-theme-trigger">
+                <span className="user-menu-accent-dot" style={{ background: t.primary }} />
+                主题色
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="user-menu user-menu-theme-sub user-menu-accent-sub">
+                <DropdownMenuRadioGroup
+                  className="user-menu-theme-radio-group"
+                  value={t.primary}
+                  onValueChange={(v) => {
+                    setTweak('primary', v)
+                  }}
+                >
+                  {Object.entries(PRIMARIES).map(([color, info]) => (
+                    <DropdownMenuRadioItem
+                      key={color}
+                      className="user-menu-theme-item user-menu-accent-item"
+                      value={color}
+                    >
+                      <span className="user-menu-accent-swatch" style={{ background: color }} />
+                      {info.name}
+                    </DropdownMenuRadioItem>
+                  ))}
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>

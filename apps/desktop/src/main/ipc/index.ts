@@ -18,6 +18,7 @@ import * as fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { createLogger, deriveTeamAvatar } from '@spark/shared'
+import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
   EventRepository,
@@ -271,7 +272,8 @@ function getMcpService(): McpService {
 }
 
 function getSkillService(): SkillService {
-  return new SkillService(new SkillRepository(getDatabase()))
+  const { bundledDir } = getAppSkillsManager()
+  return new SkillService(new SkillRepository(getDatabase()), bundledDir)
 }
 
 function getAgentRepository(): AgentRepository {
@@ -2090,6 +2092,54 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('skill:export-batch', async (_req) => {
     // TODO: T-12 Skill 包导入/导出
     throw new Error('Not implemented yet: skill:export-batch')
+  })
+
+  // ─── App Skills Manager Handlers ─────────────────────────────────────────
+
+  typedIpcHandle('skill:install-to-app', async (req) => {
+    log.info(`skill:install-to-app requested, sourcePath=${req.sourcePath}`)
+    const manager = getAppSkillsManager()
+    const destPath = manager.installSkill(req.sourcePath)
+    // 安装后自动注册到数据库
+    const svc = getSkillService()
+    const skill = svc.importLocalDirectory(destPath, 'custom')
+    return { skill, destPath }
+  })
+
+  typedIpcHandle('skill:uninstall-from-app', async (req) => {
+    log.info(`skill:uninstall-from-app requested, name=${req.name}`)
+    const manager = getAppSkillsManager()
+    const success = manager.uninstallSkill(req.name)
+    return { success }
+  })
+
+  typedIpcHandle('skill:link', async (req) => {
+    log.info(`skill:link requested, targetPath=${req.targetPath}, name=${req.name}`)
+    const manager = getAppSkillsManager()
+    const linkPath = manager.linkSkill(req.targetPath, req.name)
+    // 链接后自动注册到数据库
+    const svc = getSkillService()
+    const skill = svc.importLocalDirectory(linkPath, 'linked')
+    return { skill, linkPath }
+  })
+
+  typedIpcHandle('skill:unlink', async (req) => {
+    log.info(`skill:unlink requested, name=${req.name}`)
+    const manager = getAppSkillsManager()
+    const success = manager.unlinkSkill(req.name)
+    return { success }
+  })
+
+  typedIpcHandle('skill:app-paths', async () => {
+    const manager = getAppSkillsManager()
+    return {
+      bundledDir: manager.bundledDir,
+      userDir: manager.userDir,
+      linksDir: manager.linksDir,
+      bundledSkills: manager.listBundledSkillNames(),
+      userSkills: manager.listUserSkillNames(),
+      linkedSkills: manager.listLinkedSkillNames(),
+    }
   })
 
   // ─── Command Handlers ───────────────────────────────────────────────────────

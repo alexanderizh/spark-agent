@@ -538,21 +538,30 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   margin-left: auto;
 }
 .user-menu-theme-sub {
-  min-width: 152px;
+  min-width: 168px;
   margin-left: -4px;
   padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
-.user-menu-theme-sub [role="radiogroup"] {
+.user-menu-theme-radio-group,
+.user-menu-theme-sub > [role="radiogroup"]:first-of-type {
   display: flex;
   flex-direction: column;
   width: 100%;
+  min-width: 0;
 }
+.user-menu-theme-sub .user-menu-theme-item,
 .user-menu-theme-sub [role="menuitemradio"] {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100% !important;
-  padding: 6px 8px 6px 28px;
+  width: 100%;
+  box-sizing: border-box;
+  height: auto !important;
+  min-height: 32px;
+  padding: 6px 8px 6px 28px !important;
   border: none;
   background: transparent;
   color: var(--text);
@@ -561,9 +570,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   cursor: pointer;
   position: relative;
 }
-.user-menu-theme-sub [role="menuitemradio"]:hover {
+.user-menu-theme-sub .user-menu-theme-item:hover,
+.user-menu-theme-sub .user-menu-theme-item:focus,
+.user-menu-theme-sub [role="menuitemradio"]:hover,
+.user-menu-theme-sub [role="menuitemradio"]:focus {
   background: var(--hover);
 }
+.user-menu-theme-sub .user-menu-theme-item > span:first-child,
 .user-menu-theme-sub [role="menuitemradio"] > span:first-child {
   position: absolute;
   left: 8px;
@@ -573,6 +586,23 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   width: 14px;
   height: 14px;
   color: var(--primary);
+}
+.user-menu-accent-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+.user-menu-accent-sub {
+  min-width: 148px;
+}
+.user-menu-accent-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
 }
 
 /* ─── Window Controls (Windows/Linux only) ─── */

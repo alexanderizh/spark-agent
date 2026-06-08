@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, lstatSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import type { SkillCreateRequest } from '@spark/protocol'
 
-export type LocalSkillSource = 'claude' | 'agents' | 'custom'
+export type LocalSkillSource = 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
 
 export interface LocalSkillCandidate {
   id: string
@@ -19,6 +19,8 @@ const SOURCE_LABELS: Record<LocalSkillSource, string> = {
   claude: 'Claude 本地',
   codex: 'Codex 本地',
   agents: 'Agents 本地',
+  bundled: '应用内置',
+  linked: '软链接',
   custom: '本地',
 }
 
@@ -46,12 +48,43 @@ export function detectLocalSkills(searchRoots: string[] = defaultLocalSkillRoots
 
     for (const entry of readdirSync(root)) {
       const dir = join(root, entry)
-      const stat = safeStat(dir)
-      if (!stat?.isDirectory()) continue
+      // 支持软链接目录
+      const stat = safeLstat(dir)
+      if (!stat) continue
+      // 跳过非目录（包括非目录类型的链接）
+      if (stat.isSymbolicLink()) {
+        const realStat = safeStat(dir)
+        if (!realStat?.isDirectory()) continue
+      } else if (!stat.isDirectory()) {
+        continue
+      }
       const skillFile = join(dir, 'SKILL.md')
       if (!existsSync(skillFile)) continue
-      candidates.push(toCandidate(dir, inferSource(root)))
+      const source = isSymlink(dir) ? 'linked' : inferSource(root)
+      candidates.push(toCandidate(dir, source))
     }
+  }
+  return candidates.sort((a, b) => a.name.localeCompare(b.name))
+}
+
+/**
+ * 从应用内置 skills 目录扫描所有技能
+ *
+ * @param bundledDir 内置 skills 目录（dev: resources/skills，prod: resourcesPath/skills）
+ */
+export function detectBundledSkills(bundledDir: string): LocalSkillCandidate[] {
+  if (!existsSync(bundledDir)) return []
+  const rootStat = safeStat(bundledDir)
+  if (!rootStat?.isDirectory()) return []
+
+  const candidates: LocalSkillCandidate[] = []
+  for (const entry of readdirSync(bundledDir)) {
+    const dir = join(bundledDir, entry)
+    const stat = safeStat(dir)
+    if (!stat?.isDirectory()) continue
+    const skillFile = join(dir, 'SKILL.md')
+    if (!existsSync(skillFile)) continue
+    candidates.push(toCandidate(dir, 'bundled'))
   }
   return candidates.sort((a, b) => a.name.localeCompare(b.name))
 }
@@ -64,9 +97,11 @@ export function importLocalSkillDirectory(directoryPath: string, source: LocalSk
   }
 
   const parsed = parseSkillFile(skillFilePath, basename(rootPath))
+  const manifest = loadManifestJson(rootPath)
+
   return {
-    id: `local:${source}:${hashPath(rootPath)}`,
-    scope: 'user',
+    id: manifest?.id ?? `local:${source}:${hashPath(rootPath)}`,
+    scope: source === 'bundled' ? 'system' : 'user',
     name: parsed.name,
     version: parsed.version,
     rootPath,
@@ -78,8 +113,8 @@ export function importLocalSkillDirectory(directoryPath: string, source: LocalSk
       category: parsed.category,
       tags: parsed.tags,
       systemPrompt: parsed.body,
-      requiredTools: parsed.requiredTools,
-      parameters: [],
+      requiredTools: manifest?.requiredTools ?? parsed.requiredTools,
+      parameters: manifest?.parameters ?? [],
       importedFrom: source,
       skillFilePath,
     }),
@@ -134,12 +169,51 @@ export function importLocalSkillFile(filePath: string): SkillCreateRequest {
   }
 }
 
+// ─── Manifest.json 支持 ─────────────────────────────────────────────────
+
+/**
+ * skill 目录中可选的 manifest.json 结构
+ * 用于存储 SKILL.md frontmatter 不便表达的元数据（requiredTools、parameters 等）
+ */
+export interface SkillManifest {
+  /** 可覆盖自动生成的 skill ID，如 "builtin:browser-use" */
+  id?: string
+  category?: string
+  requiredTools?: string[]
+  parameters?: Array<{
+    name: string
+    type: string
+    label: string
+    description?: string
+    defaultValue?: unknown
+    options?: Array<{ label: string; value: string }>
+    required?: boolean
+  }>
+}
+
+/**
+ * 读取 skill 目录下的 manifest.json（如果存在）
+ */
+export function loadManifestJson(skillDir: string): SkillManifest | null {
+  const manifestPath = join(skillDir, 'manifest.json')
+  if (!existsSync(manifestPath)) return null
+  try {
+    const raw = readFileSync(manifestPath, 'utf-8')
+    return JSON.parse(raw) as SkillManifest
+  } catch {
+    return null
+  }
+}
+
+// ─── Private ────────────────────────────────────────────────────────────
+
 function toCandidate(rootPath: string, source: LocalSkillSource): LocalSkillCandidate {
   const resolved = resolve(rootPath)
   const skillFilePath = join(resolved, 'SKILL.md')
   const parsed = parseSkillFile(skillFilePath, basename(resolved))
+  const manifest = loadManifestJson(resolved)
   return {
-    id: `local:${source}:${hashPath(resolved)}`,
+    id: manifest?.id ?? `local:${source}:${hashPath(resolved)}`,
     name: parsed.name,
     description: parsed.description,
     source,
@@ -227,5 +301,21 @@ function safeStat(path: string) {
     return statSync(path)
   } catch {
     return null
+  }
+}
+
+function safeLstat(path: string) {
+  try {
+    return lstatSync(path)
+  } catch {
+    return null
+  }
+}
+
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
   }
 }

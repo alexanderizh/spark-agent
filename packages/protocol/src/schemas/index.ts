@@ -22,7 +22,7 @@ export const RuleIdSchema = z.string().uuid()
 
 export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
 export const RuntimeConfigScopeSchema = z.enum(['system', 'agent', 'project', 'session'])
-export const LocalSkillSourceSchema = z.enum(['claude', 'agents', 'custom'])
+export const LocalSkillSourceSchema = z.enum(['claude', 'codex', 'agents', 'bundled', 'linked', 'custom'])
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
 export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk'])
@@ -546,6 +546,25 @@ export const IpcSchemaRegistry = {
       source: LocalSkillSourceSchema,
     })).min(1).max(100),
   }),
+  'skill:import-file': z.object({
+    filePath: z.string().min(1).max(1000),
+  }),
+  'skill:export': z.object({}),
+  'skill:export-batch': z.object({}),
+  'skill:install-to-app': z.object({
+    sourcePath: z.string().min(1).max(2000),
+  }),
+  'skill:uninstall-from-app': z.object({
+    name: z.string().min(1).max(200),
+  }),
+  'skill:link': z.object({
+    targetPath: z.string().min(1).max(2000),
+    name: z.string().min(1).max(200).optional(),
+  }),
+  'skill:unlink': z.object({
+    name: z.string().min(1).max(200),
+  }),
+  'skill:app-paths': z.object({}),
   'skill-config:get': z.object({
     workspaceId: z.string().min(1).optional(),
     sessionId: z.string().min(1).optional(),

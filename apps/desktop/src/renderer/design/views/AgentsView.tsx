@@ -67,7 +67,12 @@ const EMPTY_DRAFT: AgentDraft = {
   permissionMode: 'claude-ask',
   reasoningEffort: 'medium',
   prompt: '',
-  skillIds: [],
+  skillIds: [
+    'builtin:multi-search-engine',
+    'builtin:browser-use',
+    'builtin:platform-manager',
+    'builtin:find-skills',
+  ],
   mcpServerIds: [],
   ruleIds: [],
   hookConfig: {

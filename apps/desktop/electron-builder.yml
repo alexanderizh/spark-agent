@@ -45,6 +45,10 @@ extraResources:
     to: trayIconWin.png
   - from: resources/taskbarIcon.png
     to: taskbarIcon.png
+  - from: resources/skills
+    to: skills
+    filter:
+      - '**/*'
 publish:
   provider: generic
   url: https://releases.spark-agent.dev/${os}/

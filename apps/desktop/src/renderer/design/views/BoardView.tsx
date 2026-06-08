@@ -845,9 +845,10 @@ export function BoardView() {
           <Button
             status="danger"
             size="small"
+            icon={<Icons.Trash size={13} />}
             onClick={() => handleSoftDelete(freshCard.id)}
           >
-            <Icons.Trash size={13} /> 删除任务
+            删除任务
           </Button>
         </div>
       </div>
@@ -865,12 +866,14 @@ export function BoardView() {
         </div>
         <div className="board-header-right" aria-label="任务筛选和操作">
           <div className="board-toolbar">
-            <SparkSearchInput
-              value={searchQuery}
-              onChange={setSearchQuery}
-              placeholder="搜索任务…"
-              className="board-search-input"
-            />
+            <div className="board-search">
+              <SparkSearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="搜索任务…"
+                className="board-search-input"
+              />
+            </div>
             <Space size={6} className="board-filter-group" aria-label="筛选条件">
               <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select board-filter-priority" size="small">
                 <Select.Option value="all">全部优先级</Select.Option>
