@@ -17,8 +17,10 @@
     "migration:generate": "dotenv -e .env -- typeorm-ts-node-esm migration:generate -d src/data-source.ts migrations/migration",
     "migration:run": "dotenv -e .env -- typeorm-ts-node-esm migration:run -d src/data-source.ts",
     "migration:revert": "dotenv -e .env -- typeorm-ts-node-esm migration:revert -d src/data-source.ts",
-    "docker:up": "docker compose --env-file .env up -d",
-    "docker:down": "docker compose down",
+    "docker:up": "docker compose -f docker-compose.dev.yml --env-file .env up -d",
+    "docker:down": "docker compose -f docker-compose.dev.yml down",
+    "docker:deploy": "docker compose --env-file .env.production up -d",
+    "docker:deploy:down": "docker compose down",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
