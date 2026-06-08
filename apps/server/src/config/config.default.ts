@@ -1,9 +1,3 @@
-import { UserEntity } from '../entity/user.entity'
-import { CloudAgentEntity } from '../entity/cloud-agent.entity'
-import { CloudWorkflowEntity } from '../entity/cloud-workflow.entity'
-import { CloudAppSettingEntity } from '../entity/cloud-app-setting.entity'
-import { SyncRecordEntity } from '../entity/sync-record.entity'
-
 export default {
   keys: process.env.APP_KEYS || 'spark-agent-server-keys-change-in-production',
 
@@ -23,13 +17,7 @@ export default {
         database: process.env.PG_DATABASE || 'spark_agent',
         synchronize: false,
         logging: process.env.NODE_ENV !== 'production',
-        entities: [
-          UserEntity,
-          CloudAgentEntity,
-          CloudWorkflowEntity,
-          CloudAppSettingEntity,
-          SyncRecordEntity,
-        ],
+        entities: ['entity'],
       },
     },
   },

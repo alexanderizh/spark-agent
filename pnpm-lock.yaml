@@ -178,6 +178,9 @@ importers:
       pg:
         specifier: ^8.16.0
         version: 8.21.0
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
       typeorm:
         specifier: ^0.3.22
         version: 0.3.30(babel-plugin-macros@3.1.0)(better-sqlite3@11.10.0)(ioredis@5.11.1)(pg@8.21.0)(ts-node@10.9.2(@types/node@22.19.19)(typescript@5.9.3))

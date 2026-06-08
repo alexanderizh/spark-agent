@@ -34,6 +34,7 @@ export class AuthService {
   private readonly ACCESS_EXPIRY = '15m'
   private readonly REFRESH_EXPIRY_SECONDS = 7 * 24 * 3600
 
+  // ── 邮箱注册 ──────────────────────────────────────────
   async registerByEmail(email: string, password: string, nickname?: string) {
     const existing = await this.userRepo.findOneBy({ email })
     if (existing) {
@@ -51,6 +52,7 @@ export class AuthService {
     return this.generateTokenPair(user)
   }
 
+  // ── 邮箱登录 ──────────────────────────────────────────
   async loginByEmail(email: string, password: string): Promise<TokenPair> {
     const user = await this.userRepo.findOneBy({ email })
     if (!user || !user.passwordHash) {
@@ -66,6 +68,7 @@ export class AuthService {
     return this.generateTokenPair(user)
   }
 
+  // ── 手机号验证码登录 ──────────────────────────────────
   async loginByPhone(phone: string, code: string): Promise<TokenPair> {
     const cacheKey = `sms:code:${phone}`
     const cached = await this.redisService.get(cacheKey)
@@ -89,6 +92,7 @@ export class AuthService {
     return this.generateTokenPair(user)
   }
 
+  // ── 发送短信验证码 ────────────────────────────────────
   async sendSmsCode(phone: string): Promise<void> {
     const rateKey = `sms:rate:${phone}`
     const sent = await this.redisService.incr(rateKey)
@@ -103,10 +107,11 @@ export class AuthService {
     const cacheKey = `sms:code:${phone}`
     await this.redisService.set(cacheKey, code, 300)
 
-    // TODO: 接入阿里云 SMS API 发送短信
+    // TODO: 接入阿里云 SMS API
     console.log(`[SMS] Code for ${phone}: ${code}`)
   }
 
+  // ── 刷新 Token ────────────────────────────────────────
   async refreshTokens(oldRefreshToken: string): Promise<TokenPair> {
     const prefix = 'auth:refresh:'
     const userId = await this.redisService.get(prefix + oldRefreshToken)
@@ -123,6 +128,7 @@ export class AuthService {
     return this.generateTokenPair(user)
   }
 
+  // ── 登出 ──────────────────────────────────────────────
   async logout(userId: string, accessToken: string): Promise<void> {
     const decoded = await this.jwtService.verify(accessToken) as any
     const ttl = Math.max((decoded.exp - Date.now() / 1000), 0)
@@ -131,10 +137,7 @@ export class AuthService {
     }
   }
 
-  async isTokenBlacklisted(token: string): Promise<boolean> {
-    return this.redisService.exists(`auth:blacklist:${token}`)
-  }
-
+  // ── OAuth 登录（GitHub / 微信）─────────────────────────
   async findOrCreateByOAuth(
     provider: 'github' | 'wechat',
     providerId: string,
@@ -160,6 +163,7 @@ export class AuthService {
     return this.generateTokenPair(user)
   }
 
+  // ── Token 验证 ────────────────────────────────────────
   async verifyAccessToken(token: string): Promise<UserPayload> {
     const blacklisted = await this.isTokenBlacklisted(token)
     if (blacklisted) {
@@ -168,6 +172,66 @@ export class AuthService {
     return this.jwtService.verify(token) as unknown as UserPayload
   }
 
+  async isTokenBlacklisted(token: string): Promise<boolean> {
+    return this.redisService.exists(`auth:blacklist:${token}`)
+  }
+
+  // ── GitHub OAuth ──────────────────────────────────────
+  getGitHubAuthUrl(clientId: string, redirectUri: string, state: string): string {
+    const params = new URLSearchParams({
+      client_id: clientId,
+      redirect_uri: redirectUri,
+      scope: 'read:user user:email',
+      state,
+    })
+    return `https://github.com/login/oauth/authorize?${params}`
+  }
+
+  async getGitHubUserInfo(code: string, clientId: string, clientSecret: string) {
+    const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ client_id: clientId, client_secret: clientSecret, code }),
+    })
+    const tokenData = await tokenRes.json()
+    if (tokenData.error) throw new Error(`GitHub OAuth error: ${tokenData.error_description}`)
+
+    const userRes = await fetch('https://api.github.com/user', {
+      headers: { Authorization: `Bearer ${tokenData.access_token}`, Accept: 'application/json' },
+    })
+    if (!userRes.ok) throw new Error('Failed to fetch GitHub user info')
+    return userRes.json()
+  }
+
+  // ── 微信 OAuth ────────────────────────────────────────
+  getWeChatQrCodeUrl(appId: string, redirectUri: string, state: string): string {
+    const params = new URLSearchParams({
+      appid: appId,
+      redirect_uri: redirectUri,
+      response_type: 'code',
+      scope: 'snsapi_login',
+      state,
+    })
+    return `https://open.weixin.qq.com/connect/qrconnect?${params}#wechat_redirect`
+  }
+
+  async getWeChatAccessToken(code: string, appId: string, appSecret: string) {
+    const url = `https://api.weixin.qq.com/sns/oauth2/access_token?appid=${appId}&secret=${appSecret}&code=${code}&grant_type=authorization_code`
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data.errcode) throw new Error(`WeChat OAuth error: ${data.errmsg}`)
+    return data
+  }
+
+  async getWeChatUserInfo(accessToken: string, openid: string) {
+    const url = `https://api.weixin.qq.com/sns/userinfo?access_token=${accessToken}&openid=${openid}`
+    const res = await fetch(url)
+    const data = await res.json()
+    if (data.errcode) throw new Error(`WeChat user info error: ${data.errmsg}`)
+    return data
+  }
+
+  // ── 内部方法 ──────────────────────────────────────────
   private async generateTokenPair(user: UserEntity): Promise<TokenPair> {
     const payload: UserPayload = {
       userId: user.id,
@@ -187,7 +251,7 @@ export class AuthService {
     return {
       accessToken,
       refreshToken,
-      expiresIn: 15 * 60, // 15 minutes in seconds
+      expiresIn: 15 * 60,
     }
   }
 }

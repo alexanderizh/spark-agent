@@ -1,11 +1,11 @@
+import 'reflect-metadata'
 import 'dotenv/config'
 import { join } from 'path'
+import { fileURLToPath } from 'url'
 import { Bootstrap } from '@midwayjs/bootstrap'
-import { MainConfiguration } from './configuration'
 
-const srcDir = join(import.meta.dirname || __dirname)
+const __dirname = join(fileURLToPath(import.meta.url), '..')
 
 Bootstrap.configure({
-  baseDir: srcDir,
-  imports: [MainConfiguration],
+  baseDir: __dirname,
 }).run()

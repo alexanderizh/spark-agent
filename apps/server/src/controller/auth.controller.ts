@@ -1,8 +1,6 @@
 import { Controller, Post, Inject, Body, Query, Get } from '@midwayjs/core'
 import { Context } from '@midwayjs/koa'
 import { AuthService } from '../service/auth/auth.service'
-import { GitHubStrategy } from '../service/auth/github.strategy'
-import { WeChatStrategy } from '../service/auth/wechat.strategy'
 import { RegisterDTO, LoginDTO, SendSmsDTO, PhoneLoginDTO, RefreshTokenDTO } from '../dto/auth.dto'
 import { v4 as uuid } from 'uuid'
 
@@ -10,12 +8,6 @@ import { v4 as uuid } from 'uuid'
 export class AuthController {
   @Inject()
   authService: AuthService
-
-  @Inject()
-  githubStrategy: GitHubStrategy
-
-  @Inject()
-  wechatStrategy: WeChatStrategy
 
   @Inject()
   ctx: Context
@@ -51,7 +43,7 @@ export class AuthController {
   async githubOAuth(@Query('redirect_uri') redirectUri?: string) {
     const config = (this.ctx as any).app.config.oauth?.github
     const state = uuid()
-    const url = this.githubStrategy.getAuthorizeUrl(
+    const url = this.authService.getGitHubAuthUrl(
       config.clientId,
       redirectUri || config.callbackUrl,
       state,
@@ -62,7 +54,7 @@ export class AuthController {
   @Get('/oauth/github/callback')
   async githubCallback(@Query('code') code: string) {
     const config = (this.ctx as any).app.config.oauth?.github
-    const ghUser = await this.githubStrategy.getUserInfo(code, config.clientId, config.clientSecret)
+    const ghUser = await this.authService.getGitHubUserInfo(code, config.clientId, config.clientSecret)
     const tokens = await this.authService.findOrCreateByOAuth('github', String(ghUser.id), {
       email: ghUser.email ?? undefined,
       nickname: ghUser.name || ghUser.login,
@@ -75,15 +67,15 @@ export class AuthController {
   async wechatOAuth() {
     const config = (this.ctx as any).app.config.oauth?.wechat
     const state = uuid()
-    const url = this.wechatStrategy.getQrCodeUrl(config.appId, config.callbackUrl, state)
+    const url = this.authService.getWeChatQrCodeUrl(config.appId, config.callbackUrl, state)
     return { code: 200, data: { url, state } }
   }
 
   @Get('/oauth/wechat/callback')
   async wechatCallback(@Query('code') code: string) {
     const config = (this.ctx as any).app.config.oauth?.wechat
-    const tokenData = await this.wechatStrategy.getAccessToken(code, config.appId, config.appSecret)
-    const wxUser = await this.wechatStrategy.getUserInfo(tokenData.access_token, tokenData.openid)
+    const tokenData = await this.authService.getWeChatAccessToken(code, config.appId, config.appSecret)
+    const wxUser = await this.authService.getWeChatUserInfo(tokenData.access_token, tokenData.openid)
     const tokens = await this.authService.findOrCreateByOAuth('wechat', tokenData.openid, {
       nickname: wxUser.nickname,
       avatarUrl: wxUser.headimgurl,
