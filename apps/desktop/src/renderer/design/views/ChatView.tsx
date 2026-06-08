@@ -154,6 +154,13 @@ type ContextMenuItem = {
   disabled?: boolean
   onClick?: () => void
 }
+type ReplyToState = {
+  messageId: string
+  role: 'user' | 'assistant'
+  agentId?: string
+  agentName?: string
+  contentPreview: string
+}
 type TextEditMenuState = {
   x: number
   y: number
@@ -315,6 +322,7 @@ export function ChatView({
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [clearTrigger, setClearTrigger] = useState(0)
+  const [replyTo, setReplyTo] = useState<ReplyToState | null>(null)
   const { toast } = useToast()
 
   // ── IPC hooks (only those NOT duplicated in context) ──
@@ -487,6 +495,21 @@ export function ChatView({
     }
   }
 
+  const handleReplyTo = useCallback(
+    (msg: UIMessage, agentId?: string, agentName?: string) => {
+      const preview = extractTextFromBlocks(msg.blocks).slice(0, 80).replace(/\n/g, ' ')
+      setReplyTo({
+        messageId: msg.id,
+        role: msg.role,
+        ...(agentId != null ? { agentId } : {}),
+        ...(agentName != null ? { agentName } : {}),
+        contentPreview: preview || '(附件/图片)',
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [],
+  )
+
   return (
     <div className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}>
 
@@ -535,6 +558,7 @@ export function ChatView({
               teamConfig={teamConfig}
               onChangeTeamConfig={updateTeamConfig}
               onOpenTeamInspector={() => setShowInspector(true)}
+              replyTo={null}
             />
           </div>
         ) : (
@@ -601,6 +625,8 @@ export function ChatView({
               teamConfig={teamConfig}
               onChangeTeamConfig={updateTeamConfig}
               onOpenTeamInspector={() => setShowInspector(true)}
+              replyTo={replyTo}
+              onClearReply={() => setReplyTo(null)}
             />
           </>
         )}
@@ -916,6 +942,7 @@ function ChatStream({
   onTurnPromptSnapshotsChange,
   clearTrigger,
   teamConfig,
+  onReplyTo,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -930,6 +957,7 @@ function ChatStream({
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
   teamConfig: TeamModeConfig
+  onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -1309,6 +1337,7 @@ function ChatStream({
                   }
                 : {})}
               onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+              {...(onReplyTo != null ? { onReply: () => onReplyTo(msg) } : {})}
             >
               {renderBlocks(msg.blocks)}
             </UserMsg>
@@ -1327,6 +1356,9 @@ function ChatStream({
               {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
               {...(msg.status !== 'streaming'
                 ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                : {})}
+              {...(onReplyTo != null && msg.status !== 'streaming'
+                ? { onReply: () => onReplyTo(msg, assistantAgentId, assistantName) }
                 : {})}
             />
           ),
@@ -2856,6 +2888,28 @@ function splitTableRow(line: string): string[] {
     .map((cell) => cell.trim())
 }
 
+/** 将纯文本中的 @mention 片段替换为主题色 span */
+function highlightMentions(text: string): ReactNode[] {
+  const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
+  const parts: ReactNode[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  while ((match = mentionPattern.exec(text)) != null) {
+    const prefix = match[1] ?? ''
+    const mention = match[2] ?? ''
+    const mentionStart = match.index + prefix.length
+    if (mentionStart > cursor) parts.push(text.slice(cursor, mentionStart))
+    parts.push(
+      <span key={`mention-${mentionStart}`} className="mention-highlight">
+        {mention}
+      </span>,
+    )
+    cursor = mentionStart + mention.length
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor))
+  return parts.length > 0 ? parts : [text]
+}
+
 function renderInlineMarkdown(text: string): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
@@ -2864,7 +2918,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   let match: RegExpExecArray | null
 
   while ((match = pattern.exec(text)) != null) {
-    if (match.index > cursor) nodes.push(text.slice(cursor, match.index))
+    if (match.index > cursor) nodes.push(...highlightMentions(text.slice(cursor, match.index)))
     const token = match[0]
     const key = `${match.index}-${token}`
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
@@ -2892,7 +2946,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     cursor = match.index + token.length
   }
 
-  if (cursor < text.length) nodes.push(text.slice(cursor))
+  if (cursor < text.length) nodes.push(...highlightMentions(text.slice(cursor)))
   const rendered: ReactNode[] = []
   nodes.forEach((node, index) => {
     if (typeof node !== 'string') {
@@ -3133,6 +3187,7 @@ function UserMsg({
   attachments = [],
   onDelete,
   mentionAgentName,
+  onReply,
 }: {
   children: ReactNode
   timestamp?: string | undefined
@@ -3142,6 +3197,7 @@ function UserMsg({
   onDelete?: () => void
   /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
   mentionAgentName?: string | undefined
+  onReply?: () => void
 }) {
   const textContent = extractTextFromBlocks(blocks)
   const [contextMenu, setContextMenu] = useState<{
@@ -3183,6 +3239,14 @@ function UserMsg({
         },
       })
     }
+    if (onReply != null) {
+      items.push({
+        key: 'reply',
+        label: '回复',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: onReply,
+      })
+    }
     if (onDelete != null) {
       items.push({
         key: 'delete',
@@ -3193,7 +3257,7 @@ function UserMsg({
       })
     }
     return items
-  }, [contextMenu, onDelete, textContent])
+  }, [contextMenu, onDelete, onReply, textContent])
 
   return (
     <div className="msg msg-user">
@@ -3418,6 +3482,7 @@ function AssistantMessageRows({
   assistantAvatarSrc,
   usage,
   onDelete,
+  onReply,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -3430,6 +3495,7 @@ function AssistantMessageRows({
   assistantAvatarSrc: string
   usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
+  onReply?: () => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
@@ -3471,6 +3537,7 @@ function AssistantMessageRows({
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
             {...(onDelete != null ? { onDelete } : {})}
+            {...(onReply != null ? { onReply } : {})}
           />
         )
       })}
@@ -3495,7 +3562,17 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
     Extract<AssistantMessageSegment, { kind: 'team_member_activity' }>
   >()
   const runningDispatches = new Set<string>()
-  let currentAgentSegment: Extract<AssistantMessageSegment, { kind: 'agent' }> | null = null
+  // 单一 agent segment：Host 的所有 blocks 合并到一个气泡中，
+  // 避免 team dispatch/activity 打断后产生多个独立气泡。
+  let agentSegment: Extract<AssistantMessageSegment, { kind: 'agent' }> | null = null
+
+  const ensureAgentSegment = () => {
+    if (agentSegment == null) {
+      agentSegment = { kind: 'agent', blocks: [] }
+      segments.push(agentSegment)
+    }
+    return agentSegment
+  }
 
   for (const block of blocks) {
     if (isHiddenTimelineBlock(block)) continue
@@ -3510,7 +3587,6 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
       const segment = teamMemberSegments.get(key)
       if (segment != null) segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
       segments.push({ kind: 'team', blocks: [block] })
-      currentAgentSegment = null
       continue
     }
     const memberContext = getBlockTeamMemberContext(block)
@@ -3529,14 +3605,9 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
       }
       segment.blocks.push(block)
       segment.running = runningDispatches.has(key) || isTeamMemberActivityRunning(segment.blocks)
-      currentAgentSegment = null
       continue
     }
-    if (currentAgentSegment == null) {
-      currentAgentSegment = { kind: 'agent', blocks: [] }
-      segments.push(currentAgentSegment)
-    }
-    currentAgentSegment.blocks.push(block)
+    ensureAgentSegment().blocks.push(block)
   }
   return segments
 }
@@ -3571,6 +3642,7 @@ function AgentMsg({
   assistantAvatarSrc,
   usage,
   onDelete,
+  onReply,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -3583,6 +3655,7 @@ function AgentMsg({
   assistantAvatarSrc: string
   usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
+  onReply?: () => void
 }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
@@ -3648,6 +3721,14 @@ function AgentMsg({
         },
       })
     }
+    if (onReply != null) {
+      items.push({
+        key: 'reply',
+        label: '回复',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: onReply,
+      })
+    }
     if (onDelete != null) {
       items.push({
         key: 'delete',
@@ -3658,7 +3739,7 @@ function AgentMsg({
       })
     }
     return items
-  }, [contextMenu, onDelete, textContent])
+  }, [contextMenu, onDelete, onReply, textContent])
 
   return (
     <div
@@ -4740,6 +4821,8 @@ function ComposerV2({
   teamConfig,
   onChangeTeamConfig,
   onOpenTeamInspector,
+  replyTo,
+  onClearReply,
   focusTrigger = 0,
 }: {
   session: SessionSummary | null
@@ -4789,6 +4872,9 @@ function ComposerV2({
   onSwitchWorkspace?: (workspaceId: string) => void
   // Focus trigger from Ctrl/Cmd+L global shortcut (incremented counter)
   focusTrigger?: number
+  // Reply-to quote bar
+  replyTo?: ReplyToState | null
+  onClearReply?: () => void
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -5164,7 +5250,7 @@ function ComposerV2({
   }, [draftBucketKey])
 
   const dispatchMessage = useCallback(
-    async (text: string, turnAttachments: ComposerAttachment[]) => {
+    async (text: string, turnAttachments: ComposerAttachment[], replySnapshot?: ReplyToState | null) => {
       const requestAttachments = toSessionAttachments(turnAttachments)
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
       if (text.startsWith('/')) {
@@ -5210,6 +5296,7 @@ function ComposerV2({
           pendingMention.agentId !== teamConfig.hostAgentId
             ? { mentionAgentId: pendingMention.agentId }
             : {}),
+              ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
             })
             if (!sendRes.started) {
               setQueueVisible(true)
@@ -5267,6 +5354,7 @@ function ComposerV2({
           pendingMention.agentId !== teamConfig.hostAgentId
             ? { mentionAgentId: pendingMention.agentId }
             : {}),
+          ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
         })
         if (!res.started) {
           setQueueVisible(true)
@@ -5414,12 +5502,20 @@ function ComposerV2({
   const handleSend = async () => {
     if (!canSubmit) return
     setTextEditMenu(null)
-    const text = value.trim() || '请查看附件。'
+    const rawText = value.trim() || '请查看附件。'
     const turnAttachments = attachments
+    // Prepend reply context if quoting a message
+    let text = rawText
+    const replySnapshot = replyTo
+    if (replySnapshot != null) {
+      const quotedLine = replySnapshot.contentPreview.replace(/\n/g, ' ')
+      const who = replySnapshot.role === 'assistant' ? (replySnapshot.agentName ?? 'Agent') : 'You'
+      text = `[回复 ${who}: ${quotedLine}]\n${rawText}`
+    }
     // Record to input history (deduplicate consecutive identical entries)
     const history = sentHistoryRef.current
-    if (text !== history[history.length - 1]) {
-      history.push(text)
+    if (rawText !== history[history.length - 1]) {
+      history.push(rawText)
     }
     historyIndexRef.current = -1
     historyDraftRef.current = ''
@@ -5427,7 +5523,8 @@ function ComposerV2({
     setAttachments([])
     // 发送后清除 pending mention（避免下一条消息误带）；dispatchMessage 内已通过 text 计算用过
     setPendingMention(null)
-    await dispatchMessage(text, turnAttachments)
+    if (replySnapshot != null) onClearReply?.()
+    await dispatchMessage(text, turnAttachments, replySnapshot)
   }
 
   const handlePrimaryAction = async () => {
@@ -6193,6 +6290,26 @@ function ComposerV2({
         <div
           className={`composer composer-v2 has-workspace-picks ${manualExpanded ? 'expanded' : ''}`}
         >
+          {replyTo != null && (
+            <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-xs text-[var(--color-text-3)]">
+              <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                <span className="shrink-0 text-[var(--color-primary-6)]">
+                  {replyTo.role === 'assistant' ? (replyTo.agentName ?? 'Agent') : 'You'}
+                </span>
+                <span className="truncate text-[var(--color-text-3)] opacity-80">
+                  {replyTo.contentPreview}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 p-0.5 rounded hover:bg-[var(--color-fill-3)] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors"
+                title="取消回复"
+                onClick={onClearReply}
+              >
+                <Icons.X size={12} />
+              </button>
+            </div>
+          )}
           {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
             <div className="composer-attachments-inside">
               {imageAttachments.length > 0 && (

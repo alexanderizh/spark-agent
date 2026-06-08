@@ -13,6 +13,7 @@ import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { generateDefaultAvatarUrl, getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { TeamsPanel } from './TeamsPanel'
 import type {
+  AgentExportPayload,
   ManagedAgent,
   McpServerItem,
   ProviderProfile,
@@ -156,6 +157,8 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
   const { invoke: createAgent } = useIpcInvoke('agent:create')
   const { invoke: updateAgent } = useIpcInvoke('agent:update')
   const { invoke: deleteAgent } = useIpcInvoke('agent:delete')
+  const { invoke: exportAgentsToFile } = useIpcInvoke('agent:export-to-file')
+  const { invoke: importAgentsFromFile } = useIpcInvoke('agent:import-from-file')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: listSkills } = useIpcInvoke('skill:list')
   const { invoke: listMcp } = useIpcInvoke('mcp:list')
@@ -397,6 +400,72 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
     }
   }
 
+  const handleExportAgent = async (agent: ManagedAgent) => {
+    try {
+      const res = await exportAgentsToFile({ ids: [agent.id] })
+      if (res.filePath) {
+        toast.success(`已导出「${agent.name}」到 ${res.filePath}`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导出失败')
+    }
+  }
+
+  const handleExportAll = async () => {
+    try {
+      const res = await exportAgentsToFile({ ids: [] })
+      if (res.filePath) {
+        toast.success(`已导出 ${res.count} 个 Agent 到 ${res.filePath}`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导出失败')
+    }
+  }
+
+  const handleImport = async () => {
+    try {
+      const fileRes = await importAgentsFromFile({})
+      if (fileRes.payload == null) return
+
+      const existingNames = new Set(agents.map((a) => a.name))
+      const payload = fileRes.payload as AgentExportPayload
+      let imported = 0
+      let skipped = 0
+
+      for (const agent of payload.agents) {
+        if (existingNames.has(agent.name)) {
+          skipped++
+          continue
+        }
+        await createAgent({
+          name: agent.name,
+          description: agent.description,
+          agentAdapter: agent.agentAdapter,
+          permissionMode: agent.permissionMode,
+          reasoningEffort: agent.reasoningEffort,
+          prompt: agent.prompt,
+          skillIds: agent.skillIds,
+          disabledSkillIds: agent.disabledSkillIds,
+          mcpServerIds: agent.mcpServerIds,
+          ruleIds: agent.ruleIds,
+          hookConfig: agent.hookConfig,
+          workflowId: agent.workflowId,
+          metadata: agent.metadata,
+        })
+        imported++
+      }
+
+      if (imported > 0) {
+        toast.success(`已导入 ${imported} 个 Agent${skipped > 0 ? `，跳过 ${skipped} 个同名 Agent` : ''}`)
+        await refresh()
+      } else if (skipped > 0) {
+        toast.warning(`所有 ${skipped} 个 Agent 名称已存在，已跳过`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导入失败')
+    }
+  }
+
   // ── Card list screen ──
   if (screen === 'list') {
     return (
@@ -409,6 +478,12 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
           <div className="agents-actions">
             <button className="btn ghost sm" onClick={() => void refresh()} disabled={loading}>
               {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />} 刷新
+            </button>
+            <button className="btn ghost sm" onClick={() => void handleImport()}>
+              <Icons.Upload size={12} /> 导入
+            </button>
+            <button className="btn ghost sm" onClick={() => void handleExportAll()}>
+              <Icons.Download size={12} /> 导出全部
             </button>
             <button className="btn primary sm" onClick={() => void handleNew()}>
               <Icons.Plus size={12} /> 新建 Agent
@@ -451,6 +526,13 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
                     className="agents-card-actions"
                     onClick={(e) => e.stopPropagation()}
                   >
+                    <button
+                      className="agents-card-action-btn"
+                      title="导出"
+                      onClick={() => void handleExportAgent(agent)}
+                    >
+                      <Icons.Download size={13} />
+                    </button>
                     <button
                       className="agents-card-action-btn"
                       title="复制"

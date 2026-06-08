@@ -463,6 +463,12 @@ export const Icons = {
       <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14M10 11v6M14 11v6" />
     </IconBase>
   ),
+  CornerUpLeft: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M9 14L4 9l5-5" />
+      <path d="M20 20v-7a4 4 0 0 0-4-4H4" />
+    </IconBase>
+  ),
   Archive: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M21 8v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8M21 8H3M21 8l-2-4H5L3 8M10 12h4" />

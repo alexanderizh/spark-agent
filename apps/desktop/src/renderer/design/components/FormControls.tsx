@@ -321,6 +321,7 @@ export interface SparkTextareaProps {
   onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
   onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void
 }
 
 export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
@@ -341,6 +342,7 @@ export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
     onFocus,
     onBlur,
     onKeyDown,
+    onPaste,
   }, ref) {
     return (
       <TextArea
@@ -362,6 +364,7 @@ export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
         onFocus={onFocus as any}
         onBlur={onBlur as any}
         onKeyDown={onKeyDown as any}
+        onPaste={onPaste as any}
         autoSize={autoSize ?? false}
       />
     )

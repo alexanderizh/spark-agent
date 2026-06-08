@@ -17,6 +17,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@arco-design/color':
+        specifier: ^0.4.0
+        version: 0.4.0
       '@arco-design/web-react':
         specifier: ^2.66.15
         version: 2.66.15(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

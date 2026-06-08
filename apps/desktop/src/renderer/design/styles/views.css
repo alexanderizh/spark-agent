@@ -13176,6 +13176,16 @@ body.inspector-resizing {
   gap: 4px;
 }
 .msg-user-mention-hint strong {
-  color: var(--accent);
+  color: var(--primary);
   font-weight: 600;
+}
+
+/* @mention 文本主题色高亮（消息气泡 / Markdown 正文） */
+.mention-highlight {
+  color: var(--primary);
+  font-weight: 600;
+}
+.composer-input .mention-highlight,
+.msg-bubble-user .mention-highlight {
+  color: var(--primary);
 }

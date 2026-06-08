@@ -182,6 +182,7 @@ interface BoardTaskRecord {
   tags: string[]
   dueDate: string
   commentsJson: string
+  attachmentsJson: string
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -353,7 +354,7 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const sessionService = getSessionService()
   // Find a suitable provider profile (use default)
   const providerService = getProviderService()
-  const profiles = providerService.listProfiles()
+  const profiles = await providerService.listProviders()
   const defaultProfile = profiles.find(p => p.isDefault) ?? profiles[0]
   if (!defaultProfile) {
     throw new Error('No provider profile available for scheduled task execution')
@@ -368,6 +369,9 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     permissionMode: (params.permissionMode as any) ?? undefined,
     title: `[⏰] ${params.taskName}`,
   })
+
+  // Notify renderer to refresh session list (same as session:create IPC handler)
+  pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
 
   // Send the prompt as a turn
   const result = await sessionService.sendTurn({
@@ -1844,6 +1848,121 @@ export function registerAllIpcHandlers(): void {
     return { deleted }
   })
 
+  // ─── Agent Import/Export Handlers ─────────────────────────────────────────
+
+  typedIpcHandle('agent:export-to-file', async (req) => {
+    const count = req.ids.length
+    log.info(`agent:export-to-file requested, ids=${count}`)
+
+    const allAgents = getAgentRepository().list({ includeDisabled: true })
+    const toExport = count > 0
+      ? allAgents.filter((a) => req.ids.includes(a.id))
+      : allAgents
+
+    const payload: import('@spark/protocol').AgentExportPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      exportedBy: 'spark-agent',
+      agents: toExport.map((a) => ({
+        name: a.name,
+        description: a.description,
+        agentAdapter: a.agentAdapter,
+        permissionMode: a.permissionMode,
+        reasoningEffort: a.reasoningEffort,
+        prompt: a.prompt,
+        skillIds: a.skillIds,
+        disabledSkillIds: a.disabledSkillIds,
+        mcpServerIds: a.mcpServerIds,
+        ruleIds: a.ruleIds,
+        hookConfig: a.hookConfig,
+        workflowId: a.workflowId,
+        metadata: a.metadata,
+      })),
+    }
+
+    const datePart = new Date().toISOString().slice(0, 10)
+    const defaultName = `spark-agent-export-${datePart}.json`
+
+    const result = await dialog.showSaveDialog({
+      title: '导出 Agent 配置',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePath == null || result.filePath.length === 0) {
+      log.info('agent:export-to-file canceled by user')
+      return { filePath: '', count: payload.agents.length }
+    }
+
+    const fs = await import('node:fs/promises')
+    try {
+      const json = JSON.stringify(payload, null, 2)
+      await fs.writeFile(result.filePath, json, 'utf-8')
+      log.info(`agent:export-to-file wrote ${payload.agents.length} agents to ${result.filePath}`)
+      return { filePath: result.filePath, count: payload.agents.length }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`agent:export-to-file write failed: ${message}`)
+      throw new Error(`写入文件失败：${message}`)
+    }
+  })
+
+  typedIpcHandle('agent:import-from-file', async () => {
+    log.info('agent:import-from-file requested')
+
+    const result = await dialog.showOpenDialog({
+      title: '选择 Agent 配置文件',
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      log.info('agent:import-from-file canceled by user')
+      return { payload: null, filePath: '' }
+    }
+
+    const filePath = result.filePaths[0]!
+    const fs = await import('node:fs/promises')
+
+    let raw: string
+    try {
+      raw = await fs.readFile(filePath, 'utf-8')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`agent:import-from-file read failed: ${message}`)
+      throw new Error(`读取文件失败：${message}`)
+    }
+
+    let json: unknown
+    try {
+      json = JSON.parse(raw)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`agent:import-from-file parse failed: ${message}`)
+      throw new Error(`JSON 解析失败：${message}`)
+    }
+
+    // Basic runtime validation
+    if (
+      typeof json !== 'object' || json == null ||
+      !('version' in json) || !('agents' in json) ||
+      !Array.isArray((json as Record<string, unknown>).agents)
+    ) {
+      throw new Error('无效的 Agent 配置文件格式')
+    }
+
+    const payload = json as import('@spark/protocol').AgentExportPayload
+    log.info(`agent:import-from-file parsed ${payload.agents.length} agents, version=${payload.version}`)
+
+    return { payload, filePath }
+  })
+
   // ─── Team Mode Handlers ───────────────────────────────────────────────
 
   typedIpcHandle('team:update', async (req) => {
@@ -2255,6 +2374,7 @@ export function registerAllIpcHandlers(): void {
       tags: req.tags ?? [],
       dueDate: req.dueDate ?? '',
       commentsJson: '[]',
+      attachmentsJson: JSON.stringify(req.attachments ?? []),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -2281,6 +2401,7 @@ export function registerAllIpcHandlers(): void {
       tags: req.tags !== undefined ? req.tags : base.tags,
       dueDate: req.dueDate !== undefined ? req.dueDate : base.dueDate,
       commentsJson: base.commentsJson ?? '[]',
+      attachmentsJson: req.attachments !== undefined ? JSON.stringify(req.attachments) : (base.attachmentsJson ?? '[]'),
       createdAt: base.createdAt,
       updatedAt: now,
       deletedAt: base.deletedAt,
@@ -2314,6 +2435,8 @@ export function registerAllIpcHandlers(): void {
         assignee: item.assignee ?? '',
         tags: item.tags ?? [],
         dueDate: item.dueDate ?? '',
+        commentsJson: '[]',
+        attachmentsJson: JSON.stringify(item.attachments ?? []),
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
@@ -2344,6 +2467,7 @@ export function registerAllIpcHandlers(): void {
         tags: upd.tags !== undefined ? upd.tags : base.tags,
         dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
         commentsJson: base.commentsJson ?? '[]',
+        attachmentsJson: upd.attachments !== undefined ? JSON.stringify(upd.attachments) : (base.attachmentsJson ?? '[]'),
         createdAt: base.createdAt,
         updatedAt: now,
         deletedAt: base.deletedAt,

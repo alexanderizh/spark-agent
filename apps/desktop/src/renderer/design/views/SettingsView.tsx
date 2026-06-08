@@ -5113,7 +5113,7 @@ function writeRuntimePermissionPrefs(patch: RuntimePermissionPrefs): void {
   window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(next))
 }
 
-function SettingsRow({ title, desc, right }: { title: string; desc?: string; right: ReactNode }) {
+function SettingsRow({ title, desc, right }: { title: string; desc?: string; right?: ReactNode }) {
   return (
     <div className="settings-card-row">
       <div className="flex1 min-w-0">

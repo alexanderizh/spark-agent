@@ -1375,6 +1375,9 @@ export class SessionService {
     // Mention 路由：把 assistant_message 重写为 team_member_message（驱动 TeamMemberBubble + 进入历史时带 [name]）。
     // dispatchId 复用 turnId（mention 没有 dispatch 概念，UI 只需稳定标识对 delta 流聚合）。
     const mentionAgentId = options.mentionAgentId
+    const mentionMemberContext = mentionAgentId != null
+      ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
+      : undefined
     executor.onEvent((event) => {
       if (event.type === 'file_change') changedFiles.add(event.path)
       let outgoing: AgentEvent = event
@@ -1395,6 +1398,13 @@ export class SessionService {
           }
         } else if (event.type === 'user_message') {
           outgoing = { ...event, mentionAgentId }
+        } else if (
+          event.type === 'tool_call' ||
+          event.type === 'tool_result' ||
+          event.type === 'file_change' ||
+          event.type === 'terminal_output'
+        ) {
+          outgoing = { ...event, teamMemberContext: mentionMemberContext }
         }
       }
       this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
@@ -2272,22 +2282,21 @@ export class SessionService {
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
-    const hadQueuedTurns = (this.pendingTurns.get(sessionId)?.length ?? 0) > 0
-    this.pendingTurns.delete(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
     // 取消所有进行中的 team dispatch（连同其 member 执行器）
     this.teamDispatchService?.cancelAll()
     if (loop == null) {
-      if (hadQueuedTurns) this.emitQueueChanged(sessionId)
+      this.emitQueueChanged(sessionId)
       return { cancelled: false }
     }
     loop.cancel()
     this.activeLoops.delete(sessionId)
     const sessionRepo = new SessionRepository(this.db)
     sessionRepo.updateStatus(sessionId, 'idle')
-    this.emitQueueChanged(sessionId)
+    // 终止当前任务后，自动执行队列中的下一个任务
+    this.startNextQueuedTurn(sessionId)
     return { cancelled: true }
   }
 

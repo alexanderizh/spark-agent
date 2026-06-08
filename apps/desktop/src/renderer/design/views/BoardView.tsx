@@ -41,6 +41,14 @@ export type TaskComment = {
   createdAt: string
 }
 
+export type TaskAttachment = {
+  id: string
+  type: 'image' | 'file'
+  name: string
+  path: string
+  previewPath?: string
+}
+
 export type TaskCard = {
   id: string
   title: string
@@ -52,6 +60,7 @@ export type TaskCard = {
   tags: string[]
   dueDate: string
   comments: TaskComment[]
+  attachments: TaskAttachment[]
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -61,6 +70,43 @@ type BoardPage =
   | { view: 'kanban' }
   | { view: 'create'; defaultStatus: TaskStatus }
   | { view: 'edit'; card: TaskCard }
+
+/* ------------------------------------------------------------------ */
+/*  Attachment helpers                                                 */
+/* ------------------------------------------------------------------ */
+
+const IMAGE_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico',
+  'tiff', 'tif', 'avif', 'heic', 'heif',
+])
+
+function isImagePath(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase()
+  return ext != null && IMAGE_EXTENSIONS.has(ext)
+}
+
+function fileNameFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read blob'))
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Failed to read blob'))
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+function resolveImageSrc(filePath: string): string {
+  if (!filePath) return filePath
+  const lower = filePath.toLowerCase()
+  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:')) return filePath
+  return `safe-file://${filePath.replace(/\\/g, '/')}`
+}
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
@@ -103,6 +149,8 @@ async function ipcLoadTasks(): Promise<TaskCard[]> {
 function normalizeTask(raw: Record<string, unknown>): TaskCard {
   const commentsRaw = raw.commentsJson ?? raw.comments ?? '[]'
   const comments = typeof commentsRaw === 'string' ? JSON.parse(commentsRaw) : (Array.isArray(commentsRaw) ? commentsRaw : [])
+  const attachmentsRaw = raw.attachmentsJson ?? raw.attachments ?? '[]'
+  const attachments = typeof attachmentsRaw === 'string' ? JSON.parse(attachmentsRaw) : (Array.isArray(attachmentsRaw) ? attachmentsRaw : [])
   return {
     id: raw.id as string,
     title: raw.title as string,
@@ -114,6 +162,7 @@ function normalizeTask(raw: Record<string, unknown>): TaskCard {
     tags: (raw.tags as string[]) ?? [],
     dueDate: (raw.dueDate as string) ?? '',
     comments,
+    attachments,
     createdAt: raw.createdAt as string,
     updatedAt: raw.updatedAt as string,
     deletedAt: (raw.deletedAt as string | null) ?? null,
@@ -136,6 +185,7 @@ async function ipcUpdateTask(updated: TaskCard): Promise<TaskCard> {
     project: updated.project,
     tags: updated.tags,
     dueDate: updated.dueDate,
+    attachments: updated.attachments,
   })
   return res.task as TaskCard
 }
@@ -192,7 +242,10 @@ function TaskFormPage({
   const [project, setProject] = useState(card?.project ?? '')
   const [tags, setTags] = useState(card?.tags.join(', ') ?? '')
   const [dueDate, setDueDate] = useState(card?.dueDate ?? '')
+  const [attachments, setAttachments] = useState<TaskAttachment[]>(card?.attachments ?? [])
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const titleRef = useRef<any>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -214,13 +267,89 @@ function TaskFormPage({
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
       comments: card?.comments ?? [],
+      attachments,
     })
-  }, [title, description, status, priority, assignee, project, tags, dueDate, card?.comments, onSubmit])
+  }, [title, description, status, priority, assignee, project, tags, dueDate, card?.comments, attachments, onSubmit])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
     if (e.key === 'Escape') onBack()
   }, [handleSubmit, onBack])
+
+  // Paste image handler
+  const handlePaste = useCallback(async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(event.clipboardData?.items ?? [])
+    const imageItems = items.filter((item) => item.type.startsWith('image/'))
+    if (imageItems.length === 0) return
+
+    event.preventDefault()
+    try {
+      const newAttachments: TaskAttachment[] = []
+      for (let i = 0; i < imageItems.length; i++) {
+        const file = imageItems[i]!.getAsFile()
+        if (!file) continue
+        const dataUrl = await readBlobAsDataUrl(file)
+        const result = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl,
+          suggestedBaseName: `board-image-${i + 1}`,
+          ...(file.type ? { mimeType: file.type } : {}),
+        })
+        newAttachments.push({
+          id: `${Date.now()}-${i}-${result.filePath}`,
+          type: 'image',
+          name: result.fileName,
+          path: result.filePath,
+          previewPath: result.filePath,
+        })
+      }
+      if (newAttachments.length > 0) {
+        setAttachments(prev => [...prev, ...newAttachments])
+      }
+    } catch (err) {
+      console.error('粘贴图片失败', err)
+    }
+  }, [])
+
+  // Upload file handler
+  const handleUploadFile = useCallback(async () => {
+    try {
+      const selected = await window.spark.invoke('dialog:open-file', {
+        title: '添加文件或图片',
+        multiple: true,
+      })
+      const filePaths: string[] = selected.filePaths ?? (selected.filePath ? [selected.filePath] : [])
+      if (selected.canceled || filePaths.length === 0) return
+
+      const newAttachments: TaskAttachment[] = await Promise.all(
+        filePaths.map(async (filePath, index) => {
+          const type = isImagePath(filePath) ? 'image' : 'file'
+          const base: TaskAttachment = {
+            id: `${Date.now()}-${index}-${filePath}`,
+            type,
+            name: fileNameFromPath(filePath),
+            path: filePath,
+          }
+          if (type !== 'image') return base
+          try {
+            const preview = await window.spark.invoke('file:prepare-image-preview', { sourcePath: filePath })
+            return { ...base, previewPath: preview.filePath }
+          } catch {
+            return base
+          }
+        }),
+      )
+      setAttachments(prev => [...prev, ...newAttachments])
+    } catch (err) {
+      console.error('上传文件失败', err)
+    }
+  }, [])
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id))
+  }, [])
+
+  const imageAttachments = attachments.filter(a => a.type === 'image')
+  const fileAttachments = attachments.filter(a => a.type === 'file')
 
   const isEdit = mode === 'edit'
 
@@ -265,12 +394,58 @@ function TaskFormPage({
           <div className="tfp-field">
             <label className="tfp-label">描述</label>
             <SparkTextarea
+              ref={textareaRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="输入任务描述（可选）…"
+              onPaste={handlePaste}
+              placeholder="输入任务描述（可选），支持 Ctrl+V 粘贴图片…"
               rows={6}
               className="tfp-textarea"
             />
+          </div>
+
+          {/* Attachments */}
+          {attachments.length > 0 && (
+            <div className="tfp-field">
+              <label className="tfp-label">附件 ({attachments.length})</label>
+              <div className="tfp-attachments">
+                {imageAttachments.length > 0 && (
+                  <div className="tfp-attachment-gallery">
+                    {imageAttachments.map(att => (
+                      <div key={att.id} className="tfp-attachment-img" onClick={() => setPreviewImage(resolveImageSrc(att.previewPath ?? att.path))}>
+                        <img src={resolveImageSrc(att.previewPath ?? att.path)} alt={att.name} />
+                        <button className="tfp-attachment-remove" onClick={(e) => { e.stopPropagation(); handleRemoveAttachment(att.id) }}>
+                          <Icons.X size={10} />
+                        </button>
+                        <div className="tfp-attachment-name">{att.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {fileAttachments.length > 0 && (
+                  <div className="tfp-attachment-files">
+                    {fileAttachments.map(att => (
+                      <div key={att.id} className="tfp-attachment-file">
+                        <Icons.File size={13} />
+                        <span className="tfp-attachment-fname">{att.name}</span>
+                        <button className="tfp-attachment-remove" onClick={() => handleRemoveAttachment(att.id)}>
+                          <Icons.X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Upload toolbar */}
+          <div className="tfp-upload-bar">
+            <button className="tfp-upload-btn" onClick={handleUploadFile} title="上传图片或文件">
+              <Icons.Upload size={14} />
+              <span>上传图片/文件</span>
+            </button>
+            <span className="tfp-upload-hint">支持在描述区域 Ctrl+V 粘贴图片</span>
           </div>
 
           {/* Status + Priority row */}
@@ -354,6 +529,18 @@ function TaskFormPage({
           />
         )}
       </div>
+
+      {/* Image preview overlay */}
+      {previewImage && (
+        <div className="tfp-preview-overlay" onClick={() => setPreviewImage(null)}>
+          <div className="tfp-preview-content" onClick={(e) => e.stopPropagation()}>
+            <img src={previewImage} alt="预览" />
+            <button className="tfp-preview-close" onClick={() => setPreviewImage(null)}>
+              <Icons.X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -604,6 +791,24 @@ function KanbanCard({
         <div className="bc-desc">{card.description}</div>
       )}
 
+      {card.attachments && card.attachments.length > 0 && (
+        <div className="bc-attachments">
+          {card.attachments.filter(a => a.type === 'image').slice(0, 2).map((att, i) => (
+            <div key={att.id} className="bc-attachment-thumb">
+              <img src={resolveImageSrc(att.previewPath ?? att.path)} alt={att.name} />
+            </div>
+          ))}
+          {card.attachments.filter(a => a.type === 'file').length > 0 && (
+            <span className="bc-file-count">
+              <Icons.File size={10} /> {card.attachments.filter(a => a.type === 'file').length} 文件
+            </span>
+          )}
+          {card.attachments.length > 2 && (
+            <span className="bc-attachment-more">+{card.attachments.length - 2}</span>
+          )}
+        </div>
+      )}
+
       {card.tags.length > 0 && (
         <div className="bc-tags">
           {card.tags.slice(0, 3).map((tag, i) => (
@@ -623,6 +828,14 @@ function KanbanCard({
           )}
           {card.comments && card.comments.length > 0 && (
             <span className="bc-comment-count">💬 {card.comments.length}</span>
+          )}
+          {card.attachments && card.attachments.length > 0 && (
+            <span className="bc-attachment-count">
+              <Icons.Image size={11} /> {card.attachments.filter(a => a.type === 'image').length}
+              {card.attachments.filter(a => a.type === 'file').length > 0 && (
+                <> <Icons.File size={11} /> {card.attachments.filter(a => a.type === 'file').length}</>
+              )}
+            </span>
           )}
         </div>
         <div className="bc-meta-right">

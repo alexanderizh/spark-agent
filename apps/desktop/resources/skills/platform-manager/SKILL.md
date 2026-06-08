@@ -64,13 +64,13 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
 - **mcp__spark_platform__settings_get_all** — 获取全部设置
 
 ### 7. 看板任务管理
-- **mcp__spark_platform__board_list**（参数：status?, priority?, assignee?, query?, includeDeleted?）— 列出看板任务（每条任务包含关联的项目名）
-- **mcp__spark_platform__board_get**（参数：id）— 获取单个任务详情
-- **mcp__spark_platform__board_create**（参数：title, description?, status?, priority?, assignee?, tags?, dueDate?, project?）— 创建任务；project 为下拉选择，只能选择当前应用中已存在的项目（从会话侧边栏获取项目列表）
-- **mcp__spark_platform__board_update**（参数：id, title?, description?, status?, priority?, assignee?, tags?, dueDate?, project?）— 更新任务
+- **mcp__spark_platform__board_list**（参数：status?, priority?, assignee?, project?, query?, includeDeleted?）— 列出看板任务（每条任务包含关联的项目名和附件信息）
+- **mcp__spark_platform__board_get**（参数：id）— 获取单个任务详情（含附件和评论）
+- **mcp__spark_platform__board_create**（参数：title, description?, status?, priority?, assignee?, tags?, dueDate?, project?, attachments?）— 创建任务；project 为下拉选择，只能选择当前应用中已存在的项目（从会话侧边栏获取项目列表）；attachments 为附件数组，每个附件包含 id、type（image/file）、name、path 字段
+- **mcp__spark_platform__board_update**（参数：id, title?, description?, status?, priority?, assignee?, tags?, dueDate?, project?, attachments?）— 更新任务（attachments 会整体替换）
 - **mcp__spark_platform__board_delete**（参数：id）— 删除任务（移至回收站）⚠️ 破坏性操作
-- **mcp__spark_platform__board_batch_create**（参数：tasks 数组）— 批量创建任务
-- **mcp__spark_platform__board_batch_update**（参数：updates 数组）— 批量更新任务
+- **mcp__spark_platform__board_batch_create**（参数：tasks 数组，每项含 title, description?, attachments? 等）— 批量创建任务
+- **mcp__spark_platform__board_batch_update**（参数：updates 数组，每项含 id, attachments? 等）— 批量更新任务
 - **mcp__spark_platform__board_batch_delete**（参数：ids 数组）— 批量删除任务 ⚠️ 破坏性操作
 - **mcp__spark_platform__board_restore**（参数：id）— 从回收站恢复任务
 - **mcp__spark_platform__board_permanent_delete**（参数：id）— 彻底永久删除 ⚠️ 不可恢复
@@ -83,12 +83,13 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
    - 拿到 `remoteSkillId` 和 `registryId` 后，用 `skills_install` 安装到本应用
    - **不要**将技能文件写到全局 Claude 目录或项目外的路径
 3. **看板任务操作**：
-   - 任务状态：todo（待办）、in-progress（进行中）、done（已完成）、closed（已关闭）
+   - 任务状态：todo（待办）、in-progress（进行中）、done（已完成）、closed（已关闭）、bug-fix（Bug 修复）
    - 优先级：low（低）、medium（中）、high（高）、urgent（紧急）
    - **项目关联**：任务创建/编辑时可指定 project 字段，该字段为下拉选择，只能选择当前应用中已存在的项目（项目列表从会话侧边栏获取）。关联项目后，通过 board_list 或 board_get 读取任务时能明确知道该任务属于哪个项目
+   - **附件支持**：任务可携带附件（图片和文件）。读取任务时，attachments 数组包含每个附件的 id、type（image/file）、name、path 字段；图片类型附件还有 previewPath 字段用于预览。创建/更新任务时可传入 attachments 数组。在处理任务内容时，如果附件是图片，应告知用户图片的路径；如果是文件，应告知文件名和路径
    - 创建任务默认状态 todo、默认优先级 medium
    - 读取任务时，不加 includeDeleted 默认只返回活跃任务
-   - board_list 返回的每条任务都会显示其关联的项目名
+   - board_list 返回的每条任务都会显示其关联的项目名和附件数量
    - 支持 batch 操作，一次性处理多个任务的创建/更新/删除
 4. **破坏性操作必须确认**：执行 delete、uninstall、permanent_delete 前先向用户确认
 5. **创建操作主动收集参数**：创建 Provider、Agent、Workflow、看板任务时，主动询问必要参数

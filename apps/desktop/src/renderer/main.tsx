@@ -1,6 +1,11 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
+import { setCreateRoot } from '@arco-design/web-react/es/_util/react-dom'
 import { App } from './App'
+
+// React 19 不再从 react-dom 默认导出 createRoot，Arco Design 内部依赖它做动态渲染
+// (Message、Notification、Modal.confirm 等)，必须手动注入。
+setCreateRoot(createRoot)
 
 import '@arco-design/web-react/es/style/index.css'
 import '@arco-design/web-react/es/Input/style/css.js'

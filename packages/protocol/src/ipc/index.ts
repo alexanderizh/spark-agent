@@ -1450,6 +1450,46 @@ export interface AgentDeleteResponse {
   deleted: boolean
 }
 
+// ─── Agent Import/Export Channels ──────────────────────────────────────────
+
+export interface AgentExportPayload {
+  version: 1
+  exportedAt: string
+  exportedBy: 'spark-agent'
+  agents: Array<{
+    name: string
+    description: string
+    agentAdapter: SessionAgentAdapter
+    permissionMode: SessionPermissionMode
+    reasoningEffort: SessionReasoningEffort
+    prompt: string
+    skillIds: string[]
+    disabledSkillIds: string[]
+    mcpServerIds: string[]
+    ruleIds: string[]
+    hookConfig: Record<string, unknown>
+    workflowId: string | null
+    metadata: Record<string, unknown>
+  }>
+}
+
+export interface AgentExportToFileRequest {
+  /** 要导出的 agent id 列表；空数组表示导出全部 */
+  ids: string[]
+}
+
+export interface AgentExportToFileResponse {
+  filePath: string
+  count: number
+}
+
+export interface AgentImportFromFileRequest {}
+
+export interface AgentImportFromFileResponse {
+  payload: AgentExportPayload | null
+  filePath: string
+}
+
 // ─── Team Mode Channels ────────────────────────────────────────────────────
 
 /**
@@ -1776,6 +1816,14 @@ export interface BoardComment {
   createdAt: string
 }
 
+export interface BoardTaskAttachment {
+  id: string
+  type: 'image' | 'file'
+  name: string
+  path: string
+  previewPath?: string
+}
+
 export interface BoardTask {
   id: string
   title: string
@@ -1787,6 +1835,7 @@ export interface BoardTask {
   tags: string[]
   dueDate: string
   comments: BoardComment[]
+  attachments: BoardTaskAttachment[]
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -1823,6 +1872,7 @@ export interface BoardCreateRequest {
   project?: string
   tags?: string[]
   dueDate?: string
+  attachments?: BoardTaskAttachment[]
 }
 
 export interface BoardCreateResponse {
@@ -1839,6 +1889,7 @@ export interface BoardUpdateRequest {
   project?: string
   tags?: string[]
   dueDate?: string
+  attachments?: BoardTaskAttachment[]
 }
 
 export interface BoardUpdateResponse {
@@ -3232,6 +3283,8 @@ export interface IpcChannelMap {
   'agent:create': [AgentCreateRequest, AgentCreateResponse]
   'agent:update': [AgentUpdateRequest, AgentUpdateResponse]
   'agent:delete': [AgentDeleteRequest, AgentDeleteResponse]
+  'agent:export-to-file': [AgentExportToFileRequest, AgentExportToFileResponse]
+  'agent:import-from-file': [AgentImportFromFileRequest, AgentImportFromFileResponse]
 
   // Team Mode
   'team:update': [TeamUpdateRequest, TeamUpdateResponse]
