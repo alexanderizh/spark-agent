@@ -166,7 +166,7 @@ html, body, #root { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 body {
   font-family: var(--font-sans);
   font-size: var(--font-base);
-  font-feature-settings: 'cv11', 'ss01';
+  font-feature-settings: var(--font-feature-body, 'cv11', 'ss01');
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -802,7 +802,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   border-bottom-width: 2px;
   color: var(--text-muted);
   font-size: 10px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-weight: 500;
 }
 
@@ -1326,7 +1326,7 @@ input.spark-checkbox:checked::after {
 .muted { color: var(--text-muted); }
 .faint { color: var(--text-faint); }
 .strong { color: var(--text-strong); font-weight: 600; }
-.mono-sm { font-family: 'Geist Mono', ui-monospace, monospace; font-size: var(--font-sm); }
+.mono-sm { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--font-sm); }
 .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .pulse-dot {

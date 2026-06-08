@@ -1354,10 +1354,23 @@ function AppearanceSection() {
 
         <label>字体</label>
         <SparkSelect value={a.font} onChange={(e) => setA({ font: e.target.value })}>
-          <option value="geist">Geist Sans + Geist Mono（推荐）</option>
-          <option value="system">系统默认</option>
-          <option value="ibm-plex">IBM Plex</option>
-          <option value="jetbrains">JetBrains</option>
+          <optgroup label="推荐">
+            <option value="geist">Geist Sans + Geist Mono（推荐）</option>
+            <option value="system">系统默认</option>
+          </optgroup>
+          <optgroup label="英文字体">
+            <option value="inter">Inter</option>
+            <option value="jetbrains">JetBrains</option>
+            <option value="ibm-plex">IBM Plex</option>
+            <option value="segoe-ui">Segoe UI</option>
+          </optgroup>
+          <optgroup label="中文字体">
+            <option value="microsoft-yahei">微软雅黑</option>
+            <option value="simsun">宋体</option>
+            <option value="kaiti">楷体</option>
+            <option value="fangsong">仿宋</option>
+            <option value="youyuan">幼圆</option>
+          </optgroup>
         </SparkSelect>
 
         <label>

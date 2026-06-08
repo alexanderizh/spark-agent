@@ -44,6 +44,34 @@ const FONT_MAP: Record<string, { sans: string; mono: string }> = {
     sans: '"JetBrains Sans", "Inter", "SF Pro Text", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif',
     mono: '"JetBrains Mono", "SFMono-Regular", Consolas, ui-monospace, monospace',
   },
+  inter: {
+    sans: '"Inter", "SF Pro Text", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif',
+    mono: '"JetBrains Mono", "Fira Code", "SFMono-Regular", Consolas, ui-monospace, monospace',
+  },
+  'segoe-ui': {
+    sans: '"Segoe UI Variable", "Segoe UI", "Microsoft YaHei UI", system-ui, sans-serif',
+    mono: '"Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace',
+  },
+  'microsoft-yahei': {
+    sans: '"Microsoft YaHei", "Microsoft YaHei UI", "PingFang SC", "Hiragino Sans GB", "Segoe UI", system-ui, sans-serif',
+    mono: '"Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace',
+  },
+  simsun: {
+    sans: '"SimSun", "宋体", "Songti SC", "STSong", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", serif',
+    mono: '"Cascadia Code", Consolas, ui-monospace, monospace',
+  },
+  kaiti: {
+    sans: '"KaiTi", "楷体", "Kaiti SC", "STKaiti", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", serif',
+    mono: '"Cascadia Code", Consolas, ui-monospace, monospace',
+  },
+  fangsong: {
+    sans: '"FangSong", "仿宋", "STFangsong", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", serif',
+    mono: '"Cascadia Code", Consolas, ui-monospace, monospace',
+  },
+  'youyuan': {
+    sans: '"YouYuan", "幼圆", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif',
+    mono: '"Cascadia Code", Consolas, ui-monospace, monospace',
+  },
 }
 
 const CORNER_MAP: Record<string, { xs: string; sm: string; md: string; lg: string; xl: string }> = {
@@ -80,6 +108,10 @@ function applyAppearance(settings: AppearanceSettings) {
 
   // Code ligature
   root.style.setProperty('--code-ligature', settings.codeLigature ? '"calt", "liga", "dlig", "ss02", "zero"' : 'normal')
+
+  // Serif fonts should not apply Geist-specific OpenType features
+  const isSerif = ['simsun', 'kaiti', 'fangsong'].includes(settings.font)
+  root.style.setProperty('--font-feature-body', isSerif ? 'normal' : '"cv11", "ss01"')
 
   // Window corners
   const corners = CORNER_MAP[settings.windowCorners] ?? CORNER_MAP.soft!

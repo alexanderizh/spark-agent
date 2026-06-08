@@ -152,7 +152,7 @@
   border-bottom: 1px solid var(--divider);
 }
 .hunk-wrap .hunk-bar .label {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   color: var(--text-muted);
 }
 .hunk-wrap .hunk-actions {
@@ -237,7 +237,7 @@
   color: var(--text);
 }
 .checkpoint .pill .num {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   color: var(--text-faint);
 }
@@ -258,7 +258,7 @@
   padding: 1px 5px;
   color: var(--text-muted);
   background: var(--bg);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10px;
 }
 .checkpoint .pill .actions {
@@ -304,7 +304,7 @@
 .turn-summary-file-row .file-path {
   flex: 1;
   min-width: 0;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
   color: var(--text);
   background: transparent;
@@ -316,7 +316,7 @@
 .turn-summary-file-row .file-stats {
   display: inline-flex;
   gap: 6px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   flex-shrink: 0;
 }
@@ -451,7 +451,7 @@
   padding: 8px 10px;
   background: rgba(0,0,0,0.06);
   border-radius: var(--r-sm);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
   line-height: 1.5;
   color: var(--text);
@@ -704,7 +704,7 @@
   margin-bottom: 8px;
 }
 .model-row .name { font-size: var(--font-sm); font-weight: 600; color: var(--text-strong); }
-.model-row .id { font-size: 11px; color: var(--text-muted); font-family: 'Geist Mono', ui-monospace, monospace; }
+.model-row .id { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace); }
 .model-row .role-badges { display: flex; gap: 4px; flex-wrap: wrap; }
 .model-row .price {
   margin-left: auto;
@@ -743,7 +743,7 @@
 }
 .rule-line:hover { background: var(--hover); }
 .rule-line .src {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   color: var(--text-faint);
   flex-shrink: 0;

@@ -1729,7 +1729,7 @@ body.sidebar-resizing {
 .image-lightbox-error-path {
   color: rgba(241, 241, 243, 0.45);
   font-size: var(--font-xs, 12px);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   max-width: 480px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1743,7 +1743,7 @@ body.sidebar-resizing {
   color: var(--code-fg);
   overflow: auto;
   white-space: pre;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-xs);
   line-height: 1.55;
 }
@@ -1773,7 +1773,7 @@ body.sidebar-resizing {
   color: var(--text-faint);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 .md-code-copy,
 .md-code-copy-float {
@@ -2011,12 +2011,12 @@ body.sidebar-resizing {
 .tool-call-head .tool-name {
   font-weight: 600;
   color: var(--text);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-sm);
 }
 .tool-call-head .tool-arg {
   color: var(--text-muted);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-xs);
   white-space: nowrap;
   overflow: hidden;
@@ -2042,7 +2042,7 @@ body.sidebar-resizing {
   padding: 8px 0 8px 24px;
   border-top: 0;
   background: transparent;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-xs);
   color: var(--text-muted);
   line-height: 1.6;
@@ -2064,7 +2064,7 @@ body.sidebar-resizing {
   border-radius: var(--r-md);
   overflow: hidden;
   margin: 8px 0;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11.5px;
   background: var(--panel);
 }
@@ -2079,7 +2079,7 @@ body.sidebar-resizing {
   font-family: inherit;
 }
 .diff-head .diff-path {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: var(--font-xs);
   color: var(--text);
 }
@@ -2088,7 +2088,7 @@ body.sidebar-resizing {
   display: flex;
   gap: 6px;
   font-size: 10.5px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 .diff-stats .add {
   color: var(--success);
@@ -2163,7 +2163,7 @@ body.sidebar-resizing {
   border-radius: var(--r-md);
   background: var(--term-bg);
   color: var(--term-fg);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11.5px;
   line-height: 1.6;
   padding: 12px 14px;
@@ -2864,7 +2864,7 @@ body.sidebar-resizing {
   line-height: 1.25;
 }
 .composer-approval-title span {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 .composer-approval-meta {
   margin-top: 2px;
@@ -2880,7 +2880,7 @@ body.sidebar-resizing {
   border-radius: 7px;
   background: var(--bg-soft);
   color: var(--text);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -4536,7 +4536,7 @@ body.inspector-resizing {
 .tree-row .git-status {
   font-size: 10px;
   font-weight: 700;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   margin-right: 6px;
 }
 .tree-row .git-m {
@@ -4744,7 +4744,7 @@ body.inspector-resizing {
   color: var(--danger);
 }
 .mini-tool-output {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   white-space: pre-wrap;
   margin: 6px 0 0;
   font-size: 11px;
@@ -4900,7 +4900,7 @@ body.inspector-resizing {
 .tool-duration {
   font-size: 10px;
   color: var(--text-faint);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   white-space: nowrap;
 }
 .tool-call.is-success .tool-call-head .tool-name {
@@ -4951,7 +4951,7 @@ body.inspector-resizing {
   margin-top: 4px;
   font-size: var(--font-xs);
   color: var(--text-muted);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 .streaming-error-hint {
   display: block;
@@ -5155,7 +5155,7 @@ body.inspector-resizing {
   display: flex;
   gap: 8px;
   align-items: center;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 
 .wf-port {
@@ -5547,7 +5547,7 @@ body.inspector-resizing {
   padding: 6px 8px;
   background: var(--bg-soft);
   border-radius: var(--r-sm);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -5605,7 +5605,7 @@ body.inspector-resizing {
 }
 .tl-time {
   color: var(--text-faint);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   padding-top: 4px;
   text-align: right;
@@ -7123,7 +7123,7 @@ body.inspector-resizing {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   padding: 10px 12px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 12px;
   color: var(--code-fg);
   overflow: auto;
@@ -7403,7 +7403,7 @@ body.inspector-resizing {
   font-size: var(--font-xs);
   color: var(--text-muted);
   margin-top: 1px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 .integrity-sdk-right {
   display: flex;
@@ -7628,7 +7628,7 @@ body.inspector-resizing {
 .model-row .id {
   font-size: 11px;
   color: var(--text-muted);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 .model-row .role-badges {
   display: flex;
@@ -7695,7 +7695,7 @@ body.inspector-resizing {
   background: var(--hover);
 }
 .rule-line .src {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   color: var(--text-faint);
   flex-shrink: 0;
@@ -7882,7 +7882,7 @@ body.inspector-resizing {
   background: var(--code-bg);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
   color: var(--danger);
   line-height: 1.5;
@@ -11397,7 +11397,7 @@ body.inspector-resizing {
   padding: 0 12px 8px;
   font-size: 11.5px;
   color: var(--text-muted);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
 }
 .spark-wf-node-foot {
   padding: 6px 12px;
@@ -11591,7 +11591,7 @@ body.inspector-resizing {
   border-radius: var(--r-sm);
   color: var(--text);
   font-size: var(--font-sm);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   outline: none;
   transition: background 0.12s, border-color 0.12s;
 }
@@ -11650,7 +11650,7 @@ body.inspector-resizing {
   border-radius: 13px;
   font-size: var(--font-xs);
   color: var(--text);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   max-width: 100%;
   transition: background 0.12s, border-color 0.12s;
 }
@@ -11844,7 +11844,7 @@ body.inspector-resizing {
   border-radius: 10px;
   background: var(--bg-soft);
   color: var(--text-muted);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   border: 1px solid var(--border);
   max-width: 180px;
   overflow: hidden;
@@ -12005,7 +12005,7 @@ body.inspector-resizing {
   gap: 4px;
 }
 .import-meta .mono-sm {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
 }
 .import-meta .muted { color: var(--text-muted); }
@@ -12152,7 +12152,7 @@ body.inspector-resizing {
   border-radius: var(--r-sm);
   color: var(--text);
   font-size: var(--font-sm);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   outline: none;
   transition: background 0.12s, border-color 0.12s;
 }
@@ -12211,7 +12211,7 @@ body.inspector-resizing {
   border-radius: 13px;
   font-size: var(--font-xs);
   color: var(--text);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   max-width: 100%;
   transition: background 0.12s, border-color 0.12s;
 }
@@ -12405,7 +12405,7 @@ body.inspector-resizing {
   border-radius: 10px;
   background: var(--bg-soft);
   color: var(--text-muted);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   border: 1px solid var(--border);
   max-width: 180px;
   overflow: hidden;
@@ -12566,7 +12566,7 @@ body.inspector-resizing {
   gap: 4px;
 }
 .import-meta .mono-sm {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
 }
 .import-meta .muted { color: var(--text-muted); }
