@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { syncArcoThemeFromDom } from '../arcoTheme'
 
 type AppearanceSettings = {
   font: string
@@ -129,12 +130,16 @@ function applyAppearance(settings: AppearanceSettings) {
 /** Apply appearance CSS variables on mount + changes. Call once in Shell. */
 export function useAppearanceEffects() {
   useEffect(() => {
-    applyAppearance(readAppearance())
+    const syncAppearance = () => {
+      applyAppearance(readAppearance())
+      syncArcoThemeFromDom()
+    }
+    syncAppearance()
 
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail
       if (detail?.key === SETTINGS_APPEARANCE_KEY) {
-        applyAppearance(readAppearance())
+        syncAppearance()
       }
     }
     window.addEventListener(SETTINGS_UPDATED_EVENT, handler)
