@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { DataSource } from 'typeorm'
 import { UserEntity } from './entity/user.entity'
 import { CloudAgentEntity } from './entity/cloud-agent.entity'

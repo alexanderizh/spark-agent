@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { Bootstrap } from '@midwayjs/bootstrap'
 import { MainConfiguration as Configuration } from './configuration'
 

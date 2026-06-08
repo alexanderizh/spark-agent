@@ -3,15 +3,15 @@ services:
     image: postgres:16-alpine
     container_name: spark-postgres
     ports:
-      - "5432:5432"
+      - "${PG_PORT:-5432}:5432"
     environment:
-      POSTGRES_DB: spark_agent
-      POSTGRES_USER: spark
-      POSTGRES_PASSWORD: spark_dev
+      POSTGRES_DB: ${PG_DATABASE:-spark_agent}
+      POSTGRES_USER: ${PG_USER:-spark}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-spark_dev}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U spark -d spark_agent"]
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-spark} -d ${PG_DATABASE:-spark_agent}"]
       interval: 5s
       timeout: 3s
       retries: 5
@@ -20,7 +20,10 @@ services:
     image: redis:7-alpine
     container_name: spark-redis
     ports:
-      - "6379:6379"
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
