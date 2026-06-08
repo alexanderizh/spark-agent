@@ -15,7 +15,10 @@ import {
   IconPlus, IconSearch, IconPlayArrow, IconEdit,
   IconDelete, IconClockCircle, IconExclamationCircle, IconCheckCircle,
   IconCloseCircle, IconLoading, IconSync, IconSchedule, IconThunderbolt,
+  IconUser, IconUserGroup, IconSettings, IconBook, IconBulb,
 } from '@arco-design/web-react/icon'
+import type { ManagedAgent, ManagedTeam, ProviderProfile, WorkspaceInfo } from '@spark/protocol'
+import { useIpcInvoke } from '../hooks/useIpc'
 import './ScheduledTasksView.less'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -514,6 +517,56 @@ function TaskFormPage({ task, onClose }: {
   const [tags, setTags] = useState<string[]>(task?.tags ?? [])
   const [enabledOnCreate, setEnabledOnCreate] = useState(true)
 
+  // ─── Load selectable data ───────────────────────────────────────────────
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: listTeams } = useIpcInvoke('team:list-defs')
+  const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
+
+  const [agents, setAgents] = useState<ManagedAgent[]>([])
+  const [teams, setTeams] = useState<ManagedTeam[]>([])
+  const [providers, setProviders] = useState<ProviderProfile[]>([])
+  const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
+
+  useEffect(() => {
+    Promise.all([
+      listAgents({ includeDisabled: false }).catch(() => ({ agents: [] })),
+      listTeams({ includeDisabled: false }).catch(() => ({ teams: [] })),
+      listProviders({}).catch(() => ({ profiles: [] })),
+      listWorkspaces({ limit: 100 }).catch(() => ({ workspaces: [] })),
+    ]).then(([agentRes, teamRes, providerRes, workspaceRes]) => {
+      setAgents(agentRes.agents ?? [])
+      setTeams(teamRes.teams ?? [])
+      setProviders(providerRes.profiles ?? [])
+      setWorkspaces(workspaceRes.workspaces ?? [])
+    }).catch(console.error)
+  }, [listAgents, listTeams, listProviders, listWorkspaces])
+
+  // Build model options from all providers' modelIds
+  const modelOptions = useMemo(() => {
+    const modelSet = new Set<string>()
+    for (const p of providers) {
+      if (p.defaultModel) modelSet.add(p.defaultModel)
+      for (const m of p.modelIds) modelSet.add(m)
+    }
+    return Array.from(modelSet).map(m => ({ label: m, value: m }))
+  }, [providers])
+
+  const agentOptions = useMemo(
+    () => agents.map(a => ({ label: a.name, value: a.id })),
+    [agents]
+  )
+
+  const teamOptions = useMemo(
+    () => teams.map(t => ({ label: t.name, value: t.id })),
+    [teams]
+  )
+
+  const workspaceOptions = useMemo(
+    () => workspaces.map(w => ({ label: w.name, value: w.id })),
+    [workspaces]
+  )
+
   const canSave = name.trim().length > 0 && promptTemplate.trim().length > 0
 
   const handleSave = async () => {
@@ -576,43 +629,75 @@ function TaskFormPage({ task, onClose }: {
 
       {/* Form Body */}
       <div className="st-form-page-body">
-        {/* Section 1: 基础信息 */}
+        {/* ── Section 1: Basic Info ────────────────────────────────────── */}
         <div className="st-form-section">
           <div className="st-form-section-header">
-            <h3>基础信息</h3>
-            <p>先把任务的名字、用途和标签定清楚</p>
+            <div className="st-section-badge">01</div>
+            <div className="st-section-header-text">
+              <h3>基础信息</h3>
+              <p>任务名称、用途描述和分类标签</p>
+            </div>
           </div>
-          <Form layout="vertical" className="st-form-section-body">
-            <Form.Item label={<><span style={{ color: 'var(--color-danger-6)' }}>* </span>任务名称</>}>
-              <Input value={name} onChange={setName} placeholder="例如：每日代码审查" />
-            </Form.Item>
-            <Form.Item label="描述">
-              <Input.TextArea value={description} onChange={setDescription} placeholder="补充任务目标、产出格式和注意事项" rows={3} />
-            </Form.Item>
-            <Form.Item label="标签">
-              <Select
-                mode="tags"
-                value={tags}
-                onChange={(v) => setTags(v as string[])}
-                placeholder="选择标签"
-              />
-            </Form.Item>
-            <Form.Item label="创建后立即启用">
-              <div className="st-form-switch-row">
-                <Switch checked={enabledOnCreate} onChange={setEnabledOnCreate} />
-                <span className="st-form-switch-hint">任务创建后会进入调度</span>
+          <div className="st-form-section-body">
+            <div className="st-form-field-group">
+              <div className="st-form-field">
+                <label className="st-field-label">
+                  任务名称 <span className="st-required">*</span>
+                </label>
+                <Input
+                  value={name}
+                  onChange={setName}
+                  placeholder="例如：每日代码审查"
+                  size="large"
+                />
               </div>
-            </Form.Item>
-          </Form>
+
+              <div className="st-form-field">
+                <label className="st-field-label">描述</label>
+                <Input.TextArea
+                  value={description}
+                  onChange={setDescription}
+                  placeholder="补充任务目标、产出格式和注意事项"
+                  rows={3}
+                  autoSize={{ minRows: 2, maxRows: 5 }}
+                />
+              </div>
+
+              <div className="st-form-field-row">
+                <div className="st-form-field st-form-field--half">
+                  <label className="st-field-label">标签</label>
+                  <Select
+                    mode="tags"
+                    value={tags}
+                    onChange={(v) => setTags(v as string[])}
+                    placeholder="输入后回车添加"
+                    size="large"
+                  />
+                </div>
+                <div className="st-form-field st-form-field--half">
+                  <label className="st-field-label">创建后立即启用</label>
+                  <div className="st-form-switch-row">
+                    <Switch checked={enabledOnCreate} onChange={setEnabledOnCreate} />
+                    <span className="st-form-switch-hint">
+                      {enabledOnCreate ? '任务创建后进入调度' : '创建后暂停，手动启用'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Section 2: 调度策略 */}
+        {/* ── Section 2: Schedule ──────────────────────────────────────── */}
         <div className="st-form-section">
           <div className="st-form-section-header">
-            <h3>调度策略</h3>
-            <p>决定它何时运行，尽量让规则一眼就能读懂</p>
+            <div className="st-section-badge">02</div>
+            <div className="st-section-header-text">
+              <h3>调度策略</h3>
+              <p>决定任务何时运行</p>
+            </div>
           </div>
-          <Form layout="vertical" className="st-form-section-body">
+          <div className="st-form-section-body">
             <div className="st-trigger-cards">
               {([
                 {
@@ -652,109 +737,243 @@ function TaskFormPage({ task, onClose }: {
             </div>
 
             {triggerType === 'interval' && (
-              <Form.Item label="执行间隔（秒）">
-                <InputNumber
-                  value={intervalSeconds}
-                  onChange={(v) => setIntervalSeconds(v ?? 3600)}
-                  min={10}
-                  max={86400}
-                  suffix="秒"
-                  style={{ width: '100%' }}
-                />
-                <div className="st-form-hint">
-                  {intervalSeconds < 60 ? `每 ${intervalSeconds} 秒`
-                    : intervalSeconds < 3600 ? `每 ${Math.round(intervalSeconds / 60)} 分钟`
-                    : `每 ${Math.round(intervalSeconds / 3600)} 小时`}
+              <div className="st-form-field" style={{ marginTop: 16 }}>
+                <label className="st-field-label">执行间隔</label>
+                <div className="st-interval-input-row">
+                  <InputNumber
+                    value={intervalSeconds}
+                    onChange={(v) => setIntervalSeconds(v ?? 3600)}
+                    min={10}
+                    max={86400}
+                    suffix="秒"
+                    style={{ flex: 1 }}
+                    size="large"
+                  />
+                  <span className="st-interval-hint">
+                    {intervalSeconds < 60 ? `每 ${intervalSeconds} 秒`
+                      : intervalSeconds < 3600 ? `每 ${Math.round(intervalSeconds / 60)} 分钟`
+                      : `每 ${Math.round(intervalSeconds / 3600)} 小时`}
+                  </span>
                 </div>
-              </Form.Item>
+                <div className="st-quick-intervals">
+                  {[
+                    { label: '30秒', val: 30 },
+                    { label: '1分钟', val: 60 },
+                    { label: '5分钟', val: 300 },
+                    { label: '15分钟', val: 900 },
+                    { label: '1小时', val: 3600 },
+                    { label: '6小时', val: 21600 },
+                    { label: '1天', val: 86400 },
+                  ].map(qi => (
+                    <Tag
+                      key={qi.val}
+                      size="small"
+                      color={intervalSeconds === qi.val ? 'arcoblue' : 'gray'}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setIntervalSeconds(qi.val)}
+                    >
+                      {qi.label}
+                    </Tag>
+                  ))}
+                </div>
+              </div>
             )}
 
             {triggerType === 'cron' && (
-              <Form.Item label="Cron 表达式">
-                <Input value={cronExpression} onChange={setCronExpression} placeholder="0 */2 * * *" />
-                <div style={{ marginTop: 8 }}>
-                  <Space wrap size={4}>
-                    {['*/5 * * * *', '0 */1 * * *', '0 9 * * MON-FRI', '0 0 1 * *'].map(expr => (
-                      <Tag
-                        key={expr}
-                        size="small"
-                        color={cronExpression === expr ? 'blue' : 'gray'}
-                        style={{ cursor: 'pointer' }}
-                        onClick={() => setCronExpression(expr)}
-                      >
-                        {expr}
-                      </Tag>
-                    ))}
-                  </Space>
+              <div className="st-form-field" style={{ marginTop: 16 }}>
+                <label className="st-field-label">Cron 表达式</label>
+                <Input
+                  value={cronExpression}
+                  onChange={setCronExpression}
+                  placeholder="0 */2 * * *"
+                  size="large"
+                />
+                <div className="st-quick-intervals">
+                  {[
+                    { label: '每 5 分钟', expr: '*/5 * * * *' },
+                    { label: '每小时', expr: '0 */1 * * *' },
+                    { label: '工作日 9 点', expr: '0 9 * * MON-FRI' },
+                    { label: '每月 1 号', expr: '0 0 1 * *' },
+                  ].map(qc => (
+                    <Tag
+                      key={qc.expr}
+                      size="small"
+                      color={cronExpression === qc.expr ? 'arcoblue' : 'gray'}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => setCronExpression(qc.expr)}
+                    >
+                      {qc.label}
+                    </Tag>
+                  ))}
                 </div>
-              </Form.Item>
+              </div>
             )}
 
             {triggerType === 'once' && (
-              <Form.Item label="执行时间">
+              <div className="st-form-field" style={{ marginTop: 16 }}>
+                <label className="st-field-label">执行时间</label>
                 <Input
                   type="datetime-local"
                   value={runAt}
                   onChange={setRunAt}
+                  size="large"
                 />
-              </Form.Item>
+              </div>
             )}
-          </Form>
+          </div>
         </div>
 
-        {/* Section 3: 执行配置 */}
+        {/* ── Section 3: Execution Config ──────────────────────────────── */}
         <div className="st-form-section">
           <div className="st-form-section-header">
-            <h3>执行配置</h3>
-            <p>指定由谁执行、用哪个模型和哪个工作区上下文</p>
-          </div>
-          <Form layout="vertical" className="st-form-section-body">
-            <div className="st-form-row-4">
-              <Form.Item label="Agent">
-                <Select
-                  value={agentId || ''}
-                  onChange={setAgentId}
-                  placeholder="选择"
-                  allowClear
-                />
-              </Form.Item>
-              <Form.Item label="Team">
-                <Select
-                  value={teamId || ''}
-                  onChange={setTeamId}
-                  placeholder="选择"
-                  allowClear
-                />
-              </Form.Item>
-              <Form.Item label="Model">
-                <Select
-                  value={modelId || ''}
-                  onChange={setModelId}
-                  placeholder="选择"
-                  allowClear
-                />
-              </Form.Item>
-              <Form.Item label="Workspace">
-                <Select
-                  value={workspaceId || ''}
-                  onChange={setWorkspaceId}
-                  placeholder="选择"
-                  allowClear
-                />
-              </Form.Item>
+            <div className="st-section-badge">03</div>
+            <div className="st-section-header-text">
+              <h3>执行配置</h3>
+              <p>由谁执行、用哪个模型和工作区</p>
             </div>
-            <Form.Item label={<><span style={{ color: 'var(--color-danger-6)' }}>* </span>Prompt 模板</>}>
+          </div>
+          <div className="st-form-section-body">
+            <div className="st-form-field-row">
+              <div className="st-form-field st-form-field--half">
+                <label className="st-field-label">
+                  <IconUser style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  Agent
+                </label>
+                <Select
+                  {...(agentId ? { value: agentId } : {})}
+                  onChange={setAgentId}
+                  placeholder="选择执行 Agent"
+                  allowClear
+                  showSearch
+                  filterOption={(input: string, option: any) =>
+                    (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={agentOptions}
+                  size="large"
+                  notFoundContent="暂无可用 Agent"
+                />
+              </div>
+              <div className="st-form-field st-form-field--half">
+                <label className="st-field-label">
+                  <IconUserGroup style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  Team
+                </label>
+                <Select
+                  {...(teamId ? { value: teamId } : {})}
+                  onChange={setTeamId}
+                  placeholder="选择团队"
+                  allowClear
+                  showSearch
+                  filterOption={(input: string, option: any) =>
+                    (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={teamOptions}
+                  size="large"
+                  notFoundContent="暂无可用团队"
+                />
+              </div>
+            </div>
+
+            <div className="st-form-field-row">
+              <div className="st-form-field st-form-field--half">
+                <label className="st-field-label">
+                  <IconBulb style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  Model
+                </label>
+                <Select
+                  {...(modelId ? { value: modelId } : {})}
+                  onChange={setModelId}
+                  placeholder="选择模型"
+                  allowClear
+                  showSearch
+                  filterOption={(input: string, option: any) =>
+                    (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={modelOptions}
+                  size="large"
+                  notFoundContent="暂无可用模型"
+                />
+              </div>
+              <div className="st-form-field st-form-field--half">
+                <label className="st-field-label">
+                  <IconBook style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  Workspace
+                </label>
+                <Select
+                  {...(workspaceId ? { value: workspaceId } : {})}
+                  onChange={setWorkspaceId}
+                  placeholder="选择工作区"
+                  allowClear
+                  showSearch
+                  filterOption={(input: string, option: any) =>
+                    (option?.props?.children ?? '').toLowerCase().includes(input.toLowerCase())
+                  }
+                  options={workspaceOptions}
+                  size="large"
+                  notFoundContent="暂无可用工作区"
+                />
+              </div>
+            </div>
+
+            <div className="st-form-field">
+              <label className="st-field-label">
+                Prompt 模板 <span className="st-required">*</span>
+              </label>
               <Input.TextArea
                 value={promptTemplate}
                 onChange={setPromptTemplate}
                 placeholder="写清任务执行时需要产出的内容、格式和约束"
                 rows={6}
+                autoSize={{ minRows: 4, maxRows: 12 }}
               />
               <div className="st-form-hint">
                 可用变量: {'{{date}}'}, {'{{time}}'}, {'{{taskName}}'}, {'{{executionCount}}'}, {'{{interval}}'}
               </div>
-            </Form.Item>
-          </Form>
+            </div>
+          </div>
+        </div>
+
+        {/* ── Section 4: Advanced Settings ─────────────────────────────── */}
+        <div className="st-form-section">
+          <div className="st-form-section-header">
+            <div className="st-section-badge">04</div>
+            <div className="st-section-header-text">
+              <h3>高级设置</h3>
+              <p>超时、重试等运行策略</p>
+            </div>
+          </div>
+          <div className="st-form-section-body">
+            <div className="st-form-field-row">
+              <div className="st-form-field st-form-field--third">
+                <label className="st-field-label">
+                  <IconSettings style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  超时时间
+                </label>
+                <InputNumber
+                  value={timeoutSeconds}
+                  onChange={(v) => setTimeoutSeconds(v ?? 300)}
+                  min={10}
+                  max={7200}
+                  suffix="秒"
+                  style={{ width: '100%' }}
+                  size="large"
+                />
+              </div>
+              <div className="st-form-field st-form-field--third">
+                <label className="st-field-label">最大重试次数</label>
+                <InputNumber
+                  value={maxRetries}
+                  onChange={(v) => setMaxRetries(v ?? 0)}
+                  min={0}
+                  max={10}
+                  suffix="次"
+                  style={{ width: '100%' }}
+                  size="large"
+                />
+              </div>
+              <div className="st-form-field st-form-field--third" />
+            </div>
+          </div>
         </div>
       </div>
     </div>
