@@ -2,13 +2,12 @@
  * BoardView — 全局任务看板（类飞书看板）
  *
  * 功能：
- *  - 多列看板（待办 / 进行中 / 已完成 / 已关闭）
- *  - 快捷创建任务卡片（弹窗式，使用 Arco Design 组件）
- *  - 点击卡片侧拉详情面板（支持编辑保存）
+ *  - 多列看板（待办 / 进行中 / Bug 修复 / 已完成 / 已关闭）
+ *  - 内联创建/编辑页面（非弹窗）
  *  - 右键菜单：打开详情、复制、删除
  *  - 拖拽改变状态
  *  - 回收站（软删除 → 永久删除）
- *  - localStorage 持久化
+ *  - IPC 持久化
  */
 import {
   useCallback,
@@ -18,7 +17,7 @@ import {
   useState,
 } from 'react'
 import type { DragEvent } from 'react'
-import { Badge, Button, DatePicker, Drawer, Select, Space } from '@arco-design/web-react'
+import { Badge, Button, DatePicker, Select, Space } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -58,11 +57,14 @@ export type TaskCard = {
   deletedAt: string | null
 }
 
+type BoardPage =
+  | { view: 'kanban' }
+  | { view: 'create'; defaultStatus: TaskStatus }
+  | { view: 'edit'; card: TaskCard }
+
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
-
-/* Storage key kept for migration reference — data now lives in ~/.spark-agent/board-tasks.json via IPC */
 
 const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; headerBg: string; headerFg: string; colBg: string; colClass: string }[] = [
   { key: 'todo', label: '待办', color: '#6b7280', icon: '📋', headerBg: 'rgba(107,114,128,0.12)', headerFg: '#6b7280', colBg: 'rgba(107,114,128,0.04)', colClass: 'col-todo' },
@@ -161,48 +163,42 @@ type CtxMenuState = {
   card: TaskCard
 } | null
 
-/* ------------------------------------------------------------------ */
-/*  Quick Create Modal                                                 */
-/* ------------------------------------------------------------------ */
-
 type AgentOption = { id: string; name: string }
 
-function QuickCreateModal({
-  defaultStatus,
+/* ------------------------------------------------------------------ */
+/*  Task Form Page (inline create / edit)                              */
+/* ------------------------------------------------------------------ */
+
+function TaskFormPage({
+  mode,
+  card,
   agents,
   projectOptions,
-  onClose,
+  onBack,
   onSubmit,
 }: {
-  defaultStatus: TaskStatus
+  mode: 'create' | 'edit'
+  card?: TaskCard
   agents: AgentOption[]
   projectOptions: { value: string; label: string }[]
-  onClose: () => void
-  onSubmit: (card: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
+  onBack: () => void
+  onSubmit: (data: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
 }) {
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState<Priority>('medium')
-  const [assignee, setAssignee] = useState('')
-  const [project, setProject] = useState('')
-  const [tags, setTags] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [status, setStatus] = useState<TaskStatus>(defaultStatus)
+  const [title, setTitle] = useState(card?.title ?? '')
+  const [description, setDescription] = useState(card?.description ?? '')
+  const [priority, setPriority] = useState<Priority>(card?.priority ?? 'medium')
+  const [status, setStatus] = useState<TaskStatus>(card?.status ?? 'todo')
+  const [assignee, setAssignee] = useState(card?.assignee ?? '')
+  const [project, setProject] = useState(card?.project ?? '')
+  const [tags, setTags] = useState(card?.tags.join(', ') ?? '')
+  const [dueDate, setDueDate] = useState(card?.dueDate ?? '')
   const titleRef = useRef<any>(null)
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handler)
-    return () => document.removeEventListener('keydown', handler)
-  }, [onClose])
 
   useEffect(() => {
     const t = setTimeout(() => {
       const el = titleRef.current?.input ?? titleRef.current
       el?.focus?.()
-    }, 50)
+    }, 100)
     return () => clearTimeout(t)
   }, [])
 
@@ -217,412 +213,249 @@ function QuickCreateModal({
       project: project.trim(),
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
-      comments: [],
+      comments: card?.comments ?? [],
     })
-    onClose()
-  }, [title, description, status, priority, assignee, project, tags, dueDate, onSubmit, onClose])
+  }, [title, description, status, priority, assignee, project, tags, dueDate, card?.comments, onSubmit])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
-  }, [handleSubmit])
+    if (e.key === 'Escape') onBack()
+  }, [handleSubmit, onBack])
+
+  const isEdit = mode === 'edit'
 
   return (
-    <div className="board-modal-backdrop">
-      <div className="board-quick-create" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
-        <div className="bqc-header">
-          <div className="bqc-title">快捷创建任务</div>
-          <button className="board-icon-btn" onClick={onClose}><Icons.X size={16} /></button>
+    <div className="task-form-page" onKeyDown={handleKeyDown}>
+      {/* Header */}
+      <div className="tfp-header">
+        <button className="tfp-back-btn" onClick={onBack}>
+          <Icons.ChevronLeft size={18} />
+          <span>返回看板</span>
+        </button>
+        <h2 className="tfp-title">{isEdit ? '编辑任务' : '创建任务'}</h2>
+        <div className="tfp-header-actions">
+          <Button size="small" onClick={onBack}>取消</Button>
+          <Button
+            type="primary"
+            size="small"
+            onClick={handleSubmit}
+            disabled={!title.trim()}
+          >
+            {isEdit ? '保存修改' : '创建任务'}
+          </Button>
         </div>
-        <div className="bqc-body">
-          <div className="bqc-field">
-            <label>标题</label>
+      </div>
+
+      {/* Form body */}
+      <div className="tfp-body">
+        <div className="tfp-main">
+          {/* Title */}
+          <div className="tfp-field">
+            <label className="tfp-label">标题</label>
             <SparkInput
               ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="输入任务标题…"
-              className="bqc-input"
+              className="tfp-input"
             />
           </div>
-          <div className="bqc-field">
-            <label>描述</label>
+
+          {/* Description */}
+          <div className="tfp-field">
+            <label className="tfp-label">描述</label>
             <SparkTextarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="输入任务描述（可选）…"
-              rows={5}
-              className="bqc-textarea"
+              rows={6}
+              className="tfp-textarea"
             />
           </div>
-          <div className="bqc-row">
-            <div className="bqc-field bqc-field-sm">
-              <label>状态</label>
-              <SparkSelect value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className="bqc-select">
+
+          {/* Status + Priority row */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">状态</label>
+              <SparkSelect value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className="tfp-select">
                 {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
               </SparkSelect>
             </div>
-            <div className="bqc-field bqc-field-sm">
-              <label>优先级</label>
-              <SparkSelect value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="bqc-select">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">优先级</label>
+              <SparkSelect value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="tfp-select">
                 {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
                   const cfg = PRIORITY_CONFIG[p]
-                  return (
-                    <option key={p} value={p}>
-                      <span className="bqc-priority-tag" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-                    </option>
-                  )
+                  return <option key={p} value={p}>{cfg.icon} {cfg.label}</option>
                 })}
               </SparkSelect>
             </div>
           </div>
-          <div className="bqc-row">
-            <div className="bqc-field bqc-field-sm">
-              <label>负责人</label>
-              <SparkSelect value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="选择负责人" className="bqc-select" allowClear showSearch>
+
+          {/* Assignee + Due date row */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">负责人</label>
+              <SparkSelect value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="选择负责人" className="tfp-select" allowClear showSearch>
                 {agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
               </SparkSelect>
             </div>
-            <div className="bqc-field bqc-field-sm">
-              <label>截止日期</label>
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">截止日期</label>
               <DatePicker
                 {...(dueDate ? { value: dueDate } : {})}
                 onChange={(dateString) => setDueDate(dateString ?? '')}
                 placeholder="年/月/日"
-                size='small'
                 style={{ width: '100%' }}
                 allowClear
               />
             </div>
           </div>
-          <div className="bqc-row">
-            <div className="bqc-field bqc-field-sm">
-              <label>项目</label>
-              <SparkSelect value={project} onChange={(e) => setProject(e.target.value)} placeholder="选择项目" className="bqc-select" allowClear showSearch>
+
+          {/* Project */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">项目</label>
+              <SparkSelect value={project} onChange={(e) => setProject(e.target.value)} placeholder="选择项目" className="tfp-select" allowClear showSearch>
                 {projectOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
               </SparkSelect>
             </div>
-            <div className="bqc-field bqc-field-sm" />
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">标签</label>
+              <SparkInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
+            </div>
           </div>
-          <div className="bqc-field">
-            <label>标签</label>
-            <SparkInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="bqc-input" />
-          </div>
+
+          {/* Tags preview */}
+          {tags.length > 0 && (
+            <div className="tfp-tags-preview">
+              {tags.split(',').map(t => t.trim()).filter(Boolean).map((tag, i) => (
+                <span key={i} className="tfp-tag">{tag}</span>
+              ))}
+            </div>
+          )}
+
+          {/* Meta info for edit mode */}
+          {isEdit && card && (
+            <div className="tfp-meta">
+              <span>创建于 {formatDate(card.createdAt)}</span>
+              <span>更新于 {formatDate(card.updatedAt)}</span>
+            </div>
+          )}
         </div>
-        <div className="bqc-footer">
-          <span className="bqc-hint">Ctrl+Enter 提交</span>
-          <div className="bqc-actions">
-            <button className="board-btn board-btn-ghost" onClick={onClose}>取消</button>
-            <button className="board-btn board-btn-primary" onClick={handleSubmit} disabled={!title.trim()}>创建任务</button>
-          </div>
-        </div>
+
+        {/* Comments section (edit mode only) */}
+        {isEdit && card && (
+          <TaskCommentsPanel
+            card={card}
+            onAddComment={onAddComment}
+            onDeleteComment={onDeleteComment}
+            onUpdateComment={onUpdateComment}
+          />
+        )}
       </div>
     </div>
   )
 }
 
+/* Comment handlers — hoisted outside to avoid circular deps */
+
+const onAddComment = async (taskId: string, author: string, content: string) => {
+  const res = await window.spark.invoke('board:comment:create', { taskId, author, content })
+  return res.comment as TaskComment
+}
+
+const onDeleteComment = async (taskId: string, commentId: string) => {
+  await window.spark.invoke('board:comment:delete', { taskId, commentId })
+}
+
+const onUpdateComment = async (taskId: string, commentId: string, content: string) => {
+  const res = await window.spark.invoke('board:comment:update', { taskId, commentId, content })
+  return res.comment as TaskComment
+}
+
 /* ------------------------------------------------------------------ */
-/*  Detail Side Panel                                                  */
+/*  Comments Panel (edit mode sidebar)                                 */
 /* ------------------------------------------------------------------ */
 
-function DetailPanel({
+function TaskCommentsPanel({
   card,
-  agents,
-  projectOptions,
-  onClose,
-  onSave,
-  onDelete,
-  onAddComment,
-  onDeleteComment,
-  onUpdateComment,
+  onAddComment: addComment,
+  onDeleteComment: deleteComment,
+  onUpdateComment: updateComment,
 }: {
   card: TaskCard
-  agents: AgentOption[]
-  projectOptions: { value: string; label: string }[]
-  onClose: () => void
-  onSave: (updated: TaskCard) => void
-  onDelete: (id: string) => void
-  onAddComment: (taskId: string, author: string, content: string) => void
-  onDeleteComment: (taskId: string, commentId: string) => void
-  onUpdateComment: (taskId: string, commentId: string, content: string) => void
+  onAddComment: (taskId: string, author: string, content: string) => Promise<TaskComment>
+  onDeleteComment: (taskId: string, commentId: string) => Promise<void>
+  onUpdateComment: (taskId: string, commentId: string, content: string) => Promise<TaskComment>
 }) {
-  const [title, setTitle] = useState(card.title)
-  const [description, setDescription] = useState(card.description)
-  const [priority, setPriority] = useState<Priority>(card.priority)
-  const [status, setStatus] = useState<TaskStatus>(card.status)
-  const [assignee, setAssignee] = useState(card.assignee)
-  const [project, setProject] = useState(card.project ?? '')
-  const [tags, setTags] = useState(card.tags.join(', '))
-  const [dueDate, setDueDate] = useState(card.dueDate)
-  const [isDirty, setIsDirty] = useState(false)
   const [newComment, setNewComment] = useState('')
-  const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const [editContent, setEditContent] = useState('')
-  const [replyingToId, setReplyingToId] = useState<string | null>(null)
 
-  const markDirty = useCallback(<T,>(val: T, setter: (v: T) => void) => {
-    setter(val)
-    setIsDirty(true)
-  }, [])
+  const handleAdd = useCallback(async () => {
+    if (!newComment.trim()) return
+    await addComment(card.id, '', newComment.trim())
+    setNewComment('')
+  }, [card.id, newComment, addComment])
 
-  const handleSave = useCallback(() => {
-    onSave({
-      ...card,
-      title,
-      description,
-      priority,
-      status,
-      assignee,
-      project,
-      tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-      dueDate,
-      updatedAt: now(),
-    })
-    setIsDirty(false)
-  }, [card, title, description, priority, status, assignee, project, tags, dueDate, onSave])
-
-  const handleDelete = useCallback(() => {
-    onDelete(card.id)
-    onClose()
-  }, [card.id, onDelete, onClose])
-
-  const handleDeleteComment = useCallback((commentId: string) => {
-    if (!window.confirm('确定删除该评论？')) return
-    onDeleteComment(card.id, commentId)
-  }, [card.id, onDeleteComment])
-
-  const handleStartEditComment = useCallback((commentId: string, content: string) => {
-    setEditingCommentId(commentId)
-    setEditContent(content)
-    setReplyingToId(null)
-  }, [])
-
-  const handleSaveEditComment = useCallback(() => {
-    if (!editingCommentId || !editContent.trim()) return
-    onUpdateComment(card.id, editingCommentId, editContent.trim())
-    setEditingCommentId(null)
+  const handleSaveEdit = useCallback(async (commentId: string) => {
+    if (!editContent.trim()) return
+    await updateComment(card.id, commentId, editContent.trim())
+    setEditingId(null)
     setEditContent('')
-  }, [card.id, editingCommentId, editContent, onUpdateComment])
-
-  const handleCancelEdit = useCallback(() => {
-    setEditingCommentId(null)
-    setEditContent('')
-  }, [])
-
-  const handleReply = useCallback((commentId: string) => {
-    setReplyingToId(replyingToId === commentId ? null : commentId)
-    setEditingCommentId(null)
-  }, [replyingToId])
-
-  const pCfg = PRIORITY_CONFIG[priority]
-  const colCfg = COLUMNS.find(c => c.key === status)
+  }, [card.id, editContent, updateComment])
 
   return (
-    <Drawer
-      visible
-      placement="right"
-      width={440}
-      closable
-      maskClosable
-      escToExit
-      autoFocus={false}
-      title={null}
-      headerStyle={{ display: 'none' }}
-      className="board-detail-drawer"
-      onClose={onClose}
-      footer={
-        <div className="bdp-drawer-footer">
-          <button className="board-btn board-btn-danger-outline" onClick={handleDelete}>
-            <Icons.Trash size={14} /> 删除任务
-          </button>
-          <button
-            className={`board-btn ${isDirty ? 'board-btn-primary' : 'board-btn-ghost'}`}
-            onClick={handleSave}
-            disabled={!isDirty}
-            style={{ minWidth: '80px' }}
-          >保存</button>
-        </div>
-      }
-    >
-      <div className="bdp-header">
-        <div className="bdp-header-left">
-          <span className="bdp-priority-dot" style={{ background: pCfg.color }} />
-          <span className="bdp-status-tag" style={{ color: pCfg.color, background: pCfg.bg }}>
-            {colCfg?.icon} {colCfg?.label}
-          </span>
-        </div>
-      </div>
-
-      <div className="bdp-body">
-          <div className="bdp-field">
-            <label className="bdp-label">标题</label>
-            <SparkInput value={title} onChange={(e) => markDirty(e.target.value, setTitle)} className="bdp-title-input" />
-          </div>
-
-          <div className="bdp-field">
-            <label className="bdp-label">描述</label>
-            <SparkTextarea value={description} onChange={(e) => markDirty(e.target.value, setDescription)} placeholder="添加详细描述…" rows={5} className="bdp-desc-input" />
-          </div>
-
-          <div className="bdp-field-row">
-            <div className="bdp-field">
-              <label className="bdp-label">状态</label>
-              <SparkSelect value={status} onChange={(e) => markDirty(e.target.value as TaskStatus, setStatus)} className="bdp-select">
-                {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
-              </SparkSelect>
+    <div className="tfp-comments">
+      <label className="tfp-label">评论 ({card.comments?.length ?? 0})</label>
+      <div className="tfp-comment-list">
+        {(card.comments ?? []).map((c) => (
+          <div key={c.id} className="tfp-comment">
+            <div className="tfp-comment-head">
+              <span className="tfp-comment-author">{c.author || '用户'}</span>
+              <span className="tfp-comment-time">{formatDate(c.createdAt)}</span>
             </div>
-            <div className="bdp-field">
-              <label className="bdp-label">优先级</label>
-              <SparkSelect value={priority} onChange={(e) => markDirty(e.target.value as Priority, setPriority)} className="bdp-select">
-                {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
-                  const cfg = PRIORITY_CONFIG[p]
-                  return (
-                    <option key={p} value={p}>
-                      <span className="bdp-priority-tag" style={{ background: cfg.bg, color: cfg.color }}>{cfg.label}</span>
-                    </option>
-                  )
-                })}
-              </SparkSelect>
-            </div>
-          </div>
-
-          <div className="bdp-field-row">
-            <div className="bdp-field">
-              <label className="bdp-label">负责人</label>
-              <SparkSelect value={assignee} onChange={(e) => markDirty(e.target.value, setAssignee)} placeholder="未指定" className="bdp-select" allowClear showSearch>
-                {agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-              </SparkSelect>
-            </div>
-            <div className="bdp-field">
-              <label className="bdp-label">截止日期</label>
-              <DatePicker
-                {...(dueDate ? { value: dueDate } : {})}
-                onChange={(dateString) => markDirty(dateString ?? '', setDueDate)}
-                placeholder="年/月/日"
-                style={{ width: '100%' }}
-                allowClear
-              />
-            </div>
-          </div>
-
-          <div className="bdp-field">
-            <label className="bdp-label">项目</label>
-            <SparkSelect value={project} onChange={(e) => markDirty(e.target.value, setProject)} placeholder="选择项目" className="bdp-select" allowClear showSearch>
-              {projectOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}            </SparkSelect>
-          </div>
-
-          <div className="bdp-field">
-            <label className="bdp-label">标签</label>
-            <SparkInput value={tags} onChange={(e) => markDirty(e.target.value, setTags)} placeholder="用逗号分隔" className="bdp-input" />
-            {tags.length > 0 && (
-              <div className="bdp-tags-preview">
-                {tags.split(',').map(t => t.trim()).filter(Boolean).map((tag, i) => (
-                  <span key={i} className="bdp-tag">{tag}</span>
-                ))}
+            {editingId === c.id ? (
+              <div className="tfp-comment-edit">
+                <SparkTextarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={2} className="tfp-comment-edit-input" />
+                <div className="tfp-comment-edit-actions">
+                  <Button size="mini" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
+                  <Button size="mini" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="tfp-comment-body">{c.content}</div>
+            )}
+            {editingId !== c.id && (
+              <div className="tfp-comment-actions">
+                <button className="tfp-comment-action-btn" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</button>
+                <button className="tfp-comment-action-btn tfp-comment-action-danger" onClick={async () => {
+                  if (!window.confirm('确定删除该评论？')) return
+                  await deleteComment(card.id, c.id)
+                }}>删除</button>
               </div>
             )}
           </div>
-
-          <div className="bdp-meta">
-            <span>创建于 {formatDate(card.createdAt)}</span>
-            <span>更新于 {formatDate(card.updatedAt)}</span>
-          </div>
-
-          {/* Comments section */}
-          <div className="bdp-comments">
-            <label className="bdp-label">评论 ({card.comments?.length ?? 0})</label>
-            <div className="bdp-comment-list">
-              {(card.comments ?? []).map((c) => (
-                <div key={c.id} className="bdp-comment">
-                  <div className="bdp-comment-head">
-                    <span className="bdp-comment-author">{c.author || '用户'}</span>
-                    <div className="bdp-comment-head-right">
-                      <span className="bdp-comment-time">{formatDate(c.createdAt)}</span>
-                      <div className="bdp-comment-actions">
-                        <button className="bdp-comment-btn" onClick={() => handleReply(c.id)}>回复</button>
-                        <button className="bdp-comment-btn" onClick={() => handleStartEditComment(c.id, c.content)}>编辑</button>
-                        <button className="bdp-comment-btn bdp-comment-btn-danger" onClick={() => handleDeleteComment(c.id)}>删除</button>
-                      </div>
-                    </div>
-                  </div>
-                  {editingCommentId === c.id ? (
-                    <div className="bdp-comment-edit">
-                      <SparkTextarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        rows={2}
-                        className="bdp-comment-edit-input"
-                      />
-                      <div className="bdp-comment-edit-actions">
-                        <button className="board-btn board-btn-primary board-btn-xs" onClick={handleSaveEditComment} disabled={!editContent.trim()}>保存</button>
-                        <button className="board-btn board-btn-ghost board-btn-xs" onClick={handleCancelEdit}>取消</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="bdp-comment-body">{c.content}</div>
-                  )}
-                  {replyingToId === c.id && (
-                    <div className="bdp-comment-reply-row">
-                      <SparkTextarea
-                        placeholder="输入回复…"
-                        className="bdp-comment-input"
-                        rows={2}
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) {
-                            onAddComment(card.id, '', newComment.trim())
-                            setNewComment('')
-                            setReplyingToId(null)
-                          }
-                        }}
-                      />
-                      <button
-                        className="board-btn board-btn-primary board-btn-xs"
-                        disabled={!newComment.trim()}
-                        onClick={() => {
-                          if (newComment.trim()) {
-                            onAddComment(card.id, '', newComment.trim())
-                            setNewComment('')
-                            setReplyingToId(null)
-                          }
-                        }}
-                      >发送</button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {(card.comments == null || card.comments.length === 0) && (
-                <div className="bdp-comment-empty">暂无评论</div>
-              )}
-            </div>
-            <div className="bdp-comment-input-row">
-              <SparkTextarea
-                placeholder="输入评论…（Ctrl+Enter 发送）"
-                className="bdp-comment-input"
-                rows={2}
-                value={replyingToId ? '' : newComment}
-                onChange={(e) => { if (!replyingToId) setNewComment(e.target.value) }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) {
-                    onAddComment(card.id, '', newComment.trim())
-                    setNewComment('')
-                  }
-                }}
-              />
-              <button
-                className="board-btn board-btn-primary board-btn-sm"
-                disabled={!newComment.trim()}
-                onClick={() => {
-                  if (newComment.trim()) {
-                    onAddComment(card.id, '', newComment.trim())
-                    setNewComment('')
-                  }
-                }}
-              >发送</button>
-            </div>
-          </div>
-        </div>
-    </Drawer>
+        ))}
+        {(card.comments == null || card.comments.length === 0) && (
+          <div className="tfp-comment-empty">暂无评论</div>
+        )}
+      </div>
+      <div className="tfp-comment-input-row">
+        <SparkTextarea
+          placeholder="输入评论…（Ctrl+Enter 发送）"
+          className="tfp-comment-input"
+          rows={2}
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) handleAdd()
+          }}
+        />
+        <Button size="small" type="primary" disabled={!newComment.trim()} onClick={handleAdd}>发送</Button>
+      </div>
+    </div>
   )
 }
 
@@ -752,7 +585,6 @@ function KanbanCard({
       onClick={() => onOpen(card)}
       onContextMenu={(e) => onContextMenu(e, card)}
     >
-      {/* Priority & status indicators */}
       <div className="bc-indicator">
         <span className="bc-priority-badge" style={{ background: pCfg.bg, color: pCfg.color }}>
           {pCfg.icon} {pCfg.label}
@@ -762,20 +594,16 @@ function KanbanCard({
         )}
       </div>
 
-      {/* Title */}
       <div className="bc-title">{card.title}</div>
 
-      {/* Project */}
       {card.project && (
         <div className="bc-project">{card.project}</div>
       )}
 
-      {/* Description preview */}
       {card.description && (
         <div className="bc-desc">{card.description}</div>
       )}
 
-      {/* Tags row */}
       {card.tags.length > 0 && (
         <div className="bc-tags">
           {card.tags.slice(0, 3).map((tag, i) => (
@@ -785,7 +613,6 @@ function KanbanCard({
         </div>
       )}
 
-      {/* Footer: assignee + due date + column indicator */}
       <div className="bc-footer">
         <div className="bc-meta-left">
           {card.assignee && (
@@ -839,9 +666,7 @@ export function BoardView() {
   const { invoke: listAgents } = useIpcInvoke('agent:list')
   const [tasks, setTasks] = useState<TaskCard[]>([])
   const [agents, setAgents] = useState<AgentOption[]>([])
-  const [showCreate, setShowCreate] = useState(false)
-  const [createDefaultStatus, setCreateDefaultStatus] = useState<TaskStatus>('todo')
-  const [detailCard, setDetailCard] = useState<TaskCard | null>(null)
+  const [page, setPage] = useState<BoardPage>({ view: 'kanban' })
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null)
   const [showRecycle, setShowRecycle] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -900,20 +725,27 @@ export function BoardView() {
   const handleCreate = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
     const created = await ipcCreateTask(partial)
     setTasks(prev => [...prev, created])
+    setPage({ view: 'kanban' })
   }, [])
 
-  const handleSave = useCallback(async (updated: TaskCard) => {
-    const saved = await ipcUpdateTask(updated)
-    setTasks(prev => prev.map(t => t.id === saved.id ? saved : t))
-    setDetailCard(saved)
-  }, [])
+  const handleSave = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
+    if (page.view !== 'edit') return
+    const card = page.card
+    const updated = await ipcUpdateTask({
+      ...card,
+      ...partial,
+      updatedAt: now(),
+    })
+    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
+    setPage({ view: 'kanban' })
+  }, [page])
 
   const handleSoftDelete = useCallback(async (id: string) => {
     const ok = await requestConfirm({ title: '删除任务', description: '任务将移至回收站，可以恢复。', confirmText: '删除', danger: true })
     if (!ok) return
     await ipcDeleteTask(id)
     setTasks(prev => prev.map(t => t.id === id ? { ...t, deletedAt: now(), updatedAt: now() } : t))
-    setDetailCard(null)
+    setPage({ view: 'kanban' })
   }, [requestConfirm])
 
   const handleRestore = useCallback(async (id: string) => {
@@ -931,26 +763,6 @@ export function BoardView() {
   const handleCopy = useCallback(async (card: TaskCard) => {
     const created = await ipcCreateTask({ ...card, title: `${card.title} (副本)` })
     setTasks(prev => [...prev, created])
-  }, [])
-
-  const handleAddComment = useCallback(async (taskId: string, author: string, content: string) => {
-    const res = await window.spark.invoke('board:comment:create', { taskId, author, content })
-    const comment = res.comment as TaskComment
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, comments: [...(t.comments ?? []), comment] } : t))
-    setDetailCard(prev => prev && prev.id === taskId ? { ...prev, comments: [...(prev.comments ?? []), comment] } : prev)
-  }, [])
-
-  const handleDeleteComment = useCallback(async (taskId: string, commentId: string) => {
-    await window.spark.invoke('board:comment:delete', { taskId, commentId })
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, comments: (t.comments ?? []).filter(c => c.id !== commentId) } : t))
-    setDetailCard(prev => prev && prev.id === taskId ? { ...prev, comments: (prev.comments ?? []).filter(c => c.id !== commentId) } : prev)
-  }, [])
-
-  const handleUpdateComment = useCallback(async (taskId: string, commentId: string, content: string) => {
-    const res = await window.spark.invoke('board:comment:update', { taskId, commentId, content })
-    const updated = res.comment as TaskComment
-    setTasks(prev => prev.map(t => t.id === taskId ? { ...t, comments: (t.comments ?? []).map(c => c.id === commentId ? updated : c) } : t))
-    setDetailCard(prev => prev && prev.id === taskId ? { ...prev, comments: (prev.comments ?? []).map(c => c.id === commentId ? updated : c) } : prev)
   }, [])
 
   // Drag & Drop
@@ -999,6 +811,50 @@ export function BoardView() {
   const totalActive = activeTasks.length
   const totalDeleted = deletedTasks.length
 
+  // Form page — create or edit
+  if (page.view === 'create') {
+    return (
+      <div className="board-view">
+        <TaskFormPage
+          mode="create"
+          agents={agents}
+          projectOptions={projectOptions}
+          onBack={() => setPage({ view: 'kanban' })}
+          onSubmit={handleCreate}
+        />
+      </div>
+    )
+  }
+
+  if (page.view === 'edit') {
+    const card = page.card
+    // refresh card data from tasks state
+    const freshCard = tasks.find(t => t.id === card.id) ?? card
+    return (
+      <div className="board-view">
+        <TaskFormPage
+          mode="edit"
+          card={freshCard}
+          agents={agents}
+          projectOptions={projectOptions}
+          onBack={() => setPage({ view: 'kanban' })}
+          onSubmit={handleSave}
+        />
+        {/* Delete button for edit mode */}
+        <div className="tfp-delete-bar">
+          <Button
+            status="danger"
+            size="small"
+            onClick={() => handleSoftDelete(freshCard.id)}
+          >
+            <Icons.Trash size={13} /> 删除任务
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Default: kanban view
   return (
     <div className="board-view">
       {/* Header */}
@@ -1042,7 +898,7 @@ export function BoardView() {
               <Badge count={totalDeleted} className="board-recycle-badge-arco">
                 <Button className="board-recycle-arco-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
               </Badge>
-              <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => { setCreateDefaultStatus('todo'); setShowCreate(true) }}>
+              <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
                 新建任务
               </Button>
             </Space>
@@ -1065,7 +921,7 @@ export function BoardView() {
                 </span>
               </div>
               <span className="board-col-count">{columnTasks[col.key].length}</span>
-              <button className="board-icon-btn board-icon-btn-xs" title={`在"${col.label}"中新建`} onClick={() => { setCreateDefaultStatus(col.key); setShowCreate(true) }}>
+              <button className="board-icon-btn board-icon-btn-xs" title={`在"${col.label}"中新建`} onClick={() => setPage({ view: 'create', defaultStatus: col.key })}>
                 <Icons.Plus size={13} />
               </button>
             </div>
@@ -1084,7 +940,7 @@ export function BoardView() {
                   <KanbanCard
                     key={card.id}
                     card={card}
-                    onOpen={setDetailCard}
+                    onOpen={(c) => setPage({ view: 'edit', card: c })}
                     onContextMenu={handleContextMenu}
                     onDragStart={handleDragStart}
                   />
@@ -1095,18 +951,8 @@ export function BoardView() {
         ))}
       </div>
 
-      {/* Quick Create */}
-      {showCreate && (
-        <QuickCreateModal defaultStatus={createDefaultStatus} agents={agents} projectOptions={projectOptions} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
-      )}
-
-      {/* Detail Panel */}
-      {detailCard && (
-        <DetailPanel card={detailCard} agents={agents} projectOptions={projectOptions} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} onAddComment={handleAddComment} onDeleteComment={handleDeleteComment} onUpdateComment={handleUpdateComment} />
-      )}
-
       {/* Context Menu */}
-      <CardContextMenu menu={ctxMenu} onOpenDetail={setDetailCard} onCopy={handleCopy} onDelete={handleSoftDelete} onClose={() => setCtxMenu(null)} />
+      <CardContextMenu menu={ctxMenu} onOpenDetail={(c) => setPage({ view: 'edit', card: c })} onCopy={handleCopy} onDelete={handleSoftDelete} onClose={() => setCtxMenu(null)} />
 
       {/* Recycle Bin */}
       {showRecycle && (
