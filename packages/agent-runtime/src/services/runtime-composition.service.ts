@@ -85,9 +85,14 @@ export class RuntimeCompositionService {
     const sessionDisabledSkillIds = refs.sessionId != null ? this.getDisabledSkillIds('session', refs.sessionId) : []
     const disabledIds = new Set([...agentDisabledSkillIds, ...projectDisabledSkillIds, ...sessionDisabledSkillIds])
 
+    // The agent's configured skills define the base set.
+    // If the agent has no skillIds configured (e.g. default code-agent), fall back to all
+    // system-enabled skills for backward compatibility. Project and session layers are
+    // always additive on top.
+    const hasAgentSkillConfig = agentSkillIds.length > 0
+    const base = hasAgentSkillConfig ? agentSkillIds : Array.from(enabledIds)
     const ordered = uniqueStrings([
-      ...enabledIds,
-      ...agentSkillIds,
+      ...base,
       ...projectSkillIds,
       ...sessionSkillIds,
     ]).filter((id) => enabledIds.has(id) && !disabledIds.has(id))
