@@ -4046,6 +4046,7 @@ body.sidebar-resizing {
   overflow: auto;
   position: relative;
   scrollbar-gutter: stable;
+  padding-top: var(--pad-lg);
 }
 .inspector-resize-handle {
   position: absolute;
