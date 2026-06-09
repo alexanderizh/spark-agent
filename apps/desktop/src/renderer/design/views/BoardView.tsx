@@ -64,6 +64,7 @@ export type TaskCard = {
   testAgent: string
   comments: TaskComment[]
   attachments: TaskAttachment[]
+  sortOrder: number
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -189,6 +190,7 @@ function normalizeTask(raw: Record<string, unknown>): TaskCard {
     testAgent: (raw.testAgent as string) ?? '',
     comments,
     attachments,
+    sortOrder: (raw.sortOrder as number) ?? 0,
     createdAt: raw.createdAt as string,
     updatedAt: raw.updatedAt as string,
     deletedAt: (raw.deletedAt as string | null) ?? null,
@@ -215,8 +217,16 @@ async function ipcUpdateTask(updated: TaskCard): Promise<TaskCard> {
     acceptanceCriteria: updated.acceptanceCriteria,
     testAgent: updated.testAgent,
     attachments: updated.attachments,
+    sortOrder: updated.sortOrder,
   })
   return res.task as TaskCard
+}
+
+async function ipcBatchUpdateSortOrders(updates: Array<{ id: string; sortOrder: number }>): Promise<TaskCard[]> {
+  const res = await window.spark.invoke('board:batch-update', {
+    updates: updates.map((u) => ({ id: u.id, sortOrder: u.sortOrder })),
+  })
+  return (res.tasks ?? []) as TaskCard[]
 }
 
 async function ipcDeleteTask(id: string): Promise<void> {
@@ -305,6 +315,7 @@ function TaskFormPage({
       testAgent,
       comments: card?.comments ?? [],
       attachments,
+      sortOrder: card?.sortOrder ?? 0,
     })
   }, [title, description, status, priority, assignee, project, tags, dueDate, processingAgent, acceptanceCriteria, testAgent, card?.comments, attachments, onSubmit])
 
@@ -821,24 +832,38 @@ function KanbanCard({
   onOpen,
   onContextMenu,
   onDragStart,
+  onDragOver,
+  onDragEnd,
+  isDragOverBefore,
+  isDragOverAfter,
+  isDragging,
 }: {
   card: TaskCard
   onOpen: (card: TaskCard) => void
   onContextMenu: (e: React.MouseEvent, card: TaskCard) => void
   onDragStart: (e: DragEvent, card: TaskCard) => void
+  onDragOver: (e: DragEvent, card: TaskCard) => void
+  onDragEnd: () => void
+  isDragOverBefore: boolean
+  isDragOverAfter: boolean
+  isDragging: boolean
 }) {
   const pCfg = PRIORITY_CONFIG[card.priority]
   const colCfg = COLUMNS.find(c => c.key === card.status)
   const isOverdue = card.dueDate && new Date(card.dueDate) < new Date() && card.status !== 'done' && card.status !== 'closed'
 
   return (
-    <div
-      className={`board-card board-card-${card.priority}`}
-      draggable
-      onDragStart={(e) => onDragStart(e, card)}
-      onClick={() => onOpen(card)}
-      onContextMenu={(e) => onContextMenu(e, card)}
-    >
+    <>
+      {isDragOverBefore && <div className="board-card-drop-indicator" />}
+      <div
+        className={`board-card board-card-${card.priority}${isDragging ? ' board-card-dragging' : ''}`}
+        draggable
+        onDragStart={(e) => onDragStart(e, card)}
+        onDragOver={(e) => onDragOver(e, card)}
+        onDragEnd={onDragEnd}
+        onClick={() => onOpen(card)}
+        onContextMenu={(e) => onContextMenu(e, card)}
+      >
       <div className="bc-indicator">
         <span className="bc-priority-badge" style={{ background: pCfg.bg, color: pCfg.color }}>
           {pCfg.icon} {pCfg.label}
@@ -914,7 +939,9 @@ function KanbanCard({
           <span className="bc-status-dot" style={{ background: colCfg?.color }} title={colCfg?.label} />
         </div>
       </div>
-    </div>
+      </div>
+      {isDragOverAfter && <div className="board-card-drop-indicator" />}
+    </>
   )
 }
 
@@ -956,6 +983,9 @@ export function BoardView() {
   const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all')
   const [filterProject, setFilterProject] = useState<string>('all')
   const dragCardRef = useRef<TaskCard | null>(null)
+  const [dragOverCardId, setDragOverCardId] = useState<string | null>(null)
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after'>('before')
+  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null)
 
   // Load tasks, agents and team defs from IPC on mount
   useEffect(() => {
@@ -1006,6 +1036,10 @@ export function BoardView() {
   const columnTasks = useMemo(() => {
     const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'bug-fix': [], 'done': [], 'closed': [] }
     for (const t of filteredTasks) map[t.status].push(t)
+    // Sort each column by sortOrder
+    for (const key of Object.keys(map) as TaskStatus[]) {
+      map[key].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    }
     return map
   }, [filteredTasks])
 
@@ -1061,28 +1095,116 @@ export function BoardView() {
     e.dataTransfer.setDragImage(el, el.offsetWidth / 2, 20)
   }, [])
 
-  const handleDragOver = useCallback((e: DragEvent) => {
+  // Drag over a card — determine insert position (before/after)
+  const handleCardDragOver = useCallback((e: DragEvent, card: TaskCard, status: TaskStatus) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const midY = rect.top + rect.height / 2
+    setDragOverCardId(card.id)
+    setDragOverPosition(e.clientY < midY ? 'before' : 'after')
+    setDragOverColumn(status)
+  }, [])
+
+  // Drag over the column body (empty area or gap between cards)
+  const handleColumnDragOver = useCallback((e: DragEvent, status: TaskStatus) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
+    setDragOverColumn(status)
     const col = (e.currentTarget as HTMLElement).closest('.board-col')
     col?.classList.add('board-col-drag-over')
   }, [])
 
-  const handleDragLeave = useCallback((e: DragEvent) => {
+  const handleColumnDragLeave = useCallback((e: DragEvent) => {
     const col = (e.currentTarget as HTMLElement).closest('.board-col')
     col?.classList.remove('board-col-drag-over')
+    // Only clear if actually leaving the column body
+    const related = e.relatedTarget as HTMLElement | null
+    if (!col?.contains(related)) {
+      setDragOverColumn(null)
+      setDragOverCardId(null)
+    }
+  }, [])
+
+  const handleDragEnd = useCallback(() => {
+    dragCardRef.current = null
+    setDragOverCardId(null)
+    setDragOverPosition('before')
+    setDragOverColumn(null)
+    document.querySelectorAll('.board-col-drag-over').forEach(el => el.classList.remove('board-col-drag-over'))
   }, [])
 
   const handleDrop = useCallback(async (e: DragEvent, targetStatus: TaskStatus) => {
     e.preventDefault()
     const col = (e.currentTarget as HTMLElement).closest('.board-col')
     col?.classList.remove('board-col-drag-over')
+
     const card = dragCardRef.current
-    if (!card || card.status === targetStatus) return
+    if (!card) return
     dragCardRef.current = null
-    const updated = await ipcUpdateTask({ ...card, status: targetStatus })
-    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
-  }, [])
+
+    const overCardId = dragOverCardId
+    const overPosition = dragOverPosition
+    setDragOverCardId(null)
+    setDragOverPosition('before')
+    setDragOverColumn(null)
+
+    const isSameColumn = card.status === targetStatus
+
+    // Get current column tasks (sorted by sortOrder)
+    const colTasks = columnTasks[targetStatus].filter(t => t.id !== card.id)
+    const insertIdx = overCardId
+      ? colTasks.findIndex(t => t.id === overCardId)
+      : colTasks.length // drop at end if no target card (empty area)
+
+    if (insertIdx === -1 && overCardId) return // shouldn't happen
+
+    // Calculate new sortOrder based on position
+    let newSortOrder: number
+    const effectiveIdx = overCardId
+      ? (overPosition === 'before' ? insertIdx : insertIdx + 1)
+      : colTasks.length
+
+    if (colTasks.length === 0) {
+      newSortOrder = 0
+    } else if (effectiveIdx <= 0) {
+      newSortOrder = (colTasks[0]?.sortOrder ?? 0) - 100
+    } else if (effectiveIdx >= colTasks.length) {
+      newSortOrder = (colTasks[colTasks.length - 1]?.sortOrder ?? 0) + 100
+    } else {
+      const prev = colTasks[effectiveIdx - 1]!
+      const next = colTasks[effectiveIdx]!
+      newSortOrder = Math.round(((prev.sortOrder ?? 0) + (next.sortOrder ?? 0)) / 2)
+    }
+
+    // Optimistic update
+    const updatedCard: TaskCard = { ...card, status: targetStatus, sortOrder: newSortOrder }
+    setTasks(prev => prev.map(t => t.id === card.id ? updatedCard : t))
+
+    // Persist: single update for cross-column move + reorder, or same-column reorder
+    await ipcUpdateTask(updatedCard)
+
+    // After many reorder operations, sortOrder values may get too close.
+    // Re-index if needed (when the gap between neighbors < 2)
+    if (effectiveIdx > 0 && effectiveIdx < colTasks.length) {
+      const prev = colTasks[effectiveIdx - 1]!
+      const gap = newSortOrder - (prev.sortOrder ?? 0)
+      if (Math.abs(gap) < 2) {
+        // Re-index all tasks in this column
+        const allColTasks = [...colTasks]
+        allColTasks.splice(effectiveIdx, 0, updatedCard)
+        const reindexed = allColTasks.map((t, i) => ({ id: t.id, sortOrder: i * 100 }))
+        const result = await ipcBatchUpdateSortOrders(reindexed)
+        if (result.length > 0) {
+          setTasks(prev => {
+            const map = new Map(result.map(t => [t.id, t]))
+            return prev.map(t => map.get(t.id) ?? t)
+          })
+        }
+      }
+    }
+  }, [columnTasks, dragOverCardId, dragOverPosition])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, card: TaskCard) => {
     e.preventDefault()
@@ -1220,8 +1342,8 @@ export function BoardView() {
             </div>
             <div
               className="board-col-body"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
+              onDragOver={(e) => handleColumnDragOver(e, col.key)}
+              onDragLeave={handleColumnDragLeave}
               onDrop={(e) => handleDrop(e, col.key)}
             >
               {columnTasks[col.key].length === 0 ? (
@@ -1236,6 +1358,11 @@ export function BoardView() {
                     onOpen={(c) => setPage({ view: 'edit', card: c })}
                     onContextMenu={handleContextMenu}
                     onDragStart={handleDragStart}
+                    onDragOver={(e, c) => handleCardDragOver(e, c, col.key)}
+                    onDragEnd={handleDragEnd}
+                    isDragOverBefore={dragOverCardId === card.id && dragOverPosition === 'before' && dragOverColumn === col.key}
+                    isDragOverAfter={dragOverCardId === card.id && dragOverPosition === 'after' && dragOverColumn === col.key}
+                    isDragging={dragCardRef.current?.id === card.id}
                   />
                 ))
               )}

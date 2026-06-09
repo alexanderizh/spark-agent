@@ -1839,6 +1839,7 @@ export interface BoardTask {
   testAgent: string
   comments: BoardComment[]
   attachments: BoardTaskAttachment[]
+  sortOrder: number
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -1879,6 +1880,7 @@ export interface BoardCreateRequest {
   acceptanceCriteria?: string
   testAgent?: string
   attachments?: BoardTaskAttachment[]
+  sortOrder?: number
 }
 
 export interface BoardCreateResponse {
@@ -1899,6 +1901,7 @@ export interface BoardUpdateRequest {
   acceptanceCriteria?: string
   testAgent?: string
   attachments?: BoardTaskAttachment[]
+  sortOrder?: number
 }
 
 export interface BoardUpdateResponse {

@@ -268,6 +268,23 @@
 .board-card-medium { border-left: 3px solid var(--info); }
 .board-card-low { border-left: 3px solid var(--border-strong); }
 
+/* Drop indicator line */
+.board-card-drop-indicator {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+  margin: 2px 0;
+  box-shadow: 0 0 6px var(--primary-soft);
+  transition: opacity 0.1s;
+}
+
+/* Card being dragged */
+.board-card-dragging {
+  opacity: 0.45;
+  box-shadow: none;
+  transform: none;
+}
+
 /* Card indicator row */
 .bc-indicator {
   display: flex;

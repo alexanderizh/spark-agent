@@ -186,6 +186,7 @@ interface BoardTaskRecord {
   testAgent: string
   commentsJson: string
   attachmentsJson: string
+  sortOrder: number
   createdAt: string
   updatedAt: string
   deletedAt: string | null
@@ -194,7 +195,17 @@ interface BoardTaskRecord {
 function readBoardTasks(): BoardTaskRecord[] {
   try {
     if (!existsSync(BOARD_TASKS_FILE)) return []
-    return JSON.parse(readFileSync(BOARD_TASKS_FILE, 'utf-8'))
+    const raw: Array<Record<string, unknown>> = JSON.parse(readFileSync(BOARD_TASKS_FILE, 'utf-8'))
+    let needsMigration = false
+    const tasks = raw.map((t, i) => {
+      if (t.sortOrder == null || typeof t.sortOrder !== 'number') {
+        needsMigration = true
+        return { ...t, sortOrder: i * 100 } as unknown as BoardTaskRecord
+      }
+      return t as unknown as BoardTaskRecord
+    })
+    if (needsMigration) writeBoardTasks(tasks)
+    return tasks
   } catch { return [] }
 }
 
@@ -2366,11 +2377,18 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('board:create', async (req) => {
     const tasks = readBoardTasks()
     const now = new Date().toISOString()
+    const status = req.status ?? 'todo'
+    // Auto-assign sortOrder: place at the end of the same-status column
+    const sortOrder = req.sortOrder ?? (() => {
+      const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
+      if (sameStatus.length === 0) return 0
+      return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
+    })()
     const task: BoardTaskRecord = {
       id: boardTaskUid(),
       title: req.title ?? '',
       description: req.description ?? '',
-      status: req.status ?? 'todo',
+      status,
       priority: req.priority ?? 'medium',
       assignee: req.assignee ?? '',
       project: req.project ?? '',
@@ -2381,6 +2399,7 @@ export function registerAllIpcHandlers(): void {
       testAgent: req.testAgent ?? '',
       commentsJson: '[]',
       attachmentsJson: JSON.stringify(req.attachments ?? []),
+      sortOrder,
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
@@ -2411,6 +2430,7 @@ export function registerAllIpcHandlers(): void {
       testAgent: req.testAgent !== undefined ? req.testAgent : (base.testAgent ?? ''),
       commentsJson: base.commentsJson ?? '[]',
       attachmentsJson: req.attachments !== undefined ? JSON.stringify(req.attachments) : (base.attachmentsJson ?? '[]'),
+      sortOrder: req.sortOrder !== undefined ? req.sortOrder : (base.sortOrder ?? 0),
       createdAt: base.createdAt,
       updatedAt: now,
       deletedAt: base.deletedAt,
@@ -2435,17 +2455,24 @@ export function registerAllIpcHandlers(): void {
     const created: BoardTaskRecord[] = []
     for (const item of req.tasks ?? []) {
       const now = new Date().toISOString()
+      const status = item.status ?? 'todo'
+      const sortOrder = item.sortOrder ?? (() => {
+        const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
+        if (sameStatus.length === 0) return 0
+        return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
+      })()
       const task: BoardTaskRecord = {
         id: boardTaskUid(),
         title: item.title ?? '',
         description: item.description ?? '',
-        status: item.status ?? 'todo',
+        status,
         priority: item.priority ?? 'medium',
         assignee: item.assignee ?? '',
         tags: item.tags ?? [],
         dueDate: item.dueDate ?? '',
         commentsJson: '[]',
         attachmentsJson: JSON.stringify(item.attachments ?? []),
+        sortOrder,
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
@@ -2477,6 +2504,7 @@ export function registerAllIpcHandlers(): void {
         dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
         commentsJson: base.commentsJson ?? '[]',
         attachmentsJson: upd.attachments !== undefined ? JSON.stringify(upd.attachments) : (base.attachmentsJson ?? '[]'),
+        sortOrder: upd.sortOrder !== undefined ? upd.sortOrder : (base.sortOrder ?? 0),
         createdAt: base.createdAt,
         updatedAt: now,
         deletedAt: base.deletedAt,
