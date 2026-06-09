@@ -17,11 +17,12 @@ import {
   useState,
 } from 'react'
 import type { DragEvent } from 'react'
-import { Badge, Button, DatePicker, Select, Space } from '@arco-design/web-react'
+import { Badge, Button, DatePicker, Select, Space, Switch, Tooltip } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import './BoardView.less'
 
@@ -31,7 +32,7 @@ import './BoardView.less'
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 
-export type TaskStatus = 'todo' | 'in-progress' | 'done' | 'closed' | 'bug-fix'
+export type TaskStatus = 'todo' | 'in-progress' | 'done' | 'accepted' | 'closed' | 'bug-fix'
 
 export type TaskComment = {
   id: string
@@ -141,6 +142,7 @@ const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; he
   { key: 'in-progress', label: '进行中', color: '#3b82f6', icon: '🔄', headerBg: 'rgba(59,130,246,0.12)', headerFg: '#3b82f6', colBg: 'rgba(59,130,246,0.04)', colClass: 'col-in-progress' },
   { key: 'bug-fix', label: 'Bug 修复', color: '#ef4444', icon: '🐛', headerBg: 'rgba(239,68,68,0.12)', headerFg: '#ef4444', colBg: 'rgba(239,68,68,0.04)', colClass: 'col-bug-fix' },
   { key: 'done', label: '已完成', color: '#10b981', icon: '✅', headerBg: 'rgba(16,185,129,0.12)', headerFg: '#10b981', colBg: 'rgba(16,185,129,0.04)', colClass: 'col-done' },
+  { key: 'accepted', label: '已验收', color: '#8b5cf6', icon: '🎯', headerBg: 'rgba(139,92,246,0.12)', headerFg: '#8b5cf6', colBg: 'rgba(139,92,246,0.04)', colClass: 'col-accepted' },
   { key: 'closed', label: '已关闭', color: '#9ca3af', icon: '📦', headerBg: 'rgba(156,163,175,0.12)', headerFg: '#9ca3af', colBg: 'rgba(156,163,175,0.04)', colClass: 'col-closed' },
 ]
 
@@ -240,6 +242,92 @@ async function ipcRestoreTask(id: string): Promise<TaskCard> {
 
 async function ipcPermanentDeleteTask(id: string): Promise<void> {
   await window.spark.invoke('board:permanent-delete', { id })
+}
+
+/* ------------------------------------------------------------------ */
+/*  Auto-Execute Helpers                                               */
+/* ------------------------------------------------------------------ */
+
+const AUTO_EXECUTE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+
+/** Create a session for a board task and send the task as a prompt */
+async function executeTaskViaSession(
+  task: TaskCard,
+  agents: AgentOption[],
+  projectGroups: { workspace: { name: string; id: string } }[],
+): Promise<{ sessionId: string; turnId: string } | null> {
+  try {
+    // Resolve provider
+    const providerRes = await window.spark.invoke('provider:list', {})
+    const profiles = (providerRes?.profiles ?? []) as Array<{ id: string; isDefault: boolean }>
+    const profile = profiles.find((p) => p.isDefault) ?? profiles[0]
+    if (!profile) {
+      console.warn(`[AutoExecute] No provider available, skipping task "${task.title}"`)
+      return null
+    }
+
+    // Resolve agent
+    const agentRes = await window.spark.invoke('agent:list', { includeDisabled: false })
+    const allAgents = (agentRes?.agents ?? []) as Array<{ id: string; name: string; isDefault: boolean; enabled: boolean }>
+    let resolvedAgentId = 'code-agent'
+    if (task.processingAgent) {
+      const matched = allAgents.find((a) => a.name === task.processingAgent && a.enabled)
+      if (matched) resolvedAgentId = matched.id
+      else {
+        const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
+        resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'code-agent'
+      }
+    } else {
+      const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
+      resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'code-agent'
+    }
+
+    // Resolve workspace
+    let workspaceId: string | undefined
+    if (task.project) {
+      const group = projectGroups.find((g) => g.workspace.name === task.project)
+      workspaceId = group?.workspace.id
+    }
+    if (!workspaceId) {
+      // Resolve no-project workspace
+      const wsRes = await window.spark.invoke('workspace:list', { includeArchived: false })
+      const workspaces = (wsRes?.workspaces ?? []) as Array<{ id: string; name: string }>
+      const noProject = workspaces.find((w) => w.name === '不使用项目')
+      workspaceId = noProject?.id ?? workspaces[0]?.id
+    }
+
+    // Update task status to 'in-progress'
+    await ipcUpdateTask({ ...task, status: 'in-progress', updatedAt: now() })
+
+    // Build prompt
+    const promptParts = [`## 任务：${task.title}`]
+    if (task.description) promptParts.push(`\n### 描述\n${task.description}`)
+    if (task.acceptanceCriteria) promptParts.push(`\n### 验收条件\n${task.acceptanceCriteria}`)
+    if (task.processingAgent) promptParts.push(`\n### 处理 Agent\n${task.processingAgent}`)
+    if (task.testAgent) promptParts.push(`\n### 测试 Agent\n${task.testAgent}`)
+    promptParts.push('\n请严格按照上述任务要求完成开发工作。完成后请审查代码并确保测试通过。')
+    const prompt = promptParts.join('\n')
+
+    // Create session
+    const createRes = await window.spark.invoke('session:create', {
+      providerProfileId: profile.id,
+      agentId: resolvedAgentId,
+      ...(workspaceId ? { workspaceId } : {}),
+      title: `[📋] ${task.title}`,
+    })
+    const sessionId = createRes.sessionId
+
+    // Send turn
+    const turnRes = await window.spark.invoke('session:send-turn', {
+      sessionId,
+      message: prompt,
+    })
+
+    return { sessionId: sessionId as unknown as string, turnId: turnRes.turnId as unknown as string }
+  } catch (err) {
+    console.error(`[AutoExecute] Failed to execute task "${task.title}":`, err)
+    return null
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -834,6 +922,7 @@ function KanbanCard({
   onDragStart,
   onDragOver,
   onDragEnd,
+  onAccept,
   isDragOverBefore,
   isDragOverAfter,
   isDragging,
@@ -844,13 +933,14 @@ function KanbanCard({
   onDragStart: (e: DragEvent, card: TaskCard) => void
   onDragOver: (e: DragEvent, card: TaskCard) => void
   onDragEnd: () => void
+  onAccept: (card: TaskCard) => void
   isDragOverBefore: boolean
   isDragOverAfter: boolean
   isDragging: boolean
 }) {
   const pCfg = PRIORITY_CONFIG[card.priority]
   const colCfg = COLUMNS.find(c => c.key === card.status)
-  const isOverdue = card.dueDate && new Date(card.dueDate) < new Date() && card.status !== 'done' && card.status !== 'closed'
+  const isOverdue = card.dueDate && new Date(card.dueDate) < new Date() && card.status !== 'done' && card.status !== 'accepted' && card.status !== 'closed'
 
   return (
     <>
@@ -936,6 +1026,15 @@ function KanbanCard({
               <Icons.Clock size={11} /> {formatShortDate(card.dueDate)}
             </span>
           )}
+          {card.status === 'done' && (
+            <button
+              className="bc-accept-btn"
+              title="标记为已验收"
+              onClick={(e) => { e.stopPropagation(); onAccept(card) }}
+            >
+              🎯 验收
+            </button>
+          )}
           <span className="bc-status-dot" style={{ background: colCfg?.color }} title={colCfg?.label} />
         </div>
       </div>
@@ -986,9 +1085,13 @@ export function BoardView() {
   const [dragOverCardId, setDragOverCardId] = useState<string | null>(null)
   const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after'>('before')
   const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null)
+  const [autoExecute, setAutoExecute] = useState(false)
+  const [autoExecuteRunning, setAutoExecuteRunning] = useState(false)
+  const autoExecuteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoExecuteLockRef = useRef(false)
 
-  // Load tasks, agents and team defs from IPC on mount
-  useEffect(() => {
+  // Refresh handler
+  const refreshData = useCallback(() => {
     ipcLoadTasks().then(setTasks)
     listAgents({ includeDisabled: false }).then((res: any) => {
       const agentList: AgentOption[] = (res.agents ?? [])
@@ -1002,6 +1105,77 @@ export function BoardView() {
         .map((t: any) => ({ id: t.id, name: t.name }))
       setTeamDefs(teamList)
     }).catch(() => {})
+  }, [listAgents, listTeamDefs])
+  const triggerRefresh = useRefreshable(refreshData)
+
+  // Load tasks, agents and team defs from IPC on mount
+  useEffect(() => {
+    refreshData()
+  }, [refreshData])
+
+  // Auto-execute: scan for pending tasks and dispatch them
+  const scanAndExecuteTasks = useCallback(async () => {
+    if (autoExecuteLockRef.current) return
+    autoExecuteLockRef.current = true
+    setAutoExecuteRunning(true)
+    try {
+      const allTasks = await ipcLoadTasks()
+      const pending = allTasks.filter(
+        (t) => !t.deletedAt && (t.status === 'todo' || t.status === 'in-progress'),
+      )
+      if (pending.length === 0) return
+
+      // Re-read agents & project groups (already in state via refreshData)
+      const pg = sessionCtx.projectGroups.map((g) => ({
+        workspace: { name: g.workspace.name, id: g.workspace.id },
+      }))
+
+      for (const task of pending) {
+        const result = await executeTaskViaSession(task, agents, pg)
+        if (result) {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === task.id ? { ...t, status: 'in-progress' as TaskStatus, updatedAt: now() } : t,
+            ),
+          )
+        }
+      }
+    } catch (err) {
+      console.error('[AutoExecute] scan failed:', err)
+    } finally {
+      autoExecuteLockRef.current = false
+      setAutoExecuteRunning(false)
+    }
+  }, [agents, sessionCtx.projectGroups])
+
+  const handleAutoExecuteToggle = useCallback(
+    (checked: boolean) => {
+      setAutoExecute(checked)
+      if (checked) {
+        // Immediately execute once
+        scanAndExecuteTasks()
+        // Start interval
+        autoExecuteIntervalRef.current = setInterval(scanAndExecuteTasks, AUTO_EXECUTE_INTERVAL_MS)
+      } else {
+        // Clear interval
+        if (autoExecuteIntervalRef.current) {
+          clearInterval(autoExecuteIntervalRef.current)
+          autoExecuteIntervalRef.current = null
+        }
+        setAutoExecuteRunning(false)
+      }
+    },
+    [scanAndExecuteTasks],
+  )
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (autoExecuteIntervalRef.current) {
+        clearInterval(autoExecuteIntervalRef.current)
+        autoExecuteIntervalRef.current = null
+      }
+    }
   }, [])
 
   // Derived
@@ -1034,7 +1208,7 @@ export function BoardView() {
   }, [sessionCtx.projectGroups])
 
   const columnTasks = useMemo(() => {
-    const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'bug-fix': [], 'done': [], 'closed': [] }
+    const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'bug-fix': [], 'done': [], 'accepted': [], 'closed': [] }
     for (const t of filteredTasks) map[t.status].push(t)
     // Sort each column by sortOrder
     for (const key of Object.keys(map) as TaskStatus[]) {
@@ -1085,6 +1259,11 @@ export function BoardView() {
   const handleCopy = useCallback(async (card: TaskCard) => {
     const created = await ipcCreateTask({ ...card, title: `${card.title} (副本)` })
     setTasks(prev => [...prev, created])
+  }, [])
+
+  const handleAccept = useCallback(async (card: TaskCard) => {
+    const updated = await ipcUpdateTask({ ...card, status: 'accepted', updatedAt: now() })
+    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
   }, [])
 
   // Drag & Drop
@@ -1278,6 +1457,33 @@ export function BoardView() {
         </div>
         <div className="board-header-right" aria-label="任务筛选和操作">
           <div className="board-toolbar">
+            <Tooltip
+              content={
+                autoExecute
+                  ? autoExecuteRunning
+                    ? '正在执行任务…'
+                    : '自动执行已开启，每 5 分钟扫描一次'
+                  : '开启自动执行：立即执行一次，之后每 5 分钟扫描待办任务'
+              }
+            >
+              <div className="board-auto-execute-toggle">
+                <Switch
+                  size="small"
+                  checked={autoExecute}
+                  onChange={handleAutoExecuteToggle}
+                />
+                <span className={`board-auto-execute-label ${autoExecute ? 'active' : ''}`}>
+                  {autoExecuteRunning ? '执行中…' : '自动执行'}
+                </span>
+              </div>
+            </Tooltip>
+            <button
+              className="board-refresh-btn"
+              onClick={triggerRefresh}
+              title="刷新 (Ctrl+R)"
+            >
+              <Icons.Refresh size={14} />
+            </button>
             <div className="board-search">
               <SparkSearchInput
                 value={searchQuery}
@@ -1300,6 +1506,7 @@ export function BoardView() {
                 <Select.Option value="in-progress">🔄 进行中</Select.Option>
                 <Select.Option value="bug-fix">🐛 Bug 修复</Select.Option>
                 <Select.Option value="done">✅ 已完成</Select.Option>
+                <Select.Option value="accepted">🎯 已验收</Select.Option>
                 <Select.Option value="closed">📦 已关闭</Select.Option>
               </Select>
               {projectOptions.length > 0 && (
@@ -1360,6 +1567,7 @@ export function BoardView() {
                     onDragStart={handleDragStart}
                     onDragOver={(e, c) => handleCardDragOver(e, c, col.key)}
                     onDragEnd={handleDragEnd}
+                    onAccept={handleAccept}
                     isDragOverBefore={dragOverCardId === card.id && dragOverPosition === 'before' && dragOverColumn === col.key}
                     isDragOverAfter={dragOverCardId === card.id && dragOverPosition === 'after' && dragOverColumn === col.key}
                     isDragging={dragCardRef.current?.id === card.id}

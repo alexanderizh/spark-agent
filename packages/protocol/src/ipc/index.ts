@@ -23,6 +23,11 @@ import type {
   ProviderImportResult,
   ProviderImportMode,
 } from '../provider-export.js'
+import type {
+  ScheduledTaskExportPayload,
+  ScheduledTaskImportResult,
+  ScheduledTaskImportMode,
+} from '../scheduled-task-export.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -1805,7 +1810,7 @@ export interface SettingsGetAllResponse {
 
 // ─── Board Task Channels ──────────────────────────────────────────────────────
 
-export type BoardTaskStatus = 'todo' | 'in-progress' | 'done' | 'closed' | 'bug-fix'
+export type BoardTaskStatus = 'todo' | 'in-progress' | 'done' | 'accepted' | 'closed' | 'bug-fix'
 export type BoardTaskPriority = 'low' | 'medium' | 'high' | 'urgent'
 
 export interface BoardComment {
@@ -2600,6 +2605,20 @@ export interface FileOpenResponse {
   error?: string
 }
 
+// ─── File Read Channel ───────────────────────────────────────────────────────
+
+export interface FileReadRequest {
+  /** Absolute path to the file to read. */
+  filePath: string
+}
+
+export interface FileReadResponse {
+  /** File content as UTF-8 string. */
+  content?: string
+  /** Populated with the error message when the read failed. */
+  error?: string
+}
+
 // ─── File Save / Download Channels ────────────────────────────────────────────
 
 /**
@@ -2833,6 +2852,60 @@ export interface ScheduledTaskRunNowRequest {
 
 export interface ScheduledTaskRunNowResponse {
   execution: TaskExecutionItem
+}
+
+// ─── Scheduled Task Import/Export ────────────────────────────────────────────
+
+/**
+ * `scheduled-task:export` — 内存内构造 ExportPayload（不写文件）。
+ * 调用方一般会立刻跟 `scheduled-task:export-to-file` 写盘。
+ */
+export interface ScheduledTaskExportRequest {
+  /** 要导出的任务 id 列表；空数组表示导出全部 */
+  ids: string[]
+}
+
+export interface ScheduledTaskExportResponse {
+  payload: ScheduledTaskExportPayload
+}
+
+/**
+ * `scheduled-task:import` — 直接在内存里导入 ExportPayload。
+ * 主要被 `scheduled-task:import-from-file` 在读取文件后调用。
+ */
+export interface ScheduledTaskImportRequest {
+  payload: ScheduledTaskExportPayload
+  mode: ScheduledTaskImportMode
+}
+
+export interface ScheduledTaskImportResponse extends ScheduledTaskImportResult {}
+
+/**
+ * `scheduled-task:export-to-file` — 弹保存对话框并写入 .json。
+ * 返回 filePath 供 UI 提示用户。
+ */
+export interface ScheduledTaskExportToFileRequest {
+  ids: string[]
+}
+
+export interface ScheduledTaskExportToFileResponse {
+  /** 实际写入路径；用户取消时为空字符串 */
+  filePath: string
+  /** 写入的任务数量（仅用于 UI 反馈）*/
+  count: number
+}
+
+/**
+ * `scheduled-task:import-from-file` — 弹打开对话框、读文件、解析为 payload。
+ * 实际写入数据库需要再调用 `scheduled-task:import`（让 UI 走预览流程）。
+ */
+export interface ScheduledTaskImportFromFileRequest {}
+
+export interface ScheduledTaskImportFromFileResponse {
+  /** 用户取消时为 null */
+  payload: ScheduledTaskExportPayload | null
+  /** 实际读取路径（成功或失败时都填，方便 UI 提示）*/
+  filePath: string
 }
 
 // ─── Task Execution ──────────────────────────────────────────────────────────
@@ -3404,6 +3477,9 @@ export interface IpcChannelMap {
   // File Open — open a file with the OS default application
   'file:open': [FileOpenRequest, FileOpenResponse]
 
+  // File Read — read a file's content as UTF-8 text
+  'file:read': [FileReadRequest, FileReadResponse]
+
   // File Save Image — show save dialog and copy a local image to the user's chosen path
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
@@ -3449,6 +3525,10 @@ export interface IpcChannelMap {
   'scheduled-task:delete': [ScheduledTaskDeleteRequest, ScheduledTaskDeleteResponse]
   'scheduled-task:toggle': [ScheduledTaskToggleRequest, ScheduledTaskToggleResponse]
   'scheduled-task:run-now': [ScheduledTaskRunNowRequest, ScheduledTaskRunNowResponse]
+  'scheduled-task:export': [ScheduledTaskExportRequest, ScheduledTaskExportResponse]
+  'scheduled-task:import': [ScheduledTaskImportRequest, ScheduledTaskImportResponse]
+  'scheduled-task:export-to-file': [ScheduledTaskExportToFileRequest, ScheduledTaskExportToFileResponse]
+  'scheduled-task:import-from-file': [ScheduledTaskImportFromFileRequest, ScheduledTaskImportFromFileResponse]
   'task-execution:list': [TaskExecutionListRequest, TaskExecutionListResponse]
   'task-execution:get': [TaskExecutionGetRequest, TaskExecutionGetResponse]
   'task-execution:cancel': [TaskExecutionCancelRequest, TaskExecutionCancelResponse]

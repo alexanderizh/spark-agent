@@ -14,6 +14,13 @@
 import type { ScheduledTaskRepository, TaskExecutionRepository } from '@spark/storage'
 import type { ScheduledTaskRow, TaskExecutionRow } from '@spark/storage'
 import { createLogger } from '@spark/shared'
+import {
+  SCHEDULED_TASK_EXPORT_VERSION,
+  type ScheduledTaskExportPayload,
+  type ScheduledTaskExportTask,
+  type ScheduledTaskImportMode,
+  type ScheduledTaskImportResult,
+} from '@spark/protocol'
 
 const log = createLogger('scheduled-task:service')
 
@@ -169,6 +176,108 @@ export class ScheduledTaskService {
 
   deleteTask(id: string): boolean {
     return this.taskRepo.deleteById(id)
+  }
+
+  // ─── Import/Export ────────────────────────────────────────────────────────
+
+  /**
+   * 导出任务为 ExportPayload。
+   *
+   * - ids 为空数组表示导出全部
+   * - 不包含运行时统计字段（executionCount/successCount/...）和 createdAt/updatedAt
+   */
+  exportTasks(ids: string[] = []): ScheduledTaskExportPayload {
+    const rows = this.taskRepo.listAll()
+    const idSet = ids.length > 0 ? new Set(ids) : null
+    const tasks: ScheduledTaskExportTask[] = []
+    for (const row of rows) {
+      if (idSet !== null && !idSet.has(row.id)) continue
+      tasks.push(rowToExportTask(row))
+    }
+    return {
+      version: SCHEDULED_TASK_EXPORT_VERSION,
+      exportedAt: new Date().toISOString(),
+      exportedBy: 'spark-agent',
+      tasks,
+    }
+  }
+
+  /**
+   * 导入 ExportPayload 到数据库。
+   *
+   * - 模式 merge：按 name 去重，已存在则跳过（计入 skipped）
+   * - 模式 replace：按 name 去重，已存在则更新（保留运行时统计 status/nextRunAt/executionCount/...）
+   * - 单个任务失败不中断整体流程；错误累加到 errors
+   */
+  async importTasks(
+    payload: ScheduledTaskExportPayload,
+    mode: ScheduledTaskImportMode,
+  ): Promise<ScheduledTaskImportResult> {
+    const result: ScheduledTaskImportResult = { imported: 0, skipped: 0, errors: [] }
+    if (payload.tasks.length === 0) return result
+
+    const existing = new Map<string, ScheduledTaskRow>()
+    for (const row of this.taskRepo.listAll()) {
+      existing.set(row.name, row)
+    }
+
+    for (const task of payload.tasks) {
+      try {
+        const match = existing.get(task.name)
+        if (match != null) {
+          if (mode === 'merge') {
+            result.skipped += 1
+            continue
+          }
+          // replace: 更新已存在任务
+          // 不重置 enabled（尊重用户的启用偏好）；运行时统计字段保留
+          // 触发器字段变化时 updateTask 内部会重新计算 nextRunAt
+          this.updateTask(match.id, exportTaskToUpdateFields(task) as Record<string, unknown>)
+          result.imported += 1
+          continue
+        }
+
+        // 新建
+        const newId = generateId()
+        const created = this.createTask({
+          id: newId,
+          name: task.name,
+          description: task.description,
+          enabled: task.enabled ? 1 : 0,
+          trigger_type: task.triggerType,
+          interval_seconds: task.intervalSeconds,
+          cron_expression: task.cronExpression,
+          run_at: task.runAt,
+          timezone: task.timezone,
+          start_at: task.startAt,
+          end_at: task.endAt,
+          max_executions: task.maxExecutions,
+          agent_id: task.agentId,
+          team_id: task.teamId,
+          model_id: task.modelId,
+          workspace_id: task.workspaceId,
+          prompt_template: task.promptTemplate,
+          permission_mode: task.permissionMode,
+          permission_profile_id: task.permissionProfileId,
+          timeout_seconds: task.timeoutSeconds,
+          max_retries: task.maxRetries,
+          retry_delay_seconds: task.retryDelaySeconds,
+          retry_backoff: task.retryBackoff,
+          notifications: JSON.stringify(task.notifications),
+          concurrency_policy: task.concurrencyPolicy,
+          tags: JSON.stringify(task.tags),
+          history_retention_days: task.historyRetentionDays,
+        })
+        result.imported += 1
+        log.info(`Imported task name="${created.name}" id=${newId}`)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        result.errors.push(`[${task.name}] ${message}`)
+        log.warn(`Failed to import task "${task.name}": ${message}`)
+      }
+    }
+
+    return result
   }
 
   // ─── Execution Control ────────────────────────────────────────────────────
@@ -682,6 +791,74 @@ function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+}
+
+/**
+ * 把数据库 row 转成可导出的 task 对象。
+ * 排除运行时统计字段与时间戳字段（导入时新建/保留本地值）。
+ */
+function rowToExportTask(row: ScheduledTaskRow): ScheduledTaskExportTask {
+  return {
+    name: row.name,
+    description: row.description,
+    enabled: row.enabled === 1,
+    triggerType: row.trigger_type,
+    intervalSeconds: row.interval_seconds,
+    cronExpression: row.cron_expression,
+    runAt: row.run_at,
+    timezone: row.timezone,
+    startAt: row.start_at,
+    endAt: row.end_at,
+    maxExecutions: row.max_executions,
+    agentId: row.agent_id,
+    teamId: row.team_id,
+    modelId: row.model_id,
+    workspaceId: row.workspace_id,
+    promptTemplate: row.prompt_template,
+    permissionMode: row.permission_mode,
+    permissionProfileId: row.permission_profile_id,
+    timeoutSeconds: row.timeout_seconds,
+    maxRetries: row.max_retries,
+    retryDelaySeconds: row.retry_delay_seconds,
+    retryBackoff: row.retry_backoff,
+    notifications: safeJsonParse<ScheduledTaskExportTask['notifications']>(row.notifications, []),
+    concurrencyPolicy: row.concurrency_policy,
+    tags: safeJsonParse<string[]>(row.tags, []),
+    historyRetentionDays: row.history_retention_days,
+  }
+}
+
+/**
+ * 把 export task 转为 update 字段映射（snake_case）。
+ * 注意：不更新 name（name 是去重 key）、不更新 enabled（尊重用户启用偏好）。
+ */
+function exportTaskToUpdateFields(task: ScheduledTaskExportTask): Partial<ScheduledTaskRow> {
+  return {
+    description: task.description,
+    trigger_type: task.triggerType,
+    interval_seconds: task.intervalSeconds,
+    cron_expression: task.cronExpression,
+    run_at: task.runAt,
+    timezone: task.timezone,
+    start_at: task.startAt,
+    end_at: task.endAt,
+    max_executions: task.maxExecutions,
+    agent_id: task.agentId,
+    team_id: task.teamId,
+    model_id: task.modelId,
+    workspace_id: task.workspaceId,
+    prompt_template: task.promptTemplate,
+    permission_mode: task.permissionMode,
+    permission_profile_id: task.permissionProfileId,
+    timeout_seconds: task.timeoutSeconds,
+    max_retries: task.maxRetries,
+    retry_delay_seconds: task.retryDelaySeconds,
+    retry_backoff: task.retryBackoff,
+    notifications: JSON.stringify(task.notifications),
+    concurrency_policy: task.concurrencyPolicy,
+    tags: JSON.stringify(task.tags),
+    history_retention_days: task.historyRetentionDays,
+  } as Partial<ScheduledTaskRow>
 }
 
 function sleep(ms: number): Promise<void> {

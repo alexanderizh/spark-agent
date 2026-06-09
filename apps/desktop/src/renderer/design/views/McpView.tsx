@@ -7,6 +7,7 @@ import type { McpServerItem } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSearchInput, SparkSelect } from '../components/FormControls'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { useApp } from '../AppContext'
 
 type ServerStatus = 'ok' | 'warn' | 'err' | 'off'
@@ -97,6 +98,8 @@ export function McpView() {
       .then((res) => setServers(res.servers))
       .catch((err) => setError(err instanceof Error ? err.message : '加载 MCP 服务器失败'))
   }, [listMcp, scopeFilter])
+
+  useRefreshable(refresh)
 
   useEffect(() => {
     const id = window.setTimeout(() => {

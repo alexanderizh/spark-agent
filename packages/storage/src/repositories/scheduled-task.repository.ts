@@ -184,7 +184,7 @@ export class ScheduledTaskRepository extends BaseRepository {
       params.model_id ?? null,
       params.workspace_id ?? null,
       params.prompt_template,
-      params.permission_mode ?? 'ask',
+      params.permission_mode ?? 'auto',
       params.permission_profile_id ?? null,
       params.timeout_seconds ?? 300,
       params.max_retries ?? 0,

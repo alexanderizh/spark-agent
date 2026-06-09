@@ -69,6 +69,7 @@ import type {
   WorkflowItem as ProtocolWorkflowItem,
   WorkflowGraph,
   ProviderExportPayload,
+  ScheduledTaskExportPayload,
   TeamModeConfig,
   TeamMemberCard,
   ManagedTeam,
@@ -175,7 +176,7 @@ interface BoardTaskRecord {
   id: string
   title: string
   description: string
-  status: 'todo' | 'in-progress' | 'done' | 'closed' | 'bug-fix'
+  status: 'todo' | 'in-progress' | 'done' | 'accepted' | 'closed' | 'bug-fix'
   priority: 'low' | 'medium' | 'high' | 'urgent'
   assignee: string
   project: string
@@ -2468,8 +2469,12 @@ export function registerAllIpcHandlers(): void {
         status,
         priority: item.priority ?? 'medium',
         assignee: item.assignee ?? '',
+        project: item.project ?? '',
         tags: item.tags ?? [],
         dueDate: item.dueDate ?? '',
+        processingAgent: item.processingAgent ?? '',
+        acceptanceCriteria: item.acceptanceCriteria ?? '',
+        testAgent: item.testAgent ?? '',
         commentsJson: '[]',
         attachmentsJson: JSON.stringify(item.attachments ?? []),
         sortOrder,
@@ -2502,6 +2507,9 @@ export function registerAllIpcHandlers(): void {
         project: upd.project !== undefined ? upd.project : base.project,
         tags: upd.tags !== undefined ? upd.tags : base.tags,
         dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
+        processingAgent: upd.processingAgent !== undefined ? upd.processingAgent : (base.processingAgent ?? ''),
+        acceptanceCriteria: upd.acceptanceCriteria !== undefined ? upd.acceptanceCriteria : (base.acceptanceCriteria ?? ''),
+        testAgent: upd.testAgent !== undefined ? upd.testAgent : (base.testAgent ?? ''),
         commentsJson: base.commentsJson ?? '[]',
         attachmentsJson: upd.attachments !== undefined ? JSON.stringify(upd.attachments) : (base.attachmentsJson ?? '[]'),
         sortOrder: upd.sortOrder !== undefined ? upd.sortOrder : (base.sortOrder ?? 0),
@@ -2709,7 +2717,7 @@ export function registerAllIpcHandlers(): void {
       model_id: req.modelId ?? null,
       workspace_id: req.workspaceId ?? null,
       prompt_template: req.promptTemplate,
-      permission_mode: req.permissionMode ?? 'ask',
+      permission_mode: req.permissionMode ?? 'auto',
       permission_profile_id: req.permissionProfileId ?? null,
       timeout_seconds: req.timeoutSeconds ?? 300,
       max_retries: req.maxRetries ?? 0,
@@ -2796,6 +2804,116 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('task-execution:stats', async (req) => {
     return { stats: getScheduledTaskService().getExecutionStats(req.taskId) }
+  })
+
+  // ─── Scheduled Task Import/Export Handlers ────────────────────────────────
+  //
+  // 流程（与 Provider 完全对齐）：
+  //   - 内存构造 ExportPayload                → `scheduled-task:export`
+  //   - 弹保存对话框写 .json                   → `scheduled-task:export-to-file`
+  //   - 弹打开对话框读 .json                   → `scheduled-task:import-from-file`
+  //   - 真正写库                                → `scheduled-task:import`
+  //
+  // 文件 IO 走 electron 的 dialog + node:fs/promises。
+  // 解析失败、IO 失败、版本不匹配都返回友好错误，UI 弹 toast。
+
+  typedIpcHandle('scheduled-task:export', async (req) => {
+    const count = req.ids.length
+    log.info(`scheduled-task:export requested, ids=${count}`)
+    const payload = getScheduledTaskService().exportTasks(req.ids)
+    return { payload }
+  })
+
+  typedIpcHandle('scheduled-task:import', async (req) => {
+    const total = req.payload.tasks.length
+    log.info(`scheduled-task:import requested, mode=${req.mode}, tasks=${total}`)
+    const result = await getScheduledTaskService().importTasks(req.payload, req.mode)
+    log.info(
+      `scheduled-task:import done, imported=${result.imported}, skipped=${result.skipped}, errors=${result.errors.length}`,
+    )
+    return result
+  })
+
+  typedIpcHandle('scheduled-task:export-to-file', async (req) => {
+    const count = req.ids.length
+    log.info(`scheduled-task:export-to-file requested, ids=${count}`)
+
+    const payload = getScheduledTaskService().exportTasks(req.ids)
+
+    // 默认文件名：spark-agent-tasks-YYYY-MM-DD.json
+    const datePart = new Date().toISOString().slice(0, 10)
+    const defaultName = `spark-agent-tasks-${datePart}.json`
+
+    const result = await dialog.showSaveDialog({
+      title: '导出定时任务',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePath == null || result.filePath.length === 0) {
+      log.info('scheduled-task:export-to-file canceled by user')
+      return { filePath: '', count: payload.tasks.length }
+    }
+
+    try {
+      const json = JSON.stringify(payload, null, 2)
+      await fs.writeFile(result.filePath, json, 'utf-8')
+      log.info(`scheduled-task:export-to-file wrote ${payload.tasks.length} tasks to ${result.filePath}`)
+      return { filePath: result.filePath, count: payload.tasks.length }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`scheduled-task:export-to-file write failed: ${message}`)
+      throw new Error(`写入文件失败：${message}`)
+    }
+  })
+
+  typedIpcHandle('scheduled-task:import-from-file', async () => {
+    log.info('scheduled-task:import-from-file requested')
+
+    const result = await dialog.showOpenDialog({
+      title: '选择定时任务配置文件',
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      log.info('scheduled-task:import-from-file canceled by user')
+      return { payload: null, filePath: '' }
+    }
+
+    const filePath = result.filePaths[0]!
+    let raw: string
+    try {
+      raw = await fs.readFile(filePath, 'utf-8')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`scheduled-task:import-from-file read failed: ${message}`)
+      throw new Error(`读取文件失败：${message}`)
+    }
+
+    let json: unknown
+    try {
+      json = JSON.parse(raw)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`scheduled-task:import-from-file parse failed: ${message}`)
+      throw new Error(`JSON 解析失败：${message}`)
+    }
+
+    const { ScheduledTaskExportPayloadSchema } = await import('@spark/protocol')
+    const parsed = ScheduledTaskExportPayloadSchema.parse(json)
+
+    log.info(
+      `scheduled-task:import-from-file parsed ${parsed.tasks.length} tasks, version=${parsed.version}`,
+    )
+
+    return { payload: parsed as ScheduledTaskExportPayload, filePath }
   })
 
   // ─── Usage Ledger Handlers ────────────────────────────────────────────────
@@ -3077,6 +3195,27 @@ export function registerAllIpcHandlers(): void {
       return { opened: false, error: errorMessage }
     }
     return { opened: true }
+  })
+
+  // ─── File Read Handler ────────────────────────────────────────────────
+
+  typedIpcHandle('file:read', async (req) => {
+    const filePath = req.filePath
+    if (!filePath || typeof filePath !== 'string') {
+      return { error: 'filePath is required' }
+    }
+
+    log.info(`file:read requested, path=${filePath}`)
+
+    try {
+      const fs = await import('node:fs/promises')
+      const content = await fs.readFile(filePath, 'utf-8')
+      return { content }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`file:read failed, path=${filePath}, error=${message}`)
+      return { error: message }
+    }
   })
 
   // ─── File Save Image Handler ──────────────────────────────────────────

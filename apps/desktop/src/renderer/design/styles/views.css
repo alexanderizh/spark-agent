@@ -1068,9 +1068,13 @@ body.sidebar-resizing {
   overflow: auto;
   padding: var(--pad-xl) 0;
   background: var(--bg);
+  display: flex;
+  flex-direction: column;
 }
 .chat-stream-inner {
+  width: 100%;
   max-width: 900px;
+  min-width: 0;
   margin: 0 auto;
   padding: 0 var(--pad-xl);
   display: flex;

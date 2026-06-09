@@ -457,3 +457,22 @@
     background: rgba(255, 255, 255, 0.3);
   }
 }
+
+/* Auto-execute toggle */
+.board-auto-execute-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.board-auto-execute-label {
+  font-size: 12px;
+  color: var(--text-muted);
+  user-select: none;
+  transition: color 0.15s;
+
+  &.active {
+    color: var(--primary);
+  }
+}

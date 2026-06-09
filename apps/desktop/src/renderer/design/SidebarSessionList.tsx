@@ -2,13 +2,12 @@
  * SidebarSessionList — Complete conversation list extracted from ChatView.
  * Renders search, time filter, project groups, session items, and all context menus.
  */
-import React, { useRef, useState, useCallback } from 'react'
+import React, { useRef, useState, useCallback, useMemo } from 'react'
+import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '@spark/ui-kit'
 import { Icons } from './Icons'
@@ -21,7 +20,11 @@ import {
   type ProjectGroup,
   type TimeFilter,
 } from './SessionSidebarContext'
-import type { SessionId, WorkspaceInfo } from '@spark/protocol'
+import type {
+  SessionId,
+  WorkspaceInfo,
+  AgentStatusValue,
+} from '@spark/protocol'
 import { useApp } from './AppContext'
 
 /* ─── Project collapsed state persistence ─── */
@@ -58,6 +61,100 @@ function formatRelativeTime(value: string): string {
   if (diffMs < day) return `${Math.floor(diffMs / hour)} 小时`
   if (diffMs < week) return `${Math.floor(diffMs / day)} 天`
   return `${Math.floor(diffMs / week)} 周`
+}
+
+/* ─── Session Status Types ─── */
+type SessionDisplayStatus =
+  | 'running'           // thinking / calling_tool
+  | 'waiting_permission' // waiting for permission approval
+  | 'waiting_user'      // waiting for user input
+  | 'completed'         // finished successfully
+  | 'error'             // failed
+  | 'cancelled'         // cancelled
+  | 'idle'              // idle / default
+
+function getSessionDisplayStatus(
+  sessionStatus: string,
+  agentStatus?: AgentStatusValue
+): SessionDisplayStatus {
+  // Agent status takes priority for fine-grained status
+  if (agentStatus) {
+    switch (agentStatus) {
+      case 'thinking':
+      case 'calling_tool':
+        return 'running'
+      case 'waiting_permission':
+        return 'waiting_permission'
+      case 'waiting_user':
+        return 'waiting_user'
+      case 'completed':
+        return 'completed'
+      case 'error':
+        return 'error'
+      case 'cancelled':
+        return 'cancelled'
+      case 'idle':
+        return 'idle'
+    }
+  }
+  // Fallback to session status
+  if (sessionStatus === 'running') return 'running'
+  return 'idle'
+}
+
+function getStatusBadgeInfo(status: SessionDisplayStatus): {
+  className: string
+  icon: React.ReactNode
+  title: string
+  animate?: boolean
+} {
+  switch (status) {
+    case 'running':
+      return {
+        className: 'session-badge-running',
+        icon: <Icons.Spinner size={11} className="animate-spin" />,
+        title: '运行中',
+        animate: true,
+      }
+    case 'waiting_permission':
+      return {
+        className: 'session-badge-waiting-permission',
+        icon: <Icons.Shield size={10} />,
+        title: '等待权限审批',
+        animate: true,
+      }
+    case 'waiting_user':
+      return {
+        className: 'session-badge-waiting-user',
+        icon: <Icons.Cursor size={10} />,
+        title: '等待输入',
+        animate: true,
+      }
+    case 'completed':
+      return {
+        className: 'session-badge-completed',
+        icon: <Icons.Check size={10} />,
+        title: '已完成',
+      }
+    case 'error':
+      return {
+        className: 'session-badge-error',
+        icon: <Icons.X size={10} />,
+        title: '运行失败',
+      }
+    case 'cancelled':
+      return {
+        className: 'session-badge-cancelled',
+        icon: <Icons.Stop size={10} />,
+        title: '已取消',
+      }
+    default:
+      return {
+        className: '',
+        icon: null,
+        title: '',
+      }
+  }
 }
 
 /* ─── ActionMenu ─── */
@@ -114,50 +211,6 @@ function ActionMenu({
   )
 }
 
-/* ─── TimeFilterDropdown ─── */
-function TimeFilterDropdown({ value, onChange }: { value: TimeFilter; onChange: (v: TimeFilter) => void }) {
-  const [open, setOpen] = useState(false)
-  const options: Array<{ value: TimeFilter; label: string }> = [
-    { value: 'all', label: '全部' },
-    { value: '1d', label: '最近 1 天' },
-    { value: '3d', label: '最近 3 天' },
-    { value: '7d', label: '最近 7 天' },
-    { value: '10d', label: '最近 10 天' },
-  ]
-  const currentLabel = options.find(o => o.value === value)?.label ?? '全部会话'
-  return (
-    <div className="session-filter-bar">
-      <DropdownMenu open={open} onOpenChange={setOpen}>
-        <DropdownMenuTrigger asChild>
-          <button className={`filter-trigger${value !== 'all' ? ' has-filter' : ''}`} aria-label="筛选会话">
-            <span>{currentLabel}</span>
-            <Icons.ChevronDown size={12} className={`filter-chevron${open ? ' open' : ''}`} />
-          </button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="start"
-          side="bottom"
-          className="filter-dropdown"
-          style={{ minWidth: 'var(--radix-dropdown-menu-trigger-width)' }}
-        >
-          <DropdownMenuRadioGroup value={value} onValueChange={(next) => onChange(next as TimeFilter)}>
-            {options.map(option => (
-              <DropdownMenuRadioItem
-              key={option.value}
-                value={option.value}
-                className={`filter-option${value === option.value ? ' active' : ''}`}
-                onSelect={() => setOpen(false)}
-              >
-                {option.label}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
-  )
-}
-
 /* ─── ChatListItem ─── */
 function ChatListItem({
   session: s,
@@ -171,7 +224,7 @@ function ChatListItem({
 }: {
   session: SessionSummary
   active: SessionId | null
-  agentStatus?: string | undefined
+  agentStatus?: AgentStatusValue | undefined
   onClick: (id: SessionId) => void
   onRename?: (session: SessionSummary) => void
   onTogglePinned?: (session: SessionSummary) => void
@@ -179,12 +232,17 @@ function ChatListItem({
   onDelete?: (session: SessionSummary) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const isRunning = s.status === 'running'
-  const isWaitingInput = agentStatus === 'waiting_permission' || agentStatus === 'waiting_user'
-  const badgeClass = isWaitingInput ? 'is-waiting-input' : isRunning ? 'is-running' : ''
+  const displayStatus = useMemo(
+    () => getSessionDisplayStatus(s.status, agentStatus),
+    [s.status, agentStatus]
+  )
+  const badgeInfo = useMemo(() => getStatusBadgeInfo(displayStatus), [displayStatus])
+
+  const statusClass = displayStatus !== 'idle' ? `is-${displayStatus}` : ''
+
   return (
     <div
-      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${badgeClass}`}
+      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${statusClass}`}
       onClick={() => onClick(s.id)}
     >
       <div className="chat-item-row">
@@ -192,13 +250,14 @@ function ChatListItem({
           {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
           <span className="truncate">{s.title || '新会话'}</span>
         </div>
-        {isWaitingInput ? (
-          <span className="session-waiting-badge" title="等待交互">
-            <Icons.Cursor size={10} />
-            <span>等待交互</span>
+        {displayStatus !== 'idle' && badgeInfo.icon ? (
+          <span
+            className={`session-status-badge ${badgeInfo.className}`}
+            title={badgeInfo.title}
+          >
+            {badgeInfo.icon}
+            <span>{badgeInfo.title}</span>
           </span>
-        ) : isRunning ? (
-          <span className="session-running-badge" title="运行中"><Icons.Spinner size={11} /><span>运行中</span></span>
         ) : (
           <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         )}
@@ -252,7 +311,7 @@ function ProjectSessionGroup({
   group: ProjectGroup
   activeSessionId: SessionId | null
   activeWorkspaceId: string | null
-  sessionAgentStatuses: Record<string, string>
+  sessionAgentStatuses: Record<string, AgentStatusValue>
   onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   onSelectSession: (session: SessionSummary) => void
   onNewSession: (workspaceId: string) => void
@@ -456,6 +515,8 @@ export function SidebarSessionList() {
   return (
     <div className="sidebar-session-list-inner">
       {/* Header: filter + action buttons — hidden */}
+
+      {/* Current session params panel 已移除 — 权限/推理控制在 ChatView Composer param bar 中 */}
 
       {/* Session list */}
       <div className="chat-list scroll">

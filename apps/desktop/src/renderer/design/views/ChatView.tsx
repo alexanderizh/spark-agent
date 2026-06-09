@@ -6,6 +6,7 @@
  * Session/workspace/provider data is read from SessionSidebarContext.
  */
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import './ChatView.less'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
@@ -31,6 +32,8 @@ import {
 import { SparkInput, SparkTextarea } from '../components/FormControls'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
+import { ClickableFilePath, extractFilePaths } from '../components/ClickableFilePath'
+import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
@@ -77,6 +80,30 @@ import type {
 import { resolveProviderContextWindow } from '@spark/shared'
 
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
+
+/**
+ * resolveTeamHostAgentId — 解析团队模式下要使用的主持 Agent。
+ *
+ * 团队模式启用但主持人未显式选择时（如新会话/首次开启/旧 host 已被删除），
+ * 后端会收到一个无效的 hostAgentId，导致 LLM 因缺少调度工具而报
+ * "无法直接调度其他 Agent 并行开发代码" 的错。这里给出明确的回退链：
+ *   1. teamConfig.hostAgentId 已在 agents 列表里 → 直接用
+ *   2. 团队 memberAgentIds 中第一个在 agents 列表里的 → 用它
+ *   3. agents 列表第一个 → 用它
+ *   4. 保留 teamConfig.hostAgentId（即使不在列表，给后端兜底）
+ *   5. 最终兜底 'code-agent'
+ */
+function resolveTeamHostAgentId(teamConfig: TeamModeConfig, agents: ManagedAgent[]): string {
+  const isValid = (id: string | undefined): id is string =>
+    typeof id === 'string' && id.length > 0 && agents.some((agent) => agent.id === id)
+  if (isValid(teamConfig.hostAgentId)) return teamConfig.hostAgentId
+  for (const memberId of teamConfig.memberAgentIds) {
+    if (isValid(memberId)) return memberId
+  }
+  const firstAgent = agents[0]
+  if (firstAgent != null) return firstAgent.id
+  return teamConfig.hostAgentId || 'code-agent'
+}
 
 type BranchState = { currentBranch: string | null; branches: string[] }
 type AgentAdapter = SessionAgentAdapter
@@ -255,14 +282,21 @@ export function ChatView({
   const { invoke: listTeamMembers } = useIpcInvoke('team:list-members')
   const defaultTeamConfig = useCallback((): TeamModeConfig => {
     const prefs = readComposerPrefs()
+    const memberIds = prefs.teamMemberAgentIds ?? []
+    const candidateHost =
+      prefs.teamHostAgentId ??
+      memberIds.find((id) => agents.some((agent) => agent.id === id)) ??
+      agents[0]?.id ??
+      prefs.agentId ??
+      'code-agent'
     return {
       enabled: prefs.teamMode ?? false,
-      hostAgentId: prefs.teamHostAgentId ?? prefs.agentId ?? 'code-agent',
-      memberAgentIds: prefs.teamMemberAgentIds ?? [],
+      hostAgentId: candidateHost,
+      memberAgentIds: memberIds,
       maxDepth: 1,
       allowNesting: false,
     }
-  }, [])
+  }, [agents])
   const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(defaultTeamConfig)
   const updateTeamConfig = useCallback(
     (patch: Partial<TeamModeConfig>) => {
@@ -282,6 +316,11 @@ export function ChatView({
     },
     [active, persistTeamConfig],
   )
+  // 团队模式下，最终用于指派的主持 Agent（hostAgentId 解析结果）；
+  // hostAgentId 可能因为旧 host 被删除而失效，因此渲染/sendTurn 都用此值。
+  const effectiveHostAgentId = teamConfig.enabled
+    ? resolveTeamHostAgentId(teamConfig, agents)
+    : null
   // 切换 active session 时从 metadata 拉取会话级 team config 回显；
   // 历史团队会话能正常恢复底部参数与右侧 Inspector 的团队信息。
   useEffect(() => {
@@ -324,6 +363,12 @@ export function ChatView({
   const [clearTrigger, setClearTrigger] = useState(0)
   const [replyTo, setReplyTo] = useState<ReplyToState | null>(null)
   const { toast } = useToast()
+
+  // ── 文件预览状态 ──
+  const [filePreview, setFilePreview] = useState<{
+    filePath: string
+    fileType: 'markdown' | 'html' | 'image' | 'text'
+  } | null>(null)
 
   // ── IPC hooks (only those NOT duplicated in context) ──
   const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
@@ -400,6 +445,13 @@ export function ChatView({
       })
       .catch(console.error)
   }, [active, clearEvents, sessionCtx])
+
+  const handleFilePreview = useCallback(
+    (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => {
+      setFilePreview({ filePath, fileType })
+    },
+    [],
+  )
 
   const pickProjectFolder = useCallback(async () => {
     try {
@@ -556,6 +608,7 @@ export function ChatView({
               onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
               teamConfig={teamConfig}
+              effectiveHostAgentId={effectiveHostAgentId}
               onChangeTeamConfig={updateTeamConfig}
               onOpenTeamInspector={() => setShowInspector(true)}
               replyTo={null}
@@ -588,6 +641,7 @@ export function ChatView({
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
               teamConfig={teamConfig}
+              onFilePreview={handleFilePreview}
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -623,6 +677,7 @@ export function ChatView({
               onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
               teamConfig={teamConfig}
+              effectiveHostAgentId={effectiveHostAgentId}
               onChangeTeamConfig={updateTeamConfig}
               onOpenTeamInspector={() => setShowInspector(true)}
               replyTo={replyTo}
@@ -639,7 +694,9 @@ export function ChatView({
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
           {...(() => {
-            const aid = teamConfig.enabled ? teamConfig.hostAgentId : (activeSession?.agentId ?? undefined)
+            const aid = teamConfig.enabled
+              ? (effectiveHostAgentId ?? teamConfig.hostAgentId)
+              : (activeSession?.agentId ?? undefined)
             return aid != null ? { agentId: aid } : {}
           })()}
         />
@@ -672,6 +729,14 @@ export function ChatView({
           sessionId={active}
           plan={proposedPlan}
           onClose={() => setProposedPlan(null)}
+        />
+      )}
+
+      {filePreview != null && (
+        <FilePreviewPanel
+          filePath={filePreview.filePath}
+          fileType={filePreview.fileType}
+          onClose={() => setFilePreview(null)}
         />
       )}
     </div>
@@ -943,6 +1008,7 @@ function ChatStream({
   clearTrigger,
   teamConfig,
   onReplyTo,
+  onFilePreview,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -958,10 +1024,12 @@ function ChatStream({
   clearTrigger?: number
   teamConfig: TeamModeConfig
   onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [agentIsRunning, setAgentIsRunning] = useState(false)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const builderRef = useRef(new MessageBuilder())
   const rafRef = useRef<number | null>(null)
@@ -1177,6 +1245,7 @@ function ChatStream({
       const threshold = 80
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
       userScrolledRef.current = distanceFromBottom > threshold
+      setShowScrollToBottom(distanceFromBottom > threshold)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
@@ -1231,6 +1300,7 @@ function ChatStream({
       // Track user_message to reset scroll tracking
       if (event.type === 'user_message') {
         userScrolledRef.current = false
+        setShowScrollToBottom(false)
         isStreamingRef.current = true
         setAgentIsRunning(true)
       }
@@ -1296,7 +1366,10 @@ function ChatStream({
     const el = streamRef.current
     if (!el) return
     if (!userScrolledRef.current) {
-      el.scrollTop = el.scrollHeight
+      // rAF 确保在 DOM 更新后再滚动，避免滚动位置不准确
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight
+      })
     }
   }, [messages, agentIsRunning])
 
@@ -1319,6 +1392,14 @@ function ChatStream({
     [deleteMessageEvents, sessionId, onMessagesChange],
   )
 
+  const handleScrollToBottom = useCallback(() => {
+    const el = streamRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    userScrolledRef.current = false
+    setShowScrollToBottom(false)
+  }, [])
+
   return (
     <div className="chat-stream" ref={streamRef}>
       <div className="chat-stream-inner">
@@ -1339,7 +1420,7 @@ function ChatStream({
               onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
               {...(onReplyTo != null ? { onReply: () => onReplyTo(msg) } : {})}
             >
-              {renderBlocks(msg.blocks)}
+              {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
             </UserMsg>
           ) : (
             <AssistantMessageRows
@@ -1352,6 +1433,7 @@ function ChatStream({
               assistantName={assistantName}
               assistantAvatarSrc={assistantAvatarSrc}
               usage={msg.usage}
+              {...(onFilePreview != null ? { onFilePreview } : {})}
               {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
               {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
               {...(msg.status !== 'streaming'
@@ -1374,6 +1456,7 @@ function ChatStream({
             assistantId={assistantAgentId}
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
           />
         )}
         {messages.length === 0 && !showWaitingAgent && (
@@ -1399,6 +1482,16 @@ function ChatStream({
           </div>
         )}
       </div>
+      {showScrollToBottom && (
+        <button
+          className="scroll-to-bottom-btn"
+          onClick={handleScrollToBottom}
+          title="滚动到底部"
+          aria-label="滚动到底部"
+        >
+          <Icons.ChevronDown size={18} />
+        </button>
+      )}
     </div>
   )
 }
@@ -1528,7 +1621,7 @@ function applyAgentStatus(
 
 function renderBlocks(
   blocks: UIBlock[],
-  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId } = {},
+  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
   return blocks.map((block, i) => {
@@ -1536,7 +1629,7 @@ function renderBlocks(
       case 'text':
         return (
           <div key={i} className="md-surface">
-            <MarkdownText content={block.content} isStreaming={block.isStreaming} />
+            <MarkdownText content={block.content} isStreaming={block.isStreaming} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
           </div>
         )
       case 'thinking':
@@ -1742,7 +1835,7 @@ function renderBlocks(
         return <TeamDispatchBlockView key={i} block={block} />
       }
       case 'team_member_message': {
-        return <TeamMemberMessageBlockView key={i} block={block} />
+        return <TeamMemberMessageBlockView key={i} block={block} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
       }
       default:
         return null
@@ -1766,8 +1859,10 @@ function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'tea
 
 function TeamMemberMessageBlockView({
   block,
+  onFilePreview,
 }: {
   block: Extract<UIBlock, { kind: 'team_member_message' }>
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -1785,7 +1880,7 @@ function TeamMemberMessageBlockView({
         running={running}
         onOpenDetail={() => setDrawerOpen(true)}
       >
-        <MarkdownText content={block.content} isStreaming={block.isStreaming} agents={agents.map(a => ({ id: a.id, name: a.name }))} onMentionClick={(agentId) => { setDrawerAgentId(agentId); setDrawerOpen(true) }} />
+        <MarkdownText content={block.content} isStreaming={block.isStreaming} agents={agents.map(a => ({ id: a.id, name: a.name }))} onMentionClick={(agentId) => { setDrawerAgentId(agentId); setDrawerOpen(true) }} {...(onFilePreview != null ? { onFilePreview } : {})} />
       </TeamMemberBubble>
       {drawerOpen && drawerAgentId && (() => {
         const mentionedAgent = agents.find(a => a.id === drawerAgentId)
@@ -1816,11 +1911,13 @@ function TeamMemberActivityBlockView({
   blocks,
   running,
   sessionId,
+  onFilePreview,
 }: {
   memberAgentId: string
   blocks: UIBlock[]
   running: boolean
   sessionId: SessionId
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
@@ -1837,7 +1934,7 @@ function TeamMemberActivityBlockView({
         running={running}
         onOpenDetail={() => setDrawerOpen(true)}
       >
-        {renderTeamMemberActivityBlocks(blocks, { sessionId })}
+        {renderTeamMemberActivityBlocks(blocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}
       </TeamMemberBubble>
       {drawerOpen && (
         <TeamMemberDrawer
@@ -1860,7 +1957,7 @@ function TeamMemberActivityBlockView({
 
 function renderTeamMemberActivityBlocks(
   blocks: UIBlock[],
-  options: { sessionId: SessionId },
+  options: { sessionId: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void },
 ): ReactNode {
   const logBlocks = blocks.filter(isTeamMemberLogBlock)
   const resultBlocks = blocks.filter((block) => !isTeamMemberLogBlock(block))
@@ -1884,7 +1981,7 @@ function renderTeamMemberActivityBlocks(
           if (block.content.trim().length === 0) return null
           return (
             <div key={index} className="md-surface">
-              <MarkdownText content={block.content} isStreaming={block.isStreaming} />
+              <MarkdownText content={block.content} isStreaming={block.isStreaming} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
             </div>
           )
         }
@@ -2636,16 +2733,18 @@ type MarkdownBlock =
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' }
 
-function MarkdownText({
+export function MarkdownText({
   content,
   isStreaming = false,
   agents,
   onMentionClick,
+  onFilePreview,
 }: {
   content: string
   isStreaming?: boolean
   agents?: { id: string; name: string }[]
   onMentionClick?: (agentId: string) => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const blocks = parseMarkdown(content)
   const syntaxHighlight = readAppearance().syntaxHighlight
@@ -2657,10 +2756,10 @@ function MarkdownText({
         switch (block.kind) {
           case 'heading': {
             const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
-            return <Tag key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick)}</Tag>
+            return <Tag key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</Tag>
           }
           case 'paragraph':
-            return <p key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick)}</p>
+            return <p key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</p>
           case 'code':
             return (
               <div key={index} className={`md-code-block${syntaxHighlight ? '' : ' no-syntax'}`}>
@@ -2710,7 +2809,7 @@ function MarkdownText({
               </div>
             )
           case 'quote':
-            return <blockquote key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick)}</blockquote>
+            return <blockquote key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</blockquote>
           case 'list': {
             const ListTag = block.ordered ? 'ol' : 'ul'
             return (
@@ -2728,7 +2827,7 @@ function MarkdownText({
                         readOnly
                       />
                     )}
-                    <span>{renderInlineMarkdown(item.text, agents, onMentionClick)}</span>
+                    <span>{renderInlineMarkdown(item.text, agents, onMentionClick, onFilePreview)}</span>
                   </li>
                 ))}
               </ListTag>
@@ -2741,7 +2840,7 @@ function MarkdownText({
                   <thead>
                     <tr>
                       {block.headers.map((header, headerIndex) => (
-                        <th key={headerIndex}>{renderInlineMarkdown(header, agents, onMentionClick)}</th>
+                        <th key={headerIndex}>{renderInlineMarkdown(header, agents, onMentionClick, onFilePreview)}</th>
                       ))}
                     </tr>
                   </thead>
@@ -2749,7 +2848,7 @@ function MarkdownText({
                     {block.rows.map((row, rowIndex) => (
                       <tr key={rowIndex}>
                         {block.headers.map((_, cellIndex) => (
-                          <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '')}</td>
+                          <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '', agents, onMentionClick, onFilePreview)}</td>
                         ))}
                       </tr>
                     ))}
@@ -2903,6 +3002,7 @@ function highlightMentions(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
 ): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
   const parts: ReactNode[] = []
@@ -2915,7 +3015,7 @@ function highlightMentions(
     const prefix = match[1] ?? ''
     const mention = match[2] ?? ''
     const mentionStart = match.index + prefix.length
-    if (mentionStart > cursor) parts.push(text.slice(cursor, mentionStart))
+    if (mentionStart > cursor) parts.push(...highlightFilePaths(text.slice(cursor, mentionStart), onFilePreview, `fp-${cursor}`))
     const agentId = agentMap?.get(mention.slice(1).toLowerCase())
     const clickable = onMentionClick != null && agentId != null
     parts.push(
@@ -2944,14 +3044,40 @@ function highlightMentions(
     )
     cursor = mentionStart + mention.length
   }
-  if (cursor < text.length) parts.push(text.slice(cursor))
+  if (cursor < text.length) parts.push(...highlightFilePaths(text.slice(cursor), onFilePreview, `fp-${cursor}`))
   return parts.length > 0 ? parts : [text]
+}
+
+/** 识别文本中的文件路径并渲染为可点击链接 */
+function highlightFilePaths(
+  text: string,
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  keyPrefix: string = 'fp',
+): ReactNode[] {
+  const pathParts = extractFilePaths(text)
+  if (pathParts.length === 0 || (pathParts.length === 1 && !pathParts[0]!.isPath)) {
+    return [text]
+  }
+
+  return pathParts.map((part, index) => {
+    if (!part.isPath) {
+      return <span key={`${keyPrefix}-${index}`}>{part.text}</span>
+    }
+    return (
+      <ClickableFilePath
+        key={`${keyPrefix}-${index}`}
+        path={part.text}
+        {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
+      />
+    )
+  })
 }
 
 function renderInlineMarkdown(
   text: string,
   agents?: { id: string; name: string }[],
   onMentionClick?: (agentId: string) => void,
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
 ): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
@@ -2960,7 +3086,7 @@ function renderInlineMarkdown(
   let match: RegExpExecArray | null
 
   while ((match = pattern.exec(text)) != null) {
-    if (match.index > cursor) nodes.push(...highlightMentions(text.slice(cursor, match.index), agents, onMentionClick))
+    if (match.index > cursor) nodes.push(...highlightMentions(text.slice(cursor, match.index), agents, onMentionClick, onFilePreview))
     const token = match[0]
     const key = `${match.index}-${token}`
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
@@ -2988,7 +3114,7 @@ function renderInlineMarkdown(
     cursor = match.index + token.length
   }
 
-  if (cursor < text.length) nodes.push(...highlightMentions(text.slice(cursor), agents, onMentionClick))
+  if (cursor < text.length) nodes.push(...highlightMentions(text.slice(cursor), agents, onMentionClick, onFilePreview))
   const rendered: ReactNode[] = []
   nodes.forEach((node, index) => {
     if (typeof node !== 'string') {
@@ -3525,6 +3651,7 @@ function AssistantMessageRows({
   usage,
   onDelete,
   onReply,
+  onFilePreview,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -3538,6 +3665,7 @@ function AssistantMessageRows({
   usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
   onReply?: () => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const segments = splitAssistantMessageBlocks(blocks)
   if (segments.length === 0) return null
@@ -3549,7 +3677,7 @@ function AssistantMessageRows({
         if (segment.kind === 'team') {
           return (
             <div key={`team-${index}`} className="team-timeline-segment">
-              {renderBlocks(segment.blocks, { sessionId })}
+              {renderBlocks(segment.blocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}
             </div>
           )
         }
@@ -3561,6 +3689,7 @@ function AssistantMessageRows({
                 blocks={segment.blocks}
                 running={segment.running}
                 sessionId={sessionId}
+                {...(onFilePreview != null ? { onFilePreview } : {})}
               />
             </div>
           )
@@ -3575,6 +3704,7 @@ function AssistantMessageRows({
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
             usage={usage}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
             {...(status != null ? { status } : {})}
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
@@ -3685,6 +3815,7 @@ function AgentMsg({
   usage,
   onDelete,
   onReply,
+  onFilePreview,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -3698,6 +3829,7 @@ function AgentMsg({
   usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
   onReply?: () => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
@@ -3815,11 +3947,11 @@ function AgentMsg({
           </div>
         )}
         {contentBlocks.length > 0 && isLatest && (
-          <div className="msg-content">{renderBlocks(contentBlocks, { sessionId })}</div>
+          <div className="msg-content">{renderBlocks(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
         )}
         {contentBlocks.length > 0 && !isLatest && (
           <CollapsibleContent maxHeight={500} streaming={isStreaming}>
-            <div className="msg-content">{renderBlocks(contentBlocks, { sessionId })}</div>
+            <div className="msg-content">{renderBlocks(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
           </CollapsibleContent>
         )}
         {errorBlocks.map((block, i) => (
@@ -3852,6 +3984,16 @@ function AgentMsg({
           />
         )}
       </div>
+      {isStreaming && (
+        <div className="agent-task-running-tag">
+          <span>执行任务中</span>
+          <span className="agent-task-running-dots">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
+      )}
       </div>
       {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu
@@ -4861,6 +5003,7 @@ function ComposerV2({
   onUseNoProject,
   onSwitchWorkspace,
   teamConfig,
+  effectiveHostAgentId,
   onChangeTeamConfig,
   onOpenTeamInspector,
   replyTo,
@@ -4874,6 +5017,8 @@ function ComposerV2({
   selectedProviderId: string
   setSelectedProviderId: (providerId: string) => void
   teamConfig: TeamModeConfig
+  /** 团队模式下解析后的 host agent id（用于 sendTurn 指派） */
+  effectiveHostAgentId: string | null
   onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
   onOpenTeamInspector: () => void
   branchState: BranchState
@@ -5022,7 +5167,7 @@ function ComposerV2({
   const contextWindow = resolveProviderContextWindow(
     selectedProvider?.supportsMillionContext === true,
   )
-  const draftBucketKey = session?.id ?? `draft:new:${activeWorkspaceId ?? 'none'}`
+  const draftBucketKey = session?.id ?? 'draft:new'
   const draftState = drafts[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT
   const value = draftState.value
   const attachments = draftState.attachments
@@ -5331,11 +5476,13 @@ function ComposerV2({
               message: text,
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
               ...getCurrentRuntimePatch(),
-              ...(teamConfig.enabled ? { teamConfig, agentId: teamConfig.hostAgentId } : {}),
+              ...(teamConfig.enabled && effectiveHostAgentId != null
+                ? { teamConfig, agentId: effectiveHostAgentId }
+                : {}),
           ...(teamConfig.enabled &&
           pendingMention != null &&
           text.includes(`@${pendingMention.name}`) &&
-          pendingMention.agentId !== teamConfig.hostAgentId
+          pendingMention.agentId !== effectiveHostAgentId
             ? { mentionAgentId: pendingMention.agentId }
             : {}),
               ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
@@ -5389,11 +5536,13 @@ function ComposerV2({
           message: text,
           ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
           ...getCurrentRuntimePatch(),
-          ...(teamConfig.enabled ? { teamConfig, agentId: teamConfig.hostAgentId } : {}),
+          ...(teamConfig.enabled && effectiveHostAgentId != null
+            ? { teamConfig, agentId: effectiveHostAgentId }
+            : {}),
           ...(teamConfig.enabled &&
           pendingMention != null &&
           text.includes(`@${pendingMention.name}`) &&
-          pendingMention.agentId !== teamConfig.hostAgentId
+          pendingMention.agentId !== effectiveHostAgentId
             ? { mentionAgentId: pendingMention.agentId }
             : {}),
           ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
@@ -5421,6 +5570,7 @@ function ComposerV2({
       effectiveModelId,
       effectivePermissionMode,
       effectiveReasoning,
+      effectiveHostAgentId,
       flushPendingRuntimePatch,
       getCurrentRuntimePatch,
       onCreateSession,
@@ -6491,9 +6641,15 @@ function ComposerV2({
             selectedAgentId={effectiveAgentId}
             onChange={(agentId) => void handleAgentChange(agentId)}
             teamConfig={teamConfig}
-            onEnableTeamMode={() =>
-              onChangeTeamConfig({ enabled: true, hostAgentId: effectiveAgentId, teamId: undefined })
-            }
+            onEnableTeamMode={() => {
+              // 启用团队模式时，若当前 effectiveAgentId 在 agents 中存在则保留，
+              // 否则回退到第一个可用 agent，避免后端拿到无效 host 而无法调度
+              const fallbackHost =
+                agents.find((a) => a.id === effectiveAgentId)?.id ??
+                agents[0]?.id ??
+                effectiveAgentId
+              onChangeTeamConfig({ enabled: true, hostAgentId: fallbackHost, teamId: undefined })
+            }}
             onDisableTeamMode={() =>
               onChangeTeamConfig({ enabled: false, teamId: undefined })
             }

@@ -2,13 +2,14 @@
  * ScheduledTasksView — 定时任务管理主视图
  *
  * 布局：左侧任务列表 + 右侧详情面板
- * 支持筛选、搜索、新建/编辑/删除/启用/禁用/立即执行
+ * 支持：筛选、搜索、新建/编辑/删除/启用/禁用/立即执行
+ * 支持：多选批量删除 / 多选批量导出 / 全量导入导出
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
   Button, Input, Switch, Tag, Badge, Spin, Empty,
-  Select, InputNumber, Form, Popconfirm,
+  Select, InputNumber, Form, Popconfirm, Modal, Radio,
   Message, Tooltip,
 } from '@arco-design/web-react'
 import {
@@ -16,9 +17,17 @@ import {
   IconDelete, IconClockCircle, IconExclamationCircle, IconCheckCircle,
   IconCloseCircle, IconLoading, IconSync, IconSchedule, IconThunderbolt,
   IconUser, IconUserGroup, IconSettings, IconBook, IconBulb,
+  IconUpload, IconDownload, IconCheck, IconCopy,
 } from '@arco-design/web-react/icon'
-import type { ManagedAgent, ManagedTeam, ProviderProfile, WorkspaceInfo } from '@spark/protocol'
+import type {
+  ManagedAgent, ManagedTeam, ProviderProfile, WorkspaceInfo,
+  ScheduledTaskExportPayload, ScheduledTaskImportMode,
+} from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
+import { SparkSelect } from '../components/FormControls'
+import { useToast } from '../components/Toast'
+import { useApp } from '../AppContext'
 import './ScheduledTasksView.less'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -48,6 +57,7 @@ interface ScheduledTaskItem {
   createdAt: string
   updatedAt: string
   maxExecutions: number
+  permissionMode: string
   timeoutSeconds: number
   maxRetries: number
 }
@@ -129,6 +139,8 @@ async function ipcInvoke(channel: string, params?: Record<string, unknown>): Pro
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export function ScheduledTasksView() {
+  const { toast } = useToast()
+  const { requestConfirm } = useApp()
   const [tasks, setTasks] = useState<ScheduledTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -138,6 +150,22 @@ export function ScheduledTasksView() {
   const [editingTask, setEditingTask] = useState<ScheduledTaskItem | null>(null)
   const [executions, setExecutions] = useState<TaskExecutionItem[]>([])
   const [refreshKey, setRefreshKey] = useState(0)
+
+  // ─── 多选 / 批量 / 导入导出 状态 ────────────────────────────────────────
+  const [multiSelect, setMultiSelect] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [importPreview, setImportPreview] = useState<{
+    payload: ScheduledTaskExportPayload
+    filePath: string
+  } | null>(null)
+  const [importing, setImporting] = useState(false)
+
+  // 导入导出 IPC
+  const { invoke: exportTasks } = useIpcInvoke('scheduled-task:export')
+  const { invoke: importTasks } = useIpcInvoke('scheduled-task:import')
+  const { invoke: exportTasksToFile } = useIpcInvoke('scheduled-task:export-to-file')
+  const { invoke: importTasksFromFile } = useIpcInvoke('scheduled-task:import-from-file')
+  const { invoke: deleteTask } = useIpcInvoke('scheduled-task:delete')
 
   // Load tasks
   const loadTasks = useCallback(async () => {
@@ -154,6 +182,8 @@ export function ScheduledTasksView() {
       setLoading(false)
     }
   }, [filter, searchQuery])
+
+  const triggerRefresh = useRefreshable(() => setRefreshKey(k => k + 1))
 
   useEffect(() => {
     void loadTasks()
@@ -211,6 +241,197 @@ export function ScheduledTasksView() {
     }
   }, [selectedId])
 
+  // ─── 多选 helpers ────────────────────────────────────────────────────────
+
+  const enterMultiSelect = useCallback(() => {
+    setMultiSelect(true)
+    setSelectedIds(new Set())
+  }, [])
+
+  const exitMultiSelect = useCallback(() => {
+    setMultiSelect(false)
+    setSelectedIds(new Set())
+  }, [])
+
+  const toggleSelected = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  const selectAll = useCallback(() => {
+    setSelectedIds(new Set(tasks.map(t => t.id)))
+  }, [tasks])
+
+  const clearSelection = useCallback(() => {
+    setSelectedIds(new Set())
+  }, [])
+
+  const invertSelection = useCallback(() => {
+    setSelectedIds(prev => {
+      const next = new Set<string>()
+      for (const t of tasks) {
+        if (!prev.has(t.id)) next.add(t.id)
+      }
+      return next
+    })
+  }, [tasks])
+
+  // ─── 批量删除 ────────────────────────────────────────────────────────────
+
+  const handleDeleteSelected = useCallback(async () => {
+    if (selectedIds.size === 0) return
+    const confirmed = await requestConfirm({
+      title: `删除 ${selectedIds.size} 个定时任务？`,
+      description: '此操作不可撤销，选中任务及其历史执行记录会从本地移除。',
+      confirmText: '批量删除',
+      danger: true,
+    })
+    if (!confirmed) return
+    let ok = 0
+    const errs: string[] = []
+    for (const id of selectedIds) {
+      try {
+        await deleteTask({ id })
+        ok += 1
+      } catch (err) {
+        const name = tasks.find(t => t.id === id)?.name ?? id
+        errs.push(`${name}: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+    if (ok > 0) toast.success(`已删除 ${ok} 个任务`)
+    if (errs.length > 0) toast.error(`${errs.length} 个删除失败：${errs.slice(0, 2).join('；')}`)
+    // 如果详情面板中选中的任务被删了，清空选中
+    if (selectedId && selectedIds.has(selectedId)) setSelectedId(null)
+    clearSelection()
+    exitMultiSelect()
+    setRefreshKey(k => k + 1)
+  }, [selectedIds, selectedId, requestConfirm, deleteTask, tasks, toast, clearSelection, exitMultiSelect])
+
+  // ─── 导出 ────────────────────────────────────────────────────────────────
+
+  /**
+   * 弹保存对话框写文件。空 ids 表示导出全部。
+   */
+  const handleExportToFile = useCallback(async (ids: string[]) => {
+    try {
+      const result = await exportTasksToFile({ ids })
+      if (!result.filePath) {
+        // 用户取消
+        return
+      }
+      toast.success(`已导出 ${result.count} 个任务`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导出失败')
+    }
+  }, [exportTasksToFile, toast])
+
+  const handleExportAll = useCallback(() => {
+    void handleExportToFile([])
+  }, [handleExportToFile])
+
+  const handleExportSelected = useCallback(() => {
+    void handleExportToFile(Array.from(selectedIds))
+  }, [handleExportToFile, selectedIds])
+
+  /**
+   * 复制全部任务 JSON 到剪贴板（次要入口）。
+   */
+  const handleCopyToClipboard = useCallback(async () => {
+    try {
+      const { payload } = await exportTasks({ ids: [] })
+      const json = JSON.stringify(payload, null, 2)
+      await navigator.clipboard.writeText(json)
+      toast.success(`已复制 ${payload.tasks.length} 个任务到剪贴板`)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '复制失败')
+    }
+  }, [exportTasks, toast])
+
+  // ─── 导入 ────────────────────────────────────────────────────────────────
+
+  /**
+   * 弹打开对话框读文件 → 解析 → 弹预览 Modal 让用户确认。
+   */
+  const handleImportFromFile = useCallback(async () => {
+    try {
+      const { payload, filePath } = await importTasksFromFile({})
+      if (payload == null) {
+        // 用户取消
+        return
+      }
+      setImportPreview({ payload, filePath })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导入失败')
+    }
+  }, [importTasksFromFile, toast])
+
+  /**
+   * 从剪贴板读取 JSON 字符串并解析为 payload。
+   */
+  const handleImportFromClipboard = useCallback(async () => {
+    try {
+      const text = await navigator.clipboard.readText()
+      if (!text.trim()) {
+        toast.warning('剪贴板为空')
+        return
+      }
+      let json: unknown
+      try {
+        json = JSON.parse(text)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err)
+        toast.error(`剪贴板 JSON 解析失败：${message}`)
+        return
+      }
+      const { ScheduledTaskExportPayloadSchema } = await import('@spark/protocol')
+      const parsed = ScheduledTaskExportPayloadSchema.parse(json)
+      setImportPreview({ payload: parsed, filePath: '从剪贴板' })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '剪贴板内容不是有效的导出文件')
+    }
+  }, [toast])
+
+  /**
+   * 预览确认后的写入操作。
+   */
+  const handleImportConfirm = useCallback(async (
+    payload: ScheduledTaskExportPayload,
+    mode: ScheduledTaskImportMode,
+  ) => {
+    setImporting(true)
+    try {
+      const result = await importTasks({ payload, mode })
+      const parts: string[] = []
+      if (result.imported > 0) parts.push(`导入 ${result.imported}`)
+      if (result.skipped > 0) parts.push(`跳过 ${result.skipped}`)
+      if (parts.length > 0) {
+        toast.success(parts.join('，'))
+      } else if (result.errors.length === 0) {
+        toast.info('无任务被导入')
+      }
+      if (result.errors.length > 0) {
+        toast.error(`${result.errors.length} 个失败：${result.errors.slice(0, 2).join('；')}`)
+      }
+      setImportPreview(null)
+      // 关闭预览后刷新列表
+      setRefreshKey(k => k + 1)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '导入失败')
+    } finally {
+      setImporting(false)
+    }
+  }, [importTasks, toast])
+
+  /** 已有 name 集合：用于预览时标记冲突 */
+  const existingNamesForPreview = useMemo(
+    () => new Set(tasks.map(t => t.name)),
+    [tasks],
+  )
+
   const handleEdit = useCallback((task: ScheduledTaskItem) => {
     setEditingTask(task)
     setShowForm(true)
@@ -254,11 +475,112 @@ export function ScheduledTasksView() {
           <h2>Scheduled Tasks</h2>
         </div>
         <div className="st-header-right">
+          <button
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
+            onClick={triggerRefresh}
+            title="刷新 (Ctrl+R)"
+          >
+            <IconSync />
+          </button>
+          {!multiSelect && (
+            <>
+              <Button
+                size="small"
+                icon={<IconUpload />}
+                onClick={() => void handleImportFromFile()}
+                disabled={importing}
+                title="从 .json 导入定时任务"
+              >
+                导入
+              </Button>
+              <Button
+                size="small"
+                icon={<IconCopy />}
+                onClick={() => void handleImportFromClipboard()}
+                disabled={importing}
+                title="从剪贴板 JSON 字符串导入"
+              >
+                粘贴导入
+              </Button>
+              <Button
+                size="small"
+                icon={<IconDownload />}
+                onClick={() => void handleExportAll()}
+                disabled={tasks.length === 0}
+                title="导出全部任务到 .json"
+              >
+                导出全部
+              </Button>
+              <Button
+                size="small"
+                icon={<IconCopy />}
+                onClick={() => void handleCopyToClipboard()}
+                disabled={tasks.length === 0}
+                title="复制全部任务 JSON 到剪贴板"
+              >
+                复制全部
+              </Button>
+              <Button
+                size="small"
+                type="secondary"
+                icon={<IconCheck />}
+                onClick={enterMultiSelect}
+                disabled={tasks.length === 0}
+                title="进入多选模式（可批量删除 / 批量导出）"
+              >
+                批量
+              </Button>
+            </>
+          )}
           <Button type="primary" size="small" icon={<IconPlus />} onClick={handleCreate}>
             New Task
           </Button>
         </div>
       </div>
+
+      {/* 多选模式工具栏 */}
+      {multiSelect && (
+        <div className="st-multi-toolbar">
+          <Button
+            size="mini"
+            icon={<IconCloseCircle />}
+            onClick={exitMultiSelect}
+            title="退出多选模式"
+          />
+          <span className="st-multi-count">
+            已选 <strong>{selectedIds.size}</strong> / {tasks.length}
+          </span>
+          <Button size="mini" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
+            全选
+          </Button>
+          <Button size="mini" onClick={invertSelection} disabled={tasks.length === 0}>
+            反选
+          </Button>
+          <Button size="mini" onClick={clearSelection} disabled={selectedIds.size === 0}>
+            取消选择
+          </Button>
+          <span style={{ flex: 1 }} />
+          <Button
+            size="mini"
+            icon={<IconDownload />}
+            onClick={handleExportSelected}
+            disabled={selectedIds.size === 0}
+            title="导出选中的任务"
+          >
+            导出选中
+          </Button>
+          <Button
+            size="mini"
+            status="danger"
+            icon={<IconDelete />}
+            onClick={() => void handleDeleteSelected()}
+            disabled={selectedIds.size === 0 || importing}
+            title="删除选中的任务"
+          >
+            删除选中
+          </Button>
+        </div>
+      )}
 
       {/* Filter Bar */}
       <div className="st-filter-bar">
@@ -299,14 +621,24 @@ export function ScheduledTasksView() {
           <>
             {/* Left: Task List */}
             <div className="st-list">
-              {tasks.map(task => (
+              {tasks.map(task => {
+                const isSelected = selectedIds.has(task.id)
+                return (
                 <div
                   key={task.id}
-                  className={`st-task-card ${selectedId === task.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedId(task.id)}
+                  className={`st-task-card ${selectedId === task.id ? 'selected' : ''} ${multiSelect && isSelected ? 'multi-selected' : ''} ${multiSelect ? 'multi-mode' : ''}`}
+                  onClick={() => {
+                    if (multiSelect) toggleSelected(task.id)
+                    else setSelectedId(task.id)
+                  }}
                 >
                   <div className="st-task-card-header">
                     <div className="st-task-name-row">
+                      {multiSelect && (
+                        <span className={`st-checkbox ${isSelected ? 'checked' : ''}`}>
+                          {isSelected && <IconCheck style={{ fontSize: 12 }} />}
+                        </span>
+                      )}
                       <Badge
                         color={statusColor(task.status)}
                         dot
@@ -314,13 +646,15 @@ export function ScheduledTasksView() {
                       />
                       <span className="st-task-name">{task.name}</span>
                     </div>
-                    <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
-                      <Switch
-                        size="small"
-                        checked={task.enabled}
-                        onChange={(checked: boolean) => { handleToggle(task.id, checked) }}
-                      />
-                    </div>
+                    {!multiSelect && (
+                      <div onClick={(e: React.MouseEvent) => e.stopPropagation()}>
+                        <Switch
+                          size="small"
+                          checked={task.enabled}
+                          onChange={(checked: boolean) => { handleToggle(task.id, checked) }}
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="st-task-meta">
                     <Tag size="small" color="orangered">{formatTriggerType(task)}</Tag>
@@ -347,7 +681,8 @@ export function ScheduledTasksView() {
                     </span>
                   </div>
                 </div>
-              ))}
+                )
+              })}
             </div>
 
             {/* Right: Detail Panel */}
@@ -370,6 +705,18 @@ export function ScheduledTasksView() {
           </>
         )}
       </div>
+
+      {/* 导入预览 Modal */}
+      {importPreview && (
+        <TaskImportPreviewModal
+          payload={importPreview.payload}
+          filePath={importPreview.filePath}
+          existingNames={existingNamesForPreview}
+          submitting={importing}
+          onConfirm={(payload, mode) => void handleImportConfirm(payload, mode)}
+          onClose={() => setImportPreview(null)}
+        />
+      )}
     </div>
   )
 }
@@ -439,6 +786,12 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
         <div className="st-config-grid">
           <span className="st-config-label">触发方式</span>
           <span className="st-config-value">{formatTriggerType(task)}</span>
+          <span className="st-config-label">权限策略</span>
+          <span className="st-config-value">
+            <Tag size="small" color={task.permissionMode === 'bypass' ? 'orangered' : 'green'}>
+              {task.permissionMode === 'bypass' ? 'Bypass' : 'Auto'}
+            </Tag>
+          </span>
           <span className="st-config-label">超时</span>
           <span className="st-config-value">{task.timeoutSeconds}s</span>
           <span className="st-config-label">重试</span>
@@ -514,6 +867,7 @@ function TaskFormPage({ task, onClose }: {
   const [promptTemplate, setPromptTemplate] = useState(task?.promptTemplate ?? '')
   const [timeoutSeconds, setTimeoutSeconds] = useState(task?.timeoutSeconds ?? 300)
   const [maxRetries, setMaxRetries] = useState(task?.maxRetries ?? 0)
+  const [permissionMode, setPermissionMode] = useState(task?.permissionMode ?? 'auto')
   const [tags, setTags] = useState<string[]>(task?.tags ?? [])
   const [enabledOnCreate, setEnabledOnCreate] = useState(true)
 
@@ -585,6 +939,7 @@ function TaskFormPage({ task, onClose }: {
         modelId: modelId || null,
         workspaceId: workspaceId || null,
         promptTemplate,
+        permissionMode,
         timeoutSeconds,
         maxRetries,
         tags,
@@ -971,11 +1326,212 @@ function TaskFormPage({ task, onClose }: {
                   size="large"
                 />
               </div>
-              <div className="st-form-field st-form-field--third" />
+              <div className="st-form-field st-form-field--third">
+                <label className="st-field-label">
+                  <IconThunderbolt style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  权限策略
+                </label>
+                <SparkSelect
+                  value={permissionMode}
+                  onChange={(e) => setPermissionMode(e.target.value)}
+                  size="large"
+                  style={{ width: '100%' }}
+                >
+                  <option value="auto">Auto（自动批准）</option>
+                  <option value="bypass">Bypass（完全放行）</option>
+                </SparkSelect>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+  )
+}
+
+// ─── Import Preview Modal ─────────────────────────────────────────────────────
+
+interface TaskImportPreviewModalProps {
+  payload: ScheduledTaskExportPayload
+  filePath: string
+  /** 本地已有任务 name 集合，用于标记冲突 */
+  existingNames: Set<string>
+  submitting: boolean
+  onConfirm: (
+    payload: ScheduledTaskExportPayload,
+    mode: ScheduledTaskImportMode,
+  ) => void | Promise<void>
+  onClose: () => void
+}
+
+function triggerLabel(t: ScheduledTaskExportPayload['tasks'][number]): string {
+  switch (t.triggerType) {
+    case 'interval':
+      return t.intervalSeconds == null
+        ? 'Interval'
+        : t.intervalSeconds < 60 ? `每 ${t.intervalSeconds} 秒`
+        : t.intervalSeconds < 3600 ? `每 ${Math.round(t.intervalSeconds / 60)} 分钟`
+        : t.intervalSeconds < 86400 ? `每 ${Math.round(t.intervalSeconds / 3600)} 小时`
+        : `每 ${Math.round(t.intervalSeconds / 86400)} 天`
+    case 'cron':
+      return t.cronExpression ?? 'Cron'
+    case 'once':
+      return t.runAt ?? '单次'
+  }
+}
+
+function TaskImportPreviewModal({
+  payload,
+  filePath,
+  existingNames,
+  submitting,
+  onConfirm,
+  onClose,
+}: TaskImportPreviewModalProps) {
+  const [mode, setMode] = useState<ScheduledTaskImportMode>('merge')
+
+  const conflictCount = useMemo(
+    () => payload.tasks.filter(t => existingNames.has(t.name)).length,
+    [payload, existingNames],
+  )
+
+  const exportedAt = useMemo(() => {
+    try {
+      return new Date(payload.exportedAt).toLocaleString()
+    } catch {
+      return payload.exportedAt
+    }
+  }, [payload.exportedAt])
+
+  const handleConfirm = async () => {
+    if (submitting) return
+    await onConfirm(payload, mode)
+  }
+
+  return (
+    <Modal
+      title={
+        <div className="st-import-modal-title">
+          <IconUpload style={{ fontSize: 16, color: 'var(--primary)' }} />
+          <span>导入定时任务</span>
+        </div>
+      }
+      visible
+      onCancel={onClose}
+      maskClosable={!submitting}
+      closable={!submitting}
+      style={{ width: 680 }}
+      footer={
+        <div className="st-import-modal-footer">
+          <Button onClick={onClose} disabled={submitting}>取消</Button>
+          <Button
+            type="primary"
+            onClick={() => void handleConfirm()}
+            disabled={submitting || payload.tasks.length === 0}
+            loading={submitting}
+          >
+            {submitting
+              ? '导入中…'
+              : `确认导入 ${payload.tasks.length} 个`}
+          </Button>
+        </div>
+      }
+    >
+      <div className="st-import-modal-body">
+        {/* 文件元信息 */}
+        <div className="st-import-meta">
+          <div>
+            <span className="muted">文件：</span>
+            <span className="mono-sm" title={filePath}>{filePath}</span>
+          </div>
+          <div>
+            <span className="muted">版本：</span>
+            <span className="mono-sm">v{payload.version}</span>
+          </div>
+          <div>
+            <span className="muted">导出时间：</span>
+            <span className="mono-sm">{exportedAt}</span>
+          </div>
+          <div>
+            <span className="muted">来源：</span>
+            <span className="mono-sm">{payload.exportedBy}</span>
+          </div>
+          <div>
+            <span className="muted">任务数：</span>
+            <span className="mono-sm"><strong>{payload.tasks.length}</strong></span>
+          </div>
+          {conflictCount > 0 && (
+            <div className="st-import-conflict-warn">
+              <IconExclamationCircle style={{ fontSize: 12, color: 'var(--color-warning-6)' }} />
+              {conflictCount} 个任务 name 与本地冲突
+            </div>
+          )}
+        </div>
+
+        {/* 冲突模式选择 */}
+        <div className="st-import-mode-row">
+          <span className="muted">冲突处理：</span>
+          <Radio.Group
+            value={mode}
+            onChange={setMode}
+            disabled={submitting}
+            size="small"
+          >
+            <Radio value="merge">
+              <strong>合并</strong>
+              <span className="muted"> · 跳过已存在的 name</span>
+            </Radio>
+            <Radio value="replace">
+              <strong>覆盖</strong>
+              <span className="muted"> · 用导入的字段更新已存在任务（运行时统计保留）</span>
+            </Radio>
+          </Radio.Group>
+        </div>
+
+        {/* 任务列表 */}
+        <div className="st-import-list-header">
+          <span>名称</span>
+          <span>触发</span>
+          <span>Agent / Team</span>
+          <span>状态</span>
+        </div>
+        <div className="st-import-list">
+          {payload.tasks.length === 0 && (
+            <div className="st-import-empty">该文件不含任何任务</div>
+          )}
+          {payload.tasks.map((t, idx) => {
+            const conflict = existingNames.has(t.name)
+            return (
+              <div
+                key={`${t.name}-${idx}`}
+                className={`st-import-list-row${conflict ? ' conflict' : ''}`}
+              >
+                <span className="cell-name" title={t.name}>{t.name}</span>
+                <span className="cell-trigger" title={triggerLabel(t)}>
+                  {triggerLabel(t)}
+                </span>
+                <span className="cell-agent" title={t.agentId ?? t.teamId ?? '-'}>
+                  {t.agentId ? `Agent · ${t.agentId.slice(0, 6)}` : t.teamId ? `Team · ${t.teamId.slice(0, 6)}` : '-'}
+                </span>
+                <span className="cell-status">
+                  {conflict ? (
+                    <Tag size="small" color="orange">{mode === 'replace' ? '将更新' : '将跳过'}</Tag>
+                  ) : (
+                    <Tag size="small" color="green">将新增</Tag>
+                  )}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="st-import-tip">
+          <IconExclamationCircle style={{ fontSize: 12 }} />
+          <span>
+            导入的新任务默认 <strong>disabled = true</strong>(保留导入文件中的设置);merge 模式下不会覆盖本地同名任务,replace 模式会更新字段但保留运行时统计(status / 计数 / nextRunAt 等)。
+          </span>
+        </div>
+      </div>
+    </Modal>
   )
 }

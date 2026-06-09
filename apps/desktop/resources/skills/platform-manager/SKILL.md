@@ -83,7 +83,7 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
    - 拿到 `remoteSkillId` 和 `registryId` 后，用 `skills_install` 安装到本应用
    - **不要**将技能文件写到全局 Claude 目录或项目外的路径
 3. **看板任务操作**：
-   - 任务状态：todo（待办）、in-progress（进行中）、done（已完成）、closed（已关闭）、bug-fix（Bug 修复）
+   - 任务状态：todo（待办）、in-progress（进行中）、done（已完成）、accepted（已验收）、closed（已关闭）、bug-fix（Bug 修复）
    - 优先级：low（低）、medium（中）、high（高）、urgent（紧急）
    - **项目关联**：任务创建/编辑时可指定 project 字段，该字段为下拉选择，只能选择当前应用中已存在的项目（项目列表从会话侧边栏获取）。关联项目后，通过 board_list 或 board_get 读取任务时能明确知道该任务属于哪个项目
    - **附件支持**：任务可携带附件（图片和文件）。读取任务时，attachments 数组包含每个附件的 id、type（image/file）、name、path 字段；图片类型附件还有 previewPath 字段用于预览。创建/更新任务时可传入 attachments 数组。在处理任务内容时，如果附件是图片，应告知用户图片的路径；如果是文件，应告知文件名和路径

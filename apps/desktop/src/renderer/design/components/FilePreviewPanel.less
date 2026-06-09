@@ -1,0 +1,224 @@
+/* FilePreviewPanel — 右侧文件预览面板样式 */
+
+.file-preview-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 480px;
+  max-width: 50vw;
+  background: var(--color-bg-1);
+  border-left: 1px solid var(--color-border-2);
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  z-index: 1000;
+  animation: slideInRight 0.2s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.file-preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--color-border-2);
+  background: var(--color-bg-2);
+}
+
+.file-preview-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex: 1;
+}
+
+.file-preview-icon {
+  display: flex;
+  align-items: center;
+  color: var(--color-text-3);
+  flex-shrink: 0;
+}
+
+.file-preview-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-1);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.file-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.file-preview-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  border-radius: 4px;
+  color: var(--color-text-3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: var(--color-fill-2);
+    color: var(--color-text-1);
+  }
+}
+
+.file-preview-content {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+.file-preview-loading,
+.file-preview-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  height: 200px;
+  color: var(--color-text-3);
+  font-size: 13px;
+}
+
+.file-preview-error {
+  color: var(--color-danger-6);
+}
+
+.file-preview-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+
+  img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
+
+.file-preview-html {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-1);
+
+  /* 基础 HTML 样式 */
+  h1, h2, h3, h4, h5, h6 {
+    margin-top: 1em;
+    margin-bottom: 0.5em;
+    font-weight: 600;
+  }
+
+  h1 { font-size: 1.5em; }
+  h2 { font-size: 1.3em; }
+  h3 { font-size: 1.1em; }
+
+  p {
+    margin-bottom: 0.75em;
+  }
+
+  a {
+    color: var(--color-primary-6);
+    text-decoration: none;
+
+    &:hover {
+      text-decoration: underline;
+    }
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  code {
+    background: var(--color-fill-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.9em;
+  }
+
+  pre {
+    background: var(--color-fill-2);
+    padding: 12px;
+    border-radius: 6px;
+    overflow-x: auto;
+
+    code {
+      background: transparent;
+      padding: 0;
+    }
+  }
+
+  blockquote {
+    border-left: 3px solid var(--color-border-3);
+    padding-left: 12px;
+    margin-left: 0;
+    color: var(--color-text-2);
+  }
+
+  ul, ol {
+    padding-left: 1.5em;
+    margin-bottom: 0.75em;
+  }
+
+  li {
+    margin-bottom: 0.25em;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 1em;
+  }
+
+  th, td {
+    border: 1px solid var(--color-border-2);
+    padding: 8px 12px;
+    text-align: left;
+  }
+
+  th {
+    background: var(--color-fill-2);
+    font-weight: 600;
+  }
+}
+
+.file-preview-markdown {
+  /* Markdown 预览使用 ChatView 中的 MarkdownText 组件样式 */
+}
+
+.file-preview-text {
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-1);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+}
+

@@ -21,6 +21,7 @@ import {
   deduplicateCandidates,
 } from '../utils/skills-data'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import './SkillStoreView.less'
 
@@ -35,11 +36,22 @@ export function SkillStoreView() {
     setRefreshKey((k) => k + 1)
   }, [])
 
+  const triggerRefresh = useRefreshable(handleRefresh)
+
   return (
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
         {/* ── Tab bar ── */}
         <div className="store-tabbar">
+          <div className="flex items-center">
+            <button
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
+              onClick={triggerRefresh}
+              title="刷新 (Ctrl+R)"
+            >
+              <Icons.Refresh size={14} />
+            </button>
+          </div>
           <button
             className={`store-tab ${activeTab === 'installed' ? 'active' : ''}`}
             onClick={() => setActiveTab('installed')}

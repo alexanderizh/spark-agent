@@ -4,6 +4,7 @@ import './AgentsView.less'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import { Switch } from '@arco-design/web-react'
 import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
@@ -203,6 +204,8 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
       setLoading(false)
     }
   }, [listAgents, listMcp, listProviders, listRules, listSkills, listWorkflows, onAgentsChange])
+
+  useRefreshable(refresh)
 
   useEffect(() => {
     const id = window.setTimeout(() => { void refresh() }, 0)

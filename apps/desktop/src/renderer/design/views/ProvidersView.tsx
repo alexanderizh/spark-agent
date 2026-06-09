@@ -26,6 +26,7 @@ import { ChipList } from '../components/ChipList'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import {
   PROVIDER_PRESETS,
@@ -149,6 +150,8 @@ function ProvidersView() {
       .then((r) => setProfiles(r.profiles))
       .catch(console.error)
   }, [listProviders])
+
+  useRefreshable(refresh)
 
   useEffect(() => {
     refresh()
@@ -411,6 +414,13 @@ function ProvidersView() {
           <span className="flex1" />
           {/* 导入导出区（import-export） */}
           <div className="row row-gap-xs">
+            <button
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
+              onClick={refresh}
+              title="刷新 (Ctrl+R)"
+            >
+              <Icons.Refresh size={12} />
+            </button>
             <button
               ref={importButtonRef}
               className="btn"

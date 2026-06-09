@@ -152,7 +152,10 @@ function createWindow(): BrowserWindow {
   // 窗口准备好后再显示，避免白屏闪烁
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    // DevTools 不再自动打开，使用 F12 / Ctrl+Shift+I 手动开启
+    // 开发模式下自动打开 DevTools
+    if (is.dev) {
+      mainWindow.webContents.openDevTools()
+    }
   })
 
   mainWindow.on('close', (event) => {

@@ -680,6 +680,8 @@ function Shell() {
         return <SkillStoreView />
       case 'providers':
         return <ProvidersView />
+      case 'mcp':
+        return <McpView />
       case 'settings':
         return <SettingsView />
       default:

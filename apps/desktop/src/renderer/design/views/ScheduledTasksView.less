@@ -704,4 +704,234 @@
   .st-trigger-cards {
     grid-template-columns: 1fr;
   }
+
+  .st-content {
+    flex-direction: column;
+  }
+
+  .st-list {
+    width: 100%;
+    max-height: 240px;
+  }
+}
+
+/* ─── Multi-select Toolbar ─────────────────────────────────────────────────── */
+
+.st-multi-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 8px 0;
+  background: var(--color-fill-2);
+  border-radius: 6px;
+  border: 1px solid var(--color-border-2);
+}
+
+.st-multi-count {
+  font-size: 12px;
+  color: var(--color-text-2);
+  margin-right: 4px;
+
+  strong {
+    color: var(--primary);
+    font-weight: 600;
+  }
+}
+
+/* ─── Task Card multi-select states ────────────────────────────────────────── */
+
+.st-task-card {
+  &.multi-mode {
+    cursor: pointer;
+  }
+
+  &.multi-selected {
+    background: var(--color-primary-light-1, var(--primary-soft, #e6f4ff));
+    border-color: var(--primary);
+
+    .st-task-name {
+      color: var(--primary);
+      font-weight: 600;
+    }
+  }
+}
+
+.st-checkbox {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-border-3);
+  border-radius: 3px;
+  background: var(--color-bg-1);
+  margin-right: 8px;
+  flex-shrink: 0;
+  transition: all 0.15s;
+
+  &.checked {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+  }
+}
+
+/* ─── Import Preview Modal ─────────────────────────────────────────────────── */
+
+.st-import-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.st-import-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.st-import-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.st-import-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--color-fill-1);
+  border-radius: 6px;
+  font-size: 12px;
+
+  > div {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .mono-sm {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .muted {
+    color: var(--color-text-3);
+  }
+}
+
+.st-import-conflict-warn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  background: var(--color-warning-light-1, #fff7e6);
+  border-radius: 4px;
+  color: var(--color-warning-6);
+}
+
+.st-import-mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+
+  .muted {
+    color: var(--color-text-3);
+  }
+}
+
+.st-import-list-header {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1.2fr 0.8fr;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--color-fill-2);
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-3);
+}
+
+.st-import-list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--color-border-2);
+  border-radius: 6px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-fill-3);
+    border-radius: 2px;
+  }
+}
+
+.st-import-list-row {
+  display: grid;
+  grid-template-columns: 2fr 1.2fr 1.2fr 0.8fr;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border-1);
+  font-size: 12px;
+  align-items: center;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &.conflict {
+    background: var(--color-warning-light-1, #fff7e6);
+  }
+
+  .cell-name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cell-trigger,
+  .cell-agent {
+    color: var(--color-text-3);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .cell-status {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+.st-import-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--color-text-3);
+  font-size: 12px;
+}
+
+.st-import-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--color-fill-1);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--color-text-3);
+
+  strong {
+    color: var(--color-text-2);
+  }
 }
