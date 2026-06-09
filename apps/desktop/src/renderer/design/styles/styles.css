@@ -654,6 +654,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .platform-win32 .win-titlebar .sidebar-expand-btn {
   -webkit-app-region: no-drag;
+  margin-left: 12px;
+  margin-top: 2px;
 }
 .platform-win32 .win-titlebar-controls {
   margin-left: auto;
@@ -737,8 +739,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .app.sidebar-hidden .transparent-header {
   margin-left: 0;
   padding-left: 20px;
-  padding-top: 12px;
-  height: 45px;
+  padding-top: 16px;
+  height: 52px;
 }
 
 .view-body {
@@ -961,6 +963,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+*::-webkit-scrollbar-button {
+  display: none;
+}
 /* Firefox: overlay thin scrollbar */
 * {
   scrollbar-width: thin;
@@ -1043,10 +1048,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 3px;
+  border-radius: 999px;
 }
 .spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-track {
   background: transparent;
+}
+.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-button {
+  display: none;
 }
 .app textarea:not(.arco-textarea):not(.composer-input):not(.plan-approval-textarea) {
   width: 100%;

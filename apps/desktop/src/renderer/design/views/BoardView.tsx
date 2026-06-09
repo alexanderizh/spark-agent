@@ -16,8 +16,9 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Popover } from '@arco-design/web-react'
 import type { DragEvent } from 'react'
-import { Badge, Button, DatePicker, Select, Space, Switch, Tooltip } from '@arco-design/web-react'
+import { Button, DatePicker, Select, Space, Switch, Tooltip } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
@@ -145,6 +146,35 @@ const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; he
   { key: 'accepted', label: '已验收', color: '#8b5cf6', icon: '🎯', headerBg: 'rgba(139,92,246,0.12)', headerFg: '#8b5cf6', colBg: 'rgba(139,92,246,0.04)', colClass: 'col-accepted' },
   { key: 'closed', label: '已关闭', color: '#9ca3af', icon: '📦', headerBg: 'rgba(156,163,175,0.12)', headerFg: '#9ca3af', colBg: 'rgba(156,163,175,0.04)', colClass: 'col-closed' },
 ]
+
+/* ------------------------------------------------------------------ */
+/*  Column Visibility (localStorage cached)                            */
+/* ------------------------------------------------------------------ */
+
+const BOARD_COLUMNS_STORAGE_KEY = 'board-visible-columns'
+
+/** Load visible columns from localStorage, fallback to all columns */
+function loadVisibleColumns(): TaskStatus[] {
+  try {
+    const stored = localStorage.getItem(BOARD_COLUMNS_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as TaskStatus[]
+      // Validate: only return valid statuses that still exist in COLUMNS
+      const validStatuses = COLUMNS.map(c => c.key)
+      const validParsed = parsed.filter(s => validStatuses.includes(s))
+      if (validParsed.length > 0) return validParsed
+    }
+  } catch { /* ignore */ }
+  // Default: show all columns
+  return COLUMNS.map(c => c.key)
+}
+
+/** Save visible columns to localStorage */
+function saveVisibleColumns(columns: TaskStatus[]): void {
+  try {
+    localStorage.setItem(BOARD_COLUMNS_STORAGE_KEY, JSON.stringify(columns))
+  } catch { /* ignore */ }
+}
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string; icon: string }> = {
   low: { label: '低', color: 'var(--text-muted)', bg: 'var(--hover)', icon: '⚪' },
@@ -792,7 +822,12 @@ function TaskCommentsPanel({
           </div>
         ))}
         {(card.comments == null || card.comments.length === 0) && (
-          <div className="tfp-comment-empty">暂无评论</div>
+          <div className="tfp-comment-empty">
+            <div className="tfp-comment-empty-icon">
+              <Icons.Chat size={32} />
+            </div>
+            <div className="tfp-comment-empty-text">暂无评论</div>
+          </div>
         )}
       </div>
       <div className="tfp-comment-input-row">
@@ -1089,6 +1124,8 @@ export function BoardView() {
   const [autoExecuteRunning, setAutoExecuteRunning] = useState(false)
   const autoExecuteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const autoExecuteLockRef = useRef(false)
+  // Visible columns state (cached in localStorage)
+  const [visibleColumns, setVisibleColumns] = useState<TaskStatus[]>(loadVisibleColumns)
 
   // Refresh handler
   const refreshData = useCallback(() => {
@@ -1107,6 +1144,25 @@ export function BoardView() {
     }).catch(() => {})
   }, [listAgents, listTeamDefs])
   const triggerRefresh = useRefreshable(refreshData)
+
+  // Visible columns handlers
+  const handleToggleColumn = useCallback((status: TaskStatus) => {
+    setVisibleColumns(prev => {
+      // Ensure at least one column is visible
+      if (prev.includes(status) && prev.length <= 1) return prev
+      const next = prev.includes(status)
+        ? prev.filter(s => s !== status)
+        : [...prev, status]
+      saveVisibleColumns(next)
+      return next
+    })
+  }, [])
+
+  const handleSelectAllColumns = useCallback(() => {
+    const all = COLUMNS.map(c => c.key)
+    setVisibleColumns(all)
+    saveVisibleColumns(all)
+  }, [])
 
   // Load tasks, agents and team defs from IPC on mount
   useEffect(() => {
@@ -1216,6 +1272,32 @@ export function BoardView() {
     }
     return map
   }, [filteredTasks])
+
+  const columnSelectorContent = (
+    <div className="board-column-selector">
+      <div className="bcs-header">
+        <span>显示状态面板</span>
+        <button className="bcs-select-all" onClick={handleSelectAllColumns}>全选</button>
+      </div>
+      <div className="bcs-list">
+        {COLUMNS.map(col => {
+          const isVisible = visibleColumns.includes(col.key)
+          return (
+            <label key={col.key} className="bcs-item">
+              <input
+                type="checkbox"
+                checked={isVisible}
+                onChange={() => handleToggleColumn(col.key)}
+              />
+              <span className="bcs-dot" style={{ background: col.color }} />
+              <span className="bcs-label">{col.label}</span>
+              <span className="bcs-count">{columnTasks[col.key]?.length ?? 0}</span>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
 
   // Handlers
   const handleCreate = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
@@ -1492,34 +1574,61 @@ export function BoardView() {
                 className="board-search-input"
               />
             </div>
-            <Space size={6} className="board-filter-group" aria-label="筛选条件">
-              <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select board-filter-priority" size="small">
-                <Select.Option value="all">全部优先级</Select.Option>
-                <Select.Option value="urgent">🔴 紧急</Select.Option>
-                <Select.Option value="high">🟡 高</Select.Option>
-                <Select.Option value="medium">🔵 中</Select.Option>
-                <Select.Option value="low">⚪ 低</Select.Option>
-              </Select>
-              <Select value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select board-filter-status" size="small">
-                <Select.Option value="all">全部状态</Select.Option>
-                <Select.Option value="todo">📋 待办</Select.Option>
-                <Select.Option value="in-progress">🔄 进行中</Select.Option>
-                <Select.Option value="bug-fix">🐛 Bug 修复</Select.Option>
-                <Select.Option value="done">✅ 已完成</Select.Option>
-                <Select.Option value="accepted">🎯 已验收</Select.Option>
-                <Select.Option value="closed">📦 已关闭</Select.Option>
-              </Select>
-              {projectOptions.length > 0 && (
-                <Select value={filterProject} onChange={(value) => setFilterProject(value)} className="board-filter-select board-filter-project" size="small">
-                  <Select.Option value="all">全部项目</Select.Option>
-                  {projectOptions.map(p => <Select.Option key={p.value} value={p.value}>{p.label}</Select.Option>)}
-                </Select>
-              )}
-            </Space>
+            <Popover
+              content={
+                <div className="board-filter-popover-content">
+                  <div className="board-filter-popover-row">
+                    <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="small" style={{ width: 130 }}>
+                      <Select.Option value="all">全部优先级</Select.Option>
+                      <Select.Option value="urgent">🔴 紧急</Select.Option>
+                      <Select.Option value="high">🟡 高</Select.Option>
+                      <Select.Option value="medium">🔵 中</Select.Option>
+                      <Select.Option value="low">⚪ 低</Select.Option>
+                    </Select>
+                    <Select value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="small" style={{ width: 130 }}>
+                      <Select.Option value="all">全部状态</Select.Option>
+                      <Select.Option value="todo">📋 待办</Select.Option>
+                      <Select.Option value="in-progress">🔄 进行中</Select.Option>
+                      <Select.Option value="bug-fix">🐛 Bug 修复</Select.Option>
+                      <Select.Option value="done">✅ 已完成</Select.Option>
+                      <Select.Option value="accepted">🎯 已验收</Select.Option>
+                      <Select.Option value="closed">📦 已关闭</Select.Option>
+                    </Select>
+                    {projectOptions.length > 0 && (
+                      <Select value={filterProject} onChange={(value) => setFilterProject(value)} className="board-filter-select" size="small" style={{ width: 130 }}>
+                        <Select.Option value="all">全部项目</Select.Option>
+                        {projectOptions.map(p => <Select.Option key={p.value} value={p.value}>{p.label}</Select.Option>)}
+                      </Select>
+                    )}
+                  </div>
+                </div>
+              }
+              trigger="click"
+              position="bottom"
+              className="board-filter-popover"
+            >
+              <button className="board-filter-toggle-btn" title="筛选条件">
+                <Icons.Filter size={14} />
+                <span>筛选</span>
+                {(filterPriority !== 'all' || filterStatus !== 'all' || filterProject !== 'all') && (
+                  <span className="board-filter-active-dot" />
+                )}
+              </button>
+            </Popover>
             <Space size={6} className="board-action-group">
-              <Badge count={totalDeleted} className="board-recycle-badge-arco">
-                <Button className="board-recycle-arco-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
-              </Badge>
+              <Popover
+                content={columnSelectorContent}
+                trigger="click"
+                position="bottom"
+                className="board-column-selector-popover"
+              >
+                <button className="board-column-selector-btn" title="选择显示的状态面板">
+                  <Icons.Board size={14} />
+                  <span>面板</span>
+                  <Icons.ChevronDown size={12} />
+                </button>
+              </Popover>
+              <Button className="board-recycle-arco-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
               <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
                 新建任务
               </Button>
@@ -1530,7 +1639,7 @@ export function BoardView() {
 
       {/* Kanban Columns */}
       <div className="board-columns">
-        {COLUMNS.map(col => (
+        {COLUMNS.filter(col => visibleColumns.includes(col.key)).map(col => (
           <div
             className={`board-col ${col.colClass}`}
             key={col.key}

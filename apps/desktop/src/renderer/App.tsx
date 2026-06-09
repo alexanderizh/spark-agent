@@ -439,6 +439,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'remote-connections'); setUserMenuOpen(false) }}>
+              <Icons.Globe size={14} /> 远程连接
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
               <Icons.Settings size={14} /> Settings
             </DropdownMenuItem>
@@ -721,19 +724,20 @@ function Shell() {
         {/* Windows: custom title bar spanning full width with drag region */}
         {isPlatformWin32 && (
           <div className="win-titlebar">
-            {t.sidebarHidden && <SidebarExpandButton />}
+            {t.sidebarHidden && t.view !== 'chat' && <SidebarExpandButton />}
             <div className="win-titlebar-controls">
               <WindowControls />
             </div>
           </div>
         )}
         <div className="main">
-          {t.view !== 'chat' && !isPlatformWin32 && (
+          {/* Non-Windows: transparent header with expand button (only when sidebar hidden) */}
+          {t.view !== 'chat' && !isPlatformWin32 && t.sidebarHidden && (
             <div
               className="transparent-header"
               onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
             >
-              {t.sidebarHidden && <SidebarExpandButton />}
+              <SidebarExpandButton />
             </div>
           )}
           <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>

@@ -780,7 +780,7 @@ export class RemoteConnectionService {
     }
 
     this.markSeen(latest.id, message.externalId)
-    await this.sendProcessingFeedback(latest, message.messageId)
+    await this.sendProcessingFeedback(latest, message.externalId, message.messageId)
     if (this.inboundHandler == null) {
       await this.sendDirectMessage(latest, message.externalId, '远程连接运行时尚未就绪，请稍后重试。')
       return
@@ -1086,6 +1086,19 @@ export class RemoteConnectionService {
     }
   }
 
+  private async sendTelegramChatAction(connection: RemoteConnectionConfig, externalId: string, action: 'typing' | 'upload_photo' | 'record_video' | 'upload_video' | 'record_voice' | 'upload_voice' | 'upload_document' | 'find_location' | 'record_video_note' | 'upload_video_note' | 'choose_sticker' = 'typing'): Promise<void> {
+    const token = readString(connection.credentials.botToken)
+    if (token == null) return
+    try {
+      await this.postJson(`https://api.telegram.org/bot${encodeURIComponent(token)}/sendChatAction`, {
+        chat_id: externalId,
+        action,
+      })
+    } catch {
+      // Chat action 发送失败不阻断主流程
+    }
+  }
+
   private async sendFeishuMessage(connection: RemoteConnectionConfig, externalId: string, text: string): Promise<void> {
     const appId = readString(connection.credentials.appId)
     const appSecret = readString(connection.credentials.appSecret)
@@ -1099,20 +1112,24 @@ export class RemoteConnectionService {
     }, { Authorization: `Bearer ${token}` })
   }
 
-  private async sendProcessingFeedback(connection: RemoteConnectionConfig, messageId?: string): Promise<void> {
-    if (connection.channel !== 'feishu' || messageId == null) return
-    const feishuMessageId = messageId.replace(/^feishu:/, '')
-    if (feishuMessageId.length === 0) return
-    const appId = readString(connection.credentials.appId)
-    const appSecret = readString(connection.credentials.appSecret)
-    if (appId == null || appSecret == null) return
-    try {
-      const token = await this.getFeishuToken(connection.id, appId, appSecret)
-      await this.postJson(`https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(feishuMessageId)}/reactions`, {
-        reaction_type: { emoji_type: 'Typing' },
-      }, { Authorization: `Bearer ${token}` })
-    } catch {
-      // 反馈表情失败只影响体验，不阻断消息处理。
+  private async sendProcessingFeedback(connection: RemoteConnectionConfig, externalId: string, messageId?: string): Promise<void> {
+    if (connection.channel === 'telegram') {
+      await this.sendTelegramChatAction(connection, externalId, 'typing')
+    }
+    if (connection.channel === 'feishu' && messageId != null) {
+      const feishuMessageId = messageId.replace(/^feishu:/, '')
+      if (feishuMessageId.length === 0) return
+      const appId = readString(connection.credentials.appId)
+      const appSecret = readString(connection.credentials.appSecret)
+      if (appId == null || appSecret == null) return
+      try {
+        const token = await this.getFeishuToken(connection.id, appId, appSecret)
+        await this.postJson(`https://open.feishu.cn/open-apis/im/v1/messages/${encodeURIComponent(feishuMessageId)}/reactions`, {
+          reaction_type: { emoji_type: 'Typing' },
+        }, { Authorization: `Bearer ${token}` })
+      } catch {
+        // 反馈表情失败只影响体验，不阻断消息处理。
+      }
     }
   }
 

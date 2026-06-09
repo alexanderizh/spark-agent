@@ -19,6 +19,8 @@
   justify-content: space-between;
   padding: 16px 0;
   border-bottom: 1px solid var(--color-border-2);
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .st-header-left {
@@ -112,7 +114,10 @@
   }
   &::-webkit-scrollbar-thumb {
     background: var(--color-fill-3);
-    border-radius: 2px;
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
   }
 }
 
@@ -455,7 +460,10 @@
   }
   &::-webkit-scrollbar-thumb {
     background: var(--color-fill-3);
-    border-radius: 2px;
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
   }
 }
 
@@ -872,7 +880,10 @@
   }
   &::-webkit-scrollbar-thumb {
     background: var(--color-fill-3);
-    border-radius: 2px;
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
   }
 }
 

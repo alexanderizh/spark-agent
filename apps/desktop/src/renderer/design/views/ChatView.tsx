@@ -3927,17 +3927,7 @@ function AgentMsg({
           <span className="msg-agent-name">{assistantName}</span>
         </div>
         <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
-        {isStreaming && !hasContent && (
-          <div className="agent-running-tail agent-running-tail-empty" aria-label="正在运行">
-            <span>正在运行</span>
-            <span className="agent-running-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          </div>
-        )}
-        {thinkingBlocks.length > 0 && (
+                {thinkingBlocks.length > 0 && (
           <ThinkingSection blocks={thinkingBlocks} streaming={isStreaming} />
         )}
         {activeToolCount > 1 && (
@@ -3963,17 +3953,7 @@ function AgentMsg({
             retryable={(block as Extract<UIBlock, { kind: 'error' }>).retryable}
           />
         ))}
-        {isStreaming && hasContent && (
-          <div className="agent-running-tail" aria-label="正在运行">
-            <span>正在运行</span>
-            <span className="agent-running-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          </div>
-        )}
-        {isCancelled && <StoppedMarker />}
+                {isCancelled && <StoppedMarker />}
         {isFinished && textContent && (
           <MessageHoverBar
             timestamp={timestamp}

@@ -443,6 +443,30 @@ body.sidebar-resizing {
   padding: 6px;
 }
 
+/* 会话列表滚动条样式：悬停时显示 */
+.chat-list::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.chat-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+.chat-list::-webkit-scrollbar-thumb {
+  min-height: 32px;
+  background: transparent;
+  border-radius: 999px;
+  transition: background 0.3s ease;
+}
+.chat-list::-webkit-scrollbar-button {
+  display: none;
+}
+.chat-list:hover::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
+}
+.chat-list:hover::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-muted) 50%, transparent);
+}
+
 /* Project bar above the list */
 .chat-sidebar-projbar {
   display: flex;
@@ -1238,50 +1262,6 @@ body.sidebar-resizing {
   color: var(--text-muted);
   font-size: var(--font-sm);
   padding: 4px 0;
-}
-
-.agent-running-tail {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 8px;
-  color: var(--text-faint);
-  font-size: var(--font-xs);
-  font-weight: 500;
-}
-
-.agent-running-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-
-.agent-running-dots span {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: currentColor;
-  opacity: 0.35;
-  animation: agent-running-dot 1.05s ease-in-out infinite;
-}
-
-.agent-running-dots span:nth-child(2) {
-  animation-delay: 0.15s;
-}
-
-.agent-running-dots span:nth-child(3) {
-  animation-delay: 0.3s;
-}
-
-@keyframes agent-running-dot {
-  0%, 80%, 100% {
-    opacity: 0.35;
-    transform: translateY(0);
-  }
-  40% {
-    opacity: 1;
-    transform: translateY(-2px);
-  }
 }
 
 /* Cancelled agent message — dim the bubble */
