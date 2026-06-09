@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { PromptDialog } from './components/PromptDialog'
+import { applyArcoTheme } from './arcoTheme'
 
 export type NavGuard = () => boolean | Promise<boolean>
 
@@ -15,7 +16,7 @@ export type ThemeMode = 'light' | 'dark' | 'system'
 export type ResolvedTheme = 'light' | 'dark'
 export type Density = 'compact' | 'regular' | 'comfy'
 export type SidebarState = 'collapsed' | 'expanded'
-export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
+export type ViewId = 'chat' | 'workflows' | 'agents' | 'board' | 'scheduled-tasks' | 'skills' | 'skill-store' | 'mcp' | 'providers' | 'settings'
 export type ChatMode = 'vibe' | 'workspace'
 
 export type ConfirmOptions = {
@@ -64,7 +65,7 @@ export const DEFAULT_TWEAKS: Tweaks = {
   sidebar: 'collapsed',
   view: 'chat',
   chatMode: 'vibe',
-  settingsSection: 'providers',
+  settingsSection: 'general',
   showPalette: false,
   showPerm: false,
   showProviderEdit: false,
@@ -228,14 +229,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     root.style.setProperty('--primary', primary)
     root.style.setProperty('--primary-hover', info?.hover ?? primary)
     root.style.setProperty('--primary-soft', info?.soft ?? 'rgba(99,102,241,0.12)')
-    // Resolve the actual theme from the user preference
     const applyResolvedTheme = (resolved: ResolvedTheme) => {
       root.dataset.theme = resolved
-      if (resolved === 'dark') {
-        document.body.setAttribute('arco-theme', 'dark')
-      } else {
-        document.body.removeAttribute('arco-theme')
-      }
+      applyArcoTheme(resolved, primary)
     }
     if (t.theme === 'system') {
       const mq = window.matchMedia('(prefers-color-scheme: dark)')

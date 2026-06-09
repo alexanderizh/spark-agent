@@ -14,7 +14,6 @@ mac:
         - universal
   hardenedRuntime: true
   gatekeeperAssess: false
-  x64ArchFiles: '**/browsers/**'
 win:
   icon: resources/icon.ico
 linux:
@@ -46,12 +45,8 @@ extraResources:
     to: trayIconWin.png
   - from: resources/taskbarIcon.png
     to: taskbarIcon.png
-  # Bundled Playwright chromium browser (~150 MB).
-  # Downloaded pre-build by `pnpm download-browser` into apps/desktop/browsers/.
-  # At runtime, BrowserAutomationViewService points PLAYWRIGHT_BROWSERS_PATH
-  # at <resourcesPath>/browsers so playwright finds the bundled binary.
-  - from: browsers
-    to: browsers
+  - from: resources/skills
+    to: skills
     filter:
       - '**/*'
 publish:

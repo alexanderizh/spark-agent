@@ -17,7 +17,8 @@ import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { createLogger } from '@spark/shared'
+import { createLogger, deriveTeamAvatar } from '@spark/shared'
+import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
   EventRepository,
@@ -34,8 +35,12 @@ import {
   ContextPreferenceRepository,
   AgentRepository,
   WorkflowRepository,
+  TeamDispatchRepository,
+  TeamDefinitionRepository,
+  ScheduledTaskRepository,
+  TaskExecutionRepository,
 } from '@spark/storage'
-import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem } from '@spark/storage'
+import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem, AgentTeamItem as StorageAgentTeamItem } from '@spark/storage'
 import {
   ProviderService,
   RulesService,
@@ -51,6 +56,8 @@ import {
   UsageLedgerService,
   RuntimeCompositionService,
 } from '@spark/agent-runtime'
+import { ScheduledTaskService } from '@spark/agent-runtime'
+import type { TaskExecutorFn } from '@spark/agent-runtime'
 import type {
   CommandParseResponse,
   SessionAgentAdapter,
@@ -62,6 +69,12 @@ import type {
   WorkflowItem as ProtocolWorkflowItem,
   WorkflowGraph,
   ProviderExportPayload,
+  ScheduledTaskExportPayload,
+  TeamModeConfig,
+  TeamMemberCard,
+  ManagedTeam,
+  TeamA2ATask,
+  TeamA2AReply,
 } from '@spark/protocol'
 import type {
   SessionEventHandler,
@@ -105,9 +118,13 @@ import {
   closePopOutWindow,
   isPopOutOpen,
 } from '../services/PopOutBrowserService.js'
+import { RemoteConnectionService } from '../services/RemoteConnectionService.js'
+import type { RemoteInboundMessage } from '../services/RemoteConnectionService.js'
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
 const execFileAsync = promisify(execFile)
@@ -149,6 +166,58 @@ async function pathExists(targetPath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+// ─── Board Task Store (shared with MCP platform bridge) ─────────────────────
+
+const BOARD_TASKS_FILE = path.join(homedir(), '.spark-agent', 'board-tasks.json')
+
+interface BoardTaskRecord {
+  id: string
+  title: string
+  description: string
+  status: 'todo' | 'in-progress' | 'done' | 'accepted' | 'closed' | 'bug-fix'
+  priority: 'low' | 'medium' | 'high' | 'urgent'
+  assignee: string
+  project: string
+  tags: string[]
+  dueDate: string
+  processingAgent: string
+  acceptanceCriteria: string
+  testAgent: string
+  commentsJson: string
+  attachmentsJson: string
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+function readBoardTasks(): BoardTaskRecord[] {
+  try {
+    if (!existsSync(BOARD_TASKS_FILE)) return []
+    const raw: Array<Record<string, unknown>> = JSON.parse(readFileSync(BOARD_TASKS_FILE, 'utf-8'))
+    let needsMigration = false
+    const tasks = raw.map((t, i) => {
+      if (t.sortOrder == null || typeof t.sortOrder !== 'number') {
+        needsMigration = true
+        return { ...t, sortOrder: i * 100 } as unknown as BoardTaskRecord
+      }
+      return t as unknown as BoardTaskRecord
+    })
+    if (needsMigration) writeBoardTasks(tasks)
+    return tasks
+  } catch { return [] }
+}
+
+function writeBoardTasks(tasks: BoardTaskRecord[]): void {
+  const dir = path.dirname(BOARD_TASKS_FILE)
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true })
+  writeFileSync(BOARD_TASKS_FILE, JSON.stringify(tasks), 'utf-8')
+}
+
+function boardTaskUid(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
 }
 
 async function ensureNoProjectWorkspacePath(workspaceId: string): Promise<void> {
@@ -219,7 +288,8 @@ function getMcpService(): McpService {
 }
 
 function getSkillService(): SkillService {
-  return new SkillService(new SkillRepository(getDatabase()))
+  const { bundledDir } = getAppSkillsManager()
+  return new SkillService(new SkillRepository(getDatabase()), bundledDir)
 }
 
 function getAgentRepository(): AgentRepository {
@@ -245,6 +315,21 @@ function getSettingsService(): SettingsService {
   return _settingsService
 }
 
+let _remoteConnectionService: RemoteConnectionService | null = null
+let _remoteConnectionChangeHookRegistered = false
+function getRemoteConnectionService(): RemoteConnectionService {
+  if (_remoteConnectionService == null) {
+    _remoteConnectionService = new RemoteConnectionService(getSettingsService())
+  }
+  if (!_remoteConnectionChangeHookRegistered) {
+    _remoteConnectionChangeHookRegistered = true
+    _remoteConnectionService.onChange((event) => {
+      pushStreamEvent('stream:remote:changed', event)
+    })
+  }
+  return _remoteConnectionService
+}
+
 let _usageLedgerService: UsageLedgerService | null = null
 function getUsageLedgerService(): UsageLedgerService {
   if (_usageLedgerService == null) {
@@ -264,6 +349,59 @@ function getSkillRegistryService(): SkillRegistryService {
 
 function getRulesService(): RulesService {
   return new RulesService(new RulesRepository(getDatabase()))
+}
+
+let _scheduledTaskService: ScheduledTaskService | null = null
+export function getScheduledTaskService(): ScheduledTaskService {
+  if (_scheduledTaskService == null) {
+    _scheduledTaskService = new ScheduledTaskService(
+      new ScheduledTaskRepository(getDatabase()),
+      new TaskExecutionRepository(getDatabase()),
+    )
+    // Inject executor: creates a session and sends the prompt
+    _scheduledTaskService.setExecutor(scheduledTaskExecutor)
+  }
+  return _scheduledTaskService
+}
+
+/** Executor function injected into ScheduledTaskService for running tasks */
+const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
+  const sessionService = getSessionService()
+  // Find a suitable provider profile (use default)
+  const providerService = getProviderService()
+  const profiles = await providerService.listProviders()
+  const defaultProfile = profiles.find(p => p.isDefault) ?? profiles[0]
+  if (!defaultProfile) {
+    throw new Error('No provider profile available for scheduled task execution')
+  }
+
+  // Create a new session for this execution
+  const created = await sessionService.createSession({
+    providerProfileId: defaultProfile.id,
+    modelId: params.modelId ?? undefined,
+    agentId: params.agentId ?? undefined,
+    workspaceId: params.workspaceId ?? undefined,
+    permissionMode: (params.permissionMode as any) ?? undefined,
+    title: `[⏰] ${params.taskName}`,
+  })
+
+  // Notify renderer to refresh session list (same as session:create IPC handler)
+  pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+
+  // Send the prompt as a turn
+  const result = await sessionService.sendTurn({
+    sessionId: created.sessionId,
+    message: params.promptTemplate,
+    providerProfileId: defaultProfile.id,
+    modelId: params.modelId ?? undefined,
+    agentId: params.agentId ?? undefined,
+    permissionMode: (params.permissionMode as any) ?? undefined,
+  })
+
+  return {
+    sessionId: created.sessionId,
+    output: `Turn ${result.turnId} started`,
+  }
 }
 
 let _permissionService: PermissionService | null = null
@@ -370,11 +508,58 @@ function getWorkspaceService(): WorkspaceService {
 
 let _sessionService: SessionService | null = null
 let pendingQuestionResolvers = new Map<string, (answers: Record<string, unknown>) => void>()
+const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
+
+function registerRemoteTurn(turnId: string, target: { connectionId: string; externalId: string }): void {
+  remoteTurnTargets.set(turnId, target)
+  if (remoteTurnTargets.size > 500) {
+    const oldest = remoteTurnTargets.keys().next().value
+    if (oldest != null) remoteTurnTargets.delete(oldest)
+  }
+}
+
+function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void {
+  const target = remoteTurnTargets.get(event.turnId)
+  if (target == null) return
+  if (event.type === 'assistant_message' && event.isFinal) {
+    remoteTurnTargets.delete(event.turnId)
+    const content = event.content.trim()
+    if (content.length === 0) return
+    void getRemoteConnectionService().sendReply(target.connectionId, target.externalId, content).catch((err) => {
+      log.warn(`Failed to send remote assistant reply: ${String(err)}`)
+    })
+  } else if (event.type === 'agent_error') {
+    remoteTurnTargets.delete(event.turnId)
+    void getRemoteConnectionService().sendReply(target.connectionId, target.externalId, `处理失败：${event.message}`).catch((err) => {
+      log.warn(`Failed to send remote error reply: ${String(err)}`)
+    })
+  }
+}
+
+async function sendRemoteTurnReplyFromHistory(
+  sessionId: string,
+  turnId: string,
+  target: { connectionId: string; externalId: string },
+): Promise<boolean> {
+  const history = await getSessionService().getHistory({ sessionId, limit: 200 })
+  const final = history.events.find((event) => (
+    event.turnId === turnId &&
+    event.type === 'assistant_message' &&
+    event.isFinal &&
+    event.content.trim().length > 0
+  ))
+  if (final == null || final.type !== 'assistant_message') return false
+  if (remoteTurnTargets.get(turnId) !== target) return true
+  remoteTurnTargets.delete(turnId)
+  await getRemoteConnectionService().sendReply(target.connectionId, target.externalId, final.content.trim())
+  return true
+}
 
 function getSessionService(): SessionService {
   if (_sessionService == null) {
     const onEvent: SessionEventHandler = (event) => {
       pushStreamEvent('stream:session:agent-event', event)
+      handleRemoteTurnEvent(event)
     }
     const onApproval: ApprovalHandler = (sessionId, toolName, toolInput) => {
       const permissionContext = getSessionPermissionContext(sessionId)
@@ -501,15 +686,292 @@ function readAgentHookConfig(sessionId: string): HookConfigInternal {
   return parseHookConfig(agent.hookConfig, { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false })
 }
 
+function getStartupSettings(): { supported: boolean; openAtLogin: boolean; openAsHidden: boolean } {
+  try {
+    const settings = app.getLoginItemSettings()
+    return {
+      supported: true,
+      openAtLogin: settings.openAtLogin,
+      openAsHidden: settings.openAsHidden,
+    }
+  } catch (err) {
+    log.warn(`Failed to read startup settings: ${String(err)}`)
+    return { supported: false, openAtLogin: false, openAsHidden: false }
+  }
+}
+
+function parseRemoteCommand(message: string, prefix: string): { name: string; args: string[]; text: string } {
+  const trimmed = message.trim()
+  const effectivePrefix = prefix.trim() || '/'
+  const body = trimmed.startsWith(effectivePrefix) ? trimmed.slice(effectivePrefix.length).trim() : `send ${trimmed}`
+  const [name = 'help', ...args] = body.split(/\s+/).filter(Boolean)
+  return { name: name.toLowerCase(), args, text: body }
+}
+
+function formatRows(rows: Array<{ id: string; label: string; meta?: string }>, empty: string): string {
+  if (rows.length === 0) return empty
+  return rows.map((row, index) => `${index + 1}. ${row.label}\n   ${row.id}${row.meta != null ? ` · ${row.meta}` : ''}`).join('\n')
+}
+
+async function createRemoteSession(connectionId: string, workspaceId?: string): Promise<{ sessionId: string; connectionName: string }> {
+  const remoteService = getRemoteConnectionService()
+  const connection = remoteService.list().connections.find((item) => item.id === connectionId)
+  if (connection == null) throw new Error('远程连接不存在')
+  const providers = await getProviderService().listProviders()
+  const provider = connection.defaultProviderProfileId != null
+    ? providers.find((item) => item.id === connection.defaultProviderProfileId)
+    : providers.find((item) => item.isDefault) ?? providers[0]
+  if (provider == null) {
+    throw new Error('没有可用 Provider，请先在设置中配置模型 Provider。')
+  }
+  await ensureNoProjectDirectoryExists()
+  const defaults = getRuntimePermissionDefaults()
+  const created = await getSessionService().createSession({
+    providerProfileId: provider.id,
+    ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
+    ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
+    agentAdapter: defaults.agentAdapter,
+    permissionMode: defaults.permissionMode,
+    ...(workspaceId != null ? { workspaceId } : {}),
+    title: `远程会话 · ${connection.name}`,
+  })
+  pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+  remoteService.updateConnectionDefaults(connection.id, {
+    defaultSessionId: created.sessionId,
+    defaultProviderProfileId: provider.id,
+  })
+  return { sessionId: created.sessionId, connectionName: connection.name }
+}
+
+async function executeRemoteCommand(connectionId: string, message: string, explicitSessionId?: string): Promise<{ ok: boolean; title: string; text: string }> {
+  const remoteService = getRemoteConnectionService()
+  const store = remoteService.list()
+  const connection = store.connections.find((item) => item.id === connectionId)
+  if (connection == null) return { ok: false, title: '连接不存在', text: '请先在设置中创建远程连接。' }
+  if (!connection.enabled) return { ok: false, title: '连接未启用', text: '请先启用该远程连接。' }
+
+  const command = parseRemoteCommand(message, connection.commandPrefix)
+  const sessionId = explicitSessionId ?? connection.defaultSessionId
+  const requireCapability = (capability: keyof typeof connection.capabilities): { ok: boolean; title: string; text: string } | null => {
+    if (connection.capabilities[capability]) return null
+    return { ok: false, title: '功能未授权', text: `该连接没有启用 ${capability} 能力。` }
+  }
+
+  if (command.name === 'help') {
+    return {
+      ok: true,
+      title: '远程命令',
+      text: remoteService
+        .getCommandCatalog()
+        .map((cmd) => `${cmd.usage} - ${cmd.description}`)
+        .join('\n'),
+    }
+  }
+
+  if (command.name === 'status') {
+    return {
+      ok: true,
+      title: connection.name,
+      text: `渠道：${connection.channel}\n状态：${connection.status}\n配对设备：${connection.pairedDevices.length}\n默认会话：${connection.defaultSessionId ?? '未设置'}`,
+    }
+  }
+
+  if (command.name === 'sessions') {
+    const blocked = requireCapability('switchSession')
+    if (blocked != null) return blocked
+    const result = await getSessionService().listSessions({ includeArchived: false, limit: 12 })
+    return {
+      ok: true,
+      title: '最近会话',
+      text: formatRows(
+        result.sessions.map((item) => ({
+          id: item.id,
+          label: item.title || '新会话',
+          meta: `${item.status} · ${item.messageCount} 条消息`,
+        })),
+        '暂无会话',
+      ),
+    }
+  }
+
+  if (command.name === 'use-session') {
+    const blocked = requireCapability('switchSession')
+    if (blocked != null) return blocked
+    const target = command.args[0]
+    if (target == null) return { ok: false, title: '缺少 sessionId', text: '用法：/use-session <sessionId>' }
+    remoteService.updateConnectionDefaults(connection.id, { defaultSessionId: target })
+    return { ok: true, title: '已切换默认会话', text: target }
+  }
+
+  if (command.name === 'models') {
+    const blocked = requireCapability('switchModel')
+    if (blocked != null) return blocked
+    const models = getModelService().list()
+    return {
+      ok: true,
+      title: '模型配置',
+      text: formatRows(
+        models.map((item) => ({ id: item.id, label: item.name, meta: item.enabled ? 'enabled' : 'disabled' })),
+        '暂无模型配置',
+      ),
+    }
+  }
+
+  if (command.name === 'providers') {
+    const blocked = requireCapability('switchModel')
+    if (blocked != null) return blocked
+    const providers = await getProviderService().listProviders()
+    return {
+      ok: true,
+      title: 'Provider 配置',
+      text: formatRows(
+        providers.map((item) => ({ id: item.id, label: item.name, meta: item.provider })),
+        '暂无 Provider',
+      ),
+    }
+  }
+
+  if (command.name === 'agents') {
+    const blocked = requireCapability('switchAgent')
+    if (blocked != null) return blocked
+    const agents = getAgentRepository().list({ includeDisabled: false }).map(toManagedAgent)
+    return {
+      ok: true,
+      title: 'Agent',
+      text: formatRows(
+        agents.map((item) => ({ id: item.id, label: item.name, meta: item.agentAdapter })),
+        '暂无 Agent',
+      ),
+    }
+  }
+
+  if (command.name === 'workspaces') {
+    const blocked = requireCapability('manageWorkspace')
+    if (blocked != null) return blocked
+    const list = getWorkspaceService().listWorkspaces(12, 0, { includeArchived: false }).map(toWorkspaceInfo)
+    return {
+      ok: true,
+      title: '工作区',
+      text: formatRows(
+        list.map((item) => ({ id: item.id, label: item.name, meta: item.rootPath })),
+        '暂无工作区',
+      ),
+    }
+  }
+
+  if (command.name === 'new-session') {
+    const blocked = requireCapability('switchSession')
+    if (blocked != null) return blocked
+    const workspaceId = command.args[0]
+    const created = await createRemoteSession(connection.id, workspaceId)
+    return { ok: true, title: '已新建默认会话', text: created.sessionId }
+  }
+
+  if (command.name === 'open-workspace') {
+    const blocked = requireCapability('manageWorkspace')
+    if (blocked != null) return blocked
+    const rootPath = command.text.replace(/^open-workspace\s*/i, '').trim()
+    if (rootPath.length === 0) return { ok: false, title: '缺少项目路径', text: '用法：/open-workspace <path>' }
+    const workspace = await getWorkspaceService().openWorkspace(rootPath, undefined, { create: false })
+    return { ok: true, title: '已打开项目', text: `${workspace.name}\n${workspace.id}\n${workspace.root_path}` }
+  }
+
+  if (command.name === 'use-model' || command.name === 'use-provider' || command.name === 'use-agent') {
+    const capability = command.name === 'use-agent' ? 'switchAgent' : 'switchModel'
+    const blocked = requireCapability(capability)
+    if (blocked != null) return blocked
+    const target = command.args[0]
+    if (target == null) return { ok: false, title: '缺少目标 ID', text: `用法：/${command.name} <id>` }
+    if (sessionId != null) {
+      await getSessionService().updateSession({
+        sessionId,
+        ...(command.name === 'use-model' ? { modelId: target } : {}),
+        ...(command.name === 'use-provider' ? { providerProfileId: target } : {}),
+        ...(command.name === 'use-agent' ? { agentId: target } : {}),
+      })
+    }
+    remoteService.updateConnectionDefaults(connection.id, {
+      ...(command.name === 'use-model' ? { defaultModelId: target } : {}),
+      ...(command.name === 'use-provider' ? { defaultProviderProfileId: target } : {}),
+      ...(command.name === 'use-agent' ? { defaultAgentId: target } : {}),
+    })
+    return { ok: true, title: '已切换', text: target }
+  }
+
+  if (command.name === 'send') {
+    const blocked = requireCapability('sendMessages')
+    if (blocked != null) return blocked
+    const text = command.text.replace(/^send\s*/i, '').trim()
+    if (sessionId == null) return { ok: false, title: '缺少默认会话', text: '请先使用 /use-session <sessionId> 绑定会话。' }
+    if (text.length === 0) return { ok: false, title: '消息为空', text: '用法：/send <message>' }
+    const result = await getSessionService().sendTurn({
+      sessionId,
+      message: text,
+      ...(connection.defaultProviderProfileId != null ? { providerProfileId: connection.defaultProviderProfileId } : {}),
+      ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
+      ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
+    })
+    return { ok: true, title: result.started ? '已发送' : '已加入队列', text: `turnId: ${result.turnId}` }
+  }
+
+  return { ok: false, title: '未知命令', text: '发送 /help 查看可用命令。' }
+}
+
+async function handleRemoteInboundMessage(message: RemoteInboundMessage): Promise<{ title: string; text: string } | void> {
+  const prefix = message.connection.commandPrefix.trim() || '/'
+  const isCommandMessage = message.text.trim().startsWith(prefix)
+  if (isCommandMessage) {
+    if (!message.connection.capabilities.runCommands) {
+      return { title: '功能未授权', text: '该连接没有启用远程命令能力。' }
+    }
+    const result = await executeRemoteCommand(message.connection.id, message.text, message.connection.defaultSessionId)
+    return { title: result.title, text: result.text }
+  }
+
+  if (!message.connection.capabilities.sendMessages) {
+    return { title: '功能未授权', text: '该连接没有启用消息投递能力。' }
+  }
+  const sessionId = message.connection.defaultSessionId ?? (await createRemoteSession(message.connection.id)).sessionId
+  await ensureSessionWorkspacePaths(sessionId)
+
+  const result = await getSessionService().sendTurn({
+    sessionId,
+    message: message.text,
+    ...(message.connection.defaultProviderProfileId != null ? { providerProfileId: message.connection.defaultProviderProfileId } : {}),
+    ...(message.connection.defaultModelId != null ? { modelId: message.connection.defaultModelId } : {}),
+    ...(message.connection.defaultAgentId != null ? { agentId: message.connection.defaultAgentId } : {}),
+  })
+  const target = {
+    connectionId: message.connection.id,
+    externalId: message.externalId,
+  }
+  registerRemoteTurn(result.turnId, target)
+  void sendRemoteTurnReplyFromHistory(sessionId, result.turnId, target).catch((err) => {
+    log.warn(`Failed to send remote reply from history: ${String(err)}`)
+  })
+  return undefined
+}
+
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
+  void getRemoteConnectionService().startRuntime(handleRemoteInboundMessage).catch((err) => {
+    log.warn(`Failed to start remote runtime: ${String(err)}`)
+  })
+
+  // 启动时幂等保证内置 "本地 CLI" provider 存在 —— 用户无需任何配置即可立即用宿主
+  // 机的 Claude Code OAuth/环境变量开聊。失败仅记日志，不阻塞后续注册。
+  void getProviderService()
+    .ensureLocalCliProvider()
+    .catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
 
   // ─── Session Handlers ──────────────────────────────────────────────────
 
   typedIpcHandle('session:create', async (req) => {
     log.info(`session:create requested, providerProfileId=${req.providerProfileId}`)
     await ensureNoProjectDirectoryExists()
-    return getSessionService().createSession(applyRuntimePermissionDefaults(req))
+    const created = await getSessionService().createSession(applyRuntimePermissionDefaults(req))
+    pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+    return created
   })
 
   typedIpcHandle('session:send-turn', async (req) => {
@@ -529,6 +991,8 @@ export function registerAllIpcHandlers(): void {
       ...(req.skillId != null ? { skillId: req.skillId } : {}),
       ...(req.skillParams != null ? { skillParams: req.skillParams } : {}),
       ...(req.attachments != null ? { attachments: req.attachments } : {}),
+      ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
+      ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
     })
   })
 
@@ -542,6 +1006,13 @@ export function registerAllIpcHandlers(): void {
       `session:cancel-queued-turn requested, sessionId=${req.sessionId}, turnId=${req.turnId}`,
     )
     return getSessionService().cancelQueuedTurn(req)
+  })
+
+  typedIpcHandle('session:send-queued-turn-now', async (req) => {
+    log.info(
+      `session:send-queued-turn-now requested, sessionId=${req.sessionId}, turnId=${req.turnId}`,
+    )
+    return getSessionService().sendQueuedTurnNow(req)
   })
 
   typedIpcHandle('session:cancel', async (req) => {
@@ -602,7 +1073,9 @@ export function registerAllIpcHandlers(): void {
   // P1-09 完整实现，当前为骨架
 
   typedIpcHandle('provider:list', async (_req) => {
-    const profiles = await getProviderService().listProviders()
+    const svc = getProviderService()
+    await svc.ensureLocalCliProvider()
+    const profiles = await svc.listProviders()
     return { profiles }
   })
 
@@ -913,6 +1386,23 @@ export function registerAllIpcHandlers(): void {
       nodeVersion: process.versions.node ?? 'unknown',
       platform: `${process.platform} ${process.arch}`,
     }
+  })
+
+  typedIpcHandle('app:get-startup-settings', async () => {
+    return getStartupSettings()
+  })
+
+  typedIpcHandle('app:set-startup-settings', async (req) => {
+    try {
+      app.setLoginItemSettings({
+        openAtLogin: req.openAtLogin,
+        openAsHidden: req.openAsHidden ?? true,
+      })
+    } catch (err) {
+      log.warn(`Failed to update startup settings: ${String(err)}`)
+      throw err
+    }
+    return getStartupSettings()
   })
 
   // ─── App Paths Handlers ─────────────────────────────────────────────────────
@@ -1373,6 +1863,248 @@ export function registerAllIpcHandlers(): void {
     return { deleted }
   })
 
+  // ─── Agent Import/Export Handlers ─────────────────────────────────────────
+
+  typedIpcHandle('agent:export-to-file', async (req) => {
+    const count = req.ids.length
+    log.info(`agent:export-to-file requested, ids=${count}`)
+
+    const allAgents = getAgentRepository().list({ includeDisabled: true })
+    const toExport = count > 0
+      ? allAgents.filter((a) => req.ids.includes(a.id))
+      : allAgents
+
+    const payload: import('@spark/protocol').AgentExportPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      exportedBy: 'spark-agent',
+      agents: toExport.map((a) => ({
+        name: a.name,
+        description: a.description,
+        agentAdapter: a.agentAdapter,
+        permissionMode: a.permissionMode,
+        reasoningEffort: a.reasoningEffort,
+        prompt: a.prompt,
+        skillIds: a.skillIds,
+        disabledSkillIds: a.disabledSkillIds,
+        mcpServerIds: a.mcpServerIds,
+        ruleIds: a.ruleIds,
+        hookConfig: a.hookConfig,
+        workflowId: a.workflowId,
+        metadata: a.metadata,
+      })),
+    }
+
+    const datePart = new Date().toISOString().slice(0, 10)
+    const defaultName = `spark-agent-export-${datePart}.json`
+
+    const result = await dialog.showSaveDialog({
+      title: '导出 Agent 配置',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePath == null || result.filePath.length === 0) {
+      log.info('agent:export-to-file canceled by user')
+      return { filePath: '', count: payload.agents.length }
+    }
+
+    const fs = await import('node:fs/promises')
+    try {
+      const json = JSON.stringify(payload, null, 2)
+      await fs.writeFile(result.filePath, json, 'utf-8')
+      log.info(`agent:export-to-file wrote ${payload.agents.length} agents to ${result.filePath}`)
+      return { filePath: result.filePath, count: payload.agents.length }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`agent:export-to-file write failed: ${message}`)
+      throw new Error(`写入文件失败：${message}`)
+    }
+  })
+
+  typedIpcHandle('agent:import-from-file', async () => {
+    log.info('agent:import-from-file requested')
+
+    const result = await dialog.showOpenDialog({
+      title: '选择 Agent 配置文件',
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      log.info('agent:import-from-file canceled by user')
+      return { payload: null, filePath: '' }
+    }
+
+    const filePath = result.filePaths[0]!
+    const fs = await import('node:fs/promises')
+
+    let raw: string
+    try {
+      raw = await fs.readFile(filePath, 'utf-8')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`agent:import-from-file read failed: ${message}`)
+      throw new Error(`读取文件失败：${message}`)
+    }
+
+    let json: unknown
+    try {
+      json = JSON.parse(raw)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`agent:import-from-file parse failed: ${message}`)
+      throw new Error(`JSON 解析失败：${message}`)
+    }
+
+    // Basic runtime validation
+    if (
+      typeof json !== 'object' || json == null ||
+      !('version' in json) || !('agents' in json) ||
+      !Array.isArray((json as Record<string, unknown>).agents)
+    ) {
+      throw new Error('无效的 Agent 配置文件格式')
+    }
+
+    const payload = json as import('@spark/protocol').AgentExportPayload
+    log.info(`agent:import-from-file parsed ${payload.agents.length} agents, version=${payload.version}`)
+
+    return { payload, filePath }
+  })
+
+  // ─── Team Mode Handlers ───────────────────────────────────────────────
+
+  typedIpcHandle('team:update', async (req) => {
+    log.info(`team:update requested, sessionId=${req.sessionId}, enabled=${req.config.enabled}`)
+    new SessionRepository(getDatabase()).patchMetadata(req.sessionId, { team: req.config })
+    return { config: req.config }
+  })
+
+  typedIpcHandle('team:list-members', async (req) => {
+    const metadata = new SessionRepository(getDatabase()).getMetadata(req.sessionId)
+    const team = (metadata.team ?? null) as Partial<TeamModeConfig> | null
+    const hostAgentId = team?.hostAgentId ?? 'code-agent'
+    const memberIds = new Set(team?.memberAgentIds ?? [])
+    const agents = getAgentRepository().list({}).map(toManagedAgent)
+    const toCard = (a: ManagedAgent): TeamMemberCard => ({
+      agentId: a.id,
+      name: a.name,
+      description: a.description,
+      builtIn: a.builtIn,
+      providerProfileId: a.providerProfileId ?? null,
+      modelId: a.modelId ?? null,
+      avatar: deriveTeamAvatar(a.id, a.name),
+      capabilitiesSummary: a.description.slice(0, 240),
+    })
+    const members = agents.filter((a) => a.id !== hostAgentId && memberIds.has(a.id)).map(toCard)
+    const candidates = agents.filter((a) => a.id !== hostAgentId && !memberIds.has(a.id)).map(toCard)
+    // 顺带返回完整 TeamModeConfig 供前端恢复会话状态（团队模式开关 / 嵌套深度等）
+    const config: TeamModeConfig | null =
+      team != null
+        ? {
+            enabled: team.enabled === true,
+            hostAgentId,
+            memberAgentIds: Array.from(memberIds),
+            maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
+            allowNesting: team.allowNesting === true,
+          }
+        : null
+    return { hostAgentId, members, candidates, config }
+  })
+
+  typedIpcHandle('team:list-dispatches', async (req) => {
+    const repo = new TeamDispatchRepository(getDatabase())
+    const rows =
+      req.turnId != null ? repo.listByTurn(req.turnId) : repo.listBySession(req.sessionId, req.limit ?? 50)
+    const dispatches = rows.map((row) => ({
+      id: row.id,
+      state: row.state,
+      hostAgentId: row.host_agent_id,
+      memberAgentId: row.member_agent_id,
+      task: JSON.parse(row.task_json) as TeamA2ATask,
+      ...(row.reply_json != null ? { reply: JSON.parse(row.reply_json) as TeamA2AReply } : {}),
+      startedAt: row.started_at,
+      ...(row.ended_at != null ? { endedAt: row.ended_at } : {}),
+    }))
+    return { dispatches }
+  })
+
+  // ─── 长期团队定义 CRUD ──────────────────────────────────────────────────
+
+  typedIpcHandle('team:list-defs', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const teams = repo
+      .list(req.includeDisabled !== undefined ? { includeDisabled: req.includeDisabled } : {})
+      .map(toManagedTeam)
+    return { teams }
+  })
+
+  typedIpcHandle('team:get-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const team = repo.get(req.id)
+    return { team: team != null ? toManagedTeam(team) : null }
+  })
+
+  typedIpcHandle('team:create-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    // 自动剔除 hostAgentId 也在 memberAgentIds 中的情况（防"自调用自"）
+    const memberIds = (req.memberAgentIds ?? []).filter((id) => id !== req.hostAgentId)
+    const team = repo.create({
+      name: req.name,
+      ...(req.description !== undefined ? { description: req.description } : {}),
+      hostAgentId: req.hostAgentId,
+      memberAgentIds: memberIds,
+      ...(req.maxDepth !== undefined ? { maxDepth: req.maxDepth } : {}),
+      ...(req.allowNesting !== undefined ? { allowNesting: req.allowNesting } : {}),
+      ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
+      ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
+      ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
+    })
+    return { team: toManagedTeam(team) }
+  })
+
+  typedIpcHandle('team:update-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const existing = repo.get(req.id)
+    if (existing == null) throw new Error(`Team ${req.id} not found`)
+    // 解析新 host / members 后剔除 host 重叠
+    const nextHost = req.hostAgentId ?? existing.hostAgentId
+    let nextMembers: string[] | undefined
+    if (req.memberAgentIds !== undefined) {
+      nextMembers = req.memberAgentIds.filter((id) => id !== nextHost)
+    } else if (req.hostAgentId !== undefined && req.hostAgentId !== existing.hostAgentId) {
+      // 仅改 host 时也要把新 host 从原成员中移除
+      nextMembers = existing.memberAgentIds.filter((id) => id !== nextHost)
+    }
+    const team = repo.update(req.id, {
+      ...(req.name !== undefined ? { name: req.name } : {}),
+      ...(req.description !== undefined ? { description: req.description } : {}),
+      ...(req.hostAgentId !== undefined ? { hostAgentId: req.hostAgentId } : {}),
+      ...(nextMembers !== undefined ? { memberAgentIds: nextMembers } : {}),
+      ...(req.maxDepth !== undefined ? { maxDepth: req.maxDepth } : {}),
+      ...(req.allowNesting !== undefined ? { allowNesting: req.allowNesting } : {}),
+      ...(req.prompt !== undefined ? { prompt: req.prompt } : {}),
+      ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
+      ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
+    })
+    if (team == null) throw new Error(`Team ${req.id} not found after update`)
+    return { team: toManagedTeam(team) }
+  })
+
+  typedIpcHandle('team:delete-def', async (req) => {
+    const repo = new TeamDefinitionRepository(getDatabase())
+    const existing = repo.get(req.id)
+    if (existing == null) return { deleted: false }
+    if (existing.builtIn) throw new Error('内置团队不可删除，可在编辑面板停用或修改配置')
+    return { deleted: repo.delete(req.id) }
+  })
+
   // ─── Workflow Handlers ────────────────────────────────────────────────
 
   typedIpcHandle('workflow:list', async (req) => {
@@ -1496,6 +2228,54 @@ export function registerAllIpcHandlers(): void {
     throw new Error('Not implemented yet: skill:export-batch')
   })
 
+  // ─── App Skills Manager Handlers ─────────────────────────────────────────
+
+  typedIpcHandle('skill:install-to-app', async (req) => {
+    log.info(`skill:install-to-app requested, sourcePath=${req.sourcePath}`)
+    const manager = getAppSkillsManager()
+    const destPath = manager.installSkill(req.sourcePath)
+    // 安装后自动注册到数据库
+    const svc = getSkillService()
+    const skill = svc.importLocalDirectory(destPath, 'custom')
+    return { skill, destPath }
+  })
+
+  typedIpcHandle('skill:uninstall-from-app', async (req) => {
+    log.info(`skill:uninstall-from-app requested, name=${req.name}`)
+    const manager = getAppSkillsManager()
+    const success = manager.uninstallSkill(req.name)
+    return { success }
+  })
+
+  typedIpcHandle('skill:link', async (req) => {
+    log.info(`skill:link requested, targetPath=${req.targetPath}, name=${req.name}`)
+    const manager = getAppSkillsManager()
+    const linkPath = manager.linkSkill(req.targetPath, req.name)
+    // 链接后自动注册到数据库
+    const svc = getSkillService()
+    const skill = svc.importLocalDirectory(linkPath, 'linked')
+    return { skill, linkPath }
+  })
+
+  typedIpcHandle('skill:unlink', async (req) => {
+    log.info(`skill:unlink requested, name=${req.name}`)
+    const manager = getAppSkillsManager()
+    const success = manager.unlinkSkill(req.name)
+    return { success }
+  })
+
+  typedIpcHandle('skill:app-paths', async () => {
+    const manager = getAppSkillsManager()
+    return {
+      bundledDir: manager.bundledDir,
+      userDir: manager.userDir,
+      linksDir: manager.linksDir,
+      bundledSkills: manager.listBundledSkillNames(),
+      userSkills: manager.listUserSkillNames(),
+      linkedSkills: manager.listLinkedSkillNames(),
+    }
+  })
+
   // ─── Command Handlers ───────────────────────────────────────────────────────
 
   typedIpcHandle('command:execute', async (req) => {
@@ -1561,6 +2341,579 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('settings:get-all', async (_req) => {
     const settings = getSettingsService().getAll()
     return { settings }
+  })
+
+  // ─── Board Task Handlers ────────────────────────────────────────────────────
+
+  typedIpcHandle('board:list', async (req) => {
+    let tasks = readBoardTasks()
+    const includeDeleted = req.includeDeleted === true
+    if (!includeDeleted) tasks = tasks.filter((t) => !t.deletedAt)
+    if (req.status) tasks = tasks.filter((t) => t.status === req.status)
+    if (req.priority) tasks = tasks.filter((t) => t.priority === req.priority)
+    if (req.project) {
+      const p = req.project.toLowerCase()
+      tasks = tasks.filter((t) => t.project?.toLowerCase() === p)
+    }
+    if (req.assignee) {
+      const a = req.assignee.toLowerCase()
+      tasks = tasks.filter((t) => t.assignee?.toLowerCase().includes(a))
+    }
+    if (req.query) {
+      const q = req.query.toLowerCase()
+      tasks = tasks.filter((t) =>
+        t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
+      )
+    }
+    return { tasks, total: tasks.length }
+  })
+
+  typedIpcHandle('board:get', async (req) => {
+    const tasks = readBoardTasks()
+    const task = tasks.find((t) => t.id === req.id)
+    if (!task) throw new Error(`Task not found: ${req.id}`)
+    return { task }
+  })
+
+  typedIpcHandle('board:create', async (req) => {
+    const tasks = readBoardTasks()
+    const now = new Date().toISOString()
+    const status = req.status ?? 'todo'
+    // Auto-assign sortOrder: place at the end of the same-status column
+    const sortOrder = req.sortOrder ?? (() => {
+      const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
+      if (sameStatus.length === 0) return 0
+      return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
+    })()
+    const task: BoardTaskRecord = {
+      id: boardTaskUid(),
+      title: req.title ?? '',
+      description: req.description ?? '',
+      status,
+      priority: req.priority ?? 'medium',
+      assignee: req.assignee ?? '',
+      project: req.project ?? '',
+      tags: req.tags ?? [],
+      dueDate: req.dueDate ?? '',
+      processingAgent: req.processingAgent ?? '',
+      acceptanceCriteria: req.acceptanceCriteria ?? '',
+      testAgent: req.testAgent ?? '',
+      commentsJson: '[]',
+      attachmentsJson: JSON.stringify(req.attachments ?? []),
+      sortOrder,
+      createdAt: now,
+      updatedAt: now,
+      deletedAt: null,
+    }
+    tasks.push(task)
+    writeBoardTasks(tasks)
+    return { task }
+  })
+
+  typedIpcHandle('board:update', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.id)
+    if (idx === -1) throw new Error(`Task not found: ${req.id}`)
+    const base = tasks[idx]!
+    const now = new Date().toISOString()
+    const updated: BoardTaskRecord = {
+      id: base.id,
+      title: req.title !== undefined ? req.title : base.title,
+      description: req.description !== undefined ? req.description : base.description,
+      status: req.status !== undefined ? req.status : base.status,
+      priority: req.priority !== undefined ? req.priority : base.priority,
+      assignee: req.assignee !== undefined ? req.assignee : base.assignee,
+      project: req.project !== undefined ? req.project : base.project,
+      tags: req.tags !== undefined ? req.tags : base.tags,
+      dueDate: req.dueDate !== undefined ? req.dueDate : base.dueDate,
+      processingAgent: req.processingAgent !== undefined ? req.processingAgent : (base.processingAgent ?? ''),
+      acceptanceCriteria: req.acceptanceCriteria !== undefined ? req.acceptanceCriteria : (base.acceptanceCriteria ?? ''),
+      testAgent: req.testAgent !== undefined ? req.testAgent : (base.testAgent ?? ''),
+      commentsJson: base.commentsJson ?? '[]',
+      attachmentsJson: req.attachments !== undefined ? JSON.stringify(req.attachments) : (base.attachmentsJson ?? '[]'),
+      sortOrder: req.sortOrder !== undefined ? req.sortOrder : (base.sortOrder ?? 0),
+      createdAt: base.createdAt,
+      updatedAt: now,
+      deletedAt: base.deletedAt,
+    }
+    tasks[idx] = updated
+    writeBoardTasks(tasks)
+    return { task: updated }
+  })
+
+  typedIpcHandle('board:delete', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.id)
+    if (idx === -1) throw new Error(`Task not found: ${req.id}`)
+    const now = new Date().toISOString()
+    tasks[idx] = { ...tasks[idx], deletedAt: now, updatedAt: now } as BoardTaskRecord
+    writeBoardTasks(tasks)
+    return { success: true }
+  })
+
+  typedIpcHandle('board:batch-create', async (req) => {
+    const tasks = readBoardTasks()
+    const created: BoardTaskRecord[] = []
+    for (const item of req.tasks ?? []) {
+      const now = new Date().toISOString()
+      const status = item.status ?? 'todo'
+      const sortOrder = item.sortOrder ?? (() => {
+        const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
+        if (sameStatus.length === 0) return 0
+        return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
+      })()
+      const task: BoardTaskRecord = {
+        id: boardTaskUid(),
+        title: item.title ?? '',
+        description: item.description ?? '',
+        status,
+        priority: item.priority ?? 'medium',
+        assignee: item.assignee ?? '',
+        project: item.project ?? '',
+        tags: item.tags ?? [],
+        dueDate: item.dueDate ?? '',
+        processingAgent: item.processingAgent ?? '',
+        acceptanceCriteria: item.acceptanceCriteria ?? '',
+        testAgent: item.testAgent ?? '',
+        commentsJson: '[]',
+        attachmentsJson: JSON.stringify(item.attachments ?? []),
+        sortOrder,
+        createdAt: now,
+        updatedAt: now,
+        deletedAt: null,
+      }
+      tasks.push(task)
+      created.push(task)
+    }
+    writeBoardTasks(tasks)
+    return { created: created.length, tasks: created }
+  })
+
+  typedIpcHandle('board:batch-update', async (req) => {
+    const tasks = readBoardTasks()
+    const updated: BoardTaskRecord[] = []
+    for (const upd of req.updates ?? []) {
+      const idx = tasks.findIndex((t) => t.id === upd.id)
+      if (idx === -1) continue
+      const now = new Date().toISOString()
+      const base = tasks[idx]!
+      const task: BoardTaskRecord = {
+        id: base.id,
+        title: upd.title !== undefined ? upd.title : base.title,
+        description: upd.description !== undefined ? upd.description : base.description,
+        status: upd.status !== undefined ? upd.status : base.status,
+        priority: upd.priority !== undefined ? upd.priority : base.priority,
+        assignee: upd.assignee !== undefined ? upd.assignee : base.assignee,
+        project: upd.project !== undefined ? upd.project : base.project,
+        tags: upd.tags !== undefined ? upd.tags : base.tags,
+        dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
+        processingAgent: upd.processingAgent !== undefined ? upd.processingAgent : (base.processingAgent ?? ''),
+        acceptanceCriteria: upd.acceptanceCriteria !== undefined ? upd.acceptanceCriteria : (base.acceptanceCriteria ?? ''),
+        testAgent: upd.testAgent !== undefined ? upd.testAgent : (base.testAgent ?? ''),
+        commentsJson: base.commentsJson ?? '[]',
+        attachmentsJson: upd.attachments !== undefined ? JSON.stringify(upd.attachments) : (base.attachmentsJson ?? '[]'),
+        sortOrder: upd.sortOrder !== undefined ? upd.sortOrder : (base.sortOrder ?? 0),
+        createdAt: base.createdAt,
+        updatedAt: now,
+        deletedAt: base.deletedAt,
+      }
+      tasks[idx] = task
+      updated.push(task)
+    }
+    writeBoardTasks(tasks)
+    return { updated: updated.length, tasks: updated }
+  })
+
+  typedIpcHandle('board:batch-delete', async (req) => {
+    const tasks = readBoardTasks()
+    const now = new Date().toISOString()
+    let count = 0
+    for (const id of req.ids ?? []) {
+      const idx = tasks.findIndex((t) => t.id === id)
+      if (idx !== -1) {
+        tasks[idx] = { ...tasks[idx], deletedAt: now, updatedAt: now } as BoardTaskRecord
+        count++
+      }
+    }
+    writeBoardTasks(tasks)
+    return { deleted: count }
+  })
+
+  typedIpcHandle('board:restore', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.id)
+    if (idx === -1) throw new Error(`Task not found: ${req.id}`)
+    tasks[idx] = { ...tasks[idx], deletedAt: null, updatedAt: new Date().toISOString() } as BoardTaskRecord
+    writeBoardTasks(tasks)
+    return { task: tasks[idx] }
+  })
+
+  typedIpcHandle('board:permanent-delete', async (req) => {
+    const tasks = readBoardTasks()
+    const filtered = tasks.filter((t) => t.id !== req.id)
+    writeBoardTasks(filtered)
+    return { success: true }
+  })
+
+  // ─── Board Comments ──────────────────────────────────────────────────────
+
+  typedIpcHandle('board:comment:list', async (req) => {
+    const tasks = readBoardTasks()
+    const task = tasks.find((t) => t.id === req.taskId)
+    if (!task) throw new Error(`Task not found: ${req.taskId}`)
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    return { comments }
+  })
+
+  typedIpcHandle('board:comment:create', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.taskId)
+    if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
+    const task = tasks[idx]!
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    const comment = {
+      id: `cmt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      taskId: req.taskId,
+      author: req.author ?? '',
+      content: req.content,
+      createdAt: new Date().toISOString(),
+    }
+    comments.push(comment)
+    task.commentsJson = JSON.stringify(comments)
+    task.updatedAt = new Date().toISOString()
+    tasks[idx] = task
+    writeBoardTasks(tasks)
+    return { comment }
+  })
+
+  typedIpcHandle('board:comment:delete', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.taskId)
+    if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
+    const task = tasks[idx]!
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    const filtered = comments.filter((c) => c.id !== req.commentId)
+    task.commentsJson = JSON.stringify(filtered)
+    task.updatedAt = new Date().toISOString()
+    tasks[idx] = task
+    writeBoardTasks(tasks)
+    return { success: true }
+  })
+
+  typedIpcHandle('board:comment:update', async (req) => {
+    const tasks = readBoardTasks()
+    const idx = tasks.findIndex((t) => t.id === req.taskId)
+    if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
+    const task = tasks[idx]!
+    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
+      JSON.parse(task.commentsJson ?? '[]')
+    const cmt = comments.find((c) => c.id === req.commentId)
+    if (!cmt) throw new Error(`Comment not found: ${req.commentId}`)
+    cmt.content = req.content
+    task.commentsJson = JSON.stringify(comments)
+    task.updatedAt = new Date().toISOString()
+    tasks[idx] = task
+    writeBoardTasks(tasks)
+    return { comment: cmt }
+  })
+
+  // ─── Remote Connection Handlers ───────────────────────────────────────────
+
+  typedIpcHandle('remote:list', async () => {
+    const remote = getRemoteConnectionService()
+    const store = remote.list()
+    return {
+      connections: store.connections,
+      global: store.global,
+      commandCatalog: remote.getCommandCatalog(),
+    }
+  })
+
+  typedIpcHandle('remote:save', async (req) => {
+    const remote = getRemoteConnectionService()
+    const connection = remote.save(req.connection)
+    remote.syncRuntime()
+    return { connection }
+  })
+
+  typedIpcHandle('remote:delete', async (req) => {
+    const remote = getRemoteConnectionService()
+    const deleted = remote.delete(req.id)
+    remote.syncRuntime()
+    return { deleted }
+  })
+
+  typedIpcHandle('remote:test', async (req) => {
+    const remote = getRemoteConnectionService()
+    const result = remote.test(req.id)
+    remote.syncRuntime()
+    return result
+  })
+
+  typedIpcHandle('remote:create-bot-draft', async (req) => {
+    const result = getRemoteConnectionService().createBotDraft(req.channel, req.name)
+    if (req.openConsole === true) {
+      await shell.openExternal(result.consoleUrl)
+    }
+    return result
+  })
+
+  typedIpcHandle('remote:generate-pairing', async (req) => {
+    const remote = getRemoteConnectionService()
+    const result = remote.generatePairing(req.id, req.mode)
+    remote.syncRuntime()
+    return result
+  })
+
+  typedIpcHandle('remote:confirm-pairing', async (req) => {
+    const remote = getRemoteConnectionService()
+    const result = remote.confirmPairing(req)
+    remote.syncRuntime()
+    return result
+  })
+
+  typedIpcHandle('remote:command-catalog', async () => {
+    return { commands: getRemoteConnectionService().getCommandCatalog() }
+  })
+
+  typedIpcHandle('remote:execute-command', async (req) => {
+    return executeRemoteCommand(req.id, req.message, req.sessionId)
+  })
+
+  typedIpcHandle('remote:runtime-status', async () => {
+    return getRemoteConnectionService().getRuntimeStatus()
+  })
+
+  // ─── Scheduled Task Handlers ───────────────────────────────────────────────
+
+  typedIpcHandle('scheduled-task:list', async (req) => {
+    return { tasks: getScheduledTaskService().listTasks(req) }
+  })
+
+  typedIpcHandle('scheduled-task:get', async (req) => {
+    return { task: getScheduledTaskService().getTask(req.id) }
+  })
+
+  typedIpcHandle('scheduled-task:create', async (req) => {
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    const task = getScheduledTaskService().createTask({
+      id,
+      name: req.name,
+      description: req.description ?? '',
+      enabled: req.enabled !== false,
+      trigger_type: req.triggerType,
+      interval_seconds: req.intervalSeconds ?? null,
+      cron_expression: req.cronExpression ?? null,
+      run_at: req.runAt ?? null,
+      timezone: req.timezone ?? 'system',
+      start_at: req.startAt ?? null,
+      end_at: req.endAt ?? null,
+      max_executions: req.maxExecutions ?? 0,
+      agent_id: req.agentId ?? null,
+      team_id: req.teamId ?? null,
+      model_id: req.modelId ?? null,
+      workspace_id: req.workspaceId ?? null,
+      prompt_template: req.promptTemplate,
+      permission_mode: req.permissionMode ?? 'auto',
+      permission_profile_id: req.permissionProfileId ?? null,
+      timeout_seconds: req.timeoutSeconds ?? 300,
+      max_retries: req.maxRetries ?? 0,
+      retry_delay_seconds: req.retryDelaySeconds ?? 60,
+      retry_backoff: req.retryBackoff ?? 'fixed',
+      notifications: req.notifications ?? [],
+      concurrency_policy: req.concurrencyPolicy ?? 'skip',
+      tags: req.tags ?? [],
+      history_retention_days: req.historyRetentionDays ?? 30,
+    } as any)
+    return { task }
+  })
+
+  typedIpcHandle('scheduled-task:update', async (req) => {
+    const updateFields: Record<string, unknown> = {}
+    const fieldMap: Record<string, unknown> = {
+      name: req.name,
+      description: req.description,
+      trigger_type: req.triggerType,
+      interval_seconds: req.intervalSeconds,
+      cron_expression: req.cronExpression,
+      run_at: req.runAt,
+      timezone: req.timezone,
+      start_at: req.startAt,
+      end_at: req.endAt,
+      max_executions: req.maxExecutions,
+      agent_id: req.agentId,
+      team_id: req.teamId,
+      model_id: req.modelId,
+      workspace_id: req.workspaceId,
+      prompt_template: req.promptTemplate,
+      permission_mode: req.permissionMode,
+      permission_profile_id: req.permissionProfileId,
+      timeout_seconds: req.timeoutSeconds,
+      max_retries: req.maxRetries,
+      retry_delay_seconds: req.retryDelaySeconds,
+      retry_backoff: req.retryBackoff,
+      concurrency_policy: req.concurrencyPolicy,
+      history_retention_days: req.historyRetentionDays,
+    }
+    for (const [k, v] of Object.entries(fieldMap)) {
+      if (v !== undefined) updateFields[k] = v
+    }
+    if (req.enabled !== undefined) updateFields.enabled = req.enabled
+    if (req.notifications !== undefined) updateFields.notifications = req.notifications
+    if (req.tags !== undefined) updateFields.tags = req.tags
+    const task = getScheduledTaskService().updateTask(req.id, updateFields)
+    return { task }
+  })
+
+  typedIpcHandle('scheduled-task:delete', async (req) => {
+    const success = getScheduledTaskService().deleteTask(req.id)
+    return { success }
+  })
+
+  typedIpcHandle('scheduled-task:toggle', async (req) => {
+    const task = req.enabled
+      ? getScheduledTaskService().enableTask(req.id)
+      : getScheduledTaskService().disableTask(req.id)
+    return { task }
+  })
+
+  typedIpcHandle('scheduled-task:run-now', async (req) => {
+    const execution = await getScheduledTaskService().runNow(req.id)
+    return { execution }
+  })
+
+  typedIpcHandle('task-execution:list', async (req) => {
+    return getScheduledTaskService().getExecutions(req.taskId, {
+      page: req.page,
+      pageSize: req.pageSize,
+      status: req.status,
+    })
+  })
+
+  typedIpcHandle('task-execution:get', async (req) => {
+    return { execution: getScheduledTaskService().getExecution(req.id) }
+  })
+
+  typedIpcHandle('task-execution:cancel', async (req) => {
+    const success = getScheduledTaskService().cancelExecution(req.id)
+    return { success }
+  })
+
+  typedIpcHandle('task-execution:stats', async (req) => {
+    return { stats: getScheduledTaskService().getExecutionStats(req.taskId) }
+  })
+
+  // ─── Scheduled Task Import/Export Handlers ────────────────────────────────
+  //
+  // 流程（与 Provider 完全对齐）：
+  //   - 内存构造 ExportPayload                → `scheduled-task:export`
+  //   - 弹保存对话框写 .json                   → `scheduled-task:export-to-file`
+  //   - 弹打开对话框读 .json                   → `scheduled-task:import-from-file`
+  //   - 真正写库                                → `scheduled-task:import`
+  //
+  // 文件 IO 走 electron 的 dialog + node:fs/promises。
+  // 解析失败、IO 失败、版本不匹配都返回友好错误，UI 弹 toast。
+
+  typedIpcHandle('scheduled-task:export', async (req) => {
+    const count = req.ids.length
+    log.info(`scheduled-task:export requested, ids=${count}`)
+    const payload = getScheduledTaskService().exportTasks(req.ids)
+    return { payload }
+  })
+
+  typedIpcHandle('scheduled-task:import', async (req) => {
+    const total = req.payload.tasks.length
+    log.info(`scheduled-task:import requested, mode=${req.mode}, tasks=${total}`)
+    const result = await getScheduledTaskService().importTasks(req.payload, req.mode)
+    log.info(
+      `scheduled-task:import done, imported=${result.imported}, skipped=${result.skipped}, errors=${result.errors.length}`,
+    )
+    return result
+  })
+
+  typedIpcHandle('scheduled-task:export-to-file', async (req) => {
+    const count = req.ids.length
+    log.info(`scheduled-task:export-to-file requested, ids=${count}`)
+
+    const payload = getScheduledTaskService().exportTasks(req.ids)
+
+    // 默认文件名：spark-agent-tasks-YYYY-MM-DD.json
+    const datePart = new Date().toISOString().slice(0, 10)
+    const defaultName = `spark-agent-tasks-${datePart}.json`
+
+    const result = await dialog.showSaveDialog({
+      title: '导出定时任务',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePath == null || result.filePath.length === 0) {
+      log.info('scheduled-task:export-to-file canceled by user')
+      return { filePath: '', count: payload.tasks.length }
+    }
+
+    try {
+      const json = JSON.stringify(payload, null, 2)
+      await fs.writeFile(result.filePath, json, 'utf-8')
+      log.info(`scheduled-task:export-to-file wrote ${payload.tasks.length} tasks to ${result.filePath}`)
+      return { filePath: result.filePath, count: payload.tasks.length }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`scheduled-task:export-to-file write failed: ${message}`)
+      throw new Error(`写入文件失败：${message}`)
+    }
+  })
+
+  typedIpcHandle('scheduled-task:import-from-file', async () => {
+    log.info('scheduled-task:import-from-file requested')
+
+    const result = await dialog.showOpenDialog({
+      title: '选择定时任务配置文件',
+      properties: ['openFile'],
+      filters: [
+        { name: 'JSON', extensions: ['json'] },
+        { name: 'All Files', extensions: ['*'] },
+      ],
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      log.info('scheduled-task:import-from-file canceled by user')
+      return { payload: null, filePath: '' }
+    }
+
+    const filePath = result.filePaths[0]!
+    let raw: string
+    try {
+      raw = await fs.readFile(filePath, 'utf-8')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`scheduled-task:import-from-file read failed: ${message}`)
+      throw new Error(`读取文件失败：${message}`)
+    }
+
+    let json: unknown
+    try {
+      json = JSON.parse(raw)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.error(`scheduled-task:import-from-file parse failed: ${message}`)
+      throw new Error(`JSON 解析失败：${message}`)
+    }
+
+    const { ScheduledTaskExportPayloadSchema } = await import('@spark/protocol')
+    const parsed = ScheduledTaskExportPayloadSchema.parse(json)
+
+    log.info(
+      `scheduled-task:import-from-file parsed ${parsed.tasks.length} tasks, version=${parsed.version}`,
+    )
+
+    return { payload: parsed as ScheduledTaskExportPayload, filePath }
   })
 
   // ─── Usage Ledger Handlers ────────────────────────────────────────────────
@@ -1842,6 +3195,27 @@ export function registerAllIpcHandlers(): void {
       return { opened: false, error: errorMessage }
     }
     return { opened: true }
+  })
+
+  // ─── File Read Handler ────────────────────────────────────────────────
+
+  typedIpcHandle('file:read', async (req) => {
+    const filePath = req.filePath
+    if (!filePath || typeof filePath !== 'string') {
+      return { error: 'filePath is required' }
+    }
+
+    log.info(`file:read requested, path=${filePath}`)
+
+    try {
+      const fs = await import('node:fs/promises')
+      const content = await fs.readFile(filePath, 'utf-8')
+      return { content }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`file:read failed, path=${filePath}, error=${message}`)
+      return { error: message }
+    }
   })
 
   // ─── File Save Image Handler ──────────────────────────────────────────
@@ -2200,6 +3574,24 @@ function toWorkflowItem(workflow: StorageWorkflowItem): ProtocolWorkflowItem {
   return {
     ...workflow,
     graph: toWorkflowGraph(workflow.graph),
+  }
+}
+
+function toManagedTeam(team: StorageAgentTeamItem): ManagedTeam {
+  return {
+    id: team.id,
+    name: team.name,
+    description: team.description,
+    builtIn: team.builtIn,
+    enabled: team.enabled,
+    hostAgentId: team.hostAgentId,
+    memberAgentIds: team.memberAgentIds,
+    maxDepth: team.maxDepth,
+    allowNesting: team.allowNesting,
+    prompt: team.prompt,
+    metadata: team.metadata,
+    createdAt: team.createdAt,
+    updatedAt: team.updatedAt,
   }
 }
 

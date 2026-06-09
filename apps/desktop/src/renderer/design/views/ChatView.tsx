@@ -6,6 +6,7 @@
  * Session/workspace/provider data is read from SessionSidebarContext.
  */
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import './ChatView.less'
 import type { JSX, ReactNode, RefObject } from 'react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
@@ -31,12 +32,23 @@ import {
 import { SparkInput, SparkTextarea } from '../components/FormControls'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
+import { ClickableFilePath, extractFilePaths } from '../components/ClickableFilePath'
+import { FilePreviewPanel } from '../components/FilePreviewPanel'
+import { TeamDispatchCard } from '../components/TeamDispatchCard'
+import { TeamMemberBubble } from '../components/TeamMemberBubble'
+import { TeamInspectorSection } from '../components/TeamInspectorSection'
+import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
+import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
+import { AvatarImage } from '../components/AvatarImage'
+import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
+import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
+import { getAgentAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from '../avatar'
 import type { UIMessage, UIBlock, FileChangeSummary } from '../services/event-mapper'
 import type {
   AgentEvent,
@@ -58,11 +70,40 @@ import type {
   CommandListItem,
   TurnPromptSnapshotEvent,
   ManagedAgent,
+  ManagedTeam,
   SessionAttachment,
   UserQuestionPrompt,
   UserQuestionOption,
+  TeamModeConfig,
+  TeamMemberEventContext,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
+
+const SETTINGS_GENERAL_KEY = 'spark-settings-general'
+
+/**
+ * resolveTeamHostAgentId — 解析团队模式下要使用的主持 Agent。
+ *
+ * 团队模式启用但主持人未显式选择时（如新会话/首次开启/旧 host 已被删除），
+ * 后端会收到一个无效的 hostAgentId，导致 LLM 因缺少调度工具而报
+ * "无法直接调度其他 Agent 并行开发代码" 的错。这里给出明确的回退链：
+ *   1. teamConfig.hostAgentId 已在 agents 列表里 → 直接用
+ *   2. 团队 memberAgentIds 中第一个在 agents 列表里的 → 用它
+ *   3. agents 列表第一个 → 用它
+ *   4. 保留 teamConfig.hostAgentId（即使不在列表，给后端兜底）
+ *   5. 最终兜底 'code-agent'
+ */
+function resolveTeamHostAgentId(teamConfig: TeamModeConfig, agents: ManagedAgent[]): string {
+  const isValid = (id: string | undefined): id is string =>
+    typeof id === 'string' && id.length > 0 && agents.some((agent) => agent.id === id)
+  if (isValid(teamConfig.hostAgentId)) return teamConfig.hostAgentId
+  for (const memberId of teamConfig.memberAgentIds) {
+    if (isValid(memberId)) return memberId
+  }
+  const firstAgent = agents[0]
+  if (firstAgent != null) return firstAgent.id
+  return teamConfig.hostAgentId || 'code-agent'
+}
 
 type BranchState = { currentBranch: string | null; branches: string[] }
 type AgentAdapter = SessionAgentAdapter
@@ -81,6 +122,12 @@ type ComposerPrefs = {
   permissionMode?: PermissionModeChoice
   reasoningEffort?: SessionReasoningEffort
   agentId?: string
+  /** Team Mode：是否启用团队模式（设计文档 §5.1 持久化到 composer-prefs） */
+  teamMode?: boolean
+  /** Team Mode：上次使用的 Host Agent */
+  teamHostAgentId?: string
+  /** Team Mode：上次勾选的成员 Agent */
+  teamMemberAgentIds?: string[]
 }
 
 type SessionRuntimePatch = {
@@ -134,6 +181,13 @@ type ContextMenuItem = {
   disabled?: boolean
   onClick?: () => void
 }
+type ReplyToState = {
+  messageId: string
+  role: 'user' | 'assistant'
+  agentId?: string
+  agentName?: string
+  contentPreview: string
+}
 type TextEditMenuState = {
   x: number
   y: number
@@ -186,6 +240,15 @@ const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const SESSION_HISTORY_PAGE_SIZE = 500
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
+/**
+ * Cache for AskUserQuestion answers submitted by the user.
+ * Keyed by all question texts joined with NUL.
+ * Populated when the user clicks Submit in the dock, consumed by
+ * InlineQuestionCard as a fallback when the CLI tool_result output
+ * can't be parsed into structured answer summaries.
+ */
+const questionAnswerCache = new Map<string, Array<{ question: string; answer: string; skipped?: boolean }>>()
+
 export function ChatView({
   approvalRequest = null,
   onApprovalClose,
@@ -193,6 +256,7 @@ export function ChatView({
   onUserQuestionClose,
 }: ChatViewProps = {}) {
   const { t } = useApp()
+  const appearance = useAppearanceSettings()
   // ── Shared state from SessionSidebarContext ──
   const sessionCtx = useSessionSidebar()
   const active = sessionCtx.activeSessionId
@@ -210,6 +274,74 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
+  // Team Mode 配置。
+  // 双层持久化（设计文档 §5.1）：
+  //   - composer-prefs(localStorage)：全局「上次使用」默认，新会话/无会话时回落。
+  //   - sessions.metadata.team(IPC team:update)：会话级权威来源，Phase 3 运行时读取。
+  const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
+  const { invoke: listTeamMembers } = useIpcInvoke('team:list-members')
+  const defaultTeamConfig = useCallback((): TeamModeConfig => {
+    const prefs = readComposerPrefs()
+    const memberIds = prefs.teamMemberAgentIds ?? []
+    const candidateHost =
+      prefs.teamHostAgentId ??
+      memberIds.find((id) => agents.some((agent) => agent.id === id)) ??
+      agents[0]?.id ??
+      prefs.agentId ??
+      'code-agent'
+    return {
+      enabled: prefs.teamMode ?? false,
+      hostAgentId: candidateHost,
+      memberAgentIds: memberIds,
+      maxDepth: 1,
+      allowNesting: false,
+    }
+  }, [agents])
+  const [teamConfig, setTeamConfig] = useState<TeamModeConfig>(defaultTeamConfig)
+  const updateTeamConfig = useCallback(
+    (patch: Partial<TeamModeConfig>) => {
+      setTeamConfig((prev) => {
+        const next = { ...prev, ...patch }
+        writeComposerPrefs({
+          teamMode: next.enabled,
+          teamHostAgentId: next.hostAgentId,
+          teamMemberAgentIds: next.memberAgentIds,
+        })
+        // 有活跃会话时，把配置写入该会话 metadata（供运行时与重开会话恢复）
+        if (active != null) {
+          void persistTeamConfig({ sessionId: active as SessionId, config: next }).catch(() => {})
+        }
+        return next
+      })
+    },
+    [active, persistTeamConfig],
+  )
+  // 团队模式下，最终用于指派的主持 Agent（hostAgentId 解析结果）；
+  // hostAgentId 可能因为旧 host 被删除而失效，因此渲染/sendTurn 都用此值。
+  const effectiveHostAgentId = teamConfig.enabled
+    ? resolveTeamHostAgentId(teamConfig, agents)
+    : null
+  // 切换 active session 时从 metadata 拉取会话级 team config 回显；
+  // 历史团队会话能正常恢复底部参数与右侧 Inspector 的团队信息。
+  useEffect(() => {
+    if (active == null) {
+      setTeamConfig(defaultTeamConfig())
+      return
+    }
+    let cancelled = false
+    void listTeamMembers({ sessionId: active as SessionId })
+      .then((res) => {
+        if (cancelled) return
+        if (res.config != null) setTeamConfig(res.config)
+        else setTeamConfig(defaultTeamConfig())
+      })
+      .catch(() => {
+        if (!cancelled) setTeamConfig(defaultTeamConfig())
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [active, listTeamMembers, defaultTeamConfig])
   const [agentStatus, setAgentStatus] = useState('')
   const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
@@ -229,7 +361,14 @@ export function ChatView({
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [clearTrigger, setClearTrigger] = useState(0)
+  const [replyTo, setReplyTo] = useState<ReplyToState | null>(null)
   const { toast } = useToast()
+
+  // ── 文件预览状态 ──
+  const [filePreview, setFilePreview] = useState<{
+    filePath: string
+    fileType: 'markdown' | 'html' | 'image' | 'text'
+  } | null>(null)
 
   // ── IPC hooks (only those NOT duplicated in context) ──
   const { invoke: clearEvents } = useIpcInvoke('session:clear-events')
@@ -245,6 +384,37 @@ export function ChatView({
   const handleAnswerQuestion = useCallback(
     async (answers: Record<string, unknown>) => {
       if (userQuestion == null) return
+      // Build answer summaries from the submitted answers so the
+      // InlineQuestionCard can display them immediately, before the
+      // tool_result event arrives from the CLI.
+      const rawList = Array.isArray(answers.answers) ? answers.answers : []
+      const summaries = userQuestion.questions
+        .map((q, i) => {
+          const raw = rawList[i] as Record<string, unknown> | undefined
+          if (raw == null || typeof raw !== 'object') return null
+          const text =
+            typeof raw.answer === 'string'
+              ? raw.answer
+              : typeof raw.text === 'string'
+                ? raw.text
+                : ''
+          if (!text && raw.skipped !== true) return null
+          return {
+            question: q.question,
+            answer: text,
+            ...(raw.skipped === true ? { skipped: true } : {}),
+          }
+        })
+        .filter(
+          (item): item is { question: string; answer: string; skipped?: boolean } =>
+            item != null,
+        )
+      if (summaries.length > 0) {
+        questionAnswerCache.set(
+          userQuestion.questions.map((q) => q.question).join('\0'),
+          summaries,
+        )
+      }
       await answerQuestion({ questionId: userQuestion.questionId, answers })
       onUserQuestionClose?.(userQuestion.sessionId, userQuestion.questionId)
     },
@@ -275,6 +445,13 @@ export function ChatView({
       })
       .catch(console.error)
   }, [active, clearEvents, sessionCtx])
+
+  const handleFilePreview = useCallback(
+    (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => {
+      setFilePreview({ filePath, fileType })
+    },
+    [],
+  )
 
   const pickProjectFolder = useCallback(async () => {
     try {
@@ -370,8 +547,23 @@ export function ChatView({
     }
   }
 
+  const handleReplyTo = useCallback(
+    (msg: UIMessage, agentId?: string, agentName?: string) => {
+      const preview = extractTextFromBlocks(msg.blocks).slice(0, 80).replace(/\n/g, ' ')
+      setReplyTo({
+        messageId: msg.id,
+        role: msg.role,
+        ...(agentId != null ? { agentId } : {}),
+        ...(agentName != null ? { agentName } : {}),
+        contentPreview: preview || '(附件/图片)',
+      })
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [],
+  )
+
   return (
-    <div className="chat-layout chat-layout-no-sidebar">
+    <div className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}>
 
       <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`} ref={chatAreaRef}>
         {showEmptyHero && (
@@ -384,7 +576,7 @@ export function ChatView({
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
         {showEmptyHero && (
-          <h1 className="chat-hero-title">Spark Agent，让工作更简单。</h1>
+          <h1 className="chat-hero-title">Spark Agent，ready to do something！</h1>
         )}
 
         {active == null ? (
@@ -415,6 +607,11 @@ export function ChatView({
               onPickProject={pickProjectFolder}
               onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
+              teamConfig={teamConfig}
+              effectiveHostAgentId={effectiveHostAgentId}
+              onChangeTeamConfig={updateTeamConfig}
+              onOpenTeamInspector={() => setShowInspector(true)}
+              replyTo={null}
             />
           </div>
         ) : (
@@ -443,6 +640,8 @@ export function ChatView({
               onPlanProposed={setProposedPlan}
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
+              teamConfig={teamConfig}
+              onFilePreview={handleFilePreview}
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -477,6 +676,12 @@ export function ChatView({
               onPickProject={pickProjectFolder}
               onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
               onSwitchWorkspace={switchToWorkspace}
+              teamConfig={teamConfig}
+              effectiveHostAgentId={effectiveHostAgentId}
+              onChangeTeamConfig={updateTeamConfig}
+              onOpenTeamInspector={() => setShowInspector(true)}
+              replyTo={replyTo}
+              onClearReply={() => setReplyTo(null)}
             />
           </>
         )}
@@ -488,6 +693,12 @@ export function ChatView({
           workspace={activeWorkspace}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
+          {...(() => {
+            const aid = teamConfig.enabled
+              ? (effectiveHostAgentId ?? teamConfig.hostAgentId)
+              : (activeSession?.agentId ?? undefined)
+            return aid != null ? { agentId: aid } : {}
+          })()}
         />
       )}
 
@@ -504,6 +715,9 @@ export function ChatView({
           turnPromptSnapshots={turnPromptSnapshots}
           width={inspectorWidth}
           onWidthChange={setInspectorWidth}
+          teamConfig={teamConfig}
+          agents={agents}
+          onChangeTeamConfig={updateTeamConfig}
           onOpenProjectFolder={() => {
             if (activeWorkspace) void sessionCtx.handleOpenProjectFolder(activeWorkspace)
           }}
@@ -515,6 +729,14 @@ export function ChatView({
           sessionId={active}
           plan={proposedPlan}
           onClose={() => setProposedPlan(null)}
+        />
+      )}
+
+      {filePreview != null && (
+        <FilePreviewPanel
+          filePath={filePreview.filePath}
+          fileType={filePreview.fileType}
+          onClose={() => setFilePreview(null)}
         />
       )}
     </div>
@@ -784,6 +1006,9 @@ function ChatStream({
   onPlanProposed,
   onTurnPromptSnapshotsChange,
   clearTrigger,
+  teamConfig,
+  onReplyTo,
+  onFilePreview,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -797,10 +1022,15 @@ function ChatStream({
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
+  teamConfig: TeamModeConfig
+  onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [agentIsRunning, setAgentIsRunning] = useState(false)
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false)
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false)
   const builderRef = useRef(new MessageBuilder())
   const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
@@ -818,6 +1048,14 @@ function ChatStream({
   })
   const { invoke: getHistory } = useIpcInvoke('session:get-history')
   const { invoke: deleteMessageEvents } = useIpcInvoke('session:delete-message')
+  const userAvatarSrc = useUserAvatarSrc()
+  const { sessions, agents } = useSessionSidebar()
+  const session = sessions.find((item) => item.id === sessionId)
+  const assistantAgentId = teamConfig.enabled ? teamConfig.hostAgentId : (session?.agentId ?? 'code-agent')
+  const assistantAgent = agents.find((item) => item.id === assistantAgentId)
+  const assistantName = assistantAgent?.name ?? 'Spark Agent'
+  const assistantAvatar = getAgentAvatarConfig(assistantAgent?.metadata, assistantAgentId, assistantName)
+  const assistantAvatarSrc = resolveAvatarSrc(assistantAvatar)
 
   // ── 会话消息缓存：避免切换时从空白开始 ──
   // 缓存每个会话最后渲染的消息列表，切回时立即显示缓存内容，再异步更新
@@ -836,17 +1074,19 @@ function ChatStream({
     // 1) 立即展示缓存，避免空白闪烁
     const cached = sessionCacheRef.current.get(sessionId)
     if (cached != null) {
-      const cachedBuilder = new MessageBuilder()
-      // 从缓存的 messages 无法精确重建 builder，但可以立即显示
       setMessages(cached.messages)
       onMessagesChange(cached.messages)
       onStatusChange(cached.status)
       setAgentIsRunning(cached.status === 'running')
       usageRef.current = cached.usage
       onUsageDataChange(cached.usage)
+      setIsLoadingHistory(false)
+    } else {
+      // 无缓存时立即清空旧消息并显示加载状态，避免 header 已变但内容仍为旧会话
+      setMessages([])
+      onMessagesChange([])
+      setIsLoadingHistory(true)
     }
-    // 首次进入的会话，不立即清空消息，等待历史加载完成后再更新
-    // 这样可以避免闪屏：新会话历史为空会设置为 []，有历史的会话会显示加载的内容
 
     isStreamingRef.current = false
     userScrolledRef.current = false
@@ -854,84 +1094,82 @@ function ChatStream({
     onProjectContextChange(null)
     onTurnPromptSnapshotsChange([])
 
-    // 2) 异步从 SQLite 加载完整历史并更新
-    const timer = window.setTimeout(() => {
-      loadCompleteSessionHistory(getHistory, sessionId)
-        .then((historyEvents) => {
-          if (cancelled || historyLoadIdRef.current !== loadId) return
-          const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
-          const hydratedBuilder = new MessageBuilder()
-          for (const event of events) hydratedBuilder.processEvent(event)
-          builderRef.current = hydratedBuilder
-          const nextMessages = hydratedBuilder.getAllMessages()
-          setMessages(nextMessages)
-          onMessagesChange(nextMessages)
-          onUsageChange(getLatestInputTokens(events))
-          const historyUsage = buildUsageDataFromEvents(events)
-          usageRef.current = historyUsage
-          onUsageDataChange(historyUsage)
-          // 更新缓存
-          const latestStatus = getLatestAgentStatus(events)
-          const statusStr =
-            latestStatus != null
-              ? isRunningAgentStatus(latestStatus)
-                ? 'running'
-                : latestStatus === 'error'
-                  ? 'error'
-                  : ''
-              : ''
-          setAgentIsRunning(isRunningAgentStatus(latestStatus))
-          sessionCacheRef.current.set(sessionId, {
-            messages: nextMessages,
-            usage: historyUsage,
-            status: statusStr,
+    // 2) 立即开始异步加载（不再用 setTimeout(0) 延迟）
+    loadCompleteSessionHistory(getHistory, sessionId)
+      .then((historyEvents) => {
+        if (cancelled || historyLoadIdRef.current !== loadId) return
+        const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
+        const hydratedBuilder = new MessageBuilder()
+        for (const event of events) hydratedBuilder.processEvent(event)
+        builderRef.current = hydratedBuilder
+        const nextMessages = hydratedBuilder.getAllMessages()
+        setMessages(nextMessages)
+        onMessagesChange(nextMessages)
+        onUsageChange(getLatestInputTokens(events))
+        const historyUsage = buildUsageDataFromEvents(events)
+        usageRef.current = historyUsage
+        onUsageDataChange(historyUsage)
+        // 更新缓存
+        const latestStatus = getLatestAgentStatus(events)
+        const statusStr =
+          latestStatus != null
+            ? isRunningAgentStatus(latestStatus)
+              ? 'running'
+              : latestStatus === 'error'
+                ? 'error'
+                : ''
+            : ''
+        setAgentIsRunning(isRunningAgentStatus(latestStatus))
+        sessionCacheRef.current.set(sessionId, {
+          messages: nextMessages,
+          usage: historyUsage,
+          status: statusStr,
+        })
+        if (latestStatus != null)
+          applyAgentStatus(
+            latestStatus,
+            onStatusChange,
+            onSessionStatusChange,
+            isStreamingRef,
+            userScrolledRef,
+          )
+        const latestContext = getLatestContextUsageEvent(events)
+        if (latestContext != null) {
+          onContextUsageChange({
+            estimatedTokens: latestContext.estimatedTokens,
+            softLimitTokens: latestContext.softLimitTokens,
+            contextWindowTokens: latestContext.contextWindowTokens,
+            compactedThisTurn: latestContext.compacted,
           })
-          if (latestStatus != null)
-            applyAgentStatus(
-              latestStatus,
-              onStatusChange,
-              onSessionStatusChange,
-              isStreamingRef,
-              userScrolledRef,
-            )
-          const latestContext = getLatestContextUsageEvent(events)
-          if (latestContext != null) {
-            onContextUsageChange({
-              estimatedTokens: latestContext.estimatedTokens,
-              softLimitTokens: latestContext.softLimitTokens,
-              contextWindowTokens: latestContext.contextWindowTokens,
-              compactedThisTurn: latestContext.compacted,
-            })
+        }
+        onProjectContextChange(getLatestProjectContextEvent(events))
+        onTurnPromptSnapshotsChange(hydratedBuilder.getTurnPromptSnapshots())
+      })
+      .catch((err) => {
+        console.error('Failed to load session history:', err)
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          // 历史加载失败，使用缓冲的 live 事件回退
+          const bufferedEvents = bufferedEventsRef.current
+          if (bufferedEvents.length > 0) {
+            const fallbackBuilder = new MessageBuilder()
+            for (const event of bufferedEvents) fallbackBuilder.processEvent(event)
+            builderRef.current = fallbackBuilder
+            const fallbackMessages = fallbackBuilder.getAllMessages()
+            setMessages(fallbackMessages)
+            onMessagesChange(fallbackMessages)
           }
-          onProjectContextChange(getLatestProjectContextEvent(events))
-          onTurnPromptSnapshotsChange(hydratedBuilder.getTurnPromptSnapshots())
-        })
-        .catch((err) => {
-          console.error('Failed to load session history:', err)
-          if (!cancelled && historyLoadIdRef.current === loadId) {
-            // 历史加载失败，使用缓冲的 live 事件回退
-            const bufferedEvents = bufferedEventsRef.current
-            if (bufferedEvents.length > 0) {
-              const fallbackBuilder = new MessageBuilder()
-              for (const event of bufferedEvents) fallbackBuilder.processEvent(event)
-              builderRef.current = fallbackBuilder
-              const fallbackMessages = fallbackBuilder.getAllMessages()
-              setMessages(fallbackMessages)
-              onMessagesChange(fallbackMessages)
-            }
-          }
-        })
-        .finally(() => {
-          if (!cancelled && historyLoadIdRef.current === loadId) {
-            hydratingRef.current = false
-            bufferedEventsRef.current = []
-          }
-        })
-    }, 0)
+        }
+      })
+      .finally(() => {
+        if (!cancelled && historyLoadIdRef.current === loadId) {
+          hydratingRef.current = false
+          bufferedEventsRef.current = []
+          setIsLoadingHistory(false)
+        }
+      })
 
     return () => {
       cancelled = true
-      window.clearTimeout(timer)
       // 离开当前会话时，保存消息到缓存
       const currentMessages = builderRef.current.getAllMessages()
       if (currentMessages.length > 0) {
@@ -1007,6 +1245,7 @@ function ChatStream({
       const threshold = 80
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
       userScrolledRef.current = distanceFromBottom > threshold
+      setShowScrollToBottom(distanceFromBottom > threshold)
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
@@ -1061,6 +1300,7 @@ function ChatStream({
       // Track user_message to reset scroll tracking
       if (event.type === 'user_message') {
         userScrolledRef.current = false
+        setShowScrollToBottom(false)
         isStreamingRef.current = true
         setAgentIsRunning(true)
       }
@@ -1126,7 +1366,10 @@ function ChatStream({
     const el = streamRef.current
     if (!el) return
     if (!userScrolledRef.current) {
-      el.scrollTop = el.scrollHeight
+      // rAF 确保在 DOM 更新后再滚动，避免滚动位置不准确
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight
+      })
     }
   }, [messages, agentIsRunning])
 
@@ -1149,6 +1392,14 @@ function ChatStream({
     [deleteMessageEvents, sessionId, onMessagesChange],
   )
 
+  const handleScrollToBottom = useCallback(() => {
+    const el = streamRef.current
+    if (!el) return
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+    userScrolledRef.current = false
+    setShowScrollToBottom(false)
+  }, [])
+
   return (
     <div className="chat-stream" ref={streamRef}>
       <div className="chat-stream-inner">
@@ -1158,30 +1409,39 @@ function ChatStream({
               key={msg.id}
               timestamp={msg.timestamp}
               blocks={msg.blocks}
+              avatarSrc={userAvatarSrc}
               {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+              {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                ? {
+                    mentionAgentName:
+                      agents.find((a) => a.id === msg.mentionAgentId)?.name ?? msg.mentionAgentId,
+                  }
+                : {})}
               onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+              {...(onReplyTo != null ? { onReply: () => onReplyTo(msg) } : {})}
             >
-              {renderBlocks(msg.blocks)}
+              {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
             </UserMsg>
-          ) : msg.status === 'streaming' ? (
-            <AgentMsg
-              key={msg.id}
-              sessionId={sessionId}
-              status="running"
-              blocks={msg.blocks}
-              messageStatus={msg.status}
-              isLatest={index === messages.length - 1}
-              timestamp={msg.timestamp}
-            />
           ) : (
-            <AgentMsg
+            <AssistantMessageRows
               key={msg.id}
               sessionId={sessionId}
               blocks={msg.blocks}
               messageStatus={msg.status}
               isLatest={index === messages.length - 1}
-              timestamp={msg.timestamp}
-              onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+              assistantId={assistantAgentId}
+              assistantName={assistantName}
+              assistantAvatarSrc={assistantAvatarSrc}
+              usage={msg.usage}
+              {...(onFilePreview != null ? { onFilePreview } : {})}
+              {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+              {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+              {...(msg.status !== 'streaming'
+                ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                : {})}
+              {...(onReplyTo != null && msg.status !== 'streaming'
+                ? { onReply: () => onReplyTo(msg, assistantAgentId, assistantName) }
+                : {})}
             />
           ),
         )}
@@ -1193,20 +1453,45 @@ function ChatStream({
             blocks={[]}
             messageStatus="streaming"
             isLatest
+            assistantId={assistantAgentId}
+            assistantName={assistantName}
+            assistantAvatarSrc={assistantAvatarSrc}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
           />
         )}
         {messages.length === 0 && !showWaitingAgent && (
           <div className="chat-stream-empty-state">
             <div className="empty-state">
-              <div className="empty-icon">
-                <Icons.Chat size={24} />
-              </div>
-              <div className="empty-title">开始对话</div>
-              <div className="empty-desc">发送消息开始与 AI 交互</div>
+              {isLoadingHistory ? (
+                <>
+                  <div className="empty-icon loading-icon">
+                    <Icons.Spinner size={24} />
+                  </div>
+                  <div className="empty-title">加载中…</div>
+                </>
+              ) : (
+                <>
+                  <div className="empty-icon">
+                    <Icons.Chat size={24} />
+                  </div>
+                  <div className="empty-title">开始对话</div>
+                  <div className="empty-desc">发送消息开始与 AI 交互</div>
+                </>
+              )}
             </div>
           </div>
         )}
       </div>
+      {showScrollToBottom && (
+        <button
+          className="scroll-to-bottom-btn"
+          onClick={handleScrollToBottom}
+          title="滚动到底部"
+          aria-label="滚动到底部"
+        >
+          <Icons.ChevronDown size={18} />
+        </button>
+      )}
     </div>
   )
 }
@@ -1336,7 +1621,7 @@ function applyAgentStatus(
 
 function renderBlocks(
   blocks: UIBlock[],
-  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId } = {},
+  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
   return blocks.map((block, i) => {
@@ -1344,7 +1629,7 @@ function renderBlocks(
       case 'text':
         return (
           <div key={i} className="md-surface">
-            <MarkdownText content={block.content} isStreaming={block.isStreaming} />
+            <MarkdownText content={block.content} isStreaming={block.isStreaming} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
           </div>
         )
       case 'thinking':
@@ -1355,6 +1640,9 @@ function renderBlocks(
           </details>
         )
       case 'tool_call': {
+        if (isHiddenTimelineBlock(block)) {
+          return null
+        }
         const toolStatus =
           block.status === 'success'
             ? ('ok' as const)
@@ -1543,9 +1831,176 @@ function renderBlocks(
           </div>
         )
       }
+      case 'team_dispatch': {
+        return <TeamDispatchBlockView key={i} block={block} />
+      }
+      case 'team_member_message': {
+        return <TeamMemberMessageBlockView key={i} block={block} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
+      }
       default:
         return null
     }
+  })
+}
+
+/** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
+function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
+  const { agents } = useSessionSidebar()
+  const memberName = agents.find((a) => a.id === block.memberAgentId)?.name ?? block.memberAgentId
+  return (
+    <TeamDispatchCard
+      task={block.task}
+      memberName={memberName}
+      state={block.state}
+      {...(block.reply != null ? { reply: block.reply } : {})}
+    />
+  )
+}
+
+function TeamMemberMessageBlockView({
+  block,
+  onFilePreview,
+}: {
+  block: Extract<UIBlock, { kind: 'team_member_message' }>
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+}) {
+  const { agents } = useSessionSidebar()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerAgentId, setDrawerAgentId] = useState<string | null>(null)
+  const member = agents.find((a) => a.id === block.memberAgentId)
+  const memberName = member?.name ?? block.memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
+  const running = block.isStreaming
+  return (
+    <>
+      <TeamMemberBubble
+        memberAgentId={block.memberAgentId}
+        memberName={memberName}
+        avatarSrc={resolveAvatarSrc(avatar)}
+        running={running}
+        onOpenDetail={() => setDrawerOpen(true)}
+      >
+        <MarkdownText content={block.content} isStreaming={block.isStreaming} agents={agents.map(a => ({ id: a.id, name: a.name }))} onMentionClick={(agentId) => { setDrawerAgentId(agentId); setDrawerOpen(true) }} {...(onFilePreview != null ? { onFilePreview } : {})} />
+      </TeamMemberBubble>
+      {drawerOpen && drawerAgentId && (() => {
+        const mentionedAgent = agents.find(a => a.id === drawerAgentId)
+        const mentionedName = mentionedAgent?.name ?? drawerAgentId
+        const mentionedAvatar = getAgentAvatarConfig(mentionedAgent?.metadata, drawerAgentId, mentionedName)
+        return (
+          <TeamMemberDrawer
+            member={{
+              agentId: drawerAgentId,
+              name: mentionedName,
+              description: mentionedAgent?.description ?? '',
+              providerProfileId: mentionedAgent?.providerProfileId ?? null,
+              modelId: mentionedAgent?.modelId ?? null,
+              skillCount: mentionedAgent?.skillIds.length ?? 0,
+              mcpCount: mentionedAgent?.mcpServerIds.length ?? 0,
+              avatarSrc: resolveAvatarSrc(mentionedAvatar),
+            }}
+            onClose={() => { setDrawerOpen(false); setDrawerAgentId(null) }}
+          />
+        )
+      })()}
+    </>
+  )
+}
+
+function TeamMemberActivityBlockView({
+  memberAgentId,
+  blocks,
+  running,
+  sessionId,
+  onFilePreview,
+}: {
+  memberAgentId: string
+  blocks: UIBlock[]
+  running: boolean
+  sessionId: SessionId
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+}) {
+  const { agents } = useSessionSidebar()
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const member = agents.find((a) => a.id === memberAgentId)
+  const memberName = member?.name ?? memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, memberAgentId, memberName)
+
+  return (
+    <>
+      <TeamMemberBubble
+        memberAgentId={memberAgentId}
+        memberName={memberName}
+        avatarSrc={resolveAvatarSrc(avatar)}
+        running={running}
+        onOpenDetail={() => setDrawerOpen(true)}
+      >
+        {renderTeamMemberActivityBlocks(blocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}
+      </TeamMemberBubble>
+      {drawerOpen && (
+        <TeamMemberDrawer
+          member={{
+            agentId: memberAgentId,
+            name: memberName,
+            description: member?.description ?? '',
+            providerProfileId: member?.providerProfileId ?? null,
+            modelId: member?.modelId ?? null,
+            skillCount: member?.skillIds.length ?? 0,
+            mcpCount: member?.mcpServerIds.length ?? 0,
+            avatarSrc: resolveAvatarSrc(avatar),
+          }}
+          onClose={() => setDrawerOpen(false)}
+        />
+      )}
+    </>
+  )
+}
+
+function renderTeamMemberActivityBlocks(
+  blocks: UIBlock[],
+  options: { sessionId: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void },
+): ReactNode {
+  const logBlocks = blocks.filter(isTeamMemberLogBlock)
+  const resultBlocks = blocks.filter((block) => !isTeamMemberLogBlock(block))
+
+  return (
+    <>
+      {logBlocks.length > 0 && (
+        <details className="team-member-log-panel">
+          <summary>
+            <Icons.Wrench size={12} />
+            <span>执行日志</span>
+            <span className="team-member-log-count">{logBlocks.length}</span>
+          </summary>
+          <div className="team-member-log-body">
+            {renderBlocks(logBlocks, { ...options, surface: 'inspector' })}
+          </div>
+        </details>
+      )}
+      {resultBlocks.map((block, index) => {
+        if (block.kind === 'team_member_message') {
+          if (block.content.trim().length === 0) return null
+          return (
+            <div key={index} className="md-surface">
+              <MarkdownText content={block.content} isStreaming={block.isStreaming} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
+            </div>
+          )
+        }
+        return renderBlocks([block], options)
+      })}
+    </>
+  )
+}
+
+function isTeamMemberLogBlock(block: UIBlock): boolean {
+  return block.kind === 'tool_call' || block.kind === 'terminal' || block.kind === 'file_change'
+}
+
+function isTeamMemberActivityRunning(blocks: UIBlock[]): boolean {
+  return blocks.some((block) => {
+    if (block.kind === 'team_member_message') return block.isStreaming
+    if (block.kind === 'tool_call') return block.status === 'pending' || block.status === 'running'
+    if (block.kind === 'terminal') return block.isStreaming
+    return false
   })
 }
 
@@ -1880,8 +2335,32 @@ function InlineQuestionCard({
 }) {
   if (block.questions.length === 0) return null
 
-  const first = block.questions[0]
   const total = block.questions.length
+  const answerByQuestion = new Map<string, { answer: string; skipped?: boolean }>()
+  if (block.answerSummary != null && block.answerSummary.length > 0) {
+    for (const item of block.answerSummary) {
+      answerByQuestion.set(item.question, {
+        answer: item.answer,
+        ...(item.skipped != null ? { skipped: item.skipped } : {}),
+      })
+    }
+  } else if (block.answered) {
+    // Fallback: try the module-level cache populated when the user
+    // submitted answers via the dock.  The CLI tool_result output may
+    // not be in a parseable format, so the builder's answerSummary
+    // can be empty even though the user did answer.
+    const cacheKey = block.questions.map((q) => q.question).join('\0')
+    const cached = questionAnswerCache.get(cacheKey)
+    if (cached != null) {
+      for (const item of cached) {
+        answerByQuestion.set(item.question, {
+          answer: item.answer,
+          ...(item.skipped != null ? { skipped: item.skipped } : {}),
+        })
+      }
+      questionAnswerCache.delete(cacheKey)
+    }
+  }
 
   return (
     <div className="chat-card">
@@ -1895,28 +2374,41 @@ function InlineQuestionCard({
         )}
       </div>
       <div className="chat-card-body" style={{ gap: 10 }}>
-        {first?.header && (
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--c-text)' }}>
-            {first.header}
-          </div>
-        )}
-        <div style={{ fontSize: 13, color: 'var(--c-text)' }}>
-          {first?.question}
-        </div>
-        {block.answerSummary != null && block.answerSummary.length > 0 && (
-          <div className="inline-question-answers">
-            {block.answerSummary.map((item, index) => (
-              <div className="inline-question-answer" key={`${item.question}-${index}`}>
+        <div className="inline-question-answers">
+          {block.questions.map((question, index) => {
+            const summary =
+              answerByQuestion.get(question.question) ??
+              (block.answerSummary != null ? block.answerSummary[index] : undefined)
+            return (
+              <div className="inline-question-answer" key={`${question.question}-${index}`}>
+                {question.header && (
+                  <div
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: 'var(--c-dim)',
+                      marginBottom: 2,
+                    }}
+                  >
+                    {question.header}
+                  </div>
+                )}
                 <div className="inline-question-answer-q">
-                  {index + 1}. {item.question}
+                  {index + 1}. {question.question}
                 </div>
-                <div className="inline-question-answer-a">
-                  {item.skipped ? '已跳过' : item.answer || '未填写'}
-                </div>
+                {block.answered && (
+                  <div className="inline-question-answer-a">
+                    {summary?.skipped
+                      ? '已跳过'
+                      : summary?.answer && summary.answer.length > 0
+                        ? summary.answer
+                        : '未填写'}
+                  </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
+            )
+          })}
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span
             style={{
@@ -2241,14 +2733,21 @@ type MarkdownBlock =
   | { kind: 'table'; headers: string[]; rows: string[][] }
   | { kind: 'hr' }
 
-function MarkdownText({
+export function MarkdownText({
   content,
   isStreaming = false,
+  agents,
+  onMentionClick,
+  onFilePreview,
 }: {
   content: string
   isStreaming?: boolean
+  agents?: { id: string; name: string }[]
+  onMentionClick?: (agentId: string) => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const blocks = parseMarkdown(content)
+  const syntaxHighlight = readAppearance().syntaxHighlight
 
   return (
     <>
@@ -2257,13 +2756,13 @@ function MarkdownText({
         switch (block.kind) {
           case 'heading': {
             const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
-            return <Tag key={index}>{renderInlineMarkdown(block.text)}</Tag>
+            return <Tag key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</Tag>
           }
           case 'paragraph':
-            return <p key={index}>{renderInlineMarkdown(block.text)}</p>
+            return <p key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</p>
           case 'code':
             return (
-              <div key={index} className="md-code-block">
+              <div key={index} className={`md-code-block${syntaxHighlight ? '' : ' no-syntax'}`}>
                 {block.lang && (
                   <div className="md-code-header">
                     <span className="md-code-lang">{block.lang}</span>
@@ -2310,7 +2809,7 @@ function MarkdownText({
               </div>
             )
           case 'quote':
-            return <blockquote key={index}>{renderInlineMarkdown(block.text)}</blockquote>
+            return <blockquote key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</blockquote>
           case 'list': {
             const ListTag = block.ordered ? 'ol' : 'ul'
             return (
@@ -2328,7 +2827,7 @@ function MarkdownText({
                         readOnly
                       />
                     )}
-                    <span>{renderInlineMarkdown(item.text)}</span>
+                    <span>{renderInlineMarkdown(item.text, agents, onMentionClick, onFilePreview)}</span>
                   </li>
                 ))}
               </ListTag>
@@ -2341,7 +2840,7 @@ function MarkdownText({
                   <thead>
                     <tr>
                       {block.headers.map((header, headerIndex) => (
-                        <th key={headerIndex}>{renderInlineMarkdown(header)}</th>
+                        <th key={headerIndex}>{renderInlineMarkdown(header, agents, onMentionClick, onFilePreview)}</th>
                       ))}
                     </tr>
                   </thead>
@@ -2349,7 +2848,7 @@ function MarkdownText({
                     {block.rows.map((row, rowIndex) => (
                       <tr key={rowIndex}>
                         {block.headers.map((_, cellIndex) => (
-                          <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '')}</td>
+                          <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '', agents, onMentionClick, onFilePreview)}</td>
                         ))}
                       </tr>
                     ))}
@@ -2498,7 +2997,88 @@ function splitTableRow(line: string): string[] {
     .map((cell) => cell.trim())
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
+/** 将纯文本中的 @mention 片段替换为主题色 span；可点击时额外附加 onClick */
+function highlightMentions(
+  text: string,
+  agents?: { id: string; name: string }[],
+  onMentionClick?: (agentId: string) => void,
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+): ReactNode[] {
+  const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
+  const parts: ReactNode[] = []
+  let cursor = 0
+  let match: RegExpExecArray | null
+  const agentMap = agents
+    ? new Map(agents.map((a) => [a.name.toLowerCase(), a.id]))
+    : null
+  while ((match = mentionPattern.exec(text)) != null) {
+    const prefix = match[1] ?? ''
+    const mention = match[2] ?? ''
+    const mentionStart = match.index + prefix.length
+    if (mentionStart > cursor) parts.push(...highlightFilePaths(text.slice(cursor, mentionStart), onFilePreview, `fp-${cursor}`))
+    const agentId = agentMap?.get(mention.slice(1).toLowerCase())
+    const clickable = onMentionClick != null && agentId != null
+    parts.push(
+      <span
+        key={`mention-${mentionStart}`}
+        className={`mention-highlight${clickable ? ' mention-highlight-clickable' : ''}`}
+        {...(clickable
+          ? {
+              role: 'button',
+              tabIndex: 0,
+              onClick: (e: React.MouseEvent) => {
+                e.stopPropagation()
+                onMentionClick!(agentId!)
+              },
+              onKeyDown: (e: React.KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onMentionClick!(agentId!)
+                }
+              },
+            }
+          : {})}
+      >
+        {mention}
+      </span>,
+    )
+    cursor = mentionStart + mention.length
+  }
+  if (cursor < text.length) parts.push(...highlightFilePaths(text.slice(cursor), onFilePreview, `fp-${cursor}`))
+  return parts.length > 0 ? parts : [text]
+}
+
+/** 识别文本中的文件路径并渲染为可点击链接 */
+function highlightFilePaths(
+  text: string,
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+  keyPrefix: string = 'fp',
+): ReactNode[] {
+  const pathParts = extractFilePaths(text)
+  if (pathParts.length === 0 || (pathParts.length === 1 && !pathParts[0]!.isPath)) {
+    return [text]
+  }
+
+  return pathParts.map((part, index) => {
+    if (!part.isPath) {
+      return <span key={`${keyPrefix}-${index}`}>{part.text}</span>
+    }
+    return (
+      <ClickableFilePath
+        key={`${keyPrefix}-${index}`}
+        path={part.text}
+        {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
+      />
+    )
+  })
+}
+
+function renderInlineMarkdown(
+  text: string,
+  agents?: { id: string; name: string }[],
+  onMentionClick?: (agentId: string) => void,
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
+): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
     /(!?\[[^\]]+]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g
@@ -2506,7 +3086,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   let match: RegExpExecArray | null
 
   while ((match = pattern.exec(text)) != null) {
-    if (match.index > cursor) nodes.push(text.slice(cursor, match.index))
+    if (match.index > cursor) nodes.push(...highlightMentions(text.slice(cursor, match.index), agents, onMentionClick, onFilePreview))
     const token = match[0]
     const key = `${match.index}-${token}`
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
@@ -2534,7 +3114,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     cursor = match.index + token.length
   }
 
-  if (cursor < text.length) nodes.push(text.slice(cursor))
+  if (cursor < text.length) nodes.push(...highlightMentions(text.slice(cursor), agents, onMentionClick, onFilePreview))
   const rendered: ReactNode[] = []
   nodes.forEach((node, index) => {
     if (typeof node !== 'string') {
@@ -2550,13 +3130,22 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   return rendered
 }
 
-/** 格式化时间戳为 HH:MM 格式 */
+/** 格式化时间戳 — 根据 timestampFormat 设置输出相对或绝对时间 */
 function formatMsgTime(timestamp?: string): string {
   if (!timestamp) return ''
   const d = new Date(timestamp)
   const hh = String(d.getHours()).padStart(2, '0')
   const mm = String(d.getMinutes()).padStart(2, '0')
-  return `${hh}:${mm}`
+  const abs = `${hh}:${mm}`
+  const fmt = readAppearance().timestampFormat
+  if (fmt === 'abs') return abs
+  // relative time
+  const now = Date.now()
+  const diffMs = now - d.getTime()
+  if (diffMs < 60_000) return '刚刚'
+  if (diffMs < 3_600_000) return `${Math.floor(diffMs / 60_000)} 分钟前`
+  if (diffMs < 86_400_000) return `${Math.floor(diffMs / 3_600_000)} 小时前`
+  return abs
 }
 
 /** 消息悬浮操作栏：时间 + 复制按钮 + 删除按钮，放在气泡内部。position: left=agent消息(左下角), right=用户消息(右下角) */
@@ -2564,11 +3153,13 @@ function MessageHoverBar({
   timestamp,
   textContent,
   position,
+  usage,
   onDelete,
 }: {
   timestamp?: string | undefined
   textContent: string
   position: 'left' | 'right'
+  usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
 }) {
   const [copied, setCopied] = useState(false)
@@ -2584,10 +3175,16 @@ function MessageHoverBar({
   }, [textContent])
 
   const time = formatMsgTime(timestamp)
+  const showTokenCount = readAppearance().inlineTokenCount && usage != null
 
   return (
     <div className={`msg-hover-bar msg-hover-${position}`}>
       {time && <span className="msg-hover-time">{time}</span>}
+      {showTokenCount && (
+        <span className="msg-hover-tokens">
+          {usage.inputTokens + usage.outputTokens} tokens
+        </span>
+      )}
       <button className="msg-hover-copy" title="复制" onClick={handleCopy}>
         {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
       </button>
@@ -2754,14 +3351,21 @@ function UserMsg({
   children,
   timestamp,
   blocks,
+  avatarSrc,
   attachments = [],
   onDelete,
+  mentionAgentName,
+  onReply,
 }: {
   children: ReactNode
   timestamp?: string | undefined
   blocks: UIBlock[]
+  avatarSrc: string
   attachments?: MessageAttachment[]
   onDelete?: () => void
+  /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
+  mentionAgentName?: string | undefined
+  onReply?: () => void
 }) {
   const textContent = extractTextFromBlocks(blocks)
   const [contextMenu, setContextMenu] = useState<{
@@ -2803,6 +3407,14 @@ function UserMsg({
         },
       })
     }
+    if (onReply != null) {
+      items.push({
+        key: 'reply',
+        label: '回复',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: onReply,
+      })
+    }
     if (onDelete != null) {
       items.push({
         key: 'delete',
@@ -2813,14 +3425,24 @@ function UserMsg({
       })
     }
     return items
-  }, [contextMenu, onDelete, textContent])
+  }, [contextMenu, onDelete, onReply, textContent])
 
   return (
     <div className="msg msg-user">
       {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
-      <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
-        <div className="msg-content">{children}</div>
+      <div className="msg-user-line">
+        <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
+          <div className="msg-content">{children}</div>
+        </div>
+        <div className="msg-user-avatar">
+          <AvatarImage src={avatarSrc} seed="spark-user" name="User" alt="用户头像" />
+        </div>
       </div>
+      {mentionAgentName != null && mentionAgentName.length > 0 && (
+        <div className="msg-user-mention-hint">
+          → 已直接由 <strong>@{mentionAgentName}</strong> 处理
+        </div>
+      )}
       <MessageHoverBar
         timestamp={timestamp}
         textContent={textContent}
@@ -2837,6 +3459,44 @@ function UserMsg({
       )}
     </div>
   )
+}
+
+function useUserAvatarSrc(): string {
+  const readLocal = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
+      if (raw == null) return resolveAvatarSrc(getUserAvatarConfig(null))
+      return resolveAvatarSrc(getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar))
+    } catch {
+      return resolveAvatarSrc(getUserAvatarConfig(null))
+    }
+  }, [])
+  const [src, setSrc] = useState(readLocal)
+
+  useEffect(() => {
+    let cancelled = false
+    setSrc(readLocal())
+    window.spark
+      ?.invoke('settings:get', { category: 'general', key: 'data' })
+      .then((res) => {
+        if (cancelled) return
+        const value = res.value != null && typeof res.value === 'object'
+          ? (res.value as Record<string, unknown>).userAvatar
+          : null
+        setSrc(resolveAvatarSrc(getUserAvatarConfig(value)))
+      })
+      .catch(() => {})
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_GENERAL_KEY) setSrc(readLocal())
+    }
+    window.addEventListener('storage', handleStorage)
+    return () => {
+      cancelled = true
+      window.removeEventListener('storage', handleStorage)
+    }
+  }, [readLocal])
+
+  return src
 }
 
 function UserMessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
@@ -2978,14 +3638,20 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
   )
 }
 
-function AgentMsg({
+function AssistantMessageRows({
   sessionId,
   status,
   blocks,
   messageStatus,
   isLatest,
   timestamp,
+  assistantId,
+  assistantName,
+  assistantAvatarSrc,
+  usage,
   onDelete,
+  onReply,
+  onFilePreview,
 }: {
   sessionId: SessionId
   status?: 'running'
@@ -2993,14 +3659,185 @@ function AgentMsg({
   messageStatus?: UIMessage['status']
   isLatest?: boolean
   timestamp?: string | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
+  usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
+  onReply?: () => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+}) {
+  const segments = splitAssistantMessageBlocks(blocks)
+  if (segments.length === 0) return null
+
+  return (
+    <>
+      {segments.map((segment, index) => {
+        const segmentIsLatest = isLatest === true && index === segments.length - 1
+        if (segment.kind === 'team') {
+          return (
+            <div key={`team-${index}`} className="team-timeline-segment">
+              {renderBlocks(segment.blocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}
+            </div>
+          )
+        }
+        if (segment.kind === 'team_member_activity') {
+          return (
+            <div key={`team-member-activity-${index}`} className="team-timeline-segment">
+              <TeamMemberActivityBlockView
+                memberAgentId={segment.memberContext.memberAgentId}
+                blocks={segment.blocks}
+                running={segment.running}
+                sessionId={sessionId}
+                {...(onFilePreview != null ? { onFilePreview } : {})}
+              />
+            </div>
+          )
+        }
+        return (
+          <AgentMsg
+            key={`agent-${index}`}
+            sessionId={sessionId}
+            blocks={segment.blocks}
+            isLatest={segmentIsLatest}
+            assistantId={assistantId}
+            assistantName={assistantName}
+            assistantAvatarSrc={assistantAvatarSrc}
+            usage={usage}
+            {...(onFilePreview != null ? { onFilePreview } : {})}
+            {...(status != null ? { status } : {})}
+            {...(messageStatus != null ? { messageStatus } : {})}
+            {...(timestamp != null ? { timestamp } : {})}
+            {...(onDelete != null ? { onDelete } : {})}
+            {...(onReply != null ? { onReply } : {})}
+          />
+        )
+      })}
+    </>
+  )
+}
+
+type AssistantMessageSegment =
+  | { kind: 'agent'; blocks: UIBlock[] }
+  | { kind: 'team'; blocks: UIBlock[] }
+  | {
+      kind: 'team_member_activity'
+      memberContext: TeamMemberEventContext
+      blocks: UIBlock[]
+      running: boolean
+    }
+
+function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment[] {
+  const segments: AssistantMessageSegment[] = []
+  const teamMemberSegments = new Map<
+    string,
+    Extract<AssistantMessageSegment, { kind: 'team_member_activity' }>
+  >()
+  const runningDispatches = new Set<string>()
+  // 单一 agent segment：Host 的所有 blocks 合并到一个气泡中，
+  // 避免 team dispatch/activity 打断后产生多个独立气泡。
+  let agentSegment: Extract<AssistantMessageSegment, { kind: 'agent' }> | null = null
+
+  const ensureAgentSegment = () => {
+    if (agentSegment == null) {
+      agentSegment = { kind: 'agent', blocks: [] }
+      segments.push(agentSegment)
+    }
+    return agentSegment
+  }
+
+  for (const block of blocks) {
+    if (isHiddenTimelineBlock(block)) continue
+    if (block.kind === 'team_dispatch') {
+      const key = teamMemberContextKey({
+        dispatchId: block.dispatchId,
+        memberAgentId: block.memberAgentId,
+      })
+      const isRunning = block.state === 'pending' || block.state === 'working'
+      if (isRunning) runningDispatches.add(key)
+      else runningDispatches.delete(key)
+      const segment = teamMemberSegments.get(key)
+      if (segment != null) segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
+      segments.push({ kind: 'team', blocks: [block] })
+      continue
+    }
+    const memberContext = getBlockTeamMemberContext(block)
+    if (memberContext != null) {
+      const key = teamMemberContextKey(memberContext)
+      let segment = teamMemberSegments.get(key)
+      if (segment == null) {
+        segment = {
+          kind: 'team_member_activity',
+          memberContext,
+          blocks: [],
+          running: runningDispatches.has(key),
+        }
+        teamMemberSegments.set(key, segment)
+        segments.push(segment)
+      }
+      segment.blocks.push(block)
+      segment.running = runningDispatches.has(key) || isTeamMemberActivityRunning(segment.blocks)
+      continue
+    }
+    ensureAgentSegment().blocks.push(block)
+  }
+  return segments
+}
+
+function teamMemberContextKey(context: TeamMemberEventContext): string {
+  return `${context.dispatchId}:${context.memberAgentId}`
+}
+
+function isHiddenTimelineBlock(block: UIBlock): boolean {
+  return block.kind === 'tool_call' && block.toolName === 'mcp__spark_team__agent_dispatch'
+}
+
+function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | undefined {
+  if (block.kind === 'team_member_message') {
+    return { dispatchId: block.dispatchId, memberAgentId: block.memberAgentId }
+  }
+  if (block.kind === 'tool_call' || block.kind === 'terminal' || block.kind === 'file_change') {
+    return block.teamMemberContext
+  }
+  return undefined
+}
+
+function AgentMsg({
+  sessionId,
+  status,
+  blocks,
+  messageStatus,
+  isLatest,
+  timestamp,
+  assistantId,
+  assistantName,
+  assistantAvatarSrc,
+  usage,
+  onDelete,
+  onReply,
+  onFilePreview,
+}: {
+  sessionId: SessionId
+  status?: 'running'
+  blocks: UIBlock[]
+  messageStatus?: UIMessage['status']
+  isLatest?: boolean
+  timestamp?: string | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
+  usage?: UIMessage['usage'] | undefined
+  onDelete?: () => void
+  onReply?: () => void
+  onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
 }) {
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
-  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking')
+  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking' && b.kind !== 'error' && b.kind !== 'terminal' && !isHiddenTimelineBlock(b))
   const toolCallBlocks = blocks.filter(
-    (b): b is Extract<UIBlock, { kind: 'tool_call' }> => b.kind === 'tool_call',
+    (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
+      b.kind === 'tool_call' && !isHiddenTimelineBlock(b),
   )
   const errorBlocks = blocks.filter((b) => b.kind === 'error')
   const isStreaming = status === 'running'
@@ -3058,6 +3895,14 @@ function AgentMsg({
         },
       })
     }
+    if (onReply != null) {
+      items.push({
+        key: 'reply',
+        label: '回复',
+        icon: <Icons.CornerUpLeft size={14} />,
+        onClick: onReply,
+      })
+    }
     if (onDelete != null) {
       items.push({
         key: 'delete',
@@ -3068,24 +3913,21 @@ function AgentMsg({
       })
     }
     return items
-  }, [contextMenu, onDelete, textContent])
+  }, [contextMenu, onDelete, onReply, textContent])
 
   return (
     <div
       className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}
     >
-      <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
-        {isStreaming && !hasContent && (
-          <div className="agent-running-tail agent-running-tail-empty" aria-label="正在运行">
-            <span>正在运行</span>
-            <span className="agent-running-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          </div>
-        )}
-        {thinkingBlocks.length > 0 && (
+      <div className="msg-agent-avatar">
+        <AvatarImage src={assistantAvatarSrc} seed={assistantId} name={assistantName} />
+      </div>
+      <div className="msg-agent-main">
+        <div className="msg-agent-head">
+          <span className="msg-agent-name">{assistantName}</span>
+        </div>
+        <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
+                {thinkingBlocks.length > 0 && (
           <ThinkingSection blocks={thinkingBlocks} streaming={isStreaming} />
         )}
         {activeToolCount > 1 && (
@@ -3095,11 +3937,11 @@ function AgentMsg({
           </div>
         )}
         {contentBlocks.length > 0 && isLatest && (
-          <div className="msg-content">{renderBlocks(contentBlocks, { sessionId })}</div>
+          <div className="msg-content">{renderBlocks(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
         )}
         {contentBlocks.length > 0 && !isLatest && (
           <CollapsibleContent maxHeight={500} streaming={isStreaming}>
-            <div className="msg-content">{renderBlocks(contentBlocks, { sessionId })}</div>
+            <div className="msg-content">{renderBlocks(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
           </CollapsibleContent>
         )}
         {errorBlocks.map((block, i) => (
@@ -3111,25 +3953,27 @@ function AgentMsg({
             retryable={(block as Extract<UIBlock, { kind: 'error' }>).retryable}
           />
         ))}
-        {isStreaming && hasContent && (
-          <div className="agent-running-tail" aria-label="正在运行">
-            <span>正在运行</span>
-            <span className="agent-running-dots" aria-hidden="true">
-              <span />
-              <span />
-              <span />
-            </span>
-          </div>
-        )}
-        {isCancelled && <StoppedMarker />}
+                {isCancelled && <StoppedMarker />}
         {isFinished && textContent && (
           <MessageHoverBar
             timestamp={timestamp}
             textContent={textContent}
             position="left"
+            usage={usage}
             {...(onDelete ? { onDelete } : {})}
           />
         )}
+      </div>
+      {isStreaming && (
+        <div className="agent-task-running-tag">
+          <span>执行任务中</span>
+          <span className="agent-task-running-dots">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
+      )}
       </div>
       {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu
@@ -3303,9 +4147,9 @@ function ToolCall({
     Write: <Icons.File className="tool-icon" />,
   }
 
-  // Auto-collapse on completion — keep open only while pending/running
+  // Auto-collapse on completion — controlled by autoCollapseTools setting
   useEffect(() => {
-    if (status === 'ok' || status === 'error') {
+    if ((status === 'ok' || status === 'error') && readAppearance().autoCollapseTools) {
       setOpen(false)
     }
   }, [status])
@@ -3393,7 +4237,7 @@ function StreamingErrorCard({
     const m = /\((\d+)\)/.exec(message)
     return m ? Number(m[1]) : null
   })()
-  const proposedLimit = Math.min(Math.max((currentLimit ?? 100) * 2, 200), 500)
+  const proposedLimit = Math.min(Math.max((currentLimit ?? 200) * 2, 400), 2000)
 
   const [busy, setBusy] = useState(false)
   const [applied, setApplied] = useState<number | null>(null)
@@ -3560,12 +4404,39 @@ function PlanApprovalModal({
   onClose: () => void
 }) {
   const { toast } = useToast()
+  // editing: 是否处于编辑态（textarea）
+  // draft: 当前已暂存的计划草稿（初始 = 原计划；保存编辑后 = 修改后的版本）
+  // editBuffer: 编辑过程中的临时缓冲（独立于 draft，避免一边编辑一边脏读 draft）
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(plan)
+  const [editBuffer, setEditBuffer] = useState(plan)
   const [busy, setBusy] = useState(false)
 
-  const approve = async (planText: string) => {
+  const isEdited = draft !== plan
+
+  const startEditing = () => {
+    setEditBuffer(draft)
+    setEditing(true)
+  }
+
+  const saveEdit = () => {
+    setDraft(editBuffer)
+    setEditing(false)
+  }
+
+  const discardEdit = () => {
+    setEditBuffer(draft)
+    setEditing(false)
+  }
+
+  const resetDraft = () => {
+    setDraft(plan)
+    setEditBuffer(plan)
+  }
+
+  const approve = async () => {
     if (busy) return
+    const planText = draft
     setBusy(true)
     try {
       await window.spark.invoke('session:update', {
@@ -3584,61 +4455,77 @@ function PlanApprovalModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => !busy && onClose()}>
+    <div className="modal-backdrop" onClick={() => !busy && !editing && onClose()}>
       <div className="modal plan-approval-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
           <div className="modal-h-icon">
             <Icons.Check size={16} />
           </div>
           <div>
-            <div className="modal-title">计划已就绪，等待你审批</div>
-            <div className="modal-subtitle">Plan 模式 · 批准后会切换为 auto-edits 模式继续</div>
+            <div className="modal-title">
+              计划已就绪，等待你审批
+              {isEdited && !editing && (
+                <span className="plan-approval-edited-badge">已编辑</span>
+              )}
+            </div>
+            <div className="modal-subtitle">
+              {editing
+                ? '编辑模式 · 修改后点"保存编辑"暂存，可反复编辑后再批准'
+                : 'Plan 模式 · 批准后会切换为 auto-edits 模式继续'}
+            </div>
           </div>
         </div>
         <div className="modal-body">
           {editing ? (
             <textarea
               className="plan-approval-textarea"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={Math.min(20, Math.max(8, draft.split('\n').length + 1))}
+              value={editBuffer}
+              onChange={(e) => setEditBuffer(e.target.value)}
+              rows={Math.min(20, Math.max(8, editBuffer.split('\n').length + 1))}
               autoFocus
             />
           ) : (
             <div className="plan-approval-preview md-surface">
-              <MarkdownText content={plan} />
+              <MarkdownText content={draft} />
             </div>
           )}
         </div>
         <div className="modal-foot">
-          <button className="btn ghost sm" disabled={busy} onClick={onClose}>
-            拒绝
-          </button>
-          <div className="flex1" />
           {!editing && (
-            <button className="btn sm" disabled={busy} onClick={() => setEditing(true)}>
-              <Icons.Edit size={11} /> 编辑后批准
+            <button className="btn ghost sm" disabled={busy} onClick={onClose}>
+              拒绝
+            </button>
+          )}
+          <div className="flex1" />
+          {!editing && isEdited && (
+            <button className="btn ghost sm" disabled={busy} onClick={resetDraft}>
+              恢复原计划
+            </button>
+          )}
+          {!editing && (
+            <button className="btn sm" disabled={busy} onClick={startEditing}>
+              <Icons.Edit size={11} /> {isEdited ? '继续编辑' : '编辑计划'}
+            </button>
+          )}
+          {editing && (
+            <button className="btn ghost sm" onClick={discardEdit}>
+              放弃修改
             </button>
           )}
           {editing && (
             <button
               className="btn sm"
-              disabled={busy}
-              onClick={() => {
-                setDraft(plan)
-                setEditing(false)
-              }}
+              disabled={editBuffer === draft}
+              onClick={saveEdit}
             >
-              取消编辑
+              <Icons.Check size={11} /> 保存编辑
             </button>
           )}
-          <button
-            className="btn primary sm"
-            disabled={busy}
-            onClick={() => approve(editing ? draft : plan)}
-          >
-            {editing ? '批准（用编辑后）' : '批准并执行'}
-          </button>
+          {!editing && (
+            <button className="btn primary sm" disabled={busy} onClick={approve}>
+              {isEdited ? '批准（用编辑后）' : '批准并执行'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -4095,6 +4982,12 @@ function ComposerV2({
   onPickProject,
   onUseNoProject,
   onSwitchWorkspace,
+  teamConfig,
+  effectiveHostAgentId,
+  onChangeTeamConfig,
+  onOpenTeamInspector,
+  replyTo,
+  onClearReply,
   focusTrigger = 0,
 }: {
   session: SessionSummary | null
@@ -4103,6 +4996,11 @@ function ComposerV2({
   agents: ManagedAgent[]
   selectedProviderId: string
   setSelectedProviderId: (providerId: string) => void
+  teamConfig: TeamModeConfig
+  /** 团队模式下解析后的 host agent id（用于 sendTurn 指派） */
+  effectiveHostAgentId: string | null
+  onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
+  onOpenTeamInspector: () => void
   branchState: BranchState
   contextInputTokens: number
   contextUsage: ContextUsageState | null
@@ -4141,6 +5039,9 @@ function ComposerV2({
   onSwitchWorkspace?: (workspaceId: string) => void
   // Focus trigger from Ctrl/Cmd+L global shortcut (incremented counter)
   focusTrigger?: number
+  // Reply-to quote bar
+  replyTo?: ReplyToState | null
+  onClearReply?: () => void
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -4175,6 +5076,15 @@ function ComposerV2({
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
   const composingRef = useRef(false)
   const lastFocusedDraftBucketRef = useRef<string | null>(null)
+  // ── Mention (@) 状态：仅团队模式启用时生效 ──
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionAnchor, setMentionAnchor] = useState<{ left: number; top: number } | null>(null)
+  const [mentionQuery, setMentionQuery] = useState('')
+  const [mentionIndex, setMentionIndex] = useState(0)
+  /** `@` 字符在 textarea value 中的索引（含 @ 本身）。-1 表示未激活 */
+  const mentionStartRef = useRef<number>(-1)
+  /** 已选择的 mention：name 用于校验文本是否仍含该片段；agentId 用于 sendTurn 时携带 */
+  const [pendingMention, setPendingMention] = useState<{ agentId: string; name: string } | null>(null)
   const runtimeSettingsHydratedRef = useRef(false)
   // ── Input history (↑↓) ──
   const sentHistoryRef = useRef<string[]>([])
@@ -4189,6 +5099,7 @@ function ComposerV2({
   const { invoke: prepareImagePreview } = useIpcInvoke('file:prepare-image-preview')
   const { invoke: getQueue } = useIpcInvoke('session:get-queue')
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
+  const { invoke: sendQueuedTurnNow } = useIpcInvoke('session:send-queued-turn-now')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
   const pendingRuntimePatchRef = useRef<SessionRuntimePatch>({})
 
@@ -4236,7 +5147,7 @@ function ComposerV2({
   const contextWindow = resolveProviderContextWindow(
     selectedProvider?.supportsMillionContext === true,
   )
-  const draftBucketKey = session?.id ?? `draft:new:${activeWorkspaceId ?? 'none'}`
+  const draftBucketKey = session?.id ?? 'draft:new'
   const draftState = drafts[draftBucketKey] ?? EMPTY_COMPOSER_DRAFT
   const value = draftState.value
   const attachments = draftState.attachments
@@ -4506,7 +5417,7 @@ function ComposerV2({
   }, [draftBucketKey])
 
   const dispatchMessage = useCallback(
-    async (text: string, turnAttachments: ComposerAttachment[]) => {
+    async (text: string, turnAttachments: ComposerAttachment[], replySnapshot?: ReplyToState | null) => {
       const requestAttachments = toSessionAttachments(turnAttachments)
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
       if (text.startsWith('/')) {
@@ -4545,6 +5456,16 @@ function ComposerV2({
               message: text,
               ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
               ...getCurrentRuntimePatch(),
+              ...(teamConfig.enabled && effectiveHostAgentId != null
+                ? { teamConfig, agentId: effectiveHostAgentId }
+                : {}),
+          ...(teamConfig.enabled &&
+          pendingMention != null &&
+          text.includes(`@${pendingMention.name}`) &&
+          pendingMention.agentId !== effectiveHostAgentId
+            ? { mentionAgentId: pendingMention.agentId }
+            : {}),
+              ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
             })
             if (!sendRes.started) {
               setQueueVisible(true)
@@ -4595,6 +5516,16 @@ function ComposerV2({
           message: text,
           ...(requestAttachments.length > 0 ? { attachments: requestAttachments } : {}),
           ...getCurrentRuntimePatch(),
+          ...(teamConfig.enabled && effectiveHostAgentId != null
+            ? { teamConfig, agentId: effectiveHostAgentId }
+            : {}),
+          ...(teamConfig.enabled &&
+          pendingMention != null &&
+          text.includes(`@${pendingMention.name}`) &&
+          pendingMention.agentId !== effectiveHostAgentId
+            ? { mentionAgentId: pendingMention.agentId }
+            : {}),
+          ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
         })
         if (!res.started) {
           setQueueVisible(true)
@@ -4619,6 +5550,7 @@ function ComposerV2({
       effectiveModelId,
       effectivePermissionMode,
       effectiveReasoning,
+      effectiveHostAgentId,
       flushPendingRuntimePatch,
       getCurrentRuntimePatch,
       onCreateSession,
@@ -4630,7 +5562,9 @@ function ComposerV2({
       session?.id,
       setAttachments,
       setValue,
+      teamConfig,
       toast,
+      pendingMention,
     ],
   )
 
@@ -4740,18 +5674,29 @@ function ComposerV2({
   const handleSend = async () => {
     if (!canSubmit) return
     setTextEditMenu(null)
-    const text = value.trim() || '请查看附件。'
+    const rawText = value.trim() || '请查看附件。'
     const turnAttachments = attachments
+    // Prepend reply context if quoting a message
+    let text = rawText
+    const replySnapshot = replyTo
+    if (replySnapshot != null) {
+      const quotedLine = replySnapshot.contentPreview.replace(/\n/g, ' ')
+      const who = replySnapshot.role === 'assistant' ? (replySnapshot.agentName ?? 'Agent') : 'You'
+      text = `[回复 ${who}: ${quotedLine}]\n${rawText}`
+    }
     // Record to input history (deduplicate consecutive identical entries)
     const history = sentHistoryRef.current
-    if (text !== history[history.length - 1]) {
-      history.push(text)
+    if (rawText !== history[history.length - 1]) {
+      history.push(rawText)
     }
     historyIndexRef.current = -1
     historyDraftRef.current = ''
     setValue('')
     setAttachments([])
-    await dispatchMessage(text, turnAttachments)
+    // 发送后清除 pending mention（避免下一条消息误带）；dispatchMessage 内已通过 text 计算用过
+    setPendingMention(null)
+    if (replySnapshot != null) onClearReply?.()
+    await dispatchMessage(text, turnAttachments, replySnapshot)
   }
 
   const handlePrimaryAction = async () => {
@@ -4773,6 +5718,22 @@ function ComposerV2({
         enqueuedAt: turn.enqueuedAt,
       })),
     )
+  }
+
+  const handleSendQueuedNow = async (message: QueuedMessage) => {
+    if (session?.id == null) return
+    const res = await sendQueuedTurnNow({ sessionId: session.id, turnId: message.turnId })
+    setQueuedMessages(
+      res.queuedTurns.map((turn) => ({
+        id: turn.turnId,
+        turnId: turn.turnId,
+        content: turn.message,
+        enqueuedAt: turn.enqueuedAt,
+      })),
+    )
+    if (res.started) {
+      onSent(session.id)
+    }
   }
 
   const handleCancelActiveSession = async () => {
@@ -4864,6 +5825,123 @@ function ComposerV2({
     [closeSlashPopup, setValue],
   )
 
+  // ── Mention 候选构造：Host 优先，其次启用的 Members ──
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
+    if (!teamConfig.enabled) return []
+    const list: MentionCandidate[] = []
+    const hostAgent = agents.find((a) => a.id === teamConfig.hostAgentId)
+    if (hostAgent != null) {
+      list.push({
+        agentId: hostAgent.id,
+        name: hostAgent.name,
+        description: hostAgent.description ?? '',
+        isHost: true,
+        avatarSrc: resolveAvatarSrc(
+          getAgentAvatarConfig(hostAgent.metadata, hostAgent.id, hostAgent.name),
+        ),
+        builtIn: hostAgent.builtIn,
+      })
+    }
+    for (const memberId of teamConfig.memberAgentIds) {
+      if (memberId === teamConfig.hostAgentId) continue
+      const m = agents.find((a) => a.id === memberId)
+      if (m == null) continue
+      list.push({
+        agentId: m.id,
+        name: m.name,
+        description: m.description ?? '',
+        isHost: false,
+        avatarSrc: resolveAvatarSrc(getAgentAvatarConfig(m.metadata, m.id, m.name)),
+        builtIn: m.builtIn,
+      })
+    }
+    return list
+  }, [teamConfig.enabled, teamConfig.hostAgentId, teamConfig.memberAgentIds, agents])
+
+  // 过滤后的候选列表（用于键盘导航边界）
+  const filteredMentionCandidates = useMemo(() => {
+    const q = mentionQuery.trim().toLowerCase()
+    if (q.length === 0) return mentionCandidates
+    return mentionCandidates.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q) ||
+        c.agentId.toLowerCase().includes(q),
+    )
+  }, [mentionCandidates, mentionQuery])
+
+  const closeMentionPopup = useCallback(() => {
+    setMentionOpen(false)
+    setMentionQuery('')
+    setMentionIndex(0)
+    mentionStartRef.current = -1
+  }, [])
+
+  /**
+   * 计算 textarea 中指定字符索引的视口坐标（用于 mention popover 定位）。
+   * 用一个不可见的镜像 div 复刻 textarea 的字体/边距/换行，把字符放进 <span>，取其 rect。
+   */
+  const computeCaretViewportPosition = useCallback(
+    (textarea: HTMLTextAreaElement, charIndex: number): { left: number; top: number } => {
+      const taRect = textarea.getBoundingClientRect()
+      const style = window.getComputedStyle(textarea)
+      const mirror = document.createElement('div')
+      const props = [
+        'boxSizing',
+        'width',
+        'paddingTop',
+        'paddingRight',
+        'paddingBottom',
+        'paddingLeft',
+        'borderTopWidth',
+        'borderRightWidth',
+        'borderBottomWidth',
+        'borderLeftWidth',
+        'fontFamily',
+        'fontSize',
+        'fontWeight',
+        'fontStyle',
+        'lineHeight',
+        'letterSpacing',
+        'textTransform',
+        'whiteSpace',
+        'wordBreak',
+        'wordSpacing',
+      ] as const
+      for (const p of props) {
+        const v = style[p as never] as unknown as string | undefined
+        mirror.style[p as never] = (v ?? '') as never
+      }
+      mirror.style.position = 'absolute'
+      mirror.style.top = '-9999px'
+      mirror.style.left = '-9999px'
+      mirror.style.visibility = 'hidden'
+      mirror.style.whiteSpace = 'pre-wrap'
+      mirror.style.wordWrap = 'break-word'
+      mirror.style.overflowWrap = 'break-word'
+      mirror.style.overflow = 'hidden'
+      mirror.style.height = 'auto'
+
+      const before = textarea.value.slice(0, charIndex)
+      const marker = document.createElement('span')
+      marker.textContent = '​'
+      mirror.appendChild(document.createTextNode(before))
+      mirror.appendChild(marker)
+      mirror.appendChild(document.createTextNode(textarea.value.slice(charIndex) || ' '))
+      document.body.appendChild(mirror)
+
+      const markerRect = marker.getBoundingClientRect()
+      const mirrorRect = mirror.getBoundingClientRect()
+      // 把 mirror 内的相对偏移映射回 textarea 视口位置（减去 mirror 偏移再加上 textarea 偏移，
+      // 并对 textarea 滚动量做修正）
+      const left = taRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft
+      const top = taRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop + markerRect.height + 4
+      document.body.removeChild(mirror)
+      return { left, top }
+    },
+    [],
+  )
+
   const handleValueChange = useCallback(
     (next: string) => {
       setTextEditMenu(null)
@@ -4876,8 +5954,78 @@ function ComposerV2({
       } else {
         if (slashOpen) closeSlashPopup()
       }
+
+      // ── Mention 检测：仅团队模式启用时生效 ──
+      if (!teamConfig.enabled) {
+        if (mentionOpen) closeMentionPopup()
+        return
+      }
+      const el = textareaRef.current
+      if (el == null) return
+      const caret = el.selectionStart ?? next.length
+      // 从光标向前找最近的 `@`，要求其前面是行首/空白；中间不能含空白
+      const upto = next.slice(0, caret)
+      const match = upto.match(/(?:^|\s)@([^\s@]*)$/)
+      if (match == null) {
+        if (mentionOpen) closeMentionPopup()
+        return
+      }
+      const queryPart = match[1] ?? ''
+      // `@` 索引：upto 末端往前数 1 + queryPart.length
+      const atIndex = upto.length - 1 - queryPart.length
+      mentionStartRef.current = atIndex
+      setMentionQuery(queryPart)
+      setMentionIndex(0)
+      // 计算 caret 坐标并打开浮层
+      try {
+        const pos = computeCaretViewportPosition(el, atIndex)
+        setMentionAnchor(pos)
+      } catch {
+        // 镜像 div 偶发失败时退化为 textarea 左下角
+        const r = el.getBoundingClientRect()
+        setMentionAnchor({ left: r.left, top: r.bottom + 4 })
+      }
+      setMentionOpen(true)
     },
-    [setValue, slashOpen, openSlashPopup, closeSlashPopup],
+    [
+      setValue,
+      slashOpen,
+      openSlashPopup,
+      closeSlashPopup,
+      teamConfig.enabled,
+      mentionOpen,
+      closeMentionPopup,
+      computeCaretViewportPosition,
+    ],
+  )
+
+  /** 用户选中候选 Agent：用 `@<name> ` 替换 `@<query>` 段，并记录 pendingMention */
+  const handleMentionSelect = useCallback(
+    (candidate: MentionCandidate) => {
+      const el = textareaRef.current
+      const atIndex = mentionStartRef.current
+      if (el == null || atIndex < 0) {
+        closeMentionPopup()
+        return
+      }
+      const before = value.slice(0, atIndex)
+      const afterStart = atIndex + 1 + mentionQuery.length
+      const after = value.slice(afterStart)
+      const insertText = `@${candidate.name} `
+      const nextValue = `${before}${insertText}${after}`
+      setValue(nextValue)
+      setPendingMention({ agentId: candidate.agentId, name: candidate.name })
+      closeMentionPopup()
+      // 把光标移到 mention 后
+      requestAnimationFrame(() => {
+        const el2 = textareaRef.current
+        if (el2 == null) return
+        const caretPos = before.length + insertText.length
+        el2.focus()
+        el2.setSelectionRange(caretPos, caretPos)
+      })
+    },
+    [value, mentionQuery, setValue, closeMentionPopup],
   )
 
   const handleTextContextMenu = useCallback((event: React.MouseEvent<HTMLTextAreaElement>) => {
@@ -4904,6 +6052,34 @@ function ComposerV2({
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const nativeEvent = event.nativeEvent as KeyboardEvent & { isComposing?: boolean }
     if (nativeEvent.isComposing || composingRef.current || event.keyCode === 229) return
+
+    // ── Mention popup navigation（优先级高于 Slash，因 @ 弹窗只在团队模式生效） ──
+    if (mentionOpen) {
+      if (event.key === 'ArrowDown') {
+        event.preventDefault()
+        setMentionIndex((i) => Math.min(i + 1, Math.max(0, filteredMentionCandidates.length - 1)))
+        return
+      }
+      if (event.key === 'ArrowUp') {
+        event.preventDefault()
+        setMentionIndex((i) => Math.max(i - 1, 0))
+        return
+      }
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        closeMentionPopup()
+        return
+      }
+      if ((event.key === 'Enter' && !event.shiftKey) || event.key === 'Tab') {
+        if (filteredMentionCandidates.length > 0) {
+          event.preventDefault()
+          const candidate = filteredMentionCandidates[mentionIndex] ?? filteredMentionCandidates[0]
+          if (candidate != null) handleMentionSelect(candidate)
+          return
+        }
+        closeMentionPopup()
+      }
+    }
 
     // ── Slash command popup navigation ──
     if (slashOpen) {
@@ -5215,6 +6391,14 @@ function ComposerV2({
                 <span className="composer-queue-text">{message.content}</span>
                 <button
                   type="button"
+                  className="composer-queue-icon-btn composer-queue-send-btn"
+                  title="立即执行"
+                  onClick={() => void handleSendQueuedNow(message)}
+                >
+                  <Icons.Send size={14} />
+                </button>
+                <button
+                  type="button"
                   className="composer-queue-icon-btn"
                   title="移除"
                   onClick={() => void handleRemoveQueuedMessage(message)}
@@ -5276,10 +6460,28 @@ function ComposerV2({
           />
         )}
         <div
-          className={`composer composer-v2 ${manualExpanded ? 'expanded' : ''} ${
-            showProjectPicker || showBranchSelect ? 'has-workspace-picks' : ''
-          }`}
+          className={`composer composer-v2 has-workspace-picks ${manualExpanded ? 'expanded' : ''}`}
         >
+          {replyTo != null && (
+            <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-xs text-[var(--color-text-3)]">
+              <div className="flex-1 min-w-0 flex items-center gap-1.5">
+                <span className="shrink-0 text-[var(--color-primary-6)]">
+                  {replyTo.role === 'assistant' ? (replyTo.agentName ?? 'Agent') : 'You'}
+                </span>
+                <span className="truncate text-[var(--color-text-3)] opacity-80">
+                  {replyTo.contentPreview}
+                </span>
+              </div>
+              <button
+                type="button"
+                className="shrink-0 p-0.5 rounded hover:bg-[var(--color-fill-3)] text-[var(--color-text-3)] hover:text-[var(--color-text-1)] transition-colors"
+                title="取消回复"
+                onClick={onClearReply}
+              >
+                <Icons.X size={12} />
+              </button>
+            </div>
+          )}
           {(imageAttachments.length > 0 || fileAttachments.length > 0) && (
             <div className="composer-attachments-inside">
               {imageAttachments.length > 0 && (
@@ -5331,6 +6533,10 @@ function ComposerV2({
             }}
             onKeyDown={handleKeyDown}
             onContextMenu={handleTextContextMenu}
+            onBlur={() => {
+              // 失焦时延迟关闭 mention 弹窗，让 onClick 先执行
+              setTimeout(() => closeMentionPopup(), 150)
+            }}
           />
           {textEditMenu != null && (
             <TextEditContextMenu
@@ -5338,6 +6544,15 @@ function ComposerV2({
               onClose={() => setTextEditMenu(null)}
             />
           )}
+          <MentionPopover
+            open={mentionOpen && filteredMentionCandidates.length > 0 && teamConfig.enabled}
+            anchor={mentionAnchor}
+            query={mentionQuery}
+            candidates={mentionCandidates}
+            activeIndex={mentionIndex}
+            onHover={setMentionIndex}
+            onSelect={handleMentionSelect}
+          />
           <button
             className="composer-expand-btn"
             title={manualExpanded ? '折叠输入框' : '展开输入框'}
@@ -5346,30 +6561,36 @@ function ComposerV2({
             {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
           </button>
           <div className="composer-submit-row">
-            {(showProjectPicker || showBranchSelect) && (
-              <div className="composer-submit-picks">
-                {showProjectPicker && (
-                  <ProjectPicker
-                    workspaces={workspaces}
-                    activeWorkspaceId={activeWorkspaceId}
-                    {...(onPickProject !== undefined ? { onPickProject } : {})}
-                    {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
-                    {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
-                  />
-                )}
-                {showBranchSelect && (
-                  <ComposerMenuSelect
-                    icon={<Icons.GitBranch size={13} />}
-                    value={branchState.currentBranch ?? ''}
-                    label={branchState.currentBranch ?? ''}
-                    title="分支"
-                    align="right"
-                    onChange={onSwitchBranch}
-                    options={branchOptions}
-                  />
-                )}
-              </div>
-            )}
+            <div className="composer-submit-picks">
+              <ProviderModelPicker
+                icon={<ModelIcon />}
+                providers={compatibleProviders}
+                selectedProviderId={selectedProvider?.id ?? ''}
+                selectedModelId={effectiveModelId}
+                disabled={isBusy || compatibleProviders.length === 0}
+                onChange={handleProviderModelChange}
+              />
+              {showProjectPicker && (
+                <ProjectPicker
+                  workspaces={workspaces}
+                  activeWorkspaceId={activeWorkspaceId}
+                  {...(onPickProject !== undefined ? { onPickProject } : {})}
+                  {...(onUseNoProject !== undefined ? { onUseNoProject } : {})}
+                  {...(onSwitchWorkspace !== undefined ? { onSwitchWorkspace } : {})}
+                />
+              )}
+              {showBranchSelect && (
+                <ComposerMenuSelect
+                  icon={<Icons.GitBranch size={13} />}
+                  value={branchState.currentBranch ?? ''}
+                  label={branchState.currentBranch ?? ''}
+                  title="分支"
+                  align="right"
+                  onChange={onSwitchBranch}
+                  options={branchOptions}
+                />
+              )}
+            </div>
             <button
               className={`composer-send-round ${sending ? 'is-sending' : ''} ${isWorking ? 'is-stopping' : ''}`}
               title={isWorking ? '停止会话' : '发送'}
@@ -5399,14 +6620,34 @@ function ComposerV2({
             agents={agents}
             selectedAgentId={effectiveAgentId}
             onChange={(agentId) => void handleAgentChange(agentId)}
-          />
-          <ProviderModelPicker
-            icon={<ModelIcon />}
-            providers={compatibleProviders}
-            selectedProviderId={selectedProvider?.id ?? ''}
-            selectedModelId={effectiveModelId}
-            disabled={compatibleProviders.length === 0}
-            onChange={handleProviderModelChange}
+            teamConfig={teamConfig}
+            onEnableTeamMode={() => {
+              // 启用团队模式时，若当前 effectiveAgentId 在 agents 中存在则保留，
+              // 否则回退到第一个可用 agent，避免后端拿到无效 host 而无法调度
+              const fallbackHost =
+                agents.find((a) => a.id === effectiveAgentId)?.id ??
+                agents[0]?.id ??
+                effectiveAgentId
+              onChangeTeamConfig({ enabled: true, hostAgentId: fallbackHost, teamId: undefined })
+            }}
+            onDisableTeamMode={() =>
+              onChangeTeamConfig({ enabled: false, teamId: undefined })
+            }
+            onChangeHost={(agentId) =>
+              onChangeTeamConfig({ hostAgentId: agentId, teamId: undefined })
+            }
+            onOpenMembers={onOpenTeamInspector}
+            onApplyTeam={(team) =>
+              onChangeTeamConfig({
+                enabled: true,
+                hostAgentId: team.hostAgentId,
+                memberAgentIds: team.memberAgentIds,
+                maxDepth: team.maxDepth,
+                allowNesting: team.allowNesting,
+                teamId: team.id,
+              })
+            }
+            disabled={isBusy}
           />
           <ComposerMenuSelect
             icon={
@@ -5422,6 +6663,7 @@ function ComposerV2({
             label={activePermissionOption?.label ?? '默认权限'}
             title="权限模式"
             tone={activePermissionOption?.tone ?? 'default'}
+            disabled={isBusy}
             onChange={(mode) => {
               const permissionMode = mode as PermissionModeChoice
               setDraftPermissionMode(permissionMode)
@@ -5438,6 +6680,7 @@ function ComposerV2({
                 ?.label ?? effectiveReasoning
             }
             title="推理强度"
+            disabled={isBusy}
             onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
             options={getReasoningOptions(adapter)}
           />
@@ -5521,14 +6764,15 @@ function ComposerMenuSelect({
   return (
     <div
       ref={rootRef}
-      className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}`}
-      title={title}
+      className={`composer-select composer-menu-select tone-${tone} ${align === 'right' ? 'right' : ''}${disabled ? ' is-disabled' : ''}`}
+      title={disabled ? '会话运行中不可切换' : title}
     >
       <span className="composer-select-icon">{icon}</span>
       <button
         type="button"
         className="composer-select-trigger"
         disabled={disabled || options.length === 0}
+        title={disabled ? '会话运行中不可切换' : undefined}
         onClick={() => setOpen((prev) => !prev)}
       >
         <span>{label || '未配置'}</span>
@@ -5709,35 +6953,176 @@ function AgentPicker({
   agents,
   selectedAgentId,
   onChange,
+  teamConfig,
+  onEnableTeamMode,
+  onDisableTeamMode,
+  onChangeHost,
+  onOpenMembers,
+  onApplyTeam,
+  disabled,
 }: {
   agents: ManagedAgent[]
   selectedAgentId: string
   onChange: (agentId: string) => void | Promise<void>
+  teamConfig: TeamModeConfig
+  onEnableTeamMode: () => void
+  onDisableTeamMode: () => void
+  onChangeHost: (agentId: string) => void
+  onOpenMembers: () => void
+  onApplyTeam: (team: ManagedTeam) => void
+  disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
+
+  // 长期团队列表（用于「选择团队」分组）。打开下拉时按需加载，避免每次会话切换都拉。
+  const { invoke: listTeamDefs } = useIpcInvoke('team:list-defs')
+  const [teams, setTeams] = useState<ManagedTeam[]>([])
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    void listTeamDefs({})
+      .then((res) => {
+        if (!cancelled) setTeams(res.teams)
+      })
+      .catch(() => {
+        // 列表加载失败时静默：用户仍可走「团队模式」走临时团队路径
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, listTeamDefs])
+
+  const teamMode = teamConfig.enabled
+  // 团队模式下，选择器代表 Host；否则代表当前对话 Agent。
+  const activeId = teamMode ? teamConfig.hostAgentId : selectedAgentId
   const selected =
-    agents.find((agent) => agent.id === selectedAgentId) ??
+    agents.find((agent) => agent.id === activeId) ??
     agents.find((agent) => agent.id === 'code-agent') ??
     agents[0]
+  const memberCount = teamConfig.memberAgentIds.length
+  const activeTeam =
+    teamMode && teamConfig.teamId != null
+      ? teams.find((t) => t.id === teamConfig.teamId)
+      : undefined
 
   return (
-    <div ref={rootRef} className="composer-select composer-agent-picker" title="Agent">
+    <div ref={rootRef} className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : teamMode ? '团队模式' : 'Agent'}>
       <span className="composer-select-icon">
-        {selected?.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
+        {teamMode ? (
+          <Icons.Team size={13} />
+        ) : selected?.builtIn ? (
+          <Icons.Code size={13} />
+        ) : (
+          <Icons.Bot size={13} />
+        )}
       </span>
       <button
         type="button"
         className="composer-select-trigger"
-        disabled={agents.length === 0}
+        disabled={disabled || agents.length === 0}
+        title={
+          disabled
+            ? '会话运行中不可切换'
+            : teamMode
+              ? activeTeam != null
+                ? `团队：${activeTeam.name}（主持：${selected?.name ?? '编码 Agent'}）`
+                : `团队模式（当前对话：${selected?.name ?? '编码 Agent'}）`
+              : selected?.name ?? '编码 Agent'
+        }
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{selected?.name ?? '编码 Agent'}</span>
+        <span>{activeTeam != null ? activeTeam.name : selected?.name ?? '编码 Agent'}</span>
         <Icons.ChevronDown size={12} />
       </button>
+      {teamMode && (
+        <button
+          type="button"
+          className="composer-team-chip"
+          disabled={disabled}
+          onClick={onOpenMembers}
+          title={disabled ? '会话运行中不可操作' : '管理团队成员'}
+        >
+          <Icons.Team size={11} />
+          <span className="composer-team-chip-count">{memberCount}</span>
+        </button>
+      )}
       {open && (
         <div className="composer-menu composer-agent-menu">
+          {teamMode ? (
+            <button
+              type="button"
+              className="composer-menu-item team-mode-entry"
+              onClick={() => {
+                setOpen(false)
+                onDisableTeamMode()
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  <Icons.X size={13} />
+                  <span>退出团队模式</span>
+                </span>
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="composer-menu-item team-mode-entry"
+              onClick={() => {
+                setOpen(false)
+                onEnableTeamMode()
+              }}
+            >
+              <span className="composer-menu-item-copy">
+                <span className="composer-menu-item-label">
+                  <Icons.Team size={13} />
+                  <span>团队模式（多 Agent 协作）</span>
+                </span>
+                <span className="composer-menu-item-desc">让当前对话 Agent 调用其他成员协作</span>
+              </span>
+            </button>
+          )}
+          {teams.length > 0 && (
+            <>
+              <div className="composer-menu-divider" />
+              <div className="composer-menu-group-title">已保存团队</div>
+              {teams.map((team) => {
+                const host = agents.find((a) => a.id === team.hostAgentId)
+                const active = teamMode && teamConfig.teamId === team.id
+                return (
+                  <button
+                    key={team.id}
+                    type="button"
+                    className={`composer-menu-item ${active ? 'active' : ''}`}
+                    onClick={() => {
+                      setOpen(false)
+                      onApplyTeam(team)
+                    }}
+                  >
+                    <span className="composer-menu-item-copy">
+                      <span className="composer-menu-item-label">
+                        <Icons.Team size={13} />
+                        <span>{team.name}</span>
+                        {team.builtIn && <span className="composer-menu-item-tag">内置</span>}
+                      </span>
+                      <span className="composer-menu-item-desc">
+                        {host ? `主持：${host.name}` : ''}
+                        {host && team.memberAgentIds.length > 0 ? ' · ' : ''}
+                        {team.memberAgentIds.length > 0
+                          ? `${team.memberAgentIds.length} 成员`
+                          : ''}
+                      </span>
+                    </span>
+                    {active && <Icons.Check size={14} />}
+                  </button>
+                )
+              })}
+            </>
+          )}
+          <div className="composer-menu-divider" />
+          <div className="composer-menu-group-title">{teamMode ? '当前对话 Agent' : '选择 Agent'}</div>
           {agents.map((agent) => (
             <button
               key={agent.id}
@@ -5745,7 +7130,8 @@ function AgentPicker({
               className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
               onClick={() => {
                 setOpen(false)
-                void onChange(agent.id)
+                if (teamMode) onChangeHost(agent.id)
+                else void onChange(agent.id)
               }}
             >
               <span className="composer-menu-item-copy">
@@ -5791,12 +7177,13 @@ function ProviderModelPicker({
     selectedModelId || selectedProvider?.defaultModel || selectedProvider?.name || '未配置'
 
   return (
-    <div ref={rootRef} className="composer-select composer-model-picker" title="供应商模型">
+    <div ref={rootRef} className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : '供应商模型'}>
       <span className="composer-select-icon">{icon}</span>
       <button
         type="button"
         className="composer-select-trigger"
         disabled={disabled || providers.length === 0}
+        title={disabled ? '会话运行中不可切换' : undefined}
         onClick={() => setOpen((prev) => !prev)}
       >
         <span>{label}</span>
@@ -6406,14 +7793,17 @@ function ChatConfigPanel({
   workspace,
   width,
   onWidthChange,
+  agentId,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
   width: number
   onWidthChange: (width: number) => void
+  /** 当前会话实际使用的 agent ID（team mode 下为 host agent ID） */
+  agentId?: string
 }) {
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
-  const [skillsCollapsed, setSkillsCollapsed] = useState(true)
+  const [skillsCollapsed, setSkillsCollapsed] = useState(false)
   const [promptsCollapsed, setPromptsCollapsed] = useState(false)
   const [toolsCollapsed, setToolsCollapsed] = useState(false)
   const [skillConfig, setSkillConfig] = useState<SkillConfigGetResponse | null>(null)
@@ -6421,10 +7811,14 @@ function ChatConfigPanel({
   const [projectPromptDraft, setProjectPromptDraft] = useState('')
   const [sessionPromptDraft, setSessionPromptDraft] = useState('')
   const [savingRuntime, setSavingRuntime] = useState(false)
+  // 全量 skills 列表（供 picker 弹窗选择）& picker 可见状态
+  const [allSkills, setAllSkills] = useState<SkillConfigGetResponse['skills']>([])
+  const [showSkillPicker, setShowSkillPicker] = useState(false)
   const { invoke: getSkillConfig } = useIpcInvoke('skill-config:get')
   const { invoke: updateSkillConfig } = useIpcInvoke('skill-config:update')
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
+  const { invoke: listAllSkills } = useIpcInvoke('skill:list')
   const sessionId = session?.id as string | undefined
   const workspaceId = workspace?.id
 
@@ -6432,6 +7826,7 @@ function ChatConfigPanel({
     const req = {
       ...(workspaceId != null ? { workspaceId } : {}),
       ...(sessionId != null ? { sessionId } : {}),
+      ...(agentId != null ? { agentId } : {}),
     }
     const [skillsRes, promptsRes] = await Promise.all([getSkillConfig(req), getPromptConfig(req)])
     const normalizedSkills = normalizeSkillConfig(skillsRes)
@@ -6440,7 +7835,29 @@ function ChatConfigPanel({
     setPromptConfig(normalizedPrompts)
     setProjectPromptDraft(normalizedPrompts.project.content)
     setSessionPromptDraft(normalizedPrompts.session.content)
-  }, [getPromptConfig, getSkillConfig, sessionId, workspaceId])
+  }, [getPromptConfig, getSkillConfig, sessionId, workspaceId, agentId])
+
+  // 加载全量 skills 列表（供 picker 使用）
+  const loadAllSkills = useCallback(async () => {
+    try {
+      const res = await listAllSkills({})
+      setAllSkills(res.skills ?? [])
+    } catch { /* non-critical */ }
+  }, [listAllSkills])
+
+  useEffect(() => {
+    if (sessionId == null) {
+      setSkillConfig(null)
+      setPromptConfig(null)
+      setProjectPromptDraft('')
+      setSessionPromptDraft('')
+      return
+    }
+    void loadRuntimeConfig()
+  }, [loadRuntimeConfig, sessionId])
+
+  // 首次渲染时加载全量 skills
+  useEffect(() => { void loadAllSkills() }, [loadAllSkills])
 
   useEffect(() => {
     if (sessionId == null) {
@@ -6465,12 +7882,16 @@ function ChatConfigPanel({
       const nextDisabled = active
         ? currentDisabled.filter((id) => id !== skillId)
         : Array.from(new Set([...currentDisabled, skillId]))
+      // When activating, also add to the selected list if not already present
+      const nextSelected = active
+        ? Array.from(new Set([...currentSelected, skillId]))
+        : currentSelected
       setSavingRuntime(true)
       try {
         await updateSkillConfig({
           scope,
           scopeRef,
-          skillIds: currentSelected,
+          skillIds: nextSelected,
           disabledSkillIds: nextDisabled,
         })
         await loadRuntimeConfig()
@@ -6479,6 +7900,29 @@ function ChatConfigPanel({
       }
     },
     [loadRuntimeConfig, skillConfig, updateSkillConfig],
+  )
+
+  /** 通过 Picker 添加 skills 到会话级别 */
+  const handleAddSessionSkills = useCallback(
+    async (newIds: string[]) => {
+      if (skillConfig == null || sessionId == null) return
+      const nextSelected = Array.from(new Set([...skillConfig.sessionSkillIds, ...newIds]))
+      // 从 disabled 中移除新增的 skill
+      const nextDisabled = skillConfig.sessionDisabledSkillIds.filter((id) => !newIds.includes(id))
+      setSavingRuntime(true)
+      try {
+        await updateSkillConfig({
+          scope: 'session',
+          scopeRef: sessionId,
+          skillIds: nextSelected,
+          disabledSkillIds: nextDisabled,
+        })
+        await loadRuntimeConfig()
+      } finally {
+        setSavingRuntime(false)
+      }
+    },
+    [loadRuntimeConfig, skillConfig, sessionId, updateSkillConfig],
   )
 
   const savePromptLayer = useCallback(
@@ -6530,89 +7974,97 @@ function ChatConfigPanel({
         onPointerCancel={handleResizeEnd}
       />
 
-      {/* Skills */}
-      {session != null && skillConfig != null && (
-        <div className="inspector-section">
-          <h4 className="config-panel-header" onClick={() => setSkillsCollapsed(!skillsCollapsed)}>
-            <Icons.Skills size={11} />
-            Skills
-            <span className="inspector-count">{skillConfig.effectiveSkillIds.length}</span>
-            <Icons.ChevronRight
-              size={10}
-              className={`chev ${skillsCollapsed ? '' : 'chev-open'}`}
-            />
-          </h4>
-          {!skillsCollapsed && (
-            <>
-              <div className="runtime-skill-list">
-                {skillConfig.skills.map((skill) => {
-                  const systemVisible = skillConfig.systemSkillIds.includes(skill.id)
-                  const projectActive =
-                    systemVisible && !skillConfig.projectDisabledSkillIds.includes(skill.id)
-                  const sessionActive =
-                    systemVisible && !skillConfig.sessionDisabledSkillIds.includes(skill.id)
-                  const meta = parseSkillManifest(skill.manifestJson)
-                  return (
-                    <div className="runtime-skill-row" key={skill.id}>
-                      <div className="runtime-skill-main min-w-0">
-                        <div className="runtime-skill-name truncate">{skill.name}</div>
-                        <div className="runtime-skill-desc truncate">
-                          {meta.source} · {meta.desc}
+      {/* Skills — 显示本次会话可用的所有 skills（agent 配置 + 会话额外添加） */}
+      {session != null && skillConfig != null && (() => {
+        const agentSkillSet = new Set(skillConfig.agentSkillIds)
+        const effectiveSet = new Set(skillConfig.effectiveSkillIds)
+        const visibleSkills = skillConfig.skills.filter((s) => effectiveSet.has(s.id))
+        // Picker 中可选的 skills = 全量 skills 中尚未在 effective 中的
+        const pickerSkills = allSkills.filter((s) => !effectiveSet.has(s.id))
+        return (
+          <div className="inspector-section">
+            <h4 className="config-panel-header" onClick={() => setSkillsCollapsed(!skillsCollapsed)}>
+              <Icons.Skills size={11} />
+              Skills
+              <span className="inspector-count">{visibleSkills.length}</span>
+              <span className="spacer" />
+              {!skillsCollapsed && (
+                <button
+                  type="button"
+                  className="btn ghost sm"
+                  style={{ fontSize: 10, padding: '2px 8px', marginRight: 4 }}
+                  onClick={(e) => { e.stopPropagation(); setShowSkillPicker(true) }}
+                  title="为本次会话添加额外 Skill"
+                >
+                  <Icons.Plus size={10} /> 添加
+                </button>
+              )}
+              <Icons.ChevronRight
+                size={10}
+                className={`chev ${skillsCollapsed ? '' : 'chev-open'}`}
+              />
+            </h4>
+            {!skillsCollapsed && (
+              <>
+                <div className="runtime-skill-list">
+                  {visibleSkills.map((skill) => {
+                    const isAgentSkill = agentSkillSet.has(skill.id)
+                    const meta = parseSkillManifest(skill.manifestJson)
+                    return (
+                      <div className="runtime-skill-row" key={skill.id}>
+                        <div className="runtime-skill-main min-w-0">
+                          <div className="runtime-skill-name truncate">
+                            {skill.name}
+                            {isAgentSkill && (
+                              <span style={{ display:'inline-block', marginLeft:4, padding:'0 4px', borderRadius:4, fontSize:9, fontWeight:700, lineHeight:'16px', background:'var(--primary-soft)', color:'var(--primary)' }} title="来自 Agent 配置">A</span>
+                            )}
+                          </div>
+                          <div className="runtime-skill-desc truncate">
+                            {meta.source}{meta.desc ? ` · ${meta.desc}` : ''}
+                          </div>
                         </div>
+                        {/* 会话级额外添加的 skill 可移除（× 按钮） */}
+                        {!isAgentSkill && sessionId != null && (
+                          <button
+                            type="button"
+                            className="btn ghost sm"
+                            style={{ padding: '0 4px', minWidth: 20, fontSize: 11, lineHeight: '18px', color: 'var(--text-muted)' }}
+                            title="从本次会话移除此 Skill"
+                            disabled={savingRuntime}
+                            onClick={() => void toggleRuntimeSkill('session', sessionId, skill.id, false)}
+                          >
+                            ×
+                          </button>
+                        )}
                       </div>
-                      {workspaceId != null && (
-                        <label
-                          className={`mini-check ${projectActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`}
-                          title="项目层可见"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={projectActive}
-                            disabled={!systemVisible || savingRuntime}
-                            onChange={(event) =>
-                              void toggleRuntimeSkill(
-                                'project',
-                                workspaceId,
-                                skill.id,
-                                event.target.checked,
-                              )
-                            }
-                          />
-                          P
-                        </label>
-                      )}
-                      {sessionId != null && (
-                        <label
-                          className={`mini-check ${sessionActive ? 'on' : ''} ${!systemVisible ? 'disabled' : ''}`}
-                          title="会话层可见"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={sessionActive}
-                            disabled={!systemVisible || savingRuntime}
-                            onChange={(event) =>
-                              void toggleRuntimeSkill(
-                                'session',
-                                sessionId,
-                                skill.id,
-                                event.target.checked,
-                              )
-                            }
-                          />
-                          S
-                        </label>
-                      )}
+                    )
+                  })}
+                  {visibleSkills.length === 0 && (
+                    <div className="runtime-skill-empty" style={{ color: 'var(--text-muted)', fontSize: 11, padding: '8px 0' }}>
+                      当前 Agent 尚未配置 Skill，点击「添加」为会话补充
                     </div>
-                  )
-                })}
-              </div>
-              <div className="inspector-muted runtime-hint">
-                P 为项目层，S 为会话层；系统隐藏的 Skill 在此不可启用。
-              </div>
-            </>
-          )}
-        </div>
-      )}
+                  )}
+                </div>
+                <div className="inspector-muted runtime-hint">
+                  {visibleSkills.length > 0
+                    ? 'A = Agent 配置；点击「添加」为本会话补充额外 Skill'
+                    : '在 Agent 管理中配置 Skills，或点击「添加」为本会话补充'}
+                </div>
+              </>
+            )}
+            <SkillsPickerModal
+              visible={showSkillPicker}
+              skills={pickerSkills.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled }))}
+              selectedIds={[]}
+              onChange={(ids) => {
+                setShowSkillPicker(false)
+                if (ids.length > 0) void handleAddSessionSkills(ids)
+              }}
+              onClose={() => setShowSkillPicker(false)}
+            />
+          </div>
+        )
+      })()}
 
       {/* 提示词 */}
       {session != null && promptConfig != null && (
@@ -6711,6 +8163,9 @@ function ChatInspector({
   turnPromptSnapshots,
   width,
   onWidthChange,
+  teamConfig,
+  agents,
+  onChangeTeamConfig,
   onOpenProjectFolder,
 }: {
   session: SessionSummary | null
@@ -6724,6 +8179,9 @@ function ChatInspector({
   turnPromptSnapshots: TurnPromptSnapshotEvent[]
   width: number
   onWidthChange: (width: number) => void
+  teamConfig: TeamModeConfig
+  agents: ManagedAgent[]
+  onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
   onOpenProjectFolder: () => void
 }) {
   const plans = extractPlans(messages)
@@ -6731,6 +8189,7 @@ function ChatInspector({
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null)
   const projectContextSources = projectContext?.sources ?? []
   const fileChangeSummaries = extractInspectorFileChanges(messages)
+  const runningTeamAgentIds = extractRunningTeamMemberIds(messages)
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -6773,6 +8232,31 @@ function ChatInspector({
         onPointerUp={handleResizeEnd}
         onPointerCancel={handleResizeEnd}
       />
+      {teamConfig.enabled && (
+        <TeamInspectorSection
+          config={teamConfig}
+          agents={agents.map((a) => ({
+            id: a.id,
+            name: a.name,
+            description: a.description,
+            builtIn: a.builtIn,
+            providerProfileId: a.providerProfileId ?? null,
+            modelId: a.modelId ?? null,
+            skillCount: a.skillIds.length,
+            mcpCount: a.mcpServerIds.length,
+            metadata: a.metadata,
+          }))}
+          runningAgentIds={runningTeamAgentIds}
+          onToggleMember={(agentId, enabled) =>
+            onChangeTeamConfig({
+              memberAgentIds: enabled
+                ? [...teamConfig.memberAgentIds, agentId]
+                : teamConfig.memberAgentIds.filter((id) => id !== agentId),
+            })
+          }
+          onChangeConfig={onChangeTeamConfig}
+        />
+      )}
       <div className="inspector-section">
         <h4>会话信息</h4>
         {session ? (
@@ -7450,6 +8934,31 @@ function countDiffLines(diff: string | undefined): { adds: number; dels: number 
     if (line.startsWith('-')) dels += 1
   }
   return { adds, dels }
+}
+
+function extractRunningTeamMemberIds(messages: UIMessage[]): string[] {
+  const running = new Set<string>()
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind === 'team_dispatch') {
+        if (block.state === 'pending' || block.state === 'working') running.add(block.memberAgentId)
+        continue
+      }
+      if (block.kind === 'team_member_message') {
+        if (block.isStreaming) running.add(block.memberAgentId)
+        continue
+      }
+      const memberContext = getBlockTeamMemberContext(block)
+      if (memberContext == null) continue
+      if (block.kind === 'tool_call' && (block.status === 'pending' || block.status === 'running')) {
+        running.add(memberContext.memberAgentId)
+      }
+      if (block.kind === 'terminal' && block.isStreaming) {
+        running.add(memberContext.memberAgentId)
+      }
+    }
+  }
+  return Array.from(running)
 }
 
 interface InspectorSubagent {

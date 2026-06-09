@@ -55,6 +55,14 @@ export function buildConversationHistoryWithSummary(
   db: SparkDatabase,
   sessionId: string,
   currentSeq: number,
+  options?: {
+    /**
+     * Team Mode：agentId → 显示名映射。提供后，team_member_message
+     * 也会被纳入对话历史，并以 `[<name>] ...` 前缀标注发言者，
+     * 让后续任意 agent（Host 或被 @ 的 Member）都能看到完整群聊上下文。
+     */
+    agentNameById?: Record<string, string>
+  },
 ): { prompt: string | undefined; summarization?: SummarizationResult['stats'] } {
   const summaryRepo = new SessionSummaryRepository(db)
 
@@ -69,7 +77,7 @@ export function buildConversationHistoryWithSummary(
     }
   }
 
-  const entries = buildDialogueEntries(events)
+  const entries = buildDialogueEntries(events, options?.agentNameById)
   if (entries.length === 0) return { prompt: undefined }
 
   // Check for cached summary
@@ -261,14 +269,26 @@ function buildPlainPrompt(entries: DialogueEntry[]): string {
 
 // ─── Shared dialogue entry builder ──────────────────────────────────────────
 
-function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
+function buildDialogueEntries(
+  events: AgentEvent[],
+  agentNameById?: Record<string, string>,
+): DialogueEntry[] {
+  type MemberDispatch = {
+    memberAgentId: string
+    parts: string[]
+    final?: string
+    order: number
+  }
   const turns = new Map<
     string,
     {
       userParts: string[]
+      userMentionAgentId?: string
       snapshotUserMessage?: string
       assistantParts: string[]
       assistantFinal?: string
+      memberByDispatch: Map<string, MemberDispatch>
+      memberOrderCounter: number
     }
   >()
   const turnOrder: string[] = []
@@ -276,18 +296,29 @@ function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
   const getTurn = (turnId: string) => {
     let turn = turns.get(turnId)
     if (turn == null) {
-      turn = { userParts: [], assistantParts: [] }
+      turn = {
+        userParts: [],
+        assistantParts: [],
+        memberByDispatch: new Map(),
+        memberOrderCounter: 0,
+      }
       turns.set(turnId, turn)
       turnOrder.push(turnId)
     }
     return turn
   }
 
+  const resolveName = (agentId: string): string => {
+    const name = agentNameById?.[agentId]?.trim()
+    return name != null && name.length > 0 ? name : agentId
+  }
+
   for (const event of events) {
     if (
       event.type !== 'user_message' &&
       event.type !== 'assistant_message' &&
-      event.type !== 'turn_prompt_snapshot'
+      event.type !== 'turn_prompt_snapshot' &&
+      event.type !== 'team_member_message'
     )
       continue
     const turn = getTurn(event.turnId)
@@ -298,8 +329,29 @@ function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
     }
     if (event.type === 'user_message') {
       turn.userParts.push(event.content)
+      if (event.mentionAgentId != null && event.mentionAgentId.length > 0) {
+        turn.userMentionAgentId = event.mentionAgentId
+      }
       continue
     }
+    if (event.type === 'team_member_message') {
+      let dispatch = turn.memberByDispatch.get(event.dispatchId)
+      if (dispatch == null) {
+        dispatch = {
+          memberAgentId: event.memberAgentId,
+          parts: [],
+          order: turn.memberOrderCounter++,
+        }
+        turn.memberByDispatch.set(event.dispatchId, dispatch)
+      }
+      if (event.mode === 'complete' && event.isFinal) {
+        dispatch.final = event.content
+      } else {
+        dispatch.parts.push(event.content)
+      }
+      continue
+    }
+    // assistant_message
     if (event.mode === 'complete' && event.isFinal) {
       turn.assistantFinal = event.content
     } else {
@@ -311,10 +363,25 @@ function buildDialogueEntries(events: AgentEvent[]): DialogueEntry[] {
   for (const turnId of turnOrder) {
     const turn = turns.get(turnId)
     if (turn == null) continue
-    const userContent = turn.userParts.join('\n').trim() || turn.snapshotUserMessage?.trim() || ''
-    if (userContent.length > 0) entries.push({ role: 'User', content: userContent })
+    const rawUserContent =
+      turn.userParts.join('\n').trim() || turn.snapshotUserMessage?.trim() || ''
+    if (rawUserContent.length > 0) {
+      const mentionPrefix =
+        turn.userMentionAgentId != null
+          ? `(@${resolveName(turn.userMentionAgentId)}) `
+          : ''
+      entries.push({ role: 'User', content: `${mentionPrefix}${rawUserContent}` })
+    }
     const assistantContent = turn.assistantFinal?.trim() || turn.assistantParts.join('\n').trim()
     if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
+    // Member 发言按 dispatchId 聚合，前缀 [<name>] 标注发言者；按出现顺序追加。
+    const dispatches = Array.from(turn.memberByDispatch.values()).sort((a, b) => a.order - b.order)
+    for (const d of dispatches) {
+      const text = (d.final ?? d.parts.join('')).trim()
+      if (text.length === 0) continue
+      const speaker = resolveName(d.memberAgentId)
+      entries.push({ role: 'Assistant', content: `[${speaker}] ${text}` })
+    }
   }
   return entries
 }

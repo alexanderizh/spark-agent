@@ -17,6 +17,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import type {
@@ -150,6 +151,8 @@ function WorkflowViewInner() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useRefreshable(refresh)
 
   useEffect(() => {
     return deferEffect(refresh)

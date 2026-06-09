@@ -93,6 +93,11 @@ export class SparkDatabase {
       const applied = this.isMigrationApplied(version)
 
       if (!applied) {
+        if (this.shouldMarkMigrationAppliedWithoutRunning(version)) {
+          this.recordMigration(version, file.name)
+          log.info(`Migration ${version} already reflected in schema; marked as applied`)
+          continue
+        }
         this.applyMigration(file, version)
       }
     }
@@ -166,6 +171,28 @@ export class SparkDatabase {
   }
 
   /**
+   * Compatibility guard for databases that were created from an intermediate
+   * development build where the schema changed but schema_migrations did not.
+   */
+  private shouldMarkMigrationAppliedWithoutRunning(version: number): boolean {
+    if (version === 18) {
+      return this.columnExists('sessions', 'metadata_json')
+    }
+    return false
+  }
+
+  private columnExists(tableName: string, columnName: string): boolean {
+    const rows = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>
+    return rows.some((row) => row.name === columnName)
+  }
+
+  private recordMigration(version: number, name: string): void {
+    this.db
+      .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
+      .run(version, name)
+  }
+
+  /**
    * 在事务中执行单个 migration
    */
   private applyMigration(file: { name: string; path: string }, version: number): void {
@@ -176,9 +203,7 @@ export class SparkDatabase {
     // 每个 migration 在独立事务中执行
     const transaction = this.db.transaction(() => {
       this.db.exec(sql)
-      this.db
-        .prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)')
-        .run(version, file.name)
+      this.recordMigration(version, file.name)
     })
 
     try {

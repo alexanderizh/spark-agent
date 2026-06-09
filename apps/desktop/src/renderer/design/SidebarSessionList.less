@@ -1,0 +1,157 @@
+/* SidebarSessionList — session status badge styles */
+
+/* Session status badge base */
+.session-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 999px;
+  line-height: 1;
+  flex-shrink: 0;
+  font-size: 10px;
+
+  span {
+    display: none;
+  }
+}
+
+/* Running status (thinking / calling_tool) — neutral gray */
+.session-badge-running {
+  border: 1px solid color-mix(in srgb, var(--text-muted) 78%, transparent);
+  color: var(--text-muted);
+  background: transparent;
+}
+
+/* Waiting permission — warning orange with pulse */
+.session-badge-waiting-permission {
+  border: 1px solid var(--warning);
+  color: var(--warning);
+  background: var(--warning-bg);
+  animation: session-badge-pulse-warning 1.6s ease-in-out infinite;
+}
+
+/* Waiting user input — info blue with pulse */
+.session-badge-waiting-user {
+  border: 1px solid var(--info);
+  color: var(--info);
+  background: var(--info-bg);
+  animation: session-badge-pulse-info 1.6s ease-in-out infinite;
+}
+
+/* Completed — success green, static */
+.session-badge-completed {
+  border: 1px solid var(--success);
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+/* Error — danger red, static */
+.session-badge-error {
+  border: 1px solid var(--danger);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+/* Cancelled — neutral gray, static */
+.session-badge-cancelled {
+  border: 1px solid var(--text-faint);
+  color: var(--text-faint);
+  background: transparent;
+}
+
+/* Pulse animations */
+@keyframes session-badge-pulse-warning {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--warning) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--warning) 0%, transparent);
+  }
+}
+
+@keyframes session-badge-pulse-info {
+  0%, 100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--info) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--info) 0%, transparent);
+  }
+}
+
+/* Legacy badge compatibility (keep existing styles working) */
+.session-running-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, var(--text-muted) 78%, transparent);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: transparent;
+  line-height: 1;
+  flex-shrink: 0;
+
+  span {
+    display: none;
+  }
+}
+
+.session-waiting-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--info);
+  border-radius: 999px;
+  color: var(--info);
+  background: var(--info-bg);
+  line-height: 1;
+  flex-shrink: 0;
+  animation: session-badge-pulse-info 1.6s ease-in-out infinite;
+
+  span {
+    display: none;
+  }
+}
+
+/* Project session status indicators */
+.proj-session.is-running {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-waiting-input {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-waiting-permission {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-completed {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-error {
+  border-left-color: transparent;
+  background: transparent;
+}
+
+.proj-session.is-cancelled {
+  border-left-color: transparent;
+  background: transparent;
+}

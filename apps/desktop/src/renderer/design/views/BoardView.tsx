@@ -2,13 +2,12 @@
  * BoardView — 全局任务看板（类飞书看板）
  *
  * 功能：
- *  - 多列看板（待办 / 进行中 / 已完成 / 已关闭）
- *  - 快捷创建任务卡片（弹窗式，使用 Arco Design 组件）
- *  - 点击卡片侧拉详情面板（支持编辑保存）
+ *  - 多列看板（待办 / 进行中 / Bug 修复 / 已完成 / 已关闭）
+ *  - 内联创建/编辑页面（非弹窗）
  *  - 右键菜单：打开详情、复制、删除
  *  - 拖拽改变状态
  *  - 回收站（软删除 → 永久删除）
- *  - localStorage 持久化
+ *  - IPC 持久化
  */
 import {
   useCallback,
@@ -17,10 +16,16 @@ import {
   useRef,
   useState,
 } from 'react'
+import { Popover } from '@arco-design/web-react'
 import type { DragEvent } from 'react'
+import { Button, DatePicker, Select, Space, Switch, Tooltip } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
-import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { useSessionSidebar } from '../SessionSidebarContext'
+import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
+import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import './BoardView.less'
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -28,7 +33,23 @@ import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormContro
 
 type Priority = 'low' | 'medium' | 'high' | 'urgent'
 
-export type TaskStatus = 'todo' | 'in-progress' | 'done' | 'closed'
+export type TaskStatus = 'todo' | 'in-progress' | 'done' | 'accepted' | 'closed' | 'bug-fix'
+
+export type TaskComment = {
+  id: string
+  taskId: string
+  author: string
+  content: string
+  createdAt: string
+}
+
+export type TaskAttachment = {
+  id: string
+  type: 'image' | 'file'
+  name: string
+  path: string
+  previewPath?: string
+}
 
 export type TaskCard = {
   id: string
@@ -37,25 +58,123 @@ export type TaskCard = {
   status: TaskStatus
   priority: Priority
   assignee: string
+  project: string
   tags: string[]
   dueDate: string
+  processingAgent: string
+  acceptanceCriteria: string
+  testAgent: string
+  comments: TaskComment[]
+  attachments: TaskAttachment[]
+  sortOrder: number
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+}
+
+type BoardPage =
+  | { view: 'kanban' }
+  | { view: 'create'; defaultStatus: TaskStatus }
+  | { view: 'edit'; card: TaskCard }
+
+/* ------------------------------------------------------------------ */
+/*  Attachment helpers                                                 */
+/* ------------------------------------------------------------------ */
+
+const IMAGE_EXTENSIONS = new Set([
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico',
+  'tiff', 'tif', 'avif', 'heic', 'heif',
+])
+
+function isImagePath(filePath: string): boolean {
+  const ext = filePath.split('.').pop()?.toLowerCase()
+  return ext != null && IMAGE_EXTENSIONS.has(ext)
+}
+
+function fileNameFromPath(filePath: string): string {
+  return filePath.split(/[\\/]/).filter(Boolean).pop() ?? filePath
+}
+
+function readBlobAsDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read blob'))
+    reader.onload = () => {
+      if (typeof reader.result === 'string') resolve(reader.result)
+      else reject(new Error('Failed to read blob'))
+    }
+    reader.readAsDataURL(blob)
+  })
+}
+
+function encodeToSafeFileUrl(absolutePath: string): string {
+  const encoded = btoa(unescape(encodeURIComponent(absolutePath)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '')
+  return `safe-file://x/${encoded}`
+}
+
+function resolveImageSrc(filePath: string): string {
+  if (!filePath) return filePath
+  const trimmed = filePath.trim()
+  const lower = trimmed.toLowerCase()
+  if (lower.startsWith('http://') || lower.startsWith('https://') || lower.startsWith('data:') || lower.startsWith('safe-file:') || lower.startsWith('blob:')) return trimmed
+  if (lower.startsWith('file://')) {
+    try {
+      const decoded = decodeURI(trimmed.replace(/^file:\/\//, ''))
+      return encodeToSafeFileUrl(decoded.startsWith('/') ? decoded : `/${decoded}`)
+    } catch {
+      return trimmed
+    }
+  }
+  if (trimmed.startsWith('/') || /^[A-Za-z]:[\\/]/.test(trimmed)) {
+    return encodeToSafeFileUrl(trimmed)
+  }
+  return trimmed
 }
 
 /* ------------------------------------------------------------------ */
 /*  Constants                                                          */
 /* ------------------------------------------------------------------ */
 
-const STORAGE_KEY = 'spark-agent:board-tasks'
-
 const COLUMNS: { key: TaskStatus; label: string; color: string; icon: string; headerBg: string; headerFg: string; colBg: string; colClass: string }[] = [
   { key: 'todo', label: '待办', color: '#6b7280', icon: '📋', headerBg: 'rgba(107,114,128,0.12)', headerFg: '#6b7280', colBg: 'rgba(107,114,128,0.04)', colClass: 'col-todo' },
   { key: 'in-progress', label: '进行中', color: '#3b82f6', icon: '🔄', headerBg: 'rgba(59,130,246,0.12)', headerFg: '#3b82f6', colBg: 'rgba(59,130,246,0.04)', colClass: 'col-in-progress' },
+  { key: 'bug-fix', label: 'Bug 修复', color: '#ef4444', icon: '🐛', headerBg: 'rgba(239,68,68,0.12)', headerFg: '#ef4444', colBg: 'rgba(239,68,68,0.04)', colClass: 'col-bug-fix' },
   { key: 'done', label: '已完成', color: '#10b981', icon: '✅', headerBg: 'rgba(16,185,129,0.12)', headerFg: '#10b981', colBg: 'rgba(16,185,129,0.04)', colClass: 'col-done' },
+  { key: 'accepted', label: '已验收', color: '#8b5cf6', icon: '🎯', headerBg: 'rgba(139,92,246,0.12)', headerFg: '#8b5cf6', colBg: 'rgba(139,92,246,0.04)', colClass: 'col-accepted' },
   { key: 'closed', label: '已关闭', color: '#9ca3af', icon: '📦', headerBg: 'rgba(156,163,175,0.12)', headerFg: '#9ca3af', colBg: 'rgba(156,163,175,0.04)', colClass: 'col-closed' },
 ]
+
+/* ------------------------------------------------------------------ */
+/*  Column Visibility (localStorage cached)                            */
+/* ------------------------------------------------------------------ */
+
+const BOARD_COLUMNS_STORAGE_KEY = 'board-visible-columns'
+
+/** Load visible columns from localStorage, fallback to all columns */
+function loadVisibleColumns(): TaskStatus[] {
+  try {
+    const stored = localStorage.getItem(BOARD_COLUMNS_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as TaskStatus[]
+      // Validate: only return valid statuses that still exist in COLUMNS
+      const validStatuses = COLUMNS.map(c => c.key)
+      const validParsed = parsed.filter(s => validStatuses.includes(s))
+      if (validParsed.length > 0) return validParsed
+    }
+  } catch { /* ignore */ }
+  // Default: show all columns
+  return COLUMNS.map(c => c.key)
+}
+
+/** Save visible columns to localStorage */
+function saveVisibleColumns(columns: TaskStatus[]): void {
+  try {
+    localStorage.setItem(BOARD_COLUMNS_STORAGE_KEY, JSON.stringify(columns))
+  } catch { /* ignore */ }
+}
 
 const PRIORITY_CONFIG: Record<Priority, { label: string; color: string; bg: string; icon: string }> = {
   low: { label: '低', color: 'var(--text-muted)', bg: 'var(--hover)', icon: '⚪' },
@@ -73,19 +192,172 @@ function now(): string {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Persistence                                                        */
+/*  Persistence (IPC → main process → ~/.spark-agent/board-tasks.json) */
 /* ------------------------------------------------------------------ */
 
-function loadTasks(): TaskCard[] {
+async function ipcLoadTasks(): Promise<TaskCard[]> {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return []
-    return JSON.parse(raw) as TaskCard[]
+    const res = await window.spark.invoke('board:list', { includeDeleted: true })
+    return ((res.tasks ?? []) as unknown as Array<Record<string, unknown>>).map(normalizeTask)
   } catch { return [] }
 }
 
-function saveTasks(tasks: TaskCard[]) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks))
+function normalizeTask(raw: Record<string, unknown>): TaskCard {
+  const commentsRaw = raw.commentsJson ?? raw.comments ?? '[]'
+  const comments = typeof commentsRaw === 'string' ? JSON.parse(commentsRaw) : (Array.isArray(commentsRaw) ? commentsRaw : [])
+  const attachmentsRaw = raw.attachmentsJson ?? raw.attachments ?? '[]'
+  const attachments = typeof attachmentsRaw === 'string' ? JSON.parse(attachmentsRaw) : (Array.isArray(attachmentsRaw) ? attachmentsRaw : [])
+  return {
+    id: raw.id as string,
+    title: raw.title as string,
+    description: raw.description as string,
+    status: raw.status as TaskStatus,
+    priority: raw.priority as Priority,
+    assignee: (raw.assignee as string) ?? '',
+    project: (raw.project as string) ?? '',
+    tags: (raw.tags as string[]) ?? [],
+    dueDate: (raw.dueDate as string) ?? '',
+    processingAgent: (raw.processingAgent as string) ?? '',
+    acceptanceCriteria: (raw.acceptanceCriteria as string) ?? '',
+    testAgent: (raw.testAgent as string) ?? '',
+    comments,
+    attachments,
+    sortOrder: (raw.sortOrder as number) ?? 0,
+    createdAt: raw.createdAt as string,
+    updatedAt: raw.updatedAt as string,
+    deletedAt: (raw.deletedAt as string | null) ?? null,
+  }
+}
+
+async function ipcCreateTask(partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>): Promise<TaskCard> {
+  const res = await window.spark.invoke('board:create', partial)
+  return res.task as TaskCard
+}
+
+async function ipcUpdateTask(updated: TaskCard): Promise<TaskCard> {
+  const res = await window.spark.invoke('board:update', {
+    id: updated.id,
+    title: updated.title,
+    description: updated.description,
+    status: updated.status,
+    priority: updated.priority,
+    assignee: updated.assignee,
+    project: updated.project,
+    tags: updated.tags,
+    dueDate: updated.dueDate,
+    processingAgent: updated.processingAgent,
+    acceptanceCriteria: updated.acceptanceCriteria,
+    testAgent: updated.testAgent,
+    attachments: updated.attachments,
+    sortOrder: updated.sortOrder,
+  })
+  return res.task as TaskCard
+}
+
+async function ipcBatchUpdateSortOrders(updates: Array<{ id: string; sortOrder: number }>): Promise<TaskCard[]> {
+  const res = await window.spark.invoke('board:batch-update', {
+    updates: updates.map((u) => ({ id: u.id, sortOrder: u.sortOrder })),
+  })
+  return (res.tasks ?? []) as TaskCard[]
+}
+
+async function ipcDeleteTask(id: string): Promise<void> {
+  await window.spark.invoke('board:delete', { id })
+}
+
+async function ipcRestoreTask(id: string): Promise<TaskCard> {
+  const res = await window.spark.invoke('board:restore', { id })
+  return res.task as TaskCard
+}
+
+async function ipcPermanentDeleteTask(id: string): Promise<void> {
+  await window.spark.invoke('board:permanent-delete', { id })
+}
+
+/* ------------------------------------------------------------------ */
+/*  Auto-Execute Helpers                                               */
+/* ------------------------------------------------------------------ */
+
+const AUTO_EXECUTE_INTERVAL_MS = 5 * 60 * 1000 // 5 minutes
+
+/** Create a session for a board task and send the task as a prompt */
+async function executeTaskViaSession(
+  task: TaskCard,
+  agents: AgentOption[],
+  projectGroups: { workspace: { name: string; id: string } }[],
+): Promise<{ sessionId: string; turnId: string } | null> {
+  try {
+    // Resolve provider
+    const providerRes = await window.spark.invoke('provider:list', {})
+    const profiles = (providerRes?.profiles ?? []) as Array<{ id: string; isDefault: boolean }>
+    const profile = profiles.find((p) => p.isDefault) ?? profiles[0]
+    if (!profile) {
+      console.warn(`[AutoExecute] No provider available, skipping task "${task.title}"`)
+      return null
+    }
+
+    // Resolve agent
+    const agentRes = await window.spark.invoke('agent:list', { includeDisabled: false })
+    const allAgents = (agentRes?.agents ?? []) as Array<{ id: string; name: string; isDefault: boolean; enabled: boolean }>
+    let resolvedAgentId = 'code-agent'
+    if (task.processingAgent) {
+      const matched = allAgents.find((a) => a.name === task.processingAgent && a.enabled)
+      if (matched) resolvedAgentId = matched.id
+      else {
+        const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
+        resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'code-agent'
+      }
+    } else {
+      const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
+      resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'code-agent'
+    }
+
+    // Resolve workspace
+    let workspaceId: string | undefined
+    if (task.project) {
+      const group = projectGroups.find((g) => g.workspace.name === task.project)
+      workspaceId = group?.workspace.id
+    }
+    if (!workspaceId) {
+      // Resolve no-project workspace
+      const wsRes = await window.spark.invoke('workspace:list', { includeArchived: false })
+      const workspaces = (wsRes?.workspaces ?? []) as Array<{ id: string; name: string }>
+      const noProject = workspaces.find((w) => w.name === '不使用项目')
+      workspaceId = noProject?.id ?? workspaces[0]?.id
+    }
+
+    // Update task status to 'in-progress'
+    await ipcUpdateTask({ ...task, status: 'in-progress', updatedAt: now() })
+
+    // Build prompt
+    const promptParts = [`## 任务：${task.title}`]
+    if (task.description) promptParts.push(`\n### 描述\n${task.description}`)
+    if (task.acceptanceCriteria) promptParts.push(`\n### 验收条件\n${task.acceptanceCriteria}`)
+    if (task.processingAgent) promptParts.push(`\n### 处理 Agent\n${task.processingAgent}`)
+    if (task.testAgent) promptParts.push(`\n### 测试 Agent\n${task.testAgent}`)
+    promptParts.push('\n请严格按照上述任务要求完成开发工作。完成后请审查代码并确保测试通过。')
+    const prompt = promptParts.join('\n')
+
+    // Create session
+    const createRes = await window.spark.invoke('session:create', {
+      providerProfileId: profile.id,
+      agentId: resolvedAgentId,
+      ...(workspaceId ? { workspaceId } : {}),
+      title: `[📋] ${task.title}`,
+    })
+    const sessionId = createRes.sessionId
+
+    // Send turn
+    const turnRes = await window.spark.invoke('session:send-turn', {
+      sessionId,
+      message: prompt,
+    })
+
+    return { sessionId: sessionId as unknown as string, turnId: turnRes.turnId as unknown as string }
+  } catch (err) {
+    console.error(`[AutoExecute] Failed to execute task "${task.title}":`, err)
+    return null
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -98,34 +370,50 @@ type CtxMenuState = {
   card: TaskCard
 } | null
 
+type AgentOption = { id: string; name: string }
+
 /* ------------------------------------------------------------------ */
-/*  Quick Create Modal                                                 */
+/*  Task Form Page (inline create / edit)                              */
 /* ------------------------------------------------------------------ */
 
-function QuickCreateModal({
-  defaultStatus,
-  onClose,
+function TaskFormPage({
+  mode,
+  card,
+  agents,
+  teamDefs,
+  projectOptions,
+  onBack,
   onSubmit,
 }: {
-  defaultStatus: TaskStatus
-  onClose: () => void
-  onSubmit: (card: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
+  mode: 'create' | 'edit'
+  card?: TaskCard
+  agents: AgentOption[]
+  teamDefs: AgentOption[]
+  projectOptions: { value: string; label: string }[]
+  onBack: () => void
+  onSubmit: (data: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
 }) {
-  const [title, setTitle] = useState('')
-  const [description, setDescription] = useState('')
-  const [priority, setPriority] = useState<Priority>('medium')
-  const [assignee, setAssignee] = useState('')
-  const [tags, setTags] = useState('')
-  const [dueDate, setDueDate] = useState('')
-  const [status, setStatus] = useState<TaskStatus>(defaultStatus)
+  const [title, setTitle] = useState(card?.title ?? '')
+  const [description, setDescription] = useState(card?.description ?? '')
+  const [priority, setPriority] = useState<Priority>(card?.priority ?? 'medium')
+  const [status, setStatus] = useState<TaskStatus>(card?.status ?? 'todo')
+  const [assignee, setAssignee] = useState(card?.assignee ?? '')
+  const [project, setProject] = useState(card?.project ?? '')
+  const [tags, setTags] = useState(card?.tags.join(', ') ?? '')
+  const [dueDate, setDueDate] = useState(card?.dueDate ?? '')
+  const [processingAgent, setProcessingAgent] = useState(card?.processingAgent ?? '')
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState(card?.acceptanceCriteria ?? '')
+  const [testAgent, setTestAgent] = useState(card?.testAgent ?? '')
+  const [attachments, setAttachments] = useState<TaskAttachment[]>(card?.attachments ?? [])
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
   const titleRef = useRef<any>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
-    // Focus the title input after Arco mounts
     const t = setTimeout(() => {
       const el = titleRef.current?.input ?? titleRef.current
       el?.focus?.()
-    }, 50)
+    }, 100)
     return () => clearTimeout(t)
   }, [])
 
@@ -137,222 +425,423 @@ function QuickCreateModal({
       status,
       priority,
       assignee: assignee.trim(),
+      project: project.trim(),
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
+      processingAgent,
+      acceptanceCriteria: acceptanceCriteria.trim(),
+      testAgent,
+      comments: card?.comments ?? [],
+      attachments,
+      sortOrder: card?.sortOrder ?? 0,
     })
-    onClose()
-  }, [title, description, status, priority, assignee, tags, dueDate, onSubmit, onClose])
+  }, [title, description, status, priority, assignee, project, tags, dueDate, processingAgent, acceptanceCriteria, testAgent, card?.comments, attachments, onSubmit])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
-    if (e.key === 'Escape') onClose()
-  }, [handleSubmit, onClose])
+    if (e.key === 'Escape') onBack()
+  }, [handleSubmit, onBack])
+
+  // Paste image handler
+  const handlePaste = useCallback(async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = Array.from(event.clipboardData?.items ?? [])
+    const imageItems = items.filter((item) => item.type.startsWith('image/'))
+    if (imageItems.length === 0) return
+
+    event.preventDefault()
+    try {
+      const newAttachments: TaskAttachment[] = []
+      for (let i = 0; i < imageItems.length; i++) {
+        const file = imageItems[i]!.getAsFile()
+        if (!file) continue
+        const dataUrl = await readBlobAsDataUrl(file)
+        const result = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl,
+          suggestedBaseName: `board-image-${i + 1}`,
+          ...(file.type ? { mimeType: file.type } : {}),
+        })
+        newAttachments.push({
+          id: `${Date.now()}-${i}-${result.filePath}`,
+          type: 'image',
+          name: result.fileName,
+          path: result.filePath,
+          previewPath: result.filePath,
+        })
+      }
+      if (newAttachments.length > 0) {
+        setAttachments(prev => [...prev, ...newAttachments])
+      }
+    } catch (err) {
+      console.error('粘贴图片失败', err)
+    }
+  }, [])
+
+  // Upload file handler
+  const handleUploadFile = useCallback(async () => {
+    try {
+      const selected = await window.spark.invoke('dialog:open-file', {
+        title: '添加文件或图片',
+        multiple: true,
+      })
+      const filePaths: string[] = selected.filePaths ?? (selected.filePath ? [selected.filePath] : [])
+      if (selected.canceled || filePaths.length === 0) return
+
+      const newAttachments: TaskAttachment[] = await Promise.all(
+        filePaths.map(async (filePath, index) => {
+          const type = isImagePath(filePath) ? 'image' : 'file'
+          const base: TaskAttachment = {
+            id: `${Date.now()}-${index}-${filePath}`,
+            type,
+            name: fileNameFromPath(filePath),
+            path: filePath,
+          }
+          if (type !== 'image') return base
+          try {
+            const preview = await window.spark.invoke('file:prepare-image-preview', { sourcePath: filePath })
+            return { ...base, previewPath: preview.filePath }
+          } catch {
+            return base
+          }
+        }),
+      )
+      setAttachments(prev => [...prev, ...newAttachments])
+    } catch (err) {
+      console.error('上传文件失败', err)
+    }
+  }, [])
+
+  const handleRemoveAttachment = useCallback((id: string) => {
+    setAttachments(prev => prev.filter(a => a.id !== id))
+  }, [])
+
+  const imageAttachments = attachments.filter(a => a.type === 'image')
+  const fileAttachments = attachments.filter(a => a.type === 'file')
+
+  const isEdit = mode === 'edit'
 
   return (
-    <div className="board-modal-backdrop" onClick={onClose}>
-      <div className="board-quick-create" onClick={(e) => e.stopPropagation()} onKeyDown={handleKeyDown}>
-        <div className="bqc-header">
-          <div className="bqc-title">快捷创建任务</div>
-          <button className="board-icon-btn" onClick={onClose}><Icons.X size={16} /></button>
+    <div className="task-form-page" onKeyDown={handleKeyDown}>
+      {/* Header */}
+      <div className="tfp-header">
+        <button className="tfp-back-btn" onClick={onBack}>
+          <Icons.ChevronLeft size={18} />
+          <span>返回看板</span>
+        </button>
+        <h2 className="tfp-title">{isEdit ? '编辑任务' : '创建任务'}</h2>
+        <div className="tfp-header-actions">
+          <Button size="small" onClick={onBack}>取消</Button>
+          <Button
+            type="primary"
+            size="small"
+            onClick={handleSubmit}
+            disabled={!title.trim()}
+          >
+            {isEdit ? '保存修改' : '创建任务'}
+          </Button>
         </div>
-        <div className="bqc-body">
-          <div className="bqc-field">
-            <label>标题</label>
+      </div>
+
+      {/* Form body */}
+      <div className="tfp-body">
+        <div className="tfp-main">
+          {/* Title */}
+          <div className="tfp-field">
+            <label className="tfp-label">标题</label>
             <SparkInput
               ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="输入任务标题…"
-              className="bqc-input"
+              className="tfp-input"
             />
           </div>
-          <div className="bqc-field">
-            <label>描述</label>
+
+          {/* Description */}
+          <div className="tfp-field">
+            <label className="tfp-label">描述</label>
             <SparkTextarea
+              ref={textareaRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="输入任务描述（可选）…"
-              rows={3}
-              className="bqc-textarea"
+              onPaste={handlePaste}
+              placeholder="输入任务描述（可选），支持 Ctrl+V 粘贴图片…"
+              rows={6}
+              className="tfp-textarea"
             />
           </div>
-          <div className="bqc-row">
-            <div className="bqc-field bqc-field-sm">
-              <label>状态</label>
-              <SparkSelect value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className="bqc-select">
+
+          {/* Attachments */}
+          {attachments.length > 0 && (
+            <div className="tfp-field">
+              <label className="tfp-label">附件 ({attachments.length})</label>
+              <div className="tfp-attachments">
+                {imageAttachments.length > 0 && (
+                  <div className="tfp-attachment-gallery">
+                    {imageAttachments.map(att => (
+                      <div key={att.id} className="tfp-attachment-img" onClick={() => setPreviewImage(resolveImageSrc(att.previewPath ?? att.path))}>
+                        <img src={resolveImageSrc(att.previewPath ?? att.path)} alt={att.name} />
+                        <button className="tfp-attachment-remove" onClick={(e) => { e.stopPropagation(); handleRemoveAttachment(att.id) }}>
+                          <Icons.X size={10} />
+                        </button>
+                        <div className="tfp-attachment-name">{att.name}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {fileAttachments.length > 0 && (
+                  <div className="tfp-attachment-files">
+                    {fileAttachments.map(att => (
+                      <div key={att.id} className="tfp-attachment-file">
+                        <Icons.File size={13} />
+                        <span className="tfp-attachment-fname">{att.name}</span>
+                        <button className="tfp-attachment-remove" onClick={() => handleRemoveAttachment(att.id)}>
+                          <Icons.X size={10} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Upload toolbar */}
+          <div className="tfp-upload-bar">
+            <button className="tfp-upload-btn" onClick={handleUploadFile} title="上传图片或文件">
+              <Icons.Upload size={14} />
+              <span>上传图片/文件</span>
+            </button>
+            <span className="tfp-upload-hint">支持在描述区域 Ctrl+V 粘贴图片</span>
+          </div>
+
+          {/* Status + Priority row */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">状态</label>
+              <SparkSelect value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className="tfp-select">
                 {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
               </SparkSelect>
             </div>
-            <div className="bqc-field bqc-field-sm">
-              <label>优先级</label>
-              <SparkSelect value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="bqc-select">
-                <option value="low">⚪ 低</option>
-                <option value="medium">🔵 中</option>
-                <option value="high">🟡 高</option>
-                <option value="urgent">🔴 紧急</option>
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">优先级</label>
+              <SparkSelect value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="tfp-select">
+                {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
+                  const cfg = PRIORITY_CONFIG[p]
+                  return <option key={p} value={p}>{cfg.icon} {cfg.label}</option>
+                })}
               </SparkSelect>
             </div>
           </div>
-          <div className="bqc-row">
-            <div className="bqc-field bqc-field-sm">
-              <label>负责人</label>
-              <SparkInput value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="指定负责人" className="bqc-input" />
+
+          {/* Assignee + Due date row */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">负责人</label>
+              <SparkSelect value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="选择负责人" className="tfp-select" allowClear showSearch>
+                {agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
+              </SparkSelect>
             </div>
-            <div className="bqc-field bqc-field-sm">
-              <label>截止日期</label>
-              <SparkInput type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="bqc-input" />
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">截止日期</label>
+              <DatePicker
+                {...(dueDate ? { value: dueDate } : {})}
+                onChange={(dateString) => setDueDate(dateString ?? '')}
+                placeholder="年/月/日"
+                style={{ width: '100%' }}
+                allowClear
+              />
             </div>
           </div>
-          <div className="bqc-field">
-            <label>标签</label>
-            <SparkInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="bqc-input" />
+
+          {/* Processing Agent + Test Agent row */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">处理 Agent</label>
+              <SparkSelect value={processingAgent} onChange={(e) => setProcessingAgent(e.target.value)} placeholder="选择处理 Agent" className="tfp-select" allowClear showSearch>
+                {agents.map(a => <option key={`agent-${a.id}`} value={a.name}>{a.name}</option>)}
+                {teamDefs.map(t => <option key={`team-${t.id}`} value={`team:${t.name}`}>[团队] {t.name}</option>)}
+              </SparkSelect>
+            </div>
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">测试 Agent（可选）</label>
+              <SparkSelect value={testAgent} onChange={(e) => setTestAgent(e.target.value)} placeholder="选择测试 Agent" className="tfp-select" allowClear showSearch>
+                {agents.map(a => <option key={`agent-${a.id}`} value={a.name}>{a.name}</option>)}
+                {teamDefs.map(t => <option key={`team-${t.id}`} value={`team:${t.name}`}>[团队] {t.name}</option>)}
+              </SparkSelect>
+            </div>
           </div>
-        </div>
-        <div className="bqc-footer">
-          <span className="bqc-hint">Ctrl+Enter 提交</span>
-          <div className="bqc-actions">
-            <button className="board-btn board-btn-ghost" onClick={onClose}>取消</button>
-            <button className="board-btn board-btn-primary" onClick={handleSubmit} disabled={!title.trim()}>创建任务</button>
+
+          {/* Acceptance Criteria */}
+          <div className="tfp-field">
+            <label className="tfp-label">验收条件</label>
+            <SparkTextarea
+              value={acceptanceCriteria}
+              onChange={(e) => setAcceptanceCriteria(e.target.value)}
+              placeholder="输入任务完成后的验收标准（可选）…"
+              rows={3}
+              className="tfp-textarea"
+            />
           </div>
+
+          {/* Project */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">项目</label>
+              <SparkSelect value={project} onChange={(e) => setProject(e.target.value)} placeholder="选择项目" className="tfp-select" allowClear showSearch>
+                {projectOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+              </SparkSelect>
+            </div>
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">标签</label>
+              <SparkInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
+            </div>
+          </div>
+
+          {/* Tags preview */}
+          {tags.length > 0 && (
+            <div className="tfp-tags-preview">
+              {tags.split(',').map(t => t.trim()).filter(Boolean).map((tag, i) => (
+                <span key={i} className="tfp-tag">{tag}</span>
+              ))}
+            </div>
+          )}
+
+          {/* Meta info for edit mode */}
+          {isEdit && card && (
+            <div className="tfp-meta">
+              <span>创建于 {formatDate(card.createdAt)}</span>
+              <span>更新于 {formatDate(card.updatedAt)}</span>
+            </div>
+          )}
         </div>
+
+        {/* Comments section (edit mode only) */}
+        {isEdit && card && (
+          <TaskCommentsPanel
+            card={card}
+            onAddComment={onAddComment}
+            onDeleteComment={onDeleteComment}
+            onUpdateComment={onUpdateComment}
+          />
+        )}
       </div>
+
+      {/* Image preview overlay */}
+      {previewImage && (
+        <div className="tfp-preview-overlay" onClick={() => setPreviewImage(null)}>
+          <div className="tfp-preview-content" onClick={(e) => e.stopPropagation()}>
+            <img src={previewImage} alt="预览" />
+            <button className="tfp-preview-close" onClick={() => setPreviewImage(null)}>
+              <Icons.X size={16} />
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
+/* Comment handlers — hoisted outside to avoid circular deps */
+
+const onAddComment = async (taskId: string, author: string, content: string) => {
+  const res = await window.spark.invoke('board:comment:create', { taskId, author, content })
+  return res.comment as TaskComment
+}
+
+const onDeleteComment = async (taskId: string, commentId: string) => {
+  await window.spark.invoke('board:comment:delete', { taskId, commentId })
+}
+
+const onUpdateComment = async (taskId: string, commentId: string, content: string) => {
+  const res = await window.spark.invoke('board:comment:update', { taskId, commentId, content })
+  return res.comment as TaskComment
+}
+
 /* ------------------------------------------------------------------ */
-/*  Detail Side Panel                                                  */
+/*  Comments Panel (edit mode sidebar)                                 */
 /* ------------------------------------------------------------------ */
 
-function DetailPanel({
+function TaskCommentsPanel({
   card,
-  onClose,
-  onSave,
-  onDelete,
+  onAddComment: addComment,
+  onDeleteComment: deleteComment,
+  onUpdateComment: updateComment,
 }: {
   card: TaskCard
-  onClose: () => void
-  onSave: (updated: TaskCard) => void
-  onDelete: (id: string) => void
+  onAddComment: (taskId: string, author: string, content: string) => Promise<TaskComment>
+  onDeleteComment: (taskId: string, commentId: string) => Promise<void>
+  onUpdateComment: (taskId: string, commentId: string, content: string) => Promise<TaskComment>
 }) {
-  const [title, setTitle] = useState(card.title)
-  const [description, setDescription] = useState(card.description)
-  const [priority, setPriority] = useState<Priority>(card.priority)
-  const [status, setStatus] = useState<TaskStatus>(card.status)
-  const [assignee, setAssignee] = useState(card.assignee)
-  const [tags, setTags] = useState(card.tags.join(', '))
-  const [dueDate, setDueDate] = useState(card.dueDate)
-  const [isDirty, setIsDirty] = useState(false)
+  const [newComment, setNewComment] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editContent, setEditContent] = useState('')
 
-  const markDirty = useCallback(<T,>(val: T, setter: (v: T) => void) => {
-    setter(val)
-    setIsDirty(true)
-  }, [])
+  const handleAdd = useCallback(async () => {
+    if (!newComment.trim()) return
+    await addComment(card.id, '', newComment.trim())
+    setNewComment('')
+  }, [card.id, newComment, addComment])
 
-  const handleSave = useCallback(() => {
-    onSave({
-      ...card,
-      title,
-      description,
-      priority,
-      status,
-      assignee,
-      tags: tags.split(',').map(t => t.trim()).filter(Boolean),
-      dueDate,
-      updatedAt: now(),
-    })
-    setIsDirty(false)
-  }, [card, title, description, priority, status, assignee, tags, dueDate, onSave])
-
-  const handleDelete = useCallback(() => {
-    onDelete(card.id)
-    onClose()
-  }, [card.id, onDelete, onClose])
-
-  const pCfg = PRIORITY_CONFIG[priority]
-  const colCfg = COLUMNS.find(c => c.key === status)
+  const handleSaveEdit = useCallback(async (commentId: string) => {
+    if (!editContent.trim()) return
+    await updateComment(card.id, commentId, editContent.trim())
+    setEditingId(null)
+    setEditContent('')
+  }, [card.id, editContent, updateComment])
 
   return (
-    <div className="board-detail-overlay" onClick={onClose}>
-      <div className="board-detail-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="bdp-header">
-          <div className="bdp-header-left">
-            <span className="bdp-priority-dot" style={{ background: pCfg.color }} />
-            <span className="bdp-status-tag" style={{ color: pCfg.color, background: pCfg.bg }}>
-              {colCfg?.icon} {colCfg?.label}
-            </span>
-          </div>
-          <div className="bdp-header-right">
-            {isDirty && (
-              <button className="board-btn board-btn-primary board-btn-sm" onClick={handleSave}>保存</button>
+    <div className="tfp-comments">
+      <label className="tfp-label">评论 ({card.comments?.length ?? 0})</label>
+      <div className="tfp-comment-list">
+        {(card.comments ?? []).map((c) => (
+          <div key={c.id} className="tfp-comment">
+            <div className="tfp-comment-head">
+              <span className="tfp-comment-author">{c.author || '用户'}</span>
+              <span className="tfp-comment-time">{formatDate(c.createdAt)}</span>
+            </div>
+            {editingId === c.id ? (
+              <div className="tfp-comment-edit">
+                <SparkTextarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={2} className="tfp-comment-edit-input" />
+                <div className="tfp-comment-edit-actions">
+                  <Button size="mini" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
+                  <Button size="mini" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
+                </div>
+              </div>
+            ) : (
+              <div className="tfp-comment-body">{c.content}</div>
             )}
-            <button className="board-icon-btn" onClick={onClose}><Icons.X size={16} /></button>
-          </div>
-        </div>
-
-        <div className="bdp-body">
-          <div className="bdp-field">
-            <label className="bdp-label">标题</label>
-            <SparkInput value={title} onChange={(e) => markDirty(e.target.value, setTitle)} className="bdp-title-input" />
-          </div>
-
-          <div className="bdp-field">
-            <label className="bdp-label">描述</label>
-            <SparkTextarea value={description} onChange={(e) => markDirty(e.target.value, setDescription)} placeholder="添加详细描述…" rows={5} className="bdp-desc-input" />
-          </div>
-
-          <div className="bdp-field-row">
-            <div className="bdp-field">
-              <label className="bdp-label">状态</label>
-              <SparkSelect value={status} onChange={(e) => markDirty(e.target.value as TaskStatus, setStatus)} className="bdp-select">
-                {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
-              </SparkSelect>
-            </div>
-            <div className="bdp-field">
-              <label className="bdp-label">优先级</label>
-              <SparkSelect value={priority} onChange={(e) => markDirty(e.target.value as Priority, setPriority)} className="bdp-select">
-                <option value="low">⚪ 低</option>
-                <option value="medium">🔵 中</option>
-                <option value="high">🟡 高</option>
-                <option value="urgent">🔴 紧急</option>
-              </SparkSelect>
-            </div>
-          </div>
-
-          <div className="bdp-field-row">
-            <div className="bdp-field">
-              <label className="bdp-label">负责人</label>
-              <SparkInput value={assignee} onChange={(e) => markDirty(e.target.value, setAssignee)} placeholder="未指定" className="bdp-input" />
-            </div>
-            <div className="bdp-field">
-              <label className="bdp-label">截止日期</label>
-              <SparkInput type="date" value={dueDate} onChange={(e) => markDirty(e.target.value, setDueDate)} className="bdp-input" />
-            </div>
-          </div>
-
-          <div className="bdp-field">
-            <label className="bdp-label">标签</label>
-            <SparkInput value={tags} onChange={(e) => markDirty(e.target.value, setTags)} placeholder="用逗号分隔" className="bdp-input" />
-            {tags.length > 0 && (
-              <div className="bdp-tags-preview">
-                {tags.split(',').map(t => t.trim()).filter(Boolean).map((tag, i) => (
-                  <span key={i} className="bdp-tag">{tag}</span>
-                ))}
+            {editingId !== c.id && (
+              <div className="tfp-comment-actions">
+                <button className="tfp-comment-action-btn" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</button>
+                <button className="tfp-comment-action-btn tfp-comment-action-danger" onClick={async () => {
+                  if (!window.confirm('确定删除该评论？')) return
+                  await deleteComment(card.id, c.id)
+                }}>删除</button>
               </div>
             )}
           </div>
-
-          <div className="bdp-meta">
-            <span>创建于 {formatDate(card.createdAt)}</span>
-            <span>更新于 {formatDate(card.updatedAt)}</span>
+        ))}
+        {(card.comments == null || card.comments.length === 0) && (
+          <div className="tfp-comment-empty">
+            <div className="tfp-comment-empty-icon">
+              <Icons.Chat size={32} />
+            </div>
+            <div className="tfp-comment-empty-text">暂无评论</div>
           </div>
-        </div>
-
-        <div className="bdp-footer">
-          <button className="board-btn board-btn-danger-outline board-btn-sm" onClick={handleDelete}>
-            <Icons.Trash size={13} /> 删除任务
-          </button>
-        </div>
+        )}
+      </div>
+      <div className="tfp-comment-input-row">
+        <SparkTextarea
+          placeholder="输入评论…（Ctrl+Enter 发送）"
+          className="tfp-comment-input"
+          rows={2}
+          value={newComment}
+          onChange={(e) => setNewComment(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && newComment.trim()) handleAdd()
+          }}
+        />
+        <Button size="small" type="primary" disabled={!newComment.trim()} onClick={handleAdd}>发送</Button>
       </div>
     </div>
   )
@@ -373,6 +862,14 @@ function RecycleBinPanel({
   onPermanentDelete: (id: string) => void
   onClose: () => void
 }) {
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [onClose])
+
   return (
     <div className="board-modal-backdrop" onClick={onClose}>
       <div className="board-recycle-panel" onClick={(e) => e.stopPropagation()}>
@@ -458,25 +955,40 @@ function KanbanCard({
   onOpen,
   onContextMenu,
   onDragStart,
+  onDragOver,
+  onDragEnd,
+  onAccept,
+  isDragOverBefore,
+  isDragOverAfter,
+  isDragging,
 }: {
   card: TaskCard
   onOpen: (card: TaskCard) => void
   onContextMenu: (e: React.MouseEvent, card: TaskCard) => void
   onDragStart: (e: DragEvent, card: TaskCard) => void
+  onDragOver: (e: DragEvent, card: TaskCard) => void
+  onDragEnd: () => void
+  onAccept: (card: TaskCard) => void
+  isDragOverBefore: boolean
+  isDragOverAfter: boolean
+  isDragging: boolean
 }) {
   const pCfg = PRIORITY_CONFIG[card.priority]
   const colCfg = COLUMNS.find(c => c.key === card.status)
-  const isOverdue = card.dueDate && new Date(card.dueDate) < new Date() && card.status !== 'done' && card.status !== 'closed'
+  const isOverdue = card.dueDate && new Date(card.dueDate) < new Date() && card.status !== 'done' && card.status !== 'accepted' && card.status !== 'closed'
 
   return (
-    <div
-      className={`board-card board-card-${card.priority}`}
-      draggable
-      onDragStart={(e) => onDragStart(e, card)}
-      onClick={() => onOpen(card)}
-      onContextMenu={(e) => onContextMenu(e, card)}
-    >
-      {/* Priority & status indicators */}
+    <>
+      {isDragOverBefore && <div className="board-card-drop-indicator" />}
+      <div
+        className={`board-card board-card-${card.priority}${isDragging ? ' board-card-dragging' : ''}`}
+        draggable
+        onDragStart={(e) => onDragStart(e, card)}
+        onDragOver={(e) => onDragOver(e, card)}
+        onDragEnd={onDragEnd}
+        onClick={() => onOpen(card)}
+        onContextMenu={(e) => onContextMenu(e, card)}
+      >
       <div className="bc-indicator">
         <span className="bc-priority-badge" style={{ background: pCfg.bg, color: pCfg.color }}>
           {pCfg.icon} {pCfg.label}
@@ -486,15 +998,34 @@ function KanbanCard({
         )}
       </div>
 
-      {/* Title */}
       <div className="bc-title">{card.title}</div>
 
-      {/* Description preview */}
+      {card.project && (
+        <div className="bc-project">{card.project}</div>
+      )}
+
       {card.description && (
         <div className="bc-desc">{card.description}</div>
       )}
 
-      {/* Tags row */}
+      {card.attachments && card.attachments.length > 0 && (
+        <div className="bc-attachments">
+          {card.attachments.filter(a => a.type === 'image').slice(0, 2).map((att, i) => (
+            <div key={att.id} className="bc-attachment-thumb">
+              <img src={resolveImageSrc(att.previewPath ?? att.path)} alt={att.name} />
+            </div>
+          ))}
+          {card.attachments.filter(a => a.type === 'file').length > 0 && (
+            <span className="bc-file-count">
+              <Icons.File size={10} /> {card.attachments.filter(a => a.type === 'file').length} 文件
+            </span>
+          )}
+          {card.attachments.length > 2 && (
+            <span className="bc-attachment-more">+{card.attachments.length - 2}</span>
+          )}
+        </div>
+      )}
+
       {card.tags.length > 0 && (
         <div className="bc-tags">
           {card.tags.slice(0, 3).map((tag, i) => (
@@ -504,13 +1035,23 @@ function KanbanCard({
         </div>
       )}
 
-      {/* Footer: assignee + due date + column indicator */}
       <div className="bc-footer">
         <div className="bc-meta-left">
           {card.assignee && (
             <span className="bc-assignee">
               <span className="bc-avatar">{card.assignee[0]?.toUpperCase()}</span>
               {card.assignee}
+            </span>
+          )}
+          {card.comments && card.comments.length > 0 && (
+            <span className="bc-comment-count">💬 {card.comments.length}</span>
+          )}
+          {card.attachments && card.attachments.length > 0 && (
+            <span className="bc-attachment-count">
+              <Icons.Image size={11} /> {card.attachments.filter(a => a.type === 'image').length}
+              {card.attachments.filter(a => a.type === 'file').length > 0 && (
+                <> <Icons.File size={11} /> {card.attachments.filter(a => a.type === 'file').length}</>
+              )}
             </span>
           )}
         </div>
@@ -520,10 +1061,21 @@ function KanbanCard({
               <Icons.Clock size={11} /> {formatShortDate(card.dueDate)}
             </span>
           )}
+          {card.status === 'done' && (
+            <button
+              className="bc-accept-btn"
+              title="标记为已验收"
+              onClick={(e) => { e.stopPropagation(); onAccept(card) }}
+            >
+              🎯 验收
+            </button>
+          )}
           <span className="bc-status-dot" style={{ background: colCfg?.color }} title={colCfg?.label} />
         </div>
       </div>
-    </div>
+      </div>
+      {isDragOverAfter && <div className="board-card-drop-indicator" />}
+    </>
   )
 }
 
@@ -551,19 +1103,136 @@ function formatShortDate(iso: string): string {
 
 export function BoardView() {
   const { requestConfirm } = useApp()
-  const [tasks, setTasks] = useState<TaskCard[]>(() => loadTasks())
-  const [showCreate, setShowCreate] = useState(false)
-  const [createDefaultStatus, setCreateDefaultStatus] = useState<TaskStatus>('todo')
-  const [detailCard, setDetailCard] = useState<TaskCard | null>(null)
+  const sessionCtx = useSessionSidebar()
+  const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: listTeamDefs } = useIpcInvoke('team:list-defs')
+  const [tasks, setTasks] = useState<TaskCard[]>([])
+  const [agents, setAgents] = useState<AgentOption[]>([])
+  const [teamDefs, setTeamDefs] = useState<AgentOption[]>([])
+  const [page, setPage] = useState<BoardPage>({ view: 'kanban' })
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null)
   const [showRecycle, setShowRecycle] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterPriority, setFilterPriority] = useState<Priority | 'all'>('all')
   const [filterStatus, setFilterStatus] = useState<TaskStatus | 'all'>('all')
+  const [filterProject, setFilterProject] = useState<string>('all')
   const dragCardRef = useRef<TaskCard | null>(null)
+  const [dragOverCardId, setDragOverCardId] = useState<string | null>(null)
+  const [dragOverPosition, setDragOverPosition] = useState<'before' | 'after'>('before')
+  const [dragOverColumn, setDragOverColumn] = useState<TaskStatus | null>(null)
+  const [autoExecute, setAutoExecute] = useState(false)
+  const [autoExecuteRunning, setAutoExecuteRunning] = useState(false)
+  const autoExecuteIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const autoExecuteLockRef = useRef(false)
+  // Visible columns state (cached in localStorage)
+  const [visibleColumns, setVisibleColumns] = useState<TaskStatus[]>(loadVisibleColumns)
 
-  // Persist
-  useEffect(() => { saveTasks(tasks) }, [tasks])
+  // Refresh handler
+  const refreshData = useCallback(() => {
+    ipcLoadTasks().then(setTasks)
+    listAgents({ includeDisabled: false }).then((res: any) => {
+      const agentList: AgentOption[] = (res.agents ?? [])
+        .filter((a: any) => a.enabled)
+        .map((a: any) => ({ id: a.id, name: a.name }))
+      setAgents(agentList)
+    }).catch(() => {})
+    listTeamDefs({ includeDisabled: false }).then((res: any) => {
+      const teamList: AgentOption[] = (res.teams ?? [])
+        .filter((t: any) => t.enabled)
+        .map((t: any) => ({ id: t.id, name: t.name }))
+      setTeamDefs(teamList)
+    }).catch(() => {})
+  }, [listAgents, listTeamDefs])
+  const triggerRefresh = useRefreshable(refreshData)
+
+  // Visible columns handlers
+  const handleToggleColumn = useCallback((status: TaskStatus) => {
+    setVisibleColumns(prev => {
+      // Ensure at least one column is visible
+      if (prev.includes(status) && prev.length <= 1) return prev
+      const next = prev.includes(status)
+        ? prev.filter(s => s !== status)
+        : [...prev, status]
+      saveVisibleColumns(next)
+      return next
+    })
+  }, [])
+
+  const handleSelectAllColumns = useCallback(() => {
+    const all = COLUMNS.map(c => c.key)
+    setVisibleColumns(all)
+    saveVisibleColumns(all)
+  }, [])
+
+  // Load tasks, agents and team defs from IPC on mount
+  useEffect(() => {
+    refreshData()
+  }, [refreshData])
+
+  // Auto-execute: scan for pending tasks and dispatch them
+  const scanAndExecuteTasks = useCallback(async () => {
+    if (autoExecuteLockRef.current) return
+    autoExecuteLockRef.current = true
+    setAutoExecuteRunning(true)
+    try {
+      const allTasks = await ipcLoadTasks()
+      const pending = allTasks.filter(
+        (t) => !t.deletedAt && (t.status === 'todo' || t.status === 'in-progress'),
+      )
+      if (pending.length === 0) return
+
+      // Re-read agents & project groups (already in state via refreshData)
+      const pg = sessionCtx.projectGroups.map((g) => ({
+        workspace: { name: g.workspace.name, id: g.workspace.id },
+      }))
+
+      for (const task of pending) {
+        const result = await executeTaskViaSession(task, agents, pg)
+        if (result) {
+          setTasks((prev) =>
+            prev.map((t) =>
+              t.id === task.id ? { ...t, status: 'in-progress' as TaskStatus, updatedAt: now() } : t,
+            ),
+          )
+        }
+      }
+    } catch (err) {
+      console.error('[AutoExecute] scan failed:', err)
+    } finally {
+      autoExecuteLockRef.current = false
+      setAutoExecuteRunning(false)
+    }
+  }, [agents, sessionCtx.projectGroups])
+
+  const handleAutoExecuteToggle = useCallback(
+    (checked: boolean) => {
+      setAutoExecute(checked)
+      if (checked) {
+        // Immediately execute once
+        scanAndExecuteTasks()
+        // Start interval
+        autoExecuteIntervalRef.current = setInterval(scanAndExecuteTasks, AUTO_EXECUTE_INTERVAL_MS)
+      } else {
+        // Clear interval
+        if (autoExecuteIntervalRef.current) {
+          clearInterval(autoExecuteIntervalRef.current)
+          autoExecuteIntervalRef.current = null
+        }
+        setAutoExecuteRunning(false)
+      }
+    },
+    [scanAndExecuteTasks],
+  )
+
+  // Cleanup interval on unmount
+  useEffect(() => {
+    return () => {
+      if (autoExecuteIntervalRef.current) {
+        clearInterval(autoExecuteIntervalRef.current)
+        autoExecuteIntervalRef.current = null
+      }
+    }
+  }, [])
 
   // Derived
   const activeTasks = useMemo(() => tasks.filter(t => !t.deletedAt), [tasks])
@@ -577,49 +1246,106 @@ export function BoardView() {
         t.title.toLowerCase().includes(q) ||
         t.description.toLowerCase().includes(q) ||
         t.assignee.toLowerCase().includes(q) ||
+        t.project?.toLowerCase().includes(q) ||
         t.tags.some(tag => tag.toLowerCase().includes(q))
       )
     }
     if (filterPriority !== 'all') result = result.filter(t => t.priority === filterPriority)
     if (filterStatus !== 'all') result = result.filter(t => t.status === filterStatus)
+    if (filterProject !== 'all') result = result.filter(t => (t.project ?? '') === filterProject)
     return result
-  }, [activeTasks, searchQuery, filterPriority, filterStatus])
+  }, [activeTasks, searchQuery, filterPriority, filterStatus, filterProject])
+
+  const projectOptions = useMemo(() => {
+    return sessionCtx.projectGroups
+      .map(g => g.workspace)
+      .filter(w => w.name && w.name !== '不使用项目')
+      .map(w => ({ value: w.name, label: w.name }))
+  }, [sessionCtx.projectGroups])
 
   const columnTasks = useMemo(() => {
-    const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'done': [], 'closed': [] }
+    const map: Record<TaskStatus, TaskCard[]> = { 'todo': [], 'in-progress': [], 'bug-fix': [], 'done': [], 'accepted': [], 'closed': [] }
     for (const t of filteredTasks) map[t.status].push(t)
+    // Sort each column by sortOrder
+    for (const key of Object.keys(map) as TaskStatus[]) {
+      map[key].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+    }
     return map
   }, [filteredTasks])
 
+  const columnSelectorContent = (
+    <div className="board-column-selector">
+      <div className="bcs-header">
+        <span>显示状态面板</span>
+        <button className="bcs-select-all" onClick={handleSelectAllColumns}>全选</button>
+      </div>
+      <div className="bcs-list">
+        {COLUMNS.map(col => {
+          const isVisible = visibleColumns.includes(col.key)
+          return (
+            <label key={col.key} className="bcs-item">
+              <input
+                type="checkbox"
+                checked={isVisible}
+                onChange={() => handleToggleColumn(col.key)}
+              />
+              <span className="bcs-dot" style={{ background: col.color }} />
+              <span className="bcs-label">{col.label}</span>
+              <span className="bcs-count">{columnTasks[col.key]?.length ?? 0}</span>
+            </label>
+          )
+        })}
+      </div>
+    </div>
+  )
+
   // Handlers
-  const handleCreate = useCallback((partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
-    setTasks(prev => [...prev, { ...partial, id: uid(), createdAt: now(), updatedAt: now(), deletedAt: null }])
+  const handleCreate = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
+    const created = await ipcCreateTask(partial)
+    setTasks(prev => [...prev, created])
+    setPage({ view: 'kanban' })
   }, [])
 
-  const handleSave = useCallback((updated: TaskCard) => {
+  const handleSave = useCallback(async (partial: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => {
+    if (page.view !== 'edit') return
+    const card = page.card
+    const updated = await ipcUpdateTask({
+      ...card,
+      ...partial,
+      updatedAt: now(),
+    })
     setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
-    setDetailCard(updated)
-  }, [])
+    setPage({ view: 'kanban' })
+  }, [page])
 
   const handleSoftDelete = useCallback(async (id: string) => {
     const ok = await requestConfirm({ title: '删除任务', description: '任务将移至回收站，可以恢复。', confirmText: '删除', danger: true })
     if (!ok) return
+    await ipcDeleteTask(id)
     setTasks(prev => prev.map(t => t.id === id ? { ...t, deletedAt: now(), updatedAt: now() } : t))
-    setDetailCard(null)
+    setPage({ view: 'kanban' })
   }, [requestConfirm])
 
-  const handleRestore = useCallback((id: string) => {
-    setTasks(prev => prev.map(t => t.id === id ? { ...t, deletedAt: null, updatedAt: now() } : t))
+  const handleRestore = useCallback(async (id: string) => {
+    const restored = await ipcRestoreTask(id)
+    setTasks(prev => prev.map(t => t.id === id ? restored : t))
   }, [])
 
   const handlePermanentDelete = useCallback(async (id: string) => {
     const ok = await requestConfirm({ title: '彻底删除', description: '此操作不可撤销，任务将被永久删除。', confirmText: '彻底删除', danger: true })
     if (!ok) return
+    await ipcPermanentDeleteTask(id)
     setTasks(prev => prev.filter(t => t.id !== id))
   }, [requestConfirm])
 
-  const handleCopy = useCallback((card: TaskCard) => {
-    setTasks(prev => [...prev, { ...card, id: uid(), title: `${card.title} (副本)`, createdAt: now(), updatedAt: now(), deletedAt: null }])
+  const handleCopy = useCallback(async (card: TaskCard) => {
+    const created = await ipcCreateTask({ ...card, title: `${card.title} (副本)` })
+    setTasks(prev => [...prev, created])
+  }, [])
+
+  const handleAccept = useCallback(async (card: TaskCard) => {
+    const updated = await ipcUpdateTask({ ...card, status: 'accepted', updatedAt: now() })
+    setTasks(prev => prev.map(t => t.id === updated.id ? updated : t))
   }, [])
 
   // Drag & Drop
@@ -630,27 +1356,116 @@ export function BoardView() {
     e.dataTransfer.setDragImage(el, el.offsetWidth / 2, 20)
   }, [])
 
-  const handleDragOver = useCallback((e: DragEvent) => {
+  // Drag over a card — determine insert position (before/after)
+  const handleCardDragOver = useCallback((e: DragEvent, card: TaskCard, status: TaskStatus) => {
+    e.preventDefault()
+    e.stopPropagation()
+    e.dataTransfer.dropEffect = 'move'
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const midY = rect.top + rect.height / 2
+    setDragOverCardId(card.id)
+    setDragOverPosition(e.clientY < midY ? 'before' : 'after')
+    setDragOverColumn(status)
+  }, [])
+
+  // Drag over the column body (empty area or gap between cards)
+  const handleColumnDragOver = useCallback((e: DragEvent, status: TaskStatus) => {
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
+    setDragOverColumn(status)
     const col = (e.currentTarget as HTMLElement).closest('.board-col')
     col?.classList.add('board-col-drag-over')
   }, [])
 
-  const handleDragLeave = useCallback((e: DragEvent) => {
+  const handleColumnDragLeave = useCallback((e: DragEvent) => {
     const col = (e.currentTarget as HTMLElement).closest('.board-col')
     col?.classList.remove('board-col-drag-over')
+    // Only clear if actually leaving the column body
+    const related = e.relatedTarget as HTMLElement | null
+    if (!col?.contains(related)) {
+      setDragOverColumn(null)
+      setDragOverCardId(null)
+    }
   }, [])
 
-  const handleDrop = useCallback((e: DragEvent, targetStatus: TaskStatus) => {
+  const handleDragEnd = useCallback(() => {
+    dragCardRef.current = null
+    setDragOverCardId(null)
+    setDragOverPosition('before')
+    setDragOverColumn(null)
+    document.querySelectorAll('.board-col-drag-over').forEach(el => el.classList.remove('board-col-drag-over'))
+  }, [])
+
+  const handleDrop = useCallback(async (e: DragEvent, targetStatus: TaskStatus) => {
     e.preventDefault()
     const col = (e.currentTarget as HTMLElement).closest('.board-col')
     col?.classList.remove('board-col-drag-over')
+
     const card = dragCardRef.current
-    if (!card || card.status === targetStatus) return
-    setTasks(prev => prev.map(t => t.id === card.id ? { ...t, status: targetStatus, updatedAt: now() } : t))
+    if (!card) return
     dragCardRef.current = null
-  }, [])
+
+    const overCardId = dragOverCardId
+    const overPosition = dragOverPosition
+    setDragOverCardId(null)
+    setDragOverPosition('before')
+    setDragOverColumn(null)
+
+    const isSameColumn = card.status === targetStatus
+
+    // Get current column tasks (sorted by sortOrder)
+    const colTasks = columnTasks[targetStatus].filter(t => t.id !== card.id)
+    const insertIdx = overCardId
+      ? colTasks.findIndex(t => t.id === overCardId)
+      : colTasks.length // drop at end if no target card (empty area)
+
+    if (insertIdx === -1 && overCardId) return // shouldn't happen
+
+    // Calculate new sortOrder based on position
+    let newSortOrder: number
+    const effectiveIdx = overCardId
+      ? (overPosition === 'before' ? insertIdx : insertIdx + 1)
+      : colTasks.length
+
+    if (colTasks.length === 0) {
+      newSortOrder = 0
+    } else if (effectiveIdx <= 0) {
+      newSortOrder = (colTasks[0]?.sortOrder ?? 0) - 100
+    } else if (effectiveIdx >= colTasks.length) {
+      newSortOrder = (colTasks[colTasks.length - 1]?.sortOrder ?? 0) + 100
+    } else {
+      const prev = colTasks[effectiveIdx - 1]!
+      const next = colTasks[effectiveIdx]!
+      newSortOrder = Math.round(((prev.sortOrder ?? 0) + (next.sortOrder ?? 0)) / 2)
+    }
+
+    // Optimistic update
+    const updatedCard: TaskCard = { ...card, status: targetStatus, sortOrder: newSortOrder }
+    setTasks(prev => prev.map(t => t.id === card.id ? updatedCard : t))
+
+    // Persist: single update for cross-column move + reorder, or same-column reorder
+    await ipcUpdateTask(updatedCard)
+
+    // After many reorder operations, sortOrder values may get too close.
+    // Re-index if needed (when the gap between neighbors < 2)
+    if (effectiveIdx > 0 && effectiveIdx < colTasks.length) {
+      const prev = colTasks[effectiveIdx - 1]!
+      const gap = newSortOrder - (prev.sortOrder ?? 0)
+      if (Math.abs(gap) < 2) {
+        // Re-index all tasks in this column
+        const allColTasks = [...colTasks]
+        allColTasks.splice(effectiveIdx, 0, updatedCard)
+        const reindexed = allColTasks.map((t, i) => ({ id: t.id, sortOrder: i * 100 }))
+        const result = await ipcBatchUpdateSortOrders(reindexed)
+        if (result.length > 0) {
+          setTasks(prev => {
+            const map = new Map(result.map(t => [t.id, t]))
+            return prev.map(t => map.get(t.id) ?? t)
+          })
+        }
+      }
+    }
+  }, [columnTasks, dragOverCardId, dragOverPosition])
 
   const handleContextMenu = useCallback((e: React.MouseEvent, card: TaskCard) => {
     e.preventDefault()
@@ -667,6 +1482,53 @@ export function BoardView() {
   const totalActive = activeTasks.length
   const totalDeleted = deletedTasks.length
 
+  // Form page — create or edit
+  if (page.view === 'create') {
+    return (
+      <div className="board-view">
+        <TaskFormPage
+          mode="create"
+          agents={agents}
+          teamDefs={teamDefs}
+          projectOptions={projectOptions}
+          onBack={() => setPage({ view: 'kanban' })}
+          onSubmit={handleCreate}
+        />
+      </div>
+    )
+  }
+
+  if (page.view === 'edit') {
+    const card = page.card
+    // refresh card data from tasks state
+    const freshCard = tasks.find(t => t.id === card.id) ?? card
+    return (
+      <div className="board-view">
+        <TaskFormPage
+          mode="edit"
+          card={freshCard}
+          agents={agents}
+          teamDefs={teamDefs}
+          projectOptions={projectOptions}
+          onBack={() => setPage({ view: 'kanban' })}
+          onSubmit={handleSave}
+        />
+        {/* Delete button for edit mode */}
+        <div className="tfp-delete-bar">
+          <Button
+            status="danger"
+            size="small"
+            icon={<Icons.Trash size={13} />}
+            onClick={() => handleSoftDelete(freshCard.id)}
+          >
+            删除任务
+          </Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Default: kanban view
   return (
     <div className="board-view">
       {/* Header */}
@@ -675,43 +1537,109 @@ export function BoardView() {
           <h1 className="board-title">任务看板</h1>
           <span className="board-count">{totalActive} 个任务</span>
         </div>
-        <div className="board-header-right">
-          <div className="board-search">
-            <Icons.Search size={14} />
-            <SparkInput
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="搜索任务…"
-              className="board-search-input"
-            />
+        <div className="board-header-right" aria-label="任务筛选和操作">
+          <div className="board-toolbar">
+            <Tooltip
+              content={
+                autoExecute
+                  ? autoExecuteRunning
+                    ? '正在执行任务…'
+                    : '自动执行已开启，每 5 分钟扫描一次'
+                  : '开启自动执行：立即执行一次，之后每 5 分钟扫描待办任务'
+              }
+            >
+              <div className="board-auto-execute-toggle">
+                <Switch
+                  size="small"
+                  checked={autoExecute}
+                  onChange={handleAutoExecuteToggle}
+                />
+                <span className={`board-auto-execute-label ${autoExecute ? 'active' : ''}`}>
+                  {autoExecuteRunning ? '执行中…' : '自动执行'}
+                </span>
+              </div>
+            </Tooltip>
+            <button
+              className="board-refresh-btn"
+              onClick={triggerRefresh}
+              title="刷新 (Ctrl+R)"
+            >
+              <Icons.Refresh size={14} />
+            </button>
+            <div className="board-search">
+              <SparkSearchInput
+                value={searchQuery}
+                onChange={setSearchQuery}
+                placeholder="搜索任务…"
+                className="board-search-input"
+              />
+            </div>
+            <Popover
+              content={
+                <div className="board-filter-popover-content">
+                  <div className="board-filter-popover-row">
+                    <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="small" style={{ width: 130 }}>
+                      <Select.Option value="all">全部优先级</Select.Option>
+                      <Select.Option value="urgent">🔴 紧急</Select.Option>
+                      <Select.Option value="high">🟡 高</Select.Option>
+                      <Select.Option value="medium">🔵 中</Select.Option>
+                      <Select.Option value="low">⚪ 低</Select.Option>
+                    </Select>
+                    <Select value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="small" style={{ width: 130 }}>
+                      <Select.Option value="all">全部状态</Select.Option>
+                      <Select.Option value="todo">📋 待办</Select.Option>
+                      <Select.Option value="in-progress">🔄 进行中</Select.Option>
+                      <Select.Option value="bug-fix">🐛 Bug 修复</Select.Option>
+                      <Select.Option value="done">✅ 已完成</Select.Option>
+                      <Select.Option value="accepted">🎯 已验收</Select.Option>
+                      <Select.Option value="closed">📦 已关闭</Select.Option>
+                    </Select>
+                    {projectOptions.length > 0 && (
+                      <Select value={filterProject} onChange={(value) => setFilterProject(value)} className="board-filter-select" size="small" style={{ width: 130 }}>
+                        <Select.Option value="all">全部项目</Select.Option>
+                        {projectOptions.map(p => <Select.Option key={p.value} value={p.value}>{p.label}</Select.Option>)}
+                      </Select>
+                    )}
+                  </div>
+                </div>
+              }
+              trigger="click"
+              position="bottom"
+              className="board-filter-popover"
+            >
+              <button className="board-filter-toggle-btn" title="筛选条件">
+                <Icons.Filter size={14} />
+                <span>筛选</span>
+                {(filterPriority !== 'all' || filterStatus !== 'all' || filterProject !== 'all') && (
+                  <span className="board-filter-active-dot" />
+                )}
+              </button>
+            </Popover>
+            <Space size={6} className="board-action-group">
+              <Popover
+                content={columnSelectorContent}
+                trigger="click"
+                position="bottom"
+                className="board-column-selector-popover"
+              >
+                <button className="board-column-selector-btn" title="选择显示的状态面板">
+                  <Icons.Board size={14} />
+                  <span>面板</span>
+                  <Icons.ChevronDown size={12} />
+                </button>
+              </Popover>
+              <Button className="board-recycle-arco-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
+              <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
+                新建任务
+              </Button>
+            </Space>
           </div>
-          <SparkSelect value={filterPriority} onChange={(e) => setFilterPriority(e.target.value as Priority | 'all')} className="board-filter-select">
-            <option value="all">全部优先级</option>
-            <option value="urgent">🔴 紧急</option>
-            <option value="high">🟡 高</option>
-            <option value="medium">🔵 中</option>
-            <option value="low">⚪ 低</option>
-          </SparkSelect>
-          <SparkSelect value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as TaskStatus | 'all')} className="board-filter-select">
-            <option value="all">全部状态</option>
-            <option value="todo">📋 待办</option>
-            <option value="in-progress">🔄 进行中</option>
-            <option value="done">✅ 已完成</option>
-            <option value="closed">📦 已关闭</option>
-          </SparkSelect>
-          <button className="board-btn board-btn-ghost board-btn-sm" onClick={() => setShowRecycle(true)} title="回收站">
-            <Icons.Archive size={15} />
-            {totalDeleted > 0 && <span className="board-recycle-badge">{totalDeleted}</span>}
-          </button>
-          <button className="board-btn board-btn-primary board-btn-sm" onClick={() => { setCreateDefaultStatus('todo'); setShowCreate(true) }}>
-            <Icons.Plus size={14} /> 新建任务
-          </button>
         </div>
       </div>
 
       {/* Kanban Columns */}
       <div className="board-columns">
-        {COLUMNS.map(col => (
+        {COLUMNS.filter(col => visibleColumns.includes(col.key)).map(col => (
           <div
             className={`board-col ${col.colClass}`}
             key={col.key}
@@ -724,14 +1652,14 @@ export function BoardView() {
                 </span>
               </div>
               <span className="board-col-count">{columnTasks[col.key].length}</span>
-              <button className="board-icon-btn board-icon-btn-xs" title={`在"${col.label}"中新建`} onClick={() => { setCreateDefaultStatus(col.key); setShowCreate(true) }}>
+              <button className="board-icon-btn board-icon-btn-xs" title={`在"${col.label}"中新建`} onClick={() => setPage({ view: 'create', defaultStatus: col.key })}>
                 <Icons.Plus size={13} />
               </button>
             </div>
             <div
               className="board-col-body"
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
+              onDragOver={(e) => handleColumnDragOver(e, col.key)}
+              onDragLeave={handleColumnDragLeave}
               onDrop={(e) => handleDrop(e, col.key)}
             >
               {columnTasks[col.key].length === 0 ? (
@@ -743,9 +1671,15 @@ export function BoardView() {
                   <KanbanCard
                     key={card.id}
                     card={card}
-                    onOpen={setDetailCard}
+                    onOpen={(c) => setPage({ view: 'edit', card: c })}
                     onContextMenu={handleContextMenu}
                     onDragStart={handleDragStart}
+                    onDragOver={(e, c) => handleCardDragOver(e, c, col.key)}
+                    onDragEnd={handleDragEnd}
+                    onAccept={handleAccept}
+                    isDragOverBefore={dragOverCardId === card.id && dragOverPosition === 'before' && dragOverColumn === col.key}
+                    isDragOverAfter={dragOverCardId === card.id && dragOverPosition === 'after' && dragOverColumn === col.key}
+                    isDragging={dragCardRef.current?.id === card.id}
                   />
                 ))
               )}
@@ -754,18 +1688,8 @@ export function BoardView() {
         ))}
       </div>
 
-      {/* Quick Create */}
-      {showCreate && (
-        <QuickCreateModal defaultStatus={createDefaultStatus} onClose={() => setShowCreate(false)} onSubmit={handleCreate} />
-      )}
-
-      {/* Detail Panel */}
-      {detailCard && (
-        <DetailPanel card={detailCard} onClose={() => setDetailCard(null)} onSave={handleSave} onDelete={handleSoftDelete} />
-      )}
-
       {/* Context Menu */}
-      <CardContextMenu menu={ctxMenu} onOpenDetail={setDetailCard} onCopy={handleCopy} onDelete={handleSoftDelete} onClose={() => setCtxMenu(null)} />
+      <CardContextMenu menu={ctxMenu} onOpenDetail={(c) => setPage({ view: 'edit', card: c })} onCopy={handleCopy} onDelete={handleSoftDelete} onClose={() => setCtxMenu(null)} />
 
       {/* Recycle Bin */}
       {showRecycle && (

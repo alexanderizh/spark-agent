@@ -35,6 +35,7 @@ export interface SessionRow {
   reasoning_effort: string
   pinned_at: string | null
   archived_at: string | null
+  metadata_json: string
   created_at: string
   updated_at: string
 }
@@ -139,6 +140,26 @@ export class SessionRepository extends BaseRepository {
       UPDATE sessions SET title = ?, updated_at = ? WHERE id = ?
     `)
     stmt.run(title, now, id)
+  }
+
+  /** 读取 session 的 metadata（JSON 对象；缺省返回 {}） */
+  getMetadata(id: string): Record<string, unknown> {
+    const row = this.get(id)
+    return this.fromJson<Record<string, unknown>>(row?.metadata_json, {})
+  }
+
+  /**
+   * 浅合并 patch 到 session 的 metadata_json。
+   * 用于团队模式等会话级配置（如 metadata.team），不新增列。
+   */
+  patchMetadata(id: string, patch: Record<string, unknown>): Record<string, unknown> {
+    const current = this.getMetadata(id)
+    const next = { ...current, ...patch }
+    const now = new Date().toISOString()
+    this.raw
+      .prepare(`UPDATE sessions SET metadata_json = ?, updated_at = ? WHERE id = ?`)
+      .run(this.toJson(next), now, id)
+    return next
   }
 
   /** 更新会话生命周期状态 */

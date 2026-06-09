@@ -123,11 +123,9 @@ function createWindow(): BrowserWindow {
 
   // macOS: hiddenInset + trafficLightPosition places native traffic lights
   // inside the floating sidebar panel area (top-left corner).
-  // The panel sits at left:12px, so traffic lights at x:22 land inside it.
-  // Windows: use the OS-native title bar (minimize/maximize/close built in).
-  // Linux: frameless window with custom HTML window controls in the sidebar.
+  // The Panel sits at left:12px, so traffic lights at x:22 land inside it.
+  // Windows & Linux: frameless window with custom HTML title bar and window controls.
   const isDarwin = process.platform === 'darwin'
-  const isWin32 = process.platform === 'win32'
 
   const mainWindow = new BrowserWindow({
     width: 1280,
@@ -136,7 +134,7 @@ function createWindow(): BrowserWindow {
     minHeight: 600,
     show: false,
     autoHideMenuBar: true,
-    titleBarStyle: isDarwin ? 'hiddenInset' : isWin32 ? 'default' : 'hidden',
+    titleBarStyle: isDarwin ? 'hiddenInset' : 'hidden',
     ...(isDarwin ? { trafficLightPosition: { x: 22, y: 20 } } : {}),
     icon: iconPath,
     webPreferences: {
@@ -154,7 +152,10 @@ function createWindow(): BrowserWindow {
   // 窗口准备好后再显示，避免白屏闪烁
   mainWindow.on('ready-to-show', () => {
     mainWindow.show()
-    // DevTools 不再自动打开，使用 F12 / Ctrl+Shift+I 手动开启
+    // 开发模式下自动打开 DevTools
+    if (is.dev) {
+      mainWindow.webContents.openDevTools()
+    }
   })
 
   mainWindow.on('close', (event) => {
@@ -260,6 +261,19 @@ async function initializeApp(): Promise<void> {
 
   // 2. 注册 IPC handlers
   registerAllIpcHandlers()
+
+  // 2.1 启动定时任务调度器（使用 IPC 层的同一个 ScheduledTaskService 实例）
+  try {
+    const { getScheduledTaskService } = await import('./ipc/index.js')
+    const taskService = getScheduledTaskService()
+    taskService.startScheduler()
+    log.info('Scheduled task scheduler started')
+    app.on('before-quit', () => {
+      taskService.stopScheduler()
+    })
+  } catch (err) {
+    log.warn(`Failed to start scheduled task scheduler: ${String(err)}`)
+  }
 
   // 2.5 确保无项目会话目录已初始化（避免首次启动时目录不存在导致错误）
   await ensureNoProjectDirectoryExists()

@@ -151,7 +151,7 @@ const VIEW_INDEX_MAP: Record<string, ViewId> = {
   '2': 'chat',
   '3': 'workflows',
   '4': 'agents',
-  '5': 'skills',
+  '5': 'skill-store',
   '6': 'mcp',
   '7': 'settings',
 }
@@ -167,6 +167,34 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
   }, [])
 
   const handler = useCallback((e: KeyboardEvent) => {
+    // ── 应用内刷新（Ctrl+R / Cmd+R）──────────────────────────────────
+    // Chromium / Electron 默认会把 Ctrl+R 路由到 BrowserWindow.reload()，
+    // 这会丢弃整个 React 状态、回到默认 view='chat'，用户在面板页里
+    // 按刷新会被弹回会话界面。
+    //
+    // 我们在 keydown 阶段拦截：preventDefault 阻止硬刷新，然后抛出
+    // 'spark:refresh-view' 事件，由当前 mounted 的视图自行处理刷新。
+    // Shift+Ctrl+R 保留给 Electron 自己的硬刷新（带 cache-bypass），
+    // 留作「真的想 reload 应用」的逃生口。
+    const modRPressed = isMac ? e.metaKey : e.ctrlKey
+    if (
+      modRPressed &&
+      !e.shiftKey &&
+      !e.altKey &&
+      e.key.toLowerCase() === 'r' &&
+      !e.repeat
+    ) {
+      // 在 overlay 打开时（命令面板、权限弹窗等）不接管刷新，
+      // 让用户沿用浏览器原生的 reload 行为（一般用不上，但更安全）。
+      const overlayOpen = actionsRef.current.hasOverlayOpen?.() ?? false
+      if (!overlayOpen) {
+        e.preventDefault()
+        e.stopPropagation()
+        window.dispatchEvent(new CustomEvent('spark:refresh-view'))
+        return
+      }
+    }
+
     const shortcuts = shortcutsRef.current
     const { setTweak, onSearchFocus, onNewSession, onNewProject, hasOverlayOpen } = actionsRef.current
 

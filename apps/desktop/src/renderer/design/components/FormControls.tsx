@@ -1,16 +1,22 @@
 /**
  * FormControls — 基于 @arco-design/web-react 的主题化表单组件
  *
- * SparkInput    → Arco Input
- * SparkSelect   → Arco Select（保持 <option> 子元素 API）
- * SparkTextarea → Arco Input.TextArea
- * SparkCheckbox → Arco Checkbox
+ * SparkInput        → Arco Input
+ * SparkSearchInput  → Arco Input.Search（带搜索图标、清除按钮）
+ * SparkSelect       → Arco Select（保持 <option> 子元素 API；弹层使用 Arco 默认下拉弹窗）
+ * SparkTextarea      → Arco Input.TextArea
+ * SparkCheckbox      → Arco Checkbox
+ *
+ * 规则：所有下拉/弹窗类控件必须使用 Arco Design 提供的基础组件，**不要**自己手写
+ *       <select> / <ul role="listbox"> / 自定义 popup。详见 AGENTS.md。
  */
 import { forwardRef, Children, isValidElement, useMemo } from 'react'
 import type { ReactNode, CSSProperties } from 'react'
 import { Input, Select, Checkbox } from '@arco-design/web-react'
+import './FormControls.less'
 
 const { TextArea } = Input
+const InputSearch = Input.Search
 
 /* ============================================================
    SparkInput
@@ -104,7 +110,7 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
     }
 
     return (
-      <span className={`spark-input-wrap ${className}`}>
+      <span >
         {icon && <span className="spark-input-icon">{icon}</span>}
         <Input
           ref={ref}
@@ -133,18 +139,19 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
 )
 
 /* ============================================================
-   SparkSelect — Arco Select，保持 <option> 子元素 API
+   SparkSelect — Arco Design 下拉弹窗（Select 组件）
+   保持 <option> 子元素 API；不允许再用原生 <select>。
    ============================================================ */
 
-function extractOptions(children: ReactNode): { value: string; label: string }[] {
-  const result: { value: string; label: string }[] = []
+function extractOptions(children: ReactNode): { value: string; label: ReactNode }[] {
+  const result: { value: string; label: ReactNode }[] = []
   Children.forEach(children, (child) => {
     if (!isValidElement(child)) return
     const props = child.props as { value?: string; children?: ReactNode }
     const value = props.value ?? ''
-    const label = typeof props.children === 'string'
-      ? props.children
-      : String(props.children ?? value)
+    // 保留原始 ReactNode 作为 label（不再强制 String()），调用方可以传 <span> 自定义样式
+    // （如：带背景色的 tag、icon + 文字组合等）。dropDown 中 Arco 会原样渲染这些节点。
+    const label = props.children ?? value
     result.push({ value, label })
   })
   return result
@@ -156,31 +163,130 @@ export interface SparkSelectProps {
   onChange?: (event: { target: { value: string } }) => void
   disabled?: boolean
   className?: string
+  style?: CSSProperties
+  width?: CSSProperties['width']
   children?: ReactNode
+  placeholder?: string
+  size?: 'mini' | 'small' | 'default' | 'large'
+  allowClear?: boolean
+  showSearch?: boolean
+  /** 透传到 Arco Select 的 triggerProps，覆盖默认行为（一般不需要） */
+  triggerProps?: Record<string, unknown>
 }
 
 export const SparkSelect = forwardRef<any, SparkSelectProps>(
-  function SparkSelect({ className = '', children, value, defaultValue, onChange, disabled }, _ref) {
+  function SparkSelect(
+    {
+      className = '',
+      children,
+      value,
+      defaultValue,
+      onChange,
+      disabled,
+      placeholder,
+      size = 'small',
+      allowClear,
+      showSearch,
+      triggerProps,
+      style,
+      width,
+    },
+    _ref,
+  ) {
     const options = useMemo(() => extractOptions(children), [children])
 
     return (
-      <div className={`spark-select-wrap ${className}`}>
+      <div className={`spark-select-wrap ${className}`} style={{ ...(style ?? {}), ...(width !== undefined ? { width } : {}) }}>
         <Select
+          // Arco 自带的下拉弹窗样式已经够完整了，不要再用 bordered={false} 把外壳抹掉再自己画。
           className="spark-select-arco"
-          dropdownMenuClassName="spark-select-arco-popup"
-          bordered={false}
+          {...(placeholder !== undefined ? { placeholder } : {})}
+          {...(allowClear !== undefined ? { allowClear } : {})}
+          {...(showSearch !== undefined ? { showSearch } : {})}
           {...(value !== undefined ? { value } : {})}
           {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
           onChange={(v: string | number) => {
-            onChange?.({ target: { value: String(v) } })
+            onChange?.({ target: { value: v != null ? String(v) : '' } })
           }}
           disabled={disabled ?? false}
-          size="small"
+          size={size}
           getPopupContainer={() => document.body}
           triggerProps={{
             autoAlignPopupWidth: true,
             autoAlignPopupMinWidth: true,
             position: 'bl' as const,
+            ...(triggerProps ?? {}),
+          }}
+        >
+          {options.map((opt) => (
+            <Select.Option key={opt.value} value={opt.value}>
+              {opt.label}
+            </Select.Option>
+          ))}
+        </Select>
+      </div>
+    )
+  },
+)
+
+export interface SparkMultiSelectProps {
+  value?: string[]
+  defaultValue?: string[]
+  onChange?: (event: { target: { value: string[] } }) => void
+  disabled?: boolean
+  className?: string
+  style?: CSSProperties
+  width?: CSSProperties['width']
+  children?: ReactNode
+  placeholder?: string
+  size?: 'mini' | 'small' | 'default' | 'large'
+  allowClear?: boolean
+  showSearch?: boolean
+  triggerProps?: Record<string, unknown>
+}
+
+export const SparkMultiSelect = forwardRef<any, SparkMultiSelectProps>(
+  function SparkMultiSelect(
+    {
+      className = '',
+      children,
+      value,
+      defaultValue,
+      onChange,
+      disabled,
+      placeholder,
+      size = 'small',
+      allowClear,
+      showSearch,
+      triggerProps,
+      style,
+      width,
+    },
+    _ref,
+  ) {
+    const options = useMemo(() => extractOptions(children), [children])
+
+    return (
+      <div className={`spark-select-wrap ${className}`} style={{ ...(style ?? {}), ...(width !== undefined ? { width } : {}) }}>
+        <Select
+          className="spark-select-arco"
+          mode="multiple"
+          {...(placeholder !== undefined ? { placeholder } : {})}
+          {...(allowClear !== undefined ? { allowClear } : {})}
+          {...(showSearch !== undefined ? { showSearch } : {})}
+          {...(value !== undefined ? { value } : {})}
+          {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
+          onChange={(v: Array<string | number>) => {
+            onChange?.({ target: { value: v.map(String) } })
+          }}
+          disabled={disabled ?? false}
+          size={size}
+          getPopupContainer={() => document.body}
+          triggerProps={{
+            autoAlignPopupWidth: true,
+            autoAlignPopupMinWidth: true,
+            position: 'bl' as const,
+            ...(triggerProps ?? {}),
           }}
         >
           {options.map((opt) => (
@@ -215,6 +321,7 @@ export interface SparkTextareaProps {
   onFocus?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
   onBlur?: (e: React.FocusEvent<HTMLTextAreaElement>) => void
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void
+  onPaste?: (e: React.ClipboardEvent<HTMLTextAreaElement>) => void
 }
 
 export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
@@ -235,6 +342,7 @@ export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
     onFocus,
     onBlur,
     onKeyDown,
+    onPaste,
   }, ref) {
     return (
       <TextArea
@@ -256,6 +364,7 @@ export const SparkTextarea = forwardRef<any, SparkTextareaProps>(
         onFocus={onFocus as any}
         onBlur={onBlur as any}
         onKeyDown={onKeyDown as any}
+        onPaste={onPaste as any}
         autoSize={autoSize ?? false}
       />
     )
@@ -292,6 +401,79 @@ export const SparkCheckbox = forwardRef<any, SparkCheckboxProps>(
       >
         {label}
       </Checkbox>
+    )
+  },
+)
+
+/* ============================================================
+   SparkSearchInput — Arco Design 搜索输入框
+   基于 Input.Search，自带搜索图标和清除按钮
+   ============================================================ */
+
+export interface SparkSearchInputProps {
+  value?: string
+  defaultValue?: string
+  onChange?: (value: string) => void
+  onSearch?: (value: string) => void
+  onClear?: () => void
+  placeholder?: string
+  disabled?: boolean
+  readOnly?: boolean
+  className?: string
+  style?: CSSProperties
+  autoFocus?: boolean
+  maxLength?: number
+  allowClear?: boolean
+  searchButton?: boolean
+  size?: 'mini' | 'small' | 'default' | 'large'
+}
+
+export const SparkSearchInput = forwardRef<any, SparkSearchInputProps>(
+  function SparkSearchInput(
+    {
+      className = '',
+      style,
+      onChange,
+      onSearch,
+      onClear,
+      value,
+      defaultValue,
+      placeholder = '搜索...',
+      disabled,
+      readOnly,
+      autoFocus,
+      maxLength,
+      allowClear = true,
+      searchButton = false,
+      size = 'small',
+    },
+    ref,
+  ) {
+    return (
+      <InputSearch
+        ref={ref}
+        className={`spark-search-input ${className}`}
+        {...(style !== undefined ? { style } : {})}
+        {...(value !== undefined ? { value } : {})}
+        {...(value === undefined && defaultValue !== undefined ? { defaultValue } : {})}
+        onChange={(v: string) => {
+          onChange?.(v)
+        }}
+        onSearch={(v: string) => {
+          onSearch?.(v)
+        }}
+        onClear={() => {
+          onClear?.()
+        }}
+        placeholder={placeholder}
+        disabled={disabled ?? false}
+        {...(readOnly !== undefined ? { readOnly } : {})}
+        {...(autoFocus !== undefined ? { autoFocus } : {})}
+        {...(maxLength !== undefined ? { maxLength } : {})}
+        allowClear={allowClear}
+        searchButton={searchButton}
+        size={size}
+      />
     )
   },
 )

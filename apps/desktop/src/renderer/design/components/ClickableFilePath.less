@@ -1,0 +1,20 @@
+/* ClickableFilePath 样式 */
+
+.clickable-file-path {
+  display: inline;
+  color: var(--color-primary-6);
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  transition: all 0.15s ease;
+
+  &:hover {
+    color: var(--color-primary-5);
+    text-decoration-style: solid;
+    background: var(--color-primary-1);
+    padding: 1px 4px;
+    margin: -1px -4px;
+    border-radius: 3px;
+  }
+}

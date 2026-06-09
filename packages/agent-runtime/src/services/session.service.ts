@@ -15,12 +15,15 @@ import {
   ContextPreferenceRepository,
   AgentRepository,
   WorkflowRepository,
+  TeamDispatchRepository,
+  TeamDefinitionRepository,
 } from '@spark/storage'
 import type { AgentItem, WorkflowItem } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
 import type {
   AgentEvent,
   SessionCancelQueuedTurnResponse,
+  SessionSendQueuedTurnNowResponse,
   SessionCreateResponse,
   SessionGetQueueResponse,
   SessionId,
@@ -32,8 +35,15 @@ import type {
   HookNode,
   SessionAttachment,
   UserQuestionPrompt,
+  TeamModeConfig,
+  TeamA2ATask,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
+import { LOCAL_CLI_PROVIDER_ID } from '@spark/protocol'
+import { TeamDispatchService } from './team-dispatch.service.js'
+import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
+import { loadSdkMcpFactory } from '../sdk/index.js'
+import { z } from 'zod'
 import { isCommand, parseCommand, createBuiltinRegistry } from '../core/index.js'
 import { TodoStore } from '../core/todo-store.js'
 import type {
@@ -54,6 +64,10 @@ import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '.
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
 import { generateSessionTitle } from './session-title-generator.js'
+import { MemoryRepository } from '@spark/storage'
+import { MemoryWriterService } from './memory/memory-writer.service.js'
+import { MemoryReaderService } from './memory/memory-reader.service.js'
+import { MemoryStoreService } from './memory/memory-store.service.js'
 import {
   createLogger,
   resolveProviderContextWindow,
@@ -84,7 +98,11 @@ export type QuestionHandler = (
   questions: UserQuestionPrompt[],
 ) => Promise<Record<string, unknown>>
 type AgentAdapterKind = 'claude' | 'claude-sdk' | 'codex'
-type ActiveExecution = { cancel(): void }
+type ActiveExecution = {
+  cancel(): void
+  /** Hot-swap the permission mode for the currently executing turn. */
+  setPermissionMode?(mode: SessionPermissionMode): void
+}
 type ImageGenerationRuntimeContext = {
   mcpServer: SDKMcpServerConfig
   systemPrompt: string
@@ -99,6 +117,19 @@ interface FirstTurnTitleContext {
 interface TryStartSDKTurnOptions {
   allowedMcpServerIds?: Set<string>
   firstTurnTitleContext?: FirstTurnTitleContext
+  /**
+   * 团队模式 @ 路由：当前 turn 实际由该 Member 直接响应。
+   * 设置后：
+   *  - 流式 assistant_message 会重写为 team_member_message（驱动 TeamMemberBubble）
+   *  - emit user_message 时附带 mentionAgentId 字段
+   */
+  mentionAgentId?: string
+  /** Memory System：当前 workspace id（用于 project scope 记忆写入） */
+  primaryWorkspaceId?: string
+  /** Memory System：当前 agent id（用于 agent scope 记忆写入） */
+  agentId?: string
+  /** Memory System：当前 workspace 根路径（project scope 记忆文件存放） */
+  workspaceRootPath?: string
 }
 type SessionRuntimePatch = {
   providerProfileId?: string
@@ -117,6 +148,8 @@ type PendingTurn = {
   runtimePatch?: SessionRuntimePatch
   skillId?: string
   skillParams?: Record<string, unknown>
+  /** 团队模式：用户通过 @ 指定的直接处理 Agent ID（mention routing） */
+  mentionAgentId?: string
 }
 
 const DEFAULT_SESSION_TITLES = new Set(['New Session', '新会话', 'Workspace Session', '未命名会话'])
@@ -132,12 +165,22 @@ const ENABLE_CLAUDE_SDK_RESUME = false
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
+  /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
+  private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
   private approvalOverrides = new Map<string, boolean>() // sessionId → approval enabled
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
+  private teamDispatchService: TeamDispatchService | null = null
   private readonly platformBridge: PlatformBridgeService
+
+  private getTeamDispatchService(): TeamDispatchService {
+    if (this.teamDispatchService == null) {
+      this.teamDispatchService = new TeamDispatchService(new TeamDispatchRepository(this.db))
+    }
+    return this.teamDispatchService
+  }
 
   constructor(
     private readonly db: SparkDatabase,
@@ -157,6 +200,16 @@ export class SessionService {
   recoverInterruptedSessions(): { recovered: number } {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+
+    // 回收上次进程残留的、卡在 pending/working 的 team dispatch（设计文档 §15）。
+    // 单进程应用启动时不会有真正进行中的 dispatch，因此 now 之前的全部回收。
+    try {
+      const reclaimed = new TeamDispatchRepository(this.db).markStaleAsFailed(new Date().toISOString())
+      if (reclaimed > 0) log.info(`Reclaimed ${reclaimed} stale team dispatch(es) after app restart`)
+    } catch {
+      // 团队功能未启用/表不存在时忽略
+    }
+
     const { sessions } = sessionRepo.list({
       status: 'running',
       includeArchived: true,
@@ -509,20 +562,32 @@ export class SessionService {
     /** 可选：Skill 参数 */
     skillParams?: Record<string, unknown>
     attachments?: SessionAttachment[]
+    /** 可选：团队模式配置（Team Mode 下随 turn 提交） */
+    teamConfig?: TeamModeConfig
+    /** 可选：团队模式 @ 路由——用户指定由该 Member 直接响应（替代 Host 主循环） */
+    mentionAgentId?: string
   }): Promise<{ turnId: string; started: boolean }> {
-    const { sessionId, message, skillId, skillParams } = params
+    const { sessionId, message, skillId, skillParams, mentionAgentId } = params
     const attachments = normalizeTurnAttachments(params.attachments)
     const runtimePatch = getRuntimePatch(params)
     const turnId = crypto.randomUUID()
+    // 团队配置随 turn 提交时，写入 session.metadata.team（startTurn 以此为单一真相源，
+    // 无需穿过排队路径）。
+    if (params.teamConfig != null) {
+      new SessionRepository(this.db).patchMetadata(sessionId, { team: params.teamConfig })
+    }
+    // 用户提交新 turn = 已对计划做出响应（批准/继续提问/拒绝后再次发送）。
+    // 解除 plan 审批闸门，让被阻塞的队列后续可以恢复自动起跑。
+    this.pendingPlanApprovals.delete(sessionId)
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments),
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
       )
       return { turnId, started: false }
     }
 
-    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams, attachments)
+    await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId)
     return { turnId, started: true }
   }
 
@@ -534,11 +599,12 @@ export class SessionService {
     skillId?: string,
     skillParams?: Record<string, unknown>,
     attachments?: SessionAttachment[],
+    mentionAgentId?: string,
   ): Promise<void> {
     if (this.activeLoops.has(sessionId)) {
       this.enqueueTurn(
         sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments),
+        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
       )
       return
     }
@@ -552,30 +618,61 @@ export class SessionService {
     }
 
     const session = sessionRepo.findByIdOrFail(sessionId)
-    const agent = this.resolveAgent(session.agent_id)
+    // ── Mention 路由：解析"实际执行 turn 的 agent"。
+    // mentionAgentId 必须命中当前会话团队成员（hostAgentId 等同未指定，回退主循环）。
+    const sessionTeamConfig = readSessionTeamConfig(session)
+    const isMentionTurn =
+      mentionAgentId != null &&
+      sessionTeamConfig?.enabled === true &&
+      mentionAgentId !== sessionTeamConfig.hostAgentId &&
+      sessionTeamConfig.memberAgentIds.includes(mentionAgentId)
+    const agent = isMentionTurn
+      ? this.resolveAgent(mentionAgentId)
+      : this.resolveAgent(session.agent_id)
     const workflow = agent.workflowId != null ? new WorkflowRepository(this.db).get(agent.workflowId) : null
-    if (session.provider_profile_id == null) {
+    // Provider / model：mention 时优先用被 @ Agent 自己的配置，未配置则回退会话默认。
+    const effectiveProviderProfileId = isMentionTurn
+      ? agent.providerProfileId ?? session.provider_profile_id
+      : session.provider_profile_id
+    if (effectiveProviderProfileId == null) {
       throw new Error(`Session ${sessionId} has no provider profile`)
     }
 
     const existingEventCount = eventRepo.countBySession(sessionId)
     const currentSeq = this.seqCounters.get(sessionId) ?? existingEventCount
+    // Team Mode：构造 agentId→displayName 映射，让 conversation history 把 team_member_message
+    // 也纳入历史（每条 member 发言前缀 [<name>]）。Mention 路径继承上下文的关键步骤。
+    const agentNameById: Record<string, string> = {}
+    if (sessionTeamConfig?.enabled === true) {
+      const agentRepo = new AgentRepository(this.db)
+      const hostAgent = agentRepo.get(sessionTeamConfig.hostAgentId)
+      if (hostAgent != null) agentNameById[hostAgent.id] = hostAgent.name
+      for (const memberId of sessionTeamConfig.memberAgentIds) {
+        const m = agentRepo.get(memberId)
+        if (m != null) agentNameById[m.id] = m.name
+      }
+    }
     const { prompt: conversationHistoryPrompt, summarization: summarizationStats } =
-      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq)
+      buildConversationHistoryWithSummary(eventRepo, this.db, sessionId, currentSeq, {
+        agentNameById,
+      })
     const isFirstTurn = existingEventCount === 0 && shouldDeriveSessionTitle(session.title)
     if (isFirstTurn) {
       sessionRepo.updateTitle(sessionId, deriveSessionTitle(message))
     }
-    const provider = providerRepo.get(session.provider_profile_id)
+    const provider = providerRepo.get(effectiveProviderProfileId)
     if (provider == null) {
-      throw new Error(`Provider profile not found: ${session.provider_profile_id}`)
+      throw new Error(`Provider profile not found: ${effectiveProviderProfileId}`)
     }
-    if (provider.keystore_ref == null) {
+    const isLocalCli = provider.id === LOCAL_CLI_PROVIDER_ID
+    if (!isLocalCli && provider.keystore_ref == null) {
       throw new Error(`Provider ${provider.id} has no keystore ref`)
     }
 
-    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
-    if (apiKey == null) {
+    const apiKey = isLocalCli
+      ? ''
+      : (await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)) ?? ''
+    if (!isLocalCli && apiKey.length === 0) {
       throw new Error(`API key not found for provider ${provider.id}`)
     }
 
@@ -594,24 +691,23 @@ export class SessionService {
       opusModel?: string
     }
 
-    const model = session.model_id ?? config.defaultModel ?? config.model
+    const model = (isMentionTurn ? agent.modelId : null) ?? session.model_id ?? config.defaultModel ?? config.model
     if (model == null || model.length === 0) {
       throw new Error(`Provider ${provider.id} has no default model configured`)
     }
 
     const agentAdapter = getAgentAdapterFromSession(
-      session.agent_adapter,
+      isMentionTurn ? agent.agentAdapter ?? session.agent_adapter : session.agent_adapter,
       session.chat_mode,
       provider.provider_type,
     )
     const adapterKind =
       agentAdapter === 'claude-sdk' || agentAdapter === 'claude' ? 'claude-sdk' : 'codex'
-    const stableSdkSessionId = makeSdkRuntimeSessionId(
-      sessionId,
-      session.provider_profile_id,
-      model,
-      agentAdapter,
-    )
+    // 非 mention turn 保持现有 hash（向后兼容续会话）；
+    // mention turn 把被 @ 的 agent.id 加入 hash，避免与 Host SDK session 冲突且让重复 @ 同一 member 可续会话。
+    const stableSdkSessionId = isMentionTurn
+      ? makeSdkRuntimeSessionId(sessionId, effectiveProviderProfileId, model, agentAdapter, `mention:${agent.id}`)
+      : makeSdkRuntimeSessionId(sessionId, effectiveProviderProfileId, model, agentAdapter)
     const sdkResumeSafe = isSdkResumeSafe({
       providerType: provider.provider_type,
       model,
@@ -624,12 +720,20 @@ export class SessionService {
       previousPromptSnapshot != null &&
       previousPromptSnapshot.adapterKind === adapterKind &&
       previousPromptSnapshot.model === model &&
-      previousPromptSnapshot.providerProfileId === session.provider_profile_id &&
+      previousPromptSnapshot.providerProfileId === effectiveProviderProfileId &&
       previousPromptSnapshot.sdkSessionId === stableSdkSessionId
     const sdkSessionId = sdkResumeSafe
       ? stableSdkSessionId
-      : makeSdkRuntimeSessionId(sessionId, session.provider_profile_id, model, agentAdapter, turnId)
-    const storedPermissionMode = getPermissionModeFromSession(session.permission_mode, agentAdapter)
+      : makeSdkRuntimeSessionId(
+          sessionId,
+          effectiveProviderProfileId,
+          model,
+          agentAdapter,
+          isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
+        )
+    const storedPermissionMode = isMentionTurn
+      ? normalizePermissionMode(agent.permissionMode)
+      : getPermissionModeFromSession(session.permission_mode, agentAdapter)
     const permissionMode = this.getEffectivePermissionMode(
       sessionId,
       agentAdapter,
@@ -746,9 +850,82 @@ export class SessionService {
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
     const platformMcpServer = await this.resolvePlatformManagementMcpServer()
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
+
+    // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
+    // Mention 路由：被 @ 的 Member 直接响应，不注入 spark_team（不允许它再 dispatch，符合"互调暂缓"原则）。
+    const teamConfig = sessionTeamConfig
+    let teamMcpServer: SDKMcpServerConfig | undefined
+    let teamRosterPrompt = ''
+    let teamInstructionsPrompt = ''
+    if (teamConfig?.enabled && !isMentionTurn) {
+      const members = this.resolveTeamMembers(teamConfig.memberAgentIds, agent.id)
+      teamRosterPrompt = buildTeamRosterPrompt(agent, members, teamConfig)
+      // 若会话由某个长期团队（ManagedTeam）应用而来，则把团队专属 prompt 作为
+      // [Team Instructions] 段注入，紧跟在 [Team Roster] 之后。即使长期团队被删除
+      // 或被禁用，此处也按当前 DB 状态读取一次：缺失则跳过，不报错。
+      if (teamConfig.teamId != null) {
+        try {
+          const team = new TeamDefinitionRepository(this.db).get(teamConfig.teamId)
+          if (team != null && team.prompt.trim().length > 0) {
+            teamInstructionsPrompt = `[Team Instructions]\n${team.prompt.trim()}`
+          }
+        } catch {
+          // 静默：长期团队 prompt 是可选增强，DB 读取失败时降级为无 prompt 模式
+        }
+      }
+      teamMcpServer =
+        (await this.createTeamMcpServer({
+          sessionId,
+          turnId,
+          hostAgent: agent,
+          members,
+          teamConfig,
+          workspaceRootPath,
+          eventRepo,
+        })) ?? undefined
+    }
+    // Mention 路由：注入"被 @ 的 Member 视角"，告诉它自己身份 + 上下文继承策略。
+    let teamMemberContextPrompt = ''
+    if (isMentionTurn && teamConfig?.enabled) {
+      const hostName = agentNameById[teamConfig.hostAgentId] ?? teamConfig.hostAgentId
+      teamMemberContextPrompt = [
+        '[Team Member Context]',
+        `You are ${agent.name} (${agent.id}), a member of the team led by ${hostName}.`,
+        'The user explicitly @-mentioned you in the latest message — respond as yourself, inheriting the prior session context (including conversations with the host and other members above).',
+        'Stay in character: do NOT impersonate the host or other members; do NOT prefix replies with their names. End the turn after addressing what the user asked you.',
+      ].join('\n')
+    }
+
+    // ── Memory System：加载长期记忆注入 system prompt ──
+    let memoryBlock: string | undefined
+    try {
+      const settingsRepo = new SettingsRepository(this.db)
+      const memoryRepo = new MemoryRepository(this.db)
+      const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      const memoryReader = new MemoryReaderService(
+        memoryRepo,
+        memoryStore,
+        (cat: string, key: string) => settingsRepo.get(cat, key),
+      )
+      const memoryInjection = await memoryReader.loadForSession({
+        workspaceId: primaryWorkspaceId ?? '',
+        agentId: agent.id,
+      })
+      memoryBlock = memoryInjection.block || undefined
+      if (memoryBlock != null) {
+        log.debug(`Memory injected: ${memoryInjection.injectedIds.length} entries`)
+      }
+    } catch (err) {
+      log.warn(`Memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
+
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
+      teamMemberContextPrompt,
+      teamRosterPrompt,
+      teamInstructionsPrompt,
       runtimeRulesPrompt,
+      memoryBlock,
       runtimeContext.systemPrompt,
       projectContext.systemPrompt,
       conversationHistoryPrompt,
@@ -835,7 +1012,7 @@ export class SessionService {
           userMessage: buildUserMessageSnapshot(message, turnAttachments),
           systemPromptSections: promptSections,
           model,
-          providerProfileId: session.provider_profile_id,
+          providerProfileId: effectiveProviderProfileId,
           adapterKind,
           permissionMode,
           toolCount: toolCountEstimate,
@@ -948,6 +1125,7 @@ export class SessionService {
       const iterationOverride = this.iterationOverrides.get(sessionId)
       const sdkConfig: SDKExecutorConfig = {
         apiKey,
+        ...(isLocalCli ? { useLocalConfig: true } : {}),
         model,
         workspaceRootPath,
         permissionMode,
@@ -962,6 +1140,7 @@ export class SessionService {
         ...(imageGenerationContext != null
           ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
           : {}),
+        ...(teamMcpServer != null ? { teamMcpServer } : {}),
         ...(platformMcpServer != null
           ? { platformManagementMcpServer: platformMcpServer }
           : {}),
@@ -982,8 +1161,15 @@ export class SessionService {
       const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
       const turnOptions: TryStartSDKTurnOptions = {
         ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
+        ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
+        primaryWorkspaceId: primaryWorkspaceId ?? '',
+        agentId: agent.id,
+        workspaceRootPath,
       }
-      if (isFirstTurn) {
+      // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
+      // 仍保留首轮触发的简单本地标题（deriveSessionTitle）。
+      // Mention turn 不参与首轮标题精炼（会话已有上下文）。
+      if (isFirstTurn && !isLocalCli && !isMentionTurn) {
         turnOptions.firstTurnTitleContext = {
           providerType: provider.provider_type,
           apiKey,
@@ -1191,6 +1377,9 @@ export class SessionService {
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
+    if (config.teamMcpServer != null) {
+      mcpServers.spark_team = config.teamMcpServer
+    }
 
     // Platform management MCP server — auto-registered for all sessions
     if (config.platformManagementMcpServer != null) {
@@ -1224,11 +1413,64 @@ export class SessionService {
 
     let firstAssistantText = ''
     const collectAssistantText = options.firstTurnTitleContext != null
+    // Mention 路由：把 assistant_message 重写为 team_member_message（驱动 TeamMemberBubble + 进入历史时带 [name]）。
+    // dispatchId 复用 turnId（mention 没有 dispatch 概念，UI 只需稳定标识对 delta 流聚合）。
+    const mentionAgentId = options.mentionAgentId
+    const mentionMemberContext = mentionAgentId != null
+      ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
+      : undefined
     executor.onEvent((event) => {
       if (event.type === 'file_change') changedFiles.add(event.path)
-      this.emitAndPersist(sessionId, turnId, event, eventRepo)
+      let outgoing: AgentEvent = event
+      if (mentionAgentId != null) {
+        if (event.type === 'assistant_message' && typeof event.content === 'string') {
+          outgoing = {
+            id: event.id,
+            type: 'team_member_message',
+            sessionId: event.sessionId,
+            turnId: event.turnId,
+            timestamp: event.timestamp,
+            seq: event.seq,
+            dispatchId: `mention:${turnId}`,
+            memberAgentId: mentionAgentId,
+            mode: event.mode,
+            content: event.content,
+            isFinal: event.isFinal,
+          }
+        } else if (event.type === 'user_message') {
+          outgoing = { ...event, mentionAgentId }
+        } else if (
+          event.type === 'tool_call' ||
+          event.type === 'tool_result' ||
+          event.type === 'file_change' ||
+          event.type === 'terminal_output'
+        ) {
+          outgoing = { ...event, teamMemberContext: mentionMemberContext }
+        }
+      }
+      this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
       if (event.type === 'agent_status' && event.status === 'completed') {
         maybeEmitValidationSuggestion()
+      }
+      // 立即更新 DB 中的 session status，不等 .then() 延迟。
+      // 避免在此窗口期内 refreshData() 从 DB 读到旧 status 覆盖前端状态。
+      if (event.type === 'agent_status') {
+        if (event.status === 'completed' || event.status === 'cancelled') {
+          sessionRepo.updateStatus(sessionId, 'idle')
+        } else if (event.status === 'error') {
+          sessionRepo.updateStatus(sessionId, 'error')
+        }
+      }
+      // Plan 模式：agent 递交计划后，turn 即将完成。为避免 finally 里的
+      // startNextQueuedTurn 把"用户审批前残留在队列里的旧 turn"自动顶出来执行
+      // （这会让审批弹窗还没确认就执行了下一条用户消息），在这里同步把队列清空
+      // 并标记本 session 处于"等待计划审批"状态，阻断 startNextQueuedTurn 自动起跑。
+      if (event.type === 'plan_proposed') {
+        this.pendingPlanApprovals.add(sessionId)
+        if ((this.pendingTurns.get(sessionId)?.length ?? 0) > 0) {
+          this.pendingTurns.delete(sessionId)
+          this.emitQueueChanged(sessionId)
+        }
       }
       if (
         collectAssistantText &&
@@ -1245,10 +1487,16 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
-    // Compute allowed tools: merge image-gen and platform tools into config defaults
+    // Compute allowed tools: merge image-gen / team / platform tools into config defaults
     let sdkAllowedTools = config.allowedTools
     if (config.imageGenerationMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, ['mcp__spark_image__generate_image'])
+    }
+    if (config.teamMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
+        'mcp__spark_team__agent_dispatch',
+        'mcp__spark_team__agent_dispatch_batch',
+      ])
     }
     if (config.platformManagementMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PLATFORM_TOOL_NAMES)
@@ -1258,6 +1506,10 @@ export class SessionService {
       ...config,
       ...(Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
       ...(sdkAllowedTools != null ? { allowedTools: sdkAllowedTools } : {}),
+      // Team Mode 下禁用 SDK 内置 Task 工具，强制 A2A 走 spark_team.agent_dispatch（§7.4）
+      ...(config.teamMcpServer != null
+        ? { disallowedTools: mergeUniqueStrings(config.disallowedTools, ['Task']) }
+        : {}),
     }
 
     // Fire-and-forget
@@ -1275,16 +1527,65 @@ export class SessionService {
             assistantMessage: firstAssistantText,
           })
         }
+
+        // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
+        void this.maybeWriteMemoryFromTurn(
+          sessionId,
+          options.primaryWorkspaceId ?? '',
+          options.agentId ?? '',
+          options.workspaceRootPath,
+          message,
+          firstAssistantText,
+        ).catch(() => { /* swallow — never affect main flow */ })
       })
       .catch(() => {
         sessionRepo.updateStatus(sessionId, 'error')
       })
       .finally(() => {
+        // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
+        this.teamDispatchService?.clearTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
           this.startNextQueuedTurn(sessionId)
         }
       })
+  }
+
+  /**
+   * Memory System：turn 结束后异步调用 MemoryWriterService。
+   * 全过程 try/catch，任何异常仅 log，绝不向上抛（fire-and-forget）。
+   */
+  private async maybeWriteMemoryFromTurn(
+    sessionId: string,
+    workspaceId: string,
+    agentId: string,
+    workspaceRootPath: string | undefined,
+    userMessage: string,
+    assistantMessage: string,
+  ): Promise<void> {
+    try {
+      const settingsRepo = new SettingsRepository(this.db)
+      const memoryRepo = new MemoryRepository(this.db)
+      const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      const writer = new MemoryWriterService(
+        memoryRepo,
+        memoryStore,
+        (cat: string, key: string) => settingsRepo.get(cat, key),
+        // LLM call：复用 conversation-summarizer 的提取式摘要策略，
+        // 此处简化实现 — 生产环境应通过 ModelService 调用小模型
+        async (_prompt: string) => '[]',
+      )
+      await writer.maybeWriteFromTurn({
+        sessionId,
+        workspaceId,
+        agentId,
+        userMessage,
+        assistantMessage,
+        recentSummary: '',
+      })
+    } catch (err) {
+      log.warn(`maybeWriteMemoryFromTurn failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   private async refineSessionTitleAsync(
@@ -1508,6 +1809,334 @@ export class SessionService {
     }
   }
 
+  // ── Team Mode (A2A) ────────────────────────────────────────────────────────
+
+  /** 解析会话启用的成员 Agent（排除 Host 自身、不存在或已禁用的 Agent） */
+  private resolveTeamMembers(memberAgentIds: string[], hostAgentId: string): AgentItem[] {
+    const repo = new AgentRepository(this.db)
+    const members: AgentItem[] = []
+    for (const id of memberAgentIds) {
+      if (id === hostAgentId) continue
+      const agent = repo.get(id)
+      if (agent != null && agent.enabled) members.push(agent)
+    }
+    return members
+  }
+
+  /** 构建 spark_team in-process MCP server（agent_dispatch 工具）。SDK 不可用时返回 null。 */
+  private async createTeamMcpServer(ctx: {
+    sessionId: string
+    turnId: string
+    hostAgent: AgentItem
+    members: AgentItem[]
+    teamConfig: TeamModeConfig
+    workspaceRootPath: string
+    eventRepo: EventRepository
+    /** 本层 dispatch 的深度（Host=0，嵌套时递增） */
+    currentDepth?: number
+  }): Promise<SDKMcpServerConfig | null> {
+    const factory = await loadSdkMcpFactory()
+    if (factory == null) return null
+    const { createSdkMcpServer, tool } = factory
+
+    // 单次 dispatch 的实际执行：构造 task 并交给 TeamDispatchService。
+    // parallel=true 时绕过 turn 串行队列，由 batch 工具使用。
+    const runSingleDispatch = async (
+      args: Record<string, unknown>,
+      parallel = false,
+    ): Promise<import('@spark/protocol').TeamA2AReply> => {
+      const task: TeamA2ATask = {
+        taskId: crypto.randomUUID(),
+        hostAgentId: ctx.hostAgent.id,
+        memberAgentId: String(args.targetAgentId ?? ''),
+        rootTurnId: ctx.turnId,
+        instruction: String(args.instruction ?? ''),
+        ...(args.inputs != null ? { inputs: args.inputs as Record<string, unknown> } : {}),
+        ...(Array.isArray(args.attachments)
+          ? { attachments: args.attachments as NonNullable<TeamA2ATask['attachments']> }
+          : {}),
+        ...(args.expectedOutput != null
+          ? { expectedOutput: args.expectedOutput as NonNullable<TeamA2ATask['expectedOutput']> }
+          : {}),
+        ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+      }
+      return this.getTeamDispatchService().run(
+        task,
+        {
+          sessionId: ctx.sessionId,
+          turnId: ctx.turnId,
+          hostAgentId: ctx.hostAgent.id,
+          members: ctx.members,
+          teamConfig: ctx.teamConfig,
+          currentDepth: ctx.currentDepth ?? 0,
+          emitEvent: (event) => this.emitAndPersist(ctx.sessionId, ctx.turnId, event, ctx.eventRepo),
+          executeMember: ({ member, task: memberTask, dispatchId, signal, memberDepth }) =>
+            this.executeMemberTurn({
+              member,
+              task: memberTask,
+              dispatchId,
+              sessionId: ctx.sessionId,
+              turnId: ctx.turnId,
+              workspaceRootPath: ctx.workspaceRootPath,
+              eventRepo: ctx.eventRepo,
+              signal,
+              memberDepth,
+              members: ctx.members,
+              teamConfig: ctx.teamConfig,
+            }),
+        },
+        { parallel },
+      )
+    }
+
+    // 单次 dispatch 工具：串行场景（前一结果决定下一步）
+    const dispatchTool = tool(
+      'agent_dispatch',
+      TEAM_DISPATCH_TOOL_DESCRIPTION,
+      {
+        targetAgentId: z.string().describe('One of the team member IDs visible to you. Use the exact id.'),
+        instruction: z.string().max(8000).describe('Clear, self-contained description of what the member should do.'),
+        inputs: z.record(z.unknown()).optional(),
+        attachments: z
+          .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
+          .max(10)
+          .optional(),
+        expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
+        timeoutMs: z.number().int().min(5000).max(600_000).optional(),
+      } as Record<string, unknown>,
+      async (args: Record<string, unknown>) => {
+        const reply = await runSingleDispatch(args)
+        return {
+          content: [{ type: 'text' as const, text: formatReplyForHost(reply) }],
+          structuredContent: reply as unknown,
+        }
+      },
+    )
+
+    // 批量 dispatch 工具：并行场景（多个相互独立的任务）
+    const dispatchBatchTool = tool(
+      'agent_dispatch_batch',
+      TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION,
+      {
+        dispatches: z
+          .array(
+            z.object({
+              targetAgentId: z.string(),
+              instruction: z.string().max(8000),
+              inputs: z.record(z.unknown()).optional(),
+              attachments: z
+                .array(z.object({ type: z.enum(['text', 'file_ref', 'image_ref']), value: z.string() }))
+                .max(10)
+                .optional(),
+              expectedOutput: z.enum(['text', 'json', 'code', 'mixed']).optional(),
+              timeoutMs: z.number().int().min(5000).max(600_000).optional(),
+            }),
+          )
+          .min(1)
+          .max(10)
+          .describe('A list of independent tasks to run in parallel. Each item is one dispatch.'),
+      } as Record<string, unknown>,
+      async (args: Record<string, unknown>) => {
+        const items = Array.isArray(args.dispatches) ? (args.dispatches as Array<Record<string, unknown>>) : []
+        // parallel=true 绕过 turn 串行队列，items 真正并发执行；
+        // Promise.allSettled 保证一个失败不影响其他（service.run 自身已把失败转 reply，几乎总 fulfilled）。
+        const settled = await Promise.allSettled(items.map((item) => runSingleDispatch(item, true)))
+        const replies = settled.map((s, index) =>
+          s.status === 'fulfilled'
+            ? s.value
+            : ({
+                taskId: crypto.randomUUID(),
+                memberAgentId: String(items[index]?.targetAgentId ?? ''),
+                state: 'failed' as const,
+                content: '',
+                error: { code: 'internal' as const, message: s.reason instanceof Error ? s.reason.message : String(s.reason) },
+              } satisfies import('@spark/protocol').TeamA2AReply),
+        )
+        const text = replies
+          .map((r, i) => `[${i + 1}/${replies.length}] ${formatReplyForHost(r)}`)
+          .join('\n\n---\n\n')
+        return {
+          content: [{ type: 'text' as const, text }],
+          structuredContent: { replies } as unknown,
+        }
+      },
+    )
+
+    return createSdkMcpServer({
+      name: 'spark_team',
+      version: '0.2.0',
+      tools: [dispatchTool, dispatchBatchTool],
+    }) as SDKMcpServerConfig
+  }
+
+  /** 用某个成员 Agent 的配置运行一次 one-shot turn，流式输出 rebrand 为 team_member_message。 */
+  private async executeMemberTurn(args: {
+    member: AgentItem
+    task: TeamA2ATask
+    dispatchId: string
+    sessionId: string
+    turnId: string
+    workspaceRootPath: string
+    eventRepo: EventRepository
+    signal: AbortSignal
+    /** member 自身 dispatch 的深度（用于嵌套判定） */
+    memberDepth: number
+    members: AgentItem[]
+    teamConfig: TeamModeConfig
+  }): Promise<TeamMemberExecutionResult> {
+    const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal, memberDepth, members, teamConfig } =
+      args
+
+    // 解析 member 的 provider/apiKey/model；member 未配置 provider 时回落到会话 provider。
+    const sessionRepo = new SessionRepository(this.db)
+    const providerRepo = new ProviderProfileRepository(this.db)
+    const session = sessionRepo.findByIdOrFail(sessionId)
+    const providerProfileId = member.providerProfileId ?? session.provider_profile_id
+    if (providerProfileId == null) throw new Error('Member has no provider profile and session has none')
+    const provider = providerRepo.get(providerProfileId)
+    if (provider?.keystore_ref == null) throw new Error('Member provider has no keystore ref')
+    const apiKey = await keystore.getSecret(provider.keystore_ref as keystore.KeystoreRef)
+    if (apiKey == null) throw new Error('Member provider API key not found')
+    const providerConfig = JSON.parse(provider.config_json) as {
+      defaultModel?: string
+      model?: string
+      apiEndpoint?: string
+      haikuModel?: string
+      sonnetModel?: string
+      opusModel?: string
+    }
+    const model = (member.modelId ?? providerConfig.defaultModel ?? providerConfig.model ?? '').trim()
+    if (!model) throw new Error('Member has no resolvable model')
+
+    const memberSystemPrompt = buildManagedAgentSystemPrompt(member, null)
+    const userMessage = buildMemberUserMessage(task)
+    // Claude Code SDK 要求 session_id 必须是合法 UUID，给每次 dispatch 全新 UUID
+    // 避免与 Host 的 SDK session 冲突；member 不需要跨 dispatch 续会话。
+    const memberSdkSessionId = crypto.randomUUID()
+
+    // Member 自身的 MCP 工具
+    const memberMcpServers = this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
+    // 嵌套：仅当 allowNesting 且 member 的 dispatch 深度仍 < maxDepth 时，给 member 注入
+    // spark_team 工具（深度 = memberDepth），使其可再调用下一层成员。
+    let nestedTeamServer: SDKMcpServerConfig | undefined
+    if (teamConfig.allowNesting && memberDepth < teamConfig.maxDepth) {
+      nestedTeamServer =
+        (await this.createTeamMcpServer({
+          sessionId,
+          turnId,
+          hostAgent: member,
+          members,
+          teamConfig,
+          workspaceRootPath,
+          eventRepo,
+          currentDepth: memberDepth,
+        })) ?? undefined
+      if (nestedTeamServer != null) memberMcpServers.spark_team = nestedTeamServer
+    }
+
+    const sdkConfig: SDKExecutorConfig = {
+      apiKey,
+      model,
+      workspaceRootPath,
+      permissionMode: member.permissionMode as SDKExecutorConfig['permissionMode'],
+      ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
+      ...(providerConfig.haikuModel != null ? { haikuModel: providerConfig.haikuModel } : {}),
+      ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
+      ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
+      ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
+      ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
+      // 嵌套时预批准 dispatch 工具；始终禁用内置 Task（§7.4）。
+      ...(nestedTeamServer != null
+        ? { allowedTools: ['mcp__spark_team__agent_dispatch', 'mcp__spark_team__agent_dispatch_batch'] }
+        : {}),
+      disallowedTools: ['Task'],
+      enableCheckpoints: false,
+      sdkSessionId: memberSdkSessionId,
+      continueSession: false,
+      ...(this.onApproval != null ? { approvalCallback: this.onApproval } : {}),
+      ...(this.onQuestion != null ? { questionCallback: this.onQuestion } : {}),
+    }
+
+    const executor = new ClaudeSDKExecutor()
+    const onAbort = () => executor.cancel()
+    signal.addEventListener('abort', onAbort)
+
+    let completeText = ''
+    let deltaText = ''
+    let inputTokens: number | undefined
+    let outputTokens: number | undefined
+    let memberError: string | undefined
+    const makeBase = () => ({
+      id: crypto.randomUUID(),
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+    })
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...makeBase(),
+            type: 'team_member_message',
+            dispatchId,
+            memberAgentId: member.id,
+            mode: event.mode,
+            content: event.content,
+            isFinal: event.isFinal,
+          },
+          eventRepo,
+        )
+        if (event.mode === 'complete' && event.content.length > 0) completeText = event.content
+        else if (event.mode === 'delta') deltaText += event.content
+      } else if (event.type === 'usage_update') {
+        inputTokens = event.inputTokens
+        outputTokens = event.outputTokens
+      } else if (event.type === 'agent_error') {
+        memberError = event.message
+      } else if (
+        event.type === 'tool_call' ||
+        event.type === 'tool_result' ||
+        event.type === 'file_change' ||
+        event.type === 'terminal_output'
+      ) {
+        // 透传时重写 base 字段（seq 由 emitAndPersist 覆盖），保留原事件 payload
+        this.emitAndPersist(
+          sessionId,
+          turnId,
+          {
+            ...event,
+            sessionId,
+            turnId,
+            seq: 0,
+            teamMemberContext: { dispatchId, memberAgentId: member.id },
+          },
+          eventRepo,
+        )
+      }
+    })
+
+    try {
+      // 第二参数是 Spark 内部 turnId（仅用于 executor 内部日志/事件归属），不传给 SDK；
+      // 用全新 UUID 避免与 Host 的 turnId 冲突（emit 时仍用 host turnId，见 makeBase）。
+      await executor.executeTurn(sessionId, crypto.randomUUID(), userMessage, sdkConfig)
+    } finally {
+      signal.removeEventListener('abort', onAbort)
+    }
+
+    // 优先用 complete 文本；provider 只发 delta 时回落到累积的 delta 文本。
+    if (memberError != null) {
+      throw new Error(memberError)
+    }
+    return {
+      content: completeText || deltaText,
+      ...(inputTokens != null ? { inputTokens } : {}),
+      ...(outputTokens != null ? { outputTokens } : {}),
+    }
+  }
+
   private emitAndPersist(
     sessionId: string,
     turnId: string,
@@ -1577,6 +2206,59 @@ export class SessionService {
     }
   }
 
+  /**
+   * 立即执行队列中的某个 turn：中断当前任务，将该 turn 提到最前面执行，其余排队保持原序。
+   * 上下文（会话历史事件）天然保留在 DB 中，新 turn 的 startTurn 会正常读取。
+   */
+  async sendQueuedTurnNow(params: { sessionId: string; turnId: string }): Promise<SessionSendQueuedTurnNowResponse> {
+    const { sessionId, turnId } = params
+    const queue = this.pendingTurns.get(sessionId) ?? []
+    const targetIdx = queue.findIndex((t) => t.turnId === turnId)
+    if (targetIdx === -1) {
+      return { started: false, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
+    }
+    const targetTurn = queue.splice(targetIdx, 1)[0]!
+
+    // 没有正在执行的任务 → 直接启动
+    if (!this.activeLoops.has(sessionId)) {
+      if (queue.length === 0) this.pendingTurns.delete(sessionId)
+      else this.pendingTurns.set(sessionId, queue)
+      this.pendingPlanApprovals.delete(sessionId)
+      this.emitQueueChanged(sessionId)
+      await this.startTurn(
+        sessionId,
+        targetTurn.turnId,
+        targetTurn.message,
+        targetTurn.runtimePatch,
+        targetTurn.skillId,
+        targetTurn.skillParams,
+        targetTurn.attachments,
+        targetTurn.mentionAgentId,
+      )
+      return { started: true, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
+    }
+
+    // 中断当前正在执行的任务（不清理队列）
+    const loop = this.activeLoops.get(sessionId)!
+    this.onApprovalCancel?.(sessionId)
+    this.teamDispatchService?.cancelAll()
+    loop.cancel()
+    this.activeLoops.delete(sessionId)
+
+    // 将目标 turn 放回队首，其余保持原序
+    queue.unshift(targetTurn)
+    this.pendingTurns.set(sessionId, queue)
+    this.pendingPlanApprovals.delete(sessionId)
+
+    const sessionRepo = new SessionRepository(this.db)
+    sessionRepo.updateStatus(sessionId, 'idle')
+
+    // 队首 turn 立即启动（旧 executor 的 finally 里 activeLoops 已删除，
+    // 其 startNextQueuedTurn 不会重复触发）
+    this.startNextQueuedTurn(sessionId)
+    return { started: true, queuedTurns: this.queueSnapshot(sessionId).queuedTurns }
+  }
+
   private enqueueTurn(sessionId: string, turn: PendingTurn): void {
     const queue = this.pendingTurns.get(sessionId) ?? []
     queue.push(turn)
@@ -1591,6 +2273,7 @@ export class SessionService {
     skillId?: string,
     skillParams?: Record<string, unknown>,
     attachments?: SessionAttachment[],
+    mentionAgentId?: string,
   ): PendingTurn {
     return {
       turnId,
@@ -1600,10 +2283,17 @@ export class SessionService {
       ...(runtimePatch != null ? { runtimePatch } : {}),
       ...(skillId != null ? { skillId } : {}),
       ...(skillParams != null ? { skillParams } : {}),
+      ...(mentionAgentId != null ? { mentionAgentId } : {}),
     }
   }
 
   private startNextQueuedTurn(sessionId: string): void {
+    // Plan 模式审批未完成前，队列暂停自动起跑：用户必须先批准/拒绝/切换权限模式，
+    // 否则后续 turn 会跨越审批弹窗自行执行，破坏用户预期。
+    if (this.pendingPlanApprovals.has(sessionId)) {
+      this.emitQueueChanged(sessionId)
+      return
+    }
     const queue = this.pendingTurns.get(sessionId)
     const next = queue?.shift()
     if (queue == null || next == null) {
@@ -1621,6 +2311,7 @@ export class SessionService {
       next.skillId,
       next.skillParams,
       next.attachments,
+      next.mentionAgentId,
     )
   }
 
@@ -1679,19 +2370,21 @@ export class SessionService {
 
   async cancelTurn(sessionId: string): Promise<{ cancelled: boolean }> {
     const loop = this.activeLoops.get(sessionId)
-    const hadQueuedTurns = (this.pendingTurns.get(sessionId)?.length ?? 0) > 0
-    this.pendingTurns.delete(sessionId)
+    this.pendingPlanApprovals.delete(sessionId)
     // 先取消挂起的 approval（如果 agent 正卡在用户审批弹窗上）
     this.onApprovalCancel?.(sessionId)
+    // 取消所有进行中的 team dispatch（连同其 member 执行器）
+    this.teamDispatchService?.cancelAll()
     if (loop == null) {
-      if (hadQueuedTurns) this.emitQueueChanged(sessionId)
+      this.emitQueueChanged(sessionId)
       return { cancelled: false }
     }
     loop.cancel()
     this.activeLoops.delete(sessionId)
     const sessionRepo = new SessionRepository(this.db)
     sessionRepo.updateStatus(sessionId, 'idle')
-    this.emitQueueChanged(sessionId)
+    // 终止当前任务后，自动执行队列中的下一个任务
+    this.startNextQueuedTurn(sessionId)
     return { cancelled: true }
   }
 
@@ -1702,6 +2395,7 @@ export class SessionService {
   private clearSessionMemory(sessionId: string): void {
     this.activeLoops.delete(sessionId)
     this.pendingTurns.delete(sessionId)
+    this.pendingPlanApprovals.delete(sessionId)
     this.seqCounters.delete(sessionId)
     this.approvalOverrides.delete(sessionId)
     this.iterationOverrides.delete(sessionId)
@@ -1851,6 +2545,22 @@ export class SessionService {
           ? { archivedAt: params.archived ? new Date().toISOString() : null }
           : {}),
       })
+    }
+
+    // 切换 permissionMode 通常意味着用户对 plan 模式审批弹窗做了选择
+    // （批准会切到 claude-auto-edits）。此时解除闸门，让被阻塞的队列恢复推进。
+    if (params.permissionMode !== undefined && this.pendingPlanApprovals.has(params.sessionId)) {
+      this.pendingPlanApprovals.delete(params.sessionId)
+      if (!this.activeLoops.has(params.sessionId)) {
+        this.startNextQueuedTurn(params.sessionId)
+      }
+    }
+
+    // Hot-swap: propagate permission-mode change to the running executor so it
+    // takes effect on the very next tool call within the current turn.
+    if (params.permissionMode !== undefined) {
+      const active = this.activeLoops.get(params.sessionId)
+      active?.setPermissionMode?.(params.permissionMode)
     }
 
     if (
@@ -2393,6 +3103,114 @@ function normalizeReasoningEffort(
   return 'medium'
 }
 
+// ── Team Mode helpers ────────────────────────────────────────────────────────
+
+const TEAM_DISPATCH_TOOL_DESCRIPTION = [
+  'Delegate ONE focused subtask to a teammate agent (serial).',
+  'When to use: the next step depends on the previous member reply, or only one member needs to act.',
+  'When NOT to use: you can answer the user directly, or the user asks several members in parallel (use agent_dispatch_batch instead).',
+  'Returns a structured reply with the member content. You decide whether to call again or synthesize the final answer.',
+].join('\n')
+
+const TEAM_DISPATCH_BATCH_TOOL_DESCRIPTION = [
+  'Delegate multiple INDEPENDENT subtasks to teammate agents IN PARALLEL.',
+  'When to use: the user explicitly asks several members (e.g. "ask all agents", "have docs and qa each draft X"), or you have multiple unrelated tasks that can run concurrently.',
+  'When NOT to use: tasks depend on each other (use agent_dispatch one at a time), or the user only mentioned one member.',
+  'Each item is one independent dispatch; tasks may target the same or different members.',
+  'Returns an array of structured replies in the same order as the input. A failure in one item does not abort the others.',
+].join('\n')
+
+/** 从 SessionRow.metadata_json 读取团队配置（不存在/无效返回 null） */
+function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeConfig | null {
+  if (session.metadata_json == null || session.metadata_json === '') return null
+  try {
+    const meta = JSON.parse(session.metadata_json) as { team?: Partial<TeamModeConfig> }
+    const team = meta.team
+    if (team == null || typeof team !== 'object') return null
+    return {
+      enabled: team.enabled === true,
+      hostAgentId: typeof team.hostAgentId === 'string' ? team.hostAgentId : 'code-agent',
+      memberAgentIds: Array.isArray(team.memberAgentIds) ? team.memberAgentIds.filter((id) => typeof id === 'string') : [],
+      maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
+      allowNesting: team.allowNesting === true,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** 构建团队花名册 system prompt 段，附加在 [Agent Instructions] 之后（设计文档 §8.2.3） */
+export function buildTeamRosterPrompt(host: AgentItem, members: AgentItem[], teamConfig: TeamModeConfig): string {
+  if (members.length === 0) return ''
+  const lines: string[] = [
+    '[Team Roster]',
+    `You are ${host.name} (${host.id}), the host of a multi-agent team.`,
+    'You have TWO dispatch tools:',
+    '  - `mcp__spark_team__agent_dispatch` — delegate ONE subtask (serial; use when the next step depends on the previous reply).',
+    '  - `mcp__spark_team__agent_dispatch_batch` — delegate MULTIPLE independent subtasks in PARALLEL (use when the user asks several members at once, e.g. "let all members introduce themselves", or when tasks are unrelated).',
+    '',
+    'Members available to you in this session:',
+  ]
+  for (const m of members) {
+    const summary = m.description.trim().slice(0, 240)
+    lines.push(`- id: ${m.id}`)
+    lines.push(`  name: ${m.name}`)
+    if (summary) lines.push(`  description: ${summary}`)
+  }
+  lines.push('')
+  lines.push('Rules:')
+  lines.push('- Call dispatch with a clear instruction and the minimum context the member needs (paste code/snippets into `attachments` instead of relying on shared memory).')
+  lines.push(`- You may call at most ${teamConfig.maxDepth} chained dispatch level(s).`)
+  lines.push('- Do NOT call dispatch if you can answer the user directly.')
+  lines.push('')
+  lines.push('IMPORTANT — avoid duplicating member output:')
+  lines.push('- Member replies are streamed directly to the user in the chat UI. The user already sees them in full.')
+  lines.push('- After dispatch(es) return, do NOT repeat, paraphrase, restate, summarize, or list out the member replies.')
+  lines.push('- Default behavior: stay silent and end the turn. The dispatch cards plus member bubbles ARE the answer.')
+  lines.push('- Only speak again if (a) the user explicitly asked you to compare/synthesize multiple members, or (b) you need to ask the user a follow-up question, or (c) a dispatch failed and you must report what is missing. In those cases, write only the synthesis / question / failure note — never the members\' content.')
+  return lines.join('\n')
+}
+
+/** 把 task 拼成传给 member 的 user message（instruction + attachments + expectedOutput） */
+function buildMemberUserMessage(task: TeamA2ATask): string {
+  const parts: string[] = [task.instruction]
+  if (task.attachments != null && task.attachments.length > 0) {
+    parts.push('', '[Attachments]')
+    for (const att of task.attachments) {
+      parts.push(att.type === 'text' ? att.value : `${att.type}: ${att.value}`)
+    }
+  }
+  if (task.expectedOutput != null) {
+    parts.push('', `[Expected output] ${task.expectedOutput}`)
+  }
+  return parts.join('\n')
+}
+
+/** 把 member 的结构化回复格式化成给 Host LLM 看的工具结果文本（UI 不渲染此文本） */
+export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply): string {
+  const usage = reply.usage
+  const meta = [
+    `member=${reply.memberName != null ? `${reply.memberName} (${reply.memberAgentId})` : reply.memberAgentId}`,
+    `state=${reply.state}`,
+    usage?.durationMs != null ? `${usage.durationMs}ms` : null,
+    usage?.inputTokens != null && usage?.outputTokens != null
+      ? `${usage.inputTokens}→${usage.outputTokens} tok`
+      : null,
+    reply.error != null ? `code=${reply.error.code}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+  const header = `[Member Reply · ${meta}]`
+  if (reply.state !== 'completed') {
+    return `${header}\n${reply.error?.message ?? '(no content)'}`
+  }
+  const artifactsLine =
+    reply.artifacts != null && reply.artifacts.length > 0
+      ? `\n(artifacts: ${reply.artifacts.map((a) => a.name ?? a.type).join(', ')})`
+      : ''
+  return `${header}\n${reply.content}${artifactsLine}`
+}
+
 function buildManagedAgentSystemPrompt(agent: AgentItem, workflow: WorkflowItem | null): string {
   const sections: string[] = [
     '[Managed Agent]',
@@ -2479,6 +3297,16 @@ const PLATFORM_TOOL_NAMES: string[] = [
   'mcp__spark_platform__settings_set',
   'mcp__spark_platform__settings_get_category',
   'mcp__spark_platform__settings_get_all',
+  'mcp__spark_platform__board_list',
+  'mcp__spark_platform__board_get',
+  'mcp__spark_platform__board_create',
+  'mcp__spark_platform__board_update',
+  'mcp__spark_platform__board_delete',
+  'mcp__spark_platform__board_batch_create',
+  'mcp__spark_platform__board_batch_update',
+  'mcp__spark_platform__board_batch_delete',
+  'mcp__spark_platform__board_restore',
+  'mcp__spark_platform__board_permanent_delete',
 ]
 
 function resolvePlatformManagementMcpServerPath(): string | null {
@@ -2505,6 +3333,7 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   '- **Workflows**: list, get, create, update, delete',
   '- **Agents**: list, get, create, update, delete',
   '- **Settings**: get, set, get_category, get_all',
+  '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
   '',
   'When the user asks to manage any of these, use the corresponding tool directly.',
   'For destructive operations (delete, uninstall), always confirm with the user first.',

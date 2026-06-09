@@ -248,6 +248,51 @@ describe('ClaudeSDKExecutor', () => {
     expect(events).toContainEqual(expect.objectContaining({ type: 'agent_status', status: 'error' }))
   })
 
+  it('auto-extends when the SDK throws a max-turns exception instead of emitting a result message', async () => {
+    queryMock
+      .mockImplementationOnce(() => {
+        throw new Error('Claude Code returned an error result: Reached maximum number of turns (25)')
+      })
+      .mockReturnValueOnce(messages([
+        {
+          type: 'result',
+          subtype: 'success',
+          uuid: 'result-success',
+          session_id: 'sess-1',
+          duration_ms: 10,
+          duration_api_ms: 10,
+          is_error: false,
+          num_turns: 1,
+          result: 'done',
+          total_cost_usd: 0,
+          usage: { input_tokens: 1, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
+        },
+      ]))
+    const events: AgentEvent[] = []
+    const executor = new ClaudeSDKExecutor()
+    executor.onEvent((event) => events.push(event))
+
+    await executor.executeTurn('sess-1', 'turn-1', 'hello', {
+      ...baseConfig(),
+      maxTurnCount: 25,
+      maxTurnExtensionRetries: 1,
+    })
+
+    const firstOptions = queryMock.mock.calls[0]?.[0]?.options as SDKQueryOptions
+    const secondOptions = queryMock.mock.calls[1]?.[0]?.options as SDKQueryOptions
+
+    expect(queryMock).toHaveBeenCalledTimes(2)
+    expect(firstOptions).toMatchObject({ sessionId: 'sess-1', maxTurns: 25 })
+    expect(secondOptions).toMatchObject({ resume: 'sess-1', maxTurns: 50 })
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent_status',
+      status: 'thinking',
+      message: 'Reached maximum turns (25); automatically extending to 50 (retry 1/1).',
+    }))
+    expect(events).not.toContainEqual(expect.objectContaining({ code: 'SDK_ERROR' }))
+    expect(events).toContainEqual(expect.objectContaining({ type: 'agent_status', status: 'completed' }))
+  })
+
   it('returns SDK-compatible permission results with the original input', async () => {
     queryMock.mockReturnValue(messages([
       { type: 'result', subtype: 'success', result: 'ok', usage: { input_tokens: 1, output_tokens: 1 }, total_cost_usd: 0 },

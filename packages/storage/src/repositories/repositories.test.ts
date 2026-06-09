@@ -232,6 +232,32 @@ describe('SessionRepository', () => {
     expect(updated!.title).toBe('New Title')
   })
 
+  it('should patch session metadata', () => {
+    repo.create({ id: 'sess-1', kind: 'chat', title: 'Test', status: 'idle', projectId: 'proj-1' })
+
+    const next = repo.patchMetadata('sess-1', {
+      team: {
+        enabled: true,
+        hostAgentId: 'pm-agent',
+        memberAgentIds: ['docs-agent'],
+        maxDepth: 1,
+        allowNesting: false,
+      },
+    })
+
+    expect(next).toEqual({
+      team: {
+        enabled: true,
+        hostAgentId: 'pm-agent',
+        memberAgentIds: ['docs-agent'],
+        maxDepth: 1,
+        allowNesting: false,
+      },
+    })
+    expect(repo.getMetadata('sess-1')).toEqual(next)
+    expect(JSON.parse(repo.get('sess-1')!.metadata_json)).toEqual(next)
+  })
+
   it('should list sessions with filters', () => {
     repo.create({ id: 'sess-1', kind: 'chat', title: 'A', status: 'idle', projectId: 'proj-1' })
     repo.create({ id: 'sess-2', kind: 'project', title: 'B', status: 'running', projectId: 'proj-1' })

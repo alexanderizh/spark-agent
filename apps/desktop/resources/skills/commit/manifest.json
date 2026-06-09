@@ -1,0 +1,6 @@
+{
+  "id": "builtin:commit",
+  "category": "coding",
+  "requiredTools": ["Bash"],
+  "parameters": []
+}

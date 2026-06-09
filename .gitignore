@@ -23,6 +23,7 @@ playwright-report/
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # ---- Spark Agent 运行时目录 --------------
 # Agent 工作目录（含上下文、checkpoint、临时文件）

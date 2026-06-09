@@ -9,16 +9,19 @@ import {
 import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSidebarContext'
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
+import { AvatarImage } from './design/components/AvatarImage'
+import { getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
 import type { PermissionApprovalRequest, SessionId, UserQuestionPrompt } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
+import { useAppearanceEffects } from './design/hooks/useAppearance'
 
 import { ChatView } from './design/views/ChatView'
 import { ProjectView } from './design/views/ProjectView'
 import { WorkflowView } from './design/views/WorkflowView'
 import { AgentsView } from './design/views/AgentsView'
 import { BoardView } from './design/views/BoardView'
+import { ScheduledTasksView } from './design/views/ScheduledTasksView'
 import { McpView } from './design/views/McpView'
-import { SkillsView } from './design/views/SkillsView'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
 import ProvidersView from './design/views/ProvidersView'
@@ -27,6 +30,7 @@ import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
+import './FloatingSidebar.less'
 import sparkLogo from './assets/spark-logo.png'
 import {
   DropdownMenu,
@@ -41,8 +45,11 @@ import {
   DropdownMenuSeparator,
 } from '@spark/ui-kit'
 
-const isPlatformDarwin = typeof window !== 'undefined' && window.spark.platform === 'darwin'
-const isPlatformWin32 = typeof window !== 'undefined' && window.spark.platform === 'win32'
+const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
+const isPlatformDarwin = sparkPlatform === 'darwin'
+const isPlatformWin32 = sparkPlatform === 'win32'
+const SETTINGS_GENERAL_KEY = 'spark-settings-general'
+const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 
 type UserQuestionRequest = {
   questionId: string
@@ -62,6 +69,101 @@ function SparkLogoMark() {
   )
 }
 
+function useSidebarUserAvatarSrc(): string {
+  const readLocal = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
+      if (raw == null) return resolveAvatarSrc(getUserAvatarConfig(null))
+      return resolveAvatarSrc(getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar))
+    } catch {
+      return resolveAvatarSrc(getUserAvatarConfig(null))
+    }
+  }, [])
+  const [src, setSrc] = useState(readLocal)
+
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('settings:get', { category: 'general', key: 'data' })
+      .then((res) => {
+        if (cancelled) return
+        const value = res.value != null && typeof res.value === 'object'
+          ? (res.value as Record<string, unknown>).userAvatar
+          : null
+        setSrc(resolveAvatarSrc(getUserAvatarConfig(value)))
+      })
+      .catch(() => {})
+
+    const refresh = () => setSrc(readLocal())
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+    const handleSettingsUpdated = (event: Event) => {
+      const { detail } = event as CustomEvent<{ key?: string }>
+      if (detail?.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    return () => {
+      cancelled = true
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    }
+  }, [readLocal])
+
+  return src
+}
+
+function useSidebarUserName(): string {
+  const readLocal = useCallback(() => {
+    try {
+      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
+      if (raw == null) return 'User'
+      const parsed = JSON.parse(raw) as Record<string, unknown>
+      return typeof parsed.userName === 'string' && parsed.userName.trim() ? parsed.userName : 'User'
+    } catch {
+      return 'User'
+    }
+  }, [])
+  const [name, setName] = useState(readLocal)
+
+  useEffect(() => {
+    let cancelled = false
+    window.spark
+      ?.invoke('settings:get', { category: 'general', key: 'data' })
+      .then((res) => {
+        if (cancelled) return
+        if (res.value != null && typeof res.value === 'object') {
+          const userName = (res.value as Record<string, unknown>).userName
+          if (typeof userName === 'string' && userName.trim()) {
+            setName(userName)
+          }
+        }
+      })
+      .catch(() => {})
+
+    const refresh = () => setName(readLocal())
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+    const handleSettingsUpdated = (event: Event) => {
+      const { detail } = event as CustomEvent<{ key?: string }>
+      if (detail?.key === SETTINGS_GENERAL_KEY) refresh()
+    }
+
+    window.addEventListener('storage', handleStorage)
+    window.addEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    return () => {
+      cancelled = true
+      window.removeEventListener('storage', handleStorage)
+      window.removeEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
+    }
+  }, [readLocal])
+
+  return name
+}
+
 /* ---------- WindowControls — custom title bar buttons (Windows/Linux only) ---------- */
 function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false)
@@ -69,7 +171,9 @@ function WindowControls() {
   useEffect(() => {
     void (async () => {
       try {
-        const res = await window.spark.invoke('window:is-maximized', {})
+        const api = window.spark
+        if (!api?.invoke) return
+        const res = await api.invoke('window:is-maximized', {})
         if (res?.maximized != null) setIsMaximized(res.maximized)
       } catch {
         // ignore window chrome state errors in test and preview environments
@@ -78,18 +182,18 @@ function WindowControls() {
   }, [])
 
   const handleMinimize = useCallback(() => {
-    window.spark.invoke('window:minimize', {}).catch(() => {})
+    window.spark?.invoke?.('window:minimize', {}).catch(() => {})
   }, [])
 
   const handleMaximize = useCallback(async () => {
     try {
-      const res = await window.spark.invoke('window:maximize', {})
-      setIsMaximized(res.maximized)
+      const res = await window.spark?.invoke?.('window:maximize', {})
+      if (res?.maximized != null) setIsMaximized(res.maximized)
     } catch { /* ignore */ }
   }, [])
 
   const handleClose = useCallback(() => {
-    window.spark.invoke('window:close', {}).catch(() => {})
+    window.spark?.invoke?.('window:close', {}).catch(() => {})
   }, [])
 
   return (
@@ -119,15 +223,23 @@ function WindowControls() {
   )
 }
 
+const NAV_ITEMS: Array<{ id: string; label: string; icon: React.FC<{ size?: number }> }> = [
+  { id: 'agents', label: 'Agents', icon: Icons.Bot },
+  { id: 'board', label: 'Board', icon: Icons.Board },
+  { id: 'providers', label: 'Providers', icon: Icons.Server },
+  { id: 'skill-store', label: 'Skills', icon: Icons.Skills },
+  { id: 'workflows', label: 'Workflows', icon: Icons.Workflow },
+  { id: 'scheduled-tasks', label: 'Tasks', icon: Icons.Clock },
+]
+
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
-  const [themeValue, setThemeValue] = useState(t.theme)
+  const [navExpanded, setNavExpanded] = useState(false)
+  const userAvatarSrc = useSidebarUserAvatarSrc()
+  const userName = useSidebarUserName()
   const isResizing = useRef(false)
-
-  // Sync local state if theme changes externally
-  useEffect(() => { setThemeValue(t.theme) }, [t.theme])
 
   const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
     const isActive = t.view === viewId
@@ -142,6 +254,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       </button>
     )
   }
+
+  const VISIBLE_COUNT = 3 // nav items visible before fold (excludes "新建任务")
+  const visibleItems = NAV_ITEMS.slice(0, VISIBLE_COUNT)
+  const collapsedItems = NAV_ITEMS.slice(VISIBLE_COUNT)
+  const hasCollapsed = collapsedItems.length > 0
 
   // Resize handlers
   const handleResizeStart = useCallback(
@@ -219,11 +336,26 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
       {/* ── Navigation items (no Chat, no dividers between) ── */}
       <div className="sidebar-nav-section">
-        {navItem('workflows', 'Workflows', Icons.Workflow)}
-        {navItem('agents', 'Agents', Icons.Bot)}
-        {navItem('board', 'Board', Icons.Board)}
-        {navItem('skill-store', 'Skills', Icons.Skills)}
-        {navItem('providers', 'Providers', Icons.Server)}
+        {visibleItems.map((item) => navItem(item.id, item.label, item.icon))}
+        {hasCollapsed && (
+          <div className={`nav-collapsed${navExpanded ? ' nav-collapsed-expanded' : ''}`}>
+            <div className="nav-collapsed-inner">
+              {collapsedItems.map((item) => navItem(item.id, item.label, item.icon))}
+            </div>
+          </div>
+        )}
+        {hasCollapsed && (
+          <button
+            className="nav-expand-toggle"
+            onClick={() => setNavExpanded((v) => !v)}
+            title={navExpanded ? '收起' : '展开更多'}
+          >
+            <span className={`nav-expand-icon${navExpanded ? ' nav-expand-icon-up' : ''}`}>
+              <Icons.ChevronDown size={12} />
+            </span>
+            <span className="nav-label">{navExpanded ? '收起' : '展开更多'}</span>
+          </button>
+        )}
       </div>
 
       {/* ── Divider between nav and session list ── */}
@@ -239,9 +371,17 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
           <DropdownMenuTrigger asChild>
             <button className="sidebar-user" style={{ cursor: 'pointer' }}>
-              <div className="avatar">U</div>
+              <div className="avatar sidebar-user-avatar">
+                <AvatarImage
+                  src={userAvatarSrc}
+                  seed="spark-user"
+                  name="User"
+                  alt="用户头像"
+                  className="sidebar-user-avatar-image"
+                />
+              </div>
               <div className="sidebar-user-info">
-                <div className="name">User</div>
+                <div className="name">{userName}</div>
                 <div className="meta">Local · Desktop</div>
               </div>
               <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
@@ -252,34 +392,62 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               <DropdownMenuSubTrigger className="user-menu-theme-trigger">
                 <Icons.Sun size={14} /> Theme
               </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="user-menu user-menu-theme-sub flex">
+              <DropdownMenuSubContent className="user-menu user-menu-theme-sub">
                 <DropdownMenuRadioGroup
-                  value={themeValue}
+                  className="user-menu-theme-radio-group"
+                  value={t.theme}
                   onValueChange={(v) => {
-                    setThemeValue(v as typeof t.theme)
                     setTweak('theme', v as typeof t.theme)
                   }}
                 >
-                  <DropdownMenuRadioItem value="light">
+                  <DropdownMenuRadioItem className="user-menu-theme-item" value="light">
                     <Icons.Sun size={14} /> Light
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="dark">
+                  <DropdownMenuRadioItem className="user-menu-theme-item" value="dark">
                     <Icons.Moon size={14} /> Dark
                   </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem value="system">
+                  <DropdownMenuRadioItem className="user-menu-theme-item" value="system">
                     <Icons.Monitor size={14} /> System
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="user-menu-theme-trigger">
+                <span className="user-menu-accent-dot" style={{ background: t.primary }} />
+                主题色
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="user-menu user-menu-theme-sub user-menu-accent-sub">
+                <DropdownMenuRadioGroup
+                  className="user-menu-theme-radio-group"
+                  value={t.primary}
+                  onValueChange={(v) => {
+                    setTweak('primary', v)
+                  }}
+                >
+                  {Object.entries(PRIMARIES).map(([color, info]) => (
+                    <DropdownMenuRadioItem
+                      key={color}
+                      className="user-menu-theme-item user-menu-accent-item"
+                      value={color}
+                    >
+                      <span className="user-menu-accent-swatch" style={{ background: color }} />
+                      {info.name}
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
             <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'remote-connections'); setUserMenuOpen(false) }}>
+              <Icons.Globe size={14} /> 远程连接
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
               <Icons.Settings size={14} /> Settings
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        {/* Windows uses the system-native title bar; the custom HTML
-            controls below are only needed on Linux (frameless window). */}
+        {/* Linux: custom HTML controls in sidebar. Windows/macOS use their own title bars. */}
         {!isPlatformDarwin && !isPlatformWin32 && <WindowControls />}
       </div>
 
@@ -296,6 +464,7 @@ function Shell() {
   const { t, setTweak } = useApp()
   const { toast } = useToast()
   const scaleRef = useRef<HTMLDivElement>(null)
+  useAppearanceEffects()
   const [approvalRequests, setApprovalRequests] = useState<Record<string, PermissionApprovalRequest>>({})
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
 
@@ -320,7 +489,7 @@ function Shell() {
 
   const handleNewBlankSession = useCallback(() => {
     sessionCtx.setActiveSession(null)
-    sessionCtx.setActiveWorkspace(null)
+    // Keep current workspace so new session inherits the active project context
     setTweak('view', 'chat')
   }, [sessionCtx, setTweak])
 
@@ -428,9 +597,11 @@ function Shell() {
 
   // Listen for tool approval requests
   useEffect(() => {
-    return window.spark.on('stream:permission:approval-request', (req) => {
+    const api = window.spark
+    if (!api?.on) return
+    return api.on('stream:permission:approval-request', (req) => {
       setApprovalRequests((current) => ({ ...current, [req.sessionId]: req }))
-      window.spark.invoke('hook:trigger', {
+      api.invoke?.('hook:trigger', {
         sessionId: req.sessionId,
         node: 'permission_request',
         title: 'Spark Agent - 权限请求',
@@ -451,7 +622,9 @@ function Shell() {
   }, [navigateToSession, toast])
 
   useEffect(() => {
-    return window.spark.on('stream:session:user-question', (req) => {
+    const api = window.spark
+    if (!api?.on) return
+    return api.on('stream:session:user-question', (req) => {
       setUserQuestions((current) => ({ ...current, [req.sessionId]: req }))
 
       const isVisibleInCurrentSession =
@@ -502,12 +675,16 @@ function Shell() {
         return <AgentsView />
       case 'board':
         return <BoardView />
+      case 'scheduled-tasks':
+        return <ScheduledTasksView />
       case 'skills':
-        return <SkillsView />
+        return <SkillStoreView />
       case 'skill-store':
         return <SkillStoreView />
       case 'providers':
         return <ProvidersView />
+      case 'mcp':
+        return <McpView />
       case 'settings':
         return <SettingsView />
       default:
@@ -531,7 +708,7 @@ function Shell() {
     <ErrorBoundary level="global" name="Shell">
     <div
       ref={scaleRef}
-      className={`app window theme-${resolvedTheme} density-${t.density} platform-${window.spark.platform}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
+      className={`app window theme-${resolvedTheme} density-${t.density} platform-${sparkPlatform ?? 'unknown'}${t.sidebarHidden ? ' sidebar-hidden' : ''}`}
       style={
         {
           '--primary': primary,
@@ -544,13 +721,23 @@ function Shell() {
       <FloatingSidebar onNewTask={handleNewBlankSession} />
 
       <div className="main-content-area">
+        {/* Windows: custom title bar spanning full width with drag region */}
+        {isPlatformWin32 && (
+          <div className="win-titlebar">
+            {t.sidebarHidden && t.view !== 'chat' && <SidebarExpandButton />}
+            <div className="win-titlebar-controls">
+              <WindowControls />
+            </div>
+          </div>
+        )}
         <div className="main">
-          {t.view !== 'chat' && (
+          {/* Non-Windows: transparent header with expand button (only when sidebar hidden) */}
+          {t.view !== 'chat' && !isPlatformWin32 && t.sidebarHidden && (
             <div
               className="transparent-header"
-              onDoubleClick={() => { window.spark.invoke('window:maximize', {}).catch(() => {}) }}
+              onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
             >
-              {t.sidebarHidden && <SidebarExpandButton />}
+              <SidebarExpandButton />
             </div>
           )}
           <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>

@@ -1,0 +1,45 @@
+# ═══════════════════════════════════════════════════════════
+# Spark Agent Server — 开发环境 Docker Compose
+#
+# 用法:
+#   1. cp .env.example .env
+#   2. docker compose -f docker-compose.dev.yml --env-file .env up -d
+#   3. pnpm dev
+#
+# 只启动 PostgreSQL + Redis，server 通过 pnpm dev 本地运行。
+# ═══════════════════════════════════════════════════════════
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: spark-postgres
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-spark_agent}
+      POSTGRES_USER: ${PG_USER:-spark}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-spark_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-spark} -d ${PG_DATABASE:-spark_agent}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: spark-redis
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:

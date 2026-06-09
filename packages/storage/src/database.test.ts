@@ -148,6 +148,48 @@ describe('SparkDatabase', () => {
     expect(columnNames).toContain('request_timestamp')
   })
 
+  it('should mark session metadata migration applied when the column already exists', () => {
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), 'migrations')
+
+    db = new SparkDatabase(dbPath)
+    db.raw.exec(`
+      CREATE TABLE schema_migrations (
+        version INTEGER PRIMARY KEY,
+        name TEXT NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE sessions (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL,
+        title TEXT NOT NULL,
+        status TEXT NOT NULL,
+        project_id TEXT NOT NULL,
+        workspace_ids_json TEXT NOT NULL DEFAULT '[]',
+        rule_bundle_id TEXT,
+        permission_profile_id TEXT,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+    `)
+
+    const insertMigration = db.raw.prepare(
+      'INSERT INTO schema_migrations (version, name) VALUES (?, ?)',
+    )
+    for (let version = 1; version <= 17; version += 1) {
+      insertMigration.run(version, `${String(version).padStart(3, '0')}_legacy.sql`)
+    }
+
+    db.runMigrations(migrationsDir)
+
+    const applied = db.raw
+      .prepare('SELECT name FROM schema_migrations WHERE version = 18')
+      .get() as { name: string } | undefined
+    expect(applied?.name).toBe('018_add_session_metadata_json.sql')
+  })
+
   it('should throw error for invalid migration filename', () => {
     const dbPath = join(testDir, 'test.db')
     const invalidDir = join(testDir, 'migrations')

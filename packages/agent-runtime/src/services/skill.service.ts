@@ -6,6 +6,7 @@ import { buildSkillSystemPrompt } from '../skills/types.js'
 import type { SkillDefinition } from '../skills/types.js'
 import {
   detectLocalSkills as detectLocalSkillCandidates,
+  detectBundledSkills,
   importLocalSkillDirectory,
   importLocalSkillFile,
   type LocalSkillSource,
@@ -14,7 +15,11 @@ import {
 export class SkillService {
   private readonly loader: SkillLoader
 
-  constructor(private readonly repo: SkillRepository) {
+  constructor(
+    private readonly repo: SkillRepository,
+    /** 应用内置 skills 目录路径（从 AppSkillsManager.bundledDir 传入） */
+    private readonly bundledSkillsDir?: string,
+  ) {
     this.loader = new SkillLoader(repo)
   }
 
@@ -77,7 +82,7 @@ export class SkillService {
   }
 
   /**
-   * 导入单个文件作为 Skill（SKILL.md 或 .md 文件）
+   * 导入单个文件作为 Skill（SKILL.md 或 Markdown 文件）
    */
   importFile(filePath: string): SkillItem {
     const payload = importLocalSkillFile(filePath)
@@ -162,11 +167,90 @@ export class SkillService {
   /**
    * 确保内置 Skill 存在于数据库中
    *
-   * 使用 5 个完整的内置 Skill 定义替代原来的 3 个简化版本
+   * 两个来源：
+   *   1. 文件系统内置技能（resources/skills/ 目录下的 SKILL.md + manifest.json）
+   *   2. 硬编码 TS 定义（platform-manager 等纯代码驱动的技能）
+   *
+   * 对于文件系统技能，每次启动时重新从文件读取最新内容并更新到数据库，
+   * 保证应用更新后技能内容也会同步更新。
    */
   ensureBuiltInSkills(): SkillItem[] {
+    // ── 0. 收集所有当前有效的内置 Skill ID ────────────────────────────────
+    const validIds = new Set<string>()
+
+    // 来自文件系统
+    if (this.bundledSkillsDir) {
+      for (const candidate of detectBundledSkills(this.bundledSkillsDir)) {
+        validIds.add(candidate.id)
+      }
+    }
+    // 来自 TS 硬编码
     for (const def of BUILTIN_SKILLS) {
-      if (this.repo.get(def.id) !== undefined) continue
+      validIds.add(def.id)
+    }
+
+    // ── 1. 清理数据库中已不存在的内置/旧格式记录 ────────────────────────
+    const allRows = this.repo.list()
+    for (const row of allRows) {
+      const shouldRemove =
+        // 旧的 local:bundled:* 格式（ID 迁移前的残留）
+        (row.id.startsWith('local:bundled:') && row.root_path.includes('/resources/skills/')) ||
+        // 旧的 local:claude:* 格式指向 bundled 目录
+        (row.id.startsWith('local:claude:') && row.root_path.includes('/resources/skills/')) ||
+        // builtin:* 记录但不再有对应的文件或 TS 定义
+        (row.id.startsWith('builtin:') && !validIds.has(row.id))
+      if (shouldRemove) {
+        this.repo.deleteById(row.id)
+      }
+    }
+
+    // ── 3. 从文件系统加载内置技能 ──────────────────────────────────────
+    if (this.bundledSkillsDir) {
+      const candidates = detectBundledSkills(this.bundledSkillsDir)
+      for (const candidate of candidates) {
+        try {
+          const payload = importLocalSkillDirectory(candidate.rootPath, 'bundled')
+          const existing = this.repo.get(payload.id)
+          if (existing != null) {
+            // 已存在 → 更新内容（应用升级后技能文件可能变化）
+            this.repo.update(existing.id, {
+              name: payload.name,
+              version: payload.version,
+              rootPath: payload.rootPath,
+              manifestJson: payload.manifestJson,
+            })
+          } else {
+            this.repo.create(payload)
+          }
+        } catch (err) {
+          // 内置技能加载失败不应阻塞启动，记录日志即可
+          console.warn(`[SkillService] Failed to load bundled skill from ${candidate.rootPath}:`, err)
+        }
+      }
+    }
+
+    // ── 4. 从硬编码 TS 定义加载（已全部迁移到文件系统，此处为空循环） ──
+    for (const def of BUILTIN_SKILLS) {
+      const existing = this.repo.get(def.id)
+      if (existing != null) {
+        // 已存在 → 更新（代码升级后内容可能变化）
+        this.repo.update(def.id, {
+          name: def.name,
+          version: def.version,
+          rootPath: `builtin://${def.id.slice('builtin:'.length)}`,
+          manifestJson: JSON.stringify({
+            desc: def.description,
+            source: '内置',
+            author: def.author,
+            category: def.category,
+            tags: def.tags,
+            systemPrompt: def.systemPrompt,
+            requiredTools: def.requiredTools,
+            parameters: def.parameters,
+          }),
+        })
+        continue
+      }
       this.repo.create({
         id: def.id,
         scope: 'system',
@@ -186,6 +270,7 @@ export class SkillService {
         enabled: true,
       })
     }
+
     return this.listSkills()
   }
 

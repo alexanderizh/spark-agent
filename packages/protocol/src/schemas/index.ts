@@ -22,7 +22,7 @@ export const RuleIdSchema = z.string().uuid()
 
 export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
 export const RuntimeConfigScopeSchema = z.enum(['system', 'agent', 'project', 'session'])
-export const LocalSkillSourceSchema = z.enum(['claude', 'agents', 'custom'])
+export const LocalSkillSourceSchema = z.enum(['claude', 'codex', 'agents', 'bundled', 'linked', 'custom'])
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
 export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk'])
@@ -33,6 +33,115 @@ export const SessionPermissionModeSchema = z.enum([
   'claude-auto',
   'claude-bypass',
 ])
+export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
+export const RemotePairingModeSchema = z.enum(['code', 'qr'])
+
+const RemoteCredentialsSchema = z.object({
+  botToken: z.string().max(400).optional(),
+  appId: z.string().max(200).optional(),
+  appSecret: z.string().max(400).optional(),
+  webhookUrl: z.string().max(2000).optional(),
+  qqBotAppId: z.string().max(200).optional(),
+  qqBotToken: z.string().max(400).optional(),
+  qqBotSecret: z.string().max(400).optional(),
+  clawEndpoint: z.string().max(2000).optional(),
+  clawAccessToken: z.string().max(400).optional(),
+})
+
+const RemoteCapabilitiesSchema = z.object({
+  sendMessages: z.boolean(),
+  switchModel: z.boolean(),
+  switchSession: z.boolean(),
+  switchAgent: z.boolean(),
+  manageWorkspace: z.boolean(),
+  runCommands: z.boolean(),
+  approvePermissions: z.boolean(),
+})
+
+const RemoteConnectionPatchSchema = z.object({
+  id: z.string().min(1).max(160).optional(),
+  channel: RemoteChannelTypeSchema,
+  name: z.string().min(1).max(120),
+  enabled: z.boolean().optional(),
+  status: z.enum(['disabled', 'draft', 'pending-pairing', 'connected', 'error']).optional(),
+  credentials: RemoteCredentialsSchema.optional(),
+  commandPrefix: z.string().min(1).max(4).optional(),
+  allowedUserIds: z.array(z.string().min(1).max(160)).max(200).optional(),
+  allowedChatIds: z.array(z.string().min(1).max(160)).max(200).optional(),
+  defaultSessionId: z.string().min(1).max(160).optional(),
+  defaultProviderProfileId: z.string().min(1).max(160).optional(),
+  defaultModelId: z.string().min(1).max(200).optional(),
+  defaultAgentId: z.string().min(1).max(160).optional(),
+  telegramCommands: z.array(z.string().min(1).max(80)).max(80).optional(),
+  capabilities: RemoteCapabilitiesSchema.optional(),
+})
+
+// ─── Team Mode Schema ─────────────────────────────────────────────────────────
+
+export const TeamModeConfigSchema = z.object({
+  enabled: z.boolean(),
+  hostAgentId: z.string().min(1).max(160),
+  memberAgentIds: z.array(z.string().min(1).max(160)).max(20),
+  maxDepth: z.number().int().min(1).max(3),
+  allowNesting: z.boolean(),
+  /** 来源长期团队 ID，可选 */
+  teamId: z.string().min(1).max(160).optional(),
+})
+
+// ── 长期团队定义（agent_teams）CRUD 请求 ────────────────────────────────────
+export const TeamListDefsRequestSchema = z.object({
+  includeDisabled: z.boolean().optional(),
+})
+
+export const TeamGetDefRequestSchema = z.object({
+  id: z.string().min(1).max(160),
+})
+
+const TeamDefBaseFields = {
+  name: z.string().min(1).max(120),
+  description: z.string().max(400).optional(),
+  hostAgentId: z.string().min(1).max(160),
+  memberAgentIds: z.array(z.string().min(1).max(160)).max(20).optional(),
+  maxDepth: z.number().int().min(1).max(3).optional(),
+  allowNesting: z.boolean().optional(),
+  prompt: z.string().max(8_000).optional(),
+  enabled: z.boolean().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}
+
+export const TeamCreateDefRequestSchema = z.object(TeamDefBaseFields)
+
+export const TeamUpdateDefRequestSchema = z.object({
+  id: z.string().min(1).max(160),
+  name: TeamDefBaseFields.name.optional(),
+  description: TeamDefBaseFields.description,
+  hostAgentId: TeamDefBaseFields.hostAgentId.optional(),
+  memberAgentIds: TeamDefBaseFields.memberAgentIds,
+  maxDepth: TeamDefBaseFields.maxDepth,
+  allowNesting: TeamDefBaseFields.allowNesting,
+  prompt: TeamDefBaseFields.prompt,
+  enabled: TeamDefBaseFields.enabled,
+  metadata: TeamDefBaseFields.metadata,
+})
+
+export const TeamDeleteDefRequestSchema = z.object({
+  id: z.string().min(1).max(160),
+})
+
+export const TeamUpdateRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  config: TeamModeConfigSchema,
+})
+
+export const TeamListMembersRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
+export const TeamListDispatchesRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+  turnId: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(200).optional().default(50),
+})
 
 // ─── Session Schema ───────────────────────────────────────────────────────────
 
@@ -69,6 +178,8 @@ export const SessionSendTurnRequestSchema = z.object({
     )
     .max(20)
     .optional(),
+  teamConfig: TeamModeConfigSchema.optional(),
+  mentionAgentId: z.string().min(1).max(160).optional(),
 })
 
 export const DialogOpenDirectoryRequestSchema = z.object({
@@ -320,6 +431,15 @@ export const IpcSchemaRegistry = {
   'session:update': SessionUpdateRequestSchema,
   'session:delete': SessionDeleteRequestSchema,
   'session:set-max-iterations': SessionSetMaxIterationsRequestSchema,
+  // Team Mode
+  'team:update': TeamUpdateRequestSchema,
+  'team:list-members': TeamListMembersRequestSchema,
+  'team:list-dispatches': TeamListDispatchesRequestSchema,
+  'team:list-defs': TeamListDefsRequestSchema,
+  'team:get-def': TeamGetDefRequestSchema,
+  'team:create-def': TeamCreateDefRequestSchema,
+  'team:update-def': TeamUpdateDefRequestSchema,
+  'team:delete-def': TeamDeleteDefRequestSchema,
   'provider:create': ProviderCreateRequestSchema,
   'provider:update': ProviderUpdateRequestSchema,
   'provider:delete': ProviderDeleteRequestSchema,
@@ -349,6 +469,11 @@ export const IpcSchemaRegistry = {
   'dialog:open-file': DialogOpenFileRequestSchema,
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
+  'app:get-startup-settings': z.object({}),
+  'app:set-startup-settings': z.object({
+    openAtLogin: z.boolean(),
+    openAsHidden: z.boolean().optional(),
+  }),
   'rules:list': RulesListRequestSchema,
   'rules:create': RulesCreateRequestSchema,
   'rules:update': RulesUpdateRequestSchema,
@@ -421,6 +546,25 @@ export const IpcSchemaRegistry = {
       source: LocalSkillSourceSchema,
     })).min(1).max(100),
   }),
+  'skill:import-file': z.object({
+    filePath: z.string().min(1).max(1000),
+  }),
+  'skill:export': z.object({}),
+  'skill:export-batch': z.object({}),
+  'skill:install-to-app': z.object({
+    sourcePath: z.string().min(1).max(2000),
+  }),
+  'skill:uninstall-from-app': z.object({
+    name: z.string().min(1).max(200),
+  }),
+  'skill:link': z.object({
+    targetPath: z.string().min(1).max(2000),
+    name: z.string().min(1).max(200).optional(),
+  }),
+  'skill:unlink': z.object({
+    name: z.string().min(1).max(200),
+  }),
+  'skill:app-paths': z.object({}),
   'skill-config:get': z.object({
     workspaceId: z.string().min(1).optional(),
     sessionId: z.string().min(1).optional(),
@@ -458,6 +602,41 @@ export const IpcSchemaRegistry = {
     category: z.string().min(1).max(80),
   }),
   'settings:get-all': z.object({}),
+
+  // Remote Connections
+  'remote:list': z.object({}),
+  'remote:save': z.object({
+    connection: RemoteConnectionPatchSchema,
+  }),
+  'remote:delete': z.object({
+    id: z.string().min(1).max(160),
+  }),
+  'remote:test': z.object({
+    id: z.string().min(1).max(160),
+  }),
+  'remote:create-bot-draft': z.object({
+    channel: RemoteChannelTypeSchema,
+    name: z.string().min(1).max(120).optional(),
+    openConsole: z.boolean().optional(),
+  }),
+  'remote:generate-pairing': z.object({
+    id: z.string().min(1).max(160),
+    mode: RemotePairingModeSchema,
+  }),
+  'remote:confirm-pairing': z.object({
+    id: z.string().min(1).max(160),
+    code: z.string().min(4).max(20),
+    remoteUserId: z.string().min(1).max(160),
+    displayName: z.string().max(160).optional(),
+    channelThreadId: z.string().max(160).optional(),
+  }),
+  'remote:command-catalog': z.object({}),
+  'remote:execute-command': z.object({
+    id: z.string().min(1).max(160),
+    message: z.string().min(1).max(20_000),
+    sessionId: z.string().min(1).max(160).optional(),
+  }),
+  'remote:runtime-status': z.object({}),
 
   // Usage Ledger
   'usage:record': z.object({

@@ -26,6 +26,7 @@ import { ChipList } from '../components/ChipList'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import {
   PROVIDER_PRESETS,
@@ -33,6 +34,8 @@ import {
   getVendorMeta,
   getPresetsByVendor,
   getUniqueVendorIds,
+  isLocalCliProvider,
+  LOCAL_CLI_PROVIDER_ID,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -148,6 +151,8 @@ function ProvidersView() {
       .catch(console.error)
   }, [listProviders])
 
+  useRefreshable(refresh)
+
   useEffect(() => {
     refresh()
   }, [refresh])
@@ -225,6 +230,7 @@ function ProvidersView() {
     let ok = 0
     const errs: string[] = []
     for (const id of selectedIds) {
+      if (id === LOCAL_CLI_PROVIDER_ID) continue
       try {
         await deleteProvider({ id })
         ok += 1
@@ -409,6 +415,13 @@ function ProvidersView() {
           {/* 导入导出区（import-export） */}
           <div className="row row-gap-xs">
             <button
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
+              onClick={refresh}
+              title="刷新 (Ctrl+R)"
+            >
+              <Icons.Refresh size={12} />
+            </button>
+            <button
               ref={importButtonRef}
               className="btn"
               onClick={handleImportFromFile}
@@ -503,21 +516,29 @@ function ProvidersView() {
             const h = healthMap[p.id]
             const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
             const vendor = guessVendorByName(p.name, getUniqueVendorIds())
+            const builtin = isLocalCliProvider(p)
             return (
               <ProviderCardX
                 key={p.id}
                 vendor={vendor}
                 name={p.name}
-                desc={`${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`}
+                desc={
+                  builtin
+                    ? '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
+                    : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
+                }
                 status={status}
                 detail={
-                  h?.latencyMs != null
-                    ? `延迟 ${h.latencyMs}ms`
-                    : `${p.modelIds.length} 个模型${p.isDefault ? ' · 默认 Provider' : ''}`
+                  builtin
+                    ? '由本地 claude CLI 凭证驱动'
+                    : h?.latencyMs != null
+                      ? `延迟 ${h.latencyMs}ms`
+                      : `${p.modelIds.length} 个模型${p.isDefault ? ' · 默认 Provider' : ''}`
                 }
-                modelIds={p.modelIds}
+                modelIds={builtin ? [] : p.modelIds}
                 defaultModel={p.defaultModel}
-                multiSelect={multiSelect}
+                isBuiltin={builtin}
+                multiSelect={multiSelect && !builtin}
                 selected={selectedIds.has(p.id)}
                 onToggleSelect={() => toggleSelected(p.id)}
                 onEdit={() => {
@@ -619,6 +640,7 @@ function ProviderCardX({
   detail,
   modelIds,
   defaultModel,
+  isBuiltin = false,
   multiSelect = false,
   selected = false,
   onToggleSelect,
@@ -633,6 +655,8 @@ function ProviderCardX({
   detail: string
   modelIds: string[]
   defaultModel: string
+  /** 内置 provider：隐藏编辑/删除按钮，多选时不可勾选 */
+  isBuiltin?: boolean
   /** 多选模式：true 时显示复选框 + 点击行切换选择 */
   multiSelect?: boolean
   /** 是否被选中（仅 multiSelect=true 时生效）*/
@@ -696,6 +720,7 @@ function ProviderCardX({
       <div className="provider-info">
         <div className="row row-gap-sm">
           <span className="name">{name}</span>
+          {isBuiltin && <span className="badge dot">内置</span>}
           {status === 'ok' && <span className="badge success dot">在线</span>}
           {status === 'warning' && <span className="badge warning dot">需注意</span>}
           {status === 'error' && <span className="badge danger dot">错误</span>}
@@ -723,15 +748,19 @@ function ProviderCardX({
       </div>
       {!multiSelect && (
         <div className="row row-gap-xs self-start mt-sm" onClick={(e) => e.stopPropagation()}>
-          <button className="btn ghost sm" onClick={onEdit}>
-            <Icons.Edit size={11} /> 编辑
-          </button>
+          {!isBuiltin && (
+            <button className="btn ghost sm" onClick={onEdit}>
+              <Icons.Edit size={11} /> 编辑
+            </button>
+          )}
           <button className="icon-btn" title="健康检查" onClick={onHealthCheck}>
             <Icons.Refresh size={13} />
           </button>
-          <button className="icon-btn" title="删除" onClick={onDelete}>
-            <Icons.X size={13} />
-          </button>
+          {!isBuiltin && (
+            <button className="icon-btn" title="删除" onClick={onDelete}>
+              <Icons.X size={13} />
+            </button>
+          )}
         </div>
       )}
     </div>
@@ -1022,6 +1051,7 @@ export function ProviderEditPanel({
               </label>
               <div className="provider-form-select-row">
                 <SparkSelect
+                  style={{width: 200}}
                   value={form.presetId}
                   disabled={!!profileId}
                   onChange={(e) => {

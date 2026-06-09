@@ -74,8 +74,7 @@ export function HomeView() {
     const provider = providers.find((item) => item.isDefault) ?? providers[0]
     if (provider === undefined) {
       setNotice('请先在设置中配置 Provider')
-      setTweak('view', 'settings')
-      setTweak('settingsSection', 'providers')
+      setTweak('view', 'providers')
       return
     }
 
@@ -123,7 +122,7 @@ export function HomeView() {
         <QSCard icon={<Icons.Folder />} title="打开项目" desc="加载工作区，启用文件与终端工具" onClick={handleOpenProject} />
         <QSCard icon={<Icons.Workflow />} title="运行工作流" desc="启动 DAG 编排的多 Agent 任务" onClick={() => setTweak('view', 'workflows')} />
         <QSCard icon={<Icons.MCP />} title="连接 MCP" desc="接入新的工具服务或数据源" onClick={() => setTweak('view', 'mcp')} />
-        <QSCard icon={<Icons.Skills />} title="创建 Skill" desc="封装可复用的 Agent 能力包" onClick={() => setTweak('view', 'skills')} />
+        <QSCard icon={<Icons.Skills />} title="创建 Skill" desc="封装可复用的 Agent 能力包" onClick={() => setTweak('view', 'skill-store')} />
       </div>
 
       <div className="home-grid">
@@ -166,7 +165,7 @@ export function HomeView() {
         <div>
           <div className="section-h">
             Provider 状态
-            <span className="link" onClick={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}>设置</span>
+            <span className="link" onClick={() => { setTweak('view', 'providers') }}>设置</span>
           </div>
           <div className="card">
             <div className="card-body home-card-body-sm">
@@ -176,7 +175,7 @@ export function HomeView() {
                   title="未配置 Provider"
                   desc="配置至少一个 AI Provider 才能开始使用"
                   actionLabel="前往设置"
-                  onAction={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'providers') }}
+                  onAction={() => { setTweak('view', 'providers') }}
                 />
               ) : (
                 <div className="health-list">

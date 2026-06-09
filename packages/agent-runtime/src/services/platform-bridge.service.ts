@@ -588,6 +588,28 @@ export class PlatformBridgeService {
     writeFileSync(this.boardFilePath, JSON.stringify(tasks), 'utf-8')
   }
 
+  /** Parse attachmentsJson/commentsJson into arrays for API responses */
+  private normalizeBoardTask(raw: any): any {
+    const attachmentsRaw = raw.attachmentsJson ?? raw.attachments ?? '[]'
+    let attachments: any[] = []
+    try {
+      attachments = typeof attachmentsRaw === 'string' ? JSON.parse(attachmentsRaw) : (Array.isArray(attachmentsRaw) ? attachmentsRaw : [])
+    } catch { attachments = [] }
+
+    const commentsRaw = raw.commentsJson ?? raw.comments ?? '[]'
+    let comments: any[] = []
+    try {
+      comments = typeof commentsRaw === 'string' ? JSON.parse(commentsRaw) : (Array.isArray(commentsRaw) ? commentsRaw : [])
+    } catch { comments = [] }
+
+    return {
+      ...raw,
+      attachments,
+      comments,
+      project: raw.project ?? '',
+    }
+  }
+
   private boardList(params: Record<string, unknown>) {
     let tasks = this.readBoardTasks()
     const includeDeleted = params.includeDeleted === true
@@ -598,26 +620,31 @@ export class PlatformBridgeService {
       const a = String(params.assignee).toLowerCase()
       tasks = tasks.filter((t: any) => t.assignee?.toLowerCase().includes(a))
     }
+    if (params.project) {
+      const p = String(params.project).toLowerCase()
+      tasks = tasks.filter((t: any) => t.project?.toLowerCase() === p)
+    }
     if (params.query) {
       const q = String(params.query).toLowerCase()
       tasks = tasks.filter((t: any) =>
         t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
       )
     }
-    return { tasks, total: tasks.length }
+    return { tasks: tasks.map((t: any) => this.normalizeBoardTask(t)), total: tasks.length }
   }
 
   private boardGet(params: Record<string, unknown>) {
     const tasks = this.readBoardTasks()
     const task = tasks.find((t: any) => t.id === params.id)
     if (!task) throw new Error(`Task not found: ${params.id}`)
-    return { task }
+    return { task: this.normalizeBoardTask(task) }
   }
 
   private boardCreate(params: Record<string, unknown>) {
     const tasks = this.readBoardTasks()
     const now = new Date().toISOString()
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+    const attachments = Array.isArray(params.attachments) ? params.attachments : []
     const task = {
       id,
       title: String(params.title ?? ''),
@@ -625,15 +652,18 @@ export class PlatformBridgeService {
       status: String(params.status ?? 'todo'),
       priority: String(params.priority ?? 'medium'),
       assignee: String(params.assignee ?? ''),
+      project: String(params.project ?? ''),
       tags: Array.isArray(params.tags) ? params.tags : [],
       dueDate: String(params.dueDate ?? ''),
+      commentsJson: '[]',
+      attachmentsJson: JSON.stringify(attachments),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,
     }
     tasks.push(task)
     this.writeBoardTasks(tasks)
-    return { task }
+    return { task: this.normalizeBoardTask(task) }
   }
 
   private boardUpdate(params: Record<string, unknown>) {
@@ -642,13 +672,16 @@ export class PlatformBridgeService {
     if (idx === -1) throw new Error(`Task not found: ${params.id}`)
     const now = new Date().toISOString()
     const updated = { ...tasks[idx], updatedAt: now }
-    for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate']) {
+    for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project']) {
       if (params[key] !== undefined) updated[key] = String(params[key])
     }
     if (params.tags !== undefined) updated.tags = Array.isArray(params.tags) ? params.tags : []
+    if (params.attachments !== undefined) {
+      updated.attachmentsJson = JSON.stringify(Array.isArray(params.attachments) ? params.attachments : [])
+    }
     tasks[idx] = updated
     this.writeBoardTasks(tasks)
-    return { task: updated }
+    return { task: this.normalizeBoardTask(updated) }
   }
 
   private boardDelete(params: Record<string, unknown>) {
@@ -667,6 +700,7 @@ export class PlatformBridgeService {
     for (const item of items) {
       const now = new Date().toISOString()
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
+      const attachments = Array.isArray(item.attachments) ? item.attachments : []
       const task = {
         id,
         title: String(item.title ?? ''),
@@ -674,14 +708,17 @@ export class PlatformBridgeService {
         status: String(item.status ?? 'todo'),
         priority: String(item.priority ?? 'medium'),
         assignee: String(item.assignee ?? ''),
+        project: String(item.project ?? ''),
         tags: Array.isArray(item.tags) ? item.tags : [],
         dueDate: String(item.dueDate ?? ''),
+        commentsJson: '[]',
+        attachmentsJson: JSON.stringify(attachments),
         createdAt: now,
         updatedAt: now,
         deletedAt: null,
       }
       tasks.push(task)
-      created.push(task)
+      created.push(this.normalizeBoardTask(task))
     }
     this.writeBoardTasks(tasks)
     return { created: created.length, tasks: created }
@@ -696,12 +733,15 @@ export class PlatformBridgeService {
       if (idx === -1) continue
       const now = new Date().toISOString()
       const task = { ...tasks[idx], updatedAt: now }
-      for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate']) {
+      for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project']) {
         if (upd[key] !== undefined) task[key] = String(upd[key])
       }
       if (upd.tags !== undefined) task.tags = Array.isArray(upd.tags) ? upd.tags : []
+      if (upd.attachments !== undefined) {
+        task.attachmentsJson = JSON.stringify(Array.isArray(upd.attachments) ? upd.attachments : [])
+      }
       tasks[idx] = task
-      updated.push(task)
+      updated.push(this.normalizeBoardTask(task))
     }
     this.writeBoardTasks(tasks)
     return { updated: updated.length, tasks: updated }
@@ -729,7 +769,7 @@ export class PlatformBridgeService {
     if (idx === -1) throw new Error(`Task not found: ${params.id}`)
     tasks[idx] = { ...tasks[idx], deletedAt: null, updatedAt: new Date().toISOString() }
     this.writeBoardTasks(tasks)
-    return { task: tasks[idx] }
+    return { task: this.normalizeBoardTask(tasks[idx]) }
   }
 
   private boardPermanentDelete(params: Record<string, unknown>) {

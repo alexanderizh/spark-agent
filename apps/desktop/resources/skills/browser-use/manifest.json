@@ -1,0 +1,26 @@
+{
+  "id": "builtin:browser-use",
+  "category": "utility",
+  "requiredTools": [
+    "mcp__playwright__browser_navigate",
+    "mcp__playwright__browser_snapshot",
+    "mcp__playwright__browser_click",
+    "mcp__playwright__browser_type",
+    "mcp__playwright__browser_press_key",
+    "mcp__playwright__browser_take_screenshot",
+    "mcp__playwright__browser_close"
+  ],
+  "parameters": [
+    {
+      "name": "mode",
+      "type": "select",
+      "label": "运行模式",
+      "description": "是否显示浏览器窗口",
+      "defaultValue": "headful",
+      "options": [
+        { "label": "显示浏览器窗口", "value": "headful" },
+        { "label": "后台运行（无窗口）", "value": "headless" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,69 @@
+# ═══════════════════════════════════════════════════════════
+# Spark Agent Server — 生产部署 Docker Compose
+#
+# 用法:
+#   1. cp .env.example .env.production  # 填入生产配置
+#   2. docker compose --env-file .env.production up -d
+#
+# 开发模式请使用 docker-compose.dev.yml
+# ═══════════════════════════════════════════════════════════
+
+services:
+  server:
+    image: ccr.ccs.tencentyun.com/spark_ai/agent-server:${IMAGE_TAG:-latest}
+    container_name: spark-agent-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-7001}:7001"
+    env_file:
+      - ${ENV_FILE:-.env.production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7001/api/auth/refresh || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: spark-postgres
+    restart: unless-stopped
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${PG_DATABASE:-spark_agent}
+      POSTGRES_USER: ${PG_USER:-spark}
+      POSTGRES_PASSWORD: ${PG_PASSWORD:-spark_dev}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${PG_USER:-spark} -d ${PG_DATABASE:-spark_agent}"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: spark-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: >
+      redis-server
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:

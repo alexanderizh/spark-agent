@@ -1,5 +1,8 @@
 import type {
   AgentEvent,
+  TeamA2ATask,
+  TeamA2AReply,
+  TeamMemberEventContext,
   TurnPromptSnapshotEvent,
   UserQuestionOption,
   UserQuestionPrompt,
@@ -20,6 +23,8 @@ export interface UIMessage {
   timestamp?: string | undefined
   /** 参与构建此消息的所有事件 ID（用于删除时定位数据库事件） */
   eventIds: string[]
+  /** 团队模式：该用户消息通过 @ 指定的 Agent ID（未填 → Host 主循环） */
+  mentionAgentId?: string
 }
 
 export interface FileChangeSummary {
@@ -49,9 +54,16 @@ export type UIBlock =
       output: string | undefined
       error: string | undefined
       durationMs: number | undefined
+      teamMemberContext?: TeamMemberEventContext
     }
   | { kind: 'error'; code: string; message: string; retryable: boolean }
-  | { kind: 'file_change'; changeType: string; path: string; diff: string | undefined }
+  | {
+      kind: 'file_change'
+      changeType: string
+      path: string
+      diff: string | undefined
+      teamMemberContext?: TeamMemberEventContext
+    }
   | {
       kind: 'checkpoint'
       checkpointId: string
@@ -72,6 +84,7 @@ export type UIBlock =
       stderr: string
       isStreaming: boolean
       exitCode: number | undefined
+      teamMemberContext?: TeamMemberEventContext
     }
   | { kind: 'plan_proposed'; plan: string }
   | {
@@ -136,6 +149,24 @@ export type UIBlock =
       }>
       finalOutcome: 'success' | 'failure' | 'abandoned'
     }
+  | {
+      /** Team Mode：Host 调用 Member 的调用卡片（team_dispatch_requested/completed） */
+      kind: 'team_dispatch'
+      dispatchId: string
+      hostAgentId: string
+      memberAgentId: string
+      task: TeamA2ATask
+      state: 'pending' | 'working' | 'completed' | 'failed' | 'canceled'
+      reply?: TeamA2AReply
+    }
+  | {
+      /** Team Mode：被调用 Member 的消息气泡（team_member_message） */
+      kind: 'team_member_message'
+      dispatchId: string
+      memberAgentId: string
+      content: string
+      isStreaming: boolean
+    }
 
 export interface ContextUsageSnapshot {
   estimatedTokens: number
@@ -186,6 +217,7 @@ export class MessageBuilder {
           usage: null,
           timestamp: event.timestamp,
           eventIds: [event.id],
+          ...(event.mentionAgentId != null ? { mentionAgentId: event.mentionAgentId } : {}),
         })
         break
       }
@@ -297,6 +329,7 @@ export class MessageBuilder {
             output: undefined,
             error: undefined,
             durationMs: undefined,
+            ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
           })
         }
         break
@@ -314,10 +347,17 @@ export class MessageBuilder {
           ) as Extract<UIBlock, { kind: 'user_question' }> | undefined
           if (questionBlock) {
             questionBlock.answered = true
-            questionBlock.answerSummary = extractQuestionAnswerSummary(
-              event.output,
-              questionBlock.questions,
-            )
+            // Only overwrite answerSummary if we don't already have one
+            // (answers may have been populated when the user submitted via the dock)
+            if (
+              !questionBlock.answerSummary ||
+              questionBlock.answerSummary.length === 0
+            ) {
+              questionBlock.answerSummary = extractQuestionAnswerSummary(
+                event.output,
+                questionBlock.questions,
+              )
+            }
           }
           // Update tool_call block
           const block = msg.blocks.find(
@@ -328,6 +368,7 @@ export class MessageBuilder {
             block.output = formatToolOutput(event.output)
             block.error = event.error
             block.durationMs = event.durationMs
+            if (event.teamMemberContext != null) block.teamMemberContext = event.teamMemberContext
           }
         }
         break
@@ -379,6 +420,7 @@ export class MessageBuilder {
           if (block) {
             if (event.stream === 'stdout') block.stdout += event.data
             else block.stderr += event.data
+            if (event.teamMemberContext != null) block.teamMemberContext = event.teamMemberContext
             if (event.isFinal) {
               block.isStreaming = false
               block.exitCode = event.exitCode ?? undefined
@@ -394,6 +436,7 @@ export class MessageBuilder {
               stderr: event.stream === 'stderr' ? event.data : '',
               isStreaming: !event.isFinal,
               exitCode,
+              ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
             })
           }
         }
@@ -407,6 +450,7 @@ export class MessageBuilder {
           changeType: event.changeType,
           path: event.path,
           diff: event.diff ?? undefined,
+          ...(event.teamMemberContext != null ? { teamMemberContext: event.teamMemberContext } : {}),
         })
 
         // 追踪文件变更用于生成汇总
@@ -571,6 +615,100 @@ export class MessageBuilder {
         })
         break
       }
+
+      // ─── Team Mode (A2A) ───────────────────────────────────────────────
+      // 所有事件按 seq 全局有序渲染，不分泳道（设计文档 §5.2.2）。Host 调用与
+      // Member 输出都作为 block 追加到当前 Host assistant 消息的时间线中。
+
+      case 'team_dispatch_requested': {
+        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        msg.blocks.push({
+          kind: 'team_dispatch',
+          dispatchId: event.dispatchId,
+          hostAgentId: event.hostAgentId,
+          memberAgentId: event.memberAgentId,
+          task: event.task,
+          state: 'working',
+        })
+        break
+      }
+
+      case 'team_member_message': {
+        const existing = this.findTeamMemberMessageBlock(event.dispatchId)
+        const msg = existing?.msg ?? this.getOrCreateAssistant(event.id, event.timestamp)
+        if (!msg.eventIds.includes(event.id)) {
+          msg.eventIds.push(event.id)
+        }
+        // 找到该 dispatch 已存在的 member 气泡；delta 追加，complete 收尾。
+        // complete 与 delta 通常有不同 event id，必须按 dispatchId 跨消息合并，避免重复显示完整回复。
+        let block = existing?.block
+
+        if (event.mode === 'complete') {
+          if (block) {
+            block.content = event.content
+            block.isStreaming = false
+          } else if (event.content.length > 0) {
+            msg.blocks.push({
+              kind: 'team_member_message',
+              dispatchId: event.dispatchId,
+              memberAgentId: event.memberAgentId,
+              content: event.content,
+              isStreaming: false,
+            })
+          }
+          break
+        }
+
+        if (block) {
+          block.content += event.content
+        } else {
+          msg.blocks.push({
+            kind: 'team_member_message',
+            dispatchId: event.dispatchId,
+            memberAgentId: event.memberAgentId,
+            content: event.content,
+            isStreaming: true,
+          })
+        }
+        break
+      }
+
+      case 'team_member_status': {
+        // 更新对应 dispatch 卡片状态（working/failed 等）
+        for (const msg of this.messages) {
+          const block = msg.blocks.find(
+            (b) => b.kind === 'team_dispatch' && b.dispatchId === event.dispatchId,
+          ) as Extract<UIBlock, { kind: 'team_dispatch' }> | undefined
+          if (block) {
+            if (event.status === 'failed') block.state = 'failed'
+            else if (event.status === 'completed') block.state = 'completed'
+            else if (event.status === 'working' || event.status === 'pending') block.state = 'working'
+            if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+            break
+          }
+        }
+        break
+      }
+
+      case 'team_dispatch_completed': {
+        for (const msg of this.messages) {
+          const block = msg.blocks.find(
+            (b) => b.kind === 'team_dispatch' && b.dispatchId === event.dispatchId,
+          ) as Extract<UIBlock, { kind: 'team_dispatch' }> | undefined
+          if (block) {
+            block.state = event.reply.state
+            block.reply = event.reply
+            if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+          }
+          // 收尾该 dispatch 仍在流式的 member 气泡
+          for (const b of msg.blocks) {
+            if (b.kind === 'team_member_message' && b.dispatchId === event.dispatchId) {
+              b.isStreaming = false
+            }
+          }
+        }
+        break
+      }
     }
   }
 
@@ -620,6 +758,46 @@ export class MessageBuilder {
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
     return msg
+  }
+
+  /**
+   * Populate answer summaries on a user_question block *before* the
+   * tool_result event arrives, so the UI can show the user's answers
+   * immediately even if the CLI tool_result output format can't be parsed.
+   */
+  setQuestionAnswerSummary(
+    questions: UserQuestionPrompt[],
+    summaries: UserQuestionAnswerSummary[],
+  ): boolean {
+    for (const msg of this.messages) {
+      for (const block of msg.blocks) {
+        if (block.kind !== 'user_question') continue
+        const qb = block as Extract<UIBlock, { kind: 'user_question' }>
+        if (qb.answered) continue
+        const bQuestions = qb.questions
+        if (
+          bQuestions.length === questions.length &&
+          bQuestions.every((q, i) => q.question === questions[i]?.question)
+        ) {
+          qb.answerSummary = summaries
+          qb.answered = true
+          return true
+        }
+      }
+    }
+    return false
+  }
+
+  private findTeamMemberMessageBlock(
+    dispatchId: string,
+  ): { msg: UIMessage; block: Extract<UIBlock, { kind: 'team_member_message' }> } | undefined {
+    for (const msg of this.messages) {
+      const block = msg.blocks.find(
+        (b) => b.kind === 'team_member_message' && b.dispatchId === dispatchId,
+      ) as Extract<UIBlock, { kind: 'team_member_message' }> | undefined
+      if (block) return { msg, block }
+    }
+    return undefined
   }
 
   /** 在消息末尾追加文件变更汇总块 */

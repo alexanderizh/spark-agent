@@ -152,7 +152,7 @@
   border-bottom: 1px solid var(--divider);
 }
 .hunk-wrap .hunk-bar .label {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   color: var(--text-muted);
 }
 .hunk-wrap .hunk-actions {
@@ -237,7 +237,7 @@
   color: var(--text);
 }
 .checkpoint .pill .num {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   color: var(--text-faint);
 }
@@ -258,7 +258,7 @@
   padding: 1px 5px;
   color: var(--text-muted);
   background: var(--bg);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10px;
 }
 .checkpoint .pill .actions {
@@ -304,7 +304,7 @@
 .turn-summary-file-row .file-path {
   flex: 1;
   min-width: 0;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
   color: var(--text);
   background: transparent;
@@ -316,7 +316,7 @@
 .turn-summary-file-row .file-stats {
   display: inline-flex;
   gap: 6px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   flex-shrink: 0;
 }
@@ -451,7 +451,7 @@
   padding: 8px 10px;
   background: rgba(0,0,0,0.06);
   border-radius: var(--r-sm);
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
   line-height: 1.5;
   color: var(--text);
@@ -609,12 +609,6 @@
   line-height: 1.4;
   min-height: 2.6em;
 }
-.tier-grid > .tier-cell > .spark-input {
-  width: 100%;
-}
-.tier-grid > .tier-cell > .spark-input-wrap {
-  width: 100%;
-}
 .form-grid > label {
   font-size: var(--font-sm);
   font-weight: 500;
@@ -629,64 +623,12 @@
   margin-top: 2px;
   line-height: 1.45;
 }
-.form-grid > .control,
-.form-grid > .spark-input,
-.form-grid > .spark-input-wrap,
-.form-grid > .spark-select-wrap,
-.form-grid > textarea {
-  height: 36px;
-  padding: 0 12px;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-  width: 100%;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.form-grid > .spark-input,
-.form-grid > .spark-input-wrap,
-.form-grid > .spark-select-wrap {
-  /* 让 SparkInput/SparkSelect 自己的 .spark-input / .spark-select 样式生效，不被覆盖 */
-  padding: 0;
-  border: none;
-  background: none;
-  height: 36px;
-}
-.form-grid > .spark-select-wrap {
-  display: flex;
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select {
-  height: 36px !important;
-  min-height: 36px !important;
-  width: 100% !important;
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select .arco-select-view {
-  height: 100%;
-  padding: 0 34px 0 12px !important;
-}
+
+/* 不再为 .form-grid 下的 SparkSelect 重画外观 —— 完全交给 Arco Design 默认下拉弹窗 */
 .form-grid > textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
 .form-grid > .spark-input:hover,
 .form-grid > .spark-input-wrap:hover .spark-input-arco.arco-input-wrapper,
-.form-grid > .spark-select-wrap:hover .spark-select-arco.arco-select,
 .form-grid > textarea:hover { border-color: var(--text-faint); }
-.form-grid > .spark-input:focus,
-.form-grid > .spark-input-wrap .spark-input-arco.arco-input-wrapper:focus-within,
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select:focus-within,
-.form-grid > textarea:focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--panel);
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled,
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled:hover,
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select.arco-select-disabled:focus-within {
-  background: var(--bg-soft) !important;
-  border-color: var(--border) !important;
-  box-shadow: none !important;
-}
 
 .form-grid > .control { display: flex; align-items: center; gap: 8px; padding: 0; background: none; border: none; }
 
@@ -762,7 +704,7 @@
   margin-bottom: 8px;
 }
 .model-row .name { font-size: var(--font-sm); font-weight: 600; color: var(--text-strong); }
-.model-row .id { font-size: 11px; color: var(--text-muted); font-family: 'Geist Mono', ui-monospace, monospace; }
+.model-row .id { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace); }
 .model-row .role-badges { display: flex; gap: 4px; flex-wrap: wrap; }
 .model-row .price {
   margin-left: auto;
@@ -801,7 +743,7 @@
 }
 .rule-line:hover { background: var(--hover); }
 .rule-line .src {
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 10.5px;
   color: var(--text-faint);
   flex-shrink: 0;
@@ -845,18 +787,7 @@
 .perm-rule .select-full {
   width: 110px;
 }
-.perm-rule .spark-select-arco.arco-select {
-   height: 26px !important;
-   min-height: 26px !important;
-   background: var(--panel) !important;
-   border: 1px solid var(--border) !important;
-   border-radius: var(--r-sm) !important;
-   font-size: var(--font-xs) !important;
-   color: var(--text) !important;
- }
-.perm-rule .spark-select-arco.arco-select .arco-select-view {
-  padding: 0 24px 0 6px !important;
-}
+/* 不再为 .perm-rule 下的 SparkSelect 重画外观 —— 完全交给 Arco Design 默认下拉弹窗 */
 
 /* Keymap table */
 .keymap {

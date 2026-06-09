@@ -2,34 +2,28 @@
  * SkillStoreView — Skill 管理页面
  *
  * Tab 切换：已安装（Installed）+ 创建（Create）
- * 已安装 Tab：Skill 卡片网格 + 批量管理
+ * 已安装 Tab：Cursor-style 卡片列表 + 详情双页布局
  * 创建 Tab：手动创建 / 文件导入 / 目录导入 / 检测导入本地 Skill
  */
-import { useState, useCallback, useEffect, useMemo } from 'react'
-import type { LocalSkillCandidate, SkillItem } from '@spark/protocol'
+import { useState, useCallback, useMemo, useEffect } from 'react'
+import type { ReactNode } from 'react'
+import { Button, Drawer, Empty, Spin, Switch, Tag } from '@arco-design/web-react'
+import type { LocalSkillCandidate, SkillDetailInfo, SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { useApp } from '../AppContext'
 import {
   useSkills,
   parseSkillManifest,
   filterSkills,
   filterCandidates,
-  getCandidateSources,
   deduplicateSkills,
   deduplicateCandidates,
-  SKILL_PAGE_SIZE,
-  paginate,
 } from '../utils/skills-data'
 import { useIpcInvoke } from '../hooks/useIpc'
+import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
-
-function deferEffect(task: () => void | Promise<void>): () => void {
-  const id = window.setTimeout(() => {
-    void task()
-  }, 0)
-  return () => window.clearTimeout(id)
-}
+import './SkillStoreView.less'
 
 // ─── Main View ────────────────────────────────────────────────────────
 type TabType = 'installed' | 'create'
@@ -42,11 +36,22 @@ export function SkillStoreView() {
     setRefreshKey((k) => k + 1)
   }, [])
 
+  const triggerRefresh = useRefreshable(handleRefresh)
+
   return (
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
         {/* ── Tab bar ── */}
         <div className="store-tabbar">
+          <div className="flex items-center">
+            <button
+              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
+              onClick={triggerRefresh}
+              title="刷新 (Ctrl+R)"
+            >
+              <Icons.Refresh size={14} />
+            </button>
+          </div>
           <button
             className={`store-tab ${activeTab === 'installed' ? 'active' : ''}`}
             onClick={() => setActiveTab('installed')}
@@ -77,37 +82,93 @@ export function SkillStoreView() {
 // ─── Installed Tab ────────────────────────────────────────────────────
 
 function InstalledTab() {
-  const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount, refresh } = useSkills()
+  const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount } = useSkills()
   const { requestConfirm } = useApp()
+  const { invoke: getSkillDetail } = useIpcInvoke('skill:detail')
   const [search, setSearch] = useState('')
-  // Pagination for installed skills
-  const [installedPage, setInstalledPage] = useState(1)
-  // Management mode (multi-select for batch delete)
   const [managementMode, setManagementMode] = useState(false)
   const [selectedDeleteIds, setSelectedDeleteIds] = useState<Set<string>>(new Set())
   const [deleting, setDeleting] = useState(false)
+  const [preferredSkillId, setPreferredSkillId] = useState<string | null>(null)
+  const [detailState, setDetailState] = useState<{
+    skillId: string | null
+    detail: SkillDetailInfo | null
+    error: string
+  }>({
+    skillId: null,
+    detail: null,
+    error: '',
+  })
+  const [mobileDetailVisible, setMobileDetailVisible] = useState(false)
+  const [isCompact, setIsCompact] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return window.matchMedia('(max-width: 960px)').matches
+  })
   const { toast } = useToast()
 
   const dedupedSkills = useMemo(() => deduplicateSkills(skills), [skills])
-  const filtered = useMemo(() => {
+  const filteredSkills = useMemo(() => {
     const list = filterSkills(dedupedSkills, search)
     return [
       ...list.filter((s) => s.id.startsWith('builtin:')),
       ...list.filter((s) => !s.id.startsWith('builtin:')),
     ]
   }, [dedupedSkills, search])
-  const visibleInstalled = useMemo(
-    () => paginate(filtered, installedPage, SKILL_PAGE_SIZE),
-    [filtered, installedPage],
-  )
-  const hasMoreInstalled = installedPage * SKILL_PAGE_SIZE < filtered.length
 
-  // Reset installed page when search changes
+  const sections = useMemo(() => {
+    const builtin = filteredSkills.filter((skill) => skill.id.startsWith('builtin:'))
+    const local = filteredSkills.filter((skill) => !skill.id.startsWith('builtin:'))
+    return [
+      { id: 'builtin', title: 'Built-in Skills', skills: builtin },
+      { id: 'local', title: 'Installed Skills', skills: local },
+    ].filter((section) => section.skills.length > 0)
+  }, [filteredSkills])
+
+  const activeSkillId = useMemo(() => {
+    if (filteredSkills.length === 0) return null
+    if (preferredSkillId != null && filteredSkills.some((skill) => skill.id === preferredSkillId)) {
+      return preferredSkillId
+    }
+    return filteredSkills[0]?.id ?? null
+  }, [filteredSkills, preferredSkillId])
+
   useEffect(() => {
-    return deferEffect(() => setInstalledPage(1))
-  }, [search])
+    if (typeof window === 'undefined') return undefined
+    const mediaQuery = window.matchMedia('(max-width: 960px)')
+    const sync = (matches: boolean) => setIsCompact(matches)
+    sync(mediaQuery.matches)
+    const handler = (event: MediaQueryListEvent) => sync(event.matches)
+    mediaQuery.addEventListener('change', handler)
+    return () => mediaQuery.removeEventListener('change', handler)
+  }, [])
 
-  // ── Management mode: multi-select delete ──
+  useEffect(() => {
+    if (activeSkillId == null) return
+    let cancelled = false
+
+    getSkillDetail({ id: activeSkillId })
+      .then((res) => {
+        if (cancelled) return
+        setDetailState({
+          skillId: activeSkillId,
+          detail: res.detail,
+          error: res.detail == null ? '未找到该 Skill 的详情。' : '',
+        })
+      })
+      .catch((err) => {
+        if (cancelled) return
+        setDetailState({
+          skillId: activeSkillId,
+          detail: null,
+          error: err instanceof Error ? err.message : '加载 Skill 详情失败',
+        })
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [activeSkillId, getSkillDetail])
+
   const enterManagement = useCallback(() => {
     setManagementMode(true)
     setSelectedDeleteIds(new Set())
@@ -128,14 +189,13 @@ function InstalledTab() {
   }, [])
 
   const toggleDeleteSelectAll = useCallback(() => {
-    if (selectedDeleteIds.size === filtered.length) {
+    if (selectedDeleteIds.size === filteredSkills.length) {
       setSelectedDeleteIds(new Set())
     } else {
-      setSelectedDeleteIds(new Set(filtered.map((s) => s.id)))
+      setSelectedDeleteIds(new Set(filteredSkills.map((s) => s.id)))
     }
-  }, [selectedDeleteIds.size, filtered])
+  }, [selectedDeleteIds.size, filteredSkills])
 
-  // ── Single delete with confirm ──
   const handleDeleteSkill = useCallback(async (id: string) => {
     const confirmed = await requestConfirm({
       title: '删除 Skill？',
@@ -148,7 +208,6 @@ function InstalledTab() {
     toast.success('已删除 Skill')
   }, [requestConfirm, deleteSkill, toast])
 
-  // ── Batch delete with confirm ──
   const handleBatchDelete = useCallback(async () => {
     if (selectedDeleteIds.size === 0) return
     const confirmed = await requestConfirm({
@@ -181,102 +240,136 @@ function InstalledTab() {
     }
   }, [selectedDeleteIds, requestConfirm, deleteSkill, exitManagement, toast])
 
+  const openSkillDetail = useCallback((skill: SkillItem) => {
+    setPreferredSkillId(skill.id)
+    if (isCompact) setMobileDetailVisible(true)
+  }, [isCompact])
+
+  const selectedSkill = filteredSkills.find((skill) => skill.id === activeSkillId) ?? null
+  const detailLoading = activeSkillId != null && detailState.skillId !== activeSkillId
+  const selectedDetail = detailState.skillId === activeSkillId ? detailState.detail : null
+  const detailError = detailState.skillId === activeSkillId ? detailState.error : ''
+
   return (
-    <div>
-      {/* Search bar */}
-      <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
-        <div className="search-input" style={{ flex: 1 }}>
-          <Icons.Search />
-          <SparkInput
-            placeholder="搜索已安装的 Skill..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        {!managementMode && (
-          <button
-            className="btn"
-            onClick={enterManagement}
-            disabled={total === 0}
-          >
-            <Icons.CheckSquare size={12} /> 管理
-          </button>
-        )}
-      </div>
-
-      {/* Management mode bar */}
-      {managementMode && (
-        <div className="management-bar">
-          <Icons.CheckSquare size={13} />
-          <span>已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个</span>
-          <button className="btn sm" onClick={toggleDeleteSelectAll} disabled={deleting}>
-            {selectedDeleteIds.size === filtered.length ? '取消全选' : '全选'}
-          </button>
-          <button
-            className="btn sm primary"
-            onClick={() => void handleBatchDelete()}
-            disabled={selectedDeleteIds.size === 0 || deleting}
-          >
-            {deleting ? '删除中...' : `删除所选 (${selectedDeleteIds.size})`}
-          </button>
-          <div style={{ flex: 1 }} />
-          <button className="btn sm" onClick={exitManagement} disabled={deleting}>
-            退出管理
-          </button>
-        </div>
-      )}
-
-      {error && <div className="card card-error" style={{ marginBottom: '12px' }}>{error}</div>}
-
-      {loading ? (
-        <div className="empty-state">
-          <div className="empty-icon"><Icons.Sparkles /></div>
-          <div className="empty-title">正在加载...</div>
-        </div>
-      ) : total === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon"><Icons.Package /></div>
-          <div className="empty-title">暂无已安装的 Skill</div>
-          <div className="empty-desc">前往「创建」Tab 手动创建或导入 Skill</div>
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="empty-state">
-          <div className="empty-icon"><Icons.Search /></div>
-          <div className="empty-title">未找到匹配的 Skill</div>
-        </div>
-      ) : (
-        <>
-          <div className="skill-grid">
-            {visibleInstalled.map((s) => (
-              <InstalledSkillCard
-                key={s.id}
-                skill={s}
-                onToggle={toggleSkill}
-                onDelete={handleDeleteSkill}
-                managementMode={managementMode}
-                selected={selectedDeleteIds.has(s.id)}
-                onToggleSelect={toggleDeleteSelect}
-              />
-            ))}
-          </div>
-          {hasMoreInstalled && (
-            <div className="pagination-bar">
-              <span>已显示 {visibleInstalled.length} / {filtered.length} 个</span>
-              <button
-                className="btn sm"
-                onClick={() => setInstalledPage((p) => p + 1)}
-              >
-                加载更多
-              </button>
+    <>
+      <div className="skill-store-page">
+        <div className="skill-store-header">
+          <div>
+            <div className="strong text-base font-semibold">Skills</div>
+            <div className="muted text-xs mt-0.5">
+              {total} 个已安装 · {enabledCount} 个已启用
             </div>
-          )}
-        </>
-      )}
+          </div>
+          <div className="skill-store-actions">
+            <SparkSearchInput
+              placeholder="搜索已安装的 Skill..."
+              value={search}
+              onChange={(v) => setSearch(v)}
+            />
+            {!managementMode ? (
+              <Button onClick={enterManagement} disabled={total === 0}>
+                 管理
+              </Button>
+            ) : (
+              <Button onClick={exitManagement} disabled={deleting}>
+                退出管理
+              </Button>
+            )}
+          </div>
+        </div>
 
-      <div className="store-stats" style={{ marginTop: '16px' }}>
-        {total} 个已安装 · {enabledCount} 个已启用
+        {managementMode && (
+          <div className="skill-store-mgmt-bar">
+            <Icons.CheckSquare size={13} />
+            <span>已选择 <span className="mgmt-count">{selectedDeleteIds.size}</span> 个</span>
+            <button className="btn sm" onClick={toggleDeleteSelectAll} disabled={deleting}>
+              {selectedDeleteIds.size === filteredSkills.length ? '取消全选' : '全选'}
+            </button>
+            <button
+              className="btn sm primary"
+              onClick={() => void handleBatchDelete()}
+              disabled={selectedDeleteIds.size === 0 || deleting}
+            >
+              {deleting ? '删除中...' : `删除所选 (${selectedDeleteIds.size})`}
+            </button>
+          </div>
+        )}
+
+        {error && <div className="card card-error">{error}</div>}
+
+        {loading ? (
+          <div className="skill-store-loading">
+            <Spin />
+            <span>正在加载 Skills...</span>
+          </div>
+        ) : total === 0 ? (
+          <div className="skill-store-empty">
+            <Empty description='暂无已安装的 Skill，前往"创建"页手动创建或导入。' />
+          </div>
+        ) : filteredSkills.length === 0 ? (
+          <div className="skill-store-empty">
+            <Empty description="没有找到匹配的 Skill，换个关键词试试。" />
+          </div>
+        ) : (
+          <div className="skill-store-shell">
+            <div className="skill-store-list">
+              {sections.map((section) => (
+                <section key={section.id} className="skill-store-section">
+                  <div className="skill-store-section-title">
+                    <span>{section.title}</span>
+                    <span>{section.skills.length}</span>
+                  </div>
+                  <div className="skill-store-cards">
+                    {section.skills.map((skill) => (
+                      <InstalledSkillCard
+                        key={skill.id}
+                        skill={skill}
+                        onToggle={toggleSkill}
+                        onDelete={handleDeleteSkill}
+                        managementMode={managementMode}
+                        selected={selectedDeleteIds.has(skill.id)}
+                        active={skill.id === activeSkillId}
+                        onToggleSelect={toggleDeleteSelect}
+                        onOpen={() => openSkillDetail(skill)}
+                      />
+                    ))}
+                  </div>
+                </section>
+              ))}
+            </div>
+
+            {!isCompact && (
+              <aside className="skill-store-detail-panel">
+                <SkillDetailPanel
+                  skill={selectedSkill}
+                  detail={selectedDetail}
+                  loading={detailLoading}
+                  error={detailError}
+                />
+              </aside>
+            )}
+          </div>
+        )}
+
+        <div className="skill-store-stats">
+          {total} 个已安装 · {enabledCount} 个已启用
+        </div>
       </div>
-    </div>
+      <Drawer
+        width="min(440px, 94vw)"
+        visible={mobileDetailVisible}
+        title={selectedSkill?.name ?? 'Skill 详情'}
+        footer={null}
+        onCancel={() => setMobileDetailVisible(false)}
+      >
+        <SkillDetailPanel
+          skill={selectedSkill}
+          detail={selectedDetail}
+          loading={detailLoading}
+          error={detailError}
+        />
+      </Drawer>
+    </>
   )
 }
 
@@ -286,21 +379,45 @@ function InstalledSkillCard({
   onDelete,
   managementMode,
   selected,
+  active,
   onToggleSelect,
+  onOpen,
 }: {
   skill: SkillItem
   onToggle: (skill: SkillItem) => Promise<void>
   onDelete: (id: string) => Promise<void>
   managementMode: boolean
   selected: boolean
+  active: boolean
   onToggleSelect: (id: string) => void
+  onOpen: () => void
 }) {
-  const meta = parseSkillManifest(skill.manifestJson)
+  const meta = parseManifestExtras(skill.manifestJson)
   return (
-    <div className={`skill-card ${selected ? 'selected' : ''}`}>
-      {managementMode ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label className="skill-card-check" onClick={(e) => e.stopPropagation()}>
+    <div
+      role="button"
+      tabIndex={0}
+      className={`skill-store-card ${active ? 'is-selected' : ''}`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onOpen()
+        }
+      }}
+    >
+      <div className="skill-store-card-top">
+        <div className="skill-store-card-icon">{skill.name.charAt(0).toUpperCase()}</div>
+        <div className="skill-store-card-info">
+          <div className="skill-store-card-title">{skill.name}</div>
+          <div className="skill-store-card-subtitle">
+            {meta.source}
+            <span className="skill-store-card-dot" />
+            {skill.version}
+          </div>
+        </div>
+        {managementMode && (
+          <label className="local-skill-check" onClick={(e) => e.stopPropagation()}>
             <input
               type="checkbox"
               checked={selected}
@@ -308,51 +425,219 @@ function InstalledSkillCard({
             />
             <span className="checkmark" />
           </label>
-          <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
-          <div className="row row-gap-xs">
-            <span className="name">{skill.name}</span>
-            <span className="badge badge-font-sm">{meta.source}</span>
-          </div>
+        )}
+      </div>
+
+      <div className="skill-store-card-desc">{meta.description}</div>
+
+      <div className="skill-store-card-foot">
+        <div className="skill-store-card-tags">
+          <Tag size="small" color={skill.enabled ? 'arcoblue' : 'gray'}>
+            {skill.enabled ? '可见' : '隐藏'}
+          </Tag>
+          <Tag size="small">{skill.id.startsWith('builtin:') ? '内置' : '本地'}</Tag>
         </div>
-      ) : (
-        <>
-          <div className="icon-wrap">{skill.name.charAt(0).toUpperCase()}</div>
-          <div className="row row-gap-xs">
-            <span className="name">{skill.name}</span>
-            <span className="badge badge-font-sm">{meta.source}</span>
-          </div>
-        </>
-      )}
-      <div className="desc">{meta.desc}</div>
-      {!managementMode && (
-        <>
-          <div className="row skill-scope-row skill-tools-row">
-            <span
-              className={`badge ${skill.enabled ? 'success' : ''} tool-chip-sm`}
-              onClick={() => onToggle(skill)}
-            >
-              {skill.enabled ? '系统可见' : '系统隐藏'}
-            </span>
-            {skill.id === 'builtin:superpowers' && <span className="badge">内置工作流</span>}
-          </div>
-          <div className="foot">
-            <span>{meta.source} · {skill.version}</span>
-            <div className="flex1" />
+        {!managementMode && (
+          <div className="skill-store-card-actions" onClick={(event) => event.stopPropagation()}>
+            <Switch
+              size="small"
+              checked={skill.enabled}
+              onChange={() => void onToggle(skill)}
+            />
             {!skill.id.startsWith('builtin:') && (
-              <button className="icon-btn" title="删除" onClick={() => onDelete(skill.id)}>
-                <Icons.Trash size={11} />
-              </button>
+              <Button size="mini" status="danger" onClick={() => void onDelete(skill.id)}>
+                删除
+              </Button>
             )}
           </div>
-        </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function SkillDetailPanel({
+  skill,
+  detail,
+  loading,
+  error,
+}: {
+  skill: SkillItem | null
+  detail: SkillDetailInfo | null
+  loading: boolean
+  error: string
+}) {
+  if (skill == null) {
+    return (
+      <div className="skill-store-detail-empty">
+        <Empty description="选择左侧一个 Skill 查看详情。" />
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="skill-store-detail-loading">
+        <Spin />
+        <span>正在加载详情...</span>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="skill-store-detail-empty">
+        <Empty description={error} />
+      </div>
+    )
+  }
+
+  const manifestMeta = parseManifestExtras(skill.manifestJson)
+  const definition = detail?.definition
+  const tags = definition?.tags?.length ? definition.tags : manifestMeta.tags
+  const requiredTools = definition?.requiredTools ?? []
+  const parameters = definition?.parameters ?? []
+  const sourcePath = getSkillSourcePath(skill.rootPath)
+
+  return (
+    <div className="skill-store-detail">
+      <div className="skill-store-detail-hero">
+        <div className="skill-store-detail-icon">{skill.name.charAt(0).toUpperCase()}</div>
+        <div className="skill-store-detail-hero-copy">
+          <h3>{skill.name}</h3>
+          <p>{definition?.description || manifestMeta.description}</p>
+        </div>
+      </div>
+
+      <div className="skill-store-detail-meta">
+        <DetailStat label="来源" value={manifestMeta.source} />
+        <DetailStat label="版本" value={skill.version} />
+        <DetailStat label="分类" value={definition?.category || manifestMeta.category || '未分类'} />
+        <DetailStat label="作者" value={definition?.author || manifestMeta.author || '未知'} />
+      </div>
+
+      <DetailSection title="Skill ID">
+        <code className="skill-store-inline-code">{skill.id}</code>
+      </DetailSection>
+
+      <DetailSection title="Source Path">
+        <code className="skill-store-inline-code">{sourcePath}</code>
+      </DetailSection>
+
+      {tags.length > 0 && (
+        <DetailSection title="Tags">
+          <div className="skill-store-tag-list">
+            {tags.map((tag) => (
+              <Tag key={tag} size="small">{tag}</Tag>
+            ))}
+          </div>
+        </DetailSection>
+      )}
+
+      {requiredTools.length > 0 && (
+        <DetailSection title="Required Tools">
+          <div className="skill-store-tag-list">
+            {requiredTools.map((tool) => (
+              <Tag key={tool} size="small" color="gray">{tool}</Tag>
+            ))}
+          </div>
+        </DetailSection>
+      )}
+
+      {parameters.length > 0 && (
+        <DetailSection title="Parameters">
+          <div className="skill-store-parameter-list">
+            {parameters.map((parameter) => (
+              <div key={parameter.name} className="skill-store-parameter-item">
+                <div className="skill-store-parameter-name">
+                  {parameter.label} <span>{parameter.type}</span>
+                </div>
+                <div className="skill-store-parameter-desc">
+                  {parameter.description || '未提供参数说明'}
+                </div>
+              </div>
+            ))}
+          </div>
+        </DetailSection>
+      )}
+
+      {definition?.systemPrompt && (
+        <DetailSection title="Prompt Preview">
+          <pre className="skill-store-prompt-preview">{definition.systemPrompt}</pre>
+        </DetailSection>
       )}
     </div>
   )
 }
 
+function DetailSection({
+  title,
+  children,
+}: {
+  title: string
+  children: ReactNode
+}) {
+  return (
+    <section className="skill-store-detail-section">
+      <div className="skill-store-detail-section-title">{title}</div>
+      {children}
+    </section>
+  )
+}
+
+function DetailStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="skill-store-detail-stat">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
+  )
+}
+
+function parseManifestExtras(manifestJson: string): {
+  description: string
+  source: string
+  author: string
+  category: string
+  tags: string[]
+} {
+  const fallback = parseSkillManifest(manifestJson)
+  try {
+    const parsed = JSON.parse(manifestJson) as {
+      desc?: string
+      description?: string
+      source?: string
+      author?: string
+      category?: string
+      tags?: string[]
+    }
+    return {
+      description: parsed.desc ?? parsed.description ?? fallback.desc,
+      source: parsed.source ?? fallback.source,
+      author: parsed.author ?? '',
+      category: parsed.category ?? '',
+      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+    }
+  } catch {
+    return {
+      description: fallback.desc,
+      source: fallback.source,
+      author: '',
+      category: '',
+      tags: [],
+    }
+  }
+}
+
+function getSkillSourcePath(rootPath: string): string {
+  if (rootPath.startsWith('builtin://')) return rootPath
+  if (rootPath.endsWith('.md')) return rootPath
+  return `${rootPath}/SKILL.md`
+}
+
 // ─── Create Tab (New Skill Creation / Import) ──────────────────────────
 
-type ImportMode = 'none' | 'file' | 'directory' | 'detect'
+type ImportMode = 'none' | 'file' | 'directory' | 'detect' | 'link'
 
 function CreateTab({ onCreated }: { onCreated: () => void }) {
   // ── Manual creation form state ──
@@ -376,6 +661,9 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
   const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
   const { invoke: detectLocalSkills } = useIpcInvoke('skill:detect-local')
   const { invoke: importBatchLocal } = useIpcInvoke('skill:import-batch-local')
+  const { invoke: installToApp } = useIpcInvoke('skill:install-to-app')
+  const { invoke: linkSkill } = useIpcInvoke('skill:link')
+  const { invoke: getAppPaths } = useIpcInvoke('skill:app-paths')
 
   // ── Local detection state ──
   const [localCandidates, setLocalCandidates] = useState<LocalSkillCandidate[]>([])
@@ -383,19 +671,12 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
   const [importingIds, setImportingIds] = useState<Set<string>>(new Set())
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [candidateSearch, setCandidateSearch] = useState('')
-  const [activeSourceTab, setActiveSourceTab] = useState<string>('全部')
 
-  // ── Local candidates: dedup -> filter by source tab -> filter by search ──
+  // ── Local candidates: dedup -> filter by search (Claude only) ──
   const dedupedCandidates = useMemo(() => deduplicateCandidates(localCandidates), [localCandidates])
-  const candidateSources = useMemo(() => getCandidateSources(dedupedCandidates), [dedupedCandidates])
-  const sourceFiltered = useMemo(() => (
-    activeSourceTab === '全部'
-      ? dedupedCandidates
-      : dedupedCandidates.filter((c) => c.source === activeSourceTab)
-  ), [activeSourceTab, dedupedCandidates])
   const searchFiltered = useMemo(
-    () => filterCandidates(sourceFiltered, candidateSearch),
-    [candidateSearch, sourceFiltered],
+    () => filterCandidates(dedupedCandidates, candidateSearch),
+    [candidateSearch, dedupedCandidates],
   )
   const importableCandidates = useMemo(
     () => searchFiltered.filter((c) => !c.installed),
@@ -516,7 +797,6 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
     setDetecting(true)
     setSelectedIds(new Set())
     setCandidateSearch('')
-    setActiveSourceTab('全部')
     try {
       const res = await detectLocalSkills({})
       setLocalCandidates(res.candidates)
@@ -545,12 +825,17 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
     const id = candidate.id
     setImportingIds((prev) => new Set(prev).add(id))
     try {
-      await importDirectory({ directoryPath: candidate.rootPath, source: candidate.source })
-      toast.success(`已导入 ${candidate.name}`)
+      // 软链接的技能直接注册，其他来源安装到应用内
+      if (candidate.source === 'linked') {
+        await importDirectory({ directoryPath: candidate.rootPath, source: 'linked' })
+      } else {
+        await installToApp({ sourcePath: candidate.rootPath })
+      }
+      toast.success(`已安装 ${candidate.name}`)
       onCreated()
       await refreshCandidates()
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : '导入本地 Skill 失败')
+      toast.error(err instanceof Error ? err.message : '安装 Skill 失败')
     } finally {
       setImportingIds((prev) => {
         const next = new Set(prev)
@@ -558,7 +843,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
         return next
       })
     }
-  }, [importDirectory, onCreated, refreshCandidates, toast])
+  }, [installToApp, importDirectory, onCreated, refreshCandidates, toast])
 
   const handleBatchImport = useCallback(async () => {
     const toImport = importableCandidates.filter((c) => selectedIds.has(c.id))
@@ -642,6 +927,13 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
         >
           <Icons.Refresh size={13} />
           检测导入
+        </button>
+        <button
+          className={`store-tab ${importMode === 'link' ? 'active' : ''}`}
+          onClick={() => setImportMode('link')}
+        >
+          <Icons.ExternalLink size={13} />
+          软链接
         </button>
       </div>
 
@@ -836,7 +1128,7 @@ tags: [tag1, tag2]
             {creating ? '导入中...' : '选择目录并导入'}
           </button>
         </div>
-      ) : (
+      ) : importMode === 'detect' ? (
         /* ── Detect & Import Local Skills ── */
         <div>
           <div className="row" style={{ marginBottom: '12px', gap: '8px' }}>
@@ -880,41 +1172,14 @@ tags: [tag1, tag2]
                 )}
               </div>
 
-              {/* Source tabs + search */}
+              {/* Search */}
               <div className="local-skill-filter-bar">
-                <div className="local-skill-source-tabs">
-                  <button
-                    className={`store-cat-pill ${activeSourceTab === '全部' ? 'active' : ''}`}
-                    onClick={() => setActiveSourceTab('全部')}
-                  >
-                    全部 ({dedupedCandidates.length})
-                  </button>
-                  {candidateSources.map((src) => {
-                    const count = dedupedCandidates.filter((c) => c.source === src).length
-                    return (
-                      <button
-                        key={src}
-                        className={`store-cat-pill ${activeSourceTab === src ? 'active' : ''}`}
-                        onClick={() => setActiveSourceTab(src)}
-                      >
-                        {src} ({count})
-                      </button>
-                    )
-                  })}
-                </div>
-                <div className="search-input" style={{ width: '180px' }}>
-                  <Icons.Search />
-                  <SparkInput
-                    placeholder="搜索本地 Skill..."
-                    value={candidateSearch}
-                    onChange={(e) => setCandidateSearch(e.target.value)}
-                  />
-                  {candidateSearch && (
-                    <button className="icon-btn" onClick={() => setCandidateSearch('')}>
-                      <Icons.X size={10} />
-                    </button>
-                  )}
-                </div>
+                <SparkSearchInput
+                  placeholder="搜索本地 Skill..."
+                  value={candidateSearch}
+                  onChange={(v) => setCandidateSearch(v)}
+                  style={{ width: '220px' }}
+                />
               </div>
 
               <div className="local-skill-list">
@@ -983,6 +1248,159 @@ tags: [tag1, tag2]
               </div>
             </div>
           )}
+        </div>
+      ) : (
+        /* ── Link Host Skill Directory ── */
+        <LinkSkillPanel onCreated={onCreated} />
+      )}
+    </div>
+  )
+}
+
+/** 软链接技能面板 — 将宿主机上的技能目录通过软链接引入应用 */
+function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
+  const [linkTarget, setLinkTarget] = useState('')
+  const [linkName, setLinkName] = useState('')
+  const [linking, setLinking] = useState(false)
+  const [appPaths, setAppPaths] = useState<{
+    bundledDir: string
+    userDir: string
+    linksDir: string
+    linkedSkills: string[]
+  } | null>(null)
+  const { invoke: linkSkill } = useIpcInvoke('skill:link')
+  const { invoke: unlinkSkill } = useIpcInvoke('skill:unlink')
+  const { invoke: getAppPaths } = useIpcInvoke('skill:app-paths')
+  const { invoke: openDirectoryDialog } = useIpcInvoke('dialog:open-directory')
+  const { toast } = useToast()
+
+  useEffect(() => {
+    getAppPaths({}).then(setAppPaths).catch(() => {})
+  }, [getAppPaths])
+
+  const handleLink = useCallback(async () => {
+    if (!linkTarget.trim()) {
+      toast.error('请输入或选择技能目录路径')
+      return
+    }
+    setLinking(true)
+    try {
+      await linkSkill({ targetPath: linkTarget.trim(), ...(linkName.trim() ? { name: linkName.trim() } : {}) })
+      toast.success('已创建软链接')
+      setLinkTarget('')
+      setLinkName('')
+      onCreated()
+      // 刷新路径信息
+      getAppPaths({}).then(setAppPaths).catch(() => {})
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建软链接失败')
+    } finally {
+      setLinking(false)
+    }
+  }, [linkTarget, linkName, linkSkill, onCreated, getAppPaths, toast])
+
+  const handleBrowse = useCallback(async () => {
+    try {
+      const picked = await openDirectoryDialog({
+        title: '选择要链接的技能目录（需包含 SKILL.md）',
+      })
+      if (!picked.canceled && picked.filePath) {
+        setLinkTarget(picked.filePath)
+        if (!linkName.trim()) {
+          setLinkName(picked.filePath.split('/').pop() || '')
+        }
+      }
+    } catch {
+      // dialog cancelled
+    }
+  }, [openDirectoryDialog, linkName])
+
+  const handleUnlink = useCallback(async (name: string) => {
+    try {
+      await unlinkSkill({ name })
+      toast.success(`已取消链接 ${name}`)
+      onCreated()
+      getAppPaths({}).then(setAppPaths).catch(() => {})
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '取消链接失败')
+    }
+  }, [unlinkSkill, onCreated, getAppPaths, toast])
+
+  return (
+    <div className="create-import-panel">
+      <div className="import-panel-icon">
+        <Icons.ExternalLink size={48} />
+      </div>
+      <div className="import-panel-title">软链接技能目录</div>
+      <div className="import-panel-desc">
+        将宿主机上的技能目录通过软链接引入应用。链接后技能文件保持原位，应用自动读取最新内容。适用于开发中的技能，无需每次手动复制。
+      </div>
+      <div className="import-panel-supported">
+        <span className="badge">软链接</span>
+        <span className="badge">SKILL.md</span>
+      </div>
+
+      <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="form-field">
+          <label className="form-label">技能目录路径 *</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ flex: 1 }}>
+              <SparkInput
+                placeholder="例如：/Users/you/.claude/skills/my-skill"
+                value={linkTarget}
+                onChange={(e) => setLinkTarget(e.target.value)}
+              />
+            </div>
+            <button className="btn" onClick={() => void handleBrowse()}>
+              浏览
+            </button>
+          </div>
+        </div>
+        <div className="form-field">
+          <label className="form-label">链接名称（可选，默认使用目录名）</label>
+          <SparkInput
+            placeholder="my-skill"
+            value={linkName}
+            onChange={(e) => setLinkName(e.target.value)}
+          />
+        </div>
+        <button
+          className="btn primary lg"
+          disabled={linking || !linkTarget.trim()}
+          onClick={() => void handleLink()}
+        >
+          <Icons.ExternalLink size={14} />
+          {linking ? '链接中...' : '创建软链接'}
+        </button>
+      </div>
+
+      {appPaths && appPaths.linkedSkills.length > 0 && (
+        <div style={{ marginTop: '20px' }}>
+          <div className="create-section-title">已链接的技能</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '8px' }}>
+            {appPaths.linkedSkills.map((name) => (
+              <div key={name} className="local-skill-row">
+                <div className="local-skill-icon">{name.charAt(0).toUpperCase()}</div>
+                <div className="flex1 min-w-0">
+                  <div className="strong truncate">{name}</div>
+                </div>
+                <span className="badge">链接</span>
+                <button
+                  className="btn sm"
+                  onClick={() => void handleUnlink(name)}
+                >
+                  取消链接
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {appPaths && (
+        <div style={{ marginTop: '16px', fontSize: '11px', color: 'var(--text-muted)' }}>
+          <div>链接目录：{appPaths.linksDir}</div>
+          <div>应用技能目录：{appPaths.userDir}</div>
         </div>
       )}
     </div>

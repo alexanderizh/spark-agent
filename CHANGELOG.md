@@ -6,6 +6,21 @@
 
 ## [Unreleased] - Skill 商店开发中
 
+### UI 统一 — 全量下拉弹窗迁移到 Arco Design（2026-06-05）
+
+- **`SparkSelect` 重写**：去掉 `bordered={false}` + 重画外观的做法，改为直接复用 Arco `Select` 自带的下拉弹窗，CSS 只做轻量主题贴合（颜色/圆角/边框/箭头），视觉与 Arco 默认一致。
+- **修复无效选择器**：`styles.css` 中 `.arco-select-view-icon` 实际在 Arco v2.66 已重命名为 `.arco-select-arrow-icon`，旧规则 0 命中；改用真实类名覆盖箭头 / 后缀图标。
+- **清理原生 `<select>`**：`TeamInspectorSection.tsx` 「最大深度」原本是裸 `<select>`，已替换为 `SparkSelect`；同步更新 `views.css` 里的 `.team-roster-advanced-row select` 规则以适配新结构。
+- **规则写入**：`AGENTS.md` 新增「Arco Design 优先」强制规则，明确禁止原生 `<select>`、自写 popup、自写表单拼接；所有下拉必须走 `SparkSelect`。
+
+### 新功能 — 团队模式（Team Agent Mode / A2A，2026-06-05）
+
+- **团队模式**: 底部 Agent 选择器新增「团队模式」，主持 Agent(Host) 可在对话中通过 `agent_team_dispatch` 工具动态调用被授权的成员 Agent(Member)，以类 IM 群聊形式展示多 Agent 协作。仅在显式启用时进入新分支，旧 Session 行为零回归。
+- **A2A 运行时**: 新增 `TeamDispatchService` 与同进程 `spark_team` MCP server；成员以自身 provider/model/skills/MCP 运行 one-shot turn，流式输出 rebrand 为 `team_member_message`；支持成员级 MCP 工具、嵌套调用（`allowNesting` + `maxDepth`，最大 3）、单 turn dispatch 预算（5）、超时（默认 120s）与取消传播。
+- **群聊式 UI**: ChatView 时间线新增 `TeamDispatchCard`（调用卡片）与 `TeamMemberBubble`（缩进 + 成员配色气泡）；Inspector 新增「团队成员」区块（成员勾选/邀请/嵌套设置/成员详情展开）；点击成员头像滑出 `TeamMemberDrawer` 详情抽屉。
+- **协议与存储**: 新增 4 个团队事件、`TeamModeConfig`/`TeamMemberCard`/`TeamA2ATask`/`TeamA2AReply` 类型、`team:update`/`team:list-members`/`team:list-dispatches` 三个 IPC 通道；migration 016 新增 `team_dispatches` 表；会话级配置写入 `sessions.metadata.team`。
+- **测试**: `TeamDispatchService` 边界（6）、`buildTeamRosterPrompt`（2）、event-mapper 团队事件归约（4）单元测试。
+
 ### Bug 修复
 
 - **应用退出时关闭内置浏览器窗口**: 修复 `PopOutBrowserService` 的 hide-on-close 处理器在退出时阻止窗口销毁导致 Electron 进程无法退出的问题。同步加固 `BrowserAutomationViewService` 的同名处理器，在 `app` 处于退出流程时允许窗口正常关闭（双重保险）。

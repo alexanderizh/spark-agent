@@ -1,33 +1,17 @@
 /**
  * @module skills/builtin
  *
- * 内置 Skill 定义集合
+ * 硬编码内置 Skill 定义集合
+ *
+ * 所有内置 Skill 已迁移到 resources/skills/ 目录以文件形式存储。
+ * 此模块保留空数组以维持模块兼容性。
  */
 import type { SkillDefinition } from '../types.js'
-import { codeReviewSkill } from './code-review.js'
-import { translateSkill } from './translate.js'
-import { summarizeSkill } from './summarize.js'
-import { testGenSkill } from './test-gen.js'
-import { refactorSkill } from './refactor.js'
-import { superpowersSkill } from './superpowers.js'
-import { browserAutomationSkill } from './browser-automation.js'
-import { eduExplainSkill } from './edu-explain.js'
-import { platformManagerSkill } from './platform-manager.js'
 
-/** 所有内置 Skill 定义 */
-export const BUILTIN_SKILLS: SkillDefinition[] = [
-  codeReviewSkill,
-  translateSkill,
-  summarizeSkill,
-  testGenSkill,
-  refactorSkill,
-  superpowersSkill,
-  browserAutomationSkill,
-  eduExplainSkill,
-  platformManagerSkill,
-]
+/** 硬编码内置 Skill 定义（已全部迁移到文件系统） */
+export const BUILTIN_SKILLS: SkillDefinition[] = []
 
-/** 按 ID 获取内置 Skill 定义 */
+/** 按 ID 获取硬编码内置 Skill 定义 */
 export function getBuiltinSkill(id: string): SkillDefinition | undefined {
   return BUILTIN_SKILLS.find((s) => s.id === id)
 }

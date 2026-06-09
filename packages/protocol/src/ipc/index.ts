@@ -16,13 +16,18 @@
  * 注：P0-07 中旭阳-高级开发将基于此类型实现 typesafe invoke/handle 封装
  */
 
-import type { AgentEvent, SessionId } from '../events/index.js'
+import type { AgentEvent, SessionId, TurnId, TeamA2ATask, TeamA2AReply } from '../events/index.js'
 import type { HookNode } from '../hooks.js'
 import type {
   ProviderExportPayload,
   ProviderImportResult,
   ProviderImportMode,
 } from '../provider-export.js'
+import type {
+  ScheduledTaskExportPayload,
+  ScheduledTaskImportResult,
+  ScheduledTaskImportMode,
+} from '../scheduled-task-export.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -82,6 +87,14 @@ export interface SessionSendTurnRequest {
   skillId?: string
   skillParams?: Record<string, unknown>
   attachments?: SessionAttachment[]
+  /** 团队模式配置：仅在 Team Mode 下随 turn 提交，主进程据此分支到 runHostTurn */
+  teamConfig?: TeamModeConfig
+  /**
+   * 团队模式：用户在 Composer 中通过 @ 指定的直接处理 Agent。
+   * - 未填或等于 hostAgentId → 走 Host 主循环（保持原行为）
+   * - 命中 memberAgentIds 中的某个 Member → 跳过 Host，直接由该 Member 响应
+   */
+  mentionAgentId?: string
 }
 
 export interface SessionSendTurnResponse {
@@ -114,6 +127,16 @@ export interface SessionCancelQueuedTurnRequest {
 
 export interface SessionCancelQueuedTurnResponse {
   cancelled: boolean
+  queuedTurns: SessionQueuedTurn[]
+}
+
+export interface SessionSendQueuedTurnNowRequest {
+  sessionId: SessionId
+  turnId: string
+}
+
+export interface SessionSendQueuedTurnNowResponse {
+  started: boolean
   queuedTurns: SessionQueuedTurn[]
 }
 
@@ -973,7 +996,7 @@ export interface LocalSkillCandidate {
   id: string
   name: string
   description: string
-  source: 'claude' | 'codex' | 'agents' | 'custom'
+  source: 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
   rootPath: string
   skillFilePath: string
   installed: boolean
@@ -1207,7 +1230,7 @@ export interface SkillImportFileResponse {
 
 export interface SkillImportDirectoryRequest {
   directoryPath: string
-  source?: 'claude' | 'codex' | 'agents' | 'custom'
+  source?: 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
 }
 
 export interface SkillImportDirectoryResponse {
@@ -1218,7 +1241,7 @@ export interface SkillImportDirectoryResponse {
 export interface SkillImportBatchLocalRequest {
   candidates: Array<{
     rootPath: string
-    source: 'claude' | 'codex' | 'agents' | 'custom'
+    source: 'claude' | 'codex' | 'agents' | 'bundled' | 'linked' | 'custom'
   }>
 }
 
@@ -1245,6 +1268,52 @@ export interface SkillExportBatchRequest {
 export interface SkillExportBatchResponse {
   filePath: string
   count: number
+}
+
+export interface SkillInstallToAppRequest {
+  sourcePath: string
+}
+
+export interface SkillInstallToAppResponse {
+  skill: SkillItem
+  destPath: string
+}
+
+export interface SkillUninstallFromAppRequest {
+  name: string
+}
+
+export interface SkillUninstallFromAppResponse {
+  success: boolean
+}
+
+export interface SkillLinkRequest {
+  targetPath: string
+  name?: string
+}
+
+export interface SkillLinkResponse {
+  skill: SkillItem
+  linkPath: string
+}
+
+export interface SkillUnlinkRequest {
+  name: string
+}
+
+export interface SkillUnlinkResponse {
+  success: boolean
+}
+
+export interface SkillAppPathsRequest {}
+
+export interface SkillAppPathsResponse {
+  bundledDir: string
+  userDir: string
+  linksDir: string
+  bundledSkills: string[]
+  userSkills: string[]
+  linkedSkills: string[]
 }
 
 export interface SkillDetectLocalRequest {
@@ -1312,6 +1381,7 @@ export interface ManagedAgent {
   description: string
   builtIn: boolean
   enabled: boolean
+  isDefault: boolean
   providerProfileId?: string | null
   modelId?: string | null
   agentAdapter: SessionAgentAdapter
@@ -1349,6 +1419,7 @@ export interface AgentCreateRequest {
   name: string
   description?: string
   enabled?: boolean
+  isDefault?: boolean
   providerProfileId?: string | null
   modelId?: string | null
   agentAdapter?: SessionAgentAdapter
@@ -1382,6 +1453,186 @@ export interface AgentDeleteRequest {
 
 export interface AgentDeleteResponse {
   deleted: boolean
+}
+
+// ─── Agent Import/Export Channels ──────────────────────────────────────────
+
+export interface AgentExportPayload {
+  version: 1
+  exportedAt: string
+  exportedBy: 'spark-agent'
+  agents: Array<{
+    name: string
+    description: string
+    agentAdapter: SessionAgentAdapter
+    permissionMode: SessionPermissionMode
+    reasoningEffort: SessionReasoningEffort
+    prompt: string
+    skillIds: string[]
+    disabledSkillIds: string[]
+    mcpServerIds: string[]
+    ruleIds: string[]
+    hookConfig: Record<string, unknown>
+    workflowId: string | null
+    metadata: Record<string, unknown>
+  }>
+}
+
+export interface AgentExportToFileRequest {
+  /** 要导出的 agent id 列表；空数组表示导出全部 */
+  ids: string[]
+}
+
+export interface AgentExportToFileResponse {
+  filePath: string
+  count: number
+}
+
+export interface AgentImportFromFileRequest {}
+
+export interface AgentImportFromFileResponse {
+  payload: AgentExportPayload | null
+  filePath: string
+}
+
+// ─── Team Mode Channels ────────────────────────────────────────────────────
+
+/**
+ * 会话级团队模式配置。持久化在 sessions.metadata.team（JSON），
+ * 不在 agents 表新增字段——「是否允许被 dispatch」是会话级而非 Agent 全局级决策。
+ */
+export interface TeamModeConfig {
+  enabled: boolean
+  /** 主持 Agent（用户直接对话的 Agent） */
+  hostAgentId: string
+  /** 当前会话授权可被 dispatch 的成员 Agent 集合（不含 Host 自身） */
+  memberAgentIds: string[]
+  /** 最大链式 dispatch 深度，默认 1 */
+  maxDepth: number
+  /** 是否允许 Member 嵌套调用 dispatch，默认 false */
+  allowNesting: boolean
+  /** 当本配置由某个长期团队（ManagedTeam）应用而来时，此字段指向 ManagedTeam.id。
+   *  会话仍以本配置为运行时权威；Inspector 可据此提供「保存修改回团队」入口。
+   *  允许显式 undefined，便于 patch 风格的"解除关联"。 */
+  teamId?: string | undefined
+}
+
+/**
+ * 长期团队定义（Long-lived Team）。
+ * 用户在 AgentsView「Teams」Tab 维护；持久化在 agent_teams 表。
+ * 会话可一键应用某个 ManagedTeam 得到 TeamModeConfig（teamId 指向此处的 id）。
+ */
+export interface ManagedTeam {
+  id: string
+  name: string
+  description: string
+  builtIn: boolean
+  enabled: boolean
+  hostAgentId: string
+  memberAgentIds: string[]
+  maxDepth: number
+  allowNesting: boolean
+  /** 团队专属 system prompt 段，附加在 [Team Roster] 之后作为 [Team Instructions] 注入 */
+  prompt: string
+  metadata: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
+
+export interface TeamListDefsRequest {
+  includeDisabled?: boolean
+}
+export interface TeamListDefsResponse {
+  teams: ManagedTeam[]
+}
+
+export interface TeamGetDefRequest {
+  id: string
+}
+export interface TeamGetDefResponse {
+  team: ManagedTeam | null
+}
+
+export interface TeamCreateDefRequest {
+  name: string
+  description?: string
+  hostAgentId: string
+  memberAgentIds?: string[]
+  maxDepth?: number
+  allowNesting?: boolean
+  prompt?: string
+  enabled?: boolean
+  metadata?: Record<string, unknown>
+}
+export interface TeamCreateDefResponse {
+  team: ManagedTeam
+}
+
+export interface TeamUpdateDefRequest extends Partial<TeamCreateDefRequest> {
+  id: string
+}
+export interface TeamUpdateDefResponse {
+  team: ManagedTeam
+}
+
+export interface TeamDeleteDefRequest {
+  id: string
+}
+export interface TeamDeleteDefResponse {
+  deleted: boolean
+}
+
+/** 从 ManagedAgent 投影出的团队成员卡片（借鉴 Google A2A 的 AgentCard） */
+export interface TeamMemberCard {
+  agentId: string
+  name: string
+  description: string
+  builtIn: boolean
+  providerProfileId?: string | null
+  modelId?: string | null
+  /** 头像（派生）：基于 agentId hash 生成首字母 + 配色 */
+  avatar: { type: 'initial'; text: string; color: string }
+  /** 用于 system prompt 中的简略能力说明 */
+  capabilitiesSummary: string
+}
+
+export interface TeamUpdateRequest {
+  sessionId: SessionId
+  config: TeamModeConfig
+}
+export interface TeamUpdateResponse {
+  config: TeamModeConfig
+}
+
+export interface TeamListMembersRequest {
+  sessionId: SessionId
+}
+export interface TeamListMembersResponse {
+  hostAgentId: string
+  members: TeamMemberCard[]
+  /** 当前未加入但可用的 Agent（用于「邀请成员」面板） */
+  candidates: TeamMemberCard[]
+  /** 当前会话的完整团队配置（来自 sessions.metadata.team）；
+   *  团队模式未启用时该字段为 null，调用方可据此恢复或新建配置。 */
+  config: TeamModeConfig | null
+}
+
+export interface TeamListDispatchesRequest {
+  sessionId: SessionId
+  turnId?: TurnId
+  limit?: number
+}
+export interface TeamListDispatchesResponse {
+  dispatches: Array<{
+    id: string
+    state: TeamA2AReply['state'] | 'pending' | 'working'
+    hostAgentId: string
+    memberAgentId: string
+    task: TeamA2ATask
+    reply?: TeamA2AReply
+    startedAt: string
+    endedAt?: string
+  }>
 }
 
 // ─── Workflow Channels ─────────────────────────────────────────────────────
@@ -1555,6 +1806,200 @@ export interface SettingsGetAllRequest {}
 
 export interface SettingsGetAllResponse {
   settings: Record<string, Record<string, unknown>>
+}
+
+// ─── Board Task Channels ──────────────────────────────────────────────────────
+
+export type BoardTaskStatus = 'todo' | 'in-progress' | 'done' | 'accepted' | 'closed' | 'bug-fix'
+export type BoardTaskPriority = 'low' | 'medium' | 'high' | 'urgent'
+
+export interface BoardComment {
+  id: string
+  taskId: string
+  author: string
+  content: string
+  createdAt: string
+}
+
+export interface BoardTaskAttachment {
+  id: string
+  type: 'image' | 'file'
+  name: string
+  path: string
+  previewPath?: string
+}
+
+export interface BoardTask {
+  id: string
+  title: string
+  description: string
+  status: BoardTaskStatus
+  priority: BoardTaskPriority
+  assignee: string
+  project: string
+  tags: string[]
+  dueDate: string
+  processingAgent: string
+  acceptanceCriteria: string
+  testAgent: string
+  comments: BoardComment[]
+  attachments: BoardTaskAttachment[]
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  deletedAt: string | null
+}
+
+export interface BoardListRequest {
+  status?: BoardTaskStatus
+  priority?: BoardTaskPriority
+  assignee?: string
+  project?: string
+  query?: string
+  includeDeleted?: boolean
+}
+
+export interface BoardListResponse {
+  tasks: BoardTask[]
+  total: number
+}
+
+export interface BoardGetRequest {
+  id: string
+}
+
+export interface BoardGetResponse {
+  task: BoardTask
+}
+
+export interface BoardCreateRequest {
+  title: string
+  description?: string
+  status?: BoardTaskStatus
+  priority?: BoardTaskPriority
+  assignee?: string
+  project?: string
+  tags?: string[]
+  dueDate?: string
+  processingAgent?: string
+  acceptanceCriteria?: string
+  testAgent?: string
+  attachments?: BoardTaskAttachment[]
+  sortOrder?: number
+}
+
+export interface BoardCreateResponse {
+  task: BoardTask
+}
+
+export interface BoardUpdateRequest {
+  id: string
+  title?: string
+  description?: string
+  status?: BoardTaskStatus
+  priority?: BoardTaskPriority
+  assignee?: string
+  project?: string
+  tags?: string[]
+  dueDate?: string
+  processingAgent?: string
+  acceptanceCriteria?: string
+  testAgent?: string
+  attachments?: BoardTaskAttachment[]
+  sortOrder?: number
+}
+
+export interface BoardUpdateResponse {
+  task: BoardTask
+}
+
+export interface BoardDeleteRequest {
+  id: string
+}
+
+export interface BoardDeleteResponse {
+  success: boolean
+}
+
+export interface BoardBatchCreateRequest {
+  tasks: Omit<BoardCreateRequest, 'id'>[]
+}
+
+export interface BoardBatchCreateResponse {
+  created: number
+  tasks: BoardTask[]
+}
+
+export interface BoardBatchUpdateRequest {
+  updates: BoardUpdateRequest[]
+}
+
+export interface BoardBatchUpdateResponse {
+  updated: number
+  tasks: BoardTask[]
+}
+
+export interface BoardBatchDeleteRequest {
+  ids: string[]
+}
+
+export interface BoardBatchDeleteResponse {
+  deleted: number
+}
+
+export interface BoardRestoreRequest {
+  id: string
+}
+
+export interface BoardRestoreResponse {
+  task: BoardTask
+}
+
+export interface BoardPermanentDeleteRequest {
+  id: string
+}
+
+export interface BoardPermanentDeleteResponse {
+  success: boolean
+}
+
+// ── Board Comments ──
+
+export interface BoardCommentListRequest {
+  taskId: string
+}
+
+export interface BoardCommentListResponse {
+  comments: BoardComment[]
+}
+
+export interface BoardCommentCreateRequest {
+  taskId: string
+  author: string
+  content: string
+}
+
+export interface BoardCommentCreateResponse {
+  comment: BoardComment
+}
+
+export interface BoardCommentDeleteRequest {
+  taskId: string
+  commentId: string
+}
+
+export interface BoardCommentDeleteResponse {
+  success: boolean
+}
+
+export interface BoardCommentUpdateRequest {
+  taskId: string
+  commentId: string
+  content: string
+}
+
+export interface BoardCommentUpdateResponse {
+  comment: BoardComment
 }
 
 // ─── Usage Ledger Channels ────────────────────────────────────────────────────
@@ -2160,6 +2605,20 @@ export interface FileOpenResponse {
   error?: string
 }
 
+// ─── File Read Channel ───────────────────────────────────────────────────────
+
+export interface FileReadRequest {
+  /** Absolute path to the file to read. */
+  filePath: string
+}
+
+export interface FileReadResponse {
+  /** File content as UTF-8 string. */
+  content?: string
+  /** Populated with the error message when the read failed. */
+  error?: string
+}
+
 // ─── File Save / Download Channels ────────────────────────────────────────────
 
 /**
@@ -2228,6 +2687,484 @@ export interface FilePrepareImagePreviewResponse {
   fileName: string
   fileUrl: string
 }
+
+// ─── Scheduled Task Channels ──────────────────────────────────────────────────
+
+export type ScheduledTaskTriggerType = 'interval' | 'cron' | 'once'
+export type ScheduledTaskStatus = 'idle' | 'running' | 'disabled' | 'error'
+export type ScheduledTaskConcurrencyPolicy = 'skip' | 'queue' | 'cancel'
+export type ScheduledTaskRetryBackoff = 'fixed' | 'linear' | 'exponential'
+
+export interface ScheduledTaskNotification {
+  id: string
+  url: string
+  triggers: ('onSuccess' | 'onFailure' | 'onRetry' | 'onDisabled')[]
+  headers?: Record<string, string>
+  bodyTemplate?: string
+}
+
+export interface ScheduledTaskItem {
+  id: string
+  name: string
+  description: string
+  enabled: boolean
+  triggerType: ScheduledTaskTriggerType
+  intervalSeconds: number | null
+  cronExpression: string | null
+  runAt: string | null
+  timezone: string
+  startAt: string | null
+  endAt: string | null
+  maxExecutions: number
+  agentId: string | null
+  teamId: string | null
+  modelId: string | null
+  workspaceId: string | null
+  promptTemplate: string
+  permissionMode: string
+  permissionProfileId: string | null
+  timeoutSeconds: number
+  maxRetries: number
+  retryDelaySeconds: number
+  retryBackoff: ScheduledTaskRetryBackoff
+  notifications: ScheduledTaskNotification[]
+  concurrencyPolicy: ScheduledTaskConcurrencyPolicy
+  tags: string[]
+  historyRetentionDays: number
+  status: ScheduledTaskStatus
+  executionCount: number
+  successCount: number
+  failureCount: number
+  lastRunAt: string | null
+  nextRunAt: string | null
+  lastError: string | null
+  currentExecutionId: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ScheduledTaskCreateRequest {
+  name: string
+  description?: string
+  enabled?: boolean
+  triggerType: ScheduledTaskTriggerType
+  intervalSeconds?: number | null
+  cronExpression?: string | null
+  runAt?: string | null
+  timezone?: string
+  startAt?: string | null
+  endAt?: string | null
+  maxExecutions?: number
+  agentId?: string | null
+  teamId?: string | null
+  modelId?: string | null
+  workspaceId?: string | null
+  promptTemplate: string
+  permissionMode?: string
+  permissionProfileId?: string | null
+  timeoutSeconds?: number
+  maxRetries?: number
+  retryDelaySeconds?: number
+  retryBackoff?: ScheduledTaskRetryBackoff
+  notifications?: ScheduledTaskNotification[]
+  concurrencyPolicy?: ScheduledTaskConcurrencyPolicy
+  tags?: string[]
+  historyRetentionDays?: number
+}
+
+export interface ScheduledTaskCreateResponse {
+  task: ScheduledTaskItem
+}
+
+export interface ScheduledTaskUpdateRequest {
+  id: string
+  name?: string
+  description?: string
+  enabled?: boolean
+  triggerType?: ScheduledTaskTriggerType
+  intervalSeconds?: number | null
+  cronExpression?: string | null
+  runAt?: string | null
+  timezone?: string
+  startAt?: string | null
+  endAt?: string | null
+  maxExecutions?: number
+  agentId?: string | null
+  teamId?: string | null
+  modelId?: string | null
+  workspaceId?: string | null
+  promptTemplate?: string
+  permissionMode?: string
+  permissionProfileId?: string | null
+  timeoutSeconds?: number
+  maxRetries?: number
+  retryDelaySeconds?: number
+  retryBackoff?: ScheduledTaskRetryBackoff
+  notifications?: ScheduledTaskNotification[]
+  concurrencyPolicy?: ScheduledTaskConcurrencyPolicy
+  tags?: string[]
+  historyRetentionDays?: number
+}
+
+export interface ScheduledTaskUpdateResponse {
+  task: ScheduledTaskItem
+}
+
+export interface ScheduledTaskDeleteRequest {
+  id: string
+}
+
+export interface ScheduledTaskDeleteResponse {
+  success: boolean
+}
+
+export interface ScheduledTaskListRequest {
+  status?: string
+  enabled?: boolean
+  tags?: string[]
+  query?: string
+}
+
+export interface ScheduledTaskListResponse {
+  tasks: ScheduledTaskItem[]
+}
+
+export interface ScheduledTaskGetRequest {
+  id: string
+}
+
+export interface ScheduledTaskGetResponse {
+  task: ScheduledTaskItem | null
+}
+
+export interface ScheduledTaskToggleRequest {
+  id: string
+  enabled: boolean
+}
+
+export interface ScheduledTaskToggleResponse {
+  task: ScheduledTaskItem
+}
+
+export interface ScheduledTaskRunNowRequest {
+  id: string
+}
+
+export interface ScheduledTaskRunNowResponse {
+  execution: TaskExecutionItem
+}
+
+// ─── Scheduled Task Import/Export ────────────────────────────────────────────
+
+/**
+ * `scheduled-task:export` — 内存内构造 ExportPayload（不写文件）。
+ * 调用方一般会立刻跟 `scheduled-task:export-to-file` 写盘。
+ */
+export interface ScheduledTaskExportRequest {
+  /** 要导出的任务 id 列表；空数组表示导出全部 */
+  ids: string[]
+}
+
+export interface ScheduledTaskExportResponse {
+  payload: ScheduledTaskExportPayload
+}
+
+/**
+ * `scheduled-task:import` — 直接在内存里导入 ExportPayload。
+ * 主要被 `scheduled-task:import-from-file` 在读取文件后调用。
+ */
+export interface ScheduledTaskImportRequest {
+  payload: ScheduledTaskExportPayload
+  mode: ScheduledTaskImportMode
+}
+
+export interface ScheduledTaskImportResponse extends ScheduledTaskImportResult {}
+
+/**
+ * `scheduled-task:export-to-file` — 弹保存对话框并写入 .json。
+ * 返回 filePath 供 UI 提示用户。
+ */
+export interface ScheduledTaskExportToFileRequest {
+  ids: string[]
+}
+
+export interface ScheduledTaskExportToFileResponse {
+  /** 实际写入路径；用户取消时为空字符串 */
+  filePath: string
+  /** 写入的任务数量（仅用于 UI 反馈）*/
+  count: number
+}
+
+/**
+ * `scheduled-task:import-from-file` — 弹打开对话框、读文件、解析为 payload。
+ * 实际写入数据库需要再调用 `scheduled-task:import`（让 UI 走预览流程）。
+ */
+export interface ScheduledTaskImportFromFileRequest {}
+
+export interface ScheduledTaskImportFromFileResponse {
+  /** 用户取消时为 null */
+  payload: ScheduledTaskExportPayload | null
+  /** 实际读取路径（成功或失败时都填，方便 UI 提示）*/
+  filePath: string
+}
+
+// ─── Task Execution ──────────────────────────────────────────────────────────
+
+export type TaskExecutionStatus = 'running' | 'completed' | 'failed' | 'cancelled' | 'timeout'
+
+export interface TaskExecutionItem {
+  id: string
+  taskId: string
+  sessionId: string | null
+  startedAt: string
+  completedAt: string | null
+  durationMs: number | null
+  status: TaskExecutionStatus
+  output: string | null
+  error: string | null
+  tokenUsage: unknown | null
+  retryAttempt: number
+  parentExecutionId: string | null
+  triggerType: string | null
+  createdAt: string
+}
+
+export interface TaskExecutionListRequest {
+  taskId: string
+  page?: number
+  pageSize?: number
+  status?: string
+}
+
+export interface TaskExecutionListResponse {
+  executions: TaskExecutionItem[]
+  total: number
+}
+
+export interface TaskExecutionGetRequest {
+  id: string
+}
+
+export interface TaskExecutionGetResponse {
+  execution: TaskExecutionItem | null
+}
+
+export interface TaskExecutionCancelRequest {
+  id: string
+}
+
+export interface TaskExecutionCancelResponse {
+  success: boolean
+}
+
+export interface TaskExecutionStatsRequest {
+  taskId: string
+}
+
+export interface TaskExecutionStatsResponse {
+  stats: {
+    total: number
+    completed: number
+    failed: number
+    avgDurationMs: number | null
+    totalTokenUsage: number
+  }
+}
+
+// ─── Remote Connections Channels ────────────────────────────────────────────
+
+export type RemoteChannelType = 'telegram' | 'feishu' | 'qq' | 'wechat-claw'
+export type RemoteConnectionStatus = 'disabled' | 'draft' | 'pending-pairing' | 'connected' | 'error'
+export type RemotePairingMode = 'code' | 'qr'
+
+export interface RemoteConnectionCredentials {
+  botToken?: string
+  appId?: string
+  appSecret?: string
+  webhookUrl?: string
+  qqBotAppId?: string
+  qqBotToken?: string
+  qqBotSecret?: string
+  clawEndpoint?: string
+  clawAccessToken?: string
+}
+
+export interface RemoteConnectionCapabilities {
+  sendMessages: boolean
+  switchModel: boolean
+  switchSession: boolean
+  switchAgent: boolean
+  manageWorkspace: boolean
+  runCommands: boolean
+  approvePermissions: boolean
+}
+
+export interface RemotePairedDevice {
+  id: string
+  remoteUserId: string
+  displayName?: string
+  channelThreadId?: string
+  pairedAt: string
+  lastSeenAt?: string
+}
+
+export interface RemotePairingChallenge {
+  code: string
+  mode: RemotePairingMode
+  expiresAt: string
+  qrPayload: string
+}
+
+export interface RemoteConnectionConfig {
+  id: string
+  channel: RemoteChannelType
+  name: string
+  enabled: boolean
+  status: RemoteConnectionStatus
+  credentials: RemoteConnectionCredentials
+  commandPrefix: string
+  allowedUserIds: string[]
+  allowedChatIds: string[]
+  defaultSessionId?: string
+  defaultProviderProfileId?: string
+  defaultModelId?: string
+  defaultAgentId?: string
+  telegramCommands: string[]
+  capabilities: RemoteConnectionCapabilities
+  pairing?: RemotePairingChallenge
+  pairedDevices: RemotePairedDevice[]
+  createdAt: string
+  updatedAt: string
+  lastConnectedAt?: string
+  lastError?: string
+}
+
+export interface RemoteConnectionGlobalSettings {
+  enabled: boolean
+  requirePairing: boolean
+  allowQrPairing: boolean
+  pairingTtlMinutes: number
+  localWebhookPort: number
+  publicBaseUrl?: string
+}
+
+export interface RemoteCommandDefinition {
+  name: string
+  usage: string
+  description: string
+  capability: keyof RemoteConnectionCapabilities | 'system'
+}
+
+export interface RemoteListRequest {}
+export interface RemoteListResponse {
+  connections: RemoteConnectionConfig[]
+  global: RemoteConnectionGlobalSettings
+  commandCatalog: RemoteCommandDefinition[]
+}
+
+export interface RemoteSaveRequest {
+  connection: Partial<RemoteConnectionConfig> & Pick<RemoteConnectionConfig, 'channel' | 'name'>
+}
+export interface RemoteSaveResponse {
+  connection: RemoteConnectionConfig
+}
+
+export interface RemoteDeleteRequest {
+  id: string
+}
+export interface RemoteDeleteResponse {
+  deleted: boolean
+}
+
+export interface RemoteTestRequest {
+  id: string
+}
+export interface RemoteTestResponse {
+  ok: boolean
+  status: RemoteConnectionStatus
+  message: string
+}
+
+export interface RemoteCreateBotDraftRequest {
+  channel: RemoteChannelType
+  name?: string
+  openConsole?: boolean
+}
+export interface RemoteCreateBotDraftResponse {
+  connection: RemoteConnectionConfig
+  consoleUrl: string
+  instructions: string[]
+}
+
+export interface RemoteGeneratePairingRequest {
+  id: string
+  mode: RemotePairingMode
+}
+export interface RemoteGeneratePairingResponse {
+  connection: RemoteConnectionConfig
+  pairing: RemotePairingChallenge
+}
+
+export interface RemoteConfirmPairingRequest {
+  id: string
+  code: string
+  remoteUserId: string
+  displayName?: string
+  channelThreadId?: string
+}
+export interface RemoteConfirmPairingResponse {
+  ok: boolean
+  connection: RemoteConnectionConfig
+}
+
+export interface RemoteCommandCatalogRequest {}
+export interface RemoteCommandCatalogResponse {
+  commands: RemoteCommandDefinition[]
+}
+
+export interface RemoteExecuteCommandRequest {
+  id: string
+  message: string
+  sessionId?: string
+}
+export interface RemoteExecuteCommandResponse {
+  ok: boolean
+  title: string
+  text: string
+}
+
+export interface RemoteRuntimeStatusRequest {}
+export interface RemoteRuntimeStatusResponse {
+  running: boolean
+  port: number | null
+  localBaseUrl: string | null
+  polling: Array<{
+    connectionId: string
+    running: boolean
+    lastError?: string
+  }>
+  longConnections: Array<{
+    connectionId: string
+    channel: 'feishu'
+    running: boolean
+    lastError?: string
+  }>
+}
+
+// ─── App Startup Channels ────────────────────────────────────────────────────
+
+export interface AppStartupSettingsRequest {}
+export interface AppStartupSettingsResponse {
+  supported: boolean
+  openAtLogin: boolean
+  openAsHidden: boolean
+}
+
+export interface AppSetStartupSettingsRequest {
+  openAtLogin: boolean
+  openAsHidden?: boolean
+}
+export interface AppSetStartupSettingsResponse extends AppStartupSettingsResponse {}
 
 // ─── Context Governor Channels ───────────────────────────────────────────────
 
@@ -2319,6 +3256,7 @@ export interface IpcChannelMap {
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
   'session:get-queue': [SessionGetQueueRequest, SessionGetQueueResponse]
   'session:cancel-queued-turn': [SessionCancelQueuedTurnRequest, SessionCancelQueuedTurnResponse]
+  'session:send-queued-turn-now': [SessionSendQueuedTurnNowRequest, SessionSendQueuedTurnNowResponse]
   'session:cancel': [SessionCancelRequest, SessionCancelResponse]
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]
   'session:list': [SessionListRequest, SessionListResponse]
@@ -2368,6 +3306,8 @@ export interface IpcChannelMap {
   'app:get-storage-stats': [AppGetStorageStatsRequest, AppGetStorageStatsResponse]
   'app:clear-cache': [AppClearCacheRequest, AppClearCacheResponse]
   'app:open-data-dir': [AppOpenDataDirRequest, AppOpenDataDirResponse]
+  'app:get-startup-settings': [AppStartupSettingsRequest, AppStartupSettingsResponse]
+  'app:set-startup-settings': [AppSetStartupSettingsRequest, AppSetStartupSettingsResponse]
 
   // Rules
   'rules:list': [RulesListRequest, RulesListResponse]
@@ -2428,6 +3368,19 @@ export interface IpcChannelMap {
   'agent:create': [AgentCreateRequest, AgentCreateResponse]
   'agent:update': [AgentUpdateRequest, AgentUpdateResponse]
   'agent:delete': [AgentDeleteRequest, AgentDeleteResponse]
+  'agent:export-to-file': [AgentExportToFileRequest, AgentExportToFileResponse]
+  'agent:import-from-file': [AgentImportFromFileRequest, AgentImportFromFileResponse]
+
+  // Team Mode
+  'team:update': [TeamUpdateRequest, TeamUpdateResponse]
+  'team:list-members': [TeamListMembersRequest, TeamListMembersResponse]
+  'team:list-dispatches': [TeamListDispatchesRequest, TeamListDispatchesResponse]
+  // 长期团队定义（agent_teams）CRUD
+  'team:list-defs': [TeamListDefsRequest, TeamListDefsResponse]
+  'team:get-def': [TeamGetDefRequest, TeamGetDefResponse]
+  'team:create-def': [TeamCreateDefRequest, TeamCreateDefResponse]
+  'team:update-def': [TeamUpdateDefRequest, TeamUpdateDefResponse]
+  'team:delete-def': [TeamDeleteDefRequest, TeamDeleteDefResponse]
 
   // Workflows
   'workflow:list': [WorkflowListRequest, WorkflowListResponse]
@@ -2449,6 +3402,11 @@ export interface IpcChannelMap {
   'skill:import-batch-local': [SkillImportBatchLocalRequest, SkillImportBatchLocalResponse]
   'skill:export': [SkillExportRequest, SkillExportResponse]
   'skill:export-batch': [SkillExportBatchRequest, SkillExportBatchResponse]
+  'skill:install-to-app': [SkillInstallToAppRequest, SkillInstallToAppResponse]
+  'skill:uninstall-from-app': [SkillUninstallFromAppRequest, SkillUninstallFromAppResponse]
+  'skill:link': [SkillLinkRequest, SkillLinkResponse]
+  'skill:unlink': [SkillUnlinkRequest, SkillUnlinkResponse]
+  'skill:app-paths': [SkillAppPathsRequest, SkillAppPathsResponse]
 
   // External Tools (IDE / Terminal)
   'tool:detect': [ToolDetectRequest, ToolDetectResponse]
@@ -2464,6 +3422,22 @@ export interface IpcChannelMap {
   'settings:set': [SettingsSetRequest, SettingsSetResponse]
   'settings:get-category': [SettingsGetCategoryRequest, SettingsGetCategoryResponse]
   'settings:get-all': [SettingsGetAllRequest, SettingsGetAllResponse]
+
+  // Board Tasks
+  'board:list': [BoardListRequest, BoardListResponse]
+  'board:get': [BoardGetRequest, BoardGetResponse]
+  'board:create': [BoardCreateRequest, BoardCreateResponse]
+  'board:update': [BoardUpdateRequest, BoardUpdateResponse]
+  'board:delete': [BoardDeleteRequest, BoardDeleteResponse]
+  'board:batch-create': [BoardBatchCreateRequest, BoardBatchCreateResponse]
+  'board:batch-update': [BoardBatchUpdateRequest, BoardBatchUpdateResponse]
+  'board:batch-delete': [BoardBatchDeleteRequest, BoardBatchDeleteResponse]
+  'board:restore': [BoardRestoreRequest, BoardRestoreResponse]
+  'board:permanent-delete': [BoardPermanentDeleteRequest, BoardPermanentDeleteResponse]
+  'board:comment:list': [BoardCommentListRequest, BoardCommentListResponse]
+  'board:comment:create': [BoardCommentCreateRequest, BoardCommentCreateResponse]
+  'board:comment:delete': [BoardCommentDeleteRequest, BoardCommentDeleteResponse]
+  'board:comment:update': [BoardCommentUpdateRequest, BoardCommentUpdateResponse]
 
   // Usage Ledger
   'usage:record': [UsageRecordRequest, UsageRecordResponse]
@@ -2503,10 +3477,25 @@ export interface IpcChannelMap {
   // File Open — open a file with the OS default application
   'file:open': [FileOpenRequest, FileOpenResponse]
 
+  // File Read — read a file's content as UTF-8 text
+  'file:read': [FileReadRequest, FileReadResponse]
+
   // File Save Image — show save dialog and copy a local image to the user's chosen path
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
+
+  // Remote Connections
+  'remote:list': [RemoteListRequest, RemoteListResponse]
+  'remote:save': [RemoteSaveRequest, RemoteSaveResponse]
+  'remote:delete': [RemoteDeleteRequest, RemoteDeleteResponse]
+  'remote:test': [RemoteTestRequest, RemoteTestResponse]
+  'remote:create-bot-draft': [RemoteCreateBotDraftRequest, RemoteCreateBotDraftResponse]
+  'remote:generate-pairing': [RemoteGeneratePairingRequest, RemoteGeneratePairingResponse]
+  'remote:confirm-pairing': [RemoteConfirmPairingRequest, RemoteConfirmPairingResponse]
+  'remote:command-catalog': [RemoteCommandCatalogRequest, RemoteCommandCatalogResponse]
+  'remote:execute-command': [RemoteExecuteCommandRequest, RemoteExecuteCommandResponse]
+  'remote:runtime-status': [RemoteRuntimeStatusRequest, RemoteRuntimeStatusResponse]
 
   // Playwright Browser Automation
   'playwright:status': [PlaywrightStatusRequest, PlaywrightStatusResponse]
@@ -2527,6 +3516,23 @@ export interface IpcChannelMap {
   'window:maximize': [WindowMaximizeRequest, WindowMaximizeResponse]
   'window:close': [WindowCloseRequest, WindowCloseResponse]
   'window:is-maximized': [WindowIsMaximizedRequest, WindowIsMaximizedResponse]
+
+  // Scheduled Tasks
+  'scheduled-task:list': [ScheduledTaskListRequest, ScheduledTaskListResponse]
+  'scheduled-task:get': [ScheduledTaskGetRequest, ScheduledTaskGetResponse]
+  'scheduled-task:create': [ScheduledTaskCreateRequest, ScheduledTaskCreateResponse]
+  'scheduled-task:update': [ScheduledTaskUpdateRequest, ScheduledTaskUpdateResponse]
+  'scheduled-task:delete': [ScheduledTaskDeleteRequest, ScheduledTaskDeleteResponse]
+  'scheduled-task:toggle': [ScheduledTaskToggleRequest, ScheduledTaskToggleResponse]
+  'scheduled-task:run-now': [ScheduledTaskRunNowRequest, ScheduledTaskRunNowResponse]
+  'scheduled-task:export': [ScheduledTaskExportRequest, ScheduledTaskExportResponse]
+  'scheduled-task:import': [ScheduledTaskImportRequest, ScheduledTaskImportResponse]
+  'scheduled-task:export-to-file': [ScheduledTaskExportToFileRequest, ScheduledTaskExportToFileResponse]
+  'scheduled-task:import-from-file': [ScheduledTaskImportFromFileRequest, ScheduledTaskImportFromFileResponse]
+  'task-execution:list': [TaskExecutionListRequest, TaskExecutionListResponse]
+  'task-execution:get': [TaskExecutionGetRequest, TaskExecutionGetResponse]
+  'task-execution:cancel': [TaskExecutionCancelRequest, TaskExecutionCancelResponse]
+  'task-execution:stats': [TaskExecutionStatsRequest, TaskExecutionStatsResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -2552,6 +3558,8 @@ export interface IpcStreamChannelMap {
   'stream:session:queue-changed': SessionGetQueueResponse
   /** Session 标题被异步重命名（首轮完成后 LLM 总结）*/
   'stream:session:renamed': { sessionId: string; title: string }
+  /** Session created outside the renderer session sidebar flow */
+  'stream:session:created': { sessionId: string }
   /** 用户问题请求（AskUserQuestion 工具，主进程推送，渲染进程显示选择界面）*/
   'stream:session:user-question': {
     questionId: string
@@ -2563,6 +3571,11 @@ export interface IpcStreamChannelMap {
     profileId: string
     status: 'connected' | 'disconnected' | 'error'
     message?: string
+  }
+  /** Remote connection config/runtime changed */
+  'stream:remote:changed': {
+    reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'
+    connectionId?: string
   }
   /** 工具审批请求（主进程推送，渲染进程弹窗）*/
   'stream:permission:approval-request': PermissionApprovalRequest
@@ -2590,6 +3603,15 @@ export interface IpcStreamChannelMap {
     url: string | null
     /** PNG screenshot encoded as base64 data URL (omitted when unchanged) */
     dataUrl?: string
+  }
+  /** Scheduled task execution event (main → renderer push) */
+  'stream:scheduled-task:execution': {
+    taskId: string
+    executionId: string
+    type: 'started' | 'completed' | 'failed' | 'timeout' | 'retrying'
+    durationMs?: number
+    error?: string
+    sessionId?: string
   }
 }
 

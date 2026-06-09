@@ -1,0 +1,93 @@
+/**
+ * AgentsView 外壳样式：仅 Agents / Teams Tab 切换条。
+ *
+ * Agents 编辑器、列表的样式仍在 views.css 的 .agents-* 段，未在本次迁移范围。
+ */
+
+.agents-view {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-soft);
+  overflow: hidden;
+
+  &-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 12px 20px 0;
+    border-bottom: 1px solid var(--border-soft);
+    flex-shrink: 0;
+  }
+
+  &-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: 6px 6px 0 0;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+
+    &:hover {
+      color: var(--text-default);
+      background: var(--bg-hover);
+    }
+    &.active {
+      color: var(--text-default);
+      border-bottom-color: var(--accent);
+    }
+  }
+
+  > .agents-home,
+  > .agents-detail,
+  > .teams-panel,
+  > .teams-detail {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+/* Card quick actions (visible on hover) */
+.agents-card-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: auto;
+  padding-top: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  pointer-events: auto;
+}
+
+.agents-card:hover .agents-card-actions {
+  opacity: 1;
+}
+
+.agents-card-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+
+  &:hover {
+    background: var(--bg-hover);
+    color: var(--text-default);
+  }
+
+  &.danger:hover {
+    background: color-mix(in srgb, var(--danger, #ef4444) 12%, transparent);
+    color: var(--danger, #ef4444);
+  }
+}

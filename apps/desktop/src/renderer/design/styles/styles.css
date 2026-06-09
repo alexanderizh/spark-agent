@@ -30,6 +30,11 @@
   --font-lg: 14px;
   --font-sans: "SF Pro Text", "SF Pro Display", "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Segoe UI Variable", "Segoe UI", -apple-system, BlinkMacSystemFont, ui-sans-serif, system-ui, sans-serif;
   --font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, "Liberation Mono", Menlo, ui-monospace, monospace;
+
+  /* code ligature — overridden by useAppearance */
+  --code-ligature: normal;
+  /* backdrop blur — overridden by useAppearance */
+  --backdrop-blur: none;
 }
 
 /* ---------- THEME: LIGHT (default) — also on html for Arco popups outside .app ---------- */
@@ -160,7 +165,8 @@ html[data-theme="dark"],
 html, body, #root { margin: 0; padding: 0; height: 100%; overflow: hidden; }
 body {
   font-family: var(--font-sans);
-  font-feature-settings: 'cv11', 'ss01';
+  font-size: var(--font-base);
+  font-feature-settings: var(--font-feature-body, 'cv11', 'ss01');
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
@@ -169,7 +175,7 @@ body {
 }
 code, pre, .mono {
   font-family: var(--font-mono);
-  font-feature-settings: 'zero', 'ss02';
+  font-feature-settings: var(--code-ligature);
 }
 button { font-family: inherit; cursor: pointer; }
 
@@ -227,6 +233,7 @@ a:focus-visible,
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
+  /* border-radius: var(--r-xl); */
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.05),
     0 30px 80px rgba(0, 0, 0, 0.5),
@@ -242,9 +249,9 @@ a:focus-visible,
    ============================================================ */
 .floating-sidebar {
   position: absolute;
-  top: 10px;
-  left: 10px;
-  bottom: 10px;
+  top: 6px;
+  left: 6px;
+  bottom: 6px;
   width: var(--sidebar-w, 210px);
   z-index: 50;
   display: flex;
@@ -254,8 +261,11 @@ a:focus-visible,
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  backdrop-filter: blur(24px) saturate(1.4);
-  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+}
+html[data-backdrop-blur="1"] .floating-sidebar {
+  background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
 }
 .platform-darwin .floating-sidebar {
   background: color-mix(in srgb, var(--panel-elev) 88%, transparent);
@@ -288,11 +298,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   -webkit-app-region: drag;
   border-radius: var(--r-xl) var(--r-xl) 0 0;
 }
-/* Windows: native title bar handles dragging, so the invisible drag
-   region is unnecessary. Hide it to avoid stealing mouse events. */
-.platform-win32 .floating-sidebar-drag {
-  display: none;
-}
 
 /* Panel header: hide button + logo */
 .floating-sidebar-header {
@@ -307,14 +312,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .platform-darwin .floating-sidebar-header {
   padding-top: 8px;
-}
-/* Windows: hide button sits on the left, mirroring the left-aligned
-   expand button in the main content area. */
-.platform-win32 .floating-sidebar-header {
-  justify-content: flex-start;
-}
-.platform-win32 .floating-sidebar-header .sidebar-hide-btn {
-  order: -1;
 }
 .sidebar-hide-btn {
   -webkit-app-region: no-drag;
@@ -481,6 +478,15 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   font-weight: 600; font-size: 11px;
   flex-shrink: 0;
 }
+.sidebar-user-avatar { overflow: hidden; padding: 0; }
+.sidebar-user-avatar-image,
+.sidebar-user-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  display: block;
+  object-fit: cover;
+}
 .sidebar-user-info { flex: 1; min-width: 0; }
 .sidebar-user-info .name { font-size: var(--font-sm); font-weight: 600; color: var(--text); }
 .sidebar-user-info .meta { font-size: 10px; color: var(--text-muted); }
@@ -532,15 +538,30 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   margin-left: auto;
 }
 .user-menu-theme-sub {
-  min-width: 152px;
+  min-width: 168px;
   margin-left: -4px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
 }
+.user-menu-theme-radio-group,
+.user-menu-theme-sub > [role="radiogroup"]:first-of-type {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+}
+.user-menu-theme-sub .user-menu-theme-item,
 .user-menu-theme-sub [role="menuitemradio"] {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 6px 8px 6px 28px;
+  box-sizing: border-box;
+  height: auto !important;
+  min-height: 32px;
+  padding: 6px 8px 6px 28px !important;
   border: none;
   background: transparent;
   color: var(--text);
@@ -549,9 +570,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   cursor: pointer;
   position: relative;
 }
-.user-menu-theme-sub [role="menuitemradio"]:hover {
+.user-menu-theme-sub .user-menu-theme-item:hover,
+.user-menu-theme-sub .user-menu-theme-item:focus,
+.user-menu-theme-sub [role="menuitemradio"]:hover,
+.user-menu-theme-sub [role="menuitemradio"]:focus {
   background: var(--hover);
 }
+.user-menu-theme-sub .user-menu-theme-item > span:first-child,
 .user-menu-theme-sub [role="menuitemradio"] > span:first-child {
   position: absolute;
   left: 8px;
@@ -561,6 +586,23 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   width: 14px;
   height: 14px;
   color: var(--primary);
+}
+.user-menu-accent-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+.user-menu-accent-sub {
+  min-width: 148px;
+}
+.user-menu-accent-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
 }
 
 /* ─── Window Controls (Windows/Linux only) ─── */
@@ -600,11 +642,53 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* Hide window controls on macOS (uses native traffic lights) */
 .platform-darwin .window-controls { display: none; }
 
+/* ─── Windows Custom Title Bar ─── */
+.platform-win32 .win-titlebar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0 0 0 8px;
+  -webkit-app-region: drag;
+}
+.platform-win32 .win-titlebar .sidebar-expand-btn {
+  -webkit-app-region: no-drag;
+  margin-left: 12px;
+  margin-top: 2px;
+}
+.platform-win32 .win-titlebar-controls {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  -webkit-app-region: no-drag;
+}
+.platform-win32 .win-titlebar-controls .window-controls {
+  padding: 0;
+  width: auto;
+}
+
+/* Windows: enable sidebar drag region (frameless window) */
+.platform-win32 .floating-sidebar-drag {
+  display: block;
+}
+/* Windows: sidebar header also acts as drag region */
+.platform-win32 .floating-sidebar-header {
+  -webkit-app-region: drag;
+  justify-content: flex-start;
+}
+.platform-win32 .floating-sidebar-header .sidebar-hide-btn {
+  order: -1;
+  -webkit-app-region: no-drag;
+}
+
 /* ─── Main content area — offset to the right of the sidebar ─── */
 .main-content-area {
   margin-left: var(--sidebar-offset, 210px);
   flex: 1;
   display: flex;
+  flex-direction: column;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
@@ -655,8 +739,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .app.sidebar-hidden .transparent-header {
   margin-left: 0;
   padding-left: 20px;
-  padding-top: 12px;
-  height: 45px;
+  padding-top: 16px;
+  height: 52px;
 }
 
 .view-body {
@@ -750,7 +834,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   border-bottom-width: 2px;
   color: var(--text-muted);
   font-size: 10px;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono, ui-monospace, monospace);
   font-weight: 500;
 }
 
@@ -816,10 +900,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   font-size: var(--font-sm);
   min-width: 200px;
 }
-.search-input .spark-input-wrap {
-  flex: 1;
-  min-width: 0;
-}
+ 
 .search-input .spark-input-arco.arco-input-wrapper,
 .search-input input {
   background: transparent;
@@ -882,6 +963,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 *::-webkit-scrollbar-corner {
   background: transparent;
 }
+*::-webkit-scrollbar-button {
+  display: none;
+}
 /* Firefox: overlay thin scrollbar */
 * {
   scrollbar-width: thin;
@@ -892,14 +976,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    SPARK INPUT — 基于 Arco Input 的主题化输入框
    ============================================================ */
 
-/* Input wrapper */
-.spark-input-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  width: 100%;
-}
-.spark-input-wrap .spark-input-arco { width: 100%; }
+ 
 .spark-input-icon {
   position: absolute;
   left: 11px;
@@ -908,102 +985,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   pointer-events: none;
   z-index: 1;
 }
-.spark-input-icon svg { width: 14px; height: 14px; }
-.spark-input-has-icon { padding-left: 32px !important; }
 
-/* Arco Input 主题覆盖 */
-.spark-input-arco.arco-input-wrapper {
-  height: 36px;
-  background: var(--panel) !important;
-  border: 1px solid var(--border-strong) !important;
-  border-radius: var(--r-md) !important;
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-.spark-input-arco.arco-input-wrapper .arco-input {
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-}
-.spark-input-arco.arco-input-wrapper .arco-input::placeholder {
-  color: var(--text-faint);
-}
-.spark-input-arco.arco-input-wrapper:hover {
-  border-color: var(--text-faint) !important;
-}
-.spark-input-arco.arco-input-wrapper.arco-input-focus,
-.spark-input-arco.arco-input-wrapper:focus-within {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px var(--primary-soft) !important;
-}
-.spark-input-arco.arco-input-wrapper.arco-input-disabled {
-  opacity: 0.55;
-  cursor: default;
-  background: var(--bg-soft) !important;
-}
-.spark-input-arco.arco-input-wrapper .arco-input[readonly] {
-  color: var(--text-muted);
-}
-
-/* 原生 range input 保留 */
-.spark-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 6px;
-  padding: 0;
-  border: none;
-  border-radius: 3px;
-  background: var(--border);
-  cursor: pointer;
-  width: 100%;
-}
-.spark-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--primary);
-  border: 2px solid var(--panel);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  cursor: pointer;
-  transition: transform 0.12s;
-}
-.spark-input[type="range"]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
-}
-.spark-input[type="range"]:focus {
-  box-shadow: none;
-}
-
-/* 裸 input/select 通用主题（尚未迁移到 Arco 的元素） */
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input),
-.app select:not(.spark-select-arco) {
-  height: 36px;
-  min-width: 0;
-  padding: 0 12px;
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
 .app select:not(.spark-select-arco) {
   padding-right: 30px;
 }
 .app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input):hover,
 .app select:not(.spark-select-arco):hover {
   border-color: var(--text-faint);
-}
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input):focus,
-.app select:not(.spark-select-arco):focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--panel);
 }
 .app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):disabled,
 .app select:disabled {
@@ -1021,138 +1009,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .input-w-sm { width: 80px; }
 .input-max-sm { max-width: 120px; }
-
-/* ============================================================
-   SPARK SELECT — Arco Design based dropdown select
-   ============================================================ */
-.spark-select-wrap {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  height: 36px;
-}
-
-/* Arco Select 自定义主题覆盖 */
-.spark-select-arco.arco-select {
-  width: 100% !important;
-  height: 36px !important;
-  min-height: 36px !important;
-  background: var(--panel) !important;
-  border: 1px solid var(--border-strong) !important;
-  border-radius: var(--r-md) !important;
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-  box-shadow: none !important;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-/* 垂直居中 — Arco 内部 view 容器 */
-.spark-select-arco.arco-select .arco-select-view {
-  height: 100%;
-  min-height: 0 !important;
-  padding: 0 34px 0 12px !important;
-  display: flex !important;
-  align-items: center !important;
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-}
-.spark-select-arco.arco-select .arco-select-view-value {
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-  display: flex;
-  align-items: center;
-  line-height: 1.3 !important;
-}
-.spark-select-arco.arco-select .arco-select-view-suffix .arco-select-view-icon {
-  color: var(--text-muted) !important;
-}
-.spark-select-arco.arco-select:hover {
-  border-color: var(--text-faint) !important;
-}
-.spark-select-arco.arco-select.arco-select-focus,
-.spark-select-arco.arco-select:focus-within {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px var(--primary-soft) !important;
-}
-.spark-select-arco.arco-select.arco-select-disabled {
-  opacity: 1 !important;
-  cursor: default;
-  background: var(--bg-soft) !important;
-  border-color: var(--border) !important;
-  box-shadow: none !important;
-}
-.spark-select-arco.arco-select.arco-select-disabled:hover,
-.spark-select-arco.arco-select.arco-select-disabled:focus-within {
-  border-color: var(--border) !important;
-  box-shadow: none !important;
-}
-.spark-select-arco.arco-select.arco-select-disabled .arco-select-view-value {
-  color: var(--text-muted) !important;
-}
-.spark-select-arco.arco-select.arco-select-disabled .arco-select-view-suffix .arco-select-view-icon {
-  color: var(--text-faint) !important;
-}
-
-/* Arco Select 弹出面板主题 */
-.spark-select-arco-popup.arco-select-popup {
-  border-radius: var(--r-md, 6px);
-  box-shadow: 0 4px 16px rgba(0,0,0,0.18);
-}
-.spark-select-arco-popup .arco-select-popup-inner {
-  background: var(--panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md, 6px);
-}
-.spark-select-arco-popup .arco-select-option {
-  color: var(--text);
-  font-size: var(--font-sm);
-  padding: 6px 12px;
-}
-.spark-select-arco-popup .arco-select-option:hover,
-.spark-select-arco-popup .arco-select-option.arco-select-option-hover {
-  background: var(--bg-soft);
-  color: var(--text-strong);
-}
-.spark-select-arco-popup .arco-select-option.arco-select-option-selected {
-  background: var(--primary-soft);
-  color: var(--primary);
-  font-weight: 500;
-}
-/* Arco Select popup — scrollbar & empty state */
-.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar {
-  width: 6px;
-}
-.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
-}
-.spark-select-arco-popup .arco-select-popup-inner::-webkit-scrollbar-track {
-  background: transparent;
-}
-.spark-select-arco-popup .arco-select-option-disabled {
-  color: var(--text-faint) !important;
-}
-.spark-select-arco-popup .arco-select-group-title {
-  color: var(--text-muted) !important;
-  font-size: var(--font-xs);
-}
-.spark-select-arco-popup .arco-select-empty {
-  color: var(--text-muted) !important;
-}
-/* Arco Select popup — virtual list scrollbar */
-.spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar {
-  width: 6px;
-}
-.spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 3px;
-}
-.spark-select-arco-popup .arco-virtual-list::-webkit-scrollbar-track {
-  background: transparent;
-}
 
 /* ============================================================
    SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
@@ -1192,10 +1048,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 3px;
+  border-radius: 999px;
 }
 .spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-track {
   background: transparent;
+}
+.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-button {
+  display: none;
 }
 .app textarea:not(.arco-textarea):not(.composer-input):not(.plan-approval-textarea) {
   width: 100%;
@@ -1435,22 +1294,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .form-grid > .spark-textarea-arco {
   width: 100%;
 }
-.form-grid > .spark-input-wrap .spark-input-arco.arco-input-wrapper {
-  height: 36px;
-}
-.form-grid > .spark-select-wrap {
-  width: 100%;
-  display: flex;
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select {
-  height: 36px;
-  width: 100%;
-  border-color: var(--border-strong);
-}
-.form-grid > .spark-select-wrap .spark-select-arco.arco-select:focus-within {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
+ 
 
 /* Radio button styling (for sandbox level) */
 .spark-radio {
@@ -1520,7 +1364,7 @@ input.spark-checkbox:checked::after {
 .muted { color: var(--text-muted); }
 .faint { color: var(--text-faint); }
 .strong { color: var(--text-strong); font-weight: 600; }
-.mono-sm { font-family: 'Geist Mono', ui-monospace, monospace; font-size: var(--font-sm); }
+.mono-sm { font-family: var(--font-mono, ui-monospace, monospace); font-size: var(--font-sm); }
 .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .pulse-dot {

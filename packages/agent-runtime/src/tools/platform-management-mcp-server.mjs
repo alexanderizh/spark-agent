@@ -2,9 +2,9 @@
 /**
  * Platform Management MCP Server
  *
- * Exposes 25 tools for managing the Spark Agent platform:
+ * Exposes 34 tools for managing the Spark Agent platform:
  *   Skills (5), MCP Servers (5), Providers (5),
- *   Workflows (5), Agents (5), Settings (4)
+ *   Workflows (5), Agents (5), Settings (4), Board Tasks (11)
  *
  * Communicates with the main process via the PlatformBridge HTTP server
  * running on localhost. The bridge port is passed via SPARK_PLATFORM_BRIDGE_PORT.
@@ -384,20 +384,6 @@ function toolDefinitions() {
       },
     },
 
-    // ── Settings ──
-    {
-      name: 'settings_get',
-      description: '获取单个设置项的值。需要提供分类和键名。',
-      inputSchema: {
-        type: 'object',
-        required: ['key'],
-        properties: {
-          category: { type: 'string', description: '设置分类，默认 "general"' },
-          key: { type: 'string', description: '设置键名' },
-        },
-      },
-    },
-
     // ── Board Tasks ──
     {
       name: 'board_list',
@@ -438,6 +424,9 @@ function toolDefinitions() {
           assignee: { type: 'string', description: '负责人' },
           tags: { type: 'array', items: { type: 'string' }, description: '标签列表' },
           dueDate: { type: 'string', description: '截止日期（ISO 格式，如 2025-12-31）' },
+          processingAgent: { type: 'string', description: '处理 Agent，指定执行任务的 agent 或团队（格式：agent 名称 或 team:团队名称）' },
+          acceptanceCriteria: { type: 'string', description: '验收条件，任务完成后测试验收的标准' },
+          testAgent: { type: 'string', description: '测试 Agent，可选指定测试的 agent（格式：agent 名称 或 team:团队名称）' },
         },
       },
     },
@@ -456,6 +445,9 @@ function toolDefinitions() {
           assignee: { type: 'string', description: '新负责人' },
           tags: { type: 'array', items: { type: 'string' }, description: '新标签列表（完全替换）' },
           dueDate: { type: 'string', description: '新截止日期' },
+          processingAgent: { type: 'string', description: '新处理 Agent（格式：agent 名称 或 team:团队名称）' },
+          acceptanceCriteria: { type: 'string', description: '新验收条件' },
+          testAgent: { type: 'string', description: '新测试 Agent（格式：agent 名称 或 team:团队名称）' },
         },
       },
     },
@@ -562,6 +554,10 @@ function toolDefinitions() {
         },
       },
     },
+
+    // ── Settings ──
+    {
+      name: 'settings_get',
       description: '获取单个设置项的值。需要提供分类和键名。',
       inputSchema: {
         type: 'object',

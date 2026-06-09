@@ -1,7 +1,7 @@
 /**
  * Shared Skills data utilities
  *
- * Provides a unified data layer for SkillsView and Settings SkillsSection.
+ * Provides a unified data layer for skill management views.
  * All data flows through the real IPC layer (skill:list / skill:update / etc.).
  */
 import { useCallback, useEffect, useState } from 'react'
@@ -163,7 +163,7 @@ export interface UseSkillsResult {
 
 /**
  * Reusable hook that wraps all skill IPC operations.
- * Used by both SkillsView and Settings SkillsSection.
+ * Used by skill management views.
  */
 export function useSkills(): UseSkillsResult {
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -187,10 +187,19 @@ export function useSkills(): UseSkillsResult {
 
   const toggleSkill = useCallback(
     async (skill: SkillItem) => {
-      await updateSkill({ id: skill.id, enabled: !skill.enabled })
-      refresh()
+      const nextEnabled = !skill.enabled
+      setSkills((prev) =>
+        prev.map((s) => (s.id === skill.id ? { ...s, enabled: nextEnabled } : s))
+      )
+      try {
+        await updateSkill({ id: skill.id, enabled: nextEnabled })
+      } catch {
+        setSkills((prev) =>
+          prev.map((s) => (s.id === skill.id ? { ...s, enabled: skill.enabled } : s))
+        )
+      }
     },
-    [updateSkill, refresh]
+    [updateSkill]
   )
 
   const deleteSkill = useCallback(

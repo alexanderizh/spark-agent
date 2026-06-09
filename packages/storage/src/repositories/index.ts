@@ -34,6 +34,32 @@ export { AgentRepository } from './agent.repository.js'
 export type { AgentConfig, AgentItem, AgentRow, CreateAgentParams, UpdateAgentParams } from './agent.repository.js'
 export { WorkflowRepository } from './workflow.repository.js'
 export type { CreateWorkflowParams, UpdateWorkflowParams, WorkflowItem, WorkflowRow, WorkflowStatus } from './workflow.repository.js'
+export { TeamDispatchRepository } from './team-dispatch.repository.js'
+export type { TeamDispatchRow, TeamDispatchState, CreateTeamDispatchParams, UpdateTeamDispatchParams } from './team-dispatch.repository.js'
+export { TeamDefinitionRepository } from './team-definition.repository.js'
+export type {
+  AgentTeamRow,
+  AgentTeamItem,
+  CreateAgentTeamParams,
+  UpdateAgentTeamParams,
+  ListAgentTeamsParams,
+} from './team-definition.repository.js'
+export { ScheduledTaskRepository } from './scheduled-task.repository.js'
+export type {
+  ScheduledTaskRow,
+  CreateScheduledTaskParams,
+  UpdateScheduledTaskParams,
+  ScheduledTaskFilter,
+} from './scheduled-task.repository.js'
+export { TaskExecutionRepository } from './task-execution.repository.js'
+export type {
+  TaskExecutionRow,
+  CreateTaskExecutionParams,
+  ExecutionQueryOptions,
+  ExecutionStats,
+} from './task-execution.repository.js'
+export { MemoryRepository } from './memory.repository.js'
+export type { MemoryEntryRow } from './memory.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'

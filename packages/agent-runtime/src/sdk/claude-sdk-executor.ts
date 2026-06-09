@@ -39,6 +39,7 @@ import { mapSDKMessageToEvents } from './event-mapper.js'
 import { mapPermissionMode, mergeToolPermissions, mapReasoningEffort } from './permission-mapper.js'
 import type {
   SDKExecutorConfig,
+  SDKMcpServerConfig,
   SDKMessage,
   SDKPermissionResult,
   SDKQueryFunction,
@@ -62,9 +63,10 @@ const SDK_HOST_TOOL_INSTRUCTIONS = [
 ].join('\n')
 
 const ENV_BLOCKLIST_PREFIXES = ['ANTHROPIC_', 'CLAUDE_'] as const
-const DEFAULT_SDK_MAX_TURNS = 80
-const DEFAULT_MAX_TURN_EXTENSION_RETRIES = 2
-const DEFAULT_MAX_TURN_EXTENSION_CAP = 500
+const DEFAULT_SDK_MAX_TURNS = 200
+const DEFAULT_MAX_TURN_EXTENSION_RETRIES = 6
+const DEFAULT_MAX_TURN_EXTENSION_CAP = 2000
+const MAX_TURNS_ERROR_PATTERN = /reached\s+maximum\s+number\s+of\s+turns/i
 
 let sdkModule: SDKModule | null = null
 let sdkLoadAttempted = false
@@ -82,12 +84,19 @@ function buildIsolatedRuntimeEnv(
   model: string,
   apiEndpoint?: string,
   tierModels?: { haiku?: string | undefined; sonnet?: string | undefined; opus?: string | undefined },
+  useLocalConfig?: boolean,
 ): Record<string, string> {
   const env: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value == null) continue
-    if (ENV_BLOCKLIST_PREFIXES.some((prefix) => key.startsWith(prefix))) continue
+    // Local CLI 模式下保留宿主机的 ANTHROPIC_*/CLAUDE_* 环境，让 SDK 透明继承
+    // OAuth 凭证、自定义 base url、模型偏好等本地 claude CLI 配置。
+    if (!useLocalConfig && ENV_BLOCKLIST_PREFIXES.some((prefix) => key.startsWith(prefix))) continue
     env[key] = value
+  }
+  if (useLocalConfig === true) {
+    // 不覆写任何 ANTHROPIC_*；SDK 会回落到 ~/.claude/.credentials.json 或宿主环境。
+    return env
   }
   env.ANTHROPIC_API_KEY = apiKey
   if (apiEndpoint != null) env.ANTHROPIC_BASE_URL = apiEndpoint
@@ -128,9 +137,51 @@ export function resetSDKLoadState(): void {
   sdkModule = null
 }
 
+/** in-process MCP 工具定义的处理器返回值（CallToolResult 的子集） */
+export interface SdkMcpToolResult {
+  content: Array<{ type: 'text'; text: string }>
+  structuredContent?: unknown
+  isError?: boolean
+}
+
+/** 从已加载的 Claude Agent SDK 暴露 in-process MCP server 工厂（createSdkMcpServer + tool）。
+ *  用于 Team Mode 的 spark_team 工具——它需要在同进程内直接回调 dispatcher，
+ *  因此必须用 SDK 的 in-process server（区别于 spark_image 的 stdio 子进程）。
+ *  SDK 不可用时返回 null。 */
+export async function loadSdkMcpFactory(): Promise<{
+  createSdkMcpServer: (opts: { name: string; version?: string; tools: unknown[] }) => SDKMcpServerConfig
+  tool: (
+    name: string,
+    description: string,
+    inputSchema: Record<string, unknown>,
+    handler: (args: Record<string, unknown>, extra: unknown) => Promise<SdkMcpToolResult>,
+  ) => unknown
+} | null> {
+  const sdk = (await loadSDK()) as
+    | (SDKModule & {
+        createSdkMcpServer?: (opts: { name: string; version?: string; tools: unknown[] }) => SDKMcpServerConfig
+        tool?: (
+          name: string,
+          description: string,
+          inputSchema: Record<string, unknown>,
+          handler: (args: Record<string, unknown>, extra: unknown) => Promise<SdkMcpToolResult>,
+        ) => unknown
+      })
+    | null
+  if (sdk?.createSdkMcpServer == null || sdk.tool == null) return null
+  return { createSdkMcpServer: sdk.createSdkMcpServer, tool: sdk.tool }
+}
+
 export class ClaudeSDKExecutor {
   private emitter = new AgentEventEmitter()
   private abortController: AbortController | null = null
+
+  /**
+   * Live permission mode — can be updated mid-turn via `setPermissionMode()`.
+   * The `canUseTool` callback reads this on every invocation so that a
+   * permission-mode switch in the UI takes effect immediately.
+   */
+  private livePermissionMode: SDKExecutorConfig['permissionMode'] | null = null
 
   onEvent(listener: (event: AgentEvent) => void): void {
     this.emitter.on(listener)
@@ -142,6 +193,16 @@ export class ClaudeSDKExecutor {
 
   cancel(): void {
     this.abortController?.abort()
+  }
+
+  /**
+   * Hot-swap the permission mode for the **currently executing** turn.
+   * Takes effect on the next `canUseTool` callback — i.e. the very next
+   * tool invocation the SDK agent performs.
+   */
+  setPermissionMode(mode: SDKExecutorConfig['permissionMode']): void {
+    this.livePermissionMode = mode
+    log.info('Live permission mode updated', { mode })
   }
 
   async executeTurn(
@@ -156,6 +217,7 @@ export class ClaudeSDKExecutor {
     }
 
     this.abortController = new AbortController()
+    this.livePermissionMode = config.permissionMode
     const ctx = { sessionId, turnId, toolNamesById: new Map<string, string>() }
     const promptWithAttachments = buildPromptWithAttachments(userMessage, config.attachments)
     const makeBase = () => ({
@@ -210,6 +272,7 @@ export class ClaudeSDKExecutor {
 
     let terminalStatusEmitted = false
     const emitTerminalStatus = (status: AgentStatusValue): void => {
+      if (terminalStatusEmitted) return
       terminalStatusEmitted = true
       this.emitter.emit({
         ...makeBase(),
@@ -218,12 +281,33 @@ export class ClaudeSDKExecutor {
       })
     }
 
+    // Immediately emit cancellation events when abort fires,
+    // so the UI updates instantly instead of waiting for the
+    // async generator to yield its next message.
+    const onAbort = (): void => {
+      this.emitter.emit({
+        ...makeBase(),
+        type: 'agent_error',
+        code: 'ABORTED',
+        message: 'Turn cancelled by user',
+        retryable: false,
+      })
+      emitTerminalStatus('cancelled')
+    }
+    this.abortController.signal.addEventListener('abort', onAbort, { once: true })
+
     // Build SDK options
-    const runtimeEnv = buildIsolatedRuntimeEnv(config.apiKey, config.model, config.apiEndpoint, {
-      haiku: config.haikuModel,
-      sonnet: config.sonnetModel,
-      opus: config.opusModel,
-    })
+    const runtimeEnv = buildIsolatedRuntimeEnv(
+      config.apiKey,
+      config.model,
+      config.apiEndpoint,
+      {
+        haiku: config.haikuModel,
+        sonnet: config.sonnetModel,
+        opus: config.opusModel,
+      },
+      config.useLocalConfig === true,
+    )
     const settings: SDKSettings = {
       model: config.model,
       env: runtimeEnv,
@@ -234,16 +318,16 @@ export class ClaudeSDKExecutor {
       },
     }
 
-    let maxTurns = normalizePositiveInt(config.maxTurnCount, DEFAULT_SDK_MAX_TURNS, 1000)
+    let maxTurns = normalizePositiveInt(config.maxTurnCount, DEFAULT_SDK_MAX_TURNS, 5000)
     const maxTurnExtensionRetries = normalizeNonNegativeInt(
       config.maxTurnExtensionRetries,
       DEFAULT_MAX_TURN_EXTENSION_RETRIES,
-      10,
+      20,
     )
     const maxTurnExtensionCap = normalizePositiveInt(
       config.maxTurnExtensionCap,
       DEFAULT_MAX_TURN_EXTENSION_CAP,
-      1000,
+      5000,
     )
     let extensionAttempts = 0
     let prompt = promptWithAttachments
@@ -281,6 +365,9 @@ export class ClaudeSDKExecutor {
             : { type: 'preset', preset: 'claude_code' },
 
         permissionMode: mergedPerms.permissionMode,
+        ...(mergedPerms.permissionMode === 'bypassPermissions'
+          ? { allowDangerouslySkipPermissions: true }
+          : {}),
         ...(mergedPerms.allowedTools.length > 0 ? { allowedTools: mergedPerms.allowedTools } : {}),
         ...(mergedPerms.disallowedTools.length > 0
           ? { disallowedTools: mergedPerms.disallowedTools }
@@ -304,6 +391,8 @@ export class ClaudeSDKExecutor {
 
         // Map Spark callbacks to SDK permission callback when Spark needs extra
         // policy, or when AskUserQuestion needs to pause for user answers.
+        // The callback reads `this.livePermissionMode` on every invocation so
+        // that a mid-turn permission-mode switch takes effect immediately.
         ...((config.questionCallback != null ||
           (config.approvalCallback != null &&
             shouldUseSparkPermissionCallback(config.permissionMode)))
@@ -313,6 +402,8 @@ export class ClaudeSDKExecutor {
                 input: Record<string, unknown>,
                 callbackOptions,
               ): Promise<SDKPermissionResult> => {
+                // Snapshot the live permission mode for this invocation
+                const currentMode = this.livePermissionMode ?? config.permissionMode
                 try {
                   // Handle AskUserQuestion specially - it needs user interaction
                   if (isAskUserQuestionTool(toolName)) {
@@ -339,10 +430,10 @@ export class ClaudeSDKExecutor {
                   if (isAlwaysAllowedControlTool(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
-                  if (!shouldUseSparkPermissionCallback(config.permissionMode)) {
+                  if (!shouldUseSparkPermissionCallback(currentMode)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
-                  if (config.permissionMode === 'claude-auto-edits' && isEditTool(toolName)) {
+                  if (currentMode === 'claude-auto-edits' && isEditTool(toolName)) {
                     return allowTool(input, callbackOptions.toolUseID, 'user_temporary')
                   }
                   const approvalCallback = config.approvalCallback
@@ -425,14 +516,7 @@ export class ClaudeSDKExecutor {
         }
 
         if (this.abortController.signal.aborted) {
-          this.emitter.emit({
-            ...makeBase(),
-            type: 'agent_error',
-            code: 'ABORTED',
-            message: 'Turn cancelled by user',
-            retryable: false,
-          })
-          if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+          // Cancellation events already emitted by the abort signal listener.
           return
         }
 
@@ -472,14 +556,42 @@ export class ClaudeSDKExecutor {
         return
       } catch (err) {
         if (this.abortController.signal.aborted) {
+          // Cancellation events already emitted by the abort signal listener.
+          return
+        }
+
+        // ── Max-Turns Exception Recovery ───────────────────────────────
+        // Some SDK paths surface `error_max_turns` as a thrown exception
+        // instead of an `error_max_turns` result message. Detect that here
+        // and run the same auto-extension logic so the user does not have
+        // to manually re-send the message.
+        const errMessage = err instanceof Error ? err.message : String(err)
+        if (MAX_TURNS_ERROR_PATTERN.test(errMessage)) {
+          const nextMaxTurns = Math.min(maxTurnExtensionCap, maxTurns * 2)
+          if (extensionAttempts < maxTurnExtensionRetries && nextMaxTurns > maxTurns) {
+            extensionAttempts += 1
+            this.emitter.emit({
+              ...makeBase(),
+              type: 'agent_status',
+              status: 'thinking',
+              message: `Reached maximum turns (${maxTurns}); automatically extending to ${nextMaxTurns} (retry ${extensionAttempts}/${maxTurnExtensionRetries}).`,
+            })
+            maxTurns = nextMaxTurns
+            prompt = buildMaxTurnContinuationPrompt()
+            resumeExistingSession = true
+            terminalStatusEmitted = false
+            continue
+          }
+
           this.emitter.emit({
             ...makeBase(),
             type: 'agent_error',
-            code: 'ABORTED',
-            message: 'Turn cancelled by user',
+            code: 'MAX_ITERATIONS',
+            message: buildMaxTurnLimitMessage(maxTurns, extensionAttempts),
             retryable: false,
+            rawError: errMessage,
           })
-          if (!terminalStatusEmitted) emitTerminalStatus('cancelled')
+          if (!terminalStatusEmitted) emitTerminalStatus('error')
           return
         }
 
