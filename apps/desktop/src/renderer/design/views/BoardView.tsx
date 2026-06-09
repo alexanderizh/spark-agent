@@ -1448,16 +1448,38 @@ export function BoardView() {
       }
 
       const count = data.tasks.length
-      const confirmImport = window.confirm(`确定导入 ${count} 个任务？\n\n导入的任务将创建为"待办"状态。`)
+      // Stats per status for confirmation message
+      const validStatuses = COLUMNS.map(c => c.key)
+      const importedStatusCounts: Partial<Record<TaskStatus, number>> = {}
+      let invalidStatusCount = 0
+      for (const t of data.tasks) {
+        const rawStatus = (t.status as string) || 'todo'
+        if (validStatuses.includes(rawStatus as TaskStatus)) {
+          importedStatusCounts[rawStatus as TaskStatus] = (importedStatusCounts[rawStatus as TaskStatus] ?? 0) + 1
+        } else {
+          invalidStatusCount += 1
+        }
+      }
+      const breakdown = COLUMNS
+        .filter(c => (importedStatusCounts[c.key] ?? 0) > 0)
+        .map(c => `${c.label} ${importedStatusCounts[c.key]}`)
+        .join('、')
+      const breakdownSuffix = breakdown ? `\n\n状态分布：${breakdown}` : ''
+      const fallbackSuffix = invalidStatusCount > 0 ? `\n（${invalidStatusCount} 个无法识别的状态将按"待办"导入）` : ''
+      const confirmImport = window.confirm(`确定导入 ${count} 个任务？${breakdownSuffix}${fallbackSuffix}`)
       if (!confirmImport) return
 
-      // Batch create tasks
+      // Batch create tasks — preserve original status from file, fallback to 'todo'
       const createdTasks: TaskCard[] = []
       for (const t of data.tasks) {
+        const rawStatus = (t.status as string) || 'todo'
+        const status: TaskStatus = validStatuses.includes(rawStatus as TaskStatus)
+          ? (rawStatus as TaskStatus)
+          : 'todo'
         const created = await ipcCreateTask({
           title: t.title || '未命名任务',
           description: t.description || '',
-          status: 'todo' as TaskStatus, // Always import as todo
+          status,
           priority: (t.priority || 'medium') as Priority,
           assignee: t.assignee || '',
           project: t.project || '',
@@ -1498,6 +1520,42 @@ export function BoardView() {
   const handleSelectAll = useCallback(() => {
     setSelectedTaskIds(new Set(filteredTasks.map(t => t.id)))
   }, [filteredTasks])
+
+  // Select / deselect every task in a single column
+  const handleToggleColumnSelection = useCallback((status: TaskStatus) => {
+    setSelectedTaskIds(prev => {
+      const colIds = columnTasks[status].map(t => t.id)
+      if (colIds.length === 0) return prev
+      const allSelected = colIds.every(id => prev.has(id))
+      const next = new Set(prev)
+      if (allSelected) {
+        for (const id of colIds) next.delete(id)
+      } else {
+        for (const id of colIds) next.add(id)
+      }
+      return next
+    })
+  }, [columnTasks])
+
+  // Batch delete selected tasks (soft delete → recycle bin)
+  const handleBatchDelete = useCallback(async () => {
+    if (selectedTaskIds.size === 0) return
+    const count = selectedTaskIds.size
+    const ok = await requestConfirm({
+      title: '批量删除任务',
+      description: `将把 ${count} 个任务移至回收站，可在回收站中恢复。`,
+      confirmText: '删除',
+      danger: true,
+    })
+    if (!ok) return
+    const ids = Array.from(selectedTaskIds)
+    const deletedAt = now()
+    // Persist in parallel; resolve on full success
+    await Promise.all(ids.map(id => window.spark.invoke('board:delete', { id })))
+    setTasks(prev => prev.map(t => selectedTaskIds.has(t.id) ? { ...t, deletedAt, updatedAt: deletedAt } : t))
+    setSelectedTaskIds(new Set())
+    setSelectionMode(false)
+  }, [selectedTaskIds, requestConfirm])
 
   // Clear selection
   const handleClearSelection = useCallback(() => {
@@ -1849,6 +1907,15 @@ export function BoardView() {
             <Button size="small" type="outline" onClick={handleClearSelection} disabled={selectedTaskIds.size === 0}>
               取消选择
             </Button>
+            <Button
+              size="small"
+              status="danger"
+              onClick={handleBatchDelete}
+              disabled={selectedTaskIds.size === 0}
+              title="将所选任务移至回收站"
+            >
+              删除选中
+            </Button>
             <Button size="small" type="primary" onClick={() => handleExport(true)} disabled={selectedTaskIds.size === 0}>
               导出选中
             </Button>
@@ -1874,6 +1941,34 @@ export function BoardView() {
                 </span>
               </div>
               <span className="board-col-count">{columnTasks[col.key].length}</span>
+              {selectionMode && columnTasks[col.key].length > 0 && (
+                <label
+                  className="board-col-select-all"
+                  title={(() => {
+                    const colIds = columnTasks[col.key].map(t => t.id)
+                    const allSelected = colIds.length > 0 && colIds.every(id => selectedTaskIds.has(id))
+                    return allSelected ? '取消全选本面板' : '全选本面板'
+                  })()}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <input
+                    type="checkbox"
+                    checked={(() => {
+                      const colIds = columnTasks[col.key].map(t => t.id)
+                      if (colIds.length === 0) return false
+                      return colIds.every(id => selectedTaskIds.has(id))
+                    })()}
+                    ref={(el) => {
+                      if (!el) return
+                      const colIds = columnTasks[col.key].map(t => t.id)
+                      if (colIds.length === 0) { el.indeterminate = false; return }
+                      const selectedCount = colIds.filter(id => selectedTaskIds.has(id)).length
+                      el.indeterminate = selectedCount > 0 && selectedCount < colIds.length
+                    }}
+                    onChange={() => handleToggleColumnSelection(col.key)}
+                  />
+                </label>
+              )}
               <button className="board-icon-btn board-icon-btn-xs" title={`在"${col.label}"中新建`} onClick={() => setPage({ view: 'create', defaultStatus: col.key })}>
                 <Icons.Plus size={13} />
               </button>

@@ -1362,11 +1362,23 @@ function ChatStream({
   )
 
   // 智能自动滚动：只在用户未主动上滚时自动跟随
+  // 当有新用户消息时，强制重置滚动状态并滚动到底部
   useEffect(() => {
     const el = streamRef.current
     if (!el) return
-    if (!userScrolledRef.current) {
-      // rAF 确保在 DOM 更新后再滚动，避免滚动位置不准确
+
+    // 检测最新消息是否为用户消息（表示用户刚发送了新消息）
+    const latestMsg = messages[messages.length - 1]
+    const isNewUserMessage = latestMsg?.role === 'user'
+
+    if (isNewUserMessage) {
+      // 用户发送新消息，强制滚动到底部并重置滚动状态
+      userScrolledRef.current = false
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight
+      })
+    } else if (!userScrolledRef.current) {
+      // Agent回复时，只在用户未主动上滚时自动跟随
       requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight
       })
