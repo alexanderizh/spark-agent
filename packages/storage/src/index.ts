@@ -43,6 +43,7 @@ export {
   TeamDefinitionRepository,
   ScheduledTaskRepository,
   TaskExecutionRepository,
+  MemoryRepository,
 } from './repositories/index.js'
 
 export type {
@@ -105,4 +106,5 @@ export type {
   CreateTaskExecutionParams,
   ExecutionQueryOptions,
   ExecutionStats,
+  MemoryEntryRow,
 } from './repositories/index.js'

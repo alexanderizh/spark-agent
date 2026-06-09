@@ -64,6 +64,10 @@ import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '.
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
 import { generateSessionTitle } from './session-title-generator.js'
+import { MemoryRepository } from '@spark/storage'
+import { MemoryWriterService } from './memory/memory-writer.service.js'
+import { MemoryReaderService } from './memory/memory-reader.service.js'
+import { MemoryStoreService } from './memory/memory-store.service.js'
 import {
   createLogger,
   resolveProviderContextWindow,
@@ -120,6 +124,12 @@ interface TryStartSDKTurnOptions {
    *  - emit user_message 时附带 mentionAgentId 字段
    */
   mentionAgentId?: string
+  /** Memory System：当前 workspace id（用于 project scope 记忆写入） */
+  primaryWorkspaceId?: string
+  /** Memory System：当前 agent id（用于 agent scope 记忆写入） */
+  agentId?: string
+  /** Memory System：当前 workspace 根路径（project scope 记忆文件存放） */
+  workspaceRootPath?: string
 }
 type SessionRuntimePatch = {
   providerProfileId?: string
@@ -886,12 +896,36 @@ export class SessionService {
       ].join('\n')
     }
 
+    // ── Memory System：加载长期记忆注入 system prompt ──
+    let memoryBlock: string | undefined
+    try {
+      const settingsRepo = new SettingsRepository(this.db)
+      const memoryRepo = new MemoryRepository(this.db)
+      const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      const memoryReader = new MemoryReaderService(
+        memoryRepo,
+        memoryStore,
+        (cat: string, key: string) => settingsRepo.get(cat, key),
+      )
+      const memoryInjection = await memoryReader.loadForSession({
+        workspaceId: primaryWorkspaceId ?? '',
+        agentId: agent.id,
+      })
+      memoryBlock = memoryInjection.block || undefined
+      if (memoryBlock != null) {
+        log.debug(`Memory injected: ${memoryInjection.injectedIds.length} entries`)
+      }
+    } catch (err) {
+      log.warn(`Memory injection failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
+
     const composedSystemPrompt = joinPromptSections(
       managedAgentPrompt,
       teamMemberContextPrompt,
       teamRosterPrompt,
       teamInstructionsPrompt,
       runtimeRulesPrompt,
+      memoryBlock,
       runtimeContext.systemPrompt,
       projectContext.systemPrompt,
       conversationHistoryPrompt,
@@ -1128,6 +1162,9 @@ export class SessionService {
       const turnOptions: TryStartSDKTurnOptions = {
         ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
         ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
+        primaryWorkspaceId: primaryWorkspaceId ?? '',
+        agentId: agent.id,
+        workspaceRootPath,
       }
       // Local CLI 走宿主 OAuth，没有可直发的 apiKey；跳过远程标题精炼，
       // 仍保留首轮触发的简单本地标题（deriveSessionTitle）。
@@ -1490,6 +1527,16 @@ export class SessionService {
             assistantMessage: firstAssistantText,
           })
         }
+
+        // ── Memory System：turn 完成后异步写入记忆（fire-and-forget） ──
+        void this.maybeWriteMemoryFromTurn(
+          sessionId,
+          options.primaryWorkspaceId ?? '',
+          options.agentId ?? '',
+          options.workspaceRootPath,
+          message,
+          firstAssistantText,
+        ).catch(() => { /* swallow — never affect main flow */ })
       })
       .catch(() => {
         sessionRepo.updateStatus(sessionId, 'error')
@@ -1502,6 +1549,43 @@ export class SessionService {
           this.startNextQueuedTurn(sessionId)
         }
       })
+  }
+
+  /**
+   * Memory System：turn 结束后异步调用 MemoryWriterService。
+   * 全过程 try/catch，任何异常仅 log，绝不向上抛（fire-and-forget）。
+   */
+  private async maybeWriteMemoryFromTurn(
+    sessionId: string,
+    workspaceId: string,
+    agentId: string,
+    workspaceRootPath: string | undefined,
+    userMessage: string,
+    assistantMessage: string,
+  ): Promise<void> {
+    try {
+      const settingsRepo = new SettingsRepository(this.db)
+      const memoryRepo = new MemoryRepository(this.db)
+      const memoryStore = new MemoryStoreService(undefined, workspaceRootPath)
+      const writer = new MemoryWriterService(
+        memoryRepo,
+        memoryStore,
+        (cat: string, key: string) => settingsRepo.get(cat, key),
+        // LLM call：复用 conversation-summarizer 的提取式摘要策略，
+        // 此处简化实现 — 生产环境应通过 ModelService 调用小模型
+        async (_prompt: string) => '[]',
+      )
+      await writer.maybeWriteFromTurn({
+        sessionId,
+        workspaceId,
+        agentId,
+        userMessage,
+        assistantMessage,
+        recentSummary: '',
+      })
+    } catch (err) {
+      log.warn(`maybeWriteMemoryFromTurn failed (non-fatal): ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   private async refineSessionTitleAsync(

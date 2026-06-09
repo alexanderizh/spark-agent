@@ -1,0 +1,292 @@
+/**
+ * @module memory-writer.service.test
+ *
+ * 单元测试：MemoryWriterService
+ *
+ * 覆盖 4 类场景：
+ *   - 应写：返回 1 条 feedback，落库且文件存在
+ *   - 应丢（置信度 < 0.6）：不落库
+ *   - 应去重：同 name 二次写入触发 skip，不重复落库
+ *   - 应淘汰：scope 已满时新写入触发末位归档
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { MemoryWriterService, type TurnPayload, type LLMCallFn } from './memory-writer.service.js'
+import { MemoryRepository } from '@spark/storage'
+import type { MemoryEntryRow } from '@spark/storage'
+import { SparkDatabase } from '@spark/storage'
+import { MemoryStoreService } from './memory-store.service.js'
+import { join } from 'path'
+import { mkdirSync, rmSync } from 'fs'
+import { tmpdir } from 'os'
+
+describe('MemoryWriterService', () => {
+  let db: SparkDatabase
+  let repo: MemoryRepository
+  let store: MemoryStoreService
+  let writer: MemoryWriterService
+  let testDir: string
+  let settings: Record<string, Record<string, unknown>> = { memory: { enabled: true } }
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `spark-writer-test-${Date.now()}`)
+    mkdirSync(testDir, { recursive: true })
+
+    const dbPath = join(testDir, 'test.db')
+    const migrationsDir = join(process.cwd(), '..', 'storage', 'migrations')
+    db = new SparkDatabase(dbPath)
+    db.runMigrations(migrationsDir)
+
+    repo = new MemoryRepository(db)
+    store = new MemoryStoreService(testDir, join(testDir, 'workspace'))
+    settings = { memory: { enabled: true, quota: undefined } }
+
+    writer = new MemoryWriterService(
+      repo,
+      store,
+      (cat: string, key: string) => {
+        const catObj = settings[cat]
+        return catObj?.[key] ?? null
+      },
+      async () => '[]', // 默认 LLM 返回空
+    )
+  })
+
+  afterEach(() => {
+    db.close()
+    rmSync(testDir, { recursive: true, force: true })
+  })
+
+  const basePayload: TurnPayload = {
+    sessionId: 'sess_test',
+    workspaceId: 'ws_test',
+    agentId: 'agent_test',
+    userMessage: 'I am a Java engineer',
+    assistantMessage: 'Got it, noted your background.',
+    recentSummary: '',
+  }
+
+  describe('场景 1：应写 — 候选通过四道闸门后落库', () => {
+    it('should write a valid candidate to SQLite and file', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'java-engineer',
+        description: '用户是 Java 工程师',
+        body: '用户身份：Java 工程师。\n\n**Why:** 首次提及，需记录背景。\n**How to apply:** 代码示例可偏 Java 风格。',
+        confidence: 0.9,
+      }])
+
+      const writerWithLLM = new MemoryWriterService(
+        repo,
+        store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+
+      await writerWithLLM.maybeWriteFromTurn(basePayload)
+
+      // SQLite 应有 1 条
+      const entries = repo.listByScope('user', null)
+      expect(entries).toHaveLength(1)
+      expect(entries[0]!.name).toBe('java-engineer')
+      expect(entries[0]!.type).toBe('user')
+      expect(entries[0]!.confidence).toBe(0.9)
+    })
+  })
+
+  describe('场景 2：应丢 — 置信度 < 0.6', () => {
+    it('should not write candidates with confidence < 0.6', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'low-confidence',
+        description: '不确定的信息',
+        body: '不确定。',
+        confidence: 0.4,
+      }])
+
+      const writerWithLLM = new MemoryWriterService(
+        repo,
+        store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+
+      await writerWithLLM.maybeWriteFromTurn(basePayload)
+
+      const entries = repo.listByScope('user', null)
+      expect(entries).toHaveLength(0)
+    })
+  })
+
+  describe('场景 3：应去重 — 同 name 二次写入触发 skip', () => {
+    it('should skip duplicate candidate when LLM returns skip', async () => {
+      // 先写入一条
+      const firstLLMReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'feedback',
+        name: 'prefer-tailwind',
+        description: '用户偏好 Tailwind CSS',
+        body: '偏好 Tailwind。\n\n**Why:** 明确指示。',
+        confidence: 0.9,
+      }])
+
+      const firstWriter = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => firstLLMReturn,
+      )
+      await firstWriter.maybeWriteFromTurn(basePayload)
+      expect(repo.listByScope('user', null)).toHaveLength(1)
+
+      // 再写入同名 — LLM dedup 返回 skip
+      const secondLLMReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'feedback',
+        name: 'prefer-tailwind',
+        description: '用户偏好 Tailwind CSS（重复）',
+        body: '偏好 Tailwind。',
+        confidence: 0.9,
+      }])
+
+      const secondWriter = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        // 抽取 prompt 返回候选，dedup prompt 返回 skip
+        async (prompt: string) => {
+          if (prompt.includes('去重判定器')) return 'skip'
+          return secondLLMReturn
+        },
+      )
+      await secondWriter.maybeWriteFromTurn(basePayload)
+
+      // 仍只有 1 条
+      expect(repo.listByScope('user', null)).toHaveLength(1)
+    })
+  })
+
+  describe('场景 4：应淘汰 — 超配额时末位归档', () => {
+    it('should evict lowest-score entries when quota is exceeded', async () => {
+      // 设置 quota 为 2
+      settings.memory!.quota = { user: 2, project: 200, agent: 50 }
+
+      // 手动写入 2 条 user 记忆
+      for (let i = 0; i < 2; i++) {
+        const id = `usr_${i}`
+        const filePath = store.getFilePath('user', null, id)
+        await store.writeFile({
+          meta: {
+            id, scope: 'user', scopeRef: null, type: 'feedback',
+            name: `mem-${i}`, description: `Memory ${i}`,
+            confidence: 0.9, createdAt: Date.now(), updatedAt: Date.now(),
+            hitCount: i, lastHitAt: null, sourceSessionId: null, links: [], archived: false,
+          },
+          body: `Body ${i}`,
+        })
+        repo.insert({
+          id, scope: 'user', scope_ref: null, type: 'feedback',
+          name: `mem-${i}`, description: `Memory ${i}`, file_path: filePath,
+          confidence: 0.9, hit_count: i, last_hit_at: null,
+          source_session_id: null, archived: 0,
+        })
+      }
+
+      expect(repo.countByScope('user', null)).toBe(2)
+
+      // 再写 1 条 → 应淘汰 1 条
+      const newLLMReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'feedback',
+        name: 'new-mem',
+        description: 'New memory',
+        body: 'New body',
+        confidence: 0.9,
+      }])
+
+      const writerWithLLM = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => newLLMReturn,
+      )
+      await writerWithLLM.maybeWriteFromTurn(basePayload)
+
+      // 非 archived 应有 2 条
+      expect(repo.countByScope('user', null)).toBe(2)
+      // 总数应有 3 条（1 条 archived）
+      const all = repo.listByScope('user', null, { includeArchived: true })
+      expect(all).toHaveLength(3)
+      const archived = all.filter((e) => e.archived === 1)
+      expect(archived).toHaveLength(1)
+    })
+  })
+
+  describe('settings.enabled = false', () => {
+    it('should skip entirely when memory is disabled', async () => {
+      settings.memory!.enabled = false
+
+      const llmSpy = vi.fn(async () => '[]')
+      const disabledWriter = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        llmSpy,
+      )
+      await disabledWriter.maybeWriteFromTurn(basePayload)
+
+      expect(llmSpy).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('LLM 调用失败', () => {
+    it('should not throw even if LLM call fails', async () => {
+      const failWriter = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => { throw new Error('LLM unavailable') },
+      )
+      // 不应抛异常
+      await expect(failWriter.maybeWriteFromTurn(basePayload)).resolves.toBeUndefined()
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+  })
+
+  describe('manualWrite', () => {
+    it('should write manually without LLM and confidence gate', async () => {
+      const row = await writer.manualWrite({
+        scope: 'user',
+        scopeRef: null,
+        type: 'feedback',
+        name: 'manual-test',
+        description: '手动写入测试',
+        body: '手动写入。\n\n**Why:** 测试。',
+        links: [],
+      })
+
+      expect(row.name).toBe('manual-test')
+      expect(row.confidence).toBe(1.0)
+      expect(repo.listByScope('user', null)).toHaveLength(1)
+    })
+
+    it('should reject sensitive content', async () => {
+      await expect(writer.manualWrite({
+        scope: 'user', scopeRef: null, type: 'reference',
+        name: 'sensitive', description: 'API key leak',
+        body: 'api_key=sk-abcdefghijklmnopqrstuvwxyz1234567890',
+        links: [],
+      })).rejects.toThrow('sensitive content')
+    })
+
+    it('should reject duplicate name', async () => {
+      await writer.manualWrite({
+        scope: 'user', scopeRef: null, type: 'feedback',
+        name: 'dup-test', description: 'First',
+        body: 'First.', links: [],
+      })
+      await expect(writer.manualWrite({
+        scope: 'user', scopeRef: null, type: 'feedback',
+        name: 'dup-test', description: 'Second',
+        body: 'Second.', links: [],
+      })).rejects.toThrow('already exists')
+    })
+  })
+})

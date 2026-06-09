@@ -58,6 +58,8 @@ export type {
   ExecutionQueryOptions,
   ExecutionStats,
 } from './task-execution.repository.js'
+export { MemoryRepository } from './memory.repository.js'
+export type { MemoryEntryRow } from './memory.repository.js'
 
 // 类型导出
 export type { SessionRow, CreateSessionParams, ListSessionsParams } from './session.repository.js'
