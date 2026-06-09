@@ -622,6 +622,34 @@ export interface DialogOpenFileResponse {
   filePaths?: string[]
 }
 
+export interface DialogSaveFileRequest {
+  title?: string
+  defaultPath?: string
+  filters?: Array<{ name: string; extensions: string[] }>
+}
+
+export interface DialogSaveFileResponse {
+  canceled: boolean
+  filePath?: string
+}
+
+export interface FileWriteTextRequest {
+  path: string
+  content: string
+}
+
+export interface FileWriteTextResponse {
+  success: boolean
+}
+
+export interface FileReadTextRequest {
+  path: string
+}
+
+export interface FileReadTextResponse {
+  content: string
+}
+
 // ─── App Paths Channels ──────────────────────────────────────────────────────
 
 export interface AppGetTempProjectDirRequest {}
@@ -3297,6 +3325,11 @@ export interface IpcChannelMap {
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
   'dialog:open-file': [DialogOpenFileRequest, DialogOpenFileResponse]
+  'dialog:save-file': [DialogSaveFileRequest, DialogSaveFileResponse]
+
+  // File operations
+  'file:write-text': [FileWriteTextRequest, FileWriteTextResponse]
+  'file:read-text': [FileReadTextRequest, FileReadTextResponse]
 
   // App Info
   'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]

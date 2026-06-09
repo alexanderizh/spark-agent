@@ -582,7 +582,7 @@ export function SubagentCard({
         </span>
         <div className="body">
           <div className="title">
-            派生子 Agent · {name}
+            派生 · {name}
             {isClickable && (
               <span className="expand-hint">
                 {expanded ? <Icons.ChevronDown size={11} /> : <Icons.ChevronRight size={11} />}
@@ -596,13 +596,13 @@ export function SubagentCard({
         {status === 'running' && (
           <span className="live">
             <Icons.Spinner size={11} />
-            运行中{tokens ? ` · ${tokens} tokens` : ''}
+            运行中{tokens ? ` ` : ''}
           </span>
         )}
         {status === 'done' && (
           <span className="live" style={{ color: 'var(--success)' }}>
             <Icons.Check size={11} />
-            完成{tokens ? ` · ${tokens} tokens` : ''}
+            完成{tokens ? ` ` : ''}
           </span>
         )}
       </div>

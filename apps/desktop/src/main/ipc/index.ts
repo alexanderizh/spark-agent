@@ -1375,6 +1375,29 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
+  typedIpcHandle('dialog:save-file', async (req) => {
+    const result = await dialog.showSaveDialog({
+      title: req.title ?? '保存文件',
+      ...(req.defaultPath === undefined ? {} : { defaultPath: req.defaultPath }),
+      ...(req.filters ? { filters: req.filters } : {}),
+    })
+
+    return {
+      canceled: result.canceled,
+      ...(result.filePath === undefined ? {} : { filePath: result.filePath }),
+    }
+  })
+
+  typedIpcHandle('file:write-text', async (req) => {
+    await fs.writeFile(req.path, req.content, 'utf-8')
+    return { success: true }
+  })
+
+  typedIpcHandle('file:read-text', async (req) => {
+    const content = await fs.readFile(req.path, 'utf-8')
+    return { content }
+  })
+
   // ─── App Info Handlers ─────────────────────────────────────────────────────
 
   typedIpcHandle('app:get-info', async () => {

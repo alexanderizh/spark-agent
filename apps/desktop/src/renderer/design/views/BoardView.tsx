@@ -16,7 +16,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Popover } from '@arco-design/web-react'
+import { Popover, Dropdown } from '@arco-design/web-react'
 import type { DragEvent } from 'react'
 import { Button, DatePicker, Select, Space, Switch, Tooltip } from '@arco-design/web-react'
 import { Icons } from '../Icons'
@@ -961,6 +961,9 @@ function KanbanCard({
   isDragOverBefore,
   isDragOverAfter,
   isDragging,
+  selectionMode,
+  isSelected,
+  onToggleSelection,
 }: {
   card: TaskCard
   onOpen: (card: TaskCard) => void
@@ -972,23 +975,44 @@ function KanbanCard({
   isDragOverBefore: boolean
   isDragOverAfter: boolean
   isDragging: boolean
+  selectionMode?: boolean
+  isSelected?: boolean
+  onToggleSelection?: (taskId: string) => void
 }) {
   const pCfg = PRIORITY_CONFIG[card.priority]
   const colCfg = COLUMNS.find(c => c.key === card.status)
   const isOverdue = card.dueDate && new Date(card.dueDate) < new Date() && card.status !== 'done' && card.status !== 'accepted' && card.status !== 'closed'
 
+  const handleClick = useCallback((e: React.MouseEvent) => {
+    if (selectionMode) {
+      e.preventDefault()
+      onToggleSelection?.(card.id)
+    } else {
+      onOpen(card)
+    }
+  }, [selectionMode, card.id, onToggleSelection, onOpen])
+
   return (
     <>
       {isDragOverBefore && <div className="board-card-drop-indicator" />}
       <div
-        className={`board-card board-card-${card.priority}${isDragging ? ' board-card-dragging' : ''}`}
-        draggable
-        onDragStart={(e) => onDragStart(e, card)}
-        onDragOver={(e) => onDragOver(e, card)}
-        onDragEnd={onDragEnd}
-        onClick={() => onOpen(card)}
-        onContextMenu={(e) => onContextMenu(e, card)}
+        className={`board-card board-card-${card.priority}${isDragging ? ' board-card-dragging' : ''}${isSelected ? ' board-card-selected' : ''}`}
+        draggable={!selectionMode}
+        onDragStart={(e) => !selectionMode && onDragStart(e, card)}
+        onDragOver={(e) => !selectionMode && onDragOver(e, card)}
+        onDragEnd={() => !selectionMode && onDragEnd()}
+        onClick={handleClick}
+        onContextMenu={(e) => !selectionMode && onContextMenu(e, card)}
       >
+      {selectionMode && (
+        <div className="bc-select-checkbox">
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={() => onToggleSelection?.(card.id)}
+          />
+        </div>
+      )}
       <div className="bc-indicator">
         <span className="bc-priority-badge" style={{ background: pCfg.bg, color: pCfg.color }}>
           {pCfg.icon} {pCfg.label}
@@ -1126,6 +1150,9 @@ export function BoardView() {
   const autoExecuteLockRef = useRef(false)
   // Visible columns state (cached in localStorage)
   const [visibleColumns, setVisibleColumns] = useState<TaskStatus[]>(loadVisibleColumns)
+  // Selection mode for export
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set())
 
   // Refresh handler
   const refreshData = useCallback(() => {
@@ -1341,6 +1368,146 @@ export function BoardView() {
   const handleCopy = useCallback(async (card: TaskCard) => {
     const created = await ipcCreateTask({ ...card, title: `${card.title} (副本)` })
     setTasks(prev => [...prev, created])
+  }, [])
+
+  // Export tasks to JSON file
+  const handleExport = useCallback(async (selectedOnly: boolean = false) => {
+    try {
+      const tasksToExport = selectedOnly
+        ? activeTasks.filter(t => selectedTaskIds.has(t.id))
+        : activeTasks
+
+      if (tasksToExport.length === 0) {
+        window.alert('没有可导出的任务')
+        return
+      }
+
+      const exportData = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        tasks: tasksToExport.map(t => ({
+          title: t.title,
+          description: t.description,
+          status: t.status,
+          priority: t.priority,
+          assignee: t.assignee,
+          project: t.project,
+          tags: t.tags,
+          dueDate: t.dueDate,
+          processingAgent: t.processingAgent,
+          acceptanceCriteria: t.acceptanceCriteria,
+          testAgent: t.testAgent,
+        })),
+      }
+
+      const jsonStr = JSON.stringify(exportData, null, 2)
+      const result = await window.spark.invoke('dialog:save-file', {
+        title: '导出任务',
+        defaultPath: `tasks-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+
+      if (result.canceled || !result.filePath) return
+
+      await window.spark.invoke('file:write-text', {
+        path: result.filePath,
+        content: jsonStr,
+      })
+
+      // Exit selection mode after export
+      if (selectedOnly) {
+        setSelectionMode(false)
+        setSelectedTaskIds(new Set())
+      }
+    } catch (err) {
+      console.error('导出任务失败', err)
+      window.alert('导出失败: ' + (err instanceof Error ? err.message : String(err)))
+    }
+  }, [activeTasks, selectedTaskIds])
+
+  // Import tasks from JSON file
+  const handleImport = useCallback(async () => {
+    try {
+      const result = await window.spark.invoke('dialog:open-file', {
+        title: '导入任务',
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+
+      if (result.canceled || !result.filePaths?.length) return
+
+      const filePath = result.filePaths[0]
+      if (!filePath) return
+
+      const fileResult = await window.spark.invoke('file:read-text', { path: filePath })
+      const data = JSON.parse(fileResult.content)
+
+      // Validate structure
+      if (!data.tasks || !Array.isArray(data.tasks)) {
+        window.alert('无效的任务文件格式')
+        return
+      }
+
+      const count = data.tasks.length
+      const confirmImport = window.confirm(`确定导入 ${count} 个任务？\n\n导入的任务将创建为"待办"状态。`)
+      if (!confirmImport) return
+
+      // Batch create tasks
+      const createdTasks: TaskCard[] = []
+      for (const t of data.tasks) {
+        const created = await ipcCreateTask({
+          title: t.title || '未命名任务',
+          description: t.description || '',
+          status: 'todo' as TaskStatus, // Always import as todo
+          priority: (t.priority || 'medium') as Priority,
+          assignee: t.assignee || '',
+          project: t.project || '',
+          tags: t.tags || [],
+          dueDate: t.dueDate || '',
+          processingAgent: t.processingAgent || '',
+          acceptanceCriteria: t.acceptanceCriteria || '',
+          testAgent: t.testAgent || '',
+          comments: [],
+          attachments: [],
+          sortOrder: 0,
+        })
+        createdTasks.push(created)
+      }
+
+      setTasks(prev => [...prev, ...createdTasks])
+      window.alert(`成功导入 ${createdTasks.length} 个任务`)
+    } catch (err) {
+      console.error('导入任务失败', err)
+      window.alert('导入失败: ' + (err instanceof Error ? err.message : String(err)))
+    }
+  }, [])
+
+  // Toggle task selection
+  const handleToggleSelection = useCallback((taskId: string) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev)
+      if (next.has(taskId)) {
+        next.delete(taskId)
+      } else {
+        next.add(taskId)
+      }
+      return next
+    })
+  }, [])
+
+  // Select all filtered tasks
+  const handleSelectAll = useCallback(() => {
+    setSelectedTaskIds(new Set(filteredTasks.map(t => t.id)))
+  }, [filteredTasks])
+
+  // Clear selection
+  const handleClearSelection = useCallback(() => {
+    setSelectedTaskIds(new Set())
+  }, [])
+
+  // Exit selection mode
+  const handleExitSelectionMode = useCallback(() => {
+    setSelectionMode(false)
+    setSelectedTaskIds(new Set())
   }, [])
 
   const handleAccept = useCallback(async (card: TaskCard) => {
@@ -1616,6 +1783,7 @@ export function BoardView() {
               </button>
             </Popover>
             <Space size={6} className="board-action-group">
+              
               <Popover
                 content={columnSelectorContent}
                 trigger="click"
@@ -1629,6 +1797,37 @@ export function BoardView() {
                 </button>
               </Popover>
               <Button className="board-recycle-arco-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
+              {/* Import/Export dropdown button */}
+              {!selectionMode && (
+                <Dropdown
+                  droplist={
+                    <div className="board-import-export-dropdown">
+                      <button className="board-dropdown-item" onClick={handleImport}>
+                        <Icons.Download size={14} />
+                        <span>导入任务</span>
+                      </button>
+                      <button className="board-dropdown-item" onClick={() => { handleExport(false); }}>
+                        <Icons.Layers size={14} />
+                        <span>导出全部任务</span>
+                      </button>
+                      <button className="board-dropdown-item" onClick={() => { setSelectionMode(true); setSelectedTaskIds(new Set()); }}>
+                        <Icons.CheckSquare size={14} />
+                        <span>选择导出…</span>
+                      </button>
+                    </div>
+                  }
+                  trigger="click"
+                  position="bottom"
+                >
+                  <Button className="board-import-export-btn" size="small" type="outline">
+                    <span className="board-btn-inner">
+                      <Icons.File size={14} />
+                      <span>导入导出</span>
+                      <Icons.ChevronDown size={12} />
+                    </span>
+                  </Button>
+                </Dropdown>
+              )}
               <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
                 新建任务
               </Button>
@@ -1636,6 +1835,29 @@ export function BoardView() {
           </div>
         </div>
       </div>
+
+      {/* Selection Mode Toolbar (Second Row) */}
+      {selectionMode && (
+        <div className="board-selection-toolbar">
+          <span className="board-selection-count">
+            已选 {selectedTaskIds.size} 项
+          </span>
+          <div className="board-selection-actions">
+            <Button size="small" type="outline" onClick={handleSelectAll} title="全选当前筛选结果">
+              全选
+            </Button>
+            <Button size="small" type="outline" onClick={handleClearSelection} disabled={selectedTaskIds.size === 0}>
+              取消选择
+            </Button>
+            <Button size="small" type="primary" onClick={() => handleExport(true)} disabled={selectedTaskIds.size === 0}>
+              导出选中
+            </Button>
+            <Button size="small" onClick={handleExitSelectionMode}>
+              退出选择
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Kanban Columns */}
       <div className="board-columns">
@@ -1680,6 +1902,9 @@ export function BoardView() {
                     isDragOverBefore={dragOverCardId === card.id && dragOverPosition === 'before' && dragOverColumn === col.key}
                     isDragOverAfter={dragOverCardId === card.id && dragOverPosition === 'after' && dragOverColumn === col.key}
                     isDragging={dragCardRef.current?.id === card.id}
+                    selectionMode={selectionMode}
+                    isSelected={selectedTaskIds.has(card.id)}
+                    onToggleSelection={handleToggleSelection}
                   />
                 ))
               )}

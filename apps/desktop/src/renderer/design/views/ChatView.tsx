@@ -576,7 +576,7 @@ export function ChatView({
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
         {showEmptyHero && (
-          <h1 className="chat-hero-title">Spark Agent，ready to do something！</h1>
+          <h1 className="chat-hero-title">Spark Agent，go go go！</h1>
         )}
 
         {active == null ? (
