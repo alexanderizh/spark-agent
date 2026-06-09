@@ -812,11 +812,11 @@ function TaskCommentsPanel({
             )}
             {editingId !== c.id && (
               <div className="tfp-comment-actions">
-                <button className="tfp-comment-action-btn" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</button>
-                <button className="tfp-comment-action-btn tfp-comment-action-danger" onClick={async () => {
+                <Button size="mini" type="text" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</Button>
+                <Button size="mini" type="text" status="danger" onClick={async () => {
                   if (!window.confirm('确定删除该评论？')) return
                   await deleteComment(card.id, c.id)
-                }}>删除</button>
+                }}>删除</Button>
               </div>
             )}
           </div>
