@@ -1834,6 +1834,9 @@ export interface BoardTask {
   project: string
   tags: string[]
   dueDate: string
+  processingAgent: string
+  acceptanceCriteria: string
+  testAgent: string
   comments: BoardComment[]
   attachments: BoardTaskAttachment[]
   createdAt: string
@@ -1872,6 +1875,9 @@ export interface BoardCreateRequest {
   project?: string
   tags?: string[]
   dueDate?: string
+  processingAgent?: string
+  acceptanceCriteria?: string
+  testAgent?: string
   attachments?: BoardTaskAttachment[]
 }
 
@@ -1889,6 +1895,9 @@ export interface BoardUpdateRequest {
   project?: string
   tags?: string[]
   dueDate?: string
+  processingAgent?: string
+  acceptanceCriteria?: string
+  testAgent?: string
   attachments?: BoardTaskAttachment[]
 }
 

@@ -181,6 +181,9 @@ interface BoardTaskRecord {
   project: string
   tags: string[]
   dueDate: string
+  processingAgent: string
+  acceptanceCriteria: string
+  testAgent: string
   commentsJson: string
   attachmentsJson: string
   createdAt: string
@@ -2373,6 +2376,9 @@ export function registerAllIpcHandlers(): void {
       project: req.project ?? '',
       tags: req.tags ?? [],
       dueDate: req.dueDate ?? '',
+      processingAgent: req.processingAgent ?? '',
+      acceptanceCriteria: req.acceptanceCriteria ?? '',
+      testAgent: req.testAgent ?? '',
       commentsJson: '[]',
       attachmentsJson: JSON.stringify(req.attachments ?? []),
       createdAt: now,
@@ -2400,6 +2406,9 @@ export function registerAllIpcHandlers(): void {
       project: req.project !== undefined ? req.project : base.project,
       tags: req.tags !== undefined ? req.tags : base.tags,
       dueDate: req.dueDate !== undefined ? req.dueDate : base.dueDate,
+      processingAgent: req.processingAgent !== undefined ? req.processingAgent : (base.processingAgent ?? ''),
+      acceptanceCriteria: req.acceptanceCriteria !== undefined ? req.acceptanceCriteria : (base.acceptanceCriteria ?? ''),
+      testAgent: req.testAgent !== undefined ? req.testAgent : (base.testAgent ?? ''),
       commentsJson: base.commentsJson ?? '[]',
       attachmentsJson: req.attachments !== undefined ? JSON.stringify(req.attachments) : (base.attachmentsJson ?? '[]'),
       createdAt: base.createdAt,

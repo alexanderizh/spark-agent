@@ -15,7 +15,7 @@ type AppearanceSettings = {
 
 const DEFAULT_APPEARANCE: AppearanceSettings = {
   font: 'geist',
-  fontSize: 13,
+  fontSize: 14,
   codeLigature: false,
   windowCorners: 'soft',
   backdropBlur: false,

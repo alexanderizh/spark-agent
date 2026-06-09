@@ -59,6 +59,9 @@ export type TaskCard = {
   project: string
   tags: string[]
   dueDate: string
+  processingAgent: string
+  acceptanceCriteria: string
+  testAgent: string
   comments: TaskComment[]
   attachments: TaskAttachment[]
   createdAt: string
@@ -181,6 +184,9 @@ function normalizeTask(raw: Record<string, unknown>): TaskCard {
     project: (raw.project as string) ?? '',
     tags: (raw.tags as string[]) ?? [],
     dueDate: (raw.dueDate as string) ?? '',
+    processingAgent: (raw.processingAgent as string) ?? '',
+    acceptanceCriteria: (raw.acceptanceCriteria as string) ?? '',
+    testAgent: (raw.testAgent as string) ?? '',
     comments,
     attachments,
     createdAt: raw.createdAt as string,
@@ -205,6 +211,9 @@ async function ipcUpdateTask(updated: TaskCard): Promise<TaskCard> {
     project: updated.project,
     tags: updated.tags,
     dueDate: updated.dueDate,
+    processingAgent: updated.processingAgent,
+    acceptanceCriteria: updated.acceptanceCriteria,
+    testAgent: updated.testAgent,
     attachments: updated.attachments,
   })
   return res.task as TaskCard
@@ -243,6 +252,7 @@ function TaskFormPage({
   mode,
   card,
   agents,
+  teamDefs,
   projectOptions,
   onBack,
   onSubmit,
@@ -250,6 +260,7 @@ function TaskFormPage({
   mode: 'create' | 'edit'
   card?: TaskCard
   agents: AgentOption[]
+  teamDefs: AgentOption[]
   projectOptions: { value: string; label: string }[]
   onBack: () => void
   onSubmit: (data: Omit<TaskCard, 'id' | 'createdAt' | 'updatedAt' | 'deletedAt'>) => void
@@ -262,6 +273,9 @@ function TaskFormPage({
   const [project, setProject] = useState(card?.project ?? '')
   const [tags, setTags] = useState(card?.tags.join(', ') ?? '')
   const [dueDate, setDueDate] = useState(card?.dueDate ?? '')
+  const [processingAgent, setProcessingAgent] = useState(card?.processingAgent ?? '')
+  const [acceptanceCriteria, setAcceptanceCriteria] = useState(card?.acceptanceCriteria ?? '')
+  const [testAgent, setTestAgent] = useState(card?.testAgent ?? '')
   const [attachments, setAttachments] = useState<TaskAttachment[]>(card?.attachments ?? [])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const titleRef = useRef<any>(null)
@@ -286,10 +300,13 @@ function TaskFormPage({
       project: project.trim(),
       tags: tags.split(',').map(t => t.trim()).filter(Boolean),
       dueDate,
+      processingAgent,
+      acceptanceCriteria: acceptanceCriteria.trim(),
+      testAgent,
       comments: card?.comments ?? [],
       attachments,
     })
-  }, [title, description, status, priority, assignee, project, tags, dueDate, card?.comments, attachments, onSubmit])
+  }, [title, description, status, priority, assignee, project, tags, dueDate, processingAgent, acceptanceCriteria, testAgent, card?.comments, attachments, onSubmit])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) handleSubmit()
@@ -505,6 +522,36 @@ function TaskFormPage({
                 allowClear
               />
             </div>
+          </div>
+
+          {/* Processing Agent + Test Agent row */}
+          <div className="tfp-row">
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">处理 Agent</label>
+              <SparkSelect value={processingAgent} onChange={(e) => setProcessingAgent(e.target.value)} placeholder="选择处理 Agent" className="tfp-select" allowClear showSearch>
+                {agents.map(a => <option key={`agent-${a.id}`} value={a.name}>{a.name}</option>)}
+                {teamDefs.map(t => <option key={`team-${t.id}`} value={`team:${t.name}`}>[团队] {t.name}</option>)}
+              </SparkSelect>
+            </div>
+            <div className="tfp-field tfp-field-half">
+              <label className="tfp-label">测试 Agent（可选）</label>
+              <SparkSelect value={testAgent} onChange={(e) => setTestAgent(e.target.value)} placeholder="选择测试 Agent" className="tfp-select" allowClear showSearch>
+                {agents.map(a => <option key={`agent-${a.id}`} value={a.name}>{a.name}</option>)}
+                {teamDefs.map(t => <option key={`team-${t.id}`} value={`team:${t.name}`}>[团队] {t.name}</option>)}
+              </SparkSelect>
+            </div>
+          </div>
+
+          {/* Acceptance Criteria */}
+          <div className="tfp-field">
+            <label className="tfp-label">验收条件</label>
+            <SparkTextarea
+              value={acceptanceCriteria}
+              onChange={(e) => setAcceptanceCriteria(e.target.value)}
+              placeholder="输入任务完成后的验收标准（可选）…"
+              rows={3}
+              className="tfp-textarea"
+            />
           </div>
 
           {/* Project */}
@@ -897,8 +944,10 @@ export function BoardView() {
   const { requestConfirm } = useApp()
   const sessionCtx = useSessionSidebar()
   const { invoke: listAgents } = useIpcInvoke('agent:list')
+  const { invoke: listTeamDefs } = useIpcInvoke('team:list-defs')
   const [tasks, setTasks] = useState<TaskCard[]>([])
   const [agents, setAgents] = useState<AgentOption[]>([])
+  const [teamDefs, setTeamDefs] = useState<AgentOption[]>([])
   const [page, setPage] = useState<BoardPage>({ view: 'kanban' })
   const [ctxMenu, setCtxMenu] = useState<CtxMenuState>(null)
   const [showRecycle, setShowRecycle] = useState(false)
@@ -908,7 +957,7 @@ export function BoardView() {
   const [filterProject, setFilterProject] = useState<string>('all')
   const dragCardRef = useRef<TaskCard | null>(null)
 
-  // Load tasks and agents from IPC on mount
+  // Load tasks, agents and team defs from IPC on mount
   useEffect(() => {
     ipcLoadTasks().then(setTasks)
     listAgents({ includeDisabled: false }).then((res: any) => {
@@ -916,6 +965,12 @@ export function BoardView() {
         .filter((a: any) => a.enabled)
         .map((a: any) => ({ id: a.id, name: a.name }))
       setAgents(agentList)
+    }).catch(() => {})
+    listTeamDefs({ includeDisabled: false }).then((res: any) => {
+      const teamList: AgentOption[] = (res.teams ?? [])
+        .filter((t: any) => t.enabled)
+        .map((t: any) => ({ id: t.id, name: t.name }))
+      setTeamDefs(teamList)
     }).catch(() => {})
   }, [])
 
@@ -1051,6 +1106,7 @@ export function BoardView() {
         <TaskFormPage
           mode="create"
           agents={agents}
+          teamDefs={teamDefs}
           projectOptions={projectOptions}
           onBack={() => setPage({ view: 'kanban' })}
           onSubmit={handleCreate}
@@ -1069,6 +1125,7 @@ export function BoardView() {
           mode="edit"
           card={freshCard}
           agents={agents}
+          teamDefs={teamDefs}
           projectOptions={projectOptions}
           onBack={() => setPage({ view: 'kanban' })}
           onSubmit={handleSave}
