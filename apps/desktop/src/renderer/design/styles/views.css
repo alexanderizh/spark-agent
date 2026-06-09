@@ -13189,3 +13189,11 @@ body.inspector-resizing {
 .msg-bubble-user .mention-highlight {
   color: var(--primary);
 }
+.mention-highlight-clickable {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 0.12s;
+}
+.mention-highlight-clickable:hover {
+  background: var(--primary-soft);
+}

@@ -1771,6 +1771,7 @@ function TeamMemberMessageBlockView({
 }) {
   const { agents } = useSessionSidebar()
   const [drawerOpen, setDrawerOpen] = useState(false)
+  const [drawerAgentId, setDrawerAgentId] = useState<string | null>(null)
   const member = agents.find((a) => a.id === block.memberAgentId)
   const memberName = member?.name ?? block.memberAgentId
   const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
@@ -1784,23 +1785,28 @@ function TeamMemberMessageBlockView({
         running={running}
         onOpenDetail={() => setDrawerOpen(true)}
       >
-        <MarkdownText content={block.content} isStreaming={block.isStreaming} />
+        <MarkdownText content={block.content} isStreaming={block.isStreaming} agents={agents.map(a => ({ id: a.id, name: a.name }))} onMentionClick={(agentId) => { setDrawerAgentId(agentId); setDrawerOpen(true) }} />
       </TeamMemberBubble>
-      {drawerOpen && (
-        <TeamMemberDrawer
-          member={{
-            agentId: block.memberAgentId,
-            name: memberName,
-            description: member?.description ?? '',
-            providerProfileId: member?.providerProfileId ?? null,
-            modelId: member?.modelId ?? null,
-            skillCount: member?.skillIds.length ?? 0,
-            mcpCount: member?.mcpServerIds.length ?? 0,
-            avatarSrc: resolveAvatarSrc(avatar),
-          }}
-          onClose={() => setDrawerOpen(false)}
-        />
-      )}
+      {drawerOpen && drawerAgentId && (() => {
+        const mentionedAgent = agents.find(a => a.id === drawerAgentId)
+        const mentionedName = mentionedAgent?.name ?? drawerAgentId
+        const mentionedAvatar = getAgentAvatarConfig(mentionedAgent?.metadata, drawerAgentId, mentionedName)
+        return (
+          <TeamMemberDrawer
+            member={{
+              agentId: drawerAgentId,
+              name: mentionedName,
+              description: mentionedAgent?.description ?? '',
+              providerProfileId: mentionedAgent?.providerProfileId ?? null,
+              modelId: mentionedAgent?.modelId ?? null,
+              skillCount: mentionedAgent?.skillIds.length ?? 0,
+              mcpCount: mentionedAgent?.mcpServerIds.length ?? 0,
+              avatarSrc: resolveAvatarSrc(mentionedAvatar),
+            }}
+            onClose={() => { setDrawerOpen(false); setDrawerAgentId(null) }}
+          />
+        )
+      })()}
     </>
   )
 }
@@ -2633,9 +2639,13 @@ type MarkdownBlock =
 function MarkdownText({
   content,
   isStreaming = false,
+  agents,
+  onMentionClick,
 }: {
   content: string
   isStreaming?: boolean
+  agents?: { id: string; name: string }[]
+  onMentionClick?: (agentId: string) => void
 }) {
   const blocks = parseMarkdown(content)
   const syntaxHighlight = readAppearance().syntaxHighlight
@@ -2647,10 +2657,10 @@ function MarkdownText({
         switch (block.kind) {
           case 'heading': {
             const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
-            return <Tag key={index}>{renderInlineMarkdown(block.text)}</Tag>
+            return <Tag key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick)}</Tag>
           }
           case 'paragraph':
-            return <p key={index}>{renderInlineMarkdown(block.text)}</p>
+            return <p key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick)}</p>
           case 'code':
             return (
               <div key={index} className={`md-code-block${syntaxHighlight ? '' : ' no-syntax'}`}>
@@ -2700,7 +2710,7 @@ function MarkdownText({
               </div>
             )
           case 'quote':
-            return <blockquote key={index}>{renderInlineMarkdown(block.text)}</blockquote>
+            return <blockquote key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick)}</blockquote>
           case 'list': {
             const ListTag = block.ordered ? 'ol' : 'ul'
             return (
@@ -2718,7 +2728,7 @@ function MarkdownText({
                         readOnly
                       />
                     )}
-                    <span>{renderInlineMarkdown(item.text)}</span>
+                    <span>{renderInlineMarkdown(item.text, agents, onMentionClick)}</span>
                   </li>
                 ))}
               </ListTag>
@@ -2731,7 +2741,7 @@ function MarkdownText({
                   <thead>
                     <tr>
                       {block.headers.map((header, headerIndex) => (
-                        <th key={headerIndex}>{renderInlineMarkdown(header)}</th>
+                        <th key={headerIndex}>{renderInlineMarkdown(header, agents, onMentionClick)}</th>
                       ))}
                     </tr>
                   </thead>
@@ -2888,19 +2898,47 @@ function splitTableRow(line: string): string[] {
     .map((cell) => cell.trim())
 }
 
-/** 将纯文本中的 @mention 片段替换为主题色 span */
-function highlightMentions(text: string): ReactNode[] {
+/** 将纯文本中的 @mention 片段替换为主题色 span；可点击时额外附加 onClick */
+function highlightMentions(
+  text: string,
+  agents?: { id: string; name: string }[],
+  onMentionClick?: (agentId: string) => void,
+): ReactNode[] {
   const mentionPattern = /(^|\s)(@[\p{L}\p{N}_\-.]+)/gu
   const parts: ReactNode[] = []
   let cursor = 0
   let match: RegExpExecArray | null
+  const agentMap = agents
+    ? new Map(agents.map((a) => [a.name.toLowerCase(), a.id]))
+    : null
   while ((match = mentionPattern.exec(text)) != null) {
     const prefix = match[1] ?? ''
     const mention = match[2] ?? ''
     const mentionStart = match.index + prefix.length
     if (mentionStart > cursor) parts.push(text.slice(cursor, mentionStart))
+    const agentId = agentMap?.get(mention.slice(1).toLowerCase())
+    const clickable = onMentionClick != null && agentId != null
     parts.push(
-      <span key={`mention-${mentionStart}`} className="mention-highlight">
+      <span
+        key={`mention-${mentionStart}`}
+        className={`mention-highlight${clickable ? ' mention-highlight-clickable' : ''}`}
+        {...(clickable
+          ? {
+              role: 'button',
+              tabIndex: 0,
+              onClick: (e: React.MouseEvent) => {
+                e.stopPropagation()
+                onMentionClick!(agentId!)
+              },
+              onKeyDown: (e: React.KeyboardEvent) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onMentionClick!(agentId!)
+                }
+              },
+            }
+          : {})}
+      >
         {mention}
       </span>,
     )
@@ -2910,7 +2948,11 @@ function highlightMentions(text: string): ReactNode[] {
   return parts.length > 0 ? parts : [text]
 }
 
-function renderInlineMarkdown(text: string): ReactNode[] {
+function renderInlineMarkdown(
+  text: string,
+  agents?: { id: string; name: string }[],
+  onMentionClick?: (agentId: string) => void,
+): ReactNode[] {
   const nodes: ReactNode[] = []
   const pattern =
     /(!?\[[^\]]+]\([^)]+\)|`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\*[^*]+\*|_[^_]+_|~~[^~]+~~)/g
@@ -2918,7 +2960,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   let match: RegExpExecArray | null
 
   while ((match = pattern.exec(text)) != null) {
-    if (match.index > cursor) nodes.push(...highlightMentions(text.slice(cursor, match.index)))
+    if (match.index > cursor) nodes.push(...highlightMentions(text.slice(cursor, match.index), agents, onMentionClick))
     const token = match[0]
     const key = `${match.index}-${token}`
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
@@ -2946,7 +2988,7 @@ function renderInlineMarkdown(text: string): ReactNode[] {
     cursor = match.index + token.length
   }
 
-  if (cursor < text.length) nodes.push(...highlightMentions(text.slice(cursor)))
+  if (cursor < text.length) nodes.push(...highlightMentions(text.slice(cursor), agents, onMentionClick))
   const rendered: ReactNode[] = []
   nodes.forEach((node, index) => {
     if (typeof node !== 'string') {
