@@ -8,6 +8,9 @@
   border-radius: var(--r-md);
   background: var(--panel);
   margin: 8px 0;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   overflow: hidden;
   font-size: var(--font-sm);
 }

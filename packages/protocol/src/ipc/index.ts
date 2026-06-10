@@ -2580,6 +2580,14 @@ export interface BrowserPopOutResponse {
   success: boolean
 }
 
+export interface BrowserOpenExternalRequest {
+  url?: string
+}
+
+export interface BrowserOpenExternalResponse {
+  success: boolean
+}
+
 export interface BrowserPopInRequest {}
 
 export interface BrowserPopInResponse {
@@ -3542,6 +3550,7 @@ export interface IpcChannelMap {
 
   // Pop-out Browser Window
   'browser:pop-out': [BrowserPopOutRequest, BrowserPopOutResponse]
+  'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
   'browser:pop-in': [BrowserPopInRequest, BrowserPopInResponse]
 
   // Window Controls (renderer → main process)

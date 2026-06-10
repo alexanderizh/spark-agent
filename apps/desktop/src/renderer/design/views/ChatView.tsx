@@ -249,6 +249,13 @@ const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, 
  */
 const questionAnswerCache = new Map<string, Array<{ question: string; answer: string; skipped?: boolean }>>()
 
+function getQuestionAnswerCacheKey(
+  questions: UserQuestionPrompt[],
+  sessionId?: string,
+): string {
+  return `${sessionId ?? 'global'}::${questions.map((q) => q.question).join('\0')}`
+}
+
 export function ChatView({
   approvalRequest = null,
   onApprovalClose,
@@ -411,7 +418,7 @@ export function ChatView({
         )
       if (summaries.length > 0) {
         questionAnswerCache.set(
-          userQuestion.questions.map((q) => q.question).join('\0'),
+          getQuestionAnswerCacheKey(userQuestion.questions, userQuestion.sessionId),
           summaries,
         )
       }
@@ -562,6 +569,75 @@ export function ChatView({
     [],
   )
 
+  const composerNode = active == null ? (
+    <ComposerV2
+      session={activeSession}
+      workspace={activeWorkspace}
+      providers={providers}
+      agents={agents}
+      selectedProviderId={selectedProviderId}
+      setSelectedProviderId={setSelectedProviderId}
+      branchState={branchState}
+      contextInputTokens={contextInputTokens}
+      contextUsage={contextUsage}
+      isWorking={activeSession?.status === 'running'}
+      approvalRequest={approvalRequest}
+      {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+      onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
+      onUpdateSession={handleUpdateActiveSession}
+      onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
+      onSwitchBranch={handleSwitchBranch}
+      onCancelSession={handleCancelSession}
+      onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
+      showProjectPicker
+      focusTrigger={composerFocusTrigger}
+      workspaces={workspaces}
+      activeWorkspaceId={activeWorkspaceId}
+      onPickProject={pickProjectFolder}
+      onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
+      onSwitchWorkspace={switchToWorkspace}
+      teamConfig={teamConfig}
+      effectiveHostAgentId={effectiveHostAgentId}
+      onChangeTeamConfig={updateTeamConfig}
+      onOpenTeamInspector={() => setShowInspector(true)}
+      replyTo={null}
+    />
+  ) : (
+    <ComposerV2
+      session={activeSession}
+      workspace={activeWorkspace}
+      providers={providers}
+      agents={agents}
+      selectedProviderId={selectedProviderId}
+      setSelectedProviderId={setSelectedProviderId}
+      branchState={branchState}
+      contextInputTokens={contextInputTokens}
+      contextUsage={contextUsage}
+      isWorking={activeSession?.status === 'running'}
+      approvalRequest={approvalRequest}
+      {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+      onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
+      onUpdateSession={handleUpdateActiveSession}
+      onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
+      onSwitchBranch={handleSwitchBranch}
+      onCancelSession={handleCancelSession}
+      onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
+      showProjectPicker={showEmptyHero}
+      focusTrigger={composerFocusTrigger}
+      workspaces={workspaces}
+      activeWorkspaceId={activeWorkspaceId}
+      onPickProject={pickProjectFolder}
+      onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
+      onSwitchWorkspace={switchToWorkspace}
+      teamConfig={teamConfig}
+      effectiveHostAgentId={effectiveHostAgentId}
+      onChangeTeamConfig={updateTeamConfig}
+      onOpenTeamInspector={() => setShowInspector(true)}
+      replyTo={showEmptyHero ? null : replyTo}
+      onClearReply={() => setReplyTo(null)}
+    />
+  )
+
   return (
     <div className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}>
 
@@ -578,43 +654,13 @@ export function ChatView({
         {showEmptyHero && (
           <h1 className="chat-hero-title">Spark Agent，go go go！</h1>
         )}
-
-        {active == null ? (
+        {showEmptyHero && (
           <div className="chat-hero-composer">
-            <ComposerV2
-              session={activeSession}
-              workspace={activeWorkspace}
-              providers={providers}
-              agents={agents}
-              selectedProviderId={selectedProviderId}
-              setSelectedProviderId={setSelectedProviderId}
-              branchState={branchState}
-              contextInputTokens={contextInputTokens}
-              contextUsage={contextUsage}
-              isWorking={activeSession?.status === 'running'}
-              approvalRequest={approvalRequest}
-              {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-              onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
-              onUpdateSession={handleUpdateActiveSession}
-              onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
-              onSwitchBranch={handleSwitchBranch}
-              onCancelSession={handleCancelSession}
-              onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
-              showProjectPicker
-              focusTrigger={composerFocusTrigger}
-              workspaces={workspaces}
-              activeWorkspaceId={activeWorkspaceId}
-              onPickProject={pickProjectFolder}
-              onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
-              onSwitchWorkspace={switchToWorkspace}
-              teamConfig={teamConfig}
-              effectiveHostAgentId={effectiveHostAgentId}
-              onChangeTeamConfig={updateTeamConfig}
-              onOpenTeamInspector={() => setShowInspector(true)}
-              replyTo={null}
-            />
+            {composerNode}
           </div>
-        ) : (
+        )}
+
+        {active == null ? null : (
           <>
             {!showEmptyHero && (
               <ChatTabbar
@@ -650,39 +696,7 @@ export function ChatView({
                 onCancel={handleCancelQuestion}
               />
             )}
-            <ComposerV2
-              session={activeSession}
-              workspace={activeWorkspace}
-              providers={providers}
-              agents={agents}
-              selectedProviderId={selectedProviderId}
-              setSelectedProviderId={setSelectedProviderId}
-              branchState={branchState}
-              contextInputTokens={contextInputTokens}
-              contextUsage={contextUsage}
-              isWorking={activeSession?.status === 'running'}
-              approvalRequest={approvalRequest}
-              {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-              onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
-              onUpdateSession={handleUpdateActiveSession}
-              onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
-              onSwitchBranch={handleSwitchBranch}
-              onCancelSession={handleCancelSession}
-              onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
-              showProjectPicker={showEmptyHero}
-              focusTrigger={composerFocusTrigger}
-              workspaces={workspaces}
-              activeWorkspaceId={activeWorkspaceId}
-              onPickProject={pickProjectFolder}
-              onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
-              onSwitchWorkspace={switchToWorkspace}
-              teamConfig={teamConfig}
-              effectiveHostAgentId={effectiveHostAgentId}
-              onChangeTeamConfig={updateTeamConfig}
-              onOpenTeamInspector={() => setShowInspector(true)}
-              replyTo={replyTo}
-              onClearReply={() => setReplyTo(null)}
-            />
+            {!showEmptyHero && composerNode}
           </>
         )}
       </div>
@@ -902,7 +916,7 @@ function ChatTabbar({
   setShowConfigPanel: (v: boolean) => void
   onClearMessages?: () => void
 }) {
-  const { t, setTweak } = useApp()
+  const { t } = useApp()
   const [showClearConfirm, setShowClearConfirm] = useState(false)
 
   const handleClearClick = () => {
@@ -942,9 +956,11 @@ function ChatTabbar({
       </div>
       <div className="row tabbar-actions">
         <button
-          className={`btn ghost sm${t.browserPanelOpen ? ' active' : ''}`}
-          onClick={() => setTweak('browserPanelOpen', !t.browserPanelOpen)}
-          title={t.browserPanelOpen ? '隐藏浏览器面板' : '显示浏览器面板'}
+          className="btn ghost sm"
+          onClick={() => {
+            void window.spark.invoke('browser:open-external', {})
+          }}
+          title="打开默认浏览器"
         >
           <Icons.Globe size={12} />
         </button>
@@ -1413,86 +1429,88 @@ function ChatStream({
   }, [])
 
   return (
-    <div className="chat-stream" ref={streamRef}>
-      <div className="chat-stream-inner">
-        {messages.map((msg, index) =>
-          msg.role === 'user' ? (
-            <UserMsg
-              key={msg.id}
-              timestamp={msg.timestamp}
-              blocks={msg.blocks}
-              avatarSrc={userAvatarSrc}
-              {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
-              {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
-                ? {
-                    mentionAgentName:
-                      agents.find((a) => a.id === msg.mentionAgentId)?.name ?? msg.mentionAgentId,
-                  }
-                : {})}
-              onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
-              {...(onReplyTo != null ? { onReply: () => onReplyTo(msg) } : {})}
-            >
-              {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
-            </UserMsg>
-          ) : (
-            <AssistantMessageRows
-              key={msg.id}
+    <div className="chat-stream-viewport">
+      <div className="chat-stream" ref={streamRef}>
+        <div className="chat-stream-inner">
+          {messages.map((msg, index) =>
+            msg.role === 'user' ? (
+              <UserMsg
+                key={msg.id}
+                timestamp={msg.timestamp}
+                blocks={msg.blocks}
+                avatarSrc={userAvatarSrc}
+                {...(msg.attachments != null ? { attachments: msg.attachments } : {})}
+                {...(msg.mentionAgentId != null && msg.mentionAgentId !== assistantAgentId
+                  ? {
+                      mentionAgentName:
+                        agents.find((a) => a.id === msg.mentionAgentId)?.name ?? msg.mentionAgentId,
+                    }
+                  : {})}
+                onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
+                {...(onReplyTo != null ? { onReply: () => onReplyTo(msg) } : {})}
+              >
+                {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
+              </UserMsg>
+            ) : (
+              <AssistantMessageRows
+                key={msg.id}
+                sessionId={sessionId}
+                blocks={msg.blocks}
+                messageStatus={msg.status}
+                isLatest={index === messages.length - 1}
+                assistantId={assistantAgentId}
+                assistantName={assistantName}
+                assistantAvatarSrc={assistantAvatarSrc}
+                usage={msg.usage}
+                {...(onFilePreview != null ? { onFilePreview } : {})}
+                {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+                {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                {...(msg.status !== 'streaming'
+                  ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                  : {})}
+                {...(onReplyTo != null && msg.status !== 'streaming'
+                  ? { onReply: () => onReplyTo(msg, assistantAgentId, assistantName) }
+                  : {})}
+              />
+            ),
+          )}
+          {showWaitingAgent && (
+            <AgentMsg
+              key="agent-running-placeholder"
               sessionId={sessionId}
-              blocks={msg.blocks}
-              messageStatus={msg.status}
-              isLatest={index === messages.length - 1}
+              status="running"
+              blocks={[]}
+              messageStatus="streaming"
+              isLatest
               assistantId={assistantAgentId}
               assistantName={assistantName}
               assistantAvatarSrc={assistantAvatarSrc}
-              usage={msg.usage}
               {...(onFilePreview != null ? { onFilePreview } : {})}
-              {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
-              {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
-              {...(msg.status !== 'streaming'
-                ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
-                : {})}
-              {...(onReplyTo != null && msg.status !== 'streaming'
-                ? { onReply: () => onReplyTo(msg, assistantAgentId, assistantName) }
-                : {})}
             />
-          ),
-        )}
-        {showWaitingAgent && (
-          <AgentMsg
-            key="agent-running-placeholder"
-            sessionId={sessionId}
-            status="running"
-            blocks={[]}
-            messageStatus="streaming"
-            isLatest
-            assistantId={assistantAgentId}
-            assistantName={assistantName}
-            assistantAvatarSrc={assistantAvatarSrc}
-            {...(onFilePreview != null ? { onFilePreview } : {})}
-          />
-        )}
-        {messages.length === 0 && !showWaitingAgent && (
-          <div className="chat-stream-empty-state">
-            <div className="empty-state">
-              {isLoadingHistory ? (
-                <>
-                  <div className="empty-icon loading-icon">
-                    <Icons.Spinner size={24} />
-                  </div>
-                  <div className="empty-title">加载中…</div>
-                </>
-              ) : (
-                <>
-                  <div className="empty-icon">
-                    <Icons.Chat size={24} />
-                  </div>
-                  <div className="empty-title">开始对话</div>
-                  <div className="empty-desc">发送消息开始与 AI 交互</div>
-                </>
-              )}
+          )}
+          {messages.length === 0 && !showWaitingAgent && (
+            <div className="chat-stream-empty-state">
+              <div className="empty-state">
+                {isLoadingHistory ? (
+                  <>
+                    <div className="empty-icon loading-icon">
+                      <Icons.Spinner size={24} />
+                    </div>
+                    <div className="empty-title">加载中…</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="empty-icon">
+                      <Icons.Chat size={24} />
+                    </div>
+                    <div className="empty-title">开始对话</div>
+                    <div className="empty-desc">发送消息开始与 AI 交互</div>
+                  </>
+                )}
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
       {showScrollToBottom && (
         <button
@@ -1821,7 +1839,10 @@ function renderBlocks(
       case 'user_question': {
         return (
           <div key={i} style={{ marginTop: 4, marginBottom: 4 }}>
-            <InlineQuestionCard block={block} />
+            <InlineQuestionCard
+              block={block}
+              {...(options.sessionId != null ? { sessionId: options.sessionId } : {})}
+            />
           </div>
         )
       }
@@ -2342,8 +2363,10 @@ function InlinePermissionCard({
 /** Inline card for AskUserQuestion tool calls in the timeline */
 function InlineQuestionCard({
   block,
+  sessionId,
 }: {
   block: Extract<UIBlock, { kind: 'user_question' }>
+  sessionId?: SessionId
 }) {
   if (block.questions.length === 0) return null
 
@@ -2361,7 +2384,7 @@ function InlineQuestionCard({
     // submitted answers via the dock.  The CLI tool_result output may
     // not be in a parseable format, so the builder's answerSummary
     // can be empty even though the user did answer.
-    const cacheKey = block.questions.map((q) => q.question).join('\0')
+    const cacheKey = getQuestionAnswerCacheKey(block.questions, sessionId)
     const cached = questionAnswerCache.get(cacheKey)
     if (cached != null) {
       for (const item of cached) {
@@ -2370,7 +2393,6 @@ function InlineQuestionCard({
           ...(item.skipped != null ? { skipped: item.skipped } : {}),
         })
       }
-      questionAnswerCache.delete(cacheKey)
     }
   }
 
@@ -6675,7 +6697,7 @@ function ComposerV2({
             label={activePermissionOption?.label ?? '默认权限'}
             title="权限模式"
             tone={activePermissionOption?.tone ?? 'default'}
-            disabled={isBusy}
+            disabled={false}
             onChange={(mode) => {
               const permissionMode = mode as PermissionModeChoice
               setDraftPermissionMode(permissionMode)
@@ -6692,7 +6714,7 @@ function ComposerV2({
                 ?.label ?? effectiveReasoning
             }
             title="推理强度"
-            disabled={isBusy}
+            disabled={false}
             onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
             options={getReasoningOptions(adapter)}
           />

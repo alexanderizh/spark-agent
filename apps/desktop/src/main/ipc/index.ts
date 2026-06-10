@@ -3513,6 +3513,12 @@ export function registerAllIpcHandlers(): void {
     return { success: true }
   })
 
+  typedIpcHandle('browser:open-external', async (req) => {
+    log.info('browser:open-external requested')
+    await shell.openExternal(req.url && req.url.trim().length > 0 ? req.url : 'https://www.yiqibyte.com')
+    return { success: true }
+  })
+
   typedIpcHandle('browser:pop-in', async () => {
     log.info('browser:pop-in requested')
     closePopOutWindow()
