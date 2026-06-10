@@ -50,6 +50,7 @@ extraResources:
     filter:
       - '**/*'
 publish:
-  provider: generic
-  url: https://releases.spark-agent.dev/${os}/
-  channel: latest
+  provider: github
+  owner: alexanderizh
+  repo: spark-agent
+  releaseType: release
