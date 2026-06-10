@@ -354,6 +354,17 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         wsId = noProjectId
         setActiveWorkspaceId(noProjectId)
       }
+
+      // 如果该项目下有未使用的会话（没有消息、未归档），直接复用
+      const unusedSession = sessions.find(
+        s => s.workspaceIds.includes(wsId!) && s.messageCount === 0 && s.archivedAt == null,
+      )
+      if (unusedSession) {
+        if (options.activate !== false) setActive(unusedSession.id)
+        setActiveWorkspaceId(wsId)
+        return unusedSession.id
+      }
+
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
       const prefs = readComposerPrefs()
@@ -404,7 +415,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       toast.error(err instanceof Error ? err.message : '创建会话失败')
       return null
     }
-  }, [activeWorkspaceId, agents, createSession, ensureNoProjectWorkspace, listProviders, providers, refreshData, requestConfirm, selectedProviderId, toast])
+  }, [activeWorkspaceId, agents, createSession, ensureNoProjectWorkspace, listProviders, providers, refreshData, requestConfirm, selectedProviderId, sessions, toast])
 
   // Search
   const searchSessions = useCallback(async (query: string): Promise<SessionSearchResult[]> => {

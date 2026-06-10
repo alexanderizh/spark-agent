@@ -81,6 +81,8 @@ export class UpdateService {
     autoUpdater.autoDownload = true
     autoUpdater.autoInstallOnAppQuit = true
     autoUpdater.disableWebInstaller = false
+    autoUpdater.allowPrerelease = false
+    autoUpdater.allowDowngrade = false
 
     // 在开发模式下禁用自动更新签名验证（开发时不会有签名）
     if (!app.isPackaged) {
@@ -263,8 +265,8 @@ export class UpdateService {
    * 目前支持 stable/beta
    */
   setChannel(_channel: UpdateChannel): void {
-    // TODO: 当有 beta 通道时，需要修改 autoUpdater.channel 或 feed URL
-    // autoUpdater.channel = channel  // electron-updater 5.x+
+    autoUpdater.allowPrerelease = _channel === 'beta'
+    autoUpdater.channel = _channel === 'beta' ? 'beta' : 'latest'
     log.info(`Update channel set to: ${_channel}`)
   }
 

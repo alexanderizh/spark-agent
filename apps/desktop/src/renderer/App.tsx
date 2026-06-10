@@ -730,21 +730,30 @@ function Shell() {
             </div>
           </div>
         )}
-        <div className="main">
-          {/* Non-Windows: transparent header with expand button (only when sidebar hidden) */}
-          {t.view !== 'chat' && !isPlatformWin32 && t.sidebarHidden && (
-            <div
-              className="transparent-header"
-              onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
-            >
-              <SidebarExpandButton />
+        {t.view === 'chat' ? (
+          <div className="main-with-browser">
+            <div className="main">
+              <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
+                {viewElement}
+              </div>
             </div>
-          )}
-          <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
-            {viewElement}
+            <BrowserPanelView />
           </div>
-        </div>
-        {t.view === 'chat' && <BrowserPanelView />}
+        ) : (
+          <div className="main">
+            {!isPlatformWin32 && t.sidebarHidden && (
+              <div
+                className="transparent-header"
+                onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
+              >
+                <SidebarExpandButton />
+              </div>
+            )}
+            <div className="view-body" style={{ display: 'flex', flexDirection: 'column' }}>
+              {viewElement}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Overlays */}

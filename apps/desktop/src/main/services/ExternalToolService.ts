@@ -530,6 +530,20 @@ export function getToolDef(toolId: string): ToolDef | undefined {
   return TOOL_DEFS.find(t => t.id === toolId)
 }
 
+/**
+ * Escape a path for Windows command line.
+ * - If the path contains spaces or special chars, wrap it in double quotes
+ * - Escape existing double quotes and backslashes properly
+ */
+function escapeWinPath(path: string): string {
+  if (!path.includes(' ') && !path.includes('"') && !path.includes('&') && !path.includes('|')) {
+    return path
+  }
+  // Escape backslashes and double quotes for Windows shell
+  const escaped = path.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+  return `"${escaped}"`
+}
+
 export async function openProjectInTool(toolId: string, rootPath: string): Promise<boolean> {
   const tool = getToolDef(toolId)
   if (!tool) {
@@ -541,7 +555,9 @@ export async function openProjectInTool(toolId: string, rootPath: string): Promi
     throw new Error(`No launch command for tool ${toolId} on platform ${process.platform}`)
   }
 
-  const args = template.map(s => s.replace('{path}', rootPath))
+  // On Windows, properly escape the path for shell commands
+  const escapedPath = isWin ? escapeWinPath(rootPath) : rootPath
+  const args = template.map(s => s.replace('{path}', escapedPath))
   const command = args[0]
   if (command == null) {
     throw new Error(`Empty launch command for tool ${toolId}`)
@@ -568,11 +584,23 @@ end tell`
     }
   } else if (isWin && tool.kind === 'terminal') {
     const { spawn } = await import('node:child_process')
-    const child = spawn(command, commandArgs, {
+    // Build the full command string for shell execution
+    const fullCommand = [command, ...commandArgs].join(' ')
+    const child = spawn(fullCommand, [], {
       detached: true,
       stdio: 'ignore',
       shell: true,
       cwd: rootPath,
+    })
+    child.unref()
+  } else if (isWin) {
+    // For Windows IDEs, use shell to ensure CLI commands like 'code' work
+    const { spawn } = await import('node:child_process')
+    const fullCommand = [command, ...commandArgs].join(' ')
+    const child = spawn(fullCommand, [], {
+      detached: true,
+      stdio: 'ignore',
+      shell: true,
     })
     child.unref()
   } else {

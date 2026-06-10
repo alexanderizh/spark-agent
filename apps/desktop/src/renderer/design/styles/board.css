@@ -150,25 +150,46 @@
   flex-direction: row !important;
   gap: 6px;
   height: 32px;
-  min-width: 112px;
+  min-width: 98px;
   padding: 0 14px !important;
-  line-height: 32px;
   white-space: nowrap !important;
 }
 .board-recycle-arco-btn .arco-btn-icon,
 .board-create-arco-btn .arco-btn-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
   flex-shrink: 0;
-  line-height: 0;
+  margin-right: 0 !important;
 }
 .board-recycle-arco-btn svg,
 .board-create-arco-btn svg {
   display: block;
 }
-.board-create-arco-btn span {
-  white-space: nowrap;
+.board-create-arco-btn .arco-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Fix button icon and text vertical alignment */
+.board-toolbar .arco-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.board-toolbar .arco-btn .arco-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.board-toolbar .arco-btn .arco-btn-icon {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-right: 0 !important;
 }
 
 /* ── Columns ── */
@@ -836,4 +857,96 @@
   .board-columns {
     padding: 0 12px 14px;
   }
+}
+
+/* ── Import/Export Dropdown ── */
+.board-import-export-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  height: 32px;
+  padding: 0 12px !important;
+}
+
+.board-btn-inner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.board-import-export-dropdown {
+  padding: 6px;
+  background: var(--bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+}
+
+.board-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+  text-align: left;
+  width: 100%;
+}
+
+.board-dropdown-item:hover {
+  background: var(--hover);
+}
+
+.board-dropdown-item svg {
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+/* ── Selection Mode Toolbar (Second Row) ── */
+.board-selection-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  background: var(--bg-soft);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.board-selection-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 0 8px;
+}
+
+.board-selection-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Selection Mode Card Styles ── */
+.board-card-selected {
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2px var(--primary-soft) !important;
+  background: rgba(var(--primary-rgb, 59, 130, 246), 0.04) !important;
+}
+
+.bc-select-checkbox {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+}
+
+.bc-select-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--primary);
 }

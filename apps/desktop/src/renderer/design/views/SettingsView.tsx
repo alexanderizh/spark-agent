@@ -2953,104 +2953,21 @@ function McpSection() {
 
 /* ───────── SYSTEM PROMPT ───────── */
 
-type PromptLayerMeta = {
-  scope: string
-  label: string
-  badge: string
-  badgeColor: string
-  desc: string
-}
-
-const PROMPT_LAYERS: PromptLayerMeta[] = [
-  {
-    scope: 'system',
-    label: 'System',
-    badge: 'SYS',
-    badgeColor: '#94a3b8',
-    desc: '全局基础 · 所有 Agent 共享',
-  },
-  {
-    scope: 'agent',
-    label: 'Agent',
-    badge: 'AGENT',
-    badgeColor: '#8b5cf6',
-    desc: '单 Agent 定制 · 多 Agent 配置中设置',
-  },
-  {
-    scope: 'project',
-    label: 'Project',
-    badge: 'PROJ',
-    badgeColor: '#f97316',
-    desc: '.spark/prompt.md · 当前工作区',
-  },
-  {
-    scope: 'session',
-    label: 'Session',
-    badge: 'SESS',
-    badgeColor: '#f43f5e',
-    desc: '本次会话临时覆盖',
-  },
-]
-
-type PromptTemplate = {
-  id: string
-  name: string
-  desc: string
-  content: string
-}
-
-const PROMPT_TEMPLATES: PromptTemplate[] = [
-  {
-    id: 'general-coder',
-    name: '通用编程助手',
-    desc: '适合日常编码、调试、代码审查',
-    content:
-      '你是一个专业的编程助手。请遵循以下原则：\n1. 优先使用项目中已有的模式和风格\n2. 修改代码时保持最小变更原则\n3. 每次修改后说明原因和影响范围\n4. 如果有多种方案，简要对比后给出推荐',
-  },
-  {
-    id: 'strict-reviewer',
-    name: '严格代码审查',
-    desc: '关注安全、性能和可维护性',
-    content:
-      '你是一个严格的代码审查员。在审查代码时请重点关注：\n1. 安全漏洞：SQL 注入、XSS、敏感信息泄露\n2. 性能问题：N+1 查询、不必要的重渲染、内存泄漏\n3. 可维护性：命名规范、函数复杂度、模块耦合\n4. 错误处理：边界条件、异常捕获、降级策略\n给出问题时请同时提供修复建议和示例代码。',
-  },
-  {
-    id: 'architect',
-    name: '架构设计',
-    desc: '系统设计、技术选型、模块划分',
-    content:
-      '你是一个资深架构师。在进行架构设计时请遵循：\n1. 先理解业务场景和约束条件\n2. 提供多个方案并对比权衡\n3. 考虑可扩展性、可观测性、容错能力\n4. 给出清晰的模块划分和依赖关系\n5. 使用图表和代码示例辅助说明',
-  },
-  {
-    id: 'concise',
-    name: '简洁回复',
-    desc: '减少冗余，直接给出答案',
-    content:
-      '请简洁回复：\n1. 直接给出答案或代码，不要重复问题\n2. 仅在必要时解释\n3. 代码注释只在非显而易见的地方添加',
-  },
-]
-
 function SystemPromptSection() {
   const [systemPrompt, setSystemPrompt] = useState('')
   const [savedPrompt, setSavedPrompt] = useState('')
-  const [systemPromptEnabled, setSystemPromptEnabled] = useState(true)
-  const [savedEnabled, setSavedEnabled] = useState(true)
   const [savingPrompt, setSavingPrompt] = useState(false)
-  const [showTemplates, setShowTemplates] = useState(false)
-  const [showLayers, setShowLayers] = useState(true)
   const { toast } = useToast()
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
   const { invoke: updatePromptConfig } = useIpcInvoke('prompt-config:update')
 
-  const isDirty = systemPrompt !== savedPrompt || systemPromptEnabled !== savedEnabled
+  const isDirty = systemPrompt !== savedPrompt
 
   useEffect(() => {
     getPromptConfig({})
       .then((res) => {
         setSystemPrompt(res.system.content)
         setSavedPrompt(res.system.content)
-        setSystemPromptEnabled(res.system.enabled)
-        setSavedEnabled(res.system.enabled)
       })
       .catch(() => {})
   }, [getPromptConfig])
@@ -3060,12 +2977,10 @@ function SystemPromptSection() {
     try {
       const res = await updatePromptConfig({
         scope: 'system',
-        value: { enabled: systemPromptEnabled, content: systemPrompt },
+        value: { enabled: true, content: systemPrompt },
       })
       setSystemPrompt(res.system.content)
       setSavedPrompt(res.system.content)
-      setSystemPromptEnabled(res.system.enabled)
-      setSavedEnabled(res.system.enabled)
       toast.success('系统提示词已保存')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '保存系统提示词失败')
@@ -3076,12 +2991,6 @@ function SystemPromptSection() {
 
   const handleReset = () => {
     setSystemPrompt(savedPrompt)
-    setSystemPromptEnabled(savedEnabled)
-  }
-
-  const handleApplyTemplate = (template: PromptTemplate) => {
-    setSystemPrompt(template.content)
-    setShowTemplates(false)
   }
 
   const charCount = systemPrompt.length
@@ -3093,139 +3002,47 @@ function SystemPromptSection() {
         <div className="flex1">
           <h2 className="section-h2">系统提示词</h2>
           <div className="lede section-lede">
-            配置全局系统提示词，按 System → Agent → Project → Session 逐级合并，后者覆盖前者。
+            配置全局系统级提示词，作为所有 Agent 的基础指令。
           </div>
         </div>
         {isDirty && <span className="badge warning dot">未保存</span>}
       </div>
 
-      {/* ── Prompt layers overview ── */}
-      <div className="subsec-h">
-        提示词层级
-        <button
-          className="btn ghost sm"
-          onClick={() => setShowLayers((prev) => !prev)}
-          style={{ marginLeft: 8 }}
-        >
-          <Icons.ChevronDown size={12} className={showLayers ? 'spin-180' : ''} />
-          {showLayers ? '收起' : '展开'}
-        </button>
-      </div>
-      {showLayers && (
-        <div className="prompt-layers">
-          {PROMPT_LAYERS.map((layer) => (
-            <div
-              key={layer.scope}
-              className={`prompt-layer ${layer.scope === 'system' ? 'active' : ''}`}
-            >
-              <div className="prompt-layer-left">
-                <span
-                  className="badge rule-badge rule-badge-dynamic"
-                  style={{ background: layer.badgeColor + '20', color: layer.badgeColor }}
-                >
-                  {layer.badge}
-                </span>
-                <div className="prompt-layer-info">
-                  <span className="prompt-layer-name">{layer.label}</span>
-                  <span className="prompt-layer-desc">{layer.desc}</span>
-                </div>
-              </div>
-              <div className="prompt-layer-right">
-                {layer.scope === 'system' && <span className="badge success">编辑中</span>}
-                {layer.scope === 'agent' && <span className="muted text-xs-12">多 Agent 配置</span>}
-                {layer.scope === 'project' && (
-                  <span className="muted text-xs-12">.spark/prompt.md</span>
-                )}
-                {layer.scope === 'session' && <span className="muted text-xs-12">会话内覆盖</span>}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <SparkTextarea
+        className="prompt-textarea"
+        value={systemPrompt}
+        onChange={(event) => setSystemPrompt(event.target.value)}
+        placeholder="输入全局系统提示词...&#10;&#10;例如：你是一个专业的编程助手，请用中文回复。"
+        rows={14}
+      />
 
-      {/* ── Editor card ── */}
-      <div className="subsec-h">
-        系统级提示词
-        <button
-          className="btn ghost sm"
-          onClick={() => setShowTemplates((prev) => !prev)}
-          style={{ marginLeft: 8 }}
-        >
-          <Icons.Layers size={11} /> 模板
-        </button>
-      </div>
-
-      {showTemplates && (
-        <div className="prompt-templates">
-          <div className="prompt-templates-hint">选择一个模板快速填充，选择后仍可自由编辑。</div>
-          <div className="prompt-templates-grid">
-            {PROMPT_TEMPLATES.map((tpl) => (
-              <button
-                key={tpl.id}
-                className="prompt-template-card"
-                onClick={() => handleApplyTemplate(tpl)}
-              >
-                <div className="prompt-template-name">{tpl.name}</div>
-                <div className="prompt-template-desc">{tpl.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      <div className="card prompt-editor-card">
-        <div className="settings-row prompt-editor-header">
-          <div>
-            <div className="settings-row-title">全局系统提示词</div>
-            <div className="settings-row-desc">
-              全局生效，作为所有 Agent 的基础提示词注入。支持中文和英文混合。
-            </div>
-          </div>
-          <div
-            className={`switch ${systemPromptEnabled ? 'on' : ''}`}
-            onClick={() => setSystemPromptEnabled((prev) => !prev)}
-          />
-        </div>
-
-        <div className={`prompt-editor-body ${!systemPromptEnabled ? 'disabled' : ''}`}>
-          <SparkTextarea
-            className="prompt-textarea"
-            value={systemPrompt}
-            onChange={(event) => setSystemPrompt(event.target.value)}
-            placeholder="输入全局系统提示词...&#10;&#10;例如：你是一个专业的编程助手，请用中文回复。"
-            disabled={!systemPromptEnabled}
-            rows={12}
-          />
-          <div className="prompt-editor-footer">
-            <div className="prompt-editor-stats">
-              <span>{charCount} 字符</span>
+      <div className="prompt-editor-footer">
+        <div className="prompt-editor-stats">
+          <span>{charCount} 字符</span>
+          <span className="prompt-stats-sep">·</span>
+          <span>约 {estimatedTokens} tokens</span>
+          {charCount > 10000 && (
+            <>
               <span className="prompt-stats-sep">·</span>
-              <span>约 {estimatedTokens} tokens</span>
-              {charCount > 10000 && (
-                <>
-                  <span className="prompt-stats-sep">·</span>
-                  <span className="prompt-stats-warn">内容较长</span>
-                </>
-              )}
-            </div>
-            <div className="row row-gap-xs">
-              {isDirty && (
-                <button className="btn ghost sm" onClick={handleReset}>
-                  撤销修改
-                </button>
-              )}
-              <button
-                className="btn primary sm"
-                onClick={() => void saveSystemPrompt()}
-                disabled={savingPrompt || !isDirty}
-              >
-                <Icons.Check size={12} /> {savingPrompt ? '保存中...' : '保存'}
-              </button>
-            </div>
-          </div>
+              <span className="prompt-stats-warn">内容较长</span>
+            </>
+          )}
+        </div>
+        <div className="row row-gap-xs">
+          {isDirty && (
+            <button className="btn ghost sm" onClick={handleReset}>
+              撤销修改
+            </button>
+          )}
+          <button
+            className="btn primary sm"
+            onClick={() => void saveSystemPrompt()}
+            disabled={savingPrompt || !isDirty}
+          >
+            <Icons.Check size={12} /> {savingPrompt ? '保存中...' : '保存'}
+          </button>
         </div>
       </div>
-
     </div>
   )
 }

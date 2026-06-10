@@ -6,13 +6,14 @@ import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
-import { Switch } from '@arco-design/web-react'
+import { Dropdown, Menu, Switch } from '@arco-design/web-react'
 import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { generateDefaultAvatarUrl, getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { TeamsPanel } from './TeamsPanel'
+import { useSessionSidebar } from '../SessionSidebarContext'
 import type {
   AgentExportPayload,
   ManagedAgent,
@@ -130,6 +131,7 @@ export function AgentsView() {
 function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: ManagedAgent[]) => void }) {
   const { toast } = useToast()
   const { registerNavGuard, requestConfirm } = useApp()
+  const { handleNewSession, setActiveSession } = useSessionSidebar()
   const [agents, setAgents] = useState<ManagedAgent[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [skills, setSkills] = useState<SkillItem[]>([])
@@ -414,6 +416,18 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
     }
   }
 
+  const handleQuickChat = async (agent: ManagedAgent) => {
+    try {
+      const sessionId = await handleNewSession(null, { agentId: agent.id })
+      if (sessionId) {
+        setActiveSession(sessionId)
+        toast.success(`已创建新会话，使用「${agent.name}」`)
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '创建会话失败')
+    }
+  }
+
   const handleExportAll = async () => {
     try {
       const res = await exportAgentsToFile({ ids: [] })
@@ -499,77 +513,115 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
               const wf = workflows.find((w) => w.id === agent.workflowId)
               const provider = providers.find((p) => p.id === agent.providerProfileId)
               const avatar = getAgentAvatarConfig(agent.metadata, agent.id, agent.name)
+              const menuItems = (
+                <Menu>
+                  <Menu.Item key="chat" onClick={() => void handleQuickChat(agent)}>
+                    <span className="agent-context-menu-item">
+                      <Icons.Chat size={14} /> 快速对话
+                    </span>
+                  </Menu.Item>
+                  <Menu.Item key="export" onClick={() => void handleExportAgent(agent)}>
+                    <span className="agent-context-menu-item">
+                      <Icons.Download size={14} /> 导出
+                    </span>
+                  </Menu.Item>
+                  <Menu.Item key="copy" onClick={() => void handleCardCopy(agent)}>
+                    <span className="agent-context-menu-item">
+                      <Icons.Copy size={14} /> 复制
+                    </span>
+                  </Menu.Item>
+                  <Menu.Item key="edit" onClick={() => openAgent(agent)}>
+                    <span className="agent-context-menu-item">
+                      <Icons.Edit size={14} /> 编辑
+                    </span>
+                  </Menu.Item>
+                  {!agent.builtIn && (
+                    <Menu.Item key="delete" onClick={() => void handleCardDelete(agent)}>
+                      <span className="agent-context-menu-item danger">
+                        <Icons.Trash size={14} /> 删除
+                      </span>
+                    </Menu.Item>
+                  )}
+                </Menu>
+              )
               return (
-                <button key={agent.id} className="agents-card" onClick={() => openAgent(agent)}>
-                  <span className="agents-card-head">
-                    <span className="agents-card-avatar">
-                      <AvatarImage src={resolveAvatarSrc(avatar)} seed={agent.id} name={agent.name} alt={agent.name} />
+                <Dropdown
+                  key={agent.id}
+                  trigger="contextMenu"
+                  droplist={menuItems}
+                  position="bl"
+                >
+                  <button className="agents-card" onClick={() => openAgent(agent)}>
+                    <span className="agents-card-head">
+                      <span className="agents-card-avatar">
+                        <AvatarImage src={resolveAvatarSrc(avatar)} seed={agent.id} name={agent.name} alt={agent.name} />
+                      </span>
+                      <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
+                        {agent.enabled ? '启用' : '停用'}
+                      </span>
                     </span>
-                    <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
-                      {agent.enabled ? '启用' : '停用'}
+                    <span className="agents-card-name">{agent.name}</span>
+                    <span className="agents-card-desc">
+                      {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
                     </span>
-                  </span>
-                  <span className="agents-card-name">{agent.name}</span>
-                  <span className="agents-card-desc">
-                    {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
-                  </span>
-                  <span className="agents-card-meta">
-                    <span>{agent.builtIn ? '内置' : '自定义'}</span>
-                    {provider && <><span className="agents-card-dot" /><span>{provider.name}</span></>}
-                    {wf && <><span className="agents-card-dot" /><span>{wf.name}</span></>}
-                  </span>
-                  <span className="agents-card-tags">
-                    {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
-                    {agent.skillIds.length > 0 && <span className="agents-card-tag">{agent.skillIds.length} Skills</span>}
-                    {agent.mcpServerIds.length > 0 && <span className="agents-card-tag">{agent.mcpServerIds.length} MCP</span>}
-                    {agent.ruleIds.length > 0 && <span className="agents-card-tag">{agent.ruleIds.length} 规则</span>}
-                    {agent.workflowId && <span className="agents-card-tag workflow-tag"><Icons.Workflow size={10} /> 工作流</span>}
-                  </span>
-                  <span
-                    className="agents-card-actions"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      className="agents-card-action-btn"
-                      title="导出"
-                      onClick={() => void handleExportAgent(agent)}
+                    <span className="agents-card-meta">
+                      <span>{agent.builtIn ? '内置' : '自定义'}</span>
+                      {provider && <><span className="agents-card-dot" /><span>{provider.name}</span></>}
+                      {wf && <><span className="agents-card-dot" /><span>{wf.name}</span></>}
+                    </span>
+                    <span className="agents-card-tags">
+                      {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
+                      {agent.skillIds.length > 0 && <span className="agents-card-tag">{agent.skillIds.length} Skills</span>}
+                      {agent.mcpServerIds.length > 0 && <span className="agents-card-tag">{agent.mcpServerIds.length} MCP</span>}
+                      {agent.ruleIds.length > 0 && <span className="agents-card-tag">{agent.ruleIds.length} 规则</span>}
+                      {agent.workflowId && <span className="agents-card-tag workflow-tag"><Icons.Workflow size={10} /> 工作流</span>}
+                    </span>
+                    <span
+                      className="agents-card-actions"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <Icons.Download size={13} />
-                    </button>
-                    <button
-                      className="agents-card-action-btn"
-                      title="复制"
-                      onClick={() => void handleCardCopy(agent)}
-                    >
-                      <Icons.Copy size={13} />
-                    </button>
-                    {!agent.builtIn && (
-                      <button
-                        className="agents-card-action-btn danger"
-                        title="删除"
-                        onClick={() => void handleCardDelete(agent)}
-                      >
-                        <Icons.Trash size={13} />
-                      </button>
-                    )}
-                    <button
-                      className="agents-card-action-btn"
-                      title={agent.enabled ? '停用' : '启用'}
-                      onClick={() => void handleCardToggle(agent)}
-                    >
-                      {agent.enabled ? <Icons.Zap size={13} /> : <Icons.CheckCircle size={13} />}
-                    </button>
-                    {!agent.isDefault && (
                       <button
                         className="agents-card-action-btn"
-                        title="设为默认"
-                        onClick={() => void handleCardSetDefault(agent)}
+                        title="导出"
+                        onClick={() => void handleExportAgent(agent)}
                       >
-                        <Icons.Star size={13} />
+                        <Icons.Download size={13} />
                       </button>
-                    )}
-                  </span>
-                </button>
+                      <button
+                        className="agents-card-action-btn"
+                        title="复制"
+                        onClick={() => void handleCardCopy(agent)}
+                      >
+                        <Icons.Copy size={13} />
+                      </button>
+                      {!agent.builtIn && (
+                        <button
+                          className="agents-card-action-btn danger"
+                          title="删除"
+                          onClick={() => void handleCardDelete(agent)}
+                        >
+                          <Icons.Trash size={13} />
+                        </button>
+                      )}
+                      <button
+                        className="agents-card-action-btn"
+                        title={agent.enabled ? '停用' : '启用'}
+                        onClick={() => void handleCardToggle(agent)}
+                      >
+                        {agent.enabled ? <Icons.Zap size={13} /> : <Icons.CheckCircle size={13} />}
+                      </button>
+                      {!agent.isDefault && (
+                        <button
+                          className="agents-card-action-btn"
+                          title="设为默认"
+                          onClick={() => void handleCardSetDefault(agent)}
+                        >
+                          <Icons.Star size={13} />
+                        </button>
+                      )}
+                    </span>
+                  </button>
+                </Dropdown>
               )
             })}
           </div>

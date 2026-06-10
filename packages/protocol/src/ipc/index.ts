@@ -622,6 +622,34 @@ export interface DialogOpenFileResponse {
   filePaths?: string[]
 }
 
+export interface DialogSaveFileRequest {
+  title?: string
+  defaultPath?: string
+  filters?: Array<{ name: string; extensions: string[] }>
+}
+
+export interface DialogSaveFileResponse {
+  canceled: boolean
+  filePath?: string
+}
+
+export interface FileWriteTextRequest {
+  path: string
+  content: string
+}
+
+export interface FileWriteTextResponse {
+  success: boolean
+}
+
+export interface FileReadTextRequest {
+  path: string
+}
+
+export interface FileReadTextResponse {
+  content: string
+}
+
 // ─── App Paths Channels ──────────────────────────────────────────────────────
 
 export interface AppGetTempProjectDirRequest {}
@@ -2552,6 +2580,14 @@ export interface BrowserPopOutResponse {
   success: boolean
 }
 
+export interface BrowserOpenExternalRequest {
+  url?: string
+}
+
+export interface BrowserOpenExternalResponse {
+  success: boolean
+}
+
 export interface BrowserPopInRequest {}
 
 export interface BrowserPopInResponse {
@@ -3297,6 +3333,11 @@ export interface IpcChannelMap {
   // Native dialog
   'dialog:open-directory': [DialogOpenDirectoryRequest, DialogOpenDirectoryResponse]
   'dialog:open-file': [DialogOpenFileRequest, DialogOpenFileResponse]
+  'dialog:save-file': [DialogSaveFileRequest, DialogSaveFileResponse]
+
+  // File operations
+  'file:write-text': [FileWriteTextRequest, FileWriteTextResponse]
+  'file:read-text': [FileReadTextRequest, FileReadTextResponse]
 
   // App Info
   'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]
@@ -3509,6 +3550,7 @@ export interface IpcChannelMap {
 
   // Pop-out Browser Window
   'browser:pop-out': [BrowserPopOutRequest, BrowserPopOutResponse]
+  'browser:open-external': [BrowserOpenExternalRequest, BrowserOpenExternalResponse]
   'browser:pop-in': [BrowserPopInRequest, BrowserPopInResponse]
 
   // Window Controls (renderer → main process)
