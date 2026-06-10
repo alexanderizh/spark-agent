@@ -655,6 +655,9 @@ export function ChatView({
           <h1 className="chat-hero-title">Spark Agent，go go go！</h1>
         )}
         {showEmptyHero && (
+          <span className="chat-hero-span">您可以让我创建Agent、安装Skill、安装工作环境！</span>
+        )}
+        {showEmptyHero && (
           <div className="chat-hero-composer">
             {composerNode}
           </div>
