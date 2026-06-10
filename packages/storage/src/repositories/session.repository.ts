@@ -16,6 +16,8 @@
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 
+const DEFAULT_AGENT_ID = 'platform-manager-agent'
+
 /** Session 表行类型 */
 export interface SessionRow {
   id: string
@@ -99,7 +101,7 @@ export class SessionRepository extends BaseRepository {
       params.providerProfileId ?? null,
       params.modelId ?? null,
       params.agentAdapter ?? 'codex',
-      params.agentId ?? 'code-agent',
+      params.agentId ?? DEFAULT_AGENT_ID,
       params.permissionMode ?? 'codex-default',
       params.chatMode ?? 'agent',
       params.reasoningEffort ?? 'medium',

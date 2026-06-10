@@ -1805,10 +1805,10 @@ export class SessionService {
 
   private resolveAgent(agentId: string | undefined): AgentItem {
     const repo = new AgentRepository(this.db)
-    return repo.get(agentId ?? 'code-agent') ?? repo.get('code-agent') ?? {
-      id: 'code-agent',
-      name: '编码 Agent',
-      description: '系统内置编码智能体',
+    return repo.get(agentId ?? 'platform-manager-agent') ?? repo.get('platform-manager-agent') ?? {
+      id: 'platform-manager-agent',
+      name: '平台管理',
+      description: '系统内置平台管理智能体',
       builtIn: true,
       enabled: true,
       isDefault: true,
@@ -2456,7 +2456,7 @@ export class SessionService {
       workspaceIds: sessionRepo.getWorkspaceIds(row.id),
       providerProfileId: row.provider_profile_id ?? '',
       modelId: row.model_id,
-      agentId: row.agent_id ?? 'code-agent',
+      agentId: row.agent_id ?? 'platform-manager-agent',
       agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
       permissionMode: getPermissionModeFromSession(
         row.permission_mode,
@@ -2617,7 +2617,7 @@ export class SessionService {
         workspaceIds: sessionRepo.getWorkspaceIds(row.id),
         providerProfileId: row.provider_profile_id ?? '',
         modelId: row.model_id,
-        agentId: row.agent_id ?? 'code-agent',
+        agentId: row.agent_id ?? 'platform-manager-agent',
         agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
         permissionMode: getPermissionModeFromSession(
           row.permission_mode,
@@ -3150,7 +3150,7 @@ function readSessionTeamConfig(session: { metadata_json?: string }): TeamModeCon
     if (team == null || typeof team !== 'object') return null
     return {
       enabled: team.enabled === true,
-      hostAgentId: typeof team.hostAgentId === 'string' ? team.hostAgentId : 'code-agent',
+      hostAgentId: typeof team.hostAgentId === 'string' ? team.hostAgentId : 'platform-manager-agent',
       memberAgentIds: Array.isArray(team.memberAgentIds) ? team.memberAgentIds.filter((id) => typeof id === 'string') : [],
       maxDepth: typeof team.maxDepth === 'number' ? team.maxDepth : 1,
       allowNesting: team.allowNesting === true,

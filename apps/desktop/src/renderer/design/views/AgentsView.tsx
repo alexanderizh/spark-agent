@@ -955,7 +955,7 @@ function draftToPayload(draft: AgentDraft) {
 
 function normalizeDraftAvatar(draft: AgentDraft): SparkAvatarConfig {
   const config = draft.avatar
-  if (config.kind === 'url' || config.kind === 'upload') return config
+  if (config.kind === 'url' || config.kind === 'upload' || config.kind === 'builtin') return config
   return { kind: 'url', url: generateDefaultAvatarUrl(config.seed || draft.name, config.style) }
 }
 

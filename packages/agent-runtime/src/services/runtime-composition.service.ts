@@ -47,7 +47,7 @@ export interface RuntimeCompositionResult {
   skillSystemPrompt?: string
 }
 
-const DEFAULT_AGENT_ID = 'code-agent'
+const DEFAULT_AGENT_ID = 'platform-manager-agent'
 const SKILLS_CATEGORY = 'runtime.skills'
 const DISABLED_SKILLS_CATEGORY = 'runtime.skills.disabled'
 const PROMPTS_CATEGORY = 'runtime.prompts'
@@ -86,7 +86,7 @@ export class RuntimeCompositionService {
     const disabledIds = new Set([...agentDisabledSkillIds, ...projectDisabledSkillIds, ...sessionDisabledSkillIds])
 
     // The agent's configured skills define the base set.
-    // If the agent has no skillIds configured (e.g. default code-agent), fall back to all
+    // If the agent has no skillIds configured, fall back to all
     // system-enabled skills for backward compatibility. Project and session layers are
     // always additive on top.
     const hasAgentSkillConfig = agentSkillIds.length > 0

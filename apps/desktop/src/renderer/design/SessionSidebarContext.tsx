@@ -398,7 +398,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       const res = await createSession({
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
-        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'code-agent',
+        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'platform-manager-agent',
         agentAdapter,
         permissionMode,
         ...(options.chatMode !== undefined ? { chatMode: options.chatMode as SessionChatMode } : {}),
@@ -412,7 +412,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       if (options.skipRefresh !== true) await refreshData()
       writeComposerPrefs({
         adapter: agentAdapter,
-        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'code-agent',
+        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'platform-manager-agent',
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
         permissionMode,

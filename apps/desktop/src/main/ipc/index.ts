@@ -692,7 +692,7 @@ async function triggerHook(
 function readAgentHookConfig(sessionId: string): HookConfigInternal {
   const session = new SessionRepository(getDatabase()).get(sessionId)
   if (session == null) return { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false }
-  const agent = getAgentRepository().get(session.agent_id ?? 'code-agent')
+  const agent = getAgentRepository().get(session.agent_id ?? 'platform-manager-agent')
   if (agent == null) return { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false }
   return parseHookConfig(agent.hookConfig, { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false })
 }
@@ -969,11 +969,14 @@ export function registerAllIpcHandlers(): void {
     log.warn(`Failed to start remote runtime: ${String(err)}`)
   })
 
-  // 启动时幂等保证内置 "本地 CLI" provider 存在 —— 用户无需任何配置即可立即用宿主
-  // 机的 Claude Code OAuth/环境变量开聊。失败仅记日志，不阻塞后续注册。
-  void getProviderService()
-    .ensureLocalCliProvider()
-    .catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
+  // 启动时仅在宿主机存在 claude CLI 时补种内置 "本地 CLI" provider。
+  // 失败仅记日志，不阻塞后续注册。
+  void (async () => {
+    const svc = getProviderService()
+    if (await svc.isLocalCliAvailable()) {
+      await svc.ensureLocalCliProvider()
+    }
+  })().catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
 
   // ─── Session Handlers ──────────────────────────────────────────────────
 
@@ -1085,7 +1088,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('provider:list', async (_req) => {
     const svc = getProviderService()
-    await svc.ensureLocalCliProvider()
+    if (await svc.isLocalCliAvailable()) {
+      await svc.ensureLocalCliProvider()
+    }
     const profiles = await svc.listProviders()
     return { profiles }
   })
@@ -2030,7 +2035,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('team:list-members', async (req) => {
     const metadata = new SessionRepository(getDatabase()).getMetadata(req.sessionId)
     const team = (metadata.team ?? null) as Partial<TeamModeConfig> | null
-    const hostAgentId = team?.hostAgentId ?? 'code-agent'
+    const hostAgentId = team?.hostAgentId ?? 'platform-manager-agent'
     const memberIds = new Set(team?.memberAgentIds ?? [])
     const agents = getAgentRepository().list({}).map(toManagedAgent)
     const toCard = (a: ManagedAgent): TeamMemberCard => ({

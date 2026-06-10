@@ -1,12 +1,8 @@
--- Migration 023: Simplify built-in agents — only keep platform-manager
+-- Migration 026: Make platform-manager the only built-in default agent.
 --
--- Remove built-in coding/domain agents and add a single platform-manager agent.
--- Also remove all built-in teams. Users configure their own agents and teams.
+-- This repairs databases that already ran migration 023 before the platform
+-- manager became the default built-in agent.
 
--- Remove built-in teams
-DELETE FROM agent_teams WHERE built_in = 1;
-
--- Remove the old built-in coding agent.
 DELETE FROM agents
 WHERE id = 'code-agent'
   AND (
@@ -14,18 +10,10 @@ WHERE id = 'code-agent'
     OR json_extract(COALESCE(NULLIF(metadata_json, ''), '{}'), '$.role') = 'coding'
   );
 
--- Remove other built-in agents entirely (they were seeded, users haven't customized them meaningfully)
-DELETE FROM agents WHERE id IN (
-  'docs-agent',
-  'uiux-agent',
-  'secretary-agent',
-  'devops-agent',
-  'pm-agent',
-  'dev-agent',
-  'qa-agent'
-) AND built_in = 1;
+DELETE FROM agents
+WHERE built_in = 1
+  AND id <> 'platform-manager-agent';
 
--- Insert the platform-manager agent
 INSERT OR IGNORE INTO agents (
   id, name, description, built_in, enabled, is_default,
   agent_adapter, permission_mode, reasoning_effort,
@@ -51,15 +39,22 @@ INSERT OR IGNORE INTO agents (
 
 UPDATE sessions
 SET agent_id = 'platform-manager-agent'
-WHERE agent_id = 'code-agent';
+WHERE agent_id IS NULL
+  OR agent_id = ''
+  OR agent_id = 'code-agent';
 
 UPDATE agents SET is_default = 0 WHERE id <> 'platform-manager-agent';
 
 UPDATE agents
 SET
+  name = '平台管理',
+  description = '管理 Spark Agent 平台的 Skills、MCP 服务器、Providers、Workflows、Agents、Settings 和看板任务。',
   built_in = 1,
   enabled = 1,
   is_default = 1,
+  agent_adapter = 'claude-sdk',
+  permission_mode = 'claude-ask',
+  reasoning_effort = 'medium',
   skill_ids_json = '["builtin:platform-manager","builtin:multi-search-engine","builtin:browser-use","builtin:find-skills"]',
   metadata_json = json_set(
     COALESCE(NULLIF(metadata_json, ''), '{}'),

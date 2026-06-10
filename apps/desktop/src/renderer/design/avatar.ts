@@ -1,7 +1,9 @@
 import { hashAgentId } from '@spark/shared'
+import platformManagerAvatarUrl from '../assets/platform-manager-avatar.png'
 
 export type SparkAvatarConfig =
   | { kind: 'url'; url: string }
+  | { kind: 'builtin'; id: 'platform-manager' }
   | { kind: 'dicebear'; seed: string; style?: string }
   | { kind: 'upload'; dataUrl: string }
 
@@ -17,6 +19,9 @@ export function normalizeAvatarConfig(value: unknown): SparkAvatarConfig | null 
   }
   if (record.kind === 'url' && typeof record.url === 'string' && record.url.trim().length > 0) {
     return { kind: 'url', url: record.url.trim() }
+  }
+  if (record.kind === 'builtin' && record.id === 'platform-manager') {
+    return { kind: 'builtin', id: 'platform-manager' }
   }
   if (record.kind === 'dicebear' && typeof record.seed === 'string' && record.seed.trim().length > 0) {
     return {
@@ -51,6 +56,7 @@ export function getUserAvatarConfig(value: unknown): SparkAvatarConfig {
 export function resolveAvatarSrc(config: SparkAvatarConfig): string {
   if (config.kind === 'upload') return config.dataUrl
   if (config.kind === 'url') return config.url
+  if (config.kind === 'builtin') return platformManagerAvatarUrl
   return generateLocalAvatarDataUrl(config.seed || 'spark-agent', config.style)
 }
 
@@ -58,6 +64,7 @@ export function avatarConfigEquals(a: SparkAvatarConfig, b: SparkAvatarConfig): 
   if (a.kind !== b.kind) return false
   if (a.kind === 'upload' && b.kind === 'upload') return a.dataUrl === b.dataUrl
   if (a.kind === 'url' && b.kind === 'url') return a.url === b.url
+  if (a.kind === 'builtin' && b.kind === 'builtin') return a.id === b.id
   if (a.kind === 'dicebear' && b.kind === 'dicebear') {
     return a.seed === b.seed && (a.style ?? DEFAULT_DICEBEAR_STYLE) === (b.style ?? DEFAULT_DICEBEAR_STYLE)
   }

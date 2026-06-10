@@ -58,7 +58,7 @@ export interface SessionCreateRequest {
   modelId?: string
   /** SDK/runtime adapter used to execute the task */
   agentAdapter?: SessionAgentAdapter
-  /** Managed agent profile; defaults to built-in code-agent. */
+  /** Managed agent profile; defaults to built-in platform-manager-agent. */
   agentId?: string
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode

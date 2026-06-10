@@ -4,7 +4,7 @@ Spark Agent now supports managed agent profiles and workflow graphs.
 
 ## Agent Profiles
 
-The built-in `code-agent` remains the default agent for new conversations. Custom agents can be created from the Agents page and configured with:
+The built-in `platform-manager-agent` is the default agent for new conversations. Spark only ships this one built-in agent by default; custom agents can be created from the Agents page and configured with:
 
 - default provider, model, adapter, permission mode, and reasoning effort
 - agent prompt
