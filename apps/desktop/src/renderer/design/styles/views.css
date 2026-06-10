@@ -1030,7 +1030,7 @@ body.sidebar-resizing {
 .chat-main-active {
   align-items: stretch;
   justify-content: flex-start;
-  padding-bottom: 20px;
+  padding-bottom: 24px;
 }
 
 .chat-tabbar {
@@ -4072,6 +4072,7 @@ body.sidebar-resizing {
   position: relative;
   scrollbar-gutter: stable;
   padding-top: var(--pad-lg);
+  padding-bottom: var(--pad-lg);
 }
 .inspector-resize-handle {
   position: absolute;
