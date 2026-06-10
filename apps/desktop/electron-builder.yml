@@ -28,6 +28,8 @@ asarUnpack:
   - '**/node_modules/playwright-core/**'
 files:
   - out/**/*
+  - package.json
+  - node_modules/**/*
   - '!**/.DS_Store'
   - '!src/**'
   - '!e2e/**'

@@ -157,6 +157,12 @@ function ProvidersView() {
     refresh()
   }, [refresh])
 
+  useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'provider') refresh()
+    }) ?? (() => {})
+  }, [refresh])
+
   const handleDelete = async (id: string) => {
     const confirmed = await requestConfirm({
       title: '删除 Provider？',

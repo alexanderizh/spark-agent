@@ -15,6 +15,7 @@ function agent(id: string, name: string, description = ''): AgentItem {
     description,
     builtIn: false,
     enabled: true,
+    isDefault: false,
     providerProfileId: null,
     modelId: null,
     agentAdapter: 'claude-sdk',

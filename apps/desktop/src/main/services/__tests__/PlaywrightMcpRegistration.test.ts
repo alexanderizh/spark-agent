@@ -23,22 +23,21 @@ vi.mock('electron', () => ({
 import { buildPlaywrightConfig } from '../PlaywrightMcpRegistration.js'
 
 describe('buildPlaywrightConfig', () => {
-  it('always produces a stdio config with npx command', () => {
+  it('always produces a stdio config using the bundled Electron Node runtime', () => {
     const config = buildPlaywrightConfig('headful', null)
     expect(config.type).toBe('stdio')
-    expect(config.command).toBe('npx')
+    expect(config.command).toBe(process.execPath)
     expect(Array.isArray(config.args)).toBe(true)
-    expect(config.args.length).toBeGreaterThanOrEqual(2)
+    expect(config.args.length).toBeGreaterThanOrEqual(1)
+    expect(config.env?.ELECTRON_RUN_AS_NODE).toBe('1')
   })
 
-  it('passes the @playwright/mcp package name to npx', () => {
+  it('passes the packaged @playwright/mcp cli path before flags', () => {
     const config = buildPlaywrightConfig('headful', null)
-    expect(config.args).toContain('@playwright/mcp')
-    // Package specifier must come before any flag arg
-    const pkgIdx = config.args.indexOf('@playwright/mcp')
+    expect(config.args[0]).toMatch(/@playwright[\\/]mcp[\\/]cli\.js$/)
     const firstFlagIdx = config.args.findIndex((a) => a.startsWith('--'))
     if (firstFlagIdx >= 0) {
-      expect(pkgIdx).toBeLessThan(firstFlagIdx)
+      expect(firstFlagIdx).toBeGreaterThan(0)
     }
   })
 
@@ -92,15 +91,14 @@ describe('buildPlaywrightConfig', () => {
     const json = JSON.stringify(config)
     const parsed = JSON.parse(json)
     expect(parsed.type).toBe('stdio')
-    expect(parsed.command).toBe('npx')
+    expect(parsed.command).toBe(process.execPath)
     expect(Array.isArray(parsed.args)).toBe(true)
   })
 
-  it('includes env when bundled browsers path is available', () => {
+  it('always includes Electron node env and optionally bundled browser env', () => {
     const config = buildPlaywrightConfig('headful', null)
-    // env is only present when PLAYWRIGHT_BROWSERS_PATH is set or bundled
-    // browsers found; the test environment may or may not have it
-    if (config.env) {
+    expect(config.env?.ELECTRON_RUN_AS_NODE).toBe('1')
+    if (config.env?.PLAYWRIGHT_BROWSERS_PATH) {
       expect(config.env).toHaveProperty('PLAYWRIGHT_BROWSERS_PATH')
     }
   })

@@ -3614,6 +3614,12 @@ export interface IpcStreamChannelMap {
     status: 'connected' | 'disconnected' | 'error'
     message?: string
   }
+  /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
+  'stream:config:changed': {
+    scope: 'provider' | 'agent' | 'skill' | 'mcp' | 'rule' | 'prompt'
+    action: 'create' | 'update' | 'delete' | 'import'
+    id?: string
+  }
   /** Remote connection config/runtime changed */
   'stream:remote:changed': {
     reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'

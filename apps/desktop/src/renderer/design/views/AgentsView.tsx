@@ -215,6 +215,12 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
   }, [refresh])
 
   useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'agent' || event.scope === 'provider') void refresh()
+    }) ?? (() => {})
+  }, [refresh])
+
+  useEffect(() => {
     registerNavGuard(async () => {
       if (!dirtyRef.current) return true
       return requestConfirm({

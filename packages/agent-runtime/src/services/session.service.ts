@@ -999,6 +999,22 @@ export class SessionService {
         })
       }
       const toolCountEstimate = 12 // built-in coding agent tools (Read, Write, Edit, Bash, Glob, Grep, ...)
+      const runtimeLoadStatus = [
+        makeRuntimeLoadStatus('managed-agent', 'Managed Agent Prompt', managedAgentPrompt),
+        makeRuntimeLoadStatus('team-member', 'Team Member Context', teamMemberContextPrompt),
+        makeRuntimeLoadStatus('team-roster', 'Team Roster', teamRosterPrompt, teamConfig?.memberAgentIds.length),
+        makeRuntimeLoadStatus('team-instructions', 'Team Instructions', teamInstructionsPrompt),
+        makeRuntimeLoadStatus('rules', 'Rules', runtimeRulesPrompt, activeRules.length + managedRules.length),
+        makeRuntimeLoadStatus('memory', 'Memory', memoryBlock),
+        makeRuntimeLoadStatus('system-prompt', 'System Prompt Layer', runtimeContext.promptConfig.system.content),
+        makeRuntimeLoadStatus('agent-prompt', 'Agent Prompt Layer', runtimeContext.promptConfig.agent.content),
+        makeRuntimeLoadStatus('project-prompt', 'Project Prompt Layer', runtimeContext.promptConfig.project.content),
+        makeRuntimeLoadStatus('session-prompt', 'Session Prompt Layer', runtimeContext.promptConfig.session.content),
+        makeRuntimeLoadStatus('project-context', 'Project Context', projectContext.systemPrompt, projectContext.sources.length),
+        makeRuntimeLoadStatus('selected-skill', 'Selected Skill Prompt', explicitSkillPrompt),
+        makeRuntimeLoadStatus('available-skills', 'Available Skills Catalog', runtimeContext.skillSystemPrompt, runtimeContext.skillConfig.effectiveSkillIds.length),
+        makeRuntimeLoadStatus('conversation-history', 'Conversation History', conversationHistoryPrompt),
+      ]
       this.emitAndPersist(
         sessionId,
         turnId,
@@ -1017,6 +1033,7 @@ export class SessionService {
           permissionMode,
           toolCount: toolCountEstimate,
           sdkSessionId,
+          runtimeLoadStatus,
           ...(agentAdapter === 'claude-sdk' || agentAdapter === 'claude'
             ? { sdkPreset: 'claude_code' }
             : {}),
@@ -1440,10 +1457,13 @@ export class SessionService {
         } else if (event.type === 'user_message') {
           outgoing = { ...event, mentionAgentId }
         } else if (
-          event.type === 'tool_call' ||
-          event.type === 'tool_result' ||
-          event.type === 'file_change' ||
-          event.type === 'terminal_output'
+          mentionMemberContext != null &&
+          (
+            event.type === 'tool_call' ||
+            event.type === 'tool_result' ||
+            event.type === 'file_change' ||
+            event.type === 'terminal_output'
+          )
         ) {
           outgoing = { ...event, teamMemberContext: mentionMemberContext }
         }
@@ -1791,6 +1811,7 @@ export class SessionService {
       description: '系统内置编码智能体',
       builtIn: true,
       enabled: true,
+      isDefault: true,
       providerProfileId: null,
       modelId: null,
       agentAdapter: 'claude-sdk',
@@ -3619,6 +3640,28 @@ function joinPromptSections(...sections: Array<string | undefined>): string | un
     .filter((section): section is string => section != null && section.length > 0)
     .join('\n\n')
   return joined.length > 0 ? joined : undefined
+}
+
+function makeRuntimeLoadStatus(
+  key: string,
+  label: string,
+  content: string | undefined,
+  itemCount?: number,
+): {
+  key: string
+  label: string
+  loaded: boolean
+  charCount: number
+  itemCount?: number
+} {
+  const charCount = content?.trim().length ?? 0
+  return {
+    key,
+    label,
+    loaded: charCount > 0 || (itemCount ?? 0) > 0,
+    charCount,
+    ...(itemCount !== undefined ? { itemCount } : {}),
+  }
 }
 
 function formatSelectedSkillPrompt(skillId: string, prompt: string): string {

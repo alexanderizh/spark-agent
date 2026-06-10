@@ -132,6 +132,17 @@ const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 
+type ConfigChangedScope = 'provider' | 'agent' | 'skill' | 'mcp' | 'rule' | 'prompt'
+type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
+
+function pushConfigChanged(scope: ConfigChangedScope, action: ConfigChangedAction, id?: string): void {
+  pushStreamEvent('stream:config:changed', {
+    scope,
+    action,
+    ...(id !== undefined ? { id } : {}),
+  })
+}
+
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
 }
@@ -1082,18 +1093,21 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('provider:create', async (req) => {
     log.info(`provider:create requested, provider=${req.provider}, name=${req.name}`)
     const profile = await getProviderService().createProvider(req)
+    pushConfigChanged('provider', 'create', profile.id)
     return { profile }
   })
 
   typedIpcHandle('provider:update', async (req) => {
     log.info(`provider:update requested, id=${req.id}`)
     const profile = await getProviderService().updateProvider(req)
+    pushConfigChanged('provider', 'update', profile.id)
     return { profile }
   })
 
   typedIpcHandle('provider:delete', async (req) => {
     log.info(`provider:delete requested, id=${req.id}`)
     await getProviderService().deleteProvider(req.id)
+    pushConfigChanged('provider', 'delete', req.id)
     return { deleted: true }
   })
 
@@ -1127,6 +1141,7 @@ export function registerAllIpcHandlers(): void {
     log.info(
       `provider:import done, imported=${result.imported}, skipped=${result.skipped}, errors=${result.errors.length}`,
     )
+    if (result.imported > 0) pushConfigChanged('provider', 'import')
     return result
   })
 
@@ -1857,6 +1872,7 @@ export function registerAllIpcHandlers(): void {
         agent.disabledSkillIds,
       )
     }
+    pushConfigChanged('agent', 'create', agent.id)
     return { agent: toManagedAgent(agent) }
   })
 
@@ -1878,11 +1894,13 @@ export function registerAllIpcHandlers(): void {
         agent.disabledSkillIds,
       )
     }
+    pushConfigChanged('agent', 'update', agent.id)
     return { agent: toManagedAgent(agent) }
   })
 
   typedIpcHandle('agent:delete', async (req) => {
     const deleted = getAgentRepository().delete(req.id)
+    if (deleted) pushConfigChanged('agent', 'delete', req.id)
     return { deleted }
   })
 

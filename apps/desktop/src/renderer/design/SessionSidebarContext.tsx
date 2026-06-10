@@ -302,6 +302,14 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   }, [refreshData])
 
   useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'provider' || event.scope === 'agent') {
+        refreshData().catch(console.error)
+      }
+    }) ?? (() => {})
+  }, [refreshData])
+
+  useEffect(() => {
     if (active) window.localStorage.setItem(LAST_SESSION_KEY, active)
     else window.localStorage.removeItem(LAST_SESSION_KEY)
   }, [active])
