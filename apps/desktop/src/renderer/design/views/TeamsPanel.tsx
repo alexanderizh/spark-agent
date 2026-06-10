@@ -95,7 +95,7 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
     setScreen('detail')
   }
   const openNew = () => {
-    const firstAgentId = enabledAgents[0]?.id ?? 'code-agent'
+    const firstAgentId = enabledAgents[0]?.id ?? 'platform-manager-agent'
     setDraft({ ...EMPTY_DRAFT, hostAgentId: firstAgentId })
     setScreen('detail')
   }

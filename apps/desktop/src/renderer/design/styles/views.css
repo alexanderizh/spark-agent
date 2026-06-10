@@ -1030,6 +1030,7 @@ body.sidebar-resizing {
 .chat-main-active {
   align-items: stretch;
   justify-content: flex-start;
+  padding-bottom: 24px;
 }
 
 .chat-tabbar {
@@ -4071,6 +4072,7 @@ body.sidebar-resizing {
   position: relative;
   scrollbar-gutter: stable;
   padding-top: var(--pad-lg);
+  padding-bottom: var(--pad-lg);
 }
 .inspector-resize-handle {
   position: absolute;
@@ -7986,7 +7988,7 @@ body.inspector-resizing {
 
 .toast-container {
   position: fixed;
-  top: 12px;
+  top: 48px;
   right: 12px;
   z-index: 9999;
   display: flex;
@@ -7995,6 +7997,8 @@ body.inspector-resizing {
   pointer-events: none;
   max-width: 380px;
   min-width: 280px;
+  max-height: calc(100vh - 72px);
+  overflow: hidden;
 }
 
 .toast {
@@ -8008,8 +8012,9 @@ body.inspector-resizing {
   box-shadow: var(--shadow-md, 0 4px 12px rgba(0, 0, 0, 0.12));
   pointer-events: auto;
   min-width: 280px;
+  max-height: min(42vh, 320px);
   position: relative;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .toast.toast-enter {
@@ -8062,10 +8067,14 @@ body.inspector-resizing {
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  padding: 2px;
-  border-radius: var(--r-sm, 4px);
+  width: 28px;
+  height: 28px;
+  margin: -4px -6px 0 0;
+  padding: 0;
+  border-radius: 6px;
   display: flex;
   align-items: center;
+  justify-content: center;
   transition:
     color 0.15s,
     background 0.15s;
@@ -11862,6 +11871,19 @@ body.inspector-resizing {
   border: 1px solid var(--border);
 }
 .provider-card .provider-info .name { font-size: 14px; }
+.provider-card .provider-default-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7a3e00;
+  background: linear-gradient(135deg, #fff4bf, #ffd166);
+  border: 1px solid color-mix(in srgb, #f59e0b 62%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #f59e0b 14%, transparent);
+}
 .provider-card .provider-info .models-row {
   display: flex;
   gap: 5px;
@@ -12423,6 +12445,19 @@ body.inspector-resizing {
   border: 1px solid var(--border);
 }
 .provider-card .provider-info .name { font-size: 14px; }
+.provider-card .provider-default-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7a3e00;
+  background: linear-gradient(135deg, #fff4bf, #ffd166);
+  border: 1px solid color-mix(in srgb, #f59e0b 62%, white);
+  box-shadow: 0 0 0 2px color-mix(in srgb, #f59e0b 14%, transparent);
+}
 .provider-card .provider-info .models-row {
   display: flex;
   gap: 5px;

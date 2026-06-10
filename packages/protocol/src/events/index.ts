@@ -587,6 +587,14 @@ export interface TurnPromptSnapshotEvent extends BaseEvent {
   sdkPreset?: string
   /** 底层 SDK 会话 ID，用于判断是否可以安全 resume */
   sdkSessionId?: string
+  /** Runtime prompt composition audit, used to verify which context layers were loaded. */
+  runtimeLoadStatus?: Array<{
+    key: string
+    label: string
+    loaded: boolean
+    charCount: number
+    itemCount?: number
+  }>
 }
 
 // ─── AgentEvent 联合类型 ──────────────────────────────────────────────────────

@@ -58,7 +58,7 @@ export interface SessionCreateRequest {
   modelId?: string
   /** SDK/runtime adapter used to execute the task */
   agentAdapter?: SessionAgentAdapter
-  /** Managed agent profile; defaults to built-in code-agent. */
+  /** Managed agent profile; defaults to built-in platform-manager-agent. */
   agentId?: string
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
@@ -3613,6 +3613,12 @@ export interface IpcStreamChannelMap {
     profileId: string
     status: 'connected' | 'disconnected' | 'error'
     message?: string
+  }
+  /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
+  'stream:config:changed': {
+    scope: 'provider' | 'agent' | 'skill' | 'mcp' | 'rule' | 'prompt'
+    action: 'create' | 'update' | 'delete' | 'import'
+    id?: string
   }
   /** Remote connection config/runtime changed */
   'stream:remote:changed': {

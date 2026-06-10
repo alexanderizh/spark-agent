@@ -16,6 +16,8 @@
  * configJson. The "reset config" IPC handler delegates here.
  */
 
+import { dirname, join } from 'node:path'
+import { createRequire } from 'node:module'
 import type { SparkDatabase } from '@spark/storage'
 import { McpServerRepository } from '@spark/storage'
 import { MANAGED_MCP_SCOPE, PLAYWRIGHT_MCP_NAME } from '@spark/agent-runtime'
@@ -62,11 +64,8 @@ export function buildPlaywrightConfig(
   mode: PlaywrightMode,
   cdpEndpoint: string | null,
 ): PlaywrightMcpConfig {
-  // `npx -y @playwright/mcp` runs the installed CLI without an interactive prompt.
-  // Without the package specifier here, npx would try to install a package named
-  // after the first flag (e.g. `--browser`) and fail silently — leaving the agent
-  // with zero browser_* tools.
-  const args: string[] = ['-y', '@playwright/mcp']
+  const cliPath = resolvePlaywrightMcpCliPath()
+  const args: string[] = [cliPath]
 
   // Choose browser arg based on what's available.
   //
@@ -90,14 +89,23 @@ export function buildPlaywrightConfig(
   }
   const config: PlaywrightMcpConfig = {
     type: 'stdio',
-    command: 'npx',
+    command: process.execPath,
     args,
+    env: {
+      ELECTRON_RUN_AS_NODE: '1',
+    },
   }
   const env = getPlaywrightEnv()
   if (Object.keys(env).length > 0) {
-    config.env = env
+    config.env = { ...config.env, ...env }
   }
   return config
+}
+
+function resolvePlaywrightMcpCliPath(): string {
+  const require = createRequire(import.meta.url)
+  const packageJsonPath = require.resolve('@playwright/mcp/package.json')
+  return join(dirname(packageJsonPath), 'cli.js')
 }
 
 /**

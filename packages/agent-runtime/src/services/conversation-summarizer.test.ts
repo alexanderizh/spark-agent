@@ -8,6 +8,12 @@ import { describe, it, expect } from 'vitest'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
 import type { AgentEvent } from '@spark/protocol'
 
+function mockRows(events: AgentEvent[], eventType?: string): Array<{ event_json: string; id: string }> {
+  return events
+    .filter((event) => eventType == null || event.type === eventType)
+    .map((event, i) => ({ event_json: JSON.stringify(event), id: `row-${event.type}-${i}` }))
+}
+
 // Helper: create a user_message event
 function userMsg(turnId: string, content: string, seq: number): AgentEvent {
   return {
@@ -68,7 +74,7 @@ describe('ConversationSummarizer', () => {
       ]
 
       const mockEventRepo = {
-        queryBySession: () => ({ events: events.map((e, i) => ({ event_json: JSON.stringify(e), id: `row-${i}` })) }),
+        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
       } as any
       const mockDb = {
         raw: {
@@ -91,7 +97,7 @@ describe('ConversationSummarizer', () => {
       }
 
       const mockEventRepo = {
-        queryBySession: () => ({ events: events.map((e, i) => ({ event_json: JSON.stringify(e), id: `row-${i}` })) }),
+        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
       } as any
       const mockDb = {
         raw: {
@@ -133,7 +139,7 @@ describe('ConversationSummarizer', () => {
       }
 
       const mockEventRepo = {
-        queryBySession: () => ({ events: events.map((e, i) => ({ event_json: JSON.stringify(e), id: `row-${i}` })) }),
+        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
       } as any
       const mockDb = {
         raw: {
@@ -151,6 +157,41 @@ describe('ConversationSummarizer', () => {
       expect(result.prompt).toContain('[Recent Exchanges]')
       // No new summarization when using cache
       expect(result.summarization).toBeUndefined()
+    })
+
+    it('keeps dialogue history even when many tool events are newer', () => {
+      const events: AgentEvent[] = [
+        userMsg('t1', 'Important original requirement: keep audit logs visible.', 1),
+        assistantMsg('t1', 'Confirmed. Updated audit log rendering.', 2),
+      ]
+      for (let i = 0; i < 400; i++) {
+        events.push({
+          type: 'tool_call',
+          id: `tool-${i}`,
+          sessionId: 'test-session',
+          turnId: 'tool-turn',
+          timestamp: new Date().toISOString(),
+          seq: 3 + i,
+          toolCallId: `tc-${i}`,
+          toolName: 'Read',
+          toolInput: { file: `file-${i}.ts` },
+          source: 'builtin',
+        })
+      }
+      events.push(userMsg('t2', 'What was the original requirement?', 500))
+
+      const mockEventRepo = {
+        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
+      } as any
+      const mockDb = {
+        raw: {
+          prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }),
+        },
+      } as any
+
+      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 500)
+      expect(result.prompt).toContain('Important original requirement')
+      expect(result.prompt).toContain('What was the original requirement?')
     })
   })
 })

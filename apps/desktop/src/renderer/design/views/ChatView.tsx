@@ -91,7 +91,7 @@ const SETTINGS_GENERAL_KEY = 'spark-settings-general'
  *   2. 团队 memberAgentIds 中第一个在 agents 列表里的 → 用它
  *   3. agents 列表第一个 → 用它
  *   4. 保留 teamConfig.hostAgentId（即使不在列表，给后端兜底）
- *   5. 最终兜底 'code-agent'
+ *   5. 最终兜底 'platform-manager-agent'
  */
 function resolveTeamHostAgentId(teamConfig: TeamModeConfig, agents: ManagedAgent[]): string {
   const isValid = (id: string | undefined): id is string =>
@@ -102,7 +102,7 @@ function resolveTeamHostAgentId(teamConfig: TeamModeConfig, agents: ManagedAgent
   }
   const firstAgent = agents[0]
   if (firstAgent != null) return firstAgent.id
-  return teamConfig.hostAgentId || 'code-agent'
+  return teamConfig.hostAgentId || 'platform-manager-agent'
 }
 
 type BranchState = { currentBranch: string | null; branches: string[] }
@@ -295,7 +295,7 @@ export function ChatView({
       memberIds.find((id) => agents.some((agent) => agent.id === id)) ??
       agents[0]?.id ??
       prefs.agentId ??
-      'code-agent'
+      'platform-manager-agent'
     return {
       enabled: prefs.teamMode ?? false,
       hostAgentId: candidateHost,
@@ -1067,7 +1067,7 @@ function ChatStream({
   const userAvatarSrc = useUserAvatarSrc()
   const { sessions, agents } = useSessionSidebar()
   const session = sessions.find((item) => item.id === sessionId)
-  const assistantAgentId = teamConfig.enabled ? teamConfig.hostAgentId : (session?.agentId ?? 'code-agent')
+  const assistantAgentId = teamConfig.enabled ? teamConfig.hostAgentId : (session?.agentId ?? 'platform-manager-agent')
   const assistantAgent = agents.find((item) => item.id === assistantAgentId)
   const assistantName = assistantAgent?.name ?? 'Spark Agent'
   const assistantAvatar = getAgentAvatarConfig(assistantAgent?.metadata, assistantAgentId, assistantName)
@@ -5093,7 +5093,7 @@ function ComposerV2({
   const [draftAdapter, setDraftAdapter] = useState<AgentAdapter>(
     initialPrefs.adapter ?? DEFAULT_AGENT_ADAPTER,
   )
-  const [draftAgentId, setDraftAgentId] = useState(initialPrefs.agentId ?? 'code-agent')
+  const [draftAgentId, setDraftAgentId] = useState(initialPrefs.agentId ?? 'platform-manager-agent')
   const [draftModelId, setDraftModelId] = useState(initialPrefs.modelId ?? '')
   const [draftMode] = useState<SessionChatMode>('agent')
   const [draftPermissionMode, setDraftPermissionMode] = useState<PermissionModeChoice>(
@@ -5140,7 +5140,7 @@ function ComposerV2({
   const effectiveAgentId = session?.agentId ?? draftAgentId
   const activeAgent =
     agents.find((agent) => agent.id === effectiveAgentId) ??
-    agents.find((agent) => agent.id === 'code-agent') ??
+    agents.find((agent) => agent.id === 'platform-manager-agent') ??
     null
   const adapter = session?.agentAdapter ?? activeAgent?.agentAdapter ?? draftAdapter
   const compatibleProviders = providers.filter((provider) =>
@@ -7033,7 +7033,7 @@ function AgentPicker({
   const activeId = teamMode ? teamConfig.hostAgentId : selectedAgentId
   const selected =
     agents.find((agent) => agent.id === activeId) ??
-    agents.find((agent) => agent.id === 'code-agent') ??
+    agents.find((agent) => agent.id === 'platform-manager-agent') ??
     agents[0]
   const memberCount = teamConfig.memberAgentIds.length
   const activeTeam =
@@ -7061,13 +7061,13 @@ function AgentPicker({
             ? '会话运行中不可切换'
             : teamMode
               ? activeTeam != null
-                ? `团队：${activeTeam.name}（主持：${selected?.name ?? '编码 Agent'}）`
-                : `团队模式（当前对话：${selected?.name ?? '编码 Agent'}）`
-              : selected?.name ?? '编码 Agent'
+                ? `团队：${activeTeam.name}（主持：${selected?.name ?? '平台管理'}）`
+                : `团队模式（当前对话：${selected?.name ?? '平台管理'}）`
+              : selected?.name ?? '平台管理'
         }
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{activeTeam != null ? activeTeam.name : selected?.name ?? '编码 Agent'}</span>
+        <span>{activeTeam != null ? activeTeam.name : selected?.name ?? '平台管理'}</span>
         <Icons.ChevronDown size={12} />
       </button>
       {teamMode && (

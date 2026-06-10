@@ -1,3 +1,5 @@
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import type {
   ProviderProfile,
   ProviderHealthCheckResponse,
@@ -17,10 +19,14 @@ import * as keystore from '@spark/shared/keystore'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('provider.service')
+const execFileAsync = promisify(execFile)
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
 type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
 const PROVIDER_MODEL_TYPES = new Set<ProviderModelType>(['image', 'text', 'multimodal', 'voice', 'video'])
 const IMAGE_API_TYPES = new Set<ImageGenApiType>(['sync', 'async', 'auto'])
+const LOCAL_CLI_CHECK_TTL_MS = 10_000
+
+let localCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
 
 function rowToProfile(row: {
   id: string
@@ -57,7 +63,29 @@ export class ProviderService {
   constructor(private readonly repo: ProviderProfileRepository) {}
 
   async listProviders(): Promise<ProviderProfile[]> {
-    return this.repo.listAll().map(rowToProfile)
+    const profiles = this.repo.listAll().map(rowToProfile)
+    if (await this.isLocalCliAvailable()) return profiles
+    return profiles.filter((profile) => profile.id !== LOCAL_CLI_PROVIDER_ID)
+  }
+
+  async isLocalCliAvailable(): Promise<boolean> {
+    const now = Date.now()
+    if (
+      localCliAvailabilityCache != null &&
+      now - localCliAvailabilityCache.checkedAt < LOCAL_CLI_CHECK_TTL_MS
+    ) {
+      return localCliAvailabilityCache.available
+    }
+
+    let available = false
+    try {
+      await execFileAsync('claude', ['--version'], { timeout: 3000, windowsHide: true })
+      available = true
+    } catch {
+      available = false
+    }
+    localCliAvailabilityCache = { checkedAt: now, available }
+    return available
   }
 
   /**
@@ -71,6 +99,10 @@ export class ProviderService {
    * - 不强制设为 isDefault，避免覆盖用户已有的默认选择
    */
   async ensureLocalCliProvider(): Promise<ProviderProfile> {
+    if (!(await this.isLocalCliAvailable())) {
+      throw new Error('Local claude CLI not found')
+    }
+
     const existing = this.repo.get(LOCAL_CLI_PROVIDER_ID)
     if (existing != null) return rowToProfile(existing)
 
@@ -289,7 +321,12 @@ export class ProviderService {
 
     // Local CLI provider 走宿主 claude CLI 的本地凭证，没有可检测的 endpoint —
     // 视为始终可用；真正的鉴权失败会在 turn 启动时由 SDK 抛错。
-    if (id === LOCAL_CLI_PROVIDER_ID) return { healthy: true, latencyMs: 0 }
+    if (id === LOCAL_CLI_PROVIDER_ID) {
+      const available = await this.isLocalCliAvailable()
+      return available
+        ? { healthy: true, latencyMs: 0 }
+        : { healthy: false, errorMessage: 'Local claude CLI not found' }
+    }
 
     if (!row.keystore_ref) return { healthy: false, errorMessage: 'No API key configured' }
 

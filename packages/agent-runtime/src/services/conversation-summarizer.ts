@@ -66,16 +66,7 @@ export function buildConversationHistoryWithSummary(
 ): { prompt: string | undefined; summarization?: SummarizationResult['stats'] } {
   const summaryRepo = new SessionSummaryRepository(db)
 
-  // Load historical events
-  const rows = eventRepo.queryBySession({ sessionId, limit: 240 }).events
-  const events: AgentEvent[] = []
-  for (const row of rows) {
-    try {
-      events.push(JSON.parse(row.event_json) as AgentEvent)
-    } catch {
-      // ignore
-    }
-  }
+  const events = loadDialogueEvents(eventRepo, sessionId)
 
   const entries = buildDialogueEntries(events, options?.agentNameById)
   if (entries.length === 0) return { prompt: undefined }
@@ -148,6 +139,28 @@ export function buildConversationHistoryWithSummary(
       summaryTokens,
     },
   }
+}
+
+function loadDialogueEvents(eventRepo: EventRepository, sessionId: string): AgentEvent[] {
+  const eventTypes = [
+    'user_message',
+    'assistant_message',
+    'team_member_message',
+    'turn_prompt_snapshot',
+  ]
+  const byId = new Map<string, AgentEvent>()
+  for (const eventType of eventTypes) {
+    const rows = eventRepo.queryBySession({ sessionId, eventType, limit: 220 }).events
+    for (const row of rows) {
+      try {
+        const event = JSON.parse(row.event_json) as AgentEvent
+        byId.set(event.id, event)
+      } catch {
+        // ignore malformed historical rows
+      }
+    }
+  }
+  return Array.from(byId.values()).sort((a, b) => a.seq - b.seq)
 }
 
 /**

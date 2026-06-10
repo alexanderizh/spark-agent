@@ -302,6 +302,14 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   }, [refreshData])
 
   useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'provider' || event.scope === 'agent') {
+        refreshData().catch(console.error)
+      }
+    }) ?? (() => {})
+  }, [refreshData])
+
+  useEffect(() => {
     if (active) window.localStorage.setItem(LAST_SESSION_KEY, active)
     else window.localStorage.removeItem(LAST_SESSION_KEY)
   }, [active])
@@ -390,7 +398,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       const res = await createSession({
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
-        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'code-agent',
+        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'platform-manager-agent',
         agentAdapter,
         permissionMode,
         ...(options.chatMode !== undefined ? { chatMode: options.chatMode as SessionChatMode } : {}),
@@ -404,7 +412,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       if (options.skipRefresh !== true) await refreshData()
       writeComposerPrefs({
         adapter: agentAdapter,
-        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'code-agent',
+        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'platform-manager-agent',
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
         permissionMode,

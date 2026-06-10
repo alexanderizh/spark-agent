@@ -157,6 +157,12 @@ function ProvidersView() {
     refresh()
   }, [refresh])
 
+  useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'provider') refresh()
+    }) ?? (() => {})
+  }, [refresh])
+
   const handleDelete = async (id: string) => {
     const confirmed = await requestConfirm({
       title: '删除 Provider？',
@@ -538,6 +544,7 @@ function ProvidersView() {
                 modelIds={builtin ? [] : p.modelIds}
                 defaultModel={p.defaultModel}
                 isBuiltin={builtin}
+                isDefault={p.isDefault}
                 multiSelect={multiSelect && !builtin}
                 selected={selectedIds.has(p.id)}
                 onToggleSelect={() => toggleSelected(p.id)}
@@ -641,6 +648,7 @@ function ProviderCardX({
   modelIds,
   defaultModel,
   isBuiltin = false,
+  isDefault = false,
   multiSelect = false,
   selected = false,
   onToggleSelect,
@@ -657,6 +665,8 @@ function ProviderCardX({
   defaultModel: string
   /** 内置 provider：隐藏编辑/删除按钮，多选时不可勾选 */
   isBuiltin?: boolean
+  /** 默认 Provider：用更明显的标签提示 */
+  isDefault?: boolean
   /** 多选模式：true 时显示复选框 + 点击行切换选择 */
   multiSelect?: boolean
   /** 是否被选中（仅 multiSelect=true 时生效）*/
@@ -721,6 +731,7 @@ function ProviderCardX({
         <div className="row row-gap-sm">
           <span className="name">{name}</span>
           {isBuiltin && <span className="badge dot">内置</span>}
+          {isDefault && <span className="provider-default-badge"><Icons.Star size={10} /> 默认 Provider</span>}
           {status === 'ok' && <span className="badge success dot">在线</span>}
           {status === 'warning' && <span className="badge warning dot">需注意</span>}
           {status === 'error' && <span className="badge danger dot">错误</span>}

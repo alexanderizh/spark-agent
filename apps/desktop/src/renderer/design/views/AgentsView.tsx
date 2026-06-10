@@ -215,6 +215,12 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
   }, [refresh])
 
   useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'agent' || event.scope === 'provider') void refresh()
+    }) ?? (() => {})
+  }, [refresh])
+
+  useEffect(() => {
     registerNavGuard(async () => {
       if (!dirtyRef.current) return true
       return requestConfirm({
@@ -949,7 +955,7 @@ function draftToPayload(draft: AgentDraft) {
 
 function normalizeDraftAvatar(draft: AgentDraft): SparkAvatarConfig {
   const config = draft.avatar
-  if (config.kind === 'url' || config.kind === 'upload') return config
+  if (config.kind === 'url' || config.kind === 'upload' || config.kind === 'builtin') return config
   return { kind: 'url', url: generateDefaultAvatarUrl(config.seed || draft.name, config.style) }
 }
 

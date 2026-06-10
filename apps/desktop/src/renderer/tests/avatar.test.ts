@@ -17,33 +17,34 @@ describe('avatar config', () => {
     expect(resolveAvatarSrc(avatar!)).toBe('data:image/png;base64,abc')
   })
 
-  it('falls back to Dicebear for agents and users', () => {
+  it('falls back to local generated avatars for agents and users', () => {
     const agent = getAgentAvatarConfig({}, 'reviewer', 'Reviewer')
     const user = getUserAvatarConfig(null)
 
-    expect(resolveAvatarSrc(agent)).toContain('api.dicebear.com/9.x/')
-    expect(resolveAvatarSrc(agent)).toContain('seed=Reviewer')
-    expect(resolveAvatarSrc(user)).toContain('api.dicebear.com/9.x/')
-    expect(resolveAvatarSrc(user)).toContain('seed=User')
+    expect(resolveAvatarSrc(agent)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    expect(decodeURIComponent(resolveAvatarSrc(agent))).toContain('RE')
+    expect(resolveAvatarSrc(user)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    expect(decodeURIComponent(resolveAvatarSrc(user))).toContain('US')
   })
 
-  it('keeps custom Dicebear seeds URL encoded', () => {
+  it('keeps custom default avatars offline', () => {
     const avatar = createDefaultAvatar('Agent One')
 
-    expect(resolveAvatarSrc(avatar)).toContain('seed=Agent%20One')
+    expect(resolveAvatarSrc(avatar)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    expect(decodeURIComponent(resolveAvatarSrc(avatar))).toContain('AO')
   })
 
-  it('generates a fully composed DiceBear URL from the agent name', () => {
+  it('generates a fully composed local SVG data URL from the agent name', () => {
     const url = generateDefaultAvatarUrl('编码 Agent')
 
-    expect(url).toMatch(/^https:\/\/api\.dicebear\.com\/9\.x\/[^/]+\/svg\?seed=/)
-    expect(url).toContain('seed=%E7%BC%96%E7%A0%81%20Agent')
+    expect(url).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
+    expect(decodeURIComponent(url)).toContain('编A')
   })
 
-  it('allows DiceBear default avatars through the renderer CSP', () => {
+  it('allows local data avatars through the renderer CSP', () => {
     const html = readFileSync(new URL('../index.html', import.meta.url), 'utf-8')
 
     expect(html).toContain('img-src')
-    expect(html).toContain('https://api.dicebear.com')
+    expect(html).toContain('data:')
   })
 })

@@ -299,17 +299,17 @@ async function executeTaskViaSession(
     // Resolve agent
     const agentRes = await window.spark.invoke('agent:list', { includeDisabled: false })
     const allAgents = (agentRes?.agents ?? []) as Array<{ id: string; name: string; isDefault: boolean; enabled: boolean }>
-    let resolvedAgentId = 'code-agent'
+    let resolvedAgentId = 'platform-manager-agent'
     if (task.processingAgent) {
       const matched = allAgents.find((a) => a.name === task.processingAgent && a.enabled)
       if (matched) resolvedAgentId = matched.id
       else {
         const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
-        resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'code-agent'
+        resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'platform-manager-agent'
       }
     } else {
       const defaultAgent = allAgents.find((a) => a.isDefault && a.enabled)
-      resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'code-agent'
+      resolvedAgentId = defaultAgent?.id ?? allAgents[0]?.id ?? 'platform-manager-agent'
     }
 
     // Resolve workspace

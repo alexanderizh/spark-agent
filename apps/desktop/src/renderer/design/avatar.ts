@@ -1,7 +1,9 @@
 import { hashAgentId } from '@spark/shared'
+import platformManagerAvatarUrl from '../assets/platform-manager-avatar.png'
 
 export type SparkAvatarConfig =
   | { kind: 'url'; url: string }
+  | { kind: 'builtin'; id: 'platform-manager' }
   | { kind: 'dicebear'; seed: string; style?: string }
   | { kind: 'upload'; dataUrl: string }
 
@@ -18,6 +20,9 @@ export function normalizeAvatarConfig(value: unknown): SparkAvatarConfig | null 
   if (record.kind === 'url' && typeof record.url === 'string' && record.url.trim().length > 0) {
     return { kind: 'url', url: record.url.trim() }
   }
+  if (record.kind === 'builtin' && record.id === 'platform-manager') {
+    return { kind: 'builtin', id: 'platform-manager' }
+  }
   if (record.kind === 'dicebear' && typeof record.seed === 'string' && record.seed.trim().length > 0) {
     return {
       kind: 'dicebear',
@@ -33,8 +38,7 @@ export function createDicebearAvatar(seed: string, style = DEFAULT_DICEBEAR_STYL
 }
 
 export function generateDefaultAvatarUrl(seed: string, style?: string): string {
-  const selectedStyle = style ?? pickDicebearStyle(seed)
-  return `${DICEBEAR_BASE}/${encodeURIComponent(selectedStyle)}/svg?seed=${encodeURIComponent(seed.trim() || 'spark-agent')}`
+  return generateLocalAvatarDataUrl(seed, style)
 }
 
 export function createDefaultAvatar(seed: string): SparkAvatarConfig {
@@ -52,15 +56,15 @@ export function getUserAvatarConfig(value: unknown): SparkAvatarConfig {
 export function resolveAvatarSrc(config: SparkAvatarConfig): string {
   if (config.kind === 'upload') return config.dataUrl
   if (config.kind === 'url') return config.url
-  const style = encodeURIComponent(config.style || DEFAULT_DICEBEAR_STYLE)
-  const seed = encodeURIComponent(config.seed || 'spark-agent')
-  return `${DICEBEAR_BASE}/${style}/svg?seed=${seed}&radius=18&backgroundType=gradientLinear`
+  if (config.kind === 'builtin') return platformManagerAvatarUrl
+  return generateLocalAvatarDataUrl(config.seed || 'spark-agent', config.style)
 }
 
 export function avatarConfigEquals(a: SparkAvatarConfig, b: SparkAvatarConfig): boolean {
   if (a.kind !== b.kind) return false
   if (a.kind === 'upload' && b.kind === 'upload') return a.dataUrl === b.dataUrl
   if (a.kind === 'url' && b.kind === 'url') return a.url === b.url
+  if (a.kind === 'builtin' && b.kind === 'builtin') return a.id === b.id
   if (a.kind === 'dicebear' && b.kind === 'dicebear') {
     return a.seed === b.seed && (a.style ?? DEFAULT_DICEBEAR_STYLE) === (b.style ?? DEFAULT_DICEBEAR_STYLE)
   }
@@ -74,6 +78,41 @@ function pickDicebearStyle(seed: string): string {
     hash = (hash * 33) ^ input.charCodeAt(i)
   }
   return DICEBEAR_STYLES[(hash >>> 0) % DICEBEAR_STYLES.length]!
+}
+
+function generateLocalAvatarDataUrl(seed: string, style?: string): string {
+  const input = seed.trim() || 'Spark'
+  const selectedStyle = style ?? pickDicebearStyle(input)
+  const hue = hashAgentId(`${selectedStyle}:${input}`) % 360
+  const initials = getInitials(input)
+  const svg = [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 96 96">',
+    '<defs>',
+    `<linearGradient id="g" x1="16" y1="8" x2="82" y2="88"><stop stop-color="hsl(${hue},76%,60%)"/><stop offset="1" stop-color="hsl(${(hue + 48) % 360},72%,46%)"/></linearGradient>`,
+    '</defs>',
+    '<rect width="96" height="96" rx="28" fill="url(#g)"/>',
+    `<circle cx="72" cy="24" r="14" fill="hsla(${(hue + 120) % 360},80%,92%,0.28)"/>`,
+    `<circle cx="24" cy="72" r="18" fill="hsla(${(hue + 220) % 360},80%,92%,0.2)"/>`,
+    `<text x="48" y="56" text-anchor="middle" font-family="Inter, Arial, sans-serif" font-size="${initials.length > 1 ? 28 : 34}" font-weight="700" fill="white">${escapeSvgText(initials)}</text>`,
+    '</svg>',
+  ].join('')
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
+}
+
+function getInitials(value: string): string {
+  const trimmed = value.trim()
+  if (!trimmed) return 'S'
+  const parts = trimmed.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0]![0] ?? ''}${parts[1]![0] ?? ''}`.toUpperCase()
+  return [...trimmed].slice(0, 2).join('').toUpperCase()
+}
+
+function escapeSvgText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
 }
 
 export function getAvatarFallback(seed: string, name: string): { background: string } {

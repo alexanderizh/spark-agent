@@ -132,6 +132,17 @@ const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 
+type ConfigChangedScope = 'provider' | 'agent' | 'skill' | 'mcp' | 'rule' | 'prompt'
+type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
+
+function pushConfigChanged(scope: ConfigChangedScope, action: ConfigChangedAction, id?: string): void {
+  pushStreamEvent('stream:config:changed', {
+    scope,
+    action,
+    ...(id !== undefined ? { id } : {}),
+  })
+}
+
 function getProviderService(): ProviderService {
   return new ProviderService(new ProviderProfileRepository(getDatabase()))
 }
@@ -681,7 +692,7 @@ async function triggerHook(
 function readAgentHookConfig(sessionId: string): HookConfigInternal {
   const session = new SessionRepository(getDatabase()).get(sessionId)
   if (session == null) return { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false }
-  const agent = getAgentRepository().get(session.agent_id ?? 'code-agent')
+  const agent = getAgentRepository().get(session.agent_id ?? 'platform-manager-agent')
   if (agent == null) return { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false }
   return parseHookConfig(agent.hookConfig, { ...DEFAULT_HOOK_CONFIG_INTERNAL, enabled: false })
 }
@@ -958,11 +969,14 @@ export function registerAllIpcHandlers(): void {
     log.warn(`Failed to start remote runtime: ${String(err)}`)
   })
 
-  // 启动时幂等保证内置 "本地 CLI" provider 存在 —— 用户无需任何配置即可立即用宿主
-  // 机的 Claude Code OAuth/环境变量开聊。失败仅记日志，不阻塞后续注册。
-  void getProviderService()
-    .ensureLocalCliProvider()
-    .catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
+  // 启动时仅在宿主机存在 claude CLI 时补种内置 "本地 CLI" provider。
+  // 失败仅记日志，不阻塞后续注册。
+  void (async () => {
+    const svc = getProviderService()
+    if (await svc.isLocalCliAvailable()) {
+      await svc.ensureLocalCliProvider()
+    }
+  })().catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
 
   // ─── Session Handlers ──────────────────────────────────────────────────
 
@@ -1074,7 +1088,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('provider:list', async (_req) => {
     const svc = getProviderService()
-    await svc.ensureLocalCliProvider()
+    if (await svc.isLocalCliAvailable()) {
+      await svc.ensureLocalCliProvider()
+    }
     const profiles = await svc.listProviders()
     return { profiles }
   })
@@ -1082,18 +1098,21 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('provider:create', async (req) => {
     log.info(`provider:create requested, provider=${req.provider}, name=${req.name}`)
     const profile = await getProviderService().createProvider(req)
+    pushConfigChanged('provider', 'create', profile.id)
     return { profile }
   })
 
   typedIpcHandle('provider:update', async (req) => {
     log.info(`provider:update requested, id=${req.id}`)
     const profile = await getProviderService().updateProvider(req)
+    pushConfigChanged('provider', 'update', profile.id)
     return { profile }
   })
 
   typedIpcHandle('provider:delete', async (req) => {
     log.info(`provider:delete requested, id=${req.id}`)
     await getProviderService().deleteProvider(req.id)
+    pushConfigChanged('provider', 'delete', req.id)
     return { deleted: true }
   })
 
@@ -1127,6 +1146,7 @@ export function registerAllIpcHandlers(): void {
     log.info(
       `provider:import done, imported=${result.imported}, skipped=${result.skipped}, errors=${result.errors.length}`,
     )
+    if (result.imported > 0) pushConfigChanged('provider', 'import')
     return result
   })
 
@@ -1857,6 +1877,7 @@ export function registerAllIpcHandlers(): void {
         agent.disabledSkillIds,
       )
     }
+    pushConfigChanged('agent', 'create', agent.id)
     return { agent: toManagedAgent(agent) }
   })
 
@@ -1878,11 +1899,13 @@ export function registerAllIpcHandlers(): void {
         agent.disabledSkillIds,
       )
     }
+    pushConfigChanged('agent', 'update', agent.id)
     return { agent: toManagedAgent(agent) }
   })
 
   typedIpcHandle('agent:delete', async (req) => {
     const deleted = getAgentRepository().delete(req.id)
+    if (deleted) pushConfigChanged('agent', 'delete', req.id)
     return { deleted }
   })
 
@@ -2012,7 +2035,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('team:list-members', async (req) => {
     const metadata = new SessionRepository(getDatabase()).getMetadata(req.sessionId)
     const team = (metadata.team ?? null) as Partial<TeamModeConfig> | null
-    const hostAgentId = team?.hostAgentId ?? 'code-agent'
+    const hostAgentId = team?.hostAgentId ?? 'platform-manager-agent'
     const memberIds = new Set(team?.memberAgentIds ?? [])
     const agents = getAgentRepository().list({}).map(toManagedAgent)
     const toCard = (a: ManagedAgent): TeamMemberCard => ({

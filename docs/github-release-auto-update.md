@@ -16,6 +16,7 @@ Spark Agent 桌面端现在使用 `electron-builder + electron-updater + GitHub 
 - 发布源配置在 [apps/desktop/electron-builder.yml](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/electron-builder.yml)
 - 自动发布 workflow 在 [publish-desktop-release.yml](/Users/zhangyang/spark_ai_project/Spark-Agent/.github/workflows/publish-desktop-release.yml)
 - 应用内更新服务在 [UpdateService.ts](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/src/main/services/UpdateService.ts)
+- Playwright 相关 JS 包不再走整包 `asarUnpack`，避免 pnpm 硬链接目录在 `electron-builder` 打包阶段触发重复 link 的 `EEXIST`
 
 ## 使用要求
 
