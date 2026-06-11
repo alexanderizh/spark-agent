@@ -146,3 +146,9 @@
     transform: translateY(-3px);
   }
 }
+
+/* hero 模式下：把 ChatStream 整个从视觉上移除（但不影响 React mount / event 订阅） */
+.chat-main-empty .chat-stream,
+.chat-main-empty .chat-stream-viewport {
+  display: none !important;
+}
