@@ -57,9 +57,7 @@ import { SettingsRepository } from '@spark/storage'
 const log = createLogger('main')
 let tray: Tray | null = null
 let isQuitting = false
-let availablePromptVersion: string | null = null
 let downloadedPromptVersion: string | null = null
-let pendingAvailablePromptTimer: ReturnType<typeof setTimeout> | null = null
 
 // ─── Custom protocol registration ───────────────────────────────────────────
 // `safe-file://` 让渲染进程能读取 userData 下的本地图片（生成的图、附件等），
@@ -135,34 +133,6 @@ function showUpdateNotification(title: string, body: string): void {
     showMainWindow()
   })
   notification.show()
-}
-
-async function promptForAvailableUpdate(info: UpdateInfo): Promise<void> {
-  if (!shouldNotifyNewVersion()) return
-  if (availablePromptVersion === info.version) return
-  availablePromptVersion = info.version
-
-  const mainWindow = BrowserWindow.getAllWindows()[0] ?? null
-  if (mainWindow == null || mainWindow.isDestroyed()) {
-    showUpdateNotification(
-      '发现新版本',
-      `Spark Agent v${info.version} 可用，请打开应用下载更新包`,
-    )
-    return
-  }
-
-  const result = await dialog.showMessageBox(mainWindow, {
-    type: 'info',
-    title: '发现新版本',
-    message: `发现 Spark Agent v${info.version}`,
-    detail: '是否现在开始下载更新安装包？',
-    buttons: ['立即下载', '稍后'],
-    defaultId: 0,
-    cancelId: 1,
-  })
-  if (result.response === 0) {
-    void getUpdateService().downloadUpdate()
-  }
 }
 
 async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean): Promise<void> {
@@ -443,27 +413,8 @@ async function initializeApp(): Promise<void> {
     preferences: readPersistedUpdateSettings(),
     lastCheckedAt: readPersistedLastCheckedAt(),
     onLastCheckedChange: persistLastCheckedAt,
-    onUpdateAvailable: (info) => {
-      if (pendingAvailablePromptTimer != null) {
-        clearTimeout(pendingAvailablePromptTimer)
-      }
-      pendingAvailablePromptTimer = setTimeout(() => {
-        pendingAvailablePromptTimer = null
-        void promptForAvailableUpdate(info)
-      }, 900)
-    },
     onUpdateDownloaded: (info, preferences) => {
-      if (pendingAvailablePromptTimer != null) {
-        clearTimeout(pendingAvailablePromptTimer)
-        pendingAvailablePromptTimer = null
-      }
       void promptForDownloadedUpdate(info, preferences.autoInstall)
-    },
-    onUpdateError: () => {
-      if (pendingAvailablePromptTimer != null) {
-        clearTimeout(pendingAvailablePromptTimer)
-        pendingAvailablePromptTimer = null
-      }
     },
     handler: (status: UpdateStatus) => {
       // 推送状态变化到渲染进程

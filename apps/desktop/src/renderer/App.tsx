@@ -73,10 +73,8 @@ function SparkLogoMark() {
 
 function CircularProgressGlyph({
   progress,
-  children,
 }: {
   progress: number
-  children: React.ReactNode
 }) {
   const clamped = Math.max(0, Math.min(100, progress))
   const radius = 9
@@ -96,7 +94,6 @@ function CircularProgressGlyph({
           strokeDashoffset={dashOffset}
         />
       </svg>
-      <span className="sidebar-update-progress-icon">{children}</span>
     </span>
   )
 }
@@ -383,11 +380,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     if (updateState === 'checking') return <Icons.Refresh size={15} className="spin" />
     if (updateState === 'available') return <Icons.Download size={15} />
     if (updateState === 'downloading') {
-      return (
-        <CircularProgressGlyph progress={updateProgressPercent}>
-          <Icons.Download size={11} />
-        </CircularProgressGlyph>
-      )
+      return <CircularProgressGlyph progress={updateProgressPercent} />
     }
     if (updateState === 'downloaded') return <Icons.CheckCircle size={15} />
     if (updateState === 'error') return <Icons.AlertTriangle size={15} />
