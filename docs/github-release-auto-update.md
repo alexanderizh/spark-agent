@@ -8,7 +8,7 @@ Spark Agent 桌面端现在使用 `electron-builder + electron-updater + GitHub 
 2. 只有 [apps/desktop/package.json](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/package.json) 被改动时，workflow 才会触发
 3. Workflow 会对比本次 push 前后的 `version`，只有版本号真的变化才继续发布
 4. Workflow 自动创建 `v<version>` tag（如果还不存在）
-5. `electron-builder` 为 macOS、Windows、Linux 打包并上传到对应 GitHub Release
+5. `electron-builder` 为 macOS、Windows 打包并上传到对应 GitHub Release
 6. Release 中的更新元数据由 `electron-builder` 自动生成，应用内通过 `electron-updater` 检查、下载并安装
 
 ## 当前仓库配置
@@ -17,6 +17,7 @@ Spark Agent 桌面端现在使用 `electron-builder + electron-updater + GitHub 
 - 自动发布 workflow 在 [publish-desktop-release.yml](/Users/zhangyang/spark_ai_project/Spark-Agent/.github/workflows/publish-desktop-release.yml)
 - 应用内更新服务在 [UpdateService.ts](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/src/main/services/UpdateService.ts)
 - Playwright 相关 JS 包不再走整包 `asarUnpack`，避免 pnpm 硬链接目录在 `electron-builder` 打包阶段触发重复 link 的 `EEXIST`
+- 发布 workflow 会在调用 `electron-builder` 前清理空的签名 secret，避免空 `CSC_LINK` / `WIN_CSC_LINK` 被解析成工作目录路径导致构建失败
 
 ## 使用要求
 
