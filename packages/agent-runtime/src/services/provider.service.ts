@@ -20,13 +20,72 @@ import { createLogger } from '@spark/shared'
 
 const log = createLogger('provider.service')
 const execFileAsync = promisify(execFile)
+const isWin = process.platform === 'win32'
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
 type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
 const PROVIDER_MODEL_TYPES = new Set<ProviderModelType>(['image', 'text', 'multimodal', 'voice', 'video'])
 const IMAGE_API_TYPES = new Set<ImageGenApiType>(['sync', 'async', 'auto'])
 const LOCAL_CLI_CHECK_TTL_MS = 10_000
 
+/**
+ * Windows 下 npm 全局包生成的可执行 shim 实际是 `claude.cmd` / `claude.ps1`，
+ * 而 Node 的 execFile 走 CreateProcess，不会按 PATHEXT 自动尝试这些扩展名，
+ * 直接传 `claude` 会 ENOENT。这里列出所有候选名 + 兜底用 `where`/`which` 解析。
+ */
+const CLAUDE_CLI_CANDIDATES = isWin
+  ? ['claude.cmd', 'claude.exe', 'claude.bat', 'claude.ps1', 'claude']
+  : ['claude']
+
 let localCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
+
+/**
+ * 解析 `claude` CLI 的实际可执行路径（用于校验存在性，不执行它）。
+ *
+ * - Unix: `which claude`
+ * - Windows: `where claude` （where 会按 PATHEXT 找到 claude.cmd 等）
+ *
+ * 返回首个解析到的路径；找不到返回 null。
+ */
+async function resolveClaudeCliPath(): Promise<string | null> {
+  const finder = isWin ? 'where' : 'which'
+  try {
+    const { stdout } = await execFileAsync(finder, ['claude'], {
+      timeout: 3000,
+      windowsHide: true,
+    })
+    const first = stdout.split(/[\r\n]+/).find((line) => line.trim().length > 0)
+    return first ? first.trim() : null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 对单个候选命令尝试 `--version`；成功即返回 true。
+ * Windows 上若直接 execFile 失败，再走一次 `where` 解析完整路径调用。
+ */
+async function tryClaudeVersion(command: string): Promise<boolean> {
+  try {
+    await execFileAsync(command, ['--version'], {
+      timeout: 3000,
+      windowsHide: true,
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function checkClaudeCliAvailable(): Promise<boolean> {
+  for (const candidate of CLAUDE_CLI_CANDIDATES) {
+    if (await tryClaudeVersion(candidate)) return true
+  }
+  // 兜底：候选名都没命中，再用 where/which 解析一次，避免 PATH 已修但 shim
+  // 名字不规范（例如只装在某个非默认目录）的情况。
+  const resolved = await resolveClaudeCliPath()
+  if (resolved != null && await tryClaudeVersion(resolved)) return true
+  return false
+}
 
 function rowToProfile(row: {
   id: string
@@ -80,14 +139,14 @@ export class ProviderService {
       return localCliAvailabilityCache.available
     }
 
-    let available = false
-    try {
-      await execFileAsync('claude', ['--version'], { timeout: 3000, windowsHide: true })
-      available = true
-    } catch {
-      available = false
-    }
+    const available = await checkClaudeCliAvailable()
     localCliAvailabilityCache = { checkedAt: now, available }
+    if (!available) {
+      log.warn(
+        `Local claude CLI not found. Tried candidates [${CLAUDE_CLI_CANDIDATES.join(', ')}]` +
+        ` and ${isWin ? 'where' : 'which'} resolution.`,
+      )
+    }
     return available
   }
 

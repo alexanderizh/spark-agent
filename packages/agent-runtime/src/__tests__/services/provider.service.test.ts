@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { LOCAL_CLI_DEFAULT_MODEL, LOCAL_CLI_PROVIDER_ID, LOCAL_CLI_PROVIDER_NAME } from '@spark/protocol'
 import { ProviderService } from '../../services/provider.service.js'
 
@@ -13,7 +13,7 @@ vi.mock('@spark/shared/keystore', () => ({
 
 // Mock logger
 vi.mock('@spark/shared', () => ({
-  createLogger: () => ({ info: vi.fn(), error: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 
 import * as keystore from '@spark/shared/keystore'
@@ -483,5 +483,76 @@ describe('ProviderService', () => {
         }),
       }),
     )
+  })
+
+  describe('isLocalCliAvailable platform behavior', () => {
+    const realPlatform = process.platform
+
+    function setPlatform(platform: string): void {
+      Object.defineProperty(process, 'platform', { value: platform, configurable: true })
+    }
+
+    function mockExecFile(map: (cmd: string) => boolean): void {
+      const calls: Array<{ cmd: string }> = []
+      vi.resetModules()
+      vi.doMock('node:util', async () => {
+        const actual = await vi.importActual<typeof import('node:util')>('node:util')
+        return {
+          ...actual,
+          promisify: () => async (cmd: string, args: string[] = []) => {
+            calls.push({ cmd })
+            if (map(cmd)) return { stdout: 'claude x.y.z\n', stderr: '' }
+            const err = new Error(`ENOENT: ${cmd}`) as NodeJS.ErrnoException
+            err.code = 'ENOENT'
+            throw err
+          },
+        }
+      })
+    }
+
+    afterEach(() => {
+      setPlatform(realPlatform)
+      vi.doUnmock('node:util')
+      vi.resetModules()
+    })
+
+    it('windows: tries claude.cmd shim when bare claude is not in PATH', async () => {
+      setPlatform('win32')
+      mockExecFile((cmd) => cmd === 'claude.cmd')
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      const available = await fresh.isLocalCliAvailable()
+
+      expect(available).toBe(true)
+    })
+
+    it('windows: returns false when no claude shim variant is resolvable', async () => {
+      setPlatform('win32')
+      mockExecFile(() => false)
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      const available = await fresh.isLocalCliAvailable()
+
+      expect(available).toBe(false)
+    })
+
+    it('unix: tries bare claude only', async () => {
+      setPlatform('darwin')
+      const seen: string[] = []
+      mockExecFile((cmd) => {
+        seen.push(cmd)
+        return cmd === 'claude'
+      })
+      const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
+      const fresh = new FreshProviderService(repo as never)
+
+      const available = await fresh.isLocalCliAvailable()
+
+      expect(available).toBe(true)
+      expect(seen).toContain('claude')
+      expect(seen).not.toContain('claude.cmd')
+    })
   })
 })
