@@ -4474,19 +4474,38 @@ function PlanApprovalModal({
     const planText = draft
     setBusy(true)
     try {
-      await window.spark.invoke('session:update', {
-        sessionId,
-        permissionMode: 'claude-auto-edits',
-      })
       const message = `批准上述计划。请按如下计划继续执行：\n\n${planText}`
-      await window.spark.invoke('session:send-turn', { sessionId, message })
-      toast.success('计划已批准，已切换为 auto-edits 模式继续执行')
+      // 直接在 send-turn 中传递 permissionMode，避免先调用 session:update 导致的时序问题：
+      // 1. session:update 清空 pendingPlanApprovals 后，plan turn 的 finally 可能还没执行完
+      // 2. 此时 activeLoops 可能还存在，导致 send-turn 的消息被入队而不是立即执行
+      // 3. interruptActive: true 会中断当前 loop（如果有）并立即启动新 turn
+      await window.spark.invoke('session:send-turn', {
+        sessionId,
+        message,
+        permissionMode: 'claude-auto',
+        interruptActive: true,
+      })
+      toast.success('计划已批准，已切换为 auto 模式继续执行')
       onClose()
     } catch (err) {
       toast.error(`批准失败：${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setBusy(false)
     }
+  }
+
+  // 拒绝/取消：清理 pendingPlanApprovals 闸门，让用户可以在 composer 继续补充对话。
+  // session:cancel 会清理 pendingPlanApprovals 和 activeLoops，让后端状态恢复正常。
+  // 用户可以继续输入新消息，可能会再次触发 plan 模式生成新计划。
+  const reject = async () => {
+    if (busy) return
+    try {
+      // 清理后端状态：删除 pendingPlanApprovals，让队列可以继续推进
+      await window.spark.invoke('session:cancel', { sessionId })
+    } catch {
+      /* 非关键路径，忽略 */
+    }
+    onClose()
   }
 
   return (
