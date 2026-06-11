@@ -78,19 +78,42 @@ export function buildConversationHistoryWithSummary(
   const recentEntries = entries.slice(-Math.min(entries.length, 30))
   const oldEntries = entries.slice(0, entries.length - recentEntries.length)
 
-  // If we have a cached summary covering the old entries, use it
+  // If we have a cached summary covering the old entries, use it — but the cache
+  // only covers the FIRST `summarized_entry_count` entries. As the conversation
+  // grows, entries between the cache boundary and the recent window would form a
+  // "hole" (neither summarized nor kept verbatim). We close that hole by either:
+  //   (a) injecting the uncovered middle entries verbatim (small drift), or
+  //   (b) regenerating the summary over all old entries (large drift).
   if (cachedSummary != null && oldEntries.length > 0) {
-    const recentText = formatEntriesWithinBudget(recentEntries, RECENT_ENTRIES_MAX_CHARS)
-    const combined = [
-      '[Spark Session History — Earlier Summary]',
-      `The following is a condensed summary of ${cachedSummary.summarized_entry_count} earlier exchanges:`,
-      cachedSummary.summary_text,
-      '',
-      '[Recent Exchanges]',
-      'The following are the most recent exchanges verbatim:',
-      recentText,
-    ].join('\n\n')
-    return { prompt: combined }
+    const coveredCount = Math.min(cachedSummary.summarized_entry_count, oldEntries.length)
+    const uncoveredOld = oldEntries.slice(coveredCount)
+    if (uncoveredOld.length < SUMMARIZATION_ENTRY_THRESHOLD) {
+      const recentText = formatEntriesWithinBudget(recentEntries, RECENT_ENTRIES_MAX_CHARS)
+      const midText =
+        uncoveredOld.length > 0
+          ? formatEntriesWithinBudget(uncoveredOld, RECENT_ENTRIES_MAX_CHARS)
+          : ''
+      const combined = [
+        '[Spark Session History — Earlier Summary]',
+        `The following is a condensed summary of ${cachedSummary.summarized_entry_count} earlier exchanges:`,
+        cachedSummary.summary_text,
+        ...(midText.length > 0
+          ? [
+              '',
+              '[Additional Earlier Exchanges]',
+              'Exchanges after the summary but before the recent window:',
+              midText,
+            ]
+          : []),
+        '',
+        '[Recent Exchanges]',
+        'The following are the most recent exchanges verbatim:',
+        recentText,
+      ].join('\n\n')
+      return { prompt: combined }
+    }
+    // Large drift: fall through to regenerate a fresh summary covering all old
+    // entries (and refresh the cache so the next turn starts from a tight base).
   }
 
   // If old entries are below threshold, just use the regular approach (no summarization)
@@ -142,22 +165,16 @@ export function buildConversationHistoryWithSummary(
 }
 
 function loadDialogueEvents(eventRepo: EventRepository, sessionId: string): AgentEvent[] {
-  const eventTypes = [
-    'user_message',
-    'assistant_message',
-    'team_member_message',
-    'turn_prompt_snapshot',
-  ]
+  // SQL 层已排除 delta 行（见 EventRepository.queryDialogueEvents），这里拿到的
+  // assistant/member 行均为 mode='complete'，不会被 delta 挤占配额。
+  const rows = eventRepo.queryDialogueEvents(sessionId, 400)
   const byId = new Map<string, AgentEvent>()
-  for (const eventType of eventTypes) {
-    const rows = eventRepo.queryBySession({ sessionId, eventType, limit: 220 }).events
-    for (const row of rows) {
-      try {
-        const event = JSON.parse(row.event_json) as AgentEvent
-        byId.set(event.id, event)
-      } catch {
-        // ignore malformed historical rows
-      }
+  for (const row of rows) {
+    try {
+      const event = JSON.parse(row.event_json) as AgentEvent
+      byId.set(event.id, event)
+    } catch {
+      // ignore malformed historical rows
     }
   }
   return Array.from(byId.values()).sort((a, b) => a.seq - b.seq)
@@ -286,10 +303,48 @@ function buildDialogueEntries(
   events: AgentEvent[],
   agentNameById?: Record<string, string>,
 ): DialogueEntry[] {
+  // 按 segment 聚合的文本累加器：bySegment 同段覆盖（complete 多次到达取最后一次），
+  // order 保留段首次出现顺序，looseParts 收集无 segmentId 的历史 complete（兜底）。
+  type SegmentAccum = {
+    bySegment: Map<string, string>
+    order: string[]
+    looseParts: string[]
+    final?: string
+  }
+  const newSegmentAccum = (): SegmentAccum => ({
+    bySegment: new Map(),
+    order: [],
+    looseParts: [],
+  })
+  const addSegment = (
+    acc: SegmentAccum,
+    content: string,
+    segmentId: string | undefined,
+    isFinal: boolean,
+  ): void => {
+    if (isFinal) {
+      acc.final = content
+      return
+    }
+    if (segmentId != null) {
+      if (!acc.bySegment.has(segmentId)) acc.order.push(segmentId)
+      acc.bySegment.set(segmentId, content)
+    } else {
+      acc.looseParts.push(content)
+    }
+  }
+  const resolveSegmentText = (acc: SegmentAccum): string => {
+    const segParts = acc.order
+      .map((id) => acc.bySegment.get(id) ?? '')
+      .filter((t) => t.trim().length > 0)
+    if (segParts.length > 0) return segParts.join('\n').trim()
+    if (acc.final != null) return acc.final.trim()
+    return acc.looseParts.join('\n').trim()
+  }
+
   type MemberDispatch = {
     memberAgentId: string
-    parts: string[]
-    final?: string
+    accum: SegmentAccum
     order: number
   }
   const turns = new Map<
@@ -298,8 +353,7 @@ function buildDialogueEntries(
       userParts: string[]
       userMentionAgentId?: string
       snapshotUserMessage?: string
-      assistantParts: string[]
-      assistantFinal?: string
+      assistant: SegmentAccum
       memberByDispatch: Map<string, MemberDispatch>
       memberOrderCounter: number
     }
@@ -311,7 +365,7 @@ function buildDialogueEntries(
     if (turn == null) {
       turn = {
         userParts: [],
-        assistantParts: [],
+        assistant: newSegmentAccum(),
         memberByDispatch: new Map(),
         memberOrderCounter: 0,
       }
@@ -348,28 +402,23 @@ function buildDialogueEntries(
       continue
     }
     if (event.type === 'team_member_message') {
+      // delta 已在 SQL 层排除；这里只处理 complete 段
+      if (event.mode !== 'complete') continue
       let dispatch = turn.memberByDispatch.get(event.dispatchId)
       if (dispatch == null) {
         dispatch = {
           memberAgentId: event.memberAgentId,
-          parts: [],
+          accum: newSegmentAccum(),
           order: turn.memberOrderCounter++,
         }
         turn.memberByDispatch.set(event.dispatchId, dispatch)
       }
-      if (event.mode === 'complete' && event.isFinal) {
-        dispatch.final = event.content
-      } else {
-        dispatch.parts.push(event.content)
-      }
+      addSegment(dispatch.accum, event.content, event.segmentId, event.isFinal)
       continue
     }
-    // assistant_message
-    if (event.mode === 'complete' && event.isFinal) {
-      turn.assistantFinal = event.content
-    } else {
-      turn.assistantParts.push(event.content)
-    }
+    // assistant_message：delta 已在 SQL 层排除，只聚合 complete 段
+    if (event.mode !== 'complete') continue
+    addSegment(turn.assistant, event.content, event.segmentId, event.isFinal)
   }
 
   const entries: DialogueEntry[] = []
@@ -385,12 +434,12 @@ function buildDialogueEntries(
           : ''
       entries.push({ role: 'User', content: `${mentionPrefix}${rawUserContent}` })
     }
-    const assistantContent = turn.assistantFinal?.trim() || turn.assistantParts.join('\n').trim()
+    const assistantContent = resolveSegmentText(turn.assistant)
     if (assistantContent.length > 0) entries.push({ role: 'Assistant', content: assistantContent })
     // Member 发言按 dispatchId 聚合，前缀 [<name>] 标注发言者；按出现顺序追加。
     const dispatches = Array.from(turn.memberByDispatch.values()).sort((a, b) => a.order - b.order)
     for (const d of dispatches) {
-      const text = (d.final ?? d.parts.join('')).trim()
+      const text = resolveSegmentText(d.accum)
       if (text.length === 0) continue
       const speaker = resolveName(d.memberAgentId)
       entries.push({ role: 'Assistant', content: `[${speaker}] ${text}` })

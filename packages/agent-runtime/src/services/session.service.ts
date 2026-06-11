@@ -1455,6 +1455,7 @@ export class SessionService {
             mode: event.mode,
             content: event.content,
             isFinal: event.isFinal,
+            ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
           }
         } else if (event.type === 'user_message') {
           outgoing = { ...event, mentionAgentId }
@@ -2084,7 +2085,10 @@ export class SessionService {
     const onAbort = () => executor.cancel()
     signal.addEventListener('abort', onAbort)
 
-    let completeText = ''
+    // 按 segment 收集 member 多段正文（被工具调用分隔的每段文本）。
+    // 给 Host 的最终 content 拼接所有段，避免最后一段 result 覆盖前面段。
+    const segments: Array<{ id: string | undefined; text: string }> = []
+    let finalResultText = ''
     let deltaText = ''
     let inputTokens: number | undefined
     let outputTokens: number | undefined
@@ -2109,11 +2113,21 @@ export class SessionService {
             mode: event.mode,
             content: event.content,
             isFinal: event.isFinal,
+            // 透传 segmentId：让 UI/历史按段聚合 member 的多段正文（与 Host 一致）
+            ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
           },
           eventRepo,
         )
-        if (event.mode === 'complete' && event.content.length > 0) completeText = event.content
-        else if (event.mode === 'delta') deltaText += event.content
+        if (event.mode === 'complete') {
+          if (event.isFinal) {
+            finalResultText = event.content
+          } else if (event.content.length > 0) {
+            const existing =
+              event.segmentId != null ? segments.find((s) => s.id === event.segmentId) : undefined
+            if (existing) existing.text = event.content
+            else segments.push({ id: event.segmentId, text: event.content })
+          }
+        } else if (event.mode === 'delta') deltaText += event.content
       } else if (event.type === 'usage_update') {
         inputTokens = event.inputTokens
         outputTokens = event.outputTokens
@@ -2141,20 +2155,34 @@ export class SessionService {
       }
     })
 
+    let aborted = false
     try {
       // 第二参数是 Spark 内部 turnId（仅用于 executor 内部日志/事件归属），不传给 SDK；
       // 用全新 UUID 避免与 Host 的 turnId 冲突（emit 时仍用 host turnId，见 makeBase）。
       await executor.executeTurn(sessionId, crypto.randomUUID(), userMessage, sdkConfig)
+    } catch (err) {
+      // 被超时/取消（signal abort）打断：不抛错，回传已累积的部分产出（partial）。
+      // 真实执行错误才向上抛出，交由 TeamDispatchService 标记 failed。
+      if (!signal.aborted) throw err
+      aborted = true
     } finally {
       signal.removeEventListener('abort', onAbort)
     }
 
-    // 优先用 complete 文本；provider 只发 delta 时回落到累积的 delta 文本。
-    if (memberError != null) {
+    // 优先拼接各段正文；无分段（result-only / 纯 delta provider）时依次回落。
+    const segmentText = segments
+      .map((s) => s.text)
+      .filter((t) => t.trim().length > 0)
+      .join('\n\n')
+    const content = segmentText || finalResultText || deltaText
+
+    // 真实错误（非 abort）才抛；abort 即便伴随 memberError 也走 partial 返回。
+    if (memberError != null && !aborted) {
       throw new Error(memberError)
     }
     return {
-      content: completeText || deltaText,
+      content,
+      ...(aborted ? { partial: true } : {}),
       ...(inputTokens != null ? { inputTokens } : {}),
       ...(outputTokens != null ? { outputTokens } : {}),
     }
@@ -3225,7 +3253,12 @@ export function formatReplyForHost(reply: import('@spark/protocol').TeamA2AReply
     .join(' · ')
   const header = `[Member Reply · ${meta}]`
   if (reply.state !== 'completed') {
-    return `${header}\n${reply.error?.message ?? '(no content)'}`
+    const errorLine = reply.error?.message ?? '(no content)'
+    // 超时/取消但保留了部分产出时，把已产出内容一并带给 Host，避免盲目重派丢工作。
+    const partial = reply.content.trim()
+    return partial.length > 0
+      ? `${header}\n${errorLine}\n\n[Partial output]\n${reply.content}`
+      : `${header}\n${errorLine}`
   }
   const artifactsLine =
     reply.artifacts != null && reply.artifacts.length > 0

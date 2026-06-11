@@ -147,6 +147,34 @@ export class EventRepository extends BaseRepository {
     return { events, hasMore }
   }
 
+  /**
+   * 查询用于构建「对话历史」的事件，按 seq 正序返回。
+   *
+   * 关键点：assistant_message / team_member_message 在流式时会产生海量 mode='delta'
+   * 行（每个 text_delta 一行）。若按普通 queryBySession 取最近 N 行，这些 delta 会
+   * 挤占配额，导致真正承载完整文本的 mode='complete' 行被截断、历史出现黑洞。
+   * 这里在 SQL 层直接排除 delta（user_message / turn_prompt_snapshot 没有 mode，全取），
+   * 把配额全部留给 complete 行。
+   */
+  queryDialogueEvents(sessionId: string, limit: number = 400): AgentEventRow[] {
+    const seqOrder = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const stmt = this.raw.prepare(
+      `SELECT * FROM agent_events
+       WHERE session_id = ?
+         AND (
+           event_type IN ('user_message', 'turn_prompt_snapshot')
+           OR (
+             event_type IN ('assistant_message', 'team_member_message')
+             AND json_extract(event_json, '$.mode') = 'complete'
+           )
+         )
+       ORDER BY ${seqOrder} DESC, created_at DESC, rowid DESC
+       LIMIT ?`,
+    )
+    const rows = stmt.all(sessionId, limit) as AgentEventRow[]
+    return rows.reverse()
+  }
+
   /** 统计指定 session 的事件数量 */
   countBySession(sessionId: string): number {
     const stmt = this.raw.prepare(

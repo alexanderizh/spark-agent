@@ -14,6 +14,19 @@ function mockRows(events: AgentEvent[], eventType?: string): Array<{ event_json:
     .map((event, i) => ({ event_json: JSON.stringify(event), id: `row-${event.type}-${i}` }))
 }
 
+/** 模拟 EventRepository.queryDialogueEvents：对话类型 + 仅 complete（排除 delta） */
+function dialogueRows(events: AgentEvent[]): Array<{ event_json: string; id: string }> {
+  return mockRows(
+    events.filter((e) => {
+      if (e.type === 'user_message' || e.type === 'turn_prompt_snapshot') return true
+      if (e.type === 'assistant_message' || e.type === 'team_member_message') {
+        return (e as { mode?: string }).mode === 'complete'
+      }
+      return false
+    }),
+  )
+}
+
 // Helper: create a user_message event
 function userMsg(turnId: string, content: string, seq: number): AgentEvent {
   return {
@@ -53,6 +66,7 @@ describe('ConversationSummarizer', () => {
       // With a mock event repo that returns empty results
       const mockEventRepo = {
         queryBySession: () => ({ events: [] }),
+        queryDialogueEvents: () => [],
       } as any
       const mockDb = {
         raw: {
@@ -65,6 +79,46 @@ describe('ConversationSummarizer', () => {
       expect(result.summarization).toBeUndefined()
     })
 
+    it('aggregates multi-segment assistant text and ignores delta rows', () => {
+      // 一个 turn 内被工具分隔的两段正文（各自一个 segmentId 的 complete），
+      // 外加一条 isFinal result（无 segmentId）。delta 行由 dialogueRows 过滤掉，
+      // 模拟 SQL 层排除。期望历史保留两段而非只剩最后一段。
+      const seg1 = assistantMsg('t1', 'first analysis paragraph', 2, false)
+      ;(seg1 as { segmentId?: string }).segmentId = 'seg-1'
+      const seg2 = assistantMsg('t1', 'second conclusion paragraph', 4, false)
+      ;(seg2 as { segmentId?: string }).segmentId = 'seg-2'
+      const finalResult = assistantMsg('t1', 'second conclusion paragraph', 5, true)
+      const deltaRow = {
+        ...assistantMsg('t1', 'noise-delta', 3, false),
+        mode: 'delta',
+      } as AgentEvent
+
+      const events: AgentEvent[] = [
+        userMsg('t1', 'analyze and conclude', 1),
+        seg1,
+        deltaRow,
+        seg2,
+        finalResult,
+      ]
+
+      const mockEventRepo = {
+        queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
+        queryDialogueEvents: () => dialogueRows(events),
+      } as any
+      const mockDb = {
+        raw: { prepare: () => ({ get: () => null, run: () => ({ changes: 0 }) }) },
+      } as any
+
+      const result = buildConversationHistoryWithSummary(mockEventRepo, mockDb, 's1', 5)
+      expect(result.prompt).toContain('first analysis paragraph')
+      expect(result.prompt).toContain('second conclusion paragraph')
+      // delta 噪声不得进入历史
+      expect(result.prompt).not.toContain('noise-delta')
+      // 最终 result 与第二段重复，不应出现两次「second conclusion paragraph」
+      const occurrences = result.prompt!.split('second conclusion paragraph').length - 1
+      expect(occurrences).toBe(1)
+    })
+
     it('produces a plain prompt for short conversations (below threshold)', () => {
       const events: AgentEvent[] = [
         userMsg('t1', 'Hello, help me with something', 1),
@@ -75,6 +129,7 @@ describe('ConversationSummarizer', () => {
 
       const mockEventRepo = {
         queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
+        queryDialogueEvents: () => dialogueRows(events),
       } as any
       const mockDb = {
         raw: {
@@ -98,6 +153,7 @@ describe('ConversationSummarizer', () => {
 
       const mockEventRepo = {
         queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
+        queryDialogueEvents: () => dialogueRows(events),
       } as any
       const mockDb = {
         raw: {
@@ -140,6 +196,7 @@ describe('ConversationSummarizer', () => {
 
       const mockEventRepo = {
         queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
+        queryDialogueEvents: () => dialogueRows(events),
       } as any
       const mockDb = {
         raw: {
@@ -182,6 +239,7 @@ describe('ConversationSummarizer', () => {
 
       const mockEventRepo = {
         queryBySession: (params: { eventType?: string }) => ({ events: mockRows(events, params.eventType) }),
+        queryDialogueEvents: () => dialogueRows(events),
       } as any
       const mockDb = {
         raw: {
