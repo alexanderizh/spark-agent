@@ -77,9 +77,11 @@ import type {
   TeamModeConfig,
   TeamMemberEventContext,
 } from '@spark/protocol'
+import { LOCAL_CLI_DEFAULT_MODEL, LOCAL_CLI_PROVIDER_ID } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
+const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
 
 /**
  * resolveTeamHostAgentId — 解析团队模式下要使用的主持 Agent。
@@ -5160,13 +5162,15 @@ function ComposerV2({
     : selectedProvider?.defaultModel
       ? [selectedProvider.defaultModel]
       : []
-  const providerDefaultModel = selectedProvider?.defaultModel || modelOptions[0] || ''
+  const providerDefaultModel = getProviderDefaultModel(selectedProvider, modelOptions[0])
   const sessionModelId = normalizeModelForProvider(session?.modelId, selectedProvider)
   const draftModelForProvider = normalizeModelForProvider(draftModelId, selectedProvider)
   const effectiveModelId =
-    session != null
-      ? sessionModelId || providerDefaultModel
-      : draftModelForProvider || providerDefaultModel
+    selectedProvider != null && isLocalCliProvider(selectedProvider)
+      ? LOCAL_CLI_DEFAULT_MODEL
+      : session != null
+        ? sessionModelId || providerDefaultModel
+        : draftModelForProvider || providerDefaultModel
   const effectiveMode = session?.chatMode ?? draftMode
   const effectiveReasoning = session?.reasoningEffort ?? draftReasoning
   const permissionOptions = getPermissionModeOptions(adapter)
@@ -5342,7 +5346,7 @@ function ComposerV2({
             runtimePrefs.adapter,
           )
           if (fallbackProvider != null) {
-            const nextModel = fallbackProvider.defaultModel || fallbackProvider.modelIds[0] || ''
+            const nextModel = getProviderDefaultModel(fallbackProvider, fallbackProvider.modelIds[0])
             setSelectedProviderId(fallbackProvider.id)
             setDraftModelId(nextModel)
             writeComposerPrefs({
@@ -5367,7 +5371,7 @@ function ComposerV2({
     if (fallbackProvider == null) return
     const nextAdapter = getProviderAdapterKind(fallbackProvider)
     const nextPermissionMode = getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask'
-    const nextModel = fallbackProvider.defaultModel || fallbackProvider.modelIds[0] || ''
+    const nextModel = getProviderDefaultModel(fallbackProvider, fallbackProvider.modelIds[0])
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(fallbackProvider.id)
@@ -5399,7 +5403,7 @@ function ComposerV2({
 
   useEffect(() => {
     if (selectedProvider != null && !draftModelId) {
-      setDraftModelId(selectedProvider.defaultModel || selectedProvider.modelIds[0] || '')
+      setDraftModelId(getProviderDefaultModel(selectedProvider, selectedProvider.modelIds[0]))
     }
   }, [draftModelId, selectedProvider])
 
@@ -6256,7 +6260,7 @@ function ComposerV2({
     setDraftAdapter(nextAdapter)
     setDraftPermissionMode(nextPermissionMode)
     setSelectedProviderId(providerId)
-    const nextModel = provider.defaultModel || provider.modelIds[0] || ''
+    const nextModel = getProviderDefaultModel(provider, provider.modelIds[0])
     setDraftModelId(nextModel)
     writeComposerPrefs({
       adapter: nextAdapter,
@@ -6284,8 +6288,7 @@ function ComposerV2({
         : (getPermissionModeOptions(nextAdapter)[0]?.value ?? 'claude-ask')
     const nextModel =
       normalizeModelForProvider(modelId, provider) ||
-      provider.defaultModel ||
-      provider.modelIds[0] ||
+      getProviderDefaultModel(provider, provider.modelIds[0]) ||
       modelId
 
     setDraftAdapter(nextAdapter)
@@ -6317,7 +6320,7 @@ function ComposerV2({
       (provider) => getProviderAdapterKind(provider) === nextAdapter,
     )
     if (nextProvider != null) {
-      const nextModel = nextProvider.defaultModel || nextProvider.modelIds[0] || ''
+      const nextModel = getProviderDefaultModel(nextProvider, nextProvider.modelIds[0])
       setSelectedProviderId(nextProvider.id)
       setDraftModelId(nextModel)
       writeComposerPrefs({
@@ -6352,7 +6355,10 @@ function ComposerV2({
     const provider =
       providers.find((item) => item.id === agent.providerProfileId) ??
       getPreferredProvider(providers, { ...readComposerPrefs(), agentId: agent.id }, agent.agentAdapter)
-    const model = agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? ''
+    const model =
+      provider != null && isLocalCliProvider(provider)
+        ? LOCAL_CLI_DEFAULT_MODEL
+        : agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? ''
     if (provider != null) setSelectedProviderId(provider.id)
     setDraftModelId(model)
     writeComposerPrefs({
@@ -7210,8 +7216,7 @@ function ProviderModelPicker({
   useCloseOnOutside(rootRef, () => setOpen(false), open)
   const selectedProvider =
     providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
-  const label =
-    selectedModelId || selectedProvider?.defaultModel || selectedProvider?.name || '未配置'
+  const label = getModelDisplayLabel(selectedProvider, selectedModelId)
 
   return (
     <div ref={rootRef} className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : '供应商模型'}>
@@ -7250,7 +7255,7 @@ function ProviderModelPicker({
                         void onChange(provider.id, modelId)
                       }}
                     >
-                      <span>{modelId}</span>
+                      <span>{getModelDisplayLabel(provider, modelId)}</span>
                       {active && <Icons.Check size={14} />}
                     </button>
                   )
@@ -7663,6 +7668,7 @@ function normalizeModelForProvider(
   modelId: string | null | undefined,
   provider: ProviderProfile | null | undefined,
 ): string {
+  if (isLocalCliProvider(provider)) return LOCAL_CLI_DEFAULT_MODEL
   const model = modelId?.trim() ?? ''
   if (!model || provider == null) return ''
   const configuredModels = provider.modelIds.length
@@ -7672,6 +7678,26 @@ function normalizeModelForProvider(
       : []
   if (configuredModels.length === 0) return model
   return configuredModels.includes(model) ? model : ''
+}
+
+function isLocalCliProvider(provider: ProviderProfile | null | undefined): boolean {
+  return provider?.id === LOCAL_CLI_PROVIDER_ID
+}
+
+function getProviderDefaultModel(
+  provider: ProviderProfile | null | undefined,
+  fallback = '',
+): string {
+  if (isLocalCliProvider(provider)) return LOCAL_CLI_DEFAULT_MODEL
+  return provider?.defaultModel || fallback || ''
+}
+
+function getModelDisplayLabel(
+  provider: ProviderProfile | null | undefined,
+  modelId: string | null | undefined,
+): string {
+  if (isLocalCliProvider(provider)) return LOCAL_CLI_MODEL_DISPLAY
+  return modelId || provider?.defaultModel || provider?.name || '未配置'
 }
 
 function isClaudeAdapter(adapter: AgentAdapter): boolean {
@@ -8576,6 +8602,10 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
     () => snapshot.systemPromptSections.reduce((sum, s) => sum + s.charCount, 0),
     [snapshot.systemPromptSections],
   )
+  const modelLabel =
+    snapshot.providerProfileId === LOCAL_CLI_PROVIDER_ID
+      ? LOCAL_CLI_MODEL_DISPLAY
+      : snapshot.model
   const formatCharCount = (n: number): string => {
     if (n >= 10_000) return `${Math.round(n / 1000)}K`
     return `${n}`
@@ -8599,7 +8629,7 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
           {expanded ? '▾' : '▸'}
         </span>
         <span className="prompt-turn-title">
-          Turn {turnNumber} · {snapshot.model}
+          Turn {turnNumber} · {modelLabel}
         </span>
         <span className="prompt-turn-time">{relativeTime(snapshot.timestamp)}</span>
       </div>

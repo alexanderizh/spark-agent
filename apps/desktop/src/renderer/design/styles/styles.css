@@ -607,6 +607,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .user-menu-theme-trigger {
   justify-content: flex-start;
 }
+.user-menu-theme-trigger.user-menu-theme-nested-trigger {
+  margin-top: 2px;
+}
 .user-menu-theme-trigger:hover {
   background: var(--hover);
 }

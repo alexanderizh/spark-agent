@@ -8756,14 +8756,16 @@ body.inspector-resizing {
   gap: 8px;
   flex-shrink: 0;
 }
-.update-actions .arco-btn.update-action-btn {
-  min-width: 144px;
+.arco-btn.update-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
 }
-.update-actions .arco-btn.update-action-btn .arco-btn-icon {
+.update-actions .arco-btn.update-action-btn {
+  min-width: 144px;
+}
+.arco-btn.update-action-btn .arco-btn-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;

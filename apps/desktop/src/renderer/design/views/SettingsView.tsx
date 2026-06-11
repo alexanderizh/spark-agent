@@ -79,6 +79,7 @@ const SETTINGS_UPDATES_KEY = 'spark-settings-updates'
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
+const RELEASES_URL = 'https://github.com/alexanderizh/spark-agent/releases'
 
 const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
   telegram: 'Telegram',
@@ -4704,6 +4705,10 @@ function UpdatesSection() {
     void window.spark.invoke('update:install-restart', {})
   }
 
+  const handleOpenReleasesPage = () => {
+    void window.spark?.invoke('browser:open-external', { url: RELEASES_URL })
+  }
+
   const handleSettingsChange = (key: keyof UpdatesSettings, value: boolean | string) => {
     set({ [key]: value })
     const patch: Record<string, boolean | string> = {}
@@ -4819,6 +4824,22 @@ function UpdatesSection() {
             </Button>
           )}
         </div>
+      </div>
+
+      <div className="card">
+        <SettingsRow
+          title="Release 下载"
+          desc="前往 GitHub Release 页面查看所有版本安装包"
+          right={
+            <Button
+              icon={<Icons.GitHub size={14} />}
+              className="update-action-btn"
+              onClick={handleOpenReleasesPage}
+            >
+              打开 Release 页
+            </Button>
+          }
+        />
       </div>
 
       <div className="subsec-h">更新策略</div>

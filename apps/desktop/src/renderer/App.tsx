@@ -49,6 +49,7 @@ const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : u
 const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
 const downloadedUpdateActionLabel = isPlatformDarwin ? '打开安装镜像' : '安装更新'
+const REPOSITORY_URL = 'https://github.com/alexanderizh/spark-agent'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 
@@ -342,6 +343,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     setTweak('sidebarHidden', true)
   }, [setTweak])
 
+  const handleOpenExternal = useCallback((url: string) => {
+    void window.spark?.invoke('browser:open-external', { url })
+    setUserMenuOpen(false)
+  }, [])
+
   const updateState = updateStatus?.state ?? 'idle'
   const updateProgressPercent = updateStatus?.progress?.percent ?? 0
   const handleUpdateClick = useCallback(() => {
@@ -515,32 +521,33 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     <Icons.Monitor size={14} /> System
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="user-menu-theme-trigger">
-                <span className="user-menu-accent-dot" style={{ background: t.primary }} />
-                主题色
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="user-menu user-menu-theme-sub user-menu-accent-sub">
-                <DropdownMenuRadioGroup
-                  className="user-menu-theme-radio-group"
-                  value={t.primary}
-                  onValueChange={(v) => {
-                    setTweak('primary', v)
-                  }}
-                >
-                  {Object.entries(PRIMARIES).map(([color, info]) => (
-                    <DropdownMenuRadioItem
-                      key={color}
-                      className="user-menu-theme-item user-menu-accent-item"
-                      value={color}
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="user-menu-theme-trigger user-menu-theme-nested-trigger">
+                    <span className="user-menu-accent-dot" style={{ background: t.primary }} />
+                    主题色
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="user-menu user-menu-theme-sub user-menu-accent-sub">
+                    <DropdownMenuRadioGroup
+                      className="user-menu-theme-radio-group"
+                      value={t.primary}
+                      onValueChange={(v) => {
+                        setTweak('primary', v)
+                      }}
                     >
-                      <span className="user-menu-accent-swatch" style={{ background: color }} />
-                      {info.name}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
+                      {Object.entries(PRIMARIES).map(([color, info]) => (
+                        <DropdownMenuRadioItem
+                          key={color}
+                          className="user-menu-theme-item user-menu-accent-item"
+                          value={color}
+                        >
+                          <span className="user-menu-accent-swatch" style={{ background: color }} />
+                          {info.name}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSeparator />
@@ -549,6 +556,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
               <Icons.Settings size={14} /> Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { handleOpenExternal(REPOSITORY_URL) }}>
+              <Icons.GitHub size={14} /> GitHub
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

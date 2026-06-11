@@ -37,10 +37,13 @@ function rowToProfile(row: {
   is_default: number
   created_at: string
 }): ProviderProfile {
-  const config = normalizeProviderConfig(JSON.parse(row.config_json) as ProviderConfig)
+  const rawConfig = JSON.parse(row.config_json) as ProviderConfig
+  const config = row.id === LOCAL_CLI_PROVIDER_ID
+    ? normalizeLocalCliProviderConfig(rawConfig)
+    : normalizeProviderConfig(rawConfig)
   return {
     id: row.id,
-    name: row.name,
+    name: row.id === LOCAL_CLI_PROVIDER_ID ? LOCAL_CLI_PROVIDER_NAME : row.name,
     provider: normalizeProviderType(row.provider_type),
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
@@ -104,7 +107,22 @@ export class ProviderService {
     }
 
     const existing = this.repo.get(LOCAL_CLI_PROVIDER_ID)
-    if (existing != null) return rowToProfile(existing)
+    if (existing != null) {
+      const rawConfig = JSON.parse(existing.config_json) as ProviderConfig
+      const normalizedConfig = normalizeLocalCliProviderConfig(rawConfig)
+      if (
+        existing.name !== LOCAL_CLI_PROVIDER_NAME ||
+        rawConfig.defaultModel !== LOCAL_CLI_DEFAULT_MODEL ||
+        rawConfig.modelIds?.length !== 1 ||
+        rawConfig.modelIds[0] !== LOCAL_CLI_DEFAULT_MODEL
+      ) {
+        this.repo.update(LOCAL_CLI_PROVIDER_ID, {
+          name: LOCAL_CLI_PROVIDER_NAME,
+          config: normalizedConfig,
+        })
+      }
+      return rowToProfile(existing)
+    }
 
     const row = this.repo.create({
       id: LOCAL_CLI_PROVIDER_ID,
@@ -527,6 +545,14 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   if (imageApiType !== undefined) normalized.imageApiType = imageApiType
   else delete normalized.imageApiType
   return normalized
+}
+
+function normalizeLocalCliProviderConfig(config: ProviderConfig): NormalizedProviderConfig {
+  return normalizeProviderConfig({
+    ...config,
+    defaultModel: LOCAL_CLI_DEFAULT_MODEL,
+    modelIds: [LOCAL_CLI_DEFAULT_MODEL],
+  })
 }
 
 function normalizeModelType(value: unknown): ProviderModelType {

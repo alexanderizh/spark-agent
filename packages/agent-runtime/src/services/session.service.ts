@@ -39,7 +39,7 @@ import type {
   TeamA2ATask,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
-import { LOCAL_CLI_PROVIDER_ID } from '@spark/protocol'
+import { LOCAL_CLI_DEFAULT_MODEL, LOCAL_CLI_PROVIDER_ID } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
@@ -691,7 +691,9 @@ export class SessionService {
       opusModel?: string
     }
 
-    const model = (isMentionTurn ? agent.modelId : null) ?? session.model_id ?? config.defaultModel ?? config.model
+    const model = isLocalCli
+      ? LOCAL_CLI_DEFAULT_MODEL
+      : (isMentionTurn ? agent.modelId : null) ?? session.model_id ?? config.defaultModel ?? config.model
     if (model == null || model.length === 0) {
       throw new Error(`Provider ${provider.id} has no default model configured`)
     }
