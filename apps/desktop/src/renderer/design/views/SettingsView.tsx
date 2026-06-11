@@ -76,6 +76,9 @@ const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 const SETTINGS_APPEARANCE_KEY = 'spark-settings-appearance'
 const SETTINGS_TELEMETRY_KEY = 'spark-settings-telemetry'
 const SETTINGS_UPDATES_KEY = 'spark-settings-updates'
+const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
+const isPlatformDarwin = sparkPlatform === 'darwin'
+const isPlatformWin32 = sparkPlatform === 'win32'
 
 const REMOTE_CHANNEL_LABELS: Record<RemoteChannelType, string> = {
   telegram: 'Telegram',
@@ -201,7 +204,7 @@ const DEFAULT_TELEMETRY: TelemetrySettings = {
 
 const DEFAULT_UPDATES: UpdatesSettings = {
   autoCheck: true,
-  autoDownload: true,
+  autoDownload: false,
   autoInstall: false,
   channel: 'stable',
 }
@@ -383,6 +386,12 @@ export function SettingsView() {
       </div>
 
       <div className="settings-content scroll">
+        {isPlatformDarwin && (
+          <div
+            className="settings-drag-header"
+            onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
+          />
+        )}
         {SectionBody != null ? <SectionBody /> : <PlaceholderSection name={section} />}
       </div>
     </div>
@@ -4641,25 +4650,9 @@ function IntegritySection() {
 function UpdatesSection() {
   const [s, set] = usePersistedSettings(SETTINGS_UPDATES_KEY, DEFAULT_UPDATES)
   const [status, setStatus] = useState<UpdateStatus | null>(null)
-  const [lastChecked, setLastChecked] = useState<string | null>(() =>
-    window.localStorage.getItem('spark-updates-last-checked'),
-  )
-
-  // Load lastChecked from IPC on mount
+  const installActionLabel = isPlatformDarwin ? '打开安装镜像' : '安装更新'
+  const autoInstallSupported = isPlatformWin32
   useEffect(() => {
-    window.spark
-      ?.invoke('settings:get', { category: 'updates', key: 'lastChecked' })
-      .then((res) => {
-        if (res.value != null && typeof res.value === 'string') {
-          setLastChecked(res.value)
-          window.localStorage.setItem('spark-updates-last-checked', res.value)
-        }
-      })
-      .catch(() => {
-        /* ignore */
-      })
-
-    // Get initial update status
     window.spark
       ?.invoke('update:get-status', {})
       .then((res) => {
@@ -4678,17 +4671,22 @@ function UpdatesSection() {
     return unsub
   }, [])
 
+  useEffect(() => {
+    if (s.autoDownload) {
+      set({ autoDownload: false })
+      void window.spark?.invoke('update:settings', { autoDownload: false })
+    }
+  }, [s.autoDownload, set])
+
+  useEffect(() => {
+    if (autoInstallSupported || !s.autoInstall) return
+    set({ autoInstall: false })
+    void window.spark?.invoke('update:settings', { autoInstall: false })
+  }, [autoInstallSupported, s.autoInstall, set])
+
   const handleCheckUpdate = async () => {
     try {
       await window.spark.invoke('update:check', {})
-      const now = new Date().toLocaleString('zh-CN')
-      setLastChecked(now)
-      window.localStorage.setItem('spark-updates-last-checked', now)
-      window.spark
-        ?.invoke('settings:set', { category: 'updates', key: 'lastChecked', value: now })
-        .catch(() => {
-          /* ignore */
-        })
     } catch {
       // Error handled via stream events
     }
@@ -4708,28 +4706,37 @@ function UpdatesSection() {
 
   const handleSettingsChange = (key: keyof UpdatesSettings, value: boolean | string) => {
     set({ [key]: value })
-    // Sync auto-download setting to main process
-    if (key === 'autoDownload' && typeof value === 'boolean') {
-      void window.spark.invoke('update:settings', { autoDownload: value })
+    const patch: Record<string, boolean | string> = {}
+    if ((key === 'autoCheck' || key === 'autoDownload' || key === 'autoInstall') && typeof value === 'boolean') {
+      patch[key] = value
     }
     if (key === 'channel' && typeof value === 'string') {
-      void window.spark.invoke('update:settings', { channel: value as 'stable' | 'beta' })
+      patch.channel = value as 'stable' | 'beta'
+    }
+    if (Object.keys(patch).length > 0) {
+      void window.spark.invoke('update:settings', patch)
     }
   }
 
   const state = status?.state ?? 'idle'
   const isChecking = state === 'checking'
   const isDownloading = state === 'downloading'
-  const hasUpdate = state === 'available' || state === 'downloading' || state === 'downloaded'
+  const isAvailable = state === 'available'
+  const hasUpdate = isAvailable || isDownloading || state === 'downloaded'
   const isDownloaded = state === 'downloaded'
   const isError = state === 'error'
   const currentVersion = status?.currentVersion ?? '0.1.0'
+  const lastChecked = status?.lastCheckedAt != null
+    ? new Date(status.lastCheckedAt).toLocaleString('zh-CN')
+    : null
 
   // Update card status icon and label
   const getStatusIcon = () => {
     if (isError) return <Icons.AlertTriangle size={26} />
-    if (isDownloaded) return <Icons.Download size={26} />
-    if (hasUpdate) return <Icons.Refresh size={26} className="spin" />
+    if (isDownloaded) return <Icons.CheckCircle size={26} />
+    if (isDownloading) return <Icons.Download size={26} />
+    if (isAvailable) return <Icons.Download size={26} />
+    if (isChecking) return <Icons.Refresh size={26} className="spin" />
     return <Icons.CheckCircle size={26} />
   }
 
@@ -4738,15 +4745,17 @@ function UpdatesSection() {
     if (isChecking) return '正在检查更新…'
     if (isDownloading)
       return `正在下载 ${status?.progress != null ? `(${Math.round(status.progress.percent)}%)` : ''}`
-    if (isDownloaded) return `更新已就绪：v${status?.updateInfo?.version ?? '?'}`
+    if (isDownloaded) return `安装包已就绪：v${status?.updateInfo?.version ?? '?'}`
     if (hasUpdate) return `发现新版本：v${status?.updateInfo?.version ?? '?'}`
     return `已是最新版本`
   }
 
   const getStatusClass = () => {
     if (isError) return 'error'
+    if (isChecking) return 'checking'
+    if (isDownloading) return 'downloading'
     if (isDownloaded) return 'downloaded'
-    if (hasUpdate) return 'available'
+    if (isAvailable) return 'available'
     return 'ok'
   }
 
@@ -4774,21 +4783,40 @@ function UpdatesSection() {
         </div>
         <div className="update-actions">
           {isDownloaded ? (
-            <button className="btn primary" onClick={handleInstall}>
-              安装并重启
-            </button>
-          ) : hasUpdate && state === 'available' ? (
-            <button className="btn primary" onClick={() => void handleDownload()}>
-              <Icons.Download size={12} /> 下载更新
-            </button>
+            <Button
+              type="primary"
+              icon={<Icons.CheckCircle size={14} />}
+              className="update-action-btn"
+              onClick={handleInstall}
+            >
+              {installActionLabel}
+            </Button>
+          ) : isAvailable ? (
+            <Button
+              type="primary"
+              icon={<Icons.Download size={14} />}
+              className="update-action-btn"
+              onClick={() => void handleDownload()}
+            >
+              下载更新
+            </Button>
+          ) : isDownloading ? (
+            <Button
+              icon={<Icons.Download size={14} />}
+              className="update-action-btn"
+              disabled
+            >
+              下载中 {status?.progress != null ? `${Math.round(status.progress.percent)}%` : ''}
+            </Button>
           ) : (
-            <button
-              className="btn"
+            <Button
+              // icon={<Icons.Refresh size={14} className={isChecking ? 'spin' : ''} />}
+              className="update-action-btn"
               onClick={() => void handleCheckUpdate()}
               disabled={isChecking || isDownloading}
             >
-              <Icons.Refresh size={12} /> {isChecking ? '检查中…' : '检查更新'}
-            </button>
+              {isChecking ? '检查中…' : '检查更新'}
+            </Button>
           )}
         </div>
       </div>
@@ -4797,6 +4825,7 @@ function UpdatesSection() {
       <div className="card">
         <SettingsRow
           title="自动检查更新"
+          desc="仅在应用启动时自动检查；固定间隔轮询已关闭以节省 GitHub 请求次数"
           right={
             <div
               className={`switch ${s.autoCheck ? 'on' : ''}`}
@@ -4806,21 +4835,23 @@ function UpdatesSection() {
         />
         <SettingsRow
           title="自动下载"
-          desc="后台下载，准备好后提示安装"
+          desc="为避免误下载，检测到新版本后仅显示更新按钮，需要手动点击下载"
           right={
             <div
-              className={`switch ${s.autoDownload ? 'on' : ''}`}
-              onClick={() => handleSettingsChange('autoDownload', !s.autoDownload)}
+              className="switch disabled"
             />
           }
         />
         <SettingsRow
           title="自动安装"
-          desc="退出应用时静默安装"
+          desc={autoInstallSupported ? '退出应用时自动启动安装器' : '当前平台不支持自动安装，下载后需手动打开安装包'}
           right={
             <div
-              className={`switch ${s.autoInstall ? 'on' : ''}`}
-              onClick={() => handleSettingsChange('autoInstall', !s.autoInstall)}
+              className={`switch ${s.autoInstall ? 'on' : ''} ${autoInstallSupported ? '' : 'disabled'}`.trim()}
+              onClick={() => {
+                if (!autoInstallSupported) return
+                handleSettingsChange('autoInstall', !s.autoInstall)
+              }}
             />
           }
         />

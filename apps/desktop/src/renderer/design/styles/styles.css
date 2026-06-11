@@ -316,6 +316,83 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .sidebar-hide-btn {
   -webkit-app-region: no-drag;
 }
+.sidebar-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  -webkit-app-region: no-drag;
+}
+.sidebar-update-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  transition: color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+.sidebar-update-btn.state-checking {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.sidebar-update-btn.state-available {
+  color: var(--warning, #c98900);
+  background: color-mix(in srgb, var(--warning, #c98900) 12%, transparent);
+}
+.sidebar-update-btn.state-downloading {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+.sidebar-update-btn.state-downloaded {
+  color: var(--success, #3d9b5b);
+  background: color-mix(in srgb, var(--success, #3d9b5b) 12%, transparent);
+}
+.sidebar-update-btn.state-error {
+  color: var(--danger-6, #d94f4f);
+  background: color-mix(in srgb, #d94f4f 10%, transparent);
+}
+.sidebar-update-progress-ring {
+  position: relative;
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-update-progress-ring svg {
+  width: 18px;
+  height: 18px;
+  transform: rotate(-90deg);
+}
+.sidebar-update-progress-track,
+.sidebar-update-progress-value {
+  fill: none;
+  stroke-width: 2;
+}
+.sidebar-update-progress-track {
+  stroke: color-mix(in srgb, currentColor 18%, transparent);
+}
+.sidebar-update-progress-value {
+  stroke: currentColor;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.2s ease;
+}
+.sidebar-update-progress-icon {
+  position: absolute;
+  inset: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sidebar-update-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px var(--panel-elev);
+}
 .floating-sidebar-brand {
   display: flex;
   align-items: center;

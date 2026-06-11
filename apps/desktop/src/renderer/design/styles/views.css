@@ -5879,6 +5879,11 @@ body.inspector-resizing {
   padding: var(--pad-xl);
   min-width: 0;
 }
+.settings-drag-header {
+  height: 20px;
+  margin: calc(var(--pad-xl) * -1) calc(var(--pad-xl) * -1) var(--pad-md);
+  -webkit-app-region: drag;
+}
 .settings-section {
   max-width: 980px;
   margin: 0 auto var(--pad-xl);
@@ -8705,6 +8710,10 @@ body.inspector-resizing {
   background: var(--success-bg);
   color: var(--success);
 }
+.update-icon.checking {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
 .update-icon.error {
   background: var(--danger-bg);
   color: var(--danger);
@@ -8713,9 +8722,13 @@ body.inspector-resizing {
   background: var(--warning-bg);
   color: var(--warning);
 }
+.update-icon.downloading {
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+  color: var(--primary);
+}
 .update-icon.downloaded {
-  background: var(--info-bg);
-  color: var(--info);
+  background: var(--success-bg);
+  color: var(--success);
 }
 .update-version {
   font-size: 15px;
@@ -8739,8 +8752,22 @@ body.inspector-resizing {
 }
 .update-actions {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+.update-actions .arco-btn.update-action-btn {
+  min-width: 144px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.update-actions .arco-btn.update-action-btn .arco-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-right: 0;
 }
 .btn.primary {
   background: var(--primary);

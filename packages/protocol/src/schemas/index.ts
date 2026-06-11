@@ -670,6 +670,7 @@ export const IpcSchemaRegistry = {
   'update:settings': z.object({
     autoCheck: z.boolean().optional(),
     autoDownload: z.boolean().optional(),
+    autoInstall: z.boolean().optional(),
     channel: z.enum(['stable', 'beta']).optional(),
   }),
 

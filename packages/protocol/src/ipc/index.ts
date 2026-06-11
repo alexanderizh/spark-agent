@@ -2190,6 +2190,7 @@ export interface UpdateStatus {
   updateInfo: UpdateInfo | null
   progress: UpdateProgressInfo | null
   error: string | null
+  lastCheckedAt?: string | null
 }
 
 /** 检查更新请求 */
@@ -2228,6 +2229,7 @@ export interface UpdateGetStatusResponse {
 export interface UpdateSettingsRequest {
   autoCheck?: boolean
   autoDownload?: boolean
+  autoInstall?: boolean
   channel?: UpdateChannel
 }
 

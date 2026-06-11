@@ -3029,12 +3029,29 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('update:settings', async (req) => {
     log.info(`update:settings requested: ${JSON.stringify(req)}`)
     const svc = getUpdateService()
+    const currentValue = getSettingsService().get('updates', 'data')
+    const currentSettings =
+      currentValue != null && typeof currentValue === 'object'
+        ? (currentValue as Record<string, unknown>)
+        : {}
+    const nextSettings: Record<string, unknown> = { ...currentSettings }
+    if (req.autoCheck !== undefined) {
+      nextSettings.autoCheck = req.autoCheck
+      svc.setAutoCheck(req.autoCheck)
+    }
     if (req.autoDownload !== undefined) {
+      nextSettings.autoDownload = req.autoDownload
       svc.setAutoDownload(req.autoDownload)
     }
+    if (req.autoInstall !== undefined) {
+      nextSettings.autoInstall = process.platform === 'win32' ? req.autoInstall : false
+      svc.setAutoInstall(req.autoInstall)
+    }
     if (req.channel !== undefined) {
+      nextSettings.channel = req.channel
       svc.setChannel(req.channel)
     }
+    getSettingsService().set('updates', 'data', nextSettings)
     return { ok: true }
   })
 
