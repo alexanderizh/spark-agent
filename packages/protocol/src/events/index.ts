@@ -85,6 +85,12 @@ export interface AssistantMessageEvent extends BaseEvent {
   provider: ProviderId
   /** 是否为最终完整消息 */
   isFinal: boolean
+  /**
+   * 消息段标识：同一 turn 内每条 SDK assistant message（被工具调用分隔的一段正文）
+   * 对应一个稳定 segmentId。complete 只替换同 segment 的流式文本，不同 segment
+   * 的文本在时间线上各自保留。缺省（历史事件）时退回“complete 替换最近流式文本”。
+   */
+  segmentId?: string
 }
 
 // ─── 工具类事件 ──────────────────────────────────────────────────────────────
@@ -240,6 +246,8 @@ export interface TeamMemberMessageEvent extends BaseEvent {
   mode: 'delta' | 'complete'
   content: string
   isFinal: boolean
+  /** 同 AssistantMessageEvent.segmentId：member 一次 dispatch 内的消息段标识 */
+  segmentId?: string
 }
 
 export interface TeamMemberEventContext {
@@ -384,6 +392,8 @@ export interface AgentThinkingEvent extends BaseEvent {
   type: 'agent_thinking'
   mode: 'delta' | 'complete'
   content: string
+  /** 同 AssistantMessageEvent.segmentId：complete 只替换同 segment 的思考文本 */
+  segmentId?: string
 }
 
 // ─── 资源使用类事件 ──────────────────────────────────────────────────────────

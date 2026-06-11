@@ -30,6 +30,44 @@ interface EventContext {
   toolResultsById?: Map<string, string>
 }
 
+/**
+ * 消息段状态：同一 turn 内每条 SDK assistant message（被工具调用分隔的一段
+ * 正文/思考）分配一个 segmentId。complete 事件携带 segmentId 后，下游只替换
+ * 同 segment 的流式文本，避免多段正文互相覆盖。
+ */
+interface SegmentState {
+  /** 当前正在流式输出的 assistant message 对应的 segmentId */
+  currentText: string | null
+  currentThinking: string | null
+}
+
+function getSegmentState(ctx: EventContext): SegmentState {
+  const record = ctx as EventContext & { segmentState?: SegmentState }
+  if (record.segmentState == null) {
+    record.segmentState = { currentText: null, currentThinking: null }
+  }
+  return record.segmentState
+}
+
+function currentTextSegment(ctx: EventContext): string {
+  const state = getSegmentState(ctx)
+  if (state.currentText == null) state.currentText = randomUUID()
+  return state.currentText
+}
+
+function currentThinkingSegment(ctx: EventContext): string {
+  const state = getSegmentState(ctx)
+  if (state.currentThinking == null) state.currentThinking = randomUUID()
+  return state.currentThinking
+}
+
+/** 一条 assistant message 收尾后，下一段正文/思考属于新 segment */
+function closeSegments(ctx: EventContext): void {
+  const state = getSegmentState(ctx)
+  state.currentText = null
+  state.currentThinking = null
+}
+
 function baseEvent(ctx: EventContext) {
   return {
     id: randomUUID(),
@@ -76,22 +114,27 @@ function mapSystemMessage(msg: SDKSystemMessage, ctx: EventContext): AgentEvent[
 function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): AgentEvent[] {
   const events: AgentEvent[] = []
   const content = msg.message.content
+  const isSubagentMessage = msg.parent_tool_use_id != null
 
   // Subagent assistant messages carry parent_tool_use_id pointing to the
   // Agent tool_use that spawned them. Accumulate their usage so we can attach
   // it to the eventual subagent_completed event.
-  if (msg.parent_tool_use_id != null && msg.message.usage) {
+  if (isSubagentMessage && msg.message.usage) {
     const acc = getSubagentUsage(ctx)
-    const prev = acc.get(msg.parent_tool_use_id) ?? { inputTokens: 0, outputTokens: 0 }
-    acc.set(msg.parent_tool_use_id, {
+    const prev = acc.get(msg.parent_tool_use_id!) ?? { inputTokens: 0, outputTokens: 0 }
+    acc.set(msg.parent_tool_use_id!, {
       inputTokens: prev.inputTokens + (msg.message.usage.input_tokens ?? 0),
       outputTokens: prev.outputTokens + (msg.message.usage.output_tokens ?? 0),
     })
   }
 
   for (const block of content) {
+    // Subagent 的正文/思考属于其内部过程，不能混入主时间线（会覆盖 Host 正文）；
+    // 其产出统一由 subagent_completed 的 output 呈现。工具事件仍透传（执行日志）。
+    if (isSubagentMessage && (block.type === 'text' || block.type === 'thinking')) continue
     events.push(...mapContentBlock(block, ctx))
   }
+  if (!isSubagentMessage) closeSegments(ctx)
 
   // Emit usage if available
   if (msg.message.usage) {
@@ -112,12 +155,19 @@ function mapAssistantMessage(msg: SDKAssistantMessage, ctx: EventContext): Agent
 
 function mapUserMessage(msg: SDKUserMessage, ctx: EventContext): AgentEvent[] {
   if (!Array.isArray(msg.message.content)) return []
-  return msg.message.content.flatMap((block) => mapContentBlock(block, ctx))
+  const events = msg.message.content.flatMap((block) => mapContentBlock(block, ctx))
+  // user 消息（工具结果等）到达即意味着上一段 assistant 输出已结束
+  closeSegments(ctx)
+  return events
 }
 
 function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
   const event = msg.event
   if (event == null) return []
+
+  // Subagent 的流式增量不进入主时间线（与 mapAssistantMessage 的过滤保持一致），
+  // 否则 Host 正文会被并行运行的 subagent 文本污染。
+  if (msg.parent_tool_use_id != null && event.type === 'content_block_delta') return []
 
   switch (event.type) {
     case 'content_block_delta': {
@@ -133,6 +183,7 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
             content: delta.text,
             provider: 'claude',
             isFinal: false,
+            segmentId: currentTextSegment(ctx),
           },
         ]
       }
@@ -144,6 +195,7 @@ function mapStreamEvent(msg: SDKStreamEvent, ctx: EventContext): AgentEvent[] {
             type: 'agent_thinking',
             mode: 'delta',
             content: delta.thinking,
+            segmentId: currentThinkingSegment(ctx),
           },
         ]
       }
@@ -265,6 +317,8 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
           content: block.text,
           provider: 'claude',
           isFinal: false,
+          // 与本条消息的流式 delta 共用同一 segmentId，complete 仅替换该段
+          segmentId: currentTextSegment(ctx),
         },
       ]
 
@@ -275,6 +329,7 @@ function mapContentBlock(block: SDKContentBlock, ctx: EventContext): AgentEvent[
           type: 'agent_thinking',
           mode: 'complete',
           content: block.thinking,
+          segmentId: currentThinkingSegment(ctx),
         },
       ]
 
