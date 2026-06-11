@@ -659,13 +659,8 @@ export function ChatView({
         {showEmptyHero && (
           <span className="chat-hero-span">您可以让我创建Agent、安装Skill、安装工作环境！</span>
         )}
-        {showEmptyHero && (
-          <div className="chat-hero-composer">
-            {composerNode}
-          </div>
-        )}
 
-        {active == null ? null : (
+        {active != null && (
           <>
             {!showEmptyHero && (
               <ChatTabbar
@@ -701,9 +696,10 @@ export function ChatView({
                 onCancel={handleCancelQuestion}
               />
             )}
-            {!showEmptyHero && composerNode}
           </>
         )}
+
+        {composerNode}
       </div>
 
       {showConfigPanel && (
