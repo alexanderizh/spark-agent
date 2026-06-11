@@ -11,7 +11,7 @@ import { ToastProvider, ToastContainer, useToast } from './design/components/Toa
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { AvatarImage } from './design/components/AvatarImage'
 import { getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
-import type { PermissionApprovalRequest, SessionId, UserQuestionPrompt } from '@spark/protocol'
+import type { PermissionApprovalRequest, SessionId, UpdateStatus, UserQuestionPrompt } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
 
@@ -48,6 +48,8 @@ import {
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
 const isPlatformWin32 = sparkPlatform === 'win32'
+const downloadedUpdateActionLabel = isPlatformDarwin ? '打开安装镜像' : '安装更新'
+const REPOSITORY_URL = 'https://github.com/alexanderizh/spark-agent'
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const SETTINGS_UPDATED_EVENT = 'spark-settings-updated'
 
@@ -66,6 +68,33 @@ function SparkLogoMark() {
       draggable={false}
       style={{ width: '100%', height: '100%', display: 'block' }}
     />
+  )
+}
+
+function CircularProgressGlyph({
+  progress,
+}: {
+  progress: number
+}) {
+  const clamped = Math.max(0, Math.min(100, progress))
+  const radius = 9
+  const circumference = 2 * Math.PI * radius
+  const dashOffset = circumference * (1 - clamped / 100)
+
+  return (
+    <span className="sidebar-update-progress-ring" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <circle className="sidebar-update-progress-track" cx="12" cy="12" r={radius} />
+        <circle
+          className="sidebar-update-progress-value"
+          cx="12"
+          cy="12"
+          r={radius}
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+        />
+      </svg>
+    </span>
   )
 }
 
@@ -237,9 +266,24 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [navExpanded, setNavExpanded] = useState(false)
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
   const userAvatarSrc = useSidebarUserAvatarSrc()
   const userName = useSidebarUserName()
   const isResizing = useRef(false)
+
+  useEffect(() => {
+    let cancelled = false
+    window.spark?.invoke('update:get-status', {}).then((res) => {
+      if (!cancelled) setUpdateStatus(res.status)
+    }).catch(() => {})
+    const unsub = window.spark?.on('stream:update:status', (payload) => {
+      setUpdateStatus(payload)
+    })
+    return () => {
+      cancelled = true
+      unsub?.()
+    }
+  }, [])
 
   const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
     const isActive = t.view === viewId
@@ -296,6 +340,53 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     setTweak('sidebarHidden', true)
   }, [setTweak])
 
+  const handleOpenExternal = useCallback((url: string) => {
+    void window.spark?.invoke('browser:open-external', { url })
+    setUserMenuOpen(false)
+  }, [])
+
+  const updateState = updateStatus?.state ?? 'idle'
+  const updateProgressPercent = updateStatus?.progress?.percent ?? 0
+  const handleUpdateClick = useCallback(() => {
+    if (updateState === 'checking') return
+    if (updateState === 'available') {
+      void window.spark?.invoke('update:download', {})
+      return
+    }
+    if (updateState === 'downloaded') {
+      void window.spark?.invoke('update:install-restart', {})
+      return
+    }
+    if (updateState === 'downloading') {
+      void setTweak('view', 'settings')
+      return
+    }
+    void window.spark?.invoke('update:check', {})
+  }, [setTweak, updateState])
+
+  const getUpdateButtonTitle = () => {
+    if (updateState === 'checking') return '正在检查更新'
+    if (updateState === 'available') return `发现新版本 ${updateStatus?.updateInfo?.version ?? ''}`.trim()
+    if (updateState === 'downloading') {
+      const percentLabel = Math.round(updateProgressPercent)
+      return `正在下载更新 ${Number.isFinite(percentLabel) ? `${percentLabel}%` : ''}`.trim()
+    }
+    if (updateState === 'downloaded') return downloadedUpdateActionLabel
+    if (updateState === 'error') return `更新异常：${updateStatus?.error ?? '点击重试'}`
+    return '检查更新'
+  }
+
+  const renderUpdateButtonIcon = () => {
+    if (updateState === 'checking') return <Icons.Refresh size={15} className="spin" />
+    if (updateState === 'available') return <Icons.Download size={15} />
+    if (updateState === 'downloading') {
+      return <CircularProgressGlyph progress={updateProgressPercent} />
+    }
+    if (updateState === 'downloaded') return <Icons.CheckCircle size={15} />
+    if (updateState === 'error') return <Icons.AlertTriangle size={15} />
+    return <Icons.Refresh size={15} />
+  }
+
   if (t.sidebarHidden) return null
 
   return (
@@ -310,13 +401,26 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       <div className="floating-sidebar-header">
         <div className="floating-sidebar-brand" />
         {/* <div className="sidebar-logo"><SparkLogoMark /></div> */}
-        <button
-          className="icon-btn sidebar-hide-btn"
-          onClick={handleHideSidebar}
-          title="隐藏菜单栏"
-        >
-          <Icons.SidebarHide size={15} />
-        </button>
+        <div className="sidebar-header-actions">
+          <button
+            className={`icon-btn sidebar-update-btn state-${updateState}`}
+            onClick={handleUpdateClick}
+            title={getUpdateButtonTitle()}
+            aria-label={getUpdateButtonTitle()}
+          >
+            {renderUpdateButtonIcon()}
+            {(updateState === 'available' || updateState === 'downloaded' || updateState === 'error') && (
+              <span className="sidebar-update-dot" />
+            )}
+          </button>
+          <button
+            className="icon-btn sidebar-hide-btn"
+            onClick={handleHideSidebar}
+            title="隐藏菜单栏"
+          >
+            <Icons.SidebarHide size={15} />
+          </button>
+        </div>
       </div>
 
       {/* New Task button — replaces the previous search/command bar.
@@ -410,32 +514,33 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
                     <Icons.Monitor size={14} /> System
                   </DropdownMenuRadioItem>
                 </DropdownMenuRadioGroup>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="user-menu-theme-trigger">
-                <span className="user-menu-accent-dot" style={{ background: t.primary }} />
-                主题色
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="user-menu user-menu-theme-sub user-menu-accent-sub">
-                <DropdownMenuRadioGroup
-                  className="user-menu-theme-radio-group"
-                  value={t.primary}
-                  onValueChange={(v) => {
-                    setTweak('primary', v)
-                  }}
-                >
-                  {Object.entries(PRIMARIES).map(([color, info]) => (
-                    <DropdownMenuRadioItem
-                      key={color}
-                      className="user-menu-theme-item user-menu-accent-item"
-                      value={color}
+                <DropdownMenuSeparator />
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="user-menu-theme-trigger user-menu-theme-nested-trigger">
+                    <span className="user-menu-accent-dot" style={{ background: t.primary }} />
+                    主题色
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="user-menu user-menu-theme-sub user-menu-accent-sub">
+                    <DropdownMenuRadioGroup
+                      className="user-menu-theme-radio-group"
+                      value={t.primary}
+                      onValueChange={(v) => {
+                        setTweak('primary', v)
+                      }}
                     >
-                      <span className="user-menu-accent-swatch" style={{ background: color }} />
-                      {info.name}
-                    </DropdownMenuRadioItem>
-                  ))}
-                </DropdownMenuRadioGroup>
+                      {Object.entries(PRIMARIES).map(([color, info]) => (
+                        <DropdownMenuRadioItem
+                          key={color}
+                          className="user-menu-theme-item user-menu-accent-item"
+                          value={color}
+                        >
+                          <span className="user-menu-accent-swatch" style={{ background: color }} />
+                          {info.name}
+                        </DropdownMenuRadioItem>
+                      ))}
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuSubContent>
             </DropdownMenuSub>
             <DropdownMenuSeparator />
@@ -444,6 +549,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
               <Icons.Settings size={14} /> Settings
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { handleOpenExternal(REPOSITORY_URL) }}>
+              <Icons.GitHub size={14} /> GitHub
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>

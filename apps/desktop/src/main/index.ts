@@ -14,7 +14,7 @@
  *   - sandbox: true
  */
 
-import { app, BrowserWindow, Menu, Tray, nativeImage, shell } from 'electron'
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, shell } from 'electron'
 import { join } from 'path'
 
 // ─── CDP endpoint for Playwright MCP browser automation ──────────────────────
@@ -50,11 +50,14 @@ import {
 } from './services/SafeFileProtocol.js'
 import { getDatabase } from './db.js'
 import { createLogger } from '@spark/shared'
-import type { UpdateStatus } from '@spark/protocol'
+import type { UpdateInfo, UpdateStatus } from '@spark/protocol'
+import { SettingsService } from '@spark/agent-runtime'
+import { SettingsRepository } from '@spark/storage'
 
 const log = createLogger('main')
 let tray: Tray | null = null
 let isQuitting = false
+let downloadedPromptVersion: string | null = null
 
 // ─── Custom protocol registration ───────────────────────────────────────────
 // `safe-file://` 让渲染进程能读取 userData 下的本地图片（生成的图、附件等），
@@ -76,6 +79,107 @@ function showMainWindow(): void {
     return
   }
   createWindow()
+}
+
+type PersistedUpdateSettings = {
+  autoCheck?: boolean
+  autoDownload?: boolean
+  autoInstall?: boolean
+  channel?: 'stable' | 'beta'
+}
+
+type PersistedGeneralSettings = {
+  notifyNewVersion?: boolean
+}
+
+function getSettingsService(): SettingsService {
+  return new SettingsService(new SettingsRepository(getDatabase()))
+}
+
+function readPersistedUpdateSettings(): PersistedUpdateSettings {
+  const value = getSettingsService().get('updates', 'data')
+  if (value == null || typeof value !== 'object') return {}
+  return value as PersistedUpdateSettings
+}
+
+function readPersistedGeneralSettings(): PersistedGeneralSettings {
+  const value = getSettingsService().get('general', 'data')
+  if (value == null || typeof value !== 'object') return {}
+  return value as PersistedGeneralSettings
+}
+
+function readPersistedLastCheckedAt(): string | null {
+  const value = getSettingsService().get('updates', 'lastChecked')
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function persistLastCheckedAt(iso: string): void {
+  getSettingsService().set('updates', 'lastChecked', iso)
+}
+
+function shouldNotifyNewVersion(): boolean {
+  const general = readPersistedGeneralSettings()
+  return general.notifyNewVersion !== false
+}
+
+function showUpdateNotification(title: string, body: string): void {
+  if (!Notification.isSupported()) return
+  const notification = new Notification({
+    title,
+    body,
+    silent: true,
+  })
+  notification.on('click', () => {
+    showMainWindow()
+  })
+  notification.show()
+}
+
+async function promptForDownloadedUpdate(info: UpdateInfo, autoInstall: boolean): Promise<void> {
+  if (!shouldNotifyNewVersion()) return
+  if (downloadedPromptVersion === info.version) return
+  downloadedPromptVersion = info.version
+
+  showUpdateNotification(
+    '更新已下载完成',
+    process.platform === 'darwin'
+      ? `Spark Agent v${info.version} 安装镜像已下载完成`
+      : autoInstall
+        ? `Spark Agent v${info.version} 已准备好，退出应用时会自动启动安装器`
+        : `Spark Agent v${info.version} 安装包已下载完成`,
+  )
+
+  const mainWindow = BrowserWindow.getAllWindows()[0] ?? null
+  if (mainWindow == null || mainWindow.isDestroyed()) return
+
+  const installButtonLabel =
+    process.platform === 'darwin'
+      ? '打开安装镜像'
+      : '安装更新'
+  const detail =
+    process.platform === 'darwin'
+      ? '现在打开 dmg 安装镜像，随后请将 Spark Agent 拖到 Applications 并替换现有版本。'
+      : autoInstall
+        ? '现在启动安装器，或稍后退出应用时自动启动安装器。'
+        : '现在启动安装器，或稍后手动安装。'
+
+  const result = await dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    title: '更新已就绪',
+    message: `Spark Agent v${info.version} 安装包已下载完成`,
+    detail,
+    buttons:
+      process.platform === 'darwin'
+        ? [installButtonLabel, '稍后']
+        : autoInstall
+          ? [installButtonLabel, '稍后（退出时自动启动安装器）']
+          : [installButtonLabel, '稍后'],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  if (result.response === 0) {
+    getUpdateService().installAndRestart()
+  }
 }
 
 function createTray(): void {
@@ -305,35 +409,37 @@ async function initializeApp(): Promise<void> {
 
   // 4. 初始化自动更新服务
   const updateService = getUpdateService()
-  updateService.initialize((status: UpdateStatus) => {
-    // 推送状态变化到渲染进程
-    sendToMainWindow('stream:update:status', status)
+  updateService.initialize({
+    preferences: readPersistedUpdateSettings(),
+    lastCheckedAt: readPersistedLastCheckedAt(),
+    onLastCheckedChange: persistLastCheckedAt,
+    onUpdateDownloaded: (info, preferences) => {
+      void promptForDownloadedUpdate(info, preferences.autoInstall)
+    },
+    handler: (status: UpdateStatus) => {
+      // 推送状态变化到渲染进程
+      sendToMainWindow('stream:update:status', status)
 
-    // 根据状态推送特定事件
-    switch (status.state) {
-      case 'available':
-        if (status.updateInfo != null) {
-          sendToMainWindow('stream:update:available', status.updateInfo)
-        }
-        break
-      case 'downloading':
-        if (status.progress != null) {
-          sendToMainWindow('stream:update:progress', status.progress)
-        }
-        break
-      case 'downloaded':
-        if (status.updateInfo != null) {
-          sendToMainWindow('stream:update:downloaded', status.updateInfo)
-        }
-        break
-    }
+      // 根据状态推送特定事件
+      switch (status.state) {
+        case 'available':
+          if (status.updateInfo != null) {
+            sendToMainWindow('stream:update:available', status.updateInfo)
+          }
+          break
+        case 'downloading':
+          if (status.progress != null) {
+            sendToMainWindow('stream:update:progress', status.progress)
+          }
+          break
+        case 'downloaded':
+          if (status.updateInfo != null) {
+            sendToMainWindow('stream:update:downloaded', status.updateInfo)
+          }
+          break
+      }
+    },
   })
-
-  // 启动自动检查（应用启动后延迟 30 秒检查，避免影响启动速度）
-  setTimeout(() => {
-    void updateService.checkForUpdates()
-  }, 30_000)
-  updateService.startAutoCheck()
 
   // 5. SDK 完整性自检（延迟 5 秒，确保窗口已加载完成）
   setTimeout(() => {

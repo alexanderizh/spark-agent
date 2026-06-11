@@ -552,7 +552,10 @@ export function SidebarSessionList() {
                       ctx.setActiveWorkspace(group.workspace.id)
                       setTweak('view', 'chat')
                     }}
-                    onNewSession={(workspaceId) => { void ctx.handleNewSession(workspaceId) }}
+                    onNewSession={async (workspaceId) => {
+                      const id = await ctx.handleNewSession(workspaceId)
+                      if (id != null) setTweak('view', 'chat')
+                    }}
                     onRenameProject={ctx.handleRenameProject}
                     onToggleProjectPinned={ctx.handleToggleProjectPinned}
                     onArchiveProject={ctx.handleArchiveProject}

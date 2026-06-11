@@ -43,8 +43,8 @@ export interface UserQuestionAnswerSummary {
 }
 
 export type UIBlock =
-  | { kind: 'text'; content: string; isStreaming: boolean }
-  | { kind: 'thinking'; content: string; isStreaming: boolean }
+  | { kind: 'text'; content: string; isStreaming: boolean; segmentId?: string }
+  | { kind: 'thinking'; content: string; isStreaming: boolean; segmentId?: string }
   | {
       kind: 'tool_call'
       toolCallId: string
@@ -166,6 +166,7 @@ export type UIBlock =
       memberAgentId: string
       content: string
       isStreaming: boolean
+      segmentId?: string
     }
 
 export interface ContextUsageSnapshot {
@@ -246,27 +247,19 @@ export class MessageBuilder {
         }
 
         if (event.mode === 'complete') {
-          msg.blocks = msg.blocks.filter((block) => block.kind !== 'text')
-          if (event.content.length > 0) {
-            msg.blocks.push({ kind: 'text', content: event.content, isStreaming: false })
-          }
           if (event.isFinal) {
+            // 最终 result 文本：通常与最后一段 complete 内容一致，仅做去重收尾，
+            // 不再清空全部 text block（那会吃掉多段正文，见 segmentId 注释）。
+            this.reconcileFinalText(msg, event.content)
             msg.status = 'completed'
             this.finishStreamingBlocks(msg, 'completed')
+            break
           }
+          this.applySegmentComplete(msg.blocks, 'text', event.content, event.segmentId)
           break
         }
 
-        const lastBlock = msg.blocks[msg.blocks.length - 1]
-        if (lastBlock?.kind === 'text') {
-          lastBlock.content += event.content
-        } else {
-          msg.blocks.push({
-            kind: 'text',
-            content: event.content,
-            isStreaming: true,
-          })
-        }
+        this.applySegmentDelta(msg.blocks, 'text', event.content, event.segmentId)
 
         if (event.isFinal) {
           msg.status = 'completed'
@@ -278,36 +271,21 @@ export class MessageBuilder {
       case 'agent_thinking': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
         if (event.mode === 'complete') {
-          msg.blocks = msg.blocks.filter((block) => block.kind !== 'thinking')
-          if (event.content.length > 0) {
-            // Always insert thinking at the beginning so it appears before text blocks
-            msg.blocks.unshift({ kind: 'thinking', content: event.content, isStreaming: false })
-          }
-          break
-        }
-
-        // Find the last thinking block — search from end, skip non-thinking blocks
-        // This ensures thinking blocks are always grouped together (before text)
-        let lastThinkingIdx = -1
-        for (let i = msg.blocks.length - 1; i >= 0; i--) {
-          if (msg.blocks[i]?.kind === 'thinking') {
-            lastThinkingIdx = i
-            break
-          }
-        }
-
-        if (lastThinkingIdx >= 0) {
-          ;(msg.blocks[lastThinkingIdx] as Extract<UIBlock, { kind: 'thinking' }>).content +=
-            event.content
+          this.applySegmentComplete(msg.blocks, 'thinking', event.content, event.segmentId)
         } else {
-          // No thinking block yet — insert at beginning to keep thinking before text
-          msg.blocks.unshift({ kind: 'thinking', content: event.content, isStreaming: true })
+          this.applySegmentDelta(msg.blocks, 'thinking', event.content, event.segmentId)
         }
         break
       }
 
       case 'tool_call': {
-        const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        // member 工具调用归位到该 dispatch 的宿主消息，避免气泡分裂
+        const home =
+          event.teamMemberContext != null
+            ? this.findTeamMemberDispatchHome(event.teamMemberContext.dispatchId)
+            : undefined
+        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp)
+        if (home != null && !home.eventIds.includes(event.id)) home.eventIds.push(event.id)
         // AskUserQuestion gets its own dedicated inline block
         const isAskQuestion =
           event.toolName.replace(/[-_]/g, '').toLowerCase() === 'askuserquestion'
@@ -336,9 +314,19 @@ export class MessageBuilder {
       }
 
       case 'tool_result': {
-        const msg = this.currentAssistantId
-          ? this.messages.find((m) => m.id === this.currentAssistantId)
-          : null
+        // 优先在「包含该 toolCall block 的消息」上更新（member 工具结果可能不在当前消息）
+        const owner = this.messages.find((m) =>
+          m.blocks.some(
+            (b) =>
+              (b.kind === 'tool_call' || b.kind === 'user_question') &&
+              b.toolCallId === event.toolCallId,
+          ),
+        )
+        const msg =
+          owner ??
+          (this.currentAssistantId
+            ? this.messages.find((m) => m.id === this.currentAssistantId)
+            : null)
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
           // Update user_question block answered state
@@ -634,42 +622,79 @@ export class MessageBuilder {
       }
 
       case 'team_member_message': {
-        const existing = this.findTeamMemberMessageBlock(event.dispatchId)
-        const msg = existing?.msg ?? this.getOrCreateAssistant(event.id, event.timestamp)
+        // member 的所有事件归位到「该 dispatch 已有 block 所在的消息」，
+        // 避免 currentAssistantId 漂移把同一 dispatch 拆进多条消息（气泡分裂）。
+        const home = this.findTeamMemberDispatchHome(event.dispatchId)
+        const msg = home ?? this.getOrCreateAssistant(event.id, event.timestamp)
         if (!msg.eventIds.includes(event.id)) {
           msg.eventIds.push(event.id)
         }
-        // 找到该 dispatch 已存在的 member 气泡；delta 追加，complete 收尾。
-        // complete 与 delta 通常有不同 event id，必须按 dispatchId 跨消息合并，避免重复显示完整回复。
-        let block = existing?.block
-
-        if (event.mode === 'complete') {
-          if (block) {
-            block.content = event.content
-            block.isStreaming = false
-          } else if (event.content.length > 0) {
-            msg.blocks.push({
-              kind: 'team_member_message',
-              dispatchId: event.dispatchId,
-              memberAgentId: event.memberAgentId,
-              content: event.content,
-              isStreaming: false,
-            })
-          }
-          break
-        }
-
-        if (block) {
-          block.content += event.content
-        } else {
+        const memberBlocks = msg.blocks.filter(
+          (b): b is Extract<UIBlock, { kind: 'team_member_message' }> =>
+            b.kind === 'team_member_message' && b.dispatchId === event.dispatchId,
+        )
+        const pushBlock = (content: string, isStreaming: boolean) => {
           msg.blocks.push({
             kind: 'team_member_message',
             dispatchId: event.dispatchId,
             memberAgentId: event.memberAgentId,
-            content: event.content,
-            isStreaming: true,
+            content,
+            isStreaming,
+            ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
           })
         }
+
+        if (event.mode === 'complete') {
+          if (event.isFinal) {
+            // 最终回复：通常等于最后一段 complete，按内容去重收尾；不覆盖此前各段叙述。
+            const last = memberBlocks[memberBlocks.length - 1]
+            if (event.content.length > 0) {
+              if (last == null) pushBlock(event.content, false)
+              else if (last.isStreaming) {
+                last.content = event.content
+                last.isStreaming = false
+              } else if (last.content.trim() !== event.content.trim()) {
+                pushBlock(event.content, false)
+              }
+            }
+            for (const b of memberBlocks) b.isStreaming = false
+            break
+          }
+          if (event.segmentId != null) {
+            const block = memberBlocks.find((b) => b.segmentId === event.segmentId)
+            if (block) {
+              if (block.isStreaming) {
+                block.content = event.content
+                block.isStreaming = false
+              } else if (event.content.length > 0) {
+                block.content += event.content
+              }
+            } else if (event.content.length > 0) {
+              pushBlock(event.content, false)
+            }
+            break
+          }
+          // legacy（无 segmentId 的历史事件）：替换最近仍在流式的段
+          const lastStreaming = [...memberBlocks].reverse().find((b) => b.isStreaming)
+          if (lastStreaming) {
+            lastStreaming.content = event.content
+            lastStreaming.isStreaming = false
+          } else if (event.content.length > 0) {
+            pushBlock(event.content, false)
+          }
+          break
+        }
+
+        // delta
+        if (event.segmentId != null) {
+          const block = memberBlocks.find((b) => b.segmentId === event.segmentId)
+          if (block) block.content += event.content
+          else pushBlock(event.content, true)
+          break
+        }
+        const lastStreaming = [...memberBlocks].reverse().find((b) => b.isStreaming)
+        if (lastStreaming) lastStreaming.content += event.content
+        else pushBlock(event.content, true)
         break
       }
 
@@ -788,16 +813,109 @@ export class MessageBuilder {
     return false
   }
 
-  private findTeamMemberMessageBlock(
-    dispatchId: string,
-  ): { msg: UIMessage; block: Extract<UIBlock, { kind: 'team_member_message' }> } | undefined {
+  /**
+   * 找到某个 dispatch 的「宿主消息」：包含该 dispatch 任意 block（member 文本
+   * 或带 teamMemberContext 的工具/终端/文件块）的第一条消息。后续同 dispatch
+   * 的事件都归位到这里，保证一个 dispatch 只渲染为一个气泡。
+   */
+  private findTeamMemberDispatchHome(dispatchId: string): UIMessage | undefined {
     for (const msg of this.messages) {
-      const block = msg.blocks.find(
-        (b) => b.kind === 'team_member_message' && b.dispatchId === dispatchId,
-      ) as Extract<UIBlock, { kind: 'team_member_message' }> | undefined
-      if (block) return { msg, block }
+      const hit = msg.blocks.some((b) => {
+        if (b.kind === 'team_member_message' || b.kind === 'team_dispatch') {
+          return b.dispatchId === dispatchId
+        }
+        if (b.kind === 'tool_call' || b.kind === 'terminal' || b.kind === 'file_change') {
+          return b.teamMemberContext?.dispatchId === dispatchId
+        }
+        return false
+      })
+      if (hit) return msg
     }
     return undefined
+  }
+
+  /** delta：追加到同 segment 的流式块；无 segmentId（历史事件）退回最近流式块 */
+  private applySegmentDelta(
+    blocks: UIBlock[],
+    kind: 'text' | 'thinking',
+    content: string,
+    segmentId: string | undefined,
+  ): void {
+    if (content.length === 0) return
+    type StreamBlock = Extract<UIBlock, { kind: 'text' } | { kind: 'thinking' }>
+    if (segmentId != null) {
+      const block = blocks.find((b) => b.kind === kind && b.segmentId === segmentId) as
+        | StreamBlock
+        | undefined
+      if (block) {
+        block.content += content
+      } else {
+        blocks.push({ kind, content, isStreaming: true, segmentId })
+      }
+      return
+    }
+    const lastStreaming = [...blocks]
+      .reverse()
+      .find((b) => b.kind === kind && (b as StreamBlock).isStreaming) as StreamBlock | undefined
+    if (lastStreaming) {
+      lastStreaming.content += content
+    } else {
+      blocks.push({ kind, content, isStreaming: true })
+    }
+  }
+
+  /** complete：只替换同 segment 的流式块，不再清空全部同类块（避免多段正文互相覆盖） */
+  private applySegmentComplete(
+    blocks: UIBlock[],
+    kind: 'text' | 'thinking',
+    content: string,
+    segmentId: string | undefined,
+  ): void {
+    type StreamBlock = Extract<UIBlock, { kind: 'text' } | { kind: 'thinking' }>
+    if (segmentId != null) {
+      const block = blocks.find((b) => b.kind === kind && b.segmentId === segmentId) as
+        | StreamBlock
+        | undefined
+      if (block) {
+        if (block.isStreaming) {
+          block.content = content
+          block.isStreaming = false
+        } else if (content.length > 0) {
+          // 同一 SDK message 含多个同类 block（罕见）：追加而非覆盖
+          block.content += content
+        }
+      } else if (content.length > 0) {
+        blocks.push({ kind, content, isStreaming: false, segmentId })
+      }
+      return
+    }
+    // legacy：替换最近仍在流式的同类块
+    const lastStreaming = [...blocks]
+      .reverse()
+      .find((b) => b.kind === kind && (b as StreamBlock).isStreaming) as StreamBlock | undefined
+    if (lastStreaming) {
+      lastStreaming.content = content
+      lastStreaming.isStreaming = false
+    } else if (content.length > 0) {
+      blocks.push({ kind, content, isStreaming: false })
+    }
+  }
+
+  /** 最终 result 文本：与最后一段正文按内容去重，避免重复或覆盖此前各段 */
+  private reconcileFinalText(msg: UIMessage, content: string): void {
+    if (content.length === 0) return
+    type TextBlock = Extract<UIBlock, { kind: 'text' }>
+    const lastText = [...msg.blocks].reverse().find((b) => b.kind === 'text') as
+      | TextBlock
+      | undefined
+    if (lastText == null) {
+      msg.blocks.push({ kind: 'text', content, isStreaming: false })
+    } else if (lastText.isStreaming) {
+      lastText.content = content
+      lastText.isStreaming = false
+    } else if (lastText.content.trim() !== content.trim()) {
+      msg.blocks.push({ kind: 'text', content, isStreaming: false })
+    }
   }
 
   /** 在消息末尾追加文件变更汇总块 */

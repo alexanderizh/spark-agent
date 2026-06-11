@@ -23,6 +23,12 @@ export interface TeamMemberExecutionResult {
   inputTokens?: number
   outputTokens?: number
   artifacts?: TeamA2AReply['artifacts']
+  /**
+   * member 被超时/取消打断，但 content 中保留了已产出的部分文本。
+   * TeamDispatchService 据此把 reply 标记为 failed/canceled 的同时回传
+   * 部分产出，避免 Host 丢失工作后盲目重派。
+   */
+  partial?: boolean
 }
 
 /** 一次 dispatch 的运行上下文 */
@@ -50,8 +56,10 @@ export interface TeamDispatchRunContext<M extends { id: string; name: string }> 
   }) => Promise<TeamMemberExecutionResult>
 }
 
-const DEFAULT_DISPATCH_TIMEOUT_MS = 120_000
-const MAX_DISPATCH_TIMEOUT_MS = 600_000
+// 默认 10 分钟：member 一次 turn 常含多轮工具调用（读写文件、跑命令），
+// 旧的 2 分钟对真实编码任务远远不够，会在中途被砍断。
+const DEFAULT_DISPATCH_TIMEOUT_MS = 600_000
+const MAX_DISPATCH_TIMEOUT_MS = 1_800_000
 // 单 turn dispatch 预算。Host 用 agent_dispatch_batch 一次提交多个并行任务时
 // 计数仍按"每个 task 一次"累加（保护循环），所以上限要能覆盖典型 batch（≤10）。
 const DEFAULT_MAX_DISPATCHES_PER_TURN = 10
@@ -144,7 +152,10 @@ export class TeamDispatchService {
     ctx.signal?.addEventListener('abort', onParentAbort)
     // parallel=true 时绕过 turn 串行队列（agent_dispatch_batch 显式并行场景）。
     const runMember = async (): Promise<TeamA2AReply> => {
-      const timeoutMs = Math.min(task.timeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS, MAX_DISPATCH_TIMEOUT_MS)
+      // 超时优先级：task 级 > 团队配置级 > 默认；统一受 MAX 上限约束。
+      const requestedTimeout =
+        task.timeoutMs ?? ctx.teamConfig.dispatchTimeoutMs ?? DEFAULT_DISPATCH_TIMEOUT_MS
+      const timeoutMs = Math.min(requestedTimeout, MAX_DISPATCH_TIMEOUT_MS)
       let timedOut = false
       const timer = setTimeout(() => {
         timedOut = true
@@ -164,6 +175,47 @@ export class TeamDispatchService {
           memberDepth: ctx.currentDepth + 1,
         })
         const durationMs = Date.now() - startedAt
+
+        // 被超时/取消打断但保留了部分产出：标记 failed/canceled，仍回传已产出内容。
+        if (result.partial === true) {
+          const canceled = controller.signal.aborted
+          const code: NonNullable<TeamA2AReply['error']>['code'] = timedOut ? 'timeout' : 'denied'
+          const message = timedOut
+            ? `Member timed out after ${timeoutMs}ms; partial output preserved below.`
+            : 'Dispatch was canceled; partial output preserved below.'
+          const reply: TeamA2AReply = {
+            taskId: task.taskId,
+            memberAgentId: member.id,
+            memberName: member.name,
+            state: canceled && !timedOut ? 'canceled' : 'failed',
+            content: result.content,
+            error: { code, message },
+            usage: {
+              ...(result.inputTokens != null ? { inputTokens: result.inputTokens } : {}),
+              ...(result.outputTokens != null ? { outputTokens: result.outputTokens } : {}),
+              durationMs,
+            },
+          }
+          this.dispatches.update(dispatchId, {
+            state: reply.state,
+            replyJson: JSON.stringify(reply),
+            errorMessage: message,
+            ...(result.inputTokens != null ? { inputTokens: result.inputTokens } : {}),
+            ...(result.outputTokens != null ? { outputTokens: result.outputTokens } : {}),
+            durationMs,
+            endedAt: new Date().toISOString(),
+          })
+          ctx.emitEvent({
+            ...base(),
+            type: 'team_dispatch_completed',
+            dispatchId,
+            hostAgentId: ctx.hostAgentId,
+            memberAgentId: member.id,
+            reply,
+          })
+          return reply
+        }
+
         const reply: TeamA2AReply = {
           taskId: task.taskId,
           memberAgentId: member.id,

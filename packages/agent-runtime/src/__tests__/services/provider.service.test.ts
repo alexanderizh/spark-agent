@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { LOCAL_CLI_DEFAULT_MODEL, LOCAL_CLI_PROVIDER_ID, LOCAL_CLI_PROVIDER_NAME } from '@spark/protocol'
 import { ProviderService } from '../../services/provider.service.js'
 
 // Mock keystore
@@ -390,6 +391,39 @@ describe('ProviderService', () => {
     expect(profiles[0]!.id).toBe('id-4')
     expect(profiles[0]!.defaultModel).toBe('claude-3')
     expect(profiles[0]!.modelIds).toEqual(['claude-3', 'claude-3-haiku'])
+  })
+
+  it('normalizes the built-in local CLI provider model display config', async () => {
+    repo.rows.set(LOCAL_CLI_PROVIDER_ID, {
+      id: LOCAL_CLI_PROVIDER_ID,
+      provider_type: 'anthropic',
+      name: 'Local Claude CLI',
+      config_json: '{"defaultModel":"claude-sonnet-4-5","modelIds":["claude-sonnet-4-5"]}',
+      enabled: 1,
+      keystore_ref: '',
+      is_default: 0,
+      created_at: '2026-06-01',
+      updated_at: '2026-06-01',
+    })
+    vi.spyOn(service, 'isLocalCliAvailable').mockResolvedValue(true)
+
+    const profiles = await service.listProviders()
+    const ensured = await service.ensureLocalCliProvider()
+
+    expect(profiles[0]).toMatchObject({
+      id: LOCAL_CLI_PROVIDER_ID,
+      name: LOCAL_CLI_PROVIDER_NAME,
+      defaultModel: LOCAL_CLI_DEFAULT_MODEL,
+      modelIds: [LOCAL_CLI_DEFAULT_MODEL],
+    })
+    expect(ensured.defaultModel).toBe(LOCAL_CLI_DEFAULT_MODEL)
+    expect(repo.update).toHaveBeenCalledWith(LOCAL_CLI_PROVIDER_ID, {
+      name: LOCAL_CLI_PROVIDER_NAME,
+      config: expect.objectContaining({
+        defaultModel: LOCAL_CLI_DEFAULT_MODEL,
+        modelIds: [LOCAL_CLI_DEFAULT_MODEL],
+      }),
+    })
   })
 
   it('listProviders exposes stored codexApiKind', async () => {

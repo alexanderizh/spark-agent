@@ -26,6 +26,7 @@ import type {
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { SparkSelect } from '../components/FormControls'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
 import './ScheduledTasksView.less'
@@ -458,6 +459,7 @@ export function ScheduledTasksView() {
   if (showForm) {
     return (
       <div className="scheduled-tasks-view">
+        <MacWindowDragHeader />
         <TaskFormPage
           task={editingTask}
           onClose={handleFormClose}
@@ -468,6 +470,7 @@ export function ScheduledTasksView() {
 
   return (
     <div className="scheduled-tasks-view">
+      <MacWindowDragHeader />
       {/* Header */}
       <div className="st-header">
         <div className="st-header-left">

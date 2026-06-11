@@ -8,6 +8,7 @@ import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import { Dropdown, Menu, Switch } from '@arco-design/web-react'
 import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
@@ -103,6 +104,7 @@ export function AgentsView() {
   const [agentsForTeams, setAgentsForTeams] = useState<ManagedAgent[]>([])
   return (
     <div className="agents-view">
+      <MacWindowDragHeader />
       <div className="agents-view-tabs">
         <button
           type="button"

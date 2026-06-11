@@ -70,6 +70,7 @@ jobs:
           fi
 
   publish:
+    name: Publish ${{ matrix.name }}
     needs: prepare
     if: needs.prepare.outputs.should_publish == 'true'
     strategy:
@@ -77,9 +78,14 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            platform: mac
+            name: mac-arm64
+            build_args: --mac --arm64
+          - os: macos-latest
+            name: mac-x64
+            build_args: --mac --x64
           - os: windows-latest
-            platform: win
+            name: win-x64
+            build_args: --win --x64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout tagged source
@@ -132,4 +138,4 @@ jobs:
             fi
           done
 
-          pnpm --filter @spark/desktop exec electron-builder --${{ matrix.platform }} --publish always
+          pnpm --filter @spark/desktop exec electron-builder ${{ matrix.build_args }} --publish always

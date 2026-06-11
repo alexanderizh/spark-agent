@@ -3,6 +3,7 @@
   display: flex;
   flex-direction: column;
   height: 100%;
+padding-bottom: 20px;
 }
 
 .tfp-header {
@@ -23,7 +24,7 @@
     color: var(--text-secondary);
     font-size: 13px;
     padding: 4px 8px;
-    border-radius: 6px;
+    border-radius: var(--r-sm);
     transition: background 0.15s, color 0.15s;
 
     &:hover {
@@ -108,7 +109,7 @@
   display: inline-flex;
   align-items: center;
   padding: 2px 10px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   font-size: 12px;
   background: var(--hover);
   color: var(--text-secondary);
@@ -144,7 +145,7 @@
 
 .tfp-comment {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--hover);
 }
 
@@ -270,7 +271,7 @@
   position: relative;
   width: 120px;
   height: 90px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow: hidden;
   border: 1px solid var(--divider);
   cursor: pointer;
@@ -343,7 +344,7 @@
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--hover);
   font-size: 12px;
   color: var(--text-secondary);
@@ -385,7 +386,7 @@
   gap: 4px;
   background: none;
   border: 1px dashed var(--divider);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 6px 12px;
   cursor: pointer;
   color: var(--text-secondary);
@@ -428,7 +429,7 @@
     max-width: 90vw;
     max-height: 90vh;
     object-fit: contain;
-    border-radius: 4px;
+    border-radius: var(--r-xs);
   }
 }
 
@@ -497,7 +498,7 @@
   gap: 4px;
   background: none;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 4px 10px;
   cursor: pointer;
   color: var(--text-secondary);
@@ -533,7 +534,7 @@
 .board-filter-popover-content {
   padding: 12px;
   background: var(--bg);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
 }
 
@@ -550,7 +551,7 @@
   gap: 4px;
   background: none;
   border: 1px solid var(--divider);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 4px 10px;
   cursor: pointer;
   color: var(--text-secondary);
@@ -575,7 +576,7 @@
 .board-column-selector {
   width: 220px;
   background: var(--bg);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   overflow: hidden;
 }
@@ -598,7 +599,7 @@
   color: var(--primary);
   font-size: 12px;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
 
   &:hover {
     background: rgba(var(--primary-rgb, 59, 130, 246), 0.08);
@@ -649,7 +650,7 @@
   color: var(--text-muted);
   background: var(--hover);
   padding: 2px 6px;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
 }
 
 /* Per-column select-all checkbox (only visible in selection mode) */
@@ -660,7 +661,7 @@
   cursor: pointer;
   padding: 0 4px;
   margin-left: 2px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   transition: background 0.15s;
 
   &:hover {

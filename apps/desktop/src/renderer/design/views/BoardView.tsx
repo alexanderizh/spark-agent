@@ -25,6 +25,7 @@ import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import './BoardView.less'
 
 /* ------------------------------------------------------------------ */
@@ -1711,6 +1712,7 @@ export function BoardView() {
   if (page.view === 'create') {
     return (
       <div className="board-view">
+        <MacWindowDragHeader />
         <TaskFormPage
           mode="create"
           agents={agents}
@@ -1729,6 +1731,7 @@ export function BoardView() {
     const freshCard = tasks.find(t => t.id === card.id) ?? card
     return (
       <div className="board-view">
+        <MacWindowDragHeader />
         <TaskFormPage
           mode="edit"
           card={freshCard}
@@ -1756,6 +1759,7 @@ export function BoardView() {
   // Default: kanban view
   return (
     <div className="board-view">
+      <MacWindowDragHeader />
       {/* Header */}
       <div className="board-header">
         <div className="board-header-left">
@@ -1877,7 +1881,7 @@ export function BoardView() {
                   trigger="click"
                   position="bottom"
                 >
-                  <Button className="board-import-export-btn" size="small" type="outline">
+                  <Button size="small" type="outline">
                     <span className="board-btn-inner">
                       <Icons.File size={14} />
                       <span>导入导出</span>
@@ -1886,7 +1890,7 @@ export function BoardView() {
                   </Button>
                 </Dropdown>
               )}
-              <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
+              <Button type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
                 新建任务
               </Button>
             </Space>

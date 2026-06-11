@@ -12,12 +12,16 @@ import {
   ProviderExportPayloadSchema,
   ProviderImportModeSchema,
 } from '../provider-export.js'
+import { LOCAL_CLI_PROVIDER_ID } from '../local-cli-provider.js'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
 
 export const SessionIdSchema = z.string().uuid()
 export const TurnIdSchema = z.string().uuid()
-export const ProfileIdSchema = z.string().uuid()
+export const ProfileIdSchema = z.union([
+  z.string().uuid(),
+  z.literal(LOCAL_CLI_PROVIDER_ID),
+])
 export const RuleIdSchema = z.string().uuid()
 
 export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
@@ -670,6 +674,7 @@ export const IpcSchemaRegistry = {
   'update:settings': z.object({
     autoCheck: z.boolean().optional(),
     autoDownload: z.boolean().optional(),
+    autoInstall: z.boolean().optional(),
     channel: z.enum(['stable', 'beta']).optional(),
   }),
 

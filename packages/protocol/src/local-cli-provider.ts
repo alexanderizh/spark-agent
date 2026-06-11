@@ -22,7 +22,7 @@ export const LOCAL_CLI_PROVIDER_NAME = '本地 CLI'
  * 默认模型名 —— 仅作为 UI 上的占位/记账；运行时 SDK 在 useLocalConfig 模式下
  * 不会强制写 ANTHROPIC_MODEL，实际模型由宿主 claude CLI 决定。
  */
-export const LOCAL_CLI_DEFAULT_MODEL = 'claude-sonnet-4-5'
+export const LOCAL_CLI_DEFAULT_MODEL = 'claude cli'
 
 /** 判断一个 provider profile 是不是本地 CLI 这条内置项 */
 export function isLocalCliProvider(

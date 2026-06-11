@@ -147,6 +147,7 @@ type SessionSidebarCtx = {
   // Actions
   refreshData: () => Promise<void>
   updateSessionInList: (sessionId: SessionId, patch: Partial<SessionSummary>) => void
+  bumpSessionMessageCount: (sessionId: SessionId) => void
 
   // Session actions
   handleNewSession: (workspaceId?: string | null, options?: Record<string, unknown>) => Promise<SessionId | null>
@@ -330,6 +331,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   const updateSessionInList = useCallback((sessionId: SessionId, patch: Partial<SessionSummary>) => {
     setSessions(prev => prev.map(item => item.id === sessionId ? { ...item, ...patch } : item))
+  }, [])
+
+  const bumpSessionMessageCount = useCallback((sessionId: SessionId) => {
+    setSessions(prev => prev.map(item =>
+      item.id === sessionId ? { ...item, messageCount: item.messageCount + 1 } : item,
+    ))
   }, [])
 
   const ensureNoProjectWorkspace = useCallback(async (): Promise<string | null> => {
@@ -605,7 +612,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     setActiveSession: setActive, setActiveWorkspace: setActiveWorkspaceId,
     sessionAgentStatuses,
     projectGroups, noProjectWorkspace, noProjectSessions, ungroupedSessions,
-    refreshData, updateSessionInList, handleNewSession,
+    refreshData, updateSessionInList, bumpSessionMessageCount, handleNewSession,
     handleToggleSessionPinned, handleRenameSession, handleDeleteSession,
     handleArchiveSession, handleOpenSessionFolder,
     handleToggleProjectPinned, handleRenameProject, handleArchiveProject,
@@ -619,7 +626,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     sessions, workspaces, providers, agents, active, activeWorkspaceId,
     sessionAgentStatuses,
     projectGroups, noProjectWorkspace, noProjectSessions, ungroupedSessions,
-    refreshData, updateSessionInList, handleNewSession,
+    refreshData, updateSessionInList, bumpSessionMessageCount, handleNewSession,
     handleToggleSessionPinned, handleRenameSession, handleDeleteSession,
     handleArchiveSession, handleOpenSessionFolder,
     handleToggleProjectPinned, handleRenameProject, handleArchiveProject,

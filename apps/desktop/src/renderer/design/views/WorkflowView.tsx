@@ -37,6 +37,7 @@ import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workfl
 import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
 type WorkflowScreen = 'list' | 'detail'
@@ -290,6 +291,7 @@ function WorkflowViewInner() {
   if (screen === 'list' || draft == null) {
     return (
       <div className="workflow-layout workflow-home">
+        <MacWindowDragHeader />
         <div className="workflow-home-head">
           <div>
             <div className="agents-title-lg">Workflows</div>
@@ -376,6 +378,7 @@ function WorkflowViewInner() {
   return (
     <div className="workflow-layout workflow-builder workflow-builder-v2">
       <div className="wf-stage">
+        <MacWindowDragHeader />
         <div className="wf-toolbar">
           <button
             className="btn ghost sm"

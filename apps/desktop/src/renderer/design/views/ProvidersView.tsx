@@ -23,6 +23,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect } from '../components/FormControls'
 import { ChipList } from '../components/ChipList'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { ProviderLogo } from '../components/ProviderLogo'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -397,6 +398,7 @@ function ProvidersView() {
 
   return (
     <>
+      <MacWindowDragHeader />
       <div className="settings-section">
         <div className="row section-header-row">
           <div className="row row-gap-xs">
@@ -534,13 +536,6 @@ function ProvidersView() {
                     : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
                 }
                 status={status}
-                detail={
-                  builtin
-                    ? '由本地 claude CLI 凭证驱动'
-                    : h?.latencyMs != null
-                      ? `延迟 ${h.latencyMs}ms`
-                      : `${p.modelIds.length} 个模型${p.isDefault ? ' · 默认 Provider' : ''}`
-                }
                 modelIds={builtin ? [] : p.modelIds}
                 defaultModel={p.defaultModel}
                 isBuiltin={builtin}

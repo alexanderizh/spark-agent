@@ -11,6 +11,7 @@ import { Button, Drawer, Empty, Spin, Switch, Tag } from '@arco-design/web-react
 import type { LocalSkillCandidate, SkillDetailInfo, SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useApp } from '../AppContext'
 import {
   useSkills,
@@ -41,6 +42,7 @@ export function SkillStoreView() {
   return (
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
+        <MacWindowDragHeader />
         {/* ── Tab bar ── */}
         <div className="store-tabbar">
           <div className="flex items-center">

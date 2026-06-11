@@ -24,9 +24,10 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { sep } from 'node:path'
+import { homedir } from 'node:os'
+import { join, sep } from 'node:path'
 import type { AgentEvent, AgentStatusValue, UserQuestionOption, UserQuestionPrompt } from '@spark/protocol'
 import {
   createLogger,
@@ -79,6 +80,31 @@ export function getResumeCircuitBreaker(): ResumeCircuitBreaker {
   return resumeCircuitBreaker
 }
 
+/**
+ * 读取宿主 `claude` CLI 的 `~/.claude/settings.json` 中的 `env` 块。
+ *
+ * `claude` CLI 启动子进程前会把 settings.json 里的 env 注入进自己的进程；很多用户
+ * （尤其用第三方中转的）把 `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_BASE_URL` 写在这里
+ * 而非 shell rc 文件，所以 `process.env` 里看不到这些值。"本地 CLI" provider 要复用
+ * 宿主认证，就必须显式合并这块 env，否则 SDK 默认走 api.anthropic.com 拿不到 key → 401。
+ */
+function loadClaudeSettingsEnv(): Record<string, string> {
+  try {
+    const settingsPath = join(homedir(), '.claude', 'settings.json')
+    if (!existsSync(settingsPath)) return {}
+    const raw = JSON.parse(readFileSync(settingsPath, 'utf-8')) as { env?: Record<string, unknown> }
+    if (raw.env == null || typeof raw.env !== 'object') return {}
+    const out: Record<string, string> = {}
+    for (const [k, v] of Object.entries(raw.env)) {
+      if (typeof v === 'string') out[k] = v
+    }
+    return out
+  } catch (err) {
+    log.warn(`Failed to read ~/.claude/settings.json env block: ${(err as Error).message}`)
+    return {}
+  }
+}
+
 function buildIsolatedRuntimeEnv(
   apiKey: string,
   model: string,
@@ -95,7 +121,12 @@ function buildIsolatedRuntimeEnv(
     env[key] = value
   }
   if (useLocalConfig === true) {
-    // 不覆写任何 ANTHROPIC_*；SDK 会回落到 ~/.claude/.credentials.json 或宿主环境。
+    // 合并 ~/.claude/settings.json 里的 env 块（宿主 CLI 的中转 token / base url 通常写在这里）。
+    // 进程环境优先级更高 —— 如果用户在 shell 里显式 export 过同名变量，不覆盖。
+    const settingsEnv = loadClaudeSettingsEnv()
+    for (const [k, v] of Object.entries(settingsEnv)) {
+      if (env[k] == null) env[k] = v
+    }
     return env
   }
   env.ANTHROPIC_API_KEY = apiKey
@@ -308,8 +339,15 @@ export class ClaudeSDKExecutor {
       },
       config.useLocalConfig === true,
     )
+    // 本地 CLI 模式下 config.model 是占位符 "claude cli"（仅 UI 显示用），不能透传给 SDK
+    // —— 真正的模型由宿主 ~/.claude/settings.json 里的 ANTHROPIC_MODEL 决定，
+    // 已在 runtimeEnv 里合并好。优先读 env，回落到 config.model。
+    const effectiveModel =
+      config.useLocalConfig === true
+        ? runtimeEnv.ANTHROPIC_MODEL ?? runtimeEnv.ANTHROPIC_DEFAULT_SONNET_MODEL ?? config.model
+        : config.model
     const settings: SDKSettings = {
-      model: config.model,
+      model: effectiveModel,
       env: runtimeEnv,
       permissions: {
         defaultMode: mergedPerms.permissionMode,
@@ -338,7 +376,7 @@ export class ClaudeSDKExecutor {
       const sdkSessionId = config.sdkSessionId ?? sessionId
       const options: SDKQueryOptions = {
         abortController: this.abortController,
-        model: config.model,
+        model: effectiveModel,
         cwd: config.workspaceRootPath,
         ...(claudeCodeExecutable != null
           ? { pathToClaudeCodeExecutable: claudeCodeExecutable }
