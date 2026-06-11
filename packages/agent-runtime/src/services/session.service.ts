@@ -566,6 +566,12 @@ export class SessionService {
     teamConfig?: TeamModeConfig
     /** 可选：团队模式 @ 路由——用户指定由该 Member 直接响应（替代 Host 主循环） */
     mentionAgentId?: string
+    /**
+     * 可选：若为 true，则当中途存在活跃 loop（典型场景：plan 批准时上一个 plan turn
+     * 的 SDK 还没完全收尾）时，显式中断并立即起跑新 turn，而不是入队等待。
+     * 与 sendQueuedTurnNow 的中断语义一致，避免 plan 批准后被卡在队尾不自动执行。
+     */
+    interruptActive?: boolean
   }): Promise<{ turnId: string; started: boolean }> {
     const { sessionId, message, skillId, skillParams, mentionAgentId } = params
     const attachments = normalizeTurnAttachments(params.attachments)
@@ -580,11 +586,22 @@ export class SessionService {
     // 解除 plan 审批闸门，让被阻塞的队列后续可以恢复自动起跑。
     this.pendingPlanApprovals.delete(sessionId)
     if (this.activeLoops.has(sessionId)) {
-      this.enqueueTurn(
-        sessionId,
-        this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
-      )
-      return { turnId, started: false }
+      if (params.interruptActive === true) {
+        // 显式中断当前 loop（与 sendQueuedTurnNow 同模式），让批准消息立即起跑，
+        // 不再依赖上一个 plan turn 的 finally 兜底（时机不可控，会被用户感知为"卡住"）。
+        const loop = this.activeLoops.get(sessionId)!
+        this.onApprovalCancel?.(sessionId)
+        this.teamDispatchService?.cancelAll()
+        loop.cancel()
+        this.activeLoops.delete(sessionId)
+        new SessionRepository(this.db).updateStatus(sessionId, 'idle')
+      } else {
+        this.enqueueTurn(
+          sessionId,
+          this.makePendingTurn(turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId),
+        )
+        return { turnId, started: false }
+      }
     }
 
     await this.startTurn(sessionId, turnId, message, runtimePatch, skillId, skillParams, attachments, mentionAgentId)

@@ -95,6 +95,11 @@ export interface SessionSendTurnRequest {
    * - 命中 memberAgentIds 中的某个 Member → 跳过 Host，直接由该 Member 响应
    */
   mentionAgentId?: string
+  /**
+   * 若为 true，则当 session 仍有活跃 loop（典型：plan 批准时上一个 plan turn 还没完全收尾）
+   * 时显式中断并立即起跑新 turn，而不是入队等待。用于 Plan Approval Modal 的"批准并执行"。
+   */
+  interruptActive?: boolean
 }
 
 export interface SessionSendTurnResponse {

@@ -1024,6 +1024,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.attachments != null ? { attachments: req.attachments } : {}),
       ...(req.teamConfig != null ? { teamConfig: req.teamConfig } : {}),
       ...(req.mentionAgentId != null ? { mentionAgentId: req.mentionAgentId } : {}),
+      ...(req.interruptActive === true ? { interruptActive: true } : {}),
     })
   })
 
