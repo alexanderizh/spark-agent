@@ -80,8 +80,6 @@ jobs:
             platform: mac
           - os: windows-latest
             platform: win
-          - os: ubuntu-latest
-            platform: linux
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout tagged source
@@ -118,4 +116,20 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
-        run: pnpm --filter @spark/desktop exec electron-builder --${{ matrix.platform }} --publish always
+        shell: bash
+        run: |
+          for name in \
+            CSC_LINK \
+            CSC_KEY_PASSWORD \
+            APPLE_ID \
+            APPLE_APP_SPECIFIC_PASSWORD \
+            APPLE_TEAM_ID \
+            WIN_CSC_LINK \
+            WIN_CSC_KEY_PASSWORD
+          do
+            if [ -z "${!name:-}" ]; then
+              unset "$name"
+            fi
+          done
+
+          pnpm --filter @spark/desktop exec electron-builder --${{ matrix.platform }} --publish always
