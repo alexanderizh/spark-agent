@@ -590,7 +590,7 @@ export function ChatView({
       onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
       onSwitchBranch={handleSwitchBranch}
       onCancelSession={handleCancelSession}
-      onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
+      onSent={(sessionId) => { setSessionStatus(sessionId, 'running'); sessionCtx.bumpSessionMessageCount(sessionId) }}
       showProjectPicker
       focusTrigger={composerFocusTrigger}
       workspaces={workspaces}
@@ -623,7 +623,7 @@ export function ChatView({
       onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
       onSwitchBranch={handleSwitchBranch}
       onCancelSession={handleCancelSession}
-      onSent={(sessionId) => { setSessionStatus(sessionId, 'running') }}
+      onSent={(sessionId) => { setSessionStatus(sessionId, 'running'); sessionCtx.bumpSessionMessageCount(sessionId) }}
       showProjectPicker={showEmptyHero}
       focusTrigger={composerFocusTrigger}
       workspaces={workspaces}

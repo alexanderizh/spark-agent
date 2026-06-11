@@ -8,6 +8,7 @@ import { Icons } from '../Icons'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { MessageBuilder, type UIBlock, type UIMessage } from '../services/event-mapper'
+import { useSessionSidebar } from '../SessionSidebarContext'
 
 /** File change status tracked via file_change agent events */
 type FileChangeStatus = 'create' | 'modify' | 'delete'
@@ -415,6 +416,7 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
   const { invoke: sendTurn } = useIpcInvoke('session:send-turn')
   const { invoke: cancelTurn } = useIpcInvoke('session:cancel')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { bumpSessionMessageCount } = useSessionSidebar()
 
   useEffect(() => {
     let cancelled = false
@@ -503,11 +505,12 @@ function ProjectAgentPane({ workspaceId }: { workspaceId: string | undefined }) 
     setNotice('')
     try {
       await sendTurn({ sessionId, message: text })
+      bumpSessionMessageCount(sessionId)
     } catch (err) {
       setNotice(err instanceof Error ? err.message : '发送失败')
       setInput(text)
     }
-  }, [input, sessionId, sendTurn])
+  }, [input, sessionId, sendTurn, bumpSessionMessageCount])
 
   const handleCancel = useCallback(async () => {
     if (sessionId == null) return
