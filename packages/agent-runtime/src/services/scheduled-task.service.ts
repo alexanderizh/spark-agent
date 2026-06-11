@@ -630,22 +630,22 @@ export class ScheduledTaskService {
         const next = new Date(now.getTime() + seconds * 1000)
         // If start_at is in the future, use that instead
         if (task.start_at && new Date(task.start_at) > now) {
-          return new Date(task.start_at).toISOString()
+          return toSQLiteUtc(new Date(task.start_at))
         }
-        return next.toISOString()
+        return toSQLiteUtc(next)
       }
       case 'cron': {
         const expr = task.cron_expression ?? '* * * * *'
         const next = this.parseCronNextRun(expr, now)
         if (task.start_at && next && new Date(task.start_at) > next) {
-          return new Date(task.start_at).toISOString()
+          return toSQLiteUtc(new Date(task.start_at))
         }
-        return next?.toISOString() ?? null
+        return next ? toSQLiteUtc(next) : null
       }
       case 'once': {
         if (!task.run_at) return null
         const runAt = new Date(task.run_at)
-        return runAt > now ? runAt.toISOString() : null
+        return runAt > now ? toSQLiteUtc(runAt) : null
       }
       default:
         return null
@@ -791,6 +791,18 @@ function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10)
+}
+
+/**
+ * Convert a Date to SQLite datetime('now')-compatible format: 'YYYY-MM-DD HH:MM:SS' (UTC).
+ *
+ * Why: findDueTasks() compares next_run_at against datetime('now'), which SQLite
+ * returns as 'YYYY-MM-DD HH:MM:SS'. ISO strings ('YYYY-MM-DDTHH:MM:SS.sssZ') sort
+ * incorrectly against that format (the 'T' vs ' ' separator and trailing Z), so
+ * due tasks never match. Storing next_run_at in the same format fixes the comparison.
+ */
+function toSQLiteUtc(date: Date): string {
+  return date.toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, '')
 }
 
 /**

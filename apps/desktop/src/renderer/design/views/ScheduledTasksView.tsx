@@ -926,7 +926,7 @@ function TaskFormPage({ task, onClose }: {
 
   const canSave = name.trim().length > 0 && promptTemplate.trim().length > 0
 
-  const handleSave = async () => {
+  const handleSave = async (runNow: boolean = false) => {
     if (!canSave) return
     setSaving(true)
     try {
@@ -948,10 +948,22 @@ function TaskFormPage({ task, onClose }: {
         tags,
         enabled: enabledOnCreate,
       }
+      let taskId: string | null = null
       if (isEdit) {
         await ipcInvoke('scheduled-task:update', { id: task!.id, ...payload })
+        taskId = task!.id
       } else {
-        await ipcInvoke('scheduled-task:create', payload)
+        const res = await ipcInvoke('scheduled-task:create', payload)
+        taskId = res?.task?.id ?? null
+      }
+
+      if (runNow && taskId) {
+        try {
+          await ipcInvoke('scheduled-task:run-now', { id: taskId })
+          Message.success('已保存并触发执行')
+        } catch (runErr) {
+          Message.warning(`已保存，但立即执行失败: ${runErr}`)
+        }
       }
       onClose(true)
     } catch (err) {
@@ -979,7 +991,16 @@ function TaskFormPage({ task, onClose }: {
         </div>
         <div className="st-form-page-actions">
           <Button onClick={() => onClose(false)}>取消</Button>
-          <Button type="primary" loading={saving} disabled={!canSave} onClick={handleSave}>
+          <Button
+            loading={saving}
+            disabled={!canSave}
+            onClick={() => handleSave(true)}
+            icon={<IconPlayArrow />}
+            title="保存后立即触发一次执行"
+          >
+            保存并执行
+          </Button>
+          <Button type="primary" loading={saving} disabled={!canSave} onClick={() => handleSave(false)}>
             {isEdit ? '保存修改' : '创建任务'}
           </Button>
         </div>

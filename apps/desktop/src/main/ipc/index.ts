@@ -290,6 +290,19 @@ async function ensureSessionWorkspacePaths(sessionId: string): Promise<void> {
   await Promise.all(workspaceIds.map((workspaceId) => ensureNoProjectWorkspacePath(workspaceId)))
 }
 
+/**
+ * Look up the no-project workspace id by name ('不使用项目').
+ *
+ * Used as a fallback when a scheduled task has no workspaceId set, so triggered
+ * sessions land in the same default workspace as ad-hoc chats and remain visible
+ * in the session sidebar. Returns null if no such workspace exists yet.
+ */
+function getNoProjectWorkspaceId(): string | null {
+  const rows = new WorkspaceRepository(getDatabase()).listAll(100, 0, { includeArchived: true })
+  const found = rows.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME)
+  return found?.id ?? null
+}
+
 let _mcpService: McpService | null = null
 function getMcpService(): McpService {
   if (_mcpService == null) {
@@ -386,12 +399,16 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
     throw new Error('No provider profile available for scheduled task execution')
   }
 
+  // Fall back to the no-project workspace so triggered sessions stay visible
+  // in the session sidebar even when the task didn't specify one.
+  const workspaceId = params.workspaceId ?? getNoProjectWorkspaceId() ?? undefined
+
   // Create a new session for this execution
   const created = await sessionService.createSession({
     providerProfileId: defaultProfile.id,
     modelId: params.modelId ?? undefined,
     agentId: params.agentId ?? undefined,
-    workspaceId: params.workspaceId ?? undefined,
+    workspaceId,
     permissionMode: (params.permissionMode as any) ?? undefined,
     title: `[⏰] ${params.taskName}`,
   })
