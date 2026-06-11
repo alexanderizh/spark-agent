@@ -8249,6 +8249,7 @@ function ChatInspector({
   const projectContextSources = projectContext?.sources ?? []
   const fileChangeSummaries = extractInspectorFileChanges(messages)
   const runningTeamAgentIds = extractRunningTeamMemberIds(messages)
+  const inspectorTasks = extractInspectorTasks(messages)
 
   const handleResizeStart = (event: React.PointerEvent<HTMLDivElement>) => {
     dragRef.current = { startX: event.clientX, startWidth: width }
@@ -8436,6 +8437,16 @@ function ChatInspector({
           {plans.map((plan) => (
             <PlanSummary key={plan.id} plan={plan} />
           ))}
+        </div>
+      )}
+
+      {inspectorTasks.length > 0 && (
+        <div className="inspector-section">
+          <h4>
+            <Icons.CheckSquare size={11} /> 任务
+            <span className="inspector-count">{inspectorTasks.length}</span>
+          </h4>
+          <TaskListSection tasks={inspectorTasks} />
         </div>
       )}
 
@@ -8742,6 +8753,54 @@ function PlanSummary({ plan }: { plan: SidebarPlan }) {
               {item.status === 'running' && <Icons.Spinner size={10} />}
             </span>
             <span className="text">{item.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * TaskListSection — 渲染 TaskCreate / TaskUpdate 维护的当前任务列表。
+ * 复用 inspector-plan 样式以与 todo_write 的"计划"区块保持视觉一致。
+ */
+function TaskListSection({ tasks }: { tasks: InspectorTask[] }) {
+  const completed = tasks.filter((t) => t.status === 'completed').length
+  const total = tasks.length
+  const percent = total === 0 ? 0 : Math.round((completed / total) * 100)
+  const inProgress = tasks.find((t) => t.status === 'in_progress')
+
+  return (
+    <div className="inspector-plan">
+      <div className="inspector-plan-head">
+        <span className="strong truncate">
+          {inProgress ? (inProgress.activeForm ?? inProgress.subject) : '任务进度'}
+        </span>
+        <span className="mono-sm">
+          {completed}/{total}
+        </span>
+      </div>
+      <div className="inspector-progress">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="inspector-plan-items">
+        {tasks.map((task) => (
+          <div
+            key={task.id}
+            className={`inspector-plan-item ${
+              task.status === 'completed' ? 'done' : task.status === 'in_progress' ? 'running' : ''
+            }`}
+          >
+            <span className="inspector-plan-dot">
+              {task.status === 'completed' && <Icons.Check size={10} />}
+              {task.status === 'in_progress' && <Icons.Spinner size={10} />}
+            </span>
+            <span className="text">
+              <span className="mono-sm" style={{ marginRight: 4, color: 'var(--text-muted)' }}>
+                {task.id}
+              </span>
+              {task.status === 'in_progress' ? (task.activeForm ?? task.subject) : task.subject}
+            </span>
           </div>
         ))}
       </div>
@@ -9119,6 +9178,92 @@ function normalizePlanStatus(value: unknown): 'done' | 'running' | 'pending' {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
+}
+
+type InspectorTaskStatus = 'pending' | 'in_progress' | 'completed'
+
+interface InspectorTask {
+  id: string
+  subject: string
+  description?: string | undefined
+  activeForm?: string | undefined
+  status: InspectorTaskStatus
+  createdAt: number
+}
+
+function isTaskToolName(name: string): boolean {
+  const lower = name.toLowerCase()
+  return lower === 'task_create' || lower === 'taskcreate' || lower === 'task_update' || lower === 'taskupdate'
+}
+
+function parseTaskIdFromOutput(output: string | undefined): string | null {
+  if (!output) return null
+  const match = output.match(/Task\s+(#[A-Za-z0-9_-]+)\s+created/i)
+  return match?.[1] ?? null
+}
+
+/**
+ * 按时间顺序聚合会话中的 TaskCreate / TaskUpdate 工具调用，
+ * 输出当前最新的任务视图。TaskCreate 的 id 来自 tool result 文本
+ * （"Task #N created"），找不到时退回按出现顺序自增的占位 id。
+ * TaskUpdate 的 status=deleted 表示删除任务。
+ */
+function extractInspectorTasks(messages: UIMessage[]): InspectorTask[] {
+  const tasks = new Map<string, InspectorTask>()
+  let nextSeq = 0
+  let fallbackCounter = 0
+
+  for (const message of messages) {
+    for (const block of message.blocks) {
+      if (block.kind !== 'tool_call') continue
+      if (!isTaskToolName(block.toolName)) continue
+
+      const lower = block.toolName.toLowerCase()
+      const input = block.toolInput ?? {}
+
+      if (lower === 'task_create' || lower === 'taskcreate') {
+        const subject = typeof input.subject === 'string' ? input.subject : ''
+        if (!subject) continue
+        const parsedId = parseTaskIdFromOutput(block.output)
+        const id = parsedId ?? `#task-${++fallbackCounter}`
+        // 同一 id 重复创建（如重放）：保留首次创建时的 createdAt
+        if (!tasks.has(id)) {
+          tasks.set(id, {
+            id,
+            subject,
+            description: typeof input.description === 'string' ? input.description : undefined,
+            activeForm: typeof input.activeForm === 'string' ? input.activeForm : undefined,
+            status: 'pending',
+            createdAt: nextSeq++,
+          })
+        }
+        continue
+      }
+
+      // task_update
+      const rawId = input.taskId ?? input.task_id ?? input.id
+      const id = typeof rawId === 'string' ? rawId : ''
+      if (!id) continue
+      const existing = tasks.get(id)
+      if (!existing) continue
+
+      const status = input.status
+      if (typeof status === 'string') {
+        if (status === 'deleted') {
+          tasks.delete(id)
+          continue
+        }
+        if (status === 'pending' || status === 'in_progress' || status === 'completed') {
+          existing.status = status
+        }
+      }
+      if (typeof input.subject === 'string') existing.subject = input.subject
+      if (typeof input.description === 'string') existing.description = input.description
+      if (typeof input.activeForm === 'string') existing.activeForm = input.activeForm
+    }
+  }
+
+  return Array.from(tasks.values()).sort((a, b) => a.createdAt - b.createdAt)
 }
 
 function clamp(value: number, min: number, max: number): number {

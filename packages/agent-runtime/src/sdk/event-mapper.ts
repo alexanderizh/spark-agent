@@ -709,6 +709,12 @@ function mapSDKToolName(sdkName: string): string {
     ExitPlanMode: 'exit_plan_mode',
     EnterPlanMode: 'enter_plan_mode',
     AskUserQuestion: 'ask_user_question',
+    TaskCreate: 'task_create',
+    TaskUpdate: 'task_update',
+    TaskGet: 'task_get',
+    TaskList: 'task_list',
+    TaskOutput: 'task_output',
+    TaskStop: 'task_stop',
   }
   return mapping[sdkName] ?? sdkName
 }

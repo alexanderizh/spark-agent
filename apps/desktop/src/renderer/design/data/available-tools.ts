@@ -30,6 +30,8 @@ export const CODING_AGENT_TOOLS: CodingAgentTool[] = [
   { name: 'monitor', group: '执行', status: 'built-in' },
   { name: 'git', group: '版本控制', status: 'built-in' },
   { name: 'todo_write', group: '协作', status: 'built-in' },
+  { name: 'task_create', group: '协作', status: 'built-in' },
+  { name: 'task_update', group: '协作', status: 'built-in' },
   { name: 'web_fetch', group: '网络', status: 'built-in' },
   { name: 'web_search', group: '网络', status: 'built-in' },
   { name: 'exit_plan_mode', group: '协作', status: 'built-in' },

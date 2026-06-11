@@ -19,6 +19,8 @@ describe('CODING_AGENT_TOOLS', () => {
       'monitor',
       'git',
       'todo_write',
+      'task_create',
+      'task_update',
       'web_fetch',
       'web_search',
       'exit_plan_mode',
