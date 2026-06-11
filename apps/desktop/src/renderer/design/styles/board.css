@@ -143,34 +143,6 @@
   height: 32px;
   padding: 0 !important;
 }
-.board-create-arco-btn {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  flex-direction: row !important;
-  gap: 6px;
-  height: 32px;
-  min-width: 98px;
-  padding: 0 14px !important;
-  white-space: nowrap !important;
-}
-.board-recycle-arco-btn .arco-btn-icon,
-.board-create-arco-btn .arco-btn-icon {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  flex-shrink: 0;
-  margin-right: 0 !important;
-}
-.board-recycle-arco-btn svg,
-.board-create-arco-btn svg {
-  display: block;
-}
-.board-create-arco-btn .arco-btn-content {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
 
 /* Fix button icon and text vertical alignment */
 .board-toolbar .arco-btn {
@@ -857,15 +829,6 @@
   .board-columns {
     padding: 0 12px 14px;
   }
-}
-
-/* ── Import/Export Dropdown ── */
-.board-import-export-btn {
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  height: 32px;
-  padding: 0 12px !important;
 }
 
 .board-btn-inner {

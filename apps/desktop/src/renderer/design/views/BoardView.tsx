@@ -1881,7 +1881,7 @@ export function BoardView() {
                   trigger="click"
                   position="bottom"
                 >
-                  <Button className="board-import-export-btn" size="small" type="outline">
+                  <Button size="small" type="outline">
                     <span className="board-btn-inner">
                       <Icons.File size={14} />
                       <span>导入导出</span>
@@ -1890,7 +1890,7 @@ export function BoardView() {
                   </Button>
                 </Dropdown>
               )}
-              <Button className="board-create-arco-btn" type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
+              <Button type="primary" size="small" icon={<Icons.Plus size={14} />} onClick={() => setPage({ view: 'create', defaultStatus: 'todo' })}>
                 新建任务
               </Button>
             </Space>
