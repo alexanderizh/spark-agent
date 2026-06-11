@@ -403,7 +403,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .sidebar-logo {
   width: 24px;
   height: 24px;
-  border-radius: 7px;
+  border-radius: var(--r-md);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -680,7 +680,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .user-menu-accent-swatch {
   width: 14px;
   height: 14px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   flex-shrink: 0;
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
 }
@@ -881,7 +881,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   gap: 4px;
   height: 20px;
   padding: 0 7px;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: var(--bg-soft);
   border: 1px solid var(--border);
   color: var(--text-muted);
@@ -909,7 +909,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   min-width: 18px;
   height: 18px;
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   background: var(--bg-soft);
   border: 1px solid var(--border);
   border-bottom-width: 2px;
@@ -1415,7 +1415,7 @@ input.spark-checkbox {
   width: 14px;
   height: 14px;
   border: 1.5px solid var(--border-strong);
-  border-radius: 3px;
+  border-radius: var(--r-xs);
   flex-shrink: 0;
   cursor: pointer;
   position: relative;
