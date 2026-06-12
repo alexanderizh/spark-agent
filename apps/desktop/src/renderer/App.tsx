@@ -256,6 +256,7 @@ const NAV_ITEMS: Array<{ id: string; label: string; icon: React.FC<{ size?: numb
   { id: 'agents', label: 'Agents', icon: Icons.Bot },
   { id: 'board', label: 'Board', icon: Icons.Board },
   { id: 'providers', label: 'Providers', icon: Icons.Server },
+  { id: 'mcp', label: 'MCP', icon: Icons.MCP },
   { id: 'skill-store', label: 'Skills', icon: Icons.Skills },
   { id: 'workflows', label: 'Workflows', icon: Icons.Workflow },
   { id: 'scheduled-tasks', label: 'Tasks', icon: Icons.Clock },

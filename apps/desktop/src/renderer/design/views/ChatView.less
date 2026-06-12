@@ -44,12 +44,36 @@
 }
 
 .chat-layout > .inspector {
-  height: 100vh;
+  height: 100%;
   min-height: 0;
   padding-bottom: 30px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+}
+
+/* Chat route lives inside a flex shell; 100vh here makes Windows custom titlebar
+   steal visible bottom space and leaves macOS feeling too airy. */
+.main-with-browser > .main > .view-body,
+.app.sidebar-hidden .main-with-browser > .main,
+.chat-main {
+  height: 100%;
+}
+
+.chat-main-active {
+  padding-bottom: 14px;
+}
+
+.chat-main-active .composer-inner {
+  padding-bottom: 10px;
+}
+
+.platform-win32 .chat-main-active {
+  padding-bottom: 18px;
+}
+
+.platform-win32 .chat-main-active .composer-inner {
+  padding-bottom: 12px;
 }
 
 .scroll-to-bottom-btn {
