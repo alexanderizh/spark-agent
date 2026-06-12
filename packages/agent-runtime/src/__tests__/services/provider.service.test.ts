@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { LOCAL_CLI_DEFAULT_MODEL, LOCAL_CLI_PROVIDER_ID, LOCAL_CLI_PROVIDER_NAME } from '@spark/protocol'
+import {
+  LOCAL_CLI_DEFAULT_MODEL,
+  LOCAL_CLI_PROVIDER_ID,
+  LOCAL_CLI_PROVIDER_NAME,
+  LOCAL_CODEX_CLI_DEFAULT_MODEL,
+  LOCAL_CODEX_CLI_PROVIDER_ID,
+  LOCAL_CODEX_CLI_PROVIDER_NAME,
+} from '@spark/protocol'
 import { ProviderService } from '../../services/provider.service.js'
 
 // Mock keystore
@@ -406,6 +413,7 @@ describe('ProviderService', () => {
       updated_at: '2026-06-01',
     })
     vi.spyOn(service, 'isLocalCliAvailable').mockResolvedValue(true)
+    vi.spyOn(service, 'isLocalCodexCliAvailable').mockResolvedValue(false)
 
     const profiles = await service.listProviders()
     const ensured = await service.ensureLocalCliProvider()
@@ -422,6 +430,43 @@ describe('ProviderService', () => {
       config: expect.objectContaining({
         defaultModel: LOCAL_CLI_DEFAULT_MODEL,
         modelIds: [LOCAL_CLI_DEFAULT_MODEL],
+      }),
+    })
+  })
+
+  it('normalizes the built-in local Codex CLI provider model display config', async () => {
+    repo.rows.set(LOCAL_CODEX_CLI_PROVIDER_ID, {
+      id: LOCAL_CODEX_CLI_PROVIDER_ID,
+      provider_type: 'openai',
+      name: 'Local Codex CLI',
+      config_json: '{"defaultModel":"gpt-5-codex","modelIds":["gpt-5-codex"]}',
+      enabled: 1,
+      keystore_ref: '',
+      is_default: 0,
+      created_at: '2026-06-01',
+      updated_at: '2026-06-01',
+    })
+    vi.spyOn(service, 'isLocalCliAvailable').mockResolvedValue(false)
+    vi.spyOn(service, 'isLocalCodexCliAvailable').mockResolvedValue(true)
+
+    const profiles = await service.listProviders()
+    const ensured = await service.ensureLocalCodexCliProvider()
+
+    expect(profiles[0]).toMatchObject({
+      id: LOCAL_CODEX_CLI_PROVIDER_ID,
+      name: LOCAL_CODEX_CLI_PROVIDER_NAME,
+      provider: 'openai',
+      defaultModel: LOCAL_CODEX_CLI_DEFAULT_MODEL,
+      modelIds: [LOCAL_CODEX_CLI_DEFAULT_MODEL],
+      codexApiKind: 'responses',
+    })
+    expect(ensured.defaultModel).toBe(LOCAL_CODEX_CLI_DEFAULT_MODEL)
+    expect(repo.update).toHaveBeenCalledWith(LOCAL_CODEX_CLI_PROVIDER_ID, {
+      name: LOCAL_CODEX_CLI_PROVIDER_NAME,
+      config: expect.objectContaining({
+        defaultModel: LOCAL_CODEX_CLI_DEFAULT_MODEL,
+        modelIds: [LOCAL_CODEX_CLI_DEFAULT_MODEL],
+        codexApiKind: 'responses',
       }),
     })
   })

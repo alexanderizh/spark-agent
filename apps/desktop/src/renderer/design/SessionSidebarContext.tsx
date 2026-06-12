@@ -23,6 +23,10 @@ import type {
   AgentEvent,
   AgentStatusValue,
 } from '@spark/protocol'
+import {
+  isBuiltInLocalCliProvider,
+  isLocalCodexCliProvider,
+} from '@spark/protocol'
 
 export type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -41,14 +45,23 @@ function getNoProjectRootPath(tempDir: string): string {
   return `${tempDir.replace(/[\\/]$/, '')}${sep}no-project`
 }
 
-const DEFAULT_AGENT_ADAPTER: SessionAgentAdapter = 'claude'
+const DEFAULT_AGENT_ADAPTER: SessionAgentAdapter = 'claude-sdk'
 
-function isProviderCompatibleWithAdapter(_provider: ProviderProfile, _adapter: SessionAgentAdapter): boolean {
-  return true
+function isClaudeAdapter(adapter: SessionAgentAdapter): boolean {
+  return adapter === 'claude' || adapter === 'claude-sdk'
 }
 
-function getProviderAdapterKind(_provider: ProviderProfile): SessionAgentAdapter {
-  return DEFAULT_AGENT_ADAPTER
+function isProviderCompatibleWithAdapter(provider: ProviderProfile, adapter: SessionAgentAdapter): boolean {
+  if (isLocalCodexCliProvider(provider)) return adapter === 'codex'
+  if (isBuiltInLocalCliProvider(provider)) return isClaudeAdapter(adapter)
+  return isClaudeAdapter(adapter)
+    ? provider.provider === 'anthropic'
+    : provider.provider !== 'anthropic'
+}
+
+function getProviderAdapterKind(provider: ProviderProfile): SessionAgentAdapter {
+  if (isLocalCodexCliProvider(provider)) return 'codex'
+  return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
 }
 
 function getValidPermissionMode(mode: SessionPermissionMode | undefined, adapter: SessionAgentAdapter): SessionPermissionMode {

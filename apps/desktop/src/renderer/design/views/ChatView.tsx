@@ -77,11 +77,19 @@ import type {
   TeamModeConfig,
   TeamMemberEventContext,
 } from '@spark/protocol'
-import { LOCAL_CLI_DEFAULT_MODEL, LOCAL_CLI_PROVIDER_ID } from '@spark/protocol'
+import {
+  LOCAL_CLI_DEFAULT_MODEL,
+  LOCAL_CLI_PROVIDER_ID,
+  LOCAL_CODEX_CLI_DEFAULT_MODEL,
+  LOCAL_CODEX_CLI_PROVIDER_ID,
+  isBuiltInLocalCliProvider,
+  isLocalCodexCliProvider,
+} from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
+const LOCAL_CODEX_CLI_MODEL_DISPLAY = 'codex cli'
 
 /**
  * resolveTeamHostAgentId — 解析团队模式下要使用的主持 Agent。
@@ -5182,7 +5190,7 @@ function ComposerV2({
   const draftModelForProvider = normalizeModelForProvider(draftModelId, selectedProvider)
   const effectiveModelId =
     selectedProvider != null && isLocalCliProvider(selectedProvider)
-      ? LOCAL_CLI_DEFAULT_MODEL
+      ? getProviderDefaultModel(selectedProvider)
       : session != null
         ? sessionModelId || providerDefaultModel
         : draftModelForProvider || providerDefaultModel
@@ -6372,7 +6380,7 @@ function ComposerV2({
       getPreferredProvider(providers, { ...readComposerPrefs(), agentId: agent.id }, agent.agentAdapter)
     const model =
       provider != null && isLocalCliProvider(provider)
-        ? LOCAL_CLI_DEFAULT_MODEL
+        ? getProviderDefaultModel(provider)
         : agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? ''
     if (provider != null) setSelectedProviderId(provider.id)
     setDraftModelId(model)
@@ -7337,6 +7345,7 @@ function ModelIcon() {
 
 const ADAPTER_OPTIONS: Array<{ value: AgentAdapter; label: string }> = [
   { value: 'claude-sdk', label: 'Claude SDK' },
+  { value: 'codex', label: 'Codex' },
 ]
 
 const DEFAULT_AGENT_ADAPTER: AgentAdapter = 'claude-sdk'
@@ -7371,7 +7380,22 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
     },
   ]
 
-// Codex 权限选项已移除，项目仅支持 Claude SDK
+const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
+  [
+    { value: 'codex-default', label: 'Default', description: '使用 Codex CLI 默认权限策略' },
+    {
+      value: 'codex-auto-review',
+      label: 'Auto review',
+      description: '允许自动读写，保留关键确认',
+      tone: 'auto',
+    },
+    {
+      value: 'codex-full-access',
+      label: 'Full access',
+      description: '危险：Codex CLI 完全访问',
+      tone: 'danger',
+    },
+  ]
 
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
   'png',
@@ -7545,7 +7569,7 @@ function toSessionAttachments(attachments: ComposerAttachment[]): SessionAttachm
 function getPermissionModeOptions(
   adapter: AgentAdapter,
 ): Array<ComposerMenuOption & { value: PermissionModeChoice }> {
-  return CLAUDE_PERMISSION_MODE_OPTIONS
+  return adapter === 'codex' ? CODEX_PERMISSION_MODE_OPTIONS : CLAUDE_PERMISSION_MODE_OPTIONS
 }
 
 function getValidPermissionMode(
@@ -7564,7 +7588,7 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
 } {
   const source = value != null && typeof value === 'object' ? (value as ComposerPrefs) : {}
   const adapter =
-    source.adapter === 'claude' || source.adapter === 'claude-sdk'
+    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
       ? source.adapter
       : DEFAULT_AGENT_ADAPTER
   return {
@@ -7662,8 +7686,8 @@ function getPreferredProvider(
 }
 
 function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
-  // 仅支持 Claude SDK
-  return DEFAULT_AGENT_ADAPTER
+  if (isLocalCodexCliProvider(provider)) return 'codex'
+  return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
 }
 
 function isControlApprovalRequest(request: PermissionApprovalRequest): boolean {
@@ -7683,7 +7707,7 @@ function normalizeModelForProvider(
   modelId: string | null | undefined,
   provider: ProviderProfile | null | undefined,
 ): string {
-  if (isLocalCliProvider(provider)) return LOCAL_CLI_DEFAULT_MODEL
+  if (isLocalCliProvider(provider)) return getProviderDefaultModel(provider)
   const model = modelId?.trim() ?? ''
   if (!model || provider == null) return ''
   const configuredModels = provider.modelIds.length
@@ -7696,14 +7720,15 @@ function normalizeModelForProvider(
 }
 
 function isLocalCliProvider(provider: ProviderProfile | null | undefined): boolean {
-  return provider?.id === LOCAL_CLI_PROVIDER_ID
+  return isBuiltInLocalCliProvider(provider)
 }
 
 function getProviderDefaultModel(
   provider: ProviderProfile | null | undefined,
   fallback = '',
 ): string {
-  if (isLocalCliProvider(provider)) return LOCAL_CLI_DEFAULT_MODEL
+  if (provider?.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_DEFAULT_MODEL
+  if (provider?.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLI_DEFAULT_MODEL
   return provider?.defaultModel || fallback || ''
 }
 
@@ -7711,7 +7736,8 @@ function getModelDisplayLabel(
   provider: ProviderProfile | null | undefined,
   modelId: string | null | undefined,
 ): string {
-  if (isLocalCliProvider(provider)) return LOCAL_CLI_MODEL_DISPLAY
+  if (provider?.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_MODEL_DISPLAY
+  if (provider?.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLI_MODEL_DISPLAY
   return modelId || provider?.defaultModel || provider?.name || '未配置'
 }
 
@@ -7723,6 +7749,8 @@ function isProviderCompatibleWithAdapter(
   provider: ProviderProfile,
   adapter: AgentAdapter,
 ): boolean {
+  if (isLocalCodexCliProvider(provider)) return adapter === 'codex'
+  if (isLocalCliProvider(provider)) return isClaudeAdapter(adapter)
   return isClaudeAdapter(adapter)
     ? provider.provider === 'anthropic'
     : provider.provider !== 'anthropic'
@@ -8629,9 +8657,11 @@ const TurnPromptRow = React.memo(function TurnPromptRow({
     [snapshot.systemPromptSections],
   )
   const modelLabel =
-    snapshot.providerProfileId === LOCAL_CLI_PROVIDER_ID
-      ? LOCAL_CLI_MODEL_DISPLAY
-      : snapshot.model
+    snapshot.providerProfileId === LOCAL_CODEX_CLI_PROVIDER_ID
+      ? LOCAL_CODEX_CLI_MODEL_DISPLAY
+      : snapshot.providerProfileId === LOCAL_CLI_PROVIDER_ID
+        ? LOCAL_CLI_MODEL_DISPLAY
+        : snapshot.model
   const formatCharCount = (n: number): string => {
     if (n >= 10_000) return `${Math.round(n / 1000)}K`
     return `${n}`

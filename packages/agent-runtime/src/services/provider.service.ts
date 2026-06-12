@@ -13,6 +13,11 @@ import {
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CLI_PROVIDER_NAME,
   LOCAL_CLI_DEFAULT_MODEL,
+  LOCAL_CODEX_CLI_DEFAULT_MODEL,
+  LOCAL_CODEX_CLI_PROVIDER_ID,
+  LOCAL_CODEX_CLI_PROVIDER_NAME,
+  isBuiltInLocalCliProvider,
+  isLocalCodexCliProvider,
 } from '@spark/protocol'
 import { ProviderProfileRepository } from '@spark/storage'
 import * as keystore from '@spark/shared/keystore'
@@ -35,8 +40,12 @@ const LOCAL_CLI_CHECK_TTL_MS = 10_000
 const CLAUDE_CLI_CANDIDATES = isWin
   ? ['claude.cmd', 'claude.exe', 'claude.bat', 'claude.ps1', 'claude']
   : ['claude']
+const CODEX_CLI_CANDIDATES = isWin
+  ? ['codex.cmd', 'codex.exe', 'codex.bat', 'codex.ps1', 'codex']
+  : ['codex']
 
 let localCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
+let localCodexCliAvailabilityCache: { checkedAt: number; available: boolean } | null = null
 
 /**
  * 解析 `claude` CLI 的实际可执行路径（用于校验存在性，不执行它）。
@@ -47,9 +56,17 @@ let localCliAvailabilityCache: { checkedAt: number; available: boolean } | null 
  * 返回首个解析到的路径；找不到返回 null。
  */
 async function resolveClaudeCliPath(): Promise<string | null> {
+  return resolveCliPath('claude')
+}
+
+async function resolveCodexCliPath(): Promise<string | null> {
+  return resolveCliPath('codex')
+}
+
+async function resolveCliPath(binaryName: string): Promise<string | null> {
   const finder = isWin ? 'where' : 'which'
   try {
-    const { stdout } = await execFileAsync(finder, ['claude'], {
+    const { stdout } = await execFileAsync(finder, [binaryName], {
       timeout: 3000,
       windowsHide: true,
     })
@@ -65,6 +82,14 @@ async function resolveClaudeCliPath(): Promise<string | null> {
  * Windows 上若直接 execFile 失败，再走一次 `where` 解析完整路径调用。
  */
 async function tryClaudeVersion(command: string): Promise<boolean> {
+  return tryCliVersion(command)
+}
+
+async function tryCodexVersion(command: string): Promise<boolean> {
+  return tryCliVersion(command)
+}
+
+async function tryCliVersion(command: string): Promise<boolean> {
   try {
     await execFileAsync(command, ['--version'], {
       timeout: 3000,
@@ -87,6 +112,15 @@ async function checkClaudeCliAvailable(): Promise<boolean> {
   return false
 }
 
+async function checkCodexCliAvailable(): Promise<boolean> {
+  for (const candidate of CODEX_CLI_CANDIDATES) {
+    if (await tryCodexVersion(candidate)) return true
+  }
+  const resolved = await resolveCodexCliPath()
+  if (resolved != null && await tryCodexVersion(resolved)) return true
+  return false
+}
+
 function rowToProfile(row: {
   id: string
   provider_type: string
@@ -97,12 +131,17 @@ function rowToProfile(row: {
   created_at: string
 }): ProviderProfile {
   const rawConfig = JSON.parse(row.config_json) as ProviderConfig
-  const config = row.id === LOCAL_CLI_PROVIDER_ID
-    ? normalizeLocalCliProviderConfig(rawConfig)
+  const config = isBuiltInLocalCliProvider(row)
+    ? normalizeLocalCliProviderConfig(row.id, rawConfig)
     : normalizeProviderConfig(rawConfig)
+  const name = isLocalCodexCliProvider(row)
+    ? LOCAL_CODEX_CLI_PROVIDER_NAME
+    : row.id === LOCAL_CLI_PROVIDER_ID
+      ? LOCAL_CLI_PROVIDER_NAME
+      : row.name
   return {
     id: row.id,
-    name: row.id === LOCAL_CLI_PROVIDER_ID ? LOCAL_CLI_PROVIDER_NAME : row.name,
+    name,
     provider: normalizeProviderType(row.provider_type),
     defaultModel: config.defaultModel,
     modelIds: config.modelIds,
@@ -126,8 +165,15 @@ export class ProviderService {
 
   async listProviders(): Promise<ProviderProfile[]> {
     const profiles = this.repo.listAll().map(rowToProfile)
-    if (await this.isLocalCliAvailable()) return profiles
-    return profiles.filter((profile) => profile.id !== LOCAL_CLI_PROVIDER_ID)
+    const [claudeAvailable, codexAvailable] = await Promise.all([
+      this.isLocalCliAvailable(),
+      this.isLocalCodexCliAvailable(),
+    ])
+    return profiles.filter((profile) => {
+      if (profile.id === LOCAL_CLI_PROVIDER_ID) return claudeAvailable
+      if (profile.id === LOCAL_CODEX_CLI_PROVIDER_ID) return codexAvailable
+      return true
+    })
   }
 
   async isLocalCliAvailable(): Promise<boolean> {
@@ -144,6 +190,26 @@ export class ProviderService {
     if (!available) {
       log.warn(
         `Local claude CLI not found. Tried candidates [${CLAUDE_CLI_CANDIDATES.join(', ')}]` +
+        ` and ${isWin ? 'where' : 'which'} resolution.`,
+      )
+    }
+    return available
+  }
+
+  async isLocalCodexCliAvailable(): Promise<boolean> {
+    const now = Date.now()
+    if (
+      localCodexCliAvailabilityCache != null &&
+      now - localCodexCliAvailabilityCache.checkedAt < LOCAL_CLI_CHECK_TTL_MS
+    ) {
+      return localCodexCliAvailabilityCache.available
+    }
+
+    const available = await checkCodexCliAvailable()
+    localCodexCliAvailabilityCache = { checkedAt: now, available }
+    if (!available) {
+      log.warn(
+        `Local codex CLI not found. Tried candidates [${CODEX_CLI_CANDIDATES.join(', ')}]` +
         ` and ${isWin ? 'where' : 'which'} resolution.`,
       )
     }
@@ -168,7 +234,7 @@ export class ProviderService {
     const existing = this.repo.get(LOCAL_CLI_PROVIDER_ID)
     if (existing != null) {
       const rawConfig = JSON.parse(existing.config_json) as ProviderConfig
-      const normalizedConfig = normalizeLocalCliProviderConfig(rawConfig)
+      const normalizedConfig = normalizeLocalCliProviderConfig(LOCAL_CLI_PROVIDER_ID, rawConfig)
       if (
         existing.name !== LOCAL_CLI_PROVIDER_NAME ||
         rawConfig.defaultModel !== LOCAL_CLI_DEFAULT_MODEL ||
@@ -195,6 +261,47 @@ export class ProviderService {
       isDefault: false,
     })
     log.info(`Seeded built-in local CLI provider id=${LOCAL_CLI_PROVIDER_ID}`)
+    return rowToProfile(row)
+  }
+
+  async ensureLocalCodexCliProvider(): Promise<ProviderProfile> {
+    if (!(await this.isLocalCodexCliAvailable())) {
+      throw new Error('Local codex CLI not found')
+    }
+
+    const existing = this.repo.get(LOCAL_CODEX_CLI_PROVIDER_ID)
+    if (existing != null) {
+      const rawConfig = JSON.parse(existing.config_json) as ProviderConfig
+      const normalizedConfig = normalizeLocalCliProviderConfig(LOCAL_CODEX_CLI_PROVIDER_ID, rawConfig)
+      if (
+        existing.name !== LOCAL_CODEX_CLI_PROVIDER_NAME ||
+        existing.provider_type !== 'openai' ||
+        rawConfig.defaultModel !== LOCAL_CODEX_CLI_DEFAULT_MODEL ||
+        rawConfig.modelIds?.length !== 1 ||
+        rawConfig.modelIds[0] !== LOCAL_CODEX_CLI_DEFAULT_MODEL ||
+        rawConfig.codexApiKind !== 'responses'
+      ) {
+        this.repo.update(LOCAL_CODEX_CLI_PROVIDER_ID, {
+          name: LOCAL_CODEX_CLI_PROVIDER_NAME,
+          config: normalizedConfig,
+        })
+      }
+      return rowToProfile(existing)
+    }
+
+    const row = this.repo.create({
+      id: LOCAL_CODEX_CLI_PROVIDER_ID,
+      providerType: 'openai',
+      name: LOCAL_CODEX_CLI_PROVIDER_NAME,
+      config: normalizeProviderConfig({
+        defaultModel: LOCAL_CODEX_CLI_DEFAULT_MODEL,
+        modelIds: [LOCAL_CODEX_CLI_DEFAULT_MODEL],
+        codexApiKind: 'responses',
+      }),
+      keystoreRef: '',
+      isDefault: false,
+    })
+    log.info(`Seeded built-in local Codex CLI provider id=${LOCAL_CODEX_CLI_PROVIDER_ID}`)
     return rowToProfile(row)
   }
 
@@ -380,7 +487,7 @@ export class ProviderService {
   }
 
   async deleteProvider(id: string): Promise<void> {
-    if (id === LOCAL_CLI_PROVIDER_ID) {
+    if (id === LOCAL_CLI_PROVIDER_ID || id === LOCAL_CODEX_CLI_PROVIDER_ID) {
       throw new Error('Cannot delete the built-in local CLI provider')
     }
     const row = this.repo.get(id)
@@ -403,6 +510,12 @@ export class ProviderService {
       return available
         ? { healthy: true, latencyMs: 0 }
         : { healthy: false, errorMessage: 'Local claude CLI not found' }
+    }
+    if (id === LOCAL_CODEX_CLI_PROVIDER_ID) {
+      const available = await this.isLocalCodexCliAvailable()
+      return available
+        ? { healthy: true, latencyMs: 0 }
+        : { healthy: false, errorMessage: 'Local codex CLI not found' }
     }
 
     if (!row.keystore_ref) return { healthy: false, errorMessage: 'No API key configured' }
@@ -606,7 +719,15 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   return normalized
 }
 
-function normalizeLocalCliProviderConfig(config: ProviderConfig): NormalizedProviderConfig {
+function normalizeLocalCliProviderConfig(providerId: string, config: ProviderConfig): NormalizedProviderConfig {
+  if (providerId === LOCAL_CODEX_CLI_PROVIDER_ID) {
+    return normalizeProviderConfig({
+      ...config,
+      defaultModel: LOCAL_CODEX_CLI_DEFAULT_MODEL,
+      modelIds: [LOCAL_CODEX_CLI_DEFAULT_MODEL],
+      codexApiKind: 'responses',
+    })
+  }
   return normalizeProviderConfig({
     ...config,
     defaultModel: LOCAL_CLI_DEFAULT_MODEL,

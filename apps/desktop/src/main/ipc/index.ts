@@ -986,12 +986,15 @@ export function registerAllIpcHandlers(): void {
     log.warn(`Failed to start remote runtime: ${String(err)}`)
   })
 
-  // 启动时仅在宿主机存在 claude CLI 时补种内置 "本地 CLI" provider。
+  // 启动时仅在宿主机存在对应 CLI 时补种内置本地 provider。
   // 失败仅记日志，不阻塞后续注册。
   void (async () => {
     const svc = getProviderService()
     if (await svc.isLocalCliAvailable()) {
       await svc.ensureLocalCliProvider()
+    }
+    if (await svc.isLocalCodexCliAvailable()) {
+      await svc.ensureLocalCodexCliProvider()
     }
   })().catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
 
@@ -1108,6 +1111,9 @@ export function registerAllIpcHandlers(): void {
     const svc = getProviderService()
     if (await svc.isLocalCliAvailable()) {
       await svc.ensureLocalCliProvider()
+    }
+    if (await svc.isLocalCodexCliAvailable()) {
+      await svc.ensureLocalCodexCliProvider()
     }
     const profiles = await svc.listProviders()
     return { profiles }

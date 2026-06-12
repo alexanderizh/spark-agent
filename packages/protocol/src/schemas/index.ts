@@ -12,7 +12,7 @@ import {
   ProviderExportPayloadSchema,
   ProviderImportModeSchema,
 } from '../provider-export.js'
-import { LOCAL_CLI_PROVIDER_ID } from '../local-cli-provider.js'
+import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
 
@@ -21,6 +21,7 @@ export const TurnIdSchema = z.string().uuid()
 export const ProfileIdSchema = z.union([
   z.string().uuid(),
   z.literal(LOCAL_CLI_PROVIDER_ID),
+  z.literal(LOCAL_CODEX_CLI_PROVIDER_ID),
 ])
 export const RuleIdSchema = z.string().uuid()
 
@@ -29,13 +30,16 @@ export const RuntimeConfigScopeSchema = z.enum(['system', 'agent', 'project', 's
 export const LocalSkillSourceSchema = z.enum(['claude', 'codex', 'agents', 'bundled', 'linked', 'custom'])
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['low', 'medium', 'high', 'xhigh'])
-export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk'])
+export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk', 'codex'])
 export const SessionPermissionModeSchema = z.enum([
   'claude-ask',
   'claude-auto-edits',
   'claude-plan',
   'claude-auto',
   'claude-bypass',
+  'codex-default',
+  'codex-auto-review',
+  'codex-full-access',
 ])
 export const RemoteChannelTypeSchema = z.enum(['telegram', 'feishu', 'qq', 'wechat-claw'])
 export const RemotePairingModeSchema = z.enum(['code', 'qr'])

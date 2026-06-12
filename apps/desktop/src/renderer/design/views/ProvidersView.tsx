@@ -42,8 +42,8 @@ import {
   getVendorMeta,
   getPresetsByVendor,
   getUniqueVendorIds,
-  isLocalCliProvider,
-  LOCAL_CLI_PROVIDER_ID,
+  isBuiltInLocalCliProvider,
+  isLocalCodexCliProvider,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -245,7 +245,7 @@ function ProvidersView() {
     let ok = 0
     const errs: string[] = []
     for (const id of selectedIds) {
-      if (id === LOCAL_CLI_PROVIDER_ID) continue
+      if (isBuiltInLocalCliProvider({ id })) continue
       try {
         await deleteProvider({ id })
         ok += 1
@@ -547,7 +547,10 @@ function ProvidersView() {
             const h = healthMap[p.id]
             const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
             const vendor = guessVendorByName(p.name, getUniqueVendorIds())
-            const builtin = isLocalCliProvider(p)
+            const builtin = isBuiltInLocalCliProvider(p)
+            const builtinDesc = isLocalCodexCliProvider(p)
+              ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
+              : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
             return (
               <ProviderCardX
                 key={p.id}
@@ -555,7 +558,7 @@ function ProvidersView() {
                 name={p.name}
                 desc={
                   builtin
-                    ? '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
+                    ? builtinDesc
                     : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
                 }
                 status={status}

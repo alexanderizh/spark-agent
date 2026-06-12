@@ -839,6 +839,7 @@ type ProviderProfile = {
 - `defaultModel` 是默认运行模型，必须同时出现在 `modelIds[]` 中。
 - `modelIds[]` 支持用户手动维护更多模型 ID，供会话或工作流覆盖使用。
 - preset 只是创建时的模板来源，不参与运行时路由判定，也不限制用户后续修改 endpoint、默认模型或模型列表。
+- 内置本地 CLI provider 不需要 API Key: `local-cli` 表示宿主机 Claude CLI，默认模型展示为 `claude cli`; `local-codex-cli` 表示宿主机 Codex CLI，默认模型展示为 `codex cli`。两者只在对应 CLI 可用时自动补种并出现在会话模型选择中。
 
 路由策略:
 

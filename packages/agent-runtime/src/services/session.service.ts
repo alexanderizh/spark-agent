@@ -3680,6 +3680,12 @@ export function makeSdkRuntimeSessionId(
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
 }
 
+function getLocalCliDefaultModel(provider: { id: string }): string {
+  return isLocalCodexCliProvider(provider)
+    ? LOCAL_CODEX_CLI_DEFAULT_MODEL
+    : LOCAL_CLI_DEFAULT_MODEL
+}
+
 export function isSdkResumeSafe(params: {
   providerType: string
   apiEndpoint?: string
