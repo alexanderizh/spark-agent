@@ -23,9 +23,9 @@ Spark Agent 的 Claude 执行路径已经切换为 Claude Agent SDK。SDK 自带
 | `claude-plan` | `plan` | `ExitPlanMode` / `EnterPlanMode` / `AskUserQuestion` 控制工具自动允许 | 普通安全色 |
 | `claude-auto` | `auto` | 不挂 Spark `canUseTool`，由 SDK 自带策略接管 | Auto 色，说明“SDK 自动权限策略” |
 | `claude-bypass` | `bypassPermissions` | 不挂 Spark `canUseTool`，仅保留 SDK 传入配置 | 危险色，显示警告图标 |
-| `codex-default` | 当前未接通 Codex SDK | 预留 | 普通安全色 |
-| `codex-auto-review` | 当前未接通 Codex SDK | 预留 | Auto 色 |
-| `codex-full-access` | 当前未接通 Codex SDK | 预留 | 危险色 |
+| `codex-default` | Codex CLI `--sandbox workspace-write` | 走宿主 Codex 配置；Spark 注入规则、skills、会话历史与 CLI-compatible MCP | 普通安全色 |
+| `codex-auto-review` | Codex CLI `--sandbox workspace-write` | 当前 Codex CLI 无单独 `--ask-for-approval` 开关，权限由 Codex CLI 自身策略处理 | Auto 色 |
+| `codex-full-access` | Codex CLI `--dangerously-bypass-approvals-and-sandbox` | 完全跳过 Codex CLI 审批与沙箱，仅用于用户明确选择的高信任任务 | 危险色 |
 
 ## 3. 工具动作归一化
 
@@ -80,3 +80,11 @@ Spark approval callback 接收 SDK 原生工具名。权限服务必须先归一
 - SessionService 在启动 turn 前校验附件存在且为文件，并将附件路径整理为 SDK prompt 中的显式 “User-selected attachments” 清单。
 - 附件位于 workspace 之外时，SessionService 会把附件目录写入 Claude SDK `additionalDirectories`，让 SDK 的 `Read` 工具可以读取用户明确选择的文件。
 - 单轮最多 20 个附件；附件不写入数据库，只作为当前 turn 的临时输入和提示词快照审计信息。
+
+## 8. Codex CLI 执行路径
+
+- 本地 `local-codex-cli` provider 使用模型显示名 `codex cli`，执行时不把该占位名传给 `codex exec --model`，实际模型由宿主 `~/.codex/config.toml` / Codex 登录态决定。
+- Codex adapter 通过 `CodexCliExecutor` 启动真实 `codex exec --json --output-last-message` 子进程，不再走旧 in-process AgentLoop，也不再抛 `SDK_REQUIRED`。
+- Spark 运行时仍在 turn 启动前组装 managed agent prompt、规则、记忆、项目上下文、会话历史、显式 skill prompt 和可用 skills catalog，并作为 Codex CLI 初始 prompt 注入。
+- 普通 stdio / SSE / HTTP MCP server 会转换为 Codex CLI `-c mcp_servers.*` 配置；同进程 SDK MCP（例如 `spark_team`）不会传给 Codex CLI 子进程。
+- Codex CLI 当前只回传 JSONL/最终消息文件，Spark 将其映射为 `terminal_output`、`assistant_message`、`agent_status` 和错误事件；更细粒度的 tool/file/change 事件待 Codex CLI JSONL schema 稳定后扩展。

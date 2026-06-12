@@ -64,7 +64,7 @@ import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import { ClaudeSDKExecutor } from '../sdk/index.js'
+import { ClaudeSDKExecutor, CodexCliExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
@@ -1231,17 +1231,47 @@ export class SessionService {
       return
     }
 
-    this.emitSdkRequiredError({
+    const codexConfig: SDKExecutorConfig = {
+      apiKey,
+      ...(isLocalCli ? { useLocalConfig: true } : {}),
+      model,
+      workspaceRootPath,
+      permissionMode,
+      ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+      ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
+      ...(composedSkillSystemPrompt != null
+        ? { skillSystemPrompt: composedSkillSystemPrompt }
+        : {}),
+      ...(platformMcpServer != null
+        ? { platformManagementMcpServer: platformMcpServer }
+        : {}),
+      ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
+      contextWindowTokens,
+      ...(session.reasoning_effort != null
+        ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' }
+        : {}),
+      ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
+      ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
+      enableCheckpoints: false,
+      sdkSessionId,
+      continueSession: canResumeSdkSession,
+    }
+    const allowedMcpServerIds = getAllowedMcpServerIds(agent, workflow)
+    await this.tryStartCodexCliTurn(
       sessionId,
       turnId,
       message,
       eventRepo,
       sessionRepo,
-      sdkName: 'Codex SDK',
-      statusMessage: 'Codex SDK is not connected',
-      detail:
-        'Codex execution must use the real Codex SDK. The legacy in-process AgentLoop has been removed as an execution path.',
-    })
+      codexConfig,
+      {
+        ...(allowedMcpServerIds != null ? { allowedMcpServerIds } : {}),
+        ...(isMentionTurn ? { mentionAgentId: agent.id } : {}),
+        primaryWorkspaceId: primaryWorkspaceId ?? '',
+        agentId: agent.id,
+        workspaceRootPath,
+      },
+    )
   }
 
   /**
@@ -1588,6 +1618,163 @@ export class SessionService {
       })
       .finally(() => {
         // 清理本 turn 的 dispatch 预算计数，避免长生命周期进程内存增长
+        this.teamDispatchService?.clearTurn(turnId)
+        if (this.activeLoops.get(sessionId) === executor) {
+          this.activeLoops.delete(sessionId)
+          this.startNextQueuedTurn(sessionId)
+        }
+      })
+  }
+
+  private async tryStartCodexCliTurn(
+    sessionId: string,
+    turnId: string,
+    message: string,
+    eventRepo: EventRepository,
+    sessionRepo: SessionRepository,
+    config: SDKExecutorConfig,
+    options: TryStartSDKTurnOptions = {},
+  ): Promise<void> {
+    const makeBase = () => ({
+      id: crypto.randomUUID(),
+      sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: 0,
+    })
+
+    const workspaceIssue = await getWorkspaceRootIssue(config.workspaceRootPath)
+    if (workspaceIssue != null) {
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'user_message',
+          content: message,
+        },
+        eventRepo,
+      )
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'agent_error',
+          code: 'WORKSPACE_UNAVAILABLE',
+          message:
+            `Workspace path is not available: ${config.workspaceRootPath}. ` +
+            'Reopen the workspace or update the session workspace before running Codex CLI.',
+          retryable: false,
+          rawError: workspaceIssue,
+        },
+        eventRepo,
+      )
+      this.emitAndPersist(
+        sessionId,
+        turnId,
+        {
+          ...makeBase(),
+          type: 'agent_status',
+          status: 'error',
+          message: 'Workspace path is not available',
+        },
+        eventRepo,
+      )
+      sessionRepo.updateStatus(sessionId, 'error')
+      return
+    }
+
+    const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
+    if (config.platformManagementMcpServer != null) {
+      mcpServers.spark_platform = config.platformManagementMcpServer
+    }
+
+    const executor = new CodexCliExecutor()
+    let firstAssistantText = ''
+    const mentionAgentId = options.mentionAgentId
+    const mentionMemberContext =
+      mentionAgentId != null
+        ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
+        : undefined
+
+    executor.onEvent((event) => {
+      let outgoing: AgentEvent = event
+      if (mentionAgentId != null) {
+        if (event.type === 'assistant_message' && typeof event.content === 'string') {
+          outgoing = {
+            id: event.id,
+            type: 'team_member_message',
+            sessionId: event.sessionId,
+            turnId: event.turnId,
+            timestamp: event.timestamp,
+            seq: event.seq,
+            dispatchId: `mention:${turnId}`,
+            memberAgentId: mentionAgentId,
+            mode: event.mode,
+            content: event.content,
+            isFinal: event.isFinal,
+            ...(event.segmentId != null ? { segmentId: event.segmentId } : {}),
+          }
+        } else if (event.type === 'user_message') {
+          outgoing = { ...event, mentionAgentId }
+        } else if (
+          mentionMemberContext != null &&
+          (
+            event.type === 'tool_call' ||
+            event.type === 'tool_result' ||
+            event.type === 'file_change' ||
+            event.type === 'terminal_output'
+          )
+        ) {
+          outgoing = { ...event, teamMemberContext: mentionMemberContext }
+        }
+      }
+      this.emitAndPersist(sessionId, turnId, outgoing, eventRepo)
+      if (event.type === 'agent_status') {
+        if (event.status === 'completed' || event.status === 'cancelled') {
+          sessionRepo.updateStatus(sessionId, 'idle')
+        } else if (event.status === 'error') {
+          sessionRepo.updateStatus(sessionId, 'error')
+        }
+      }
+      if (
+        event.type === 'assistant_message' &&
+        event.mode === 'complete' &&
+        typeof event.content === 'string' &&
+        firstAssistantText.length === 0
+      ) {
+        firstAssistantText = event.content
+      }
+    })
+
+    this.activeLoops.set(sessionId, executor)
+    sessionRepo.updateStatus(sessionId, 'running')
+    this.emitQueueChanged(sessionId)
+
+    const cliMcpServers = filterCliCompatibleMcpServers(mcpServers)
+    const cliConfig: SDKExecutorConfig = {
+      ...config,
+      ...(Object.keys(cliMcpServers).length > 0 ? { mcpServers: cliMcpServers } : {}),
+    }
+
+    executor
+      .executeTurn(sessionId, turnId, message, cliConfig)
+      .then(() => {
+        sessionRepo.updateStatus(sessionId, 'idle')
+        void this.maybeWriteMemoryFromTurn(
+          sessionId,
+          options.primaryWorkspaceId ?? '',
+          options.agentId ?? '',
+          options.workspaceRootPath,
+          message,
+          firstAssistantText,
+        ).catch(() => { /* swallow — never affect main flow */ })
+      })
+      .catch(() => {
+        sessionRepo.updateStatus(sessionId, 'error')
+      })
+      .finally(() => {
         this.teamDispatchService?.clearTurn(turnId)
         if (this.activeLoops.get(sessionId) === executor) {
           this.activeLoops.delete(sessionId)
@@ -3763,6 +3950,18 @@ function makeRuntimeLoadStatus(
     charCount,
     ...(itemCount !== undefined ? { itemCount } : {}),
   }
+}
+
+function filterCliCompatibleMcpServers(
+  servers: Record<string, SDKMcpServerConfig>,
+): Record<string, SDKMcpServerConfig> {
+  const result: Record<string, SDKMcpServerConfig> = {}
+  for (const [name, server] of Object.entries(servers)) {
+    if (server.type === 'sdk') continue
+    if (server.command == null && server.url == null) continue
+    result[name] = server
+  }
+  return result
 }
 
 function formatSelectedSkillPrompt(skillId: string, prompt: string): string {
