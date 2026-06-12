@@ -19,6 +19,7 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import { createLogger, deriveTeamAvatar } from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
+import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
   EventRepository,
@@ -3621,6 +3622,9 @@ export function registerAllIpcHandlers(): void {
     const win = getMainWindow()
     return { maximized: win ? win.isMaximized() : false }
   })
+
+  // ─── Cloud Auth (对接 spark-edugen/edu-server) ───────────────────────────────
+  registerAuthIpc()
 
   log.info('All IPC handlers registered')
 }

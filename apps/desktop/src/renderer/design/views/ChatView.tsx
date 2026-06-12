@@ -48,6 +48,12 @@ import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
 import { MessageBuilder } from '../services/event-mapper'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
+import {
+  getPreferredProviderForAdapter,
+  getProviderAdapterKind,
+  isClaudeAdapter,
+  isProviderCompatibleWithAdapter,
+} from '../utils/provider-adapter'
 import { getAgentAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from '../avatar'
 import type { UIMessage, UIBlock, FileChangeSummary } from '../services/event-mapper'
 import type {
@@ -83,7 +89,6 @@ import {
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
   isBuiltInLocalCliProvider,
-  isLocalCodexCliProvider,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
 
@@ -5170,7 +5175,7 @@ function ComposerV2({
     agents.find((agent) => agent.id === effectiveAgentId) ??
     agents.find((agent) => agent.id === 'platform-manager-agent') ??
     null
-  const adapter = session?.agentAdapter ?? activeAgent?.agentAdapter ?? draftAdapter
+  const adapter = session?.agentAdapter ?? draftAdapter
   const compatibleProviders = providers.filter((provider) =>
     isProviderCompatibleWithAdapter(provider, adapter),
   )
@@ -6630,10 +6635,10 @@ function ComposerV2({
             <div className="composer-submit-picks">
               <ProviderModelPicker
                 icon={<ModelIcon />}
-                providers={compatibleProviders}
+                providers={providers}
                 selectedProviderId={selectedProvider?.id ?? ''}
                 selectedModelId={effectiveModelId}
-                disabled={isBusy || compatibleProviders.length === 0}
+                disabled={isBusy || providers.length === 0}
                 onChange={handleProviderModelChange}
               />
               {showProjectPicker && (
@@ -7670,24 +7675,7 @@ function getPreferredProvider(
   prefs: ComposerPrefs,
   adapter: AgentAdapter,
 ): ProviderProfile | undefined {
-  return (
-    providers.find(
-      (provider) =>
-        provider.id === prefs.providerProfileId &&
-        isProviderCompatibleWithAdapter(provider, adapter),
-    ) ??
-    providers.find(
-      (provider) => provider.isDefault && isProviderCompatibleWithAdapter(provider, adapter),
-    ) ??
-    providers.find((provider) => isProviderCompatibleWithAdapter(provider, adapter)) ??
-    providers.find((provider) => provider.provider === 'anthropic') ??
-    providers[0]
-  )
-}
-
-function getProviderAdapterKind(provider: ProviderProfile): AgentAdapter {
-  if (isLocalCodexCliProvider(provider)) return 'codex'
-  return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
+  return getPreferredProviderForAdapter(providers, prefs.providerProfileId, adapter)
 }
 
 function isControlApprovalRequest(request: PermissionApprovalRequest): boolean {
@@ -7739,21 +7727,6 @@ function getModelDisplayLabel(
   if (provider?.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_MODEL_DISPLAY
   if (provider?.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLI_MODEL_DISPLAY
   return modelId || provider?.defaultModel || provider?.name || '未配置'
-}
-
-function isClaudeAdapter(adapter: AgentAdapter): boolean {
-  return adapter === 'claude' || adapter === 'claude-sdk'
-}
-
-function isProviderCompatibleWithAdapter(
-  provider: ProviderProfile,
-  adapter: AgentAdapter,
-): boolean {
-  if (isLocalCodexCliProvider(provider)) return adapter === 'codex'
-  if (isLocalCliProvider(provider)) return isClaudeAdapter(adapter)
-  return isClaudeAdapter(adapter)
-    ? provider.provider === 'anthropic'
-    : provider.provider !== 'anthropic'
 }
 
 function getReasoningOptions(

@@ -8,13 +8,13 @@
       - default-src 'self'：只允许来自当前 origin 的资源
       - script-src 'self'：禁止 inline scripts，防止 XSS
       - style-src 'self' 'unsafe-inline'：允许内联样式（React 组件库需要）
-      - img-src 'self' data: safe-file: https://api.dicebear.com：允许本地图片和 DiceBear 默认头像
+      - img-src 'self' data: safe-file: https: http:：允许本地图片、DiceBear 与云端账号头像
       - connect-src 'self' safe-file:：IPC 通过 contextBridge + safe-file 协议读取
       - frame-src safe-file:：lightbox 中显示 safe-file 图片
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: safe-file: https://api.dicebear.com; connect-src 'self' safe-file:; frame-src 'self' safe-file:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: safe-file: https: http:; connect-src 'self' safe-file:; frame-src 'self' safe-file:"
     />
     <title>Spark Agent</title>
   </head>

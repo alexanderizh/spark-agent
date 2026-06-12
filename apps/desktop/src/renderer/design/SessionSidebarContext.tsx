@@ -24,9 +24,10 @@ import type {
   AgentStatusValue,
 } from '@spark/protocol'
 import {
-  isBuiltInLocalCliProvider,
-  isLocalCodexCliProvider,
-} from '@spark/protocol'
+  getPreferredProviderForAdapter,
+  getProviderAdapterKind,
+  isProviderCompatibleWithAdapter,
+} from './utils/provider-adapter'
 
 export type SessionSummary = SessionListResponse['sessions'][number]
 
@@ -46,23 +47,6 @@ function getNoProjectRootPath(tempDir: string): string {
 }
 
 const DEFAULT_AGENT_ADAPTER: SessionAgentAdapter = 'claude-sdk'
-
-function isClaudeAdapter(adapter: SessionAgentAdapter): boolean {
-  return adapter === 'claude' || adapter === 'claude-sdk'
-}
-
-function isProviderCompatibleWithAdapter(provider: ProviderProfile, adapter: SessionAgentAdapter): boolean {
-  if (isLocalCodexCliProvider(provider)) return adapter === 'codex'
-  if (isBuiltInLocalCliProvider(provider)) return isClaudeAdapter(adapter)
-  return isClaudeAdapter(adapter)
-    ? provider.provider === 'anthropic'
-    : provider.provider !== 'anthropic'
-}
-
-function getProviderAdapterKind(provider: ProviderProfile): SessionAgentAdapter {
-  if (isLocalCodexCliProvider(provider)) return 'codex'
-  return provider.provider === 'anthropic' ? DEFAULT_AGENT_ADAPTER : 'codex'
-}
 
 function getValidPermissionMode(mode: SessionPermissionMode | undefined, adapter: SessionAgentAdapter): SessionPermissionMode {
   if (!mode) {
@@ -101,13 +85,7 @@ function getPreferredProvider(
   prefs: ComposerPrefs,
   adapter: SessionAgentAdapter,
 ): ProviderProfile | undefined {
-  if (prefs.providerProfileId) {
-    const found = providers.find(p => p.id === prefs.providerProfileId)
-    if (found && isProviderCompatibleWithAdapter(found, adapter)) return found
-  }
-  const def = providers.find(p => p.isDefault)
-  if (def && isProviderCompatibleWithAdapter(def, adapter)) return def
-  return providers[0]
+  return getPreferredProviderForAdapter(providers, prefs.providerProfileId, adapter)
 }
 
 function getBasename(path: string): string {
@@ -399,9 +377,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       const defaultAgent = agents.find(a => a.isDefault && a.enabled)
       const selectedAgent = agents.find(a => a.id === (options.agentId as string)) ??
         agents.find(a => a.id === prefs.agentId) ?? defaultAgent ?? agents[0]
-      const preferredAdapter = (options.agentAdapter as SessionAgentAdapter) ?? selectedAgent?.agentAdapter ?? prefs.adapter ?? DEFAULT_AGENT_ADAPTER
+      const preferredAdapter = (options.agentAdapter as SessionAgentAdapter) ?? prefs.adapter ?? selectedAgent?.agentAdapter ?? DEFAULT_AGENT_ADAPTER
       const profile = knownProviders.find(p => p.id === (options.providerProfileId as string)) ??
-        knownProviders.find(p => p.id === selectedAgent?.providerProfileId) ??
+        knownProviders.find(p =>
+          p.id === selectedAgent?.providerProfileId &&
+          isProviderCompatibleWithAdapter(p, preferredAdapter),
+        ) ??
         knownProviders.find(p => p.id === selectedProviderId && isProviderCompatibleWithAdapter(p, preferredAdapter)) ??
         getPreferredProvider(knownProviders, prefs, preferredAdapter)
       if (!profile) {
@@ -412,7 +393,10 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         })
         return null
       }
-      const agentAdapter = (options.agentAdapter as SessionAgentAdapter) ?? selectedAgent?.agentAdapter ?? getProviderAdapterKind(profile)
+      const agentAdapter =
+        (options.agentAdapter as SessionAgentAdapter) ??
+        (selectedAgent?.providerProfileId === profile.id ? selectedAgent?.agentAdapter : undefined) ??
+        getProviderAdapterKind(profile)
       const permissionMode = (options.permissionMode as SessionPermissionMode) ?? selectedAgent?.permissionMode ?? getValidPermissionMode(prefs.permissionMode, agentAdapter)
       const modelId = (options.modelId as string) ?? selectedAgent?.modelId ?? (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
       const res = await createSession({

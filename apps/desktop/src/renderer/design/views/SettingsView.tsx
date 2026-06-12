@@ -10,9 +10,8 @@ import { Button, Modal, Tag } from '@arco-design/web-react'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
-import { AvatarPicker } from '../components/AvatarPicker'
-import { createDefaultAvatar, getUserAvatarConfig, type SparkAvatarConfig } from '../avatar'
 import { useApp, PRIMARIES } from '../AppContext'
+import { AccountSection } from '../auth/AccountSection'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
@@ -102,7 +101,6 @@ function localStorageKeyToCategory(key: string): string {
 }
 
 type GeneralSettings = {
-  userAvatar?: SparkAvatarConfig
   userName: string
   language: string
   startupBehavior: string
@@ -165,7 +163,6 @@ type RuntimePermissionModeOption = {
 }
 
 const DEFAULT_GENERAL: GeneralSettings = {
-  userAvatar: createDefaultAvatar('User'),
   userName: 'User',
   language: 'zh-CN',
   startupBehavior: 'last',
@@ -303,6 +300,7 @@ export function SettingsView() {
     {
       group: '通用',
       items: [
+        { id: 'account', icon: <Icons.User />, label: '账号' },
         { id: 'general', icon: <Icons.Settings />, label: '通用' },
         { id: 'appearance', icon: <Icons.Sparkles />, label: '外观' },
         { id: 'shortcuts', icon: <Icons.Command />, label: '快捷键' },
@@ -343,6 +341,7 @@ export function SettingsView() {
   ]
 
   const Section: Record<string, () => React.ReactElement> = {
+    account: AccountSection,
     general: GeneralSection,
     appearance: AppearanceSection,
     shortcuts: ShortcutsSection,
@@ -403,7 +402,6 @@ export function SettingsView() {
 function GeneralSection() {
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
-  const userAvatar = getUserAvatarConfig(s.userAvatar)
   const [autoStartSupported, setAutoStartSupported] = useState(true)
   const [autoStartBusy, setAutoStartBusy] = useState(false)
 
@@ -462,26 +460,6 @@ function GeneralSection() {
       <div className="lede">应用启动、语言、默认行为。</div>
 
       <div className="form-grid">
-        <label>
-          用户头像<span className="sub">显示在会话区和侧边栏用户区域</span>
-        </label>
-        <AvatarPicker
-          value={userAvatar}
-          defaultSeed="spark-user"
-          title="我的头像"
-          description="默认使用 Dicebear，也可以上传并裁剪本地图片。"
-          onChange={(avatar) => set({ userAvatar: avatar })}
-        />
-
-        <label>
-          用户名称<span className="sub">显示在侧边栏底部用户区域</span>
-        </label>
-        <SparkInput
-          value={s.userName}
-          onChange={(e) => set({ userName: e.target.value })}
-          placeholder="输入用户名称"
-        />
-
         <label>
           语言<span className="sub">界面文案语言</span>
         </label>

@@ -53,6 +53,7 @@ import { createLogger } from '@spark/shared'
 import type { UpdateInfo, UpdateStatus } from '@spark/protocol'
 import { SettingsService } from '@spark/agent-runtime'
 import { SettingsRepository } from '@spark/storage'
+import { initAuthService, getAuthService } from './services/Auth/AuthService.js'
 
 const log = createLogger('main')
 let tray: Tray | null = null
@@ -90,6 +91,19 @@ type PersistedUpdateSettings = {
 
 type PersistedGeneralSettings = {
   notifyNewVersion?: boolean
+}
+
+/** 持久化的 edu-server base URL（用户在设置页切换过的会保存）*/
+function readPersistedEduServerBaseUrl(): string | null {
+  try {
+    const settings = getSettingsService().get('cloudAuth', 'data') as
+      | { eduServerBaseUrl?: string }
+      | undefined
+    const v = settings?.eduServerBaseUrl?.trim()
+    return v && v.length > 0 ? v : null
+  } catch {
+    return null
+  }
 }
 
 function getSettingsService(): SettingsService {
@@ -365,6 +379,27 @@ async function initializeApp(): Promise<void> {
 
   // 2. 注册 IPC handlers
   registerAllIpcHandlers()
+
+  // 2.05 初始化 Cloud Auth（对接 spark-edugen/edu-server）
+  // 默认 base URL：生产环境 https://www.yiqibyte.com/；本地开发可通过
+  // 环境变量 SPARK_EDUGEN_BASE_URL 覆盖。
+  try {
+    initAuthService({
+      defaultBaseUrl:
+        process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://www.yiqibyte.com/',
+      keytarService: 'SparkAgent.CloudAuth',
+      requestTimeoutMs: 30_000,
+    })
+    await getAuthService().start()
+    // 加载持久化的 base URL（用户在设置页切换过的会保存到 SQLite）
+    const persistedBaseUrl = readPersistedEduServerBaseUrl()
+    if (persistedBaseUrl) {
+      await getAuthService().loadBaseUrl(persistedBaseUrl)
+    }
+    log.info('Cloud auth service started')
+  } catch (err) {
+    log.error(`Cloud auth service init failed: ${String(err)}`)
+  }
 
   // 2.1 启动定时任务调度器（使用 IPC 层的同一个 ScheduledTaskService 实例）
   try {

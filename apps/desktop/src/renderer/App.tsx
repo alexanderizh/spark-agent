@@ -11,6 +11,7 @@ import { ToastProvider, ToastContainer, useToast } from './design/components/Toa
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { AvatarImage } from './design/components/AvatarImage'
 import { getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
+import { AuthProvider, useAuth } from './design/auth/AuthContext'
 import type { PermissionApprovalRequest, SessionId, UpdateStatus, UserQuestionPrompt } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
 import { useAppearanceEffects } from './design/hooks/useAppearance'
@@ -98,101 +99,6 @@ function CircularProgressGlyph({
   )
 }
 
-function useSidebarUserAvatarSrc(): string {
-  const readLocal = useCallback(() => {
-    try {
-      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
-      if (raw == null) return resolveAvatarSrc(getUserAvatarConfig(null))
-      return resolveAvatarSrc(getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar))
-    } catch {
-      return resolveAvatarSrc(getUserAvatarConfig(null))
-    }
-  }, [])
-  const [src, setSrc] = useState(readLocal)
-
-  useEffect(() => {
-    let cancelled = false
-    window.spark
-      ?.invoke('settings:get', { category: 'general', key: 'data' })
-      .then((res) => {
-        if (cancelled) return
-        const value = res.value != null && typeof res.value === 'object'
-          ? (res.value as Record<string, unknown>).userAvatar
-          : null
-        setSrc(resolveAvatarSrc(getUserAvatarConfig(value)))
-      })
-      .catch(() => {})
-
-    const refresh = () => setSrc(readLocal())
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === SETTINGS_GENERAL_KEY) refresh()
-    }
-    const handleSettingsUpdated = (event: Event) => {
-      const { detail } = event as CustomEvent<{ key?: string }>
-      if (detail?.key === SETTINGS_GENERAL_KEY) refresh()
-    }
-
-    window.addEventListener('storage', handleStorage)
-    window.addEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
-    return () => {
-      cancelled = true
-      window.removeEventListener('storage', handleStorage)
-      window.removeEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
-    }
-  }, [readLocal])
-
-  return src
-}
-
-function useSidebarUserName(): string {
-  const readLocal = useCallback(() => {
-    try {
-      const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
-      if (raw == null) return 'User'
-      const parsed = JSON.parse(raw) as Record<string, unknown>
-      return typeof parsed.userName === 'string' && parsed.userName.trim() ? parsed.userName : 'User'
-    } catch {
-      return 'User'
-    }
-  }, [])
-  const [name, setName] = useState(readLocal)
-
-  useEffect(() => {
-    let cancelled = false
-    window.spark
-      ?.invoke('settings:get', { category: 'general', key: 'data' })
-      .then((res) => {
-        if (cancelled) return
-        if (res.value != null && typeof res.value === 'object') {
-          const userName = (res.value as Record<string, unknown>).userName
-          if (typeof userName === 'string' && userName.trim()) {
-            setName(userName)
-          }
-        }
-      })
-      .catch(() => {})
-
-    const refresh = () => setName(readLocal())
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === SETTINGS_GENERAL_KEY) refresh()
-    }
-    const handleSettingsUpdated = (event: Event) => {
-      const { detail } = event as CustomEvent<{ key?: string }>
-      if (detail?.key === SETTINGS_GENERAL_KEY) refresh()
-    }
-
-    window.addEventListener('storage', handleStorage)
-    window.addEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
-    return () => {
-      cancelled = true
-      window.removeEventListener('storage', handleStorage)
-      window.removeEventListener(SETTINGS_UPDATED_EVENT, handleSettingsUpdated)
-    }
-  }, [readLocal])
-
-  return name
-}
-
 /* ---------- WindowControls — custom title bar buttons (Windows/Linux only) ---------- */
 function WindowControls() {
   const [isMaximized, setIsMaximized] = useState(false)
@@ -265,11 +171,17 @@ const NAV_ITEMS: Array<{ id: string; label: string; icon: React.FC<{ size?: numb
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
+  const auth = useAuth()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [navExpanded, setNavExpanded] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
-  const userAvatarSrc = useSidebarUserAvatarSrc()
-  const userName = useSidebarUserName()
+  // 已登录时使用云端用户头像/昵称；未登录时使用本地"灰白默认"占位
+  const userAvatarSrc = auth.isAuthenticated
+    ? (auth.user?.avatarUrl || resolveAvatarSrc(getUserAvatarConfig(null)))
+    : '' // 空字符串 → 用灰白占位
+  const userName = auth.isAuthenticated
+    ? (auth.user?.nickname || auth.user?.account || '用户')
+    : '未登录'
   const isResizing = useRef(false)
 
   useEffect(() => {
@@ -475,24 +387,53 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
       <div className="sidebar-bottom">
         <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
           <DropdownMenuTrigger asChild>
-            <button className="sidebar-user" style={{ cursor: 'pointer' }}>
+            <button
+              className={`sidebar-user${auth.isAuthenticated ? '' : ' sidebar-user-guest'}`}
+              style={{ cursor: 'pointer' }}
+            >
               <div className="avatar sidebar-user-avatar">
-                <AvatarImage
-                  src={userAvatarSrc}
-                  seed="spark-user"
-                  name="User"
-                  alt="用户头像"
-                  className="sidebar-user-avatar-image"
-                />
+                {auth.isAuthenticated && userAvatarSrc ? (
+                  <AvatarImage
+                    src={userAvatarSrc}
+                    seed={auth.user?.account || 'spark-user'}
+                    name={userName}
+                    alt="用户头像"
+                    className="sidebar-user-avatar-image"
+                  />
+                ) : (
+                  <div className="sidebar-user-avatar-guest" aria-hidden>
+                    <Icons.User size={16} />
+                  </div>
+                )}
               </div>
               <div className="sidebar-user-info">
                 <div className="name">{userName}</div>
-                <div className="meta">Local · Desktop</div>
+                <div className="meta">
+                  {auth.isAuthenticated ? '已登录 · Cloud' : '未登录 · 点击登录'}
+                </div>
               </div>
               <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" side="top" className="user-menu user-menu-portal">
+            {/* 未登录：菜单顶部加「登录」入口，直接跳设置-账号 */}
+            {!auth.isAuthenticated && (
+              <>
+                <DropdownMenuItem
+                  className="user-menu-login-item"
+                  onSelect={() => {
+                    auth.setFlow('login')
+                    setTweak('view', 'settings')
+                    setTweak('settingsSection', 'account')
+                    setUserMenuOpen(false)
+                  }}
+                >
+                  <Icons.User size={14} /> 登录 / 注册
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+              </>
+            )}
+
             <DropdownMenuSub>
               <DropdownMenuSubTrigger className="user-menu-theme-trigger">
                 <Icons.Sun size={14} /> Theme
@@ -886,11 +827,42 @@ function Shell() {
 export function App() {
   return (
     <AppProvider>
-      <ToastProvider>
-        <SessionSidebarProvider>
-          <Shell />
-        </SessionSidebarProvider>
-      </ToastProvider>
+      <AuthProvider>
+        <ToastProvider>
+          <SessionSidebarProvider>
+            <GateAwareShell />
+          </SessionSidebarProvider>
+        </ToastProvider>
+      </AuthProvider>
     </AppProvider>
   )
+}
+
+/**
+ * 启动期拦截：
+ *   - bootstrapping 显示 loading
+ *   - 登录是可选的，未登录也进 Shell
+ *   - 登录入口在侧边栏底部用户信息处 + 设置-账号页
+ */
+function GateAwareShell(): React.ReactElement {
+  const auth = useAuth()
+  if (auth.bootstrapping) {
+    return (
+      <div
+        style={{
+          position: 'fixed',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'var(--color-bg-1, #f7f8fa)',
+          fontSize: 13,
+          color: 'var(--color-text-3, #86909c)',
+        }}
+      >
+        正在启动 Spark Agent…
+      </div>
+    )
+  }
+  return <Shell />
 }

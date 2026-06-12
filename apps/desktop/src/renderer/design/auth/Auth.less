@@ -1,0 +1,545 @@
+// ─── Page 容器（嵌入设置页里） ──────────────────────────────────────────────
+
+.auth-page {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 68vh;
+  padding: 12px 0 20px;
+}
+
+.auth-shell {
+  width: 100%;
+  max-width: 560px;
+}
+
+.auth-card {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+  padding: 20px 20px 16px;
+  background: var(--color-bg-2, #ffffff);
+  border: 1px solid var(--color-border-1, #e5e7eb);
+  border-radius: 12px;
+  position: relative;
+  overflow: visible;
+}
+
+.auth-section-kicker {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.auth-card {
+  box-shadow: none;
+}
+
+.auth-panel-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-panel-title {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-text-1, #0f172a);
+  letter-spacing: -0.02em;
+}
+
+.auth-content {
+  min-height: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.auth-content-panel {
+  padding: 16px;
+  border: 1px solid var(--color-border-1, #e5e7eb);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+// ─── Form ────────────────────────────────────────────────────────────────────
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.auth-section-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.auth-section-intro--center {
+  align-items: center;
+  text-align: center;
+}
+
+.auth-form-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--color-text-1, #0f172a);
+  letter-spacing: -0.01em;
+}
+
+.auth-subflow-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border-radius: 10px;
+  background: var(--color-bg-2, #ffffff);
+}
+
+.auth-subflow-panel--wechat {
+  align-items: center;
+}
+
+.auth-form-body {
+  display: flex;
+  flex-direction: column;
+}
+
+// Arco Form/Input 样式：保持原装，不在这里覆盖。
+// 之前这段自定义 input 样式（特别是 .arco-input-focus 的 3px 蓝色光晕）和其它
+// 页面不一致，移除后由 Arco 主题接管。
+
+.auth-form .arco-form-item {
+  margin-bottom: 12px;
+}
+
+.auth-hidden-field {
+  display: none;
+}
+
+.auth-form-footer {
+  display: flex;
+  justify-content: center;
+  margin-top: 4px;
+}
+
+// ─── Tabs ────────────────────────────────────────────────────────────────────
+
+.auth-flow-tabs,
+.auth-login-tabs {
+  position: relative;
+  z-index: 1;
+}
+
+.auth-flow-tabs .arco-tabs-header,
+.auth-login-tabs .arco-tabs-header {
+  margin-bottom: 0;
+  padding: 0;
+  display: flex !important;
+  width: 100%;
+  white-space: normal;
+}
+
+.auth-flow-tabs .arco-tabs-header-scroll,
+.auth-login-tabs .arco-tabs-header-scroll,
+.auth-flow-tabs .arco-tabs-header-wrapper,
+.auth-login-tabs .arco-tabs-header-wrapper {
+  width: 100%;
+}
+
+.auth-flow-tabs .arco-tabs-header-scroll,
+.auth-login-tabs .arco-tabs-header-scroll,
+.auth-flow-tabs .arco-tabs-header-wrapper,
+.auth-login-tabs .arco-tabs-header-wrapper {
+  display: flex;
+}
+
+.auth-flow-tabs .arco-tabs-header,
+.auth-login-tabs .arco-tabs-header {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.auth-flow-tabs .arco-tabs-header {
+  gap: 10px;
+  padding: 6px;
+  border-radius: 12px;
+  background: var(--color-fill-1, #f7f9fc);
+  border: 1px solid var(--color-border-1, #edf1f6);
+}
+
+.auth-login-tabs .arco-tabs-header {
+  gap: 8px;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.auth-flow-tabs .arco-tabs-header-title,
+.auth-login-tabs .arco-tabs-header-title {
+  display: inline-flex;
+  flex: 1 1 0;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: center;
+  min-width: 0;
+}
+
+.auth-flow-tabs .arco-tabs-header-title:hover,
+.auth-login-tabs .arco-tabs-header-title:hover {
+  cursor: pointer;
+}
+
+.auth-flow-tabs .arco-tabs-header-title-text,
+.auth-login-tabs .arco-tabs-header-title-text {
+  display: inline-flex;
+  width: 100%;
+  justify-content: center;
+}
+
+.auth-flow-tabs .arco-tabs-header-title {
+  min-height: 50px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  color: var(--color-text-2, #475569);
+  background: transparent;
+}
+
+.auth-flow-tabs .arco-tabs-header-title-active {
+  background: #ffffff;
+  color: #1d4ed8;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+}
+
+.auth-login-tabs .arco-tabs-header-title {
+  flex: 0 0 auto;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--color-fill-2, #f1f5f9);
+  color: var(--color-text-3, #64748b);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.auth-login-tabs .arco-tabs-header-title-active {
+  background: rgba(37, 99, 235, 0.12);
+  color: #1d4ed8;
+}
+
+.auth-flow-tab-label {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  line-height: 1.2;
+}
+
+.auth-login-tabs {
+  margin-bottom: 2px;
+}
+
+.auth-code-action,
+.captcha-svg-btn {
+  min-width: 132px;
+  height: 36px;
+  border-radius: 8px;
+  padding-inline: 10px;
+  font-weight: 500;
+}
+
+.auth-code-action {
+  white-space: nowrap;
+}
+
+// ─── 微信扫码面板 ────────────────────────────────────────────────────────────
+
+.auth-wechat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 2px 0 0;
+}
+
+.auth-wechat .auth-section-intro {
+  align-items: center;
+  text-align: center;
+}
+
+.auth-wechat-qr {
+  width: 212px;
+  height: 212px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-1, #e5e7eb);
+  padding: 12px;
+  box-shadow: none;
+}
+
+.auth-wechat-loading,
+.auth-wechat-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  color: var(--color-text-3, #64748b);
+}
+
+.auth-spin {
+  animation: auth-spin 1.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-spin {
+    animation: none;
+  }
+}
+
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.auth-wechat-status {
+  text-align: center;
+  font-size: 13px;
+  color: var(--color-text-2, #475569);
+  line-height: 1.6;
+
+  p {
+    margin: 0;
+  }
+}
+
+.auth-wechat-tip {
+  color: var(--color-text-3, #64748b);
+  font-size: 12px;
+  margin-top: 6px !important;
+}
+
+.auth-wechat-error-text {
+  color: #dc2626;
+}
+
+.auth-wechat-refresh {
+  margin-top: 10px;
+}
+
+// ─── Captcha SVG 按钮 ────────────────────────────────────────────────────────
+
+.captcha-svg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0 !important;
+}
+
+.captcha-svg-btn .arco-btn-content {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.captcha-visual {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+.captcha-inline-svg,
+.captcha-inline-svg > svg,
+.captcha-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.captcha-inline-svg > svg {
+  max-width: 100%;
+  max-height: 100%;
+  // 后端 SVG 没显式声明 preserveAspectRatio 时显式给一个，避免被默认 xMidYMid meet 留白
+  preserveAspectRatio: xMidYMid slice;
+}
+
+.captcha-image {
+  object-fit: fill;
+  object-position: center;
+}
+
+// ─── base url 徽章（登录页底部） ─────────────────────────────────────────────
+
+.auth-baseurl-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-3, #64748b);
+  border-top: 1px solid var(--color-border-1, #edf1f6);
+  padding-top: 12px;
+  margin-top: auto;
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 640px) {
+  .auth-card {
+    padding: 16px 16px 14px;
+  }
+
+  .auth-content-panel {
+    padding: 12px;
+  }
+
+  .auth-flow-tabs .arco-tabs-header {
+    gap: 6px;
+    padding: 4px;
+  }
+
+  .auth-flow-tabs .arco-tabs-header-title {
+    min-height: 46px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+
+  .auth-flow-tab-label {
+    gap: 4px;
+  }
+}
+
+.auth-baseurl-label {
+  white-space: nowrap;
+  opacity: 0.75;
+}
+
+.auth-baseurl-value {
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  background: var(--color-bg-1, #f8fafc);
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-family: var(--font-mono, 'SF Mono', Menlo, monospace);
+  font-size: 11px;
+  color: var(--color-text-2, #475569);
+  transition: background 150ms ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--color-fill-2, #f1f5f9);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+  }
+}
+
+.auth-baseurl-icon {
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--color-fill-1, #f8fafc);
+  opacity: 0.72;
+  transition: opacity 150ms ease;
+
+  &:hover {
+    opacity: 1;
+  }
+
+  &:focus-visible {
+    outline: 2px solid #2563eb;
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+.auth-baseurl-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--color-text-2, #475569);
+    line-height: 1.5;
+  }
+}
+
+.auth-baseurl-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+@media (max-width: 980px) {
+  .auth-shell {
+    max-width: 680px;
+  }
+
+  .auth-form-subtitle {
+    max-width: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-card {
+    padding: 16px;
+    border-radius: 8px;
+  }
+
+  .auth-panel-title {
+    font-size: 15px;
+  }
+
+  .auth-wechat-qr {
+    width: 196px;
+    height: 196px;
+    padding: 10px;
+  }
+
+  .auth-baseurl-badge {
+    flex-wrap: wrap;
+  }
+}

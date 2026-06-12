@@ -3585,6 +3585,44 @@ export interface IpcChannelMap {
   'task-execution:get': [TaskExecutionGetRequest, TaskExecutionGetResponse]
   'task-execution:cancel': [TaskExecutionCancelRequest, TaskExecutionCancelResponse]
   'task-execution:stats': [TaskExecutionStatsRequest, TaskExecutionStatsResponse]
+
+  // ─── Cloud Auth (对接 spark-edugen/edu-server 的登录/注册/微信扫码) ────────
+
+  /** 获取图片验证码 */
+  'auth:captcha': [AuthCaptchaRequest, AuthCaptchaResponse]
+  /** 发送邮箱验证码（注册 / 验证码登录通用，需先通过图片验证码）*/
+  'auth:send-code': [AuthSendCodeRequest, AuthSendCodeResponse]
+  /** 注册 */
+  'auth:register': [AuthRegisterRequest, AuthRegisterResponse]
+  /** 登录（password 模式 / emailCode 模式）*/
+  'auth:login': [AuthLoginRequest, AuthLoginResponse]
+  /** refreshToken 换发新 token */
+  'auth:refresh': [AuthRefreshRequest, AuthRefreshResponse]
+  /** 退出登录（撤销服务端 session）*/
+  'auth:logout': [AuthLogoutRequest, AuthLogoutResponse]
+  /** 获取当前用户信息 */
+  'auth:me': [AuthMeRequest, AuthMeResponse]
+  /** 查询账号绑定状态（邮箱/手机/微信/密码）*/
+  'auth:bind-status': [AuthBindStatusRequest, AuthBindStatusResponse]
+  /** 修改密码 */
+  'auth:change-password': [AuthChangePasswordRequest, AuthChangePasswordResponse]
+  /** 获取微信扫码登录参数（state + qrUrl）*/
+  'auth:wechat-qr': [AuthWechatQrRequest, AuthWechatQrResponse]
+  /** 轮询微信扫码登录状态 */
+  'auth:wechat-poll': [AuthWechatPollRequest, AuthWechatPollResponse]
+  /** 微信扫码后绑定邮箱 — 发送验证码 */
+  'auth:wechat-bind-email-send-code': [
+    AuthWechatBindEmailSendCodeRequest,
+    AuthWechatBindEmailSendCodeResponse,
+  ]
+  /** 微信扫码后绑定邮箱 — 校验验证码 */
+  'auth:wechat-bind-email': [AuthWechatBindEmailRequest, AuthWechatBindEmailResponse]
+  /** 切换 edu-server base URL（设置页用，无需重启）*/
+  'auth:set-base-url': [AuthSetBaseUrlRequest, AuthSetBaseUrlResponse]
+  /** 读取当前 edu-server base URL */
+  'auth:get-base-url': [AuthGetBaseUrlRequest, AuthGetBaseUrlResponse]
+  /** 启动时尝试自动登录（从 keytar 读取已存 token 并验证有效性）*/
+  'auth:bootstrap': [AuthBootstrapRequest, AuthBootstrapResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -3647,6 +3685,21 @@ export interface IpcStreamChannelMap {
   'stream:update:downloaded': UpdateInfo
   /** 更新状态变化（主进程推送，渲染进程同步状态）*/
   'stream:update:status': UpdateStatus
+
+  // ─── Cloud Auth 流式事件 ──────────────────────────────────────────────────
+  /** token 续期成功（主进程推送，渲染端刷新内存缓存 + 状态）*/
+  'stream:auth:token-refreshed': {
+    token: string
+    refreshToken: string
+    userId: string
+  }
+  /** session 过期（refresh 也失败，渲染端跳到登录页）*/
+  'stream:auth:session-expired': {}
+  /** 登录状态变化（已登录 ↔ 已登出）*/
+  'stream:auth:state-changed': {
+    isAuthenticated: boolean
+    userId?: string
+  }
   /** SDK 完整性自检结果（启动时自动推送）*/
   'stream:sdk:integrity': SdkIntegrityCheckResponse
   /** Shell 环境状态（PATH 修复 + 运行时工具检测结果）*/
@@ -3674,4 +3727,181 @@ export interface IpcStreamChannelMap {
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap
+
+// ─── Cloud Auth 类型定义（对接 spark-edugen/edu-server）────────────────────────
+
+/** 登录模式 */
+export type AuthLoginMode = 'password' | 'code'
+
+/** 验证码用途 */
+export type AuthSendCodeType = 'register' | 'login'
+
+/** 用户信息 */
+export interface AuthUserInfo {
+  id: number
+  account: string
+  nickname: string
+  avatarUrl: string
+  role: string
+  createdAt: string
+  lastLoginAt: string | null
+  /** 服务档位 */
+  tier?: {
+    key: string
+    name: string
+    isPaid: boolean
+  }
+}
+
+/** 登录成功的会话（access token + refresh token + userId）*/
+export interface AuthSession {
+  token: string
+  refreshToken: string
+  userId: string
+}
+
+/** 图片验证码响应 */
+export interface AuthCaptchaRequest {
+  /** 强制刷新（默认 true，避免缓存）*/
+  fresh?: boolean
+}
+export type AuthCaptchaResponse = {
+  id: string
+  /** SVG 字符串，可直接 inline 渲染 */
+  svg: string
+}
+
+/** 发送邮箱验证码 */
+export interface AuthSendCodeRequest {
+  account: string
+  type: AuthSendCodeType
+  captchaId: string
+  captchaText: string
+}
+export type AuthSendCodeResponse = {
+  expire_in: number
+}
+
+/** 注册 */
+export interface AuthRegisterRequest {
+  account: string
+  password: string
+  code: string
+  inviteCode?: string
+}
+export type AuthRegisterResponse = AuthSession
+
+/** 登录 */
+export interface AuthLoginRequest {
+  account: string
+  loginMode: AuthLoginMode
+  password?: string
+  captchaId?: string
+  captchaText?: string
+  emailCode?: string
+}
+export type AuthLoginResponse = AuthSession
+
+/** 刷新 token */
+export interface AuthRefreshRequest {
+  /** 可选 — 主进程默认从 keytar 自动读取 */
+  refreshToken?: string
+}
+export type AuthRefreshResponse = AuthSession
+
+/** 退出登录 */
+export interface AuthLogoutRequest {}
+export type AuthLogoutResponse = {
+  ok: true
+}
+
+/** 当前用户信息 */
+export interface AuthMeRequest {}
+export type AuthMeResponse = AuthUserInfo
+
+/** 账号绑定状态 */
+export interface AuthBindStatusRequest {}
+export type AuthBindStatusResponse = {
+  hasEmail: boolean
+  hasPhone: boolean
+  hasWechat: boolean
+  hasPassword: boolean
+  account: string
+}
+
+/** 修改密码 */
+export interface AuthChangePasswordRequest {
+  oldPassword: string
+  newPassword: string
+}
+export type AuthChangePasswordResponse = {
+  ok: true
+}
+
+/** 微信扫码 */
+export interface AuthWechatQrRequest {}
+export type AuthWechatQrResponse = {
+  state: string
+  qrUrl: string
+  appId?: string
+  redirectUri?: string
+}
+
+/** 微信扫码轮询 */
+export interface AuthWechatPollRequest {
+  state: string
+}
+export type AuthWechatPollResponse = {
+  status: 'pending' | 'success' | 'pending_bind' | 'error'
+  token?: string
+  refreshToken?: string
+  userId?: string
+  isNew?: boolean
+  needsSetup?: boolean
+  bindSession?: string
+  message?: string
+}
+
+/** 微信扫码后绑定邮箱 — 发送验证码 */
+export interface AuthWechatBindEmailSendCodeRequest {
+  bindSession: string
+  email: string
+  captchaId: string
+  captchaText: string
+}
+export type AuthWechatBindEmailSendCodeResponse = {
+  expire_in: number
+}
+
+/** 微信扫码后绑定邮箱 — 校验验证码 */
+export interface AuthWechatBindEmailRequest {
+  bindSession: string
+  code: string
+}
+export type AuthWechatBindEmailResponse = AuthSession & { isNew: boolean }
+
+/** 设置 edu-server base URL */
+export interface AuthSetBaseUrlRequest {
+  /** 形如 `http://localhost:7002` 或 `https://api.example.com`，留空则用默认值 */
+  baseUrl: string
+}
+export type AuthSetBaseUrlResponse = {
+  baseUrl: string
+}
+
+/** 读取当前 edu-server base URL */
+export interface AuthGetBaseUrlRequest {}
+export type AuthGetBaseUrlResponse = {
+  baseUrl: string
+  source: 'default' | 'env' | 'user'
+}
+
+/** 启动时自动登录（读取 keytar 中已存 token，验证有效性）*/
+export interface AuthBootstrapRequest {}
+export type AuthBootstrapResponse = {
+  isAuthenticated: boolean
+  user?: AuthUserInfo
+  baseUrl: string
+  reason?: 'no-session' | 'refresh-failed' | 'me-fetch-failed'
+}
 export type IpcStreamPayload<C extends IpcStreamChannel> = IpcStreamChannelMap[C]

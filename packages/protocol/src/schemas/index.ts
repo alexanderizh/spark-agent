@@ -708,4 +708,58 @@ export const IpcSchemaRegistry = {
   }),
   'playwright:close-view': z.object({}),
   'playwright:capture-view': z.object({}),
+
+  // ─── Cloud Auth ────────────────────────────────────────────────────────
+  'auth:captcha': z.object({
+    fresh: z.boolean().optional(),
+  }),
+  'auth:send-code': z.object({
+    account: z.string().min(1).max(200),
+    type: z.enum(['register', 'login']),
+    captchaId: z.string().min(1),
+    captchaText: z.string().min(1).max(20),
+  }),
+  'auth:register': z.object({
+    account: z.string().min(1).max(200),
+    password: z.string().min(6).max(100),
+    code: z.string().min(1).max(20),
+    inviteCode: z.string().min(1).max(100).optional(),
+  }),
+  'auth:login': z.object({
+    account: z.string().min(1).max(200),
+    loginMode: z.enum(['password', 'code']),
+    password: z.string().min(1).max(100).optional(),
+    captchaId: z.string().min(1).max(100).optional(),
+    captchaText: z.string().min(1).max(20).optional(),
+    emailCode: z.string().min(1).max(20).optional(),
+  }),
+  'auth:refresh': z.object({
+    refreshToken: z.string().min(1).optional(),
+  }),
+  'auth:logout': z.object({}),
+  'auth:me': z.object({}),
+  'auth:bind-status': z.object({}),
+  'auth:change-password': z.object({
+    oldPassword: z.string().min(1).max(100),
+    newPassword: z.string().min(6).max(100),
+  }),
+  'auth:wechat-qr': z.object({}),
+  'auth:wechat-poll': z.object({
+    state: z.string().min(1).max(200),
+  }),
+  'auth:wechat-bind-email-send-code': z.object({
+    bindSession: z.string().min(1).max(200),
+    email: z.string().email().max(200),
+    captchaId: z.string().min(1).max(100),
+    captchaText: z.string().min(1).max(20),
+  }),
+  'auth:wechat-bind-email': z.object({
+    bindSession: z.string().min(1).max(200),
+    code: z.string().min(1).max(20),
+  }),
+  'auth:set-base-url': z.object({
+    baseUrl: z.string().max(500),
+  }),
+  'auth:get-base-url': z.object({}),
+  'auth:bootstrap': z.object({}),
 } as const
