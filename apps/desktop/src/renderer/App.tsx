@@ -547,11 +547,11 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'remote-connections'); setUserMenuOpen(false) }}>
               <Icons.Globe size={14} /> 远程连接
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
-              <Icons.Settings size={14} /> Settings
-            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => { handleOpenExternal(REPOSITORY_URL) }}>
               <Icons.GitHub size={14} /> GitHub
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
+              <Icons.Settings size={14} /> Settings
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
