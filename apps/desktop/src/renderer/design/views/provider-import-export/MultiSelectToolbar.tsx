@@ -9,9 +9,12 @@
  * 设计：
  *   - 不绑定具体数据；纯受控组件
  *   - 主操作按钮由 caller 注入（保持组件薄）
+ *   - 全部使用 Arco Design Button + Icon，符合 AGENTS.md 强制规则
  */
-import React from 'react'
-import { Icons } from '../../Icons'
+import { Button } from '@arco-design/web-react'
+import {
+  IconClose, IconCheck, IconDownload, IconDelete,
+} from '@arco-design/web-react/icon'
 
 export interface MultiSelectToolbarProps {
   selectedCount: number
@@ -40,56 +43,59 @@ function MultiSelectToolbar({
   deleting = false,
 }: MultiSelectToolbarProps) {
   return (
-    <div className="multi-select-toolbar" role="toolbar" aria-label="批量操作">
-      <button
-        className="icon-btn"
+    <div className="pv_multi_toolbar flex items-center" role="toolbar" aria-label="批量操作">
+      <Button
+        size="mini"
+        shape="circle"
+        icon={<IconClose />}
         onClick={onExitMultiSelect}
         title="退出多选模式"
         aria-label="退出多选模式"
-      >
-        <Icons.X size={13} />
-      </button>
-      <span className="multi-select-count" aria-live="polite">
+      />
+      <span className="pv_multi_count" aria-live="polite">
         已选 <strong>{selectedCount}</strong> / {totalCount}
       </span>
-      <div className="row row-gap-xs">
-        <button className="btn ghost sm" onClick={onSelectAll} title="全选">
-          全选
-        </button>
-        <button
-          className="btn ghost sm"
-          onClick={onInvertSelection}
-          title="反选"
-          disabled={totalCount === 0}
-        >
-          反选
-        </button>
-        <button
-          className="btn ghost sm"
-          onClick={onClearSelection}
-          title="清空选择"
-          disabled={!hasSelection}
-        >
-          取消选择
-        </button>
-      </div>
-      <span className="flex1" />
-      <button
-        className="btn ghost sm"
+      <Button size="mini" onClick={onSelectAll} title="全选">
+        全选
+      </Button>
+      <Button
+        size="mini"
+        onClick={onInvertSelection}
+        title="反选"
+        disabled={totalCount === 0}
+      >
+        反选
+      </Button>
+      <Button
+        size="mini"
+        onClick={onClearSelection}
+        title="清空选择"
+        disabled={!hasSelection}
+      >
+        取消选择
+      </Button>
+      <span className="flex-1" />
+      <Button
+        size="mini"
+        type="outline"
+        icon={<IconDownload />}
         onClick={onExportSelected}
         disabled={!hasSelection}
         title="导出选中的 Provider"
       >
-        <Icons.Download size={12} /> 导出选中
-      </button>
-      <button
-        className="btn ghost sm danger"
+        导出选中
+      </Button>
+      <Button
+        size="mini"
+        status="danger"
+        type="outline"
+        icon={<IconDelete />}
         onClick={onDeleteSelected}
         disabled={!hasSelection || deleting}
         title="删除选中的 Provider"
       >
-        <Icons.Trash size={12} /> {deleting ? '删除中…' : '删除选中'}
-      </button>
+        {deleting ? '删除中…' : '删除选中'}
+      </Button>
     </div>
   )
 }

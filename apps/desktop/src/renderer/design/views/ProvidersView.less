@@ -1,0 +1,569 @@
+/**
+ * ProvidersView — 模型供应商管理页面样式
+ *
+ * 设计语言：参考 ScheduledTasksView，Arco Design Token + 项目 CSS 变量混用。
+ * 类名前缀：`pv-` (providers view) — 避免污染 views.css 的旧全局类。
+ *
+ * Tailwind 优先处理布局/间距；此处只写状态、动画、复杂选择器。
+ */
+
+.pv_root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  padding: 0 20px 20px;
+  background: var(--bg-soft);
+}
+
+/* ─── Header ────────────────────────────────────────────────────────────── */
+
+.pv_header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.pv_header_left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+
+  h2 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-strong);
+  }
+}
+
+.pv_header_right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+/* ─── Multi-select toolbar ──────────────────────────────────────────────── */
+
+.pv_multi_toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 12px;
+  background: var(--color-fill-2, var(--hover));
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  flex-shrink: 0;
+}
+
+.pv_multi_count {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-right: 4px;
+
+  strong {
+    color: var(--primary);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+/* ─── Preset catalog (vendor templates grid) ────────────────────────────── */
+
+.pv_catalog {
+  margin-top: 16px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+}
+
+.pv_catalog_hint {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.pv_catalog_grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+/* Vendor preset card */
+.pv_vendor_card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+
+  &:hover {
+    border-color: var(--border-strong, var(--primary));
+    background: var(--hover);
+  }
+
+  &:active {
+    transform: scale(0.99);
+  }
+
+  &.pv_vendor_added {
+    opacity: 0.55;
+    cursor: default;
+
+    &:hover {
+      border-color: var(--border);
+      background: var(--bg-soft);
+    }
+  }
+}
+
+.pv_vendor_info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pv_vendor_name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.pv_vendor_desc {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ─── Provider card (configured entry) ──────────────────────────────────── */
+
+.pv_card {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  margin-top: 12px;
+  border-radius: var(--r-lg);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    border-color: var(--border-strong, var(--primary));
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  }
+
+  &.pv_multi_mode {
+    cursor: pointer;
+  }
+
+  &.pv_selected {
+    border-color: var(--primary);
+    background: var(--primary-soft);
+
+    .pv_card_name {
+      color: var(--primary);
+    }
+  }
+}
+
+.pv_card_info {
+  flex: 1;
+  min-width: 0;
+}
+
+.pv_card_name_row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pv_card_name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-strong);
+}
+
+.pv_card_desc {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.pv_card_models {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.pv_model_pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.pv_model_default {
+    background: var(--primary-soft);
+    color: var(--primary);
+    border-color: transparent;
+    font-weight: 500;
+  }
+}
+
+.pv_model_more {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+}
+
+.pv_card_actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ─── Empty placeholder ─────────────────────────────────────────────────── */
+
+.pv_empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 64px 20px;
+  margin-top: 12px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+  gap: 12px;
+}
+
+/* ─── Provider Edit Drawer body ─────────────────────────────────────────── */
+
+.pv_drawer_body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 20px 24px 32px;
+  overflow-y: auto;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-fill-3, var(--border-strong));
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+}
+
+/* ─── Form Section ──────────────────────────────────────────────────────── */
+
+.pv_section {
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  transition: border-color 0.2s ease;
+
+  &:hover {
+    border-color: var(--border-strong, var(--primary));
+  }
+}
+
+.pv_section_head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 10px;
+  border-bottom: 1px solid var(--divider, var(--border));
+}
+
+.pv_section_icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-sm);
+  background: var(--primary-soft);
+  color: var(--primary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.pv_section_title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+}
+
+.pv_section_hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pv_section_body {
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ─── Form Grid ─────────────────────────────────────────────────────────── */
+
+.pv_form_grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 10px 14px;
+  align-items: center;
+
+  /* Switch 行：第二列允许自定义对齐 */
+  .pv_form_label + .pv_form_control_inline {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.pv_form_label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  user-select: none;
+
+  .pv_form_sub {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-weight: 400;
+  }
+}
+
+.pv_form_control_inline {
+  min-width: 0;
+}
+
+.pv_form_hint {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* 一行内 select + logo 预览 */
+.pv_form_select_row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pv_form_select_preview {
+  flex-shrink: 0;
+}
+
+/* Tier 3-column grid */
+.pv_tier_grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: 1fr;
+  }
+}
+
+.pv_tier_cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* ─── Drawer footer ─────────────────────────────────────────────────────── */
+
+/* ─── Import preview modal (Arco Modal body) ────────────────────────────── */
+
+.pv_import_meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: var(--color-fill-1, var(--bg-soft));
+  border-radius: var(--r-sm);
+  font-size: 12px;
+
+  > div {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .pv_muted {
+    color: var(--text-muted);
+  }
+
+  .pv_mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.pv_import_conflict_warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 8px;
+  background: var(--color-warning-light-1, #fff7e6);
+  border-radius: var(--r-xs);
+  color: var(--color-warning-6, #f7a700);
+  font-size: 11px;
+  width: fit-content;
+}
+
+.pv_import_mode_row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.pv_import_list_header {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.4fr 0.8fr;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--color-fill-2, var(--hover));
+  border-radius: var(--r-xs);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.pv_import_list {
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-fill-3, var(--border-strong));
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+}
+
+.pv_import_list_row {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1.4fr 0.8fr;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  align-items: center;
+
+  &:last-child {
+    border-bottom: none;
+  }
+
+  &.pv_conflict {
+    background: var(--color-warning-light-1, #fff7e6);
+  }
+
+  .pv_cell_name {
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pv_cell_model {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .pv_cell_status {
+    display: flex;
+    justify-content: flex-end;
+  }
+}
+
+.pv_import_empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.pv_import_tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 8px 10px;
+  background: var(--color-fill-1, var(--bg-soft));
+  border-radius: var(--r-xs);
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.5;
+
+  strong {
+    color: var(--text-secondary);
+  }
+}

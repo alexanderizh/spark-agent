@@ -4,23 +4,30 @@
  * 原嵌在 SettingsView 的 ProvidersSection 已抽到此处，作为一级菜单入口。
  * 包含：
  *   - ProvidersView（默认导出）：列表 + 预设模板目录
- *   - ProviderEditPanel（命名导出）：滑入式编辑面板
+ *   - ProviderEditPanel（命名导出）：滑入式编辑面板（基于 Arco Drawer）
  *
- * 本文件在 nav-and-shell 重构基础上做 UI/UX 升级：
- *   - 真实 logo 集成：ProviderCardX / VendorPresetCard / 编辑面板 hero 全部用真实 SVG，
- *     失败时回退到 emoji + vendor 颜色
- *   - 可用模型列表：textarea 改为 ChipList（input + add + 锁定默认模型）
- *   - 编辑面板：分节卡片布局（基本信息 / 模型 / 档位 / 鉴权），hero 区突出 logo + 协议
- *   - 输入控件密度统一：36px 高、12px 内边距、明显 border、强 focus 态
+ * 本次重设计（2026-06 arco-refresh）：
+ *   - 全部使用 Arco Design 组件（Button / Tag / Badge / Checkbox / Drawer / Switch / Alert / Modal）
+ *   - 图标全部换成 @arco-design/web-react/icon
+ *   - 样式落在组件级 ProvidersView.less（pv_ 前缀），不再依赖 views.css 的 .provider-card / .preset-card /
+ *     .slide-panel 等旧全局类，避免与其他 view 相互污染。
+ *   - 布局优先使用 Tailwind 原子类，复杂状态/动画用 LESS。
  *
- * 导入/导出（2026-06 import-export）：
+ * 导入/导出（2026-06 import-export）行为保持：
  *   - 顶部"导入/导出"按钮组：写文件 + 复制到剪贴板
  *   - 多选模式：勾选卡片 → 批量导出 / 删除
  *   - 导入预览 Modal：显示 conflict、模式 merge/replace
- *   - API Key 随导入导出一并处理（方便迁移备份）
+ *   - API Key 随导入导出一并处理
  */
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
-import { Icons } from '../Icons'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import {
+  Button, Tag, Badge, Checkbox, Drawer, Switch, Alert,
+} from '@arco-design/web-react'
+import {
+  IconPlus, IconRefresh, IconUpload, IconDownload, IconCopy,
+  IconCheckSquare, IconClose, IconEdit, IconStarFill,
+  IconStorage, IconLock, IconArchive, IconSettings, IconExclamationCircle,
+} from '@arco-design/web-react/icon'
 import { SparkInput, SparkSelect } from '../components/FormControls'
 import { ChipList } from '../components/ChipList'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
@@ -50,6 +57,7 @@ import type {
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
+import './ProvidersView.less'
 
 type ProviderKind = 'anthropic' | 'openai'
 type ProviderModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
@@ -399,79 +407,94 @@ function ProvidersView() {
   return (
     <>
       <MacWindowDragHeader />
-      <div className="settings-section">
-        <div className="row section-header-row">
-          <div className="row row-gap-xs">
-            <button
-              className={`btn ${showPresetCatalog ? 'active' : ''}`}
+      <div className="pv_root">
+        {/* ─── Header ─── */}
+        <div className="pv_header">
+          <div className="pv_header_left">
+            <h2>Providers</h2>
+            <Tag size="small" color="gray">{profiles.length}</Tag>
+          </div>
+          <div className="pv_header_right">
+            <Button
+              size="small"
+              type={showPresetCatalog ? 'primary' : 'outline'}
+              icon={<IconPlus />}
               onClick={() => setShowPresetCatalog((prev) => !prev)}
             >
-              <Icons.Layers size={12} /> 从模板添加
-            </button>
-            <button
-              className="btn primary"
+              从模板添加
+            </Button>
+            <Button
+              size="small"
+              type="primary"
+              icon={<IconPlus />}
               onClick={() => {
                 setEditingId(null)
                 setInitialPresetId(null)
                 setTweak('showProviderEdit', true)
               }}
             >
-              <Icons.Plus size={12} /> 自定义添加
-            </button>
-          </div>
-          <span className="flex1" />
-          {/* 导入导出区（import-export） */}
-          <div className="row row-gap-xs">
-            <button
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
+              自定义添加
+            </Button>
+            <span className="flex-1" />
+            <Button
+              size="small"
+              shape="circle"
+              type="text"
+              icon={<IconRefresh />}
               onClick={refresh}
               title="刷新 (Ctrl+R)"
-            >
-              <Icons.Refresh size={12} />
-            </button>
-            <button
-              ref={importButtonRef}
-              className="btn"
-              onClick={handleImportFromFile}
+              aria-label="刷新"
+            />
+            <Button
+              ref={importButtonRef as any}
+              size="small"
+              icon={<IconUpload />}
+              onClick={() => void handleImportFromFile()}
               disabled={importing}
               title="从 .json 导入 Provider 配置"
             >
-              <Icons.Upload size={12} /> 导入
-            </button>
-            <button
-              className="btn"
-              onClick={handleImportFromClipboard}
+              导入
+            </Button>
+            <Button
+              size="small"
+              icon={<IconCopy />}
+              onClick={() => void handleImportFromClipboard()}
               disabled={importing}
               title="从剪贴板 JSON 字符串导入"
             >
-              <Icons.Copy size={12} /> 从剪贴板导入
-            </button>
-            <button
-              className="btn"
+              从剪贴板
+            </Button>
+            <Button
+              size="small"
+              type="outline"
+              icon={<IconDownload />}
               onClick={handleExportAll}
               disabled={profiles.length === 0}
               title="导出全部 Provider 到 .json"
             >
-              <Icons.Download size={12} /> 导出
-            </button>
-            <button
-              className="btn ghost"
-              onClick={() => handleCopyToClipboard([])}
+              导出
+            </Button>
+            <Button
+              size="small"
+              icon={<IconCopy />}
+              onClick={() => void handleCopyToClipboard([])}
               disabled={profiles.length === 0}
               title="复制全部 Provider JSON 到剪贴板"
             >
-              <Icons.Copy size={12} /> 复制
-            </button>
-            {!multiSelect ? (
-              <button
-                className="btn ghost"
+              复制
+            </Button>
+            {!multiSelect && (
+              <Button
+                size="small"
+                type="outline"
+                icon={<IconCheckSquare />}
                 onClick={enterMultiSelect}
                 disabled={profiles.length === 0}
                 title="进入多选模式"
               >
-                <Icons.CheckSquare size={12} /> 批量
-              </button>
-            ) : null}
+                批量
+              </Button>
+            )}
           </div>
         </div>
 
@@ -486,18 +509,18 @@ function ProvidersView() {
             onInvertSelection={invertSelection}
             onExitMultiSelect={exitMultiSelect}
             onExportSelected={handleExportSelected}
-            onDeleteSelected={handleDeleteSelected}
+            onDeleteSelected={() => void handleDeleteSelected()}
             deleting={importing}
           />
         )}
 
         {/* ─── 预设模板目录 ─── */}
         {showPresetCatalog && (
-          <div className="preset-catalog">
-            <div className="preset-catalog-hint">
+          <div className="pv_catalog">
+            <div className="pv_catalog_hint">
               选择供应商模板快速配置，选择后仍可自定义所有字段。
             </div>
-            <div className="preset-catalog-grid">
+            <div className="pv_catalog_grid">
               {getUniqueVendorIds().map((vendorId) => {
                 const meta = getVendorMeta(vendorId)
                 if (!meta) return null
@@ -516,8 +539,8 @@ function ProvidersView() {
         )}
 
         {profiles.length === 0 && !showPresetCatalog ? (
-          <div className="empty-placeholder-lg">
-            尚未配置 Provider — 点击"从模板添加"快速开始，或"自定义添加"手动配置
+          <div className="pv_empty">
+            尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
           </div>
         ) : (
           profiles.map((p) => {
@@ -547,8 +570,8 @@ function ProvidersView() {
                   setEditingId(p.id)
                   setTweak('showProviderEdit', true)
                 }}
-                onDelete={() => handleDelete(p.id)}
-                onHealthCheck={() => handleHealthCheck(p.id)}
+                onDelete={() => void handleDelete(p.id)}
+                onHealthCheck={() => void handleHealthCheck(p.id)}
               />
             )
           })
@@ -558,6 +581,7 @@ function ProvidersView() {
       {/* Provider 编辑面板 */}
       {showProviderEdit && (
         <ProviderEditPanel
+          visible
           profileId={editingId}
           initialPresetId={initialPresetId}
           onClose={() => {
@@ -619,16 +643,25 @@ function VendorPresetCard({
   onSelectVendor: (vendorId: string) => void
 }) {
   return (
-    <div className={`preset-card${isAdded ? ' preset-added' : ''}`}>
-      <div className="preset-card-main" onClick={() => onSelectVendor(vendor.id)}>
-        <ProviderLogo vendor={vendor} size={32} shape="rounded" />
-        <div className="preset-card-info">
-          <div className="preset-card-name">
-            {vendor.name}
-            {isAdded && <span className="preset-card-badge">已添加</span>}
-          </div>
-          <div className="preset-card-desc">{vendor.desc}</div>
+    <div
+      className={`pv_vendor_card${isAdded ? ' pv_vendor_added' : ''}`}
+      onClick={() => !isAdded && onSelectVendor(vendor.id)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && !isAdded) {
+          e.preventDefault()
+          onSelectVendor(vendor.id)
+        }
+      }}
+    >
+      <ProviderLogo vendor={vendor} size={36} shape="rounded" />
+      <div className="pv_vendor_info">
+        <div className="pv_vendor_name">
+          {vendor.name}
+          {isAdded && <Tag size="small" color="gray">已添加</Tag>}
         </div>
+        <div className="pv_vendor_desc">{vendor.desc}</div>
       </div>
     </div>
   )
@@ -639,7 +672,6 @@ function ProviderCardX({
   name,
   desc,
   status,
-  detail,
   modelIds,
   defaultModel,
   isBuiltin = false,
@@ -655,7 +687,6 @@ function ProviderCardX({
   name: string
   desc: string
   status: 'ok' | 'warning' | 'off' | 'error' | 'unknown'
-  detail: string
   modelIds: string[]
   defaultModel: string
   /** 内置 provider：隐藏编辑/删除按钮，多选时不可勾选 */
@@ -689,9 +720,22 @@ function ProviderCardX({
     if (multiSelect && onToggleSelect) onToggleSelect()
   }
 
+  // 状态颜色映射（用于 Arco Badge / Tag）
+  const statusColor =
+    status === 'ok' ? 'green'
+    : status === 'warning' ? 'orange'
+    : status === 'error' ? 'red'
+    : 'gray'
+  const statusLabel =
+    status === 'ok' ? '在线'
+    : status === 'warning' ? '需注意'
+    : status === 'error' ? '错误'
+    : status === 'off' ? '未启用'
+    : '未验证'
+
   return (
     <div
-      className={`provider-card${multiSelect ? ' multi-select' : ''}${selected ? ' selected' : ''}`}
+      className={`pv_card${multiSelect ? ' pv_multi_mode' : ''}${selected ? ' pv_selected' : ''}`}
       onClick={multiSelect ? handleCardClick : undefined}
       role={multiSelect ? 'button' : undefined}
       tabIndex={multiSelect ? 0 : undefined}
@@ -708,64 +752,82 @@ function ProviderCardX({
       aria-pressed={multiSelect ? selected : undefined}
     >
       {multiSelect && (
-        <label
-          className="provider-card-checkbox"
+        <div
+          className="flex items-center pt-1"
           onClick={(e) => e.stopPropagation()}
           title={selected ? '取消选择' : '选择'}
         >
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected}
-            onChange={onToggleSelect}
+            onChange={() => onToggleSelect?.()}
             aria-label={`选择 Provider ${name}`}
           />
-        </label>
+        </div>
       )}
       <ProviderLogo vendor={fallbackVendor} size={44} shape="rounded" />
-      <div className="provider-info">
-        <div className="row row-gap-sm">
-          <span className="name">{name}</span>
-          {isBuiltin && <span className="badge dot">内置</span>}
-          {isDefault && <span className="provider-default-badge"><Icons.Star size={10} /> 默认 Provider</span>}
-          {status === 'ok' && <span className="badge success dot">在线</span>}
-          {status === 'warning' && <span className="badge warning dot">需注意</span>}
-          {status === 'error' && <span className="badge danger dot">错误</span>}
-          {status === 'off' && <span className="badge dot">未启用</span>}
-          {status === 'unknown' && <span className="badge dot">未验证</span>}
+      <div className="pv_card_info">
+        <div className="pv_card_name_row">
+          <span className="pv_card_name">{name}</span>
+          {isBuiltin && <Tag size="small" color="gray">内置</Tag>}
+          {isDefault && (
+            <Tag size="small" color="arcoblue" icon={<IconStarFill />}>
+              默认 Provider
+            </Tag>
+          )}
+          <Tag size="small" color={statusColor as any}>
+            <Badge status={status === 'ok' ? 'success' : status === 'error' ? 'error' : status === 'warning' ? 'warning' : 'default'} />
+            <span className="ml-1">{statusLabel}</span>
+          </Tag>
         </div>
-        <div className="desc">{desc}</div>
+        <div className="pv_card_desc">{desc}</div>
         {modelIds.length > 0 && (
-          <div className="models-row">
+          <div className="pv_card_models">
             {visibleModels.map((m) => (
               <span
                 key={m}
-                className="model-pill"
+                className={`pv_model_pill${m === defaultModel ? ' pv_model_default' : ''}`}
                 title={m}
-                style={m === defaultModel ? { background: 'var(--primary-soft)', color: 'var(--primary)' } : undefined}
               >
-                {m === defaultModel && <Icons.Star size={9} style={{ marginRight: 3, verticalAlign: -1 }} />}
+                {m === defaultModel && <IconStarFill style={{ fontSize: 9 }} />}
                 {m}
               </span>
             ))}
-            {moreCount > 0 && <span className="model-pill-more">+{moreCount}</span>}
+            {moreCount > 0 && <span className="pv_model_more">+{moreCount}</span>}
           </div>
         )}
-        {detail && <div className="muted detail-sm">{detail}</div>}
       </div>
       {!multiSelect && (
-        <div className="row row-gap-xs self-start mt-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
           {!isBuiltin && (
-            <button className="btn ghost sm" onClick={onEdit}>
-              <Icons.Edit size={11} /> 编辑
-            </button>
+            <Button
+              size="mini"
+              type="text"
+              icon={<IconEdit />}
+              onClick={onEdit}
+            >
+              编辑
+            </Button>
           )}
-          <button className="icon-btn" title="健康检查" onClick={onHealthCheck}>
-            <Icons.Refresh size={13} />
-          </button>
+          <Button
+            size="mini"
+            shape="circle"
+            type="text"
+            icon={<IconRefresh />}
+            onClick={onHealthCheck}
+            title="健康检查"
+            aria-label="健康检查"
+          />
           {!isBuiltin && (
-            <button className="icon-btn" title="删除" onClick={onDelete}>
-              <Icons.X size={13} />
-            </button>
+            <Button
+              size="mini"
+              shape="circle"
+              type="text"
+              status="danger"
+              icon={<IconClose />}
+              onClick={onDelete}
+              title="删除"
+              aria-label="删除"
+            />
           )}
         </div>
       )}
@@ -773,12 +835,14 @@ function ProviderCardX({
   )
 }
 
-/* ───────── PROVIDER EDIT slide panel ───────── */
+/* ───────── PROVIDER EDIT drawer ───────── */
 export function ProviderEditPanel({
+  visible = true,
   profileId = null,
   initialPresetId = null,
   onClose,
 }: {
+  visible?: boolean
   profileId?: string | null
   initialPresetId?: string | null
   onClose: () => void
@@ -808,7 +872,9 @@ export function ProviderEditPanel({
   const { invoke: listProviders } = useIpcInvoke('provider:list')
 
   // 编辑模式：加载现有 profile；新建模式：支持 initialPresetId 预填
+  // 仅在 Drawer 打开时执行，避免关闭后 form 被错误重置
   useEffect(() => {
+    if (!visible) return
     if (!profileId) {
       // 从预设模板打开：自动填充 preset 数据
       if (initialPresetId) {
@@ -880,7 +946,7 @@ export function ProviderEditPanel({
         }
       })
       .catch(console.error)
-  }, [listProviders, profileId, initialPresetId])
+  }, [listProviders, profileId, initialPresetId, visible])
 
   // ── 衍生：当前选中 preset 对应的 vendor（用于 hero 渲染真实 logo） ──
   const currentVendor: VendorMeta | null = useMemo(() => {
@@ -983,52 +1049,55 @@ export function ProviderEditPanel({
   }
 
   return (
-    <div className="slide-panel-backdrop" onClick={onClose}>
-      <div className="slide-panel" onClick={(e) => e.stopPropagation()}>
-        {/* ─── HERO HEADER ─── */}
-        <div className="slide-panel-h">
-          <ProviderLogo vendor={currentVendor} size={40} shape="rounded" />
-          <div className="flex1">
-            <div className="h-title">{profileId ? '编辑 Provider' : '添加 Provider'}</div>
-            <div className="h-sub">
-              {form.modelType === 'image'
+    <Drawer
+      visible={visible}
+      onCancel={onClose}
+      onOk={() => void handleSave()}
+      maskClosable={!saving}
+      width={960}
+      title={profileId ? '编辑 Provider' : '添加 Provider'}
+      okText="保存"
+      cancelText="取消"
+      confirmLoading={saving}
+      bodyStyle={{ padding: 0 }}
+    >
+      <div className="pv_drawer_body">
+        <Alert
+          type="info"
+          content={
+            [
+              form.modelType === 'image'
                 ? `生图模型 · ${form.imageProvider}/${form.imageApiType}`
-                : form.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'}
-              <span className="dot" />
-              API Key 鉴权
-              {form.presetId !== 'custom' && (
-                <>
-                  <span className="dot" />
-                  预设模板 · {currentVendor?.name ?? form.presetId}
-                </>
-              )}
-            </div>
+                : form.provider === 'anthropic'
+                  ? 'Anthropic 格式'
+                  : 'OpenAI 格式',
+              'API Key 鉴权',
+              form.presetId !== 'custom' ? `预设模板 · ${currentVendor?.name ?? form.presetId}` : null,
+            ].filter(Boolean).join(' · ')
+          }
+        />
+
+        {error && (
+          <Alert
+            type="error"
+            icon={<IconExclamationCircle />}
+            content={error}
+            closable
+            onClose={() => setError('')}
+          />
+        )}
+
+        {/* ─── 基础信息 ─── */}
+        <div className="pv_section">
+          <div className="pv_section_head">
+            <span className="pv_section_icon">
+              <IconStorage style={{ fontSize: 11 }} />
+            </span>
+            <span className="pv_section_title">基本信息</span>
           </div>
-          <button className="icon-btn" onClick={onClose} title="关闭">
-            <Icons.X />
-          </button>
-        </div>
-
-        <div className="slide-panel-body">
-          {error && (
-            <div className="alert-banner" role="alert">
-              <span className="alert-banner-icon">
-                <Icons.AlertTriangle size={14} />
-              </span>
-              <span className="alert-banner-content">{error}</span>
-            </div>
-          )}
-
-          {/* ─── 基础信息 ─── */}
-          <div className="provider-form-section">
-            <div className="provider-form-section-title">
-              <span className="icon">
-                <Icons.Server size={11} />
-              </span>
-              基本信息
-            </div>
-            <div className="form-grid">
-              <label>模型类型</label>
+          <div className="pv_section_body">
+            <div className="pv_form_grid">
+              <label className="pv_form_label">模型类型</label>
               <SparkSelect
                 value={form.modelType}
                 onChange={(e) => {
@@ -1051,13 +1120,13 @@ export function ProviderEditPanel({
                 <option value="video">视频模型</option>
               </SparkSelect>
 
-              <label>
+              <label className="pv_form_label">
                 供应商模板
-                <span className="sub">基于官方公开文档预填，后续仍可修改</span>
+                <span className="pv_form_sub">基于官方公开文档预填，后续仍可修改</span>
               </label>
-              <div className="provider-form-select-row">
+              <div className="pv_form_select_row">
                 <SparkSelect
-                  style={{width: 200}}
+                  width={220}
                   value={form.presetId}
                   disabled={!!profileId}
                   onChange={(e) => {
@@ -1075,8 +1144,6 @@ export function ProviderEditPanel({
                     form.modelType === 'image' ? preset.modelType === 'image' : preset.modelType !== 'image'
                   ).map((preset) => {
                     const meta = getVendorMeta(preset.vendorId)
-                    // 同一 vendor 可能对应多个 preset（如 openai-official / openai-images / apimart-images），
-                    // 这里显示 preset 自己的 name 让用户能区分；带 image 类型的 preset 追加提示。
                     const baseName = preset.name || meta?.name || preset.vendorId
                     return (
                       <option key={preset.id} value={preset.id}>
@@ -1089,44 +1156,46 @@ export function ProviderEditPanel({
                   vendor={currentVendor}
                   size={36}
                   shape="rounded"
-                  className="provider-form-select-preview"
+                  className="pv_form_select_preview"
                 />
               </div>
 
-              <label>显示名称</label>
+              <label className="pv_form_label">显示名称</label>
               <SparkInput
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
                 placeholder="例：Anthropic · Claude"
               />
 
-              {form.modelType !== 'image' && (<>
-              <label>
-                API 协议格式
-                <span className="sub">决定 Provider 请求格式；Claude 执行统一使用 Claude Agent SDK</span>
-              </label>
-              <SparkSelect
-                value={form.provider}
-                onChange={(e) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    presetId: 'custom',
-                    provider: normalizeProviderKind(e.target.value),
-                    codexApiKind: 'chat',
-                  }))
-                }
-                disabled={true}
-              >
-                <option value="anthropic">Anthropic 格式</option>
-                <option value="openai">OpenAI 格式</option>
-              </SparkSelect>
-              </>)}
+              {form.modelType !== 'image' && (
+                <>
+                  <label className="pv_form_label">
+                    API 协议格式
+                    <span className="pv_form_sub">决定 Provider 请求格式；Claude 执行统一使用 Claude Agent SDK</span>
+                  </label>
+                  <SparkSelect
+                    value={form.provider}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        presetId: 'custom',
+                        provider: normalizeProviderKind(e.target.value),
+                        codexApiKind: 'chat',
+                      }))
+                    }
+                    disabled={true}
+                  >
+                    <option value="anthropic">Anthropic 格式</option>
+                    <option value="openai">OpenAI 格式</option>
+                  </SparkSelect>
+                </>
+              )}
 
               {form.modelType === 'image' && (
                 <>
-                  <label>
+                  <label className="pv_form_label">
                     生图接口来源
-                    <span className="sub">决定图片请求 body、路径、尺寸参数和轮询策略</span>
+                    <span className="pv_form_sub">决定图片请求 body、路径、尺寸参数和轮询策略</span>
                   </label>
                   <SparkSelect
                     value={form.imageProvider}
@@ -1148,9 +1217,9 @@ export function ProviderEditPanel({
                     ))}
                   </SparkSelect>
 
-                  <label>
+                  <label className="pv_form_label">
                     生图调用方式
-                    <span className="sub">同步直接返回图片；异步会提交任务并轮询；auto 可兼容混合响应</span>
+                    <span className="pv_form_sub">同步直接返回图片；异步会提交任务并轮询；auto 可兼容混合响应</span>
                   </label>
                   <SparkSelect
                     value={form.imageApiType}
@@ -1165,9 +1234,9 @@ export function ProviderEditPanel({
 
               {form.provider === 'openai' && form.modelType !== 'image' && (
                 <>
-                  <label>
+                  <label className="pv_form_label">
                     Codex API 类型
-                    <span className="sub">控制 Codex/OpenAI 执行使用 Chat Completions 还是 Responses API</span>
+                    <span className="pv_form_sub">控制 Codex/OpenAI 执行使用 Chat Completions 还是 Responses API</span>
                   </label>
                   <SparkSelect
                     value={form.codexApiKind}
@@ -1181,9 +1250,9 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              <label>
+              <label className="pv_form_label">
                 默认模型 ID
-                <span className="sub">作为主对话默认；同时自动加入下方可用模型列表（带星标）</span>
+                <span className="pv_form_sub">作为主对话默认；同时自动加入下方可用模型列表（带星标）</span>
               </label>
               <SparkInput
                 value={form.defaultModel}
@@ -1196,10 +1265,9 @@ export function ProviderEditPanel({
                   })
                 }}
                 placeholder="例：claude-sonnet-4-20250514"
-                className="mono-sm"
               />
 
-              <label>Endpoint URL</label>
+              <label className="pv_form_label">Endpoint URL</label>
               <SparkInput
                 value={form.endpoint}
                 onChange={(e) => set('endpoint', e.target.value)}
@@ -1210,36 +1278,35 @@ export function ProviderEditPanel({
                     ? 'https://api.anthropic.com'
                     : 'https://api.openai.com/v1'
                 }
-                className="mono-sm"
               />
 
-              {form.modelType !== 'image' && (<>
-              <label>
-                支持 1M 上下文
-                <span className="sub">开启后该 Provider 默认按 1M token 计算；关闭时默认 200K</span>
-              </label>
-              <div className="control">
-                <div
-                  className={`switch ${form.supportsMillionContext ? 'on' : ''}`}
-                  onClick={() => set('supportsMillionContext', !form.supportsMillionContext)}
-                  role="switch"
-                  aria-checked={form.supportsMillionContext}
-                />
-                <span className="muted" style={{ fontSize: 'var(--font-xs)' }}>
-                  {form.supportsMillionContext ? '已开启' : '关闭'}
-                </span>
-              </div>
-              </>)}
+              {form.modelType !== 'image' && (
+                <>
+                  <label className="pv_form_label">
+                    支持 1M 上下文
+                    <span className="pv_form_sub">开启后该 Provider 默认按 1M token 计算；关闭时默认 200K</span>
+                  </label>
+                  <div className="pv_form_control_inline">
+                    <Switch
+                      size="small"
+                      checked={form.supportsMillionContext}
+                      onChange={(checked: boolean) => set('supportsMillionContext', checked)}
+                    />
+                    <span className="pv_form_hint">
+                      {form.supportsMillionContext ? '已开启' : '关闭'}
+                    </span>
+                  </div>
+                </>
+              )}
 
-              <label>{form.modelType === 'image' ? '默认生图模型' : '默认 Provider'}</label>
-              <div className="control">
-                <div
-                  className={`switch ${form.isDefault ? 'on' : ''}`}
-                  onClick={() => set('isDefault', !form.isDefault)}
-                  role="switch"
-                  aria-checked={form.isDefault}
+              <label className="pv_form_label">{form.modelType === 'image' ? '默认生图模型' : '默认 Provider'}</label>
+              <div className="pv_form_control_inline">
+                <Switch
+                  size="small"
+                  checked={form.isDefault}
+                  onChange={(checked: boolean) => set('isDefault', checked)}
                 />
-                <span className="muted" style={{ fontSize: 'var(--font-xs)' }}>
+                <span className="pv_form_hint">
                   {form.isDefault
                     ? (form.modelType === 'image' ? '默认生图' : '系统默认')
                     : (form.modelType === 'image' ? '备选生图' : '备选 Provider')}
@@ -1247,19 +1314,21 @@ export function ProviderEditPanel({
               </div>
             </div>
           </div>
+        </div>
 
-          {/* ─── 鉴权（API Key）放在可用模型上方 ─── */}
-          <div className="provider-form-section">
-            <div className="provider-form-section-title">
-              <span className="icon">
-                <Icons.Lock size={11} />
-              </span>
-              鉴权
-            </div>
-            <div className="form-grid">
-              <label>
+        {/* ─── 鉴权（API Key） ─── */}
+        <div className="pv_section">
+          <div className="pv_section_head">
+            <span className="pv_section_icon">
+              <IconLock style={{ fontSize: 11 }} />
+            </span>
+            <span className="pv_section_title">鉴权</span>
+          </div>
+          <div className="pv_section_body">
+            <div className="pv_form_grid">
+              <label className="pv_form_label">
                 API Key
-                {profileId && <span className="sub">留空则不更新当前 key</span>}
+                {profileId && <span className="pv_form_sub">留空则不更新当前 key</span>}
               </label>
               <SparkInput
                 type="password"
@@ -1270,127 +1339,96 @@ export function ProviderEditPanel({
               />
             </div>
           </div>
-
-          {form.modelType !== 'image' && (<>
-          {/* ─── 可用模型 ─── */}
-          <div className="provider-form-section">
-            <div className="provider-form-section-title">
-              <span className="icon">
-                <Icons.Box size={11} />
-              </span>
-              可用模型
-              <span
-                className="muted"
-                style={{
-                  marginLeft: 'auto',
-                  fontSize: 'var(--font-xs)',
-                  fontWeight: 400,
-                  textTransform: 'none',
-                  letterSpacing: 0,
-                }}
-              >
-                点击 chip 即可切换为默认模型（带星标）
-              </span>
-            </div>
-            <div className="form-grid" style={{ gridTemplateColumns: '1fr' }}>
-              <ChipList
-                value={form.modelIds}
-                onChange={(ids) => set('modelIds', ids)}
-                onSelectDefault={(id) => {
-                  // 把 id 设为默认模型：从 modelIds 里把它放到最前
-                  setForm((prev) => {
-                    const trimmed = id.trim()
-                    if (!trimmed) return prev
-                    const rest = prev.modelIds.filter((m) => m !== trimmed)
-                    return {
-                      ...prev,
-                      defaultModel: trimmed,
-                      modelIds: uniqPreserveOrder([trimmed, ...rest]),
-                    }
-                  })
-                }}
-                locked={form.defaultModel.trim() ? [form.defaultModel.trim()] : []}
-                placeholder="输入模型 ID 后按 Enter 添加…"
-                emptyText="尚未添加任何模型（默认模型会自动加入）"
-                addLabel="添加"
-                removeLabel="移除"
-              />
-            </div>
-          </div>
-
-          {/* ─── 档位映射 ─── */}
-          <div className="provider-form-section">
-            <div className="provider-form-section-title">
-              <span className="icon">
-                <Icons.Sliders size={11} />
-              </span>
-              档位映射
-              <span
-                className="muted"
-                style={{
-                  marginLeft: 'auto',
-                  fontSize: 'var(--font-xs)',
-                  fontWeight: 400,
-                  textTransform: 'none',
-                  letterSpacing: 0,
-                }}
-              >
-                可选；留空则该档自动回落"默认模型 ID"
-              </span>
-            </div>
-            <div className="tier-grid">
-              <div className="tier-cell">
-                <label>
-                  Haiku 档
-                  <span className="sub">SDK 派生子 agent / Task 工具默认走此档</span>
-                </label>
-                <SparkInput
-                  value={form.haikuModel}
-                  onChange={(e) => set('haikuModel', e.target.value)}
-                  placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
-                  className="mono-sm"
-                />
-              </div>
-              <div className="tier-cell">
-                <label>
-                  Sonnet 档
-                  <span className="sub">主对话默认档；通常等同于默认模型</span>
-                </label>
-                <SparkInput
-                  value={form.sonnetModel}
-                  onChange={(e) => set('sonnetModel', e.target.value)}
-                  placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
-                  className="mono-sm"
-                />
-              </div>
-              <div className="tier-cell">
-                <label>
-                  Opus 档
-                  <span className="sub">Plan / Review 等高能力 agent 使用</span>
-                </label>
-                <SparkInput
-                  value={form.opusModel}
-                  onChange={(e) => set('opusModel', e.target.value)}
-                  placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
-                  className="mono-sm"
-                />
-              </div>
-            </div>
-          </div>
-          </>)}
         </div>
 
-        <div className="slide-panel-foot">
-          <span className="flex1" />
-          <button className="btn" onClick={onClose} disabled={saving}>
-            取消
-          </button>
-          <button className="btn primary" onClick={handleSave} disabled={saving}>
-            <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
-          </button>
-        </div>
+        {form.modelType !== 'image' && (
+          <>
+            {/* ─── 可用模型 ─── */}
+            <div className="pv_section">
+              <div className="pv_section_head">
+                <span className="pv_section_icon">
+                  <IconArchive style={{ fontSize: 11 }} />
+                </span>
+                <span className="pv_section_title">可用模型</span>
+                <span className="pv_section_hint">点击 chip 即可切换为默认模型（带星标）</span>
+              </div>
+              <div className="pv_section_body">
+                <ChipList
+                  value={form.modelIds}
+                  onChange={(ids) => set('modelIds', ids)}
+                  onSelectDefault={(id) => {
+                    // 把 id 设为默认模型：从 modelIds 里把它放到最前
+                    setForm((prev) => {
+                      const trimmed = id.trim()
+                      if (!trimmed) return prev
+                      const rest = prev.modelIds.filter((m) => m !== trimmed)
+                      return {
+                        ...prev,
+                        defaultModel: trimmed,
+                        modelIds: uniqPreserveOrder([trimmed, ...rest]),
+                      }
+                    })
+                  }}
+                  locked={form.defaultModel.trim() ? [form.defaultModel.trim()] : []}
+                  placeholder="输入模型 ID 后按 Enter 添加…"
+                  emptyText="尚未添加任何模型（默认模型会自动加入）"
+                  addLabel="添加"
+                  removeLabel="移除"
+                />
+              </div>
+            </div>
+
+            {/* ─── 档位映射 ─── */}
+            <div className="pv_section">
+              <div className="pv_section_head">
+                <span className="pv_section_icon">
+                  <IconSettings style={{ fontSize: 11 }} />
+                </span>
+                <span className="pv_section_title">档位映射</span>
+                <span className="pv_section_hint">可选；留空则该档自动回落「默认模型 ID」</span>
+              </div>
+              <div className="pv_section_body">
+                <div className="pv_tier_grid">
+                  <div className="pv_tier_cell">
+                    <label className="pv_form_label">
+                      Haiku 档
+                      <span className="pv_form_sub">SDK 派生子 agent / Task 工具默认走此档</span>
+                    </label>
+                    <SparkInput
+                      value={form.haikuModel}
+                      onChange={(e) => set('haikuModel', e.target.value)}
+                      placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
+                    />
+                  </div>
+                  <div className="pv_tier_cell">
+                    <label className="pv_form_label">
+                      Sonnet 档
+                      <span className="pv_form_sub">主对话默认档；通常等同于默认模型</span>
+                    </label>
+                    <SparkInput
+                      value={form.sonnetModel}
+                      onChange={(e) => set('sonnetModel', e.target.value)}
+                      placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
+                    />
+                  </div>
+                  <div className="pv_tier_cell">
+                    <label className="pv_form_label">
+                      Opus 档
+                      <span className="pv_form_sub">Plan / Review 等高能力 agent 使用</span>
+                    </label>
+                    <SparkInput
+                      value={form.opusModel}
+                      onChange={(e) => set('opusModel', e.target.value)}
+                      placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
       </div>
-    </div>
+    </Drawer>
   )
 }
 
