@@ -39,7 +39,12 @@ import type {
   TeamA2ATask,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
-import { LOCAL_CLI_DEFAULT_MODEL, LOCAL_CLI_PROVIDER_ID } from '@spark/protocol'
+import {
+  LOCAL_CLI_DEFAULT_MODEL,
+  LOCAL_CODEX_CLI_DEFAULT_MODEL,
+  isBuiltInLocalCliProvider,
+  isLocalCodexCliProvider,
+} from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
 import { loadSdkMcpFactory } from '../sdk/index.js'
@@ -681,7 +686,7 @@ export class SessionService {
     if (provider == null) {
       throw new Error(`Provider profile not found: ${effectiveProviderProfileId}`)
     }
-    const isLocalCli = provider.id === LOCAL_CLI_PROVIDER_ID
+    const isLocalCli = isBuiltInLocalCliProvider(provider)
     if (!isLocalCli && provider.keystore_ref == null) {
       throw new Error(`Provider ${provider.id} has no keystore ref`)
     }
@@ -709,7 +714,7 @@ export class SessionService {
     }
 
     const model = isLocalCli
-      ? LOCAL_CLI_DEFAULT_MODEL
+      ? getLocalCliDefaultModel(provider)
       : (isMentionTurn ? agent.modelId : null) ?? session.model_id ?? config.defaultModel ?? config.model
     if (model == null || model.length === 0) {
       throw new Error(`Provider ${provider.id} has no default model configured`)
@@ -867,7 +872,7 @@ export class SessionService {
       },
     )
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
-    const platformMcpServer = await this.resolvePlatformManagementMcpServer()
+    const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
@@ -1723,6 +1728,7 @@ export class SessionService {
       workflowRepo: new WorkflowRepository(this.db),
       agentRepo: new AgentRepository(this.db),
       settingsRepo,
+      sessionService: this,
     }
 
     return this.platformBridge.start(deps)
@@ -1732,7 +1738,7 @@ export class SessionService {
    * Resolve the Platform Management MCP server config.
    * Returns null if the MCP server script cannot be found or the bridge fails to start.
    */
-  private async resolvePlatformManagementMcpServer(): Promise<SDKMcpServerConfig | null> {
+  private async resolvePlatformManagementMcpServer(sessionId: string): Promise<SDKMcpServerConfig | null> {
     const serverPath = resolvePlatformManagementMcpServerPath()
     if (serverPath == null) {
       log.warn('Platform management MCP server script not found')
@@ -1748,6 +1754,7 @@ export class SessionService {
         env: {
           ELECTRON_RUN_AS_NODE: '1',
           SPARK_PLATFORM_BRIDGE_PORT: String(port),
+          SPARK_SESSION_ID: sessionId,
         },
       }
     } catch (err) {
@@ -2679,6 +2686,42 @@ export class SessionService {
         updatedAt: row.updated_at,
         messageCount: eventRepo.countBySession(row.id),
       },
+    }
+  }
+
+  async getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>> {
+    const sessionRepo = new SessionRepository(this.db)
+    const row = sessionRepo.findByIdOrFail(sessionId)
+    const providerRepo = new ProviderProfileRepository(this.db)
+    const provider = providerRepo.get(row.provider_profile_id ?? '')
+    let providerName = ''
+    let providerType = ''
+    let availableModels: string[] = []
+    if (provider != null) {
+      providerName = provider.name
+      providerType = provider.provider_type
+      try {
+        const config = JSON.parse(provider.config_json) as { modelIds?: string[] }
+        availableModels = config.modelIds ?? []
+      } catch { /* ignore */ }
+    }
+    return {
+      sessionId: row.id,
+      title: row.title,
+      providerProfileId: row.provider_profile_id ?? '',
+      providerName,
+      providerType,
+      modelId: row.model_id,
+      agentId: row.agent_id ?? '',
+      agentAdapter: getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
+      permissionMode: getPermissionModeFromSession(
+        row.permission_mode,
+        getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
+      ),
+      chatMode: getChatModeFromSession(row.chat_mode),
+      reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
+      status: row.status as 'idle' | 'running' | 'error',
+      availableModels,
     }
   }
 

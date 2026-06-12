@@ -17,6 +17,7 @@ import readline from 'node:readline'
 
 const BRIDGE_PORT = Number(process.env.SPARK_PLATFORM_BRIDGE_PORT || 0)
 const BRIDGE_HOST = '127.0.0.1'
+const SESSION_ID = process.env.SPARK_SESSION_ID || ''
 
 // ─── JSON-RPC helpers ────────────────────────────────────────────────
 
@@ -248,6 +249,40 @@ function toolDefinitions() {
         required: ['id'],
         properties: {
           id: { type: 'string', description: '要测试的 Provider ID' },
+        },
+      },
+    },
+    {
+      name: 'providers_get',
+      description: '获取单个 Provider 的完整详情，包含默认模型、可用模型列表、API 端点、是否为默认供应商等。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: 'Provider ID' },
+        },
+      },
+    },
+    {
+      name: 'providers_set_default',
+      description: '将指定 Provider 设为默认供应商。设为默认后，新建会话将优先使用该供应商。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '要设为默认的 Provider ID' },
+        },
+      },
+    },
+    {
+      name: 'providers_set_default_model',
+      description: '修改 Provider 的默认模型。后续使用该 Provider 创建会话时将优先使用新默认模型。',
+      inputSchema: {
+        type: 'object',
+        required: ['id', 'model'],
+        properties: {
+          id: { type: 'string', description: 'Provider ID' },
+          model: { type: 'string', description: '新的默认模型名称，如 "claude-sonnet-4-6"' },
         },
       },
     },
@@ -632,6 +667,71 @@ function toolDefinitions() {
         properties: {},
       },
     },
+
+    // ── Session Management ──
+    {
+      name: 'sessions_get',
+      description: '获取当前会话的运行时状态，包括当前模型、供应商、会话模式、权限模式、推理强度、可用模型列表等。用于 Agent 自查当前运行参数。',
+      inputSchema: {
+        type: 'object',
+        properties: {},
+      },
+    },
+    {
+      name: 'sessions_switch_model',
+      description: '切换当前会话使用的模型。模型必须属于当前会话的供应商。切换后立即生效。',
+      inputSchema: {
+        type: 'object',
+        required: ['modelId'],
+        properties: {
+          modelId: { type: 'string', description: '要切换到的模型 ID，如 "claude-sonnet-4-6"、"claude-opus-4-7"' },
+        },
+      },
+    },
+    {
+      name: 'sessions_switch_provider',
+      description: '切换当前会话使用的 AI 供应商（Provider）。切换后模型也会变更到新供应商的默认模型。',
+      inputSchema: {
+        type: 'object',
+        required: ['providerProfileId'],
+        properties: {
+          providerProfileId: { type: 'string', description: '要切换到的 Provider Profile ID' },
+        },
+      },
+    },
+    {
+      name: 'sessions_switch_mode',
+      description: '切换当前会话的聊天模式。不同模式影响 Agent 的行为方式：agent（正常对话）、ask（仅回答不执行）、edit（编辑模式）、review（代码审查模式）。',
+      inputSchema: {
+        type: 'object',
+        required: ['chatMode'],
+        properties: {
+          chatMode: { type: 'string', description: '聊天模式', enum: ['agent', 'ask', 'edit', 'review'] },
+        },
+      },
+    },
+    {
+      name: 'sessions_switch_permission',
+      description: '切换当前会话的权限模式。权限模式控制 Agent 能自动执行哪些操作。default（需确认高风险操作）、claude-auto-edits（自动编辑文件，高风险仍需确认）、bypassPermissions（完全自动，慎用）。',
+      inputSchema: {
+        type: 'object',
+        required: ['permissionMode'],
+        properties: {
+          permissionMode: { type: 'string', description: '权限模式', enum: ['default', 'plan', 'claude-auto-edits', 'claude-plan', 'bypassPermissions'] },
+        },
+      },
+    },
+    {
+      name: 'sessions_switch_reasoning_effort',
+      description: '切换当前会话的推理强度。low（快速简答）、medium（平衡）、high（深度分析）、xhigh（极致推理，消耗更多 token）。',
+      inputSchema: {
+        type: 'object',
+        required: ['reasoningEffort'],
+        properties: {
+          reasoningEffort: { type: 'string', description: '推理强度', enum: ['low', 'medium', 'high', 'xhigh'] },
+        },
+      },
+    },
   ]
 }
 
@@ -651,10 +751,13 @@ async function handleToolCall(name, args) {
     mcp_delete: 'mcp.delete',
     mcp_status: 'mcp.status',
     providers_list: 'providers.list',
+    providers_get: 'providers.get',
     providers_create: 'providers.create',
     providers_update: 'providers.update',
     providers_delete: 'providers.delete',
     providers_health_check: 'providers.health_check',
+    providers_set_default: 'providers.set_default',
+    providers_set_default_model: 'providers.set_default_model',
     workflows_list: 'workflows.list',
     workflows_get: 'workflows.get',
     workflows_create: 'workflows.create',
@@ -669,6 +772,12 @@ async function handleToolCall(name, args) {
     settings_set: 'settings.set',
     settings_get_category: 'settings.get_category',
     settings_get_all: 'settings.get_all',
+    sessions_get: 'sessions.get',
+    sessions_switch_model: 'sessions.switch_model',
+    sessions_switch_provider: 'sessions.switch_provider',
+    sessions_switch_mode: 'sessions.switch_mode',
+    sessions_switch_permission: 'sessions.switch_permission',
+    sessions_switch_reasoning_effort: 'sessions.switch_reasoning_effort',
     board_list: 'board.list',
     board_get: 'board.get',
     board_create: 'board.create',
@@ -689,8 +798,14 @@ async function handleToolCall(name, args) {
     }
   }
 
+  // Auto-inject sessionId for session tools (read from env)
+  const rpcArgs = { ...args }
+  if (name.startsWith('sessions_') && SESSION_ID) {
+    rpcArgs.sessionId = SESSION_ID
+  }
+
   try {
-    const data = await rpc(method, args)
+    const data = await rpc(method, rpcArgs)
     return {
       content: [{ type: 'text', text: JSON.stringify(data, null, 2) }],
     }
@@ -719,7 +834,7 @@ function main() {
       result(msg.id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'spark-platform-management', version: '1.0.0' },
+        serverInfo: { name: 'spark-platform-management', version: '2.2.0' },
       })
       return
     }

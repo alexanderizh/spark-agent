@@ -1,7 +1,7 @@
 ---
 name: 平台管理
 description: "管理 Spark Agent 平台的 Skills、MCP 服务器、Providers、Workflows、Agents、Settings 和看板任务"
-version: 2.1.0
+version: 2.2.0
 author: Spark AI
 category: utility
 tags: [platform, management, admin, configuration, skills, mcp, provider, workflow, agent, settings, board, kanban, task, 安装, 技能, 看板, 任务, 配置, 管理]
@@ -14,7 +14,8 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
 当用户提到以下任何关键词或意图时，你应该使用对应的平台管理工具：
 - **Skills/技能/插件**：安装、卸载、搜索、启用、禁用、查看已安装技能
 - **MCP 服务器/MCP**：添加、修改、删除、查看 MCP 服务器配置
-- **Provider/供应商/模型/AI模型**：添加、修改、删除、测试 AI 供应商连接
+- **Provider/供应商/模型/AI模型**：添加、修改、删除、测试 AI 供应商连接、查看供应商详情、设置默认供应商、切换默认模型
+- **会话/Session/切换模型/切换模式**：查看当前会话状态、切换模型、切换供应商、切换会话模式、切换权限模式、切换推理强度
 - **Workflow/工作流**：创建、编辑、删除工作流
 - **Agent/代理/助手**：创建、修改、删除、查看 Agent 配置
 - **Settings/设置/偏好**：读取、修改平台设置
@@ -38,10 +39,13 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
 
 ### 3. Provider 管理
 - **mcp__spark_platform__providers_list** — 列出所有 Provider（不返回 API Key）
+- **mcp__spark_platform__providers_get**（参数：id）— 获取单个 Provider 完整详情（默认模型、可用模型列表、API 端点、是否为默认供应商等）
 - **mcp__spark_platform__providers_create**（参数：name, providerType, config, keystoreRef, isDefault?）— 创建 Provider
-- **mcp__spark_platform__providers_update**（参数：id, ...fields）— 更新 Provider
+- **mcp__spark_platform__providers_update**（参数：id, name?, config?, enabled?, keystoreRef?）— 更新 Provider
 - **mcp__spark_platform__providers_delete**（参数：id）— 删除 Provider ⚠️ 破坏性操作
 - **mcp__spark_platform__providers_health_check**（参数：id）— 测试 Provider 连接
+- **mcp__spark_platform__providers_set_default**（参数：id）— 将指定 Provider 设为默认供应商
+- **mcp__spark_platform__providers_set_default_model**（参数：id, model）— 修改 Provider 的默认模型
 
 ### 4. Workflow 管理
 - **mcp__spark_platform__workflows_list** — 列出所有 Workflow
@@ -63,7 +67,17 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
 - **mcp__spark_platform__settings_get_category**（参数：category）— 获取分类下所有设置
 - **mcp__spark_platform__settings_get_all** — 获取全部设置
 
-### 7. 看板任务管理
+### 7. 会话管理（Session Management）
+Agent 可通过这些工具查看和修改当前会话的运行时参数，实现自我管理。所有 session 工具**自动注入当前会话 ID**，无需手动传递。
+
+- **mcp__spark_platform__sessions_get** — 获取当前会话运行时状态（模型、供应商、会话模式、权限模式、推理强度、可用模型列表等）
+- **mcp__spark_platform__sessions_switch_model**（参数：modelId）— 切换当前会话使用的模型（如 `claude-sonnet-4-6`、`claude-opus-4-7`）
+- **mcp__spark_platform__sessions_switch_provider**（参数：providerProfileId）— 切换当前会话的 AI 供应商，模型也会变更为新供应商的默认模型
+- **mcp__spark_platform__sessions_switch_mode**（参数：chatMode）— 切换聊天模式：`agent`（正常对话）、`ask`（仅回答不执行）、`edit`（编辑模式）、`review`（代码审查模式）
+- **mcp__spark_platform__sessions_switch_permission**（参数：permissionMode）— 切换权限模式：`default`（需确认高风险）、`claude-auto-edits`（自动编辑）、`bypassPermissions`（完全自动，慎用）
+- **mcp__spark_platform__sessions_switch_reasoning_effort**（参数：reasoningEffort）— 切换推理强度：`low`（快速）、`medium`（平衡）、`high`（深度分析）、`xhigh`（极致推理）
+
+### 8. 看板任务管理
 - **mcp__spark_platform__board_list**（参数：status?, priority?, assignee?, project?, query?, includeDeleted?）— 列出看板任务（每条任务包含关联的项目名和附件信息）
 - **mcp__spark_platform__board_get**（参数：id）— 获取单个任务详情（含附件和评论）
 - **mcp__spark_platform__board_create**（参数：title, description?, status?, priority?, assignee?, tags?, dueDate?, project?, processingAgent?, acceptanceCriteria?, testAgent?, attachments?）— 创建任务；project 为下拉选择，只能选择当前应用中已存在的项目（从会话侧边栏获取项目列表）；attachments 为附件数组，每个附件包含 id、type（image/file）、name、path 字段；processingAgent / testAgent 格式为 `agent 名称` 或 `team:团队名称`
@@ -100,3 +114,8 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
    - 需要设置 API Key 时，引导用户去 Settings → Providers 页面操作
 8. **错误处理**：操作失败时说明原因并建议解决方案
 9. **不主动管理**：除非用户请求，不主动修改平台配置
+10. **会话自管理**：
+    - 用户要求切换模型/模式/权限时，先调用 `sessions_get` 查看当前状态，确认后再切换
+    - 切换供应商前，先用 `providers_list` 确认目标供应商可用
+    - 切换模型前，先通过 `providers_get` 获取该供应商的可用模型列表
+    - `bypassPermissions` 模式有安全风险，切换前必须明确告知用户后果

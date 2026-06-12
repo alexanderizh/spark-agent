@@ -41,6 +41,22 @@ export interface PlatformBridgeDeps {
   workflowRepo: WorkflowRepository
   agentRepo: AgentRepository
   settingsRepo: SettingsRepository
+  sessionService: {
+    updateSession(params: {
+      sessionId: string
+      title?: string
+      pinned?: boolean
+      archived?: boolean
+      providerProfileId?: string
+      modelId?: string | null
+      agentId?: string
+      agentAdapter?: 'claude' | 'claude-sdk' | 'codex'
+      permissionMode?: string
+      chatMode?: 'agent' | 'ask' | 'edit' | 'review'
+      reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+    }): Promise<{ session: Record<string, unknown> }>
+    getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>>
+  }
 }
 
 interface RpcRequest {
@@ -182,10 +198,13 @@ export class PlatformBridgeService {
 
       // ── Providers ──
       case 'providers.list': return this.providerList(d, params)
+      case 'providers.get': return this.providerGet(d, params)
       case 'providers.create': return this.providerCreate(d, params)
       case 'providers.update': return this.providerUpdate(d, params)
       case 'providers.delete': return this.providerDelete(d, params)
       case 'providers.health_check': return this.providerHealthCheck(d, params)
+      case 'providers.set_default': return this.providerSetDefault(d, params)
+      case 'providers.set_default_model': return this.providerSetDefaultModel(d, params)
 
       // ── Workflows ──
       case 'workflows.list': return this.workflowList(d, params)
@@ -206,6 +225,14 @@ export class PlatformBridgeService {
       case 'settings.set': return this.settingsSet(d, params)
       case 'settings.get_category': return this.settingsGetCategory(d, params)
       case 'settings.get_all': return this.settingsGetAll(d, params)
+
+      // ── Sessions ──
+      case 'sessions.get': return this.sessionGet(d, params)
+      case 'sessions.switch_model': return this.sessionSwitchModel(d, params)
+      case 'sessions.switch_provider': return this.sessionSwitchProvider(d, params)
+      case 'sessions.switch_mode': return this.sessionSwitchMode(d, params)
+      case 'sessions.switch_permission': return this.sessionSwitchPermission(d, params)
+      case 'sessions.switch_reasoning_effort': return this.sessionSwitchReasoningEffort(d, params)
 
       // ── Board Tasks ──
       case 'board.list': return this.boardList(params)
@@ -396,10 +423,11 @@ export class PlatformBridgeService {
 
   private providerUpdate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const id = String(params.id ?? '')
-    const fields: Partial<{ name: string; config: Record<string, unknown>; enabled: boolean }> = {}
+    const fields: Partial<{ name: string; config: Record<string, unknown>; enabled: boolean; keystoreRef: string }> = {}
     if (params.name != null) fields.name = String(params.name)
     if (params.config != null) fields.config = params.config as Record<string, unknown>
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
+    if (params.keystoreRef != null) fields.keystoreRef = String(params.keystoreRef)
     d.providerRepo.update(id, fields)
     const row = d.providerRepo.get(id)
     if (!row) throw new Error(`Provider not found: ${id}`)
@@ -426,6 +454,54 @@ export class PlatformBridgeService {
     if (!row) throw new Error(`Provider not found: ${id}`)
     const hasApiKey = row.keystore_ref != null && row.keystore_ref.length > 0
     return { healthy: hasApiKey, providerId: id, name: row.name }
+  }
+
+  private providerGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = String(params.id ?? '')
+    const row = d.providerRepo.get(id)
+    if (!row) throw new Error(`Provider not found: ${id}`)
+    const config = JSON.parse(row.config_json) as Record<string, unknown>
+    return {
+      provider: {
+        id: row.id,
+        name: row.name,
+        providerType: row.provider_type,
+        enabled: row.enabled === 1,
+        isDefault: row.is_default === 1,
+        config: {
+          defaultModel: config.defaultModel ?? '',
+          modelIds: (config.modelIds as string[]) ?? [],
+          apiEndpoint: config.apiEndpoint ?? '',
+          maxTokens: config.maxTokens,
+          temperature: config.temperature,
+          modelType: config.modelType ?? '',
+          supportsMillionContext: config.supportsMillionContext,
+        },
+        hasApiKey: row.keystore_ref != null && row.keystore_ref.length > 0,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      },
+    }
+  }
+
+  private providerSetDefault(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = String(params.id ?? '')
+    const row = d.providerRepo.get(id)
+    if (!row) throw new Error(`Provider not found: ${id}`)
+    d.providerRepo.setDefault(id)
+    return { success: true, providerId: id, name: row.name }
+  }
+
+  private providerSetDefaultModel(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = String(params.id ?? '')
+    const model = String(params.model ?? '')
+    if (!model) throw new Error('Missing parameter: model')
+    const row = d.providerRepo.get(id)
+    if (!row) throw new Error(`Provider not found: ${id}`)
+    const config = JSON.parse(row.config_json) as Record<string, unknown>
+    config.defaultModel = model
+    d.providerRepo.update(id, { config })
+    return { success: true, providerId: id, defaultModel: model }
   }
 
   // ── Workflow handlers ──
@@ -592,6 +668,59 @@ export class PlatformBridgeService {
   private settingsGetAll(d: PlatformBridgeDeps, _params: Record<string, unknown>) {
     const settings = d.settingsRepo.getAll()
     return { settings }
+  }
+
+  // ── Session handlers ──
+
+  private async sessionGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    const state = await d.sessionService.getSessionRuntimeState(sessionId)
+    return { session: state }
+  }
+
+  private async sessionSwitchModel(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const modelId = params.modelId != null ? String(params.modelId) : null
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    const result = await d.sessionService.updateSession({ sessionId, modelId })
+    return { session: result.session }
+  }
+
+  private async sessionSwitchProvider(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const providerProfileId = String(params.providerProfileId ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!providerProfileId) throw new Error('Missing parameter: providerProfileId')
+    const result = await d.sessionService.updateSession({ sessionId, providerProfileId })
+    return { session: result.session }
+  }
+
+  private async sessionSwitchMode(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const chatMode = params.chatMode as 'agent' | 'ask' | 'edit' | 'review' | undefined
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!chatMode) throw new Error('Missing parameter: chatMode')
+    const result = await d.sessionService.updateSession({ sessionId, chatMode })
+    return { session: result.session }
+  }
+
+  private async sessionSwitchPermission(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const permissionMode = String(params.permissionMode ?? '')
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!permissionMode) throw new Error('Missing parameter: permissionMode')
+    const result = await d.sessionService.updateSession({ sessionId, permissionMode: permissionMode as any })
+    return { session: result.session }
+  }
+
+  private async sessionSwitchReasoningEffort(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const sessionId = String(params.sessionId ?? '')
+    const reasoningEffort = params.reasoningEffort as 'low' | 'medium' | 'high' | 'xhigh' | undefined
+    if (!sessionId) throw new Error('Missing parameter: sessionId')
+    if (!reasoningEffort) throw new Error('Missing parameter: reasoningEffort')
+    const result = await d.sessionService.updateSession({ sessionId, reasoningEffort })
+    return { session: result.session }
   }
 
   // ── Board Task handlers (file-backed store) ──
