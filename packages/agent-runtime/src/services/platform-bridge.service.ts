@@ -455,7 +455,10 @@ export class PlatformBridgeService {
     const item = d.workflowRepo.create({
       name: String(params.name ?? 'Untitled'),
       description: String(params.description ?? ''),
+      scope: String(params.scope ?? 'system'),
+      version: String(params.version ?? '1.0.0'),
       status: (params.status as 'draft' | 'active' | 'archived') ?? 'draft',
+      tags: (params.tags as string[]) ?? [],
       graph: (params.graph as Record<string, unknown>) ?? {},
     })
     return { workflow: item }
@@ -466,7 +469,10 @@ export class PlatformBridgeService {
     const fields: Record<string, unknown> = {}
     if (params.name != null) fields.name = String(params.name)
     if (params.description != null) fields.description = String(params.description)
+    if (params.scope != null) fields.scope = String(params.scope)
+    if (params.version != null) fields.version = String(params.version)
     if (params.status != null) fields.status = params.status
+    if (params.tags != null) fields.tags = params.tags
     if (params.graph != null) fields.graph = params.graph
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
     const item = d.workflowRepo.update(id, fields as UpdateWorkflowParams)
@@ -509,12 +515,20 @@ export class PlatformBridgeService {
       name: String(params.name ?? 'New Agent'),
       description: String(params.description ?? ''),
       enabled: params.enabled !== false,
+      isDefault: params.isDefault === true,
       agentAdapter: String(params.agentAdapter ?? 'claude-sdk'),
       permissionMode: String(params.permissionMode ?? 'default'),
       reasoningEffort: String(params.reasoningEffort ?? 'medium'),
       prompt: String(params.prompt ?? ''),
+      providerProfileId: params.providerProfileId != null ? String(params.providerProfileId) : null,
+      modelId: params.modelId != null ? String(params.modelId) : null,
+      ruleIds: (params.ruleIds as string[]) ?? [],
       skillIds: (params.skillIds as string[]) ?? [],
+      disabledSkillIds: (params.disabledSkillIds as string[]) ?? [],
       mcpServerIds: (params.mcpServerIds as string[]) ?? [],
+      workflowId: params.workflowId != null ? String(params.workflowId) : null,
+      hookConfig: (params.hookConfig as Record<string, unknown>) ?? {},
+      metadata: (params.metadata as Record<string, unknown>) ?? {},
     })
     return { agent: item }
   }
@@ -525,11 +539,20 @@ export class PlatformBridgeService {
     if (params.name != null) fields.name = String(params.name)
     if (params.description != null) fields.description = String(params.description)
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
+    if (params.isDefault != null) fields.isDefault = Boolean(params.isDefault)
     if (params.agentAdapter != null) fields.agentAdapter = String(params.agentAdapter)
     if (params.permissionMode != null) fields.permissionMode = String(params.permissionMode)
+    if (params.reasoningEffort != null) fields.reasoningEffort = String(params.reasoningEffort)
     if (params.prompt != null) fields.prompt = String(params.prompt)
+    if (params.providerProfileId != null) fields.providerProfileId = params.providerProfileId
+    if (params.modelId != null) fields.modelId = params.modelId
+    if (params.ruleIds != null) fields.ruleIds = params.ruleIds
     if (params.skillIds != null) fields.skillIds = params.skillIds
+    if (params.disabledSkillIds != null) fields.disabledSkillIds = params.disabledSkillIds
     if (params.mcpServerIds != null) fields.mcpServerIds = params.mcpServerIds
+    if (params.workflowId != null) fields.workflowId = params.workflowId
+    if (params.hookConfig != null) fields.hookConfig = params.hookConfig
+    if (params.metadata != null) fields.metadata = params.metadata
     const item = d.agentRepo.update(id, fields as UpdateAgentParams)
     if (!item) throw new Error(`Agent not found: ${id}`)
     return { agent: item }
@@ -655,6 +678,9 @@ export class PlatformBridgeService {
       project: String(params.project ?? ''),
       tags: Array.isArray(params.tags) ? params.tags : [],
       dueDate: String(params.dueDate ?? ''),
+      processingAgent: String(params.processingAgent ?? ''),
+      acceptanceCriteria: String(params.acceptanceCriteria ?? ''),
+      testAgent: String(params.testAgent ?? ''),
       commentsJson: '[]',
       attachmentsJson: JSON.stringify(attachments),
       createdAt: now,
@@ -672,7 +698,7 @@ export class PlatformBridgeService {
     if (idx === -1) throw new Error(`Task not found: ${params.id}`)
     const now = new Date().toISOString()
     const updated = { ...tasks[idx], updatedAt: now }
-    for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project']) {
+    for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project', 'processingAgent', 'acceptanceCriteria', 'testAgent']) {
       if (params[key] !== undefined) updated[key] = String(params[key])
     }
     if (params.tags !== undefined) updated.tags = Array.isArray(params.tags) ? params.tags : []
@@ -733,7 +759,7 @@ export class PlatformBridgeService {
       if (idx === -1) continue
       const now = new Date().toISOString()
       const task = { ...tasks[idx], updatedAt: now }
-      for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project']) {
+      for (const key of ['title', 'description', 'status', 'priority', 'assignee', 'dueDate', 'project', 'processingAgent', 'acceptanceCriteria', 'testAgent']) {
         if (upd[key] !== undefined) task[key] = String(upd[key])
       }
       if (upd.tags !== undefined) task.tags = Array.isArray(upd.tags) ? upd.tags : []

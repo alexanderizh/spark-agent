@@ -1,7 +1,7 @@
 ---
 name: 平台管理
 description: "管理 Spark Agent 平台的 Skills、MCP 服务器、Providers、Workflows、Agents、Settings 和看板任务"
-version: 2.0.0
+version: 2.1.0
 author: Spark AI
 category: utility
 tags: [platform, management, admin, configuration, skills, mcp, provider, workflow, agent, settings, board, kanban, task, 安装, 技能, 看板, 任务, 配置, 管理]
@@ -46,16 +46,16 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
 ### 4. Workflow 管理
 - **mcp__spark_platform__workflows_list** — 列出所有 Workflow
 - **mcp__spark_platform__workflows_get**（参数：id）— 获取 Workflow 详情含流程图
-- **mcp__spark_platform__workflows_create**（参数：name, description?, graph?）— 创建 Workflow
-- **mcp__spark_platform__workflows_update**（参数：id, ...fields）— 更新 Workflow
+- **mcp__spark_platform__workflows_create**（参数：name, description?, scope?, version?, status?, tags?, graph?）— 创建 Workflow；scope 默认 system、version 默认 1.0.0、status 默认 draft
+- **mcp__spark_platform__workflows_update**（参数：id, name?, description?, scope?, version?, status?, tags?, graph?, enabled?）— 更新 Workflow
 - **mcp__spark_platform__workflows_delete**（参数：id）— 删除 Workflow ⚠️ 破坏性操作
 
 ### 5. Agent 管理
 - **mcp__spark_platform__agents_list** — 列出所有 Agent
-- **mcp__spark_platform__agents_get**（参数：id）— 获取 Agent 完整配置
-- **mcp__spark_platform__agents_create**（参数：name, description?, prompt?, agentAdapter?, ...）— 创建 Agent
-- **mcp__spark_platform__agents_update**（参数：id, ...fields）— 更新 Agent 配置
-- **mcp__spark_platform__agents_delete**（参数：id）— 删除 Agent ⚠️ 破坏性操作
+- **mcp__spark_platform__agents_get**（参数：id）— 获取 Agent 完整配置（含 prompt / provider / model / skills / MCP / workflow / rules / hookConfig / metadata）
+- **mcp__spark_platform__agents_create**（参数：name, description?, prompt?, agentAdapter?, permissionMode?, reasoningEffort?, providerProfileId?, modelId?, skillIds?, mcpServerIds?, ruleIds?, workflowId?, hookConfig?, metadata?, isDefault?, enabled?）— 创建 Agent。**`workflowId` 用于将 Agent 绑定到指定 Workflow**，绑定后 Agent 会按该工作流执行；传 `null` 或省略则不绑定
+- **mcp__spark_platform__agents_update**（参数：id, name?, description?, prompt?, agentAdapter?, permissionMode?, reasoningEffort?, providerProfileId?, modelId?, skillIds?, mcpServerIds?, ruleIds?, workflowId?, hookConfig?, metadata?, isDefault?, enabled?）— 更新 Agent 配置
+- **mcp__spark_platform__agents_delete**（参数：id）— 删除 Agent ⚠️ 破坏性操作（内置 Agent 不可删除）
 
 ### 6. 设置管理
 - **mcp__spark_platform__settings_get**（参数：key, category?）— 获取单个设置
@@ -66,11 +66,11 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
 ### 7. 看板任务管理
 - **mcp__spark_platform__board_list**（参数：status?, priority?, assignee?, project?, query?, includeDeleted?）— 列出看板任务（每条任务包含关联的项目名和附件信息）
 - **mcp__spark_platform__board_get**（参数：id）— 获取单个任务详情（含附件和评论）
-- **mcp__spark_platform__board_create**（参数：title, description?, status?, priority?, assignee?, tags?, dueDate?, project?, attachments?）— 创建任务；project 为下拉选择，只能选择当前应用中已存在的项目（从会话侧边栏获取项目列表）；attachments 为附件数组，每个附件包含 id、type（image/file）、name、path 字段
-- **mcp__spark_platform__board_update**（参数：id, title?, description?, status?, priority?, assignee?, tags?, dueDate?, project?, attachments?）— 更新任务（attachments 会整体替换）
+- **mcp__spark_platform__board_create**（参数：title, description?, status?, priority?, assignee?, tags?, dueDate?, project?, processingAgent?, acceptanceCriteria?, testAgent?, attachments?）— 创建任务；project 为下拉选择，只能选择当前应用中已存在的项目（从会话侧边栏获取项目列表）；attachments 为附件数组，每个附件包含 id、type（image/file）、name、path 字段；processingAgent / testAgent 格式为 `agent 名称` 或 `team:团队名称`
+- **mcp__spark_platform__board_update**（参数：id, title?, description?, status?, priority?, assignee?, tags?, dueDate?, project?, processingAgent?, acceptanceCriteria?, testAgent?, attachments?）— 更新任务（attachments 会整体替换）
 - **mcp__spark_platform__board_delete**（参数：id）— 删除任务（移至回收站）⚠️ 破坏性操作
-- **mcp__spark_platform__board_batch_create**（参数：tasks 数组，每项含 title, description?, attachments? 等）— 批量创建任务
-- **mcp__spark_platform__board_batch_update**（参数：updates 数组，每项含 id, attachments? 等）— 批量更新任务
+- **mcp__spark_platform__board_batch_create**（参数：tasks 数组，每项含 title, description?, status?, priority?, assignee?, tags?, dueDate?, project?, processingAgent?, acceptanceCriteria?, testAgent?, attachments?）— 批量创建任务
+- **mcp__spark_platform__board_batch_update**（参数：updates 数组，每项含 id, 上述任意可更新字段）— 批量更新任务
 - **mcp__spark_platform__board_batch_delete**（参数：ids 数组）— 批量删除任务 ⚠️ 破坏性操作
 - **mcp__spark_platform__board_restore**（参数：id）— 从回收站恢复任务
 - **mcp__spark_platform__board_permanent_delete**（参数：id）— 彻底永久删除 ⚠️ 不可恢复
