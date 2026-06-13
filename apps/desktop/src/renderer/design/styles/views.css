@@ -13262,13 +13262,11 @@ body.inspector-resizing {
   gap: 2px;
   padding: 2px 0 4px;
 }
-/* member 输出与主 agent 保持一致的字号 / 行高 / markdown 视觉规则
-   （等同 .msg-content：var(--font-base) + 1.65 line-height），
-   极淡纯色底气泡区分于 Host 主流，无边框、无色条、无阴影。 */
+/* member 输出沿用 .msg-content 的字号/行高/颜色（见上方 .msg-content 定义），
+   这里只负责气泡形态：极淡纯色底、无边框、无色条、无阴影，与 Host 主流区分。
+   注意：font-size / line-height / color 一律不要在此覆盖，否则会与主 agent 气泡
+   出现排版差异（line-height、段落密度等）。 */
 .team-member-bubble-body {
-  font-size: var(--font-base);
-  line-height: 1.65;
-  color: var(--text);
   width: fit-content;
   min-width: 120px;
   max-width: 100%;
