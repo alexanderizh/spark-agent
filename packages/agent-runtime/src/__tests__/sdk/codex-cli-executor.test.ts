@@ -251,9 +251,9 @@ describe('CodexCliExecutor', () => {
     const configArgs = args
       .map((arg, index) => (arg === '-c' ? args[index + 1] : null))
       .filter((arg): arg is string => arg != null)
-    expect(configArgs).toContain('mcp_servers.local_tools.command="node"')
-    expect(configArgs).toContain('mcp_servers.local_tools.args=["server.js"]')
-    expect(configArgs).toContain('mcp_servers.local_tools.env.TEST_TOKEN="secret"')
+    expect(configArgs).toContain("mcp_servers.local_tools.command='node'")
+    expect(configArgs).toContain("mcp_servers.local_tools.args=['server.js']")
+    expect(configArgs).toContain("mcp_servers.local_tools.env.TEST_TOKEN='secret'")
     expect(configArgs.some((arg) => arg.includes('in_process'))).toBe(false)
   })
 

@@ -483,6 +483,7 @@ function sanitizeConfigKey(value: string): string {
 }
 
 function tomlString(value: string): string {
+  if (!value.includes("'") && !/[\r\n]/.test(value)) return `'${value}'`
   return JSON.stringify(value)
 }
 

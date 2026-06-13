@@ -366,6 +366,14 @@ export function ChatView({
   }, [active, listTeamMembers, defaultTeamConfig])
   const [agentStatus, setAgentStatus] = useState('')
   const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
+  /**
+   * 重发请求：从用户消息上的"重发"按钮触发，把该消息的文本+附件重新塞回输入区。
+   * requestId 单调递增，ComposerV2 内部通过 useEffect 监听其变化执行写入。
+   */
+  const [resendRequest, setResendRequest] = useState<{
+    requestId: number
+    payload: { text: string; attachments: MessageAttachment[] }
+  } | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
   const [contextInputTokens, setContextInputTokens] = useState(0)
@@ -584,6 +592,22 @@ export function ChatView({
     [],
   )
 
+  /**
+   * 处理用户消息"重发"动作：把文本和附件打包成 resendRequest，
+   * ComposerV2 通过 useEffect 监听 requestId 变化把内容写入当前会话草稿并自动 focus。
+   */
+  const handleResendMessage = useCallback(
+    (payload: { text: string; attachments: MessageAttachment[] }) => {
+      setResendRequest((prev) => ({
+        requestId: (prev?.requestId ?? 0) + 1,
+        payload,
+      }))
+      // 顺手让输入区获得焦点
+      setComposerFocusTrigger((n) => n + 1)
+    },
+    [],
+  )
+
   const composerNode = active == null ? (
     <ComposerV2
       session={activeSession}
@@ -606,6 +630,7 @@ export function ChatView({
       onSent={(sessionId) => { setSessionStatus(sessionId, 'running'); sessionCtx.bumpSessionMessageCount(sessionId) }}
       showProjectPicker
       focusTrigger={composerFocusTrigger}
+      resendRequest={resendRequest}
       workspaces={workspaces}
       activeWorkspaceId={activeWorkspaceId}
       onPickProject={pickProjectFolder}
@@ -639,6 +664,7 @@ export function ChatView({
       onSent={(sessionId) => { setSessionStatus(sessionId, 'running'); sessionCtx.bumpSessionMessageCount(sessionId) }}
       showProjectPicker={showEmptyHero}
       focusTrigger={composerFocusTrigger}
+      resendRequest={resendRequest}
       workspaces={workspaces}
       activeWorkspaceId={activeWorkspaceId}
       onPickProject={pickProjectFolder}
@@ -701,6 +727,7 @@ export function ChatView({
               clearTrigger={clearTrigger}
               teamConfig={teamConfig}
               onFilePreview={handleFilePreview}
+              onResendMessage={handleResendMessage}
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -951,7 +978,6 @@ function ChatTabbar({
       <div className="chat-title-block">
         {session ? (
           <>
-            <span className="badge primary dot">会话</span>
             <span className="chat-title truncate">{session.title || '新会话'}</span>
             {workspace && (
               <span className="badge">
@@ -1465,6 +1491,15 @@ function ChatStream({
                   : {})}
                 onDelete={() => handleDeleteMessage(msg.id, msg.eventIds)}
                 {...(onReplyTo != null ? { onReply: () => onReplyTo(msg) } : {})}
+                {...(onResendMessage != null
+                  ? {
+                      onResend: () =>
+                        onResendMessage({
+                          text: extractTextFromBlocks(msg.blocks),
+                          attachments: msg.attachments ?? [],
+                        }),
+                    }
+                  : {})}
               >
                 {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
               </UserMsg>
@@ -5090,6 +5125,7 @@ function ComposerV2({
   replyTo,
   onClearReply,
   focusTrigger = 0,
+  resendRequest = null,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -5143,6 +5179,11 @@ function ComposerV2({
   // Reply-to quote bar
   replyTo?: ReplyToState | null
   onClearReply?: () => void
+  // Resend request: when requestId changes, write text+attachments into current draft
+  resendRequest?: {
+    requestId: number
+    payload: { text: string; attachments: MessageAttachment[] }
+  } | null
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -6313,6 +6354,73 @@ function ComposerV2({
     if (focusTrigger === 0) return
     textareaRef.current?.focus()
   }, [focusTrigger])
+
+  /**
+   * React to "resend" action from a historical user message:
+   * 把该消息的文本和附件写入当前会话草稿，并自动 focus 输入框。
+   * 图片附件会异步生成 preview（与 handleAddAttachments 走相同的 prepareImagePreview 流程），
+   * 避免阻塞主流程；非图片附件直接用原 path + basename 构造。
+   *
+   * 这个 effect 是"外部 prop → 内部 state 同步"的合规用例
+   * （参见 https://react.dev/learn/you-might-not-need-an-effect#adjusting-some-state-when-a-prop-changes）。
+   * requestId 单调递增保证每次重发都会触发一次同步。
+   */
+  useEffect(() => {
+    const current = resendRequest
+    if (current == null) return
+    const { payload } = current
+
+    // 文本立即写入（用户能马上看到效果）
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setValue(payload.text)
+
+    // 附件写入：先用占位 ComposerAttachment（带 id/name），
+    // 如果是图片再异步补 previewPath/previewUrl，写入后会通过 setAttachments 更新。
+    const stamp = Date.now()
+    const placeholders: ComposerAttachment[] = payload.attachments.map((att, index) => ({
+      id: `resend-${stamp}-${index}-${att.path}`,
+      type: att.type,
+      path: att.path,
+      name: att.name ?? getFileNameFromPath(att.path),
+    }))
+    setAttachments(placeholders)
+
+    // 异步补图片预览（与 handleAddAttachments 走同一通道，保证缩略图能渲染）
+    const imageTasks = placeholders
+      .map((placeholder, index) => ({ placeholder, index }))
+      .filter(({ placeholder }) => placeholder.type === 'image')
+    if (imageTasks.length === 0) {
+      textareaRef.current?.focus()
+      return
+    }
+    void Promise.all(
+      imageTasks.map(async ({ placeholder, index }) => {
+        try {
+          const preview = await prepareImagePreview({ sourcePath: placeholder.path })
+          return { index, previewPath: preview.filePath, previewUrl: preview.fileUrl }
+        } catch {
+          return null
+        }
+      }),
+    ).then((results) => {
+      const updates = results.filter((r): r is { index: number; previewPath: string; previewUrl: string } => r != null)
+      if (updates.length === 0) return
+      setAttachments((currentList) =>
+        currentList.map((item) => {
+          // 用 path 匹配占位（id 也带 path）
+          const match = updates.find((u) => item.path === placeholders[u.index]?.path)
+          if (match == null) return item
+          return {
+            ...item,
+            previewPath: match.previewPath,
+            previewUrl: match.previewUrl,
+          }
+        }),
+      )
+    })
+
+    textareaRef.current?.focus()
+  }, [resendRequest, setValue, setAttachments, prepareImagePreview])
 
   const handleProviderChange = async (providerId: string) => {
     const provider = providers.find((item) => item.id === providerId)
