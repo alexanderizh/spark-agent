@@ -3294,6 +3294,7 @@ export function PermissionsSection() {
                 onChange={(e) => handleRuntimeAdapterChange(e.target.value as SessionAgentAdapter)}
               >
                 <option value="claude-sdk">Claude SDK</option>
+                <option value="codex">Codex</option>
               </SparkSelect>
             </div>
           }
@@ -4907,13 +4908,26 @@ const CLAUDE_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
   },
 ]
 
-// Codex 权限选项已移除，项目仅支持 Claude SDK
+const CODEX_RUNTIME_PERMISSION_OPTIONS: RuntimePermissionModeOption[] = [
+  { value: 'codex-default', label: 'Default', desc: '使用 Codex 默认权限策略' },
+  {
+    value: 'codex-auto-review',
+    label: 'Auto review',
+    desc: 'Codex workspace-write 自动审查模式',
+    tone: 'auto',
+  },
+  {
+    value: 'codex-full-access',
+    label: 'Full access',
+    desc: '危险：跳过 Codex 审批与沙箱',
+    tone: 'danger',
+  },
+]
 
 function getRuntimePermissionModeOptions(
   adapter: SessionAgentAdapter,
 ): RuntimePermissionModeOption[] {
-  // 仅支持 Claude SDK
-  return CLAUDE_RUNTIME_PERMISSION_OPTIONS
+  return adapter === 'codex' ? CODEX_RUNTIME_PERMISSION_OPTIONS : CLAUDE_RUNTIME_PERMISSION_OPTIONS
 }
 
 function getValidRuntimePermissionMode(
@@ -4929,7 +4943,7 @@ function getValidRuntimePermissionMode(
 function normalizeRuntimePermissionSettings(value: unknown): RuntimePermissionSettings {
   const source = value != null && typeof value === 'object' ? (value as RuntimePermissionPrefs) : {}
   const adapter =
-    source.adapter === 'claude' || source.adapter === 'claude-sdk'
+    source.adapter === 'claude' || source.adapter === 'claude-sdk' || source.adapter === 'codex'
       ? source.adapter
       : 'claude-sdk'
   return {

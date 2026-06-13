@@ -712,6 +712,19 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
             <Field label="说明" wide>
               <SparkInput value={draft.description} onChange={(e) => updateDraft('description', e.target.value)} />
             </Field>
+            <Field label="执行器">
+              <SparkSelect
+                value={draft.agentAdapter}
+                onChange={(e) => {
+                  const nextAdapter = e.target.value as SessionAgentAdapter
+                  updateDraft('agentAdapter', nextAdapter)
+                  updateDraft('permissionMode', getDefaultPermissionMode(nextAdapter))
+                }}
+              >
+                <option value="claude-sdk">Claude SDK</option>
+                <option value="codex">Codex</option>
+              </SparkSelect>
+            </Field>
             <Field label="Provider">
               <SparkSelect
                 value={draft.providerProfileId}
@@ -733,7 +746,7 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
             </Field>
             <Field label="权限">
               <SparkSelect value={draft.permissionMode} onChange={(e) => updateDraft('permissionMode', e.target.value as SessionPermissionMode)}>
-                {PERMISSION_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                {getPermissionOptions(draft.agentAdapter).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </SparkSelect>
             </Field>
             <Field label="推理强度">
@@ -1006,3 +1019,17 @@ const PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }>
   { value: 'claude-auto', label: '自动权限' },
   { value: 'claude-bypass', label: '绕过权限' },
 ]
+
+const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> = [
+  { value: 'codex-default', label: 'Codex 默认' },
+  { value: 'codex-auto-review', label: 'Codex 自动审查' },
+  { value: 'codex-full-access', label: 'Codex 完全访问' },
+]
+
+function getPermissionOptions(adapter: SessionAgentAdapter): Array<{ value: SessionPermissionMode; label: string }> {
+  return adapter === 'codex' ? CODEX_PERMISSION_OPTIONS : PERMISSION_OPTIONS
+}
+
+function getDefaultPermissionMode(adapter: SessionAgentAdapter): SessionPermissionMode {
+  return adapter === 'codex' ? 'codex-default' : 'claude-ask'
+}

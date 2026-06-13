@@ -674,7 +674,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [candidateSearch, setCandidateSearch] = useState('')
 
-  // ── Local candidates: dedup -> filter by search (Claude only) ──
+  // ── Local candidates: dedup -> filter by search (Claude / Codex / Agents) ──
   const dedupedCandidates = useMemo(() => deduplicateCandidates(localCandidates), [localCandidates])
   const searchFiltered = useMemo(
     () => filterCandidates(dedupedCandidates, candidateSearch),
@@ -1348,7 +1348,7 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
           <div style={{ display: 'flex', gap: '8px' }}>
             <div style={{ flex: 1 }}>
               <SparkInput
-                placeholder="例如：/Users/you/.claude/skills/my-skill"
+                placeholder="例如：/Users/you/.codex/skills/my-skill 或 /Users/you/.claude/skills/my-skill"
                 value={linkTarget}
                 onChange={(e) => setLinkTarget(e.target.value)}
               />

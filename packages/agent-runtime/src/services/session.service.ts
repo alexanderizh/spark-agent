@@ -64,7 +64,7 @@ import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import { ClaudeSDKExecutor, CodexCliExecutor } from '../sdk/index.js'
+import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
@@ -1238,6 +1238,7 @@ export class SessionService {
       workspaceRootPath,
       permissionMode,
       ...(config.apiEndpoint != null ? { apiEndpoint: config.apiEndpoint } : {}),
+      ...(config.codexApiKind != null ? { codexApiKind: config.codexApiKind } : {}),
       ...(composedSystemPrompt != null ? { systemPrompt: composedSystemPrompt } : {}),
       ...(composedSkillSystemPrompt != null
         ? { skillSystemPrompt: composedSkillSystemPrompt }
@@ -1690,7 +1691,9 @@ export class SessionService {
       mcpServers.spark_platform = config.platformManagementMcpServer
     }
 
-    const executor = new CodexCliExecutor()
+    const executor = config.useLocalConfig === true
+      ? new CodexCliExecutor()
+      : new CodexOpenAIExecutor()
     let firstAssistantText = ''
     const mentionAgentId = options.mentionAgentId
     const mentionMemberContext =
@@ -1752,7 +1755,9 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
-    const cliMcpServers = filterCliCompatibleMcpServers(mcpServers)
+    const cliMcpServers = config.useLocalConfig === true
+      ? filterCliCompatibleMcpServers(mcpServers)
+      : mcpServers
     const cliConfig: SDKExecutorConfig = {
       ...config,
       ...(Object.keys(cliMcpServers).length > 0 ? { mcpServers: cliMcpServers } : {}),

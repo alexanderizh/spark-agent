@@ -585,7 +585,7 @@ function EmptyState({
             <div>
               <div className="mv_empty_title">还没有配置 MCP 服务器</div>
               <div className="mv_empty_desc">
-                添加一个 stdio / http / sse 协议的 MCP 服务器，Agent 即可调用其暴露的工具
+                添加一个 stdio / http / sse 协议的 MCP 服务器，Claude SDK 与本地 Codex CLI Agent 即可调用其暴露的工具
               </div>
             </div>
           )
@@ -681,7 +681,7 @@ function McpForm({
                   <option key={scope} value={scope}>{scope}</option>
                 ))}
               </SparkSelect>
-              <span className="mv_form_hint">决定配置的可见范围与会话覆盖优先级</span>
+              <span className="mv_form_hint">决定配置的可见范围与会话覆盖优先级；会按 Agent / Workflow 配置注入 Claude SDK 与本地 Codex CLI</span>
             </div>
 
             <label className="mv_form_label">描述</label>

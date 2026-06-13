@@ -19,13 +19,18 @@ class MockChildProcess extends EventEmitter {
       const outputFile = this.args[this.args.indexOf('--output-last-message') + 1]
       if (outputFile == null) throw new Error('missing --output-last-message path')
       writeFileSync(outputFile, 'OK from Codex CLI')
-      this.stdout.emit('data', Buffer.from('{"type":"message","message":"working"}\n'))
+      for (const line of this.outputLines) {
+        this.stdout.emit('data', Buffer.from(`${line}\n`))
+      }
       this.emit('close', 0)
     }),
   }
   prompt = ''
 
-  constructor(public readonly args: string[]) {
+  constructor(
+    public readonly args: string[],
+    private readonly outputLines = ['{"type":"message","message":"working"}'],
+  ) {
     super()
   }
 
@@ -101,5 +106,28 @@ describe('CodexCliExecutor', () => {
     expect(configArgs).toContain('mcp_servers.local_tools.args=["server.js"]')
     expect(configArgs).toContain('mcp_servers.local_tools.env.TEST_TOKEN="secret"')
     expect(configArgs.some((arg) => arg.includes('in_process'))).toBe(false)
+  })
+
+  it('maps Codex JSONL deltas and completed agent messages to assistant stream events', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args, [
+      '{"type":"response.output_text.delta","delta":"Hel"}',
+      '{"type":"response.output_text.delta","delta":"lo"}',
+      '{"type":"item.completed","item":{"type":"agent_message","text":"Hello"}}',
+    ]))
+
+    const events: Array<{ type: string; mode?: string; content?: string }> = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'assistant_message') {
+        events.push({ type: event.type, mode: event.mode, content: event.content })
+      }
+    })
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([
+      { type: 'assistant_message', mode: 'delta', content: 'Hel' },
+      { type: 'assistant_message', mode: 'delta', content: 'lo' },
+      { type: 'assistant_message', mode: 'complete', content: 'Hello' },
+    ])
   })
 })

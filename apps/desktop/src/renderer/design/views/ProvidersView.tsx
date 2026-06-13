@@ -963,6 +963,16 @@ export function ProviderEditPanel({
     // 自定义模式：尝试按 name 反推 vendor
     return guessVendorByName(form.name, getUniqueVendorIds())
   }, [form.presetId, form.name])
+  const availablePresets = useMemo(
+    () =>
+      PROVIDER_PRESETS.filter((preset) => {
+        if (preset.provider !== form.provider) return false
+        return form.modelType === 'image'
+          ? preset.modelType === 'image'
+          : preset.modelType !== 'image'
+      }),
+    [form.modelType, form.provider],
+  )
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.defaultModel.trim()) {
@@ -1100,6 +1110,29 @@ export function ProviderEditPanel({
           </div>
           <div className="pv_section_body">
             <div className="pv_form_grid">
+              {form.modelType !== 'image' && (
+                <>
+                  <label className="pv_form_label">
+                    API 协议格式
+                    <span className="pv_form_sub">决定 Provider 请求格式；OpenAI 格式可用于 Codex / Responses API</span>
+                  </label>
+                  <SparkSelect
+                    value={form.provider}
+                    onChange={(e) =>
+                      setForm((prev) => ({
+                        ...prev,
+                        presetId: 'custom',
+                        provider: normalizeProviderKind(e.target.value),
+                        codexApiKind: 'chat',
+                      }))
+                    }
+                  >
+                    <option value="anthropic">Anthropic 格式</option>
+                    <option value="openai">OpenAI 格式</option>
+                  </SparkSelect>
+                </>
+              )}
+
               <label className="pv_form_label">模型类型</label>
               <SparkSelect
                 value={form.modelType}
@@ -1123,45 +1156,47 @@ export function ProviderEditPanel({
                 <option value="video">视频模型</option>
               </SparkSelect>
 
-              <label className="pv_form_label">
-                供应商模板
-                <span className="pv_form_sub">基于官方公开文档预填，后续仍可修改</span>
-              </label>
-              <div className="pv_form_select_row">
-                <SparkSelect
-                  width={220}
-                  value={form.presetId}
-                  disabled={!!profileId}
-                  onChange={(e) => {
-                    const presetId = e.target.value
-                    if (presetId === 'custom') {
-                      set('presetId', 'custom')
-                      return
-                    }
-                    const preset = getProviderPresetById(presetId)
-                    if (preset) applyPreset(preset)
-                  }}
-                >
-                  <option value="custom">自定义</option>
-                  {PROVIDER_PRESETS.filter((preset) =>
-                    form.modelType === 'image' ? preset.modelType === 'image' : preset.modelType !== 'image'
-                  ).map((preset) => {
-                    const meta = getVendorMeta(preset.vendorId)
-                    const baseName = preset.name || meta?.name || preset.vendorId
-                    return (
-                      <option key={preset.id} value={preset.id}>
-                        {baseName}
-                      </option>
-                    )
-                  })}
-                </SparkSelect>
-                <ProviderLogo
-                  vendor={currentVendor}
-                  size={36}
-                  shape="rounded"
-                  className="pv_form_select_preview"
-                />
-              </div>
+              {availablePresets.length > 0 && (
+                <>
+                  <label className="pv_form_label">
+                    供应商模板
+                    <span className="pv_form_sub">基于官方公开文档预填，后续仍可修改</span>
+                  </label>
+                  <div className="pv_form_select_row">
+                    <SparkSelect
+                      width={220}
+                      value={form.presetId}
+                      disabled={!!profileId}
+                      onChange={(e) => {
+                        const presetId = e.target.value
+                        if (presetId === 'custom') {
+                          set('presetId', 'custom')
+                          return
+                        }
+                        const preset = getProviderPresetById(presetId)
+                        if (preset) applyPreset(preset)
+                      }}
+                    >
+                      <option value="custom">自定义</option>
+                      {availablePresets.map((preset) => {
+                        const meta = getVendorMeta(preset.vendorId)
+                        const baseName = preset.name || meta?.name || preset.vendorId
+                        return (
+                          <option key={preset.id} value={preset.id}>
+                            {baseName}
+                          </option>
+                        )
+                      })}
+                    </SparkSelect>
+                    <ProviderLogo
+                      vendor={currentVendor}
+                      size={36}
+                      shape="rounded"
+                      className="pv_form_select_preview"
+                    />
+                  </div>
+                </>
+              )}
 
               <label className="pv_form_label">显示名称</label>
               <SparkInput
@@ -1169,30 +1204,6 @@ export function ProviderEditPanel({
                 onChange={(e) => set('name', e.target.value)}
                 placeholder="例：Anthropic · Claude"
               />
-
-              {form.modelType !== 'image' && (
-                <>
-                  <label className="pv_form_label">
-                    API 协议格式
-                    <span className="pv_form_sub">决定 Provider 请求格式；Claude 执行统一使用 Claude Agent SDK</span>
-                  </label>
-                  <SparkSelect
-                    value={form.provider}
-                    onChange={(e) =>
-                      setForm((prev) => ({
-                        ...prev,
-                        presetId: 'custom',
-                        provider: normalizeProviderKind(e.target.value),
-                        codexApiKind: 'chat',
-                      }))
-                    }
-                    disabled={true}
-                  >
-                    <option value="anthropic">Anthropic 格式</option>
-                    <option value="openai">OpenAI 格式</option>
-                  </SparkSelect>
-                </>
-              )}
 
               {form.modelType === 'image' && (
                 <>

@@ -9,6 +9,13 @@ import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '.
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
+type CodexRunResult = {
+  exitCode: number
+  stdout: string
+  stderr: string
+  assistantText: string
+  assistantCompleteEmitted: boolean
+}
 
 export class CodexCliExecutor {
   private listeners = new Set<Listener>()
@@ -93,8 +100,11 @@ export class CodexCliExecutor {
         return
       }
 
-      const finalMessage = (await readLastMessage(outputFile)) || extractFallbackText(result.stdout)
-      if (finalMessage.length > 0) {
+      const finalMessage =
+        (await readLastMessage(outputFile)) ||
+        result.assistantText ||
+        extractFallbackText(result.stdout)
+      if (!result.assistantCompleteEmitted && finalMessage.length > 0) {
         this.emit({
           ...makeBase(),
           type: 'assistant_message',
@@ -137,7 +147,7 @@ export class CodexCliExecutor {
     prompt: string,
     makeBase: () => EventBase,
     cwd: string,
-  ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  ): Promise<CodexRunResult> {
     return new Promise((resolve, reject) => {
       const child = spawn('codex', args, {
         cwd,
@@ -147,12 +157,55 @@ export class CodexCliExecutor {
       this.child = child
       let stdout = ''
       let stderr = ''
+      let assistantText = ''
+      let assistantCompleteEmitted = false
+      let lineBuffer = ''
       let settled = false
 
       child.stdout.on('data', (chunk: Buffer) => {
         const text = chunk.toString()
         stdout += text
-        this.emitCodexJsonlAsTerminal(text, 'stdout', makeBase)
+        lineBuffer += text
+        const lines = lineBuffer.split(/\r?\n/)
+        lineBuffer = lines.pop() ?? ''
+        for (const line of lines) {
+          const parsed = parseCodexJsonLine(line)
+          if (parsed == null) {
+            this.emitTerminalLine(line, 'stdout', makeBase)
+            continue
+          }
+          const visible = summarizeCodexJsonObject(parsed)
+          if (visible.length > 0) this.emitTerminalLine(visible, 'stdout', makeBase)
+
+          const delta = extractCodexDeltaText(parsed)
+          if (delta.length > 0) {
+            assistantText += delta
+            this.emit({
+              ...makeBase(),
+              type: 'assistant_message',
+              mode: 'delta',
+              content: delta,
+              provider: 'codex',
+              isFinal: false,
+              segmentId: `codex-${makeBase().turnId}`,
+            })
+          }
+
+          const completedText = extractCodexCompletedAgentText(parsed)
+          if (completedText.length > 0) {
+            assistantText = completedText
+            assistantCompleteEmitted = true
+            this.emit({
+              ...makeBase(),
+              type: 'assistant_message',
+              mode: 'complete',
+              content: completedText,
+              provider: 'codex',
+              isFinal: true,
+              segmentId: `codex-${makeBase().turnId}`,
+            })
+          }
+        }
       })
       child.stderr.on('data', (chunk: Buffer) => {
         const text = chunk.toString()
@@ -174,6 +227,8 @@ export class CodexCliExecutor {
       child.on('close', (code) => {
         if (settled) return
         settled = true
+        const tail = lineBuffer.trim()
+        if (tail.length > 0) this.emitTerminalLine(tail, 'stdout', makeBase)
         this.emit({
           ...makeBase(),
           type: 'terminal_output',
@@ -183,23 +238,25 @@ export class CodexCliExecutor {
           isFinal: true,
           exitCode: code ?? 1,
         })
-        resolve({ exitCode: code ?? 1, stdout, stderr })
+        resolve({
+          exitCode: code ?? 1,
+          stdout,
+          stderr,
+          assistantText,
+          assistantCompleteEmitted,
+        })
       })
       child.stdin.end(prompt)
     })
   }
 
-  private emitCodexJsonlAsTerminal(
-    text: string,
+  private emitTerminalLine(
+    line: string,
     stream: 'stdout' | 'stderr',
     makeBase: () => EventBase,
   ): void {
-    const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0)
-    const visible = lines
-      .map((line) => summarizeCodexJsonLine(line))
-      .filter((line) => line.length > 0)
-      .join('\n')
-    if (!visible) return
+    const visible = line.trim()
+    if (visible.length === 0) return
     this.emit({
       ...makeBase(),
       type: 'terminal_output',
@@ -345,17 +402,23 @@ async function readLastMessage(filePath: string): Promise<string> {
   }
 }
 
-function summarizeCodexJsonLine(line: string): string {
+function parseCodexJsonLine(line: string): Record<string, unknown> | null {
   try {
-    const obj = JSON.parse(line) as Record<string, unknown>
-    const type = typeof obj.type === 'string' ? obj.type : 'event'
-    const text = findText(obj)
-    return text != null && text.trim().length > 0
-      ? `[codex:${type}] ${text.trim()}`
-      : `[codex:${type}]`
+    const parsed = JSON.parse(line) as unknown
+    return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null
   } catch {
-    return line
+    return null
   }
+}
+
+function summarizeCodexJsonObject(obj: Record<string, unknown>): string {
+  const type = typeof obj.type === 'string' ? obj.type : 'event'
+  const text = findText(obj)
+  return text != null && text.trim().length > 0
+    ? `[codex:${type}] ${text.trim()}`
+    : `[codex:${type}]`
 }
 
 function extractFallbackText(stdout: string): string {
@@ -385,6 +448,46 @@ function findText(value: unknown): string | null {
   const record = value as Record<string, unknown>
   for (const key of ['text', 'content', 'message', 'result', 'summary']) {
     const found = findText(record[key])
+    if (found != null && found.length > 0) return found
+  }
+  return null
+}
+
+function extractCodexDeltaText(obj: Record<string, unknown>): string {
+  const type = typeof obj.type === 'string' ? obj.type : ''
+  if (!/delta|updated|stream/i.test(type)) return ''
+  return findTextFromKeys(obj, ['delta', 'text_delta', 'content_delta']) ?? ''
+}
+
+function extractCodexCompletedAgentText(obj: Record<string, unknown>): string {
+  const type = typeof obj.type === 'string' ? obj.type : ''
+  if (type !== 'item.completed' && type !== 'response.output_text.done') return ''
+  const item = obj.item
+  if (item != null && typeof item === 'object' && !Array.isArray(item)) {
+    const record = item as Record<string, unknown>
+    if (record.type === 'agent_message' || record.type === 'assistant_message' || record.type === 'message') {
+      return findText(record.text) ?? findText(record.content) ?? ''
+    }
+  }
+  return findTextFromKeys(obj, ['text', 'content']) ?? ''
+}
+
+function findTextFromKeys(value: unknown, keys: string[]): string | null {
+  if (value == null || typeof value !== 'object') return null
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findTextFromKeys(item, keys)
+      if (found != null && found.length > 0) return found
+    }
+    return null
+  }
+  const record = value as Record<string, unknown>
+  for (const key of keys) {
+    const found = findText(record[key])
+    if (found != null && found.length > 0) return found
+  }
+  for (const key of ['item', 'data', 'response', 'message', 'content']) {
+    const found = findTextFromKeys(record[key], keys)
     if (found != null && found.length > 0) return found
   }
   return null

@@ -640,6 +640,9 @@ function WorkflowInspector(props: InspectorProps) {
             <option value="claude-auto-edits">自动编辑</option>
             <option value="claude-plan">计划模式</option>
             <option value="claude-bypass">绕过权限</option>
+            <option value="codex-default">Codex 默认</option>
+            <option value="codex-auto-review">Codex 自动审查</option>
+            <option value="codex-full-access">Codex 完全访问</option>
           </SparkSelect>
         </InspectorField>
         <InspectorField label="节点提示词">
