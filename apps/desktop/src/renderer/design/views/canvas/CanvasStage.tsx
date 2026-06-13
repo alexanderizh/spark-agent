@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
   Controls,
@@ -6,6 +6,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   addEdge,
+  applyNodeChanges,
   type Connection,
   type Edge,
   type Node,
@@ -77,16 +78,34 @@ export function CanvasStage({
     () => snapshot.nodes.map((node) => toFlowNode(node, nodeActions)),
     [nodeActions, snapshot.nodes],
   )
+  const [flowNodes, setFlowNodes] = useState(nodes)
+  const flowNodesRef = useRef(nodes)
   const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
+
+  useEffect(() => {
+    flowNodesRef.current = nodes
+    const syncId = window.setTimeout(() => {
+      setFlowNodes(nodes)
+    }, 0)
+    return () => window.clearTimeout(syncId)
+  }, [nodes])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
-      const nextNodes = persistCanvasNodeLayoutChanges(snapshot.nodes, nodes, changes)
-      if (nextNodes) {
-        onNodesPersist(nextNodes)
+      const nextFlowNodes = applyNodeChanges(changes, flowNodesRef.current)
+      flowNodesRef.current = nextFlowNodes
+      setFlowNodes(nextFlowNodes)
+
+      const nextPersistedNodes = persistCanvasNodeLayoutChanges(
+        snapshot.nodes,
+        nextFlowNodes,
+        changes,
+      )
+      if (nextPersistedNodes) {
+        onNodesPersist(nextPersistedNodes)
       }
     },
-    [nodes, onNodesPersist, snapshot.nodes],
+    [onNodesPersist, snapshot.nodes],
   )
 
   const handleConnect = useCallback(
@@ -101,7 +120,7 @@ export function CanvasStage({
     <ReactFlowProvider>
       <div className="canvas-stage">
         <ReactFlow
-          nodes={nodes}
+          nodes={flowNodes}
           edges={edges}
           nodeTypes={nodeTypes}
           fitView

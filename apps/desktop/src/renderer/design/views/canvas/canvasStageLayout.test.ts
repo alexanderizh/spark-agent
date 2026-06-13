@@ -27,7 +27,10 @@ function createCanvasNode(overrides: Partial<CanvasNode> = {}): CanvasNode {
   }
 }
 
-function createFlowNode(canvasNode: CanvasNode): Node<CanvasFlowNodeData> {
+function createFlowNode(
+  canvasNode: CanvasNode,
+  overrides: Partial<Node<CanvasFlowNodeData>> = {},
+): Node<CanvasFlowNodeData> {
   return {
     id: canvasNode.id,
     type: 'sparkCanvasNode',
@@ -43,6 +46,7 @@ function createFlowNode(canvasNode: CanvasNode): Node<CanvasFlowNodeData> {
         bringNodeToFront: () => undefined,
       },
     },
+    ...overrides,
   }
 }
 
@@ -56,13 +60,28 @@ describe('persistCanvasNodeLayoutChanges', () => {
     expect(persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)).toBeNull()
   })
 
-  it('returns moved nodes for position changes', () => {
+  it('skips in-flight position changes while dragging', () => {
     const node = createCanvasNode()
     const changes = [
       { id: node.id, type: 'position', position: { x: 48, y: 72 }, dragging: true },
     ] as NodeChange<Node<CanvasFlowNodeData>>[]
 
     const nextNodes = persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)
+
+    expect(nextNodes).toBeNull()
+  })
+
+  it('returns moved nodes when dragging ends', () => {
+    const node = createCanvasNode()
+    const changes = [
+      { id: node.id, type: 'position', position: { x: 48, y: 72 }, dragging: false },
+    ] as NodeChange<Node<CanvasFlowNodeData>>[]
+
+    const nextNodes = persistCanvasNodeLayoutChanges(
+      [node],
+      [createFlowNode(node, { position: { x: 48, y: 72 } })],
+      changes,
+    )
 
     expect(nextNodes?.[0]?.x).toBe(48)
     expect(nextNodes?.[0]?.y).toBe(72)
@@ -77,13 +96,38 @@ describe('persistCanvasNodeLayoutChanges', () => {
     expect(persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)).toBeNull()
   })
 
-  it('returns resized nodes for dimension changes', () => {
+  it('skips in-flight dimension changes while resizing', () => {
     const node = createCanvasNode()
     const changes = [
-      { id: node.id, type: 'dimensions', dimensions: { width: 240, height: 180 } },
+      {
+        id: node.id,
+        type: 'dimensions',
+        dimensions: { width: 240, height: 180 },
+        resizing: true,
+      },
     ] as NodeChange<Node<CanvasFlowNodeData>>[]
 
     const nextNodes = persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)
+
+    expect(nextNodes).toBeNull()
+  })
+
+  it('returns resized nodes when resizing ends', () => {
+    const node = createCanvasNode()
+    const changes = [
+      {
+        id: node.id,
+        type: 'dimensions',
+        dimensions: { width: 240, height: 180 },
+        resizing: false,
+      },
+    ] as NodeChange<Node<CanvasFlowNodeData>>[]
+
+    const nextNodes = persistCanvasNodeLayoutChanges(
+      [node],
+      [createFlowNode(node, { measured: { width: 240, height: 180 } })],
+      changes,
+    )
 
     expect(nextNodes?.[0]?.width).toBe(240)
     expect(nextNodes?.[0]?.height).toBe(180)

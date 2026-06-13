@@ -1,4 +1,4 @@
-import { applyNodeChanges, type Node, type NodeChange } from '@xyflow/react'
+import type { Node, NodeChange } from '@xyflow/react'
 import type { CanvasFlowNodeData } from './CanvasNode'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 
@@ -55,12 +55,11 @@ export function persistCanvasNodeLayoutChanges(
 ): SparkCanvasNode[] | null {
   const layoutChanges = changes.filter(
     (change) =>
-      (change.type === 'position' && Boolean(change.position)) ||
-      (change.type === 'dimensions' && Boolean(change.dimensions)),
+      (change.type === 'position' && Boolean(change.position) && change.dragging === false) ||
+      (change.type === 'dimensions' && Boolean(change.dimensions) && change.resizing === false),
   )
   if (layoutChanges.length === 0) return null
 
-  const nextFlowNodes = applyNodeChanges(layoutChanges, flowNodes)
-  const nextNodes = fromFlowNodes(baseNodes, nextFlowNodes)
+  const nextNodes = fromFlowNodes(baseNodes, flowNodes)
   return hasPersistedLayoutChanged(baseNodes, nextNodes) ? nextNodes : null
 }
