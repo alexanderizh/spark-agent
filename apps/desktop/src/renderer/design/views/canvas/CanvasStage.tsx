@@ -6,7 +6,6 @@ import {
   ReactFlow,
   ReactFlowProvider,
   addEdge,
-  applyNodeChanges,
   type Connection,
   type Edge,
   type Node,
@@ -15,6 +14,7 @@ import {
 import '@xyflow/react/dist/style.css'
 import { Message } from '@arco-design/web-react'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
+import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import type { CanvasEdge, CanvasNode as SparkCanvasNode, CanvasSnapshot } from './canvas.types'
 
 const nodeTypes = { sparkCanvasNode: CanvasNode }
@@ -44,24 +44,6 @@ function toFlowEdge(edge: CanvasEdge): Edge {
   }
 }
 
-function fromFlowNodes(
-  base: SparkCanvasNode[],
-  flowNodes: Node<CanvasFlowNodeData>[],
-): SparkCanvasNode[] {
-  const flowById = new Map(flowNodes.map((node) => [node.id, node]))
-  return base.map((node) => {
-    const flow = flowById.get(node.id)
-    if (!flow) return node
-    return {
-      ...node,
-      x: flow.position.x,
-      y: flow.position.y,
-      width: typeof flow.width === 'number' ? flow.width : node.width,
-      height: typeof flow.height === 'number' ? flow.height : node.height,
-    }
-  })
-}
-
 export function CanvasStage({
   snapshot,
   onSelectionChange,
@@ -76,8 +58,10 @@ export function CanvasStage({
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
-      const nextFlowNodes = applyNodeChanges(changes, nodes)
-      onNodesPersist(fromFlowNodes(snapshot.nodes, nextFlowNodes))
+      const nextNodes = persistCanvasNodeLayoutChanges(snapshot.nodes, nodes, changes)
+      if (nextNodes) {
+        onNodesPersist(nextNodes)
+      }
     },
     [nodes, onNodesPersist, snapshot.nodes],
   )

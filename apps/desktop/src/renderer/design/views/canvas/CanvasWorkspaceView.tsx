@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Message, Spin, Tag } from '@arco-design/web-react'
 import { Icons } from '../../Icons'
 import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
@@ -19,6 +19,10 @@ function readFileAsDataUrl(file: File): Promise<string> {
     reader.onload = () => resolve(String(reader.result ?? ''))
     reader.readAsDataURL(file)
   })
+}
+
+function areNodeIdsEqual(left: string[], right: string[]): boolean {
+  return left.length === right.length && left.every((id, index) => id === right[index])
 }
 
 export function CanvasWorkspaceView({
@@ -50,6 +54,12 @@ export function CanvasWorkspaceView({
     () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
     [selectedNodeIds, snapshot?.nodes],
   )
+
+  const handleSelectionChange = useCallback((nodeIds: string[]) => {
+    setSelectedNodeIds((previousIds) =>
+      areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
+    )
+  }, [])
 
   if (loading) {
     return (
@@ -177,7 +187,7 @@ export function CanvasWorkspaceView({
         />
         <CanvasStage
           snapshot={snapshot}
-          onSelectionChange={setSelectedNodeIds}
+          onSelectionChange={handleSelectionChange}
           onNodesPersist={(nodes) => void updateNodes(nodes)}
         />
         <aside className="canvas-side-panel">
