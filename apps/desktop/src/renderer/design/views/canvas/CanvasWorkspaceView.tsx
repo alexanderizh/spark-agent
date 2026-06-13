@@ -1,0 +1,218 @@
+import { useMemo, useRef, useState } from 'react'
+import { Button, Empty, Message, Spin, Tag } from '@arco-design/web-react'
+import { Icons } from '../../Icons'
+import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
+import { CanvasAiPanel } from './CanvasAiPanel'
+import { CanvasAssetDrawer } from './CanvasAssetDrawer'
+import { CanvasInspector } from './CanvasInspector'
+import { CanvasStage } from './CanvasStage'
+import { CanvasTaskQueue } from './CanvasTaskQueue'
+import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
+import { useCanvasWorkspace } from './canvas.store'
+import type { CanvasOperationType } from './canvas.types'
+import './CanvasWorkspaceView.less'
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'))
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.readAsDataURL(file)
+  })
+}
+
+export function CanvasWorkspaceView({
+  projectId,
+  onBack,
+}: {
+  projectId: string
+  onBack: () => void
+}) {
+  const {
+    snapshot,
+    loading,
+    updateNodes,
+    createTextNode,
+    createImageNode,
+    deleteNodes,
+    duplicateNodes,
+    patchNodes,
+    updateNodeData,
+    createTask,
+    completeDemoTask,
+  } = useCanvasWorkspace(projectId)
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const [activeTool, setActiveTool] = useState<CanvasTool>('select')
+  const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const selectedNodes = useMemo(
+    () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
+    [selectedNodeIds, snapshot?.nodes],
+  )
+
+  if (loading) {
+    return (
+      <div className="canvas-workspace canvas-workspace-loading">
+        <Spin tip="正在加载画布..." />
+      </div>
+    )
+  }
+
+  if (!snapshot) {
+    return (
+      <div className="canvas-workspace canvas-workspace-loading">
+        <Empty description="画布不存在" />
+      </div>
+    )
+  }
+
+  const addText = async (isPrompt = false) => {
+    await createTextNode({
+      text: isPrompt
+        ? '描述你想生成的画面、风格、主体、限制条件...'
+        : '双击后续版本可直接编辑文本内容。',
+      isPrompt,
+      x: 140 + snapshot.nodes.length * 24,
+      y: 120 + snapshot.nodes.length * 24,
+    })
+  }
+
+  const uploadFirstImage = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      Message.warning('请选择图片文件')
+      return
+    }
+    const dataUrl = await readFileAsDataUrl(file)
+    await createImageNode({
+      file,
+      dataUrl,
+      x: 220 + snapshot.nodes.length * 24,
+      y: 180 + snapshot.nodes.length * 24,
+    })
+  }
+
+  const handleCreateTask = async ({
+    operation,
+    prompt,
+  }: {
+    operation: CanvasOperationType
+    prompt: string
+  }) => {
+    await createTask({
+      operation,
+      prompt,
+      inputNodeIds: selectedNodeIds,
+      inputAssetIds: selectedNodes
+        .map((node) => node.assetId)
+        .filter((id): id is string => Boolean(id)),
+      outputPlacement: {
+        x: selectedNodes[0] ? selectedNodes[0].x + 360 : 360,
+        y: selectedNodes[0] ? selectedNodes[0].y + 80 : 260,
+      },
+    })
+  }
+
+  const handleToggleLock = async () => {
+    if (selectedNodes.length === 0) return
+    const shouldLock = selectedNodes.some((node) => !node.locked)
+    await patchNodes(selectedNodeIds, { locked: shouldLock })
+  }
+
+  const handleBringToFront = async () => {
+    if (selectedNodes.length === 0) return
+    const maxZ = Math.max(0, ...snapshot.nodes.map((node) => node.zIndex))
+    await patchNodes(selectedNodeIds, { zIndex: maxZ + 1 })
+  }
+
+  return (
+    <div className="canvas-workspace">
+      <MacWindowDragHeader />
+      <header className="canvas-workspace-header">
+        <div className="canvas-workspace-title">
+          <Button size="small" type="text" icon={<Icons.ArrowLeft size={15} />} onClick={onBack}>
+            项目
+          </Button>
+          <div>
+            <h2>{snapshot.project.title}</h2>
+            <div className="canvas-workspace-subtitle">
+              {snapshot.nodes.length} nodes / {snapshot.assets.length} assets /{' '}
+              {snapshot.tasks.length} tasks
+            </div>
+          </div>
+        </div>
+        <div className="canvas-workspace-actions">
+          <Tag size="small" color="green">
+            Local draft
+          </Tag>
+          <Button
+            size="small"
+            icon={<Icons.Package size={15} />}
+            onClick={() => setAssetDrawerOpen(true)}
+          >
+            资产
+          </Button>
+          <Button size="small" icon={<Icons.Download size={15} />}>
+            导出
+          </Button>
+        </div>
+      </header>
+
+      <div className="canvas-workspace-body">
+        <CanvasToolbar
+          activeTool={activeTool}
+          onToolChange={setActiveTool}
+          onAddText={() => void addText(false)}
+          onAddPrompt={() => void addText(true)}
+          onUploadImage={uploadFirstImage}
+          onDeleteSelected={() => void deleteNodes(selectedNodeIds)}
+          selectedCount={selectedNodeIds.length}
+        />
+        <CanvasStage
+          snapshot={snapshot}
+          onSelectionChange={setSelectedNodeIds}
+          onNodesPersist={(nodes) => void updateNodes(nodes)}
+        />
+        <aside className="canvas-side-panel">
+          <CanvasAiPanel
+            selectedNodes={selectedNodes}
+            onCreateTask={(input) => void handleCreateTask(input)}
+          />
+          <CanvasInspector
+            selectedNodes={selectedNodes}
+            onDuplicate={() => void duplicateNodes(selectedNodeIds)}
+            onToggleLock={() => void handleToggleLock()}
+            onBringToFront={() => void handleBringToFront()}
+            onSaveText={(node, text) => {
+              void updateNodeData(node.id, { ...node.data, text })
+            }}
+          />
+        </aside>
+      </div>
+
+      <CanvasTaskQueue
+        tasks={snapshot.tasks}
+        onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
+      />
+      <CanvasAssetDrawer
+        open={assetDrawerOpen}
+        assets={snapshot.assets}
+        onClose={() => setAssetDrawerOpen(false)}
+      />
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(event) => void handleFileChange(event)}
+      />
+    </div>
+  )
+}

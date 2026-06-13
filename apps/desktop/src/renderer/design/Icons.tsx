@@ -90,6 +90,13 @@ export const Icons = {
       <rect x="14" y="14" width="7" height="7" rx="1.5" />
     </IconBase>
   ),
+  Canvas: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v11a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-11z" />
+      <path d="M8 9h4M8 13h8M8 17h5" />
+      <path d="M16.5 7.5l1 2 2 .7-2 .8-1 2-1-2-2-.8 2-.7 1-2z" />
+    </IconBase>
+  ),
   Workflow: (p: IconProps) => (
     <IconBase {...p}>
       <rect x="3" y="3" width="6" height="6" rx="1.5" />

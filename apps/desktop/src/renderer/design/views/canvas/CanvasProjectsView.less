@@ -1,0 +1,232 @@
+.canvas-projects-view {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+}
+
+.canvas-projects-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 22px 28px 16px;
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+.canvas-projects-header h2 {
+  margin: 0;
+  color: var(--text-strong);
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.canvas-projects-header p {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+
+.canvas-projects-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--divider);
+  flex-shrink: 0;
+}
+
+.canvas-projects-search {
+  width: min(420px, 48vw);
+}
+
+.canvas-projects-stats {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.canvas-projects-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 22px 28px 30px;
+}
+
+.canvas-projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+}
+
+.canvas-project-card {
+  min-height: 250px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+  transition:
+    transform 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+.canvas-project-card:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  box-shadow: var(--shadow-md);
+}
+
+.canvas-project-cover {
+  position: relative;
+  height: 112px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--primary);
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--primary) 16%, transparent), transparent 55%),
+    color-mix(in srgb, var(--panel) 88%, var(--bg-sunken));
+  border-bottom: 1px solid var(--divider);
+  overflow: hidden;
+}
+
+.canvas-project-cover-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--text-muted) 12%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--text-muted) 12%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 22px 22px;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.5), transparent);
+}
+
+.canvas-project-card-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+}
+
+.canvas-project-card-top,
+.canvas-project-card-foot,
+.canvas-project-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-project-card-top {
+  justify-content: space-between;
+}
+
+.canvas-project-card h3 {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 15px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-project-card p {
+  display: -webkit-box;
+  min-height: 38px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  line-height: 1.45;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.canvas-project-card-meta {
+  flex-wrap: wrap;
+  margin-top: auto;
+}
+
+.canvas-project-card-meta span {
+  display: inline-flex;
+  height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  font-size: 11px;
+}
+
+.canvas-project-card-foot {
+  justify-content: space-between;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.canvas-project-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.canvas-projects-empty {
+  min-height: 360px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.canvas-create-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.canvas-create-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .canvas-projects-header,
+  .canvas-projects-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .canvas-projects-search {
+    width: 100%;
+  }
+
+  .canvas-projects-stats {
+    justify-content: flex-start;
+  }
+}

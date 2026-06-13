@@ -21,6 +21,7 @@ import { ProjectView } from './design/views/ProjectView'
 import { WorkflowView } from './design/views/WorkflowView'
 import { AgentsView } from './design/views/AgentsView'
 import { BoardView } from './design/views/BoardView'
+import { CanvasProjectsView } from './design/views/canvas/CanvasProjectsView'
 import { ScheduledTasksView } from './design/views/ScheduledTasksView'
 import { McpView } from './design/views/McpView'
 import { SkillStoreView } from './design/views/SkillStoreView'
@@ -161,6 +162,7 @@ function WindowControls() {
 const NAV_ITEMS: Array<{ id: string; label: string; icon: React.FC<{ size?: number }> }> = [
   { id: 'agents', label: 'Agents', icon: Icons.Bot },
   { id: 'board', label: 'Board', icon: Icons.Board },
+  { id: 'canvas', label: 'Canvas', icon: Icons.Canvas },
   { id: 'providers', label: 'Providers', icon: Icons.Server },
   { id: 'mcp', label: 'MCP', icon: Icons.MCP },
   { id: 'skill-store', label: 'Skills', icon: Icons.Skills },
@@ -725,6 +727,8 @@ function Shell() {
         return <AgentsView />
       case 'board':
         return <BoardView />
+      case 'canvas':
+        return <CanvasProjectsView />
       case 'scheduled-tasks':
         return <ScheduledTasksView />
       case 'skills':
