@@ -20,7 +20,18 @@
   justify-content: center;
 }
 
-/* 历史加载指示器：极简圆环 spinner + 呼吸文字，垂直居中 */
+/* 极简圆环 spinner，初始加载与「加载更早」共用 */
+.chat-loading-spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--primary) 16%, transparent);
+  border-top-color: var(--primary);
+  animation: chat-loading-spin 0.75s linear infinite;
+  will-change: transform;
+}
+
+/* 历史首屏加载指示器：圆环 spinner + 呼吸文字，垂直居中 */
 .chat-loading {
   display: flex;
   flex-direction: column;
@@ -28,21 +39,25 @@
   justify-content: center;
   gap: 14px;
 
-  .chat-loading-spinner {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    border: 3px solid color-mix(in srgb, var(--primary) 16%, transparent);
-    border-top-color: var(--primary);
-    animation: chat-loading-spin 0.75s linear infinite;
-    will-change: transform;
-  }
-
   .chat-loading-text {
     font-size: var(--font-sm);
     color: var(--text-muted);
     letter-spacing: 0.04em;
     animation: chat-loading-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+/* 「加载更早一页」顶部指示器：列表顶部居中的小圆环 */
+.chat-load-older {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 0 12px;
+
+  .chat-loading-spinner {
+    width: 22px;
+    height: 22px;
+    border-width: 2px;
   }
 }
 
