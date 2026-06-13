@@ -61,6 +61,39 @@ export function CanvasWorkspaceView({
     )
   }, [])
 
+  const handleDeleteNode = useCallback(
+    (nodeId: string) => {
+      setSelectedNodeIds((previousIds) => previousIds.filter((id) => id !== nodeId))
+      void deleteNodes([nodeId])
+    },
+    [deleteNodes],
+  )
+
+  const handleDuplicateNode = useCallback(
+    (nodeId: string) => {
+      void duplicateNodes([nodeId])
+    },
+    [duplicateNodes],
+  )
+
+  const handleToggleLockNode = useCallback(
+    (nodeId: string) => {
+      const node = snapshot?.nodes.find((item) => item.id === nodeId)
+      if (!node) return
+      void patchNodes([nodeId], { locked: !node.locked })
+    },
+    [patchNodes, snapshot?.nodes],
+  )
+
+  const handleBringNodeToFront = useCallback(
+    (nodeId: string) => {
+      const nodes = snapshot?.nodes ?? []
+      const maxZ = Math.max(0, ...nodes.map((node) => node.zIndex))
+      void patchNodes([nodeId], { zIndex: maxZ + 1 })
+    },
+    [patchNodes, snapshot?.nodes],
+  )
+
   if (loading) {
     return (
       <div className="canvas-workspace canvas-workspace-loading">
@@ -189,6 +222,10 @@ export function CanvasWorkspaceView({
           snapshot={snapshot}
           onSelectionChange={handleSelectionChange}
           onNodesPersist={(nodes) => void updateNodes(nodes)}
+          onDuplicateNode={handleDuplicateNode}
+          onDeleteNode={handleDeleteNode}
+          onToggleLockNode={handleToggleLockNode}
+          onBringNodeToFront={handleBringNodeToFront}
         />
         <aside className="canvas-side-panel">
           <CanvasAiPanel

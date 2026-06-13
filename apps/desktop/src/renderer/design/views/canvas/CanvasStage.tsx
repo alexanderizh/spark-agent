@@ -19,17 +19,20 @@ import type { CanvasEdge, CanvasNode as SparkCanvasNode, CanvasSnapshot } from '
 
 const nodeTypes = { sparkCanvasNode: CanvasNode }
 
-function toFlowNode(node: SparkCanvasNode): Node<CanvasFlowNodeData> {
+type CanvasNodeActions = CanvasFlowNodeData['actions']
+
+function toFlowNode(node: SparkCanvasNode, actions: CanvasNodeActions): Node<CanvasFlowNodeData> {
   return {
     id: node.id,
     type: 'sparkCanvasNode',
     position: { x: node.x, y: node.y },
     width: node.width,
     height: node.height,
+    style: { width: node.width, height: node.height },
     zIndex: node.zIndex,
     draggable: !node.locked,
     selectable: !node.locked,
-    data: { canvasNode: node },
+    data: { actions, canvasNode: node },
   }
 }
 
@@ -48,12 +51,32 @@ export function CanvasStage({
   snapshot,
   onSelectionChange,
   onNodesPersist,
+  onDuplicateNode,
+  onDeleteNode,
+  onToggleLockNode,
+  onBringNodeToFront,
 }: {
   snapshot: CanvasSnapshot
   onSelectionChange: (nodeIds: string[]) => void
   onNodesPersist: (nodes: SparkCanvasNode[]) => void
+  onDuplicateNode: (nodeId: string) => void
+  onDeleteNode: (nodeId: string) => void
+  onToggleLockNode: (nodeId: string) => void
+  onBringNodeToFront: (nodeId: string) => void
 }) {
-  const nodes = useMemo(() => snapshot.nodes.map(toFlowNode), [snapshot.nodes])
+  const nodeActions = useMemo<CanvasNodeActions>(
+    () => ({
+      duplicateNode: onDuplicateNode,
+      deleteNode: onDeleteNode,
+      toggleLockNode: onToggleLockNode,
+      bringNodeToFront: onBringNodeToFront,
+    }),
+    [onBringNodeToFront, onDeleteNode, onDuplicateNode, onToggleLockNode],
+  )
+  const nodes = useMemo(
+    () => snapshot.nodes.map((node) => toFlowNode(node, nodeActions)),
+    [nodeActions, snapshot.nodes],
+  )
   const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
 
   const handleNodesChange = useCallback(

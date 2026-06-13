@@ -34,7 +34,15 @@ function createFlowNode(canvasNode: CanvasNode): Node<CanvasFlowNodeData> {
     position: { x: canvasNode.x, y: canvasNode.y },
     width: canvasNode.width,
     height: canvasNode.height,
-    data: { canvasNode },
+    data: {
+      canvasNode,
+      actions: {
+        duplicateNode: () => undefined,
+        deleteNode: () => undefined,
+        toggleLockNode: () => undefined,
+        bringNodeToFront: () => undefined,
+      },
+    },
   }
 }
 
@@ -43,7 +51,6 @@ describe('persistCanvasNodeLayoutChanges', () => {
     const node = createCanvasNode()
     const changes = [
       { id: node.id, type: 'select', selected: true },
-      { id: node.id, type: 'dimensions', dimensions: { width: 220, height: 160 } },
     ] as NodeChange<Node<CanvasFlowNodeData>>[]
 
     expect(persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)).toBeNull()
@@ -68,5 +75,17 @@ describe('persistCanvasNodeLayoutChanges', () => {
     ] as NodeChange<Node<CanvasFlowNodeData>>[]
 
     expect(persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)).toBeNull()
+  })
+
+  it('returns resized nodes for dimension changes', () => {
+    const node = createCanvasNode()
+    const changes = [
+      { id: node.id, type: 'dimensions', dimensions: { width: 240, height: 180 } },
+    ] as NodeChange<Node<CanvasFlowNodeData>>[]
+
+    const nextNodes = persistCanvasNodeLayoutChanges([node], [createFlowNode(node)], changes)
+
+    expect(nextNodes?.[0]?.width).toBe(240)
+    expect(nextNodes?.[0]?.height).toBe(180)
   })
 })

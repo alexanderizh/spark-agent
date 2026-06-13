@@ -33,6 +33,27 @@
   min-width: 0;
 }
 
+.canvas-workspace-actions {
+  flex-shrink: 0;
+}
+
+.canvas-workspace-title .arco-btn,
+.canvas-workspace-actions .arco-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  white-space: nowrap;
+}
+
+.canvas-workspace-title .arco-btn-content,
+.canvas-workspace-actions .arco-btn-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
 .canvas-workspace-title h2 {
   margin: 0;
   max-width: 42vw;
@@ -64,10 +85,27 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 12px 8px;
+  gap: 6px;
+  padding: 12px 9px;
   border-right: 1px solid var(--divider);
   background: var(--panel);
+}
+
+.canvas-toolbar .arco-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 32px;
+  padding: 0;
+}
+
+.canvas-toolbar .arco-btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
 }
 
 .canvas-toolbar-separator {
@@ -102,6 +140,10 @@
   display: none;
 }
 
+.canvas-stage .react-flow__node {
+  overflow: visible;
+}
+
 .canvas-minimap {
   overflow: hidden;
   border: 1px solid var(--border);
@@ -126,7 +168,11 @@
 
 .canvas-node {
   width: 100%;
-  min-width: 220px;
+  height: 100%;
+  min-width: 180px;
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -146,8 +192,21 @@
     var(--shadow-md);
 }
 
+.canvas-node-resize-line {
+  border-color: var(--primary) !important;
+}
+
+.canvas-node-resize-handle {
+  width: 9px !important;
+  height: 9px !important;
+  border: 2px solid var(--panel) !important;
+  border-radius: 50%;
+  background: var(--primary) !important;
+  box-shadow: var(--shadow-xs);
+}
+
 .canvas-node-head {
-  height: 38px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -175,14 +234,16 @@
 
 .canvas-node-image {
   width: 100%;
-  height: 172px;
+  min-height: 0;
+  flex: 1;
   display: block;
   object-fit: cover;
   background: var(--bg-sunken);
 }
 
 .canvas-node-image-placeholder {
-  height: 172px;
+  min-height: 0;
+  flex: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -198,9 +259,9 @@
 }
 
 .canvas-node-text {
-  max-height: 118px;
-  min-height: 112px;
-  overflow: hidden;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
   padding: 12px;
   color: var(--text);
   font-size: 13px;
@@ -210,7 +271,8 @@
 
 .canvas-node-task {
   display: flex;
-  min-height: 104px;
+  min-height: 0;
+  flex: 1;
   flex-direction: column;
   gap: 9px;
   padding: 12px;
@@ -226,9 +288,26 @@
 }
 
 .canvas-node-task-msg {
+  min-height: 0;
+  overflow: auto;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.4;
+}
+
+.canvas-node-context-menu {
+  min-width: 142px;
+}
+
+.canvas-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.canvas-menu-item-danger {
+  color: var(--danger);
 }
 
 .canvas-node-handle {

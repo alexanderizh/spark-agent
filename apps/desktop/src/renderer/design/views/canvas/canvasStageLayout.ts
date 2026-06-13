@@ -14,8 +14,18 @@ function fromFlowNodes(
       ...node,
       x: flow.position.x,
       y: flow.position.y,
-      width: typeof flow.width === 'number' ? flow.width : node.width,
-      height: typeof flow.height === 'number' ? flow.height : node.height,
+      width:
+        typeof flow.measured?.width === 'number'
+          ? flow.measured.width
+          : typeof flow.width === 'number'
+            ? flow.width
+            : node.width,
+      height:
+        typeof flow.measured?.height === 'number'
+          ? flow.measured.height
+          : typeof flow.height === 'number'
+            ? flow.height
+            : node.height,
     }
   })
 }
@@ -44,7 +54,9 @@ export function persistCanvasNodeLayoutChanges(
   changes: NodeChange<Node<CanvasFlowNodeData>>[],
 ): SparkCanvasNode[] | null {
   const layoutChanges = changes.filter(
-    (change) => change.type === 'position' && Boolean(change.position),
+    (change) =>
+      (change.type === 'position' && Boolean(change.position)) ||
+      (change.type === 'dimensions' && Boolean(change.dimensions)),
   )
   if (layoutChanges.length === 0) return null
 

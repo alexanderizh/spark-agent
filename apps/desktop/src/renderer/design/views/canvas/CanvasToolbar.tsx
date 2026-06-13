@@ -44,6 +44,7 @@ export function CanvasToolbar({
             shape="circle"
             type={activeTool === tool.id ? 'primary' : 'text'}
             icon={tool.icon}
+            aria-label={tool.title}
             onClick={() => handleTool(tool.id)}
           />
         </Tooltip>
@@ -57,6 +58,7 @@ export function CanvasToolbar({
           type="text"
           disabled={selectedCount === 0}
           icon={<Icons.Trash size={15} />}
+          aria-label="删除选中节点"
           onClick={onDeleteSelected}
         />
       </Tooltip>
