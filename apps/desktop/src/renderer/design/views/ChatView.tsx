@@ -5,9 +5,11 @@
  * This component only renders the main chat area (hero/composer/stream).
  * Session/workspace/provider data is read from SessionSidebarContext.
  */
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+import React, { useEffect, useRef, useState, useCallback, useMemo, Fragment } from 'react'
 import './ChatView.less'
+import './ToolDropdown.less'
 import type { JSX, ReactNode, RefObject } from 'react'
+import { Button } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import {
@@ -32,6 +34,7 @@ import {
 import { SparkInput, SparkTextarea } from '../components/FormControls'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
+import { MarkdownCodeBlock } from '../components/MarkdownCodeBlock'
 import { ClickableFilePath, ClickableUrl, extractFilePaths, extractUrlsAndEmails } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
@@ -41,6 +44,8 @@ import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
 import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
+import { ComposerActionsMenu } from '../components/ComposerActionsMenu'
+import { ToolIcon } from '../components/ToolIcon'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
@@ -54,7 +59,7 @@ import {
   isClaudeAdapter,
   isProviderCompatibleWithAdapter,
 } from '../utils/provider-adapter'
-import { getAgentAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from '../avatar'
+import { getAgentAvatarConfig, getUserAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../avatar'
 import type { UIMessage, UIBlock, FileChangeSummary } from '../services/event-mapper'
 import type {
   AgentEvent,
@@ -89,8 +94,11 @@ import {
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_PROVIDER_ID,
   isBuiltInLocalCliProvider,
+  VENDOR_CATALOG,
+  type VendorMeta,
 } from '@spark/protocol'
 import { resolveProviderContextWindow } from '@spark/shared'
+import { ProviderLogo } from '../components/ProviderLogo'
 
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
 const LOCAL_CLI_MODEL_DISPLAY = 'claude cli'
@@ -364,6 +372,15 @@ export function ChatView({
       cancelled = true
     }
   }, [active, listTeamMembers, defaultTeamConfig])
+
+  // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / Config 面板，
+  // 否则它们会沿用上一个会话的展开态继续遮挡空白聊天区。
+  useEffect(() => {
+    if (active == null) {
+      setShowInspector(false)
+      setShowConfigPanel(false)
+    }
+  }, [active])
   const [agentStatus, setAgentStatus] = useState('')
   const [composerFocusTrigger, setComposerFocusTrigger] = useState(0)
   /**
@@ -800,53 +817,19 @@ export function ChatView({
 
 // ─── Tool Dropdown (IDE / Terminal open) ─────────────────────────────────
 
-/** Map iconHint to the corresponding Icons component */
-function getToolIcon(iconHint?: string, kind?: 'ide' | 'terminal'): JSX.Element {
-  const size = 13
-  const fallback = kind === 'ide' ? <Icons.Code size={size} /> : <Icons.Terminal size={size} />
-  if (!iconHint) return fallback
-
-  // Map iconHint to Icons component
-  const iconMap: Record<string, (() => JSX.Element) | undefined> = {
-    VSCode: () => <Icons.VSCode size={size} />,
-    Cursor: () => <Icons.Cursor size={size} />,
-    Zed: () => <Icons.Zed size={size} />,
-    WebStorm: () => <Icons.WebStorm size={size} />,
-    Sublime: () => <Icons.Sublime size={size} />,
-    Vim: () => <Icons.Vim size={size} />,
-    Neovim: () => <Icons.Neovim size={size} />,
-    Windsurf: () => <Icons.Windsurf size={size} />,
-    Trae: () => <Icons.Trae size={size} />,
-    CodeBuddy: () => <Icons.CodeBuddy size={size} />,
-    Kiro: () => <Icons.Kiro size={size} />,
-    Qoder: () => <Icons.Qoder size={size} />,
-    IntelliJ: () => <Icons.IntelliJ size={size} />,
-    PyCharm: () => <Icons.PyCharm size={size} />,
-    ITerm2: () => <Icons.ITerm2 size={size} />,
-    TerminalApp: () => <Icons.TerminalApp size={size} />,
-    Warp: () => <Icons.Warp size={size} />,
-    Alacritty: () => <Icons.Alacritty size={size} />,
-    Kitty: () => <Icons.Kitty size={size} />,
-    Hyper: () => <Icons.Hyper size={size} />,
-    Tabby: () => <Icons.Tabby size={size} />,
-    PowerShell: () => <Icons.PowerShell size={size} />,
-    WindowsTerminal: () => <Icons.WindowsTerminal size={size} />,
-    GitBash: () => <Icons.GitBash size={size} />,
-    CMD: () => <Icons.CMD size={size} />,
-  }
-
-  const iconFn = iconMap[iconHint]
-  return iconFn ? iconFn() : fallback
+function getToolIcon(iconHint?: string, kind?: 'ide' | 'terminal', size: number = 18): JSX.Element {
+  return <ToolIcon iconHint={iconHint} kind={kind} size={size} />
 }
 
 function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: string }) {
   const [open, setOpen] = useState(false)
   const [tools, setTools] = useState<ExternalToolInfo[]>([])
   const [loading, setLoading] = useState(false)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   const isIde = kind === 'ide'
-  const TriggerIcon = isIde ? Icons.Code : Icons.Terminal
+  const FallbackIcon = isIde ? Icons.Code : Icons.Terminal
   const tooltip = isIde ? '在编辑器中打开' : '在终端中打开'
 
   useEffect(() => {
@@ -859,7 +842,7 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
   }, [open])
 
   useEffect(() => {
-    if (!open || tools.length > 0) return
+    if (tools.length > 0) return
     let cancelled = false
     setLoading(true)
     window.spark
@@ -876,10 +859,11 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
     return () => {
       cancelled = true
     }
-  }, [open, kind, tools.length])
+  }, [kind, tools.length])
 
   const handleSelect = async (tool: ExternalToolInfo) => {
     setOpen(false)
+    setSelectedId(tool.id)
     try {
       await window.spark.invoke('tool:open-project', { toolId: tool.id, rootPath })
     } catch (err) {
@@ -889,14 +873,27 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
 
   const availableTools = tools.filter((t) => t.available)
 
+  // 触发器图标优先级：用户上次选中的工具 > 当前检测到的第一个可用工具 > 通用兜底
+  const triggerTool =
+    availableTools.find((t) => t.id === selectedId) ?? availableTools[0]
+  const triggerTitle = triggerTool
+    ? `${tooltip}（当前：${triggerTool.name}）`
+    : `${tooltip}（未检测到已安装的${isIde ? '编辑器' : '终端'}）`
+
   return (
     <div className="tool-dropdown-wrap" ref={ref}>
       <button
         className={`icon-btn${open ? ' active' : ''}`}
-        title={tooltip}
+        title={triggerTitle}
         onClick={() => setOpen((prev) => !prev)}
       >
-        <TriggerIcon size={14} />
+        {triggerTool ? (
+          <span className="tool-dropdown-trigger-icon">
+            {getToolIcon(triggerTool.iconHint, triggerTool.kind)}
+          </span>
+        ) : (
+          <FallbackIcon size={14} />
+        )}
       </button>
       {open && (
         <div className="tool-dropdown">
@@ -1141,9 +1138,8 @@ function ChatStream({
       onUsageDataChange(cached.usage)
       setIsLoadingHistory(false)
     } else {
-      // 无缓存时立即清空旧消息并显示加载状态，避免 header 已变但内容仍为旧会话
-      setMessages([])
-      onMessagesChange([])
+      // 无缓存时不再立即清空旧消息（那会导致空白闪烁）：保留当前内容并显示遮罩 loading，
+      // 待目标会话历史加载完成后再一次性替换，避免「标题已切、正文空白、内容再弹出」的闪屏。
       setIsLoadingHistory(true)
     }
 
@@ -1564,6 +1560,11 @@ function ChatStream({
           )}
         </div>
       </div>
+      {isLoadingHistory && messages.length > 0 && (
+        <div className="chat-switching-overlay" aria-hidden="true">
+          <Icons.Spinner size={22} />
+        </div>
+      )}
       {showScrollToBottom && (
         <button
           className="scroll-to-bottom-btn"
@@ -1928,6 +1929,79 @@ function renderBlocks(
   })
 }
 
+type ToolLogGroupKind = 'read' | 'write' | 'command' | 'tool'
+
+function renderBlocksGrouped(
+  blocks: UIBlock[],
+  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void } = {},
+): ReactNode {
+  const surface = options.surface ?? 'main'
+  const nodes: ReactNode[] = []
+  let batch: Array<Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>> = []
+  let batchKind: ToolLogGroupKind | null = null
+
+  const flush = (key: string) => {
+    if (batch.length === 0) return
+    nodes.push(<ToolLogGroup key={key} blocks={batch} surface={surface} />)
+    batch = []
+    batchKind = null
+  }
+
+  blocks.forEach((block, index) => {
+    const kind = getToolLogGroupKind(block, surface)
+    if (kind != null && (block.kind === 'tool_call' || block.kind === 'terminal')) {
+      if (batchKind != null && batchKind !== kind) flush(`tool-log-${index}`)
+      batchKind = kind
+      batch.push(block)
+      return
+    }
+
+    flush(`tool-log-${index}`)
+    nodes.push(
+      <Fragment key={`block-${index}`}>{renderBlocks([block], options)}</Fragment>,
+    )
+  })
+
+  flush('tool-log-end')
+  return nodes
+}
+
+function getToolLogGroupKind(block: UIBlock, surface: 'main' | 'inspector'): ToolLogGroupKind | null {
+  if (block.kind === 'terminal') return surface === 'inspector' ? 'command' : null
+  if (block.kind !== 'tool_call' || isHiddenTimelineBlock(block)) return null
+  const name = normalizeToolName(block.toolName)
+  if (name === 'todo_write') return null
+  if (name === 'bash' || name === 'run_command' || name.includes('shell') || name.includes('terminal')) {
+    return 'command'
+  }
+  if (
+    name === 'read' ||
+    name === 'read_file' ||
+    name === 'grep' ||
+    name === 'grep_files' ||
+    name === 'list' ||
+    name === 'ls' ||
+    name.includes('search')
+  ) {
+    return 'read'
+  }
+  if (
+    name === 'edit' ||
+    name === 'edit_file' ||
+    name === 'write' ||
+    name === 'write_file' ||
+    name === 'apply_patch' ||
+    name.includes('replace')
+  ) {
+    return 'write'
+  }
+  return 'tool'
+}
+
+function normalizeToolName(name: string): string {
+  return name.replace(/^functions__/, '').replace(/^mcp__[^_]+__/, '').toLowerCase()
+}
+
 /** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
 function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
   const { agents } = useSessionSidebar()
@@ -2057,7 +2131,7 @@ function renderTeamMemberActivityBlocks(
             <span className="team-member-log-count">{logBlocks.length}</span>
           </summary>
           <div className="team-member-log-body">
-            {renderBlocks(logBlocks, { ...options, surface: 'inspector' })}
+            {renderBlocksGrouped(logBlocks, { ...options, surface: 'inspector' })}
           </div>
         </details>
       )}
@@ -2848,51 +2922,22 @@ export function MarkdownText({
             return <p key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</p>
           case 'code':
             return (
-              <div key={index} className={`md-code-block${syntaxHighlight ? '' : ' no-syntax'}`}>
-                {block.lang && (
-                  <div className="md-code-header">
-                    <span className="md-code-lang">{block.lang}</span>
-                    <button
-                      className="md-code-copy"
-                      title="复制"
-                      onClick={() => {
-                        navigator.clipboard.writeText(block.code).catch(() => {})
-                      }}
-                    >
-                      <Icons.Copy size={12} />
-                    </button>
-                  </div>
-                )}
-                {!block.lang && (
-                  <button
-                    className="md-code-copy-float"
-                    title="复制"
-                    onClick={() => {
-                      navigator.clipboard.writeText(block.code).catch(() => {})
-                    }}
-                  >
-                    <Icons.Copy size={12} />
-                  </button>
-                )}
-                <pre className="md-code">
-                  <code>{block.code}</code>
-                </pre>
-              </div>
+              <MarkdownCodeBlock
+                key={index}
+                code={block.code}
+                lang={block.lang}
+                syntaxHighlight={syntaxHighlight}
+              />
             )
           case 'incomplete_code':
             return (
-              <div key={index} className="md-code-block md-code-streaming-block">
-                {block.lang && (
-                  <div className="md-code-header">
-                    <span className="md-code-lang">{block.lang}</span>
-                    <Icons.Spinner size={10} className="md-code-streaming-badge" />
-                  </div>
-                )}
-                <pre className="md-code md-code-incomplete">
-                  <code>{block.code}</code>
-                  <span className="md-code-cursor">▌</span>
-                </pre>
-              </div>
+              <MarkdownCodeBlock
+                key={index}
+                code={block.code}
+                lang={block.lang}
+                syntaxHighlight={syntaxHighlight}
+                incomplete
+              />
             )
           case 'quote':
             return <blockquote key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</blockquote>
@@ -3460,7 +3505,7 @@ function extractTextFromBlocks(blocks: UIBlock[]): string {
     .trim()
 }
 
-function UserMsg({
+const UserMsg = React.memo(function UserMsg({
   children,
   timestamp,
   blocks,
@@ -3576,7 +3621,16 @@ function UserMsg({
       )}
     </div>
   )
-}
+}, (prev, next) => {
+  // 用户消息创建后不再变化：blocks 引用稳定即可跳过重渲染（忽略 children/回调标识）。
+  return (
+    prev.blocks === next.blocks &&
+    prev.avatarSrc === next.avatarSrc &&
+    prev.attachments === next.attachments &&
+    prev.mentionAgentName === next.mentionAgentName &&
+    prev.timestamp === next.timestamp
+  )
+})
 
 function useUserAvatarSrc(): string {
   const readLocal = useCallback(() => {
@@ -3755,7 +3809,49 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
   )
 }
 
-function AssistantMessageRows({
+/**
+ * assistantRowsPropsAreEqual — AssistantMessageRows / AgentMsg 的 memo 比较器。
+ *
+ * MessageBuilder 对消息对象/blocks 数组是「就地 mutate」的：流式中 blocks 引用不变、
+ * 内容在变，因此对正在流式（isLatest 或 status==='running'）的行必须始终重渲染。
+ * 已完成且非最新的行不会再被 mutate（blocks 引用永久稳定），可安全跳过——这正是
+ * 长会话流式时大量历史行被无谓重渲染（重跑 markdown 解析）的根因。
+ * 故意忽略 onDelete/onReply/onFilePreview 等回调标识：它们每次 render 都是新函数，
+ * 但其「是否存在」对给定消息是稳定的，不应触发重渲染。
+ */
+type AssistantRowCompareProps = {
+  sessionId: SessionId
+  status?: 'running'
+  blocks: UIBlock[]
+  messageStatus?: UIMessage['status']
+  isLatest?: boolean
+  timestamp?: string | undefined
+  assistantId: string
+  assistantName: string
+  assistantAvatarSrc: string
+  usage?: UIMessage['usage'] | undefined
+}
+
+function assistantRowsPropsAreEqual(
+  prev: Readonly<AssistantRowCompareProps>,
+  next: Readonly<AssistantRowCompareProps>,
+): boolean {
+  if (prev.isLatest || next.isLatest || prev.status === 'running' || next.status === 'running') {
+    return false
+  }
+  return (
+    prev.blocks === next.blocks &&
+    prev.messageStatus === next.messageStatus &&
+    prev.sessionId === next.sessionId &&
+    prev.assistantId === next.assistantId &&
+    prev.assistantName === next.assistantName &&
+    prev.assistantAvatarSrc === next.assistantAvatarSrc &&
+    prev.timestamp === next.timestamp &&
+    prev.usage === next.usage
+  )
+}
+
+const AssistantMessageRows = React.memo(function AssistantMessageRows({
   sessionId,
   status,
   blocks,
@@ -3832,7 +3928,7 @@ function AssistantMessageRows({
       })}
     </>
   )
-}
+}, assistantRowsPropsAreEqual)
 
 type AssistantMessageSegment =
   | { kind: 'agent'; blocks: UIBlock[] }
@@ -3919,7 +4015,7 @@ function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | und
   return undefined
 }
 
-function AgentMsg({
+const AgentMsg = React.memo(function AgentMsg({
   sessionId,
   status,
   blocks,
@@ -4054,11 +4150,11 @@ function AgentMsg({
           </div>
         )}
         {contentBlocks.length > 0 && isLatest && (
-          <div className="msg-content">{renderBlocks(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
+          <div className="msg-content">{renderBlocksGrouped(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
         )}
         {contentBlocks.length > 0 && !isLatest && (
           <CollapsibleContent maxHeight={500} streaming={isStreaming}>
-            <div className="msg-content">{renderBlocks(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
+            <div className="msg-content">{renderBlocksGrouped(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
           </CollapsibleContent>
         )}
         {errorBlocks.map((block, i) => (
@@ -4102,7 +4198,7 @@ function AgentMsg({
       )}
     </div>
   )
-}
+}, assistantRowsPropsAreEqual)
 
 function ThinkingSection({
   blocks,
@@ -4312,6 +4408,175 @@ function ToolCall({
       {open && children && <div className="tool-call-body">{children}</div>}
     </div>
   )
+}
+
+function ToolLogGroup({
+  blocks,
+  surface,
+}: {
+  blocks: Array<Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>>
+  surface: 'main' | 'inspector'
+}) {
+  const running = blocks.some((block) => {
+    if (block.kind === 'terminal') return block.isStreaming
+    return block.status === 'pending' || block.status === 'running'
+  })
+  const hasError = blocks.some((block) => {
+    if (block.kind === 'terminal') return (block.exitCode ?? 0) !== 0 || block.stderr.trim().length > 0
+    return block.status === 'error' || Boolean(block.error)
+  })
+  const [open, setOpen] = useState(running && surface === 'main')
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (running) {
+        setOpen(true)
+        return
+      }
+      if (readAppearance().autoCollapseTools) setOpen(false)
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [running])
+
+  const kind = getToolLogGroupKind(blocks[0] as UIBlock, surface) ?? 'tool'
+  const count = blocks.length
+  const label =
+    kind === 'command'
+      ? `执行 ${count} 条命令`
+      : kind === 'read'
+        ? `查看 ${count} 个文件`
+        : kind === 'write'
+          ? `修改 ${count} 个文件`
+          : `调用 ${count} 个工具`
+  const Icon =
+    kind === 'command'
+      ? Icons.BashCommand
+      : kind === 'read'
+        ? Icons.File
+        : kind === 'write'
+          ? Icons.Edit
+          : Icons.Wrench
+
+  return (
+    <div className={`tool-log-group ${open ? 'is-open' : ''} ${running ? 'is-running' : ''} ${hasError ? 'is-error' : 'is-success'}`}>
+      <Button
+        className="tool-log-summary"
+        type="text"
+        size="mini"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <Icon size={13} className="tool-log-summary-icon" />
+        <span>{label}</span>
+        {running && <Icons.Spinner size={12} className="tool-status spinner" />}
+        {!running && hasError && <Icons.X size={12} className="tool-status err" />}
+        {!running && !hasError && <Icons.Check size={12} className="tool-status ok" />}
+        <Icons.ChevronRight size={13} className="chev" />
+      </Button>
+      {open && (
+        <div className="tool-log-body">
+          {blocks.map((block, index) => (
+            <ToolLogEntry key={`${block.kind}-${index}`} block={block} index={index} />
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ToolLogEntry({
+  block,
+  index,
+}: {
+  block: Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>
+  index: number
+}) {
+  if (block.kind === 'terminal') {
+    return (
+      <div className="tool-log-entry">
+        <ToolLogEntryHead icon={<Icons.Terminal size={13} />} title="终端" subtitle={`#${index + 1}`} />
+        <div className="tool-log-card">
+          {block.stdout && <ToolLogSection label="输出" content={block.stdout} />}
+          {block.stderr && <ToolLogSection label="错误" content={block.stderr} tone="error" />}
+          {block.isStreaming && <span className="tool-log-streaming">运行中...</span>}
+        </div>
+      </div>
+    )
+  }
+
+  const input = formatToolLogInput(block)
+  const output = block.output
+  const error = block.error
+  const icon = getToolLogIcon(block.toolName)
+
+  return (
+    <div className={`tool-log-entry ${block.status === 'error' ? 'is-error' : ''}`}>
+      <ToolLogEntryHead
+        icon={icon}
+        title={block.toolName}
+        subtitle={block.durationMs != null ? formatDuration(block.durationMs) : `#${index + 1}`}
+      />
+      <div className="tool-log-card">
+        {input && <ToolLogSection label="输入" content={input} />}
+        {output && <ToolLogSection label="输出" content={output} />}
+        {error && <ToolLogSection label="错误" content={error} tone="error" />}
+      </div>
+    </div>
+  )
+}
+
+function ToolLogEntryHead({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: ReactNode
+  title: string
+  subtitle: string
+}) {
+  return (
+    <div className="tool-log-entry-head">
+      <span className="tool-log-entry-icon">{icon}</span>
+      <span className="tool-log-entry-title">{title}</span>
+      <span className="tool-log-entry-subtitle">{subtitle}</span>
+    </div>
+  )
+}
+
+function ToolLogSection({
+  label,
+  content,
+  tone,
+}: {
+  label: string
+  content: string
+  tone?: 'error'
+}) {
+  return (
+    <div className={`tool-log-section ${tone === 'error' ? 'is-error' : ''}`}>
+      <div className="tool-log-section-label">{label}</div>
+      <pre>{content}</pre>
+    </div>
+  )
+}
+
+function formatToolLogInput(block: Extract<UIBlock, { kind: 'tool_call' }>): string {
+  const isBashLike = block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
+  if (isBashLike && typeof block.toolInput.command === 'string') return block.toolInput.command
+  try {
+    return JSON.stringify(block.toolInput, null, 2)
+  } catch {
+    return String(block.toolInput)
+  }
+}
+
+function getToolLogIcon(name: string): ReactNode {
+  const normalized = normalizeToolName(name)
+  if (normalized === 'bash' || normalized === 'run_command') return <Icons.BashCommand size={13} />
+  if (normalized === 'grep' || normalized === 'grep_files' || normalized.includes('search')) return <Icons.Search size={13} />
+  if (normalized === 'edit' || normalized === 'edit_file' || normalized === 'apply_patch') return <Icons.Edit size={13} />
+  if (normalized === 'read' || normalized === 'read_file' || normalized === 'write' || normalized === 'write_file') return <Icons.File size={13} />
+  return <Icons.Wrench size={13} />
 }
 
 function TerminalBlock({ children }: { children: ReactNode }) {
@@ -5851,6 +6116,34 @@ function ComposerV2({
     await handleSend()
   }
 
+  /**
+   * 把 `@<技能名> ` 插入到输入框当前光标位置（来自 ComposerActionsMenu 弹窗中的技能选择）。
+   * 不走团队模式的 @agent mention 状态机——技能没有 agentId，只是纯文本提示。
+   */
+  const handleInsertSkillMention = useCallback(
+    (skill: { name: string }) => {
+      const el = textareaRef.current
+      const current = value
+      const caret = el?.selectionStart ?? current.length
+      const end = el?.selectionEnd ?? caret
+      const insertText = `@${skill.name} `
+      const before = current.slice(0, caret)
+      const after = current.slice(end)
+      const nextValue = `${before}${insertText}${after}`
+      setValue(nextValue)
+      setTextEditMenu(null)
+      // 把光标移到 mention 后
+      requestAnimationFrame(() => {
+        const el2 = textareaRef.current
+        if (el2 == null) return
+        const caretPos = before.length + insertText.length
+        el2.focus()
+        el2.setSelectionRange(caretPos, caretPos)
+      })
+    },
+    [value, setValue, setTextEditMenu],
+  )
+
   const handleRemoveQueuedMessage = async (message: QueuedMessage) => {
     if (session?.id == null) return
     const res = await cancelQueuedTurn({ sessionId: session.id, turnId: message.turnId })
@@ -6821,14 +7114,11 @@ function ComposerV2({
           </div>
         </div>
         <div className="composer-param-bar composer-controls">
-          <button
-            type="button"
-            className="icon-btn"
-            title="添加文件或图片"
-            onClick={() => void handleAddAttachments()}
-          >
-            <Icons.Upload />
-          </button>
+          <ComposerActionsMenu
+            onAddAttachments={() => void handleAddAttachments()}
+            onInsertSkillMention={handleInsertSkillMention}
+            disabled={isBusy}
+          />
           <AgentPicker
             agents={agents}
             selectedAgentId={effectiveAgentId}
@@ -7220,10 +7510,34 @@ function AgentPicker({
       ? teams.find((t) => t.id === teamConfig.teamId)
       : undefined
 
+  // 选择器头部图标：优先显示当前选中项的自定义头像。
+  // - 非团队模式：显示当前 agent 头像
+  // - 团队模式 + 已应用某个已保存团队：显示该团队头像
+  // - 团队模式 + 临时团队：显示 Host agent 头像
+  // 没有自定义头像时保持原来的默认图标（Team / Code / Bot）。
+  const triggerAvatarTarget: { id: string; metadata: Record<string, unknown> | undefined; name: string } | null = (() => {
+    if (teamMode && activeTeam != null) {
+      return { id: activeTeam.id, metadata: activeTeam.metadata, name: activeTeam.name }
+    }
+    if (selected) {
+      return { id: selected.id, metadata: selected.metadata, name: selected.name }
+    }
+    return null
+  })()
+  const showTriggerAvatar = triggerAvatarTarget != null && hasCustomAvatar(triggerAvatarTarget.metadata)
+
   return (
     <div ref={rootRef} className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : teamMode ? '团队模式' : 'Agent'}>
       <span className="composer-select-icon">
-        {teamMode ? (
+        {showTriggerAvatar && triggerAvatarTarget ? (
+          <AvatarImage
+            className="composer-agent-picker-avatar"
+            src={resolveAvatarSrc(getAgentAvatarConfig(triggerAvatarTarget.metadata, triggerAvatarTarget.id, triggerAvatarTarget.name))}
+            seed={triggerAvatarTarget.id}
+            name={triggerAvatarTarget.name}
+            alt={`${triggerAvatarTarget.name} 头像`}
+          />
+        ) : teamMode ? (
           <Icons.Team size={13} />
         ) : selected?.builtIn ? (
           <Icons.Code size={13} />
@@ -7304,6 +7618,7 @@ function AgentPicker({
               {teams.map((team) => {
                 const host = agents.find((a) => a.id === team.hostAgentId)
                 const active = teamMode && teamConfig.teamId === team.id
+                const teamHasAvatar = hasCustomAvatar(team.metadata)
                 return (
                   <button
                     key={team.id}
@@ -7316,7 +7631,17 @@ function AgentPicker({
                   >
                     <span className="composer-menu-item-copy">
                       <span className="composer-menu-item-label">
-                        <Icons.Team size={13} />
+                        {teamHasAvatar ? (
+                          <AvatarImage
+                            className="composer-menu-avatar"
+                            src={resolveAvatarSrc(getAgentAvatarConfig(team.metadata, team.id, team.name))}
+                            seed={team.id}
+                            name={team.name}
+                            alt={`${team.name} 头像`}
+                          />
+                        ) : (
+                          <Icons.Team size={13} />
+                        )}
                         <span>{team.name}</span>
                         {team.builtIn && <span className="composer-menu-item-tag">内置</span>}
                       </span>
@@ -7336,7 +7661,9 @@ function AgentPicker({
           )}
           <div className="composer-menu-divider" />
           <div className="composer-menu-group-title">{teamMode ? '当前对话 Agent' : '选择 Agent'}</div>
-          {agents.map((agent) => (
+          {agents.map((agent) => {
+            const agentHasAvatar = hasCustomAvatar(agent.metadata)
+            return (
             <button
               key={agent.id}
               type="button"
@@ -7349,7 +7676,19 @@ function AgentPicker({
             >
               <span className="composer-menu-item-copy">
                 <span className="composer-menu-item-label">
-                  {agent.builtIn ? <Icons.Code size={13} /> : <Icons.Bot size={13} />}
+                  {agentHasAvatar ? (
+                    <AvatarImage
+                      className="composer-menu-avatar"
+                      src={resolveAvatarSrc(getAgentAvatarConfig(agent.metadata, agent.id, agent.name))}
+                      seed={agent.id}
+                      name={agent.name}
+                      alt={`${agent.name} 头像`}
+                    />
+                  ) : agent.builtIn ? (
+                    <Icons.Code size={13} />
+                  ) : (
+                    <Icons.Bot size={13} />
+                  )}
                   <span>{agent.name}</span>
                 </span>
                 {agent.description && (
@@ -7359,7 +7698,8 @@ function AgentPicker({
               {agent.workflowId && <Icons.Workflow size={13} />}
               {agent.id === selected?.id && <Icons.Check size={14} />}
             </button>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -7387,10 +7727,17 @@ function ProviderModelPicker({
   const selectedProvider =
     providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
   const label = getModelDisplayLabel(selectedProvider, selectedModelId)
+  const selectedVendor = resolveProviderVendor(selectedProvider)
 
   return (
     <div ref={rootRef} className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : '供应商模型'}>
-      <span className="composer-select-icon">{icon}</span>
+      <span className="composer-select-icon">
+        {selectedVendor ? (
+          <ProviderLogo vendor={selectedVendor} size={18} shape="rounded" />
+        ) : (
+          icon
+        )}
+      </span>
       <button
         type="button"
         className="composer-select-trigger"
@@ -7410,9 +7757,17 @@ function ProviderModelPicker({
               : provider.defaultModel
                 ? [provider.defaultModel]
                 : []
+            const vendor = resolveProviderVendor(provider)
             return (
               <div key={provider.id} className="composer-model-group">
-                <div className="composer-model-group-title">{provider.name}</div>
+                <div className="composer-model-group-title">
+                  {vendor && (
+                    <span className="composer-model-group-icon">
+                      <ProviderLogo vendor={vendor} size={14} shape="rounded" />
+                    </span>
+                  )}
+                  <span>{provider.name}</span>
+                </div>
                 {models.map((modelId) => {
                   const active = provider.id === selectedProviderId && modelId === selectedModelId
                   return (
@@ -7851,6 +8206,89 @@ function normalizeModelForProvider(
 
 function isLocalCliProvider(provider: ProviderProfile | null | undefined): boolean {
   return isBuiltInLocalCliProvider(provider)
+}
+
+/**
+ * ProviderProfile → VendorMeta 解析（用于输入框 / 下拉的供应商图标渲染）。
+ *
+ * 1) 内置本地 CLI（codex / claude）走合成 vendor（与 ProvidersView 一致）
+ * 2) 否则用 provider.name 在 VENDOR_CATALOG 里匹配（同 ProvidersView 的 guessVendorByName）
+ * 3) 仍没匹配 → 按 provider 协议格式（anthropic/openai）渲染对应官方图标
+ * 4) 兜底：合成首字母 vendor
+ */
+const LOCAL_CLAUDE_CLI_VENDOR: VendorMeta = {
+  id: 'local-claude-cli',
+  name: '本地 Claude CLI',
+  emoji: 'CC',
+  color: '#d97757',
+  desc: '',
+  logoPath: '',
+}
+
+const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
+  id: 'local-codex-cli',
+  name: '本地 Codex CLI',
+  emoji: 'CX',
+  color: '#10a37f',
+  desc: '',
+  logoPath: '',
+}
+
+/**
+ * 按协议格式（anthropic / openai）合成 vendor，让自定义供应商也能渲染出官方彩色图标。
+ * id 对齐 ProviderLogo 的 VENDOR_AVATAR_MAP（anthropic → Anthropic.Avatar，openai → OpenAI.Avatar）。
+ */
+const PROTOCOL_VENDOR_MAP: Record<string, VendorMeta> = {
+  anthropic: {
+    id: 'anthropic',
+    name: 'Anthropic',
+    emoji: 'A',
+    color: '#d4a574',
+    desc: '',
+    logoPath: '',
+  },
+  openai: {
+    id: 'openai',
+    name: 'OpenAI',
+    emoji: 'OA',
+    color: '#10a37f',
+    desc: '',
+    logoPath: '',
+  },
+}
+
+function resolveProviderVendor(provider: ProviderProfile | null | undefined): VendorMeta | null {
+  if (!provider) return null
+  if (provider.id === LOCAL_CODEX_CLI_PROVIDER_ID) return LOCAL_CODEX_CLI_VENDOR
+  if (provider.id === LOCAL_CLI_PROVIDER_ID) return LOCAL_CLAUDE_CLI_VENDOR
+
+  const name = provider.name ?? ''
+  // 1) 精确匹配 vendor.name
+  for (const v of VENDOR_CATALOG) {
+    if (v.name === name) return v
+  }
+  // 2) 包含关系
+  for (const v of VENDOR_CATALOG) {
+    if (name && (name.includes(v.name) || v.name.includes(name))) return v
+  }
+  // 3) 按协议格式兜底（自定义供应商能渲染出官方彩色图标）
+  const protocolVendor = PROTOCOL_VENDOR_MAP[provider.provider]
+  if (protocolVendor) {
+    return {
+      ...protocolVendor,
+      // 保留自定义名作为展示名，但 id 不变以命中 ProviderLogo 头像映射
+      name: name || protocolVendor.name,
+    }
+  }
+  // 4) 终极兜底：首字母合成 vendor
+  return {
+    id: `custom-${provider.id}`,
+    name: name || provider.id,
+    emoji: (name[0] ?? provider.id[0] ?? '?').toUpperCase(),
+    color: 'var(--text-faint)',
+    desc: '',
+    logoPath: '',
+  }
 }
 
 function getProviderDefaultModel(

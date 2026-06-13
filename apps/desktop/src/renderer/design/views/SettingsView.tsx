@@ -62,6 +62,10 @@ const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 
+// 远程连接：记住用户上次新建/切换的渠道，方便"新建连接"卡片一键复用
+const REMOTE_LAST_CHANNEL_CATEGORY = 'remote-connections'
+const REMOTE_LAST_CHANNEL_KEY = 'last-channel'
+
 function deferEffect(task: () => void | Promise<void>): () => void {
   const id = window.setTimeout(() => {
     void task()
@@ -682,6 +686,8 @@ function createRemoteDraft(channel: RemoteChannelType): RemoteConnectionConfig {
 
 function RemoteConnectionsSection() {
   const { toast } = useToast()
+  const { invoke: getSetting } = useIpcInvoke('settings:get')
+  const { invoke: setSetting } = useIpcInvoke('settings:set')
   const [connections, setConnections] = useState<RemoteConnectionConfig[]>([])
   const [commands, setCommands] = useState<RemoteCommandDefinition[]>([])
   const [sessions, setSessions] = useState<SessionListResponse['sessions']>([])
@@ -693,12 +699,45 @@ function RemoteConnectionsSection() {
     longConnections: [],
   })
   const [selectedId, setSelectedId] = useState<string>('')
+  const [lastChannel, setLastChannel] = useState<RemoteChannelType>('telegram')
   const [draft, setDraft] = useState<RemoteConnectionConfig>(() => createRemoteDraft('telegram'))
   const [editorOpen, setEditorOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
   const [manualPairUser, setManualPairUser] = useState('')
   const [manualPairName, setManualPairName] = useState('')
+
+  // 加载"上次新建/选择的渠道"，失败或不存在则保持默认 telegram。
+  useEffect(() => {
+    let cancelled = false
+    getSetting({ category: REMOTE_LAST_CHANNEL_CATEGORY, key: REMOTE_LAST_CHANNEL_KEY })
+      .then((res) => {
+        if (cancelled) return
+        if (res && typeof res.value === 'string' && res.value in REMOTE_CHANNEL_LABELS) {
+          setLastChannel(res.value as RemoteChannelType)
+        }
+      })
+      .catch(() => {
+        // 静默失败，不阻塞 UI
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [getSetting])
+
+  const rememberChannel = useCallback(
+    (channel: RemoteChannelType) => {
+      setLastChannel(channel)
+      void setSetting({
+        category: REMOTE_LAST_CHANNEL_CATEGORY,
+        key: REMOTE_LAST_CHANNEL_KEY,
+        value: channel,
+      }).catch(() => {
+        // 持久化失败不影响当前 UI
+      })
+    },
+    [setSetting],
+  )
 
   const refresh = useCallback(async () => {
     setLoading(true)
@@ -766,7 +805,10 @@ function RemoteConnectionsSection() {
         ...draft,
         status: draft.enabled ? draft.status : 'disabled',
       }
-      if (draft.id) payload.id = draft.id
+      // 新建草稿时 createRemoteDraft 把 id 初始化成 ''，spread 会把它带进来，
+      // 这里统一清掉，让服务端按缺失 id 处理（service 会自动 createId）。
+      if (!draft.id) delete (payload as { id?: string }).id
+      else payload.id = draft.id
       const res = await window.spark.invoke('remote:save', { connection: payload })
       setConnections((prev) => {
         const exists = prev.some((item) => item.id === res.connection.id)
@@ -797,6 +839,7 @@ function RemoteConnectionsSection() {
       setSelectedId(res.connection.id)
       setDraft(res.connection)
       setEditorOpen(true)
+      rememberChannel(channel)
       await refreshRuntime()
       toast.success(`已创建 ${REMOTE_CHANNEL_LABELS[channel]} 草稿并打开平台入口`)
     } catch (err) {
@@ -939,13 +982,13 @@ function RemoteConnectionsSection() {
             className={`remote-connection-card ${draft.id === '' ? 'active' : ''}`}
             onClick={() => {
               setSelectedId('')
-              setDraft(createRemoteDraft('telegram'))
+              setDraft(createRemoteDraft(lastChannel))
               setEditorOpen(true)
             }}
           >
             <span className="remote-card-main">
               <span className="remote-card-title">新建连接</span>
-              <span className="remote-card-desc">选择渠道后保存</span>
+              <span className="remote-card-desc">上次：{REMOTE_CHANNEL_LABELS[lastChannel]}</span>
             </span>
             <Icons.Plus size={14} />
           </button>
@@ -992,6 +1035,7 @@ function RemoteConnectionsSection() {
               onChange={(e) => {
                 const channel = e.target.value as RemoteChannelType
                 updateDraft({ channel, name: draft.name || REMOTE_CHANNEL_LABELS[channel] })
+                rememberChannel(channel)
               }}
             >
               <option value="telegram">Telegram</option>

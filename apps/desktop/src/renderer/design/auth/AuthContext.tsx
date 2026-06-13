@@ -47,6 +47,8 @@ export interface AuthContextValue {
   setBindSession: (s: string | null) => void
   /** 是否正在 bootstrap（启动时验证已存 token）*/
   bootstrapping: boolean
+  /** keytar 是否可用；false 表示登录态不会持久化（dev 模式 native binding 失败常见）*/
+  keytarAvailable: boolean | null
 
   // ─── 业务方法（薄包装，调用 window.spark.invoke）──────────────────────────
   fetchCaptcha: (fresh?: boolean) => Promise<AuthCaptchaResponse>
@@ -107,6 +109,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
   const [baseUrl, setBaseUrlState] = useState('')
   const [flow, setFlow] = useState<AuthFlow>('login')
   const [bindSession, setBindSession] = useState<string | null>(null)
+  const [keytarAvailable, setKeytarAvailable] = useState<boolean | null>(null)
 
   // ─── 启动时 bootstrap ──────────────────────────────────────────────────────
   useEffect(() => {
@@ -116,15 +119,16 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       .then((res: AuthBootstrapResponse) => {
         if (cancelled) return
         setBaseUrlState(res.baseUrl)
+        if (res.keytarAvailable !== undefined) {
+          setKeytarAvailable(res.keytarAvailable)
+        }
         if (res.isAuthenticated && res.user) {
           setIsAuthenticated(true)
           setUser(res.user)
         } else {
           setIsAuthenticated(false)
           setUser(null)
-          // 启动时根据 reason 智能选择默认页
-          if (res.reason === 'no-session') setFlow('login')
-          else setFlow('login')
+          setFlow('login')
         }
       })
       .catch(() => {
@@ -279,6 +283,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       bindSession,
       setBindSession,
       bootstrapping,
+      keytarAvailable,
       fetchCaptcha,
       sendCode,
       login,
@@ -299,6 +304,7 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       flow,
       bindSession,
       bootstrapping,
+      keytarAvailable,
       fetchCaptcha,
       sendCode,
       login,

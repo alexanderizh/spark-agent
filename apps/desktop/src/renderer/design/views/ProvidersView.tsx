@@ -35,6 +35,7 @@ import { ProviderLogo } from '../components/ProviderLogo'
 import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
+import { useDebouncedCallback } from '../hooks/useDebounce'
 import { useToast } from '../components/Toast'
 import {
   PROVIDER_PRESETS,
@@ -936,6 +937,17 @@ export function ProviderEditPanel({
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
 
+  // 防抖更新 modelIds：避免每个字符输入都往列表里加模型
+  const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
+    setForm((prev) => {
+      const trimmed = next.trim()
+      // 仅在非空且 modelIds 未包含该值时添加（与原逻辑一致）
+      if (!trimmed || prev.modelIds.includes(trimmed)) return prev
+      const ids = uniqPreserveOrder([next, ...prev.modelIds.filter((m) => m !== next)])
+      return { ...prev, modelIds: ids }
+    })
+  }, 300)
+
   // 编辑模式：加载现有 profile；新建模式：支持 initialPresetId 预填
   // 仅在 Drawer 打开时执行，避免关闭后 form 被错误重置
   useEffect(() => {
@@ -1345,11 +1357,10 @@ export function ProviderEditPanel({
                 value={form.defaultModel}
                 onChange={(e) => {
                   const next = e.target.value
-                  setForm((prev) => {
-                    // 把新的 defaultModel 加到 modelIds 最前（去重）
-                    const ids = uniqPreserveOrder([next, ...prev.modelIds.filter((m) => m !== next)])
-                    return { ...prev, defaultModel: next, modelIds: ids }
-                  })
+                  // defaultModel 立即更新保证输入响应
+                  set('defaultModel', next)
+                  // modelIds 防抖更新（避免每个字符都往列表里加模型）
+                  debouncedUpdateModelIds(next)
                 }}
                 placeholder="例：claude-sonnet-4-20250514"
               />

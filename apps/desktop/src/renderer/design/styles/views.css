@@ -636,6 +636,7 @@ body.sidebar-resizing {
   margin-left: 0;
   padding-left: 0 !important;
   border-left: 0;
+  position: relative;
 }
 .proj-session:hover {
   border-left-color: transparent;
@@ -941,80 +942,7 @@ body.sidebar-resizing {
   transform: rotate(20deg);
 }
 
-/* ---------- TOOL DROPDOWN (IDE / Terminal open) ---------- */
-.tool-dropdown-wrap {
-  position: relative;
-  display: inline-flex;
-}
-.tool-dropdown {
-  position: absolute;
-  right: 0;
-  top: 28px;
-  z-index: 40;
-  min-width: 180px;
-  max-height: 280px;
-  overflow-y: auto;
-  padding: 4px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-}
-.tool-dropdown-loading,
-.tool-dropdown-empty {
-  padding: 10px 12px;
-  font-size: var(--font-xs);
-  color: var(--text-muted);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  white-space: nowrap;
-}
-.tool-dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--text);
-  font-size: var(--font-sm);
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s;
-}
-.tool-dropdown-item:hover {
-  background: var(--hover);
-}
-.tool-dropdown-item-icon {
-  width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.tool-dropdown-item-name {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tool-dropdown-refresh {
-  margin-top: 2px;
-  border-top: 1px solid var(--border);
-  border-radius: 0 0 var(--r-sm) var(--r-sm);
-  padding-top: 8px;
-  color: var(--text-muted);
-  font-size: var(--font-xs);
-}
-.tool-dropdown-refresh:hover {
-  color: var(--text);
-}
+/* ---------- TOOL DROPDOWN moved to views/ToolDropdown.less ---------- */
 
 .chat-main {
   flex: 1;
@@ -1092,6 +1020,8 @@ body.sidebar-resizing {
   font-size: var(--font-base);
   font-weight: 600;
   color: var(--text-strong);
+  max-width: 240px;
+  min-width: 0;
 }
 .chat-tabbar .chat-context {
   font-size: var(--font-xs);
@@ -1321,10 +1251,17 @@ body.sidebar-resizing {
 .msg-agent.is-error .msg-bubble-agent {
   opacity: 0.9;
 }
+.msg-agent.is-error .streaming-error-card.is-fatal {
+  --error-card-bg: color-mix(in srgb, var(--danger, #ef4444) 10%, var(--bg));
+  --error-card-border: color-mix(in srgb, var(--danger, #ef4444) 36%, var(--border));
+}
+.msg-agent.is-error .streaming-error-card.is-fatal .streaming-error-msg {
+  color: var(--danger, #ef4444);
+}
 
 .msg-content {
   font-size: var(--font-base);
-  line-height: 1.65;
+  line-height: 1.75;
   color: var(--text);
 }
 
@@ -1806,6 +1743,27 @@ body.sidebar-resizing {
   font-size: var(--font-xs);
   line-height: 1.55;
 }
+.md-code-highlighted .shiki {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  overflow: auto;
+  white-space: pre;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: var(--font-xs);
+  line-height: 1.55;
+}
+.md-code-highlighted code {
+  font-family: inherit;
+  background: transparent;
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
+}
+.md-code-highlighted span {
+  color: var(--shiki-light, inherit);
+}
 .md-code-block {
   margin: 8px 0;
   position: relative;
@@ -1836,23 +1794,22 @@ body.sidebar-resizing {
 }
 .md-code-copy,
 .md-code-copy-float {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   background: transparent;
   border: none;
   color: var(--text-faint);
-  cursor: pointer;
-  padding: 2px;
   border-radius: var(--r-xs);
   opacity: 0;
   transition:
     opacity 0.15s,
     color 0.15s;
+  width: 22px;
+  height: 22px;
+  padding: 0;
 }
 .md-code-copy:hover,
 .md-code-copy-float:hover {
   color: var(--text-muted);
+  background: var(--hover);
 }
 .md-code-block:hover .md-code-copy,
 .md-code-block:hover .md-code-copy-float {
@@ -1903,6 +1860,17 @@ body.sidebar-resizing {
   padding: 1px 5px;
   border-radius: var(--r-xs);
   font-size: 12px;
+}
+.msg-content .md-code-highlighted code,
+.msg-content .md-code-highlighted .line,
+.msg-content .md-code-highlighted span {
+  background: transparent;
+}
+.msg-content .md-code-highlighted code {
+  color: inherit;
+  padding: 0;
+  border-radius: 0;
+  font-size: inherit;
 }
 
 /* --- Thinking section (collapsible, minimal inline) --- */
@@ -2108,6 +2076,138 @@ body.sidebar-resizing {
   max-height: none;
   overflow: visible;
   white-space: normal;
+}
+
+.tool-log-group {
+  margin: 8px 0;
+  color: var(--text-faint);
+}
+.tool-log-summary {
+  width: auto;
+  min-height: 24px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--text-faint) !important;
+  font: inherit;
+  font-size: var(--font-sm);
+  font-weight: 400;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: none !important;
+}
+.tool-log-summary:hover,
+.tool-log-summary:focus,
+.tool-log-summary:active {
+  background: transparent !important;
+  color: var(--text-muted) !important;
+  box-shadow: none !important;
+}
+.arco-btn.tool-log-summary,
+.arco-btn.tool-log-summary:hover,
+.arco-btn.tool-log-summary:focus,
+.arco-btn.tool-log-summary:active {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+.tool-log-summary span:not(.tool-status),
+.tool-log-summary .chev {
+  color: inherit !important;
+}
+.tool-log-summary .tool-status.ok,
+.tool-log-summary-icon {
+  display: none;
+}
+.tool-log-summary-icon,
+.tool-log-entry-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+.tool-log-summary > .tool-log-summary-icon {
+  display: none;
+}
+.tool-log-summary .chev {
+  color: inherit;
+  transition: transform 0.15s ease;
+}
+.tool-log-group.is-open .tool-log-summary .chev {
+  transform: rotate(90deg);
+}
+.tool-log-body {
+  margin: 4px 0 10px 2px;
+  padding-left: 20px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  max-width: 100%;
+}
+.tool-log-entry {
+  margin: 10px 0 14px;
+}
+.tool-log-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+}
+.tool-log-entry-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+}
+.tool-log-entry-subtitle {
+  flex: 0 0 auto;
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+}
+.tool-log-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg-soft));
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.03);
+  overflow: hidden;
+  max-width: 100%;
+}
+.tool-log-section {
+  padding: 12px 14px;
+}
+.tool-log-section + .tool-log-section {
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+.tool-log-section-label {
+  margin-bottom: 8px;
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+  line-height: 1;
+}
+.tool-log-section pre {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.tool-log-section.is-error pre {
+  color: var(--danger);
+}
+.tool-log-streaming {
+  display: inline-flex;
+  padding: 10px 14px 12px;
+  color: var(--text-faint);
+  font-size: var(--font-xs);
 }
 
 .tool-icon {
@@ -4783,6 +4883,8 @@ body.inspector-resizing {
   display: flex;
   align-items: center;
   gap: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Mini tool (compact, inside agent pane) */
@@ -4978,52 +5080,94 @@ body.inspector-resizing {
 
 /* --- Streaming error card (inline, non-blocking) --- */
 .streaming-error-card {
+  --error-card-accent: var(--danger, #ef4444);
+  --error-card-bg: color-mix(in srgb, var(--error-card-accent) 6%, var(--bg));
+  --error-card-border: color-mix(in srgb, var(--error-card-accent) 22%, var(--border));
+  position: relative;
   margin: 8px 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: var(--r-md);
-  background: rgba(239, 68, 68, 0.06);
+  padding: 12px 14px 12px 16px;
+  border: 1px solid var(--error-card-border);
+  border-radius: var(--r-sm, 8px);
+  background: var(--error-card-bg);
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--error-card-accent) 72%, transparent);
 }
 .streaming-error-card.is-network {
-  border-color: rgba(234, 179, 8, 0.3);
-  background: rgba(234, 179, 8, 0.06);
-}
-.streaming-error-card.is-network .streaming-error-icon {
-  color: var(--warning, #eab308);
+  --error-card-accent: var(--warning, #eab308);
 }
 .streaming-error-card.is-timeout {
-  border-color: rgba(249, 115, 22, 0.3);
-  background: rgba(249, 115, 22, 0.06);
+  --error-card-accent: #f97316;
 }
-.streaming-error-card.is-timeout .streaming-error-icon {
-  color: var(--warning, #f97316);
+.streaming-error-card.is-aborted {
+  --error-card-accent: var(--text-faint);
+  --error-card-bg: color-mix(in srgb, var(--bg-soft) 74%, var(--bg));
+  --error-card-border: color-mix(in srgb, var(--text-faint) 18%, var(--border));
+}
+.streaming-error-card.is-max-iter {
+  --error-card-accent: var(--primary, #165dff);
+}
+.streaming-error-card.is-fatal {
+  --error-card-bg: color-mix(in srgb, var(--danger, #ef4444) 10%, var(--bg));
+  --error-card-border: color-mix(in srgb, var(--danger, #ef4444) 36%, var(--border));
+}
+.streaming-error-card.is-fatal .streaming-error-msg {
+  color: var(--danger, #ef4444);
 }
 .streaming-error-head {
   display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.streaming-error-icon-wrap {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
+  justify-content: center;
+  flex-shrink: 0;
+  border-radius: 999px;
+  color: var(--error-card-accent);
+  background: color-mix(in srgb, var(--error-card-accent) 10%, transparent);
 }
 .streaming-error-icon {
-  color: var(--danger);
   flex-shrink: 0;
+}
+.streaming-error-copy {
+  min-width: 0;
+  flex: 1;
+}
+.streaming-error-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 .streaming-error-msg {
   font-size: var(--font-sm);
   color: var(--text);
-  font-weight: 500;
+  font-weight: 600;
+  line-height: 1.45;
 }
 .streaming-error-code {
-  display: inline-block;
-  margin-top: 4px;
-  font-size: var(--font-xs);
-  color: var(--text-muted);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
+  line-height: 18px;
+}
+.streaming-error-detail {
+  display: block;
+  margin-top: 2px;
+  font-size: var(--font-xs);
+  line-height: 1.55;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
 }
 .streaming-error-hint {
   display: block;
-  margin-top: 6px;
+  margin-top: 10px;
+  padding-left: 34px;
   font-size: var(--font-xs);
   color: var(--text-faint);
+  line-height: 1.55;
 }
 
 /* --- Stopped marker (shown after cancel) --- */
@@ -5092,14 +5236,33 @@ body.inspector-resizing {
 
 /* --- Streaming error actions --- */
 .streaming-error-actions {
-  margin-top: 8px;
+  margin-top: 10px;
+  padding-left: 34px;
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
 .streaming-error-retry-hint {
-  font-style: italic;
+  margin-top: 0;
+  padding-left: 0;
+  color: var(--text-muted);
+}
+.streaming-error-actions .streaming-error-hint {
+  margin-top: 0;
+  padding-left: 0;
+}
+.streaming-error-action-btn {
+  border-radius: var(--r-xs, 6px);
+}
+@media (max-width: 640px) {
+  .streaming-error-card {
+    padding: 11px 12px 11px 14px;
+  }
+  .streaming-error-hint,
+  .streaming-error-actions {
+    padding-left: 0;
+  }
 }
 
 /* --- Chat stream empty state (inside stream) --- */
@@ -5108,12 +5271,6 @@ body.inspector-resizing {
   align-items: center;
   justify-content: center;
   min-height: 200px;
-}
-
-/* --- Streaming error card is-max-iter variant --- */
-.streaming-error-card.is-max-iter {
-  border-color: rgba(59, 130, 246, 0.25);
-  background: rgba(59, 130, 246, 0.04);
 }
 
 /* ============================================================

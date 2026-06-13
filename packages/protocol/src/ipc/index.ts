@@ -3920,5 +3920,9 @@ export type AuthBootstrapResponse = {
   user?: AuthUserInfo
   baseUrl: string
   reason?: 'no-session' | 'refresh-failed' | 'me-fetch-failed'
+  /** keytar 是否可用；false 表示 token 仅在内存，重启会丢失（dev 模式常见）*/
+  keytarAvailable?: boolean
+  /** keytar 最近一次错误信息（诊断用，不含敏感数据）*/
+  keytarError?: string
 }
 export type IpcStreamPayload<C extends IpcStreamChannel> = IpcStreamChannelMap[C]

@@ -3,13 +3,16 @@
  *
  * 字段：
  *   - 账号（邮箱）
- *   - 图片验证码（password 模式）
- *   - 密码（password 模式）
- *   - 邮箱验证码（code 模式；点击"发送验证码"按钮触发 send-code）
+ *   - 图片验证码
+ *   - 密码（password 模式） / 邮箱验证码（code 模式）
  *
  * 提交流程：
- *   - password 模式：先校验 captcha，调 login(loginMode=password)
- *   - code 模式：先调 send-code，调 login(loginMode=code)
+ *   - password 模式：调 login(loginMode=password)
+ *   - code 模式：调 send-code 后调 login(loginMode=code)
+ *
+ * 错误回显：
+ *   - 字段级错误（如"密码错误"、"验证码失效"）→ form.setFields，Arco 原生红色 inline
+ *   - 网络错误、服务端兜底错误 → toast
  */
 
 import React, { useEffect, useMemo, useState } from 'react'
@@ -19,31 +22,43 @@ import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
 import { CaptchaField } from './CaptchaField'
 import { getRecentEmails, rememberEmail } from './recentEmails'
+import { matchFieldError } from './errorMapping'
 
 const F = Form
+
+type LoginTab = 'password' | 'code'
 
 export function LoginForm(): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
   const [form] = F.useForm()
   const [submitting, setSubmitting] = useState(false)
-  const [tab, setTab] = useState<'password' | 'code'>('password')
+  const [tab, setTab] = useState<LoginTab>('password')
   const [countdown, setCountdown] = useState(0)
-  // 联想邮箱：组件挂载时同步读一次即可，不需要响应外部状态变化
   const [recentEmails, setRecentEmails] = useState<string[]>(() => getRecentEmails())
 
-  // 倒计时
   useEffect(() => {
     if (countdown <= 0) return
     const t = setTimeout(() => setCountdown(countdown - 1), 1000)
     return () => clearTimeout(t)
   }, [countdown])
 
+  /** 切换登录方式时，清掉另一个分支遗留的字段错误（避免显示错位）*/
+  const handleTabChange = (key: string): void => {
+    setTab(key as LoginTab)
+    form.clearFields(['password', 'emailCode'])
+  }
+
+  const refreshCaptcha = (): void => {
+    // 服务器拒绝了 captcha 后，CaptchaField 自身刷新按钮也会拉新；这里走同样的逻辑
+    void form.setFieldValue('captchaText', '')
+  }
+
   const handleSendCode = async (): Promise<void> => {
     try {
       const values = await form.validate(['account', 'captchaId', 'captchaText'])
       if (!values.account) {
-        toast.error('请填写邮箱')
+        form.setFields({ account: { error: { message: '请填写邮箱' } } })
         return
       }
       await auth.sendCode({
@@ -55,8 +70,14 @@ export function LoginForm(): React.ReactElement {
       toast.success('验证码已发送到邮箱')
       setCountdown(60)
     } catch (e) {
-      const msg = (e as Error).message
-      if (msg && !msg.includes('captcha')) toast.error(msg)
+      const msg = (e as Error).message ?? '发送失败'
+      const target = matchFieldError(msg, ['account', 'captchaText'])
+      if (target) {
+        form.setFields({ [target]: { error: { message: msg } } })
+        if (target === 'captchaText') refreshCaptcha()
+      } else if (!msg.includes('captcha')) {
+        toast.error(msg)
+      }
     }
   }
 
@@ -81,113 +102,108 @@ export function LoginForm(): React.ReactElement {
           emailCode: values.emailCode,
         })
       }
-      // 登录成功：记住邮箱，下次进入可联想
       rememberEmail(values.account)
       setRecentEmails(getRecentEmails())
       toast.success('登录成功')
       void result
     } catch (e) {
-      toast.error((e as Error).message || '登录失败')
+      const msg = (e as Error).message ?? '登录失败'
+      // 401 字段错误（密码/验证码/captcha）回填到 inline，其它走 toast
+      const candidates: Array<'account' | 'password' | 'captchaText' | 'emailCode'> =
+        tab === 'password'
+          ? ['password', 'captchaText', 'account']
+          : ['emailCode', 'account']
+      const target = matchFieldError(msg, candidates)
+      if (target) {
+        form.setFields({ [target]: { error: { message: msg } } })
+        if (target === 'captchaText') refreshCaptcha()
+      } else {
+        toast.error(msg)
+      }
     } finally {
       setSubmitting(false)
     }
   }
 
-  /**
-   * 邮箱联想：根据当前 input 过滤 recent emails。
-   * Arco AutoComplete 默认对 data 做 startsWith 过滤；我们传 `strict:false`
-   * 让它大小写不敏感，同时把列表限定在最近使用过的邮箱里（不暴露任何不在历史的值）。
-   */
-  const accountSuggestions = useMemo(() => {
-    return recentEmails.map((email) => ({
-      value: email,
-      name: email,
-    }))
-  }, [recentEmails])
+  const accountSuggestions = useMemo(
+    () => recentEmails.map((email) => ({ value: email, name: email })),
+    [recentEmails],
+  )
 
   return (
     <div className="auth-form">
-      <div className="auth-section-intro">
-        <h3 className="auth-form-title">欢迎回来</h3>
-      </div>
-
       <Tabs
         className="auth-login-tabs"
         activeTab={tab}
-        onChange={(k) => setTab(k as 'password' | 'code')}
-        type="rounded"
+        onChange={handleTabChange}
+        type="line"
+        size="small"
       >
         <TabPane key="password" title="密码登录" />
         <TabPane key="code" title="邮箱验证码" />
       </Tabs>
 
-      <div className="auth-subflow-panel">
-        <F form={form} className="auth-form-body" layout="vertical" requiredSymbol={false}>
+      <F form={form} className="auth-form-body" layout="vertical" requiredSymbol={false}>
+        <Form.Item
+          field="account"
+          label="邮箱"
+          rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
+        >
+          <AutoComplete
+            placeholder="example@spark.com"
+            data={accountSuggestions}
+            strict={false}
+            allowClear
+            inputProps={{ autoComplete: 'email' }}
+            triggerProps={{ autoAlignPopupWidth: true }}
+            filterOption={(inputValue, option) => {
+              const v = (option as { value?: string }).value ?? ''
+              return v.toLowerCase().includes(inputValue.toLowerCase())
+            }}
+          />
+        </Form.Item>
+
+        {tab === 'password' && (
           <Form.Item
-            field="account"
-            label="邮箱"
-            rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
+            field="password"
+            label="密码"
+            rules={[{ required: true, minLength: 6, message: '至少 6 位' }]}
           >
-            <AutoComplete
-              placeholder="example@spark.com"
-              data={accountSuggestions}
-              strict={false}
-              allowClear
-              inputProps={{ autoComplete: 'email' }}
-              triggerProps={{ autoAlignPopupWidth: true }}
-              filterOption={(inputValue, option) => {
-                const v = (option as { value?: string }).value ?? ''
-                return v.toLowerCase().includes(inputValue.toLowerCase())
-              }}
+            <Input.Password placeholder="请输入密码" autoComplete="current-password" />
+          </Form.Item>
+        )}
+
+        <CaptchaField form={form} />
+
+        {tab === 'code' && (
+          <Form.Item
+            field="emailCode"
+            label="邮箱验证码"
+            rules={[{ required: true, message: '请填写邮箱验证码' }]}
+          >
+            <Input
+              placeholder="6 位验证码"
+              maxLength={6}
+              addAfter={
+                <Button
+                  className="auth-code-action"
+                  type="secondary"
+                  disabled={countdown > 0}
+                  onClick={() => void handleSendCode()}
+                >
+                  {countdown > 0 ? `${countdown}s 后重试` : '发送验证码'}
+                </Button>
+              }
             />
           </Form.Item>
+        )}
 
-          {tab === 'password' && (
-            <>
-              <CaptchaField form={form} />
-              <Form.Item
-                field="password"
-                label="密码"
-                rules={[{ required: true, minLength: 6, message: '至少 6 位' }]}
-              >
-                <Input.Password placeholder="请输入密码" autoComplete="current-password" />
-              </Form.Item>
-            </>
-          )}
-
-          {tab === 'code' && (
-            <>
-              <CaptchaField form={form} />
-              <Form.Item
-                field="emailCode"
-                label="邮箱验证码"
-                rules={[{ required: true, message: '请填写邮箱验证码' }]}
-              >
-                <Input
-                  placeholder="6 位验证码"
-                  maxLength={6}
-                  addAfter={
-                    <Button
-                      className="auth-code-action"
-                      type="secondary"
-                      disabled={countdown > 0}
-                      onClick={() => void handleSendCode()}
-                    >
-                      {countdown > 0 ? `${countdown}s 后重试` : '发送验证码'}
-                    </Button>
-                  }
-                />
-              </Form.Item>
-            </>
-          )}
-
-          <Form.Item>
-            <Button type="primary" long loading={submitting} onClick={handleSubmit}>
-              {tab === 'password' ? '登录' : '验证码登录'}
-            </Button>
-          </Form.Item>
-        </F>
-      </div>
+        <Form.Item>
+          <Button type="primary" long loading={submitting} onClick={handleSubmit}>
+            {tab === 'password' ? '登录' : '验证码登录'}
+          </Button>
+        </Form.Item>
+      </F>
     </div>
   )
 }

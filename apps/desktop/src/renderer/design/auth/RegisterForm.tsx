@@ -13,6 +13,7 @@ import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
 import { CaptchaField } from './CaptchaField'
 import { getRecentEmails, rememberEmail } from './recentEmails'
+import { matchFieldError } from './errorMapping'
 
 const F = Form
 
@@ -42,8 +43,14 @@ export function RegisterForm(): React.ReactElement {
       toast.success('验证码已发送到邮箱')
       setCountdown(60)
     } catch (e) {
-      const msg = (e as Error).message
-      if (msg && !msg.includes('captcha')) toast.error(msg)
+      const msg = (e as Error).message ?? '发送失败'
+      const target = matchFieldError(msg, ['account', 'captchaText'])
+      if (target) {
+        form.setFields({ [target]: { error: { message: msg } } })
+        if (target === 'captchaText') form.setFieldValue('captchaText', '')
+      } else if (!msg.includes('captcha')) {
+        toast.error(msg)
+      }
     }
   }
 
@@ -57,12 +64,18 @@ export function RegisterForm(): React.ReactElement {
         code: values.emailCode,
         ...(values.inviteCode ? { inviteCode: values.inviteCode } : {}),
       })
-      // 注册即登录：把新邮箱加入历史，下次登录可联想
       rememberEmail(values.account)
       setRecentEmails(getRecentEmails())
       toast.success('注册成功，已自动登录')
     } catch (e) {
-      toast.error((e as Error).message || '注册失败')
+      const msg = (e as Error).message ?? '注册失败'
+      const target = matchFieldError(msg, ['emailCode', 'password', 'captchaText', 'account'])
+      if (target) {
+        form.setFields({ [target]: { error: { message: msg } } })
+        if (target === 'captchaText') form.setFieldValue('captchaText', '')
+      } else {
+        toast.error(msg)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -76,68 +89,66 @@ export function RegisterForm(): React.ReactElement {
   return (
     <div className="auth-form">
       <div className="auth-section-intro">
-        <h3 className="auth-form-title">注册 Spark 账号</h3>
+        <h3 className="auth-form-title">创建你的账号</h3>
       </div>
 
-      <div className="auth-subflow-panel">
-        <F form={form} className="auth-form-body" layout="vertical" requiredSymbol={false}>
-          <Form.Item
-            field="account"
-            label="邮箱"
-            rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
-          >
-            <AutoComplete
-              placeholder="example@spark.com"
-              data={accountSuggestions}
-              strict={false}
-              allowClear
-              inputProps={{ autoComplete: 'email' }}
-              triggerProps={{ autoAlignPopupWidth: true }}
-              filterOption={(inputValue, option) => {
-                const v = (option as { value?: string }).value ?? ''
-                return v.toLowerCase().includes(inputValue.toLowerCase())
-              }}
-            />
-          </Form.Item>
+      <F form={form} className="auth-form-body" layout="vertical" requiredSymbol={false}>
+        <Form.Item
+          field="account"
+          label="邮箱"
+          rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
+        >
+          <AutoComplete
+            placeholder="example@spark.com"
+            data={accountSuggestions}
+            strict={false}
+            allowClear
+            inputProps={{ autoComplete: 'email' }}
+            triggerProps={{ autoAlignPopupWidth: true }}
+            filterOption={(inputValue, option) => {
+              const v = (option as { value?: string }).value ?? ''
+              return v.toLowerCase().includes(inputValue.toLowerCase())
+            }}
+          />
+        </Form.Item>
 
-          <CaptchaField form={form} />
+        <CaptchaField form={form} />
 
-          <Form.Item
-            field="emailCode"
-            label="邮箱验证码"
-            rules={[{ required: true, message: '请填写邮箱验证码' }]}
-          >
-            <Input
-              placeholder="6 位验证码"
-              maxLength={6}
-              addAfter={
-                <Button
-                  className="auth-code-action"
-                  type="secondary"
-                  disabled={countdown > 0}
-                  onClick={() => void handleSendCode()}
-                >
-                  {countdown > 0 ? `${countdown}s 后重试` : '发送验证码'}
-                </Button>
-              }
-            />
-          </Form.Item>
+        <Form.Item
+          field="emailCode"
+          label="邮箱验证码"
+          rules={[{ required: true, message: '请填写邮箱验证码' }]}
+        >
+          <Input
+            placeholder="6 位验证码"
+            maxLength={6}
+            addAfter={
+              <Button
+                className="auth-code-action"
+                type="secondary"
+                disabled={countdown > 0}
+                onClick={() => void handleSendCode()}
+              >
+                {countdown > 0 ? `${countdown}s 后重试` : '发送验证码'}
+              </Button>
+            }
+          />
+        </Form.Item>
 
-          <Form.Item
-            field="password"
-            label="设置密码"
-            rules={[{ required: true, minLength: 6, message: '至少 6 位' }]}
-          >
-            <Input.Password placeholder="请设置登录密码" autoComplete="new-password" />
-          </Form.Item>
+        <Form.Item
+          field="password"
+          label="设置密码"
+          rules={[{ required: true, minLength: 6, message: '至少 6 位' }]}
+        >
+          <Input.Password placeholder="请设置登录密码" autoComplete="new-password" />
+        </Form.Item>
 
-          <Form.Item>
-            <Button type="primary" long loading={submitting} onClick={handleSubmit}>
-              注册
-            </Button>
-          </Form.Item>
-        </F>
-      </div>
+        <Form.Item>
+          <Button type="primary" long loading={submitting} onClick={handleSubmit}>
+            注册并登录
+          </Button>
+        </Form.Item>
+      </F>
     </div>
   )
 }

@@ -244,6 +244,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     applyResolvedTheme(t.theme)
   }, [t.theme, t.primary])
+  // Mirror density class onto <html> so Arco popups portaled to <body>
+  // can resolve density-driven design tokens (--row-h / --pad-* / --font-*).
+  useEffect(() => {
+    const root = document.documentElement
+    root.classList.remove('density-compact', 'density-regular', 'density-comfy')
+    root.classList.add(`density-${t.density}`)
+  }, [t.density])
   const value = useMemo<AppCtx>(
     () => ({ t, setTweak, registerNavGuard, requestConfirm, requestPrompt }),
     [t, setTweak, registerNavGuard, requestConfirm, requestPrompt],

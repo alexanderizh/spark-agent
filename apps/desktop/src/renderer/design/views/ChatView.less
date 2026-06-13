@@ -1,9 +1,37 @@
+.chat-stream-viewport {
+  position: relative;
+}
+
 .chat-stream {
   position: relative;
   display: flex;
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+}
+
+/* 切换会话加载遮罩：保留旧内容并轻微变暗，待新历史就绪后一次性替换，避免空白闪屏 */
+.chat-switching-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  backdrop-filter: blur(1px);
+  animation: chat-switching-fade-in 0.12s ease;
+  pointer-events: none;
+
+  svg {
+    color: var(--text-muted);
+    animation: spin 0.9s linear infinite;
+  }
+}
+
+@keyframes chat-switching-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .chat-stream-inner {
@@ -218,3 +246,283 @@
     display: inline-block;
   }
 }
+
+/* ─── ProviderModelPicker：供应商图标 ───
+ * 下拉里只在供应商名（group title）前面展示彩色供应商 logo；
+ * 输入框选中态的图标也由写死的 ModelIcon 换成对应供应商图标。
+ */
+.composer-model-picker .composer-select-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.composer-model-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.composer-model-group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ─── ComposerActionsMenu：输入框「+」弹窗（原上传按钮升级版） ───
+ * 位置：composer-param-bar 第一个；弹窗向上展开
+ */
+.composer-actions-menu {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+
+  .composer-actions-trigger {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-2);
+    background: transparent;
+    border: 1px solid transparent;
+    transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+
+    &:hover:not(:disabled) {
+      background: var(--fill-2);
+      color: var(--text-1);
+    }
+
+    &.is-open,
+    &:active {
+      background: var(--fill-3);
+      color: var(--text-1);
+    }
+  }
+
+  &.is-disabled .composer-actions-trigger {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+}
+
+.composer-actions-popup {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--bg-elevated, var(--color-bg-2, #fff));
+  border: 1px solid var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.08)));
+  border-radius: 10px;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  animation: composer-actions-popup-in 120ms ease-out;
+}
+
+@keyframes composer-actions-popup-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.composer-actions-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-1);
+  font-size: 13px;
+  line-height: 18px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background-color 100ms ease;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--fill-2);
+    outline: none;
+  }
+
+  &.has-sub {
+    padding-right: 6px;
+  }
+
+  &.sub-open {
+    background: var(--fill-2);
+  }
+}
+
+.composer-actions-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: var(--text-2);
+  flex-shrink: 0;
+}
+
+.composer-actions-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.composer-actions-item-chev {
+  color: var(--text-3, var(--text-2));
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.composer-actions-item-badge {
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--text-3);
+  background: var(--fill-2);
+  border-radius: 999px;
+  padding: 1px 6px;
+  flex-shrink: 0;
+}
+
+.composer-actions-divider {
+  height: 1px;
+  background: var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.06)));
+  margin: 4px 0;
+}
+
+/* ─── 技能子菜单：从主菜单右侧偏移展开 ─── */
+.composer-actions-sub {
+  position: absolute;
+  left: calc(100% + 4px);
+  top: 0;
+  bottom: auto;
+  min-width: 180px;
+  max-width: 240px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-elevated, var(--color-bg-2, #fff));
+  border: 1px solid var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.08)));
+  border-radius: 10px;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.08),
+    0 1px 2px rgba(0, 0, 0, 0.04);
+  z-index: 51;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.composer-actions-sub-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.composer-actions-sub-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--text-1);
+  font-size: 12.5px;
+  line-height: 16px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background-color 100ms ease;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--fill-2);
+    outline: none;
+  }
+
+  &.is-utility {
+    color: var(--text-2);
+  }
+}
+
+.composer-actions-sub-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-3, var(--text-2));
+  flex-shrink: 0;
+}
+
+.composer-actions-sub-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.composer-actions-sub-empty {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 16px;
+}
+
+.composer-actions-sub-divider {
+  height: 1px;
+  background: var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.06)));
+  margin: 4px 0;
+}
+
+/* 当子菜单接近视口右边缘时，反向到左侧展开 */
+.composer-actions-item.has-sub.sub-open > .composer-actions-sub {
+  /* 默认是 right 侧，ChatView 中靠左，常规就能展开 */
+}
+
+/* ─── AgentPicker：当前 agent / 已保存团队头像 ───
+ * Trigger 头部：占满 composer-select-icon 容器（18×18），圆形贴合小尺寸
+ * 菜单项：用 16×16 圆形头像代替默认的 Code/Bot/Team 图标，保留原有间距与对齐
+ */
+.composer-agent-picker .composer-select-icon .composer-agent-picker-avatar,
+.composer-agent-picker .composer-select-icon .spark-avatar-fallback {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.composer-menu-item-label .composer-menu-avatar,
+.composer-menu-item-label .spark-avatar-fallback {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: block;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+

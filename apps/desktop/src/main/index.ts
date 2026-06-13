@@ -17,6 +17,19 @@
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, shell } from 'electron'
 import { join } from 'path'
 
+// ─── EPIPE guard ─────────────────────────────────────────────────────────────
+// 当主进程从控制台分离启动（Windows 上常见）或父进程关闭后，stdout/stderr 的管道
+// 会断开，此后任何 console.* 写入都会抛出 EPIPE。若未处理便成为 uncaughtException，
+// 触发 Electron 的崩溃弹窗（"A JavaScript error occurred in the main process"）。
+// 这里在输出流上挂 'error' 监听，吞掉 EPIPE：有监听器后，流错误不会升级成
+// uncaughtException，也就不会触发崩溃弹窗。其他流错误仍重新抛出，保留诊断能力。
+const ignoreEpipe = (err: NodeJS.ErrnoException): void => {
+  if (err?.code === 'EPIPE') return
+  throw err
+}
+process.stdout?.on('error', ignoreEpipe)
+process.stderr?.on('error', ignoreEpipe)
+
 // ─── CDP endpoint for Playwright MCP browser automation ──────────────────────
 // MUST be set before app.whenReady() fires. Allocate a fixed port in the
 // 9222-9230 range; if collision is detected at runtime we fall back to

@@ -68,7 +68,14 @@ export class AuthService {
   /** 启动后尝试自动登录（验证已存 token 是否仍有效）*/
   async bootstrap(): Promise<AuthBootstrapResponse> {
     if (!this.tokenStore.isAuthenticated()) {
-      return { isAuthenticated: false, baseUrl: this.client.getBaseUrl(), reason: 'no-session' }
+      const lastError = this.tokenStore.getLastError()
+      const base: AuthBootstrapResponse = {
+        isAuthenticated: false,
+        baseUrl: this.client.getBaseUrl(),
+        reason: 'no-session',
+        keytarAvailable: this.tokenStore.isPersistent(),
+      }
+      return lastError ? { ...base, keytarError: lastError } : base
     }
 
     try {
@@ -84,6 +91,7 @@ export class AuthService {
         isAuthenticated: false,
         baseUrl: this.client.getBaseUrl(),
         reason: msg.includes('登录已过期') ? 'refresh-failed' : 'me-fetch-failed',
+        keytarAvailable: this.tokenStore.isPersistent(),
       }
     }
   }

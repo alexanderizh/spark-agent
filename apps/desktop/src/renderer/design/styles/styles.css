@@ -134,7 +134,8 @@ html[data-theme="dark"],
 }
 
 /* ---------- DENSITY MODES ---------- */
-.app.density-compact {
+.app.density-compact,
+html.density-compact {
   --pad-xs: 4px;
   --pad-sm: 6px;
   --pad-md: 10px;
@@ -145,7 +146,8 @@ html[data-theme="dark"],
   --font-base: 12.5px;
   --font-sm: 11.5px;
 }
-.app.density-comfy {
+.app.density-comfy,
+html.density-comfy {
   --pad-xs: 8px;
   --pad-sm: 10px;
   --pad-md: 14px;
@@ -1015,8 +1017,8 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 
 /* ── Scrollbar — global thin & elegant ── */
 *::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;

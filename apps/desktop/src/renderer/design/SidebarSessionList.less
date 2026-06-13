@@ -147,11 +147,61 @@
 }
 
 .proj-session.is-error {
+  position: relative;
   border-left-color: transparent;
   background: transparent;
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--danger);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 14%, transparent);
+    transform: translateY(-50%);
+  }
 }
 
 .proj-session.is-cancelled {
   border-left-color: transparent;
   background: transparent;
+}
+
+/* ─── Flat group (date / state / none 分组) ─── */
+.flat-group-head {
+  cursor: default;
+
+  &:hover {
+    background: transparent;
+  }
+}
+
+.flat-group-head .proj-name {
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+
+/* ─── Global filter bar (groupBy ≠ project 时显示) ─── */
+.sidebar-global-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 8px 6px;
+  gap: 6px;
+}
+
+/* ─── Context-menu open state (right-click on a session) ─── */
+.chat-item-compact.is-context-open {
+  background: color-mix(in srgb, var(--accent, var(--brand, #4f8cff)) 14%, transparent);
+  box-shadow: inset 2px 0 0 0 var(--accent, var(--brand, #4f8cff));
+}
+
+.chat-item-compact.is-context-open .item-menu-wrap {
+  display: flex;
 }

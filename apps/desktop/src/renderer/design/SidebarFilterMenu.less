@@ -1,0 +1,191 @@
+/* SidebarFilterMenu — 会话栏过滤器弹层样式 */
+
+.sidebar-filter-btn {
+  width: 22px;
+  height: 22px;
+  position: relative;
+  flex-shrink: 0;
+  opacity: 0;
+  color: var(--text-muted);
+
+  &:hover {
+    color: var(--text);
+  }
+
+  &.is-active,
+  &.is-open {
+    opacity: 1;
+    color: var(--text);
+  }
+
+  .sidebar-filter-btn-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--primary, #2f6cff);
+  }
+}
+
+.proj-head:hover .sidebar-filter-btn {
+  opacity: 1;
+}
+
+/* 主菜单容器 */
+.sidebar-filter-menu {
+  min-width: 220px;
+  padding: var(--pad-xs);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown, 100);
+}
+
+/* 一级菜单条目 */
+.sidebar-filter-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 0 var(--pad-sm) 0 var(--pad-md);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: default;
+  gap: var(--pad-sm);
+
+  &:hover,
+  &.is-open {
+    background: var(--hover);
+    outline: none;
+  }
+}
+
+.sidebar-filter-row-label {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+}
+
+.sidebar-filter-row-value {
+  color: var(--text-muted);
+  font-size: var(--font-xs);
+
+  &.is-highlight {
+    color: var(--primary, #2f6cff);
+  }
+}
+
+.sidebar-filter-row-chev {
+  color: var(--text-faint);
+  flex-shrink: 0;
+}
+
+.sidebar-filter-divider {
+  margin: var(--pad-xs) var(--pad-xs);
+  height: 1px;
+  background: var(--border);
+}
+
+.sidebar-filter-clear {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: 0 var(--pad-sm) 0 var(--pad-md);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: default;
+
+  &:hover {
+    background: var(--hover);
+    outline: none;
+  }
+}
+
+/* 二级子菜单 */
+.sidebar-filter-submenu {
+  min-width: 160px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: var(--pad-xs);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: var(--z-dropdown, 100);
+}
+
+.sidebar-filter-submenu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--row-h);
+  padding: var(--pad-xs) var(--pad-sm) var(--pad-xs) var(--pad-md);
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  font-size: var(--font-sm);
+  text-align: left;
+  cursor: default;
+  gap: var(--pad-sm);
+
+  &:hover {
+    background: var(--hover);
+    outline: none;
+  }
+
+  &.is-active {
+    color: var(--primary, #2f6cff);
+  }
+}
+
+.sidebar-filter-submenu-item-label {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sidebar-filter-submenu-item-text {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-filter-submenu-item-hint {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-filter-submenu-check {
+  color: var(--primary, #2f6cff);
+  flex-shrink: 0;
+}
+
+/* Arco Trigger 弹层默认带 padding/box-shadow,这里去掉避免重复 */
+.sidebar-filter-trigger,
+.sidebar-filter-sub-trigger {
+  &.arco-trigger-popup {
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    padding: 0;
+  }
+}

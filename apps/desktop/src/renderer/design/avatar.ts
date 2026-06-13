@@ -1,9 +1,11 @@
 import { hashAgentId } from '@spark/shared'
 import platformManagerAvatarUrl from '../assets/platform-manager-avatar.png'
+import guestAvatarUrl from '../assets/guest-avatar.png'
 
 export type SparkAvatarConfig =
   | { kind: 'url'; url: string }
   | { kind: 'builtin'; id: 'platform-manager' }
+  | { kind: 'builtin'; id: 'guest' }
   | { kind: 'dicebear'; seed: string; style?: string }
   | { kind: 'upload'; dataUrl: string }
 
@@ -22,6 +24,9 @@ export function normalizeAvatarConfig(value: unknown): SparkAvatarConfig | null 
   }
   if (record.kind === 'builtin' && record.id === 'platform-manager') {
     return { kind: 'builtin', id: 'platform-manager' }
+  }
+  if (record.kind === 'builtin' && record.id === 'guest') {
+    return { kind: 'builtin', id: 'guest' }
   }
   if (record.kind === 'dicebear' && typeof record.seed === 'string' && record.seed.trim().length > 0) {
     return {
@@ -49,13 +54,26 @@ export function getAgentAvatarConfig(metadata: Record<string, unknown> | undefin
   return normalizeAvatarConfig(metadata?.avatar) ?? createDefaultAvatar(name || agentId || 'agent')
 }
 
+/**
+ * 用户是否显式配置了头像（区别于 `getAgentAvatarConfig` 的 fallback 默认头像）。
+ * 用于在选择器等位置判断是否展示图片，而不是继续用内置默认图标。
+ */
+export function hasCustomAvatar(metadata: Record<string, unknown> | undefined): boolean {
+  return normalizeAvatarConfig(metadata?.avatar) != null
+}
+
 export function getUserAvatarConfig(value: unknown): SparkAvatarConfig {
   return normalizeAvatarConfig(value) ?? createDefaultAvatar('User')
+}
+
+export function getGuestAvatarConfig(): SparkAvatarConfig {
+  return { kind: 'builtin', id: 'guest' }
 }
 
 export function resolveAvatarSrc(config: SparkAvatarConfig): string {
   if (config.kind === 'upload') return config.dataUrl
   if (config.kind === 'url') return config.url
+  if (config.kind === 'builtin' && config.id === 'guest') return guestAvatarUrl
   if (config.kind === 'builtin') return platformManagerAvatarUrl
   return generateLocalAvatarDataUrl(config.seed || 'spark-agent', config.style)
 }

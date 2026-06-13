@@ -14,11 +14,9 @@ import { Icons } from './Icons'
 import { SparkInput } from './components/FormControls'
 import {
   useSessionSidebar,
-  filterSessionsByTime,
   buildProjectGroups,
   type SessionSummary,
   type ProjectGroup,
-  type TimeFilter,
 } from './SessionSidebarContext'
 import type {
   SessionId,
@@ -26,6 +24,13 @@ import type {
   AgentStatusValue,
 } from '@spark/protocol'
 import { useApp } from './AppContext'
+import {
+  SidebarFilterMenu,
+  DEFAULT_SIDEBAR_FILTER,
+  type SidebarFilterState,
+  type SidebarStatusFilter,
+  type SidebarLastActivityFilter,
+} from './SidebarFilterMenu'
 
 /* ─── Project collapsed state persistence ─── */
 const PROJECT_COLLAPSED_KEY = 'spark-agent:project-collapsed'
@@ -46,6 +51,132 @@ function setProjectCollapsed(workspaceId: string, collapsed: boolean): void {
   try { window.localStorage.setItem(PROJECT_COLLAPSED_KEY, JSON.stringify([...set])) } catch { /* */ }
 }
 
+/* ─── Sidebar filter persistence ─── */
+const SIDEBAR_FILTER_KEY = 'spark-agent:sidebar-filter'
+
+function readSidebarFilter(): SidebarFilterState {
+  try {
+    const raw = window.localStorage.getItem(SIDEBAR_FILTER_KEY)
+    if (!raw) return { ...DEFAULT_SIDEBAR_FILTER }
+    const parsed = JSON.parse(raw) as Partial<SidebarFilterState>
+    return {
+      status: parsed.status ?? DEFAULT_SIDEBAR_FILTER.status,
+      projectId: parsed.projectId ?? DEFAULT_SIDEBAR_FILTER.projectId,
+      lastActivity: parsed.lastActivity ?? DEFAULT_SIDEBAR_FILTER.lastActivity,
+      groupBy: parsed.groupBy ?? DEFAULT_SIDEBAR_FILTER.groupBy,
+    }
+  } catch {
+    return { ...DEFAULT_SIDEBAR_FILTER }
+  }
+}
+
+function writeSidebarFilter(state: SidebarFilterState): void {
+  try { window.localStorage.setItem(SIDEBAR_FILTER_KEY, JSON.stringify(state)) }
+  catch { /* */ }
+}
+
+/* ─── Filter helpers ─── */
+function filterByStatus(sessions: SessionSummary[], status: SidebarStatusFilter): SessionSummary[] {
+  if (status === 'all') return sessions
+  if (status === 'archived') return sessions.filter(s => s.archivedAt != null)
+  return sessions.filter(s => s.archivedAt == null)
+}
+
+function filterByLastActivity(sessions: SessionSummary[], range: SidebarLastActivityFilter): SessionSummary[] {
+  if (range === 'all') return sessions
+  const days = Number.parseInt(range, 10)
+  if (!Number.isFinite(days)) return sessions
+  const cutoff = Date.now() - days * 24 * 60 * 60 * 1000
+  return sessions.filter((session) => {
+    const updatedAt = new Date(session.updatedAt).getTime()
+    return Number.isFinite(updatedAt) && updatedAt >= cutoff
+  })
+}
+
+function filterByProject(sessions: SessionSummary[], projectId: string): SessionSummary[] {
+  if (projectId === 'all') return sessions
+  return sessions.filter(s => s.workspaceIds.includes(projectId))
+}
+
+function applySessionFilters(
+  sessions: SessionSummary[],
+  filter: SidebarFilterState,
+): SessionSummary[] {
+  return filterByLastActivity(
+    filterByProject(filterByStatus(sessions, filter.status), filter.projectId),
+    filter.lastActivity,
+  )
+}
+
+/* ─── Group by helpers ─── */
+type DisplayGroup = {
+  id: string
+  label: string
+  sessions: SessionSummary[]
+  workspace?: WorkspaceInfo
+}
+
+const DATE_GROUP_ORDER = ['今天', '昨天', '本周', '本月', '更早'] as const
+
+function getDateGroupLabel(updatedAt: string): string {
+  const then = new Date(updatedAt).getTime()
+  if (!Number.isFinite(then)) return '更早'
+  const now = Date.now()
+  const startOfToday = new Date()
+  startOfToday.setHours(0, 0, 0, 0)
+  const todayMs = startOfToday.getTime()
+  const dayMs = 24 * 60 * 60 * 1000
+  if (then >= todayMs) return '今天'
+  if (then >= todayMs - dayMs) return '昨天'
+  if (then >= now - 7 * dayMs) return '本周'
+  if (then >= now - 30 * dayMs) return '本月'
+  return '更早'
+}
+
+const STATE_GROUP_ORDER = ['运行中', '等待权限', '等待输入', '出错', '已完成', '已取消', '空闲'] as const
+
+function getStateGroupLabel(sessionStatus: string, agentStatus?: AgentStatusValue): string {
+  const display = getSessionDisplayStatus(sessionStatus, agentStatus)
+  switch (display) {
+    case 'running': return '运行中'
+    case 'waiting_permission': return '等待权限'
+    case 'waiting_user': return '等待输入'
+    case 'completed': return '已完成'
+    case 'error': return '出错'
+    case 'cancelled': return '已取消'
+    default: return '空闲'
+  }
+}
+
+function buildGroupsByDate(sessions: SessionSummary[]): DisplayGroup[] {
+  const buckets = new Map<string, SessionSummary[]>()
+  for (const label of DATE_GROUP_ORDER) buckets.set(label, [])
+  for (const s of sessions) {
+    const label = getDateGroupLabel(s.updatedAt)
+    if (!buckets.has(label)) buckets.set(label, [])
+    buckets.get(label)!.push(s)
+  }
+  return DATE_GROUP_ORDER
+    .filter(label => buckets.get(label)!.length > 0)
+    .map(label => ({ id: `date:${label}`, label, sessions: buckets.get(label)! }))
+}
+
+function buildGroupsByState(
+  sessions: SessionSummary[],
+  agentStatuses: Record<string, AgentStatusValue>,
+): DisplayGroup[] {
+  const buckets = new Map<string, SessionSummary[]>()
+  for (const label of STATE_GROUP_ORDER) buckets.set(label, [])
+  for (const s of sessions) {
+    const label = getStateGroupLabel(s.status, agentStatuses[s.id])
+    if (!buckets.has(label)) buckets.set(label, [])
+    buckets.get(label)!.push(s)
+  }
+  return STATE_GROUP_ORDER
+    .filter(label => buckets.get(label)!.length > 0)
+    .map(label => ({ id: `state:${label}`, label, sessions: buckets.get(label)! }))
+}
+
 /* ─── Helper ─── */
 function formatRelativeTime(value: string): string {
   const then = new Date(value).getTime()
@@ -63,21 +194,10 @@ function formatRelativeTime(value: string): string {
   return `${Math.floor(diffMs / week)} 周`
 }
 
-/* ─── Session Status Types ─── */
-type SessionDisplayStatus =
-  | 'running'           // thinking / calling_tool
-  | 'waiting_permission' // waiting for permission approval
-  | 'waiting_user'      // waiting for user input
-  | 'completed'         // finished successfully
-  | 'error'             // failed
-  | 'cancelled'         // cancelled
-  | 'idle'              // idle / default
-
 function getSessionDisplayStatus(
   sessionStatus: string,
   agentStatus?: AgentStatusValue
-): SessionDisplayStatus {
-  // Agent status takes priority for fine-grained status
+): 'running' | 'waiting_permission' | 'waiting_user' | 'completed' | 'error' | 'cancelled' | 'idle' {
   if (agentStatus) {
     switch (agentStatus) {
       case 'thinking':
@@ -97,12 +217,11 @@ function getSessionDisplayStatus(
         return 'idle'
     }
   }
-  // Fallback to session status
   if (sessionStatus === 'running') return 'running'
   return 'idle'
 }
 
-function getStatusBadgeInfo(status: SessionDisplayStatus): {
+function getStatusBadgeInfo(status: 'running' | 'waiting_permission' | 'waiting_user' | 'completed' | 'error' | 'cancelled' | 'idle'): {
   className: string
   icon: React.ReactNode
   title: string
@@ -232,6 +351,7 @@ function ChatListItem({
   onDelete?: (session: SessionSummary) => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [contextOpen, setContextOpen] = useState(false)
   const displayStatus = useMemo(
     () => getSessionDisplayStatus(s.status, agentStatus),
     [s.status, agentStatus]
@@ -242,8 +362,14 @@ function ChatListItem({
 
   return (
     <div
-      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${statusClass}`}
+      className={`chat-item proj-session chat-item-compact ${active === s.id ? 'active' : ''} ${contextOpen ? 'is-context-open' : ''} ${statusClass}`}
       onClick={() => onClick(s.id)}
+      onContextMenu={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
+        setContextOpen(true)
+        setMenuOpen(true)
+      }}
     >
       <div className="chat-item-row">
         <div className="chat-item-title-compact">
@@ -262,7 +388,10 @@ function ChatListItem({
           <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         )}
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenu open={menuOpen} onOpenChange={(open) => {
+            setMenuOpen(open)
+            if (!open) setContextOpen(false)
+          }}>
             <DropdownMenuTrigger asChild>
               <button
                 className="icon-btn item-menu-btn"
@@ -295,6 +424,7 @@ function ProjectSessionGroup({
   activeSessionId,
   activeWorkspaceId,
   sessionAgentStatuses,
+  filterSlot,
   onSelectWorkspace,
   onSelectSession,
   onNewSession,
@@ -312,6 +442,7 @@ function ProjectSessionGroup({
   activeSessionId: SessionId | null
   activeWorkspaceId: string | null
   sessionAgentStatuses: Record<string, AgentStatusValue>
+  filterSlot?: ReactNode
   onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   onSelectSession: (session: SessionSummary) => void
   onNewSession: (workspaceId: string) => void
@@ -362,6 +493,7 @@ function ProjectSessionGroup({
         >
           <Icons.Plus size={12} />
         </button>
+        {filterSlot}
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger asChild>
@@ -421,6 +553,54 @@ function ProjectSessionGroup({
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+/* ─── FlatGroup — date / state / none 分组用的轻量分组 ─── */
+type FlatGroupActions = {
+  onSelectSession: (session: SessionSummary) => void
+  onRenameSession: (session: SessionSummary) => Promise<void>
+  onToggleSessionPinned: (session: SessionSummary) => Promise<void>
+  onArchiveSession: (session: SessionSummary) => Promise<void>
+  onDeleteSession: (session: SessionSummary) => Promise<void>
+}
+
+function FlatGroup({
+  label,
+  sessions,
+  activeSessionId,
+  sessionAgentStatuses,
+  actions,
+}: {
+  label: string
+  sessions: SessionSummary[]
+  activeSessionId: SessionId | null
+  sessionAgentStatuses: Record<string, AgentStatusValue>
+  actions: FlatGroupActions
+}) {
+  if (sessions.length === 0) return null
+  return (
+    <div className="proj-group flat-group">
+      <div className="proj-head flat-group-head">
+        <span className="proj-name">{label}</span>
+        <span className="proj-count">{sessions.length}</span>
+      </div>
+      <div className="proj-sessions">
+        {sessions.map(session => (
+          <ChatListItem
+            key={session.id}
+            session={session}
+            active={activeSessionId}
+            agentStatus={sessionAgentStatuses[session.id]}
+            onClick={() => actions.onSelectSession(session)}
+            onRename={actions.onRenameSession}
+            onTogglePinned={actions.onToggleSessionPinned}
+            onArchive={actions.onArchiveSession}
+            onDelete={actions.onDeleteSession}
+          />
+        ))}
+      </div>
     </div>
   )
 }
@@ -488,34 +668,79 @@ function CreateProjectModal({
    ============================================================ */
 export function SidebarSessionList() {
   const ctx = useSessionSidebar()
-  const { setTweak } = useApp()
+  const { t, setTweak } = useApp()
 
-  // Time filter
-  const [timeFilter, setTimeFilter] = useState<TimeFilter>('all')
+  // Sidebar global filter (status / project / lastActivity / groupBy)
+  const [filter, setFilter] = useState<SidebarFilterState>(() => readSidebarFilter())
+  const handleFilterChange = useCallback((next: SidebarFilterState) => {
+    setFilter(next)
+    writeSidebarFilter(next)
+  }, [])
+  const handleFilterClear = useCallback(() => {
+    const cleared = { ...DEFAULT_SIDEBAR_FILTER }
+    setFilter(cleared)
+    writeSidebarFilter(cleared)
+  }, [])
 
   // Notice
   const [notice, setNotice] = useState('')
 
-  // "New blank session" — clears active, enters no-project empty state
-  const handleNewBlankSession = useCallback(() => {
-    ctx.setActiveSession(null)
-    ctx.setActiveWorkspace(null)
-    setTweak('view', 'chat')
-  }, [ctx, setTweak])
+  // Active session/workspace highlighting only applies while the chat view is
+  // mounted. When the user navigates to Board/Agents/Settings/etc., the sidebar
+  // should not show any session as "selected" because none is being edited.
+  const isChatView = t.view === 'chat'
+  const effectiveActiveSessionId = isChatView ? ctx.activeSessionId : null
+  const effectiveActiveWorkspaceId = isChatView ? ctx.activeWorkspaceId : null
 
-  // Time-filtered sessions
-  const visibleSessions = filterSessionsByTime(ctx.sessions, timeFilter)
-  const projectGroups = buildProjectGroups(ctx.workspaces, visibleSessions)
-  const noProjectWorkspace = ctx.noProjectWorkspace
-  const noProjectSessions = noProjectWorkspace
-    ? visibleSessions.filter(s => s.workspaceIds.includes(noProjectWorkspace.id))
-    : []
-  const ungroupedSessions = visibleSessions.filter(s => s.workspaceIds.length === 0)
+  // Apply status / project / lastActivity filters
+  const filteredSessions = useMemo(
+    () => applySessionFilters(ctx.sessions, filter),
+    [ctx.sessions, filter],
+  )
+
+  // Build display groups based on groupBy mode
+  const displayGroups = useMemo<DisplayGroup[]>(() => {
+    if (filter.groupBy === 'date') return buildGroupsByDate(filteredSessions)
+    if (filter.groupBy === 'state') {
+      return buildGroupsByState(filteredSessions, ctx.sessionAgentStatuses)
+    }
+    if (filter.groupBy === 'none') {
+      return [{ id: 'none:all', label: '所有会话', sessions: filteredSessions }]
+    }
+    // 'project' mode: each workspace is its own group
+    const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions)
+    const noProjectWorkspace = ctx.noProjectWorkspace
+    const noProject = noProjectWorkspace
+      ? filteredSessions.filter(s => s.workspaceIds.includes(noProjectWorkspace.id))
+      : []
+    const ungrouped = filteredSessions.filter(s => s.workspaceIds.length === 0)
+    const list: DisplayGroup[] = projectGroups.map(g => ({
+      id: `project:${g.workspace.id}`,
+      label: g.workspace.name,
+      sessions: g.sessions,
+      workspace: g.workspace,
+    }))
+    if (noProject.length > 0) {
+      list.push({ id: 'project:no-project', label: '无项目对话', sessions: noProject })
+    }
+    if (ungrouped.length > 0) {
+      list.push({ id: 'project:ungrouped', label: '未归属会话', sessions: ungrouped })
+    }
+    return list
+  }, [filter.groupBy, filteredSessions, ctx.workspaces, ctx.noProjectWorkspace, ctx.sessionAgentStatuses])
+
+  const showGlobalFilterBar = filter.groupBy !== 'project'
+  const filterSlot = (
+    <SidebarFilterMenu
+      state={filter}
+      workspaces={ctx.workspaces}
+      onChange={handleFilterChange}
+      onClear={handleFilterClear}
+    />
+  )
 
   return (
     <div className="sidebar-session-list-inner">
-      {/* Header: filter + action buttons — hidden */}
-
       {/* Current session params panel 已移除 — 权限/推理控制在 ChatView Composer param bar 中 */}
 
       {/* Session list */}
@@ -527,21 +752,38 @@ export function SidebarSessionList() {
             <button className="icon-btn" onClick={() => setNotice('')}><Icons.X size={10} /></button>
           </div>
         )}
+
+        {/* Global filter bar — when not in project-grouping mode */}
+        {showGlobalFilterBar && ctx.sessions.length > 0 && (
+          <div className="sidebar-global-filter-bar">
+            {filterSlot}
+          </div>
+        )}
+
         {ctx.workspaces.length === 0 && ctx.sessions.length === 0 ? (
           <div className="empty-compact">
             <div className="empty-icon"><Icons.Folder size={18} /></div>
             <div className="empty-title">还没有项目</div>
             <div className="empty-desc">先打开已有文件夹，或新建一个项目文件夹</div>
           </div>
+        ) : displayGroups.length === 0 ? (
+          <div className="empty-compact">
+            <div className="empty-icon"><Icons.Sliders size={18} /></div>
+            <div className="empty-title">没有匹配的会话</div>
+            <div className="empty-desc">试试调整筛选条件或清空过滤器</div>
+          </div>
         ) : (
           <>
-                {projectGroups.map(group => (
+            {displayGroups.map((group, idx) => {
+              if (group.workspace) {
+                return (
                   <ProjectSessionGroup
-                    key={group.workspace.id}
-                    group={group}
-                    activeSessionId={ctx.activeSessionId}
-                    activeWorkspaceId={ctx.activeWorkspaceId}
+                    key={group.id}
+                    group={{ workspace: group.workspace, sessions: group.sessions }}
+                    activeSessionId={effectiveActiveSessionId}
+                    activeWorkspaceId={effectiveActiveWorkspaceId}
                     sessionAgentStatuses={ctx.sessionAgentStatuses}
+                    filterSlot={idx === 0 ? filterSlot : undefined}
                     onSelectWorkspace={async (workspace) => {
                       ctx.setActiveWorkspace(workspace.id)
                       await ctx.handleOpenWorkspace(workspace)
@@ -549,7 +791,7 @@ export function SidebarSessionList() {
                     }}
                     onSelectSession={(session) => {
                       ctx.setActiveSession(session.id)
-                      ctx.setActiveWorkspace(group.workspace.id)
+                      ctx.setActiveWorkspace(group.workspace!.id)
                       setTweak('view', 'chat')
                     }}
                     onNewSession={async (workspaceId) => {
@@ -566,49 +808,30 @@ export function SidebarSessionList() {
                     onArchiveSession={ctx.handleArchiveSession}
                     onDeleteSession={ctx.handleDeleteSession}
                   />
-                ))}
-                {noProjectSessions.length > 0 && (
-                  <div className="proj-group">
-                    <div className="chat-list-section-h">无项目对话</div>
-                    {noProjectSessions.map(session => (
-                      <ChatListItem
-                        key={session.id}
-                        session={session}
-                        active={ctx.activeSessionId}
-                        agentStatus={ctx.sessionAgentStatuses[session.id]}
-                        onClick={(id) => {
-                          ctx.setActiveSession(id)
-                          if (noProjectWorkspace) ctx.setActiveWorkspace(noProjectWorkspace.id)
-                          setTweak('view', 'chat')
-                        }}
-                        onRename={ctx.handleRenameSession}
-                        onTogglePinned={ctx.handleToggleSessionPinned}
-                        onArchive={ctx.handleArchiveSession}
-                        onDelete={ctx.handleDeleteSession}
-                      />
-                    ))}
-                  </div>
-                )}
-                {ungroupedSessions.length > 0 && (
-                  <div className="proj-group">
-                    <div className="chat-list-section-h">未归属会话</div>
-                    {ungroupedSessions.map(session => (
-                      <ChatListItem
-                        key={session.id}
-                        session={session}
-                        active={ctx.activeSessionId}
-                        agentStatus={ctx.sessionAgentStatuses[session.id]}
-                        onClick={(id) => { ctx.setActiveSession(id); setTweak('view', 'chat') }}
-                        onRename={ctx.handleRenameSession}
-                        onTogglePinned={ctx.handleToggleSessionPinned}
-                        onArchive={ctx.handleArchiveSession}
-                        onDelete={ctx.handleDeleteSession}
-                      />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
+                )
+              }
+              return (
+                <FlatGroup
+                  key={group.id}
+                  label={group.label}
+                  sessions={group.sessions}
+                  activeSessionId={effectiveActiveSessionId}
+                  sessionAgentStatuses={ctx.sessionAgentStatuses}
+                  actions={{
+                    onSelectSession: (session) => {
+                      ctx.setActiveSession(session.id)
+                      setTweak('view', 'chat')
+                    },
+                    onRenameSession: ctx.handleRenameSession,
+                    onToggleSessionPinned: ctx.handleToggleSessionPinned,
+                    onArchiveSession: ctx.handleArchiveSession,
+                    onDeleteSession: ctx.handleDeleteSession,
+                  }}
+                />
+              )
+            })}
+          </>
+        )}
       </div>
 
       {/* Create Project Modal */}

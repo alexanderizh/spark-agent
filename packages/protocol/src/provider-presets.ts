@@ -205,8 +205,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '腾讯云 Coding Plan',
     provider: 'anthropic',
     apiEndpoint: 'https://api.lkeap.cloud.tencent.com/coding/anthropic',
-    defaultModel: 'tc-code-latest',
-    modelIds: ['tc-code-latest', 'hunyuan-2.0-instruct', 'hunyuan-2.0-thinking', 'minimax-m2.5', 'kimi-k2.5', 'glm-5'],
+    defaultModel: 'glm-5',
+    modelIds: ['glm-5'],
     sourceUrls: [
       'https://cloud.tencent.com/document/product/1823/130092',
     ],
@@ -232,7 +232,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'anthropic',
     apiEndpoint: 'https://coding.dashscope.aliyuncs.com/apps/anthropic',
     defaultModel: 'qwen3.6-plus',
-    modelIds: ['qwen3.6-plus', 'qwen3.5-plus', 'qwen3-coder-plus', 'glm-5', 'kimi-k2.5', 'MiniMax-M2.5'],
+    modelIds: ['qwen3.6-plus', 'glm-5'],
     sourceUrls: [
       'https://help.aliyun.com/zh/model-studio/coding-plan-faq',
       'https://help.aliyun.com/zh/model-studio/text-generation-model/',
@@ -261,8 +261,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '智谱 GLM Coding Plan',
     provider: 'anthropic',
     apiEndpoint: 'https://open.bigmodel.cn/api/anthropic',
-    defaultModel: 'glm-4.7',
-    modelIds: ['glm-4.7', 'glm-4.5-air', 'glm-5-turbo', 'glm-5.1'],
+    defaultModel:  'glm-5.1',
+    modelIds: ['glm-4.7','glm-5-turbo', 'glm-5.1'],
     sourceUrls: [
       'https://docs.bigmodel.cn/cn/coding-plan/tool/claude',
       'https://docs.bigmodel.cn/cn/guide/develop/claude/introduction',
@@ -331,8 +331,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'MiniMax',
     provider: 'anthropic',
     apiEndpoint: 'https://api.minimaxi.com/anthropic',
-    defaultModel: 'MiniMax-M2.7',
-    modelIds: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M2.5', 'MiniMax-M2.5-highspeed'],
+    defaultModel: 'MiniMax-M3',
+    modelIds: ['MiniMax-M2.7', 'MiniMax-M2.7-highspeed', 'MiniMax-M3'],
     sourceUrls: [
       'https://platform.minimaxi.com/docs/api-reference/text-chat-anthropic',
       'https://platform.minimaxi.com/docs/api-reference/models/anthropic/list-models',
@@ -546,7 +546,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'anthropic',
     apiEndpoint: 'https://aigw-sh22.cucloud.cn/v1',
     defaultModel: 'GLM-4.7',
-    modelIds: ['GLM-4.7', 'MiniMax-M2.5', 'Qwen3.5', 'Qwen3-235B', 'DeepSeek-V3.1', 'Unichat-32B'],
+    modelIds: ['GLM-4.7', 'MiniMax-M2.5'],
     sourceUrls: [
       'https://www.cucloud.cn/product/aisp',
       'https://www.cucloud.cn/',
@@ -602,8 +602,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '九章云极 Alaya Code',
     provider: 'anthropic',
     apiEndpoint: 'https://api.alayacode.com/coding/anthropic',
-    defaultModel: 'kimi-k2.5',
-    modelIds: ['kimi-k2.5', 'Qwen3.5-Plus', 'GLM-5', 'MiniMax-M2.5', 'deepseek-v4-pro'],
+    defaultModel: 'GLM-5',
+    modelIds: ['GLM-5', 'deepseek-v4-pro'],
     sourceUrls: [
       'https://www.datacanvas.com/',
       'https://www.alayacode.com/',
@@ -717,8 +717,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '无问芯穹 Coding Plan',
     provider: 'anthropic',
     apiEndpoint: 'https://cloud.infini-ai.com/maas/coding',
-    defaultModel: 'minimax-m2.7',
-    modelIds: ['minimax-m2.7', 'minimax-m2.5', 'glm-5.1', 'glm-5', 'glm-4.7', 'deepseek-v3.2', 'kimi-k2.5'],
+    defaultModel: 'glm-5.1',
+    modelIds: ['glm-5.1'],
     sourceUrls: [
       'https://docs.infini-ai.com/gen-studio-coding-plan/',
     ],
@@ -732,7 +732,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'anthropic',
     apiEndpoint: 'https://api.moonshot.ai/anthropic',
     defaultModel: 'kimi-k2.6',
-    modelIds: ['kimi-k2.6', 'kimi-k2.7-code', 'kimi-k2.5'],
+    modelIds: ['kimi-k2.6'],
     sourceUrls: [
       'https://platform.kimi.com/docs/guide/agent-support',
       'https://platform.moonshot.cn/',
@@ -750,9 +750,6 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelIds: [
       'anthropic/claude-sonnet-4',
       'anthropic/claude-opus-4',
-      'openai/gpt-4.1',
-      'google/gemini-2.5-pro',
-      'deepseek/deepseek-chat',
     ],
     sourceUrls: [
       'https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration',
@@ -767,7 +764,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://models.github.ai/inference',
     defaultModel: 'gpt-4o',
-    modelIds: ['gpt-4o', 'gpt-4.1', 'o3', 'o4-mini', 'Llama-3.3-70B-Instruct', 'Phi-4', 'Mistral-Large-2411'],
+    modelIds: ['gpt-4o'],
     sourceUrls: [
       'https://docs.github.com/github-models/prototyping-with-ai-models',
     ],
@@ -781,7 +778,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://your-newapi-host/v1',
     defaultModel: 'gpt-4.1',
-    modelIds: ['gpt-4.1', 'claude-sonnet-4', 'deepseek-chat'],
+    modelIds: ['gpt-4.1'],
     sourceUrls: [
       'https://www.newapi.ai/zh/docs/apps/claude-code',
       'https://github.com/Calcium-Ion/new-api',
@@ -810,8 +807,8 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: '小米 MiMo',
     provider: 'anthropic',
     apiEndpoint: 'https://api.xiaomimimo.com/anthropic',
-    defaultModel: 'mimo-v2-flash',
-    modelIds: ['mimo-v2-flash', 'mimo-v2-pro', 'mimo-v2.5-pro', 'mimo-v2-omni'],
+    defaultModel: 'mimo-v2.5-flash',
+    modelIds: ['mimo-v2.5-pro', 'mimo-v2.5-flash'],
     sourceUrls: [
       'https://platform.xiaomimimo.com/docs/en-US/integration/claudecode',
       'https://platform.xiaomimimo.com/docs/en-US/quick-start/first-api-call',

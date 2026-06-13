@@ -412,37 +412,111 @@ function mapTaskPermissionMode(
   return undefined
 }
 
+/**
+ * 解析定时任务的执行配置。优先级：
+ *   1. 用户在任务里挑了 modelId → 用挑的 model，并定位到拥有这个 model 的 provider
+ *   2. 否则用户挑了 agentId → 用 agent 自带的 model / provider
+ *   3. 都没挑 → 解析默认 agent，沿用它的 provider / model
+ *
+ * 这样可以避免之前"executor 永远使用 defaultProfile 导致 provider 和 model 错配"
+ * 的问题（例如挑了 OpenAI 的模型，但 defaultProfile 是 Anthropic，结果模型被 SDK
+ * 当成 Anthropic 的请求或者被本地 CLI 兜底覆盖）。
+ */
+async function resolveScheduledTaskRuntime(params: {
+  agentId: string | null | undefined
+  modelId: string | null | undefined
+}): Promise<{
+  providerProfileId: string
+  modelId: string | undefined
+  agentId: string | undefined
+  agentAdapter: SessionAgentAdapter
+}> {
+  const providerService = getProviderService()
+  const agentRepo = getAgentRepository()
+  const profiles = await providerService.listProviders()
+  if (profiles.length === 0) {
+    throw new Error('No provider profile available for scheduled task execution')
+  }
+
+  let providerProfileId: string | null = null
+  let modelId: string | null = params.modelId ?? null
+  let agentId: string | null = params.agentId ?? null
+  let agentAdapterHint: SessionAgentAdapter | null = null
+
+  // 1. 任务里挑了 modelId：找拥有这个 model 的 provider
+  if (modelId) {
+    const owner = profiles.find(
+      (p) => p.defaultModel === modelId || p.modelIds.includes(modelId!),
+    )
+    if (owner) providerProfileId = owner.id
+  }
+
+  // 2. 任务里挑了 agentId：补全 provider / model
+  if (agentId) {
+    const agent = agentRepo.get(agentId)
+    if (agent != null) {
+      if (modelId == null && agent.modelId != null) modelId = agent.modelId
+      if (providerProfileId == null && agent.providerProfileId != null) {
+        providerProfileId = agent.providerProfileId
+      }
+      if (agent.agentAdapter === 'claude' || agent.agentAdapter === 'claude-sdk') {
+        agentAdapterHint = 'claude-sdk'
+      } else if (agent.agentAdapter === 'codex') {
+        agentAdapterHint = 'codex'
+      }
+    }
+  }
+
+  // 3. 兜底：沿用默认 agent + 默认 provider
+  if (providerProfileId == null) {
+    const def = profiles.find((p) => p.isDefault) ?? profiles[0]
+    if (def == null) throw new Error('No provider profile available')
+    providerProfileId = def.id
+  }
+
+  // 确认 providerProfileId 真的存在；不存在则回退到默认
+  if (!profiles.some((p) => p.id === providerProfileId)) {
+    const def = profiles.find((p) => p.isDefault) ?? profiles[0]
+    providerProfileId = def?.id ?? providerProfileId
+  }
+
+  const runtimeDefaults = getRuntimePermissionDefaults()
+  return {
+    providerProfileId: providerProfileId!,
+    modelId: modelId ?? undefined,
+    agentId: agentId ?? undefined,
+    agentAdapter: agentAdapterHint ?? runtimeDefaults.agentAdapter,
+  }
+}
+
 /** Executor function injected into ScheduledTaskService for running tasks */
 const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const sessionService = getSessionService()
-  // Find a suitable provider profile (use default)
-  const providerService = getProviderService()
-  const profiles = await providerService.listProviders()
-  const defaultProfile = profiles.find(p => p.isDefault) ?? profiles[0]
-  if (!defaultProfile) {
-    throw new Error('No provider profile available for scheduled task execution')
-  }
+
+  // 按 user-selected model > agent's model > default 的优先级解析 provider/model
+  const runtime = await resolveScheduledTaskRuntime({
+    agentId: params.agentId,
+    modelId: params.modelId,
+  })
 
   // Fall back to the no-project workspace so triggered sessions stay visible
   // in the session sidebar even when the task didn't specify one.
   const workspaceId = params.workspaceId ?? getNoProjectWorkspaceId() ?? undefined
 
-  // Apply runtime defaults so the scheduled session uses the same adapter /
-  // permission mode policy the user picked for ad-hoc chats; map the form's
-  // 'auto' / 'bypass' onto the proper SessionPermissionMode value.
+  // 把表单的 'auto' / 'bypass' 映射到当前 agentAdapter 下的合法 SessionPermissionMode
   const runtimeDefaults = getRuntimePermissionDefaults()
   const mappedPermissionMode =
-    mapTaskPermissionMode(params.permissionMode, runtimeDefaults.agentAdapter)
+    mapTaskPermissionMode(params.permissionMode, runtime.agentAdapter)
     ?? runtimeDefaults.permissionMode
 
   // Create a new session for this execution
   await ensureNoProjectDirectoryExists()
   const created = await sessionService.createSession({
-    providerProfileId: defaultProfile.id,
-    ...(params.modelId != null ? { modelId: params.modelId } : {}),
-    ...(params.agentId != null ? { agentId: params.agentId } : {}),
+    providerProfileId: runtime.providerProfileId,
+    ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
+    ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),
     ...(workspaceId != null ? { workspaceId } : {}),
-    agentAdapter: runtimeDefaults.agentAdapter,
+    agentAdapter: runtime.agentAdapter,
     permissionMode: mappedPermissionMode,
     title: `[⏰] ${params.taskName}`,
   })
@@ -457,10 +531,10 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const result = await sessionService.sendTurn({
     sessionId: created.sessionId,
     message: params.promptTemplate,
-    providerProfileId: defaultProfile.id,
-    ...(params.modelId != null ? { modelId: params.modelId } : {}),
-    ...(params.agentId != null ? { agentId: params.agentId } : {}),
-    agentAdapter: runtimeDefaults.agentAdapter,
+    providerProfileId: runtime.providerProfileId,
+    ...(runtime.modelId != null ? { modelId: runtime.modelId } : {}),
+    ...(runtime.agentId != null ? { agentId: runtime.agentId } : {}),
+    agentAdapter: runtime.agentAdapter,
     permissionMode: mappedPermissionMode,
   })
 

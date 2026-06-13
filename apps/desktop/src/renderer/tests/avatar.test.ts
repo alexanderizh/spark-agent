@@ -4,6 +4,7 @@ import {
   createDefaultAvatar,
   generateDefaultAvatarUrl,
   getAgentAvatarConfig,
+  getGuestAvatarConfig,
   getUserAvatarConfig,
   normalizeAvatarConfig,
   resolveAvatarSrc,
@@ -17,6 +18,13 @@ describe('avatar config', () => {
     expect(resolveAvatarSrc(avatar!)).toBe('data:image/png;base64,abc')
   })
 
+  it('normalizes the guest builtin avatar', () => {
+    const avatar = normalizeAvatarConfig({ kind: 'builtin', id: 'guest' })
+
+    expect(avatar).toEqual({ kind: 'builtin', id: 'guest' })
+    expect(resolveAvatarSrc(avatar!)).toContain('guest-avatar')
+  })
+
   it('falls back to local generated avatars for agents and users', () => {
     const agent = getAgentAvatarConfig({}, 'reviewer', 'Reviewer')
     const user = getUserAvatarConfig(null)
@@ -25,6 +33,13 @@ describe('avatar config', () => {
     expect(decodeURIComponent(resolveAvatarSrc(agent))).toContain('RE')
     expect(resolveAvatarSrc(user)).toMatch(/^data:image\/svg\+xml;charset=utf-8,/)
     expect(decodeURIComponent(resolveAvatarSrc(user))).toContain('US')
+  })
+
+  it('resolves the guest avatar to the bundled guest-avatar asset', () => {
+    const guest = getGuestAvatarConfig()
+
+    expect(guest).toEqual({ kind: 'builtin', id: 'guest' })
+    expect(resolveAvatarSrc(guest)).toContain('guest-avatar')
   })
 
   it('keeps custom default avatars offline', () => {

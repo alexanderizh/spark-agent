@@ -10,7 +10,7 @@ import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSideb
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { AvatarImage } from './design/components/AvatarImage'
-import { getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
+import { getGuestAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
 import { AuthProvider, useAuth } from './design/auth/AuthContext'
 import type { PermissionApprovalRequest, SessionId, UpdateStatus, UserQuestionPrompt } from '@spark/protocol'
 import { useGlobalShortcuts } from './design/hooks/useKeyboard'
@@ -175,10 +175,10 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [navExpanded, setNavExpanded] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
-  // 已登录时使用云端用户头像/昵称；未登录时使用本地"灰白默认"占位
+  // 已登录时使用云端用户头像/昵称；未登录时使用产品 logo（白底）作为占位
   const userAvatarSrc = auth.isAuthenticated
     ? (auth.user?.avatarUrl || resolveAvatarSrc(getUserAvatarConfig(null)))
-    : '' // 空字符串 → 用灰白占位
+    : resolveAvatarSrc(getGuestAvatarConfig())
   const userName = auth.isAuthenticated
     ? (auth.user?.nickname || auth.user?.account || '用户')
     : '未登录'
@@ -392,19 +392,15 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               style={{ cursor: 'pointer' }}
             >
               <div className="avatar sidebar-user-avatar">
-                {auth.isAuthenticated && userAvatarSrc ? (
+                {userAvatarSrc ? (
                   <AvatarImage
                     src={userAvatarSrc}
                     seed={auth.user?.account || 'spark-user'}
                     name={userName}
-                    alt="用户头像"
-                    className="sidebar-user-avatar-image"
+                    alt={auth.isAuthenticated ? '用户头像' : '未登录占位头像'}
+                    className={`sidebar-user-avatar-image${auth.isAuthenticated ? '' : ' sidebar-user-avatar-image-guest'}`}
                   />
-                ) : (
-                  <div className="sidebar-user-avatar-guest" aria-hidden>
-                    <Icons.User size={16} />
-                  </div>
-                )}
+                ) : null}
               </div>
               <div className="sidebar-user-info">
                 <div className="name">{userName}</div>
