@@ -1,6 +1,10 @@
 import React from 'react'
 import { ThemeProvider } from '@lobehub/ui'
 import type { ThemeAppearance } from 'antd-style'
+import '@lobehub/webfont-geist/css/index.css'
+import '@lobehub/webfont-geist-mono/css/index.css'
+import '@lobehub/webfont-harmony-sans-sc/css/index.css'
+import 'katex/dist/katex.min.css'
 import type { ResolvedTheme, ThemeMode } from '../AppContext'
 
 type LobeThemeProviderProps = {
@@ -30,6 +34,7 @@ export function LobeThemeProvider({
     <ThemeProvider
       appearance={appearance}
       themeMode={themeMode === 'system' ? 'auto' : themeMode}
+      enableCustomFonts={false}
       theme={{
         token: {
           colorPrimary: primary,

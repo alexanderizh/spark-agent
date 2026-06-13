@@ -33,7 +33,7 @@ export function AuthBaseUrlBadge(): React.ReactElement {
         open={editing}
         onCancel={() => setEditing(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <div className="auth-baseurl-edit">
           <p>输入同步服务的 API URL：</p>

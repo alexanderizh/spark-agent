@@ -100,6 +100,7 @@ function GlobalErrorFallback({ error, name, onRetry, onReport }: {
 }) {
   return (
     <div className="error-boundary-fallback error-boundary-global">
+      <div className="error-boundary-drag-bar" aria-hidden />
       <div className="error-boundary-inner">
         <div className="error-boundary-icon">
           <Icons.AlertTriangle size={36} />

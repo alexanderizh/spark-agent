@@ -85,6 +85,13 @@ export default defineConfig({
       alias: {
         '@renderer': resolve('src/renderer'),
         '@': resolve('src/renderer'),
+        // @lobehub/emojilib 的 index.js 是 CJS shim（用 __dirname + fs.readFileSync 读 index.json），
+        // 浏览器无 __dirname / fs，会抛 "ReferenceError: __dirname is not defined"。
+        // alias 直接指向 JSON —— Vite 原生支持 JSON import，等价于 emojilib 想导出的对象。
+        '@lobehub/emojilib': resolve(
+          __dirname,
+          '../../node_modules/@lobehub/emojilib/index.json',
+        ),
       },
     },
     plugins: [react(), tailwindcss()],

@@ -199,7 +199,7 @@ export function HistoryImportModal() {
       onCancel={close}
       footer={null}
       width={880}
-      destroyOnClose
+      destroyOnHidden
       className="history-import-modal"
     >
       {phase === 'scanning' && (

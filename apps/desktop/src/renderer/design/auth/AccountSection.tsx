@@ -200,7 +200,7 @@ function AuthenticatedAccountView(): React.ReactElement {
         open={editingBaseUrl}
         onCancel={() => setEditingBaseUrl(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <p>输入同步服务的 API URL：</p>
         <Input
@@ -222,7 +222,7 @@ function AuthenticatedAccountView(): React.ReactElement {
         open={passwordModal}
         onCancel={() => setPasswordModal(false)}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <ChangePasswordForm
           onClose={() => setPasswordModal(false)}

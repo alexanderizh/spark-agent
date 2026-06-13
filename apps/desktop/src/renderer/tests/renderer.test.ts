@@ -424,28 +424,80 @@ describe('Renderer Smoke Tests', () => {
         }
         return new Proxy(components, {
           get(target, prop: string | symbol) {
+            if (prop === 'then') return undefined
             if (prop in target) return target[prop as keyof typeof target]
             return makeComponent('div')
           },
         })
       })
       vi.doMock('@lobehub/icons', () =>
-        new Proxy(
-          { __esModule: true },
-          {
-            get(target, prop: string | symbol) {
-              if (prop in target) return target[prop as keyof typeof target]
-              return {
-                Avatar: ({ size }: { size?: number }) =>
-                  React.createElement('span', {
-                    'data-lobe-icon': String(prop),
-                    style: { width: size, height: size },
-                  }),
-              }
-            },
-          },
-        ),
+        ({
+          __esModule: true,
+          ...Object.fromEntries(
+            [
+              'Amp',
+              'Alibaba',
+              'Antigravity',
+              'Anthropic',
+              'Baidu',
+              'Bailian',
+              'Claude',
+              'ClaudeCode',
+              'Cline',
+              'CodeBuddy',
+              'Codex',
+              'Copilot',
+              'Cursor',
+              'DeepSeek',
+              'Devin',
+              'GithubCopilot',
+              'Github',
+              'Google',
+              'HuaweiCloud',
+              'IFlyTekCloud',
+              'Infinigence',
+              'KiloCode',
+              'Kling',
+              'Kiro',
+              'Minimax',
+              'Moonshot',
+              'NewAPI',
+              'Ollama',
+              'OpenCode',
+              'OpenAI',
+              'OpenRouter',
+              'Qoder',
+              'Qwen',
+              'Replit',
+              'RooCode',
+              'SiliconCloud',
+              'StateCloud',
+              'TencentCloud',
+              'Trae',
+              'Volcengine',
+              'Windsurf',
+              'XiaomiMiMo',
+              'Zhipu',
+            ].map((name) => {
+              const Icon = ({ size }: { size?: number }) =>
+                React.createElement('span', {
+                  'data-lobe-icon': name,
+                  style: { width: size, height: size },
+                })
+              Icon.Avatar = Icon
+              return [name, Icon]
+            }),
+          ),
+        }),
       )
+      vi.doMock('../design/AppContext', () => ({
+        AppProvider: ({ children }: { children: React.ReactNode }) => children,
+        useApp: () => ({
+          t: {},
+          requestConfirm: vi.fn(async () => false),
+          requestPrompt: vi.fn(async () => null),
+        }),
+      }))
       const { ChatView } = await import('../design/views/ChatView')
 
       await act(async () => {

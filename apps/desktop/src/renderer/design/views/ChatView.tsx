@@ -263,7 +263,6 @@ const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const CHAT_MESSAGE_ESTIMATED_HEIGHT = 180
 const CHAT_MESSAGE_OVERSCAN = 8
-const SESSION_HISTORY_PAGE_SIZE = 80
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
 /**
@@ -493,7 +492,7 @@ export function ChatView({
   // ── Session status updates via context ──
   const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
     sessionCtx.updateSessionInList(sessionId, { status })
-  }, [sessionCtx])
+  }, [sessionCtx.updateSessionInList])
   const handleActiveSessionStatusChange = useCallback(
     (status: SessionSummary['status']) => {
       if (active != null) setSessionStatus(active, status)
@@ -745,9 +744,10 @@ export function ChatView({
         )}
 
         {active != null && (
-          <>
+          <Fragment key="active-session-content">
             {!showEmptyHero && (
               <ChatTabbar
+                key="chat-tabbar"
                 session={activeSession}
                 workspace={activeWorkspace}
                 agentStatus={agentStatus}
@@ -759,6 +759,7 @@ export function ChatView({
               />
             )}
             <ChatStream
+              key="chat-stream"
               sessionId={active}
               onStatusChange={setAgentStatus}
               onUsageChange={setContextInputTokens}
@@ -782,7 +783,7 @@ export function ChatView({
                 onCancel={handleCancelQuestion}
               />
             )}
-          </>
+          </Fragment>
         )}
 
         {composerNode}
@@ -1119,9 +1120,6 @@ function ChatStream({
   const [agentIsRunning, setAgentIsRunning] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
-  // 窗口化加载：是否还有更早的历史可加载 + 是否正在加载更早一页（顶部 loading 用）
-  const [hasMoreHistory, setHasMoreHistory] = useState(false)
-  const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const builderRef = useRef(new MessageBuilder())
   const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
@@ -1148,16 +1146,33 @@ function ChatStream({
   const assistantAvatar = getAgentAvatarConfig(assistantAgent?.metadata, assistantAgentId, assistantName)
   const assistantAvatarSrc = resolveAvatarSrc(assistantAvatar)
 
-  // ── 窗口化加载状态 ──
-  // loadedEventsRef：当前已加载到内存的「历史窗口 + 实时」event（按 seq 升序、按 id 去重）。
-  //   它是构建消息模型与「加载更早」时增量重建的唯一数据源。
-  // oldestSeqRef：当前已加载最旧 event 的 seq，向上翻页时作为 beforeSeq。
-  // hasMoreHistoryRef / loadingOlderRef：与对应 state 同步的 ref，供事件回调/滚动处理同步读取。
+  // ── 历史加载状态 ──
+  // loadedEventsRef：当前已加载到内存的历史 + 实时 event，用于删除消息时同步剔除对应 event。
   const loadedEventsRef = useRef<AgentEvent[]>([])
-  const oldestSeqRef = useRef<number | undefined>(undefined)
-  const hasMoreHistoryRef = useRef(false)
-  const loadingOlderRef = useRef(false)
-  const loadOlderRef = useRef<() => void>(() => {})
+  const viewCallbacksRef = useRef({
+    onMessagesChange,
+    onUsageChange,
+    onUsageDataChange,
+    onStatusChange,
+    onSessionStatusChange,
+    onContextUsageChange,
+    onProjectContextChange,
+    onTurnPromptSnapshotsChange,
+    onPlanProposed,
+    onLoadingChange,
+  })
+  viewCallbacksRef.current = {
+    onMessagesChange,
+    onUsageChange,
+    onUsageDataChange,
+    onStatusChange,
+    onSessionStatusChange,
+    onContextUsageChange,
+    onProjectContextChange,
+    onTurnPromptSnapshotsChange,
+    onPlanProposed,
+    onLoadingChange,
+  }
 
   /**
    * commitEventsToView — 把一段已加载的 event 窗口构建成消息并渲染。
@@ -1168,31 +1183,32 @@ function ChatStream({
    */
   const commitEventsToView = useCallback(
     (events: AgentEvent[], deriveMeta: boolean) => {
+      const callbacks = viewCallbacksRef.current
       const builder = new MessageBuilder()
       for (const event of events) builder.processEvent(event)
       builderRef.current = builder
       const nextMessages = builder.getAllMessages()
       setMessages(nextMessages)
-      onMessagesChange(nextMessages)
+      callbacks.onMessagesChange(nextMessages)
       if (!deriveMeta) return nextMessages
 
-      onUsageChange(getLatestInputTokens(events))
+      callbacks.onUsageChange(getLatestInputTokens(events))
       const historyUsage = buildUsageDataFromEvents(events)
       usageRef.current = historyUsage
-      onUsageDataChange(historyUsage)
+      callbacks.onUsageDataChange(historyUsage)
       const latestStatus = getLatestAgentStatus(events)
       setAgentIsRunning(isRunningAgentStatus(latestStatus))
       if (latestStatus != null) {
         applyAgentStatus(
           latestStatus,
-          onStatusChange,
-          onSessionStatusChange,
+          callbacks.onStatusChange,
+          callbacks.onSessionStatusChange,
           isStreamingRef,
           userScrolledRef,
         )
       }
       const latestContext = getLatestContextUsageEvent(events)
-      onContextUsageChange(
+      callbacks.onContextUsageChange(
         latestContext != null
           ? {
               estimatedTokens: latestContext.estimatedTokens,
@@ -1202,61 +1218,41 @@ function ChatStream({
             }
           : null,
       )
-      onProjectContextChange(getLatestProjectContextEvent(events))
-      onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
+      callbacks.onProjectContextChange(getLatestProjectContextEvent(events))
+      callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
       // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
       // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
       const pendingPlan = builder.getPendingPlan()
-      if (pendingPlan != null) onPlanProposed(pendingPlan)
+      if (pendingPlan != null) callbacks.onPlanProposed(pendingPlan)
       return nextMessages
     },
-    [
-      onMessagesChange,
-      onUsageChange,
-      onUsageDataChange,
-      onStatusChange,
-      onSessionStatusChange,
-      onContextUsageChange,
-      onProjectContextChange,
-      onTurnPromptSnapshotsChange,
-      onPlanProposed,
-    ],
+    [],
   )
 
-  // 切换会话时加载历史：窗口化——只取最新一页，其余向上懒加载
+  // 切换会话时加载完整历史，保证旧会话能恢复全部上下文与消息。
   useEffect(() => {
     const loadId = historyLoadIdRef.current + 1
     historyLoadIdRef.current = loadId
     hydratingRef.current = true
     bufferedEventsRef.current = []
-    // 重置窗口化状态
     loadedEventsRef.current = []
-    oldestSeqRef.current = undefined
-    hasMoreHistoryRef.current = false
-    loadingOlderRef.current = false
-    setHasMoreHistory(false)
-    setIsLoadingOlder(false)
     let cancelled = false
 
     // 不清空旧消息（保留当前内容 + 遮罩 loading，避免空白闪屏）；交由 onLoadingChange 抑制 hero。
     setIsLoadingHistory(true)
-    onLoadingChange?.(true)
+    viewCallbacksRef.current.onLoadingChange?.(true)
 
     isStreamingRef.current = false
     userScrolledRef.current = false
-    onContextUsageChange(null)
-    onProjectContextChange(null)
-    onTurnPromptSnapshotsChange([])
+    viewCallbacksRef.current.onContextUsageChange(null)
+    viewCallbacksRef.current.onProjectContextChange(null)
+    viewCallbacksRef.current.onTurnPromptSnapshotsChange([])
 
-    // 只加载最新一页（窗口尾部），用户进会话立即看到最近内容；更早历史按需向上懒加载。
-    loadSessionHistoryPage(getHistory, sessionId)
-      .then(({ events: pageEvents, hasMore }) => {
+    loadCompleteSessionHistory(getHistory, sessionId)
+      .then((historyEvents) => {
         if (cancelled || historyLoadIdRef.current !== loadId) return
-        const events = mergeSessionEvents(pageEvents, bufferedEventsRef.current)
+        const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
         loadedEventsRef.current = events
-        oldestSeqRef.current = events[0]?.seq
-        hasMoreHistoryRef.current = hasMore
-        setHasMoreHistory(hasMore)
         commitEventsToView(events, true)
       })
       .catch((err) => {
@@ -1275,7 +1271,7 @@ function ChatStream({
           hydratingRef.current = false
           bufferedEventsRef.current = []
           setIsLoadingHistory(false)
-          onLoadingChange?.(false)
+          viewCallbacksRef.current.onLoadingChange?.(false)
         }
       })
 
@@ -1288,56 +1284,9 @@ function ChatStream({
     }
   }, [
     getHistory,
-    onContextUsageChange,
-    onProjectContextChange,
-    onTurnPromptSnapshotsChange,
-    onLoadingChange,
     commitEventsToView,
     sessionId,
   ])
-
-  // 加载更早一页历史（用户滚动到顶部时触发）。prepend 后锚定滚动位置，避免内容跳动。
-  const loadOlderHistory = useCallback(() => {
-    if (loadingOlderRef.current || !hasMoreHistoryRef.current) return
-    const beforeSeq = oldestSeqRef.current
-    if (beforeSeq === undefined) return
-    const loadIdAtRequest = historyLoadIdRef.current
-    loadingOlderRef.current = true
-    setIsLoadingOlder(true)
-    const el = streamRef.current
-    const prevScrollHeight = el?.scrollHeight ?? 0
-    const prevScrollTop = el?.scrollTop ?? 0
-    loadSessionHistoryPage(getHistory, sessionId, beforeSeq)
-      .then(({ events: olderEvents, hasMore }) => {
-        // 会话已切走（historyLoadIdRef 被切换 effect 递增）则丢弃
-        if (historyLoadIdRef.current !== loadIdAtRequest) return
-        if (olderEvents.length > 0) {
-          const merged = mergeSessionEvents(olderEvents, loadedEventsRef.current)
-          loadedEventsRef.current = merged
-          oldestSeqRef.current = merged[0]?.seq ?? oldestSeqRef.current
-          commitEventsToView(merged, false)
-          // 在下一帧（DOM 已更新）按高度增量恢复 scrollTop，保持视觉锚点不动
-          requestAnimationFrame(() => {
-            const el2 = streamRef.current
-            if (el2 != null) {
-              el2.scrollTop = prevScrollTop + (el2.scrollHeight - prevScrollHeight)
-            }
-          })
-        }
-        hasMoreHistoryRef.current = hasMore
-        setHasMoreHistory(hasMore)
-      })
-      .catch((err) => console.error('Failed to load older history:', err))
-      .finally(() => {
-        if (historyLoadIdRef.current !== loadIdAtRequest) return
-        loadingOlderRef.current = false
-        setIsLoadingOlder(false)
-      })
-  }, [getHistory, commitEventsToView, sessionId])
-  // 让滚动处理（[] deps、闭包固定）始终调用到最新的 loadOlderHistory
-  useEffect(() => {
-    loadOlderRef.current = loadOlderHistory
-  }, [loadOlderHistory])
 
   // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
   const flushMessages = useCallback(() => {
@@ -1364,9 +1313,6 @@ function ChatStream({
     if (clearTrigger === undefined || clearTrigger === 0) return
     builderRef.current.clearAll()
     loadedEventsRef.current = []
-    oldestSeqRef.current = undefined
-    hasMoreHistoryRef.current = false
-    setHasMoreHistory(false)
     setMessages([])
     onMessagesChange([])
     onStatusChange('')
@@ -1393,10 +1339,6 @@ function ChatStream({
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
       userScrolledRef.current = distanceFromBottom > threshold
       setShowScrollToBottom(distanceFromBottom > threshold)
-      // 接近顶部时懒加载更早一页（窗口化）
-      if (el.scrollTop < 200 && hasMoreHistoryRef.current && !loadingOlderRef.current) {
-        loadOlderRef.current()
-      }
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
@@ -1573,11 +1515,6 @@ function ChatStream({
     <div className="chat-stream-viewport">
       <div className="chat-stream">
         <div className="chat-stream-inner" ref={streamRef}>
-          {isLoadingOlder && (
-            <div className="chat-load-older" aria-hidden="true">
-              <span className="chat-loading-spinner" />
-            </div>
-          )}
           {messages.map((msg, index) =>
             msg.role === 'user' ? (
               <UserMsg
@@ -1691,26 +1628,16 @@ type GetSessionHistory = (request: {
   beforeSeq?: number
 }) => Promise<{ events: AgentEvent[]; hasMore: boolean }>
 
-/**
- * loadSessionHistoryPage — 加载会话历史的「一页」（窗口化加载的核心）。
- *
- * 不再一次性把整段会话的全部 event 拉下来（旧实现循环翻完所有页 → O(全部)，
- * 大会话首屏 IPC/build/render 全部爆炸）。这里只取一页：
- *   - 初始：不带 beforeSeq → 返回**最新**一页（用户进会话先看到的尾部）。
- *   - 加载更早：带 beforeSeq=当前已加载最旧 event 的 seq → 返回它之前的一页。
- * hasMore 表示该方向上是否还有更早的 event，供上层决定是否继续懒加载。
- */
-async function loadSessionHistoryPage(
+// Load the full session history so reopening a session restores every message.
+async function loadCompleteSessionHistory(
   getHistory: GetSessionHistory,
   sessionId: SessionId,
-  beforeSeq?: number,
-): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
+): Promise<AgentEvent[]> {
   const res = await getHistory({
     sessionId,
-    limit: SESSION_HISTORY_PAGE_SIZE,
-    ...(beforeSeq !== undefined ? { beforeSeq } : {}),
+    full: true,
   })
-  return { events: res.events, hasMore: res.hasMore }
+  return res.events
 }
 
 function mergeSessionEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {

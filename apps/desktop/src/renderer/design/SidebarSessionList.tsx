@@ -319,7 +319,7 @@ function ActionMenu({
   )
 }
 
-// 注:ActionMenu 在 antd Dropdown 下通过 dropdownRender 注入 JSX 内容
+// 注:ActionMenu 在 antd Dropdown 下通过 popupRender 注入 JSX 内容
 
 /* ─── ChatListItem ─── */
 function ChatListItem({
@@ -405,7 +405,7 @@ function ChatListItem({
             }}
             trigger={['click']}
             placement="topRight"
-            dropdownRender={() => (
+            popupRender={() => (
               <ActionMenu
                 onAction={() => setMenuOpen(false)}
                 items={[
@@ -517,7 +517,7 @@ function ProjectSessionGroup({
             onOpenChange={setMenuOpen}
             trigger={['click']}
             placement="topRight"
-            dropdownRender={() => (
+            popupRender={() => (
               <ActionMenu
                 onAction={() => setMenuOpen(false)}
                 items={[

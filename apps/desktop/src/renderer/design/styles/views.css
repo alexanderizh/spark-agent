@@ -8083,6 +8083,23 @@ body.inspector-resizing {
   z-index: 9000;
 }
 
+/* Top drag strip so the window stays movable when the shell has crashed.
+   Buttons inside .error-boundary-actions are kept interactive via no-drag. */
+.error-boundary-drag-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 28px;
+  -webkit-app-region: drag;
+}
+
+.error-boundary-actions,
+.error-boundary-detail,
+.error-boundary-inner .btn {
+  -webkit-app-region: no-drag;
+}
+
 .error-boundary-inner {
   display: flex;
   flex-direction: column;

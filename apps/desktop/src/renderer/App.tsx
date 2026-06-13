@@ -198,6 +198,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     const isActive = t.view === viewId
     return (
       <button
+        key={viewId}
         className={`nav-item ${isActive ? 'active' : ''}`}
         onClick={() => setTweak('view', viewId as typeof t.view)}
         title={title}

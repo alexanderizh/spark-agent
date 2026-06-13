@@ -1857,7 +1857,7 @@ export function BoardView() {
               {!selectionMode && (
                 <Dropdown
                   menu={{ items: [] }}
-                  dropdownRender={() => (
+                  popupRender={() => (
                     <div className="board-import-export-dropdown">
                       <button className="board-dropdown-item" onClick={handleImport}>
                         <Icons.Download size={14} />
