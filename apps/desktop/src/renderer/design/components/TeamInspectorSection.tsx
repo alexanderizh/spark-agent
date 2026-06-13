@@ -16,7 +16,7 @@ import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import { AvatarImage } from './AvatarImage'
-import { SparkInput, SparkSelect, SparkTextarea } from './FormControls'
+import { Checkbox as LobeCheckbox, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
 import type { ManagedTeam, TeamModeConfig } from '@spark/protocol'
@@ -257,17 +257,17 @@ export function TeamInspectorSection({
           {sourceTeam == null && saveFormOpen && (
             <div className="team-roster-save-form">
               <div className="team-roster-save-form-title">保存为长期团队</div>
-              <SparkInput
+              <LobeInput
                 value={saveDraftName}
                 onChange={(e) => setSaveDraftName(e.target.value)}
                 placeholder="团队名称（必填）"
               />
-              <SparkInput
+              <LobeInput
                 value={saveDraftDesc}
                 onChange={(e) => setSaveDraftDesc(e.target.value)}
                 placeholder="一句话描述（可选）"
               />
-              <SparkTextarea
+              <LobeTextArea
                 value={saveDraftPrompt}
                 onChange={(e) => setSaveDraftPrompt(e.target.value)}
                 placeholder="团队专属规则（可选，作为 [Team Instructions] 注入到主持人）"
@@ -433,25 +433,26 @@ export function TeamInspectorSection({
           </button>
           {advancedOpen && (
             <div className="team-roster-advanced">
-              <label className="team-roster-advanced-row">
-                <input
-                  type="checkbox"
+              <div className="team-roster-advanced-row">
+                <LobeCheckbox
                   checked={config.allowNesting}
-                  onChange={(e) => onChangeConfig({ allowNesting: e.target.checked })}
-                />
-                <span>允许 Member 嵌套调用</span>
-              </label>
+                  onChange={(checked) => onChangeConfig({ allowNesting: checked })}
+                >
+                  允许 Member 嵌套调用
+                </LobeCheckbox>
+              </div>
               <label className="team-roster-advanced-row">
                 <span>最大深度</span>
-                <SparkSelect
+                <LobeSelect
                   value={String(config.maxDepth)}
                   disabled={!config.allowNesting}
-                  onChange={(e) => onChangeConfig({ maxDepth: Number(e.target.value) })}
-                >
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={3}>3</option>
-                </SparkSelect>
+                  onChange={(value) => onChangeConfig({ maxDepth: Number(value) })}
+                  options={[
+                    { label: '1', value: '1' },
+                    { label: '2', value: '2' },
+                    { label: '3', value: '3' },
+                  ]}
+                />
               </label>
             </div>
           )}

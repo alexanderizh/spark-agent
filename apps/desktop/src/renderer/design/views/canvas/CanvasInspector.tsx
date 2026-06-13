@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Button, Descriptions, Empty, Space, Tag } from '@arco-design/web-react'
-import { SparkTextarea } from '../../components/FormControls'
+import { Button, Tag } from '@lobehub/ui'
+import { Descriptions, Empty, Space } from 'antd'
+import { TextArea as LobeTextArea } from '@lobehub/ui'
 import type { CanvasNode } from './canvas.types'
 
 export function CanvasInspector({
@@ -22,10 +23,10 @@ export function CanvasInspector({
         <div className="canvas-panel-title-row">
           <h3>属性</h3>
           <Space size={6}>
-            <Button size="mini" disabled>
+            <Button size="small" disabled>
               复制
             </Button>
-            <Button size="mini" disabled>
+            <Button size="small" disabled>
               锁定
             </Button>
           </Space>
@@ -40,7 +41,7 @@ export function CanvasInspector({
       <section className="canvas-panel-section">
         <div className="canvas-panel-title-row">
           <h3>属性</h3>
-          <Tag size="small" color="arcoblue">
+          <Tag color="blue">
             {selectedNodes.length} selected
           </Tag>
         </div>
@@ -59,7 +60,7 @@ export function CanvasInspector({
           {selectedNodes.map((node) => (
             <div key={node.id} className="canvas-selection-row">
               <span>{node.title ?? node.type}</span>
-              <Tag size="small" color="gray" bordered>
+              <Tag color="default" bordered>
                 {node.type}
               </Tag>
             </div>
@@ -76,7 +77,7 @@ export function CanvasInspector({
     <section className="canvas-panel-section">
       <div className="canvas-panel-title-row">
         <h3>属性</h3>
-        <Tag size="small" color="gray" bordered>
+        <Tag color="default" bordered>
           {node.type}
         </Tag>
       </div>
@@ -84,14 +85,14 @@ export function CanvasInspector({
         className="canvas-inspector-desc"
         size="small"
         column={1}
-        data={[
-          { label: '标题', value: node.title ?? '-' },
-          { label: '位置', value: `${Math.round(node.x)}, ${Math.round(node.y)}` },
-          { label: '尺寸', value: `${Math.round(node.width)} x ${Math.round(node.height)}` },
-          { label: '层级', value: String(node.zIndex) },
-          { label: '锁定', value: node.locked ? '是' : '否' },
-          { label: '资产', value: node.assetId ?? '-' },
-          { label: '任务', value: node.taskId ?? '-' },
+        items={[
+          { label: '标题', children: node.title ?? '-' },
+          { label: '位置', children: `${Math.round(node.x)}, ${Math.round(node.y)}` },
+          { label: '尺寸', children: `${Math.round(node.width)} x ${Math.round(node.height)}` },
+          { label: '层级', children: String(node.zIndex) },
+          { label: '锁定', children: node.locked ? '是' : '否' },
+          { label: '资产', children: node.assetId ?? '-' },
+          { label: '任务', children: node.taskId ?? '-' },
         ]}
       />
       <Space size={8} wrap>
@@ -124,10 +125,10 @@ function TextNodeEditor({
   return (
     <div className="canvas-form-row">
       <label>内容</label>
-      <SparkTextarea
+      <LobeTextArea
         value={textDraft}
         rows={5}
-        onChange={(event) => setTextDraft(event.target.value)}
+        onChange={(e) => setTextDraft(e.target.value)}
       />
       <Button size="small" type="primary" onClick={() => onSaveText(node, textDraft)}>
         保存文本

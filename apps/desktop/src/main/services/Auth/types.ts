@@ -24,6 +24,8 @@ export interface AuthServiceConfig {
   defaultBaseUrl: string
   /** keytar service 名称（用于区分多个 Spark Agent 安装）*/
   keytarService: string
+  /** Called after the user changes the cloud auth base URL. */
+  onBaseUrlChanged?: (baseUrl: string) => void
   /** 网络请求超时（毫秒）*/
   requestTimeoutMs?: number
 }

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react'
-import { Button, Dropdown, Empty, Menu, Message, Modal, Spin, Tag } from '@arco-design/web-react'
+import { Button, Dropdown, Empty, Modal, Tag } from '@lobehub/ui'
+import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
 import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
-import { SparkInput, SparkSearchInput, SparkTextarea } from '../../components/FormControls'
+import { Input as LobeInput, SearchBar as LobeSearchBar, TextArea as LobeTextArea } from '@lobehub/ui'
 import { canvasApi } from './canvas.api'
 import { useCanvasProjects, type CanvasViewMode } from './canvas.store'
 import { CanvasWorkspaceView } from './CanvasWorkspaceView'
@@ -58,7 +59,7 @@ export function CanvasProjectsView() {
 
   const handleSaveProject = async () => {
     if (title.trim().length === 0) {
-      Message.warning('请输入项目名称')
+      message.warning('请输入项目名称')
       return
     }
     setSaving(true)
@@ -97,12 +98,12 @@ export function CanvasProjectsView() {
   }
 
   const handleDeleteProject = async (projectId: string) => {
-    Modal.confirm({
+    AntdModal.confirm({
       title: '删除 Canvas 项目？',
       content: '项目会被标记为删除，后续可接入恢复机制。',
       okText: '删除',
       cancelText: '取消',
-      okButtonProps: { status: 'danger' },
+      okButtonProps: { danger: true },
       onOk: async () => {
         await canvasApi.deleteProject(projectId)
         await refresh()
@@ -124,20 +125,20 @@ export function CanvasProjectsView() {
       </header>
 
       <div className="canvas-projects-toolbar">
-        <SparkSearchInput
+        <LobeSearchBar
           value={query}
-          onChange={setQuery}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索项目名称或描述..."
           className="canvas-projects-search"
         />
         <div className="canvas-projects-stats">
-          <Tag size="small" color="arcoblue">
+          <Tag color="blue">
             {projects.length} projects
           </Tag>
-          <Tag size="small" color="green">
+          <Tag color="green">
             {projects.reduce((sum, project) => sum + project.taskCount, 0)} tasks
           </Tag>
-          <Tag size="small" color="orange">
+          <Tag color="orange">
             {projects.reduce((sum, project) => sum + project.assetCount, 0)} assets
           </Tag>
         </div>
@@ -172,7 +173,7 @@ export function CanvasProjectsView() {
                 <div className="canvas-project-card-body">
                   <div className="canvas-project-card-top">
                     <h3>{project.title}</h3>
-                    <Tag size="small" color={project.status === 'archived' ? 'gray' : 'green'}>
+                    <Tag color={project.status === 'archived' ? 'default' : 'green'}>
                       {project.status === 'archived' ? '已归档' : '进行中'}
                     </Tag>
                   </div>
@@ -189,31 +190,19 @@ export function CanvasProjectsView() {
                       onClick={(event) => event.stopPropagation()}
                     >
                       <Dropdown
-                        trigger="click"
-                        position="bottom"
-                        droplist={
-                          <Menu>
-                            <Menu.Item key="rename" onClick={() => openEdit(project.id)}>
-                              重命名
-                            </Menu.Item>
-                            <Menu.Item
-                              key="archive"
-                              onClick={() => void handleArchiveProject(project.id)}
-                            >
-                              {project.status === 'archived' ? '恢复' : '归档'}
-                            </Menu.Item>
-                            <Menu.Item
-                              key="delete"
-                              onClick={() => void handleDeleteProject(project.id)}
-                            >
-                              删除
-                            </Menu.Item>
-                          </Menu>
-                        }
+                        trigger={['click']}
+                        placement="bottom"
+                        menu={{
+                          items: [
+                            { key: 'rename', label: '重命名', onClick: () => openEdit(project.id) },
+                            { key: 'archive', label: project.status === 'archived' ? '恢复' : '归档', onClick: () => void handleArchiveProject(project.id) },
+                            { key: 'delete', label: '删除', onClick: () => void handleDeleteProject(project.id) },
+                          ],
+                        }}
                       >
-                        <Button size="mini" type="text" icon={<Icons.More size={13} />} />
+                        <Button size="small" type="text" icon={<Icons.More size={13} />} />
                       </Dropdown>
-                      <Button size="mini" type="text" icon={<Icons.ChevronRight size={13} />}>
+                      <Button size="small" type="text" icon={<Icons.ChevronRight size={13} />}>
                         打开
                       </Button>
                     </div>
@@ -227,7 +216,7 @@ export function CanvasProjectsView() {
 
       <Modal
         title={editingProjectId == null ? '新建 Canvas 项目' : '编辑 Canvas 项目'}
-        visible={createOpen}
+        open={createOpen}
         onCancel={() => setCreateOpen(false)}
         onOk={() => void handleSaveProject()}
         confirmLoading={saving}
@@ -237,18 +226,18 @@ export function CanvasProjectsView() {
         <div className="canvas-create-form">
           <label>
             项目名称
-            <SparkInput
+            <LobeInput
               value={title}
-              onChange={(event) => setTitle(event.target.value)}
+              onChange={(e) => setTitle(e.target.value)}
               placeholder="例如：618 商品主图"
               autoFocus
             />
           </label>
           <label>
             描述
-            <SparkTextarea
+            <LobeTextArea
               value={description}
-              onChange={(event) => setDescription(event.target.value)}
+              onChange={(e) => setDescription(e.target.value)}
               placeholder="这个项目要生成什么、有哪些素材和风格约束"
               rows={4}
             />

@@ -1,4 +1,5 @@
-import { Button, Progress, Tag } from '@arco-design/web-react'
+import { Button, Tag } from '@lobehub/ui'
+import { Progress } from 'antd'
 import { operationLabel } from './canvas.api'
 import type { CanvasTask } from './canvas.types'
 
@@ -19,13 +20,13 @@ export function CanvasTaskQueue({
     <div className="canvas-task-queue">
       <div className="canvas-task-summary">
         <span>任务队列</span>
-        <Tag size="small" color="arcoblue">
+        <Tag color="blue">
           运行 {running}
         </Tag>
-        <Tag size="small" color="red">
+        <Tag color="red">
           失败 {failed}
         </Tag>
-        <Tag size="small" color="green">
+        <Tag color="green">
           完成 {completed}
         </Tag>
       </div>
@@ -35,9 +36,9 @@ export function CanvasTaskQueue({
             <span className="canvas-task-pill-title">
               {task.title ?? operationLabel(task.operation)}
             </span>
-            <Progress percent={task.progress} size="small" showText={false} />
+            <Progress percent={task.progress} size="small" />
             {task.status !== 'completed' && (
-              <Button size="mini" type="text" onClick={() => onCompleteDemoTask(task.id)}>
+              <Button size="small" type="text" onClick={() => onCompleteDemoTask(task.id)}>
                 Demo 完成
               </Button>
             )}

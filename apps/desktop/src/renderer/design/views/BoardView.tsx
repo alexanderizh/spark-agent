@@ -16,15 +16,15 @@ import {
   useRef,
   useState,
 } from 'react'
-import { Popover, Dropdown } from '@arco-design/web-react'
+import { Popover, Dropdown, Button, Select, Tooltip } from '@lobehub/ui'
+import { DatePicker, Space, Switch } from 'antd'
 import type { DragEvent } from 'react'
-import { Button, DatePicker, Select, Space, Switch, Tooltip } from '@arco-design/web-react'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
-import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import './BoardView.less'
 
@@ -408,7 +408,7 @@ function TaskFormPage({
   const [attachments, setAttachments] = useState<TaskAttachment[]>(card?.attachments ?? [])
   const [previewImage, setPreviewImage] = useState<string | null>(null)
   const titleRef = useRef<any>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const textareaRef = useRef<any>(null)
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -548,7 +548,7 @@ function TaskFormPage({
           {/* Title */}
           <div className="tfp-field">
             <label className="tfp-label">标题</label>
-            <SparkInput
+            <LobeInput
               ref={titleRef}
               value={title}
               onChange={(e) => setTitle(e.target.value)}
@@ -560,7 +560,7 @@ function TaskFormPage({
           {/* Description */}
           <div className="tfp-field">
             <label className="tfp-label">描述</label>
-            <SparkTextarea
+            <LobeTextArea
               ref={textareaRef}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -619,18 +619,14 @@ function TaskFormPage({
           <div className="tfp-row">
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">状态</label>
-              <SparkSelect value={status} onChange={(e) => setStatus(e.target.value as TaskStatus)} className="tfp-select">
-                {COLUMNS.map(c => <option key={c.key} value={c.key}>{c.icon} {c.label}</option>)}
-              </SparkSelect>
+              <LobeSelect value={status} onChange={(value) => setStatus(value as TaskStatus)} className="tfp-select" options={COLUMNS.map(c => ({ label: `${c.icon} ${c.label}`, value: c.key }))} />
             </div>
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">优先级</label>
-              <SparkSelect value={priority} onChange={(e) => setPriority(e.target.value as Priority)} className="tfp-select">
-                {(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
+              <LobeSelect value={priority} onChange={(value) => setPriority(value as Priority)} className="tfp-select" options={(Object.keys(PRIORITY_CONFIG) as Priority[]).map((p) => {
                   const cfg = PRIORITY_CONFIG[p]
-                  return <option key={p} value={p}>{cfg.icon} {cfg.label}</option>
-                })}
-              </SparkSelect>
+                  return { label: `${cfg.icon} ${cfg.label}`, value: p }
+                })} />
             </div>
           </div>
 
@@ -638,9 +634,7 @@ function TaskFormPage({
           <div className="tfp-row">
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">负责人</label>
-              <SparkSelect value={assignee} onChange={(e) => setAssignee(e.target.value)} placeholder="选择负责人" className="tfp-select" allowClear showSearch>
-                {agents.map(a => <option key={a.id} value={a.name}>{a.name}</option>)}
-              </SparkSelect>
+              <LobeSelect value={assignee} onChange={(value) => setAssignee(value as string)} placeholder="选择负责人" className="tfp-select" allowClear showSearch options={agents.map(a => ({ label: a.name, value: a.name }))} />
             </div>
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">截止日期</label>
@@ -658,24 +652,24 @@ function TaskFormPage({
           <div className="tfp-row">
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">处理 Agent</label>
-              <SparkSelect value={processingAgent} onChange={(e) => setProcessingAgent(e.target.value)} placeholder="选择处理 Agent" className="tfp-select" allowClear showSearch>
-                {agents.map(a => <option key={`agent-${a.id}`} value={a.name}>{a.name}</option>)}
-                {teamDefs.map(t => <option key={`team-${t.id}`} value={`team:${t.name}`}>[团队] {t.name}</option>)}
-              </SparkSelect>
+              <LobeSelect value={processingAgent} onChange={(value) => setProcessingAgent(value as string)} placeholder="选择处理 Agent" className="tfp-select" allowClear showSearch options={[
+                  ...agents.map(a => ({ label: a.name, value: a.name })),
+                  ...teamDefs.map(t => ({ label: `[团队] ${t.name}`, value: `team:${t.name}` })),
+                ]} />
             </div>
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">测试 Agent（可选）</label>
-              <SparkSelect value={testAgent} onChange={(e) => setTestAgent(e.target.value)} placeholder="选择测试 Agent" className="tfp-select" allowClear showSearch>
-                {agents.map(a => <option key={`agent-${a.id}`} value={a.name}>{a.name}</option>)}
-                {teamDefs.map(t => <option key={`team-${t.id}`} value={`team:${t.name}`}>[团队] {t.name}</option>)}
-              </SparkSelect>
+              <LobeSelect value={testAgent} onChange={(value) => setTestAgent(value as string)} placeholder="选择测试 Agent" className="tfp-select" allowClear showSearch options={[
+                  ...agents.map(a => ({ label: a.name, value: a.name })),
+                  ...teamDefs.map(t => ({ label: `[团队] ${t.name}`, value: `team:${t.name}` })),
+                ]} />
             </div>
           </div>
 
           {/* Acceptance Criteria */}
           <div className="tfp-field">
             <label className="tfp-label">验收条件</label>
-            <SparkTextarea
+            <LobeTextArea
               value={acceptanceCriteria}
               onChange={(e) => setAcceptanceCriteria(e.target.value)}
               placeholder="输入任务完成后的验收标准（可选）…"
@@ -688,13 +682,11 @@ function TaskFormPage({
           <div className="tfp-row">
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">项目</label>
-              <SparkSelect value={project} onChange={(e) => setProject(e.target.value)} placeholder="选择项目" className="tfp-select" allowClear showSearch>
-                {projectOptions.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
-              </SparkSelect>
+              <LobeSelect value={project} onChange={(value) => setProject(value as string)} placeholder="选择项目" className="tfp-select" allowClear showSearch options={projectOptions.map(p => ({ label: p.label, value: p.value }))} />
             </div>
             <div className="tfp-field tfp-field-half">
               <label className="tfp-label">标签</label>
-              <SparkInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
+              <LobeInput value={tags} onChange={(e) => setTags(e.target.value)} placeholder="用逗号分隔多个标签" className="tfp-input" />
             </div>
           </div>
 
@@ -802,10 +794,10 @@ function TaskCommentsPanel({
             </div>
             {editingId === c.id ? (
               <div className="tfp-comment-edit">
-                <SparkTextarea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={2} className="tfp-comment-edit-input" />
+                <LobeTextArea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={2} className="tfp-comment-edit-input" />
                 <div className="tfp-comment-edit-actions">
-                  <Button size="mini" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
-                  <Button size="mini" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
+                  <Button size="small" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
+                  <Button size="small" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
                 </div>
               </div>
             ) : (
@@ -813,8 +805,8 @@ function TaskCommentsPanel({
             )}
             {editingId !== c.id && (
               <div className="tfp-comment-actions">
-                <Button size="mini" type="text" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</Button>
-                <Button size="mini" type="text" status="danger" onClick={async () => {
+                <Button size="small" type="text" onClick={() => { setEditingId(c.id); setEditContent(c.content) }}>编辑</Button>
+                <Button size="small" type="text" danger onClick={async () => {
                   if (!window.confirm('确定删除该评论？')) return
                   await deleteComment(card.id, c.id)
                 }}>删除</Button>
@@ -832,7 +824,7 @@ function TaskCommentsPanel({
         )}
       </div>
       <div className="tfp-comment-input-row">
-        <SparkTextarea
+        <LobeTextArea
           placeholder="输入评论…（Ctrl+Enter 发送）"
           className="tfp-comment-input"
           rows={2}
@@ -1744,7 +1736,7 @@ export function BoardView() {
         {/* Delete button for edit mode */}
         <div className="tfp-delete-bar">
           <Button
-            status="danger"
+            danger
             size="small"
             icon={<Icons.Trash size={13} />}
             onClick={() => handleSoftDelete(freshCard.id)}
@@ -1769,7 +1761,7 @@ export function BoardView() {
         <div className="board-header-right" aria-label="任务筛选和操作">
           <div className="board-toolbar">
             <Tooltip
-              content={
+              title={
                 autoExecute
                   ? autoExecuteRunning
                     ? '正在执行任务…'
@@ -1796,44 +1788,46 @@ export function BoardView() {
               <Icons.Refresh size={14} />
             </button>
             <div className="board-search">
-              <SparkSearchInput
+              <LobeInput
                 value={searchQuery}
-                onChange={setSearchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="搜索任务…"
                 className="board-search-input"
+                prefix={<Icons.Search size={14} />}
+                allowClear
               />
             </div>
             <Popover
               content={
                 <div className="board-filter-popover-content">
                   <div className="board-filter-popover-row">
-                    <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="small" style={{ width: 130 }}>
-                      <Select.Option value="all">全部优先级</Select.Option>
-                      <Select.Option value="urgent">🔴 紧急</Select.Option>
-                      <Select.Option value="high">🟡 高</Select.Option>
-                      <Select.Option value="medium">🔵 中</Select.Option>
-                      <Select.Option value="low">⚪ 低</Select.Option>
-                    </Select>
-                    <Select value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="small" style={{ width: 130 }}>
-                      <Select.Option value="all">全部状态</Select.Option>
-                      <Select.Option value="todo">📋 待办</Select.Option>
-                      <Select.Option value="in-progress">🔄 进行中</Select.Option>
-                      <Select.Option value="bug-fix">🐛 Bug 修复</Select.Option>
-                      <Select.Option value="done">✅ 已完成</Select.Option>
-                      <Select.Option value="accepted">🎯 已验收</Select.Option>
-                      <Select.Option value="closed">📦 已关闭</Select.Option>
-                    </Select>
+                    <Select value={filterPriority} onChange={(value) => setFilterPriority(value as Priority | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                      { label: '全部优先级', value: 'all' },
+                      { label: '🔴 紧急', value: 'urgent' },
+                      { label: '🟡 高', value: 'high' },
+                      { label: '🔵 中', value: 'medium' },
+                      { label: '⚪ 低', value: 'low' },
+                    ]} />
+                    <Select value={filterStatus} onChange={(value) => setFilterStatus(value as TaskStatus | 'all')} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                      { label: '全部状态', value: 'all' },
+                      { label: '📋 待办', value: 'todo' },
+                      { label: '🔄 进行中', value: 'in-progress' },
+                      { label: '🐛 Bug 修复', value: 'bug-fix' },
+                      { label: '✅ 已完成', value: 'done' },
+                      { label: '🎯 已验收', value: 'accepted' },
+                      { label: '📦 已关闭', value: 'closed' },
+                    ]} />
                     {projectOptions.length > 0 && (
-                      <Select value={filterProject} onChange={(value) => setFilterProject(value)} className="board-filter-select" size="small" style={{ width: 130 }}>
-                        <Select.Option value="all">全部项目</Select.Option>
-                        {projectOptions.map(p => <Select.Option key={p.value} value={p.value}>{p.label}</Select.Option>)}
-                      </Select>
+                      <Select value={filterProject} onChange={(value) => setFilterProject(value as string)} className="board-filter-select" size="small" style={{ width: 130 }} options={[
+                        { label: '全部项目', value: 'all' },
+                        ...projectOptions.map(p => ({ label: p.label, value: p.value })),
+                      ]} />
                     )}
                   </div>
                 </div>
               }
-              trigger="click"
-              position="bottom"
+              trigger={['click']}
+              placement="bottom"
               className="board-filter-popover"
             >
               <button className="board-filter-toggle-btn" title="筛选条件">
@@ -1848,8 +1842,8 @@ export function BoardView() {
               
               <Popover
                 content={columnSelectorContent}
-                trigger="click"
-                position="bottom"
+                trigger={['click']}
+                placement="bottom"
                 className="board-column-selector-popover"
               >
                 <button className="board-column-selector-btn" title="选择显示的状态面板">
@@ -1858,11 +1852,12 @@ export function BoardView() {
                   <Icons.ChevronDown size={12} />
                 </button>
               </Popover>
-              <Button className="board-recycle-arco-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
+              <Button className="board-recycle-btn" size="small" icon={<Icons.Archive size={15} />} onClick={() => setShowRecycle(true)} title="回收站" />
               {/* Import/Export dropdown button */}
               {!selectionMode && (
                 <Dropdown
-                  droplist={
+                  menu={{ items: [] }}
+                  dropdownRender={() => (
                     <div className="board-import-export-dropdown">
                       <button className="board-dropdown-item" onClick={handleImport}>
                         <Icons.Download size={14} />
@@ -1877,11 +1872,11 @@ export function BoardView() {
                         <span>选择导出…</span>
                       </button>
                     </div>
-                  }
-                  trigger="click"
-                  position="bottom"
+                  )}
+                  trigger={['click']}
+                  placement="bottom"
                 >
-                  <Button size="small" type="outline">
+                  <Button size="small" type="default">
                     <span className="board-btn-inner">
                       <Icons.File size={14} />
                       <span>导入导出</span>
@@ -1905,15 +1900,15 @@ export function BoardView() {
             已选 {selectedTaskIds.size} 项
           </span>
           <div className="board-selection-actions">
-            <Button size="small" type="outline" onClick={handleSelectAll} title="全选当前筛选结果">
+            <Button size="small" type="default" onClick={handleSelectAll} title="全选当前筛选结果">
               全选
             </Button>
-            <Button size="small" type="outline" onClick={handleClearSelection} disabled={selectedTaskIds.size === 0}>
+            <Button size="small" type="default" onClick={handleClearSelection} disabled={selectedTaskIds.size === 0}>
               取消选择
             </Button>
             <Button
               size="small"
-              status="danger"
+              danger
               onClick={handleBatchDelete}
               disabled={selectedTaskIds.size === 0}
               title="将所选任务移至回收站"

@@ -1,21 +1,9 @@
 /**
  * WechatQrPanel — 微信扫码登录
- *
- * 流程：
- *   1. 进入面板立即调 wechat:qr 拿到 state 和 qrUrl
- *   2. 用 QRCodeSVG 把 qrUrl 渲染成二维码
- *   3. 启动轮询 wechat:poll（每 2 秒一次）
- *   4. status === 'success' → 后端已发 token，前端继续登录流程
- *   5. status === 'pending_bind' → 跳转 wechat-bind 面板输入邮箱绑定
- *   6. status === 'error' → 显示 message
- *
- * qrUrl 来自 edu-server（通常是 https://open.weixin.qq.com/connect/qrconnect?...）
- * 但当前实现是 polling 模式，所以其实用 state 作为 QR 内容也行。
- * 这里采用 state 作为 QR 内容（兼容后端 polling），后端再根据 state 完成授权。
  */
 
 import React, { useEffect, useRef, useState } from 'react'
-import { Button } from '@arco-design/web-react'
+import { Button } from 'antd'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
@@ -48,7 +36,6 @@ export function WechatQrPanel(): React.ReactElement {
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const stopRef = useRef(false)
 
-  // 启动扫码
   useEffect(() => {
     let cancelled = false
     void (async () => {
@@ -57,9 +44,6 @@ export function WechatQrPanel(): React.ReactElement {
         const res = await auth.wechatQr()
         if (cancelled) return
         setState(res.state)
-        // QR 内容：用 qrUrl（如果后端提供了 QR 图的标准 URL）
-        // 如果是 polling 模式，QR 内容是 state（前端生成二维码让微信 App 扫）
-        // 这里兼容两种：优先 qrUrl，否则用 state
         setQrValue(res.qrUrl || res.state)
         setStatus('pending')
         setMessage('请使用微信扫描二维码登录')
@@ -82,7 +66,6 @@ export function WechatQrPanel(): React.ReactElement {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // 轮询
   useEffect(() => {
     if (!state || status !== 'pending') return
 
@@ -97,8 +80,6 @@ export function WechatQrPanel(): React.ReactElement {
         const res: PollResult = await auth.wechatPoll(state)
         if (stopRef.current) return
         if (res.status === 'success') {
-          // 后端已通过 polling 模式返回 token；EduServerClient 已自动存 tokenStore
-          // 这里只刷新本地状态
           const me = await auth.refreshMe()
           if (me) {
             toast.success('微信登录成功')
@@ -115,7 +96,6 @@ export function WechatQrPanel(): React.ReactElement {
           setStatus('error')
           setMessage(res.message ?? '扫码失败')
         } else {
-          // pending → 继续轮询
           setElapsed((e) => e + POLL_INTERVAL_MS)
           pollTimerRef.current = setTimeout(tick, POLL_INTERVAL_MS)
         }

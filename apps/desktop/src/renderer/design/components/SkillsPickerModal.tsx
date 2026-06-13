@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Modal, Checkbox, Input, Button, Tag, Tooltip, Empty } from '@arco-design/web-react'
+import { Modal, Checkbox, Button, Tag, Tooltip, Empty } from '@lobehub/ui'
+import { Input as AntdInput } from 'antd'
 import { Icons } from '../Icons'
 import './SkillsPickerModal.less'
 
@@ -71,16 +72,14 @@ export function SkillsPickerModal({
 
   return (
     <Modal
-      visible={visible}
+      open={visible}
       title={null}
       closable={false}
       onCancel={onClose}
       footer={null}
       className="skills-picker-modal"
       style={{ width: 720 }}
-      autoFocus={false}
-      focusLock={false}
-      unmountOnExit
+      destroyOnHidden
     >
       <div className="skills-picker-header">
         <div className="skills-picker-title">
@@ -93,11 +92,11 @@ export function SkillsPickerModal({
       </div>
 
       <div className="skills-picker-toolbar">
-        <Input.Search
+        <AntdInput.Search
           className="skills-picker-search"
           placeholder="搜索 Skills..."
           value={searchText}
-          onChange={setSearchText}
+          onChange={(e) => setSearchText(e.target.value)}
           allowClear
           size="small"
         />
@@ -140,7 +139,7 @@ export function SkillsPickerModal({
             <Checkbox
               checked={allSelected}
               indeterminate={someSelected}
-              onChange={handleSelectAll}
+              onChange={(checked) => handleSelectAll(checked)}
             />
           </div>
           <div className="skills-picker-cell skills-picker-cell--name">名称</div>
@@ -168,11 +167,11 @@ export function SkillsPickerModal({
                   >
                     <Checkbox
                       checked={checked}
-                      onChange={(v) => handleSelect(skill.id, v)}
+                      onChange={(c) => handleSelect(skill.id, c)}
                     />
                   </div>
                   <div className="skills-picker-cell skills-picker-cell--name">
-                    <Tooltip content={skill.name} disabled={skill.name.length <= 24}>
+                    <Tooltip title={skill.name}>
                       <span className="skills-picker-name-text">{skill.name}</span>
                     </Tooltip>
                   </div>
@@ -198,7 +197,7 @@ export function SkillsPickerModal({
 
       <div className="skills-picker-footer">
         <div className="skills-picker-footer-left">
-          <Tag color="arcoblue" size="small">
+          <Tag color="blue" size="small">
             {selectedIds.length} 已选
           </Tag>
           {(searchText || statusFilter !== 'all') && (
@@ -209,7 +208,7 @@ export function SkillsPickerModal({
         </div>
         <div className="skills-picker-footer-right">
           <Button
-            type="secondary"
+            type="default"
             size="small"
             disabled={selectedIds.length === 0}
             onClick={() => onChange([])}

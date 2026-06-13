@@ -14,7 +14,7 @@
 
 import { useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
-import { Dropdown, Menu } from '@arco-design/web-react'
+import { Dropdown } from '@lobehub/ui'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
 import { Icons } from '../Icons'
@@ -135,28 +135,16 @@ export function ClickableFilePath({ path, onPreview }: Props): ReactNode {
     }
   }, [path, revealFile, toast])
 
-  const menu = (
-    <Menu>
-      <Menu.Item key="copy" onClick={() => void handleCopyPath()}>
-        <span className="clickable-file-menu-item">
-          <Icons.Copy size={14} /> 复制路径
-        </span>
-      </Menu.Item>
-      <Menu.Item key="open" onClick={() => void handleOpenWithDefault()}>
-        <span className="clickable-file-menu-item">
-          <Icons.ExternalLink size={14} /> 用默认应用打开
-        </span>
-      </Menu.Item>
-      <Menu.Item key="reveal" onClick={() => void handleReveal()}>
-        <span className="clickable-file-menu-item">
-          <Icons.Folder size={14} /> 在文件夹中显示
-        </span>
-      </Menu.Item>
-    </Menu>
-  )
+  const menu = {
+    items: [
+      { key: 'copy', label: (<span className="clickable-file-menu-item"><Icons.Copy size={14} /> 复制路径</span>), onClick: () => void handleCopyPath() },
+      { key: 'open', label: (<span className="clickable-file-menu-item"><Icons.ExternalLink size={14} /> 用默认应用打开</span>), onClick: () => void handleOpenWithDefault() },
+      { key: 'reveal', label: (<span className="clickable-file-menu-item"><Icons.Folder size={14} /> 在文件夹中显示</span>), onClick: () => void handleReveal() },
+    ],
+  }
 
   return (
-    <Dropdown trigger="contextMenu" droplist={menu} position="bl">
+    <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <span
         className="clickable-file-path"
         onClick={handleClick}

@@ -177,16 +177,7 @@
   padding-right: 4px;
   margin-right: -4px;
 
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-fill-3, var(--border-strong));
-    border-radius: 999px;
-  }
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
+  // 滚动条样式交由全局规则统一处理，不再写局部 `::-webkit-scrollbar*`。
 }
 
 .mv_grid {

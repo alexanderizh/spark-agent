@@ -6,10 +6,9 @@
  */
 import React, { useState, useEffect, useCallback } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Modal, Tag } from '@arco-design/web-react'
+import { Button, Input, Modal, Select, Tag, TextArea } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
-import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
 import { useApp, PRIMARIES } from '../AppContext'
 import { AccountSection } from '../auth/AccountSection'
 import { useIpcInvoke } from '../hooks/useIpc'
@@ -467,30 +466,35 @@ function GeneralSection() {
         <label>
           语言<span className="sub">界面文案语言</span>
         </label>
-        <SparkSelect value={s.language} onChange={(e) => set({ language: e.target.value })}>
-          <option value="zh-CN">简体中文</option>
-          <option value="en-US">English (US)</option>
-          <option value="ja-JP">日本語</option>
-        </SparkSelect>
+        <Select
+          value={s.language}
+          onChange={(v) => set({ language: v })}
+          options={[
+            { label: '简体中文', value: 'zh-CN' },
+            { label: 'English (US)', value: 'en-US' },
+            { label: '日本語', value: 'ja-JP' },
+          ]}
+        />
 
         <label>
           启动行为<span className="sub">应用启动时的默认动作</span>
         </label>
-        <SparkSelect
+        <Select
           value={s.startupBehavior}
-          onChange={(e) => set({ startupBehavior: e.target.value })}
-        >
-          <option value="last">恢复上次会话</option>
-          <option value="home">打开 Home</option>
-          <option value="last-project">打开上次项目</option>
-          <option value="blank">空白会话</option>
-        </SparkSelect>
+          onChange={(v) => set({ startupBehavior: v })}
+          options={[
+            { label: '恢复上次会话', value: 'last' },
+            { label: '打开 Home', value: 'home' },
+            { label: '打开上次项目', value: 'last-project' },
+            { label: '空白会话', value: 'blank' },
+          ]}
+        />
 
         <label>
           默认工作区<span className="sub">新建项目会话时的预选根目录</span>
         </label>
         <div className="control">
-          <SparkInput
+          <Input
             className="flex1"
             value={s.defaultWorkspace || ''}
             onChange={(e) => set({ defaultWorkspace: e.target.value })}
@@ -552,7 +556,7 @@ function GeneralSection() {
           检查点保留<span className="sub">每个会话保留多少历史检查点</span>
         </label>
         <div className="control">
-          <SparkInput
+          <Input
             type="number"
             value={s.checkpointRetention}
             onChange={(e) => set({ checkpointRetention: Number(e.target.value) || 50 })}
@@ -954,7 +958,7 @@ function RemoteConnectionsSection() {
           <Button
             key={channel}
             size="small"
-            type={draft.channel === channel ? 'primary' : 'secondary'}
+            type={draft.channel === channel ? 'primary' : 'default'}
             loading={busy === `create:${channel}`}
             onClick={() => void createBotDraft(channel)}
           >
@@ -972,7 +976,7 @@ function RemoteConnectionsSection() {
               : '本地 webhook 服务未启动'}
           </span>
         </div>
-        <Button size="mini" onClick={() => void refreshRuntime()}>
+        <Button size="small" onClick={() => void refreshRuntime()}>
           刷新状态
         </Button>
       </div>
@@ -1009,7 +1013,10 @@ function RemoteConnectionsSection() {
                 <span className="remote-card-title">{item.name}</span>
                 <span className="remote-card-desc">{REMOTE_CHANNEL_LABELS[item.channel]}</span>
               </span>
-              <Tag size="small" color={item.status === 'connected' ? 'green' : item.status === 'error' ? 'red' : 'arcoblue'}>
+              <Tag
+                size="small"
+                color={item.status === 'connected' ? 'green' : item.status === 'error' ? 'red' : 'blue'}
+              >
                 {REMOTE_STATUS_LABELS[item.status]}
               </Tag>
             </button>
@@ -1017,7 +1024,7 @@ function RemoteConnectionsSection() {
       </div>
 
       <Modal
-        visible={editorOpen}
+        open={editorOpen}
         title={draft.id ? `编辑 ${draft.name}` : '新建远程连接'}
         footer={null}
         onCancel={() => setEditorOpen(false)}
@@ -1030,22 +1037,23 @@ function RemoteConnectionsSection() {
             <label>
               渠道<span className="sub">同一时间可以启用多个渠道</span>
             </label>
-            <SparkSelect
+            <Select
               value={draft.channel}
-              onChange={(e) => {
-                const channel = e.target.value as RemoteChannelType
+              onChange={(v) => {
+                const channel = v as RemoteChannelType
                 updateDraft({ channel, name: draft.name || REMOTE_CHANNEL_LABELS[channel] })
                 rememberChannel(channel)
               }}
-            >
-              <option value="telegram">Telegram</option>
-              <option value="feishu">飞书机器人</option>
-              <option value="qq">QQ 机器人</option>
-              <option value="wechat-claw">微信 Claw</option>
-            </SparkSelect>
+              options={[
+                { label: 'Telegram', value: 'telegram' },
+                { label: '飞书机器人', value: 'feishu' },
+                { label: 'QQ 机器人', value: 'qq' },
+                { label: '微信 Claw', value: 'wechat-claw' },
+              ]}
+            />
 
             <label>连接名称</label>
-            <SparkInput value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
+            <Input value={draft.name} onChange={(e) => updateDraft({ name: e.target.value })} />
 
             <label>
               启用连接<span className="sub">停用后不会接收远程消息</span>
@@ -1055,15 +1063,15 @@ function RemoteConnectionsSection() {
             <label>
               命令前缀<span className="sub">Telegram 可同步为 bot command</span>
             </label>
-            <SparkInput value={draft.commandPrefix} onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })} />
+            <Input value={draft.commandPrefix} onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })} />
 
             <label>
               默认会话<span className="sub">普通远程消息会投递到这里</span>
             </label>
-            <SparkSelect
+            <Select
               value={draft.defaultSessionId ?? ''}
-              onChange={(e) => {
-                const value = e.target.value
+              onChange={(v) => {
+                const value = v
                 setDraft((prev) => {
                   const next = { ...prev }
                   if (value) next.defaultSessionId = value
@@ -1071,21 +1079,21 @@ function RemoteConnectionsSection() {
                   return next
                 })
               }}
-            >
-              <option value="">未选择</option>
-              {sessions.map((session) => (
-                <option key={session.id} value={session.id}>
-                  {session.title || '新会话'} · {session.id}
-                </option>
-              ))}
-            </SparkSelect>
+              options={[
+                { label: '未选择', value: '' },
+                ...sessions.map((session) => ({
+                  label: `${session.title || '新会话'} · ${session.id}`,
+                  value: session.id,
+                })),
+              ]}
+            />
 
             <RemoteCredentialFields draft={draft} updateCredential={updateCredential} />
 
             <label>
               允许用户 ID<span className="sub">英文逗号或换行分隔，留空表示配对后允许</span>
             </label>
-            <SparkTextarea
+            <TextArea
               value={joinCsv(draft.allowedUserIds)}
               onChange={(e) => updateDraft({ allowedUserIds: splitCsv(e.target.value) })}
               rows={2}
@@ -1094,7 +1102,7 @@ function RemoteConnectionsSection() {
             <label>
               允许会话/群 ID<span className="sub">用于群聊、频道或飞书群限制</span>
             </label>
-            <SparkTextarea
+            <TextArea
               value={joinCsv(draft.allowedChatIds)}
               onChange={(e) => updateDraft({ allowedChatIds: splitCsv(e.target.value) })}
               rows={2}
@@ -1111,7 +1119,7 @@ function RemoteConnectionsSection() {
                     ? `Telegram polling 未启动：${polling.lastError}`
                     : '保存并启用 Telegram Bot Token 后会自动启动 polling。'}
               </div>
-              <SparkTextarea
+              <TextArea
                 value={draft.telegramCommands.join('\n')}
                 onChange={(e) => updateDraft({ telegramCommands: splitCsv(e.target.value) })}
                 rows={5}
@@ -1152,7 +1160,7 @@ function RemoteConnectionsSection() {
             <Button size="small" loading={busy === 'test'} disabled={!draft.id} onClick={() => void testConnection()}>
               测试配置
             </Button>
-            <Button size="small" status="danger" loading={busy === 'delete'} onClick={() => void deleteConnection()}>
+            <Button size="small" danger loading={busy === 'delete'} onClick={() => void deleteConnection()}>
               删除
             </Button>
           </div>
@@ -1162,7 +1170,7 @@ function RemoteConnectionsSection() {
             {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
               <div className="remote-webhook-box">
                 <span>{webhookUrl}</span>
-                <Button size="mini" onClick={() => void navigator.clipboard?.writeText(webhookUrl)}>
+                <Button size="small" onClick={() => void navigator.clipboard?.writeText(webhookUrl)}>
                   复制 webhook
                 </Button>
               </div>
@@ -1187,8 +1195,8 @@ function RemoteConnectionsSection() {
                   </div>
                   <div className="muted text-xs-12">过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}</div>
                   <div className="remote-manual-pair">
-                    <SparkInput value={manualPairUser} onChange={(e) => setManualPairUser(e.target.value)} placeholder="远程用户 ID" />
-                    <SparkInput value={manualPairName} onChange={(e) => setManualPairName(e.target.value)} placeholder="显示名称（可选）" />
+                    <Input value={manualPairUser} onChange={(e) => setManualPairUser(e.target.value)} placeholder="远程用户 ID" />
+                    <Input value={manualPairName} onChange={(e) => setManualPairName(e.target.value)} placeholder="显示名称（可选）" />
                     <Button size="small" loading={busy === 'confirm-pair'} onClick={() => void confirmPairing()}>
                       手动确认
                     </Button>
@@ -1256,7 +1264,7 @@ function RemoteCredentialFields({
     return (
       <>
         <label>Bot Token</label>
-        <SparkInput value={draft.credentials.botToken ?? ''} onChange={(e) => updateCredential('botToken', e.target.value)} placeholder="123456:ABC..." />
+        <Input value={draft.credentials.botToken ?? ''} onChange={(e) => updateCredential('botToken', e.target.value)} placeholder="123456:ABC..." />
       </>
     )
   }
@@ -1264,9 +1272,9 @@ function RemoteCredentialFields({
     return (
       <>
         <label>App ID</label>
-        <SparkInput value={draft.credentials.appId ?? ''} onChange={(e) => updateCredential('appId', e.target.value)} />
+        <Input value={draft.credentials.appId ?? ''} onChange={(e) => updateCredential('appId', e.target.value)} />
         <label>App Secret</label>
-        <SparkInput value={draft.credentials.appSecret ?? ''} onChange={(e) => updateCredential('appSecret', e.target.value)} />
+        <Input value={draft.credentials.appSecret ?? ''} onChange={(e) => updateCredential('appSecret', e.target.value)} />
       </>
     )
   }
@@ -1274,20 +1282,20 @@ function RemoteCredentialFields({
     return (
       <>
         <label>机器人 AppID</label>
-        <SparkInput value={draft.credentials.qqBotAppId ?? ''} onChange={(e) => updateCredential('qqBotAppId', e.target.value)} />
+        <Input value={draft.credentials.qqBotAppId ?? ''} onChange={(e) => updateCredential('qqBotAppId', e.target.value)} />
         <label>机器人 Token</label>
-        <SparkInput value={draft.credentials.qqBotToken ?? ''} onChange={(e) => updateCredential('qqBotToken', e.target.value)} />
+        <Input value={draft.credentials.qqBotToken ?? ''} onChange={(e) => updateCredential('qqBotToken', e.target.value)} />
         <label>机器人 Secret</label>
-        <SparkInput value={draft.credentials.qqBotSecret ?? ''} onChange={(e) => updateCredential('qqBotSecret', e.target.value)} />
+        <Input value={draft.credentials.qqBotSecret ?? ''} onChange={(e) => updateCredential('qqBotSecret', e.target.value)} />
       </>
     )
   }
   return (
     <>
       <label>Claw Endpoint</label>
-      <SparkInput value={draft.credentials.clawEndpoint ?? ''} onChange={(e) => updateCredential('clawEndpoint', e.target.value)} placeholder="http://127.0.0.1:..." />
+      <Input value={draft.credentials.clawEndpoint ?? ''} onChange={(e) => updateCredential('clawEndpoint', e.target.value)} placeholder="http://127.0.0.1:..." />
       <label>Access Token</label>
-      <SparkInput value={draft.credentials.clawAccessToken ?? ''} onChange={(e) => updateCredential('clawAccessToken', e.target.value)} />
+      <Input value={draft.credentials.clawAccessToken ?? ''} onChange={(e) => updateCredential('clawAccessToken', e.target.value)} />
     </>
   )
 }
@@ -1385,31 +1393,29 @@ function AppearanceSection() {
         </div>
 
         <label>字体</label>
-        <SparkSelect value={a.font} onChange={(e) => setA({ font: e.target.value })}>
-          <optgroup label="推荐">
-            <option value="geist">Geist Sans + Geist Mono（推荐）</option>
-            <option value="system">系统默认</option>
-          </optgroup>
-          <optgroup label="英文字体">
-            <option value="inter">Inter</option>
-            <option value="jetbrains">JetBrains</option>
-            <option value="ibm-plex">IBM Plex</option>
-            <option value="segoe-ui">Segoe UI</option>
-          </optgroup>
-          <optgroup label="中文字体">
-            <option value="microsoft-yahei">微软雅黑</option>
-            <option value="simsun">宋体</option>
-            <option value="kaiti">楷体</option>
-            <option value="fangsong">仿宋</option>
-            <option value="youyuan">幼圆</option>
-          </optgroup>
-        </SparkSelect>
+        <Select
+          value={a.font}
+          onChange={(v) => setA({ font: v })}
+          options={[
+            { label: 'Geist Sans + Geist Mono（推荐）', value: 'geist' },
+            { label: '系统默认', value: 'system' },
+            { label: 'Inter', value: 'inter' },
+            { label: 'JetBrains', value: 'jetbrains' },
+            { label: 'IBM Plex', value: 'ibm-plex' },
+            { label: 'Segoe UI', value: 'segoe-ui' },
+            { label: '微软雅黑', value: 'microsoft-yahei' },
+            { label: '宋体', value: 'simsun' },
+            { label: '楷体', value: 'kaiti' },
+            { label: '仿宋', value: 'fangsong' },
+            { label: '幼圆', value: 'youyuan' },
+          ]}
+        />
 
         <label>
           字号<span className="sub">基础字号，其他字号按比例缩放</span>
         </label>
         <div className="control">
-          <SparkInput
+          <Input
             type="range"
             min="11"
             max="16"
@@ -1489,15 +1495,14 @@ function AppearanceSection() {
         <SettingsRow
           title="时间戳格式"
           right={
-            <div className="select-sm">
-              <SparkSelect
-                value={a.timestampFormat}
-                onChange={(e) => setA({ timestampFormat: e.target.value })}
-              >
-                <option value="rel">相对时间</option>
-                <option value="abs">绝对时间</option>
-              </SparkSelect>
-            </div>
+            <Select
+              value={a.timestampFormat}
+              onChange={(v) => setA({ timestampFormat: v })}
+              options={[
+                { label: '相对时间', value: 'rel' },
+                { label: '绝对时间', value: 'abs' },
+              ]}
+            />
           }
         />
       </div>
@@ -1625,7 +1630,7 @@ function ShortcutsSection() {
       <div className="row row-mb-sm">
         <div className="search-input flex1">
           <Icons.Search />
-          <SparkInput placeholder="搜索动作或按键..." />
+          <Input placeholder="搜索动作或按键..." />
         </div>
         <button className="btn">
           <Icons.Refresh size={12} /> 重置全部
@@ -1672,10 +1677,10 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
         <div className="modal-body modal-body-scroll">
           <div className="form-grid">
             <label>显示名称</label>
-            <SparkInput defaultValue="Sonnet 4.5 · 默认" />
+            <Input defaultValue="Sonnet 4.5 · 默认" />
 
             <label>模型 ID</label>
-            <SparkInput className="mono-sm" defaultValue="claude-sonnet-4-5-20250929" />
+            <Input className="mono-sm" defaultValue="claude-sonnet-4-5-20250929" />
 
             <label>
               角色<span className="sub">该 profile 适配的角色</span>
@@ -1695,7 +1700,7 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 
             <label>Temperature</label>
             <div className="control">
-              <SparkInput
+              <Input
                 type="range"
                 min="0"
                 max="2"
@@ -1707,10 +1712,10 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             </div>
 
             <label>最大输入 token</label>
-            <SparkInput type="number" defaultValue="180000" />
+            <Input type="number" defaultValue="180000" />
 
             <label>最大输出 token</label>
-            <SparkInput type="number" defaultValue="8192" />
+            <Input type="number" defaultValue="8192" />
 
             <label>
               推理强度<span className="sub">extended thinking 时使用</span>
@@ -1726,13 +1731,13 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
             <label>单次运行成本上限</label>
             <div className="control">
               <span className="muted">$</span>
-              <SparkInput type="number" defaultValue="5.00" step="0.50" className="flex1" />
+              <Input type="number" defaultValue="5.00" step="0.50" className="flex1" />
               <span className="muted text-xs-12">USD · 超出后切换到 fallback</span>
             </div>
 
             <label>超时</label>
             <div className="control">
-              <SparkInput type="number" defaultValue="120" className="flex1" />
+              <Input type="number" defaultValue="120" className="flex1" />
               <span className="muted text-xs-12">秒</span>
             </div>
 
@@ -1885,7 +1890,7 @@ function ModelsSection() {
 
             {addingForProvider === provider.id && (
               <div className="row row-gap-sm mb-sm">
-                <SparkInput
+                <Input
                   className="flex1 model-name-sm"
                   placeholder="模型名称，如 gpt-4o"
                   value={newModelName}
@@ -2254,7 +2259,7 @@ function RuleEditPanel({
           <div className="subsec-h">规则</div>
           <div className="form-grid">
             <label>名称</label>
-            <SparkInput
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="例：代码风格"
@@ -2263,14 +2268,14 @@ function RuleEditPanel({
             <label>
               优先级<span className="sub">数字越大越优先</span>
             </label>
-            <SparkInput
+            <Input
               type="number"
               value={priority}
               onChange={(e) => setPriority(Number(e.target.value))}
             />
 
             <label>内容</label>
-            <SparkTextarea
+            <TextArea
               value={content}
               onChange={(e) => setContent(e.target.value)}
               placeholder="输入要注入到 Agent prompt 的规则内容"
@@ -2799,7 +2804,7 @@ function McpSection() {
                 <label>
                   名称<span className="sub">服务器唯一标识名称</span>
                 </label>
-                <SparkInput
+                <Input
                   value={draft.name}
                   onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
                   placeholder="例：filesystem"
@@ -2808,33 +2813,35 @@ function McpSection() {
                 <label>
                   作用域<span className="sub">配置生效范围</span>
                 </label>
-                <SparkSelect
+                <Select
                   value={draft.scope}
-                  onChange={(e) => setDraft((prev) => ({ ...prev, scope: e.target.value }))}
+                  onChange={(v) => setDraft((prev) => ({ ...prev, scope: v }))}
                   disabled={!!editingId}
-                >
-                  <option value="user">user</option>
-                  <option value="team">team</option>
-                  <option value="project">project</option>
-                  <option value="session">session</option>
-                </SparkSelect>
+                  options={[
+                    { label: 'user', value: 'user' },
+                    { label: 'team', value: 'team' },
+                    { label: 'project', value: 'project' },
+                    { label: 'session', value: 'session' },
+                  ]}
+                />
 
                 <label>
                   传输类型<span className="sub">与 MCP 服务器的通信方式</span>
                 </label>
-                <SparkSelect
+                <Select
                   value={draft.type}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     setDraft((prev) => ({
                       ...prev,
-                      type: (e.target.value === 'sse' ? 'sse' : 'stdio') as McpTransportType,
+                      type: (v === 'sse' ? 'sse' : 'stdio') as McpTransportType,
                     }))
                   }
                   disabled={!!editingId}
-                >
-                  <option value="stdio">Stdio（本地进程）</option>
-                  <option value="sse">SSE（HTTP 流）</option>
-                </SparkSelect>
+                  options={[
+                    { label: 'Stdio（本地进程）', value: 'stdio' },
+                    { label: 'SSE（HTTP 流）', value: 'sse' },
+                  ]}
+                />
               </div>
 
               {draft.type === 'stdio' ? (
@@ -2844,7 +2851,7 @@ function McpSection() {
                     <label>
                       启动命令<span className="sub">可执行文件路径</span>
                     </label>
-                    <SparkInput
+                    <Input
                       className="mono-sm"
                       value={draft.command}
                       onChange={(e) => setDraft((prev) => ({ ...prev, command: e.target.value }))}
@@ -2854,7 +2861,7 @@ function McpSection() {
                     <label>
                       参数<span className="sub">空格分隔的命令行参数</span>
                     </label>
-                    <SparkInput
+                    <Input
                       className="mono-sm"
                       value={draft.args}
                       onChange={(e) => setDraft((prev) => ({ ...prev, args: e.target.value }))}
@@ -2869,7 +2876,7 @@ function McpSection() {
                     <label>
                       URL<span className="sub">SSE 端点地址</span>
                     </label>
-                    <SparkInput
+                    <Input
                       className="mono-sm"
                       value={draft.url}
                       onChange={(e) => setDraft((prev) => ({ ...prev, url: e.target.value }))}
@@ -2891,14 +2898,14 @@ function McpSection() {
                 <div className="mcp-env-list">
                   {draft.envPairs.map((pair, idx) => (
                     <div key={idx} className="mcp-env-row">
-                      <SparkInput
+                      <Input
                         className="mcp-env-key mono-sm"
                         value={pair.key}
                         onChange={(e) => updateEnvPair(idx, 'key', e.target.value)}
                         placeholder="KEY"
                       />
                       <span className="mcp-env-eq">=</span>
-                      <SparkInput
+                      <Input
                         className="mcp-env-val mono-sm flex1"
                         value={pair.value}
                         onChange={(e) => updateEnvPair(idx, 'value', e.target.value)}
@@ -3040,7 +3047,7 @@ function SystemPromptSection() {
         {isDirty && <span className="badge warning dot">未保存</span>}
       </div>
 
-      <SparkTextarea
+      <TextArea
         className="prompt-textarea"
         value={systemPrompt}
         onChange={(event) => setSystemPrompt(event.target.value)}
@@ -3333,13 +3340,14 @@ export function PermissionsSection() {
           desc="影响新会话与无会话输入区；已有会话保留自己的运行时策略"
           right={
             <div className="select-sm">
-              <SparkSelect
+              <Select
                 value={runtimeAdapter}
-                onChange={(e) => handleRuntimeAdapterChange(e.target.value as SessionAgentAdapter)}
-              >
-                <option value="claude-sdk">Claude SDK</option>
-                <option value="codex">Codex</option>
-              </SparkSelect>
+                onChange={(v) => handleRuntimeAdapterChange(v as SessionAgentAdapter)}
+                options={[
+                  { label: 'Claude SDK', value: 'claude-sdk' },
+                  { label: 'Codex', value: 'codex' },
+                ]}
+              />
             </div>
           }
         />
@@ -3436,7 +3444,7 @@ export function PermissionsSection() {
                 title={title}
                 desc={desc}
                 right={
-                  <SparkInput
+                  <Input
                     type="radio"
                     className="spark-radio"
                     name={`sb-${activeProfile.id}`}
@@ -3467,12 +3475,15 @@ export function PermissionsSection() {
           title="审计日志保留"
           right={
             <div className="select-sm">
-              <SparkSelect defaultValue="90">
-                <option value="30">30 天</option>
-                <option value="90">90 天</option>
-                <option value="365">1 年</option>
-                <option value="forever">永久</option>
-              </SparkSelect>
+              <Select
+                defaultValue="90"
+                options={[
+                  { label: '30 天', value: '30' },
+                  { label: '90 天', value: '90' },
+                  { label: '1 年', value: '365' },
+                  { label: '永久', value: 'forever' },
+                ]}
+              />
             </div>
           }
         />
@@ -3528,26 +3539,30 @@ function PermRule({
         <div className="hint">{hint}</div>
       </div>
       <div className="select-full">
-        <SparkSelect defaultValue={scope}>
-          <option>工作区内</option>
-          <option>本会话</option>
-          <option>本项目</option>
-          <option>任意</option>
-          <option>profile 内</option>
-          <option>按 server</option>
-          <option>域名白名单</option>
-        </SparkSelect>
+        <Select
+          defaultValue={scope}
+          options={[
+            { label: '工作区内', value: '工作区内' },
+            { label: '本会话', value: '本会话' },
+            { label: '本项目', value: '本项目' },
+            { label: '任意', value: '任意' },
+            { label: 'profile 内', value: 'profile 内' },
+            { label: '按 server', value: '按 server' },
+            { label: '域名白名单', value: '域名白名单' },
+          ]}
+        />
       </div>
       <div className="select-full">
-        <SparkSelect
+        <Select
           value={mode}
-          onChange={(e) => onModeChange?.(e.target.value as PermissionMode)}
-        >
-          <option value="allow">允许</option>
-          <option value="ask">询问</option>
-          <option value="ask-twice">双重确认</option>
-          <option value="deny">拒绝</option>
-        </SparkSelect>
+          onChange={(v) => onModeChange?.(v as PermissionMode)}
+          options={[
+            { label: '允许', value: 'allow' },
+            { label: '询问', value: 'ask' },
+            { label: '双重确认', value: 'ask-twice' },
+            { label: '拒绝', value: 'deny' },
+          ]}
+        />
       </div>
     </div>
   )
@@ -3564,18 +3579,22 @@ function TelemetrySection() {
 
       <div className="form-grid">
         <label>本地日志级别</label>
-        <SparkSelect value={s.logLevel} onChange={(e) => set({ logLevel: e.target.value })}>
-          <option value="error">error</option>
-          <option value="warn">warn</option>
-          <option value="info">info</option>
-          <option value="debug">debug</option>
-          <option value="trace">trace</option>
-        </SparkSelect>
+        <Select
+          value={s.logLevel}
+          onChange={(v) => set({ logLevel: v })}
+          options={[
+            { label: 'error', value: 'error' },
+            { label: 'warn', value: 'warn' },
+            { label: 'info', value: 'info' },
+            { label: 'debug', value: 'debug' },
+            { label: 'trace', value: 'trace' },
+          ]}
+        />
 
         <label>
           OpenTelemetry endpoint<span className="sub">可选 — 把 trace 转发到 collector</span>
         </label>
-        <SparkInput
+        <Input
           value={s.otlpEndpoint}
           onChange={(e) => set({ otlpEndpoint: e.target.value })}
           placeholder="https://otlp.example.com:4318 (可选)"
@@ -3583,7 +3602,7 @@ function TelemetrySection() {
 
         <label>Trace 采样率</label>
         <div className="control">
-          <SparkInput
+          <Input
             type="range"
             min="0"
             max="100"
@@ -3595,7 +3614,7 @@ function TelemetrySection() {
         </div>
 
         <label>本地保留 trace 天数</label>
-        <SparkInput
+        <Input
           type="number"
           value={s.traceRetentionDays}
           onChange={(e) => set({ traceRetentionDays: Number(e.target.value) || 14 })}
@@ -3985,7 +4004,7 @@ function StorageSection() {
       <div className="form-grid">
         <label>数据目录</label>
         <div className="control">
-          <SparkInput
+          <Input
             className="flex1"
             value={stats?.userDataPath ?? '加载中...'}
             readOnly
@@ -3999,7 +4018,7 @@ function StorageSection() {
           当前工作区<span className="sub">Agent 文件工具的根目录</span>
         </label>
         <div className="control">
-          <SparkInput className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
+          <Input className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
           <button className="btn" onClick={handleOpenWorkspace}>
             <Icons.Folder size={12} /> 选择
           </button>
@@ -4903,13 +4922,14 @@ function UpdatesSection() {
           title="更新通道"
           right={
             <div className="select-sm">
-              <SparkSelect
+              <Select
                 value={s.channel}
-                onChange={(e) => handleSettingsChange('channel', e.target.value)}
-              >
-                <option value="stable">stable</option>
-                <option value="beta">beta</option>
-              </SparkSelect>
+                onChange={(v) => handleSettingsChange('channel', v)}
+                options={[
+                  { label: 'stable', value: 'stable' },
+                  { label: 'beta', value: 'beta' },
+                ]}
+              />
             </div>
           }
         />

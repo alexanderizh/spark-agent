@@ -147,6 +147,17 @@ export class EventRepository extends BaseRepository {
     return { events, hasMore }
   }
 
+  /** 按 session 查询完整事件历史，按时间线正序返回。 */
+  queryAllBySession(sessionId: string): AgentEventRow[] {
+    const seqOrder = "CAST(json_extract(event_json, '$.seq') AS INTEGER)"
+    const stmt = this.raw.prepare(
+      `SELECT * FROM agent_events
+       WHERE session_id = ?
+       ORDER BY ${seqOrder} ASC, created_at ASC, rowid ASC`,
+    )
+    return stmt.all(sessionId) as AgentEventRow[]
+  }
+
   /**
    * 查询用于构建「对话历史」的事件，按 seq 正序返回。
    *

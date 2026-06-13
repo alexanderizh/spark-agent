@@ -131,10 +131,10 @@
   margin-left: 2px;
   line-height: 1;
 }
-.board-recycle-badge-arco .arco-badge-number {
+.board-recycle-badge .ant-badge-count {
   box-shadow: 0 0 0 2px var(--panel);
 }
-.board-recycle-arco-btn {
+.board-recycle-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -145,19 +145,19 @@
 }
 
 /* Fix button icon and text vertical alignment */
-.board-toolbar .arco-btn {
+.board-toolbar .ant-btn {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
 }
 
-.board-toolbar .arco-btn .arco-btn-content {
+.board-toolbar .ant-btn > span:not(.ant-btn-icon) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
-.board-toolbar .arco-btn .arco-btn-icon {
+.board-toolbar .ant-btn .ant-btn-icon {
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -638,8 +638,8 @@
   white-space: nowrap;
 }
 /* select 中已选值的渲染 */
-.bqc-select .arco-select-view-value .bqc-priority-tag,
-.bdp-select .arco-select-view-value .bdp-priority-tag {
+.bqc-select .ant-select-selection-item .bqc-priority-tag,
+.bdp-select .ant-select-selection-item .bdp-priority-tag {
   margin: -2px 0;
 }
 
@@ -679,7 +679,7 @@
 .bdp-field-row .bdp-field { flex: 1; }
 .bdp-label { font-size: var(--font-xs); font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.04em; }
 
-.bdp-title-input .arco-input {
+.bdp-title-input .ant-input {
   padding: 6px 0 !important;
   border: none !important;
   border-bottom: 1px solid transparent !important;
@@ -690,30 +690,30 @@
   color: var(--text-strong) !important;
   transition: border-bottom-color 0.15s !important;
 }
-.bdp-title-input .arco-input:focus {
+.bdp-title-input .ant-input:focus {
   border-bottom-color: var(--primary) !important;
   box-shadow: none !important;
 }
 
-.bdp-desc-input .arco-input {
+.bdp-desc-input .ant-input {
   border: 1px solid var(--border) !important;
   border-radius: var(--r-sm) !important;
   background: var(--bg) !important;
   transition: border-color 0.15s, box-shadow 0.15s !important;
   line-height: 1.55 !important;
 }
-.bdp-desc-input .arco-input:focus {
+.bdp-desc-input .ant-input:focus {
   border-color: var(--primary) !important;
   box-shadow: 0 0 0 2px var(--primary-soft) !important;
 }
 
-.bdp-input .arco-input {
+.bdp-input .ant-input {
   border: 1px solid var(--border) !important;
   border-radius: var(--r-sm) !important;
   background: var(--bg) !important;
   transition: border-color 0.15s, box-shadow 0.15s !important;
 }
-.bdp-input .arco-input:focus {
+.bdp-input .ant-input:focus {
   border-color: var(--primary) !important;
   box-shadow: 0 0 0 2px var(--primary-soft) !important;
 }

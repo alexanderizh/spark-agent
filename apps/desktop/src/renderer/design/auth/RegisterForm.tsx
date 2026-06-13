@@ -1,26 +1,19 @@
 /**
  * RegisterForm — 邮箱注册
- *
- * 流程：
- *   1. 填写邮箱 + 图片验证码 → 发送邮箱验证码
- *   2. 填写密码 + 邮箱验证码 → 提交注册
- *   3. 注册成功后自动登录（后端直接返回 session）
  */
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { AutoComplete, Button, Form, Input } from '@arco-design/web-react'
+import { AutoComplete, Button, Form, Input } from 'antd'
 import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
 import { CaptchaField } from './CaptchaField'
 import { getRecentEmails, rememberEmail } from './recentEmails'
 import { matchFieldError } from './errorMapping'
 
-const F = Form
-
 export function RegisterForm(): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
-  const [form] = F.useForm()
+  const [form] = Form.useForm()
   const [submitting, setSubmitting] = useState(false)
   const [countdown, setCountdown] = useState(0)
   const [recentEmails, setRecentEmails] = useState<string[]>(() => getRecentEmails())
@@ -31,9 +24,13 @@ export function RegisterForm(): React.ReactElement {
     return () => clearTimeout(t)
   }, [countdown])
 
+  const setFieldError = (name: string, message: string): void => {
+    form.setFields([{ name, errors: [message] }])
+  }
+
   const handleSendCode = async (): Promise<void> => {
     try {
-      const values = await form.validate(['account', 'captchaId', 'captchaText'])
+      const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
       await auth.sendCode({
         account: values.account,
         type: 'register',
@@ -46,7 +43,7 @@ export function RegisterForm(): React.ReactElement {
       const msg = (e as Error).message ?? '发送失败'
       const target = matchFieldError(msg, ['account', 'captchaText'])
       if (target) {
-        form.setFields({ [target]: { error: { message: msg } } })
+        setFieldError(target, msg)
         if (target === 'captchaText') form.setFieldValue('captchaText', '')
       } else if (!msg.includes('captcha')) {
         toast.error(msg)
@@ -57,7 +54,7 @@ export function RegisterForm(): React.ReactElement {
   const handleSubmit = async (): Promise<void> => {
     try {
       setSubmitting(true)
-      const values = await form.validate()
+      const values = await form.validateFields()
       await auth.register({
         account: values.account,
         password: values.password,
@@ -71,7 +68,7 @@ export function RegisterForm(): React.ReactElement {
       const msg = (e as Error).message ?? '注册失败'
       const target = matchFieldError(msg, ['emailCode', 'password', 'captchaText', 'account'])
       if (target) {
-        form.setFields({ [target]: { error: { message: msg } } })
+        setFieldError(target, msg)
         if (target === 'captchaText') form.setFieldValue('captchaText', '')
       } else {
         toast.error(msg)
@@ -82,7 +79,7 @@ export function RegisterForm(): React.ReactElement {
   }
 
   const accountSuggestions = useMemo(
-    () => recentEmails.map((email) => ({ value: email, name: email })),
+    () => recentEmails.map((email) => ({ value: email })),
     [recentEmails],
   )
 
@@ -92,21 +89,19 @@ export function RegisterForm(): React.ReactElement {
         <h3 className="auth-form-title">创建你的账号</h3>
       </div>
 
-      <F form={form} className="auth-form-body" layout="vertical" requiredSymbol={false}>
+      <Form form={form} className="auth-form-body" layout="vertical" requiredMark={false}>
         <Form.Item
-          field="account"
+          name="account"
           label="邮箱"
           rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
         >
           <AutoComplete
             placeholder="example@spark.com"
-            data={accountSuggestions}
-            strict={false}
+            options={accountSuggestions}
             allowClear
-            inputProps={{ autoComplete: 'email' }}
-            triggerProps={{ autoAlignPopupWidth: true }}
+            {...({ autoComplete: 'email' } as any)}
             filterOption={(inputValue, option) => {
-              const v = (option as { value?: string }).value ?? ''
+              const v = (option as { value?: string })?.value ?? ''
               return v.toLowerCase().includes(inputValue.toLowerCase())
             }}
           />
@@ -115,17 +110,17 @@ export function RegisterForm(): React.ReactElement {
         <CaptchaField form={form} />
 
         <Form.Item
-          field="emailCode"
+          name="emailCode"
           label="邮箱验证码"
           rules={[{ required: true, message: '请填写邮箱验证码' }]}
         >
           <Input
             placeholder="6 位验证码"
             maxLength={6}
-            addAfter={
+            addonAfter={
               <Button
                 className="auth-code-action"
-                type="secondary"
+                type="default"
                 disabled={countdown > 0}
                 onClick={() => void handleSendCode()}
               >
@@ -136,19 +131,19 @@ export function RegisterForm(): React.ReactElement {
         </Form.Item>
 
         <Form.Item
-          field="password"
+          name="password"
           label="设置密码"
-          rules={[{ required: true, minLength: 6, message: '至少 6 位' }]}
+          rules={[{ required: true, min: 6, message: '至少 6 位' }]}
         >
           <Input.Password placeholder="请设置登录密码" autoComplete="new-password" />
         </Form.Item>
 
         <Form.Item>
-          <Button type="primary" long loading={submitting} onClick={handleSubmit}>
+          <Button type="primary" block loading={submitting} onClick={handleSubmit}>
             注册并登录
           </Button>
         </Form.Item>
-      </F>
+      </Form>
     </div>
   )
 }

@@ -372,6 +372,21 @@ describe('EventRepository', () => {
     expect(older.hasMore).toBe(false)
   })
 
+  it('returns all session events in chronological order for complete history hydration', () => {
+    for (let i = 0; i < 5; i++) {
+      repo.insert({
+        id: `evt-all-${i}`,
+        sessionId: 'sess-1',
+        eventType: 'assistant_message',
+        eventJson: JSON.stringify({ seq: i, content: `chunk-${i}` }),
+      })
+    }
+
+    const events = repo.queryAllBySession('sess-1')
+
+    expect(events.map((event) => JSON.parse(event.event_json).seq)).toEqual([0, 1, 2, 3, 4])
+  })
+
   it('should filter by event type', () => {
     repo.insert({
       id: 'evt-1',

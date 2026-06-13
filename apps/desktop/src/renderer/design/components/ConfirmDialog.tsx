@@ -1,12 +1,4 @@
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@spark/ui-kit'
+import { Modal, Button } from 'antd'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -30,30 +22,28 @@ export function ConfirmDialog({
   onConfirm,
 }: ConfirmDialogProps) {
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="spark-confirm-dialog">
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          {description != null
-            ? <DialogDescription>{description}</DialogDescription>
-            : <DialogDescription className="sr-only">请确认是否继续执行此操作。</DialogDescription>}
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="secondary" size="sm" onClick={() => onOpenChange(false)}>
-            {cancelText}
-          </Button>
-          <Button
-            variant={danger ? 'danger' : 'primary'}
-            size="sm"
-            onClick={() => {
-              void onConfirm()
-              onOpenChange(false)
-            }}
-          >
-            {confirmText}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <Modal
+      open={open}
+      onCancel={() => onOpenChange(false)}
+      title={title}
+      footer={null}
+      width={440}
+      className="spark-confirm-dialog"
+    >
+      {description != null ? <p>{description}</p> : null}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+        <Button onClick={() => onOpenChange(false)}>{cancelText}</Button>
+        <Button
+          type="primary"
+          danger={danger ?? false}
+          onClick={() => {
+            void onConfirm()
+            onOpenChange(false)
+          }}
+        >
+          {confirmText}
+        </Button>
+      </div>
+    </Modal>
   )
 }

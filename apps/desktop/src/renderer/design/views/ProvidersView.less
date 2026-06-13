@@ -265,19 +265,7 @@
   overflow-y: auto;
   padding-right: 4px;
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-fill-3, var(--border-strong));
-    border-radius: 999px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
+  // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
 /* ─── Empty placeholder ─────────────────────────────────────────────────── */
@@ -306,16 +294,7 @@
   padding: 20px 24px 32px;
   overflow-y: auto;
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-fill-3, var(--border-strong));
-    border-radius: 999px;
-  }
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
+  // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
 /* ─── Form Section ──────────────────────────────────────────────────────── */
@@ -380,7 +359,7 @@
 
 .pv_form_grid {
   display: grid;
-  grid-template-columns: 140px 1fr;
+  grid-template-columns: 200px 1fr;
   gap: 10px 14px;
   align-items: center;
 
@@ -405,6 +384,7 @@
     font-size: 11px;
     color: var(--text-muted);
     font-weight: 400;
+    line-height: 1.4;
   }
 }
 
@@ -518,16 +498,7 @@
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-fill-3, var(--border-strong));
-    border-radius: 999px;
-  }
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
+  // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
 .pv_import_list_row {

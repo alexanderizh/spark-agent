@@ -1,17 +1,9 @@
 /**
  * AccountSection — 设置页"账号"区
- *
- * 状态：
- *   - 未登录：显示 AuthGate 页面（登录/注册/微信扫码直接在页面上）
- *   - 已登录：显示云端 profile + 绑定方式 + 本地用户资料编辑 + base URL
- *
- * 设计：
- *   - 头像/名称编辑从通用区搬到这里
- *   - 登录注册是页面而非弹窗，符合用户偏好
  */
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { Avatar, Button, Form, Input, Modal } from '@arco-design/web-react'
+import { Avatar, Button, Form, Input, Modal } from 'antd'
 import { useAuth } from '../auth/AuthContext'
 import { useToast } from '../components/Toast'
 import { AuthGate } from '../auth/AuthGate'
@@ -29,7 +21,6 @@ interface BindStatus {
 export function AccountSection(): React.ReactElement {
   const auth = useAuth()
 
-  // 未登录：直接在设置页里显示登录/注册表单
   if (!auth.isAuthenticated) {
     return (
       <div className="account-section">
@@ -38,7 +29,6 @@ export function AccountSection(): React.ReactElement {
     )
   }
 
-  // 已登录：完整 profile 视图
   return <AuthenticatedAccountView />
 }
 
@@ -50,7 +40,6 @@ function AuthenticatedAccountView(): React.ReactElement {
   const [editingBaseUrl, setEditingBaseUrl] = useState(false)
   const [passwordModal, setPasswordModal] = useState(false)
 
-  // ─── 绑定状态 ──────────────────────────────────────────────────────────────
   useEffect(() => {
     void window.spark
       ?.invoke('auth:bind-status', {})
@@ -103,10 +92,9 @@ function AuthenticatedAccountView(): React.ReactElement {
     <div className="account-section">
       <h3 className="settings-section-title">账号</h3>
 
-      {/* 云端登录用户信息 */}
       <div className="account-profile-card">
         <div className="account-profile">
-          <Avatar size={64} className="account-profile-avatar">
+          <Avatar size={64} className="account-profile-avatar" src={null}>
             <AvatarImage
               src={auth.user?.avatarUrl || ''}
               seed={auth.user?.account || displayName}
@@ -153,7 +141,6 @@ function AuthenticatedAccountView(): React.ReactElement {
         </div>
       </div>
 
-      {/* 绑定方式 */}
       <div className="account-panel">
         <div className="account-panel-head">
           <div>
@@ -187,7 +174,6 @@ function AuthenticatedAccountView(): React.ReactElement {
         </div>
       </div>
 
-      {/* Base URL */}
       <div className="account-panel">
         <div className="account-panel-head">
           <div>
@@ -198,7 +184,7 @@ function AuthenticatedAccountView(): React.ReactElement {
         <div className="account-baseurl-row">
           <code>{auth.baseUrl}</code>
           <Button
-            size="mini"
+            size="small"
             onClick={() => {
               setBaseUrlDraft(auth.baseUrl)
               setEditingBaseUrl(true)
@@ -211,15 +197,15 @@ function AuthenticatedAccountView(): React.ReactElement {
 
       <Modal
         title="切换云端服务地址"
-        visible={editingBaseUrl}
+        open={editingBaseUrl}
         onCancel={() => setEditingBaseUrl(false)}
         footer={null}
-        unmountOnExit
+        destroyOnClose
       >
         <p>输入同步服务的 API URL：</p>
         <Input
           value={baseUrlDraft}
-          onChange={setBaseUrlDraft}
+          onChange={(e) => setBaseUrlDraft(e.target.value)}
           placeholder="https://www.yiqibyte.com/"
           autoFocus
         />
@@ -233,10 +219,10 @@ function AuthenticatedAccountView(): React.ReactElement {
 
       <Modal
         title="修改密码"
-        visible={passwordModal}
+        open={passwordModal}
         onCancel={() => setPasswordModal(false)}
         footer={null}
-        unmountOnExit
+        destroyOnClose
       >
         <ChangePasswordForm
           onClose={() => setPasswordModal(false)}
@@ -284,7 +270,7 @@ function ChangePasswordForm({
   const handleSubmit = async (): Promise<void> => {
     try {
       setSubmitting(true)
-      const values = await form.validate()
+      const values = await form.validateFields()
       if (values.newPassword !== values.confirmPassword) {
         toast.error('两次输入的新密码不一致')
         return
@@ -304,21 +290,21 @@ function ChangePasswordForm({
   return (
     <Form form={form} layout="vertical">
       <Form.Item
-        field="oldPassword"
+        name="oldPassword"
         label="当前密码"
         rules={[{ required: true, message: '请输入当前密码' }]}
       >
         <Input.Password />
       </Form.Item>
       <Form.Item
-        field="newPassword"
+        name="newPassword"
         label="新密码"
-        rules={[{ required: true, minLength: 6, message: '至少 6 位' }]}
+        rules={[{ required: true, min: 6, message: '至少 6 位' }]}
       >
         <Input.Password />
       </Form.Item>
       <Form.Item
-        field="confirmPassword"
+        name="confirmPassword"
         label="确认新密码"
         rules={[{ required: true, message: '请再次输入新密码' }]}
       >

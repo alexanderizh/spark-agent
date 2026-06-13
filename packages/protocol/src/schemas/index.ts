@@ -235,6 +235,7 @@ export const SessionCancelQueuedTurnRequestSchema = z.object({
 
 export const SessionGetHistoryRequestSchema = z.object({
   sessionId: SessionIdSchema,
+  full: z.boolean().optional().default(false),
   limit: z.number().int().min(1).max(1000).optional().default(50),
   beforeSeq: z.number().int().nonnegative().optional(),
 })

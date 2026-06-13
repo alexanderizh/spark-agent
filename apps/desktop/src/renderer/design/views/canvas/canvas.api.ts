@@ -235,6 +235,16 @@ function createNodeBase(input: {
   }
 }
 
+function sortCanvasNodes(nodes: CanvasNode[]): CanvasNode[] {
+  return [...nodes].sort((left, right) => {
+    if (left.type === 'group' && right.type !== 'group') return -1
+    if (left.type !== 'group' && right.type === 'group') return 1
+    if (left.parentNodeId && !right.parentNodeId) return 1
+    if (!left.parentNodeId && right.parentNodeId) return -1
+    return left.zIndex - right.zIndex
+  })
+}
+
 function updateProjectCounts(db: CanvasDb, projectId: string): void {
   const project = db.projects.find((item) => item.id === projectId)
   if (!project) return
@@ -310,7 +320,7 @@ export const canvasApi = {
     return {
       project,
       board,
-      nodes: db.nodes.filter((node) => node.projectId === projectId && !node.hidden),
+      nodes: sortCanvasNodes(db.nodes.filter((node) => node.projectId === projectId && !node.hidden)),
       edges: db.edges.filter((edge) => edge.projectId === projectId),
       assets: db.assets.filter((asset) => asset.projectId === projectId),
       tasks: db.tasks.filter((task) => task.projectId === projectId),
@@ -407,6 +417,105 @@ export const canvasApi = {
     updateProjectCounts(db, input.projectId)
     writeDb(db)
     return node
+  },
+
+  async createGroupNode(projectId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.projectId === projectId)
+    if (!board) throw new Error('Canvas board not found')
+
+    const selected = new Set(nodeIds)
+    const sourceNodes = db.nodes.filter(
+      (node) =>
+        node.projectId === projectId &&
+        !node.hidden &&
+        node.type !== 'group' &&
+        !node.parentNodeId &&
+        selected.has(node.id),
+    )
+    if (sourceNodes.length < 2) return this.openSnapshot(projectId)
+
+    const at = now()
+    const maxZ = Math.max(0, ...db.nodes.filter((node) => node.projectId === projectId).map((node) => node.zIndex))
+    const groupX = Math.min(...sourceNodes.map((node) => node.x)) - 28
+    const groupY = Math.min(...sourceNodes.map((node) => node.y)) - 56
+    const cellWidth = Math.max(220, ...sourceNodes.map((node) => Math.min(node.width, 320)))
+    const cellHeight = Math.max(132, ...sourceNodes.map((node) => Math.min(node.height, 210)))
+    const columns = sourceNodes.length <= 2 ? sourceNodes.length : 2
+    const rows = Math.ceil(sourceNodes.length / columns)
+    const gap = 18
+    const paddingX = 22
+    const headerHeight = 48
+    const groupWidth = Math.max(360, columns * cellWidth + (columns - 1) * gap + paddingX * 2)
+    const groupHeight = Math.max(220, headerHeight + rows * cellHeight + (rows - 1) * gap + 24)
+
+    const groupNode = createNodeBase({
+      projectId,
+      boardId: board.id,
+      type: 'group',
+      title: `Group ${sourceNodes.length}`,
+      x: groupX,
+      y: groupY,
+      width: groupWidth,
+      height: groupHeight,
+      data: {
+        text: `包含 ${sourceNodes.length} 个节点`,
+        message: sourceNodes.map((node) => node.title ?? node.type).join(' / '),
+      },
+      at,
+    })
+    groupNode.zIndex = maxZ + 1
+
+    const sortedNodes = [...sourceNodes].sort((left, right) => left.x - right.x || left.y - right.y)
+    const arrangedById = new Map(
+      sortedNodes.map((node, index) => {
+        const col = index % columns
+        const row = Math.floor(index / columns)
+        return [
+          node.id,
+          {
+            x: paddingX + col * (cellWidth + gap),
+            y: headerHeight + row * (cellHeight + gap),
+            width: Math.min(Math.max(node.width, 200), cellWidth),
+            height: Math.min(Math.max(node.height, 118), cellHeight),
+          },
+        ]
+      }),
+    )
+
+    db.nodes = db.nodes.map((node) => {
+      const layout = arrangedById.get(node.id)
+      if (!layout) return node
+      return {
+        ...node,
+        parentNodeId: groupNode.id,
+        x: layout.x,
+        y: layout.y,
+        width: layout.width,
+        height: layout.height,
+        zIndex: groupNode.zIndex + 1,
+        updatedAt: at,
+      }
+    })
+    db.nodes.push(groupNode)
+    db.edges.push(
+      ...sourceNodes.map(
+        (node): CanvasEdge => ({
+          id: uid('canvas_edge'),
+          projectId,
+          boardId: board.id,
+          userId: USER_ID,
+          sourceNodeId: groupNode.id,
+          targetNodeId: node.id,
+          type: 'group_contains',
+          metadata: {},
+          createdAt: at,
+        }),
+      ),
+    )
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
   },
 
   async updateNodes(projectId: string, nodes: CanvasNode[]): Promise<void> {
@@ -508,9 +617,24 @@ export const canvasApi = {
   async deleteNodes(projectId: string, nodeIds: string[]): Promise<void> {
     const db = readDb()
     const remove = new Set(nodeIds)
-    db.nodes = db.nodes.map((node) =>
-      remove.has(node.id) ? { ...node, hidden: true, updatedAt: now() } : node,
+    const removedGroups = new Map(
+      db.nodes
+        .filter((node) => remove.has(node.id) && node.projectId === projectId && node.type === 'group')
+        .map((node) => [node.id, node]),
     )
+    const at = now()
+    db.nodes = db.nodes.map((node) => {
+      if (remove.has(node.id)) return { ...node, hidden: true, updatedAt: at }
+      const parent = node.parentNodeId ? removedGroups.get(node.parentNodeId) : undefined
+      if (!parent) return node
+      return {
+        ...node,
+        parentNodeId: null,
+        x: parent.x + node.x,
+        y: parent.y + node.y,
+        updatedAt: at,
+      }
+    })
     db.edges = db.edges.filter(
       (edge) => !remove.has(edge.sourceNodeId) && !remove.has(edge.targetNodeId),
     )

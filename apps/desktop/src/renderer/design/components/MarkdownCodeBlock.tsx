@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button } from '@arco-design/web-react'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../Icons'
 
 type MarkdownCodeBlockProps = {
@@ -157,7 +157,7 @@ export function MarkdownCodeBlock({
             <Button
               className="md-code-copy"
               type="text"
-              size="mini"
+              size="small"
               icon={copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
               title={copied ? '已复制' : '复制'}
               onClick={handleCopy}
@@ -169,7 +169,7 @@ export function MarkdownCodeBlock({
         <Button
           className="md-code-copy-float"
           type="text"
-          size="mini"
+          size="small"
           icon={copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
           title={copied ? '已复制' : '复制'}
           onClick={handleCopy}

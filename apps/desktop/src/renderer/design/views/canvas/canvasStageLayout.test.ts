@@ -39,11 +39,14 @@ function createFlowNode(
     height: canvasNode.height,
     data: {
       canvasNode,
+      selectedCount: 0,
       actions: {
         duplicateNode: () => undefined,
         deleteNode: () => undefined,
         toggleLockNode: () => undefined,
         bringNodeToFront: () => undefined,
+        createGroupFromSelection: () => undefined,
+        openAiComposer: () => undefined,
       },
     },
     ...overrides,

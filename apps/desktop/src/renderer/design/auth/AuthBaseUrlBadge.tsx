@@ -3,7 +3,7 @@
  */
 
 import React, { useState } from 'react'
-import { Modal, Input, Button } from '@arco-design/web-react'
+import { Modal, Input, Button } from 'antd'
 import { useAuth } from './AuthContext'
 import { Icons } from '../Icons'
 
@@ -30,16 +30,16 @@ export function AuthBaseUrlBadge(): React.ReactElement {
 
       <Modal
         title="切换云端服务地址"
-        visible={editing}
+        open={editing}
         onCancel={() => setEditing(false)}
         footer={null}
-        unmountOnExit
+        destroyOnClose
       >
         <div className="auth-baseurl-edit">
           <p>输入同步服务的 API URL：</p>
           <Input
             value={value}
-            onChange={setValue}
+            onChange={(e) => setValue(e.target.value)}
             placeholder="http://localhost:7002"
             autoFocus
           />

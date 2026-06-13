@@ -55,29 +55,6 @@ describe('Renderer Smoke Tests', () => {
     vi.unstubAllGlobals()
   })
 
-  it('should import ui-kit components without errors', async () => {
-    const { Button, Card, Badge, Input } = await import('@spark/ui-kit')
-    expect(Button).toBeDefined()
-    expect(Card).toBeDefined()
-    expect(Badge).toBeDefined()
-    expect(Input).toBeDefined()
-  })
-
-  it('should import Tab components', async () => {
-    const mod = await import('@spark/ui-kit')
-    expect(mod.Tabs).toBeDefined()
-    expect(mod.TabsList).toBeDefined()
-    expect(mod.TabsTrigger).toBeDefined()
-    expect(mod.TabsContent).toBeDefined()
-  })
-
-  it('should import Dialog components', async () => {
-    const mod = await import('@spark/ui-kit')
-    expect(mod.Dialog).toBeDefined()
-    expect(mod.DialogContent).toBeDefined()
-    expect(mod.DialogTitle).toBeDefined()
-  })
-
   it('should have cn utility function', async () => {
     const { cn } = await import('@spark/ui-kit')
     expect(typeof cn).toBe('function')
@@ -366,6 +343,133 @@ describe('Renderer Smoke Tests', () => {
     })
 
     expect(invoke).toHaveBeenCalledWith('session:cancel', { sessionId: 'session-1' })
+  })
+
+  it('does not retry session history endlessly when the initial load fails', async () => {
+    localStorage.setItem('spark-agent:last-active-session', 'session-1')
+    const historyRequests: Array<Record<string, unknown> | undefined> = []
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: 'workspace-1',
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') {
+        return {
+          sessions: [{
+            id: 'session-1',
+            title: 'Broken history',
+            projectId: 'workspace-1',
+            workspaceIds: ['workspace-1'],
+            providerProfileId: 'provider-1',
+            modelId: 'claude-3-5-sonnet',
+            agentAdapter: 'claude',
+            permissionMode: 'claude-ask',
+            chatMode: 'agent',
+            reasoningEffort: 'medium',
+            status: 'idle',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+            messageCount: 1,
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') return { profiles: [] }
+      if (channel === 'workspace:list-branches') return { currentBranch: null, branches: [] }
+      if (channel === 'session:get-history') {
+        historyRequests.push(request)
+        throw new Error('history unavailable')
+      }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    try {
+      vi.doMock('@lobehub/ui', () => {
+        const makeComponent = (tag: string) =>
+          ({ children, ...props }: Record<string, unknown> & { children?: React.ReactNode }) =>
+            React.createElement(tag, props, children)
+        const components: Record<string, unknown> = {
+          __esModule: true,
+          Button: makeComponent('button'),
+          Checkbox: makeComponent('input'),
+          Dropdown: makeComponent('div'),
+          Empty: makeComponent('div'),
+          Input: makeComponent('input'),
+          Modal: makeComponent('div'),
+          SearchBar: makeComponent('input'),
+          Select: makeComponent('select'),
+          Tag: makeComponent('span'),
+          TextArea: makeComponent('textarea'),
+          Tooltip: makeComponent('span'),
+        }
+        return new Proxy(components, {
+          get(target, prop: string | symbol) {
+            if (prop in target) return target[prop as keyof typeof target]
+            return makeComponent('div')
+          },
+        })
+      })
+      vi.doMock('@lobehub/icons', () =>
+        new Proxy(
+          { __esModule: true },
+          {
+            get(target, prop: string | symbol) {
+              if (prop in target) return target[prop as keyof typeof target]
+              return {
+                Avatar: ({ size }: { size?: number }) =>
+                  React.createElement('span', {
+                    'data-lobe-icon': String(prop),
+                    style: { width: size, height: size },
+                  }),
+              }
+            },
+          },
+        ),
+      )
+      const { ChatView } = await import('../design/views/ChatView')
+
+      await act(async () => {
+        root = createRoot(container)
+        root.render(React.createElement(ToastProvider, null, React.createElement((await import('../design/SessionSidebarContext')).SessionSidebarProvider, null, React.createElement(ChatView))))
+        await new Promise((resolve) => setTimeout(resolve, 0))
+      })
+
+      await vi.waitFor(() => {
+        expect(historyRequests).toHaveLength(1)
+      })
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 20))
+      })
+
+      expect(historyRequests).toHaveLength(1)
+      expect(historyRequests[0]).toEqual(expect.objectContaining({
+        sessionId: 'session-1',
+        limit: 80,
+      }))
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('shows a running indicator at the bottom of a streaming agent message with content', async () => {
@@ -2009,7 +2113,7 @@ describe('Renderer Smoke Tests', () => {
     expect(sections[1]?.textContent).toContain('执行 Vite 初始化命令')
   })
 
-  it('hydrates paged running history and merges live events received during reload', async () => {
+  it('hydrates complete running history with one IPC request and merges live events received during reload', async () => {
     let streamHandler: ((event: Record<string, unknown>) => void) | null = null
     let resolveFirstHistory: ((value: unknown) => void) | null = null
     const firstHistory = new Promise((resolve) => {
@@ -2098,13 +2202,7 @@ describe('Renderer Smoke Tests', () => {
       if (channel === 'session:get-history') {
         historyCalls.push(request ?? {})
         if (historyCalls.length === 1) return firstHistory
-        return {
-          events: [
-            userEvent(0, 'turn-1', 'first'),
-            assistantEvent(1, 'turn-1', 'Older answer. '),
-          ],
-          hasMore: false,
-        }
+        throw new Error('history should be loaded in one complete request')
       }
       return {}
     })
@@ -2142,18 +2240,20 @@ describe('Renderer Smoke Tests', () => {
       streamHandler?.(assistantEvent(4, 'turn-2', 'live tail. '))
       resolveFirstHistory?.({
         events: [
+          userEvent(0, 'turn-1', 'first'),
+          assistantEvent(1, 'turn-1', 'Older answer. '),
           userEvent(2, 'turn-2', 'second'),
           assistantEvent(3, 'turn-2', 'Latest start. '),
         ],
-        hasMore: true,
+        hasMore: false,
       })
       await firstHistory
       await new Promise((resolve) => setTimeout(resolve, 0))
     })
 
     await vi.waitFor(() => {
-      expect(historyCalls.length).toBe(2)
-      expect(historyCalls[1]).toEqual(expect.objectContaining({ beforeSeq: 2 }))
+      expect(historyCalls).toHaveLength(1)
+      expect(historyCalls[0]).toEqual(expect.objectContaining({ full: true }))
     })
 
     await vi.waitFor(() => {

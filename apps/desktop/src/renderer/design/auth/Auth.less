@@ -153,7 +153,7 @@
 }
 
 // Arco Form/Input 样式：保持原装，不在这里覆盖。
-.auth-form .arco-form-item {
+.auth-form .ant-form-item {
   margin-bottom: 12px;
 }
 
@@ -168,8 +168,8 @@
   position: relative;
 }
 
-.auth-flow-tabs .arco-tabs-header,
-.auth-login-tabs .arco-tabs-header {
+.auth-flow-tabs .ant-tabs-nav,
+.auth-login-tabs .ant-tabs-nav {
   margin-bottom: 0;
   padding: 0;
   display: flex !important;
@@ -177,23 +177,23 @@
   white-space: normal;
 }
 
-.auth-flow-tabs .arco-tabs-header-scroll,
-.auth-login-tabs .arco-tabs-header-scroll,
-.auth-flow-tabs .arco-tabs-header-wrapper,
-.auth-login-tabs .arco-tabs-header-wrapper {
+.auth-flow-tabs .ant-tabs-nav-wrap,
+.auth-login-tabs .ant-tabs-nav-wrap,
+.auth-flow-tabs .ant-tabs-nav-list,
+.auth-login-tabs .ant-tabs-nav-list {
   width: 100%;
   display: flex;
 }
 
-.auth-flow-tabs .arco-tabs-header,
-.auth-login-tabs .arco-tabs-header {
+.auth-flow-tabs .ant-tabs-nav,
+.auth-login-tabs .ant-tabs-nav {
   display: flex !important;
   flex-direction: row !important;
   align-items: stretch;
   justify-content: stretch;
 }
 
-.auth-flow-tabs .arco-tabs-header {
+.auth-flow-tabs .ant-tabs-nav {
   gap: 4px;
   padding: 4px;
   border-radius: 10px;
@@ -201,7 +201,7 @@
   border: 1px solid var(--color-border-1, #edf1f6);
 }
 
-.auth-login-tabs .arco-tabs-header {
+.auth-login-tabs .ant-tabs-nav {
   gap: 4px;
   align-items: stretch;
   justify-content: flex-start;
@@ -209,8 +209,8 @@
   margin-bottom: 4px;
 }
 
-.auth-flow-tabs .arco-tabs-header-title,
-.auth-login-tabs .arco-tabs-header-title {
+.auth-flow-tabs .ant-tabs-tab,
+.auth-login-tabs .ant-tabs-tab {
   display: inline-flex;
   flex: 1 1 0;
   justify-content: center;
@@ -222,14 +222,14 @@
   min-width: 0;
 }
 
-.auth-flow-tabs .arco-tabs-header-title-text,
-.auth-login-tabs .arco-tabs-header-title-text {
+.auth-flow-tabs .ant-tabs-tab-btn,
+.auth-login-tabs .ant-tabs-tab-btn {
   display: inline-flex;
   width: 100%;
   justify-content: center;
 }
 
-.auth-flow-tabs .arco-tabs-header-title {
+.auth-flow-tabs .ant-tabs-tab {
   min-height: 44px;
   padding: 8px 12px;
   font-size: 13px;
@@ -239,17 +239,17 @@
   transition: background 150ms ease, color 150ms ease;
 }
 
-.auth-flow-tabs .arco-tabs-header-title:hover {
+.auth-flow-tabs .ant-tabs-tab:hover {
   color: var(--color-text-1, #0f172a);
 }
 
-.auth-flow-tabs .arco-tabs-header-title-active {
+.auth-flow-tabs .ant-tabs-tab-active {
   background: #ffffff;
   color: rgb(var(--primary-6, 37 99 235));
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
 }
 
-.auth-login-tabs .arco-tabs-header-title {
+.auth-login-tabs .ant-tabs-tab {
   flex: 0 0 auto;
   padding: 6px 4px;
   margin: 0 12px;
@@ -260,15 +260,15 @@
   transition: color 150ms ease;
 }
 
-.auth-login-tabs .arco-tabs-header-title:first-child {
+.auth-login-tabs .ant-tabs-tab:first-child {
   margin-left: 0;
 }
 
-.auth-login-tabs .arco-tabs-header-title:hover {
+.auth-login-tabs .ant-tabs-tab:hover {
   color: var(--color-text-1, #0f172a);
 }
 
-.auth-login-tabs .arco-tabs-header-title-active {
+.auth-login-tabs .ant-tabs-tab-active {
   background: transparent;
   color: rgb(var(--primary-6, 37 99 235));
   font-weight: 600;
@@ -384,7 +384,7 @@
   padding: 0 !important;
 }
 
-.captcha-svg-btn .arco-btn-content {
+.captcha-svg-btn .ant-btn > span:not(.ant-btn-icon) {
   display: flex;
   align-items: stretch;
   justify-content: center;
@@ -441,12 +441,12 @@
     padding: 16px 16px 14px;
   }
 
-  .auth-flow-tabs .arco-tabs-header {
+  .auth-flow-tabs .ant-tabs-nav {
     gap: 4px;
     padding: 4px;
   }
 
-  .auth-flow-tabs .arco-tabs-header-title {
+  .auth-flow-tabs .ant-tabs-tab {
     min-height: 40px;
     padding: 6px 10px;
     font-size: 12px;

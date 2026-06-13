@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Message, Spin, Tag } from '@arco-design/web-react'
+import { Button, Empty, Tag } from '@lobehub/ui'
+import { Spin, message } from 'antd'
 import { Icons } from '../../Icons'
 import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
-import { CanvasAiPanel } from './CanvasAiPanel'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
+import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import { CanvasInspector } from './CanvasInspector'
 import { CanvasStage } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
@@ -38,6 +39,7 @@ export function CanvasWorkspaceView({
     updateNodes,
     createTextNode,
     createImageNode,
+    createGroupNode,
     deleteNodes,
     duplicateNodes,
     patchNodes,
@@ -48,6 +50,7 @@ export function CanvasWorkspaceView({
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
+  const [inlineAiOpen, setInlineAiOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const selectedNodes = useMemo(
@@ -94,6 +97,21 @@ export function CanvasWorkspaceView({
     [patchNodes, snapshot?.nodes],
   )
 
+  const handleCreateGroup = useCallback(() => {
+    if (selectedNodeIds.length < 2) return
+    void createGroupNode(selectedNodeIds)
+  }, [createGroupNode, selectedNodeIds])
+
+  const handleOpenInlineAi = useCallback(
+    (nodeId?: string) => {
+      if (nodeId && !selectedNodeIds.includes(nodeId)) {
+        setSelectedNodeIds([nodeId])
+      }
+      setInlineAiOpen(true)
+    },
+    [selectedNodeIds],
+  )
+
   if (loading) {
     return (
       <div className="canvas-workspace canvas-workspace-loading">
@@ -130,7 +148,7 @@ export function CanvasWorkspaceView({
     event.target.value = ''
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      Message.warning('请选择图片文件')
+      message.warning('请选择图片文件')
       return
     }
     const dataUrl = await readFileAsDataUrl(file)
@@ -179,59 +197,72 @@ export function CanvasWorkspaceView({
     <div className="canvas-workspace">
       <MacWindowDragHeader />
       <header className="canvas-workspace-header">
-        <div className="canvas-workspace-title">
-          <Button size="small" type="text" icon={<Icons.ArrowLeft size={15} />} onClick={onBack}>
-            项目
-          </Button>
-          <div>
-            <h2>{snapshot.project.title}</h2>
-            <div className="canvas-workspace-subtitle">
-              {snapshot.nodes.length} nodes / {snapshot.assets.length} assets /{' '}
-              {snapshot.tasks.length} tasks
+        <div className="canvas-workspace-topbar">
+          <div className="canvas-workspace-title">
+            <Button size="small" type="text" icon={<Icons.ArrowLeft size={15} />} onClick={onBack}>
+              项目
+            </Button>
+            <div>
+              <h2>{snapshot.project.title}</h2>
+              <div className="canvas-workspace-subtitle">
+                {snapshot.nodes.length} nodes / {snapshot.assets.length} assets /{' '}
+                {snapshot.tasks.length} tasks
+              </div>
             </div>
           </div>
+          <div className="canvas-workspace-actions">
+            <Tag color="green">
+              Local draft
+            </Tag>
+            <Button
+              size="small"
+              icon={<Icons.Package size={15} />}
+              onClick={() => setAssetDrawerOpen(true)}
+            >
+              资产
+            </Button>
+            <Button size="small" icon={<Icons.Download size={15} />}>
+              导出
+            </Button>
+          </div>
         </div>
-        <div className="canvas-workspace-actions">
-          <Tag size="small" color="green">
-            Local draft
-          </Tag>
-          <Button
-            size="small"
-            icon={<Icons.Package size={15} />}
-            onClick={() => setAssetDrawerOpen(true)}
-          >
-            资产
-          </Button>
-          <Button size="small" icon={<Icons.Download size={15} />}>
-            导出
-          </Button>
-        </div>
-      </header>
-
-      <div className="canvas-workspace-body">
         <CanvasToolbar
           activeTool={activeTool}
           onToolChange={setActiveTool}
           onAddText={() => void addText(false)}
           onAddPrompt={() => void addText(true)}
           onUploadImage={uploadFirstImage}
+          onCreateGroup={handleCreateGroup}
+          onOpenAiComposer={() => handleOpenInlineAi()}
           onDeleteSelected={() => void deleteNodes(selectedNodeIds)}
           selectedCount={selectedNodeIds.length}
         />
+      </header>
+
+      <div className="canvas-workspace-body">
         <CanvasStage
           snapshot={snapshot}
+          activeTool={activeTool === 'pan' ? 'pan' : 'select'}
+          selectedNodeIds={selectedNodeIds}
           onSelectionChange={handleSelectionChange}
           onNodesPersist={(nodes) => void updateNodes(nodes)}
           onDuplicateNode={handleDuplicateNode}
           onDeleteNode={handleDeleteNode}
           onToggleLockNode={handleToggleLockNode}
           onBringNodeToFront={handleBringNodeToFront}
+          onCreateGroupFromSelection={handleCreateGroup}
+          onOpenAiComposer={handleOpenInlineAi}
+        />
+        <CanvasInlineAiComposer
+          open={inlineAiOpen}
+          selectedNodes={selectedNodes}
+          onClose={() => setInlineAiOpen(false)}
+          onCreateTask={(input) => {
+            void handleCreateTask(input)
+            setInlineAiOpen(false)
+          }}
         />
         <aside className="canvas-side-panel">
-          <CanvasAiPanel
-            selectedNodes={selectedNodes}
-            onCreateTask={(input) => void handleCreateTask(input)}
-          />
           <CanvasInspector
             selectedNodes={selectedNodes}
             onDuplicate={() => void duplicateNodes(selectedNodeIds)}

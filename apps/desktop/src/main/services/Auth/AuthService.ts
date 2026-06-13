@@ -226,8 +226,10 @@ export class AuthService {
 
   setBaseUrl(url: string): { baseUrl: string } {
     this.client.setBaseUrl(url)
-    this.baseUrlSource = url === this.config.defaultBaseUrl ? 'default' : 'user'
-    return { baseUrl: this.client.getBaseUrl() }
+    const baseUrl = this.client.getBaseUrl()
+    this.baseUrlSource = baseUrl === this.config.defaultBaseUrl.replace(/\/$/, '') ? 'default' : 'user'
+    this.config.onBaseUrlChanged?.(baseUrl)
+    return { baseUrl }
   }
 
   /** 加载 base URL 持久化设置（启动时调用）*/

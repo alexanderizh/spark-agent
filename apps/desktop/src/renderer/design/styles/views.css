@@ -443,29 +443,9 @@ body.sidebar-resizing {
   padding: 6px;
 }
 
-/* 会话列表滚动条样式：悬停时显示 */
-.chat-list::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-.chat-list::-webkit-scrollbar-track {
-  background: transparent;
-}
-.chat-list::-webkit-scrollbar-thumb {
-  min-height: 32px;
-  background: transparent;
-  border-radius: 999px;
-  transition: background 0.3s ease;
-}
-.chat-list::-webkit-scrollbar-button {
-  display: none;
-}
-.chat-list:hover::-webkit-scrollbar-thumb {
-  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
-}
-.chat-list:hover::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--text-muted) 50%, transparent);
-}
+/* 滚动条样式交由全局规则统一处理（styles.css 中 `* { scrollbar-width: thin; scrollbar-color: ... }`）。
+   不再写局部 `::-webkit-scrollbar*` 覆盖 —— 新版 Chromium 一旦在元素上看到 webkit 滚动条伪元素，
+   就会强制走经典渲染路径（带箭头按钮 + 直角端头），全局现代滚动条规则对它失效。 */
 
 /* Project bar above the list */
 .chat-sidebar-projbar {
@@ -2106,10 +2086,10 @@ body.sidebar-resizing {
   color: var(--text-muted) !important;
   box-shadow: none !important;
 }
-.arco-btn.tool-log-summary,
-.arco-btn.tool-log-summary:hover,
-.arco-btn.tool-log-summary:focus,
-.arco-btn.tool-log-summary:active {
+.ant-btn.tool-log-summary,
+.ant-btn.tool-log-summary:hover,
+.ant-btn.tool-log-summary:focus,
+.ant-btn.tool-log-summary:active {
   background: transparent !important;
   border-color: transparent !important;
   box-shadow: none !important;
@@ -3125,15 +3105,19 @@ body.sidebar-resizing {
   min-height: 92px;
   max-height: 320px;
   transition: height 0.12s ease;
-  /* 隐藏原生滚动条但保留滚动能力（Electron Chromium） */
-  scrollbar-width: none;        /* Firefox */
-  -ms-overflow-style: none;     /* IE/Edge legacy */
+  /* 隐藏原生滚动条但保留滚动能力（必须 !important，否则会被全局 * 规则覆盖） */
+  scrollbar-width: none !important;
+  scrollbar-color: transparent transparent !important;
+  -ms-overflow-style: none;
   overflow-y: auto;
 }
-.composer-v2 textarea::-webkit-scrollbar {
-  width: 0;
-  height: 0;
-  display: none;                /* WebKit / Chromium */
+.composer-v2 textarea::-webkit-scrollbar,
+.composer-v2 textarea::-webkit-scrollbar-thumb,
+.composer-v2 textarea::-webkit-scrollbar-track {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
 }
 .composer-expand-btn {
   position: absolute;
@@ -5510,10 +5494,12 @@ body.inspector-resizing {
   text-transform: uppercase;
   color: var(--text-faint);
 }
+/* 仅给原生 input / textarea / select 兜底；lobe-ui (antd-based) 控件通过 :not 白名单
+   排除，让组件自身的 variant 样式接管。 */
 .field .control,
-.field input,
+.field input:not(.ant-input):not(.ant-select-selection-search-input),
 .field select,
-.field textarea {
+.field textarea:not(.ant-input) {
   height: 32px;
   padding: 0 10px;
   background: var(--panel);
@@ -5524,15 +5510,15 @@ body.inspector-resizing {
   font-family: inherit;
   outline: none;
 }
-.field textarea {
+.field textarea:not(.ant-input) {
   padding: 8px 10px;
   min-height: 60px;
   height: auto;
   resize: vertical;
 }
-.field input:focus,
+.field input:not(.ant-input):not(.ant-select-selection-search-input):focus,
 .field select:focus,
-.field textarea:focus {
+.field textarea:not(.ant-input):focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
@@ -6444,17 +6430,17 @@ body.inspector-resizing {
 .remote-editor {
   min-width: 0;
 }
-.remote-editor-modal .arco-modal {
+.remote-editor-modal .ant-modal {
   width: min(860px, calc(100vw - 32px));
 }
-.remote-editor-modal .arco-modal-content {
+.remote-editor-modal .ant-modal-content {
   max-height: min(74vh, 760px);
   overflow: auto;
 }
 .remote-form-grid {
   margin-bottom: 18px;
 }
-.remote-form-grid .spark-textarea-arco {
+.remote-form-grid .spark-textarea {
   min-height: 58px;
 }
 .remote-cap-grid {
@@ -7434,10 +7420,12 @@ body.inspector-resizing {
   margin-top: 2px;
   line-height: 1.45;
 }
+/* 仅给原生 input/select/textarea 兜底；lobe-ui (antd-based) 控件通过 :not 白名单排除，
+   让组件自身的 variant 样式接管。 */
 .form-grid > .control,
-.form-grid > input,
+.form-grid > input:not(.ant-input),
 .form-grid > select,
-.form-grid > textarea {
+.form-grid > textarea:not(.ant-input) {
   height: 36px;
   padding: 0 12px;
   background: var(--panel);
@@ -7450,19 +7438,19 @@ body.inspector-resizing {
   width: 100%;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.form-grid > textarea {
+.form-grid > textarea:not(.ant-input) {
   height: auto;
   min-height: 84px;
   padding: 10px 12px;
   resize: vertical;
   line-height: 1.55;
 }
-.form-grid > input:hover,
+.form-grid > input:not(.ant-input):hover,
 .form-grid > select:hover,
-.form-grid > textarea:hover { border-color: var(--text-faint); }
-.form-grid > input:focus,
+.form-grid > textarea:not(.ant-input):hover { border-color: var(--text-faint); }
+.form-grid > input:not(.ant-input):focus,
 .form-grid > select:focus,
-.form-grid > textarea:focus {
+.form-grid > textarea:not(.ant-input):focus {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
@@ -8968,16 +8956,16 @@ body.inspector-resizing {
   gap: 8px;
   flex-shrink: 0;
 }
-.arco-btn.update-action-btn {
+.ant-btn.update-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
 }
-.update-actions .arco-btn.update-action-btn {
+.update-actions .ant-btn.update-action-btn {
   min-width: 144px;
 }
-.arco-btn.update-action-btn .arco-btn-icon {
+.ant-btn.update-action-btn .ant-btn-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11129,31 +11117,16 @@ body.inspector-resizing {
 .agent-field.wide {
   grid-column: 1 / -1;
 }
-.agent-field input:not(.arco-input):not(.spark-input),
-.agent-field select:not(.spark-select-arco),
-.agent-field textarea:not(.arco-textarea):not(.spark-textarea),
-.workflow-builder input:not(.arco-input),
-.workflow-builder select,
-.wf-inspector input:not(.arco-input),
-.wf-inspector select,
-.wf-inspector textarea:not(.arco-textarea) {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text);
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  font: inherit;
-}
-.agent-field textarea,
-.wf-inspector textarea:not(.arco-textarea) {
-  resize: vertical;
-  line-height: 1.45;
-}
-.agent-field .spark-select-wrap,
-.agent-field .spark-input,
-.agent-field .spark-textarea {
+/* 控件宽度填满 Field —— 不覆盖任何视觉属性，让 lobe-ui Input / Select / TextArea
+   的 variants 自己接管 border / background / hover / focus。 */
+.agent-field .ant-input,
+.agent-field .ant-input-affix-wrapper,
+.agent-field .ant-input-textarea,
+.agent-field .ant-select,
+.wf-inspector .field .ant-input,
+.wf-inspector .field .ant-input-affix-wrapper,
+.wf-inspector .field .ant-input-textarea,
+.wf-inspector .field .ant-select {
   width: 100%;
   min-width: 0;
 }
@@ -11224,13 +11197,13 @@ body.inspector-resizing {
   background: var(--panel);
 }
 .agent-skills-select,
-.agent-skills-select .spark-select-arco.arco-select {
+.agent-skills-select .spark-select {
   width: 100%;
 }
-.agent-skills-select .arco-select-view {
+.agent-skills-select .ant-select-selector {
   min-height: 32px;
 }
-.agent-skills-select .arco-select-view-multiple {
+.agent-skills-select .ant-select-selection-overflow {
   max-height: 88px;
   overflow-y: auto;
 }
@@ -13028,30 +13001,68 @@ body.inspector-resizing {
 
 /* Dispatch 调用卡片 */
 .team-dispatch-card {
-  margin: 8px 0 6px 46px;
-  padding: 6px 0;
+  margin: 10px 0 8px 46px;
+  padding: 0;
   border: 0;
   border-radius: 0;
   background: transparent;
+  max-width: min(760px, calc(100% - 56px));
 }
 .team-dispatch-card-head {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-height: 30px;
+  height: auto;
   font-size: var(--font-xs);
-  color: var(--text-faint);
+  color: var(--text-muted);
   width: 100%;
   text-align: left;
   background: transparent;
   border: 0;
+  box-shadow: none;
+  line-height: 1.2;
   padding: 0;
   cursor: pointer;
 }
-.team-dispatch-card-head:disabled {
-  cursor: default;
+.team-dispatch-card-head.ant-btn {
+  justify-content: flex-start;
 }
-.team-dispatch-card-head:hover:not(:disabled) {
+.team-dispatch-card-head.ant-btn > span {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+.team-dispatch-card-head:disabled,
+.team-dispatch-card-head.ant-btn[disabled] {
+  cursor: default;
+  opacity: 1;
+}
+.team-dispatch-card-head:hover:not(:disabled),
+.team-dispatch-card-head.ant-btn:not(:disabled):hover {
+  background: transparent;
+  border-color: transparent;
   color: var(--text-muted);
+}
+.team-dispatch-card-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid color-mix(in srgb, var(--member-accent, var(--primary)) 28%, var(--border));
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--member-accent, var(--primary)) 10%, var(--panel));
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+.team-dispatch-card-avatar img,
+.team-dispatch-card-avatar .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  object-fit: cover;
 }
 .team-dispatch-card-chevron {
   margin-left: auto;
@@ -13061,9 +13072,10 @@ body.inspector-resizing {
 .team-dispatch-card-title {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 7px;
   min-width: 0;
   flex: 1;
+  white-space: nowrap;
 }
 /* 折叠时把任务 instruction 预览塞到 head 行，超出省略号 */
 .team-dispatch-card-task-preview {
@@ -13075,17 +13087,23 @@ body.inspector-resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 60ch;
+  max-width: 52ch;
+}
+.team-dispatch-card-task-preview::before {
+  content: "";
+  display: inline-block;
+  width: 1px;
+  height: 12px;
+  margin: 0 8px 0 2px;
+  vertical-align: -2px;
+  background: var(--border);
 }
 /* 折叠态把 head 与 status chip 放同一行，更紧凑 */
 .team-dispatch-card.is-collapsed {
-  padding: 4px 0;
+  padding: 0;
 }
 .team-dispatch-card.is-collapsed .team-dispatch-card-head {
   width: 100%;
-}
-.team-dispatch-card-arrow {
-  color: var(--member-accent, var(--primary));
 }
 .team-dispatch-card-arrow-text {
   color: var(--text-faint);
@@ -13093,7 +13111,11 @@ body.inspector-resizing {
 }
 .team-dispatch-card-member {
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text);
+  flex-shrink: 0;
+}
+.team-dispatch-card-action {
+  color: var(--text-faint);
   flex-shrink: 0;
 }
 .team-dispatch-card-result {
@@ -13106,33 +13128,58 @@ body.inspector-resizing {
 .team-dispatch-card-result-failed {
   color: var(--danger);
 }
+.team-dispatch-task-panel {
+  margin: 8px 0 0 32px;
+  padding: 10px 12px 11px;
+  border: 1px solid color-mix(in srgb, var(--member-accent, var(--primary)) 22%, var(--border));
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--member-accent, var(--primary)) 6%, transparent), transparent 72%),
+    var(--panel);
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+}
+.team-dispatch-task-panel-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--text-faint);
+  font-size: 11px;
+  font-weight: 600;
+}
+.team-dispatch-task-panel-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--member-accent, var(--primary));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--member-accent, var(--primary)) 14%, transparent);
+}
 .team-dispatch-card-task {
-  margin-top: 4px;
   font-size: var(--font-xs);
   color: var(--text-muted);
+  line-height: 1.58;
   white-space: pre-wrap;
   word-break: break-word;
-  max-width: 72ch;
+  max-width: 76ch;
 }
 .team-dispatch-card-attachments {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  margin-top: 6px;
+  gap: 6px;
+  margin-top: 10px;
 }
 .team-dispatch-card-attachment {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   font-size: var(--font-xs);
-  color: var(--text-faint);
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 1px 6px;
+  color: var(--text-muted);
+  border-color: color-mix(in srgb, var(--member-accent, var(--primary)) 18%, var(--border));
+  border-radius: 6px;
+  padding: 2px 7px;
 }
 .team-dispatch-card-status {
-  margin-top: 5px;
+  margin: 8px 0 0 32px;
 }
 .team-dispatch-chip {
   display: inline-flex;

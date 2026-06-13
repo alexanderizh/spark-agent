@@ -164,7 +164,18 @@ html.density-comfy {
    RESET & BASE
    ============================================================ */
 *, *::before, *::after { box-sizing: border-box; }
-html, body, #root { margin: 0; padding: 0; height: 100%; overflow: hidden; }
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
 body {
   font-family: var(--font-sans);
   font-size: var(--font-base);
@@ -221,8 +232,10 @@ summary:focus {
 
 .window {
   width: 100%;
-  height: 100%;
-  min-height: 100%;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
   overflow: hidden;
@@ -661,21 +674,94 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   color: var(--primary);
 }
 .user-menu-accent-dot {
+  display: inline-block;
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  flex-shrink: 0;
+  flex: 0 0 14px;
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
 }
 .user-menu-accent-sub {
   min-width: 148px;
 }
 .user-menu-accent-swatch {
+  display: inline-block;
   width: 14px;
   height: 14px;
   border-radius: var(--r-xs);
-  flex-shrink: 0;
+  flex: 0 0 14px;
   box-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.12);
+}
+.user-menu-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--primary);
+}
+.user-menu-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+.user-menu-label > svg,
+.user-menu-label > .user-menu-accent-dot,
+.user-menu-label > .user-menu-accent-swatch {
+  flex: 0 0 auto;
+}
+.user-menu-label-text {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* antd Dropdown menu (renders as .ant-dropdown-menu.user-menu portal).
+   Force label content into a single-line flex row so icon + text never wrap.
+   Selectors intentionally cover the nested submenu popup too — antd does NOT
+   propagate the user-defined menu className to submenu popups, so we scope
+   via `.user-menu .ant-dropdown-menu` (descendant) instead. */
+.ant-dropdown-menu.user-menu,
+.ant-dropdown-menu.user-menu .ant-dropdown-menu {
+  min-width: 180px;
+  padding: 4px;
+  background: var(--panel-elev);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item,
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm);
+  font-size: var(--font-sm);
+  color: var(--text);
+  white-space: nowrap;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-title-content {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: visible;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-title-content > svg {
+  flex-shrink: 0;
+}
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-item:hover,
+.ant-dropdown-menu.user-menu .ant-dropdown-menu-submenu-title:hover {
+  background: var(--hover);
 }
 
 /* ─── Window Controls (Windows/Linux only) ─── */
@@ -759,7 +845,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* ─── Main content area — offset to the right of the sidebar ─── */
 .main-content-area {
   margin-left: var(--sidebar-offset, 210px);
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -782,7 +868,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    MAIN CONTENT
    ============================================================ */
 .main {
-  flex: 1;
+  flex: 1 1 auto;
   display: flex;
   flex-direction: column;
   position: relative;
@@ -820,7 +906,11 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   flex: 1;
   overflow: auto;
   min-height: 0;
-  height: 100vh;
+  height: 100%; /* resolves against .main → .main-content-area → .app.window → #root chain (all definite) */
+}
+
+.main > .view-body {
+  height: auto;
 }
 
 /* ============================================================
@@ -975,7 +1065,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   min-width: 200px;
 }
  
-.search-input .spark-input-arco.arco-input-wrapper,
 .search-input input {
   background: transparent;
   border: none !important;
@@ -988,17 +1077,10 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   padding: 0;
   box-shadow: none !important;
 }
-.search-input .spark-input-arco.arco-input-wrapper:hover,
-.search-input .spark-input-arco.arco-input-wrapper:focus-within,
 .search-input input:focus {
   box-shadow: none !important;
   border-color: transparent !important;
 }
-.search-input .spark-input-arco .arco-input {
-  background: transparent;
-  padding: 0 !important;
-}
-.search-input .spark-input-arco .arco-input::placeholder,
 .search-input input::placeholder { color: var(--text-faint); }
 .search-input svg { width: 14px; height: 14px; color: var(--text-faint); }
 
@@ -1015,35 +1097,52 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .dot-indicator.red { background: var(--danger); }
 .dot-indicator.blue { background: var(--info); }
 
-/* ── Scrollbar — global thin & elegant ── */
-*::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+/* ── Scrollbar — global thin, rounded, no arrow buttons ──
+   两套机制并用：
+   1) 标准 `scrollbar-width: thin` / `scrollbar-color`（Chrome 121+，Electron 30+）
+      —— 强制走"现代滚动条"渲染路径，原生不带两端箭头按钮，自然圆头。
+   2) `::-webkit-scrollbar*` 兼容老版本 Chromium：宽度、圆角、隐藏按钮。
+   只用 `::-webkit-scrollbar*` 时，较新的 Chromium 会走经典模式，
+   在 Windows 上仍带箭头方块、直角端头，这就是用户看到"尖锐方头 + 点击块"的根因。 */
+* {
+  scrollbar-width: thin !important;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 28%, transparent) transparent !important;
+}
+*::-webkit-scrollbar,
+*::-webkit-scrollbar:hover {
+  width: 4px !important;
+  height: 4px !important;
 }
 *::-webkit-scrollbar-track {
-  background: transparent;
+  background: transparent !important;
 }
 *::-webkit-scrollbar-thumb {
-  min-height: 32px;
-  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
-  border-radius: 999px;
-  border: 2px solid transparent;
-  background-clip: content-box;
+  min-height: 24px;
+  background: color-mix(in srgb, var(--text-muted) 28%, transparent) !important;
+  border-radius: 999px !important;
+  border: 1px solid transparent !important;
+  background-clip: padding-box !important;
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--text-muted) 50%, transparent);
-  background-clip: content-box;
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent) !important;
 }
 *::-webkit-scrollbar-corner {
-  background: transparent;
+  background: transparent !important;
 }
-*::-webkit-scrollbar-button {
-  display: none;
+*::-webkit-scrollbar-button,
+*::-webkit-scrollbar-button:start,
+*::-webkit-scrollbar-button:end,
+*::-webkit-scrollbar-button:vertical:start,
+*::-webkit-scrollbar-button:vertical:end,
+*::-webkit-scrollbar-button:horizontal:start,
+*::-webkit-scrollbar-button:horizontal:end {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  -webkit-appearance: none !important;
 }
-/* NOTE: 不要给元素加 `scrollbar-width`/`scrollbar-color`（标准属性）。
-   Electron 渲染器是纯 Chromium：一旦设置标准属性，Chromium 会切换到
-   "标准滚动条"模式并忽略上面的 `::-webkit-scrollbar` 自定义，在 Windows 上
-   退回带箭头按钮、无圆角的原生滚动条。改用 `::-webkit-scrollbar` 即可。 */
 
 /* ============================================================
    SPARK INPUT — 基于 Arco Input 的主题化输入框
@@ -1059,26 +1158,15 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   z-index: 1;
 }
 
-.app select:not(.spark-select-arco) {
-  padding-right: 30px;
-}
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):not(.composer-input):not(.chip-list-input):not(.sa-input):not(.wf-title-input):hover,
-.app select:not(.spark-select-arco):hover {
-  border-color: var(--text-faint);
-}
-.app input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not(.arco-input):disabled,
-.app select:disabled {
-  opacity: 0.55;
-  cursor: default;
-  background: var(--bg-soft);
-}
+/* NOTE: global bare-input/select fallback rules removed — antd v6 now
+   owns all form controls. Old `:not(.arco-input)` whitelists were hitting
+   antd's internal inputs and producing double borders. */
 
 /* Size variants */
-.spark-input-arco.sm.arco-input-wrapper,
-.select-sm .spark-select-arco.arco-select {
-  height: 28px;
+.select-sm .spark-select,
+.spark-select.sm {
+  min-height: 28px;
   font-size: var(--font-xs);
-  border-radius: var(--r-sm);
 }
 .input-w-sm { width: 80px; }
 .input-max-sm { max-width: 120px; }
@@ -1086,112 +1174,22 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* ============================================================
    SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
    ============================================================ */
-.spark-textarea-arco.arco-textarea-wrapper {
-  width: 100%;
-  min-height: 96px;
-  background: var(--panel) !important;
-  border: 1px solid var(--border-strong) !important;
-  border-radius: var(--r-md) !important;
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-  line-height: 1.5 !important;
-  transition: border-color 0.15s, box-shadow 0.15s;
-  resize: vertical;
-}
-.spark-textarea-arco.arco-textarea-wrapper .arco-textarea {
-  color: var(--text) !important;
-  font-size: var(--font-sm) !important;
-  font-family: inherit !important;
-  line-height: 1.5 !important;
-}
-.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::placeholder {
-  color: var(--text-faint);
-}
-.spark-textarea-arco.arco-textarea-wrapper:hover {
-  border-color: var(--text-faint) !important;
-}
-.spark-textarea-arco.arco-textarea-wrapper.arco-textarea-focus,
-.spark-textarea-arco.arco-textarea-wrapper:focus-within {
-  border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px var(--primary-soft) !important;
-}
-.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar {
-  width: 6px;
-}
-.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
-  border-radius: 999px;
-}
-.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-track {
-  background: transparent;
-}
-.spark-textarea-arco.arco-textarea-wrapper .arco-textarea::-webkit-scrollbar-button {
-  display: none;
-}
-.app textarea:not(.arco-textarea):not(.composer-input):not(.plan-approval-textarea) {
-  width: 100%;
-  min-width: 0;
-  min-height: 96px;
-  resize: vertical;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--r-md);
-  padding: 9px 10px;
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
-  line-height: 1.5;
-  outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
-}
-.app textarea:not(.arco-textarea):not(.composer-input)::placeholder {
-  color: var(--text-faint);
-}
-.app textarea:not(.arco-textarea):not(.composer-input):hover {
-  border-color: var(--text-faint);
-}
-.app textarea:not(.arco-textarea):not(.composer-input):focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-  background: var(--panel);
-}
+/* textarea 滚动条样式由全局规则统一处理（见 * { scrollbar-width/color }）。
+   此处不再写 `::-webkit-scrollbar*` —— 否则新版 Chromium 会对该 textarea 强制走经典
+   渲染路径（带箭头按钮、直角端头），全局现代滚动条规则失效。 */
+/* NOTE: global bare-textarea fallback removed — antd Input.TextArea owns
+   textareas now. The `:not(.arco-textarea)` whitelist hit antd's internal
+   <textarea> and overlaid its own border. */
 
 /* ============================================================
    SPARK CHECKBOX — Arco Checkbox 主题覆盖
    ============================================================ */
-.spark-checkbox-arco.arco-checkbox {
-  color: var(--text);
-  font-size: var(--font-sm);
-}
-.spark-checkbox-arco .arco-checkbox-icon {
-  border-color: var(--border-strong) !important;
-  background: var(--panel) !important;
-}
-.spark-checkbox-arco.arco-checkbox-checked .arco-checkbox-icon,
-.spark-checkbox-arco.arco-checkbox-indeterminate .arco-checkbox-icon {
-  background: var(--primary) !important;
-  border-color: var(--primary) !important;
-}
-.spark-checkbox-arco.arco-checkbox-checked .arco-checkbox-icon .arco-checkbox-icon-check {
-  color: #fff;
-}
-.spark-checkbox-arco.arco-checkbox-hover .arco-checkbox-icon {
-  border-color: var(--text-faint) !important;
-}
-.spark-checkbox-arco.arco-checkbox-disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 
 .spark-confirm-dialog {
   width: min(420px, calc(100vw - 32px));
   max-width: 420px;
 }
-.spark-confirm-dialog .spark-input-arco {
-  margin-top: -2px;
-}
-
-/* Radix Dialog fallback styles. The ui-kit dialog also supplies Tailwind
+/* Dialog fallback styles. The ui-kit dialog also supplies Tailwind
    utility classes, but renderer builds can miss those generated utilities. */
 .spark-dialog-overlay {
   position: fixed;
@@ -1251,7 +1249,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   color: var(--text-muted);
   font-size: var(--font-sm);
 }
-[role="dialog"].spark-confirm-dialog .spark-input-arco,
 [role="dialog"].spark-confirm-dialog input,
 [role="dialog"].spark-confirm-dialog textarea {
   width: 100%;
@@ -1287,8 +1284,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 }
 .spark-dialog-content .spark-button:focus,
 .spark-dialog-content .spark-button:focus-visible,
-.spark-dialog-content .spark-input-arco:focus,
-.spark-dialog-content .spark-input-arco:focus-within,
 .spark-dialog-content input:focus,
 .spark-dialog-content textarea:focus {
   outline: none !important;
@@ -1321,50 +1316,15 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .spark-dialog-content .spark-button-danger:hover {
   opacity: 0.9;
 }
-.spark-dialog-content .spark-input-arco.arco-input-wrapper {
-  height: 36px;
-  border-color: var(--border) !important;
-  background: var(--panel) !important;
-  box-shadow: none !important;
-}
-.spark-dialog-content .spark-input-arco.arco-input-wrapper:hover,
-.spark-dialog-content .spark-input-arco.arco-input-wrapper:focus-within {
-  border-color: var(--border-strong) !important;
-  box-shadow: none !important;
-}
-.spark-dialog-content .arco-input {
-  color: var(--text);
-}
-
 /* Size variants */
-.select-sm .spark-select-wrap,
-.spark-select-wrap.sm {
-  height: 28px;
-}
-.select-sm .spark-select-arco.arco-select,
-.spark-select.sm .spark-select-arco.arco-select {
-  height: 28px !important;
-  min-height: 28px !important;
-  font-size: var(--font-xs) !important;
-  border-radius: var(--r-sm) !important;
-}
-.select-sm .spark-select-arco.arco-select .arco-select-view,
-.spark-select.sm .spark-select-arco.arco-select .arco-select-view {
-  height: 100%;
-  padding: 0 28px 0 8px !important;
-}
-.select-full .spark-select-wrap,
-.spark-select-wrap.full {
-  width: 100%;
-}
-.select-full .spark-select-arco.arco-select,
-.spark-select.full .spark-select-arco.arco-select {
+.select-full .spark-select,
+.spark-select.full {
   width: 100%;
 }
 
 /* Override .form-grid children */
 .form-grid > .spark-input-wrap,
-.form-grid > .spark-textarea-arco {
+.form-grid > .spark-textarea {
   width: 100%;
 }
  

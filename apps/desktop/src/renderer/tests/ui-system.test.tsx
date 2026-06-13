@@ -4,14 +4,9 @@ import React from 'react'
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@spark/ui-kit'
+import { Dropdown } from 'antd'
+import { Checkbox as LobeCheckbox, TextArea as LobeTextArea } from '@lobehub/ui'
 import { AppProvider, useApp } from '../design/AppContext'
-import { SparkCheckbox, SparkTextarea } from '../design/components/FormControls'
 import { ComposerActionsMenu } from '../design/components/ComposerActionsMenu'
 import { ToastProvider } from '../design/components/Toast'
 
@@ -19,6 +14,7 @@ import { ToastProvider } from '../design/components/Toast'
 
 class ResizeObserverMock {
   observe = vi.fn()
+  unobserve = vi.fn()
   disconnect = vi.fn()
 }
 
@@ -85,14 +81,9 @@ describe('Desktop UI system overlays', () => {
     function ClippedMenu() {
       return (
         <div data-testid="clipper" style={{ overflow: 'hidden', width: 80, height: 32 }}>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button type="button">筛选</button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent data-testid="filter-menu">
-              <DropdownMenuItem>最近 7 天</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <Dropdown menu={{ items: [{ key: '7d', label: '最近 7 天' }] }}>
+            <button type="button">筛选</button>
+          </Dropdown>
         </div>
       )
     }
@@ -209,12 +200,13 @@ describe('Desktop UI system overlays', () => {
       const [enabled, setEnabled] = React.useState(false)
       return (
         <>
-          <SparkTextarea value={notes} onChange={(event) => setNotes(event.target.value)} />
-          <SparkCheckbox
+          <LobeTextArea value={notes} onChange={(event) => setNotes(event.target.value)} />
+          <LobeCheckbox
             checked={enabled}
-            label="启用技能"
-            onChange={(event) => setEnabled(event.target.checked)}
-          />
+            onChange={(checked) => setEnabled(checked)}
+          >
+            启用技能
+          </LobeCheckbox>
           <span data-testid="form-state">{`${notes}:${String(enabled)}`}</span>
         </>
       )
@@ -225,8 +217,13 @@ describe('Desktop UI system overlays', () => {
       root.render(<FormHarness />)
     })
 
-    const textarea = container.querySelector<HTMLTextAreaElement>('textarea.spark-textarea')
-    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')
+    // Lobe's TextArea wraps antd Input.TextArea → renders a real <textarea>.
+    const textarea = container.querySelector<HTMLTextAreaElement>('textarea')
+    // Lobe's Checkbox is a div with onClick (no <input type="checkbox">).
+    // Find the clickable wrapper that contains the label text.
+    const labelSpan = Array.from(container.querySelectorAll('span'))
+      .find((el) => el.textContent === '启用技能')
+    const checkbox = labelSpan?.parentElement
     expect(textarea).not.toBeNull()
     expect(checkbox).not.toBeNull()
 

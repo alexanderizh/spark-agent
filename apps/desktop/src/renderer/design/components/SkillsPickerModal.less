@@ -8,19 +8,19 @@
   overflow: hidden;
 
   // 去掉 Arco 默认 header（用自定义 header 替代）
-  .arco-modal-header {
+  .ant-modal-header {
     display: none;
   }
 
-  .arco-modal-body {
+  .ant-modal-body {
     padding: 0;
   }
 
-  .arco-modal-footer {
+  .ant-modal-footer {
     display: none;
   }
 
-  .arco-modal-content {
+  .ant-modal-content {
     border-radius: 12px;
   }
 }
@@ -216,21 +216,8 @@
   overflow-y: auto;
   flex: 1;
 
-  // 自定义滚动条
-  &::-webkit-scrollbar {
-    width: 8px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-border-2);
-    border-radius: 4px;
-
-    &:hover {
-      background: var(--color-border-1);
-    }
-  }
+  // 滚动条样式交由全局规则统一处理（styles.css `* { scrollbar-width/color }`），
+  // 不再写 `::-webkit-scrollbar*` 覆盖。
 }
 
 .skills-picker-row {

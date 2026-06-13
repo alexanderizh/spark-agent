@@ -15,7 +15,8 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
-import { SparkInput } from '../components/FormControls'
+import { Input } from '@lobehub/ui'
+import type { InputRef } from 'antd'
 import { useToast } from '../components/Toast'
 import { getShortcutLabel, DEFAULT_SHORTCUTS, formatShortcut } from '../hooks/useKeyboard'
 import type { ShortcutId } from '../hooks/useKeyboard'
@@ -294,7 +295,7 @@ export function CommandPalette({
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [loading, setLoading] = useState(true)
   const resultsRef = useRef<HTMLDivElement | null>(null)
-  const inputRef = useRef<HTMLInputElement | null>(null)
+  const inputRef = useRef<InputRef | null>(null)
   const { toast } = useToast()
 
   // Load IPC commands (three-layer)
@@ -576,7 +577,7 @@ export function CommandPalette({
       <div className="palette" onClick={(e) => e.stopPropagation()}>
         <div className="palette-search">
           <Icons.Search />
-          <SparkInput
+          <Input
             ref={inputRef}
             placeholder="搜索命令..."
             autoFocus

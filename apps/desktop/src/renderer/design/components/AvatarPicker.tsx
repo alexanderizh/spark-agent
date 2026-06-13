@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Modal, Slider } from '@arco-design/web-react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { Modal, Slider } from 'antd'
 import { Icons } from '../Icons'
 import { createDefaultAvatar, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { AvatarImage } from './AvatarImage'

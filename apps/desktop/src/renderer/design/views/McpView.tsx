@@ -11,23 +11,12 @@
  * - 样式落在 `McpView.less`（mv_ 前缀），不再依赖 views.css 的旧全局类。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Tag, Switch, Drawer, Empty, Tooltip, Message } from '@arco-design/web-react'
-import {
-  IconPlus,
-  IconRefresh,
-  IconSearch,
-  IconStorage,
-  IconLink,
-  IconCode,
-  IconDelete,
-  IconEdit,
-  IconCheck,
-  IconClose,
-  IconExclamationCircle,
-  IconTool,
-} from '@arco-design/web-react/icon'
+import { Button, Tag, Tooltip, Drawer, Empty } from '@lobehub/ui'
+import { Switch } from 'antd'
+import { message } from 'antd'
+import { Icons } from '../Icons'
 import type { McpServerItem } from '@spark/protocol'
-import { SparkInput, SparkSelect } from '../components/FormControls'
+import { Input as LobeInput, Select as LobeSelect } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
@@ -198,8 +187,8 @@ export function McpView() {
     listMcp(scopeFilter === 'all' ? {} : { scope: scopeFilter })
       .then((res) => setServers(res.servers ?? []))
       .catch((err) => {
-        const message = err instanceof Error ? err.message : '加载 MCP 服务器失败'
-        Message.error(message)
+        const errorMsg = err instanceof Error ? err.message : '加载 MCP 服务器失败'
+        message.error(errorMsg)
       })
   }, [listMcp, scopeFilter])
 
@@ -294,7 +283,7 @@ export function McpView() {
           configJson,
           enabled: draft.enabled,
         })
-        Message.success('MCP 服务器已添加')
+        message.success('MCP 服务器已添加')
       } else {
         await updateMcp({
           id: editingId,
@@ -302,14 +291,14 @@ export function McpView() {
           configJson,
           enabled: draft.enabled,
         })
-        Message.success('已保存')
+        message.success('已保存')
       }
       setDrawerOpen(false)
       refresh()
     } catch (err) {
-      const message = err instanceof Error ? err.message : '保存失败'
-      setDraftError(message)
-      Message.error(message)
+      const errorMsg = err instanceof Error ? err.message : '保存失败'
+      setDraftError(errorMsg)
+      message.error(errorMsg)
     } finally {
       setSaving(false)
     }
@@ -321,8 +310,8 @@ export function McpView() {
         await updateMcp({ id: item.id, enabled: next })
         refresh()
       } catch (err) {
-        const message = err instanceof Error ? err.message : '更新状态失败'
-        Message.error(message)
+        const errorMsg = err instanceof Error ? err.message : '更新状态失败'
+        message.error(errorMsg)
       }
     },
     [updateMcp, refresh],
@@ -339,11 +328,11 @@ export function McpView() {
       if (!confirmed) return
       try {
         await deleteMcp({ id: item.id })
-        Message.success('已删除')
+        message.success('已删除')
         refresh()
       } catch (err) {
-        const message = err instanceof Error ? err.message : '删除失败'
-        Message.error(message)
+        const errorMsg = err instanceof Error ? err.message : '删除失败'
+        message.error(errorMsg)
       }
     },
     [requestConfirm, deleteMcp, refresh],
@@ -357,30 +346,30 @@ export function McpView() {
         <div className="mv_header">
           <div className="mv_header_left">
             <h2>MCP</h2>
-            <Tag size="small" color="arcoblue">
+            <Tag color="blue">
               {derived.length}
             </Tag>
             <span className="mv_header_subtitle">· {totalTools} 个工具 · 配置保存在本地</span>
           </div>
           <div className="mv_header_right">
             <div className="mv_search_wrap">
-              <SparkInput
+              <LobeInput
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 placeholder="搜索服务器名称、传输、端点..."
-                icon={<IconSearch />}
+                prefix={<Icons.Search size={14} />}
               />
             </div>
-            <Tooltip content="刷新 (Ctrl+R)">
+            <Tooltip title="刷新 (Ctrl+R)">
               <Button
                 size="small"
                 shape="circle"
                 type="text"
-                icon={<IconRefresh />}
+                icon={<Icons.Refresh />}
                 onClick={refresh}
               />
             </Tooltip>
-            <Button type="primary" size="small" icon={<IconPlus />} onClick={openCreate}>
+            <Button type="primary" size="small" icon={<Icons.Plus />} onClick={openCreate}>
               添加 MCP
             </Button>
           </div>
@@ -465,8 +454,8 @@ export function McpView() {
       <Drawer
         width={520}
         title={editingId == null ? '添加 MCP 服务器' : '编辑 MCP 服务器'}
-        visible={drawerOpen}
-        onCancel={closeDrawer}
+        open={drawerOpen}
+        onClose={closeDrawer}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button onClick={closeDrawer} disabled={saving}>
@@ -476,13 +465,13 @@ export function McpView() {
               type="primary"
               loading={saving}
               onClick={() => void handleSave()}
-              icon={<IconCheck />}
+              icon={<Icons.Check />}
             >
               {editingId == null ? '添加' : '保存'}
             </Button>
           </div>
         }
-        escToExit={!saving}
+        keyboard={!saving}
         maskClosable={!saving}
       >
         <McpForm draft={draft} setDraft={setDraft} error={draftError} />
@@ -523,7 +512,7 @@ function McpCard({
             <span className="mv_card_name" title={server.name}>
               {server.name}
             </span>
-            <Tag size="small" color="gray" bordered>
+            <Tag color="default" bordered>
               {server.scope}
             </Tag>
           </div>
@@ -539,8 +528,8 @@ function McpCard({
           size="small"
           checked={isOn}
           onChange={onToggle}
-          checkedText="ON"
-          uncheckedText="OFF"
+          checkedChildren="ON"
+          unCheckedChildren="OFF"
         />
       </div>
 
@@ -555,19 +544,19 @@ function McpCard({
         </span>
         {server.tools > 0 && (
           <span className="mv_card_tools">
-            <IconTool /> {server.tools} tools
+            <Icons.Wrench /> {server.tools} tools
           </span>
         )}
         <div className="mv_toolbar_spacer" />
-        <Tooltip content="编辑">
-          <Button type="text" size="mini" icon={<IconEdit />} onClick={onEdit} />
+        <Tooltip title="编辑">
+          <Button type="text" size="small" icon={<Icons.Edit />} onClick={onEdit} />
         </Tooltip>
-        <Tooltip content="删除">
+        <Tooltip title="删除">
           <Button
             type="text"
-            size="mini"
-            status="danger"
-            icon={<IconDelete />}
+            size="small"
+            danger
+            icon={<Icons.Trash />}
             onClick={onDelete}
           />
         </Tooltip>
@@ -609,7 +598,7 @@ function EmptyState({
         }
       />
       {!isFiltered && (
-        <Button type="primary" size="small" icon={<IconPlus />} onClick={onAdd}>
+        <Button type="primary" size="small" icon={<Icons.Plus />} onClick={onAdd}>
           添加第一个 MCP
         </Button>
       )}
@@ -665,7 +654,7 @@ function McpForm({
             fontSize: 12,
           }}
         >
-          <IconExclamationCircle />
+          <Icons.AlertTriangle />
           {error}
         </div>
       )}
@@ -674,7 +663,7 @@ function McpForm({
       <section className="mv_drawer_section">
         <header className="mv_drawer_section_head">
           <span className="mv_drawer_section_icon">
-            <IconStorage />
+            <Icons.Database />
           </span>
           <span className="mv_drawer_section_title">基本信息</span>
         </header>
@@ -685,7 +674,7 @@ function McpForm({
               <span className="mv_form_sub">用于在工具与列表中标识</span>
             </label>
             <div className="mv_form_field">
-              <SparkInput
+              <LobeInput
                 value={draft.name}
                 style={{
                   minWidth: 200,
@@ -697,19 +686,14 @@ function McpForm({
 
             <label className="mv_form_label">作用域</label>
             <div className="mv_form_field">
-              <SparkSelect
+              <LobeSelect
                 value={draft.scope}
                 style={{
                   minWidth: 200,
                 }}
-                onChange={(event) => update('scope', event.target.value)}
-              >
-                {SCOPES.map((scope) => (
-                  <option key={scope} value={scope}>
-                    {scope}
-                  </option>
-                ))}
-              </SparkSelect>
+                onChange={(value) => update('scope', value as string)}
+                options={SCOPES.map((scope) => ({ label: scope, value: scope }))}
+              />
               <span className="mv_form_hint">
                 决定配置的可见范围与会话覆盖优先级；会按 Agent / Workflow 配置注入 Claude SDK 与本地
                 Codex CLI
@@ -718,7 +702,7 @@ function McpForm({
 
             <label className="mv_form_label">描述</label>
             <div className="mv_form_field">
-              <SparkInput
+              <LobeInput
                 style={{
                   minWidth: 200,
                 }}
@@ -734,8 +718,8 @@ function McpForm({
                 size="small"
                 checked={draft.enabled}
                 onChange={(checked) => update('enabled', checked)}
-                checkedText="ON"
-                uncheckedText="OFF"
+                checkedChildren="ON"
+                unCheckedChildren="OFF"
               />
             </div>
           </div>
@@ -745,7 +729,7 @@ function McpForm({
       {/* ── 启动配置 ── */}
       <section className="mv_drawer_section">
         <header className="mv_drawer_section_head">
-          <span className="mv_drawer_section_icon">{isStdio ? <IconCode /> : <IconLink />}</span>
+          <span className="mv_drawer_section_icon">{isStdio ? <Icons.Code /> : <Icons.Link />}</span>
           <span className="mv_drawer_section_title">启动配置</span>
           <span className="mv_drawer_section_hint">{isStdio ? 'stdio' : 'http / sse'}</span>
         </header>
@@ -774,7 +758,7 @@ function McpForm({
                   <span className="mv_form_sub">在用户目录执行的二进制</span>
                 </label>
                 <div className="mv_form_field">
-                  <SparkInput
+                  <LobeInput
                     value={draft.command}
                     onChange={(event) => update('command', event.target.value)}
                     placeholder="npx"
@@ -786,7 +770,7 @@ function McpForm({
                   <span className="mv_form_sub">空格分隔</span>
                 </label>
                 <div className="mv_form_field">
-                  <SparkInput
+                  <LobeInput
                     value={draft.args}
                     onChange={(event) => update('args', event.target.value)}
                     placeholder="-y @modelcontextprotocol/server-filesystem ."
@@ -801,7 +785,7 @@ function McpForm({
             )}
             {!isStdio && (
               <div className="mv_form_field">
-                <SparkInput
+                <LobeInput
                   value={draft.url}
                   onChange={(event) => update('url', event.target.value)}
                   placeholder="https://mcp.example.com/sse"
@@ -827,14 +811,14 @@ function McpForm({
               draft.env.map((row, idx) => (
                 <div key={idx} className="mv_env_row">
                   <div className="mv_env_key">
-                    <SparkInput
+                    <LobeInput
                       value={row.key}
                       onChange={(event) => updateEnvRow(idx, { key: event.target.value })}
                       placeholder="KEY"
                     />
                   </div>
                   <div className="mv_env_val">
-                    <SparkInput
+                    <LobeInput
                       value={row.value}
                       onChange={(event) => updateEnvRow(idx, { value: event.target.value })}
                       placeholder="value"
@@ -842,9 +826,9 @@ function McpForm({
                   </div>
                   <Button
                     type="text"
-                    size="mini"
-                    status="danger"
-                    icon={<IconClose />}
+                    size="small"
+                    danger
+                    icon={<Icons.X />}
                     onClick={() => removeEnvRow(idx)}
                   />
                 </div>
@@ -853,9 +837,9 @@ function McpForm({
           </div>
           <Button
             className="mv_env_add"
-            type="outline"
-            size="mini"
-            icon={<IconPlus />}
+            type="default"
+            size="small"
+            icon={<Icons.Plus />}
             onClick={addEnvRow}
           >
             添加变量

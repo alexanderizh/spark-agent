@@ -4,11 +4,11 @@
  * 原嵌在 SettingsView 的 ProvidersSection 已抽到此处，作为一级菜单入口。
  * 包含：
  *   - ProvidersView（默认导出）：列表 + 预设模板目录
- *   - ProviderEditPanel（命名导出）：滑入式编辑面板（基于 Arco Drawer）
+ *   - ProviderEditPanel（命名导出）：滑入式编辑面板（基于 @lobehub/ui Drawer）
  *
- * 本次重设计（2026-06 arco-refresh）：
- *   - 全部使用 Arco Design 组件（Button / Tag / Badge / Checkbox / Drawer / Switch / Alert / Modal）
- *   - 图标全部换成 @arco-design/web-react/icon
+ * 本次重设计（2026-06 arco-refresh → 2026-06 spark-to-lobe）：
+ *   - 全部使用 @lobehub/ui 组件（Button / Tag / Checkbox / Drawer / Switch / Alert / Modal /
+ *     Input / Select / Radio / FlexBasic）
  *   - 样式落在组件级 ProvidersView.less（pv_ 前缀），不再依赖 views.css 的 .provider-card / .preset-card /
  *     .slide-panel 等旧全局类，避免与其他 view 相互污染。
  *   - 布局优先使用 Tailwind 原子类，复杂状态/动画用 LESS。
@@ -21,14 +21,11 @@
  */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  Button, Tag, Badge, Checkbox, Drawer, Switch, Alert,
-} from '@arco-design/web-react'
-import {
-  IconPlus, IconRefresh, IconUpload, IconDownload, IconCopy,
-  IconCheckSquare, IconClose, IconEdit, IconStarFill,
-  IconStorage, IconLock, IconArchive, IconSettings, IconExclamationCircle,
-} from '@arco-design/web-react/icon'
-import { SparkInput, SparkSelect } from '../components/FormControls'
+  Button, Tag, Checkbox, Drawer, Alert, Input, InputPassword, Select,
+} from '@lobehub/ui'
+// TODO(lobe-migration): @lobehub/ui 没有 Badge/Switch 命名导出;临时从 antd 引用,与 SparkOverlays 行为一致
+import { Badge, Switch } from 'antd'
+import { Icons } from '../Icons'
 import { ChipList } from '../components/ChipList'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { ProviderLogo } from '../components/ProviderLogo'
@@ -418,8 +415,8 @@ function ProvidersView() {
           <div className="pv_header_right">
             <Button
               size="small"
-              type={showPresetCatalog ? 'primary' : 'outline'}
-              icon={<IconPlus />}
+              type={showPresetCatalog ? 'primary' : 'default'}
+              icon={<Icons.Plus />}
               onClick={() => setShowPresetCatalog((prev) => !prev)}
             >
               从模板添加
@@ -427,7 +424,7 @@ function ProvidersView() {
             <Button
               size="small"
               type="primary"
-              icon={<IconPlus />}
+              icon={<Icons.Plus />}
               onClick={() => {
                 setEditingId(null)
                 setInitialPresetId(null)
@@ -441,7 +438,7 @@ function ProvidersView() {
               size="small"
               shape="circle"
               type="text"
-              icon={<IconRefresh />}
+              icon={<Icons.Refresh />}
               onClick={refresh}
               title="刷新 (Ctrl+R)"
               aria-label="刷新"
@@ -449,7 +446,7 @@ function ProvidersView() {
             <Button
               ref={importButtonRef as any}
               size="small"
-              icon={<IconUpload />}
+              icon={<Icons.Upload />}
               onClick={() => void handleImportFromFile()}
               disabled={importing}
               title="从 .json 导入 Provider 配置"
@@ -458,7 +455,7 @@ function ProvidersView() {
             </Button>
             <Button
               size="small"
-              icon={<IconCopy />}
+              icon={<Icons.Copy />}
               onClick={() => void handleImportFromClipboard()}
               disabled={importing}
               title="从剪贴板 JSON 字符串导入"
@@ -467,8 +464,8 @@ function ProvidersView() {
             </Button>
             <Button
               size="small"
-              type="outline"
-              icon={<IconDownload />}
+              type="default"
+              icon={<Icons.Download />}
               onClick={handleExportAll}
               disabled={profiles.length === 0}
               title="导出全部 Provider 到 .json"
@@ -477,7 +474,7 @@ function ProvidersView() {
             </Button>
             <Button
               size="small"
-              icon={<IconCopy />}
+              icon={<Icons.Copy />}
               onClick={() => void handleCopyToClipboard([])}
               disabled={profiles.length === 0}
               title="复制全部 Provider JSON 到剪贴板"
@@ -487,8 +484,8 @@ function ProvidersView() {
             {!multiSelect && (
               <Button
                 size="small"
-                type="outline"
-                icon={<IconCheckSquare />}
+                type="default"
+                icon={<Icons.CheckSquare />}
                 onClick={enterMultiSelect}
                 disabled={profiles.length === 0}
                 title="进入多选模式"
@@ -836,7 +833,7 @@ function ProviderCardX({
           <span className="pv_card_name">{name}</span>
           {isBuiltin && <Tag size="small" color="gray">内置</Tag>}
           {isDefault && (
-            <Tag size="small" color="arcoblue" icon={<IconStarFill />}>
+            <Tag size="small" color="arcoblue" icon={<Icons.StarFill />}>
               默认 Provider
             </Tag>
           )}
@@ -854,7 +851,7 @@ function ProviderCardX({
                 className={`pv_model_pill${m === defaultModel ? ' pv_model_default' : ''}`}
                 title={m}
               >
-                {m === defaultModel && <IconStarFill style={{ fontSize: 9 }} />}
+                {m === defaultModel && <Icons.StarFill size={9} />}
                 {m}
               </span>
             ))}
@@ -866,30 +863,30 @@ function ProviderCardX({
         <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
           {!isBuiltin && (
             <Button
-              size="mini"
+              size="small"
               type="text"
-              icon={<IconEdit />}
+              icon={<Icons.Edit />}
               onClick={onEdit}
             >
               编辑
             </Button>
           )}
           <Button
-            size="mini"
+            size="small"
             shape="circle"
             type="text"
-            icon={<IconRefresh />}
+            icon={<Icons.Refresh />}
             onClick={onHealthCheck}
             title="健康检查"
             aria-label="健康检查"
           />
           {!isBuiltin && (
             <Button
-              size="mini"
+              size="small"
               shape="circle"
               type="text"
-              status="danger"
-              icon={<IconClose />}
+              danger
+              icon={<Icons.X />}
               onClick={onDelete}
               title="删除"
               aria-label="删除"
@@ -1148,21 +1145,31 @@ export function ProviderEditPanel({
 
   return (
     <Drawer
-      visible={visible}
-      onCancel={onClose}
-      onOk={() => void handleSave()}
+      open={visible}
+      onClose={onClose}
       maskClosable={!saving}
       width={960}
       title={profileId ? '编辑 Provider' : '添加 Provider'}
-      okText="保存"
-      cancelText="取消"
-      confirmLoading={saving}
-      bodyStyle={{ padding: 0 }}
+      footer={
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+          <Button onClick={onClose} disabled={saving}>
+            取消
+          </Button>
+          <Button
+            type="primary"
+            loading={saving}
+            onClick={() => void handleSave()}
+          >
+            保存
+          </Button>
+        </div>
+      }
+      styles={{ body: { padding: 0 } }}
     >
       <div className="pv_drawer_body">
         <Alert
           type="info"
-          content={
+          message={
             [
               form.modelType === 'image'
                 ? `生图模型 · ${form.imageProvider}/${form.imageApiType}`
@@ -1178,8 +1185,8 @@ export function ProviderEditPanel({
         {error && (
           <Alert
             type="error"
-            icon={<IconExclamationCircle />}
-            content={error}
+            icon={<Icons.AlertTriangle />}
+            message={error}
             closable
             onClose={() => setError('')}
           />
@@ -1189,7 +1196,7 @@ export function ProviderEditPanel({
         <div className="pv_section">
           <div className="pv_section_head">
             <span className="pv_section_icon">
-              <IconStorage style={{ fontSize: 11 }} />
+              <Icons.Database size={11} />
             </span>
             <span className="pv_section_title">基本信息</span>
           </div>
@@ -1201,28 +1208,29 @@ export function ProviderEditPanel({
                     API 协议格式
                     <span className="pv_form_sub">决定 Provider 请求格式；OpenAI 格式可用于 Codex / Responses API</span>
                   </label>
-                  <SparkSelect
+                  <Select
                     value={form.provider}
-                    onChange={(e) =>
+                    onChange={(v) =>
                       setForm((prev) => ({
                         ...prev,
                         presetId: 'custom',
-                        provider: normalizeProviderKind(e.target.value),
+                        provider: normalizeProviderKind(v),
                         codexApiKind: 'chat',
                       }))
                     }
-                  >
-                    <option value="anthropic">Anthropic 格式</option>
-                    <option value="openai">OpenAI 格式</option>
-                  </SparkSelect>
+                    options={[
+                      { label: 'Anthropic 格式', value: 'anthropic' },
+                      { label: 'OpenAI 格式', value: 'openai' },
+                    ]}
+                  />
                 </>
               )}
 
               <label className="pv_form_label">模型类型</label>
-              <SparkSelect
+              <Select
                 value={form.modelType}
-                onChange={(e) => {
-                  const modelType = e.target.value as ProviderModelType
+                onChange={(v) => {
+                  const modelType = v as ProviderModelType
                   setForm((prev) => ({
                     ...prev,
                     modelType,
@@ -1233,13 +1241,14 @@ export function ProviderEditPanel({
                     imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
                   }))
                 }}
-              >
-                <option value="image">生图模型</option>
-                <option value="text">文本（含编码）模型</option>
-                <option value="multimodal">多模态（含编码、生图）模型</option>
-                <option value="voice">语音模型</option>
-                <option value="video">视频模型</option>
-              </SparkSelect>
+                options={[
+                  { label: '生图模型', value: 'image' },
+                  { label: '文本（含编码）模型', value: 'text' },
+                  { label: '多模态（含编码、生图）模型', value: 'multimodal' },
+                  { label: '语音模型', value: 'voice' },
+                  { label: '视频模型', value: 'video' },
+                ]}
+              />
 
               {availablePresets.length > 0 && (
                 <>
@@ -1248,12 +1257,12 @@ export function ProviderEditPanel({
                     <span className="pv_form_sub">基于官方公开文档预填，后续仍可修改</span>
                   </label>
                   <div className="pv_form_select_row">
-                    <SparkSelect
-                      width={220}
+                    <Select
+                      style={{ width: 220 }}
                       value={form.presetId}
                       disabled={!!profileId}
-                      onChange={(e) => {
-                        const presetId = e.target.value
+                      onChange={(v) => {
+                        const presetId = v
                         if (presetId === 'custom') {
                           set('presetId', 'custom')
                           return
@@ -1261,18 +1270,15 @@ export function ProviderEditPanel({
                         const preset = getProviderPresetById(presetId)
                         if (preset) applyPreset(preset)
                       }}
-                    >
-                      <option value="custom">自定义</option>
-                      {availablePresets.map((preset) => {
-                        const meta = getVendorMeta(preset.vendorId)
-                        const baseName = preset.name || meta?.name || preset.vendorId
-                        return (
-                          <option key={preset.id} value={preset.id}>
-                            {baseName}
-                          </option>
-                        )
-                      })}
-                    </SparkSelect>
+                      options={[
+                        { label: '自定义', value: 'custom' },
+                        ...availablePresets.map((preset) => {
+                          const meta = getVendorMeta(preset.vendorId)
+                          const baseName = preset.name || meta?.name || preset.vendorId
+                          return { label: baseName, value: preset.id }
+                        }),
+                      ]}
+                    />
                     <ProviderLogo
                       vendor={currentVendor}
                       size={36}
@@ -1284,7 +1290,7 @@ export function ProviderEditPanel({
               )}
 
               <label className="pv_form_label">显示名称</label>
-              <SparkInput
+              <Input
                 value={form.name}
                 onChange={(e) => set('name', e.target.value)}
                 placeholder="例：Anthropic · Claude"
@@ -1296,10 +1302,10 @@ export function ProviderEditPanel({
                     生图接口来源
                     <span className="pv_form_sub">决定图片请求 body、路径、尺寸参数和轮询策略</span>
                   </label>
-                  <SparkSelect
+                  <Select
                     value={form.imageProvider}
-                    onChange={(e) => {
-                      const imageProvider = normalizeImageProvider(e.target.value)
+                    onChange={(v) => {
+                      const imageProvider = normalizeImageProvider(v)
                       const defaults = imageProviderDefaults(imageProvider)
                       setForm((prev) => ({
                         ...prev,
@@ -1310,24 +1316,25 @@ export function ProviderEditPanel({
                         codexApiKind: 'chat',
                       }))
                     }}
-                  >
-                    {IMAGE_PROVIDER_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </SparkSelect>
+                    options={IMAGE_PROVIDER_OPTIONS.map((option) => ({
+                      label: option.label,
+                      value: option.value,
+                    }))}
+                  />
 
                   <label className="pv_form_label">
                     生图调用方式
                     <span className="pv_form_sub">同步直接返回图片；异步会提交任务并轮询；auto 可兼容混合响应</span>
                   </label>
-                  <SparkSelect
+                  <Select
                     value={form.imageApiType}
-                    onChange={(e) => set('imageApiType', normalizeImageApiType(e.target.value))}
-                  >
-                    <option value="sync">sync · 同步返回</option>
-                    <option value="async">async · 任务轮询</option>
-                    <option value="auto">auto · 自动兼容</option>
-                  </SparkSelect>
+                    onChange={(v) => set('imageApiType', normalizeImageApiType(v))}
+                    options={[
+                      { label: 'sync · 同步返回', value: 'sync' },
+                      { label: 'async · 任务轮询', value: 'async' },
+                      { label: 'auto · 自动兼容', value: 'auto' },
+                    ]}
+                  />
                 </>
               )}
 
@@ -1337,15 +1344,16 @@ export function ProviderEditPanel({
                     Codex API 类型
                     <span className="pv_form_sub">控制 Codex/OpenAI 执行使用 Chat Completions 还是 Responses API</span>
                   </label>
-                  <SparkSelect
+                  <Select
                     value={form.codexApiKind}
-                    onChange={(e) =>
-                      set('codexApiKind', e.target.value === 'responses' ? 'responses' : 'chat')
+                    onChange={(v) =>
+                      set('codexApiKind', v === 'responses' ? 'responses' : 'chat')
                     }
-                  >
-                    <option value="chat">Chat Completions</option>
-                    <option value="responses">Responses API</option>
-                  </SparkSelect>
+                    options={[
+                      { label: 'Chat Completions', value: 'chat' },
+                      { label: 'Responses API', value: 'responses' },
+                    ]}
+                  />
                 </>
               )}
 
@@ -1353,7 +1361,7 @@ export function ProviderEditPanel({
                 默认模型 ID
                 <span className="pv_form_sub">作为主对话默认；同时自动加入下方可用模型列表（带星标）</span>
               </label>
-              <SparkInput
+              <Input
                 value={form.defaultModel}
                 onChange={(e) => {
                   const next = e.target.value
@@ -1366,7 +1374,7 @@ export function ProviderEditPanel({
               />
 
               <label className="pv_form_label">Endpoint URL</label>
-              <SparkInput
+              <Input
                 value={form.endpoint}
                 onChange={(e) => set('endpoint', e.target.value)}
                 placeholder={
@@ -1418,7 +1426,7 @@ export function ProviderEditPanel({
         <div className="pv_section">
           <div className="pv_section_head">
             <span className="pv_section_icon">
-              <IconLock style={{ fontSize: 11 }} />
+              <Icons.Lock size={11} />
             </span>
             <span className="pv_section_title">鉴权</span>
           </div>
@@ -1428,8 +1436,7 @@ export function ProviderEditPanel({
                 API Key
                 {profileId && <span className="pv_form_sub">留空则不更新当前 key</span>}
               </label>
-              <SparkInput
-                type="password"
+              <InputPassword
                 value={form.apiKey}
                 onChange={(e) => set('apiKey', e.target.value)}
                 placeholder={profileId ? '••••••••（留空不更新）' : 'sk-ant-...'}
@@ -1445,7 +1452,7 @@ export function ProviderEditPanel({
             <div className="pv_section">
               <div className="pv_section_head">
                 <span className="pv_section_icon">
-                  <IconArchive style={{ fontSize: 11 }} />
+                  <Icons.Archive size={11} />
                 </span>
                 <span className="pv_section_title">可用模型</span>
                 <span className="pv_section_hint">点击 chip 即可切换为默认模型（带星标）</span>
@@ -1480,7 +1487,7 @@ export function ProviderEditPanel({
             <div className="pv_section">
               <div className="pv_section_head">
                 <span className="pv_section_icon">
-                  <IconSettings style={{ fontSize: 11 }} />
+                  <Icons.Settings size={11} />
                 </span>
                 <span className="pv_section_title">档位映射</span>
                 <span className="pv_section_hint">可选；留空则该档自动回落「默认模型 ID」</span>
@@ -1492,7 +1499,7 @@ export function ProviderEditPanel({
                       Haiku 档
                       <span className="pv_form_sub">SDK 派生子 agent / Task 工具默认走此档</span>
                     </label>
-                    <SparkInput
+                    <Input
                       value={form.haikuModel}
                       onChange={(e) => set('haikuModel', e.target.value)}
                       placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
@@ -1503,7 +1510,7 @@ export function ProviderEditPanel({
                       Sonnet 档
                       <span className="pv_form_sub">主对话默认档；通常等同于默认模型</span>
                     </label>
-                    <SparkInput
+                    <Input
                       value={form.sonnetModel}
                       onChange={(e) => set('sonnetModel', e.target.value)}
                       placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}
@@ -1514,7 +1521,7 @@ export function ProviderEditPanel({
                       Opus 档
                       <span className="pv_form_sub">Plan / Review 等高能力 agent 使用</span>
                     </label>
-                    <SparkInput
+                    <Input
                       value={form.opusModel}
                       onChange={(e) => set('opusModel', e.target.value)}
                       placeholder={form.defaultModel ? `留空 → ${form.defaultModel}` : '留空 → 默认模型'}

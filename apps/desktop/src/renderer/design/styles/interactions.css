@@ -650,8 +650,6 @@
 
 /* 不再为 .form-grid 下的 SparkSelect 重画外观 —— 完全交给 Arco Design 默认下拉弹窗 */
 .form-grid > textarea { height: auto; min-height: 84px; padding: 10px 12px; resize: vertical; line-height: 1.55; }
-.form-grid > .spark-input:hover,
-.form-grid > .spark-input-wrap:hover .spark-input-arco.arco-input-wrapper,
 .form-grid > textarea:hover { border-color: var(--text-faint); }
 
 .form-grid > .control { display: flex; align-items: center; gap: 8px; padding: 0; background: none; border: none; }

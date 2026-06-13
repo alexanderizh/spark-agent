@@ -11,19 +11,26 @@ import {
   type Edge,
   type Node,
   type NodeChange,
+  type NodeOrigin,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { Message } from '@arco-design/web-react'
+import { message } from 'antd'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import type { CanvasEdge, CanvasNode as SparkCanvasNode, CanvasSnapshot } from './canvas.types'
 
 const nodeTypes = { sparkCanvasNode: CanvasNode }
+const defaultNodeOrigin: NodeOrigin = [0, 0]
 
 type CanvasNodeActions = CanvasFlowNodeData['actions']
 
-function toFlowNode(node: SparkCanvasNode, actions: CanvasNodeActions): Node<CanvasFlowNodeData> {
-  return {
+function toFlowNode(
+  node: SparkCanvasNode,
+  actions: CanvasNodeActions,
+  selectedCount: number,
+  selected: boolean,
+): Node<CanvasFlowNodeData> {
+  const flowNode: Node<CanvasFlowNodeData> = {
     id: node.id,
     type: 'sparkCanvasNode',
     position: { x: node.x, y: node.y },
@@ -33,8 +40,14 @@ function toFlowNode(node: SparkCanvasNode, actions: CanvasNodeActions): Node<Can
     zIndex: node.zIndex,
     draggable: !node.locked,
     selectable: !node.locked,
-    data: { actions, canvasNode: node },
+    selected,
+    data: { actions, canvasNode: node, selectedCount },
   }
+  if (node.parentNodeId) {
+    flowNode.parentId = node.parentNodeId
+    flowNode.extent = 'parent'
+  }
+  return flowNode
 }
 
 function toFlowEdge(edge: CanvasEdge): Edge {
@@ -50,20 +63,28 @@ function toFlowEdge(edge: CanvasEdge): Edge {
 
 export function CanvasStage({
   snapshot,
+  activeTool,
+  selectedNodeIds,
   onSelectionChange,
   onNodesPersist,
   onDuplicateNode,
   onDeleteNode,
   onToggleLockNode,
   onBringNodeToFront,
+  onCreateGroupFromSelection,
+  onOpenAiComposer,
 }: {
   snapshot: CanvasSnapshot
+  activeTool: 'select' | 'pan'
+  selectedNodeIds: string[]
   onSelectionChange: (nodeIds: string[]) => void
   onNodesPersist: (nodes: SparkCanvasNode[]) => void
   onDuplicateNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
   onToggleLockNode: (nodeId: string) => void
   onBringNodeToFront: (nodeId: string) => void
+  onCreateGroupFromSelection: () => void
+  onOpenAiComposer: (nodeId: string) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
     () => ({
@@ -71,12 +92,25 @@ export function CanvasStage({
       deleteNode: onDeleteNode,
       toggleLockNode: onToggleLockNode,
       bringNodeToFront: onBringNodeToFront,
+      createGroupFromSelection: onCreateGroupFromSelection,
+      openAiComposer: onOpenAiComposer,
     }),
-    [onBringNodeToFront, onDeleteNode, onDuplicateNode, onToggleLockNode],
+    [
+      onBringNodeToFront,
+      onCreateGroupFromSelection,
+      onDeleteNode,
+      onDuplicateNode,
+      onOpenAiComposer,
+      onToggleLockNode,
+    ],
   )
+  const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds])
   const nodes = useMemo(
-    () => snapshot.nodes.map((node) => toFlowNode(node, nodeActions)),
-    [nodeActions, snapshot.nodes],
+    () =>
+      snapshot.nodes.map((node) =>
+        toFlowNode(node, nodeActions, selectedNodeIds.length, selectedNodeIdSet.has(node.id)),
+      ),
+    [nodeActions, selectedNodeIdSet, selectedNodeIds.length, snapshot.nodes],
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
   const flowNodesRef = useRef(nodes)
@@ -111,7 +145,7 @@ export function CanvasStage({
   const handleConnect = useCallback(
     (connection: Connection) => {
       void addEdge(connection, edges)
-      Message.info('血缘边将在后端 API 接入后保存')
+      message.info('血缘边将在后端 API 接入后保存')
     },
     [edges],
   )
@@ -127,11 +161,13 @@ export function CanvasStage({
           fitViewOptions={{ padding: 0.24 }}
           minZoom={0.18}
           maxZoom={2.2}
-          nodesDraggable
+          nodeOrigin={defaultNodeOrigin}
+          nodesDraggable={activeTool === 'select'}
           nodesConnectable
           elementsSelectable
+          panOnDrag={activeTool === 'pan'}
           multiSelectionKeyCode={['Meta', 'Control']}
-          selectionOnDrag
+          selectionOnDrag={activeTool === 'select'}
           onNodesChange={handleNodesChange}
           onConnect={handleConnect}
           onSelectionChange={({ nodes: selected }) =>

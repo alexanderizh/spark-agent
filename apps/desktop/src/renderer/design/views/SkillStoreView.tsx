@@ -7,10 +7,10 @@
  */
 import { useState, useCallback, useMemo, useEffect } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Drawer, Empty, Spin, Switch, Tag } from '@arco-design/web-react'
+import { Spin, Switch } from 'antd'
 import type { LocalSkillCandidate, SkillDetailInfo, SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { SparkInput, SparkSearchInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useApp } from '../AppContext'
 import {
@@ -263,10 +263,11 @@ function InstalledTab() {
             </div>
           </div>
           <div className="skill-store-actions">
-            <SparkSearchInput
+            <SearchBar
               placeholder="搜索已安装的 Skill..."
               value={search}
-              onChange={(v) => setSearch(v)}
+              onInputChange={(value) => setSearch(value)}
+              allowClear
             />
             {!managementMode ? (
               <Button onClick={enterManagement} disabled={total === 0}>
@@ -359,10 +360,10 @@ function InstalledTab() {
       </div>
       <Drawer
         width="min(440px, 94vw)"
-        visible={mobileDetailVisible}
+        open={mobileDetailVisible}
         title={selectedSkill?.name ?? 'Skill 详情'}
         footer={null}
-        onCancel={() => setMobileDetailVisible(false)}
+        onClose={() => setMobileDetailVisible(false)}
       >
         <SkillDetailPanel
           skill={selectedSkill}
@@ -434,10 +435,10 @@ function InstalledSkillCard({
 
       <div className="skill-store-card-foot">
         <div className="skill-store-card-tags">
-          <Tag size="small" color={skill.enabled ? 'arcoblue' : 'gray'}>
+          <Tag color={skill.enabled ? 'blue' : 'default'}>
             {skill.enabled ? '可见' : '隐藏'}
           </Tag>
-          <Tag size="small">{skill.id.startsWith('builtin:') ? '内置' : '本地'}</Tag>
+          <Tag>{skill.id.startsWith('builtin:') ? '内置' : '本地'}</Tag>
         </div>
         {!managementMode && (
           <div className="skill-store-card-actions" onClick={(event) => event.stopPropagation()}>
@@ -447,7 +448,7 @@ function InstalledSkillCard({
               onChange={() => void onToggle(skill)}
             />
             {!skill.id.startsWith('builtin:') && (
-              <Button size="mini" status="danger" onClick={() => void onDelete(skill.id)}>
+              <Button size="small" danger onClick={() => void onDelete(skill.id)}>
                 删除
               </Button>
             )}
@@ -530,7 +531,7 @@ function SkillDetailPanel({
         <DetailSection title="Tags">
           <div className="skill-store-tag-list">
             {tags.map((tag) => (
-              <Tag key={tag} size="small">{tag}</Tag>
+              <Tag key={tag}>{tag}</Tag>
             ))}
           </div>
         </DetailSection>
@@ -540,7 +541,7 @@ function SkillDetailPanel({
         <DetailSection title="Required Tools">
           <div className="skill-store-tag-list">
             {requiredTools.map((tool) => (
-              <Tag key={tool} size="small" color="gray">{tool}</Tag>
+              <Tag key={tool} color="default">{tool}</Tag>
             ))}
           </div>
         </DetailSection>
@@ -949,7 +950,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
                 <label className="form-label">
                   名称 <span className="required">*</span>
                 </label>
-                <SparkInput
+                <Input
                   placeholder="例如：代码审查助手"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -957,7 +958,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">版本</label>
-                <SparkInput
+                <Input
                   placeholder="1.0.0"
                   value={version}
                   onChange={(e) => setVersion(e.target.value)}
@@ -965,7 +966,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">作者</label>
-                <SparkInput
+                <Input
                   placeholder="作者名称"
                   value={author}
                   onChange={(e) => setAuthor(e.target.value)}
@@ -973,26 +974,27 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               </div>
               <div className="form-field">
                 <label className="form-label">分类</label>
-                <SparkSelect
+                <Select
                   value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                >
-                  <option value="utility">通用</option>
-                  <option value="code-generation">代码生成</option>
-                  <option value="code-review">代码审查</option>
-                  <option value="testing">测试</option>
-                  <option value="documentation">文档</option>
-                  <option value="data-analysis">数据分析</option>
-                  <option value="web-development">Web 开发</option>
-                  <option value="api-development">API 开发</option>
-                  <option value="devops">DevOps</option>
-                  <option value="security">安全</option>
-                  <option value="ai-ml">AI/ML</option>
-                  <option value="automation">自动化</option>
-                  <option value="database">数据库</option>
-                  <option value="frontend">前端</option>
-                  <option value="backend">后端</option>
-                </SparkSelect>
+                  onChange={(v) => setCategory(v)}
+                  options={[
+                    { label: '通用', value: 'utility' },
+                    { label: '代码生成', value: 'code-generation' },
+                    { label: '代码审查', value: 'code-review' },
+                    { label: '测试', value: 'testing' },
+                    { label: '文档', value: 'documentation' },
+                    { label: '数据分析', value: 'data-analysis' },
+                    { label: 'Web 开发', value: 'web-development' },
+                    { label: 'API 开发', value: 'api-development' },
+                    { label: 'DevOps', value: 'devops' },
+                    { label: '安全', value: 'security' },
+                    { label: 'AI/ML', value: 'ai-ml' },
+                    { label: '自动化', value: 'automation' },
+                    { label: '数据库', value: 'database' },
+                    { label: '前端', value: 'frontend' },
+                    { label: '后端', value: 'backend' },
+                  ]}
+                />
               </div>
             </div>
           </div>
@@ -1003,7 +1005,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               <label className="form-label">
                 简短描述 <span className="required">*</span>
               </label>
-              <SparkTextarea
+              <TextArea
                 rows={3}
                 placeholder="一句话描述 Skill 的功能，例如：自动化代码审查，检测潜在 Bug 和安全问题"
                 value={description}
@@ -1012,7 +1014,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
             </div>
             <div className="form-field">
               <label className="form-label">标签（逗号分隔）</label>
-              <SparkInput
+              <Input
                 placeholder="code-review, security, quality"
                 value={tagsInput}
                 onChange={(e) => setTagsInput(e.target.value)}
@@ -1020,7 +1022,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
             </div>
             <div className="form-field">
               <label className="form-label">所需工具（逗号分隔）</label>
-              <SparkInput
+              <Input
                 placeholder="例如：Bash, Read, Edit"
                 value={requiredTools}
                 onChange={(e) => setRequiredTools(e.target.value)}
@@ -1034,7 +1036,7 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
               <label className="form-label">
                 System Prompt / 指令内容 <span className="required">*</span>
               </label>
-              <SparkTextarea
+              <TextArea
                 className="form-textarea-lg"
                 rows={12}
                 placeholder={`在此编写 Skill 的完整指令内容，支持 Markdown 格式。\n\n例如：\n# 代码审查助手\n\n你是一个专业的代码审查助手。请对提供的代码进行以下方面的审查：\n\n1. **代码质量**：检查代码是否清晰、可读\n2. **安全漏洞**：检测潜在的安全问题\n3. **性能优化**：发现性能瓶颈\n4. **最佳实践**：建议改进方向`}
@@ -1176,10 +1178,11 @@ tags: [tag1, tag2]
 
               {/* Search */}
               <div className="local-skill-filter-bar">
-                <SparkSearchInput
+                <SearchBar
                   placeholder="搜索本地 Skill..."
                   value={candidateSearch}
-                  onChange={(v) => setCandidateSearch(v)}
+                  onInputChange={(value) => setCandidateSearch(value)}
+                  allowClear
                   style={{ width: '220px' }}
                 />
               </div>
@@ -1347,7 +1350,7 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
           <label className="form-label">技能目录路径 *</label>
           <div style={{ display: 'flex', gap: '8px' }}>
             <div style={{ flex: 1 }}>
-              <SparkInput
+              <Input
                 placeholder="例如：/Users/you/.codex/skills/my-skill 或 /Users/you/.claude/skills/my-skill"
                 value={linkTarget}
                 onChange={(e) => setLinkTarget(e.target.value)}
@@ -1360,7 +1363,7 @@ function LinkSkillPanel({ onCreated }: { onCreated: () => void }) {
         </div>
         <div className="form-field">
           <label className="form-label">链接名称（可选，默认使用目录名）</label>
-          <SparkInput
+          <Input
             placeholder="my-skill"
             value={linkName}
             onChange={(e) => setLinkName(e.target.value)}

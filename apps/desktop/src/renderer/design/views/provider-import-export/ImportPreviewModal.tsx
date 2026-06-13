@@ -11,10 +11,9 @@
  * UI：Arco Modal + Radio.Group + Tag；样式落在 ProvidersView.less (.pv_import_*)。
  */
 import { useMemo, useState } from 'react'
-import { Modal, Button, Radio, Tag } from '@arco-design/web-react'
-import {
-  IconUpload, IconExclamationCircle,
-} from '@arco-design/web-react/icon'
+import { Radio } from 'antd'
+import { Button, Modal, Tag } from '@lobehub/ui'
+import { Icons } from '../../Icons'
 import type { ProviderExportPayload, ProviderImportMode } from '@spark/protocol'
 
 export interface ImportPreviewModalProps {
@@ -63,11 +62,11 @@ function ImportPreviewModal({
     <Modal
       title={
         <div className="flex items-center gap-2">
-          <IconUpload style={{ fontSize: 16, color: 'var(--primary)' }} />
+          <Icons.Upload style={{ fontSize: 16, color: 'var(--primary)' }} />
           <span>导入 Provider 配置</span>
         </div>
       }
-      visible
+      open
       onCancel={onClose}
       maskClosable={!submitting}
       closable={!submitting}
@@ -82,7 +81,7 @@ function ImportPreviewModal({
             onClick={() => void handleConfirm()}
             disabled={submitting || payload.profiles.length === 0}
             loading={submitting}
-            icon={<IconUpload />}
+            icon={<Icons.Upload />}
           >
             {submitting ? '导入中…' : `确认导入 ${payload.profiles.length} 个`}
           </Button>
@@ -114,7 +113,7 @@ function ImportPreviewModal({
           </div>
           {conflictCount > 0 && (
             <div className="pv_import_conflict_warn">
-              <IconExclamationCircle style={{ fontSize: 12 }} />
+              <Icons.AlertTriangle style={{ fontSize: 12 }} />
               {conflictCount} 个 name 与本地冲突
             </div>
           )}
@@ -125,10 +124,9 @@ function ImportPreviewModal({
           <span className="text-xs" style={{ color: 'var(--text-muted)' }}>冲突处理：</span>
           <Radio.Group
             value={mode}
-            onChange={(v) => setMode(v as ProviderImportMode)}
+            onChange={(e) => setMode(e.target.value as ProviderImportMode)}
             disabled={submitting}
-            size="small"
-            direction="vertical"
+            style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
           >
             <Radio value="merge">
               <strong>合并</strong>
@@ -163,7 +161,7 @@ function ImportPreviewModal({
                   {p.name}
                 </span>
                 <span>
-                  <Tag size="small" color={p.provider === 'anthropic' ? 'purple' : 'blue'}>
+                  <Tag color={p.provider === 'anthropic' ? 'purple' : 'blue'}>
                     {p.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'}
                   </Tag>
                 </span>
@@ -172,9 +170,9 @@ function ImportPreviewModal({
                 </span>
                 <span className="pv_cell_status">
                   {conflict ? (
-                    <Tag size="small" color="orange">将更新</Tag>
+                    <Tag color="orange">将更新</Tag>
                   ) : (
-                    <Tag size="small" color="green">将新增</Tag>
+                    <Tag color="green">将新增</Tag>
                   )}
                 </span>
               </div>
@@ -183,7 +181,7 @@ function ImportPreviewModal({
         </div>
 
         <div className="pv_import_tip">
-          <IconExclamationCircle style={{ fontSize: 12, flexShrink: 0, marginTop: 2 }} />
+          <Icons.AlertTriangle style={{ fontSize: 12, flexShrink: 0, marginTop: 2 }} />
           <span>
             <strong>API Key 将随导入一并恢复</strong>。
             若导出文件中包含 API Key，导入时会自动写入本地 Keychain；

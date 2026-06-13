@@ -44,6 +44,12 @@ process.stderr?.on('error', ignoreEpipe)
 app.commandLine.appendSwitch('remote-debugging-port', '9223')
 app.commandLine.appendSwitch('remote-allow-origins', '*')
 
+// ─── Overlay scrollbars (modern, no arrows, rounded ends) ───────────────────
+// 不启用 OverlayScrollbar feature —— overlay 模式下 Chromium 会自动在 hover 时
+// 扩宽 thumb，且 Windows 下 thumb 形状由系统接管（border-radius 失效，方头）。
+// 改用经典 `::-webkit-scrollbar*` 路径：thumb 宽度/圆角/hover 行为完全由 CSS 控制，
+// 配合 scrollbar-button:display:none 隐藏箭头。
+
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
@@ -116,6 +122,22 @@ function readPersistedEduServerBaseUrl(): string | null {
     return v && v.length > 0 ? v : null
   } catch {
     return null
+  }
+}
+
+function persistEduServerBaseUrl(baseUrl: string): void {
+  try {
+    const existing = getSettingsService().get('cloudAuth', 'data')
+    const settings =
+      existing != null && typeof existing === 'object' && !Array.isArray(existing)
+        ? (existing as Record<string, unknown>)
+        : {}
+    getSettingsService().set('cloudAuth', 'data', {
+      ...settings,
+      eduServerBaseUrl: baseUrl,
+    })
+  } catch (err) {
+    log.warn(`Failed to persist cloud auth base URL: ${String(err)}`)
   }
 }
 
@@ -401,6 +423,7 @@ async function initializeApp(): Promise<void> {
       defaultBaseUrl:
         process.env.SPARK_EDUGEN_BASE_URL?.trim() || 'https://www.yiqibyte.com/',
       keytarService: 'SparkAgent.CloudAuth',
+      onBaseUrlChanged: persistEduServerBaseUrl,
       requestTimeoutMs: 30_000,
     })
     await getAuthService().start()

@@ -109,16 +109,7 @@
   gap: 6px;
   padding-right: 8px;
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-fill-3);
-    border-radius: 999px;
-  }
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
+  // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
 .st-task-card {
@@ -335,7 +326,7 @@
   word-break: break-all;
   line-height: 1.5;
 
-  .arco-icon {
+  svg {
     flex-shrink: 0;
     margin-top: 1px;
   }
@@ -455,16 +446,7 @@
   flex-direction: column;
   gap: 16px;
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-fill-3);
-    border-radius: 999px;
-  }
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
+  // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
 /* ─── Section Card ────────────────────────────────────────────────────────── */
@@ -875,16 +857,7 @@
   border: 1px solid var(--color-border-2);
   border-radius: var(--r-sm);
 
-  &::-webkit-scrollbar {
-    width: 4px;
-  }
-  &::-webkit-scrollbar-thumb {
-    background: var(--color-fill-3);
-    border-radius: 999px;
-  }
-  &::-webkit-scrollbar-button {
-    display: none;
-  }
+  // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
 
 .st-import-list-row {

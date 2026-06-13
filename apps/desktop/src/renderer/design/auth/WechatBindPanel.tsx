@@ -1,20 +1,12 @@
 /**
- * WechatBindPanel — 微信扫码后绑定邮箱（首次扫码用户）
- *
- * 流程：
- *   1. 用户扫码后 edu-server 发现该微信号未绑定账号 → 返回 bindSession + status=pending_bind
- *   2. 前端跳转到这里，用户填写邮箱 + 图片验证码
- *   3. 调 wechat:bind-email-send-code 发验证码
- *   4. 用户输入验证码，调 wechat:bind-email 完成绑定 + 自动登录
+ * WechatBindPanel — 微信扫码后绑定邮箱
  */
 
 import React, { useEffect, useState } from 'react'
-import { Button, Form, Input } from '@arco-design/web-react'
+import { Button, Form, Input } from 'antd'
 import { useAuth } from './AuthContext'
 import { useToast } from '../components/Toast'
 import { CaptchaField } from './CaptchaField'
-
-const F = Form
 
 interface WechatBindPanelProps {
   bindSession: string
@@ -23,7 +15,7 @@ interface WechatBindPanelProps {
 export function WechatBindPanel({ bindSession }: WechatBindPanelProps): React.ReactElement {
   const auth = useAuth()
   const { toast } = useToast()
-  const [form] = F.useForm()
+  const [form] = Form.useForm()
   const [submitting, setSubmitting] = useState(false)
   const [countdown, setCountdown] = useState(0)
 
@@ -35,7 +27,7 @@ export function WechatBindPanel({ bindSession }: WechatBindPanelProps): React.Re
 
   const handleSendCode = async (): Promise<void> => {
     try {
-      const values = await form.validate(['account', 'captchaId', 'captchaText'])
+      const values = await form.validateFields(['account', 'captchaId', 'captchaText'])
       await auth.wechatBindEmailSendCode({
         bindSession,
         email: values.account,
@@ -53,7 +45,7 @@ export function WechatBindPanel({ bindSession }: WechatBindPanelProps): React.Re
   const handleSubmit = async (): Promise<void> => {
     try {
       setSubmitting(true)
-      const values = await form.validate()
+      const values = await form.validateFields()
       await auth.wechatBindEmail({
         bindSession,
         code: values.emailCode,
@@ -80,51 +72,51 @@ export function WechatBindPanel({ bindSession }: WechatBindPanelProps): React.Re
           <div className="auth-subflow-desc">完成邮箱验证后，会自动把当前微信身份绑定到这个 Spark 账号。</div>
         </div>
 
-        <F form={form} layout="vertical" requiredSymbol={false}>
-        <Form.Item
-          field="account"
-          label="邮箱"
-          rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
-        >
-          <Input placeholder="example@spark.com" />
-        </Form.Item>
+        <Form form={form} layout="vertical" requiredMark={false}>
+          <Form.Item
+            name="account"
+            label="邮箱"
+            rules={[{ required: true, type: 'email', message: '请填写有效邮箱' }]}
+          >
+            <Input placeholder="example@spark.com" />
+          </Form.Item>
 
-        <CaptchaField form={form} />
+          <CaptchaField form={form} />
 
-        <Form.Item
-          field="emailCode"
-          label="邮箱验证码"
-          rules={[{ required: true, message: '请填写邮箱验证码' }]}
-        >
-          <Input
-            placeholder="6 位验证码"
-            maxLength={6}
-            addAfter={
-              <Button
-                className="auth-code-action"
-                type="secondary"
-                size="small"
-                disabled={countdown > 0}
-                onClick={() => void handleSendCode()}
-              >
-                {countdown > 0 ? `${countdown}s 后重试` : '发送验证码'}
-              </Button>
-            }
-          />
-        </Form.Item>
+          <Form.Item
+            name="emailCode"
+            label="邮箱验证码"
+            rules={[{ required: true, message: '请填写邮箱验证码' }]}
+          >
+            <Input
+              placeholder="6 位验证码"
+              maxLength={6}
+              addonAfter={
+                <Button
+                  className="auth-code-action"
+                  type="default"
+                  size="small"
+                  disabled={countdown > 0}
+                  onClick={() => void handleSendCode()}
+                >
+                  {countdown > 0 ? `${countdown}s 后重试` : '发送验证码'}
+                </Button>
+              }
+            />
+          </Form.Item>
 
-        <Form.Item>
-          <Button type="primary" long loading={submitting} onClick={handleSubmit}>
-            绑定并登录
-          </Button>
-        </Form.Item>
+          <Form.Item>
+            <Button type="primary" block loading={submitting} onClick={handleSubmit}>
+              绑定并登录
+            </Button>
+          </Form.Item>
 
-        <div className="auth-form-footer">
-          <Button type="text" onClick={() => auth.setFlow('wechat')}>
-            返回重新扫码
-          </Button>
-        </div>
-        </F>
+          <div className="auth-form-footer">
+            <Button type="text" onClick={() => auth.setFlow('wechat')}>
+              返回重新扫码
+            </Button>
+          </div>
+        </Form>
       </div>
     </div>
   )

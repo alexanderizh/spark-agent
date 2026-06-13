@@ -89,6 +89,13 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId, snapshot],
   )
 
+  const createGroupNode = useCallback(
+    async (nodeIds: string[]) => {
+      setSnapshot(await canvasApi.createGroupNode(projectId, nodeIds))
+    },
+    [projectId],
+  )
+
   const deleteNodes = useCallback(
     async (nodeIds: string[]) => {
       await canvasApi.deleteNodes(projectId, nodeIds)
@@ -141,6 +148,7 @@ export function useCanvasWorkspace(projectId: string) {
     updateNodes,
     createTextNode,
     createImageNode,
+    createGroupNode,
     deleteNodes,
     duplicateNodes,
     patchNodes,

@@ -9,12 +9,10 @@
  * 设计：
  *   - 不绑定具体数据；纯受控组件
  *   - 主操作按钮由 caller 注入（保持组件薄）
- *   - 全部使用 Arco Design Button + Icon，符合 AGENTS.md 强制规则
+ *   - 直接使用 @lobehub/ui Button（lobe 透传 antd）
  */
-import { Button } from '@arco-design/web-react'
-import {
-  IconClose, IconCheck, IconDownload, IconDelete,
-} from '@arco-design/web-react/icon'
+import { Button } from '@lobehub/ui'
+import { Icons } from '../../Icons'
 
 export interface MultiSelectToolbarProps {
   selectedCount: number
@@ -45,9 +43,9 @@ function MultiSelectToolbar({
   return (
     <div className="pv_multi_toolbar flex items-center" role="toolbar" aria-label="批量操作">
       <Button
-        size="mini"
+        size="small"
         shape="circle"
-        icon={<IconClose />}
+        icon={<Icons.X />}
         onClick={onExitMultiSelect}
         title="退出多选模式"
         aria-label="退出多选模式"
@@ -55,11 +53,11 @@ function MultiSelectToolbar({
       <span className="pv_multi_count" aria-live="polite">
         已选 <strong>{selectedCount}</strong> / {totalCount}
       </span>
-      <Button size="mini" onClick={onSelectAll} title="全选">
+      <Button size="small" onClick={onSelectAll} title="全选">
         全选
       </Button>
       <Button
-        size="mini"
+        size="small"
         onClick={onInvertSelection}
         title="反选"
         disabled={totalCount === 0}
@@ -67,7 +65,7 @@ function MultiSelectToolbar({
         反选
       </Button>
       <Button
-        size="mini"
+        size="small"
         onClick={onClearSelection}
         title="清空选择"
         disabled={!hasSelection}
@@ -76,9 +74,8 @@ function MultiSelectToolbar({
       </Button>
       <span className="flex-1" />
       <Button
-        size="mini"
-        type="outline"
-        icon={<IconDownload />}
+        size="small"
+        icon={<Icons.Download />}
         onClick={onExportSelected}
         disabled={!hasSelection}
         title="导出选中的 Provider"
@@ -86,10 +83,9 @@ function MultiSelectToolbar({
         导出选中
       </Button>
       <Button
-        size="mini"
-        status="danger"
-        type="outline"
-        icon={<IconDelete />}
+        size="small"
+        danger
+        icon={<Icons.Trash />}
         onClick={onDeleteSelected}
         disabled={!hasSelection || deleting}
         title="删除选中的 Provider"

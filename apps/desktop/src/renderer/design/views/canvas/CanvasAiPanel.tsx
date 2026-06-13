@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Button, Tag } from '@arco-design/web-react'
-import { SparkSelect, SparkTextarea } from '../../components/FormControls'
+import { Button, Tag } from '@lobehub/ui'
+import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import type { CanvasNode, CanvasOperationType } from './canvas.types'
 
@@ -38,36 +38,33 @@ export function CanvasAiPanel({
     <section className="canvas-panel-section">
       <div className="canvas-panel-title-row">
         <h3>AI 操作</h3>
-        <Tag size="small" color={selectedNodes.length > 0 ? 'arcoblue' : 'gray'}>
+        <Tag color={selectedNodes.length > 0 ? 'blue' : 'default'}>
           {selectedSummary}
         </Tag>
       </div>
       <div className="canvas-form-row">
         <label>能力</label>
-        <SparkSelect
+        <LobeSelect
           value={operation}
-          onChange={(event) => setOperation(event.target.value as CanvasOperationType)}
-        >
-          {capabilities.map((capability) => (
-            <option key={capability.id} value={capability.operation}>
-              {capability.recommended ? '推荐 / ' : ''}
-              {capability.label}
-            </option>
-          ))}
-        </SparkSelect>
+          onChange={(value) => setOperation(value as CanvasOperationType)}
+          options={capabilities.map((capability) => ({
+            value: capability.operation,
+            label: capability.recommended ? `推荐 / ${capability.label}` : capability.label,
+          }))}
+        />
       </div>
       <div className="canvas-form-row">
         <label>指令</label>
-        <SparkTextarea
+        <LobeTextArea
           value={prompt}
-          onChange={(event) => setPrompt(event.target.value)}
+          onChange={(e) => setPrompt(e.target.value)}
           placeholder="描述你想让 agent/provider 完成的生成、编辑或改写任务"
           rows={5}
         />
       </div>
       <Button
         type="primary"
-        long
+        block
         disabled={prompt.trim().length === 0}
         onClick={() => {
           onCreateTask({ operation, prompt: prompt.trim() })

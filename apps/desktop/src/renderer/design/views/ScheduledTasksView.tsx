@@ -8,24 +8,31 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Button, Input, Switch, Tag, Badge, Spin, Empty,
-  Select, InputNumber, Form, Popconfirm, Modal, Radio,
-  Message, Tooltip,
-} from '@arco-design/web-react'
+  Button,
+  Empty,
+  Input,
+  Modal,
+  Select,
+  Tag,
+  TextArea,
+  Tooltip,
+} from '@lobehub/ui'
 import {
-  IconPlus, IconSearch, IconPlayArrow, IconEdit,
-  IconDelete, IconClockCircle, IconExclamationCircle, IconCheckCircle,
-  IconCloseCircle, IconLoading, IconSync, IconSchedule, IconThunderbolt,
-  IconUser, IconUserGroup, IconSettings, IconBook, IconBulb,
-  IconUpload, IconDownload, IconCheck, IconCopy,
-} from '@arco-design/web-react/icon'
+  Badge,
+  InputNumber,
+  Popconfirm,
+  Radio,
+  Spin,
+  Switch,
+  message as antdMessage,
+} from 'antd'
+import { Icons } from '../Icons'
 import type {
   ManagedAgent, ManagedTeam, ProviderProfile, WorkspaceInfo,
   ScheduledTaskExportPayload, ScheduledTaskImportMode,
 } from '@spark/protocol'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
-import { SparkSelect } from '../components/FormControls'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
@@ -113,23 +120,23 @@ function formatTriggerType(task: ScheduledTaskItem): string {
   }
 }
 
-function statusColor(status: string): string {
+function statusColor(status: string): 'processing' | 'success' | 'default' | 'error' {
   switch (status) {
-    case 'running': return 'arcoblue'
-    case 'idle': return 'green'
-    case 'disabled': return 'gray'
-    case 'error': return 'red'
-    default: return 'gray'
+    case 'running': return 'processing'
+    case 'idle': return 'success'
+    case 'disabled': return 'default'
+    case 'error': return 'error'
+    default: return 'default'
   }
 }
 
 function executionStatusIcon(status: string): React.ReactNode {
   switch (status) {
-    case 'completed': return <IconCheckCircle style={{ color: 'var(--color-success-6)' }} />
+    case 'completed': return <Icons.CheckCircle style={{ color: 'var(--color-success-6)' }} />
     case 'failed':
-    case 'timeout': return <IconCloseCircle style={{ color: 'var(--color-danger-6)' }} />
-    case 'running': return <IconLoading style={{ color: 'var(--color-primary-6)' }} spin />
-    case 'cancelled': return <IconExclamationCircle style={{ color: 'var(--color-warning-6)' }} />
+    case 'timeout': return <Icons.XCircle style={{ color: 'var(--color-danger-6)' }} />
+    case 'running': return <Icons.Spinner style={{ color: 'var(--color-primary-6)' }} />
+    case 'cancelled': return <Icons.AlertTriangle style={{ color: 'var(--color-warning-6)' }} />
     default: return null
   }
 }
@@ -217,9 +224,9 @@ export function ScheduledTasksView() {
     try {
       await ipcInvoke('scheduled-task:toggle', { id, enabled })
       setRefreshKey(k => k + 1)
-      Message.success(enabled ? '任务已启用' : '任务已禁用')
+      antdMessage.success(enabled ? '任务已启用' : '任务已禁用')
     } catch (err) {
-      Message.error(`操作失败: ${err}`)
+      antdMessage.error(`操作失败: ${err}`)
     }
   }, [])
 
@@ -229,14 +236,14 @@ export function ScheduledTasksView() {
       const sessionId: string | null = res?.execution?.sessionId ?? null
       setRefreshKey(k => k + 1)
       if (sessionId) {
-        Message.success('任务已触发执行，正在打开会话')
+        antdMessage.success('任务已触发执行，正在打开会话')
         sidebar.setActiveSession(sessionId as any)
         setTweak('view', 'chat')
       } else {
-        Message.success('任务已触发执行，会话稍后会出现在会话栏「无项目对话」分组')
+        antdMessage.success('任务已触发执行，会话稍后会出现在会话栏「无项目对话」分组')
       }
     } catch (err) {
-      Message.error(`执行失败: ${err}`)
+      antdMessage.error(`执行失败: ${err}`)
     }
   }, [sidebar, setTweak])
 
@@ -245,9 +252,9 @@ export function ScheduledTasksView() {
       await ipcInvoke('scheduled-task:delete', { id })
       if (selectedId === id) setSelectedId(null)
       setRefreshKey(k => k + 1)
-      Message.success('任务已删除')
+      antdMessage.success('任务已删除')
     } catch (err) {
-      Message.error(`删除失败: ${err}`)
+      antdMessage.error(`删除失败: ${err}`)
     }
   }, [selectedId])
 
@@ -458,7 +465,7 @@ export function ScheduledTasksView() {
     setEditingTask(null)
     if (success) {
       setRefreshKey(k => k + 1)
-      Message.success(wasEdit ? '任务已更新' : '任务已创建')
+      antdMessage.success(wasEdit ? '任务已更新' : '任务已创建')
     }
   }, [])
 
@@ -483,7 +490,7 @@ export function ScheduledTasksView() {
       {/* Header */}
       <div className="st-header">
         <div className="st-header-left">
-          <IconClockCircle style={{ fontSize: 20, color: 'var(--primary)' }} />
+          <Icons.Clock style={{ fontSize: 20, color: 'var(--primary)' }} />
           <h2>Scheduled Tasks</h2>
         </div>
         <div className="st-header-right">
@@ -492,13 +499,13 @@ export function ScheduledTasksView() {
             onClick={triggerRefresh}
             title="刷新 (Ctrl+R)"
           >
-            <IconSync />
+            <Icons.Refresh />
           </button>
           {!multiSelect && (
             <>
               <Button
                 size="small"
-                icon={<IconUpload />}
+                icon={<Icons.Upload />}
                 onClick={() => void handleImportFromFile()}
                 disabled={importing}
                 title="从 .json 导入定时任务"
@@ -507,7 +514,7 @@ export function ScheduledTasksView() {
               </Button>
               <Button
                 size="small"
-                icon={<IconCopy />}
+                icon={<Icons.Copy />}
                 onClick={() => void handleImportFromClipboard()}
                 disabled={importing}
                 title="从剪贴板 JSON 字符串导入"
@@ -516,7 +523,7 @@ export function ScheduledTasksView() {
               </Button>
               <Button
                 size="small"
-                icon={<IconDownload />}
+                icon={<Icons.Download />}
                 onClick={() => void handleExportAll()}
                 disabled={tasks.length === 0}
                 title="导出全部任务到 .json"
@@ -525,7 +532,7 @@ export function ScheduledTasksView() {
               </Button>
               <Button
                 size="small"
-                icon={<IconCopy />}
+                icon={<Icons.Copy />}
                 onClick={() => void handleCopyToClipboard()}
                 disabled={tasks.length === 0}
                 title="复制全部任务 JSON 到剪贴板"
@@ -534,8 +541,8 @@ export function ScheduledTasksView() {
               </Button>
               <Button
                 size="small"
-                type="secondary"
-                icon={<IconCheck />}
+                type="default"
+                icon={<Icons.Check />}
                 onClick={enterMultiSelect}
                 disabled={tasks.length === 0}
                 title="进入多选模式（可批量删除 / 批量导出）"
@@ -544,7 +551,7 @@ export function ScheduledTasksView() {
               </Button>
             </>
           )}
-          <Button type="primary" size="small" icon={<IconPlus />} onClick={handleCreate}>
+          <Button type="primary" size="small" icon={<Icons.Plus />} onClick={handleCreate}>
             New Task
           </Button>
         </div>
@@ -554,27 +561,27 @@ export function ScheduledTasksView() {
       {multiSelect && (
         <div className="st-multi-toolbar">
           <Button
-            size="mini"
-            icon={<IconCloseCircle />}
+            size="small"
+            icon={<Icons.XCircle />}
             onClick={exitMultiSelect}
             title="退出多选模式"
           />
           <span className="st-multi-count">
             已选 <strong>{selectedIds.size}</strong> / {tasks.length}
           </span>
-          <Button size="mini" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
+          <Button size="small" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
             全选
           </Button>
-          <Button size="mini" onClick={invertSelection} disabled={tasks.length === 0}>
+          <Button size="small" onClick={invertSelection} disabled={tasks.length === 0}>
             反选
           </Button>
-          <Button size="mini" onClick={clearSelection} disabled={selectedIds.size === 0}>
+          <Button size="small" onClick={clearSelection} disabled={selectedIds.size === 0}>
             取消选择
           </Button>
           <span style={{ flex: 1 }} />
           <Button
-            size="mini"
-            icon={<IconDownload />}
+            size="small"
+            icon={<Icons.Download />}
             onClick={handleExportSelected}
             disabled={selectedIds.size === 0}
             title="导出选中的任务"
@@ -582,9 +589,9 @@ export function ScheduledTasksView() {
             导出选中
           </Button>
           <Button
-            size="mini"
-            status="danger"
-            icon={<IconDelete />}
+            size="small"
+            danger
+            icon={<Icons.Trash />}
             onClick={() => void handleDeleteSelected()}
             disabled={selectedIds.size === 0 || importing}
             title="删除选中的任务"
@@ -608,11 +615,11 @@ export function ScheduledTasksView() {
           ))}
         </div>
         <Input
-          prefix={<IconSearch />}
+          prefix={<Icons.Search />}
           placeholder="搜索任务..."
           size="small"
           value={searchQuery}
-          onChange={setSearchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
           style={{ width: 200 }}
           allowClear
         />
@@ -648,12 +655,11 @@ export function ScheduledTasksView() {
                     <div className="st-task-name-row">
                       {multiSelect && (
                         <span className={`st-checkbox ${isSelected ? 'checked' : ''}`}>
-                          {isSelected && <IconCheck style={{ fontSize: 12 }} />}
+                          {isSelected && <Icons.Check style={{ fontSize: 12 }} />}
                         </span>
                       )}
                       <Badge
-                        color={statusColor(task.status)}
-                        dot
+                        status={statusColor(task.status)}
                         style={{ marginRight: 8 }}
                       />
                       <span className="st-task-name">{task.name}</span>
@@ -671,7 +677,7 @@ export function ScheduledTasksView() {
                   <div className="st-task-meta">
                     <Tag size="small" color="orangered">{formatTriggerType(task)}</Tag>
                     {task.status === 'running' && (
-                      <Tag size="small" color="blue" icon={<IconLoading spin />}>运行中</Tag>
+                      <Tag size="small" color="blue" icon={<Icons.Spinner />}>运行中</Tag>
                     )}
                   </div>
                   <div className="st-task-footer">
@@ -750,15 +756,15 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
         <div className="st-detail-title-row">
           <h3 className="st-detail-title">{task.name}</h3>
           <div className="st-detail-actions">
-            <Tooltip content="立即执行">
-              <Button size="mini" type="primary" icon={<IconPlayArrow />} onClick={onRunNow} />
+            <Tooltip title="立即执行">
+              <Button size="small" type="primary" icon={<Icons.Play />} onClick={onRunNow} />
             </Tooltip>
-            <Tooltip content="编辑">
-              <Button size="mini" icon={<IconEdit />} onClick={onEdit} />
+            <Tooltip title="编辑">
+              <Button size="small" icon={<Icons.Edit />} onClick={onEdit} />
             </Tooltip>
-            <Popconfirm title="确定删除此任务？" onOk={onDelete}>
-              <Tooltip content="删除">
-                <Button size="mini" status="danger" icon={<IconDelete />} />
+            <Popconfirm title="确定删除此任务？" onConfirm={onDelete}>
+              <Tooltip title="删除">
+                <Button size="small" danger icon={<Icons.Trash />} />
               </Tooltip>
             </Popconfirm>
           </div>
@@ -813,7 +819,7 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
         </div>
         {task.lastError && (
           <div className="st-detail-error">
-            <IconExclamationCircle style={{ color: 'var(--color-danger-6)' }} />
+            <Icons.AlertTriangle style={{ color: 'var(--color-danger-6)' }} />
             <span>{task.lastError}</span>
           </div>
         )}
@@ -837,12 +843,12 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
                 <div className="st-execution-right">
                   <span className="st-execution-duration">{formatDuration(ex.durationMs)}</span>
                   {ex.sessionId && (
-                    <Tooltip content={`Session: ${ex.sessionId.slice(0, 8)}...`}>
-                      <Tag size="small" color="gray">会话</Tag>
+                    <Tooltip title={`Session: ${ex.sessionId.slice(0, 8)}...`}>
+                      <Tag size="small" color="default">会话</Tag>
                     </Tooltip>
                   )}
                   {ex.error && (
-                    <Tooltip content={ex.error}>
+                    <Tooltip title={ex.error}>
                       <Tag size="small" color="red">错误</Tag>
                     </Tooltip>
                   )}
@@ -973,21 +979,21 @@ function TaskFormPage({ task, onClose }: {
           const runRes = await ipcInvoke('scheduled-task:run-now', { id: taskId })
           const sessionId: string | null = runRes?.execution?.sessionId ?? null
           if (sessionId) {
-            Message.success('已保存并触发执行，正在打开会话')
+            antdMessage.success('已保存并触发执行，正在打开会话')
             sidebar.setActiveSession(sessionId as any)
             setTweak('view', 'chat')
             onClose(true)
             return
           }
           // 兜底：没拿到 sessionId（10s 内未建会话），仅提示用户后续可在会话栏查看
-          Message.success('已保存并触发执行，会话稍后会出现在会话栏「无项目对话」分组')
+          antdMessage.success('已保存并触发执行，会话稍后会出现在会话栏「无项目对话」分组')
         } catch (runErr) {
-          Message.warning(`已保存，但立即执行失败: ${runErr}`)
+          antdMessage.warning(`已保存，但立即执行失败: ${runErr}`)
         }
       }
       onClose(true)
     } catch (err) {
-      Message.error(`保存失败: ${err}`)
+      antdMessage.error(`保存失败: ${err}`)
     } finally {
       setSaving(false)
     }
@@ -1001,7 +1007,7 @@ function TaskFormPage({ task, onClose }: {
           <Button
             type="text"
             size="small"
-            icon={<IconCloseCircle />}
+            icon={<Icons.XCircle />}
             onClick={() => onClose(false)}
           />
           <div className="st-form-page-title-text">
@@ -1015,7 +1021,7 @@ function TaskFormPage({ task, onClose }: {
             loading={saving}
             disabled={!canSave}
             onClick={() => handleSave(true)}
-            icon={<IconPlayArrow />}
+            icon={<Icons.Play />}
             title="保存后立即触发一次执行"
           >
             保存并执行
@@ -1045,7 +1051,7 @@ function TaskFormPage({ task, onClose }: {
                 </label>
                 <Input
                   value={name}
-                  onChange={setName}
+                  onChange={(e) => setName(e.target.value)}
                   placeholder="例如：每日代码审查"
                   size="large"
                 />
@@ -1053,9 +1059,9 @@ function TaskFormPage({ task, onClose }: {
 
               <div className="st-form-field">
                 <label className="st-field-label">描述</label>
-                <Input.TextArea
+                <TextArea
                   value={description}
-                  onChange={setDescription}
+                  onChange={(e) => setDescription(e.target.value)}
                   placeholder="补充任务目标、产出格式和注意事项"
                   rows={3}
                   autoSize={{ minRows: 2, maxRows: 5 }}
@@ -1101,19 +1107,19 @@ function TaskFormPage({ task, onClose }: {
               {([
                 {
                   value: 'interval' as const,
-                  icon: <IconSync />,
+                  icon: <Icons.Refresh />,
                   title: '固定间隔',
                   desc: '每隔固定时间自动执行',
                 },
                 {
                   value: 'cron' as const,
-                  icon: <IconSchedule />,
+                  icon: <Icons.Calendar />,
                   title: 'Cron 表达式',
                   desc: '用 cron 规则精确控制时间',
                 },
                 {
                   value: 'once' as const,
-                  icon: <IconThunderbolt />,
+                  icon: <Icons.Zap />,
                   title: '单次执行',
                   desc: '在指定时间点执行一次',
                 },
@@ -1129,7 +1135,7 @@ function TaskFormPage({ task, onClose }: {
                     <span className="st-trigger-card-desc">{opt.desc}</span>
                   </div>
                   <div className="st-trigger-card-check">
-                    {triggerType === opt.value && <IconCheckCircle />}
+                    {triggerType === opt.value && <Icons.CheckCircle />}
                   </div>
                 </div>
               ))}
@@ -1141,7 +1147,7 @@ function TaskFormPage({ task, onClose }: {
                 <div className="st-interval-input-row">
                   <InputNumber
                     value={intervalSeconds}
-                    onChange={(v) => setIntervalSeconds(v ?? 3600)}
+                    onChange={(v) => setIntervalSeconds(typeof v === 'number' ? v : 3600)}
                     min={10}
                     max={86400}
                     suffix="秒"
@@ -1167,7 +1173,7 @@ function TaskFormPage({ task, onClose }: {
                     <Tag
                       key={qi.val}
                       size="small"
-                      color={intervalSeconds === qi.val ? 'arcoblue' : 'gray'}
+                      color={intervalSeconds === qi.val ? 'blue' : 'default'}
                       style={{ cursor: 'pointer' }}
                       onClick={() => setIntervalSeconds(qi.val)}
                     >
@@ -1183,7 +1189,7 @@ function TaskFormPage({ task, onClose }: {
                 <label className="st-field-label">Cron 表达式</label>
                 <Input
                   value={cronExpression}
-                  onChange={setCronExpression}
+                  onChange={(e) => setCronExpression(e.target.value)}
                   placeholder="0 */2 * * *"
                   size="large"
                 />
@@ -1197,7 +1203,7 @@ function TaskFormPage({ task, onClose }: {
                     <Tag
                       key={qc.expr}
                       size="small"
-                      color={cronExpression === qc.expr ? 'arcoblue' : 'gray'}
+                      color={cronExpression === qc.expr ? 'blue' : 'default'}
                       style={{ cursor: 'pointer' }}
                       onClick={() => setCronExpression(qc.expr)}
                     >
@@ -1214,7 +1220,7 @@ function TaskFormPage({ task, onClose }: {
                 <Input
                   type="datetime-local"
                   value={runAt}
-                  onChange={setRunAt}
+                  onChange={(e) => setRunAt(e.target.value)}
                   size="large"
                 />
               </div>
@@ -1235,12 +1241,12 @@ function TaskFormPage({ task, onClose }: {
             <div className="st-form-field-row">
               <div className="st-form-field st-form-field--half">
                 <label className="st-field-label">
-                  <IconUser style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  <Icons.User style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
                   Agent
                 </label>
                 <Select
                   {...(agentId ? { value: agentId } : {})}
-                  onChange={setAgentId}
+                  onChange={(v) => setAgentId(v as string)}
                   placeholder="选择执行 Agent"
                   allowClear
                   showSearch
@@ -1254,12 +1260,12 @@ function TaskFormPage({ task, onClose }: {
               </div>
               <div className="st-form-field st-form-field--half">
                 <label className="st-field-label">
-                  <IconUserGroup style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  <Icons.Users style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
                   Team
                 </label>
                 <Select
                   {...(teamId ? { value: teamId } : {})}
-                  onChange={setTeamId}
+                  onChange={(v) => setTeamId(v as string)}
                   placeholder="选择团队"
                   allowClear
                   showSearch
@@ -1276,12 +1282,12 @@ function TaskFormPage({ task, onClose }: {
             <div className="st-form-field-row">
               <div className="st-form-field st-form-field--half">
                 <label className="st-field-label">
-                  <IconBulb style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  <Icons.Lightbulb style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
                   Model
                 </label>
                 <Select
                   {...(modelId ? { value: modelId } : {})}
-                  onChange={setModelId}
+                  onChange={(v) => setModelId(v as string)}
                   placeholder="选择模型"
                   allowClear
                   showSearch
@@ -1295,12 +1301,12 @@ function TaskFormPage({ task, onClose }: {
               </div>
               <div className="st-form-field st-form-field--half">
                 <label className="st-field-label">
-                  <IconBook style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  <Icons.Book style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
                   Workspace
                 </label>
                 <Select
                   {...(workspaceId ? { value: workspaceId } : {})}
-                  onChange={setWorkspaceId}
+                  onChange={(v) => setWorkspaceId(v as string)}
                   placeholder="选择工作区"
                   allowClear
                   showSearch
@@ -1318,9 +1324,9 @@ function TaskFormPage({ task, onClose }: {
               <label className="st-field-label">
                 Prompt 模板 <span className="st-required">*</span>
               </label>
-              <Input.TextArea
+              <TextArea
                 value={promptTemplate}
-                onChange={setPromptTemplate}
+                onChange={(e) => setPromptTemplate(e.target.value)}
                 placeholder="写清任务执行时需要产出的内容、格式和约束"
                 rows={6}
                 autoSize={{ minRows: 4, maxRows: 12 }}
@@ -1345,12 +1351,12 @@ function TaskFormPage({ task, onClose }: {
             <div className="st-form-field-row">
               <div className="st-form-field st-form-field--third">
                 <label className="st-field-label">
-                  <IconSettings style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  <Icons.Settings style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
                   超时时间
                 </label>
                 <InputNumber
                   value={timeoutSeconds}
-                  onChange={(v) => setTimeoutSeconds(v ?? 300)}
+                  onChange={(v) => setTimeoutSeconds(typeof v === 'number' ? v : 300)}
                   min={10}
                   max={7200}
                   suffix="秒"
@@ -1362,7 +1368,7 @@ function TaskFormPage({ task, onClose }: {
                 <label className="st-field-label">最大重试次数</label>
                 <InputNumber
                   value={maxRetries}
-                  onChange={(v) => setMaxRetries(v ?? 0)}
+                  onChange={(v) => setMaxRetries(typeof v === 'number' ? v : 0)}
                   min={0}
                   max={10}
                   suffix="次"
@@ -1372,18 +1378,19 @@ function TaskFormPage({ task, onClose }: {
               </div>
               <div className="st-form-field st-form-field--third">
                 <label className="st-field-label">
-                  <IconThunderbolt style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
+                  <Icons.Zap style={{ marginRight: 4, fontSize: 13, verticalAlign: -1 }} />
                   权限策略
                 </label>
-                <SparkSelect
+                <Select
                   value={permissionMode}
-                  onChange={(e) => setPermissionMode(e.target.value)}
+                  onChange={(v) => setPermissionMode(v as string)}
+                  options={[
+                    { label: 'Auto（自动批准）', value: 'auto' },
+                    { label: 'Bypass（完全放行）', value: 'bypass' },
+                  ]}
                   size="large"
                   style={{ width: '100%' }}
-                >
-                  <option value="auto">Auto（自动批准）</option>
-                  <option value="bypass">Bypass（完全放行）</option>
-                </SparkSelect>
+                />
               </div>
             </div>
           </div>
@@ -1456,7 +1463,7 @@ function TaskImportPreviewModal({
     <Modal
       title={
         <div className="st-import-modal-title">
-          <IconUpload style={{ fontSize: 16, color: 'var(--primary)' }} />
+          <Icons.Upload style={{ fontSize: 16, color: 'var(--primary)' }} />
           <span>导入定时任务</span>
         </div>
       }
@@ -1506,7 +1513,7 @@ function TaskImportPreviewModal({
           </div>
           {conflictCount > 0 && (
             <div className="st-import-conflict-warn">
-              <IconExclamationCircle style={{ fontSize: 12, color: 'var(--color-warning-6)' }} />
+              <Icons.AlertTriangle style={{ fontSize: 12, color: 'var(--color-warning-6)' }} />
               {conflictCount} 个任务 name 与本地冲突
             </div>
           )}
@@ -1517,7 +1524,7 @@ function TaskImportPreviewModal({
           <span className="muted">冲突处理：</span>
           <Radio.Group
             value={mode}
-            onChange={setMode}
+            onChange={(e) => setMode(e.target.value as 'replace' | 'merge')}
             disabled={submitting}
             size="small"
           >
@@ -1570,7 +1577,7 @@ function TaskImportPreviewModal({
         </div>
 
         <div className="st-import-tip">
-          <IconExclamationCircle style={{ fontSize: 12 }} />
+          <Icons.AlertTriangle style={{ fontSize: 12 }} />
           <span>
             导入的新任务默认 <strong>disabled = true</strong>(保留导入文件中的设置);merge 模式下不会覆盖本地同名任务,replace 模式会更新字段但保留运行时统计(status / 计数 / nextRunAt 等)。
           </span>

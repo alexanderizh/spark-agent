@@ -5,7 +5,7 @@
  * 作用:筛选/分组整个会话栏列表
  */
 import { useMemo, useState } from 'react'
-import { Trigger } from '@arco-design/web-react'
+import { Popover } from '@lobehub/ui'
 import './SidebarFilterMenu.less'
 import { Icons } from './Icons'
 import type { WorkspaceInfo } from '@spark/protocol'
@@ -118,16 +118,15 @@ function FilterRow({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    <Trigger
-      popup={() => <>{children}</>}
+    <Popover
+      content={children}
       trigger="hover"
-      position="rt"
-      mouseEnterDelay={50}
-      mouseLeaveDelay={150}
-      popupAlign={{ left: 4 }}
-      popupVisible={open}
-      onVisibleChange={setOpen}
-      classNames="sidebar-filter-sub-trigger"
+      placement="right"
+      mouseEnterDelay={0.05}
+      mouseLeaveDelay={0.15}
+      open={open}
+      onOpenChange={setOpen}
+      classNames={{ root: 'sidebar-filter-sub-trigger' }}
     >
       <button
         type="button"
@@ -137,7 +136,7 @@ function FilterRow({
         <span className={`sidebar-filter-row-value${highlighted ? ' is-highlight' : ''}`}>{valueLabel}</span>
         <Icons.ChevronRight size={12} className="sidebar-filter-row-chev" />
       </button>
-    </Trigger>
+    </Popover>
   )
 }
 
@@ -251,21 +250,20 @@ export function SidebarFilterMenu({
   const active = !isDefaultFilter(state)
 
   return (
-    <Trigger
-      popup={() => (
+    <Popover
+      content={
         <FilterPopupContent
           state={state}
           workspaces={workspaces}
           onChange={onChange}
           onClear={onClear}
         />
-      )}
+      }
       trigger="click"
-      position="br"
-      popupAlign={{ top: 4 }}
-      popupVisible={open}
-      onVisibleChange={setOpen}
-      classNames="sidebar-filter-trigger"
+      placement="bottomRight"
+      open={open}
+      onOpenChange={setOpen}
+      classNames={{ root: 'sidebar-filter-trigger' }}
     >
       <button
         type="button"
@@ -277,6 +275,6 @@ export function SidebarFilterMenu({
         <Icons.Sliders size={13} />
         {active && <span className="sidebar-filter-btn-dot" />}
       </button>
-    </Trigger>
+    </Popover>
   )
 }

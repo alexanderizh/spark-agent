@@ -6,8 +6,8 @@ import { useApp } from '../AppContext'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
-import { Dropdown, Menu, Switch } from '@arco-design/web-react'
-import { SparkCheckbox, SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { Switch } from 'antd'
+import { Checkbox as LobeCheckbox, Dropdown, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
@@ -29,6 +29,25 @@ import type {
 } from '@spark/protocol'
 
 type AgentScreen = 'list' | 'detail'
+
+const agentSelectStyle = { width: '100%' }
+
+const enabledOptions = [
+  { label: '启用', value: 'enabled' },
+  { label: '停用', value: 'disabled' },
+]
+
+const adapterOptions = [
+  { label: 'Claude SDK', value: 'claude-sdk' },
+  { label: 'Codex', value: 'codex' },
+]
+
+const reasoningOptions = [
+  { label: 'low', value: 'low' },
+  { label: 'medium', value: 'medium' },
+  { label: 'high', value: 'high' },
+  { label: 'xhigh', value: 'xhigh' },
+]
 
 type AgentDraft = {
   id?: string
@@ -521,43 +540,23 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
               const wf = workflows.find((w) => w.id === agent.workflowId)
               const provider = providers.find((p) => p.id === agent.providerProfileId)
               const avatar = getAgentAvatarConfig(agent.metadata, agent.id, agent.name)
-              const menuItems = (
-                <Menu>
-                  <Menu.Item key="chat" onClick={() => void handleQuickChat(agent)}>
-                    <span className="agent-context-menu-item">
-                      <Icons.Chat size={14} /> 快速对话
-                    </span>
-                  </Menu.Item>
-                  <Menu.Item key="export" onClick={() => void handleExportAgent(agent)}>
-                    <span className="agent-context-menu-item">
-                      <Icons.Download size={14} /> 导出
-                    </span>
-                  </Menu.Item>
-                  <Menu.Item key="copy" onClick={() => void handleCardCopy(agent)}>
-                    <span className="agent-context-menu-item">
-                      <Icons.Copy size={14} /> 复制
-                    </span>
-                  </Menu.Item>
-                  <Menu.Item key="edit" onClick={() => openAgent(agent)}>
-                    <span className="agent-context-menu-item">
-                      <Icons.Edit size={14} /> 编辑
-                    </span>
-                  </Menu.Item>
-                  {!agent.builtIn && (
-                    <Menu.Item key="delete" onClick={() => void handleCardDelete(agent)}>
-                      <span className="agent-context-menu-item danger">
-                        <Icons.Trash size={14} /> 删除
-                      </span>
-                    </Menu.Item>
-                  )}
-                </Menu>
-              )
+              const menuItems = {
+                items: [
+                  { key: 'chat', label: (<span className="agent-context-menu-item"><Icons.Chat size={14} /> 快速对话</span>), onClick: () => void handleQuickChat(agent) },
+                  { key: 'export', label: (<span className="agent-context-menu-item"><Icons.Download size={14} /> 导出</span>), onClick: () => void handleExportAgent(agent) },
+                  { key: 'copy', label: (<span className="agent-context-menu-item"><Icons.Copy size={14} /> 复制</span>), onClick: () => void handleCardCopy(agent) },
+                  { key: 'edit', label: (<span className="agent-context-menu-item"><Icons.Edit size={14} /> 编辑</span>), onClick: () => openAgent(agent) },
+                  ...(!agent.builtIn
+                    ? [{ key: 'delete', label: (<span className="agent-context-menu-item danger"><Icons.Trash size={14} /> 删除</span>), onClick: () => void handleCardDelete(agent) }]
+                    : []),
+                ],
+              }
               return (
                 <Dropdown
                   key={agent.id}
-                  trigger="contextMenu"
-                  droplist={menuItems}
-                  position="bl"
+                  trigger={['contextMenu']}
+                  menu={menuItems}
+                  placement="bottomLeft"
                 >
                   <button className="agents-card" onClick={() => openAgent(agent)}>
                     <span className="agents-card-head">
@@ -692,13 +691,15 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
 
           <div className="agent-form-grid">
             <Field label="名称">
-              <SparkInput value={draft.name} onChange={(e) => updateDraft('name', e.target.value)} />
+              <LobeInput value={draft.name} onChange={(e) => updateDraft('name', e.target.value)} />
             </Field>
             <Field label="状态">
-              <SparkSelect value={draft.enabled ? 'enabled' : 'disabled'} onChange={(e) => updateDraft('enabled', e.target.value === 'enabled')}>
-                <option value="enabled">启用</option>
-                <option value="disabled">停用</option>
-              </SparkSelect>
+              <LobeSelect
+                value={draft.enabled ? 'enabled' : 'disabled'}
+                onChange={(value) => updateDraft('enabled', value === 'enabled')}
+                options={enabledOptions}
+                style={agentSelectStyle}
+              />
             </Field>
             <Field label="默认 Agent">
               <span className="agent-toggle-row">
@@ -710,61 +711,76 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
               </span>
             </Field>
             <Field label="说明" wide>
-              <SparkInput value={draft.description} onChange={(e) => updateDraft('description', e.target.value)} />
+              <LobeInput value={draft.description} onChange={(e) => updateDraft('description', e.target.value)} />
             </Field>
             <Field label="执行器">
-              <SparkSelect
+              <LobeSelect
                 value={draft.agentAdapter}
-                onChange={(e) => {
-                  const nextAdapter = e.target.value as SessionAgentAdapter
+                onChange={(value) => {
+                  const nextAdapter = value as SessionAgentAdapter
                   updateDraft('agentAdapter', nextAdapter)
                   updateDraft('permissionMode', getDefaultPermissionMode(nextAdapter))
                 }}
-              >
-                <option value="claude-sdk">Claude SDK</option>
-                <option value="codex">Codex</option>
-              </SparkSelect>
+                options={adapterOptions}
+                style={agentSelectStyle}
+              />
             </Field>
             <Field label="Provider">
-              <SparkSelect
+              <LobeSelect
                 value={draft.providerProfileId}
-                onChange={(e) => {
-                  const p = providers.find((item) => item.id === e.target.value)
-                  updateDraft('providerProfileId', e.target.value)
+                onChange={(value) => {
+                  const nextProviderId = String(value)
+                  const p = providers.find((item) => item.id === nextProviderId)
+                  updateDraft('providerProfileId', nextProviderId)
                   updateDraft('modelId', p?.defaultModel ?? p?.modelIds[0] ?? '')
                 }}
-              >
-                <option value="">跟随会话</option>
-                {providers.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </SparkSelect>
+                options={[
+                  { label: '跟随会话', value: '' },
+                  ...providers.map((p) => ({ label: p.name, value: p.id })),
+                ]}
+                style={agentSelectStyle}
+              />
             </Field>
             <Field label="默认模型">
-              <SparkSelect value={draft.modelId} onChange={(e) => updateDraft('modelId', e.target.value)}>
-                <option value="">Provider 默认</option>
-                {modelOptions.map((m) => <option key={m} value={m}>{m}</option>)}
-              </SparkSelect>
+              <LobeSelect
+                value={draft.modelId}
+                onChange={(value) => updateDraft('modelId', String(value))}
+                options={[
+                  { label: 'Provider 默认', value: '' },
+                  ...modelOptions.map((m) => ({ label: m, value: m })),
+                ]}
+                style={agentSelectStyle}
+              />
             </Field>
             <Field label="权限">
-              <SparkSelect value={draft.permissionMode} onChange={(e) => updateDraft('permissionMode', e.target.value as SessionPermissionMode)}>
-                {getPermissionOptions(draft.agentAdapter).map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </SparkSelect>
+              <LobeSelect
+                value={draft.permissionMode}
+                onChange={(value) => updateDraft('permissionMode', value as SessionPermissionMode)}
+                options={getPermissionOptions(draft.agentAdapter).map((o) => ({ label: o.label, value: o.value }))}
+                style={agentSelectStyle}
+              />
             </Field>
             <Field label="推理强度">
-              <SparkSelect value={draft.reasoningEffort} onChange={(e) => updateDraft('reasoningEffort', e.target.value as SessionReasoningEffort)}>
-                <option value="low">low</option>
-                <option value="medium">medium</option>
-                <option value="high">high</option>
-                <option value="xhigh">xhigh</option>
-              </SparkSelect>
+              <LobeSelect
+                value={draft.reasoningEffort}
+                onChange={(value) => updateDraft('reasoningEffort', value as SessionReasoningEffort)}
+                options={reasoningOptions}
+                style={agentSelectStyle}
+              />
             </Field>
             <Field label="工作流" wide>
-              <SparkSelect value={draft.workflowId} onChange={(e) => updateDraft('workflowId', e.target.value)}>
-                <option value="">不使用工作流</option>
-                {workflows.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </SparkSelect>
+              <LobeSelect
+                value={draft.workflowId}
+                onChange={(value) => updateDraft('workflowId', String(value))}
+                options={[
+                  { label: '不使用工作流', value: '' },
+                  ...workflows.map((w) => ({ label: w.name, value: w.id })),
+                ]}
+                style={agentSelectStyle}
+              />
             </Field>
             <Field label="提示词" wide>
-              <SparkTextarea rows={8} value={draft.prompt} onChange={(e) => updateDraft('prompt', e.target.value)} />
+              <LobeTextArea rows={8} value={draft.prompt} onChange={(e) => updateDraft('prompt', e.target.value)} />
             </Field>
           </div>
         </section>
@@ -980,12 +996,12 @@ function HookEditor({ value, onChange }: { value: AgentHookConfig; onChange: (v:
   }
   return (
     <div className="agent-hook-editor">
-      <SparkCheckbox className="agent-toggle-row" checked={value.enabled} onChange={(e) => onChange({ ...value, enabled: e.target.checked })} label="启用 Agent 专属 Hook" />
+      <LobeCheckbox checked={value.enabled} onChange={(checked) => onChange({ ...value, enabled: checked })}>启用 Agent 专属 Hook</LobeCheckbox>
       {HOOK_NODES.map((item) => (
         <div key={item.node} className="agent-hook-row">
           <span>{item.label}</span>
-          <SparkCheckbox checked={value.nodes[item.node].sound} onChange={(e) => patchNode(item.node, { sound: e.target.checked })} label="声音" />
-          <SparkCheckbox checked={value.nodes[item.node].notification} onChange={(e) => patchNode(item.node, { notification: e.target.checked })} label="通知" />
+          <LobeCheckbox checked={value.nodes[item.node].sound} onChange={(checked) => patchNode(item.node, { sound: checked })}>声音</LobeCheckbox>
+          <LobeCheckbox checked={value.nodes[item.node].notification} onChange={(checked) => patchNode(item.node, { notification: checked })}>通知</LobeCheckbox>
         </div>
       ))}
     </div>

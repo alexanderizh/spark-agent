@@ -1,15 +1,7 @@
-import { Button, Tooltip } from '@arco-design/web-react'
+import { Button, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 
 export type CanvasTool = 'select' | 'pan' | 'text' | 'prompt' | 'image'
-
-const tools: Array<{ id: CanvasTool; title: string; icon: React.ReactNode }> = [
-  { id: 'select', title: '选择', icon: <Icons.Command size={15} /> },
-  { id: 'pan', title: '平移', icon: <Icons.Compass size={15} /> },
-  { id: 'text', title: '文本', icon: <Icons.File size={15} /> },
-  { id: 'prompt', title: 'Prompt', icon: <Icons.Sparkles size={15} /> },
-  { id: 'image', title: '上传图片', icon: <Icons.Image size={15} /> },
-]
 
 export function CanvasToolbar({
   activeTool,
@@ -17,6 +9,8 @@ export function CanvasToolbar({
   onAddText,
   onAddPrompt,
   onUploadImage,
+  onCreateGroup,
+  onOpenAiComposer,
   onDeleteSelected,
   selectedCount,
 }: {
@@ -25,43 +19,85 @@ export function CanvasToolbar({
   onAddText: () => void
   onAddPrompt: () => void
   onUploadImage: () => void
+  onCreateGroup: () => void
+  onOpenAiComposer: () => void
   onDeleteSelected: () => void
   selectedCount: number
 }) {
-  const handleTool = (tool: CanvasTool) => {
-    onToolChange(tool)
-    if (tool === 'text') onAddText()
-    if (tool === 'prompt') onAddPrompt()
-    if (tool === 'image') onUploadImage()
-  }
-
   return (
-    <div className="canvas-toolbar">
-      {tools.map((tool) => (
-        <Tooltip key={tool.id} content={tool.title} position="right">
+    <div className="canvas-toolbar" role="toolbar" aria-label="Canvas toolbar">
+      <div className="canvas-toolbar-group">
+        <div className="canvas-toolbar-group-title">工具</div>
+        <Tooltip title="选择" placement="bottom">
           <Button
             size="small"
-            shape="circle"
-            type={activeTool === tool.id ? 'primary' : 'text'}
-            icon={tool.icon}
-            aria-label={tool.title}
-            onClick={() => handleTool(tool.id)}
+            type={activeTool === 'select' ? 'primary' : 'default'}
+            icon={<Icons.Command size={15} />}
+            aria-label="选择"
+            onClick={() => onToolChange('select')}
           />
         </Tooltip>
-      ))}
-      <div className="canvas-toolbar-separator" />
-      <Tooltip content={selectedCount > 0 ? '删除选中节点' : '先选择节点'} position="right">
+        <Tooltip title="平移" placement="bottom">
+          <Button
+            size="small"
+            type={activeTool === 'pan' ? 'primary' : 'default'}
+            icon={<Icons.Compass size={15} />}
+            aria-label="平移"
+            onClick={() => onToolChange('pan')}
+          />
+        </Tooltip>
+      </div>
+
+      <div className="canvas-toolbar-group">
+        <div className="canvas-toolbar-group-title">插入</div>
+        <Button size="small" icon={<Icons.File size={15} />} onClick={onAddText}>
+          文本
+        </Button>
+        <Button size="small" icon={<Icons.Sparkles size={15} />} onClick={onAddPrompt}>
+          Prompt
+        </Button>
+        <Button size="small" icon={<Icons.Image size={15} />} onClick={onUploadImage}>
+          图片
+        </Button>
+      </div>
+
+      <div className="canvas-toolbar-group">
+        <div className="canvas-toolbar-group-title">组织</div>
         <Button
           size="small"
-          shape="circle"
-          status="danger"
-          type="text"
+          icon={<Icons.Layers size={15} />}
+          disabled={selectedCount < 2}
+          onClick={onCreateGroup}
+        >
+          创建组
+        </Button>
+      </div>
+
+      <div className="canvas-toolbar-group">
+        <div className="canvas-toolbar-group-title">AI</div>
+        <Button
+          size="small"
+          type="primary"
+          icon={<Icons.Sparkles size={15} />}
+          onClick={onOpenAiComposer}
+        >
+          AI 操作
+        </Button>
+      </div>
+
+      <div className="canvas-toolbar-group canvas-toolbar-group-danger">
+        <div className="canvas-toolbar-group-title">编辑</div>
+        <Button
+          size="small"
+          danger
+          type="default"
           disabled={selectedCount === 0}
           icon={<Icons.Trash size={15} />}
-          aria-label="删除选中节点"
           onClick={onDeleteSelected}
-        />
-      </Tooltip>
+        >
+          删除
+        </Button>
+      </div>
     </div>
   )
 }

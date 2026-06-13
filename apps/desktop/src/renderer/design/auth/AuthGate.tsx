@@ -1,20 +1,9 @@
 /**
- * AuthGate — 登录/注册的页面容器（直接嵌入到设置-账号页）
- *
- * 不再是 Modal：登录表单直接在页面里渲染，用户从侧边栏"登录"菜单项
- * 跳到设置-账号页时，看到的就是这个组件。
- *
- * 流程：
- *   - 未登录 → 显示 LoginForm / RegisterForm / WechatQrPanel / WechatBindPanel
- *   - 已登录 → 不渲染此组件（由父组件切换到 profile 卡片）
- *
- * 当 keytar 不可用时（dev 模式 native binding 不匹配等），显示一条黄色提示，
- * 告知用户登录态不会持久化，并给出修复指引。
+ * AuthGate — 登录/注册的页面容器
  */
 
 import React from 'react'
-import { Alert, Tabs } from '@arco-design/web-react'
-import TabPane from '@arco-design/web-react/lib/Tabs/tab-pane'
+import { Alert, Tabs } from 'antd'
 import { useAuth } from './AuthContext'
 import { LoginForm } from './LoginForm'
 import { RegisterForm } from './RegisterForm'
@@ -42,7 +31,8 @@ export function AuthGate(): React.ReactElement {
           {auth.keytarAvailable === false && (
             <Alert
               type="warning"
-              content={
+              showIcon
+              message={
                 <div className="auth-keytar-warn">
                   <div>本地凭证库不可用（keytar 加载失败），登录态不会保存到下次启动。</div>
                   <div className="auth-keytar-warn-fix">
@@ -56,38 +46,38 @@ export function AuthGate(): React.ReactElement {
 
           <Tabs
             className="auth-flow-tabs"
-            activeTab={activeFlow}
+            activeKey={activeFlow}
             onChange={(value) => auth.setFlow(value as 'login' | 'register' | 'wechat')}
-            type="rounded"
-          >
-            <TabPane
-              key="login"
-              title={
-                <span className="auth-flow-tab-label">
-                  <Icons.User size={14} />
-                  <span>登录</span>
-                </span>
-              }
-            />
-            <TabPane
-              key="register"
-              title={
-                <span className="auth-flow-tab-label">
-                  <Icons.Edit size={14} />
-                  <span>注册</span>
-                </span>
-              }
-            />
-            <TabPane
-              key="wechat"
-              title={
-                <span className="auth-flow-tab-label">
-                  <Icons.Chat size={14} />
-                  <span>微信扫码</span>
-                </span>
-              }
-            />
-          </Tabs>
+            items={[
+              {
+                key: 'login',
+                label: (
+                  <span className="auth-flow-tab-label">
+                    <Icons.User size={14} />
+                    <span>登录</span>
+                  </span>
+                ),
+              },
+              {
+                key: 'register',
+                label: (
+                  <span className="auth-flow-tab-label">
+                    <Icons.Edit size={14} />
+                    <span>注册</span>
+                  </span>
+                ),
+              },
+              {
+                key: 'wechat',
+                label: (
+                  <span className="auth-flow-tab-label">
+                    <Icons.Chat size={14} />
+                    <span>微信扫码</span>
+                  </span>
+                ),
+              },
+            ]}
+          />
 
           <div className="auth-content">
             {auth.flow === 'login' && <LoginForm />}

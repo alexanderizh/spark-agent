@@ -263,6 +263,7 @@ const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const CHAT_MESSAGE_ESTIMATED_HEIGHT = 180
 const CHAT_MESSAGE_OVERSCAN = 8
+const SESSION_HISTORY_PAGE_SIZE = 80
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
 /**
@@ -493,6 +494,12 @@ export function ChatView({
   const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
     sessionCtx.updateSessionInList(sessionId, { status })
   }, [sessionCtx])
+  const handleActiveSessionStatusChange = useCallback(
+    (status: SessionSummary['status']) => {
+      if (active != null) setSessionStatus(active, status)
+    },
+    [active, setSessionStatus],
+  )
 
   // ── Handlers ──
   const handleClearMessages = useCallback(() => {
@@ -757,7 +764,7 @@ export function ChatView({
               onUsageChange={setContextInputTokens}
               onUsageDataChange={setSessionUsageData}
               onMessagesChange={setActiveMessages}
-              onSessionStatusChange={(status) => { setSessionStatus(active, status) }}
+              onSessionStatusChange={handleActiveSessionStatusChange}
               onContextUsageChange={setContextUsage}
               onProjectContextChange={setProjectContext}
               onPlanProposed={setProposedPlan}

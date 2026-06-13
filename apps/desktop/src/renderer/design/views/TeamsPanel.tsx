@@ -12,7 +12,7 @@ import './TeamsPanel.less'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
-import { SparkInput, SparkTextarea, SparkSelect, SparkCheckbox } from '../components/FormControls'
+import { Checkbox as LobeCheckbox, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { AvatarImage } from '../components/AvatarImage'
 import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
 import type { ManagedAgent, ManagedTeam } from '@spark/protocol'
@@ -313,7 +313,7 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
             <div className="teams-field-grid">
               <div className="teams-field">
                 <span className="teams-field-label">名称</span>
-                <SparkInput
+                <LobeInput
                   value={draft.name}
                   onChange={(e) => updateDraft('name', e.target.value)}
                   placeholder="例：全栈协作组"
@@ -321,17 +321,18 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
               </div>
               <div className="teams-field">
                 <span className="teams-field-label">状态</span>
-                <SparkSelect
+                <LobeSelect
                   value={draft.enabled ? 'enabled' : 'disabled'}
-                  onChange={(e) => updateDraft('enabled', e.target.value === 'enabled')}
-                >
-                  <option value="enabled">启用</option>
-                  <option value="disabled">停用</option>
-                </SparkSelect>
+                  onChange={(value) => updateDraft('enabled', value === 'enabled')}
+                  options={[
+                    { label: '启用', value: 'enabled' },
+                    { label: '停用', value: 'disabled' },
+                  ]}
+                />
               </div>
               <div className="teams-field wide">
                 <span className="teams-field-label">描述</span>
-                <SparkTextarea
+                <LobeTextArea
                   value={draft.description}
                   onChange={(e) => updateDraft('description', e.target.value)}
                   placeholder="一两句话说明该团队适合什么场景"
@@ -361,17 +362,14 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
                 {host.builtIn && <span className="teams-host-row-builtin">内置</span>}
               </div>
             )}
-            <SparkSelect
+            <LobeSelect
               value={draft.hostAgentId}
-              onChange={(e) => switchHost(e.target.value)}
-            >
-              {enabledAgents.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                  {a.builtIn ? ' (内置)' : ''}
-                </option>
-              ))}
-            </SparkSelect>
+              onChange={(value) => switchHost(String(value))}
+              options={enabledAgents.map((a) => ({
+                label: `${a.name}${a.builtIn ? ' (内置)' : ''}`,
+                value: a.id,
+              }))}
+            />
           </section>
 
           {/* 成员 */}
@@ -417,7 +415,7 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
               <div className="teams-section-title">团队专属规则（Prompt）</div>
               <div className="teams-section-hint">作为 [Team Instructions] 段注入到主持人 system prompt</div>
             </div>
-            <SparkTextarea
+            <LobeTextArea
               value={draft.prompt}
               onChange={(e) => updateDraft('prompt', e.target.value)}
               placeholder={`例如：\n- 接到用户需求先整理「目标 / 关键约束 / 不做什么」，再决定派工；\n- 实现细节优先派给编码 Agent，验证派给测试 Agent；\n- 每位成员各自给出独立答复后，主持人在最后一句给出「下一步建议」。`}
@@ -432,22 +430,24 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
               <div className="teams-section-hint">允许成员继续 dispatch 下一层 Agent；默认关闭，避免链路失控</div>
             </div>
             <div className="teams-nesting-row">
-              <SparkCheckbox
+              <LobeCheckbox
                 checked={draft.allowNesting}
-                onChange={(e) => updateDraft('allowNesting', e.target.checked)}
-                label="允许成员发起下一层 dispatch"
-              />
+                onChange={(checked) => updateDraft('allowNesting', checked)}
+              >
+                允许成员发起下一层 dispatch
+              </LobeCheckbox>
               <div className="teams-field" style={{ width: 160 }}>
                 <span className="teams-field-label">最大深度</span>
-                <SparkSelect
+                <LobeSelect
                   value={String(draft.maxDepth)}
-                  onChange={(e) => updateDraft('maxDepth', Number(e.target.value))}
+                  onChange={(value) => updateDraft('maxDepth', Number(value))}
                   disabled={!draft.allowNesting}
-                >
-                  <option value="1">1</option>
-                  <option value="2">2</option>
-                  <option value="3">3</option>
-                </SparkSelect>
+                  options={[
+                    { label: '1', value: '1' },
+                    { label: '2', value: '2' },
+                    { label: '3', value: '3' },
+                  ]}
+                />
               </div>
             </div>
           </section>

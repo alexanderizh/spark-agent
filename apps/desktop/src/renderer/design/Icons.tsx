@@ -617,6 +617,54 @@ export const Icons = {
       />
     </svg>
   ),
+  Link: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M9 12a3 3 0 0 1 3-3h3a3 3 0 0 1 0 6h-1.5" />
+      <path d="M15 12a3 3 0 0 1-3 3H9a3 3 0 0 1 0-6h1.5" />
+    </IconBase>
+  ),
+  StarFill: ({ size = 16, className = '', style }: IconProps) => (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      style={style}
+    >
+      <path d="M12 2.5l2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 18.9 6.1 22l1.2-6.5L2.5 9.4l6.6-.9L12 2.5z" />
+    </svg>
+  ),
+  Users: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19" />
+      <circle cx="10" cy="9" r="3" />
+      <path d="M20 19v-1.5a3.5 3.5 0 0 0-2.6-3.4" />
+      <path d="M15 5.6a3.5 3.5 0 0 1 0 6.8" />
+    </IconBase>
+  ),
+  Book: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H18a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6.5A1.5 1.5 0 0 1 5 19.5" />
+      <path d="M4 4.5A1.5 1.5 0 0 0 5.5 6H20" />
+      <path d="M9 10h6M9 14h4" />
+    </IconBase>
+  ),
+  Lightbulb: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M9 18h6" />
+      <path d="M10 21h4" />
+      <path d="M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.3 1 2.5h6c0-1.2.3-1.8 1-2.5A6 6 0 0 0 12 3z" />
+    </IconBase>
+  ),
+  Calendar: (p: IconProps) => (
+    <IconBase {...p}>
+      <rect x="3" y="4.5" width="18" height="16" rx="2" />
+      <path d="M3 9h18M8 3v4M16 3v4" />
+      <path d="M7.5 13h2M11 13h2M14.5 13h2M7.5 16.5h2M11 16.5h2" />
+    </IconBase>
+  ),
 
   // ─── Editor/IDE Brand Icons ─────────────────────────────────────────────
   VSCode: (p: IconProps) => (

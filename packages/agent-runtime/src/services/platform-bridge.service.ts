@@ -592,6 +592,7 @@ export class PlatformBridgeService {
       description: String(params.description ?? ''),
       enabled: params.enabled !== false,
       isDefault: params.isDefault === true,
+      builtIn: params.builtIn === true,
       agentAdapter: String(params.agentAdapter ?? 'claude-sdk'),
       permissionMode: String(params.permissionMode ?? 'default'),
       reasoningEffort: String(params.reasoningEffort ?? 'medium'),
@@ -616,6 +617,7 @@ export class PlatformBridgeService {
     if (params.description != null) fields.description = String(params.description)
     if (params.enabled != null) fields.enabled = Boolean(params.enabled)
     if (params.isDefault != null) fields.isDefault = Boolean(params.isDefault)
+    if (params.builtIn != null) fields.builtIn = Boolean(params.builtIn)
     if (params.agentAdapter != null) fields.agentAdapter = String(params.agentAdapter)
     if (params.permissionMode != null) fields.permissionMode = String(params.permissionMode)
     if (params.reasoningEffort != null) fields.reasoningEffort = String(params.reasoningEffort)

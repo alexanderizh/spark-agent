@@ -6,8 +6,8 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { Select } from '@lobehub/ui'
 import { PRIMARIES, useApp } from './AppContext'
-import { SparkSelect } from './components/FormControls'
 
 const PANEL_CSS = `
   .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
@@ -40,8 +40,7 @@ const PANEL_CSS = `
     color:rgba(41,38,27,.45);padding:10px 0 0}
   .twk-sect:first-child{padding-top:0}
   .twk-field{width:100%}
-  .twk-field.spark-select-wrap{height:26px;min-width:0}
-  /* 不再为 .twk-field 下的 SparkSelect 重画外观 —— 完全交给 Arco Design 默认下拉弹窗 */
+  .twk-field{min-height:26px;min-width:0}
   .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
     background:rgba(0,0,0,.06);user-select:none}
   .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
@@ -205,15 +204,20 @@ export function TweaksPanel() {
         </Row>
         <Section label="视图" />
         <Row label="当前视图">
-          <SparkSelect className="twk-field" value={t.view} onChange={(e) => setTweak('view', e.target.value as Tweaks['view'])}>
-            <option value="home">home</option>
-            <option value="chat">chat</option>
-            <option value="workflow">workflow</option>
-            <option value="agents">agents</option>
-            <option value="skills">skills</option>
-            <option value="mcp">mcp</option>
-            <option value="settings">settings</option>
-          </SparkSelect>
+          <Select
+            className="twk-field"
+            value={t.view}
+            onChange={(value) => setTweak('view', value as Tweaks['view'])}
+            options={[
+              { label: 'home', value: 'home' },
+              { label: 'chat', value: 'chat' },
+              { label: 'workflow', value: 'workflow' },
+              { label: 'agents', value: 'agents' },
+              { label: 'skills', value: 'skills' },
+              { label: 'mcp', value: 'mcp' },
+              { label: 'settings', value: 'settings' },
+            ]}
+          />
         </Row>
         <Row label="会话模式">
           <Seg value={t.chatMode} options={['vibe', 'workspace']} onChange={(v) => setTweak('chatMode', v)} />

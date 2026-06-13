@@ -36,7 +36,7 @@ import type {
 import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workflow/graph-adapter'
 import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
-import { SparkInput, SparkSelect, SparkTextarea } from '../components/FormControls'
+import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
@@ -387,21 +387,22 @@ function WorkflowViewInner() {
           >
             <Icons.ArrowLeft size={12} /> 列表
           </button>
-          <SparkInput
+          <LobeInput
             className="wf-title-input"
             value={draft.name}
             onChange={(event) => patchDraftMeta({ name: event.target.value })}
             placeholder="工作流名称"
           />
-          <SparkSelect
+          <LobeSelect
             className="wf-status-select"
             value={draft.status}
-            onChange={(event) => patchDraftMeta({ status: event.target.value as WorkflowStatus })}
-          >
-            <option value="draft">draft</option>
-            <option value="active">active</option>
-            <option value="archived">archived</option>
-          </SparkSelect>
+            onChange={(value) => patchDraftMeta({ status: value as WorkflowStatus })}
+            options={[
+              { label: 'draft', value: 'draft' },
+              { label: 'active', value: 'active' },
+              { label: 'archived', value: 'archived' },
+            ]}
+          />
           <div className="wf-toolbar-spacer" />
           <button
             className="btn ghost sm"
@@ -582,71 +583,61 @@ function WorkflowInspector(props: InspectorProps) {
       </div>
       <div className="wf-insp-body scroll">
         <InspectorField label="标题">
-          <SparkInput value={node.data.title} onChange={(event) => props.onPatch({ title: event.target.value })} />
+          <LobeInput value={node.data.title} onChange={(event) => props.onPatch({ title: event.target.value })} />
         </InspectorField>
         <InspectorField label="节点类型">
-          <SparkSelect
+          <LobeSelect
             value={node.data.kind}
-            onChange={(event) => props.onPatch({ kind: event.target.value as WorkflowNodeKind })}
-          >
-            {NODE_KIND_ORDER.map((kind) => (
-              <option key={kind} value={kind}>
-                {NODE_KIND_META[kind].label}
-              </option>
-            ))}
-          </SparkSelect>
+            onChange={(value) => props.onPatch({ kind: value as WorkflowNodeKind })}
+            options={NODE_KIND_ORDER.map((kind) => ({ label: NODE_KIND_META[kind].label, value: kind }))}
+          />
         </InspectorField>
         <InspectorField label="Provider">
-          <SparkSelect
+          <LobeSelect
             value={String(config.providerProfileId ?? '')}
-            onChange={(event) =>
-              props.onPatchConfig({ providerProfileId: event.target.value || null })
+            onChange={(value) =>
+              props.onPatchConfig({ providerProfileId: String(value) || null })
             }
-          >
-            <option value="">继承 Agent</option>
-            {providers.map((provider) => (
-              <option key={provider.id} value={provider.id}>
-                {provider.name}
-              </option>
-            ))}
-          </SparkSelect>
+            options={[
+              { label: '继承 Agent', value: '' },
+              ...providers.map((provider) => ({ label: provider.name, value: provider.id })),
+            ]}
+          />
         </InspectorField>
         <InspectorField label="模型">
-          <SparkSelect
+          <LobeSelect
             value={String(config.modelId ?? '')}
-            onChange={(event) => props.onPatchConfig({ modelId: event.target.value || null })}
-          >
-            <option value="">继承 Agent</option>
-            {modelOptions.map((model) => (
-              <option key={model} value={model}>
-                {model}
-              </option>
-            ))}
-          </SparkSelect>
+            onChange={(value) => props.onPatchConfig({ modelId: String(value) || null })}
+            options={[
+              { label: '继承 Agent', value: '' },
+              ...modelOptions.map((model) => ({ label: model, value: model })),
+            ]}
+          />
         </InspectorField>
         <InspectorField label="权限">
-          <SparkSelect
+          <LobeSelect
             value={String(config.permissionMode ?? '')}
-            onChange={(event) =>
+            onChange={(value) =>
               props.onPatchConfig(
-                event.target.value
-                  ? { permissionMode: event.target.value as SessionPermissionMode }
+                value
+                  ? { permissionMode: value as SessionPermissionMode }
                   : {},
               )
             }
-          >
-            <option value="">继承 Agent</option>
-            <option value="claude-ask">询问</option>
-            <option value="claude-auto-edits">自动编辑</option>
-            <option value="claude-plan">计划模式</option>
-            <option value="claude-bypass">绕过权限</option>
-            <option value="codex-default">Codex 默认</option>
-            <option value="codex-auto-review">Codex 自动审查</option>
-            <option value="codex-full-access">Codex 完全访问</option>
-          </SparkSelect>
+            options={[
+              { label: '继承 Agent', value: '' },
+              { label: '询问', value: 'claude-ask' },
+              { label: '自动编辑', value: 'claude-auto-edits' },
+              { label: '计划模式', value: 'claude-plan' },
+              { label: '绕过权限', value: 'claude-bypass' },
+              { label: 'Codex 默认', value: 'codex-default' },
+              { label: 'Codex 自动审查', value: 'codex-auto-review' },
+              { label: 'Codex 完全访问', value: 'codex-full-access' },
+            ]}
+          />
         </InspectorField>
         <InspectorField label="节点提示词">
-          <SparkTextarea
+          <LobeTextArea
             rows={6}
             value={String(config.prompt ?? '')}
             onChange={(event) => props.onPatchConfig({ prompt: event.target.value })}
@@ -655,22 +646,19 @@ function WorkflowInspector(props: InspectorProps) {
         {isSubagent && (
           <>
             <InspectorField label="子代理">
-              <SparkSelect
+              <LobeSelect
                 value={String(config.agentId ?? '')}
-                onChange={(event) => props.onPatchConfig({ agentId: event.target.value || null })}
-              >
-                <option value="">选择子代理</option>
-                {agents
-                  .filter((agent) => agent.workflowId !== currentWorkflowId)
-                  .map((agent) => (
-                    <option key={agent.id} value={agent.id}>
-                      {agent.name}
-                    </option>
-                  ))}
-              </SparkSelect>
+                onChange={(value) => props.onPatchConfig({ agentId: String(value) || null })}
+                options={[
+                  { label: '选择子代理', value: '' },
+                  ...agents
+                    .filter((agent) => agent.workflowId !== currentWorkflowId)
+                    .map((agent) => ({ label: agent.name, value: agent.id })),
+                ]}
+              />
             </InspectorField>
             <InspectorField label="并发数">
-              <SparkInput
+              <LobeInput
                 type="number"
                 min={1}
                 max={8}
@@ -682,7 +670,7 @@ function WorkflowInspector(props: InspectorProps) {
         )}
         {isVerify && (
           <InspectorField label="验证命令">
-            <SparkTextarea
+            <LobeTextArea
               rows={3}
               placeholder="一行一条，例如：pnpm test"
               value={(config.verifyCommands ?? []).join('\n')}
@@ -726,7 +714,7 @@ function WorkflowInspector(props: InspectorProps) {
           />
         </InspectorField>
         <InspectorField label="重试次数">
-          <SparkInput
+          <LobeInput
             type="number"
             min={0}
             max={10}

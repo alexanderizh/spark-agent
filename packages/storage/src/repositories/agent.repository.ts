@@ -59,6 +59,7 @@ export interface CreateAgentParams extends Partial<AgentConfig> {
   description?: string
   enabled?: boolean
   isDefault?: boolean
+  builtIn?: boolean
 }
 
 export interface UpdateAgentParams extends Partial<CreateAgentParams> {}
@@ -98,12 +99,13 @@ export class AgentRepository extends BaseRepository {
           agent_adapter, permission_mode, reasoning_effort, prompt, rule_ids_json,
           skill_ids_json, disabled_skill_ids_json, mcp_server_ids_json, hook_config_json,
           workflow_id, metadata_json, created_at, updated_at
-        ) VALUES (?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         params.name,
         params.description ?? '',
+        params.builtIn === true ? 1 : 0,
         params.enabled === false ? 0 : 1,
         isDefault,
         params.providerProfileId ?? null,
@@ -138,6 +140,7 @@ export class AgentRepository extends BaseRepository {
 
     if (fields.name !== undefined) add('name', fields.name)
     if (fields.description !== undefined) add('description', fields.description)
+    if (fields.builtIn !== undefined) add('built_in', fields.builtIn ? 1 : 0)
     if (fields.enabled !== undefined) add('enabled', fields.enabled ? 1 : 0)
     if (fields.isDefault !== undefined) {
       if (fields.isDefault) this.clearDefaultFlag()

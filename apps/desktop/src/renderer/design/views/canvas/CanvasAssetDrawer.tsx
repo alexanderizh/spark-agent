@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
-import { Drawer, Empty, List, Tag } from '@arco-design/web-react'
-import { SparkSearchInput, SparkSelect } from '../../components/FormControls'
+import { Drawer, Tag } from '@lobehub/ui'
+import { Empty, List } from 'antd'
+import { SearchBar as LobeSearchBar, Select as LobeSelect } from '@lobehub/ui'
 import type { CanvasAsset, CanvasAssetType } from './canvas.types'
 
 type AssetFilter = 'all' | CanvasAssetType
@@ -29,26 +30,27 @@ export function CanvasAssetDrawer({
   }, [assets, query, typeFilter])
 
   return (
-    <Drawer title="项目资产" visible={open} onCancel={onClose} width={420} footer={null}>
+    <Drawer title="项目资产" open={open} onClose={onClose} width={420} footer={null}>
       <div className="canvas-asset-drawer-toolbar">
-        <SparkSearchInput
+        <LobeSearchBar
           value={query}
-          onChange={setQuery}
+          onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索资产、prompt、来源..."
           className="canvas-asset-search"
         />
-        <SparkSelect
+        <LobeSelect
           value={typeFilter}
-          onChange={(event) => setTypeFilter(event.target.value as AssetFilter)}
-          width={132}
-        >
-          <option value="all">全部类型</option>
-          <option value="image">图片</option>
-          <option value="video">视频</option>
-          <option value="text">文本</option>
-          <option value="prompt">Prompt</option>
-          <option value="file">文件</option>
-        </SparkSelect>
+          onChange={(value) => setTypeFilter(value as AssetFilter)}
+          style={{ width: 132 }}
+          options={[
+            { label: '全部类型', value: 'all' },
+            { label: '图片', value: 'image' },
+            { label: '视频', value: 'video' },
+            { label: '文本', value: 'text' },
+            { label: 'Prompt', value: 'prompt' },
+            { label: '文件', value: 'file' },
+          ]}
+        />
       </div>
 
       {filteredAssets.length === 0 ? (
@@ -57,7 +59,7 @@ export function CanvasAssetDrawer({
         <List
           className="canvas-asset-list"
           dataSource={filteredAssets}
-          render={(asset) => (
+          renderItem={(asset) => (
             <List.Item key={asset.id}>
               <div className="canvas-asset-item">
                 <div className="canvas-asset-thumb">
@@ -73,10 +75,10 @@ export function CanvasAssetDrawer({
                     <div className="canvas-asset-content">{asset.contentText}</div>
                   )}
                   <div className="canvas-asset-meta">
-                    <Tag size="small" color="gray" bordered>
+                    <Tag color="default" bordered>
                       {asset.type}
                     </Tag>
-                    <Tag size="small" color="arcoblue" bordered>
+                    <Tag color="blue" bordered>
                       {asset.source}
                     </Tag>
                   </div>
