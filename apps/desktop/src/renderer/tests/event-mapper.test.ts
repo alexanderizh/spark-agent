@@ -129,6 +129,33 @@ describe('MessageBuilder', () => {
     })
   })
 
+  it('keeps a non-final complete assistant segment streaming until agent status completes', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'Codex CLI answer',
+      provider: 'codex',
+      isFinal: false,
+      segmentId: 'codex-turn-1',
+    })
+
+    let message = builder.getAllMessages()[0]
+    expect(message).toBeDefined()
+    if (message == null) return
+
+    expect(message.status).toBe('streaming')
+    expect(message.blocks).toMatchObject([
+      { kind: 'text', content: 'Codex CLI answer', isStreaming: false },
+    ])
+
+    builder.processEvent(statusEvent('completed'))
+    message = builder.getAllMessages()[0]
+    expect(message?.status).toBe('completed')
+  })
+
   it('maps validation suggestions into assistant blocks', () => {
     const builder = new MessageBuilder()
 

@@ -16,6 +16,9 @@ type CodexRunResult = {
   assistantText: string
   assistantCompleteEmitted: boolean
 }
+type CodexProgressState = {
+  lastProgressText: string
+}
 
 export class CodexCliExecutor {
   private listeners = new Set<Listener>()
@@ -159,6 +162,8 @@ export class CodexCliExecutor {
       let stderr = ''
       let assistantText = ''
       let assistantCompleteEmitted = false
+      const progressState: CodexProgressState = { lastProgressText: '' }
+      let terminalOutputEmitted = false
       let lineBuffer = ''
       let settled = false
 
@@ -171,11 +176,9 @@ export class CodexCliExecutor {
         for (const line of lines) {
           const parsed = parseCodexJsonLine(line)
           if (parsed == null) {
-            this.emitTerminalLine(line, 'stdout', makeBase)
+            terminalOutputEmitted = this.emitTerminalLine(line, 'stdout', makeBase) || terminalOutputEmitted
             continue
           }
-          const visible = summarizeCodexJsonObject(parsed)
-          if (visible.length > 0) this.emitTerminalLine(visible, 'stdout', makeBase)
 
           const delta = extractCodexDeltaText(parsed)
           if (delta.length > 0) {
@@ -189,6 +192,7 @@ export class CodexCliExecutor {
               isFinal: false,
               segmentId: `codex-${makeBase().turnId}`,
             })
+            continue
           }
 
           const completedText = extractCodexCompletedAgentText(parsed)
@@ -201,15 +205,22 @@ export class CodexCliExecutor {
               mode: 'complete',
               content: completedText,
               provider: 'codex',
-              isFinal: true,
+              // The CLI can emit item.completed before the process has fully exited.
+              // Keep the message streaming until agent_status=completed to avoid a
+              // second "running" placeholder bubble in the chat UI.
+              isFinal: false,
               segmentId: `codex-${makeBase().turnId}`,
             })
+            continue
           }
+
+          this.emitCodexProgress(parsed, makeBase, progressState)
         }
       })
       child.stderr.on('data', (chunk: Buffer) => {
         const text = chunk.toString()
         stderr += text
+        terminalOutputEmitted = true
         this.emit({
           ...makeBase(),
           type: 'terminal_output',
@@ -228,16 +239,20 @@ export class CodexCliExecutor {
         if (settled) return
         settled = true
         const tail = lineBuffer.trim()
-        if (tail.length > 0) this.emitTerminalLine(tail, 'stdout', makeBase)
-        this.emit({
-          ...makeBase(),
-          type: 'terminal_output',
-          toolCallId: `codex-cli-${makeBase().turnId}`,
-          stream: 'stdout',
-          data: '',
-          isFinal: true,
-          exitCode: code ?? 1,
-        })
+        if (tail.length > 0) {
+          terminalOutputEmitted = this.emitTerminalLine(tail, 'stdout', makeBase) || terminalOutputEmitted
+        }
+        if (terminalOutputEmitted) {
+          this.emit({
+            ...makeBase(),
+            type: 'terminal_output',
+            toolCallId: `codex-cli-${makeBase().turnId}`,
+            stream: 'stdout',
+            data: '',
+            isFinal: true,
+            exitCode: code ?? 1,
+          })
+        }
         resolve({
           exitCode: code ?? 1,
           stdout,
@@ -254,9 +269,9 @@ export class CodexCliExecutor {
     line: string,
     stream: 'stdout' | 'stderr',
     makeBase: () => EventBase,
-  ): void {
+  ): boolean {
     const visible = line.trim()
-    if (visible.length === 0) return
+    if (visible.length === 0) return false
     this.emit({
       ...makeBase(),
       type: 'terminal_output',
@@ -264,6 +279,24 @@ export class CodexCliExecutor {
       stream,
       data: `${visible}\n`,
       isFinal: false,
+    })
+    return true
+  }
+
+  private emitCodexProgress(
+    obj: Record<string, unknown>,
+    makeBase: () => EventBase,
+    state: CodexProgressState,
+  ): void {
+    const text = summarizeCodexProgress(obj)
+    if (text.length === 0 || text === state.lastProgressText) return
+    state.lastProgressText = text
+    this.emit({
+      ...makeBase(),
+      type: 'agent_thinking',
+      mode: 'delta',
+      content: `${text}\n`,
+      segmentId: `codex-cli-progress-${makeBase().turnId}`,
     })
   }
 
@@ -413,12 +446,38 @@ function parseCodexJsonLine(line: string): Record<string, unknown> | null {
   }
 }
 
-function summarizeCodexJsonObject(obj: Record<string, unknown>): string {
+function summarizeCodexProgress(obj: Record<string, unknown>): string {
   const type = typeof obj.type === 'string' ? obj.type : 'event'
-  const text = findText(obj)
-  return text != null && text.trim().length > 0
-    ? `[codex:${type}] ${text.trim()}`
-    : `[codex:${type}]`
+  switch (type) {
+    case 'thread.started':
+      return 'Codex CLI thread started'
+    case 'turn.started':
+      return 'Codex CLI turn started'
+    case 'turn.completed':
+      return 'Codex CLI turn completed'
+    case 'item.started':
+      return summarizeCodexItem(obj, 'started')
+    case 'item.completed':
+      return summarizeCodexItem(obj, 'completed')
+    default:
+      return ''
+  }
+}
+
+function summarizeCodexItem(obj: Record<string, unknown>, status: string): string {
+  const item = obj.item
+  if (item == null || typeof item !== 'object' || Array.isArray(item)) {
+    return `Codex item ${status}`
+  }
+  const record = item as Record<string, unknown>
+  const itemType = typeof record.type === 'string' ? record.type : 'item'
+  if (itemType === 'agent_reasoning') return `Codex reasoning ${status}`
+  if (itemType === 'tool_call') {
+    const name = typeof record.name === 'string' ? record.name : 'tool'
+    return `Codex tool ${name} ${status}`
+  }
+  if (itemType === 'command_execution') return `Codex command ${status}`
+  return `Codex ${itemType} ${status}`
 }
 
 function extractFallbackText(stdout: string): string {

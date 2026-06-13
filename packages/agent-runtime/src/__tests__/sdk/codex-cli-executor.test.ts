@@ -115,19 +115,43 @@ describe('CodexCliExecutor', () => {
       '{"type":"item.completed","item":{"type":"agent_message","text":"Hello"}}',
     ]))
 
-    const events: Array<{ type: string; mode?: string; content?: string }> = []
+    const events: Array<{ type: string; mode?: string; content?: string; isFinal?: boolean }> = []
     const executor = new CodexCliExecutor()
     executor.onEvent((event) => {
       if (event.type === 'assistant_message') {
-        events.push({ type: event.type, mode: event.mode, content: event.content })
+        events.push({
+          type: event.type,
+          mode: event.mode,
+          content: event.content,
+          isFinal: event.isFinal,
+        })
       }
     })
     await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
 
     expect(events).toEqual([
-      { type: 'assistant_message', mode: 'delta', content: 'Hel' },
-      { type: 'assistant_message', mode: 'delta', content: 'lo' },
-      { type: 'assistant_message', mode: 'complete', content: 'Hello' },
+      { type: 'assistant_message', mode: 'delta', content: 'Hel', isFinal: false },
+      { type: 'assistant_message', mode: 'delta', content: 'lo', isFinal: false },
+      { type: 'assistant_message', mode: 'complete', content: 'Hello', isFinal: false },
     ])
+  })
+
+  it('does not surface structured Codex JSONL as terminal output', async () => {
+    spawnMock.mockImplementation((_command: string, args: string[]) => new MockChildProcess(args, [
+      '{"type":"thread.started","thread_id":"t1"}',
+      '{"type":"turn.started"}',
+      '{"type":"item.completed","item":{"type":"agent_reasoning","text":"private reasoning"}}',
+      '{"type":"item.completed","item":{"type":"agent_message","text":"Visible answer"}}',
+      '{"type":"turn.completed"}',
+    ]))
+
+    const events: string[] = []
+    const executor = new CodexCliExecutor()
+    executor.onEvent((event) => {
+      if (event.type === 'terminal_output') events.push(event.data)
+    })
+    await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+    expect(events).toEqual([])
   })
 })
