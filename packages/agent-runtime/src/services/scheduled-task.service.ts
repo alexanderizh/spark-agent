@@ -114,6 +114,12 @@ export type TaskExecutorFn = (params: {
   permissionMode?: string
   timeoutSeconds?: number
   taskName: string
+  /**
+   * 会话创建完成后立即触发的回调（在等待 turn 完成之前）。
+   * 用于让上层（runNow / scheduler tick）尽早拿到 sessionId，
+   * 以便 UI 跳转到刚创建的会话；turn 仍在后台异步运行。
+   */
+  onSessionCreated?: (sessionId: string) => void
 }) => Promise<{ sessionId?: string; output?: string; error?: string; tokenUsage?: unknown }>
 
 // ─── Service ────────────────────────────────────────────────────────────────
@@ -121,6 +127,11 @@ export type TaskExecutorFn = (params: {
 export class ScheduledTaskService {
   private schedulerTimer: ReturnType<typeof setInterval> | null = null
   private executorFn: TaskExecutorFn | null = null
+  /**
+   * runNow 用：executionId → 等待 sessionId 的 resolver。
+   * 当 executor 通过 onSessionCreated 回调上报 sessionId 时触发。
+   */
+  private runNowSessionResolvers = new Map<string, (sessionId: string) => void>()
 
   constructor(
     private readonly taskRepo: ScheduledTaskRepository,
@@ -299,6 +310,9 @@ export class ScheduledTaskService {
 
   /**
    * 立即执行任务
+   *
+   * 不会等待 turn 跑完，但会等待"会话已创建"（最多 10s）。这样调用方（IPC / UI）
+   * 能在返回值里拿到 sessionId，"保存并执行"后可直接跳转到该会话。
    */
   async runNow(id: string): Promise<TaskExecutionItem> {
     const task = this.taskRepo.get(id)
@@ -310,12 +324,30 @@ export class ScheduledTaskService {
       trigger_type: 'manual',
     })
 
-    // Run asynchronously — don't await completion
+    const sessionIdPromise = new Promise<string | null>((resolve) => {
+      const timeout = setTimeout(() => {
+        this.runNowSessionResolvers.delete(execution.id)
+        resolve(null)
+      }, 10000)
+      this.runNowSessionResolvers.set(execution.id, (sessionId) => {
+        clearTimeout(timeout)
+        resolve(sessionId)
+      })
+    })
+
+    // Turn 在后台异步运行；执行失败时清理 resolver 防止 promise 卡住
     this.executeTask(task, execution.id, 'manual').catch((err) => {
+      const resolver = this.runNowSessionResolvers.get(execution.id)
+      if (resolver) {
+        this.runNowSessionResolvers.delete(execution.id)
+        resolver('')
+      }
       log.error(`Manual execution failed for task ${id}: ${err}`)
     })
 
-    return toExecutionItem(execution)
+    await sessionIdPromise
+
+    return toExecutionItem(this.executionRepo.get(execution.id) ?? execution)
   }
 
   /**
@@ -427,6 +459,19 @@ export class ScheduledTaskService {
           permissionMode: task.permission_mode,
           timeoutSeconds: task.timeout_seconds,
           taskName: task.name,
+          onSessionCreated: (sessionId: string) => {
+            // 会话已建好：尽早把 sessionId 写回执行记录，并通知 runNow 解锁返回
+            try {
+              this.executionRepo.updateStatus(executionId, 'running', { sessionId })
+            } catch (err) {
+              log.warn(`Failed to update execution sessionId early: ${err}`)
+            }
+            const resolver = this.runNowSessionResolvers.get(executionId)
+            if (resolver) {
+              this.runNowSessionResolvers.delete(executionId)
+              resolver(sessionId)
+            }
+          },
         }),
         task.timeout_seconds * 1000,
       )

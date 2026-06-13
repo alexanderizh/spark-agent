@@ -514,71 +514,76 @@ function ProvidersView() {
           />
         )}
 
-        {/* ─── 预设模板目录 ─── */}
-        {showPresetCatalog && (
-          <div className="pv_catalog">
-            <div className="pv_catalog_hint">
-              选择供应商模板快速配置，选择后仍可自定义所有字段。
+        {/* ─── 可滚动内容区（catalog + cards / empty） ─── */}
+        <div className="pv_scroll">
+          {showPresetCatalog && (
+            <div className="pv_catalog">
+              <div className="pv_catalog_hint">
+                选择供应商模板快速配置，选择后仍可自定义所有字段。
+              </div>
+              <div className="pv_catalog_grid">
+                {getUniqueVendorIds().map((vendorId) => {
+                  const meta = getVendorMeta(vendorId)
+                  if (!meta) return null
+                  const isAdded = configuredNames.has(meta.name)
+                  return (
+                    <VendorPresetCard
+                      key={vendorId}
+                      vendor={meta}
+                      isAdded={isAdded}
+                      onSelectVendor={handleSelectVendor}
+                    />
+                  )
+                })}
+              </div>
             </div>
-            <div className="pv_catalog_grid">
-              {getUniqueVendorIds().map((vendorId) => {
-                const meta = getVendorMeta(vendorId)
-                if (!meta) return null
-                const isAdded = configuredNames.has(meta.name)
-                return (
-                  <VendorPresetCard
-                    key={vendorId}
-                    vendor={meta}
-                    isAdded={isAdded}
-                    onSelectVendor={handleSelectVendor}
-                  />
-                )
-              })}
-            </div>
-          </div>
-        )}
+          )}
 
-        {profiles.length === 0 && !showPresetCatalog ? (
-          <div className="pv_empty">
-            尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
-          </div>
-        ) : (
-          profiles.map((p) => {
-            const h = healthMap[p.id]
-            const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
-            const vendor = guessVendorByName(p.name, getUniqueVendorIds())
-            const builtin = isBuiltInLocalCliProvider(p)
-            const builtinDesc = isLocalCodexCliProvider(p)
-              ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
-              : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
-            return (
-              <ProviderCardX
-                key={p.id}
-                vendor={vendor}
-                name={p.name}
-                desc={
-                  builtin
-                    ? builtinDesc
-                    : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
-                }
-                status={status}
-                modelIds={builtin ? [] : p.modelIds}
-                defaultModel={p.defaultModel}
-                isBuiltin={builtin}
-                isDefault={p.isDefault}
-                multiSelect={multiSelect && !builtin}
-                selected={selectedIds.has(p.id)}
-                onToggleSelect={() => toggleSelected(p.id)}
-                onEdit={() => {
-                  setEditingId(p.id)
-                  setTweak('showProviderEdit', true)
-                }}
-                onDelete={() => void handleDelete(p.id)}
-                onHealthCheck={() => void handleHealthCheck(p.id)}
-              />
-            )
-          })
-        )}
+          {profiles.length === 0 && !showPresetCatalog ? (
+            <div className="pv_empty">
+              尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
+            </div>
+          ) : (
+            profiles.map((p) => {
+              const h = healthMap[p.id]
+              const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
+              const vendor =
+                resolveBuiltinLocalCliVendor(p) ??
+                guessVendorByName(p.name, getUniqueVendorIds()) ??
+                (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META)
+              const builtin = isBuiltInLocalCliProvider(p)
+              const builtinDesc = isLocalCodexCliProvider(p)
+                ? '内置 · 沿用宿主机本地 Codex CLI 配置（无需 API Key）'
+                : '内置 · 沿用宿主机本地 Claude CLI 配置（无需 API Key）'
+              return (
+                <ProviderCardX
+                  key={p.id}
+                  vendor={vendor}
+                  name={p.name}
+                  desc={
+                    builtin
+                      ? builtinDesc
+                      : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
+                  }
+                  status={status}
+                  modelIds={builtin ? [] : p.modelIds}
+                  defaultModel={p.defaultModel}
+                  isBuiltin={builtin}
+                  isDefault={p.isDefault}
+                  multiSelect={multiSelect && !builtin}
+                  selected={selectedIds.has(p.id)}
+                  onToggleSelect={() => toggleSelected(p.id)}
+                  onEdit={() => {
+                    setEditingId(p.id)
+                    setTweak('showProviderEdit', true)
+                  }}
+                  onDelete={() => void handleDelete(p.id)}
+                  onHealthCheck={() => void handleHealthCheck(p.id)}
+                />
+              )
+            })
+          )}
+        </div>
       </div>
 
       {/* Provider 编辑面板 */}
@@ -633,6 +638,63 @@ function guessVendorByName(name: string, vendorIds: string[]): VendorMeta | null
     if (name.includes(meta.name) || meta.name.includes(name)) return meta
   }
   return null
+}
+
+/**
+ * 内置本地 CLI provider 的合成 vendor（id 对齐 ProviderLogo 的 AVATAR 映射）。
+ *
+ * 这两个 provider 不在 VENDOR_CATALOG 里（它们是内置项、无 API Key、无 logoPath），
+ * 所以无法通过 guessVendorByName 命中。这里用固定 id 让 ProviderLogo 渲染
+ * @lobehub/icons 的 ClaudeCode / Codex 图标。
+ */
+const LOCAL_CLAUDE_CLI_VENDOR: VendorMeta = {
+  id: 'local-claude-cli',
+  name: '本地 Claude CLI',
+  emoji: 'CC',
+  color: '#d97757',
+  desc: '',
+  logoPath: '',
+}
+
+const LOCAL_CODEX_CLI_VENDOR: VendorMeta = {
+  id: 'local-codex-cli',
+  name: '本地 Codex CLI',
+  emoji: 'CX',
+  color: '#10a37f',
+  desc: '',
+  logoPath: '',
+}
+
+/**
+ * 协议格式官方图标（无匹配供应商 / 自定义模式下按当前 provider 格式回退显示）。
+ * id 对齐 ProviderLogo 的 VENDOR_AVATAR_MAP，渲染 @lobehub/icons 的彩色图标：
+ *   - openai 格式 → OpenAI 图标
+ *   - anthropic 格式 → Claude 图标
+ */
+const OPENAI_VENDOR_META: VendorMeta = {
+  id: 'openai',
+  name: 'OpenAI',
+  emoji: 'OA',
+  color: '#10a37f',
+  desc: '',
+  logoPath: '',
+}
+
+const CLAUDE_VENDOR_META: VendorMeta = {
+  id: 'claude',
+  name: 'Claude',
+  emoji: 'CL',
+  color: '#d97757',
+  desc: '',
+  logoPath: '',
+}
+
+/**
+ * 内置本地 CLI provider → 合成 vendor（用于 logo 渲染）；其余返回 null 走原有 name 匹配。
+ */
+function resolveBuiltinLocalCliVendor(provider: ProviderProfile): VendorMeta | null {
+  if (!isBuiltInLocalCliProvider(provider)) return null
+  return isLocalCodexCliProvider(provider) ? LOCAL_CODEX_CLI_VENDOR : LOCAL_CLAUDE_CLI_VENDOR
 }
 
 /* ─── VENDOR PRESET CARD（模板目录卡片） ─── */
@@ -961,8 +1023,19 @@ export function ProviderEditPanel({
       }
     }
     // 自定义模式：尝试按 name 反推 vendor
-    return guessVendorByName(form.name, getUniqueVendorIds())
-  }, [form.presetId, form.name])
+    const guessed = guessVendorByName(form.name, getUniqueVendorIds())
+    if (guessed) {
+      // 仅当该 vendor 在当前协议格式下存在预设时才采用；
+      // 否则可能是从另一种格式切换过来遗留的名称（如 anthropic → openai），
+      // 此时应回退到当前协议格式的官方图标，避免「选 OpenAI 格式却显示 Anthropic 图标」。
+      const hasMatchingPreset = getPresetsByVendor(guessed.id).some(
+        (preset) => preset.provider === form.provider,
+      )
+      if (hasMatchingPreset) return guessed
+    }
+    // 未匹配到当前格式的供应商 → 按协议格式显示官方图标（openai → OpenAI，anthropic → Claude）
+    return form.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META
+  }, [form.presetId, form.name, form.provider])
   const availablePresets = useMemo(
     () =>
       PROVIDER_PRESETS.filter((preset) => {

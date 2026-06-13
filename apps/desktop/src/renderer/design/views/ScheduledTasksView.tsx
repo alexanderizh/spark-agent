@@ -29,6 +29,7 @@ import { SparkSelect } from '../components/FormControls'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useToast } from '../components/Toast'
 import { useApp } from '../AppContext'
+import { useSessionSidebar } from '../SessionSidebarContext'
 import './ScheduledTasksView.less'
 
 // ─── Types ──────────────────────────────────────────────────────────────────
@@ -141,7 +142,8 @@ async function ipcInvoke(channel: string, params?: Record<string, unknown>): Pro
 
 export function ScheduledTasksView() {
   const { toast } = useToast()
-  const { requestConfirm } = useApp()
+  const { requestConfirm, setTweak } = useApp()
+  const sidebar = useSessionSidebar()
   const [tasks, setTasks] = useState<ScheduledTaskItem[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -223,13 +225,20 @@ export function ScheduledTasksView() {
 
   const handleRunNow = useCallback(async (id: string) => {
     try {
-      await ipcInvoke('scheduled-task:run-now', { id })
-      Message.success('任务已触发执行')
+      const res = await ipcInvoke('scheduled-task:run-now', { id })
+      const sessionId: string | null = res?.execution?.sessionId ?? null
       setRefreshKey(k => k + 1)
+      if (sessionId) {
+        Message.success('任务已触发执行，正在打开会话')
+        sidebar.setActiveSession(sessionId as any)
+        setTweak('view', 'chat')
+      } else {
+        Message.success('任务已触发执行，会话稍后会出现在会话栏「无项目对话」分组')
+      }
     } catch (err) {
       Message.error(`执行失败: ${err}`)
     }
-  }, [])
+  }, [sidebar, setTweak])
 
   const handleDelete = useCallback(async (id: string) => {
     try {
@@ -853,6 +862,8 @@ function TaskFormPage({ task, onClose }: {
   task: ScheduledTaskItem | null
   onClose: (success: boolean) => void
 }) {
+  const { setTweak } = useApp()
+  const sidebar = useSessionSidebar()
   const [saving, setSaving] = useState(false)
   const isEdit = task != null
 
@@ -959,8 +970,17 @@ function TaskFormPage({ task, onClose }: {
 
       if (runNow && taskId) {
         try {
-          await ipcInvoke('scheduled-task:run-now', { id: taskId })
-          Message.success('已保存并触发执行')
+          const runRes = await ipcInvoke('scheduled-task:run-now', { id: taskId })
+          const sessionId: string | null = runRes?.execution?.sessionId ?? null
+          if (sessionId) {
+            Message.success('已保存并触发执行，正在打开会话')
+            sidebar.setActiveSession(sessionId as any)
+            setTweak('view', 'chat')
+            onClose(true)
+            return
+          }
+          // 兜底：没拿到 sessionId（10s 内未建会话），仅提示用户后续可在会话栏查看
+          Message.success('已保存并触发执行，会话稍后会出现在会话栏「无项目对话」分组')
         } catch (runErr) {
           Message.warning(`已保存，但立即执行失败: ${runErr}`)
         }

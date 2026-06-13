@@ -6,7 +6,11 @@ import {
   Anthropic,
   Baidu,
   Bailian,
+  Claude,
+  ClaudeCode,
+  Codex,
   DeepSeek,
+  Github,
   Google,
   HuaweiCloud,
   IFlyTekCloud,
@@ -14,6 +18,7 @@ import {
   Kling,
   Minimax,
   Moonshot,
+  NewAPI,
   Ollama,
   OpenAI,
   OpenRouter,
@@ -23,6 +28,7 @@ import {
   TencentCloud,
   Trae,
   Volcengine,
+  XiaomiMiMo,
   Zhipu,
 } from '@lobehub/icons'
 import { useState, type CSSProperties, type FC } from 'react'
@@ -48,6 +54,10 @@ type AvatarFC = FC<{ size: number; shape?: 'circle' | 'square' }>
 const VENDOR_AVATAR_MAP: Record<string, AvatarFC> = {
   openai: OpenAI.Avatar as AvatarFC,
   anthropic: Anthropic.Avatar as AvatarFC,
+  claude: Claude.Avatar as AvatarFC,
+  // 内置本地 CLI provider（id 与 provider profile id 对齐）
+  'local-claude-cli': ClaudeCode.Avatar as AvatarFC,
+  'local-codex-cli': Codex.Avatar as AvatarFC,
   'google-gemini': Google.Avatar as AvatarFC,
   'tencent-coding-plan': TencentCloud.Avatar as AvatarFC,
   'aliyun-bailian-coding-plan': Bailian.Avatar as AvatarFC,
@@ -68,6 +78,10 @@ const VENDOR_AVATAR_MAP: Record<string, AvatarFC> = {
   kuaishou: Kling.Avatar as AvatarFC,
   trae: Trae.Avatar as AvatarFC,
   'qwen-tongyi': Alibaba.Avatar as AvatarFC,
+  // 新增（2026-06）
+  'xiaomi-mimo': XiaomiMiMo.Avatar as AvatarFC,
+  github: Github.Avatar as AvatarFC,
+  'new-api': NewAPI.Avatar as AvatarFC,
 }
 
 // ─── 组件 ───

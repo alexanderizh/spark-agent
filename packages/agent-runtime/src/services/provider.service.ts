@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process'
+import { execFile, exec } from 'node:child_process'
 import { promisify } from 'node:util'
 import type {
   ProviderProfile,
@@ -25,6 +25,7 @@ import { createLogger } from '@spark/shared'
 
 const log = createLogger('provider.service')
 const execFileAsync = promisify(execFile)
+const execAsync = promisify(exec)
 const isWin = process.platform === 'win32'
 type ProviderModelType = NonNullable<ProviderProfile['modelType']>
 type ImageGenApiType = NonNullable<ProviderProfile['imageApiType']>
@@ -91,10 +92,23 @@ async function tryCodexVersion(command: string): Promise<boolean> {
 
 async function tryCliVersion(command: string): Promise<boolean> {
   try {
-    await execFileAsync(command, ['--version'], {
-      timeout: 3000,
-      windowsHide: true,
-    })
+    if (isWin) {
+      // Windows npm/pnpm 全局包装出的 shim 实际是 `claude.cmd` / `claude.ps1`，
+      // 而 Node 自 CVE-2024-27980 修复后，execFile（不走 shell）的 CreateProcess
+      // 拒绝直接启动 .cmd/.bat/.ps1，会抛 EINVAL/EFTYPE，导致即使 PATH 上能
+      // `where claude` 也检测不到。这里改走 cmd.exe；command 可能是带空格的完整
+      // 路径，需自行加引号（--version 为静态参数，无注入风险）。
+      const quoted = /[\s&|()<>^]/.test(command) ? `"${command}"` : command
+      await execAsync(`${quoted} --version`, {
+        timeout: 3000,
+        windowsHide: true,
+      })
+    } else {
+      await execFileAsync(command, ['--version'], {
+        timeout: 3000,
+        windowsHide: true,
+      })
+    }
     return true
   } catch {
     return false

@@ -15,6 +15,7 @@ type CodexRunResult = {
   stderr: string
   assistantText: string
   assistantCompleteEmitted: boolean
+  failureMessage: string
 }
 type CodexProgressState = {
   lastProgressText: string
@@ -86,13 +87,18 @@ export class CodexCliExecutor {
     try {
       const result = await this.runCodex(args, prompt, makeBase, config.workspaceRootPath)
       if (result.exitCode !== 0) {
+        const failureMessage =
+          extractCodexFailureText(result.stdout, result.stderr) || result.failureMessage
         this.emit({
           ...makeBase(),
           type: 'agent_error',
           code: 'CODEX_CLI_ERROR',
-          message: `Codex CLI exited with code ${result.exitCode}`,
+          message:
+            failureMessage.length > 0
+              ? `Codex CLI failed: ${failureMessage}`
+              : `Codex CLI exited with code ${result.exitCode}`,
           retryable: true,
-          rawError: result.stderr || result.stdout,
+          rawError: [failureMessage, result.stderr, result.stdout].filter(Boolean).join('\n\n'),
         })
         this.emit({
           ...makeBase(),
@@ -155,6 +161,7 @@ export class CodexCliExecutor {
       let stdout = ''
       let stderr = ''
       let assistantText = ''
+      let failureMessage = ''
       let assistantCompleteEmitted = false
       const progressState: CodexProgressState = { lastProgressText: '' }
       let terminalOutputEmitted = false
@@ -175,6 +182,7 @@ export class CodexCliExecutor {
         const child = spawn(command, args, {
           cwd,
           env: process.env,
+          shell: process.platform === 'win32',
           windowsHide: true,
         })
         this.child = child
@@ -188,7 +196,16 @@ export class CodexCliExecutor {
           for (const line of lines) {
             const parsed = parseCodexJsonLine(line)
             if (parsed == null) {
-              terminalOutputEmitted = this.emitTerminalLine(line, 'stdout', makeBase) || terminalOutputEmitted
+              terminalOutputEmitted =
+                this.emitTerminalLine(line, 'stdout', makeBase) || terminalOutputEmitted
+              continue
+            }
+
+            const errorText = extractCodexErrorText(parsed)
+            if (errorText.length > 0) {
+              failureMessage = errorText
+              terminalOutputEmitted =
+                this.emitTerminalLine(errorText, 'stderr', makeBase) || terminalOutputEmitted
               continue
             }
 
@@ -242,6 +259,12 @@ export class CodexCliExecutor {
             isFinal: false,
           })
         })
+        child.stdin.on('error', (err: NodeJS.ErrnoException) => {
+          if (settled) return
+          if (attemptIndex !== candidateIndex) return
+          settled = true
+          reject(err)
+        })
         child.on('error', (err: NodeJS.ErrnoException) => {
           if (settled) return
           if (attemptIndex !== candidateIndex) return
@@ -259,7 +282,8 @@ export class CodexCliExecutor {
           settled = true
           const tail = lineBuffer.trim()
           if (tail.length > 0) {
-            terminalOutputEmitted = this.emitTerminalLine(tail, 'stdout', makeBase) || terminalOutputEmitted
+            terminalOutputEmitted =
+              this.emitTerminalLine(tail, 'stdout', makeBase) || terminalOutputEmitted
           }
           if (terminalOutputEmitted) {
             this.emit({
@@ -278,6 +302,7 @@ export class CodexCliExecutor {
             stderr,
             assistantText,
             assistantCompleteEmitted,
+            failureMessage,
           })
         })
         child.stdin.end(prompt)
@@ -360,12 +385,11 @@ function getCodexCliCandidates(): string[] {
 }
 
 function createCodexCliNotFoundError(candidates: string[]): Error {
-  const suffix = process.platform === 'win32'
-    ? ' On Windows, install Codex CLI globally and make sure the npm global bin directory is available in PATH.'
-    : ' Install Codex CLI and make sure it is available in PATH.'
-  const err = new Error(
-    `Codex CLI executable not found. Tried: ${candidates.join(', ')}.${suffix}`,
-  )
+  const suffix =
+    process.platform === 'win32'
+      ? ' On Windows, install Codex CLI globally and make sure the npm global bin directory is available in PATH.'
+      : ' Install Codex CLI and make sure it is available in PATH.'
+  const err = new Error(`Codex CLI executable not found. Tried: ${candidates.join(', ')}.${suffix}`)
   err.name = 'CodexCliNotFoundError'
   return err
 }
@@ -478,7 +502,7 @@ function parseCodexJsonLine(line: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(line) as unknown
     return parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
+      ? (parsed as Record<string, unknown>)
       : null
   } catch {
     return null
@@ -528,6 +552,56 @@ function extractFallbackText(stdout: string): string {
   return stdout.trim()
 }
 
+function extractCodexFailureText(stdout: string, stderr: string): string {
+  const stderrLines = stderr
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const networkLine = [...stderrLines]
+    .reverse()
+    .find((line) => /os error 10013|websocket|responses|api\.openai\.com/i.test(line))
+  if (networkLine != null) return normalizeCodexCliErrorText(networkLine)
+
+  const stdoutLines = stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  for (let i = stdoutLines.length - 1; i >= 0; i--) {
+    const parsed = parseCodexJsonLine(stdoutLines[i] ?? '')
+    if (parsed == null) continue
+    const errorText = extractCodexErrorText(parsed)
+    if (errorText.length > 0) return errorText
+  }
+
+  const lastStderr = stderrLines.at(-1)
+  if (lastStderr != null) return normalizeCodexCliErrorText(lastStderr)
+  return ''
+}
+
+function extractCodexErrorText(obj: Record<string, unknown>): string {
+  const type = typeof obj.type === 'string' ? obj.type : ''
+  if (type !== 'error' && type !== 'turn.failed') return ''
+
+  const directMessage = findTextFromKeys(obj, ['message'])
+  if (directMessage != null && directMessage.trim().length > 0) {
+    return normalizeCodexCliErrorText(directMessage)
+  }
+
+  const error = obj.error
+  if (error != null && typeof error === 'object' && !Array.isArray(error)) {
+    const nestedMessage = findTextFromKeys(error, ['message', 'error'])
+    if (nestedMessage != null && nestedMessage.trim().length > 0) {
+      return normalizeCodexCliErrorText(nestedMessage)
+    }
+  }
+
+  return ''
+}
+
+function normalizeCodexCliErrorText(value: string): string {
+  return value.replace(/^\d{4}-\d{2}-\d{2}T\S+\s+ERROR\s+\S+:\s*/i, '').trim()
+}
+
 function findTextFromLine(line: string): string {
   try {
     return findText(JSON.parse(line)) ?? ''
@@ -540,7 +614,9 @@ function findText(value: unknown): string | null {
   if (typeof value === 'string') return value
   if (value == null || typeof value !== 'object') return null
   if (Array.isArray(value)) {
-    const parts = value.map(findText).filter((part): part is string => part != null && part.length > 0)
+    const parts = value
+      .map(findText)
+      .filter((part): part is string => part != null && part.length > 0)
     return parts.length > 0 ? parts.join('\n') : null
   }
   const record = value as Record<string, unknown>
@@ -563,7 +639,11 @@ function extractCodexCompletedAgentText(obj: Record<string, unknown>): string {
   const item = obj.item
   if (item != null && typeof item === 'object' && !Array.isArray(item)) {
     const record = item as Record<string, unknown>
-    if (record.type === 'agent_message' || record.type === 'assistant_message' || record.type === 'message') {
+    if (
+      record.type === 'agent_message' ||
+      record.type === 'assistant_message' ||
+      record.type === 'message'
+    ) {
       return findText(record.text) ?? findText(record.content) ?? ''
     }
   }

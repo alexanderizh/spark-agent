@@ -1,6 +1,7 @@
-/* ClickableFilePath 样式 */
+/* ClickableFilePath / ClickableUrl 样式 */
 
-.clickable-file-path {
+.clickable-file-path,
+.clickable-url {
   display: inline;
   color: var(--color-primary-6);
   cursor: pointer;
@@ -17,4 +18,19 @@
     margin: -1px -4px;
     border-radius: var(--r-xs);
   }
+}
+
+/* 链接（URL/mailto）保持普通 <a> 行为：不阻止默认导航 */
+.clickable-url {
+  // <a> 默认有 visited 颜色，统一覆盖为主题色
+  &:visited {
+    color: var(--color-primary-6);
+  }
+}
+
+/* 右键菜单项内的图标 + 文字对齐 */
+.clickable-file-menu-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }

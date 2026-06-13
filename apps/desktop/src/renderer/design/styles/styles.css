@@ -190,16 +190,7 @@ a:focus,
 summary:focus {
   outline: none;
 }
-/* Keyboard-only focus indicator (accessible, no mouse-click highlight) */
-button:focus-visible,
-a:focus-visible,
-[tabindex]:focus-visible,
-[role="button"]:focus-visible,
-[role="menuitem"]:focus-visible,
-[role="tab"]:focus-visible {
-  outline: 2px solid var(--focus-ring, rgba(99, 102, 241, 0.5));
-  outline-offset: 1px;
-}
+
 
 /* ============================================================
    WINDOW CHROME (Electron-style)
@@ -1047,11 +1038,10 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 *::-webkit-scrollbar-button {
   display: none;
 }
-/* Firefox: overlay thin scrollbar */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text-muted) 30%, transparent) transparent;
-}
+/* NOTE: 不要给元素加 `scrollbar-width`/`scrollbar-color`（标准属性）。
+   Electron 渲染器是纯 Chromium：一旦设置标准属性，Chromium 会切换到
+   "标准滚动条"模式并忽略上面的 `::-webkit-scrollbar` 自定义，在 Windows 上
+   退回带箭头按钮、无圆角的原生滚动条。改用 `::-webkit-scrollbar` 即可。 */
 
 /* ============================================================
    SPARK INPUT — 基于 Arco Input 的主题化输入框

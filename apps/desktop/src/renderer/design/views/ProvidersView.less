@@ -257,6 +257,29 @@
   flex-shrink: 0;
 }
 
+/* ─── Scrollable card list ──────────────────────────────────────────────── */
+
+.pv_scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: var(--color-fill-3, var(--border-strong));
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+}
+
 /* ─── Empty placeholder ─────────────────────────────────────────────────── */
 
 .pv_empty {

@@ -64,6 +64,10 @@ export const VENDOR_CATALOG: VendorMeta[] = [
   { id: 'kuaishou',         name: '快手可灵',         emoji: 'KS',  color: '#ff6633', desc: '可灵 Kling V1.6 / 视频生成', logoPath: 'providers/kuaishou.png' },
   { id: 'trae',             name: 'Trae (字节)',     emoji: 'TR',  color: '#5b21b6', desc: 'Trae IDE · Doubao-1.5 / DeepSeek', logoPath: 'providers/trae.svg' },
   { id: 'qwen-tongyi',      name: '阿里通义',         emoji: 'QY',  color: '#ff6a00', desc: 'Qwen3.5 / Qwen3-Max / Qwen-Coder', logoPath: 'providers/qwen-tongyi.png' },
+
+  /* ─── 新增（2026-06）：海外 / 自建网关 ─── */
+  { id: 'github',           name: 'GitHub Models',   emoji: 'GH',  color: '#24292f', desc: 'GitHub Models · GPT-4o / o3 / Llama / Phi', logoPath: 'providers/github.svg' },
+  { id: 'new-api',          name: 'New API 网关',    emoji: 'NA',  color: '#0ea5e9', desc: '自建 LLM 网关（One-API / New-API）· OpenAI 格式聚合', logoPath: 'providers/new-api.svg' },
 ]
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -699,6 +703,118 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelIds: ['qwen3-max', 'qwen3.5-plus', 'qwen3-coder-plus', 'qwen3-235b-a22b', 'qwen3-vl-plus'],
     sourceUrls: [
       'https://help.aliyun.com/zh/model-studio/claude-code',
+    ],
+  },
+
+  /* ════════════════════════════════════════════════════════════════ */
+  /* ─── 新增（2026-06）：更多 Claude Code / Codex 兼容供应商 ───      */
+  /* ════════════════════════════════════════════════════════════════ */
+
+  /* ─── 无问芯穹 Infini-AI（Coding Plan，Anthropic 协议）─── */
+  {
+    id: 'infini-ai-coding-plan-anthropic',
+    vendorId: 'infini-ai',
+    name: '无问芯穹 Coding Plan',
+    provider: 'anthropic',
+    apiEndpoint: 'https://cloud.infini-ai.com/maas/coding',
+    defaultModel: 'minimax-m2.7',
+    modelIds: ['minimax-m2.7', 'minimax-m2.5', 'glm-5.1', 'glm-5', 'glm-4.7', 'deepseek-v3.2', 'kimi-k2.5'],
+    sourceUrls: [
+      'https://docs.infini-ai.com/gen-studio-coding-plan/',
+    ],
+  },
+
+  /* ─── Kimi（月之暗面，Anthropic 协议）─── */
+  {
+    id: 'kimi-anthropic',
+    vendorId: 'kimi',
+    name: 'Kimi (Moonshot)',
+    provider: 'anthropic',
+    apiEndpoint: 'https://api.moonshot.ai/anthropic',
+    defaultModel: 'kimi-k2.6',
+    modelIds: ['kimi-k2.6', 'kimi-k2.7-code', 'kimi-k2.5'],
+    sourceUrls: [
+      'https://platform.kimi.com/docs/guide/agent-support',
+      'https://platform.moonshot.cn/',
+    ],
+  },
+
+  /* ─── OpenRouter（Anthropic 协议；注意 base_url 为 /api 而非 /api/v1）─── */
+  {
+    id: 'openrouter-anthropic',
+    vendorId: 'openrouter',
+    name: 'OpenRouter',
+    provider: 'anthropic',
+    apiEndpoint: 'https://openrouter.ai/api',
+    defaultModel: 'anthropic/claude-sonnet-4',
+    modelIds: [
+      'anthropic/claude-sonnet-4',
+      'anthropic/claude-opus-4',
+      'openai/gpt-4.1',
+      'google/gemini-2.5-pro',
+      'deepseek/deepseek-chat',
+    ],
+    sourceUrls: [
+      'https://openrouter.ai/docs/cookbook/coding-agents/claude-code-integration',
+    ],
+  },
+
+  /* ─── GitHub Models（OpenAI 协议；旧 models.inference.ai.azure.com 已于 2025-07 弃用）─── */
+  {
+    id: 'github-models-openai',
+    vendorId: 'github',
+    name: 'GitHub Models',
+    provider: 'openai',
+    apiEndpoint: 'https://models.github.ai/inference',
+    defaultModel: 'gpt-4o',
+    modelIds: ['gpt-4o', 'gpt-4.1', 'o3', 'o4-mini', 'Llama-3.3-70B-Instruct', 'Phi-4', 'Mistral-Large-2411'],
+    sourceUrls: [
+      'https://docs.github.com/github-models/prototyping-with-ai-models',
+    ],
+  },
+
+  /* ─── New API / One-API 自建网关（OpenAI 协议；endpoint 由用户自建部署决定）─── */
+  {
+    id: 'new-api-gateway-openai',
+    vendorId: 'new-api',
+    name: 'New API 网关',
+    provider: 'openai',
+    apiEndpoint: 'https://your-newapi-host/v1',
+    defaultModel: 'gpt-4.1',
+    modelIds: ['gpt-4.1', 'claude-sonnet-4', 'deepseek-chat'],
+    sourceUrls: [
+      'https://www.newapi.ai/zh/docs/apps/claude-code',
+      'https://github.com/Calcium-Ion/new-api',
+    ],
+  },
+
+  /* ─── 百度千帆 Coding Plan（Anthropic 协议；统一模型名 qianfan-code-latest 聚合多模型）─── */
+  {
+    id: 'baidu-coding-plan-anthropic',
+    vendorId: 'baidu',
+    name: '百度千帆 Coding Plan',
+    provider: 'anthropic',
+    apiEndpoint: 'https://qianfan.baidubce.com/anthropic/coding',
+    defaultModel: 'qianfan-code-latest',
+    modelIds: ['qianfan-code-latest'],
+    sourceUrls: [
+      'https://cloud.baidu.com/doc/qianfan/s/imlg0beiu',
+      'https://cloud.baidu.com/doc/qianfan/s/0mn2mnemj',
+    ],
+  },
+
+  /* ─── 小米 MiMo（Anthropic 协议）─── */
+  {
+    id: 'xiaomi-mimo-anthropic',
+    vendorId: 'xiaomi-mimo',
+    name: '小米 MiMo',
+    provider: 'anthropic',
+    apiEndpoint: 'https://api.xiaomimimo.com/anthropic',
+    defaultModel: 'mimo-v2-flash',
+    modelIds: ['mimo-v2-flash', 'mimo-v2-pro', 'mimo-v2.5-pro', 'mimo-v2-omni'],
+    sourceUrls: [
+      'https://platform.xiaomimimo.com/docs/en-US/integration/claudecode',
+      'https://platform.xiaomimimo.com/docs/en-US/quick-start/first-api-call',
     ],
   },
 ]

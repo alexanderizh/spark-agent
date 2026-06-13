@@ -11,12 +11,19 @@
  * - 样式落在 `McpView.less`（mv_ 前缀），不再依赖 views.css 的旧全局类。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Button, Tag, Switch, Drawer, Empty, Tooltip, Message } from '@arco-design/web-react'
 import {
-  Button, Tag, Switch, Drawer, Empty, Tooltip, Message,
-} from '@arco-design/web-react'
-import {
-  IconPlus, IconRefresh, IconSearch, IconStorage, IconLink, IconCode,
-  IconDelete, IconEdit, IconCheck, IconClose, IconExclamationCircle,
+  IconPlus,
+  IconRefresh,
+  IconSearch,
+  IconStorage,
+  IconLink,
+  IconCode,
+  IconDelete,
+  IconEdit,
+  IconCheck,
+  IconClose,
+  IconExclamationCircle,
   IconTool,
 } from '@arco-design/web-react/icon'
 import type { McpServerItem } from '@spark/protocol'
@@ -129,11 +136,12 @@ function deriveServer(item: McpServerItem): ServerDerived {
   const endpoint = transport === 'stdio' ? (config.command ?? '') : (config.url ?? '')
   const valid = endpoint.trim().length > 0
   const status: ServerDerived['status'] = !item.enabled ? 'off' : valid ? 'ok' : 'warn'
-  const desc = config.description?.trim() && config.description.trim().length > 0
-    ? config.description.trim()
-    : transport === 'stdio'
-      ? `${transport} · ${config.command ?? '未配置启动信息'}`
-      : `${transport} · ${config.url ?? '未配置 URL'}`
+  const desc =
+    config.description?.trim() && config.description.trim().length > 0
+      ? config.description.trim()
+      : transport === 'stdio'
+        ? `${transport} · ${config.command ?? '未配置启动信息'}`
+        : `${transport} · ${config.url ?? '未配置 URL'}`
   let statusLabel: string
   if (status === 'off') statusLabel = '未启用'
   else if (status === 'warn') statusLabel = '配置不完整'
@@ -224,8 +232,9 @@ export function McpView() {
     return derived.filter((server) => {
       if (statusFilter !== 'all' && server.status !== statusFilter) return false
       if (keyword.length === 0) return true
-      return [server.name, server.scope, server.desc, server.transport, server.endpoint]
-        .some((value) => value.toLowerCase().includes(keyword))
+      return [server.name, server.scope, server.desc, server.transport, server.endpoint].some(
+        (value) => value.toLowerCase().includes(keyword),
+      )
     })
   }, [derived, query, statusFilter])
 
@@ -306,33 +315,39 @@ export function McpView() {
     }
   }, [draft, editingId, createMcp, updateMcp, refresh])
 
-  const handleToggle = useCallback(async (item: McpServerItem, next: boolean) => {
-    try {
-      await updateMcp({ id: item.id, enabled: next })
-      refresh()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '更新状态失败'
-      Message.error(message)
-    }
-  }, [updateMcp, refresh])
+  const handleToggle = useCallback(
+    async (item: McpServerItem, next: boolean) => {
+      try {
+        await updateMcp({ id: item.id, enabled: next })
+        refresh()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '更新状态失败'
+        Message.error(message)
+      }
+    },
+    [updateMcp, refresh],
+  )
 
-  const handleDelete = useCallback(async (item: McpServerItem) => {
-    const confirmed = await requestConfirm({
-      title: `删除 ${item.name}？`,
-      description: '删除后该 MCP 配置会从本地移除，相关工具将不再可用。',
-      confirmText: '删除',
-      danger: true,
-    })
-    if (!confirmed) return
-    try {
-      await deleteMcp({ id: item.id })
-      Message.success('已删除')
-      refresh()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '删除失败'
-      Message.error(message)
-    }
-  }, [requestConfirm, deleteMcp, refresh])
+  const handleDelete = useCallback(
+    async (item: McpServerItem) => {
+      const confirmed = await requestConfirm({
+        title: `删除 ${item.name}？`,
+        description: '删除后该 MCP 配置会从本地移除，相关工具将不再可用。',
+        confirmText: '删除',
+        danger: true,
+      })
+      if (!confirmed) return
+      try {
+        await deleteMcp({ id: item.id })
+        Message.success('已删除')
+        refresh()
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '删除失败'
+        Message.error(message)
+      }
+    },
+    [requestConfirm, deleteMcp, refresh],
+  )
 
   return (
     <>
@@ -342,7 +357,9 @@ export function McpView() {
         <div className="mv_header">
           <div className="mv_header_left">
             <h2>MCP</h2>
-            <Tag size="small" color="arcoblue">{derived.length}</Tag>
+            <Tag size="small" color="arcoblue">
+              {derived.length}
+            </Tag>
             <span className="mv_header_subtitle">· {totalTools} 个工具 · 配置保存在本地</span>
           </div>
           <div className="mv_header_right">
@@ -363,12 +380,7 @@ export function McpView() {
                 onClick={refresh}
               />
             </Tooltip>
-            <Button
-              type="primary"
-              size="small"
-              icon={<IconPlus />}
-              onClick={openCreate}
-            >
+            <Button type="primary" size="small" icon={<IconPlus />} onClick={openCreate}>
               添加 MCP
             </Button>
           </div>
@@ -388,9 +400,7 @@ export function McpView() {
                 >
                   <span className="mv_status_chip_dot" />
                   {option.label}
-                  <span style={{ opacity: 0.6, marginLeft: 2 }}>
-                    {statusCounts[option.value]}
-                  </span>
+                  <span style={{ opacity: 0.6, marginLeft: 2 }}>{statusCounts[option.value]}</span>
                 </button>
               )
             })}
@@ -459,7 +469,9 @@ export function McpView() {
         onCancel={closeDrawer}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-            <Button onClick={closeDrawer} disabled={saving}>取消</Button>
+            <Button onClick={closeDrawer} disabled={saving}>
+              取消
+            </Button>
             <Button
               type="primary"
               loading={saving}
@@ -473,11 +485,7 @@ export function McpView() {
         escToExit={!saving}
         maskClosable={!saving}
       >
-        <McpForm
-          draft={draft}
-          setDraft={setDraft}
-          error={draftError}
-        />
+        <McpForm draft={draft} setDraft={setDraft} error={draftError} />
       </Drawer>
     </>
   )
@@ -486,7 +494,10 @@ export function McpView() {
 // ── 子组件：单张 MCP 卡片 ────────────────────────────────────────────────
 
 function McpCard({
-  server, onToggle, onEdit, onDelete,
+  server,
+  onToggle,
+  onEdit,
+  onDelete,
 }: {
   server: ServerDerived
   onToggle: (next: boolean) => void
@@ -495,9 +506,13 @@ function McpCard({
 }) {
   const logoText = server.name.slice(0, 2).toUpperCase() || 'MCP'
   const statusClass =
-    server.status === 'ok' ? 'mv_status_ok' :
-    server.status === 'warn' ? 'mv_status_warn' :
-    server.status === 'err' ? 'mv_status_err' : 'mv_status_off'
+    server.status === 'ok'
+      ? 'mv_status_ok'
+      : server.status === 'warn'
+        ? 'mv_status_warn'
+        : server.status === 'err'
+          ? 'mv_status_err'
+          : 'mv_status_off'
   const isOn = server.status !== 'off'
   return (
     <div className="mv_card">
@@ -505,7 +520,9 @@ function McpCard({
         <div className="mv_card_logo">{logoText}</div>
         <div className="mv_card_info">
           <div className="mv_card_name_row">
-            <span className="mv_card_name" title={server.name}>{server.name}</span>
+            <span className="mv_card_name" title={server.name}>
+              {server.name}
+            </span>
             <Tag size="small" color="gray" bordered>
               {server.scope}
             </Tag>
@@ -527,7 +544,9 @@ function McpCard({
         />
       </div>
 
-      <div className="mv_card_desc" title={server.desc}>{server.desc}</div>
+      <div className="mv_card_desc" title={server.desc}>
+        {server.desc}
+      </div>
 
       <div className="mv_card_foot">
         <span className={`mv_card_status ${statusClass}`}>
@@ -541,12 +560,7 @@ function McpCard({
         )}
         <div className="mv_toolbar_spacer" />
         <Tooltip content="编辑">
-          <Button
-            type="text"
-            size="mini"
-            icon={<IconEdit />}
-            onClick={onEdit}
-          />
+          <Button type="text" size="mini" icon={<IconEdit />} onClick={onEdit} />
         </Tooltip>
         <Tooltip content="删除">
           <Button
@@ -565,7 +579,9 @@ function McpCard({
 // ── 子组件：Empty 状态 ───────────────────────────────────────────────────
 
 function EmptyState({
-  totalCount, hasQuery, onAdd,
+  totalCount,
+  hasQuery,
+  onAdd,
 }: {
   totalCount: number
   hasQuery: boolean
@@ -585,7 +601,8 @@ function EmptyState({
             <div>
               <div className="mv_empty_title">还没有配置 MCP 服务器</div>
               <div className="mv_empty_desc">
-                添加一个 stdio / http / sse 协议的 MCP 服务器，Claude SDK 与本地 Codex CLI Agent 即可调用其暴露的工具
+                添加一个 stdio / http / sse 协议的 MCP 服务器，Claude SDK 与本地 Codex CLI Agent
+                即可调用其暴露的工具
               </div>
             </div>
           )
@@ -603,7 +620,9 @@ function EmptyState({
 // ── 子组件：MCP 表单（Drawer body） ──────────────────────────────────────
 
 function McpForm({
-  draft, setDraft, error,
+  draft,
+  setDraft,
+  error,
 }: {
   draft: DraftBase
   setDraft: (updater: (prev: DraftBase) => DraftBase) => void
@@ -654,7 +673,9 @@ function McpForm({
       {/* ── 基本信息 ── */}
       <section className="mv_drawer_section">
         <header className="mv_drawer_section_head">
-          <span className="mv_drawer_section_icon"><IconStorage /></span>
+          <span className="mv_drawer_section_icon">
+            <IconStorage />
+          </span>
           <span className="mv_drawer_section_title">基本信息</span>
         </header>
         <div className="mv_drawer_section_body">
@@ -666,6 +687,9 @@ function McpForm({
             <div className="mv_form_field">
               <SparkInput
                 value={draft.name}
+                style={{
+                  minWidth: 200,
+                }}
                 onChange={(event) => update('name', event.target.value)}
                 placeholder="例：filesystem"
               />
@@ -675,18 +699,29 @@ function McpForm({
             <div className="mv_form_field">
               <SparkSelect
                 value={draft.scope}
+                style={{
+                  minWidth: 200,
+                }}
                 onChange={(event) => update('scope', event.target.value)}
               >
                 {SCOPES.map((scope) => (
-                  <option key={scope} value={scope}>{scope}</option>
+                  <option key={scope} value={scope}>
+                    {scope}
+                  </option>
                 ))}
               </SparkSelect>
-              <span className="mv_form_hint">决定配置的可见范围与会话覆盖优先级；会按 Agent / Workflow 配置注入 Claude SDK 与本地 Codex CLI</span>
+              <span className="mv_form_hint">
+                决定配置的可见范围与会话覆盖优先级；会按 Agent / Workflow 配置注入 Claude SDK 与本地
+                Codex CLI
+              </span>
             </div>
 
             <label className="mv_form_label">描述</label>
             <div className="mv_form_field">
               <SparkInput
+                style={{
+                  minWidth: 200,
+                }}
                 value={draft.description}
                 onChange={(event) => update('description', event.target.value)}
                 placeholder="可选：给该 MCP 写一句话说明"
@@ -710,9 +745,7 @@ function McpForm({
       {/* ── 启动配置 ── */}
       <section className="mv_drawer_section">
         <header className="mv_drawer_section_head">
-          <span className="mv_drawer_section_icon">
-            {isStdio ? <IconCode /> : <IconLink />}
-          </span>
+          <span className="mv_drawer_section_icon">{isStdio ? <IconCode /> : <IconLink />}</span>
           <span className="mv_drawer_section_title">启动配置</span>
           <span className="mv_drawer_section_hint">{isStdio ? 'stdio' : 'http / sse'}</span>
         </header>

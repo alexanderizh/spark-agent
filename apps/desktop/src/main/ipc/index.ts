@@ -389,6 +389,29 @@ export function getScheduledTaskService(): ScheduledTaskService {
   return _scheduledTaskService
 }
 
+/**
+ * 把定时任务表单的 permissionMode ('auto' / 'bypass') 映射到会话级别的
+ * SessionPermissionMode；非法值返回 undefined，让 createSession / sendTurn
+ * 各自回退到 agent / 运行时默认。
+ */
+function mapTaskPermissionMode(
+  mode: string | null | undefined,
+  adapter: SessionAgentAdapter,
+): SessionPermissionMode | undefined {
+  if (mode == null || mode === '') return undefined
+  // 已经是合法的 SessionPermissionMode，直接透传
+  if (
+    mode === 'claude-ask' || mode === 'claude-auto-edits' || mode === 'claude-plan' ||
+    mode === 'claude-auto' || mode === 'claude-bypass' ||
+    mode === 'codex-default' || mode === 'codex-auto-review' || mode === 'codex-full-access'
+  ) {
+    return mode
+  }
+  if (mode === 'bypass') return adapter === 'codex' ? 'codex-full-access' : 'claude-bypass'
+  if (mode === 'auto') return adapter === 'codex' ? 'codex-auto-review' : 'claude-auto-edits'
+  return undefined
+}
+
 /** Executor function injected into ScheduledTaskService for running tasks */
 const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   const sessionService = getSessionService()
@@ -404,27 +427,41 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   // in the session sidebar even when the task didn't specify one.
   const workspaceId = params.workspaceId ?? getNoProjectWorkspaceId() ?? undefined
 
+  // Apply runtime defaults so the scheduled session uses the same adapter /
+  // permission mode policy the user picked for ad-hoc chats; map the form's
+  // 'auto' / 'bypass' onto the proper SessionPermissionMode value.
+  const runtimeDefaults = getRuntimePermissionDefaults()
+  const mappedPermissionMode =
+    mapTaskPermissionMode(params.permissionMode, runtimeDefaults.agentAdapter)
+    ?? runtimeDefaults.permissionMode
+
   // Create a new session for this execution
+  await ensureNoProjectDirectoryExists()
   const created = await sessionService.createSession({
     providerProfileId: defaultProfile.id,
-    modelId: params.modelId ?? undefined,
-    agentId: params.agentId ?? undefined,
-    workspaceId,
-    permissionMode: (params.permissionMode as any) ?? undefined,
+    ...(params.modelId != null ? { modelId: params.modelId } : {}),
+    ...(params.agentId != null ? { agentId: params.agentId } : {}),
+    ...(workspaceId != null ? { workspaceId } : {}),
+    agentAdapter: runtimeDefaults.agentAdapter,
+    permissionMode: mappedPermissionMode,
     title: `[⏰] ${params.taskName}`,
   })
 
   // Notify renderer to refresh session list (same as session:create IPC handler)
   pushStreamEvent('stream:session:created', { sessionId: created.sessionId })
+  // 让 ScheduledTaskService 立即拿到 sessionId（运行 turn 之前），
+  // 这样 runNow 可以在 turn 还在跑时就把 sessionId 返回给前端用于跳转。
+  params.onSessionCreated?.(created.sessionId)
 
   // Send the prompt as a turn
   const result = await sessionService.sendTurn({
     sessionId: created.sessionId,
     message: params.promptTemplate,
     providerProfileId: defaultProfile.id,
-    modelId: params.modelId ?? undefined,
-    agentId: params.agentId ?? undefined,
-    permissionMode: (params.permissionMode as any) ?? undefined,
+    ...(params.modelId != null ? { modelId: params.modelId } : {}),
+    ...(params.agentId != null ? { agentId: params.agentId } : {}),
+    agentAdapter: runtimeDefaults.agentAdapter,
+    permissionMode: mappedPermissionMode,
   })
 
   return {
@@ -3283,6 +3320,24 @@ export function registerAllIpcHandlers(): void {
       return { opened: false, error: errorMessage }
     }
     return { opened: true }
+  })
+
+  // ─── File Reveal Handler ──────────────────────────────────────────────
+  // Highlight a file/directory in the OS file manager (Finder / Explorer).
+  typedIpcHandle('file:reveal', async (req) => {
+    const filePath = req.filePath
+    if (!filePath || typeof filePath !== 'string') {
+      return { revealed: false, error: 'filePath is required' }
+    }
+    log.info(`file:reveal requested, path=${filePath}`)
+    try {
+      shell.showItemInFolder(filePath)
+      return { revealed: true }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`file:reveal failed, path=${filePath}, error=${message}`)
+      return { revealed: false, error: message }
+    }
   })
 
   // ─── File Read Handler ────────────────────────────────────────────────

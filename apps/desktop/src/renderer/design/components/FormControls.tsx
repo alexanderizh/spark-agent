@@ -33,6 +33,7 @@ export interface SparkInputProps {
   className?: string
   icon?: ReactNode
   autoFocus?: boolean
+  style?: any
   maxLength?: number
   name?: string
   min?: string | number
@@ -69,6 +70,7 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
     onBlur,
     onKeyDown,
     onKeyUp,
+    style={}
   }, ref) {
     // range / checkbox 保持原生（Arco 不支持）
     if (type === 'range') {
@@ -76,6 +78,7 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
         <input
           ref={ref as any}
           type="range"
+          style={{...(style || {})}}
           className={`spark-input ${className}`}
           value={value as string}
           defaultValue={defaultValue}
@@ -93,6 +96,7 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
       return (
         <input
           ref={ref as any}
+          style={{...(style || {})}}
           type={type}
           className={className}
           checked={checked}
@@ -127,6 +131,7 @@ export const SparkInput = forwardRef<any, SparkInputProps>(
           {...(autoFocus !== undefined ? { autoFocus } : {})}
           {...(maxLength !== undefined ? { maxLength } : {})}
           {...(name !== undefined ? { name } : {})}
+          style={{...(style || {})}}
           onFocus={onFocus as any}
           onBlur={onBlur as any}
           onKeyDown={onKeyDown as any}

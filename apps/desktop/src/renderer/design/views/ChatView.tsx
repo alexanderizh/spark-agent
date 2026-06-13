@@ -32,7 +32,7 @@ import {
 import { SparkInput, SparkTextarea } from '../components/FormControls'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
-import { ClickableFilePath, extractFilePaths } from '../components/ClickableFilePath'
+import { ClickableFilePath, ClickableUrl, extractFilePaths, extractUrlsAndEmails } from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
@@ -1039,6 +1039,7 @@ function ChatStream({
   teamConfig,
   onReplyTo,
   onFilePreview,
+  onResendMessage,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -1055,6 +1056,8 @@ function ChatStream({
   teamConfig: TeamModeConfig
   onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
   onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  /** 重发：用户消息上"重发"按钮触发，把 blocks+attachments 重新塞回输入区 */
+  onResendMessage?: (payload: { text: string; attachments: MessageAttachment[] }) => void
 }) {
   const streamRef = useRef<HTMLDivElement | null>(null)
   const [messages, setMessages] = useState<UIMessage[]>([])
@@ -3096,28 +3099,47 @@ function highlightMentions(
   return parts.length > 0 ? parts : [text]
 }
 
-/** 识别文本中的文件路径并渲染为可点击链接 */
+/** 识别文本中的文件路径并渲染为可点击链接；非路径段交给 highlightUrls 处理裸 URL/mailto */
 function highlightFilePaths(
   text: string,
   onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void,
   keyPrefix: string = 'fp',
 ): ReactNode[] {
   const pathParts = extractFilePaths(text)
-  if (pathParts.length === 0 || (pathParts.length === 1 && !pathParts[0]!.isPath)) {
-    return [text]
+  if (pathParts.length === 0) return [text]
+  // 整段都不是路径 → 直接走 URL 高亮
+  if (pathParts.length === 1 && !pathParts[0]!.isPath) {
+    return highlightUrls(pathParts[0]!.text, `${keyPrefix}-u`)
   }
 
-  return pathParts.map((part, index) => {
+  const nodes: ReactNode[] = []
+  pathParts.forEach((part, index) => {
     if (!part.isPath) {
-      return <span key={`${keyPrefix}-${index}`}>{part.text}</span>
+      nodes.push(...highlightUrls(part.text, `${keyPrefix}-${index}-u`))
+      return
     }
-    return (
+    nodes.push(
       <ClickableFilePath
         key={`${keyPrefix}-${index}`}
         path={part.text}
         {...(onFilePreview != null ? { onPreview: onFilePreview } : {})}
-      />
+      />,
     )
+  })
+  return nodes
+}
+
+/** 识别裸 URL / www. / mailto，渲染为主题色 <a> */
+function highlightUrls(text: string, keyPrefix: string = 'u'): ReactNode[] {
+  const parts = extractUrlsAndEmails(text)
+  if (parts.length === 0) return [text]
+  if (parts.length === 1 && parts[0]!.kind === 'text') return [text]
+
+  return parts.map((part, index) => {
+    if (part.kind === 'text') {
+      return <span key={`${keyPrefix}-${index}`}>{part.text}</span>
+    }
+    return <ClickableUrl key={`${keyPrefix}-${index}`} url={part.text} />
   })
 }
 
@@ -3145,7 +3167,7 @@ function renderInlineMarkdown(
         nodes.push(<MarkdownImage key={key} src={link[3] ?? ''} alt={link[2] ?? ''} />)
       } else {
         nodes.push(
-          <a key={key} href={link[3] ?? '#'} target="_blank" rel="noreferrer">
+          <a key={key} className="clickable-url" href={link[3] ?? '#'} target="_blank" rel="noreferrer">
             {link[2] ?? ''}
           </a>,
         )
@@ -3203,12 +3225,15 @@ function MessageHoverBar({
   position,
   usage,
   onDelete,
+  onResend,
 }: {
   timestamp?: string | undefined
   textContent: string
   position: 'left' | 'right'
   usage?: UIMessage['usage'] | undefined
   onDelete?: () => void
+  /** 仅用户消息：把这条消息的文本+附件重新塞回输入区 */
+  onResend?: () => void
 }) {
   const [copied, setCopied] = useState(false)
 
@@ -3232,6 +3257,11 @@ function MessageHoverBar({
         <span className="msg-hover-tokens">
           {usage.inputTokens + usage.outputTokens} tokens
         </span>
+      )}
+      {onResend && (
+        <button className="msg-hover-resend" title="重发" onClick={onResend}>
+          <Icons.RotateCw size={12} />
+        </button>
       )}
       <button className="msg-hover-copy" title="复制" onClick={handleCopy}>
         {copied ? <Icons.Check size={12} /> : <Icons.Copy size={12} />}
@@ -3404,6 +3434,7 @@ function UserMsg({
   onDelete,
   mentionAgentName,
   onReply,
+  onResend,
 }: {
   children: ReactNode
   timestamp?: string | undefined
@@ -3414,6 +3445,8 @@ function UserMsg({
   /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
   mentionAgentName?: string | undefined
   onReply?: () => void
+  /** 重发：把这条消息的文本+附件重新塞回输入区 */
+  onResend?: () => void
 }) {
   const textContent = extractTextFromBlocks(blocks)
   const [contextMenu, setContextMenu] = useState<{
@@ -3496,6 +3529,7 @@ function UserMsg({
         textContent={textContent}
         position="right"
         {...(onDelete ? { onDelete } : {})}
+        {...(onResend ? { onResend } : {})}
       />
       {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu
@@ -8788,6 +8822,8 @@ function PlanSummary({ plan }: { plan: SidebarPlan }) {
  */
 function TaskListSection({ tasks }: { tasks: InspectorTask[] }) {
   const completed = tasks.filter((t) => t.status === 'completed').length
+  const running = tasks.filter((t) => t.status === 'in_progress').length
+  const pending = tasks.filter((t) => t.status === 'pending').length
   const total = tasks.length
   const percent = total === 0 ? 0 : Math.round((completed / total) * 100)
   const inProgress = tasks.find((t) => t.status === 'in_progress')
@@ -8804,6 +8840,23 @@ function TaskListSection({ tasks }: { tasks: InspectorTask[] }) {
       </div>
       <div className="inspector-progress">
         <span style={{ width: `${percent}%` }} />
+      </div>
+      <div className="inspector-task-counts">
+        {running > 0 && (
+          <span className="inspector-task-count running" title="进行中">
+            <Icons.Spinner size={10} /> {running} 进行中
+          </span>
+        )}
+        {pending > 0 && (
+          <span className="inspector-task-count pending" title="待运行">
+            <span className="inspector-task-dot" /> {pending} 待运行
+          </span>
+        )}
+        {completed > 0 && (
+          <span className="inspector-task-count done" title="已完成">
+            <Icons.Check size={10} /> {completed} 完成
+          </span>
+        )}
       </div>
       <div className="inspector-plan-items">
         {tasks.map((task) => (

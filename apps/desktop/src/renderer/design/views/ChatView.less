@@ -52,11 +52,11 @@
   overscroll-behavior: contain;
 }
 
-/* Chat route lives inside a flex shell; 100vh here makes Windows custom titlebar
-   steal visible bottom space and leaves macOS feeling too airy. */
+/* These fill the available flex height inside the shell. .chat-main's own
+   height is platform-managed in views.css (100vh on macOS, calc(100vh - 32px)
+   on Windows), so it's intentionally not overridden here. */
 .main-with-browser > .main > .view-body,
-.app.sidebar-hidden .main-with-browser > .main,
-.chat-main {
+.app.sidebar-hidden .main-with-browser > .main {
   height: 100%;
 }
 
@@ -175,4 +175,46 @@
 .chat-main-empty .chat-stream,
 .chat-main-empty .chat-stream-viewport {
   display: none !important;
+}
+
+/* ── TaskListSection: pending / running / completed 分项计数 ── */
+.inspector-task-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.inspector-task-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  line-height: 1.4;
+
+  &.running {
+    color: var(--info);
+    border-color: var(--info);
+    background: transparent;
+  }
+  &.done {
+    color: var(--success);
+    border-color: var(--success);
+    background: transparent;
+  }
+  &.pending {
+    color: var(--text-muted);
+  }
+
+  .inspector-task-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    display: inline-block;
+  }
 }

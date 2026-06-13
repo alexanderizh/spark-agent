@@ -2651,6 +2651,20 @@ export interface FileOpenResponse {
   error?: string
 }
 
+// ─── File Reveal Channel ─────────────────────────────────────────────────────
+
+export interface FileRevealRequest {
+  /** Absolute path to the file or directory to highlight in the OS file manager. */
+  filePath: string
+}
+
+export interface FileRevealResponse {
+  /** True when shell.showItemInFolder was invoked. */
+  revealed: boolean
+  /** Populated when the path is invalid or the call failed. */
+  error?: string
+}
+
 // ─── File Read Channel ───────────────────────────────────────────────────────
 
 export interface FileReadRequest {
@@ -3527,6 +3541,9 @@ export interface IpcChannelMap {
 
   // File Open — open a file with the OS default application
   'file:open': [FileOpenRequest, FileOpenResponse]
+
+  // File Reveal — highlight a file/directory in the OS file manager
+  'file:reveal': [FileRevealRequest, FileRevealResponse]
 
   // File Read — read a file's content as UTF-8 text
   'file:read': [FileReadRequest, FileReadResponse]
