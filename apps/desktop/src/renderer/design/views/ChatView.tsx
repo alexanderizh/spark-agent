@@ -5805,6 +5805,33 @@ function ComposerV2({
     void refreshQueueState(session?.id)
   }, [refreshQueueState, session?.id])
 
+  // 监听 SessionSidebarContext.handleNewSession 派发的 'spark:composer:reset-draft' 事件：
+  // 当用户「新建会话」（含复用未使用会话）时，清空目标会话与 'draft:new' 桶的输入草稿，
+  // 防止此前未发送的输入内容残留在新会话的输入框中。
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: string }>).detail ?? {}
+      const targetId = detail.sessionId
+      setDrafts((current) => {
+        const next: Record<string, ComposerDraftSnapshot> = { ...current }
+        let changed = false
+        if (targetId != null && next[targetId] != null) {
+          next[targetId] = { ...next[targetId], value: '', attachments: [] }
+          changed = true
+        }
+        if (next['draft:new'] != null) {
+          next['draft:new'] = { ...next['draft:new'], value: '', attachments: [] }
+          changed = true
+        }
+        if (!changed) return current
+        writeComposerDrafts(next)
+        return next
+      })
+    }
+    window.addEventListener('spark:composer:reset-draft', handler)
+    return () => window.removeEventListener('spark:composer:reset-draft', handler)
+  }, [])
+
   useEffect(() => {
     return window.spark.on('stream:session:queue-changed', (snapshot) => {
       applyQueueState(snapshot)

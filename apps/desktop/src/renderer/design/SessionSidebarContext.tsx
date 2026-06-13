@@ -399,6 +399,11 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       if (unusedSession) {
         if (options.activate !== false) setActive(unusedSession.id)
         setActiveWorkspaceId(wsId)
+        // 复用「未使用」会话时，将其视为新会话：清空此前残留的输入草稿，
+        // 避免用户切换/新建会话时旧输入内容仍残留在输入框。
+        window.dispatchEvent(new CustomEvent('spark:composer:reset-draft', {
+          detail: { sessionId: unusedSession.id },
+        }))
         return unusedSession.id
       }
 
@@ -444,6 +449,11 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(wsId)
+      // 新建会话时清空输入草稿（包括 'draft:new' 与该会话 id 的 bucket），
+      // 确保用户进入新会话时输入框是空的。
+      window.dispatchEvent(new CustomEvent('spark:composer:reset-draft', {
+        detail: { sessionId: res.sessionId },
+      }))
       if (options.skipRefresh !== true) await refreshData()
       writeComposerPrefs({
         adapter: agentAdapter,
