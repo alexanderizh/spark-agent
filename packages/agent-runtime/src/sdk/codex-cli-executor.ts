@@ -152,12 +152,6 @@ export class CodexCliExecutor {
     cwd: string,
   ): Promise<CodexRunResult> {
     return new Promise((resolve, reject) => {
-      const child = spawn('codex', args, {
-        cwd,
-        env: process.env,
-        windowsHide: true,
-      })
-      this.child = child
       let stdout = ''
       let stderr = ''
       let assistantText = ''
@@ -166,102 +160,130 @@ export class CodexCliExecutor {
       let terminalOutputEmitted = false
       let lineBuffer = ''
       let settled = false
+      let candidateIndex = 0
+      const candidates = getCodexCliCandidates()
 
-      child.stdout.on('data', (chunk: Buffer) => {
-        const text = chunk.toString()
-        stdout += text
-        lineBuffer += text
-        const lines = lineBuffer.split(/\r?\n/)
-        lineBuffer = lines.pop() ?? ''
-        for (const line of lines) {
-          const parsed = parseCodexJsonLine(line)
-          if (parsed == null) {
-            terminalOutputEmitted = this.emitTerminalLine(line, 'stdout', makeBase) || terminalOutputEmitted
-            continue
-          }
-
-          const delta = extractCodexDeltaText(parsed)
-          if (delta.length > 0) {
-            assistantText += delta
-            this.emit({
-              ...makeBase(),
-              type: 'assistant_message',
-              mode: 'delta',
-              content: delta,
-              provider: 'codex',
-              isFinal: false,
-              segmentId: `codex-${makeBase().turnId}`,
-            })
-            continue
-          }
-
-          const completedText = extractCodexCompletedAgentText(parsed)
-          if (completedText.length > 0) {
-            assistantText = completedText
-            assistantCompleteEmitted = true
-            this.emit({
-              ...makeBase(),
-              type: 'assistant_message',
-              mode: 'complete',
-              content: completedText,
-              provider: 'codex',
-              // The CLI can emit item.completed before the process has fully exited.
-              // Keep the message streaming until agent_status=completed to avoid a
-              // second "running" placeholder bubble in the chat UI.
-              isFinal: false,
-              segmentId: `codex-${makeBase().turnId}`,
-            })
-            continue
-          }
-
-          this.emitCodexProgress(parsed, makeBase, progressState)
+      const startCandidate = (): void => {
+        const command = candidates[candidateIndex]
+        if (command == null) {
+          settled = true
+          reject(createCodexCliNotFoundError(candidates))
+          return
         }
-      })
-      child.stderr.on('data', (chunk: Buffer) => {
-        const text = chunk.toString()
-        stderr += text
-        terminalOutputEmitted = true
-        this.emit({
-          ...makeBase(),
-          type: 'terminal_output',
-          toolCallId: `codex-cli-${makeBase().turnId}`,
-          stream: 'stderr',
-          data: text,
-          isFinal: false,
+        const attemptIndex = candidateIndex
+
+        const child = spawn(command, args, {
+          cwd,
+          env: process.env,
+          windowsHide: true,
         })
-      })
-      child.on('error', (err) => {
-        if (settled) return
-        settled = true
-        reject(err)
-      })
-      child.on('close', (code) => {
-        if (settled) return
-        settled = true
-        const tail = lineBuffer.trim()
-        if (tail.length > 0) {
-          terminalOutputEmitted = this.emitTerminalLine(tail, 'stdout', makeBase) || terminalOutputEmitted
-        }
-        if (terminalOutputEmitted) {
+        this.child = child
+
+        child.stdout.on('data', (chunk: Buffer) => {
+          const text = chunk.toString()
+          stdout += text
+          lineBuffer += text
+          const lines = lineBuffer.split(/\r?\n/)
+          lineBuffer = lines.pop() ?? ''
+          for (const line of lines) {
+            const parsed = parseCodexJsonLine(line)
+            if (parsed == null) {
+              terminalOutputEmitted = this.emitTerminalLine(line, 'stdout', makeBase) || terminalOutputEmitted
+              continue
+            }
+
+            const delta = extractCodexDeltaText(parsed)
+            if (delta.length > 0) {
+              assistantText += delta
+              this.emit({
+                ...makeBase(),
+                type: 'assistant_message',
+                mode: 'delta',
+                content: delta,
+                provider: 'codex',
+                isFinal: false,
+                segmentId: `codex-${makeBase().turnId}`,
+              })
+              continue
+            }
+
+            const completedText = extractCodexCompletedAgentText(parsed)
+            if (completedText.length > 0) {
+              assistantText = completedText
+              assistantCompleteEmitted = true
+              this.emit({
+                ...makeBase(),
+                type: 'assistant_message',
+                mode: 'complete',
+                content: completedText,
+                provider: 'codex',
+                // The CLI can emit item.completed before the process has fully exited.
+                // Keep the message streaming until agent_status=completed to avoid a
+                // second "running" placeholder bubble in the chat UI.
+                isFinal: false,
+                segmentId: `codex-${makeBase().turnId}`,
+              })
+              continue
+            }
+
+            this.emitCodexProgress(parsed, makeBase, progressState)
+          }
+        })
+        child.stderr.on('data', (chunk: Buffer) => {
+          const text = chunk.toString()
+          stderr += text
+          terminalOutputEmitted = true
           this.emit({
             ...makeBase(),
             type: 'terminal_output',
             toolCallId: `codex-cli-${makeBase().turnId}`,
-            stream: 'stdout',
-            data: '',
-            isFinal: true,
-            exitCode: code ?? 1,
+            stream: 'stderr',
+            data: text,
+            isFinal: false,
           })
-        }
-        resolve({
-          exitCode: code ?? 1,
-          stdout,
-          stderr,
-          assistantText,
-          assistantCompleteEmitted,
         })
-      })
-      child.stdin.end(prompt)
+        child.on('error', (err: NodeJS.ErrnoException) => {
+          if (settled) return
+          if (attemptIndex !== candidateIndex) return
+          if (err.code === 'ENOENT' && stdout.length === 0 && stderr.length === 0) {
+            candidateIndex += 1
+            startCandidate()
+            return
+          }
+          settled = true
+          reject(err)
+        })
+        child.on('close', (code) => {
+          if (settled) return
+          if (attemptIndex !== candidateIndex) return
+          settled = true
+          const tail = lineBuffer.trim()
+          if (tail.length > 0) {
+            terminalOutputEmitted = this.emitTerminalLine(tail, 'stdout', makeBase) || terminalOutputEmitted
+          }
+          if (terminalOutputEmitted) {
+            this.emit({
+              ...makeBase(),
+              type: 'terminal_output',
+              toolCallId: `codex-cli-${makeBase().turnId}`,
+              stream: 'stdout',
+              data: '',
+              isFinal: true,
+              exitCode: code ?? 1,
+            })
+          }
+          resolve({
+            exitCode: code ?? 1,
+            stdout,
+            stderr,
+            assistantText,
+            assistantCompleteEmitted,
+          })
+        })
+        child.stdin.end(prompt)
+      }
+
+      startCandidate()
     })
   }
 
@@ -329,6 +351,23 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
     args.push('-c', item)
   }
   return args
+}
+
+function getCodexCliCandidates(): string[] {
+  return process.platform === 'win32'
+    ? ['codex.cmd', 'codex.exe', 'codex.bat', 'codex.ps1', 'codex']
+    : ['codex']
+}
+
+function createCodexCliNotFoundError(candidates: string[]): Error {
+  const suffix = process.platform === 'win32'
+    ? ' On Windows, install Codex CLI globally and make sure the npm global bin directory is available in PATH.'
+    : ' Install Codex CLI and make sure it is available in PATH.'
+  const err = new Error(
+    `Codex CLI executable not found. Tried: ${candidates.join(', ')}.${suffix}`,
+  )
+  err.name = 'CodexCliNotFoundError'
+  return err
 }
 
 function mapCodexPermissionArgs(mode: SDKExecutorConfig['permissionMode']): string[] {

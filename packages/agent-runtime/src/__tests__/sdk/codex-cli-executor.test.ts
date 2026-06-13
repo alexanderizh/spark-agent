@@ -37,6 +37,21 @@ class MockChildProcess extends EventEmitter {
   kill = vi.fn()
 }
 
+class MissingCommandProcess extends EventEmitter {
+  stdout = new EventEmitter()
+  stderr = new EventEmitter()
+  stdin = {
+    end: vi.fn(() => {
+      const err = new Error('spawn codex ENOENT') as NodeJS.ErrnoException
+      err.code = 'ENOENT'
+      this.emit('error', err)
+      this.emit('close', 1)
+    }),
+  }
+
+  kill = vi.fn()
+}
+
 function makeConfig(overrides: Partial<SDKExecutorConfig> = {}): SDKExecutorConfig {
   return {
     apiKey: '',
@@ -90,6 +105,24 @@ describe('CodexCliExecutor', () => {
     expect(child?.prompt).toContain('Skill catalog')
     expect(child?.prompt).toContain('# Spark Runtime Context')
     expect(child?.prompt).toContain('System context')
+  })
+
+  it('falls back to Windows Codex CLI shim candidates when the first command is missing', async () => {
+    const originalPlatform = process.platform
+    Object.defineProperty(process, 'platform', { value: 'win32' })
+    try {
+      spawnMock.mockImplementation((command: string, args: string[]) => {
+        if (command === 'codex.cmd') return new MissingCommandProcess()
+        return new MockChildProcess(args)
+      })
+
+      const executor = new CodexCliExecutor()
+      await executor.executeTurn('session-1', 'turn-1', 'hello', makeConfig())
+
+      expect(spawnMock.mock.calls.map((call) => call[0])).toEqual(['codex.cmd', 'codex.exe'])
+    } finally {
+      Object.defineProperty(process, 'platform', { value: originalPlatform })
+    }
   })
 
   it('passes CLI-compatible MCP servers and skips in-process SDK servers', async () => {
