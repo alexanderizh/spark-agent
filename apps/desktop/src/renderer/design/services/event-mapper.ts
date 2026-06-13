@@ -203,9 +203,18 @@ export class MessageBuilder {
     return plan
   }
 
+  /** Peek the latest unresolved plan_proposed without clearing it.
+   *  Used after history hydrate to detect a plan modal that was dismissed without
+   *  approval/cancel (eg. APP_RESTARTED) so the UI can re-prompt the user. */
+  getPendingPlan(): string | null {
+    return this.latestPlanProposed
+  }
+
   processEvent(event: AgentEvent): void {
     switch (event.type) {
       case 'user_message': {
+        // 新用户消息抵达 = 上一个待审批的 plan 已被处理（批准发送 send-turn 或被取消后用户重新发言）
+        this.latestPlanProposed = null
         this.currentAssistantId = null
         this.messages.push({
           id: event.id,
@@ -363,6 +372,14 @@ export class MessageBuilder {
       }
 
       case 'agent_status': {
+        // turn 结束（完成 / 出错 / 被取消）意味着 plan 模式不再处于待审批状态
+        if (
+          event.status === 'completed' ||
+          event.status === 'error' ||
+          event.status === 'cancelled'
+        ) {
+          this.latestPlanProposed = null
+        }
         const msg = this.currentAssistantId
           ? this.messages.find((m) => m.id === this.currentAssistantId)
           : null

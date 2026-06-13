@@ -4,7 +4,6 @@
  * 把原来单一的上传按钮升级为可下拉的弹窗，提供：
  *   1. 添加文件或图片
  *   2. 技能（hover 展示全量 skills 子菜单，点击插入 `@技能名 ` 到输入框）
- *   3. 总结（占位：toast 提示「即将上线」）
  *
  * 弹窗向上展开（图示），与现有 `composer-menu` 风格一致。
  */
@@ -102,12 +101,6 @@ export function ComposerActionsMenu({
     onAddAttachments()
   }
 
-  const handleSummarizeClick = () => {
-    setOpen(false)
-    setSkillSubOpen(false)
-    toast.info('总结功能即将上线')
-  }
-
   const handleSkillClick = (skill: SkillItem) => {
     setOpen(false)
     setSkillSubOpen(false)
@@ -136,6 +129,7 @@ export function ComposerActionsMenu({
             type="button"
             className="composer-actions-item"
             onClick={handleAddClick}
+            onMouseEnter={() => setSkillSubOpen(false)}
           >
             <span className="composer-actions-item-icon">
               <Icons.FilePlus size={14} />
@@ -227,18 +221,6 @@ export function ComposerActionsMenu({
               </div>
             )}
           </div>
-          <div className="composer-actions-divider" />
-          <button
-            type="button"
-            className="composer-actions-item"
-            onClick={handleSummarizeClick}
-          >
-            <span className="composer-actions-item-icon">
-              <Icons.Sparkles size={14} />
-            </span>
-            <span className="composer-actions-item-label">总结</span>
-            <span className="composer-actions-item-badge">即将上线</span>
-          </button>
         </div>
       )}
     </div>

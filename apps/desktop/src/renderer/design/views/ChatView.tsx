@@ -5,7 +5,7 @@
  * This component only renders the main chat area (hero/composer/stream).
  * Session/workspace/provider data is read from SessionSidebarContext.
  */
-import React, { useEffect, useRef, useState, useCallback, useMemo, Fragment } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, Fragment } from 'react'
 import './ChatView.less'
 import './ToolDropdown.less'
 import type { JSX, ReactNode, RefObject } from 'react'
@@ -24,6 +24,7 @@ import {
   MCPPermCard,
   HunkDiff,
   PlanCard,
+  renderPlanInline,
   SubagentCard,
   Checkpoint,
   SandboxNote,
@@ -393,6 +394,16 @@ export function ChatView({
   } | null>(null)
   const chatAreaRef = useRef<HTMLDivElement | null>(null)
   const [activeMessages, setActiveMessages] = useState<UIMessage[]>([])
+  // 活跃会话历史是否正在加载。用于区分「真正的空会话」与「老会话历史还没加载完」：
+  // 从非聊天页（如 Agents）点进一个老会话时，ChatView 重新挂载、activeMessages 还是空，
+  // 若仅凭空数组判定就会误闪「新建会话 hero」，加载完才跳到目标会话。
+  // 初值取 active != null，保证首帧（挂载即带 sessionId）就抑制 hero，无需等副作用。
+  const [activeSessionLoading, setActiveSessionLoading] = useState(active != null)
+  // active 变化（含挂载后切换）时，在历史加载完成前先抑制 hero。
+  // 用 layout effect 在浏览器绘制前同步置位，避免 active 已切到老会话却闪一帧 hero。
+  useLayoutEffect(() => {
+    if (active != null) setActiveSessionLoading(true)
+  }, [active])
   const [contextInputTokens, setContextInputTokens] = useState(0)
   const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
     inputTokens: 0,
@@ -544,7 +555,9 @@ export function ChatView({
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
   )
-  const showEmptyHero = active == null || activeMessages.length === 0
+  // 仅在「无活跃会话」或「活跃会话历史已加载完且确实为空」时显示新建会话 hero；
+  // 历史加载中不显示，避免老会话进入时先闪一下空会话。
+  const showEmptyHero = active == null || (activeMessages.length === 0 && !activeSessionLoading)
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
@@ -745,6 +758,7 @@ export function ChatView({
               teamConfig={teamConfig}
               onFilePreview={handleFilePreview}
               onResendMessage={handleResendMessage}
+              onLoadingChange={setActiveSessionLoading}
             />
             {userQuestion != null && (
               <UserQuestionDock
@@ -1063,6 +1077,7 @@ function ChatStream({
   onReplyTo,
   onFilePreview,
   onResendMessage,
+  onLoadingChange,
 }: {
   sessionId: SessionId
   onStatusChange: (s: string) => void
@@ -1076,6 +1091,8 @@ function ChatStream({
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
+  /** 当前会话历史的加载状态变化（用于父级抑制「空会话 hero」误闪） */
+  onLoadingChange?: (loading: boolean) => void
   teamConfig: TeamModeConfig
   onReplyTo?: (msg: UIMessage, agentId?: string, agentName?: string) => void
   onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
@@ -1137,10 +1154,12 @@ function ChatStream({
       usageRef.current = cached.usage
       onUsageDataChange(cached.usage)
       setIsLoadingHistory(false)
+      onLoadingChange?.(false)
     } else {
       // 无缓存时不再立即清空旧消息（那会导致空白闪烁）：保留当前内容并显示遮罩 loading，
       // 待目标会话历史加载完成后再一次性替换，避免「标题已切、正文空白、内容再弹出」的闪屏。
       setIsLoadingHistory(true)
+      onLoadingChange?.(true)
     }
 
     isStreamingRef.current = false
@@ -1199,6 +1218,13 @@ function ChatStream({
         }
         onProjectContextChange(getLatestProjectContextEvent(events))
         onTurnPromptSnapshotsChange(hydratedBuilder.getTurnPromptSnapshots())
+        // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
+        // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗，避免会话
+        // 一直停留在 "运行中" / "waiting" 状态而无法继续推进。
+        const pendingPlan = hydratedBuilder.getPendingPlan()
+        if (pendingPlan != null) {
+          onPlanProposed(pendingPlan)
+        }
       })
       .catch((err) => {
         console.error('Failed to load session history:', err)
@@ -1220,6 +1246,7 @@ function ChatStream({
           hydratingRef.current = false
           bufferedEventsRef.current = []
           setIsLoadingHistory(false)
+          onLoadingChange?.(false)
         }
       })
 
@@ -1247,6 +1274,7 @@ function ChatStream({
     onUsageDataChange,
     onContextUsageChange,
     onProjectContextChange,
+    onLoadingChange,
     sessionId,
   ])
 
@@ -1540,12 +1568,10 @@ function ChatStream({
             <div className="chat-stream-empty-state">
               <div className="empty-state">
                 {isLoadingHistory ? (
-                  <>
-                    <div className="empty-icon loading-icon">
-                      <Icons.Spinner size={24} />
-                    </div>
-                    <div className="empty-title">加载中…</div>
-                  </>
+                  <div className="chat-loading">
+                    <span className="chat-loading-spinner" aria-hidden="true" />
+                    <div className="chat-loading-text">加载中…</div>
+                  </div>
                 ) : (
                   <>
                     <div className="empty-icon">
@@ -4856,7 +4882,9 @@ function PlanApprovalModal({
   }
 
   return (
-    <div className="modal-backdrop" onClick={() => !busy && !editing && onClose()}>
+    // 背景遮罩不响应点击：防止误触关闭丢失审批弹窗。
+    // 关闭只能通过下方"拒绝"按钮。
+    <div className="modal-backdrop">
       <div className="modal plan-approval-modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-h">
           <div className="modal-h-icon">
@@ -4872,7 +4900,7 @@ function PlanApprovalModal({
             <div className="modal-subtitle">
               {editing
                 ? '编辑模式 · 修改后点"保存编辑"暂存，可反复编辑后再批准'
-                : 'Plan 模式 · 批准后会切换为 auto-edits 模式继续'}
+                : 'Plan 模式 · 批准后会自动切换为 auto-edits 模式继续执行'}
             </div>
           </div>
         </div>
@@ -4882,7 +4910,7 @@ function PlanApprovalModal({
               className="plan-approval-textarea"
               value={editBuffer}
               onChange={(e) => setEditBuffer(e.target.value)}
-              rows={Math.min(20, Math.max(8, editBuffer.split('\n').length + 1))}
+              rows={Math.min(24, Math.max(12, editBuffer.split('\n').length + 1))}
               autoFocus
             />
           ) : (
@@ -4891,40 +4919,40 @@ function PlanApprovalModal({
             </div>
           )}
         </div>
-        <div className="modal-foot">
+        <div className="modal-foot plan-approval-foot">
           {!editing && (
-            <button className="btn ghost sm" disabled={busy} onClick={onClose}>
+            <button className="btn ghost" disabled={busy} onClick={reject}>
               拒绝
             </button>
           )}
           <div className="flex1" />
           {!editing && isEdited && (
-            <button className="btn ghost sm" disabled={busy} onClick={resetDraft}>
+            <button className="btn ghost" disabled={busy} onClick={resetDraft}>
               恢复原计划
             </button>
           )}
           {!editing && (
-            <button className="btn sm" disabled={busy} onClick={startEditing}>
-              <Icons.Edit size={11} /> {isEdited ? '继续编辑' : '编辑计划'}
+            <button className="btn" disabled={busy} onClick={startEditing}>
+              <Icons.Edit size={12} /> {isEdited ? '继续编辑' : '编辑计划'}
             </button>
           )}
           {editing && (
-            <button className="btn ghost sm" onClick={discardEdit}>
+            <button className="btn ghost" onClick={discardEdit}>
               放弃修改
             </button>
           )}
           {editing && (
             <button
-              className="btn sm"
+              className="btn"
               disabled={editBuffer === draft}
               onClick={saveEdit}
             >
-              <Icons.Check size={11} /> 保存编辑
+              <Icons.Check size={12} /> 保存编辑
             </button>
           )}
           {!editing && (
-            <button className="btn primary sm" disabled={busy} onClick={approve}>
-              {isEdited ? '批准（用编辑后）' : '批准并执行'}
+            <button className="btn primary" disabled={busy} onClick={approve}>
+              {isEdited ? '批准（用编辑后）并自动执行' : '批准并自动执行'}
             </button>
           )}
         </div>
@@ -9354,7 +9382,7 @@ function PlanSummary({ plan }: { plan: SidebarPlan }) {
               {item.status === 'done' && <Icons.Check size={10} />}
               {item.status === 'running' && <Icons.Spinner size={10} />}
             </span>
-            <span className="text">{item.text}</span>
+            <span className="text">{renderPlanInline(item.text)}</span>
           </div>
         ))}
       </div>

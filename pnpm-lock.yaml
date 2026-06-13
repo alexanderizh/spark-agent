@@ -26,9 +26,15 @@ importers:
       '@larksuiteoapi/node-sdk':
         specifier: ^1.66.1
         version: 1.66.1
+      '@lobehub/fluent-emoji':
+        specifier: ^4.1.0
+        version: 4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@lobehub/icons':
         specifier: ^5.10.0
-        version: 5.10.0(@lobehub/ui@5.15.8)(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+        version: 5.10.0(@lobehub/ui@5.15.15)(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@lobehub/ui':
+        specifier: ^5.15.15
+        version: 5.15.15(@lobehub/fluent-emoji@4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@lobehub/icons@5.10.0)(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@playwright/mcp':
         specifier: ^0.0.30
         version: 0.0.30(zod@3.25.76)
@@ -50,6 +56,9 @@ importers:
       '@xyflow/react':
         specifier: ^12.3.5
         version: 12.11.0(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(immer@11.1.8)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd:
+        specifier: ^6.4.4
+        version: 6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       better-sqlite3:
         specifier: ^11.10.0
         version: 11.10.0
@@ -65,6 +74,9 @@ importers:
       lucide-react:
         specifier: ^1.16.0
         version: 1.16.0(react@19.2.6)
+      motion:
+        specifier: ^12.40.0
+        version: 12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       openai:
         specifier: ^6.39.0
         version: 6.39.0(ws@8.21.0)(zod@3.25.76)
@@ -1028,8 +1040,8 @@ packages:
       react: ^19.0.0
       react-dom: ^19.0.0
 
-  '@lobehub/ui@5.15.8':
-    resolution: {integrity: sha512-lpdkfAkEU2WJLm73FkjK2hmVvxr9dbN5xNf5I5htDZrFvHeaPDuEzfuzBz2plQzhjHbml2FTmCljPYz8Y8laLw==}
+  '@lobehub/ui@5.15.15':
+    resolution: {integrity: sha512-nbake8F9Lp6/g1AaBnbt+l0Q8/u5/RjpSeE67ABOf5BV2MMV4Vhac5rTkkS7F4DpRYXug7i4A/ZvGwn3/F+jmA==}
     peerDependencies:
       '@lobehub/fluent-emoji': ^4.0.0
       '@lobehub/icons': ^5.0.0
@@ -1085,8 +1097,8 @@ packages:
     engines: {node: ^12.13.0 || ^14.15.0 || >=16.0.0}
     deprecated: This functionality has been moved to @npmcli/fs
 
-  '@pierre/diffs@1.2.7':
-    resolution: {integrity: sha512-YrHmFZLDtiLZ4DkiVqMDUFqTFIct3ML3t20nMp0UeuiUtqrmRcenYVxPb4IafiNkhZZURhCiwcs89tVb/HrSDA==}
+  '@pierre/diffs@1.2.8':
+    resolution: {integrity: sha512-HVaWzZ1cW5GDKodivaPCN1hU05DGvoLiG/uvVBNZODD+qY2NTr36KYgATGhb79Vr8OCKNG3qATTWJEwbkMGfzA==}
     peerDependencies:
       react: ^18.3.1 || ^19.0.0
       react-dom: ^18.3.1 || ^19.0.0
@@ -1176,6 +1188,15 @@ packages:
 
   '@radix-ui/react-compose-refs@1.1.2':
     resolution: {integrity: sha512-z4eqJvfiNnFMHIIvXP3CY57y2WJs5g2v3X0zm9mEJkrkNv4rDxu+sg9Jh8EkXyeqBkB7SOcboo9dMVqhyrACIg==}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
+  '@radix-ui/react-compose-refs@1.1.3':
+    resolution: {integrity: sha512-rYOP8OMnuuPMQF1uhPVlGNcCDlkokKqGFE3JcxFViIkAXP7EvFWUliJAstrapypaBLJNHbZL6jGhbVDGTwmVhA==}
     peerDependencies:
       '@types/react': '*'
       react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
@@ -1419,6 +1440,15 @@ packages:
       '@types/react':
         optional: true
 
+  '@radix-ui/react-slot@1.2.5':
+    resolution: {integrity: sha512-rCMO3QsIVKv5JTY5CVbo2MvO77SpEqqYc8AvRE7OWqRDOIqAKjsp+DrmnY9uc8NPdxB5E2z47HTYGeE2+NTptg==}
+    peerDependencies:
+      '@types/react': '*'
+      react: ^16.8 || ^17.0 || ^18.0 || ^19.0 || ^19.0.0-rc
+    peerDependenciesMeta:
+      '@types/react':
+        optional: true
+
   '@radix-ui/react-tabs@1.1.13':
     resolution: {integrity: sha512-7xdcatg7/U+7+Udyoj2zodtI9H/IIopqo+YOIcZOq1nJwXWBZ9p8xiu5llXlekDbZkca79a/fozEYQXIA4sW6A==}
     peerDependencies:
@@ -1537,12 +1567,12 @@ packages:
   '@radix-ui/rect@1.1.1':
     resolution: {integrity: sha512-HPwpGIzkl28mWyZqG52jiqDJ12waP11Pa1lGoiyUkIEuMLBP0oeK/C89esbXrxsky5we7dfd8U58nm0SgAWpVw==}
 
-  '@rc-component/async-validator@5.1.0':
-    resolution: {integrity: sha512-n4HcR5siNUXRX23nDizbZBQPO0ZM/5oTtmKZ6/eqL0L2bo747cklFdZGRN2f+c9qWGICwDzrhW0H7tE9PptdcA==}
+  '@rc-component/async-validator@6.0.0':
+    resolution: {integrity: sha512-D3AGQwdyE58gmvx6waVSXJ80JGO+IY5L2O8HDnSOex7JNlzB3GuN/4hyHNTdhy2qtOhkpbIjmeAN3tL993wKbA==}
     engines: {node: '>=14.x'}
 
-  '@rc-component/cascader@1.15.0':
-    resolution: {integrity: sha512-ZzpMtwFCRo3fbXHuDnncARJMZQjdqA2w7aDuPofNQt+aDx39st1hgfIpEwTBLhe2Hqsvs/zOr8RTtgxTkCPySw==}
+  '@rc-component/cascader@1.16.1':
+    resolution: {integrity: sha512-wxLopwM+EBed0zNNGdnGE4coYoqcO+XD42fHgn+pDvO+XzhNFbdgSlSNXdKocIYqccvqgWvoxDPNb0OVRdi59A==}
     peerDependencies:
       react: '>=18.0.0'
       react-dom: '>=18.0.0'
@@ -1589,8 +1619,8 @@ packages:
       react: '>=16.11.0'
       react-dom: '>=16.11.0'
 
-  '@rc-component/form@1.8.2':
-    resolution: {integrity: sha512-ZidCvOLmM9Xr+3vzk4UAoR7Aj1W/5IHyrzlBB7sNkygpTeRVrohQSo4TN7W/nARTH+nt8zSAPsn4BEl4zLEO2g==}
+  '@rc-component/form@1.8.3':
+    resolution: {integrity: sha512-jNkat3uxZ246ELudKwnjQhnDI8+rSxgLxjztvQU3Mrb0G+LwDyOrPu9RNfekOjqU5GQ5QJepi225x+9LhCizJw==}
     engines: {node: '>=8.x'}
     peerDependencies:
       react: '>=16.9.0'
@@ -1630,8 +1660,8 @@ packages:
     resolution: {integrity: sha512-bk/FJ09fLf+NLODMAFll6CfYrHPBioTedhW6lxDBuuWucJEqFUd4l/D/5JgIi3dina6sYahB8iuPAZTNz2pMxw==}
     engines: {node: '>=8.x'}
 
-  '@rc-component/motion@1.3.2':
-    resolution: {integrity: sha512-itfd+GztzJYAb04Z4RkEub1TbJAfZc2Iuy8p44U44xD1F5+fNYFKI3897ijlbIyfvXkTmMm+KGcjkQQGMHywEQ==}
+  '@rc-component/motion@1.3.3':
+    resolution: {integrity: sha512-Xh3IszxvlSv3/PLYFyC2UZi9LNB83yOnkB/LNmRzaypZLvkhqUIPS7MQpGZcCMWrNsXV2p6YTSWbSGvFpEle9A==}
     peerDependencies:
       react: '>=16.9.0'
       react-dom: '>=16.9.0'
@@ -1656,8 +1686,8 @@ packages:
       react: '>=16.9.0'
       react-dom: '>=16.9.0'
 
-  '@rc-component/pagination@1.2.0':
-    resolution: {integrity: sha512-YcpUFE8dMLfSo6OARJlK6DbHHvrxz7pMGPGmC/caZSJJz6HRKHC1RPP001PRHCvG9Z/veD039uOQmazVuLJzlw==}
+  '@rc-component/pagination@1.3.0':
+    resolution: {integrity: sha512-12ahTY+HPITg1L2bjWKXUqBJe/oOnpA2QsChdCjthqLVf/e19StiCsv8OLKpWoHbc+8PFEkNjRqRqrLoRBHjFw==}
     peerDependencies:
       react: '>=16.9.0'
       react-dom: '>=16.9.0'
@@ -1709,6 +1739,13 @@ packages:
       react: '>=16.9.0'
       react-dom: '>=16.9.0'
 
+  '@rc-component/qrcode@2.0.0':
+    resolution: {integrity: sha512-aAv3QhPP1xyafuTZOxub6a54pCeBnN3IwQkpETrBtthq4BL5IgxnCbuoBWPDpdLw1y1j6BgBUCAKV92+yX06Dw==}
+    engines: {node: '>=8.x'}
+    peerDependencies:
+      react: '>=16.9.0'
+      react-dom: '>=16.9.0'
+
   '@rc-component/rate@1.0.1':
     resolution: {integrity: sha512-bkXxeBqDpl5IOC7yL7GcSYjQx9G8H+6kLYQnNZWeBYq2OYIv1MONd6mqKTjnnJYpV0cQIU2z3atdW0j1kttpTw==}
     engines: {node: '>=8.x'}
@@ -1728,8 +1765,8 @@ packages:
       react: '>=16.0.0'
       react-dom: '>=16.0.0'
 
-  '@rc-component/select@1.6.15':
-    resolution: {integrity: sha512-SyVCWnqxCQZZcQvQJ/CxSjx2bGma6ds/HtnpkIfZVnt6RoEgbqUmHgD6vrzNarNXwbLXerwVzWwq8F3d1sst7g==}
+  '@rc-component/select@1.7.1':
+    resolution: {integrity: sha512-GZ1cMJk2xQh0VHyOQjjG8drYL4iu24NcbkXioUcReQOCUr+ub/3fmRonZe6cRPEZhWMbJdeHsqnEltogDaZ5Tg==}
     engines: {node: '>=8.x'}
     peerDependencies:
       react: '*'
@@ -1782,8 +1819,8 @@ packages:
       react: '>=16.9.0'
       react-dom: '>=16.9.0'
 
-  '@rc-component/tree-select@1.9.0':
-    resolution: {integrity: sha512-GXcFe15a+trUl1/J3OHWQhsVWFpwFpGFK2cqYWZ1sK22Zs3KZTvMwDpzr75PIo1s6QVioVxpE/pRwRopkeDQ6w==}
+  '@rc-component/tree-select@1.10.0':
+    resolution: {integrity: sha512-E1U4pn2LAbXEhLJdzIzid7WYbIuFbkTIctuFoeC6weppf8UbPR3+YYB6/ay0c0ksand4gXMRQpa1Z60Auo7VJA==}
     peerDependencies:
       react: '*'
       react-dom: '*'
@@ -2561,8 +2598,8 @@ packages:
       antd: '>=6.0.0'
       react: '>=18'
 
-  antd@6.4.3:
-    resolution: {integrity: sha512-6H2avkxCGfxcF67r3J2mwm9Ck50el1pks/73vfM1wDsPL/tPtj5vHuauMgJFnrqmq7CH3g8aoZ0VBQbt+jpAsw==}
+  antd@6.4.4:
+    resolution: {integrity: sha512-lgPz4KhfhiYddV/qPYo0ieqWimCVgV2OQF72mbeGNixE753JWNnmEc7UNGy08wBS/zZ7hxrmX0pc5aX7EUaIIg==}
     peerDependencies:
       react: '>=18.0.0'
       react-dom: '>=18.0.0'
@@ -4380,6 +4417,11 @@ packages:
 
   lucide-react@1.16.0:
     resolution: {integrity: sha512-dYwyPzb4MEKpGUmNYk3WKWPnMrHs3FKM+q94kAnJrcDIqqn1hq2xY8scaS2ovsOCM5D51ey2gaRG3PBb1vgoYQ==}
+    peerDependencies:
+      react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
+
+  lucide-react@1.18.0:
+    resolution: {integrity: sha512-LZDb7H/0YfM+RJncD0hDQRCAu+vSGODqpe35TuVI8EuXaRjkczbsx7p8dY4J87F/MUSj6bpYqeI8nw8qXaAdmA==}
     peerDependencies:
       react: ^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
@@ -6997,10 +7039,10 @@ snapshots:
 
   '@lobehub/emojilib@1.0.0': {}
 
-  '@lobehub/fluent-emoji@4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@lobehub/fluent-emoji@4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@lobehub/emojilib': 1.0.0
-      antd-style: 4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd-style: 4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       emoji-regex: 10.6.0
       es-toolkit: 1.47.0
       lucide-react: 0.562.0(react@19.2.6)
@@ -7012,11 +7054,11 @@ snapshots:
       - antd
       - supports-color
 
-  '@lobehub/icons@5.10.0(@lobehub/ui@5.15.8)(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@lobehub/icons@5.10.0(@lobehub/ui@5.15.15)(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@lobehub/ui': 5.15.8(@lobehub/fluent-emoji@4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@lobehub/icons@5.10.0)(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      antd: 6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      antd-style: 4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@lobehub/ui': 5.15.15(@lobehub/fluent-emoji@4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@lobehub/icons@5.10.0)(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd: 6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd-style: 4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       es-toolkit: 1.47.0
       lucide-react: 0.469.0(react@19.2.6)
       polished: 4.3.1
@@ -7026,7 +7068,7 @@ snapshots:
       - '@types/react'
       - supports-color
 
-  '@lobehub/ui@5.15.8(@lobehub/fluent-emoji@4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@lobehub/icons@5.10.0)(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@lobehub/ui@5.15.15(@lobehub/fluent-emoji@4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@lobehub/icons@5.10.0)(@types/mdast@4.0.4)(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(micromark-util-types@2.0.2)(micromark@4.0.2)(motion@12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@ant-design/cssinjs': 2.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@base-ui/react': 1.5.0(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -7039,18 +7081,18 @@ snapshots:
       '@emotion/is-prop-valid': 1.4.0
       '@floating-ui/react': 0.27.19(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@giscus/react': 3.1.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@lobehub/fluent-emoji': 4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@lobehub/icons': 5.10.0(@lobehub/ui@5.15.8)(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@lobehub/fluent-emoji': 4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@lobehub/icons': 5.10.0(@lobehub/ui@5.15.15)(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@mdx-js/mdx': 3.1.1
       '@mdx-js/react': 3.1.1(@types/react@19.2.15)(react@19.2.6)
-      '@pierre/diffs': 1.2.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@radix-ui/react-slot': 1.2.4(@types/react@19.2.15)(react@19.2.6)
+      '@pierre/diffs': 1.2.8(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@radix-ui/react-slot': 1.2.5(@types/react@19.2.15)(react@19.2.6)
       '@shikijs/core': 4.2.0
       '@shikijs/transformers': 4.2.0
       '@splinetool/runtime': 0.9.526
       ahooks: 3.9.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      antd: 6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      antd-style: 4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd: 6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd-style: 4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       chroma-js: 3.2.0
       class-variance-authority: 0.7.1
       clsx: 2.1.1
@@ -7061,7 +7103,7 @@ snapshots:
       immer: 11.1.8
       katex: 0.16.47
       leva: 0.10.1(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      lucide-react: 1.16.0(react@19.2.6)
+      lucide-react: 1.18.0(react@19.2.6)
       marked: 17.0.6
       mermaid: 11.15.0
       motion: 12.40.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -7206,7 +7248,7 @@ snapshots:
       mkdirp: 1.0.4
       rimraf: 3.0.2
 
-  '@pierre/diffs@1.2.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@pierre/diffs@1.2.8(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@pierre/theme': 1.0.3
       '@shikijs/transformers': 3.23.0
@@ -7294,6 +7336,12 @@ snapshots:
       '@types/react-dom': 19.2.3(@types/react@19.2.15)
 
   '@radix-ui/react-compose-refs@1.1.2(@types/react@19.2.15)(react@19.2.6)':
+    dependencies:
+      react: 19.2.6
+    optionalDependencies:
+      '@types/react': 19.2.15
+
+  '@radix-ui/react-compose-refs@1.1.3(@types/react@19.2.15)(react@19.2.6)':
     dependencies:
       react: 19.2.6
     optionalDependencies:
@@ -7533,6 +7581,13 @@ snapshots:
     optionalDependencies:
       '@types/react': 19.2.15
 
+  '@radix-ui/react-slot@1.2.5(@types/react@19.2.15)(react@19.2.6)':
+    dependencies:
+      '@radix-ui/react-compose-refs': 1.1.3(@types/react@19.2.15)(react@19.2.6)
+      react: 19.2.6
+    optionalDependencies:
+      '@types/react': 19.2.15
+
   '@radix-ui/react-tabs@1.1.13(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@radix-ui/primitive': 1.1.3
@@ -7648,13 +7703,13 @@ snapshots:
 
   '@radix-ui/rect@1.1.1': {}
 
-  '@rc-component/async-validator@5.1.0':
+  '@rc-component/async-validator@6.0.0':
     dependencies:
       '@babel/runtime': 7.29.7
 
-  '@rc-component/cascader@1.15.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@rc-component/cascader@1.16.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/select': 1.6.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/select': 1.7.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/tree': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7671,7 +7726,7 @@ snapshots:
   '@rc-component/collapse@1.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@babel/runtime': 7.29.7
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
       react: 19.2.6
@@ -7693,7 +7748,7 @@ snapshots:
 
   '@rc-component/dialog@1.9.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/portal': 2.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7702,7 +7757,7 @@ snapshots:
 
   '@rc-component/drawer@1.4.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/portal': 2.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7717,9 +7772,9 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@rc-component/form@1.8.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@rc-component/form@1.8.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/async-validator': 5.1.0
+      '@rc-component/async-validator': 6.0.0
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
       react: 19.2.6
@@ -7727,7 +7782,7 @@ snapshots:
 
   '@rc-component/image@1.9.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/portal': 2.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7762,7 +7817,7 @@ snapshots:
 
   '@rc-component/menu@1.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/overflow': 1.0.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/trigger': 3.9.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -7774,7 +7829,7 @@ snapshots:
     dependencies:
       '@babel/runtime': 7.29.7
 
-  '@rc-component/motion@1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@rc-component/motion@1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7789,7 +7844,7 @@ snapshots:
 
   '@rc-component/notification@2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
       react: 19.2.6
@@ -7804,7 +7859,7 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@rc-component/pagination@1.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@rc-component/pagination@1.3.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7851,6 +7906,12 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
+  '@rc-component/qrcode@2.0.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+    dependencies:
+      '@babel/runtime': 7.29.7
+      react: 19.2.6
+      react-dom: 19.2.6(react@19.2.6)
+
   '@rc-component/rate@1.0.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -7867,13 +7928,13 @@ snapshots:
   '@rc-component/segmented@1.3.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@babel/runtime': 7.29.7
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@rc-component/select@1.6.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@rc-component/select@1.7.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@rc-component/overflow': 1.0.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/trigger': 3.9.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -7918,7 +7979,7 @@ snapshots:
     dependencies:
       '@rc-component/dropdown': 1.0.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/menu': 1.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/resize-observer': 1.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7942,9 +8003,9 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@rc-component/tree-select@1.9.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
+  '@rc-component/tree-select@1.10.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/select': 1.6.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/select': 1.7.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/tree': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7953,7 +8014,7 @@ snapshots:
 
   '@rc-component/tree@1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/virtual-list': 1.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       clsx: 2.1.1
@@ -7973,7 +8034,7 @@ snapshots:
 
   '@rc-component/trigger@3.9.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/portal': 2.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/resize-observer': 1.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -8762,7 +8823,7 @@ snapshots:
 
   ansi-styles@6.2.3: {}
 
-  antd-style@4.1.0(@types/react@19.2.15)(antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  antd-style@4.1.0(@types/react@19.2.15)(antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       '@ant-design/cssinjs': 2.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@babel/runtime': 7.29.7
@@ -8771,7 +8832,7 @@ snapshots:
       '@emotion/react': 11.14.0(@types/react@19.2.15)(react@19.2.6)
       '@emotion/serialize': 1.3.3
       '@emotion/utils': 1.4.2
-      antd: 6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      antd: 6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       use-merge-value: 1.2.0(react@19.2.6)
     transitivePeerDependencies:
@@ -8779,7 +8840,7 @@ snapshots:
       - react-dom
       - supports-color
 
-  antd@6.4.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
+  antd@6.4.4(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       '@ant-design/colors': 8.0.1
       '@ant-design/cssinjs': 2.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -8788,30 +8849,30 @@ snapshots:
       '@ant-design/icons': 6.2.5(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@ant-design/react-slick': 2.0.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@babel/runtime': 7.29.7
-      '@rc-component/cascader': 1.15.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/cascader': 1.16.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/checkbox': 2.0.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/collapse': 1.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/color-picker': 3.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/dialog': 1.9.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/drawer': 1.4.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/dropdown': 1.0.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@rc-component/form': 1.8.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/form': 1.8.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/image': 1.9.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/input': 1.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/input-number': 1.6.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/mentions': 1.9.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/menu': 1.3.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@rc-component/motion': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/motion': 1.3.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/mutate-observer': 2.0.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/notification': 2.0.7(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@rc-component/pagination': 1.2.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/pagination': 1.3.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/picker': 1.10.0(dayjs@1.11.21)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/progress': 1.0.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@rc-component/qrcode': 1.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/qrcode': 2.0.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/rate': 1.0.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/resize-observer': 1.1.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/segmented': 1.3.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@rc-component/select': 1.6.15(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/select': 1.7.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/slider': 1.0.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/steps': 1.2.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/switch': 1.0.3(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -8820,7 +8881,7 @@ snapshots:
       '@rc-component/tooltip': 1.4.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/tour': 2.4.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/tree': 1.3.2(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
-      '@rc-component/tree-select': 1.9.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@rc-component/tree-select': 1.10.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/trigger': 3.9.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/upload': 1.1.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@rc-component/util': 1.11.1(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -10928,6 +10989,10 @@ snapshots:
       react: 19.2.6
 
   lucide-react@1.16.0(react@19.2.6):
+    dependencies:
+      react: 19.2.6
+
+  lucide-react@1.18.0(react@19.2.6):
     dependencies:
       react: 19.2.6
 

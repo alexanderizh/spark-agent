@@ -10,6 +10,57 @@
   overflow: hidden;
 }
 
+/* 会话流内空态 / 加载态容器：flex:1 撑满聊天区高度，使内容垂直 + 水平居中
+   （从 styles/views.css 迁出至组件级 .less，并补上 flex:1 实现垂直居中）。 */
+.chat-stream-empty-state {
+  flex: 1;
+  min-height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 历史加载指示器：极简圆环 spinner + 呼吸文字，垂直居中 */
+.chat-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+
+  .chat-loading-spinner {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 3px solid color-mix(in srgb, var(--primary) 16%, transparent);
+    border-top-color: var(--primary);
+    animation: chat-loading-spin 0.75s linear infinite;
+    will-change: transform;
+  }
+
+  .chat-loading-text {
+    font-size: var(--font-sm);
+    color: var(--text-muted);
+    letter-spacing: 0.04em;
+    animation: chat-loading-pulse 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes chat-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chat-loading-pulse {
+  0%, 100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 /* 切换会话加载遮罩：保留旧内容并轻微变暗，待新历史就绪后一次性替换，避免空白闪屏 */
 .chat-switching-overlay {
   position: absolute;
@@ -72,12 +123,42 @@
 }
 
 .chat-layout > .inspector {
-  height: 100%;
+  /* 显式高度 + flex:0 让面板填满 flex 行高，并把溢出交给自身滚动条。
+     之前父级未约束 height 时 height:100% 会塌成内容高度，导致面板内长内容溢出而不可滚。 */
+  align-self: stretch;
+  flex: 0 0 auto;
+  height: auto;
+  max-height: 100%;
   min-height: 0;
   padding-bottom: 30px;
   overflow-y: auto;
   overflow-x: hidden;
   overscroll-behavior: contain;
+
+  /* 滚动条样式：悬停时显示 */
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    min-height: 32px;
+    background: transparent;
+    border-radius: 999px;
+    transition: background 0.3s ease;
+  }
+  &:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-muted) 28%, transparent);
+  }
+  &:hover::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--text-muted) 50%, transparent);
+  }
+  &::-webkit-scrollbar-button { display: none; }
+
+  /* 确保 section 不被 flex 父级压缩 */
+  > .inspector-section,
+  > .team-inspector {
+    flex-shrink: 0;
+  }
 }
 
 /* These fill the available flex height inside the shell. .chat-main's own
@@ -309,20 +390,18 @@
 
 .composer-actions-popup {
   position: absolute;
-  bottom: calc(100% + 6px);
+  bottom: calc(100% + 8px);
   left: 0;
   z-index: 50;
-  min-width: 200px;
-  padding: 4px;
-  background: var(--bg-elevated, var(--color-bg-2, #fff));
-  border: 1px solid var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.08)));
-  border-radius: 10px;
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.08),
-    0 1px 2px rgba(0, 0, 0, 0.04);
+  min-width: 184px;
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   animation: composer-actions-popup-in 120ms ease-out;
 }
 
@@ -342,30 +421,39 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
-  border-radius: 6px;
+  min-height: 32px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
   background: transparent;
   border: none;
-  color: var(--text-1);
-  font-size: 13px;
-  line-height: 18px;
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: 20px;
   cursor: pointer;
   text-align: left;
   width: 100%;
-  transition: background-color 100ms ease;
+  transition: background-color 120ms ease, color 120ms ease;
 
   &:hover,
   &:focus-visible {
-    background: var(--fill-2);
+    background: var(--hover);
+    color: var(--text-strong);
     outline: none;
   }
 
   &.has-sub {
-    padding-right: 6px;
+    padding-right: 7px;
   }
 
   &.sub-open {
-    background: var(--fill-2);
+    background: var(--hover);
+    color: var(--text-strong);
+  }
+
+  &:hover .composer-actions-item-icon,
+  &:focus-visible .composer-actions-item-icon,
+  &.sub-open .composer-actions-item-icon {
+    color: var(--primary);
   }
 }
 
@@ -375,59 +463,43 @@
   justify-content: center;
   width: 16px;
   height: 16px;
-  color: var(--text-2);
+  color: var(--text-muted);
   flex-shrink: 0;
+  transition: color 120ms ease;
 }
 
 .composer-actions-item-label {
   flex: 1 1 auto;
   min-width: 0;
+  white-space: nowrap;
 }
 
 .composer-actions-item-chev {
-  color: var(--text-3, var(--text-2));
+  color: var(--text-faint);
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
 }
 
-.composer-actions-item-badge {
-  font-size: 11px;
-  line-height: 14px;
-  color: var(--text-3);
-  background: var(--fill-2);
-  border-radius: 999px;
-  padding: 1px 6px;
-  flex-shrink: 0;
-}
-
-.composer-actions-divider {
-  height: 1px;
-  background: var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.06)));
-  margin: 4px 0;
-}
-
 /* ─── 技能子菜单：从主菜单右侧偏移展开 ─── */
 .composer-actions-sub {
   position: absolute;
-  left: calc(100% + 4px);
+  left: calc(100% + 6px);
   top: 0;
   bottom: auto;
-  min-width: 180px;
-  max-width: 240px;
+  min-width: 188px;
+  max-width: 260px;
   max-height: 320px;
   overflow-y: auto;
-  padding: 4px;
-  background: var(--bg-elevated, var(--color-bg-2, #fff));
-  border: 1px solid var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.08)));
-  border-radius: 10px;
-  box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.08),
-    0 1px 2px rgba(0, 0, 0, 0.04);
+  padding: 5px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
   z-index: 51;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
 }
 
 .composer-actions-sub-list {
@@ -440,26 +512,33 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  min-height: 30px;
+  padding: 0 9px;
+  border-radius: var(--r-sm);
   background: transparent;
   border: none;
-  color: var(--text-1);
-  font-size: 12.5px;
-  line-height: 16px;
+  color: var(--text);
+  font-size: var(--font-sm);
+  line-height: 18px;
   cursor: pointer;
   text-align: left;
   width: 100%;
-  transition: background-color 100ms ease;
+  transition: background-color 120ms ease, color 120ms ease;
 
   &:hover,
   &:focus-visible {
-    background: var(--fill-2);
+    background: var(--hover);
+    color: var(--text-strong);
     outline: none;
   }
 
   &.is-utility {
-    color: var(--text-2);
+    color: var(--text-muted);
+  }
+
+  &:hover .composer-actions-sub-item-icon,
+  &:focus-visible .composer-actions-sub-item-icon {
+    color: var(--primary);
   }
 }
 
@@ -469,8 +548,9 @@
   justify-content: center;
   width: 14px;
   height: 14px;
-  color: var(--text-3, var(--text-2));
+  color: var(--text-faint);
   flex-shrink: 0;
+  transition: color 120ms ease;
 }
 
 .composer-actions-sub-item-name {
@@ -485,16 +565,17 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 10px;
-  color: var(--text-3);
-  font-size: 12.5px;
-  line-height: 16px;
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--text-faint);
+  font-size: var(--font-sm);
+  line-height: 18px;
 }
 
 .composer-actions-sub-divider {
   height: 1px;
-  background: var(--border-soft, var(--color-border-2, rgba(0, 0, 0, 0.06)));
-  margin: 4px 0;
+  background: var(--divider);
+  margin: 4px 2px;
 }
 
 /* 当子菜单接近视口右边缘时，反向到左侧展开 */

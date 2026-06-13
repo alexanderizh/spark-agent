@@ -4397,6 +4397,23 @@ body.inspector-resizing {
   font-size: var(--font-xs);
   line-height: 1.45;
   color: var(--text);
+  min-width: 0;
+}
+.inspector-plan-item .text {
+  flex: 1 1 auto;
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+.inspector-plan-item .text code,
+.inspector-plan-item .text .plan-inline-code {
+  padding: 0 4px;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 0.92em;
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  word-break: break-all;
 }
 .inspector-plan-item.done .text {
   color: var(--text-muted);
@@ -5265,13 +5282,7 @@ body.inspector-resizing {
   }
 }
 
-/* --- Chat stream empty state (inside stream) --- */
-.chat-stream-empty-state {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 200px;
-}
+/* Chat stream empty/loading state moved to ChatView.less (component-level) */
 
 /* ============================================================
    WORKFLOW VIEW
@@ -10450,35 +10461,51 @@ body.inspector-resizing {
 
 /* ===== Plan approval modal ===== */
 .plan-approval-modal {
-  width: min(720px, 92vw);
-  max-height: 80vh;
+  width: min(960px, 94vw);
+  max-height: 86vh;
   display: flex;
   flex-direction: column;
 }
 .plan-approval-modal .modal-body {
   flex: 1;
   overflow-y: auto;
-  max-height: 60vh;
+  max-height: 68vh;
 }
 .plan-approval-preview {
-  padding: 12px 14px;
+  padding: 14px 18px;
   background: var(--bg-soft);
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
+  font-size: var(--font-sm);
+  line-height: 1.65;
 }
 .plan-approval-textarea {
   width: 100%;
   resize: vertical;
-  min-height: 200px;
-  padding: 10px 12px;
+  min-height: 320px;
+  padding: 12px 14px;
   font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12.5px;
-  line-height: 1.5;
+  font-size: 13px;
+  line-height: 1.55;
   color: var(--text);
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   box-sizing: border-box;
+}
+.plan-approval-foot {
+  gap: 10px;
+  padding-top: 12px;
+}
+.plan-approval-foot .btn {
+  height: 36px;
+  padding: 0 18px;
+  font-size: var(--font-sm);
+  border-radius: var(--r-sm);
+}
+.plan-approval-foot .btn.primary {
+  padding: 0 22px;
+  font-weight: 600;
 }
 .plan-approval-textarea:focus {
   outline: none;

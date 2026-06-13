@@ -12,6 +12,8 @@ import {
 } from '@spark/ui-kit'
 import { AppProvider, useApp } from '../design/AppContext'
 import { SparkCheckbox, SparkTextarea } from '../design/components/FormControls'
+import { ComposerActionsMenu } from '../design/components/ComposerActionsMenu'
+import { ToastProvider } from '../design/components/Toast'
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -22,6 +24,10 @@ class ResizeObserverMock {
 
 function click(element: Element) {
   element.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+}
+
+function mouseOver(element: Element) {
+  element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, cancelable: true }))
 }
 
 function pointerDown(element: Element) {
@@ -231,5 +237,81 @@ describe('Desktop UI system overlays', () => {
     })
 
     expect(container.querySelector('[data-testid="form-state"]')?.textContent).toBe('ready:true')
+  })
+
+  it('omits the placeholder summarize action from the composer add menu', () => {
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <ComposerActionsMenu
+            onAddAttachments={vi.fn()}
+            onInsertSkillMention={vi.fn()}
+          />
+        </ToastProvider>,
+      )
+    })
+
+    act(() => {
+      const trigger = container.querySelector<HTMLButtonElement>('.composer-actions-trigger')
+      expect(trigger).not.toBeNull()
+      if (trigger == null) throw new Error('Composer actions trigger missing')
+      click(trigger)
+    })
+
+    expect(container.textContent).toContain('添加文件或图片')
+    expect(container.textContent).toContain('技能')
+    expect(container.textContent).not.toContain('总结')
+  })
+
+  it('closes the skills submenu when hovering another composer add menu item', async () => {
+    vi.stubGlobal('spark', {
+      invoke: vi.fn(async () => ({ skills: [] })),
+      on: vi.fn(() => vi.fn()),
+    })
+
+    act(() => {
+      root = createRoot(container)
+      root.render(
+        <ToastProvider>
+          <ComposerActionsMenu
+            onAddAttachments={vi.fn()}
+            onInsertSkillMention={vi.fn()}
+          />
+        </ToastProvider>,
+      )
+    })
+
+    await act(async () => {
+      const trigger = container.querySelector<HTMLButtonElement>('.composer-actions-trigger')
+      expect(trigger).not.toBeNull()
+      if (trigger == null) throw new Error('Composer actions trigger missing')
+      click(trigger)
+    })
+
+    const addItem = Array.from(container.querySelectorAll<HTMLElement>('.composer-actions-item'))
+      .find((item) => item.textContent?.includes('添加文件或图片'))
+    const skillItem = Array.from(container.querySelectorAll<HTMLElement>('.composer-actions-item'))
+      .find((item) => item.textContent?.includes('技能'))
+
+    expect(addItem).toBeDefined()
+    expect(skillItem).toBeDefined()
+    if (addItem == null || skillItem == null) throw new Error('Composer menu items missing')
+
+    await act(async () => {
+      mouseOver(skillItem)
+      await Promise.resolve()
+    })
+
+    expect(skillItem.classList.contains('sub-open')).toBe(true)
+    expect(container.querySelector('.composer-actions-sub')).not.toBeNull()
+
+    await act(async () => {
+      mouseOver(addItem)
+      await Promise.resolve()
+    })
+
+    expect(skillItem.classList.contains('sub-open')).toBe(false)
+    expect(container.querySelector('.composer-actions-sub')).toBeNull()
   })
 })

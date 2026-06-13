@@ -235,6 +235,52 @@ export function HunkDiff({ path, hunks }: { path: string; hunks: Hunk[] }) {
 }
 
 type PlanItem = { status: 'done' | 'running' | 'pending'; text: string; meta?: string }
+
+/**
+ * 计划条目文本支持轻量 markdown 渲染：
+ *   - `code`  → <code>
+ *   - **bold** → <strong>
+ *   - *italic* → <em>
+ *   - [text](url) → <a>
+ * 仅用于单行场景；多行/代码块由上层 MarkdownText 处理。
+ */
+function renderPlanInline(text: string): ReactNode[] {
+  // 1) 先按 ` 切出 code 段，避免内部再次匹配
+  const out: ReactNode[] = []
+  const codeParts = text.split(/(`[^`]+`)/g)
+  codeParts.forEach((part, ci) => {
+    if (/^`[^`]+`$/.test(part)) {
+      out.push(<code key={`c${ci}`} className="plan-inline-code">{part.slice(1, -1)}</code>)
+      return
+    }
+    // 2) 再按链接切
+    const linkParts = part.split(/(\[[^\]]+\]\([^)]+\))/g)
+    linkParts.forEach((sub, li) => {
+      const linkMatch = sub.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
+      if (linkMatch) {
+        out.push(
+          <a key={`c${ci}l${li}`} href={linkMatch[2]} target="_blank" rel="noreferrer">
+            {linkMatch[1]}
+          </a>,
+        )
+        return
+      }
+      // 3) 粗体 / 斜体
+      const segs = sub.split(/(\*\*[^*]+\*\*|\*[^*]+\*)/g)
+      segs.forEach((seg, si) => {
+        if (/^\*\*[^*]+\*\*$/.test(seg)) {
+          out.push(<strong key={`c${ci}l${li}b${si}`}>{seg.slice(2, -2)}</strong>)
+        } else if (/^\*[^*]+\*$/.test(seg)) {
+          out.push(<em key={`c${ci}l${li}i${si}`}>{seg.slice(1, -1)}</em>)
+        } else if (seg.length > 0) {
+          out.push(<span key={`c${ci}l${li}t${si}`}>{seg}</span>)
+        }
+      })
+    })
+  })
+  return out
+}
+
 export function PlanCard({ title, items }: { title: string; items: PlanItem[] }) {
   const done = items.filter((it) => it.status === 'done').length
   return (
@@ -250,7 +296,7 @@ export function PlanCard({ title, items }: { title: string; items: PlanItem[] })
         {items.map((it, i) => (
           <div key={i} className={`plan-item ${it.status}`}>
             <span className="check">{it.status === 'done' && <Icons.Check />}</span>
-            <span className="text">{it.text}</span>
+            <span className="text">{renderPlanInline(it.text)}</span>
             {it.meta && <span className="meta">{it.meta}</span>}
           </div>
         ))}
@@ -258,6 +304,8 @@ export function PlanCard({ title, items }: { title: string; items: PlanItem[] })
     </div>
   )
 }
+
+export { renderPlanInline }
 
 export function Checkpoint({
   num,

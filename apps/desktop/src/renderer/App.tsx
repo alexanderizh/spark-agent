@@ -27,6 +27,7 @@ import { McpView } from './design/views/McpView'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
 import ProvidersView from './design/views/ProvidersView'
+import { LobePreviewView } from './design/theme/LobePreviewView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
@@ -493,6 +494,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
               <Icons.Settings size={14} /> Settings
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { setTweak('view', 'lobe-preview'); setUserMenuOpen(false) }}>
+              <Icons.Layers size={14} /> Lobe UI 沙箱
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
         {/* Linux: custom HTML controls in sidebar. Windows/macOS use their own title bars. */}
@@ -737,6 +741,8 @@ function Shell() {
         return <McpView />
       case 'settings':
         return <SettingsView />
+      case 'lobe-preview':
+        return <LobePreviewView />
       default:
         return (
           <ChatView
