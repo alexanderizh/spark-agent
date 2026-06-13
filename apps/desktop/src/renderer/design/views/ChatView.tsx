@@ -9,7 +9,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMe
 import './ChatView.less'
 import './ToolDropdown.less'
 import type { JSX, ReactNode, RefObject } from 'react'
-import { Button } from '@arco-design/web-react'
+import { Button, Tag as LobeTag } from '@lobehub/ui'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import {
@@ -32,7 +32,7 @@ import {
   ToolChooser,
   TurnFileSummaryCard,
 } from '../ChatInteractions'
-import { SparkInput, SparkTextarea } from '../components/FormControls'
+import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
 import { MarkdownCodeBlock } from '../components/MarkdownCodeBlock'
@@ -261,7 +261,8 @@ const COMPOSER_PREFS_KEY = 'spark-agent:composer-prefs'
 const COMPOSER_DRAFTS_KEY = 'spark-agent:composer-drafts'
 const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
-const SESSION_HISTORY_PAGE_SIZE = 500
+const CHAT_MESSAGE_ESTIMATED_HEIGHT = 180
+const CHAT_MESSAGE_OVERSCAN = 8
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
 /**
@@ -581,7 +582,7 @@ export function ChatView({
   useEffect(() => {
     const handler = () => {
       // Scroll chat area to bottom
-      const scrollEl = chatAreaRef.current?.querySelector('.chat-stream')
+      const scrollEl = chatAreaRef.current?.querySelector('.chat-stream-inner')
       if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
       // Trigger composer focus (increment counter → ComposerV2 reacts)
       setComposerFocusTrigger((n) => n + 1)
@@ -638,6 +639,11 @@ export function ChatView({
     [],
   )
 
+  const runningTeamAgentIds = useMemo(
+    () => (teamConfig.enabled ? extractRunningTeamMemberIds(activeMessages) : []),
+    [activeMessages, teamConfig.enabled],
+  )
+
   const composerNode = active == null ? (
     <ComposerV2
       session={activeSession}
@@ -670,6 +676,7 @@ export function ChatView({
       effectiveHostAgentId={effectiveHostAgentId}
       onChangeTeamConfig={updateTeamConfig}
       onOpenTeamInspector={() => setShowInspector(true)}
+      runningTeamAgentIds={runningTeamAgentIds}
       replyTo={null}
     />
   ) : (
@@ -704,6 +711,7 @@ export function ChatView({
       effectiveHostAgentId={effectiveHostAgentId}
       onChangeTeamConfig={updateTeamConfig}
       onOpenTeamInspector={() => setShowInspector(true)}
+      runningTeamAgentIds={runningTeamAgentIds}
       replyTo={showEmptyHero ? null : replyTo}
       onClearReply={() => setReplyTo(null)}
     />
@@ -1607,6 +1615,7 @@ function ChatStream({
 
 type GetSessionHistory = (request: {
   sessionId: SessionId
+  full?: boolean
   limit?: number
   beforeSeq?: number
 }) => Promise<{ events: AgentEvent[]; hasMore: boolean }>
@@ -1615,29 +1624,8 @@ async function loadCompleteSessionHistory(
   getHistory: GetSessionHistory,
   sessionId: SessionId,
 ): Promise<AgentEvent[]> {
-  const pages: AgentEvent[][] = []
-  let beforeSeq: number | undefined
-
-  for (let page = 0; page < 200; page++) {
-    const res = await getHistory({
-      sessionId,
-      limit: SESSION_HISTORY_PAGE_SIZE,
-      ...(beforeSeq !== undefined ? { beforeSeq } : {}),
-    })
-    pages.unshift(res.events)
-    if (!res.hasMore || res.events.length === 0) break
-
-    const nextBeforeSeq = getFirstEventSeq(res.events)
-    if (nextBeforeSeq === undefined || nextBeforeSeq === beforeSeq) break
-    beforeSeq = nextBeforeSeq
-  }
-
-  return pages.flat()
-}
-
-function getFirstEventSeq(events: AgentEvent[]): number | undefined {
-  const first = events[0]
-  return typeof first?.seq === 'number' ? first.seq : undefined
+  const res = await getHistory({ sessionId, full: true })
+  return res.events
 }
 
 function mergeSessionEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
@@ -2031,11 +2019,14 @@ function normalizeToolName(name: string): string {
 /** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
 function TeamDispatchBlockView({ block }: { block: Extract<UIBlock, { kind: 'team_dispatch' }> }) {
   const { agents } = useSessionSidebar()
-  const memberName = agents.find((a) => a.id === block.memberAgentId)?.name ?? block.memberAgentId
+  const member = agents.find((a) => a.id === block.memberAgentId)
+  const memberName = member?.name ?? block.memberAgentId
+  const avatar = getAgentAvatarConfig(member?.metadata, block.memberAgentId, memberName)
   return (
     <TeamDispatchCard
       task={block.task}
       memberName={memberName}
+      avatarSrc={resolveAvatarSrc(avatar)}
       state={block.state}
       {...(block.reply != null ? { reply: block.reply } : {})}
     />
@@ -2977,9 +2968,8 @@ export function MarkdownText({
                     className={item.checked !== undefined ? 'md-task' : undefined}
                   >
                     {item.checked !== undefined && (
-                      <SparkInput
+                      <input
                         type="checkbox"
-                        className="spark-checkbox"
                         checked={item.checked}
                         readOnly
                       />
@@ -4488,7 +4478,7 @@ function ToolLogGroup({
       <Button
         className="tool-log-summary"
         type="text"
-        size="mini"
+        size="small"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
@@ -5415,6 +5405,7 @@ function ComposerV2({
   effectiveHostAgentId,
   onChangeTeamConfig,
   onOpenTeamInspector,
+  runningTeamAgentIds = [],
   replyTo,
   onClearReply,
   focusTrigger = 0,
@@ -5431,6 +5422,7 @@ function ComposerV2({
   effectiveHostAgentId: string | null
   onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
   onOpenTeamInspector: () => void
+  runningTeamAgentIds?: string[]
   branchState: BranchState
   contextInputTokens: number
   contextUsage: ContextUsageState | null
@@ -5603,6 +5595,16 @@ function ComposerV2({
     selectedProvider != null &&
     effectiveModelId.length > 0
   const showTaskQueue = queuedMessages.length > 0
+  const runningTeamAgents = useMemo(() => {
+    if (!teamConfig.enabled || runningTeamAgentIds.length === 0) return []
+    const uniqueIds = Array.from(new Set(runningTeamAgentIds))
+    return uniqueIds.map((id) => {
+      const agent = agents.find((item) => item.id === id)
+      return { id, name: agent?.name ?? id }
+    })
+  }, [agents, runningTeamAgentIds, teamConfig.enabled])
+  const visibleRunningTeamAgents = runningTeamAgents.slice(0, 3)
+  const hiddenRunningTeamAgentCount = Math.max(0, runningTeamAgents.length - visibleRunningTeamAgents.length)
 
   const updateDraft = useCallback(
     (updater: (draft: ComposerDraftSnapshot) => ComposerDraftSnapshot) => {
@@ -7046,6 +7048,32 @@ function ComposerV2({
                     </div>
                   ))}
                 </div>
+              )}
+            </div>
+          )}
+          {visibleRunningTeamAgents.length > 0 && (
+            <div className="composer-running-agents" aria-live="polite">
+              {visibleRunningTeamAgents.map((agent) => (
+                <LobeTag
+                  key={agent.id}
+                  className="composer-running-agent-tag"
+                  color="blue"
+                  size="small"
+                  title={`${agent.name} 执行中...`}
+                >
+                  <span className="composer-running-agent-dot" aria-hidden="true" />
+                  <span className="composer-running-agent-name">{agent.name}</span>
+                  <span className="composer-running-agent-state">执行中...</span>
+                </LobeTag>
+              ))}
+              {hiddenRunningTeamAgentCount > 0 && (
+                <LobeTag
+                  className="composer-running-agent-tag composer-running-agent-more"
+                  color="default"
+                  size="small"
+                >
+                  +{hiddenRunningTeamAgentCount}
+                </LobeTag>
               )}
             </div>
           )}
@@ -10088,9 +10116,9 @@ function UserQuestionWizard({
               <div className="user-question-other">
                 <div className="user-question-other-label">{otherLabel}</div>
                 <div className="user-question-input-wrap">
-                  <SparkInput
+                  <LobeInput
                     value={currentDraft.otherText ?? ''}
-                    onChange={(event) => handleOtherTextChange(event.target.value)}
+                    onChange={(e) => handleOtherTextChange(e.target.value)}
                     placeholder={otherInputPlaceholder}
                     disabled={submitted}
                   />
@@ -10100,9 +10128,9 @@ function UserQuestionWizard({
           ) : (
             <div className="user-question-input-wrap">
               {currentQuestion.multiline ? (
-                <SparkTextarea
+                <LobeTextArea
                   value={currentDraft.text ?? ''}
-                  onChange={(event) => handleTextChange(event.target.value)}
+                  onChange={(e) => handleTextChange(e.target.value)}
                   placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
                   disabled={submitted}
                   rows={5}
@@ -10110,9 +10138,9 @@ function UserQuestionWizard({
                   autoFocus
                 />
               ) : (
-                <SparkInput
+                <LobeInput
                   value={currentDraft.text ?? ''}
-                  onChange={(event) => handleTextChange(event.target.value)}
+                  onChange={(e) => handleTextChange(e.target.value)}
                   placeholder={currentQuestion.placeholder ?? '请输入您的回答'}
                   disabled={submitted}
                   autoFocus
