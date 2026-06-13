@@ -28,6 +28,16 @@ import type {
   ScheduledTaskImportResult,
   ScheduledTaskImportMode,
 } from '../scheduled-task-export.js'
+import type {
+  HistoryImportSource,
+  HistoryImportScanRequest,
+  HistoryImportScanResponse,
+  HistoryImportPreviewRequest,
+  HistoryImportPreviewResponse,
+  HistoryImportRequest,
+  HistoryImportResponse,
+  HistoryImportProgress,
+} from '../history-import.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
 export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
@@ -155,6 +165,8 @@ export interface SessionCancelResponse {
 
 export interface SessionGetHistoryRequest {
   sessionId: SessionId
+  /** 一次性取完整历史，避免大会话切换时反复 IPC 分页。 */
+  full?: boolean
   /** 分页：取最近 N 个事件 */
   limit?: number
   /** 分页：游标（上次返回的最小 seq）*/
@@ -309,6 +321,8 @@ export interface SessionListResponse {
     createdAt: string
     updatedAt: string
     messageCount: number
+    /** 若该会话由宿主机历史导入而来，标记来源（用于侧边栏来源徽标）*/
+    importedFrom?: HistoryImportSource
   }>
   total: number
 }
@@ -3340,6 +3354,11 @@ export interface IpcChannelMap {
   'provider:export-to-file': [ProviderExportToFileRequest, ProviderExportToFileResponse]
   'provider:import-from-file': [ProviderImportFromFileRequest, ProviderImportFromFileResponse]
 
+  // History Import（检测 + 导入宿主机 Claude Code / Codex 对话历史）
+  'history-import:scan': [HistoryImportScanRequest, HistoryImportScanResponse]
+  'history-import:preview': [HistoryImportPreviewRequest, HistoryImportPreviewResponse]
+  'history-import:import': [HistoryImportRequest, HistoryImportResponse]
+
   // Workspace
   'workspace:open': [WorkspaceOpenRequest, WorkspaceOpenResponse]
   'workspace:get-current': [WorkspaceGetCurrentRequest, WorkspaceGetCurrentResponse]
@@ -3679,6 +3698,8 @@ export interface IpcStreamChannelMap {
     status: 'connected' | 'disconnected' | 'error'
     message?: string
   }
+  /** 历史导入进度（主进程推送，渲染进程更新进度条）*/
+  'stream:history-import:progress': HistoryImportProgress
   /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
   'stream:config:changed': {
     scope: 'provider' | 'agent' | 'skill' | 'mcp' | 'rule' | 'prompt'

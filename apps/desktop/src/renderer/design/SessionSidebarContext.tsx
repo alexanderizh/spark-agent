@@ -128,6 +128,8 @@ type SessionSidebarCtx = {
 
   // Agent status per session (fine-grained: waiting_permission, waiting_user, etc.)
   sessionAgentStatuses: Record<string, AgentStatusValue>
+  // Session IDs that just completed but the user hasn't viewed since — drives the blue unread dot
+  unreviewedCompletedSessions: Set<string>
 
   // Computed
   projectGroups: ProjectGroup[]
@@ -177,6 +179,10 @@ type SessionSidebarCtx = {
   justCreatedSessionRef: React.MutableRefObject<SessionId | null>
   selectedProviderId: string
   setSelectedProviderId: (id: string) => void
+
+  // History import (检测/导入宿主机 Claude Code / Codex 对话历史)
+  historyImportOpen: boolean
+  setHistoryImportOpen: (open: boolean) => void
 }
 
 const Ctx = createContext<SessionSidebarCtx | null>(null)
@@ -186,10 +192,21 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [workspaces, setWorkspaces] = useState<WorkspaceInfo[]>([])
   const [providers, setProviders] = useState<ProviderProfile[]>([])
   const [agents, setAgents] = useState<ManagedAgent[]>([])
-  const [active, setActive] = useState<SessionId | null>(() => {
+  const [active, setActiveRaw] = useState<SessionId | null>(() => {
     const stored = window.localStorage.getItem(LAST_SESSION_KEY)
     return stored as SessionId | null ?? null
   })
+  const setActive = useCallback((id: SessionId | null) => {
+    setActiveRaw(id)
+    if (id) {
+      setUnreviewedCompleted(prev => {
+        if (!prev.has(id)) return prev
+        const next = new Set(prev)
+        next.delete(id)
+        return next
+      })
+    }
+  }, [])
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null)
   const [noProjectWorkspaceId, setNoProjectWorkspaceId] = useState<string | null>(null)
   const [selectedProviderId, setSelectedProviderId] = useState('')
@@ -197,8 +214,13 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const [projectName, setProjectName] = useState('')
   const [projectPath, setProjectPath] = useState('')
   const [projectNotice, setProjectNotice] = useState('')
+  const [historyImportOpen, setHistoryImportOpen] = useState(false)
   const [sessionAgentStatuses, setSessionAgentStatuses] = useState<Record<string, AgentStatusValue>>({})
+  // Sessions that just completed but the user hasn't viewed yet — used for the blue "unread" dot
+  const [unreviewedCompleted, setUnreviewedCompleted] = useState<Set<string>>(() => new Set())
   const justCreatedSessionRef = useRef<SessionId | null>(null)
+  const activeRef = useRef<SessionId | null>(active)
+  useEffect(() => { activeRef.current = active }, [active])
   const { toast } = useToast()
   const { requestConfirm, requestPrompt } = useApp()
 
@@ -275,6 +297,15 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         if (current === status) return prev
         return { ...prev, [sessionId]: status }
       })
+      // Mark as unreviewed on completion (for the blue dot) — unless the user is already viewing it
+      if (status === 'completed' && activeRef.current !== sessionId) {
+        setUnreviewedCompleted(prev => {
+          if (prev.has(sessionId)) return prev
+          const next = new Set(prev)
+          next.add(sessionId)
+          return next
+        })
+      }
     }) ?? (() => {})
   }, [])
 
@@ -607,7 +638,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     sessions, workspaces, providers, agents,
     activeSessionId: active, activeWorkspaceId,
     setActiveSession: setActive, setActiveWorkspace: setActiveWorkspaceId,
-    sessionAgentStatuses,
+    sessionAgentStatuses, unreviewedCompletedSessions: unreviewedCompleted,
     projectGroups, noProjectWorkspace, noProjectSessions, ungroupedSessions,
     refreshData, updateSessionInList, bumpSessionMessageCount, handleNewSession,
     handleToggleSessionPinned, handleRenameSession, handleDeleteSession,
@@ -619,9 +650,10 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     projectPath, setProjectPath, projectNotice,
     searchSessions, ensureNoProjectWorkspace,
     justCreatedSessionRef, selectedProviderId, setSelectedProviderId,
+    historyImportOpen, setHistoryImportOpen,
   }), [
     sessions, workspaces, providers, agents, active, activeWorkspaceId,
-    sessionAgentStatuses,
+    sessionAgentStatuses, unreviewedCompleted,
     projectGroups, noProjectWorkspace, noProjectSessions, ungroupedSessions,
     refreshData, updateSessionInList, bumpSessionMessageCount, handleNewSession,
     handleToggleSessionPinned, handleRenameSession, handleDeleteSession,
@@ -631,6 +663,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     handleCreateProject, handlePickProjectPath,
     projectDialog, projectName, projectPath, projectNotice,
     searchSessions, ensureNoProjectWorkspace, selectedProviderId,
+    historyImportOpen,
   ])
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>

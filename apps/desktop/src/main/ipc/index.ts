@@ -19,6 +19,8 @@ import path from 'node:path'
 import { promisify } from 'node:util'
 import { createLogger, deriveTeamAvatar } from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
+import { HistoryImportService } from '../services/HistoryImport/HistoryImportService.js'
+import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
 import { registerAuthIpc } from '../services/Auth/registerAuthIpc.js'
 import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
@@ -76,6 +78,8 @@ import type {
   ManagedTeam,
   TeamA2ATask,
   TeamA2AReply,
+  HistoryImportSource,
+  HistoryImportProgress,
 } from '@spark/protocol'
 import type {
   SessionEventHandler,
@@ -753,6 +757,64 @@ function getSessionService(): SessionService {
   return _sessionService
 }
 
+/**
+ * 按来源解析导入会话使用的 Provider / adapter：
+ *   claude-code → 本地 Claude CLI provider（不可用则任一 anthropic / 默认 provider）
+ *   codex       → 本地 Codex CLI provider（不可用则任一 openai / 默认 provider）
+ */
+async function resolveImportProvider(
+  source: HistoryImportSource,
+): Promise<ImportProviderResolution> {
+  const svc = getProviderService()
+  const profiles = await svc.listProviders()
+  const pickFallback = (preferred: 'anthropic' | 'openai') =>
+    profiles.find((p) => p.provider === preferred) ??
+    profiles.find((p) => p.isDefault) ??
+    profiles[0]
+
+  if (source === 'claude-code') {
+    let profileId: string | undefined
+    if (await svc.isLocalCliAvailable()) {
+      profileId = (await svc.ensureLocalCliProvider()).id
+    } else {
+      profileId = pickFallback('anthropic')?.id
+    }
+    if (profileId == null) throw new Error('没有可用的 Provider，请先在「Providers」中添加')
+    return { providerProfileId: profileId, agentAdapter: 'claude-sdk', permissionMode: 'claude-ask' }
+  }
+
+  let profileId: string | undefined
+  if (await svc.isLocalCodexCliAvailable()) {
+    profileId = (await svc.ensureLocalCodexCliProvider()).id
+  } else {
+    profileId = pickFallback('openai')?.id
+  }
+  if (profileId == null) throw new Error('没有可用的 Provider，请先在「Providers」中添加')
+  return { providerProfileId: profileId, agentAdapter: 'codex', permissionMode: 'codex-default' }
+}
+
+/** 构造一次性 HistoryImportService（可选进度回调） */
+function createHistoryImportService(
+  onProgress?: (progress: HistoryImportProgress) => void,
+): HistoryImportService {
+  return new HistoryImportService({
+    db: getDatabase(),
+    resolveProvider: resolveImportProvider,
+    createSession: async (params) => {
+      const created = await getSessionService().createSession({
+        title: params.title,
+        workspaceId: params.workspaceId,
+        providerProfileId: params.providerProfileId,
+        agentAdapter: params.agentAdapter,
+        permissionMode: params.permissionMode,
+        ...(params.modelId != null ? { modelId: params.modelId } : {}),
+      })
+      return { sessionId: created.sessionId }
+    },
+    ...(onProgress != null ? { onProgress } : {}),
+  })
+}
+
 /** Resolve a pending user question with the provided answers */
 export function resolveUserQuestion(questionId: string, answers: Record<string, unknown>): void {
   const resolver = pendingQuestionResolvers.get(questionId)
@@ -1375,6 +1437,34 @@ export function registerAllIpcHandlers(): void {
     }
 
     return { payload: parsed as ProviderExportPayload, filePath }
+  })
+
+  // ─── History Import Handlers ───────────────────────────────────────────
+  // 检测 + 导入宿主机 Claude Code / Codex 对话历史。导入后写入标准 agent_events，
+  // 运行时在 sendTurn 时从事件重建对话历史，因此天然可继续对话。
+
+  typedIpcHandle('history-import:scan', async (req) => {
+    log.info('history-import:scan requested')
+    const svc = createHistoryImportService()
+    return svc.scan(req.sources)
+  })
+
+  typedIpcHandle('history-import:preview', async (req) => {
+    log.info(`history-import:preview requested, source=${req.source}`)
+    const svc = createHistoryImportService()
+    return svc.preview(req.source, req.filePath, req.limit ?? 20)
+  })
+
+  typedIpcHandle('history-import:import', async (req) => {
+    log.info(`history-import:import requested, count=${req.selections.length}`)
+    const svc = createHistoryImportService((progress) => {
+      pushStreamEvent('stream:history-import:progress', progress)
+    })
+    const result = await svc.import(req.selections)
+    log.info(
+      `history-import:import done, imported=${result.imported}, skipped=${result.skipped}, failed=${result.failed}`,
+    )
+    return result
   })
 
   // ─── Workspace Handlers ────────────────────────────────────────────────

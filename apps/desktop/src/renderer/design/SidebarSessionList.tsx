@@ -5,13 +5,8 @@
 import React, { useRef, useState, useCallback, useMemo } from 'react'
 import './SidebarSessionList.less'
 import type { ReactNode } from 'react'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from '@spark/ui-kit'
+import { Dropdown, Input } from '@lobehub/ui'
 import { Icons } from './Icons'
-import { SparkInput } from './components/FormControls'
 import {
   useSessionSidebar,
   buildProjectGroups,
@@ -24,6 +19,7 @@ import type {
   AgentStatusValue,
 } from '@spark/protocol'
 import { useApp } from './AppContext'
+import { HistoryImportModal } from './components/HistoryImportModal'
 import {
   SidebarFilterMenu,
   DEFAULT_SIDEBAR_FILTER,
@@ -296,15 +292,8 @@ function ActionMenu({
   }
 
   return (
-    <DropdownMenuContent
-      align="start"
-      side="right"
-      sideOffset={4}
-      alignOffset={4}
-      collisionPadding={10}
+    <div
       className="action-menu"
-      avoidCollisions
-      onCloseAutoFocus={(e) => e.preventDefault()}
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
@@ -326,15 +315,18 @@ function ActionMenu({
           <span>{item.label}</span>
         </button>
       ))}
-    </DropdownMenuContent>
+    </div>
   )
 }
+
+// 注:ActionMenu 在 antd Dropdown 下通过 dropdownRender 注入 JSX 内容
 
 /* ─── ChatListItem ─── */
 function ChatListItem({
   session: s,
   active,
   agentStatus,
+  unreviewed,
   onClick,
   onRename,
   onTogglePinned,
@@ -344,6 +336,7 @@ function ChatListItem({
   session: SessionSummary
   active: SessionId | null
   agentStatus?: AgentStatusValue | undefined
+  unreviewed?: boolean
   onClick: (id: SessionId) => void
   onRename?: (session: SessionSummary) => void
   onTogglePinned?: (session: SessionSummary) => void
@@ -373,6 +366,21 @@ function ChatListItem({
     >
       <div className="chat-item-row">
         <div className="chat-item-title-compact">
+          {(() => {
+            const dotStatus =
+              displayStatus === 'waiting_permission' || displayStatus === 'waiting_user'
+                ? displayStatus
+                : displayStatus === 'completed' && unreviewed
+                  ? 'completed'
+                  : null
+            return dotStatus ? (
+              <span
+                className={`session-status-dot session-status-dot-${dotStatus}`}
+                title={dotStatus === 'completed' ? '新完成，未查看' : badgeInfo.title}
+                aria-hidden
+              />
+            ) : null
+          })()}
           {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
           <span className="truncate">{s.title || '新会话'}</span>
         </div>
@@ -388,30 +396,36 @@ function ChatListItem({
           <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
         )}
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
-          <DropdownMenu open={menuOpen} onOpenChange={(open) => {
-            setMenuOpen(open)
-            if (!open) setContextOpen(false)
-          }}>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="icon-btn item-menu-btn"
-                title="会话操作"
-                onPointerDown={e => e.stopPropagation()}
-                onClick={e => e.stopPropagation()}
-              >
-                <Icons.More size={13} />
-              </button>
-            </DropdownMenuTrigger>
-            <ActionMenu
-              onAction={() => setMenuOpen(false)}
-              items={[
-                { icon: <Icons.Pin size={14} />, label: s.pinnedAt == null ? '置顶会话' : '取消置顶', onClick: () => onTogglePinned?.(s) },
-                { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
-                { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
-                { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
-              ]}
-            />
-          </DropdownMenu>
+          <Dropdown
+            menu={{ items: [] }}
+            open={menuOpen}
+            onOpenChange={(open) => {
+              setMenuOpen(open)
+              if (!open) setContextOpen(false)
+            }}
+            trigger={['click']}
+            placement="topRight"
+            dropdownRender={() => (
+              <ActionMenu
+                onAction={() => setMenuOpen(false)}
+                items={[
+                  { icon: <Icons.Pin size={14} />, label: s.pinnedAt == null ? '置顶会话' : '取消置顶', onClick: () => onTogglePinned?.(s) },
+                  { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
+                  { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
+                  { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
+                ]}
+              />
+            )}
+          >
+            <button
+              className="icon-btn item-menu-btn"
+              title="会话操作"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              <Icons.More size={13} />
+            </button>
+          </Dropdown>
         </div>
       </div>
     </div>
@@ -424,6 +438,7 @@ function ProjectSessionGroup({
   activeSessionId,
   activeWorkspaceId,
   sessionAgentStatuses,
+  unreviewedCompletedSessions,
   filterSlot,
   onSelectWorkspace,
   onSelectSession,
@@ -442,6 +457,7 @@ function ProjectSessionGroup({
   activeSessionId: SessionId | null
   activeWorkspaceId: string | null
   sessionAgentStatuses: Record<string, AgentStatusValue>
+  unreviewedCompletedSessions: Set<string>
   filterSlot?: ReactNode
   onSelectWorkspace: (workspace: WorkspaceInfo) => Promise<void>
   onSelectSession: (session: SessionSummary) => void
@@ -495,28 +511,34 @@ function ProjectSessionGroup({
         </button>
         {filterSlot}
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
-          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <button
-                className="icon-btn item-menu-btn"
-                title="项目操作"
-                onPointerDown={e => e.stopPropagation()}
-                onClick={e => e.stopPropagation()}
-              >
-                <Icons.More size={13} />
-              </button>
-            </DropdownMenuTrigger>
-            <ActionMenu
-              onAction={() => setMenuOpen(false)}
-              items={[
-                { icon: <Icons.Pin size={14} />, label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶', onClick: () => onToggleProjectPinned(group.workspace) },
-                { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenProjectFolder(group.workspace) },
-                { icon: <Icons.Edit size={14} />, label: '重命名项目', onClick: () => onRenameProject(group.workspace) },
-                { icon: <Icons.Box size={14} />, label: '归档项目', onClick: () => onArchiveProject(group.workspace) },
-                { icon: <Icons.Trash size={14} />, label: '删除项目', danger: true, onClick: () => onDeleteProject(group.workspace) },
-              ]}
-            />
-          </DropdownMenu>
+          <Dropdown
+            menu={{ items: [] }}
+            open={menuOpen}
+            onOpenChange={setMenuOpen}
+            trigger={['click']}
+            placement="topRight"
+            dropdownRender={() => (
+              <ActionMenu
+                onAction={() => setMenuOpen(false)}
+                items={[
+                  { icon: <Icons.Pin size={14} />, label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶', onClick: () => onToggleProjectPinned(group.workspace) },
+                  { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenProjectFolder(group.workspace) },
+                  { icon: <Icons.Edit size={14} />, label: '重命名项目', onClick: () => onRenameProject(group.workspace) },
+                  { icon: <Icons.Box size={14} />, label: '归档项目', onClick: () => onArchiveProject(group.workspace) },
+                  { icon: <Icons.Trash size={14} />, label: '删除项目', danger: true, onClick: () => onDeleteProject(group.workspace) },
+                ]}
+              />
+            )}
+          >
+            <button
+              className="icon-btn item-menu-btn"
+              title="项目操作"
+              onPointerDown={e => e.stopPropagation()}
+              onClick={e => e.stopPropagation()}
+            >
+              <Icons.More size={13} />
+            </button>
+          </Dropdown>
         </div>
       </div>
       {open && (
@@ -534,6 +556,7 @@ function ProjectSessionGroup({
                   session={session}
                   active={activeSessionId}
                   agentStatus={sessionAgentStatuses[session.id]}
+                  unreviewed={unreviewedCompletedSessions.has(session.id)}
                   onClick={() => onSelectSession(session)}
                   onRename={onRenameSession}
                   onTogglePinned={onToggleSessionPinned}
@@ -571,12 +594,14 @@ function FlatGroup({
   sessions,
   activeSessionId,
   sessionAgentStatuses,
+  unreviewedCompletedSessions,
   actions,
 }: {
   label: string
   sessions: SessionSummary[]
   activeSessionId: SessionId | null
   sessionAgentStatuses: Record<string, AgentStatusValue>
+  unreviewedCompletedSessions: Set<string>
   actions: FlatGroupActions
 }) {
   if (sessions.length === 0) return null
@@ -593,6 +618,7 @@ function FlatGroup({
             session={session}
             active={activeSessionId}
             agentStatus={sessionAgentStatuses[session.id]}
+            unreviewed={unreviewedCompletedSessions.has(session.id)}
             onClick={() => actions.onSelectSession(session)}
             onRename={actions.onRenameSession}
             onTogglePinned={actions.onToggleSessionPinned}
@@ -641,12 +667,12 @@ function CreateProjectModal({
           )}
           <label className="field">
             <span>项目名称</span>
-            <SparkInput value={name} placeholder="例如 Spark-Agent" onChange={e => setName(e.target.value)} />
+            <Input value={name} placeholder="例如 Spark-Agent" onChange={e => setName(e.target.value)} />
           </label>
           <label className="field">
             <span>项目文件夹地址（可选）</span>
             <div className="path-picker">
-              <SparkInput value={path} placeholder="/Users/you/projects/my-agent" onChange={e => setPath(e.target.value)} />
+              <Input value={path} placeholder="/Users/you/projects/my-agent" onChange={e => setPath(e.target.value)} />
               <button className="btn ghost sm" onClick={onPickPath}>选择</button>
             </div>
             <div className="field-hint">留空则自动在临时目录创建项目文件夹</div>
@@ -765,6 +791,13 @@ export function SidebarSessionList() {
             <div className="empty-icon"><Icons.Folder size={18} /></div>
             <div className="empty-title">还没有项目</div>
             <div className="empty-desc">先打开已有文件夹，或新建一个项目文件夹</div>
+            <button
+              className="empty-import-btn"
+              onClick={() => ctx.setHistoryImportOpen(true)}
+            >
+              <Icons.Download size={12} />
+              导入已有对话历史
+            </button>
           </div>
         ) : displayGroups.length === 0 ? (
           <div className="empty-compact">
@@ -783,6 +816,7 @@ export function SidebarSessionList() {
                     activeSessionId={effectiveActiveSessionId}
                     activeWorkspaceId={effectiveActiveWorkspaceId}
                     sessionAgentStatuses={ctx.sessionAgentStatuses}
+                    unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
                     filterSlot={idx === 0 ? filterSlot : undefined}
                     onSelectWorkspace={async (workspace) => {
                       ctx.setActiveWorkspace(workspace.id)
@@ -817,6 +851,7 @@ export function SidebarSessionList() {
                   sessions={group.sessions}
                   activeSessionId={effectiveActiveSessionId}
                   sessionAgentStatuses={ctx.sessionAgentStatuses}
+                  unreviewedCompletedSessions={ctx.unreviewedCompletedSessions}
                   actions={{
                     onSelectSession: (session) => {
                       ctx.setActiveSession(session.id)
@@ -847,6 +882,9 @@ export function SidebarSessionList() {
           onCreate={(useTempDir?: boolean) => { void ctx.handleCreateProject(useTempDir) }}
         />
       )}
+
+      {/* 导入宿主机对话历史 */}
+      <HistoryImportModal />
     </div>
   )
 }

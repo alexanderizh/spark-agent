@@ -37,6 +37,7 @@ import type {
   UserQuestionPrompt,
   TeamModeConfig,
   TeamA2ATask,
+  HistoryImportSource,
 } from '@spark/protocol'
 import type { SessionPermissionMode } from '@spark/protocol'
 import {
@@ -2673,10 +2674,18 @@ export class SessionService {
 
   async getHistory(params: {
     sessionId: string
+    full?: boolean
     limit?: number
     beforeSeq?: number
   }): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
     const eventRepo = new EventRepository(this.db)
+    if (params.full === true) {
+      const rows = eventRepo.queryAllBySession(params.sessionId)
+      return {
+        events: rows.map((row) => JSON.parse(row.event_json) as AgentEvent),
+        hasMore: false,
+      }
+    }
     const { events: rows, hasMore } = eventRepo.queryBySession({
       sessionId: params.sessionId,
       limit: params.limit ?? 50,
@@ -2716,6 +2725,9 @@ export class SessionService {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
       messageCount: eventRepo.countBySession(row.id),
+      ...(getImportedFromMetadata(row.metadata_json) != null
+        ? { importedFrom: getImportedFromMetadata(row.metadata_json)! }
+        : {}),
     }))
     return { sessions, total }
   }
@@ -3818,6 +3830,18 @@ function getChatModeFromSession(
 ): 'agent' | 'ask' | 'edit' | 'review' {
   if (value === 'ask' || value === 'edit' || value === 'review') return value
   return 'agent'
+}
+
+/** 从 session.metadata_json 解析导入来源（用于侧边栏来源徽标）；非导入会话返回 null */
+function getImportedFromMetadata(metadataJson: string | null | undefined): HistoryImportSource | null {
+  if (metadataJson == null || metadataJson === '') return null
+  try {
+    const meta = JSON.parse(metadataJson) as { importedFrom?: unknown }
+    if (meta.importedFrom === 'claude-code' || meta.importedFrom === 'codex') return meta.importedFrom
+  } catch {
+    // 忽略损坏的 metadata
+  }
+  return null
 }
 
 function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | undefined {

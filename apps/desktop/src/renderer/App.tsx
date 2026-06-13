@@ -10,6 +10,7 @@ import { SessionSidebarProvider, useSessionSidebar } from './design/SessionSideb
 import { ToastProvider, ToastContainer, useToast } from './design/components/Toast'
 import { ErrorBoundary } from './design/components/ErrorBoundary'
 import { AvatarImage } from './design/components/AvatarImage'
+import { LobeThemeProvider } from './design/theme/LobeThemeProvider'
 import { getGuestAvatarConfig, getUserAvatarConfig, resolveAvatarSrc } from './design/avatar'
 import { AuthProvider, useAuth } from './design/auth/AuthContext'
 import type { PermissionApprovalRequest, SessionId, UpdateStatus, UserQuestionPrompt } from '@spark/protocol'
@@ -33,20 +34,10 @@ import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { SidebarSessionList } from './design/SidebarSessionList'
 import { Icons } from './design/Icons'
+import { useI18n, type TranslationKey } from './design/i18n'
 import './FloatingSidebar.less'
 import sparkLogo from './assets/spark-logo.png'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-} from '@spark/ui-kit'
+import { Dropdown, type MenuProps } from 'antd'
 
 const sparkPlatform = typeof window !== 'undefined' ? window.spark?.platform : undefined
 const isPlatformDarwin = sparkPlatform === 'darwin'
@@ -160,21 +151,23 @@ function WindowControls() {
   )
 }
 
-const NAV_ITEMS: Array<{ id: string; label: string; icon: React.FC<{ size?: number }> }> = [
-  { id: 'agents', label: 'Agents', icon: Icons.Bot },
-  { id: 'board', label: 'Board', icon: Icons.Board },
-  { id: 'canvas', label: 'Canvas', icon: Icons.Canvas },
-  { id: 'providers', label: 'Providers', icon: Icons.Server },
-  { id: 'mcp', label: 'MCP', icon: Icons.MCP },
-  { id: 'skill-store', label: 'Skills', icon: Icons.Skills },
-  { id: 'workflows', label: 'Workflows', icon: Icons.Workflow },
-  { id: 'scheduled-tasks', label: 'Tasks', icon: Icons.Clock },
+const NAV_ITEMS: Array<{ id: string; labelKey: TranslationKey; icon: React.FC<{ size?: number }> }> = [
+  { id: 'agents', labelKey: 'nav.agents', icon: Icons.Bot },
+  { id: 'providers', labelKey: 'nav.providers', icon: Icons.Server },
+  { id: 'skill-store', labelKey: 'nav.skills', icon: Icons.Skills },
+  { id: 'scheduled-tasks', labelKey: 'nav.tasks', icon: Icons.Clock },
+  { id: 'mcp', labelKey: 'nav.mcp', icon: Icons.MCP },
+  { id: 'board', labelKey: 'nav.board', icon: Icons.Board },
+  { id: 'workflows', labelKey: 'nav.workflows', icon: Icons.Workflow },
+  { id: 'canvas', labelKey: 'nav.canvas', icon: Icons.Canvas },
 ]
 
 /* ---------- FloatingSidebar — navigation menu + full session list ---------- */
 function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const { t, setTweak } = useApp()
+  const { t: tr } = useI18n()
   const auth = useAuth()
+  const { setHistoryImportOpen } = useSessionSidebar()
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [navExpanded, setNavExpanded] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
@@ -216,8 +209,9 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   }
 
   const VISIBLE_COUNT = 3 // nav items visible before fold (excludes "新建任务")
-  const visibleItems = NAV_ITEMS.slice(0, VISIBLE_COUNT)
-  const collapsedItems = NAV_ITEMS.slice(VISIBLE_COUNT)
+  const resolvedNavItems = NAV_ITEMS.map((item) => ({ ...item, label: tr(item.labelKey) }))
+  const visibleItems = resolvedNavItems.slice(0, VISIBLE_COUNT)
+  const collapsedItems = resolvedNavItems.slice(VISIBLE_COUNT)
   const hasCollapsed = collapsedItems.length > 0
 
   // Resize handlers
@@ -303,6 +297,18 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
     return <Icons.Refresh size={15} />
   }
 
+  const menuLabel = (
+    leading: React.ReactNode,
+    text: string,
+    checked = false,
+  ) => (
+    <span className="user-menu-label">
+      {leading}
+      <span className="user-menu-label-text">{text}</span>
+      {checked && <span className="user-menu-check">✓</span>}
+    </span>
+  )
+
   if (t.sidebarHidden) return null
 
   return (
@@ -318,6 +324,14 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
         <div className="floating-sidebar-brand" />
         {/* <div className="sidebar-logo"><SparkLogoMark /></div> */}
         <div className="sidebar-header-actions">
+          <button
+            className="icon-btn sidebar-import-btn"
+            onClick={() => setHistoryImportOpen(true)}
+            title="导入对话历史"
+            aria-label="导入对话历史"
+          >
+            <Icons.Download size={15} />
+          </button>
           <button
             className={`icon-btn sidebar-update-btn state-${updateState}`}
             onClick={handleUpdateClick}
@@ -388,117 +402,106 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
       {/* Bottom area: user + window controls */}
       <div className="sidebar-bottom">
-        <DropdownMenu open={userMenuOpen} onOpenChange={setUserMenuOpen}>
-          <DropdownMenuTrigger asChild>
-            <button
-              className={`sidebar-user${auth.isAuthenticated ? '' : ' sidebar-user-guest'}`}
-              style={{ cursor: 'pointer' }}
-            >
-              <div className="avatar sidebar-user-avatar">
-                {userAvatarSrc ? (
-                  <AvatarImage
-                    src={userAvatarSrc}
-                    seed={auth.user?.account || 'spark-user'}
-                    name={userName}
-                    alt={auth.isAuthenticated ? '用户头像' : '未登录占位头像'}
-                    className={`sidebar-user-avatar-image${auth.isAuthenticated ? '' : ' sidebar-user-avatar-image-guest'}`}
-                  />
-                ) : null}
-              </div>
-              <div className="sidebar-user-info">
-                <div className="name">{userName}</div>
-                <div className="meta">
-                  {auth.isAuthenticated ? '已登录 · Cloud' : '未登录 · 点击登录'}
-                </div>
-              </div>
-              <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" side="top" className="user-menu user-menu-portal">
-            {/* 未登录：菜单顶部加「登录」入口，直接跳设置-账号 */}
-            {!auth.isAuthenticated && (
-              <>
-                <DropdownMenuItem
-                  className="user-menu-login-item"
-                  onSelect={() => {
-                    auth.setFlow('login')
+        <Dropdown
+          open={userMenuOpen}
+          onOpenChange={setUserMenuOpen}
+          trigger={['click']}
+          placement="topRight"
+          menu={{
+            className: 'user-menu',
+            items: [
+              ...(auth.isAuthenticated
+                ? []
+                : [
+                    { key: 'login', label: menuLabel(<Icons.User size={14} />, '登录 / 注册') },
+                    { type: 'divider' as const },
+                  ]),
+              {
+                key: 'theme',
+                label: menuLabel(<Icons.Sun size={14} />, 'Theme'),
+                children: [
+                  { key: 'theme-light', label: menuLabel(<Icons.Sun size={14} />, 'Light', t.theme === 'light') },
+                  { key: 'theme-dark', label: menuLabel(<Icons.Moon size={14} />, 'Dark', t.theme === 'dark') },
+                  { key: 'theme-system', label: menuLabel(<Icons.Monitor size={14} />, 'System', t.theme === 'system') },
+                  { type: 'divider' as const },
+                  {
+                    key: 'accent',
+                    label: menuLabel(<span className="user-menu-accent-dot" style={{ background: t.primary }} />, '主题色'),
+                    children: Object.entries(PRIMARIES).map(([color, info]) => ({
+                      key: `accent-${color}`,
+                      label: menuLabel(
+                        <span className="user-menu-accent-swatch" style={{ background: color }} />,
+                        info.name,
+                        t.primary === color,
+                      ),
+                    })),
+                  },
+                ],
+              },
+              { type: 'divider' as const },
+              { key: 'remote', label: menuLabel(<Icons.Globe size={14} />, '远程连接') },
+              { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
+              { key: 'settings', label: menuLabel(<Icons.Settings size={14} />, 'Settings') },
+              { key: 'lobe-preview', label: menuLabel(<Icons.Layers size={14} />, 'Lobe UI 沙箱') },
+            ],
+            onClick: ({ key }: { key: string }) => {
+              switch (key) {
+                case 'login':
+                  auth.setFlow('login')
+                  setTweak('view', 'settings')
+                  setTweak('settingsSection', 'account')
+                  break
+                case 'theme-light':
+                  setTweak('theme', 'light' as typeof t.theme)
+                  break
+                case 'theme-dark':
+                  setTweak('theme', 'dark' as typeof t.theme)
+                  break
+                case 'theme-system':
+                  setTweak('theme', 'system' as typeof t.theme)
+                  break
+                default:
+                  if (key.startsWith('accent-')) {
+                    setTweak('primary', key.slice('accent-'.length))
+                  } else if (key === 'remote') {
                     setTweak('view', 'settings')
-                    setTweak('settingsSection', 'account')
-                    setUserMenuOpen(false)
-                  }}
-                >
-                  <Icons.User size={14} /> 登录 / 注册
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-              </>
-            )}
-
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger className="user-menu-theme-trigger">
-                <Icons.Sun size={14} /> Theme
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent className="user-menu user-menu-theme-sub">
-                <DropdownMenuRadioGroup
-                  className="user-menu-theme-radio-group"
-                  value={t.theme}
-                  onValueChange={(v) => {
-                    setTweak('theme', v as typeof t.theme)
-                  }}
-                >
-                  <DropdownMenuRadioItem className="user-menu-theme-item" value="light">
-                    <Icons.Sun size={14} /> Light
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem className="user-menu-theme-item" value="dark">
-                    <Icons.Moon size={14} /> Dark
-                  </DropdownMenuRadioItem>
-                  <DropdownMenuRadioItem className="user-menu-theme-item" value="system">
-                    <Icons.Monitor size={14} /> System
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-                <DropdownMenuSeparator />
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger className="user-menu-theme-trigger user-menu-theme-nested-trigger">
-                    <span className="user-menu-accent-dot" style={{ background: t.primary }} />
-                    主题色
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent className="user-menu user-menu-theme-sub user-menu-accent-sub">
-                    <DropdownMenuRadioGroup
-                      className="user-menu-theme-radio-group"
-                      value={t.primary}
-                      onValueChange={(v) => {
-                        setTweak('primary', v)
-                      }}
-                    >
-                      {Object.entries(PRIMARIES).map(([color, info]) => (
-                        <DropdownMenuRadioItem
-                          key={color}
-                          className="user-menu-theme-item user-menu-accent-item"
-                          value={color}
-                        >
-                          <span className="user-menu-accent-swatch" style={{ background: color }} />
-                          {info.name}
-                        </DropdownMenuRadioItem>
-                      ))}
-                    </DropdownMenuRadioGroup>
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setTweak('settingsSection', 'remote-connections'); setUserMenuOpen(false) }}>
-              <Icons.Globe size={14} /> 远程连接
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { handleOpenExternal(REPOSITORY_URL) }}>
-              <Icons.GitHub size={14} /> GitHub
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { setTweak('view', 'settings'); setUserMenuOpen(false) }}>
-              <Icons.Settings size={14} /> Settings
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => { setTweak('view', 'lobe-preview'); setUserMenuOpen(false) }}>
-              <Icons.Layers size={14} /> Lobe UI 沙箱
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+                    setTweak('settingsSection', 'remote-connections')
+                  } else if (key === 'github') {
+                    handleOpenExternal(REPOSITORY_URL)
+                  } else if (key === 'settings') {
+                    setTweak('view', 'settings')
+                  } else if (key === 'lobe-preview') {
+                    setTweak('view', 'lobe-preview')
+                  }
+              }
+              setUserMenuOpen(false)
+            },
+          } as MenuProps}
+        >
+          <button
+            className={`sidebar-user${auth.isAuthenticated ? '' : ' sidebar-user-guest'}`}
+            style={{ cursor: 'pointer' }}
+          >
+            <div className="avatar sidebar-user-avatar">
+              {userAvatarSrc ? (
+                <AvatarImage
+                  src={userAvatarSrc}
+                  seed={auth.user?.account || 'spark-user'}
+                  name={userName}
+                  alt={auth.isAuthenticated ? '用户头像' : '未登录占位头像'}
+                  className={`sidebar-user-avatar-image${auth.isAuthenticated ? '' : ' sidebar-user-avatar-image-guest'}`}
+                />
+              ) : null}
+            </div>
+            <div className="sidebar-user-info">
+              <div className="name">{userName}</div>
+              <div className="meta">
+                {auth.isAuthenticated ? '已登录 · Cloud' : '未登录 · 点击登录'}
+              </div>
+            </div>
+            <Icons.ChevronDown size={12} style={{ color: 'var(--text-faint)', flexShrink: 0 }} />
+          </button>
+        </Dropdown>
         {/* Linux: custom HTML controls in sidebar. Windows/macOS use their own title bars. */}
         {!isPlatformDarwin && !isPlatformWin32 && <WindowControls />}
       </div>
@@ -833,14 +836,32 @@ function Shell() {
 export function App() {
   return (
     <AppProvider>
-      <AuthProvider>
-        <ToastProvider>
-          <SessionSidebarProvider>
-            <GateAwareShell />
-          </SessionSidebarProvider>
-        </ToastProvider>
-      </AuthProvider>
+      <LobeThemeBridge>
+        <AuthProvider>
+          <ToastProvider>
+            <SessionSidebarProvider>
+              <GateAwareShell />
+            </SessionSidebarProvider>
+          </ToastProvider>
+        </AuthProvider>
+      </LobeThemeBridge>
     </AppProvider>
+  )
+}
+
+/**
+ * LobeThemeBridge — 读取 AppContext 的主题/配色,为 antd + lobe-ui 注入 ThemeProvider。
+ * 必须放在 AppProvider 内层(读 useApp)。
+ */
+function LobeThemeBridge({ children }: { children: React.ReactNode }) {
+  const { t } = useApp()
+  const resolvedTheme: 'light' | 'dark' = t.theme === 'system'
+    ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    : (t.theme as 'light' | 'dark')
+  return (
+    <LobeThemeProvider themeMode={t.theme} resolvedTheme={resolvedTheme} primary={t.primary}>
+      {children}
+    </LobeThemeProvider>
   )
 }
 
