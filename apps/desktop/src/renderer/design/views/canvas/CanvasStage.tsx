@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   Background,
+  BackgroundVariant,
   Controls,
   MiniMap,
   ReactFlow,
@@ -252,7 +253,24 @@ export function CanvasStage({
             onSelectionChange(selected.map((node) => node.id))
           }
         >
-          <Background gap={24} size={1} color="var(--canvas-grid-color)" />
+          {snapshot.board.settings.grid !== false && (
+            <>
+              <Background
+                id="canvas-grid-minor"
+                gap={24}
+                lineWidth={0.7}
+                color="var(--canvas-grid-minor-color)"
+                variant={BackgroundVariant.Lines}
+              />
+              <Background
+                id="canvas-grid-major"
+                gap={96}
+                lineWidth={1.1}
+                color="var(--canvas-grid-major-color)"
+                variant={BackgroundVariant.Lines}
+              />
+            </>
+          )}
           <MiniMap
             className="canvas-minimap"
             nodeColor={(node) => {
