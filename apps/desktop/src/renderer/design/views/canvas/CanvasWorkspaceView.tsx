@@ -164,12 +164,14 @@ export function CanvasWorkspaceView({
     operation,
     prompt,
     providerProfileId,
+    manifestId,
     modelId,
     modelParams,
   }: {
     operation: CanvasOperationType
     prompt: string
     providerProfileId?: string
+    manifestId?: string
     modelId?: string
     modelParams?: Record<string, unknown>
   }) => {
@@ -199,6 +201,7 @@ export function CanvasWorkspaceView({
         .filter((id): id is string => Boolean(id)),
       ...(inputFiles.length > 0 ? { inputFiles } : {}),
       ...(providerProfileId != null ? { providerProfileId } : {}),
+      ...(manifestId != null ? { manifestId } : {}),
       ...(modelId != null ? { modelId } : {}),
       ...(modelParams != null ? { modelParams } : {}),
       outputPlacement: {

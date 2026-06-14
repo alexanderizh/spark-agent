@@ -1724,6 +1724,7 @@ export function registerAllIpcHandlers(): void {
       const options = {
         providers,
         ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
+        ...(req.manifestId != null ? { manifestId: req.manifestId } : {}),
         ...(req.modelId != null ? { modelId: req.modelId } : {}),
       }
       if (req.waitForCompletion === false) {

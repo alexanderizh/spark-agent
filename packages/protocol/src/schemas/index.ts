@@ -677,6 +677,7 @@ export const IpcSchemaRegistry = {
       type: z.enum(['image', 'audio', 'video', 'file']),
     })).max(64).optional(),
     providerProfileId: z.string().min(1).max(200).nullable().optional(),
+    manifestId: z.string().min(1).max(160).nullable().optional(),
     modelId: z.string().min(1).max(200).nullable().optional(),
     modelParams: z.record(z.unknown()).optional(),
     waitForCompletion: z.boolean().optional(),

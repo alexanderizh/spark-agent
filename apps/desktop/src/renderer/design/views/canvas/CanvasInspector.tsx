@@ -130,6 +130,7 @@ function TaskParamsInspector({ task }: { task: CanvasTask }) {
         column={1}
         items={[
           { label: 'Provider', children: task.providerProfileId ?? '-' },
+          { label: 'Manifest', children: task.manifestId ?? '-' },
           { label: '模型', children: task.modelId ?? '-' },
           { label: '状态', children: task.status },
           { label: 'Request', children: task.requestId ?? '-' },

@@ -125,6 +125,7 @@ export type CanvasTask = {
   outputNodeIds: string[]
   outputAssetIds: string[]
   providerProfileId?: string | null
+  manifestId?: string | null
   modelId?: string | null
   /** provider adapter 种类（apimart/xai/...），用于资产抽屉展示 */
   provider?: string | null
@@ -180,6 +181,7 @@ export type CreateCanvasTaskRequest = {
   modelParams?: Record<string, unknown>
   agentId?: string
   providerProfileId?: string
+  manifestId?: string
   modelId?: string
 }
 

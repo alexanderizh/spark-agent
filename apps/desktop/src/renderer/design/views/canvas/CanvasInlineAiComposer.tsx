@@ -17,7 +17,7 @@ export function CanvasInlineAiComposer({
   open: boolean
   selectedNodes: CanvasNode[]
   onClose: () => void
-  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string; modelParams?: Record<string, unknown> }) => void
+  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown> }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
@@ -234,11 +234,12 @@ export function CanvasInlineAiComposer({
           disabled={prompt.trim().length === 0}
           onClick={() => {
             const modelParams = buildModelParams(parameterFields, modelParamDraft)
-            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string; modelParams?: Record<string, unknown> } = {
+            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown> } = {
               operation,
               prompt: prompt.trim(),
             }
             if (selectedModel?.providerProfileId) payload.providerProfileId = selectedModel.providerProfileId
+            if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
             if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
             if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
             onCreateTask(payload)

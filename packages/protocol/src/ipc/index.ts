@@ -3449,6 +3449,8 @@ export interface CanvasMediaTaskCreateRequest {
   inputFiles?: CanvasMediaTaskInputFile[]
   /** 指定 provider profile；缺省由 router 自动选择首个支持该 capability 的 */
   providerProfileId?: string | null
+  /** 指定 manifest；用于精确匹配 requestTemplate/response/polling。 */
+  manifestId?: string | null
   /** 指定 provider 内实际调用的模型；缺省使用 Provider defaultModel / manifest 默认模型 */
   modelId?: string | null
   modelParams?: Record<string, unknown>
