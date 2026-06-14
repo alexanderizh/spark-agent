@@ -28,17 +28,33 @@ const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
 
 /**
- * 把当前 localStorage db 的每个项目快照异步持久化到 SQLite（生产备份）。
- * debounce 500ms，避免每次 writeDb 都打 IPC。localStorage 仍是热存储，
- * SQLite 提供"重启不丢 / 可备份 / 跨窗口一致"的生产级保证。
+ * SQLite 是画布的生产权威存储：localStorage 仅做即时热存储（响应快、拖拽不掉帧），
+ * 关键变更后必须落库，保证「重启不丢 / 可备份 / 跨窗口一致」。
+ *
+ *   - schedulePersist：500ms 防抖，合并高频写入（如节点拖拽 updateNodes）。
+ *   - flushPersist：立即落库，供 createProject / updateProject / openSnapshot 等
+ *     生命周期操作 await，确保关闭应用前数据已进入应用数据库。
  */
 let persistTimer: ReturnType<typeof setTimeout> | null = null
-function schedulePersist(getDb: () => CanvasDb): void {
+let persistInFlight: Promise<void> = Promise.resolve()
+
+function schedulePersist(): void {
   if (persistTimer != null) clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
     persistTimer = null
-    void persistAllProjects(getDb())
+    persistInFlight = persistAllProjects(readDb())
   }, 500)
+}
+
+/** 立即落库：清掉防抖定时器，等在途任务完成后把当前全量快照写进 SQLite。 */
+async function flushPersist(): Promise<void> {
+  if (persistTimer != null) {
+    clearTimeout(persistTimer)
+    persistTimer = null
+  }
+  await persistInFlight
+  persistInFlight = persistAllProjects(readDb())
+  await persistInFlight
 }
 
 async function persistAllProjects(db: CanvasDb): Promise<void> {
@@ -59,10 +75,21 @@ async function persistAllProjects(db: CanvasDb): Promise<void> {
     req.meta = buildProjectMeta(project)
     try {
       await window.spark.invoke('canvas:snapshot:save', req)
-    } catch {
-      // 持久化失败不阻断画布主流程（localStorage 仍是热存储）
+    } catch (err) {
+      // 落库失败不阻断画布交互，但必须显式记录——这是「重启丢数据」的根因之一。
+      console.error('[canvas] snapshot persist failed', project.id, err)
     }
   }
+}
+
+// 应用/窗口关闭前尽力 flush 一次，避免防抖队列里最后一批改动随关闭丢失。
+// （Electron 关闭进程时 beforeunload 不保证 await 完成，关键操作仍由 flushPersist 兜底。）
+if (typeof window !== 'undefined') {
+  const flushBeforeUnload = (): void => {
+    void flushPersist()
+  }
+  window.addEventListener('pagehide', flushBeforeUnload)
+  window.addEventListener('beforeunload', flushBeforeUnload)
 }
 
 /** 构造 CanvasSnapshotSaveRequest.meta，跳过 undefined 字段（exactOptionalPropertyTypes） */
@@ -124,158 +151,17 @@ function now(): string {
 function readDb(): CanvasDb {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
-    if (!raw) return seedDb()
+    if (!raw) return emptyDb()
     return { ...emptyDb(), ...JSON.parse(raw) }
   } catch {
-    return seedDb()
+    return emptyDb()
   }
 }
 
 function writeDb(db: CanvasDb): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
-  // 异步把每个项目快照持久化到 SQLite（生产备份，debounce）
-  schedulePersist(() => db)
-}
-
-function seedDb(): CanvasDb {
-  const at = now()
-  const projectId = 'canvas_project_demo'
-  const boardId = 'canvas_board_demo'
-  const promptNodeId = 'canvas_node_prompt_demo'
-  const imageNodeId = 'canvas_node_image_demo'
-  const taskNodeId = 'canvas_node_task_demo'
-  const taskId = 'canvas_task_demo'
-  const assetId = 'canvas_asset_prompt_demo'
-  const db: CanvasDb = {
-    projects: [
-      {
-        id: projectId,
-        userId: USER_ID,
-        title: '618 商品主图',
-        description: '用于验证文本、参考图、任务节点和血缘关系的画布样例。',
-        status: 'active',
-        nodeCount: 3,
-        assetCount: 1,
-        taskCount: 1,
-        lastOpenedAt: at,
-        createdAt: at,
-        updatedAt: at,
-      },
-    ],
-    boards: [
-      {
-        id: boardId,
-        projectId,
-        userId: USER_ID,
-        name: 'Main canvas',
-        viewport: { x: 0, y: 0, zoom: 1 },
-        settings: { grid: true, snap: false, background: 'paper' },
-        createdAt: at,
-        updatedAt: at,
-      },
-    ],
-    nodes: [
-      createNodeBase({
-        id: promptNodeId,
-        projectId,
-        boardId,
-        type: 'prompt',
-        title: '促销主图 Prompt',
-        x: 120,
-        y: 110,
-        width: 260,
-        height: 164,
-        data: {
-          text: '做一张红色促销主图，突出新品首发、限时优惠和高质感产品光影。',
-          format: 'prompt',
-        },
-        at,
-      }),
-      createNodeBase({
-        id: imageNodeId,
-        projectId,
-        boardId,
-        type: 'image',
-        title: '产品参考图',
-        x: 480,
-        y: 130,
-        width: 260,
-        height: 190,
-        data: { url: '', message: '上传图片后会保留为画布资产引用' },
-        at,
-      }),
-      createNodeBase({
-        id: taskNodeId,
-        projectId,
-        boardId,
-        type: 'task',
-        title: '多图合成 / 商品主图',
-        taskId,
-        x: 330,
-        y: 380,
-        width: 300,
-        height: 152,
-        data: {
-          operation: 'image_compose',
-          status: 'running',
-          progress: 56,
-          message: '等待 agent/provider 输出',
-        },
-        at,
-      }),
-    ],
-    edges: [
-      {
-        id: 'canvas_edge_demo',
-        projectId,
-        boardId,
-        userId: USER_ID,
-        sourceNodeId: promptNodeId,
-        targetNodeId: taskNodeId,
-        type: 'used_as_input',
-        taskId,
-        metadata: {},
-        createdAt: at,
-      },
-    ],
-    assets: [
-      {
-        id: assetId,
-        projectId,
-        userId: USER_ID,
-        type: 'prompt',
-        source: 'manual',
-        title: '促销主图 Prompt',
-        contentText: '做一张红色促销主图，突出新品首发、限时优惠和高质感产品光影。',
-        metadata: { nodeId: promptNodeId },
-        createdAt: at,
-        updatedAt: at,
-      },
-    ],
-    tasks: [
-      {
-        id: taskId,
-        projectId,
-        boardId,
-        userId: USER_ID,
-        operation: 'image_compose',
-        status: 'running',
-        progress: 56,
-        title: '多图合成 / 商品主图',
-        prompt: '做一张红色促销主图',
-        inputNodeIds: [promptNodeId, imageNodeId],
-        inputAssetIds: [assetId],
-        outputNodeIds: [],
-        outputAssetIds: [],
-        modelParams: {},
-        agentMode: 'local',
-        createdAt: at,
-        updatedAt: at,
-      },
-    ],
-  }
-  writeDb(db)
-  return db
+  // localStorage 仍是即时热存储；SQLite 是生产权威源（防抖写入，见 flushPersist）
+  schedulePersist()
 }
 
 function createNodeBase(input: {
@@ -484,6 +370,8 @@ export const canvasApi = {
     db.projects.unshift(project)
     db.boards.push(board)
     writeDb(db)
+    // 项目创建是关键操作：立即落库，确保关闭应用后 SQLite 里一定有这条记录。
+    await flushPersist()
     return { project, board, nodes: [], edges: [], assets: [], tasks: [] }
   },
 
@@ -496,6 +384,8 @@ export const canvasApi = {
     if (!project) throw new Error('Canvas project not found')
     Object.assign(project, patch, { updatedAt: now() })
     writeDb(db)
+    // 覆盖 rename / archive / delete(soft)：状态变更立即落库，避免删了的项目重启后又冒回来。
+    await flushPersist()
     return project
   },
 
@@ -510,6 +400,7 @@ export const canvasApi = {
     if (!project || !board) throw new Error('Canvas project not found')
     project.lastOpenedAt = now()
     writeDb(db)
+    await flushPersist()
     return {
       project,
       board,
