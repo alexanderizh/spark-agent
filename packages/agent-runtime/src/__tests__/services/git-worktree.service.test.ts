@@ -50,3 +50,34 @@ describe('GitWorktreeService.listWorktrees', () => {
     await rm(dir, { recursive: true, force: true })
   })
 })
+
+describe('GitWorktreeService merge & base helpers', () => {
+  let repo: string
+  const svc = new GitWorktreeService()
+  beforeEach(async () => { repo = await initRepo() })
+  afterEach(async () => { await rm(repo, { recursive: true, force: true }) })
+
+  it('isMerged is false for branch with new commits, true after merge', async () => {
+    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-y')
+    await execFileAsync('git', ['worktree', 'add', '-b', 'feat-y', wtPath], { cwd: repo })
+    await writeFile(path.join(wtPath, 'a.txt'), 'a\n')
+    await execFileAsync('git', ['add', '.'], { cwd: wtPath })
+    await execFileAsync('git', ['commit', '-m', 'feat'], { cwd: wtPath })
+
+    expect(await svc.isMerged(repo, 'feat-y', 'main')).toBe(false)
+    await execFileAsync('git', ['merge', 'feat-y'], { cwd: repo })
+    expect(await svc.isMerged(repo, 'feat-y', 'main')).toBe(true)
+  })
+
+  it('detectBaseBranch falls back to current branch', async () => {
+    expect(await svc.detectBaseBranch(repo)).toBe('main')
+  })
+
+  it('resolveMainRepoRoot returns repo root from inside a worktree', async () => {
+    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-z')
+    await execFileAsync('git', ['worktree', 'add', '-b', 'feat-z', wtPath], { cwd: repo })
+    const resolved = await svc.resolveMainRepoRoot(wtPath)
+    const realRepo = await svc.resolveMainRepoRoot(repo)
+    expect(resolved).toBe(realRepo)
+  })
+})
