@@ -1,9 +1,12 @@
+import { execFile } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import * as path from 'node:path'
+import { promisify } from 'node:util'
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { GitWorktreeService } from '../../services/git-worktree.service.js'
 import { WorkspaceService, detectProjectKind } from '../../services/workspace.service.js'
 import type { WorkspaceRow } from '@spark/storage'
 
@@ -17,6 +20,7 @@ function makeWorkspace(overrides: Partial<WorkspaceRow> = {}): WorkspaceRow {
     agent_runtime_path: '/tmp/workspace/.agent_spark',
     project_kind: 'unknown',
     relocated_from_json: null,
+    worktree_meta_json: null,
     pinned_at: null,
     archived_at: null,
     created_at: now,
@@ -30,7 +34,7 @@ function makeRepo() {
 
   return {
     rows,
-    create: vi.fn((params: { id: string; name: string; rootPath: string; projectKind?: string }) => {
+    create: vi.fn((params: { id: string; name: string; rootPath: string; projectKind?: string; worktreeMeta?: unknown }) => {
       const row = makeWorkspace({
         id: params.id,
         name: params.name,
@@ -38,6 +42,7 @@ function makeRepo() {
         spark_config_path: `${params.rootPath}/.spark`,
         agent_runtime_path: `${params.rootPath}/.agent_spark`,
         project_kind: params.projectKind ?? 'unknown',
+        worktree_meta_json: params.worktreeMeta ? JSON.stringify(params.worktreeMeta) : null,
       })
       rows.set(row.id, row)
       return row
@@ -67,6 +72,11 @@ function makeRepo() {
       row.agent_runtime_path = `${params.rootPath}/.agent_spark`
       row.relocated_from_json = JSON.stringify(params.relocatedFrom ?? [])
     }),
+    getWorktreeMeta: vi.fn((id: string) => {
+      const row = rows.get(id)
+      return row?.worktree_meta_json ? JSON.parse(row.worktree_meta_json) : null
+    }),
+    findWorktreesByBaseRepo: vi.fn(() => [] as WorkspaceRow[]),
   }
 }
 
@@ -359,5 +369,29 @@ describe('detectProjectKind', () => {
     await writeFile(path.join(tempDir, 'tsconfig.json'), '{}')
     // First rule: package.json + tsconfig.json → 'typescript'
     await expect(detectProjectKind(tempDir)).resolves.toBe('typescript')
+  })
+})
+
+const execFileAsyncT = promisify(execFile)
+
+describe('WorkspaceService worktree', () => {
+  it('createWorktreeWorkspace adds a worktree and registers a workspace', async () => {
+    const repoDir = await mkdtemp(path.join(tmpdir(), 'spark-wssvc-'))
+    await execFileAsyncT('git', ['init', '-b', 'main'], { cwd: repoDir })
+    await execFileAsyncT('git', ['config', 'user.email', 't@t.dev'], { cwd: repoDir })
+    await execFileAsyncT('git', ['config', 'user.name', 'T'], { cwd: repoDir })
+    await writeFile(path.join(repoDir, 'README.md'), '# x\n')
+    await execFileAsyncT('git', ['add', '.'], { cwd: repoDir })
+    await execFileAsyncT('git', ['commit', '-m', 'init'], { cwd: repoDir })
+
+    const repo = makeRepo()
+    const base = repo.create({ id: 'base', name: 'base', rootPath: repoDir, projectKind: 'unknown' })
+    const svc = new WorkspaceService(repo as never, new GitWorktreeService())
+
+    const wt = await svc.createWorktreeWorkspace({ baseWorkspaceId: base.id, branch: 'spark/feat-1' })
+    expect(wt.root_path).toContain(path.join('.spark', 'worktrees'))
+    expect(repo.create).toHaveBeenCalledTimes(2)
+
+    await rm(repoDir, { recursive: true, force: true })
   })
 })

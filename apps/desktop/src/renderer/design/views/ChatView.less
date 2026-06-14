@@ -649,3 +649,41 @@
   flex-shrink: 0;
 }
 
+
+/* 新建会话「隔离 worktree」开关 */
+.composer-worktree-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text-secondary, #888);
+  user-select: none;
+
+  &.is-active {
+    color: var(--accent-color, #4a8cff);
+    background: var(--accent-bg, rgba(74, 140, 255, 0.08));
+  }
+
+  &:has(input[type='checkbox']:disabled) {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  input[type='checkbox'] {
+    cursor: inherit;
+  }
+
+  .composer-worktree-branch {
+    width: 150px;
+    margin-left: 4px;
+    padding: 2px 6px;
+    border: 1px solid var(--border-color, #ddd);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-primary, inherit);
+    font-size: 12px;
+  }
+}

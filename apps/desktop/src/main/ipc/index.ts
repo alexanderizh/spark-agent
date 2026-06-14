@@ -54,6 +54,7 @@ import {
   RuleCompositionEngine,
   SessionService,
   WorkspaceService,
+  GitWorktreeService,
   PermissionService,
   ModelService,
   McpService,
@@ -149,7 +150,7 @@ import type { RemoteInboundMessage } from '../services/RemoteConnectionService.j
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
@@ -2084,6 +2085,69 @@ export function registerAllIpcHandlers(): void {
       throw new Error('Unable to determine current git branch after switch')
     }
     return { currentBranch: result.currentBranch, branches: result.branches }
+  })
+
+  typedIpcHandle('workspace:list-worktrees', async (req) => {
+    log.info(`workspace:list-worktrees requested, workspaceId=${req.workspaceId}`)
+    const db = getDatabase()
+    const wsRepo = new WorkspaceRepository(db)
+    const sessionRepo = new SessionRepository(db)
+    const workspace = wsRepo.findByIdOrFail(req.workspaceId)
+    const git = new GitWorktreeService()
+    try {
+      const mainRepoRoot = await git.resolveMainRepoRoot(workspace.root_path)
+      const baseBranch = await git.detectBaseBranch(mainRepoRoot)
+      const raw = await git.listWorktrees(mainRepoRoot)
+      const registered = wsRepo.findWorktreesByBaseRepo(mainRepoRoot)
+      // 路径相等比较前统一 realpath 归一化，避免软链导致的失配（如 /var→/private/var）
+      const byPath = new Map(
+        registered.map((w) => [normalizeRealPath(w.root_path), w] as const),
+      )
+      const currentPath = normalizeRealPath(workspace.root_path)
+      // 一次性取已合并分支集合，避免逐 worktree spawn git
+      const mergedBranches = new Set(await git.listMergedBranches(mainRepoRoot, baseBranch))
+
+      const worktrees = raw.map((w) => {
+        const matched = byPath.get(normalizeRealPath(w.path))
+        let sessionTitle: string | undefined
+        if (matched) {
+          const { sessions } = sessionRepo.list({ workspaceId: matched.id, limit: 1 })
+          sessionTitle = sessions[0]?.title
+        }
+        const isMerged = w.branch != null && !w.isMain ? mergedBranches.has(w.branch) : false
+        return {
+          path: w.path,
+          branch: w.branch,
+          head: w.head,
+          isMain: w.isMain,
+          isCurrent: normalizeRealPath(w.path) === currentPath,
+          isMerged,
+          ...(matched ? { workspaceId: matched.id } : {}),
+          ...(sessionTitle ? { sessionTitle } : {}),
+        }
+      })
+      return { isGitRepo: true, baseBranch, baseRepoRoot: mainRepoRoot, worktrees }
+    } catch {
+      return { isGitRepo: false, baseBranch: null, baseRepoRoot: null, worktrees: [] }
+    }
+  })
+
+  typedIpcHandle('workspace:create-worktree', async (req) => {
+    log.info(`workspace:create-worktree requested, base=${req.baseWorkspaceId}, branch=${req.branch}`)
+    const workspace = await getWorkspaceService().createWorktreeWorkspace({
+      baseWorkspaceId: req.baseWorkspaceId,
+      branch: req.branch,
+      ...(req.baseBranch !== undefined && { baseBranch: req.baseBranch }),
+    })
+    return { workspace: toWorkspaceInfo(workspace) }
+  })
+
+  typedIpcHandle('workspace:remove-worktree', async (req) => {
+    log.info(`workspace:remove-worktree requested, workspaceId=${req.workspaceId}`)
+    await getWorkspaceService().removeWorktreeWorkspace(req.workspaceId, {
+      ...(req.force !== undefined && { force: req.force }),
+    })
+    return { removed: true }
   })
 
   // ─── File Watcher Handlers ──────────────────────────────────────────────
@@ -4369,6 +4433,7 @@ function toWorkspaceInfo(workspace: {
   updated_at: string
   pinned_at: string | null
   archived_at: string | null
+  worktree_meta_json?: string | null
 }): WorkspaceInfo {
   return {
     id: workspace.id,
@@ -4378,6 +4443,18 @@ function toWorkspaceInfo(workspace: {
     archivedAt: workspace.archived_at,
     createdAt: workspace.created_at,
     updatedAt: workspace.updated_at,
+    worktreeMeta: (() => {
+      if (workspace.worktree_meta_json == null) return null
+      try {
+        return JSON.parse(workspace.worktree_meta_json) as {
+          baseRepoRoot: string
+          branch: string
+          baseBranch: string
+        }
+      } catch {
+        return null
+      }
+    })(),
   }
 }
 
@@ -4490,6 +4567,19 @@ function isWorkflowNodeKind(kind: string): kind is ProtocolWorkflowItem['graph']
     kind === 'review' ||
     kind === 'artifact'
   )
+}
+
+/**
+ * 归一化路径用于相等比较：先 path.resolve，再尝试 realpath 解软链。
+ * realpath 失败（路径不存在）时回退到 resolve 结果。
+ */
+function normalizeRealPath(p: string): string {
+  const resolved = path.resolve(p)
+  try {
+    return realpathSync(resolved)
+  } catch {
+    return resolved
+  }
 }
 
 async function getWorkspaceBranches(

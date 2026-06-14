@@ -77,6 +77,8 @@ export { TeamDispatchService } from './services/team-dispatch.service.js'
 export type { TeamDispatchRunContext, TeamMemberExecutionResult } from './services/team-dispatch.service.js'
 export { WorkspaceService, detectProjectKind } from './services/workspace.service.js'
 export type { UpdateWorkspaceParams } from './services/workspace.service.js'
+export { GitWorktreeService } from './services/git-worktree.service.js'
+export type { RawWorktree, AddWorktreeParams } from './services/git-worktree.service.js'
 export {
   AgentEventEmitter,
   isCommand,
