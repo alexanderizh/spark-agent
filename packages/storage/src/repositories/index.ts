@@ -22,6 +22,13 @@ export { PermissionProfileRepository } from './permission.repository.js'
 export type { PermissionDecisionRow, PermissionProfileRow, PermissionRuleRow } from './permission.repository.js'
 export { ModelProfileRepository } from './model-profile.repository.js'
 export type { ModelProfileRow } from './model-profile.repository.js'
+export { MediaModelManifestRepository } from './media-model-manifest.repository.js'
+export type {
+  MediaModelManifestRow,
+  MediaProviderModelRow,
+  UpsertMediaModelManifestParams,
+  UpsertMediaProviderModelParams,
+} from './media-model-manifest.repository.js'
 export { McpServerRepository } from './mcp-server.repository.js'
 export type { McpServerRow } from './mcp-server.repository.js'
 export { SkillRepository } from './skill.repository.js'

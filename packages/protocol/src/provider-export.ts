@@ -18,6 +18,7 @@ import {
   MediaCapabilityIdSchema,
   ProviderMediaDefaultsSchema,
 } from './media-config.js'
+import { ProviderMediaModelRefSchema } from './media-model-manifest.js'
 
 /** 当前 schema 版本。导入时校验；不匹配则拒绝 */
 export const PROVIDER_EXPORT_VERSION = 2 as const
@@ -65,6 +66,8 @@ export const ProviderExportProfileSchema = z.object({
   mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
   /** 多媒体能力默认值 */
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
+  /** 启用的多媒体模型 manifest 引用 */
+  mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
   /** API Key（导出时从 Keychain 读取；导入时写入 Keychain） */
   apiKey: z.string().min(1).max(500).optional(),
 })

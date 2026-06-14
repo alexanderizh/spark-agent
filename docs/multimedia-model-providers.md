@@ -19,6 +19,7 @@ its `config_json` (all backward compatible):
 | `mediaApiType` | `sync` \| `async` \| `auto` | sync returns media directly; async polls a task; auto adapts |
 | `mediaCapabilities` | `MediaCapabilityId[]` | Declared capabilities (`image.generate`, `audio.speech`, `video.generate`, …) |
 | `mediaDefaults` | object | Default size / voice / aspect ratio / polling interval / timeout |
+| `mediaModelRefs` | array | Enabled `MediaModelManifest` refs for schema-driven model discovery |
 
 The unified capability ids are:
 
@@ -27,6 +28,20 @@ image.generate · image.edit · image.variations
 audio.speech   · audio.transcription
 video.generate · video.image_to_video
 ```
+
+### Media Model Manifest
+
+Spark now has a first-pass model manifest registry:
+
+- Protocol types and zod schemas live in `packages/protocol/src/media-model-manifest.ts`.
+- Built-in seeds cover APIMart, xAI, OpenAI Images, Google/Veo, Volcengine Seedance, and placeholder manifests for Kling, PixVerse, Wan, HappyHorse, Omni, and MiniMax-Hailuo.
+- SQLite persistence uses `media_model_manifests` and `media_provider_models` (`028_media_model_manifests.sql`).
+- `MediaModelCatalogService` seeds built-ins and exposes list/describe/link operations.
+
+Phase 1 manifests are intentionally capability/schema metadata first. Existing
+adapters still own provider HTTP behavior. This keeps APIMart/xAI canvas and MCP
+generation backward compatible while giving Agent tools and future canvas UI a
+stable way to discover available models and parameter schemas.
 
 ### Compatibility with legacy image providers
 
@@ -86,6 +101,8 @@ mcp__spark_media__edit_image         — edit / compose existing images
 mcp__spark_media__generate_audio     — text-to-speech
 mcp__spark_media__transcribe_audio   — audio-to-text transcription
 mcp__spark_media__generate_video     — text-to-video / image-to-video
+mcp__spark_media__list_models        — list configured media manifests
+mcp__spark_media__describe_model     — inspect a model manifest and parameter schema
 ```
 
 - API keys are injected only into the local Spark media MCP server process —
@@ -93,6 +110,9 @@ mcp__spark_media__generate_video     — text-to-video / image-to-video
 - Output files land under `.spark-artifacts/media/{images,audio,videos,text}`.
 - The agent system prompt is augmented with the configured model, provider,
   endpoint, and declared capabilities only when a usable media provider exists.
+- If a provider has `mediaModelRefs`, the session injects those manifests into
+  `spark_media` via `SPARK_MEDIA_MANIFESTS_JSON`; otherwise the MCP server falls
+  back to a minimal env-derived model description.
 
 ## 4. Infinite Canvas Integration
 
@@ -130,8 +150,10 @@ consistency without rewriting the canvas data layer.
 IPC channels:
 
 ```text
-canvas:media-capabilities:list   — available media providers (no keys)
-canvas:task:create-media         — run a media generation task
+canvas:media-capabilities:list   — available media providers + model summaries (no keys)
+canvas:media-models:list         — manifest-driven model catalog for canvas parameter panels
+canvas:media-models:describe     — full manifest details for one model
+canvas:task:create-media         — run a media generation task, optionally with providerProfileId/modelId
 canvas:snapshot:save             — persist project snapshot to SQLite
 canvas:snapshot:load             — load project snapshot from SQLite
 canvas:project:list              — list persisted projects
@@ -152,20 +174,15 @@ canvas:project:delete            — soft/hard delete a project
 Flow:
 
 1. Select a text/prompt node (for text→*) or an image/audio node (for image/audio→*).
-2. Open the inline AI composer, pick the operation, enter the prompt.
+2. Open the inline AI composer, pick the operation, optionally choose a
+   manifest-backed provider/model, then enter the prompt.
 3. The canvas creates an optimistic `running` task node.
 4. The renderer calls `canvas:task:create-media`. The main process resolves
    available providers + API keys (never exposed), selects an adapter via
-   `MediaRouterService`, runs sync or async polling, and downloads artifacts.
+   `MediaRouterService`, applies the selected `modelId` as the effective model,
+   runs sync or async polling, and downloads artifacts.
 5. Output assets/nodes are written back to the canvas with provider, model,
    requestId, and raw response metadata. Task node shows progress/status.
-
-IPC channels:
-
-```text
-canvas:media-capabilities:list   — list available media providers (no keys)
-canvas:task:create-media         — run a media generation task
-```
 
 ## 5. Error Handling
 

@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import { capabilityForOperation } from '@spark/protocol'
+import type { CanvasMediaModelSummary } from '@spark/protocol'
+import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import type { CanvasNode, CanvasOperationType } from './canvas.types'
 
@@ -14,10 +17,33 @@ export function CanvasInlineAiComposer({
   open: boolean
   selectedNodes: CanvasNode[]
   onClose: () => void
-  onCreateTask: (input: { operation: CanvasOperationType; prompt: string }) => void
+  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
+  const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [selectedModelKey, setSelectedModelKey] = useState<string>('')
+
+  useEffect(() => {
+    if (!open) return
+    let cancelled = false
+    setModelsLoading(true)
+    void canvasApi
+      .listMediaModels({ enabledOnly: true })
+      .then((response) => {
+        if (!cancelled) setMediaModels(response.models)
+      })
+      .catch(() => {
+        if (!cancelled) setMediaModels([])
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open])
 
   const selectedSummary = useMemo(() => {
     if (selectedNodes.length === 0) return '未选择节点'
@@ -38,6 +64,37 @@ export function CanvasInlineAiComposer({
       })),
     [selectedNodes],
   )
+
+  const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
+  const supportedMediaModels = useMemo(() => {
+    if (mediaCapabilityIds.length === 0) return []
+    return mediaModels.filter((model) =>
+      model.capabilities.some((capability) => (mediaCapabilityIds as readonly string[]).includes(capability.id)),
+    )
+  }, [mediaCapabilityIds, mediaModels])
+  const modelOptions = useMemo(
+    () =>
+      supportedMediaModels.map((model) => ({
+        value: mediaModelKey(model),
+        label: `${model.providerName ?? model.providerKind} / ${model.displayName}`,
+      })),
+    [supportedMediaModels],
+  )
+  const selectedModel = useMemo(
+    () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey),
+    [selectedModelKey, supportedMediaModels],
+  )
+
+  useEffect(() => {
+    if (supportedMediaModels.length === 0) {
+      setSelectedModelKey('')
+      return
+    }
+    if (!supportedMediaModels.some((model) => mediaModelKey(model) === selectedModelKey)) {
+      const firstModel = supportedMediaModels[0]
+      if (firstModel) setSelectedModelKey(mediaModelKey(firstModel))
+    }
+  }, [selectedModelKey, supportedMediaModels])
 
   if (!open) return null
 
@@ -72,6 +129,24 @@ export function CanvasInlineAiComposer({
           }))}
         />
       </div>
+      {mediaCapabilityIds.length > 0 && (
+        <div className="canvas-form-row">
+          <label>模型</label>
+          <LobeSelect
+            value={selectedModelKey || undefined}
+            loading={modelsLoading}
+            placeholder={modelsLoading ? '加载模型目录...' : '使用自动路由'}
+            onChange={(value) => setSelectedModelKey(String(value ?? ''))}
+            options={modelOptions}
+            allowClear
+          />
+          <div className="canvas-model-hint">
+            {selectedModel
+              ? `${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}`
+              : '未选择 manifest 模型时，将按 provider 能力自动路由。'}
+          </div>
+        </div>
+      )}
       <div className="canvas-form-row">
         <label>指令</label>
         <LobeTextArea
@@ -91,7 +166,13 @@ export function CanvasInlineAiComposer({
           icon={<Icons.Sparkles size={15} />}
           disabled={prompt.trim().length === 0}
           onClick={() => {
-            onCreateTask({ operation, prompt: prompt.trim() })
+            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string } = {
+              operation,
+              prompt: prompt.trim(),
+            }
+            if (selectedModel?.providerProfileId) payload.providerProfileId = selectedModel.providerProfileId
+            if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
+            onCreateTask(payload)
             setPrompt('')
           }}
         >
@@ -100,4 +181,8 @@ export function CanvasInlineAiComposer({
       </div>
     </section>
   )
+}
+
+function mediaModelKey(model: CanvasMediaModelSummary): string {
+  return `${model.providerProfileId ?? 'catalog'}::${model.manifestId}::${model.effectiveModelId}`
 }

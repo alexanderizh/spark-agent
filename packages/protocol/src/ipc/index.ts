@@ -25,6 +25,7 @@ import type {
   MediaCapabilityId,
   CanvasOperationType,
 } from '../media-config.js'
+import type { MediaModelManifest, ProviderMediaModelRef } from '../media-model-manifest.js'
 import type {
   ProviderExportPayload,
   ProviderImportResult,
@@ -374,6 +375,8 @@ export interface ProviderProfile {
   mediaCapabilities?: MediaCapabilityId[]
   /** 多媒体能力默认值（尺寸/语音/时长/轮询等） */
   mediaDefaults?: ProviderMediaDefaults
+  /** 启用的多媒体模型 manifest 引用，用于 schema 驱动的参数面板和工具描述 */
+  mediaModelRefs?: ProviderMediaModelRef[]
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -415,6 +418,8 @@ export interface ProviderCreateRequest {
   mediaCapabilities?: MediaCapabilityId[]
   /** 多媒体能力默认值 */
   mediaDefaults?: ProviderMediaDefaults
+  /** 启用的多媒体模型 manifest 引用 */
+  mediaModelRefs?: ProviderMediaModelRef[]
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -456,6 +461,8 @@ export interface ProviderUpdateRequest {
   mediaCapabilities?: MediaCapabilityId[]
   /** 多媒体能力默认值 */
   mediaDefaults?: ProviderMediaDefaults
+  /** 启用的多媒体模型 manifest 引用 */
+  mediaModelRefs?: ProviderMediaModelRef[]
 }
 
 export interface ProviderUpdateResponse {
@@ -3360,12 +3367,59 @@ export interface CanvasMediaCapabilityItem {
   mediaProvider: MediaProviderKind | null
   mediaApiType: MediaApiType | null
   mediaCapabilities: MediaCapabilityId[]
+  mediaModels?: CanvasMediaModelSummary[]
 }
 
 export interface CanvasMediaCapabilitiesListRequest {}
 
 export interface CanvasMediaCapabilitiesListResponse {
   providers: CanvasMediaCapabilityItem[]
+}
+
+export interface CanvasMediaModelCapabilitySummary {
+  id: string
+  label: string
+  input: MediaModelManifest['capabilities'][number]['input']
+  output: MediaModelManifest['capabilities'][number]['output']
+  paramSchema: Record<string, unknown>
+  defaults?: Record<string, unknown>
+}
+
+export interface CanvasMediaModelSummary {
+  manifestId: string
+  providerProfileId?: string
+  providerName?: string
+  providerKind: string
+  modelId: string
+  effectiveModelId: string
+  displayName: string
+  domains: MediaModelManifest['domains']
+  invocationMode: MediaModelManifest['invocation']['mode']
+  capabilities: CanvasMediaModelCapabilitySummary[]
+  sourceUrls: string[]
+  enabled: boolean
+  defaults?: Record<string, unknown>
+}
+
+export interface CanvasMediaModelsListRequest {
+  providerProfileId?: string
+  providerKind?: string
+  capability?: string
+  enabledOnly?: boolean
+}
+
+export interface CanvasMediaModelsListResponse {
+  models: CanvasMediaModelSummary[]
+}
+
+export interface CanvasMediaModelDescribeRequest {
+  manifestId: string
+  providerProfileId?: string
+}
+
+export interface CanvasMediaModelDescribeResponse {
+  manifest: MediaModelManifest | null
+  model: CanvasMediaModelSummary | null
 }
 
 /**
@@ -3389,6 +3443,8 @@ export interface CanvasMediaTaskCreateRequest {
   inputFiles?: CanvasMediaTaskInputFile[]
   /** 指定 provider profile；缺省由 router 自动选择首个支持该 capability 的 */
   providerProfileId?: string | null
+  /** 指定 provider 内实际调用的模型；缺省使用 Provider defaultModel / manifest 默认模型 */
+  modelId?: string | null
   modelParams?: Record<string, unknown>
   /** 产物落盘根目录；缺省使用 userData/.spark-artifacts/media */
   outputDir?: string
@@ -3748,6 +3804,8 @@ export interface IpcChannelMap {
 
   // Canvas Media Generation (infinite canvas → platform adapter)
   'canvas:media-capabilities:list': [CanvasMediaCapabilitiesListRequest, CanvasMediaCapabilitiesListResponse]
+  'canvas:media-models:list': [CanvasMediaModelsListRequest, CanvasMediaModelsListResponse]
+  'canvas:media-models:describe': [CanvasMediaModelDescribeRequest, CanvasMediaModelDescribeResponse]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
 
   // Canvas Persistence (SQLite-backed production storage)

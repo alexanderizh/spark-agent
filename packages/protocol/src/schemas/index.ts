@@ -18,6 +18,7 @@ import {
   MediaCapabilityIdSchema,
   ProviderMediaDefaultsSchema,
 } from '../media-config.js'
+import { ProviderMediaModelRefSchema } from '../media-model-manifest.js'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
@@ -321,6 +322,8 @@ export const ProviderCreateRequestSchema = z.object({
   mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
   /** 多媒体能力默认值 */
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
+  /** 启用的多媒体模型 manifest 引用 */
+  mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
   ctx.addIssue({
@@ -358,6 +361,8 @@ export const ProviderUpdateRequestSchema = z.object({
   mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
   /** 多媒体能力默认值 */
   mediaDefaults: ProviderMediaDefaultsSchema.optional(),
+  /** 启用的多媒体模型 manifest 引用 */
+  mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
 })
 
 export const ProviderDeleteRequestSchema = z.object({
@@ -634,6 +639,45 @@ export const IpcSchemaRegistry = {
     category: z.string().min(1).max(80),
   }),
   'settings:get-all': z.object({}),
+  'canvas:media-capabilities:list': z.object({}),
+  'canvas:media-models:list': z.object({
+    providerProfileId: z.string().min(1).max(200).optional(),
+    providerKind: z.string().min(1).max(120).optional(),
+    capability: z.string().min(1).max(120).optional(),
+    enabledOnly: z.boolean().optional(),
+  }),
+  'canvas:media-models:describe': z.object({
+    manifestId: z.string().min(1).max(160),
+    providerProfileId: z.string().min(1).max(200).optional(),
+  }),
+  'canvas:task:create-media': z.object({
+    operation: z.enum([
+      'text_to_image',
+      'image_to_image',
+      'image_edit',
+      'image_compose',
+      'text_generate',
+      'text_rewrite',
+      'prompt_optimize',
+      'text_to_audio',
+      'audio_transcribe',
+      'text_to_video',
+      'image_to_video',
+    ]),
+    prompt: z.string().max(100_000).optional(),
+    negativePrompt: z.string().max(100_000).optional(),
+    inputFiles: z.array(z.object({
+      path: z.string().max(2000).optional(),
+      url: z.string().max(4000).optional(),
+      dataUrl: z.string().max(100_000_000).optional(),
+      mimeType: z.string().max(160).optional(),
+      type: z.enum(['image', 'audio', 'video', 'file']),
+    })).max(64).optional(),
+    providerProfileId: z.string().min(1).max(200).nullable().optional(),
+    modelId: z.string().min(1).max(200).nullable().optional(),
+    modelParams: z.record(z.unknown()).optional(),
+    outputDir: z.string().max(2000).optional(),
+  }),
 
   // Remote Connections
   'remote:list': z.object({}),

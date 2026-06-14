@@ -163,9 +163,13 @@ export function CanvasWorkspaceView({
   const handleCreateTask = async ({
     operation,
     prompt,
+    providerProfileId,
+    modelId,
   }: {
     operation: CanvasOperationType
     prompt: string
+    providerProfileId?: string
+    modelId?: string
   }) => {
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const inputFiles = selectedNodes
@@ -192,6 +196,8 @@ export function CanvasWorkspaceView({
         .map((node) => node.assetId)
         .filter((id): id is string => Boolean(id)),
       ...(inputFiles.length > 0 ? { inputFiles } : {}),
+      ...(providerProfileId != null ? { providerProfileId } : {}),
+      ...(modelId != null ? { modelId } : {}),
       outputPlacement: {
         x: selectedNodes[0] ? selectedNodes[0].x + 360 : 360,
         y: selectedNodes[0] ? selectedNodes[0].y + 80 : 260,

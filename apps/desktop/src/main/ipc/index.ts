@@ -26,6 +26,7 @@ import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
   EventRepository,
   ProviderProfileRepository,
+  MediaModelManifestRepository,
   CanvasProjectRepository,
   CanvasSnapshotRepository,
   RulesRepository,
@@ -61,6 +62,7 @@ import {
   UsageLedgerService,
   RuntimeCompositionService,
   MediaRouterService,
+  MediaModelCatalogService,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -89,10 +91,13 @@ import type {
   TeamA2AReply,
   HistoryImportSource,
   HistoryImportProgress,
+  CanvasMediaModelSummary,
   CanvasMediaTaskCreateResponse,
   BoardTask,
   BoardComment,
   BoardTaskAttachment,
+  MediaModelManifest,
+  ProviderProfile,
 } from '@spark/protocol'
 import type {
   SessionEventHandler,
@@ -176,6 +181,20 @@ function getMediaRouterService(): MediaRouterService {
   return mediaRouterService
 }
 
+/** 多媒体模型能力清单服务（seed 内置 manifest，供画布/工具查询） */
+let mediaModelCatalogService: MediaModelCatalogService | null = null
+let mediaModelCatalogSeeded = false
+function getMediaModelCatalogService(): MediaModelCatalogService {
+  if (mediaModelCatalogService == null) {
+    mediaModelCatalogService = new MediaModelCatalogService(new MediaModelManifestRepository(getDatabase()))
+  }
+  if (!mediaModelCatalogSeeded) {
+    mediaModelCatalogService.seedBuiltinManifests()
+    mediaModelCatalogSeeded = true
+  }
+  return mediaModelCatalogService
+}
+
 /** 画布多媒体产物默认落盘根目录 */
 function getDefaultCanvasMediaDir(): string {
   return path.join(app.getPath('userData'), '.spark-artifacts', 'media')
@@ -195,11 +214,17 @@ function getCanvasSnapshotRepo(): CanvasSnapshotRepository {
  */
 async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntime[]> {
   const profiles = await getProviderService().listProviders()
+  const catalog = getMediaModelCatalogService()
   const result: MediaProviderProfileRuntime[] = []
   for (const profile of profiles) {
     const caps = profile.mediaCapabilities ?? []
+    const manifestRefs = profile.mediaModelRefs ?? []
+    const mediaModelManifests = manifestRefs
+      .filter((ref) => ref.enabled !== false)
+      .map((ref) => catalog.describe(ref.manifestId))
+      .filter((manifest): manifest is NonNullable<typeof manifest> => manifest != null)
     const isMediaModel = profile.modelType === 'image' || profile.modelType === 'voice' || profile.modelType === 'video'
-    if (!isMediaModel && caps.length === 0) continue
+    if (!isMediaModel && caps.length === 0 && mediaModelManifests.length === 0) continue
     if (!profile.keystoreRef) continue
     try {
       const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
@@ -213,6 +238,7 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
         mediaProvider: profile.mediaProvider ?? null,
         mediaApiType: profile.mediaApiType ?? 'auto',
         mediaCapabilities: caps,
+        ...(mediaModelManifests.length > 0 ? { mediaModelManifests } : {}),
         ...(profile.mediaDefaults ? { mediaDefaults: profile.mediaDefaults } : {}),
         apiKey,
       })
@@ -221,6 +247,107 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
     }
   }
   return result
+}
+
+function toCanvasMediaModelSummary(
+  manifest: MediaModelManifest,
+  options?: {
+    providerProfileId?: string
+    providerName?: string
+    effectiveModelId?: string
+    defaults?: Record<string, unknown>
+    enabled?: boolean
+  },
+): CanvasMediaModelSummary {
+  const capabilities = manifest.capabilities.map((capability) => {
+    const item: CanvasMediaModelSummary['capabilities'][number] = {
+      id: capability.id,
+      label: capability.label,
+      input: capability.input,
+      output: capability.output,
+      paramSchema: capability.paramSchema,
+    }
+    if (capability.defaults !== undefined) item.defaults = capability.defaults
+    return item
+  })
+  const summary: CanvasMediaModelSummary = {
+    manifestId: manifest.id,
+    providerKind: manifest.providerKind,
+    modelId: manifest.modelId,
+    effectiveModelId: options?.effectiveModelId ?? manifest.modelId,
+    displayName: manifest.displayName,
+    domains: manifest.domains,
+    invocationMode: manifest.invocation.mode,
+    capabilities,
+    sourceUrls: manifest.docs.sourceUrls,
+    enabled: options?.enabled !== false,
+  }
+  if (options?.providerProfileId !== undefined) summary.providerProfileId = options.providerProfileId
+  if (options?.providerName !== undefined) summary.providerName = options.providerName
+  if (options?.defaults !== undefined) summary.defaults = options.defaults
+  return summary
+}
+
+function providerKindCandidates(profile: ProviderProfile): string[] {
+  const candidates = new Set<string>()
+  for (const value of [profile.mediaProvider, profile.imageProvider, profile.provider]) {
+    if (typeof value !== 'string' || value.trim().length === 0) continue
+    const normalized = value.trim()
+    const lower = normalized.toLowerCase()
+    candidates.add(normalized)
+    if (lower.includes('openai')) candidates.add('openai')
+    if (lower.includes('google') || lower.includes('gemini') || lower.includes('veo')) candidates.add('google')
+    if (lower.includes('volc') || lower.includes('seed')) candidates.add('volcengine')
+  }
+  return [...candidates]
+}
+
+function profileMediaModelSummaries(
+  profile: ProviderProfile,
+  catalog: MediaModelCatalogService,
+  filters?: { capability?: string; providerKind?: string; enabledOnly?: boolean },
+): CanvasMediaModelSummary[] {
+  const summaries: CanvasMediaModelSummary[] = []
+  const seen = new Set<string>()
+  const capabilityMatches = (manifest: MediaModelManifest): boolean =>
+    filters?.capability == null || manifest.capabilities.some((capability) => capability.id === filters.capability)
+  const providerKindMatches = (manifest: MediaModelManifest): boolean =>
+    filters?.providerKind == null || manifest.providerKind === filters.providerKind
+
+  for (const ref of profile.mediaModelRefs ?? []) {
+    if (filters?.enabledOnly !== false && ref.enabled === false) continue
+    const manifest = catalog.describe(ref.manifestId)
+    if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
+    seen.add(manifest.id)
+    const options: Parameters<typeof toCanvasMediaModelSummary>[1] = {
+      providerProfileId: profile.id,
+      providerName: profile.name,
+      effectiveModelId: ref.modelId ?? manifest.modelId,
+      enabled: ref.enabled !== false,
+    }
+    if (ref.defaults !== undefined) options.defaults = ref.defaults
+    summaries.push(toCanvasMediaModelSummary(manifest, options))
+  }
+
+  if (summaries.length > 0) return summaries
+
+  const modelIds = new Set([profile.defaultModel, ...profile.modelIds].filter((value) => value.trim().length > 0))
+  for (const providerKind of providerKindCandidates(profile)) {
+    for (const item of catalog.list({ providerKind, enabledOnly: filters?.enabledOnly !== false })) {
+      if (seen.has(item.id)) continue
+      if (modelIds.size > 0 && !modelIds.has(item.modelId)) continue
+      const manifest = catalog.describe(item.id)
+      if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
+      seen.add(manifest.id)
+      summaries.push(toCanvasMediaModelSummary(manifest, {
+        providerProfileId: profile.id,
+        providerName: profile.name,
+        effectiveModelId: manifest.modelId,
+        enabled: item.enabled,
+      }))
+    }
+  }
+  return summaries
 }
 
 /** 把图片文件读取为 data URL，供 renderer 预览（仅小图，限制 2MB） */
@@ -1439,27 +1566,71 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('canvas:media-capabilities:list', async () => {
     const profiles = await getProviderService().listProviders()
+    const catalog = getMediaModelCatalogService()
     const providers = profiles
-      .filter((profile) => {
+      .map((profile) => {
         const isMediaModel =
           profile.modelType === 'image' || profile.modelType === 'voice' || profile.modelType === 'video'
         const caps = profile.mediaCapabilities ?? []
-        return (isMediaModel || caps.length > 0) && !!profile.keystoreRef
+        const mediaModels = profileMediaModelSummaries(profile, catalog, { enabledOnly: true })
+        if ((!isMediaModel && caps.length === 0 && mediaModels.length === 0) || !profile.keystoreRef) return null
+        return {
+          providerProfileId: profile.id,
+          name: profile.name,
+          defaultModel: profile.defaultModel,
+          mediaProvider: profile.mediaProvider ?? null,
+          mediaApiType: profile.mediaApiType ?? null,
+          mediaCapabilities: profile.mediaCapabilities ?? [],
+          mediaModels,
+        }
       })
-      .map((profile) => ({
-        providerProfileId: profile.id,
-        name: profile.name,
-        defaultModel: profile.defaultModel,
-        mediaProvider: profile.mediaProvider ?? null,
-        mediaApiType: profile.mediaApiType ?? null,
-        mediaCapabilities: profile.mediaCapabilities ?? [],
-      }))
+      .filter((provider): provider is NonNullable<typeof provider> => provider != null)
     return { providers }
+  })
+
+  typedIpcHandle('canvas:media-models:list', async (req) => {
+    const catalog = getMediaModelCatalogService()
+    const profiles = await getProviderService().listProviders()
+    const models: CanvasMediaModelSummary[] = []
+    const providerProfiles = req.providerProfileId
+      ? profiles.filter((profile) => profile.id === req.providerProfileId)
+      : profiles.filter((profile) => !!profile.keystoreRef)
+    for (const profile of providerProfiles) {
+      models.push(...profileMediaModelSummaries(profile, catalog, {
+        ...(req.capability !== undefined ? { capability: req.capability } : {}),
+        ...(req.providerKind !== undefined ? { providerKind: req.providerKind } : {}),
+        enabledOnly: req.enabledOnly !== false,
+      }))
+    }
+    return { models }
+  })
+
+  typedIpcHandle('canvas:media-models:describe', async (req) => {
+    const catalog = getMediaModelCatalogService()
+    const manifest = catalog.describe(req.manifestId)
+    if (!manifest) return { manifest: null, model: null }
+    let model: CanvasMediaModelSummary | null = null
+    if (req.providerProfileId) {
+      const profiles = await getProviderService().listProviders()
+      const profile = profiles.find((item) => item.id === req.providerProfileId)
+      if (profile) {
+        model = profileMediaModelSummaries(profile, catalog, { enabledOnly: false })
+          .find((item) => item.manifestId === req.manifestId) ?? null
+      }
+    }
+    return { manifest, model }
   })
 
   typedIpcHandle('canvas:task:create-media', async (req) => {
     const router = getMediaRouterService()
-    const providers = await resolveCanvasMediaProviders()
+    const resolvedProviders = await resolveCanvasMediaProviders()
+    const providers = req.modelId
+      ? resolvedProviders.map((provider) => {
+          const shouldOverride =
+            req.providerProfileId != null ? provider.id === req.providerProfileId : provider.modelIds?.includes(req.modelId ?? '') === true
+          return shouldOverride ? { ...provider, defaultModel: req.modelId as string } : provider
+        })
+      : resolvedProviders
     const outputDir = req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
     // capability 由 router 按 operation 推导（input.capability 留空）
     try {

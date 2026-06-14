@@ -19,6 +19,7 @@
  *   SPARK_MEDIA_BASE_URL      API base url
  *   SPARK_MEDIA_OUTPUT_DIR    产物落盘根目录
  *   SPARK_MEDIA_DEFAULTS_JSON 可选；mediaDefaults 的 JSON 字符串
+ *   SPARK_MEDIA_MANIFESTS_JSON 可选；已启用 MediaModelManifest[]，用于 list/describe
  */
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -45,6 +46,27 @@ function error(id, code, message) {
 }
 
 const TOOLS = [
+  {
+    name: 'list_models',
+    description: 'List configured media models and capabilities available to this Spark media MCP server.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        capability: { type: 'string', description: 'Optional capability filter, e.g. image.generate or video.image_to_video.' },
+      },
+    },
+  },
+  {
+    name: 'describe_model',
+    description: 'Describe one configured media model, including capability parameter schemas and invocation metadata.',
+    inputSchema: {
+      type: 'object',
+      required: ['model'],
+      properties: {
+        model: { type: 'string', description: 'Manifest id or provider model id.' },
+      },
+    },
+  },
   {
     name: 'generate_image',
     description:
@@ -138,10 +160,17 @@ const TOOLS = [
 
 function configFromEnv() {
   let mediaDefaults = {}
+  let manifests = []
   try {
     mediaDefaults = env.SPARK_MEDIA_DEFAULTS_JSON ? JSON.parse(env.SPARK_MEDIA_DEFAULTS_JSON) : {}
   } catch {
     mediaDefaults = {}
+  }
+  try {
+    const parsed = env.SPARK_MEDIA_MANIFESTS_JSON ? JSON.parse(env.SPARK_MEDIA_MANIFESTS_JSON) : []
+    manifests = Array.isArray(parsed) ? parsed.filter(isManifestLike) : []
+  } catch {
+    manifests = []
   }
   return {
     apiKey: env.SPARK_MEDIA_API_KEY || '',
@@ -151,7 +180,63 @@ function configFromEnv() {
     baseUrl: (env.SPARK_MEDIA_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, ''),
     outputDir: env.SPARK_MEDIA_OUTPUT_DIR || path.join(process.cwd(), '.spark-artifacts', 'media'),
     mediaDefaults,
+    manifests,
   }
+}
+
+function isManifestLike(value) {
+  return value && typeof value === 'object' &&
+    typeof value.id === 'string' &&
+    typeof value.modelId === 'string' &&
+    Array.isArray(value.capabilities)
+}
+
+function fallbackManifest(config) {
+  if (!config.model) return null
+  const capabilities = []
+  if (config.provider.includes('xai') || config.provider.includes('apimart') || config.provider.includes('openai')) {
+    capabilities.push({ id: 'image.generate', label: '文生图', paramSchema: {}, input: { required: ['prompt'] }, output: { types: ['image'] } })
+  }
+  return {
+    id: `${config.provider}:${config.model}`,
+    providerKind: config.provider,
+    modelId: config.model,
+    displayName: config.model,
+    domains: ['image', 'video', 'audio'],
+    capabilities,
+    invocation: { mode: config.mode === 'async' ? 'async_polling' : 'sync', endpoint: config.baseUrl, method: 'POST', contentType: 'json', requestTemplate: {}, response: { kind: 'url', jsonPaths: ['data[].url'], download: true } },
+    docs: { sourceUrls: [] },
+  }
+}
+
+function manifestCapabilities(manifest) {
+  return [...new Set((manifest.capabilities || []).map((cap) => cap?.id).filter(Boolean))]
+}
+
+function handleListModels(config, args) {
+  const manifests = config.manifests.length > 0 ? config.manifests : [fallbackManifest(config)].filter(Boolean)
+  const capability = typeof args.capability === 'string' ? args.capability : ''
+  const models = manifests
+    .filter((manifest) => !capability || manifestCapabilities(manifest).includes(capability))
+    .map((manifest) => ({
+      id: manifest.id,
+      providerKind: manifest.providerKind,
+      modelId: manifest.modelId,
+      displayName: manifest.displayName,
+      domains: manifest.domains || [],
+      capabilities: manifestCapabilities(manifest),
+      docs: manifest.docs || { sourceUrls: [] },
+    }))
+  return { success: true, models }
+}
+
+function handleDescribeModel(config, args) {
+  const key = String(args.model || '').trim()
+  if (!key) throw new Error('model is required')
+  const manifests = config.manifests.length > 0 ? config.manifests : [fallbackManifest(config)].filter(Boolean)
+  const manifest = manifests.find((item) => item.id === key || item.modelId === key)
+  if (!manifest) throw new Error(`Unknown media model: ${key}`)
+  return { success: true, model: manifest }
 }
 
 const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled']
@@ -404,6 +489,8 @@ async function handle(request) {
       const config = configFromEnv()
       let data
       switch (name) {
+        case 'list_models': data = handleListModels(config, args); break
+        case 'describe_model': data = handleDescribeModel(config, args); break
         case 'generate_image': data = await handleGenerateImage(config, args); break
         case 'edit_image': data = await handleEditImage(config, args); break
         case 'generate_audio': data = await handleGenerateAudio(config, args); break
@@ -411,8 +498,9 @@ async function handle(request) {
         case 'generate_video': data = await handleGenerateVideo(config, args); break
         default: throw new Error(`Unknown tool: ${name}`)
       }
+      const files = Array.isArray(data.files) ? data.files : []
       result(id, {
-        content: [{ type: 'text', text: `${name} succeeded: ${(data.files || []).join(', ')}` }],
+        content: [{ type: 'text', text: `${name} succeeded${files.length > 0 ? `: ${files.join(', ')}` : ''}` }],
         structuredContent: data,
       })
       return

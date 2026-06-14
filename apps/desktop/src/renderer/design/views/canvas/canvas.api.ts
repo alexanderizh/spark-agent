@@ -17,6 +17,10 @@ import type {
   CanvasMediaTaskCreateResponse,
   CanvasMediaTaskInputFile,
   CanvasMediaCapabilitiesListResponse,
+  CanvasMediaModelDescribeRequest,
+  CanvasMediaModelDescribeResponse,
+  CanvasMediaModelsListRequest,
+  CanvasMediaModelsListResponse,
   CanvasSnapshotSaveRequest,
 } from '@spark/protocol'
 
@@ -963,6 +967,7 @@ export const canvasApi = {
       ...(request.prompt != null ? { prompt: request.prompt } : {}),
       ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
       ...(request.providerProfileId != null ? { providerProfileId: request.providerProfileId } : {}),
+      ...(request.modelId != null ? { modelId: request.modelId } : {}),
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
     }
     let response: CanvasMediaTaskCreateResponse
@@ -1113,6 +1118,16 @@ export const canvasApi = {
   /** 拉取当前可用的多媒体 provider 列表（不含 API key） */
   async listMediaCapabilities(): Promise<CanvasMediaCapabilitiesListResponse> {
     return window.spark.invoke('canvas:media-capabilities:list', {})
+  },
+
+  /** 拉取当前画布可用的 manifest 驱动模型列表（不含 API key） */
+  async listMediaModels(request: CanvasMediaModelsListRequest = {}): Promise<CanvasMediaModelsListResponse> {
+    return window.spark.invoke('canvas:media-models:list', request)
+  },
+
+  /** 查询单个 manifest 的完整调用/参数描述，供参数面板和 agent 节点编排使用 */
+  async describeMediaModel(request: CanvasMediaModelDescribeRequest): Promise<CanvasMediaModelDescribeResponse> {
+    return window.spark.invoke('canvas:media-models:describe', request)
   },
 
   /**

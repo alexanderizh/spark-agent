@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   DialogOpenFileRequestSchema,
+  IpcSchemaRegistry,
+  ProviderCreateRequestSchema,
   SessionCreateRequestSchema,
   SessionSendTurnRequestSchema,
   SessionUpdateRequestSchema,
 } from '../schemas/index.js'
+import { BUILTIN_MEDIA_MODEL_MANIFESTS, MediaModelManifestSchema } from '../media-model-manifest.js'
 
 describe('IPC schemas', () => {
   it('does not hard-code runtime permission defaults during session creation', () => {
@@ -116,5 +119,52 @@ describe('IPC schemas', () => {
     })
 
     expect(request).toMatchObject({ multiple: true })
+  })
+
+  it('validates built-in media model manifests', () => {
+    expect(BUILTIN_MEDIA_MODEL_MANIFESTS.length).toBeGreaterThan(5)
+    for (const manifest of BUILTIN_MEDIA_MODEL_MANIFESTS) {
+      expect(() => MediaModelManifestSchema.parse(manifest)).not.toThrow()
+    }
+  })
+
+  it('accepts provider media model refs', () => {
+    const request = ProviderCreateRequestSchema.parse({
+      name: 'APIMart Media',
+      provider: 'openai',
+      defaultModel: 'gpt-image-2',
+      apiKey: 'sk-test',
+      modelType: 'image',
+      mediaProvider: 'apimart',
+      mediaModelRefs: [
+        { manifestId: 'apimart:gpt-image-2', enabled: true, defaults: { size: '1024x1024' } },
+      ],
+    })
+
+    expect(request.mediaModelRefs?.[0]?.manifestId).toBe('apimart:gpt-image-2')
+  })
+
+  it('validates canvas media model discovery and selected model task payloads', () => {
+    const listRequest = IpcSchemaRegistry['canvas:media-models:list'].parse({
+      providerProfileId: 'provider-media-1',
+      capability: 'image.generate',
+      enabledOnly: true,
+    })
+    expect(listRequest.capability).toBe('image.generate')
+
+    const describeRequest = IpcSchemaRegistry['canvas:media-models:describe'].parse({
+      manifestId: 'apimart:gpt-image-2',
+      providerProfileId: 'provider-media-1',
+    })
+    expect(describeRequest.manifestId).toBe('apimart:gpt-image-2')
+
+    const taskRequest = IpcSchemaRegistry['canvas:task:create-media'].parse({
+      operation: 'text_to_image',
+      prompt: 'a polished product photo',
+      providerProfileId: 'provider-media-1',
+      modelId: 'gpt-image-2',
+      modelParams: { size: '1024x1024' },
+    })
+    expect(taskRequest.modelId).toBe('gpt-image-2')
   })
 })

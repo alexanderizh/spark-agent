@@ -2,6 +2,7 @@
 export * from './events/index.js'
 export * from './ipc/index.js'
 export * from './media-config.js'
+export * from './media-model-manifest.js'
 export * from './model-capabilities.js'
 export * from './provider-export.js'
 export * from './history-import.js'

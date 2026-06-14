@@ -1,5 +1,10 @@
 export { ProviderService } from './services/provider.service.js'
 export { MediaRouterService } from './services/media/media-router.service.js'
+export { MediaModelCatalogService } from './services/media/media-model-catalog.service.js'
+export type {
+  MediaModelCatalogItem,
+  MediaProviderModelItem,
+} from './services/media/media-model-catalog.service.js'
 export type {
   MediaProviderProfile,
   InvokeOptions as MediaInvokeOptions,

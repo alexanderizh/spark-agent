@@ -16,8 +16,9 @@ import type {
   MediaCapabilityId,
   MediaProviderKind,
   ProviderMediaDefaults,
+  MediaModelManifest,
 } from '@spark/protocol'
-import { capabilityForOperation, isMediaProviderKind } from '@spark/protocol'
+import { capabilityForOperation, isMediaCapabilityId, isMediaProviderKind, mediaManifestCapabilities } from '@spark/protocol'
 import { MediaProviderError } from './media-adapter.types.js'
 import type {
   MediaGenerateInput,
@@ -41,6 +42,7 @@ export interface MediaProviderProfile {
   mediaProvider?: MediaProviderKind | null
   mediaApiType?: 'sync' | 'async' | 'auto' | null
   mediaCapabilities?: MediaCapabilityId[]
+  mediaModelManifests?: Array<Pick<MediaModelManifest, 'id' | 'modelId' | 'capabilities'>>
   mediaDefaults?: ProviderMediaDefaults
   apiKey: string
   modelParams?: Record<string, unknown>
@@ -97,7 +99,7 @@ export class MediaRouterService {
     const kind = effectiveProviderKind(profile)
     const adapter = kind ? this.adapters.get(kind) : undefined
     if (!adapter) return false
-    const declared = profile.mediaCapabilities ?? []
+    const declared = mediaCapabilitiesForProfile(profile)
     // 声明了能力列表就以列表为准；未声明则信任 adapter
     if (declared.length > 0) return declared.includes(capability) && adapter.supports(capability)
     return adapter.supports(capability)
@@ -168,6 +170,14 @@ export class MediaRouterService {
     )
     return { output, providerProfileId: chosen.id }
   }
+}
+
+function mediaCapabilitiesForProfile(profile: Pick<MediaProviderProfile, 'mediaCapabilities' | 'mediaModelManifests'>): MediaCapabilityId[] {
+  const declared = profile.mediaCapabilities ?? []
+  const fromManifests = (profile.mediaModelManifests ?? [])
+    .flatMap((manifest) => mediaManifestCapabilities(manifest))
+    .filter(isMediaCapabilityId)
+  return Array.from(new Set([...declared, ...fromManifests]))
 }
 
 /** 解析 provider profile 的有效 mediaProvider：优先显式字段，其次由 imageProvider 推断 */

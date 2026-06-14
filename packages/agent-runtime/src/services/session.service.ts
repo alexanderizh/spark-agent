@@ -17,6 +17,7 @@ import {
   WorkflowRepository,
   TeamDispatchRepository,
   TeamDefinitionRepository,
+  MediaModelManifestRepository,
 } from '@spark/storage'
 import type { AgentItem, WorkflowItem } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
@@ -74,6 +75,7 @@ import { MemoryRepository } from '@spark/storage'
 import { MemoryWriterService } from './memory/memory-writer.service.js'
 import { MemoryReaderService } from './memory/memory-reader.service.js'
 import { MemoryStoreService } from './memory/memory-store.service.js'
+import { MediaModelCatalogService } from './media/media-model-catalog.service.js'
 import {
   createLogger,
   resolveProviderContextWindow,
@@ -1584,6 +1586,8 @@ export class SessionService {
     }
     if (config.mediaGenerationMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
+        'mcp__spark_media__list_models',
+        'mcp__spark_media__describe_model',
         'mcp__spark_media__generate_image',
         'mcp__spark_media__edit_image',
         'mcp__spark_media__generate_audio',
@@ -2056,6 +2060,8 @@ export class SessionService {
   private async resolveMediaGenerationContext(workspaceRootPath: string): Promise<MediaGenerationRuntimeContext | null> {
     const providerRepo = new ProviderProfileRepository(this.db)
     if (typeof providerRepo.listAll !== 'function') return null
+    const catalog = new MediaModelCatalogService(new MediaModelManifestRepository(this.db))
+    catalog.seedBuiltinManifests()
     const VOICE_VIDEO = new Set(['audio.speech', 'audio.transcription', 'video.generate', 'video.image_to_video'])
     const mediaProvider = providerRepo
       .listAll()
@@ -2065,12 +2071,20 @@ export class SessionService {
           const config = JSON.parse(row.config_json) as {
             modelType?: string
             mediaCapabilities?: string[]
+            mediaModelRefs?: Array<{ manifestId?: string; enabled?: boolean }>
           }
           // voice/video 模型类型，或显式声明了 audio/video 能力
           const isMediaModelType = config.modelType === 'voice' || config.modelType === 'video'
           const caps = Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : []
           const hasMediaCap = caps.some((cap) => VOICE_VIDEO.has(cap))
-          return isMediaModelType || hasMediaCap
+          const refs = Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : []
+          const hasManifestCap = refs
+            .filter((ref) => ref.enabled !== false && typeof ref.manifestId === 'string')
+            .some((ref) => {
+              const manifest = catalog.describe(ref.manifestId!)
+              return manifest?.capabilities.some((capability) => VOICE_VIDEO.has(capability.id)) === true
+            })
+          return isMediaModelType || hasMediaCap || hasManifestCap
         } catch {
           return false
         }
@@ -2088,6 +2102,7 @@ export class SessionService {
       mediaApiType?: string | null
       mediaCapabilities?: string[]
       mediaDefaults?: Record<string, unknown>
+      mediaModelRefs?: Array<{ manifestId: string; enabled?: boolean }>
     }
     const model = (config.defaultModel ?? config.model ?? '').trim()
     if (!model) return null
@@ -2101,6 +2116,10 @@ export class SessionService {
     const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
     const providerName = (config.mediaProvider?.trim() || 'openai-compatible') as 'apimart' | 'xai' | 'openai-compatible' | 'custom'
     const apiType = config.mediaApiType ?? 'auto'
+    const mediaManifests = (Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : [])
+      .filter((ref) => ref.enabled !== false)
+      .map((ref) => catalog.describe(ref.manifestId))
+      .filter((manifest): manifest is NonNullable<typeof manifest> => manifest != null)
     return {
       mcpServer: {
         type: 'stdio',
@@ -2120,6 +2139,9 @@ export class SessionService {
           ...(config.mediaDefaults != null
             ? { SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify(config.mediaDefaults) }
             : {}),
+          ...(mediaManifests.length > 0
+            ? { SPARK_MEDIA_MANIFESTS_JSON: JSON.stringify(mediaManifests) }
+            : {}),
         },
       },
       systemPrompt: buildMediaGenerationSystemPrompt({
@@ -2129,6 +2151,11 @@ export class SessionService {
         apiType,
         outputDir,
         capabilities: Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : [],
+        modelManifests: mediaManifests.map((manifest) => ({
+          id: manifest.id,
+          modelId: manifest.modelId,
+          capabilities: manifest.capabilities.map((capability) => capability.id),
+        })),
         ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
       }),
     }
@@ -3712,9 +3739,12 @@ function buildMediaGenerationSystemPrompt(input: {
   apiType: string
   outputDir: string
   capabilities: string[]
+  modelManifests?: Array<{ id: string; modelId: string; capabilities: string[] }>
   apiEndpoint?: string
 }): string {
   const caps = input.capabilities.length > 0 ? input.capabilities.join(', ') : 'audio.speech, video.generate'
+  const manifestLines = (input.modelManifests ?? [])
+    .map((manifest) => `  - ${manifest.id} (${manifest.modelId}): ${manifest.capabilities.join(', ') || 'no declared capabilities'}`)
   return [
     '## Media Generation Capability',
     'The current Spark Agent runtime has a configured multimedia model (image / audio / video).',
@@ -3727,8 +3757,13 @@ function buildMediaGenerationSystemPrompt(input: {
     `- API base URL: ${input.apiEndpoint ?? '(provider default)'}`,
     `- Declared capabilities: ${caps}`,
     `- Output directory: ${input.outputDir}`,
+    ...(manifestLines.length > 0
+      ? ['', 'Configured model manifests:', ...manifestLines]
+      : []),
     '',
     'Available tools (call the one matching the user intent):',
+    '- `mcp__spark_media__list_models` — inspect configured media models and capabilities.',
+    '- `mcp__spark_media__describe_model` — inspect parameter schema before calling a model.',
     '- `mcp__spark_media__generate_image` — text-to-image / image-to-image.',
     '- `mcp__spark_media__edit_image` — edit / compose existing images with a prompt.',
     '- `mcp__spark_media__generate_audio` — text-to-speech.',

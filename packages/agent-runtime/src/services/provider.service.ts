@@ -16,6 +16,7 @@ import {
   type MediaApiType,
   type MediaCapabilityId,
   type ProviderMediaDefaults,
+  type ProviderMediaModelRef,
 } from '@spark/protocol'
 import {
   PROVIDER_EXPORT_VERSION,
@@ -181,6 +182,7 @@ function rowToProfile(row: {
     ...(config.mediaApiType !== undefined && { mediaApiType: config.mediaApiType }),
     ...(config.mediaCapabilities !== undefined && { mediaCapabilities: config.mediaCapabilities }),
     ...(config.mediaDefaults !== undefined && { mediaDefaults: config.mediaDefaults }),
+    ...(config.mediaModelRefs !== undefined && { mediaModelRefs: config.mediaModelRefs }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -351,6 +353,7 @@ export class ProviderService {
     mediaApiType?: MediaApiType | null
     mediaCapabilities?: MediaCapabilityId[]
     mediaDefaults?: ProviderMediaDefaults
+    mediaModelRefs?: ProviderMediaModelRef[]
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -396,6 +399,7 @@ export class ProviderService {
         ...(params.mediaApiType !== undefined && { mediaApiType: params.mediaApiType }),
         ...(params.mediaCapabilities !== undefined && { mediaCapabilities: params.mediaCapabilities }),
         ...(params.mediaDefaults !== undefined && { mediaDefaults: params.mediaDefaults }),
+        ...(params.mediaModelRefs !== undefined && { mediaModelRefs: params.mediaModelRefs }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
@@ -428,6 +432,7 @@ export class ProviderService {
     mediaApiType?: MediaApiType | null
     mediaCapabilities?: MediaCapabilityId[]
     mediaDefaults?: ProviderMediaDefaults
+    mediaModelRefs?: ProviderMediaModelRef[]
     apiKey?: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -450,7 +455,8 @@ export class ProviderService {
       params.mediaProvider !== undefined ||
       params.mediaApiType !== undefined ||
       params.mediaCapabilities !== undefined ||
-      params.mediaDefaults !== undefined
+      params.mediaDefaults !== undefined ||
+      params.mediaModelRefs !== undefined
     const newConfig =
       nextDefaultModel !== undefined ||
       params.modelIds !== undefined ||
@@ -533,6 +539,9 @@ export class ProviderService {
     }
     if (newConfig !== undefined && params.mediaDefaults !== undefined) {
       newConfig.mediaDefaults = params.mediaDefaults
+    }
+    if (newConfig !== undefined && params.mediaModelRefs !== undefined) {
+      newConfig.mediaModelRefs = params.mediaModelRefs
     }
     // 重新走 normalize，确保 image→media 同步、能力兜底、枚举校验一致
     if (newConfig !== undefined) {
@@ -756,6 +765,8 @@ interface ProviderConfig {
   mediaCapabilities?: MediaCapabilityId[]
   /** 多媒体能力默认值 */
   mediaDefaults?: ProviderMediaDefaults
+  /** 启用的多媒体模型 manifest 引用 */
+  mediaModelRefs?: ProviderMediaModelRef[]
 }
 
 function normalizeProviderType(providerType: string): 'anthropic' | 'openai' {
@@ -860,6 +871,18 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   } else {
     delete normalized.mediaDefaults
   }
+  if (Array.isArray(config.mediaModelRefs)) {
+    normalized.mediaModelRefs = config.mediaModelRefs
+      .filter((ref) => ref != null && typeof ref.manifestId === 'string' && ref.manifestId.trim().length > 0)
+      .map((ref) => ({
+        manifestId: ref.manifestId.trim(),
+        ...(ref.modelId != null && ref.modelId.trim().length > 0 ? { modelId: ref.modelId.trim() } : {}),
+        ...(ref.enabled !== undefined ? { enabled: ref.enabled } : {}),
+        ...(ref.defaults !== undefined ? { defaults: ref.defaults } : {}),
+      }))
+  } else {
+    delete normalized.mediaModelRefs
+  }
 
   return normalized
 }
@@ -957,6 +980,7 @@ function rowToExportProfile(
     ...(config.mediaApiType !== undefined && { mediaApiType: config.mediaApiType }),
     ...(config.mediaCapabilities !== undefined && { mediaCapabilities: config.mediaCapabilities }),
     ...(config.mediaDefaults !== undefined && { mediaDefaults: config.mediaDefaults }),
+    ...(config.mediaModelRefs !== undefined && { mediaModelRefs: config.mediaModelRefs }),
     ...(apiKey && apiKey.length > 0 && { apiKey }),
   }
 }
@@ -983,6 +1007,7 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   mediaApiType?: MediaApiType | null
   mediaCapabilities?: MediaCapabilityId[]
   mediaDefaults?: ProviderMediaDefaults
+  mediaModelRefs?: ProviderMediaModelRef[]
 } {
   return {
     defaultModel: profile.defaultModel,
@@ -1000,5 +1025,6 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.mediaApiType !== undefined && { mediaApiType: profile.mediaApiType }),
     ...(profile.mediaCapabilities !== undefined && { mediaCapabilities: profile.mediaCapabilities }),
     ...(profile.mediaDefaults !== undefined && { mediaDefaults: profile.mediaDefaults }),
+    ...(profile.mediaModelRefs !== undefined && { mediaModelRefs: profile.mediaModelRefs }),
   }
 }
