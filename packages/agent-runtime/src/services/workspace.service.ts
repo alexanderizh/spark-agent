@@ -3,8 +3,10 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 
 import { WorkspaceRepository } from '@spark/storage'
-import type { WorkspaceRow } from '@spark/storage'
+import type { WorkspaceRow, WorktreeMeta } from '@spark/storage'
 import type { WorkspaceTreeEntry } from '@spark/protocol'
+
+import { GitWorktreeService } from './git-worktree.service.js'
 
 /**
  * 项目类型检测标识文件列表
@@ -85,6 +87,12 @@ export interface RelocateWorkspaceParams {
   relocatedFrom?: string[]
 }
 
+export interface CreateWorktreeWorkspaceParams {
+  baseWorkspaceId: string
+  branch: string
+  baseBranch?: string
+}
+
 const DEFAULT_TREE_DEPTH = 3
 const MAX_TREE_DEPTH = 5
 const MAX_TREE_ENTRIES = 1000
@@ -100,7 +108,10 @@ const IGNORED_TREE_NAMES = new Set([
 export class WorkspaceService {
   private currentWorkspace: WorkspaceRow | null = null
 
-  constructor(private readonly repo: WorkspaceRepository) {}
+  constructor(
+    private readonly repo: WorkspaceRepository,
+    private readonly git: GitWorktreeService = new GitWorktreeService(),
+  ) {}
 
   async openWorkspace(rootPath: string, name?: string, params: OpenWorkspaceParams = {}): Promise<WorkspaceRow> {
     const resolved = path.resolve(rootPath)
@@ -236,6 +247,40 @@ export class WorkspaceService {
     }
     return updated
   }
+
+  async createWorktreeWorkspace(params: CreateWorktreeWorkspaceParams): Promise<WorkspaceRow> {
+    const base = this.repo.findByIdOrFail(params.baseWorkspaceId)
+    const mainRepoRoot = await this.git.resolveMainRepoRoot(base.root_path)
+    const baseBranch = params.baseBranch ?? (await this.git.detectBaseBranch(mainRepoRoot))
+
+    const slug = slugifyBranch(params.branch)
+    const targetPath = path.join(mainRepoRoot, '.spark', 'worktrees', slug)
+
+    await ensureGitignoreEntry(mainRepoRoot, '.spark/worktrees/')
+    await this.git.addWorktree(mainRepoRoot, { branch: params.branch, targetPath, baseBranch })
+
+    const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch: params.branch, baseBranch }
+    const workspace = this.repo.create({
+      id: randomUUID(),
+      name: `${base.name} · ${params.branch}`,
+      rootPath: targetPath,
+      projectKind: base.project_kind,
+      worktreeMeta: meta,
+    })
+    this.currentWorkspace = workspace
+    return workspace
+  }
+
+  async removeWorktreeWorkspace(workspaceId: string, opts: { force?: boolean } = {}): Promise<void> {
+    const meta = this.repo.getWorktreeMeta(workspaceId)
+    if (meta == null) throw new Error('Workspace is not a worktree')
+    const ws = this.repo.findByIdOrFail(workspaceId)
+    await this.git.removeWorktree(meta.baseRepoRoot, ws.root_path, {
+      ...(opts.force !== undefined && { force: opts.force }),
+    })
+    if (this.currentWorkspace?.id === workspaceId) this.currentWorkspace = null
+    this.repo.delete(workspaceId)
+  }
 }
 
 function clampDepth(value: number): number {
@@ -308,4 +353,20 @@ async function assertDirectory(rootPath: string): Promise<void> {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
+}
+
+function slugifyBranch(branch: string): string {
+  return branch.replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'worktree'
+}
+
+async function ensureGitignoreEntry(repoRoot: string, entry: string): Promise<void> {
+  const gitignorePath = path.join(repoRoot, '.gitignore')
+  let content = ''
+  try {
+    content = await fs.readFile(gitignorePath, 'utf8')
+  } catch { /* no .gitignore yet */ }
+  const lines = content.split(/\r?\n/).map((l) => l.trim())
+  if (lines.includes(entry.trim())) return
+  const prefix = content === '' || content.endsWith('\n') ? '' : '\n'
+  await fs.writeFile(gitignorePath, `${content}${prefix}${entry}\n`, 'utf8')
 }

@@ -56,6 +56,7 @@ export type {
   ListSessionsParams,
   WorkspaceRow,
   CreateWorkspaceParams,
+  WorktreeMeta,
   AgentEventRow,
   QueryEventsParams,
   InsertEventParams,
