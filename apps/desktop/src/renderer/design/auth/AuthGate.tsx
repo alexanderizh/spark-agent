@@ -7,15 +7,12 @@ import { Alert, Tabs } from 'antd'
 import { useAuth } from './AuthContext'
 import { LoginForm } from './LoginForm'
 import { RegisterForm } from './RegisterForm'
-import { WechatQrPanel } from './WechatQrPanel'
-import { WechatBindPanel } from './WechatBindPanel'
 import { AuthBaseUrlBadge } from './AuthBaseUrlBadge'
 import { Icons } from '../Icons'
 import './Auth.less'
 
 export function AuthGate(): React.ReactElement {
   const auth = useAuth()
-  const activeFlow = auth.flow === 'wechat-bind' ? 'wechat' : auth.flow
 
   return (
     <div className="auth-page">
@@ -46,8 +43,8 @@ export function AuthGate(): React.ReactElement {
 
           <Tabs
             className="auth-flow-tabs"
-            activeKey={activeFlow}
-            onChange={(value) => auth.setFlow(value as 'login' | 'register' | 'wechat')}
+            activeKey={auth.flow}
+            onChange={(value) => auth.setFlow(value as 'login' | 'register')}
             items={[
               {
                 key: 'login',
@@ -67,25 +64,12 @@ export function AuthGate(): React.ReactElement {
                   </span>
                 ),
               },
-              {
-                key: 'wechat',
-                label: (
-                  <span className="auth-flow-tab-label">
-                    <Icons.Chat size={14} />
-                    <span>微信扫码</span>
-                  </span>
-                ),
-              },
             ]}
           />
 
           <div className="auth-content">
             {auth.flow === 'login' && <LoginForm />}
             {auth.flow === 'register' && <RegisterForm />}
-            {auth.flow === 'wechat' && <WechatQrPanel />}
-            {auth.flow === 'wechat-bind' && (
-              <WechatBindPanel bindSession={auth.bindSession ?? ''} />
-            )}
           </div>
 
           <AuthBaseUrlBadge />

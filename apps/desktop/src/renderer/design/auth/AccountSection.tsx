@@ -13,7 +13,6 @@ import './AccountSection.less'
 interface BindStatus {
   hasEmail: boolean
   hasPhone: boolean
-  hasWechat: boolean
   hasPassword: boolean
   account: string
 }
@@ -85,7 +84,6 @@ function AuthenticatedAccountView(): React.ReactElement {
   const bindItems = [
     { label: '邮箱', value: bindStatus?.hasEmail ? '已绑定' : '未绑定' },
     { label: '手机号', value: bindStatus?.hasPhone ? '已绑定' : '未绑定' },
-    { label: '微信', value: bindStatus?.hasWechat ? '已绑定' : '未绑定' },
   ]
 
   return (

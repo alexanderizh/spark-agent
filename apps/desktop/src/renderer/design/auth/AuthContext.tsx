@@ -4,7 +4,7 @@
  * 职责：
  *   - 启动时调 `auth:bootstrap` 决定渲染登录页 or 主界面
  *   - 订阅 stream:auth:* 事件，实时同步状态
- *   - 暴露登录/注册/退出/微信扫码等业务方法
+ *   - 暴露登录/注册/退出等业务方法
  *
  * 设计要点：
  *   - 不在渲染端存 token（主进程 keytar 持久化）
@@ -27,10 +27,9 @@ import type {
   AuthMeResponse,
   AuthSendCodeType,
   AuthSession,
-  AuthWechatPollResponse,
 } from '@spark/protocol'
 
-export type AuthFlow = 'login' | 'register' | 'wechat' | 'wechat-bind'
+export type AuthFlow = 'login' | 'register'
 
 export interface AuthContextValue {
   /** 是否已登录（token + userId 都有）*/
@@ -42,9 +41,6 @@ export interface AuthContextValue {
   /** 当前显示的页面流（未登录时使用）*/
   flow: AuthFlow
   setFlow: (flow: AuthFlow) => void
-  /** 微信扫码后绑定邮箱用的会话 ID（由 WechatQrPanel 写入）*/
-  bindSession: string | null
-  setBindSession: (s: string | null) => void
   /** 是否正在 bootstrap（启动时验证已存 token）*/
   bootstrapping: boolean
   /** keytar 是否可用；false 表示登录态不会持久化（dev 模式 native binding 失败常见）*/
@@ -76,16 +72,6 @@ export interface AuthContextValue {
   refreshMe: () => Promise<AuthMeResponse | null>
   /** 主动 refresh token */
   refreshToken: () => Promise<AuthSession | null>
-  /** 微信扫码 */
-  wechatQr: () => Promise<{ state: string; qrUrl: string; appId?: string; redirectUri?: string }>
-  wechatPoll: (state: string) => Promise<AuthWechatPollResponse>
-  wechatBindEmailSendCode: (params: {
-    bindSession: string
-    email: string
-    captchaId: string
-    captchaText: string
-  }) => Promise<{ expire_in: number }>
-  wechatBindEmail: (params: { bindSession: string; code: string }) => Promise<AuthSession & { isNew: boolean }>
   /** 修改 edu-server base URL（设置页）*/
   setBaseUrl: (url: string) => Promise<{ baseUrl: string }>
 }
@@ -108,7 +94,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
   const [user, setUser] = useState<AuthMeResponse | null>(null)
   const [baseUrl, setBaseUrlState] = useState('')
   const [flow, setFlow] = useState<AuthFlow>('login')
-  const [bindSession, setBindSession] = useState<string | null>(null)
   const [keytarAvailable, setKeytarAvailable] = useState<boolean | null>(null)
 
   // ─── 启动时 bootstrap ──────────────────────────────────────────────────────
@@ -236,37 +221,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
     }
   }, [])
 
-  const wechatQr = useCallback(async () => {
-    return (await window.spark!.invoke('auth:wechat-qr', {})) as {
-      state: string
-      qrUrl: string
-      appId?: string
-      redirectUri?: string
-    }
-  }, [])
-
-  const wechatPoll = useCallback(async (state: string) => {
-    return (await window.spark!.invoke('auth:wechat-poll', { state })) as AuthWechatPollResponse
-  }, [])
-
-  const wechatBindEmailSendCode = useCallback(
-    async (params: { bindSession: string; email: string; captchaId: string; captchaText: string }) => {
-      return (await window.spark!.invoke('auth:wechat-bind-email-send-code', params)) as { expire_in: number }
-    },
-    [],
-  )
-
-  const wechatBindEmail = useCallback(
-    async (params: { bindSession: string; code: string }) => {
-      const result = (await window.spark!.invoke('auth:wechat-bind-email', params)) as AuthSession & { isNew: boolean }
-      const me = (await window.spark!.invoke('auth:me', {})) as AuthMeResponse
-      setIsAuthenticated(true)
-      setUser(me)
-      return result
-    },
-    [],
-  )
-
   const setBaseUrl = useCallback(async (url: string) => {
     const res = (await window.spark!.invoke('auth:set-base-url', { baseUrl: url })) as { baseUrl: string }
     setBaseUrlState(res.baseUrl)
@@ -280,8 +234,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       baseUrl,
       flow,
       setFlow,
-      bindSession,
-      setBindSession,
       bootstrapping,
       keytarAvailable,
       fetchCaptcha,
@@ -291,10 +243,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       logout,
       refreshMe,
       refreshToken,
-      wechatQr,
-      wechatPoll,
-      wechatBindEmailSendCode,
-      wechatBindEmail,
       setBaseUrl,
     }),
     [
@@ -302,7 +250,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       user,
       baseUrl,
       flow,
-      bindSession,
       bootstrapping,
       keytarAvailable,
       fetchCaptcha,
@@ -312,10 +259,6 @@ export function AuthProvider({ children }: AuthProviderProps): React.ReactElemen
       logout,
       refreshMe,
       refreshToken,
-      wechatQr,
-      wechatPoll,
-      wechatBindEmailSendCode,
-      wechatBindEmail,
       setBaseUrl,
     ],
   )
