@@ -264,12 +264,12 @@ export function CanvasWorkspaceView({
             <Button size="small" type="text" icon={<Icons.ArrowLeft size={15} />} onClick={onBack}>
               项目
             </Button>
-            <div>
+            <div className="canvas-workspace-heading">
               <h2>{snapshot.project.title}</h2>
-              <div className="canvas-workspace-subtitle">
-                {snapshot.nodes.length} nodes / {snapshot.assets.length} assets /{' '}
-                {snapshot.tasks.length} tasks
-              </div>
+              <span className="canvas-workspace-meta">
+                {snapshot.nodes.length} 节点 / {snapshot.assets.length} 素材 /{' '}
+                {snapshot.tasks.length} 任务
+              </span>
             </div>
           </div>
           <div className="canvas-workspace-actions">

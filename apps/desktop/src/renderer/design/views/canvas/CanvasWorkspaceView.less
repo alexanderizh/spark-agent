@@ -18,8 +18,8 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 16px;
-  padding: 8px 16px 10px 18px;
+  gap: 8px;
+  padding: 6px 16px 7px 18px;
   border-bottom: 1px solid var(--divider);
   background: var(--panel);
   flex-shrink: 0;
@@ -45,12 +45,19 @@
   flex-shrink: 0;
 }
 
+.canvas-workspace-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
 .canvas-workspace-title .ant-btn,
 .canvas-workspace-actions .ant-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 30px;
+  height: 28px;
   white-space: nowrap;
 }
 
@@ -64,19 +71,22 @@
 
 .canvas-workspace-title h2 {
   margin: 0;
-  max-width: 42vw;
+  max-width: 34vw;
   overflow: hidden;
   color: var(--text-strong);
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 700;
+  line-height: 1.2;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.canvas-workspace-subtitle {
-  margin-top: 2px;
+.canvas-workspace-meta {
+  flex-shrink: 0;
   color: var(--text-muted);
   font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 
 .canvas-workspace-body {
@@ -94,7 +104,7 @@
   align-items: stretch;
   gap: 10px;
   overflow-x: auto;
-  padding: 6px 0 0;
+  padding: 2px 0 0;
   border-top: 1px solid var(--divider);
 }
 
