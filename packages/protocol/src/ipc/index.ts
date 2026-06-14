@@ -553,6 +553,8 @@ export interface WorkspaceInfo {
   archivedAt: string | null
   createdAt: string
   updatedAt: string
+  /** 该 workspace 为 git worktree 时的元数据，否则 null */
+  worktreeMeta: { baseRepoRoot: string; branch: string; baseBranch: string } | null
 }
 
 export interface WorkspaceOpenRequest {
@@ -658,6 +660,45 @@ export interface WorkspaceSwitchBranchRequest {
 export interface WorkspaceSwitchBranchResponse {
   currentBranch: string
   branches: string[]
+}
+
+export interface WorktreeInfo {
+  path: string
+  branch: string | null
+  head: string
+  isMain: boolean
+  isCurrent: boolean
+  isMerged: boolean
+  workspaceId?: string
+  sessionTitle?: string
+}
+
+export interface WorkspaceListWorktreesRequest {
+  workspaceId: string
+}
+export interface WorkspaceListWorktreesResponse {
+  isGitRepo: boolean
+  baseBranch: string | null
+  /** 主仓库根的绝对路径；合并需在主仓库执行（base 分支无法在子 worktree 检出） */
+  baseRepoRoot: string | null
+  worktrees: WorktreeInfo[]
+}
+
+export interface WorkspaceCreateWorktreeRequest {
+  baseWorkspaceId: string
+  branch: string
+  baseBranch?: string
+}
+export interface WorkspaceCreateWorktreeResponse {
+  workspace: WorkspaceInfo
+}
+
+export interface WorkspaceRemoveWorktreeRequest {
+  workspaceId: string
+  force?: boolean
+}
+export interface WorkspaceRemoveWorktreeResponse {
+  removed: boolean
 }
 
 // ─── Dialog Channels ────────────────────────────────────────────────────────
@@ -3631,6 +3672,9 @@ export interface IpcChannelMap {
   'workspace:list-directory': [WorkspaceListDirectoryRequest, WorkspaceListDirectoryResponse]
   'workspace:list-branches': [WorkspaceListBranchesRequest, WorkspaceListBranchesResponse]
   'workspace:switch-branch': [WorkspaceSwitchBranchRequest, WorkspaceSwitchBranchResponse]
+  'workspace:list-worktrees': [WorkspaceListWorktreesRequest, WorkspaceListWorktreesResponse]
+  'workspace:create-worktree': [WorkspaceCreateWorktreeRequest, WorkspaceCreateWorktreeResponse]
+  'workspace:remove-worktree': [WorkspaceRemoveWorktreeRequest, WorkspaceRemoveWorktreeResponse]
   'workspace:watch-start': [WorkspaceWatchStartRequest, WorkspaceWatchStartResponse]
   'workspace:watch-stop': [WorkspaceWatchStopRequest, WorkspaceWatchStopResponse]
 

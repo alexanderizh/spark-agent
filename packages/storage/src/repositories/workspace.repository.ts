@@ -21,10 +21,18 @@ export interface WorkspaceRow {
   agent_runtime_path: string
   project_kind: string
   relocated_from_json: string | null
+  worktree_meta_json: string | null
   pinned_at: string | null
   archived_at: string | null
   created_at: string
   updated_at: string
+}
+
+/** worktree workspace 的元数据（序列化进 worktree_meta_json） */
+export interface WorktreeMeta {
+  baseRepoRoot: string
+  branch: string
+  baseBranch: string
 }
 
 /** 创建 Workspace 的参数 */
@@ -34,6 +42,7 @@ export interface CreateWorkspaceParams {
   rootPath: string
   projectKind?: string
   relocatedFrom?: string[]
+  worktreeMeta?: WorktreeMeta
 }
 
 export interface RelocateWorkspaceParams {
@@ -55,8 +64,8 @@ export class WorkspaceRepository extends BaseRepository {
   create(params: CreateWorkspaceParams): WorkspaceRow {
     const now = new Date().toISOString()
     const stmt = this.raw.prepare(`
-      INSERT INTO workspaces (id, name, root_path, spark_config_path, agent_runtime_path, project_kind, relocated_from_json, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO workspaces (id, name, root_path, spark_config_path, agent_runtime_path, project_kind, relocated_from_json, worktree_meta_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `)
 
     stmt.run(
@@ -67,6 +76,7 @@ export class WorkspaceRepository extends BaseRepository {
       `${params.rootPath}/.agent_spark`,
       params.projectKind ?? 'generic',
       params.relocatedFrom ? this.toJson(params.relocatedFrom) : null,
+      params.worktreeMeta ? this.toJson(params.worktreeMeta) : null,
       now,
       now,
     )
@@ -92,6 +102,23 @@ export class WorkspaceRepository extends BaseRepository {
   findByRootPath(rootPath: string): WorkspaceRow | null {
     const stmt = this.raw.prepare('SELECT * FROM workspaces WHERE root_path = ?')
     return (stmt.get(rootPath) as WorkspaceRow | undefined) ?? null
+  }
+
+  /** 解析某 workspace 的 worktree 元数据，非 worktree 返回 null */
+  getWorktreeMeta(id: string): WorktreeMeta | null {
+    const row = this.get(id)
+    if (row == null || row.worktree_meta_json == null) return null
+    return this.fromJson<WorktreeMeta | null>(row.worktree_meta_json, null)
+  }
+
+  /** 查找某主仓库下已注册为 workspace 的所有 worktree */
+  findWorktreesByBaseRepo(baseRepoRoot: string): WorkspaceRow[] {
+    const stmt = this.raw.prepare(`SELECT * FROM workspaces WHERE worktree_meta_json IS NOT NULL`)
+    const rows = stmt.all() as WorkspaceRow[]
+    return rows.filter((r) => {
+      const meta = this.fromJson<WorktreeMeta | null>(r.worktree_meta_json, null)
+      return meta?.baseRepoRoot === baseRepoRoot
+    })
   }
 
   /** 更新工作区名称 */
