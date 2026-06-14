@@ -6,7 +6,7 @@ import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import { CanvasInspector } from './CanvasInspector'
-import { CanvasStage } from './CanvasStage'
+import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { useCanvasWorkspace } from './canvas.store'
@@ -47,6 +47,38 @@ function fitImageNodeSize(width: number, height: number): { width: number; heigh
   }
 }
 
+function clampPosition(value: number, min: number, max: number): number {
+  if (max < min) return min
+  return Math.min(Math.max(value, min), max)
+}
+
+function positionNodeInViewport(
+  viewport: CanvasStageViewport | null,
+  size: { width: number; height: number },
+  fallback: { x: number; y: number },
+  offset = 0,
+): { x: number; y: number } {
+  if (!viewport || viewport.width <= 0 || viewport.height <= 0 || viewport.zoom <= 0) {
+    return fallback
+  }
+
+  const visibleLeft = -viewport.x / viewport.zoom
+  const visibleTop = -viewport.y / viewport.zoom
+  const visibleRight = (viewport.width - viewport.x) / viewport.zoom
+  const visibleBottom = (viewport.height - viewport.y) / viewport.zoom
+  const centerX = visibleLeft + (visibleRight - visibleLeft) / 2
+  const centerY = visibleTop + (visibleBottom - visibleTop) / 2
+
+  return {
+    x: Math.round(
+      clampPosition(centerX - size.width / 2 + offset, visibleLeft + 24, visibleRight - size.width - 24),
+    ),
+    y: Math.round(
+      clampPosition(centerY - size.height / 2 + offset, visibleTop + 24, visibleBottom - size.height - 24),
+    ),
+  }
+}
+
 function areNodeIdsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
@@ -77,6 +109,7 @@ export function CanvasWorkspaceView({
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
+  const [canvasViewport, setCanvasViewport] = useState<CanvasStageViewport | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const selectedNodes = useMemo(
@@ -155,13 +188,22 @@ export function CanvasWorkspaceView({
   }
 
   const addText = async (isPrompt = false) => {
+    const position = positionNodeInViewport(
+      canvasViewport,
+      { width: 280, height: 164 },
+      {
+        x: 140 + snapshot.nodes.length * 24,
+        y: 120 + snapshot.nodes.length * 24,
+      },
+      (snapshot.nodes.length % 6) * 18,
+    )
     await createTextNode({
       text: isPrompt
         ? '描述你想生成的画面、风格、主体、限制条件...'
         : '双击后续版本可直接编辑文本内容。',
       isPrompt,
-      x: 140 + snapshot.nodes.length * 24,
-      y: 120 + snapshot.nodes.length * 24,
+      x: position.x,
+      y: position.y,
     })
   }
 
@@ -180,11 +222,20 @@ export function CanvasWorkspaceView({
     const dataUrl = await readFileAsDataUrl(file)
     const dimensions = await readImageDimensions(dataUrl)
     const nodeSize = fitImageNodeSize(dimensions.width, dimensions.height)
+    const position = positionNodeInViewport(
+      canvasViewport,
+      nodeSize,
+      {
+        x: 220 + snapshot.nodes.length * 24,
+        y: 180 + snapshot.nodes.length * 24,
+      },
+      (snapshot.nodes.length % 6) * 18,
+    )
     await createImageNode({
       file,
       dataUrl,
-      x: 220 + snapshot.nodes.length * 24,
-      y: 180 + snapshot.nodes.length * 24,
+      x: position.x,
+      y: position.y,
       width: nodeSize.width,
       height: nodeSize.height,
       imageWidth: dimensions.width,
@@ -315,6 +366,7 @@ export function CanvasWorkspaceView({
           onBringNodeToFront={handleBringNodeToFront}
           onCreateGroupFromSelection={handleCreateGroup}
           onOpenAiComposer={handleOpenInlineAi}
+          onViewportChange={setCanvasViewport}
         />
         <CanvasInlineAiComposer
           open={inlineAiOpen}

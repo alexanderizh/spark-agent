@@ -13,6 +13,8 @@ import {
   type Node,
   type NodeChange,
   type NodeOrigin,
+  type ReactFlowInstance,
+  type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
@@ -25,6 +27,11 @@ const defaultNodeOrigin: NodeOrigin = [0, 0]
 
 type CanvasNodeActions = CanvasFlowNodeData['actions']
 type CanvasLineageSummary = CanvasFlowNodeData['lineage']
+
+export type CanvasStageViewport = Viewport & {
+  width: number
+  height: number
+}
 
 function toFlowNode(
   node: SparkCanvasNode,
@@ -104,6 +111,7 @@ export function CanvasStage({
   onBringNodeToFront,
   onCreateGroupFromSelection,
   onOpenAiComposer,
+  onViewportChange,
 }: {
   snapshot: CanvasSnapshot
   activeTool: 'select' | 'pan'
@@ -117,6 +125,7 @@ export function CanvasStage({
   onBringNodeToFront: (nodeId: string) => void
   onCreateGroupFromSelection: () => void
   onOpenAiComposer: (nodeId: string) => void
+  onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
     () => ({
@@ -152,13 +161,28 @@ export function CanvasStage({
     [lineageSummaries, nodeActions, selectedNodeIdSet, selectedNodeIds.length, snapshot.nodes],
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
+  const stageRef = useRef<HTMLDivElement>(null)
   const flowNodesRef = useRef(nodes)
+  const latestViewportRef = useRef<Viewport>(snapshot.board.viewport)
   const syncFrameRef = useRef<number | null>(null)
   const guideFrameRef = useRef<number | null>(null)
   const viewportInteractingRef = useRef(false)
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
+
+  const notifyViewportChange = useCallback(
+    (viewport = latestViewportRef.current) => {
+      latestViewportRef.current = viewport
+      const rect = stageRef.current?.getBoundingClientRect()
+      onViewportChange?.({
+        ...viewport,
+        width: rect?.width ?? 0,
+        height: rect?.height ?? 0,
+      })
+    },
+    [onViewportChange],
+  )
 
   const cancelScheduledSync = useCallback(() => {
     if (syncFrameRef.current == null) return
@@ -192,6 +216,15 @@ export function CanvasStage({
     if (guideFrameRef.current != null) window.cancelAnimationFrame(guideFrameRef.current)
   }, [])
 
+  useEffect(() => {
+    const element = stageRef.current
+    if (!element) return undefined
+    notifyViewportChange()
+    const observer = new ResizeObserver(() => notifyViewportChange())
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [notifyViewportChange])
+
   const flushPendingNodesSync = useCallback(() => {
     const pendingNodes = pendingNodesSyncRef.current
     pendingNodesSyncRef.current = null
@@ -203,10 +236,18 @@ export function CanvasStage({
     cancelScheduledSync()
   }, [cancelScheduledSync])
 
-  const handleViewportMoveEnd = useCallback(() => {
+  const handleViewportMoveEnd = useCallback((_event?: MouseEvent | TouchEvent | null, viewport?: Viewport) => {
     viewportInteractingRef.current = false
     flushPendingNodesSync()
-  }, [flushPendingNodesSync])
+    if (viewport) notifyViewportChange(viewport)
+  }, [flushPendingNodesSync, notifyViewportChange])
+
+  const handleInit = useCallback(
+    (instance: ReactFlowInstance<Node<CanvasFlowNodeData>, Edge>) => {
+      notifyViewportChange(instance.getViewport())
+    },
+    [notifyViewportChange],
+  )
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
@@ -264,7 +305,7 @@ export function CanvasStage({
 
   return (
     <ReactFlowProvider>
-      <div className="canvas-stage">
+      <div className="canvas-stage" ref={stageRef}>
         <ReactFlow
           nodes={flowNodes}
           edges={edges}
@@ -285,6 +326,7 @@ export function CanvasStage({
           onConnect={handleConnect}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
+          onInit={handleInit}
           onMoveStart={handleViewportMoveStart}
           onMoveEnd={handleViewportMoveEnd}
           onSelectionChange={({ nodes: selected }) =>

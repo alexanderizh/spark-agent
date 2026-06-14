@@ -550,17 +550,24 @@ export const canvasApi = {
 
     const at = now()
     const maxZ = Math.max(0, ...db.nodes.filter((node) => node.projectId === projectId).map((node) => node.zIndex))
-    const groupX = Math.min(...sourceNodes.map((node) => node.x)) - 28
-    const groupY = Math.min(...sourceNodes.map((node) => node.y)) - 56
-    const cellWidth = Math.max(220, ...sourceNodes.map((node) => Math.min(node.width, 320)))
-    const cellHeight = Math.max(132, ...sourceNodes.map((node) => Math.min(node.height, 210)))
-    const columns = sourceNodes.length <= 2 ? sourceNodes.length : 2
-    const rows = Math.ceil(sourceNodes.length / columns)
-    const gap = 18
-    const paddingX = 22
-    const headerHeight = 48
-    const groupWidth = Math.max(360, columns * cellWidth + (columns - 1) * gap + paddingX * 2)
-    const groupHeight = Math.max(220, headerHeight + rows * cellHeight + (rows - 1) * gap + 24)
+    const left = Math.min(...sourceNodes.map((node) => node.x))
+    const top = Math.min(...sourceNodes.map((node) => node.y))
+    const right = Math.max(...sourceNodes.map((node) => node.x + node.width))
+    const bottom = Math.max(...sourceNodes.map((node) => node.y + node.height))
+    const paddingX = 28
+    const paddingBottom = 28
+    const headerHeight = 56
+    const groupX = left - paddingX
+    const groupY = top - headerHeight
+    const contentWidth = right - left
+    const contentHeight = bottom - top
+    const tallestNodeHeight = Math.max(...sourceNodes.map((node) => node.height))
+    const groupWidth = Math.max(360, contentWidth + paddingX * 2)
+    const groupHeight = Math.max(
+      220,
+      headerHeight + contentHeight + paddingBottom,
+      headerHeight + tallestNodeHeight + paddingBottom,
+    )
 
     const groupNode = createNodeBase({
       projectId,
@@ -579,18 +586,18 @@ export const canvasApi = {
     })
     groupNode.zIndex = maxZ + 1
 
-    const sortedNodes = [...sourceNodes].sort((left, right) => left.x - right.x || left.y - right.y)
+    const sortedNodes = [...sourceNodes].sort(
+      (leftNode, rightNode) => leftNode.x - rightNode.x || leftNode.y - rightNode.y,
+    )
     const arrangedById = new Map(
-      sortedNodes.map((node, index) => {
-        const col = index % columns
-        const row = Math.floor(index / columns)
+      sortedNodes.map((node) => {
         return [
           node.id,
           {
-            x: paddingX + col * (cellWidth + gap),
-            y: headerHeight + row * (cellHeight + gap),
-            width: Math.min(Math.max(node.width, 200), cellWidth),
-            height: Math.min(Math.max(node.height, 118), cellHeight),
+            x: node.x - groupX,
+            y: node.y - groupY,
+            width: node.width,
+            height: node.height,
           },
         ]
       }),
