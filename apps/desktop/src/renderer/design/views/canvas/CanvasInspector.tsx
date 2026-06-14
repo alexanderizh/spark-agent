@@ -12,6 +12,14 @@ export function CanvasInspector({
   onDuplicate,
   onToggleLock,
   onBringToFront,
+  onCreateGroup,
+  onAddToGroup,
+  onRemoveFromGroup,
+  onDissolveGroup,
+  canCreateGroup,
+  canAddToGroup,
+  canRemoveFromGroup,
+  canDissolveGroup,
   onSaveText,
 }: {
   selectedNodes: CanvasNode[]
@@ -21,6 +29,14 @@ export function CanvasInspector({
   onDuplicate: () => void
   onToggleLock: () => void
   onBringToFront: () => void
+  onCreateGroup: () => void
+  onAddToGroup: () => void
+  onRemoveFromGroup: () => void
+  onDissolveGroup: () => void
+  canCreateGroup: boolean
+  canAddToGroup: boolean
+  canRemoveFromGroup: boolean
+  canDissolveGroup: boolean
   onSaveText: (node: CanvasNode, text: string) => void
 }) {
   if (selectedNodes.length === 0) {
@@ -52,6 +68,16 @@ export function CanvasInspector({
           </Tag>
         </div>
         <Space size={8} wrap>
+          <Button
+            size="small"
+            disabled={!canCreateGroup && !canAddToGroup}
+            onClick={canAddToGroup ? onAddToGroup : onCreateGroup}
+          >
+            {canAddToGroup ? '加入组' : '创建组'}
+          </Button>
+          <Button size="small" disabled={!canRemoveFromGroup} onClick={onRemoveFromGroup}>
+            移出组
+          </Button>
           <Button size="small" onClick={onDuplicate}>
             复制
           </Button>
@@ -103,6 +129,16 @@ export function CanvasInspector({
         ]}
       />
       <Space size={8} wrap>
+        {node.type === 'group' && (
+          <Button size="small" disabled={!canDissolveGroup} onClick={onDissolveGroup}>
+            解散组
+          </Button>
+        )}
+        {node.parentNodeId && (
+          <Button size="small" disabled={!canRemoveFromGroup} onClick={onRemoveFromGroup}>
+            移出组
+          </Button>
+        )}
         <Button size="small" onClick={onDuplicate}>
           复制
         </Button>

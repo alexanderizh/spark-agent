@@ -98,6 +98,9 @@ export function CanvasWorkspaceView({
     createTextNode,
     createImageNode,
     createGroupNode,
+    dissolveGroupNode,
+    addNodesToGroup,
+    removeNodesFromGroup,
     deleteNodes,
     duplicateNodes,
     patchNodes,
@@ -116,6 +119,24 @@ export function CanvasWorkspaceView({
     () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
     [selectedNodeIds, snapshot?.nodes],
   )
+  const selectedGroups = useMemo(
+    () => selectedNodes.filter((node) => node.type === 'group'),
+    [selectedNodes],
+  )
+  const selectedTopLevelNodes = useMemo(
+    () => selectedNodes.filter((node) => node.type !== 'group' && !node.parentNodeId),
+    [selectedNodes],
+  )
+  const selectedGroupedNodes = useMemo(
+    () => selectedNodes.filter((node) => Boolean(node.parentNodeId)),
+    [selectedNodes],
+  )
+  const canCreateGroup = selectedNodes.length >= 2 && selectedNodes.every(
+    (node) => node.type !== 'group' && !node.parentNodeId,
+  )
+  const canAddToGroup = selectedGroups.length === 1 && selectedTopLevelNodes.length > 0
+  const canRemoveFromGroup = selectedGroupedNodes.length > 0
+  const canDissolveGroup = selectedGroups.length === 1
 
   const handleSelectionChange = useCallback((nodeIds: string[]) => {
     setSelectedNodeIds((previousIds) =>
@@ -157,9 +178,36 @@ export function CanvasWorkspaceView({
   )
 
   const handleCreateGroup = useCallback(() => {
-    if (selectedNodeIds.length < 2) return
-    void createGroupNode(selectedNodeIds)
-  }, [createGroupNode, selectedNodeIds])
+    if (selectedTopLevelNodes.length < 2) return
+    void createGroupNode(selectedTopLevelNodes.map((node) => node.id))
+  }, [createGroupNode, selectedTopLevelNodes])
+
+  const handleAddSelectionToGroup = useCallback(
+    (groupId?: string) => {
+      const targetGroupId = groupId ?? selectedGroups[0]?.id
+      if (!targetGroupId || selectedTopLevelNodes.length === 0) return
+      void addNodesToGroup(targetGroupId, selectedTopLevelNodes.map((node) => node.id))
+    },
+    [addNodesToGroup, selectedGroups, selectedTopLevelNodes],
+  )
+
+  const handleRemoveFromGroup = useCallback(
+    (nodeIds?: string[]) => {
+      const targetNodeIds = nodeIds ?? selectedGroupedNodes.map((node) => node.id)
+      if (targetNodeIds.length === 0) return
+      void removeNodesFromGroup(targetNodeIds)
+    },
+    [removeNodesFromGroup, selectedGroupedNodes],
+  )
+
+  const handleDissolveGroup = useCallback(
+    (groupId?: string) => {
+      const targetGroupId = groupId ?? selectedGroups[0]?.id
+      if (!targetGroupId) return
+      void dissolveGroupNode(targetGroupId)
+    },
+    [dissolveGroupNode, selectedGroups],
+  )
 
   const handleOpenInlineAi = useCallback(
     (nodeId?: string) => {
@@ -346,9 +394,16 @@ export function CanvasWorkspaceView({
           onAddPrompt={() => void addText(true)}
           onUploadImage={uploadFirstImage}
           onCreateGroup={handleCreateGroup}
+          onAddToGroup={() => handleAddSelectionToGroup()}
+          onRemoveFromGroup={() => handleRemoveFromGroup()}
+          onDissolveGroup={() => handleDissolveGroup()}
           onOpenAiComposer={() => handleOpenInlineAi()}
           onDeleteSelected={() => void deleteNodes(selectedNodeIds)}
           selectedCount={selectedNodeIds.length}
+          canCreateGroup={canCreateGroup}
+          canAddToGroup={canAddToGroup}
+          canRemoveFromGroup={canRemoveFromGroup}
+          canDissolveGroup={canDissolveGroup}
         />
       </header>
 
@@ -365,6 +420,9 @@ export function CanvasWorkspaceView({
           onToggleLockNode={handleToggleLockNode}
           onBringNodeToFront={handleBringNodeToFront}
           onCreateGroupFromSelection={handleCreateGroup}
+          onAddSelectionToGroup={handleAddSelectionToGroup}
+          onRemoveNodeFromGroup={(nodeId) => handleRemoveFromGroup([nodeId])}
+          onDissolveGroup={handleDissolveGroup}
           onOpenAiComposer={handleOpenInlineAi}
           onViewportChange={setCanvasViewport}
         />
@@ -386,6 +444,14 @@ export function CanvasWorkspaceView({
             onDuplicate={() => void duplicateNodes(selectedNodeIds)}
             onToggleLock={() => void handleToggleLock()}
             onBringToFront={() => void handleBringToFront()}
+            onCreateGroup={handleCreateGroup}
+            onAddToGroup={() => handleAddSelectionToGroup()}
+            onRemoveFromGroup={() => handleRemoveFromGroup()}
+            onDissolveGroup={() => handleDissolveGroup()}
+            canCreateGroup={canCreateGroup}
+            canAddToGroup={canAddToGroup}
+            canRemoveFromGroup={canRemoveFromGroup}
+            canDissolveGroup={canDissolveGroup}
             onSaveText={(node, text) => {
               void updateNodeData(node.id, { ...node.data, text })
             }}

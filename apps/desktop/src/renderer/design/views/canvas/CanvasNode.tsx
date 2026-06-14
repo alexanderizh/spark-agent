@@ -21,6 +21,9 @@ export type CanvasFlowNodeData = {
     toggleLockNode: (nodeId: string) => void
     bringNodeToFront: (nodeId: string) => void
     createGroupFromSelection: () => void
+    addSelectionToGroup: (groupId: string) => void
+    removeNodeFromGroup: (nodeId: string) => void
+    dissolveGroup: (groupId: string) => void
     openAiComposer: (nodeId: string) => void
   }
 }
@@ -40,6 +43,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const title = node.title ?? node.type
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
+  const isGroupedChild = Boolean(node.parentNodeId)
   const hasLineage = Boolean(lineage && (lineage.incoming > 0 || lineage.outgoing > 0))
 
   const menu = {
@@ -48,6 +52,17 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       { key: 'duplicate', label: (<span className="canvas-menu-item"><Icons.Copy size={14} /> 复制节点</span>), onClick: () => actions.duplicateNode(node.id) },
       { key: 'ai', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> AI 操作</span>), onClick: () => actions.openAiComposer(node.id) },
       { key: 'group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 创建组</span>), onClick: () => actions.createGroupFromSelection() },
+      ...(isGroup
+        ? [
+            { key: 'add-to-group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Plus size={14} /> 加入选中节点</span>), onClick: () => actions.addSelectionToGroup(node.id) },
+            { key: 'dissolve-group', label: (<span className="canvas-menu-item"><Icons.FolderOpen size={14} /> 解散组</span>), onClick: () => actions.dissolveGroup(node.id) },
+          ]
+        : []),
+      ...(isGroupedChild
+        ? [
+            { key: 'remove-from-group', label: (<span className="canvas-menu-item"><Icons.ArrowUp size={14} /> 移出组</span>), onClick: () => actions.removeNodeFromGroup(node.id) },
+          ]
+        : []),
       { key: 'lock', label: (<span className="canvas-menu-item"><Icons.Lock size={14} /> {locked ? '解锁节点' : '锁定节点'}</span>), onClick: () => actions.toggleLockNode(node.id) },
       { key: 'front', label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 置于顶层</span>), onClick: () => actions.bringNodeToFront(node.id) },
       { key: 'delete', label: (<span className="canvas-menu-item canvas-menu-item-danger"><Icons.Trash size={14} /> 删除节点</span>), onClick: () => actions.deleteNode(node.id) },

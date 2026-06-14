@@ -110,6 +110,9 @@ export function CanvasStage({
   onToggleLockNode,
   onBringNodeToFront,
   onCreateGroupFromSelection,
+  onAddSelectionToGroup,
+  onRemoveNodeFromGroup,
+  onDissolveGroup,
   onOpenAiComposer,
   onViewportChange,
 }: {
@@ -124,6 +127,9 @@ export function CanvasStage({
   onToggleLockNode: (nodeId: string) => void
   onBringNodeToFront: (nodeId: string) => void
   onCreateGroupFromSelection: () => void
+  onAddSelectionToGroup: (groupId: string) => void
+  onRemoveNodeFromGroup: (nodeId: string) => void
+  onDissolveGroup: (groupId: string) => void
   onOpenAiComposer: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
@@ -134,14 +140,20 @@ export function CanvasStage({
       toggleLockNode: onToggleLockNode,
       bringNodeToFront: onBringNodeToFront,
       createGroupFromSelection: onCreateGroupFromSelection,
+      addSelectionToGroup: onAddSelectionToGroup,
+      removeNodeFromGroup: onRemoveNodeFromGroup,
+      dissolveGroup: onDissolveGroup,
       openAiComposer: onOpenAiComposer,
     }),
     [
+      onAddSelectionToGroup,
       onBringNodeToFront,
       onCreateGroupFromSelection,
       onDeleteNode,
+      onDissolveGroup,
       onDuplicateNode,
       onOpenAiComposer,
+      onRemoveNodeFromGroup,
       onToggleLockNode,
     ],
   )

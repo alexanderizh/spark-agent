@@ -10,9 +10,16 @@ export function CanvasToolbar({
   onAddPrompt,
   onUploadImage,
   onCreateGroup,
+  onAddToGroup,
+  onRemoveFromGroup,
+  onDissolveGroup,
   onOpenAiComposer,
   onDeleteSelected,
   selectedCount,
+  canCreateGroup,
+  canAddToGroup,
+  canRemoveFromGroup,
+  canDissolveGroup,
 }: {
   activeTool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
@@ -20,9 +27,16 @@ export function CanvasToolbar({
   onAddPrompt: () => void
   onUploadImage: () => void
   onCreateGroup: () => void
+  onAddToGroup: () => void
+  onRemoveFromGroup: () => void
+  onDissolveGroup: () => void
   onOpenAiComposer: () => void
   onDeleteSelected: () => void
   selectedCount: number
+  canCreateGroup: boolean
+  canAddToGroup: boolean
+  canRemoveFromGroup: boolean
+  canDissolveGroup: boolean
 }) {
   return (
     <div className="canvas-toolbar" role="toolbar" aria-label="Canvas toolbar">
@@ -56,10 +70,26 @@ export function CanvasToolbar({
       <Button
         size="small"
         icon={<Icons.Layers size={15} />}
-        disabled={selectedCount < 2}
-        onClick={onCreateGroup}
+        disabled={!canCreateGroup && !canAddToGroup}
+        onClick={canAddToGroup ? onAddToGroup : onCreateGroup}
       >
-        创建组
+        {canAddToGroup ? '加入组' : '创建组'}
+      </Button>
+      <Button
+        size="small"
+        icon={<Icons.ArrowUp size={15} />}
+        disabled={!canRemoveFromGroup}
+        onClick={onRemoveFromGroup}
+      >
+        移出组
+      </Button>
+      <Button
+        size="small"
+        icon={<Icons.FolderOpen size={15} />}
+        disabled={!canDissolveGroup}
+        onClick={onDissolveGroup}
+      >
+        解散组
       </Button>
       <Button
         size="small"

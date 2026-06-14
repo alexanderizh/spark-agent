@@ -141,6 +141,27 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  const dissolveGroupNode = useCallback(
+    async (groupId: string) => {
+      setSnapshot(await canvasApi.dissolveGroupNode(projectId, groupId))
+    },
+    [projectId],
+  )
+
+  const addNodesToGroup = useCallback(
+    async (groupId: string, nodeIds: string[]) => {
+      setSnapshot(await canvasApi.addNodesToGroup(projectId, groupId, nodeIds))
+    },
+    [projectId],
+  )
+
+  const removeNodesFromGroup = useCallback(
+    async (nodeIds: string[]) => {
+      setSnapshot(await canvasApi.removeNodesFromGroup(projectId, nodeIds))
+    },
+    [projectId],
+  )
+
   const deleteNodes = useCallback(
     async (nodeIds: string[]) => {
       await canvasApi.deleteNodes(projectId, nodeIds)
@@ -202,6 +223,9 @@ export function useCanvasWorkspace(projectId: string) {
     createTextNode,
     createImageNode,
     createGroupNode,
+    dissolveGroupNode,
+    addNodesToGroup,
+    removeNodesFromGroup,
     deleteNodes,
     duplicateNodes,
     patchNodes,

@@ -337,6 +337,78 @@ function updateProjectCounts(db: CanvasDb, projectId: string): void {
   project.updatedAt = now()
 }
 
+const GROUP_PADDING_X = 28
+const GROUP_PADDING_BOTTOM = 28
+const GROUP_HEADER_HEIGHT = 56
+
+type GroupMemberLayout = {
+  node: CanvasNode
+  absoluteX: number
+  absoluteY: number
+}
+
+function applyGroupLayout(
+  groupNode: CanvasNode,
+  members: GroupMemberLayout[],
+  at: string,
+): void {
+  if (members.length === 0) {
+    groupNode.width = Math.max(groupNode.width, 360)
+    groupNode.height = Math.max(groupNode.height, 220)
+    groupNode.data = {
+      ...groupNode.data,
+      text: '包含 0 个节点',
+      message: '拖入或选择节点后可加入此组',
+    }
+    groupNode.updatedAt = at
+    return
+  }
+
+  const left = Math.min(...members.map((item) => item.absoluteX))
+  const top = Math.min(...members.map((item) => item.absoluteY))
+  const right = Math.max(...members.map((item) => item.absoluteX + item.node.width))
+  const bottom = Math.max(...members.map((item) => item.absoluteY + item.node.height))
+  const contentWidth = right - left
+  const contentHeight = bottom - top
+  const tallestNodeHeight = Math.max(...members.map((item) => item.node.height))
+  const groupX = left - GROUP_PADDING_X
+  const groupY = top - GROUP_HEADER_HEIGHT
+
+  groupNode.x = groupX
+  groupNode.y = groupY
+  groupNode.width = Math.max(360, contentWidth + GROUP_PADDING_X * 2)
+  groupNode.height = Math.max(
+    220,
+    GROUP_HEADER_HEIGHT + contentHeight + GROUP_PADDING_BOTTOM,
+    GROUP_HEADER_HEIGHT + tallestNodeHeight + GROUP_PADDING_BOTTOM,
+  )
+  groupNode.data = {
+    ...groupNode.data,
+    text: `包含 ${members.length} 个节点`,
+    message: members.map((item) => item.node.title ?? item.node.type).join(' / '),
+  }
+  groupNode.updatedAt = at
+
+  for (const member of members) {
+    member.node.parentNodeId = groupNode.id
+    member.node.x = member.absoluteX - groupNode.x
+    member.node.y = member.absoluteY - groupNode.y
+    member.node.zIndex = groupNode.zIndex + 1
+    member.node.updatedAt = at
+  }
+}
+
+function refreshGroupLayout(db: CanvasDb, groupNode: CanvasNode, at: string): void {
+  const members = db.nodes
+    .filter((node) => node.parentNodeId === groupNode.id && !node.hidden)
+    .map((node) => ({
+      node,
+      absoluteX: groupNode.x + node.x,
+      absoluteY: groupNode.y + node.y,
+    }))
+  applyGroupLayout(groupNode, members, at)
+}
+
 function fitMediaNodeSize(
   type: CanvasAssetType,
   width?: number | null,
@@ -550,34 +622,21 @@ export const canvasApi = {
 
     const at = now()
     const maxZ = Math.max(0, ...db.nodes.filter((node) => node.projectId === projectId).map((node) => node.zIndex))
-    const left = Math.min(...sourceNodes.map((node) => node.x))
-    const top = Math.min(...sourceNodes.map((node) => node.y))
-    const right = Math.max(...sourceNodes.map((node) => node.x + node.width))
-    const bottom = Math.max(...sourceNodes.map((node) => node.y + node.height))
-    const paddingX = 28
-    const paddingBottom = 28
-    const headerHeight = 56
-    const groupX = left - paddingX
-    const groupY = top - headerHeight
-    const contentWidth = right - left
-    const contentHeight = bottom - top
-    const tallestNodeHeight = Math.max(...sourceNodes.map((node) => node.height))
-    const groupWidth = Math.max(360, contentWidth + paddingX * 2)
-    const groupHeight = Math.max(
-      220,
-      headerHeight + contentHeight + paddingBottom,
-      headerHeight + tallestNodeHeight + paddingBottom,
-    )
+    const memberLayouts = sourceNodes.map((node) => ({
+      node,
+      absoluteX: node.x,
+      absoluteY: node.y,
+    }))
 
     const groupNode = createNodeBase({
       projectId,
       boardId: board.id,
       type: 'group',
       title: `Group ${sourceNodes.length}`,
-      x: groupX,
-      y: groupY,
-      width: groupWidth,
-      height: groupHeight,
+      x: 0,
+      y: 0,
+      width: 360,
+      height: 220,
       data: {
         text: `包含 ${sourceNodes.length} 个节点`,
         message: sourceNodes.map((node) => node.title ?? node.type).join(' / '),
@@ -589,34 +648,12 @@ export const canvasApi = {
     const sortedNodes = [...sourceNodes].sort(
       (leftNode, rightNode) => leftNode.x - rightNode.x || leftNode.y - rightNode.y,
     )
-    const arrangedById = new Map(
-      sortedNodes.map((node) => {
-        return [
-          node.id,
-          {
-            x: node.x - groupX,
-            y: node.y - groupY,
-            width: node.width,
-            height: node.height,
-          },
-        ]
-      }),
-    )
+    const memberLayoutById = new Map(memberLayouts.map((item) => [item.node.id, item]))
+    const sortedMemberLayouts = sortedNodes
+      .map((node) => memberLayoutById.get(node.id))
+      .filter((item): item is GroupMemberLayout => Boolean(item))
+    applyGroupLayout(groupNode, sortedMemberLayouts, at)
 
-    db.nodes = db.nodes.map((node) => {
-      const layout = arrangedById.get(node.id)
-      if (!layout) return node
-      return {
-        ...node,
-        parentNodeId: groupNode.id,
-        x: layout.x,
-        y: layout.y,
-        width: layout.width,
-        height: layout.height,
-        zIndex: groupNode.zIndex + 1,
-        updatedAt: at,
-      }
-    })
     db.nodes.push(groupNode)
     db.edges.push(
       ...sourceNodes.map(
@@ -633,6 +670,150 @@ export const canvasApi = {
         }),
       ),
     )
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async dissolveGroupNode(projectId: string, groupId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const groupNode = db.nodes.find(
+      (node) => node.id === groupId && node.projectId === projectId && node.type === 'group' && !node.hidden,
+    )
+    if (!groupNode) return this.openSnapshot(projectId)
+
+    const at = now()
+    for (const node of db.nodes) {
+      if (node.projectId !== projectId || node.hidden || node.parentNodeId !== groupNode.id) continue
+      node.parentNodeId = null
+      node.x = groupNode.x + node.x
+      node.y = groupNode.y + node.y
+      node.updatedAt = at
+    }
+    groupNode.hidden = true
+    groupNode.updatedAt = at
+    db.edges = db.edges.filter(
+      (edge) => edge.sourceNodeId !== groupNode.id && edge.targetNodeId !== groupNode.id,
+    )
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async addNodesToGroup(projectId: string, groupId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const groupNode = db.nodes.find(
+      (node) => node.id === groupId && node.projectId === projectId && node.type === 'group' && !node.hidden,
+    )
+    if (!groupNode) return this.openSnapshot(projectId)
+
+    const selected = new Set(nodeIds.filter((id) => id !== groupNode.id))
+    const nodesToAdd = db.nodes.filter(
+      (node) =>
+        node.projectId === projectId &&
+        !node.hidden &&
+        node.type !== 'group' &&
+        !node.parentNodeId &&
+        selected.has(node.id),
+    )
+    if (nodesToAdd.length === 0) return this.openSnapshot(projectId)
+
+    const at = now()
+    const existingMembers: GroupMemberLayout[] = db.nodes
+      .filter((node) => node.projectId === projectId && !node.hidden && node.parentNodeId === groupNode.id)
+      .map((node) => ({
+        node,
+        absoluteX: groupNode.x + node.x,
+        absoluteY: groupNode.y + node.y,
+      }))
+    const addedMembers: GroupMemberLayout[] = nodesToAdd.map((node) => ({
+      node,
+      absoluteX: node.x,
+      absoluteY: node.y,
+    }))
+
+    applyGroupLayout(groupNode, [...existingMembers, ...addedMembers], at)
+
+    for (const node of nodesToAdd) {
+      const duplicate = db.edges.some(
+        (edge) =>
+          edge.projectId === projectId &&
+          edge.sourceNodeId === groupNode.id &&
+          edge.targetNodeId === node.id &&
+          edge.type === 'group_contains',
+      )
+      if (duplicate) continue
+      db.edges.push({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: groupNode.boardId,
+        userId: USER_ID,
+        sourceNodeId: groupNode.id,
+        targetNodeId: node.id,
+        type: 'group_contains',
+        metadata: {},
+        createdAt: at,
+      })
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  async removeNodesFromGroup(projectId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const selected = new Set(nodeIds)
+    const groupById = new Map(
+      db.nodes
+        .filter((node) => node.projectId === projectId && node.type === 'group' && !node.hidden)
+        .map((node) => [node.id, node]),
+    )
+    const nodesToRemove = db.nodes.filter(
+      (node) =>
+        node.projectId === projectId &&
+        !node.hidden &&
+        node.parentNodeId &&
+        selected.has(node.id) &&
+        groupById.has(node.parentNodeId),
+    )
+    if (nodesToRemove.length === 0) return this.openSnapshot(projectId)
+
+    const at = now()
+    const affectedGroupIds = new Set<string>()
+    for (const node of nodesToRemove) {
+      const groupNode = node.parentNodeId ? groupById.get(node.parentNodeId) : undefined
+      if (!groupNode) continue
+      affectedGroupIds.add(groupNode.id)
+      node.parentNodeId = null
+      node.x = groupNode.x + node.x
+      node.y = groupNode.y + node.y
+      node.zIndex = groupNode.zIndex + 1
+      node.updatedAt = at
+    }
+
+    const removedNodeIds = new Set(nodesToRemove.map((node) => node.id))
+    db.edges = db.edges.filter(
+      (edge) => !(edge.type === 'group_contains' && removedNodeIds.has(edge.targetNodeId)),
+    )
+
+    for (const groupId of affectedGroupIds) {
+      const groupNode = groupById.get(groupId)
+      if (!groupNode) continue
+      const remainingMembers = db.nodes.filter(
+        (node) => node.projectId === projectId && !node.hidden && node.parentNodeId === groupId,
+      )
+      if (remainingMembers.length === 0) {
+        groupNode.hidden = true
+        groupNode.updatedAt = at
+        db.edges = db.edges.filter(
+          (edge) => edge.sourceNodeId !== groupNode.id && edge.targetNodeId !== groupNode.id,
+        )
+        continue
+      }
+      refreshGroupLayout(db, groupNode, at)
+    }
+
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)
