@@ -5810,6 +5810,8 @@ function ComposerV2({
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
     activate?: boolean
+    createWorktree?: boolean
+    worktreeBranch?: string
   }) => Promise<SessionId | null>
   onUpdateSession: (patch: {
     providerProfileId?: string
@@ -5856,6 +5858,10 @@ function ComposerV2({
   }, [sending, onDispatchStateChange])
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueVisible, setQueueVisible] = useState(true)
+  // 「为本会话创建隔离 worktree」开关（仅空会话且 git 项目可用）
+  const [createWorktree, setCreateWorktree] = useState(false)
+  const [worktreeBranch, setWorktreeBranch] = useState('')
+  const isGitWorkspace = branchState.currentBranch != null
   const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
   const [slashFilter, setSlashFilter] = useState('')
   const [slashOpen, setSlashOpen] = useState(false)
@@ -6316,6 +6322,9 @@ function ComposerV2({
               agentId: effectiveAgentId,
               agentAdapter: adapter,
               permissionMode: effectivePermissionMode,
+              ...(createWorktree
+                ? { createWorktree: true, ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}) }
+                : {}),
             })
             if (sessionId == null) {
               toast.error('创建会话失败，无法执行命令。')
@@ -6388,6 +6397,9 @@ function ComposerV2({
             permissionMode: effectivePermissionMode,
             chatMode: effectiveMode,
             reasoningEffort: effectiveReasoning,
+            ...(createWorktree
+              ? { createWorktree: true, ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}) }
+              : {}),
           })
         }
         if (targetSessionId == null) throw new Error('请先选择项目并配置供应商')
@@ -7598,6 +7610,31 @@ function ComposerV2({
                   onChange={onSwitchBranch}
                   options={branchOptions}
                 />
+              )}
+              {session?.id == null && (
+                <label
+                  className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
+                  title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : '当前项目不是 git 仓库'}
+                >
+                  <input
+                    type="checkbox"
+                    checked={createWorktree}
+                    disabled={!isGitWorkspace}
+                    onChange={(e) => setCreateWorktree(e.target.checked)}
+                  />
+                  <Icons.GitBranch size={13} />
+                  <span>隔离 worktree</span>
+                  {createWorktree && (
+                    <input
+                      className="composer-worktree-branch"
+                      type="text"
+                      placeholder="分支名（留空自动生成）"
+                      value={worktreeBranch}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => setWorktreeBranch(e.target.value)}
+                    />
+                  )}
+                </label>
               )}
             </div>
             <button
