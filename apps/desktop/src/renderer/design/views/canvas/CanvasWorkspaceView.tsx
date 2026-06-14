@@ -165,11 +165,13 @@ export function CanvasWorkspaceView({
     prompt,
     providerProfileId,
     modelId,
+    modelParams,
   }: {
     operation: CanvasOperationType
     prompt: string
     providerProfileId?: string
     modelId?: string
+    modelParams?: Record<string, unknown>
   }) => {
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const inputFiles = selectedNodes
@@ -198,6 +200,7 @@ export function CanvasWorkspaceView({
       ...(inputFiles.length > 0 ? { inputFiles } : {}),
       ...(providerProfileId != null ? { providerProfileId } : {}),
       ...(modelId != null ? { modelId } : {}),
+      ...(modelParams != null ? { modelParams } : {}),
       outputPlacement: {
         x: selectedNodes[0] ? selectedNodes[0].x + 360 : 360,
         y: selectedNodes[0] ? selectedNodes[0].y + 80 : 260,
@@ -289,6 +292,7 @@ export function CanvasWorkspaceView({
         <aside className="canvas-side-panel">
           <CanvasInspector
             selectedNodes={selectedNodes}
+            tasks={snapshot.tasks}
             onDuplicate={() => void duplicateNodes(selectedNodeIds)}
             onToggleLock={() => void handleToggleLock()}
             onBringToFront={() => void handleBringToFront()}

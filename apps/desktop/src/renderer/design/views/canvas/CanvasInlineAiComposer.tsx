@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Tag } from '@lobehub/ui'
+import { Button, Input, Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { capabilityForOperation } from '@spark/protocol'
@@ -17,13 +17,14 @@ export function CanvasInlineAiComposer({
   open: boolean
   selectedNodes: CanvasNode[]
   onClose: () => void
-  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string }) => void
+  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string; modelParams?: Record<string, unknown> }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState<string>('')
+  const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
 
   useEffect(() => {
     if (!open) return
@@ -84,6 +85,29 @@ export function CanvasInlineAiComposer({
     () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey),
     [selectedModelKey, supportedMediaModels],
   )
+  const selectedCapability = useMemo(() => {
+    if (!selectedModel) return null
+    return selectedModel.capabilities.find((capability) =>
+      (mediaCapabilityIds as readonly string[]).includes(capability.id),
+    ) ?? null
+  }, [mediaCapabilityIds, selectedModel])
+  const parameterFields = useMemo(
+    () => schemaFields(selectedCapability?.paramSchema ?? {}),
+    [selectedCapability],
+  )
+
+  useEffect(() => {
+    const defaults = selectedCapability?.defaults ?? {}
+    setModelParamDraft((prev) => {
+      const next: Record<string, string> = {}
+      for (const field of parameterFields) {
+        const existing = prev[field.name]
+        const defaultValue = defaults[field.name]
+        next[field.name] = existing ?? (defaultValue == null ? '' : String(defaultValue))
+      }
+      return next
+    })
+  }, [parameterFields, selectedCapability])
 
   useEffect(() => {
     if (supportedMediaModels.length === 0) {
@@ -156,6 +180,49 @@ export function CanvasInlineAiComposer({
           onChange={(e) => setPrompt(e.target.value)}
         />
       </div>
+      {parameterFields.length > 0 && (
+        <div className="canvas-form-row">
+          <label>参数</label>
+          <div className="canvas-param-grid">
+            {parameterFields.map((field) => (
+              <div key={field.name} className="canvas-param-field">
+                <span>{field.title}</span>
+                {field.enumValues.length > 0 ? (
+                  <LobeSelect
+                    value={modelParamDraft[field.name] || undefined}
+                    allowClear
+                    onChange={(value) => {
+                      setModelParamDraft((prev) => ({ ...prev, [field.name]: value == null ? '' : String(value) }))
+                    }}
+                    options={field.enumValues.map((value) => ({ value, label: value }))}
+                  />
+                ) : field.type === 'boolean' ? (
+                  <LobeSelect
+                    value={modelParamDraft[field.name] || undefined}
+                    allowClear
+                    onChange={(value) => {
+                      setModelParamDraft((prev) => ({ ...prev, [field.name]: value == null ? '' : String(value) }))
+                    }}
+                    options={[
+                      { value: 'true', label: 'true' },
+                      { value: 'false', label: 'false' },
+                    ]}
+                  />
+                ) : (
+                  <Input
+                    value={modelParamDraft[field.name] ?? ''}
+                    type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
+                    placeholder={field.placeholder}
+                    onChange={(e) => {
+                      setModelParamDraft((prev) => ({ ...prev, [field.name]: e.target.value }))
+                    }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <div className="canvas-inline-ai-footer">
         <Button size="small" onClick={onClose}>
           取消
@@ -166,12 +233,14 @@ export function CanvasInlineAiComposer({
           icon={<Icons.Sparkles size={15} />}
           disabled={prompt.trim().length === 0}
           onClick={() => {
-            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string } = {
+            const modelParams = buildModelParams(parameterFields, modelParamDraft)
+            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; modelId?: string; modelParams?: Record<string, unknown> } = {
               operation,
               prompt: prompt.trim(),
             }
             if (selectedModel?.providerProfileId) payload.providerProfileId = selectedModel.providerProfileId
             if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
+            if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
             onCreateTask(payload)
             setPrompt('')
           }}
@@ -185,4 +254,54 @@ export function CanvasInlineAiComposer({
 
 function mediaModelKey(model: CanvasMediaModelSummary): string {
   return `${model.providerProfileId ?? 'catalog'}::${model.manifestId}::${model.effectiveModelId}`
+}
+
+type SchemaField = {
+  name: string
+  title: string
+  type: string
+  enumValues: string[]
+  placeholder?: string
+}
+
+function schemaFields(schema: Record<string, unknown>): SchemaField[] {
+  const properties = schema.properties
+  if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return []
+  return Object.entries(properties as Record<string, unknown>).slice(0, 12).map(([name, raw]) => {
+    const spec = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
+    const type = typeof spec.type === 'string' ? spec.type : 'string'
+    const enumValues = Array.isArray(spec.enum)
+      ? spec.enum.filter((value): value is string => typeof value === 'string')
+      : []
+    const examples = Array.isArray(spec.examples)
+      ? spec.examples.filter((value): value is string => typeof value === 'string')
+      : []
+    return {
+      name,
+      title: typeof spec.title === 'string' ? spec.title : name,
+      type,
+      enumValues,
+      ...(examples[0] ? { placeholder: examples[0] } : {}),
+    }
+  })
+}
+
+function buildModelParams(fields: SchemaField[], draft: Record<string, string>): Record<string, unknown> {
+  const params: Record<string, unknown> = {}
+  for (const field of fields) {
+    const raw = draft[field.name]?.trim()
+    if (!raw) continue
+    if (field.type === 'integer') {
+      const value = Number.parseInt(raw, 10)
+      if (Number.isFinite(value)) params[field.name] = value
+    } else if (field.type === 'number') {
+      const value = Number(raw)
+      if (Number.isFinite(value)) params[field.name] = value
+    } else if (field.type === 'boolean') {
+      params[field.name] = raw === 'true'
+    } else {
+      params[field.name] = raw
+    }
+  }
+  return params
 }

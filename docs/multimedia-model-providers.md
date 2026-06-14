@@ -193,7 +193,8 @@ Flow:
 
 1. Select a text/prompt node (for text→*) or an image/audio node (for image/audio→*).
 2. Open the inline AI composer, pick the operation, optionally choose a
-   manifest-backed provider/model, then enter the prompt.
+   manifest-backed provider/model, fill the manifest-derived parameter panel,
+   then enter the prompt.
 3. The canvas creates an optimistic `running` task node.
 4. The renderer calls `canvas:task:create-media`. The main process resolves
    available providers + API keys (never exposed), selects an adapter via
@@ -201,6 +202,8 @@ Flow:
    runs sync or async polling, and downloads artifacts.
 5. Output assets/nodes are written back to the canvas with provider, model,
    requestId, and raw response metadata. Task node shows progress/status.
+6. Selecting a task node in the Inspector shows provider/model/request metadata
+   and the exact `modelParams` used for that run.
 
 ## 5. Error Handling
 

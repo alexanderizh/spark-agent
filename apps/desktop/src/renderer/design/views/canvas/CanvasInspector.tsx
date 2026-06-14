@@ -2,16 +2,18 @@ import { useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Descriptions, Empty, Space } from 'antd'
 import { TextArea as LobeTextArea } from '@lobehub/ui'
-import type { CanvasNode } from './canvas.types'
+import type { CanvasNode, CanvasTask } from './canvas.types'
 
 export function CanvasInspector({
   selectedNodes,
+  tasks,
   onDuplicate,
   onToggleLock,
   onBringToFront,
   onSaveText,
 }: {
   selectedNodes: CanvasNode[]
+  tasks: CanvasTask[]
   onDuplicate: () => void
   onToggleLock: () => void
   onBringToFront: () => void
@@ -72,6 +74,7 @@ export function CanvasInspector({
 
   const node = selectedNodes[0]
   if (node == null) return null
+  const task = node.taskId ? tasks.find((item) => item.id === node.taskId) : undefined
 
   return (
     <section className="canvas-panel-section">
@@ -109,8 +112,47 @@ export function CanvasInspector({
       {(node.type === 'text' || node.type === 'prompt') && (
         <TextNodeEditor key={`${node.id}:${node.updatedAt}`} node={node} onSaveText={onSaveText} />
       )}
+      {task && (
+        <TaskParamsInspector task={task} />
+      )}
     </section>
   )
+}
+
+function TaskParamsInspector({ task }: { task: CanvasTask }) {
+  const entries = Object.entries(task.modelParams ?? {})
+  return (
+    <div className="canvas-task-param-panel">
+      <div className="canvas-task-param-title">模型调用</div>
+      <Descriptions
+        className="canvas-inspector-desc"
+        size="small"
+        column={1}
+        items={[
+          { label: 'Provider', children: task.providerProfileId ?? '-' },
+          { label: '模型', children: task.modelId ?? '-' },
+          { label: '状态', children: task.status },
+          { label: 'Request', children: task.requestId ?? '-' },
+        ]}
+      />
+      {entries.length > 0 && (
+        <div className="canvas-task-param-list">
+          {entries.map(([key, value]) => (
+            <div key={key} className="canvas-task-param-row">
+              <span>{key}</span>
+              <code>{formatParamValue(value)}</code>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function formatParamValue(value: unknown): string {
+  if (value == null) return '-'
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
+  return JSON.stringify(value)
 }
 
 function TextNodeEditor({
