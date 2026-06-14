@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Tag } from '@lobehub/ui'
 import { Spin, message } from 'antd'
 import { Icons } from '../../Icons'
@@ -127,6 +127,22 @@ function areNodeIdsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
 
+function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  const tagName = target.tagName.toLowerCase()
+  return (
+    tagName === 'input' ||
+    tagName === 'textarea' ||
+    tagName === 'select' ||
+    target.isContentEditable ||
+    Boolean(target.closest('[contenteditable="true"], .canvas-inline-ai-composer, .ant-modal, .ant-drawer'))
+  )
+}
+
+function toolLabel(tool: CanvasTool): string {
+  return tool === 'pan' ? '平移画布' : '选择节点'
+}
+
 export function CanvasWorkspaceView({
   projectId,
   onBack,
@@ -155,10 +171,12 @@ export function CanvasWorkspaceView({
   } = useCanvasWorkspace(projectId)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
+  const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(null)
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
   const [canvasViewport, setCanvasViewport] = useState<CanvasStageViewport | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const activeToolRef = useRef<CanvasTool>('select')
 
   const selectedNodes = useMemo(
     () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
@@ -182,6 +200,46 @@ export function CanvasWorkspaceView({
   const canAddToGroup = selectedGroups.length === 1 && selectedTopLevelNodes.length > 0
   const canRemoveFromGroup = selectedGroupedNodes.length > 0
   const canDissolveGroup = selectedGroups.length === 1
+  const toolSwitchHintTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    activeToolRef.current = activeTool
+  }, [activeTool])
+
+  const showToolSwitchHint = useCallback((tool: CanvasTool) => {
+    setToolSwitchHint({ tool, nonce: Date.now() })
+    if (toolSwitchHintTimerRef.current != null) clearTimeout(toolSwitchHintTimerRef.current)
+    toolSwitchHintTimerRef.current = setTimeout(() => {
+      setToolSwitchHint(null)
+      toolSwitchHintTimerRef.current = null
+    }, 1500)
+  }, [])
+
+  const handleToolChange = useCallback((tool: CanvasTool) => {
+    activeToolRef.current = tool
+    setActiveTool(tool)
+  }, [])
+
+  const togglePointerTool = useCallback(() => {
+    const nextTool: CanvasTool = activeToolRef.current === 'pan' ? 'select' : 'pan'
+    activeToolRef.current = nextTool
+    setActiveTool(nextTool)
+    showToolSwitchHint(nextTool)
+  }, [showToolSwitchHint])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (isEditableKeyboardTarget(event.target)) return
+      event.preventDefault()
+      togglePointerTool()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      if (toolSwitchHintTimerRef.current != null) clearTimeout(toolSwitchHintTimerRef.current)
+    }
+  }, [togglePointerTool])
 
   const handleSelectionChange = useCallback((nodeIds: string[]) => {
     setSelectedNodeIds((previousIds) =>
@@ -443,7 +501,7 @@ export function CanvasWorkspaceView({
         </div>
         <CanvasToolbar
           activeTool={activeTool}
-          onToolChange={setActiveTool}
+          onToolChange={handleToolChange}
           onAddText={() => void addText(false)}
           onAddPrompt={() => void addText(true)}
           onUploadImage={uploadFirstImage}
@@ -462,6 +520,17 @@ export function CanvasWorkspaceView({
       </header>
 
       <div className="canvas-workspace-body">
+        {toolSwitchHint && (
+          <div
+            key={toolSwitchHint.nonce}
+            className={`canvas-tool-switch-hint canvas-tool-switch-hint-${toolSwitchHint.tool}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="canvas-tool-switch-key">Tab</span>
+            <span>已切换为 {toolLabel(toolSwitchHint.tool)}</span>
+          </div>
+        )}
         <CanvasStage
           snapshot={snapshot}
           activeTool={activeTool === 'pan' ? 'pan' : 'select'}

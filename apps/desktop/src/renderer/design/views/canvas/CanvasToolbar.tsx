@@ -40,7 +40,7 @@ export function CanvasToolbar({
 }) {
   return (
     <div className="canvas-toolbar" role="toolbar" aria-label="Canvas toolbar">
-      <Tooltip title="选择" placement="bottom">
+      <Tooltip title="选择 · Tab 切换" placement="bottom">
         <Button
           size="small"
           type={activeTool === 'select' ? 'primary' : 'default'}
@@ -49,7 +49,7 @@ export function CanvasToolbar({
           onClick={() => onToolChange('select')}
         />
       </Tooltip>
-      <Tooltip title="平移" placement="bottom">
+      <Tooltip title="平移 · Tab 切换" placement="bottom">
         <Button
           size="small"
           type={activeTool === 'pan' ? 'primary' : 'default'}

@@ -98,6 +98,65 @@
   background: var(--bg-sunken);
 }
 
+.canvas-tool-switch-hint {
+  position: absolute;
+  z-index: 8;
+  top: 14px;
+  left: calc((100% - 360px) / 2);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(360px, calc(100% - 32px));
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 26%, var(--border));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--panel-elev) 92%, transparent);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  font-size: 12px;
+  font-weight: 600;
+  pointer-events: none;
+  animation: canvas-tool-switch-fade 1.5s ease both;
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+}
+
+.canvas-tool-switch-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text-strong);
+  font-size: 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.canvas-tool-switch-hint-pan {
+  border-color: color-mix(in srgb, #16a34a 34%, var(--border));
+}
+
+@keyframes canvas-tool-switch-fade {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  14%,
+  72% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+}
+
 .canvas-toolbar {
   z-index: 5;
   display: flex;
@@ -1194,6 +1253,10 @@
 @media (max-width: 980px) {
   .canvas-workspace-body {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .canvas-tool-switch-hint {
+    left: 50%;
   }
 
   .canvas-side-panel {
