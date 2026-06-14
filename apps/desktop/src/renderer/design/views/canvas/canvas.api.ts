@@ -1157,6 +1157,37 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
+  async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
+    const taskNode = db.nodes.find((item) => item.taskId === taskId && item.projectId === projectId)
+    if (!task) return this.openSnapshot(projectId)
+    if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+      return this.openSnapshot(projectId)
+    }
+
+    const at = now()
+    task.status = 'cancelled'
+    task.progress = 100
+    task.errorMsg = 'cancelled_by_user'
+    task.errorDetail = '任务已由用户在画布任务队列中取消。'
+    task.updatedAt = at
+    task.completedAt = at
+    if (taskNode) {
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'cancelled',
+        progress: 100,
+        message: '任务已取消',
+      }
+      taskNode.updatedAt = at
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
   /**
    * 创建并执行真实多媒体任务（走 main process → MediaRouterService → 平台 adapter）。
    *
@@ -1219,6 +1250,7 @@ export const canvasApi = {
       outputAssetIds: [],
       agentId: request.agentId ?? null,
       providerProfileId: request.providerProfileId ?? null,
+      manifestId: request.manifestId ?? null,
       modelId: request.modelId ?? null,
       modelParams: request.modelParams ?? {},
       createdAt: at,
@@ -1285,6 +1317,7 @@ export const canvasApi = {
     const task = db.tasks.find((item) => item.id === taskId)
     const taskNode = db.nodes.find((item) => item.taskId === taskId)
     if (!task || !taskNode) return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId)
     task.status = 'running'
     task.progress = Math.max(task.progress, 35)
     task.requestId = response.runtimeTaskId ?? response.requestId ?? null
@@ -1314,6 +1347,7 @@ export const canvasApi = {
     const task = db.tasks.find((item) => item.id === taskId)
     const taskNode = db.nodes.find((item) => item.taskId === taskId)
     if (!task || !taskNode) return this.openSnapshot(projectId)
+    if (task.status === 'cancelled') return this.openSnapshot(projectId)
 
     const responseRequestId = response.requestId ?? response.runtimeTaskId ?? null
     if (

@@ -10,7 +10,7 @@ import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { useCanvasWorkspace } from './canvas.store'
-import type { CanvasOperationType } from './canvas.types'
+import type { CanvasNode, CanvasOperationType, CanvasTask } from './canvas.types'
 import './CanvasWorkspaceView.less'
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -79,6 +79,24 @@ function positionNodeInViewport(
   }
 }
 
+function buildTaskInputFiles(nodes: CanvasNode[]) {
+  return nodes
+    .map((node) => {
+      if (!node.data.url) return null
+      const type =
+        node.type === 'image' ? 'image' as const
+          : node.type === 'audio' ? 'audio' as const
+            : node.type === 'video' ? 'video' as const
+              : 'file' as const
+      return {
+        type,
+        ...(node.data.url.startsWith('data:') ? { dataUrl: node.data.url } : { url: node.data.url }),
+        ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
+      }
+    })
+    .filter((file): file is NonNullable<typeof file> => file !== null)
+}
+
 function areNodeIdsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
@@ -107,6 +125,7 @@ export function CanvasWorkspaceView({
     updateNodeData,
     createTask,
     completeDemoTask,
+    cancelTask,
   } = useCanvasWorkspace(projectId)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
@@ -307,21 +326,7 @@ export function CanvasWorkspaceView({
     modelParams?: Record<string, unknown>
   }) => {
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
-    const inputFiles = selectedNodes
-      .map((node) => {
-        if (!node.data.url) return null
-        const type =
-          node.type === 'image' ? 'image' as const
-            : node.type === 'audio' ? 'audio' as const
-              : node.type === 'video' ? 'video' as const
-                : 'file' as const
-        return {
-          type,
-          ...(node.data.url.startsWith('data:') ? { dataUrl: node.data.url } : { url: node.data.url }),
-          ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
-        }
-      })
-      .filter((file): file is NonNullable<typeof file> => file !== null)
+    const inputFiles = buildTaskInputFiles(selectedNodes)
 
     await createTask({
       operation,
@@ -338,6 +343,27 @@ export function CanvasWorkspaceView({
       outputPlacement: {
         x: selectedNodes[0] ? selectedNodes[0].x + 360 : 360,
         y: selectedNodes[0] ? selectedNodes[0].y + 80 : 260,
+      },
+    })
+  }
+
+  const handleRetryTask = async (task: CanvasTask) => {
+    const inputNodes = snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id))
+    const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
+    const inputFiles = buildTaskInputFiles(inputNodes)
+    await createTask({
+      operation: task.operation,
+      prompt: task.prompt ?? '',
+      inputNodeIds: task.inputNodeIds,
+      inputAssetIds: task.inputAssetIds,
+      ...(inputFiles.length > 0 ? { inputFiles } : {}),
+      ...(task.providerProfileId != null ? { providerProfileId: task.providerProfileId } : {}),
+      ...(task.manifestId != null ? { manifestId: task.manifestId } : {}),
+      ...(task.modelId != null ? { modelId: task.modelId } : {}),
+      modelParams: task.modelParams ?? {},
+      outputPlacement: {
+        x: taskNode ? taskNode.x + 360 : 360,
+        y: taskNode ? taskNode.y + 48 : 260,
       },
     })
   }
@@ -436,6 +462,15 @@ export function CanvasWorkspaceView({
           }}
         />
         <aside className="canvas-side-panel">
+          <CanvasTaskQueue
+            tasks={snapshot.tasks}
+            nodes={snapshot.nodes}
+            assets={snapshot.assets}
+            onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
+            onCancelTask={(taskId) => void cancelTask(taskId)}
+            onRetryTask={(task) => void handleRetryTask(task)}
+            onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
+          />
           <CanvasInspector
             selectedNodes={selectedNodes}
             nodes={snapshot.nodes}
@@ -458,11 +493,6 @@ export function CanvasWorkspaceView({
           />
         </aside>
       </div>
-
-      <CanvasTaskQueue
-        tasks={snapshot.tasks}
-        onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
-      />
       <CanvasAssetDrawer
         open={assetDrawerOpen}
         assets={snapshot.assets}

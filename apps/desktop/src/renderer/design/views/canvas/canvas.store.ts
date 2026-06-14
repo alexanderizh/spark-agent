@@ -214,6 +214,13 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  const cancelTask = useCallback(
+    async (taskId: string) => {
+      setSnapshot(await canvasApi.cancelTask(projectId, taskId))
+    },
+    [projectId],
+  )
+
   return {
     snapshot,
     loading,
@@ -232,5 +239,6 @@ export function useCanvasWorkspace(projectId: string) {
     updateNodeData,
     createTask,
     completeDemoTask,
+    cancelTask,
   }
 }
