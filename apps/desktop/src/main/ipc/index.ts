@@ -1766,20 +1766,18 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('canvas:snapshot:save', async (req) => {
     const snapshotRepo = getCanvasSnapshotRepo()
     const projectRepo = getCanvasProjectRepo()
+    projectRepo.upsert({
+      id: req.projectId,
+      title: req.meta?.title ?? req.projectId,
+      ...(req.meta?.description !== undefined ? { description: req.meta.description } : {}),
+      ...(req.meta?.status !== undefined ? { status: req.meta.status } : {}),
+      ...(req.meta?.nodeCount !== undefined ? { nodeCount: req.meta.nodeCount } : {}),
+      ...(req.meta?.assetCount !== undefined ? { assetCount: req.meta.assetCount } : {}),
+      ...(req.meta?.taskCount !== undefined ? { taskCount: req.meta.taskCount } : {}),
+      ...(req.meta?.coverAssetId !== undefined ? { coverAssetId: req.meta.coverAssetId } : {}),
+      lastOpenedAt: new Date().toISOString(),
+    })
     snapshotRepo.save(req.projectId, 0, req.snapshotJson)
-    if (req.meta) {
-      projectRepo.upsert({
-        id: req.projectId,
-        title: req.meta.title ?? '',
-        ...(req.meta.description !== undefined ? { description: req.meta.description } : {}),
-        ...(req.meta.status !== undefined ? { status: req.meta.status } : {}),
-        ...(req.meta.nodeCount !== undefined ? { nodeCount: req.meta.nodeCount } : {}),
-        ...(req.meta.assetCount !== undefined ? { assetCount: req.meta.assetCount } : {}),
-        ...(req.meta.taskCount !== undefined ? { taskCount: req.meta.taskCount } : {}),
-        ...(req.meta.coverAssetId !== undefined ? { coverAssetId: req.meta.coverAssetId } : {}),
-        lastOpenedAt: new Date().toISOString(),
-      })
-    }
     return { saved: true, updatedAt: new Date().toISOString() }
   })
 
