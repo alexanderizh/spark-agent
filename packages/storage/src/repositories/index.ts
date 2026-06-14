@@ -9,6 +9,12 @@
 export { BaseRepository } from './base.repository.js'
 export { SessionRepository } from './session.repository.js'
 export { WorkspaceRepository } from './workspace.repository.js'
+export { CanvasProjectRepository, CanvasSnapshotRepository } from './canvas.repository.js'
+export type {
+  CanvasProjectRow,
+  CanvasSnapshotRow,
+  UpsertCanvasProjectParams,
+} from './canvas.repository.js'
 export { EventRepository } from './event.repository.js'
 export { ProviderProfileRepository } from './provider.repository.js'
 export { RulesRepository } from './rules.repository.js'

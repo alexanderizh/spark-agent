@@ -26,6 +26,8 @@ import { isCommand, parseCommand } from '@spark/agent-runtime'
 import {
   EventRepository,
   ProviderProfileRepository,
+  CanvasProjectRepository,
+  CanvasSnapshotRepository,
   RulesRepository,
   SessionRepository,
   WorkspaceRepository,
@@ -58,13 +60,20 @@ import {
   SettingsService,
   UsageLedgerService,
   RuntimeCompositionService,
+  MediaRouterService,
 } from '@spark/agent-runtime'
+import type {
+  MediaProviderProfile as MediaProviderProfileRuntime,
+  MediaProviderError,
+} from '@spark/agent-runtime'
+import * as keystore from '@spark/shared/keystore'
 import { ScheduledTaskService } from '@spark/agent-runtime'
 import type { TaskExecutorFn } from '@spark/agent-runtime'
 import type {
   CommandParseResponse,
   SessionAgentAdapter,
   SessionPermissionMode,
+  SessionReasoningEffort,
   WorkspaceInfo,
   HookNode,
   PlaywrightInstallProgress,
@@ -80,6 +89,10 @@ import type {
   TeamA2AReply,
   HistoryImportSource,
   HistoryImportProgress,
+  CanvasMediaTaskCreateResponse,
+  BoardTask,
+  BoardComment,
+  BoardTaskAttachment,
 } from '@spark/protocol'
 import type {
   SessionEventHandler,
@@ -156,6 +169,73 @@ function getModelService(): ModelService {
   return new ModelService(new ModelProfileRepository(getDatabase()))
 }
 
+/** MediaRouterService 单例（无状态，可安全复用） */
+let mediaRouterService: MediaRouterService | null = null
+function getMediaRouterService(): MediaRouterService {
+  if (mediaRouterService == null) mediaRouterService = new MediaRouterService()
+  return mediaRouterService
+}
+
+/** 画布多媒体产物默认落盘根目录 */
+function getDefaultCanvasMediaDir(): string {
+  return path.join(app.getPath('userData'), '.spark-artifacts', 'media')
+}
+
+/** Canvas 持久化 Repository（SQLite-backed，见 migration 027） */
+function getCanvasProjectRepo(): CanvasProjectRepository {
+  return new CanvasProjectRepository(getDatabase())
+}
+function getCanvasSnapshotRepo(): CanvasSnapshotRepository {
+  return new CanvasSnapshotRepository(getDatabase())
+}
+
+/**
+ * 解析所有已启用且声明了多媒体能力的 provider，附带从 Keychain 读取的 apiKey。
+ * 失败的（无 key / 无能力）静默跳过。
+ */
+async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntime[]> {
+  const profiles = await getProviderService().listProviders()
+  const result: MediaProviderProfileRuntime[] = []
+  for (const profile of profiles) {
+    const caps = profile.mediaCapabilities ?? []
+    const isMediaModel = profile.modelType === 'image' || profile.modelType === 'voice' || profile.modelType === 'video'
+    if (!isMediaModel && caps.length === 0) continue
+    if (!profile.keystoreRef) continue
+    try {
+      const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
+      if (!apiKey || apiKey.trim().length === 0) continue
+      result.push({
+        id: profile.id,
+        name: profile.name,
+        defaultModel: profile.defaultModel,
+        ...(profile.modelIds ? { modelIds: profile.modelIds } : {}),
+        ...(profile.apiEndpoint ? { apiEndpoint: profile.apiEndpoint } : {}),
+        mediaProvider: profile.mediaProvider ?? null,
+        mediaApiType: profile.mediaApiType ?? 'auto',
+        mediaCapabilities: caps,
+        ...(profile.mediaDefaults ? { mediaDefaults: profile.mediaDefaults } : {}),
+        apiKey,
+      })
+    } catch {
+      // 单个 provider 解析失败不阻断整体
+    }
+  }
+  return result
+}
+
+/** 把图片文件读取为 data URL，供 renderer 预览（仅小图，限制 2MB） */
+async function readImagePreviewDataUrl(filePath: string, mimeType: string | undefined): Promise<string | undefined> {
+  try {
+    const stat = await fs.stat(filePath)
+    if (stat.size > 2 * 1024 * 1024) return undefined
+    const buffer = await fs.readFile(filePath)
+    const mime = mimeType ?? 'image/png'
+    return `data:${mime};base64,${buffer.toString('base64')}`
+  } catch {
+    return undefined
+  }
+}
+
 function getPersistentProjectsDir(): string {
   return path.join(app.getPath('userData'), 'projects')
 }
@@ -207,6 +287,40 @@ interface BoardTaskRecord {
   createdAt: string
   updatedAt: string
   deletedAt: string | null
+}
+
+/** 安全 parse JSON 字段，失败返回 fallback */
+function safeParseJson<T>(raw: string | undefined | null, fallback: T): T {
+  if (!raw) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+/** BoardTaskRecord（内部存储，comments/attachments 为 JSON 字符串）→ protocol BoardTask（对象） */
+function boardRecordToTask(r: BoardTaskRecord): BoardTask {
+  return {
+    id: r.id,
+    title: r.title,
+    description: r.description,
+    status: r.status,
+    priority: r.priority,
+    assignee: r.assignee,
+    project: r.project,
+    tags: r.tags,
+    dueDate: r.dueDate,
+    processingAgent: r.processingAgent,
+    acceptanceCriteria: r.acceptanceCriteria,
+    testAgent: r.testAgent,
+    comments: safeParseJson<BoardComment[]>(r.commentsJson, []),
+    attachments: safeParseJson<BoardTaskAttachment[]>(r.attachmentsJson, []),
+    sortOrder: r.sortOrder,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    deletedAt: r.deletedAt,
+  }
 }
 
 function readBoardTasks(): BoardTaskRecord[] {
@@ -1319,7 +1433,158 @@ export function registerAllIpcHandlers(): void {
     return getProviderService().healthCheck(req.id)
   })
 
-  // ─── Provider Import/Export Handlers ─────────────────────────────────────
+  // ─── Canvas Media Generation Handlers ────────────────────────────────────
+  // 见 docs/multimedia-model-platform-adapters-design.md §8。
+  // 真实 provider 调用只在主进程内进行，API key 不进入 renderer。
+
+  typedIpcHandle('canvas:media-capabilities:list', async () => {
+    const profiles = await getProviderService().listProviders()
+    const providers = profiles
+      .filter((profile) => {
+        const isMediaModel =
+          profile.modelType === 'image' || profile.modelType === 'voice' || profile.modelType === 'video'
+        const caps = profile.mediaCapabilities ?? []
+        return (isMediaModel || caps.length > 0) && !!profile.keystoreRef
+      })
+      .map((profile) => ({
+        providerProfileId: profile.id,
+        name: profile.name,
+        defaultModel: profile.defaultModel,
+        mediaProvider: profile.mediaProvider ?? null,
+        mediaApiType: profile.mediaApiType ?? null,
+        mediaCapabilities: profile.mediaCapabilities ?? [],
+      }))
+    return { providers }
+  })
+
+  typedIpcHandle('canvas:task:create-media', async (req) => {
+    const router = getMediaRouterService()
+    const providers = await resolveCanvasMediaProviders()
+    const outputDir = req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
+    // capability 由 router 按 operation 推导（input.capability 留空）
+    try {
+      const { output, providerProfileId } = await router.invoke(
+        {
+          operation: req.operation,
+          ...(req.prompt != null ? { prompt: req.prompt } : {}),
+          ...(req.negativePrompt != null ? { negativePrompt: req.negativePrompt } : {}),
+          ...(req.inputFiles != null
+            ? {
+                inputFiles: req.inputFiles.map((file) => ({
+                  type: file.type,
+                  ...(file.path != null ? { path: file.path } : {}),
+                  ...(file.url != null ? { url: file.url } : {}),
+                  ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
+                  ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
+                })),
+              }
+            : {}),
+          ...(req.modelParams != null ? { modelParams: req.modelParams } : {}),
+          outputDir,
+        },
+        {
+          providers,
+          ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
+        },
+      )
+      // 为图片产物附带 previewDataUrl，便于 renderer 直接展示；映射为 IPC 响应 asset 类型
+      const assets: CanvasMediaTaskCreateResponse['assets'] = await Promise.all(
+        output.assets.map(async (asset) => {
+          const base = {
+            type: asset.type,
+            ...(asset.filePath != null ? { filePath: asset.filePath } : {}),
+            ...(asset.url != null ? { url: asset.url } : {}),
+            ...(asset.mimeType != null ? { mimeType: asset.mimeType } : {}),
+            ...(asset.width != null ? { width: asset.width } : {}),
+            ...(asset.height != null ? { height: asset.height } : {}),
+            ...(asset.durationMs != null ? { durationMs: asset.durationMs } : {}),
+            ...(asset.contentText != null ? { contentText: asset.contentText } : {}),
+          }
+          if (asset.type === 'image' && asset.filePath) {
+            const previewDataUrl = await readImagePreviewDataUrl(asset.filePath, asset.mimeType)
+            if (previewDataUrl) return { ...base, previewDataUrl }
+          }
+          return base
+        }),
+      )
+      const response: CanvasMediaTaskCreateResponse = {
+        providerProfileId,
+        provider: output.provider,
+        model: output.model,
+        mode: output.mode,
+        assets,
+        ...(output.requestId != null ? { requestId: output.requestId } : {}),
+        ...(output.rawResponse != null ? { rawResponse: output.rawResponse } : {}),
+      }
+      return response
+    } catch (err) {
+      const code = (err as MediaProviderError)?.code ?? 'provider_http_error'
+      const message = err instanceof Error ? err.message : String(err)
+      log.warn(`canvas:task:create-media failed: ${code} ${message}`)
+      const response: CanvasMediaTaskCreateResponse = {
+        providerProfileId: '',
+        provider: '',
+        model: '',
+        mode: 'sync',
+        assets: [],
+        error: { code, message },
+      }
+      return response
+    }
+  })
+
+  // ─── Canvas 持久化 Handlers（SQLite-backed 生产存储） ─────────────────────
+
+  typedIpcHandle('canvas:snapshot:save', async (req) => {
+    const snapshotRepo = getCanvasSnapshotRepo()
+    const projectRepo = getCanvasProjectRepo()
+    snapshotRepo.save(req.projectId, 0, req.snapshotJson)
+    if (req.meta) {
+      projectRepo.upsert({
+        id: req.projectId,
+        title: req.meta.title ?? '',
+        ...(req.meta.description !== undefined ? { description: req.meta.description } : {}),
+        ...(req.meta.status !== undefined ? { status: req.meta.status } : {}),
+        ...(req.meta.nodeCount !== undefined ? { nodeCount: req.meta.nodeCount } : {}),
+        ...(req.meta.assetCount !== undefined ? { assetCount: req.meta.assetCount } : {}),
+        ...(req.meta.taskCount !== undefined ? { taskCount: req.meta.taskCount } : {}),
+        ...(req.meta.coverAssetId !== undefined ? { coverAssetId: req.meta.coverAssetId } : {}),
+        lastOpenedAt: new Date().toISOString(),
+      })
+    }
+    return { saved: true, updatedAt: new Date().toISOString() }
+  })
+
+  typedIpcHandle('canvas:snapshot:load', async (req) => {
+    const row = getCanvasSnapshotRepo().get(req.projectId)
+    return { snapshotJson: row ? row.snapshot_json : null }
+  })
+
+  typedIpcHandle('canvas:project:list', async (req) => {
+    const rows = getCanvasProjectRepo().list(0, req.includeDeleted === true)
+    const projects = rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      description: row.description,
+      status: row.status,
+      nodeCount: row.node_count,
+      assetCount: row.asset_count,
+      taskCount: row.task_count,
+      lastOpenedAt: row.last_opened_at,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }))
+    return { projects }
+  })
+
+  typedIpcHandle('canvas:project:delete', async (req) => {
+    if (req.hard) {
+      getCanvasProjectRepo().hardDelete(req.projectId)
+    } else {
+      getCanvasProjectRepo().softDelete(req.projectId)
+    }
+    return { deleted: true }
+  })
   //
   // 流程：
   //   - 内存构造 ExportPayload  → `provider:export`
@@ -2153,16 +2418,16 @@ export function registerAllIpcHandlers(): void {
       agents: toExport.map((a) => ({
         name: a.name,
         description: a.description,
-        agentAdapter: a.agentAdapter,
-        permissionMode: a.permissionMode,
-        reasoningEffort: a.reasoningEffort,
+        agentAdapter: a.agentAdapter as SessionAgentAdapter,
+        permissionMode: a.permissionMode as SessionPermissionMode,
+        reasoningEffort: a.reasoningEffort as SessionReasoningEffort,
         prompt: a.prompt,
         skillIds: a.skillIds,
         disabledSkillIds: a.disabledSkillIds,
         mcpServerIds: a.mcpServerIds,
         ruleIds: a.ruleIds,
         hookConfig: a.hookConfig,
-        workflowId: a.workflowId,
+        workflowId: a.workflowId ?? null,
         metadata: a.metadata,
       })),
     }
@@ -2637,14 +2902,14 @@ export function registerAllIpcHandlers(): void {
         t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
       )
     }
-    return { tasks, total: tasks.length }
+    return { tasks: tasks.map(boardRecordToTask), total: tasks.length }
   })
 
   typedIpcHandle('board:get', async (req) => {
     const tasks = readBoardTasks()
     const task = tasks.find((t) => t.id === req.id)
     if (!task) throw new Error(`Task not found: ${req.id}`)
-    return { task }
+    return { task: boardRecordToTask(task) }
   })
 
   typedIpcHandle('board:create', async (req) => {
@@ -2679,7 +2944,7 @@ export function registerAllIpcHandlers(): void {
     }
     tasks.push(task)
     writeBoardTasks(tasks)
-    return { task }
+    return { task: boardRecordToTask(task) }
   })
 
   typedIpcHandle('board:update', async (req) => {
@@ -2710,7 +2975,7 @@ export function registerAllIpcHandlers(): void {
     }
     tasks[idx] = updated
     writeBoardTasks(tasks)
-    return { task: updated }
+    return { task: boardRecordToTask(updated) }
   })
 
   typedIpcHandle('board:delete', async (req) => {
@@ -2758,7 +3023,7 @@ export function registerAllIpcHandlers(): void {
       created.push(task)
     }
     writeBoardTasks(tasks)
-    return { created: created.length, tasks: created }
+    return { created: created.length, tasks: created.map(boardRecordToTask) }
   })
 
   typedIpcHandle('board:batch-update', async (req) => {
@@ -2793,7 +3058,7 @@ export function registerAllIpcHandlers(): void {
       updated.push(task)
     }
     writeBoardTasks(tasks)
-    return { updated: updated.length, tasks: updated }
+    return { updated: updated.length, tasks: updated.map(boardRecordToTask) }
   })
 
   typedIpcHandle('board:batch-delete', async (req) => {
@@ -2817,7 +3082,7 @@ export function registerAllIpcHandlers(): void {
     if (idx === -1) throw new Error(`Task not found: ${req.id}`)
     tasks[idx] = { ...tasks[idx], deletedAt: null, updatedAt: new Date().toISOString() } as BoardTaskRecord
     writeBoardTasks(tasks)
-    return { task: tasks[idx] }
+    return { task: boardRecordToTask(tasks[idx]!) }
   })
 
   typedIpcHandle('board:permanent-delete', async (req) => {
@@ -3037,6 +3302,7 @@ export function registerAllIpcHandlers(): void {
     if (req.notifications !== undefined) updateFields.notifications = req.notifications
     if (req.tags !== undefined) updateFields.tags = req.tags
     const task = getScheduledTaskService().updateTask(req.id, updateFields)
+    if (!task) throw new Error(`Scheduled task not found: ${req.id}`)
     return { task }
   })
 
@@ -3049,6 +3315,7 @@ export function registerAllIpcHandlers(): void {
     const task = req.enabled
       ? getScheduledTaskService().enableTask(req.id)
       : getScheduledTaskService().disableTask(req.id)
+    if (!task) throw new Error(`Scheduled task not found: ${req.id}`)
     return { task }
   })
 
@@ -3058,11 +3325,11 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('task-execution:list', async (req) => {
-    return getScheduledTaskService().getExecutions(req.taskId, {
-      page: req.page,
-      pageSize: req.pageSize,
-      status: req.status,
-    })
+    const opts: { page?: number; pageSize?: number; status?: string } = {}
+    if (req.page !== undefined) opts.page = req.page
+    if (req.pageSize !== undefined) opts.pageSize = req.pageSize
+    if (req.status !== undefined) opts.status = req.status
+    return getScheduledTaskService().getExecutions(req.taskId, opts)
   })
 
   typedIpcHandle('task-execution:get', async (req) => {

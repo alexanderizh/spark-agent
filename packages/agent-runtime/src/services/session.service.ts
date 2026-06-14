@@ -113,6 +113,10 @@ type ImageGenerationRuntimeContext = {
   mcpServer: SDKMcpServerConfig
   systemPrompt: string
 }
+type MediaGenerationRuntimeContext = {
+  mcpServer: SDKMcpServerConfig
+  systemPrompt: string
+}
 interface FirstTurnTitleContext {
   providerType: string
   apiKey: string
@@ -873,6 +877,7 @@ export class SessionService {
       },
     )
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
+    const mediaGenerationContext = await this.resolveMediaGenerationContext(workspaceRootPath)
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
 
@@ -959,6 +964,7 @@ export class SessionService {
       runtimeContext.skillSystemPrompt,
       projectContext.skillSystemPrompt,
       imageGenerationContext?.systemPrompt,
+      mediaGenerationContext?.systemPrompt,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
     )
 
@@ -1181,6 +1187,9 @@ export class SessionService {
           : {}),
         ...(imageGenerationContext != null
           ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
+          : {}),
+        ...(mediaGenerationContext != null
+          ? { mediaGenerationMcpServer: mediaGenerationContext.mcpServer }
           : {}),
         ...(teamMcpServer != null ? { teamMcpServer } : {}),
         ...(platformMcpServer != null
@@ -1450,6 +1459,9 @@ export class SessionService {
     if (config.imageGenerationMcpServer != null) {
       mcpServers.spark_image = config.imageGenerationMcpServer
     }
+    if (config.mediaGenerationMcpServer != null) {
+      mcpServers.spark_media = config.mediaGenerationMcpServer
+    }
     if (config.teamMcpServer != null) {
       mcpServers.spark_team = config.teamMcpServer
     }
@@ -1564,10 +1576,19 @@ export class SessionService {
     sessionRepo.updateStatus(sessionId, 'running')
     this.emitQueueChanged(sessionId)
 
-    // Compute allowed tools: merge image-gen / team / platform tools into config defaults
+    // Compute allowed tools: merge image-gen / media / team / platform tools into config defaults
     let sdkAllowedTools = config.allowedTools
     if (config.imageGenerationMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, ['mcp__spark_image__generate_image'])
+    }
+    if (config.mediaGenerationMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
+        'mcp__spark_media__generate_image',
+        'mcp__spark_media__edit_image',
+        'mcp__spark_media__generate_audio',
+        'mcp__spark_media__transcribe_audio',
+        'mcp__spark_media__generate_video',
+      ])
     }
     if (config.teamMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, [
@@ -2018,6 +2039,94 @@ export class SessionService {
         provider: providerName,
         apiType,
         outputDir,
+        ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
+      }),
+    }
+  }
+
+  /**
+   * 解析 spark_media MCP server 配置。
+   *
+   * 选择策略：首个 enabled 且 mediaCapabilities 包含 audio / video 能力的 provider
+   * （图片生成继续走 spark_image，避免重复注入）。
+   * 同时要求 keystore 可读 API key、有 defaultModel、MCP server 脚本可解析。
+   */
+  private async resolveMediaGenerationContext(workspaceRootPath: string): Promise<MediaGenerationRuntimeContext | null> {
+    const providerRepo = new ProviderProfileRepository(this.db)
+    if (typeof providerRepo.listAll !== 'function') return null
+    const VOICE_VIDEO = new Set(['audio.speech', 'audio.transcription', 'video.generate', 'video.image_to_video'])
+    const mediaProvider = providerRepo
+      .listAll()
+      .find((row) => {
+        if (row.enabled !== 1) return false
+        try {
+          const config = JSON.parse(row.config_json) as {
+            modelType?: string
+            mediaCapabilities?: string[]
+          }
+          // voice/video 模型类型，或显式声明了 audio/video 能力
+          const isMediaModelType = config.modelType === 'voice' || config.modelType === 'video'
+          const caps = Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : []
+          const hasMediaCap = caps.some((cap) => VOICE_VIDEO.has(cap))
+          return isMediaModelType || hasMediaCap
+        } catch {
+          return false
+        }
+      })
+    if (mediaProvider == null || mediaProvider.keystore_ref == null) return null
+
+    const apiKey = await keystore.getSecret(mediaProvider.keystore_ref as keystore.KeystoreRef)
+    if (apiKey == null || apiKey.trim().length === 0) return null
+
+    const config = JSON.parse(mediaProvider.config_json) as {
+      defaultModel?: string
+      model?: string
+      apiEndpoint?: string
+      mediaProvider?: string | null
+      mediaApiType?: string | null
+      mediaCapabilities?: string[]
+      mediaDefaults?: Record<string, unknown>
+    }
+    const model = (config.defaultModel ?? config.model ?? '').trim()
+    if (!model) return null
+
+    const serverPath = resolveMediaGenerationMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Media provider configured but spark_media MCP server script was not found')
+      return null
+    }
+
+    const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
+    const providerName = (config.mediaProvider?.trim() || 'openai-compatible') as 'apimart' | 'xai' | 'openai-compatible' | 'custom'
+    const apiType = config.mediaApiType ?? 'auto'
+    return {
+      mcpServer: {
+        type: 'stdio',
+        command: process.execPath,
+        args: [serverPath],
+        cwd: workspaceRootPath,
+        env: {
+          ELECTRON_RUN_AS_NODE: '1',
+          SPARK_MEDIA_API_KEY: apiKey,
+          SPARK_MEDIA_MODEL: model,
+          SPARK_MEDIA_PROVIDER: providerName,
+          SPARK_MEDIA_API_TYPE: apiType,
+          SPARK_MEDIA_OUTPUT_DIR: outputDir,
+          ...(config.apiEndpoint != null && config.apiEndpoint.trim().length > 0
+            ? { SPARK_MEDIA_BASE_URL: config.apiEndpoint.trim() }
+            : {}),
+          ...(config.mediaDefaults != null
+            ? { SPARK_MEDIA_DEFAULTS_JSON: JSON.stringify(config.mediaDefaults) }
+            : {}),
+        },
+      },
+      systemPrompt: buildMediaGenerationSystemPrompt({
+        name: mediaProvider.name,
+        model,
+        provider: providerName,
+        apiType,
+        outputDir,
+        capabilities: Array.isArray(config.mediaCapabilities) ? config.mediaCapabilities : [],
         ...(config.apiEndpoint !== undefined ? { apiEndpoint: config.apiEndpoint } : {}),
       }),
     }
@@ -3552,6 +3661,51 @@ function resolveImageGenerationMcpServerPath(): string | null {
     path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/image-generation-mcp-server.mjs'),
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function resolveMediaGenerationMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/media-generation-mcp-server.mjs'),
+    path.resolve(here, '../tools/media-generation-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/media-generation-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+function buildMediaGenerationSystemPrompt(input: {
+  name: string
+  model: string
+  provider: string
+  apiType: string
+  outputDir: string
+  capabilities: string[]
+  apiEndpoint?: string
+}): string {
+  const caps = input.capabilities.length > 0 ? input.capabilities.join(', ') : 'audio.speech, video.generate'
+  return [
+    '## Media Generation Capability',
+    'The current Spark Agent runtime has a configured multimedia model (image / audio / video).',
+    'Credentials are injected only into the local Spark media MCP server — never ask for or reveal API keys.',
+    '',
+    `- Configuration name: ${input.name}`,
+    `- Model ID: ${input.model}`,
+    `- Platform adapter: ${input.provider}`,
+    `- Invocation mode: ${input.apiType}`,
+    `- API base URL: ${input.apiEndpoint ?? '(provider default)'}`,
+    `- Declared capabilities: ${caps}`,
+    `- Output directory: ${input.outputDir}`,
+    '',
+    'Available tools (call the one matching the user intent):',
+    '- `mcp__spark_media__generate_image` — text-to-image / image-to-image.',
+    '- `mcp__spark_media__edit_image` — edit / compose existing images with a prompt.',
+    '- `mcp__spark_media__generate_audio` — text-to-speech.',
+    '- `mcp__spark_media__transcribe_audio` — audio-to-text transcription.',
+    '- `mcp__spark_media__generate_video` — text-to-video / image-to-video.',
+    '',
+    'After success, show the generated `files` from the structured result. Local file paths can be shown as Markdown links.',
+    'Do not auto-retry after a provider failure; report the error and suggest model, prompt, or provider-configuration adjustments.',
+  ].join('\n')
 }
 
 function buildImageGenerationSystemPrompt(input: {

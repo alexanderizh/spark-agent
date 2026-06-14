@@ -12,6 +12,12 @@
  */
 
 import { z } from 'zod'
+import {
+  MediaProviderKindSchema,
+  MediaApiTypeSchema,
+  MediaCapabilityIdSchema,
+  ProviderMediaDefaultsSchema,
+} from './media-config.js'
 
 /** 当前 schema 版本。导入时校验；不匹配则拒绝 */
 export const PROVIDER_EXPORT_VERSION = 2 as const
@@ -51,6 +57,14 @@ export const ProviderExportProfileSchema = z.object({
   imageProvider: z.string().min(1).max(80).nullable().optional(),
   /** 图片模型调用方式 */
   imageApiType: z.enum(['sync', 'async', 'auto']).nullable().optional(),
+  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+  mediaProvider: MediaProviderKindSchema.nullable().optional(),
+  /** 多媒体调用方式 */
+  mediaApiType: MediaApiTypeSchema.nullable().optional(),
+  /** 已声明支持的多媒体能力列表 */
+  mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
+  /** 多媒体能力默认值 */
+  mediaDefaults: ProviderMediaDefaultsSchema.optional(),
   /** API Key（导出时从 Keychain 读取；导入时写入 Keychain） */
   apiKey: z.string().min(1).max(500).optional(),
 })

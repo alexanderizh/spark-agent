@@ -1,3 +1,10 @@
+import type {
+  MediaProviderKind,
+  MediaApiType,
+  MediaCapabilityId,
+  ProviderMediaDefaults,
+} from './media-config.js'
+
 export type ProviderPresetKind = 'anthropic' | 'openai'
 
 export type ProviderPresetModelType = 'image' | 'text' | 'multimodal' | 'voice' | 'video'
@@ -15,6 +22,14 @@ export interface ProviderPreset {
   modelType?: ProviderPresetModelType
   imageProvider?: string
   imageApiType?: ImageGenApiType
+  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+  mediaProvider?: MediaProviderKind
+  /** 多媒体调用方式 */
+  mediaApiType?: MediaApiType
+  /** 已声明支持的多媒体能力列表 */
+  mediaCapabilities?: MediaCapabilityId[]
+  /** 多媒体能力默认值 */
+  mediaDefaults?: ProviderMediaDefaults
 }
 
 /* ─── Vendor 元数据（用于 UI 展示：emoji logo + 颜色 + 描述） ─── */
@@ -68,6 +83,10 @@ export const VENDOR_CATALOG: VendorMeta[] = [
   /* ─── 新增（2026-06）：海外 / 自建网关 ─── */
   { id: 'github',           name: 'GitHub Models',   emoji: 'GH',  color: '#24292f', desc: 'GitHub Models · GPT-4o / o3 / Llama / Phi', logoPath: 'providers/github.svg' },
   { id: 'new-api',          name: 'New API 网关',    emoji: 'NA',  color: '#0ea5e9', desc: '自建 LLM 网关（One-API / New-API）· OpenAI 格式聚合', logoPath: 'providers/new-api.svg' },
+
+  /* ─── 多媒体模型平台（APIMart / xAI）─── */
+  { id: 'apimart',          name: 'APIMart',         emoji: 'AM',  color: '#22c55e', desc: '图片 / 语音 / 视频聚合（GPT Image / Whisper / VEO / Sora）', logoPath: 'providers/apimart.svg' },
+  { id: 'xai',              name: 'xAI',             emoji: 'xA',  color: '#0f172a', desc: 'Grok Imagine 图片 / 视频 / 语音合成', logoPath: 'providers/xai.svg' },
 ]
 
 export const PROVIDER_PRESETS: ProviderPreset[] = [
@@ -812,6 +831,178 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     sourceUrls: [
       'https://platform.xiaomimimo.com/docs/en-US/integration/claudecode',
       'https://platform.xiaomimimo.com/docs/en-US/quick-start/first-api-call',
+    ],
+  },
+
+  /* ════════════════════════════════════════════════════════════════ */
+  /* ─── 多媒体模型平台 adapter preset（APIMart / xAI）───             */
+  /* ════════════════════════════════════════════════════════════════ */
+
+  /* ─── APIMart 图片（GPT Image 2）─── */
+  {
+    id: 'apimart-images',
+    vendorId: 'apimart',
+    name: 'APIMart 图片',
+    provider: 'openai',
+    apiEndpoint: 'https://api.apimart.ai/v1',
+    defaultModel: 'gpt-image-2',
+    modelIds: ['gpt-image-2', 'gpt-image-1'],
+    modelType: 'image',
+    imageProvider: 'apimart',
+    imageApiType: 'async',
+    mediaProvider: 'apimart',
+    mediaApiType: 'auto',
+    mediaCapabilities: ['image.generate', 'image.edit'],
+    mediaDefaults: {
+      image: { size: '1024x1024', n: 1, outputFormat: 'png' },
+      polling: { intervalMs: 4000, timeoutMs: 240_000 },
+    },
+    sourceUrls: [
+      'https://docs.apimart.ai/cn/api-reference/images/gpt-image-2/official',
+    ],
+  },
+
+  /* ─── APIMart 语音转写（Whisper）─── */
+  {
+    id: 'apimart-audio-whisper',
+    vendorId: 'apimart',
+    name: 'APIMart 语音转写',
+    provider: 'openai',
+    apiEndpoint: 'https://api.apimart.ai/v1',
+    defaultModel: 'whisper-1',
+    modelIds: ['whisper-1'],
+    modelType: 'voice',
+    mediaProvider: 'apimart',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.transcription'],
+    mediaDefaults: { audio: { language: 'zh' } },
+    sourceUrls: [
+      'https://docs.apimart.ai/cn/api-reference/audios/whisper-1',
+    ],
+  },
+
+  /* ─── APIMart 语音合成（TTS）─── */
+  {
+    id: 'apimart-audio-tts',
+    vendorId: 'apimart',
+    name: 'APIMart 语音合成',
+    provider: 'openai',
+    apiEndpoint: 'https://api.apimart.ai/v1',
+    defaultModel: 'tts-1',
+    modelIds: ['tts-1', 'tts-1-hd'],
+    modelType: 'voice',
+    mediaProvider: 'apimart',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaDefaults: { audio: { voice: 'alloy', format: 'mp3', speed: 1 } },
+    sourceUrls: [
+      'https://docs.apimart.ai/cn/api-reference/audios/speech',
+    ],
+  },
+
+  /* ─── APIMart 视频（VEO 3）─── */
+  {
+    id: 'apimart-video-veo3',
+    vendorId: 'apimart',
+    name: 'APIMart 视频 VEO 3',
+    provider: 'openai',
+    apiEndpoint: 'https://api.apimart.ai/v1',
+    defaultModel: 'veo3',
+    modelIds: ['veo3'],
+    modelType: 'video',
+    mediaProvider: 'apimart',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
+      polling: { intervalMs: 6000, timeoutMs: 600_000 },
+    },
+    sourceUrls: [
+      'https://docs.apimart.ai/cn/api-reference/videos/veo3/generation',
+    ],
+  },
+
+  /* ─── APIMart 视频（Sora 2）─── */
+  {
+    id: 'apimart-video-sora2',
+    vendorId: 'apimart',
+    name: 'APIMart 视频 Sora 2',
+    provider: 'openai',
+    apiEndpoint: 'https://api.apimart.ai/v1',
+    defaultModel: 'sora-2',
+    modelIds: ['sora-2'],
+    modelType: 'video',
+    mediaProvider: 'apimart',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
+      polling: { intervalMs: 6000, timeoutMs: 600_000 },
+    },
+    sourceUrls: [
+      'https://docs.apimart.ai/cn/api-reference/videos/sora2/generation',
+    ],
+  },
+
+  /* ─── xAI 图片（Grok Imagine）─── */
+  {
+    id: 'xai-imagine-image',
+    vendorId: 'xai',
+    name: 'xAI Imagine 图片',
+    provider: 'openai',
+    apiEndpoint: 'https://api.x.ai/v1',
+    defaultModel: 'grok-imagine-image',
+    modelIds: ['grok-imagine-image'],
+    modelType: 'image',
+    imageProvider: 'xai',
+    imageApiType: 'sync',
+    mediaProvider: 'xai',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['image.generate'],
+    mediaDefaults: { image: { aspectRatio: '1:1', n: 1, outputFormat: 'png' } },
+    sourceUrls: [
+      'https://docs.x.ai/developers/model-capabilities/imagine',
+    ],
+  },
+
+  /* ─── xAI 视频（Imagine Video）─── */
+  {
+    id: 'xai-imagine-video',
+    vendorId: 'xai',
+    name: 'xAI Imagine 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://api.x.ai/v1',
+    defaultModel: 'grok-imagine-video',
+    modelIds: ['grok-imagine-video'],
+    modelType: 'video',
+    mediaProvider: 'xai',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 6, quality: 'hd' },
+      polling: { intervalMs: 5000, timeoutMs: 600_000 },
+    },
+    sourceUrls: [
+      'https://docs.x.ai/developers/model-capabilities/video/generation',
+    ],
+  },
+
+  /* ─── xAI 语音合成（TTS）─── */
+  {
+    id: 'xai-tts',
+    vendorId: 'xai',
+    name: 'xAI 语音合成',
+    provider: 'openai',
+    apiEndpoint: 'https://api.x.ai/v1',
+    defaultModel: 'grok-tts',
+    modelIds: ['grok-tts'],
+    modelType: 'voice',
+    mediaProvider: 'xai',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaDefaults: { audio: { voice: 'alloy', format: 'mp3', speed: 1 } },
+    sourceUrls: [
+      'https://docs.x.ai/developers/model-capabilities/audio/text-to-speech',
     ],
   },
 ]

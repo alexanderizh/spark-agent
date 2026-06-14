@@ -21,6 +21,7 @@ export type CanvasFlowNodeData = {
 
 const typeColor: Record<SparkCanvasNode['type'], string> = {
   image: 'blue',
+  audio: 'cyan',
   video: 'purple',
   text: 'default',
   prompt: 'orange',
@@ -63,6 +64,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
         <div className="canvas-node-head">
           <div className="canvas-node-title">
             {node.type === 'image' && <Icons.Image size={14} />}
+            {node.type === 'audio' && <Icons.Play size={14} />}
             {node.type === 'text' && <Icons.File size={14} />}
             {node.type === 'prompt' && <Icons.Sparkles size={14} />}
             {node.type === 'task' && <Icons.Activity size={14} />}
@@ -86,6 +88,28 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             <div className="canvas-node-image-placeholder">
               <Icons.Image size={30} />
               <span>{node.data.message ?? '等待图片 URL'}</span>
+            </div>
+          )
+        ) : node.type === 'audio' ? (
+          node.data.url ? (
+            <div className="canvas-node-audio">
+              <Icons.Play size={22} />
+              <audio className="canvas-node-audio-player" src={node.data.url} controls preload="metadata" />
+              <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
+            </div>
+          ) : (
+            <div className="canvas-node-image-placeholder">
+              <Icons.Play size={30} />
+              <span>{node.data.message ?? '等待音频结果'}</span>
+            </div>
+          )
+        ) : node.type === 'video' ? (
+          node.data.url ? (
+            <video className="canvas-node-image" src={node.data.url} controls preload="metadata" />
+          ) : (
+            <div className="canvas-node-image-placeholder">
+              <Icons.Play size={30} />
+              <span>{node.data.message ?? '等待视频结果'}</span>
             </div>
           )
         ) : node.type === 'group' ? (

@@ -1,5 +1,6 @@
 import type {
   CanvasAsset,
+  CanvasAssetType,
   CanvasBoard,
   CanvasEdge,
   CanvasNode,
@@ -10,9 +11,85 @@ import type {
   CreateCanvasTaskRequest,
 } from './canvas.types'
 import { getCanvasCapability } from './canvas.capabilities'
+import { resolveMediaDisplayUrl } from './canvas-safe-file'
+import type {
+  CanvasMediaTaskCreateRequest,
+  CanvasMediaTaskCreateResponse,
+  CanvasMediaTaskInputFile,
+  CanvasMediaCapabilitiesListResponse,
+  CanvasSnapshotSaveRequest,
+} from '@spark/protocol'
 
 const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
+
+/**
+ * 把当前 localStorage db 的每个项目快照异步持久化到 SQLite（生产备份）。
+ * debounce 500ms，避免每次 writeDb 都打 IPC。localStorage 仍是热存储，
+ * SQLite 提供"重启不丢 / 可备份 / 跨窗口一致"的生产级保证。
+ */
+let persistTimer: ReturnType<typeof setTimeout> | null = null
+function schedulePersist(getDb: () => CanvasDb): void {
+  if (persistTimer != null) clearTimeout(persistTimer)
+  persistTimer = setTimeout(() => {
+    persistTimer = null
+    void persistAllProjects(getDb())
+  }, 500)
+}
+
+async function persistAllProjects(db: CanvasDb): Promise<void> {
+  for (const project of db.projects) {
+    if (project.status === 'deleted') continue
+    const snapshot = {
+      project,
+      board: db.boards.find((b) => b.projectId === project.id) ?? null,
+      nodes: db.nodes.filter((n) => n.projectId === project.id),
+      edges: db.edges.filter((e) => e.projectId === project.id),
+      assets: db.assets.filter((a) => a.projectId === project.id),
+      tasks: db.tasks.filter((t) => t.projectId === project.id),
+    }
+    const req: CanvasSnapshotSaveRequest = {
+      projectId: project.id,
+      snapshotJson: JSON.stringify(snapshot),
+    }
+    req.meta = buildProjectMeta(project)
+    try {
+      await window.spark.invoke('canvas:snapshot:save', req)
+    } catch {
+      // 持久化失败不阻断画布主流程（localStorage 仍是热存储）
+    }
+  }
+}
+
+/** 构造 CanvasSnapshotSaveRequest.meta，跳过 undefined 字段（exactOptionalPropertyTypes） */
+function buildProjectMeta(project: CanvasProject): NonNullable<CanvasSnapshotSaveRequest['meta']> {
+  const meta: NonNullable<CanvasSnapshotSaveRequest['meta']> = {
+    title: project.title,
+    status: project.status,
+    nodeCount: project.nodeCount,
+    assetCount: project.assetCount,
+    taskCount: project.taskCount,
+  }
+  if (project.description !== undefined) meta.description = project.description
+  if (project.coverAssetId !== undefined) meta.coverAssetId = project.coverAssetId
+  return meta
+}
+
+/** 需要真实平台 adapter 的多媒体 operation（其余走 demo / 文本模型） */
+const MEDIA_OPERATIONS = new Set<CanvasOperationType>([
+  'text_to_image',
+  'image_to_image',
+  'image_edit',
+  'image_compose',
+  'text_to_audio',
+  'audio_transcribe',
+  'text_to_video',
+  'image_to_video',
+])
+
+export function isMediaOperation(operation: CanvasOperationType): boolean {
+  return MEDIA_OPERATIONS.has(operation)
+}
 
 type CanvasDb = {
   projects: CanvasProject[]
@@ -52,6 +129,8 @@ function readDb(): CanvasDb {
 
 function writeDb(db: CanvasDb): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+  // 异步把每个项目快照持久化到 SQLite（生产备份，debounce）
+  schedulePersist(() => db)
 }
 
 function seedDb(): CanvasDb {
@@ -789,6 +868,294 @@ export const canvasApi = {
     updateProjectCounts(db, projectId)
     writeDb(db)
     return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 创建并执行真实多媒体任务（走 main process → MediaRouterService → 平台 adapter）。
+   *
+   * 流程（design doc §8）：
+   *   1. 写入 optimistic task node（status=running）。
+   *   2. 调 `canvas:task:create-media` IPC（API key 只在主进程内）。
+   *   3. 成功：把每个输出 asset 写回 canvas_assets，创建输出节点 + generated 边缘，
+   *      task 标记 completed，记录 provider/model/requestId/rawResponse。
+   *   4. 失败：task 标记 failed，保留 errorMsg 供 Inspector 展示。
+   */
+  async createMediaTask(
+    projectId: string,
+    request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+      inputFiles?: CanvasMediaTaskInputFile[]
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.projectId === projectId)
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!board || !project) throw new Error('Canvas board not found')
+    const at = now()
+    const taskId = uid('canvas_task')
+    const x = request.outputPlacement?.x ?? 360
+    const y = request.outputPlacement?.y ?? 320
+
+    // optimistic task node
+    const taskNodeData: CanvasNode['data'] = {
+      operation: request.operation,
+      status: 'running',
+      progress: 24,
+      message: '调用平台 adapter 中…',
+    }
+    if (request.prompt != null) taskNodeData.prompt = request.prompt
+    const taskNode = createNodeBase({
+      projectId,
+      boardId: board.id,
+      type: 'task',
+      taskId,
+      title: operationLabel(request.operation),
+      x,
+      y,
+      width: 300,
+      height: 152,
+      data: taskNodeData,
+      at,
+    })
+    const task: CanvasTask = {
+      id: taskId,
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      operation: request.operation,
+      status: 'running',
+      progress: 24,
+      title: operationLabel(request.operation),
+      prompt: request.prompt ?? null,
+      inputNodeIds: request.inputNodeIds ?? [],
+      inputAssetIds: request.inputAssetIds ?? [],
+      outputNodeIds: [],
+      outputAssetIds: [],
+      agentId: request.agentId ?? null,
+      providerProfileId: request.providerProfileId ?? null,
+      modelId: request.modelId ?? null,
+      modelParams: request.modelParams ?? {},
+      createdAt: at,
+      updatedAt: at,
+    }
+    const inputEdges = task.inputNodeIds.map(
+      (sourceNodeId): CanvasEdge => ({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: board.id,
+        userId: USER_ID,
+        sourceNodeId,
+        targetNodeId: taskNode.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: {},
+        createdAt: at,
+      }),
+    )
+    db.nodes.push(taskNode)
+    db.tasks.push(task)
+    db.edges.push(...inputEdges)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+
+    // 调 IPC（API key 只在主进程）
+    const ipcRequest: CanvasMediaTaskCreateRequest = {
+      operation: request.operation,
+      ...(request.prompt != null ? { prompt: request.prompt } : {}),
+      ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
+      ...(request.providerProfileId != null ? { providerProfileId: request.providerProfileId } : {}),
+      ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
+    }
+    let response: CanvasMediaTaskCreateResponse
+    try {
+      response = await window.spark.invoke('canvas:task:create-media', ipcRequest)
+    } catch (err) {
+      response = {
+        providerProfileId: '',
+        provider: '',
+        model: '',
+        mode: 'sync',
+        assets: [],
+        error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
+      }
+    }
+    return this.applyMediaTaskResult(projectId, taskId, response)
+  },
+
+  /** 把平台 adapter 的输出写回 canvas_assets / canvas_nodes / canvas_edges */
+  async applyMediaTaskResult(
+    projectId: string,
+    taskId: string,
+    response: CanvasMediaTaskCreateResponse,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId)
+    const taskNode = db.nodes.find((item) => item.taskId === taskId)
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+
+    if (response.error) {
+      task.status = 'failed'
+      task.progress = 100
+      task.errorMsg = response.error.code
+      task.errorDetail = response.error.message
+      task.updatedAt = now()
+      taskNode.data = {
+        ...taskNode.data,
+        status: 'failed',
+        progress: 100,
+        message: `失败：${response.error.message}`,
+      }
+      taskNode.updatedAt = now()
+      updateProjectCounts(db, projectId)
+      writeDb(db)
+      return this.openSnapshot(projectId)
+    }
+
+    task.status = 'completed'
+    task.progress = 100
+    task.completedAt = now()
+    task.updatedAt = now()
+    if (response.providerProfileId) task.providerProfileId = response.providerProfileId
+    if (response.model) task.modelId = response.model
+    task.provider = response.provider || null
+    task.requestId = response.requestId ?? null
+    task.rawResponse = response.rawResponse
+
+    const at = now()
+    response.assets.forEach((assetOut, index) => {
+      const assetType = (assetOut.type || 'file') as CanvasAssetType
+      // 优先用 base64 预览（小图快），否则把磁盘路径编码成 safe-file:// 供 <audio>/<video>/<img> 加载
+      const displayUrl = resolveMediaDisplayUrl({
+        url: assetOut.url,
+        dataUrl: assetOut.previewDataUrl,
+        filePath: assetOut.filePath,
+      })
+      const asset: CanvasAsset = {
+        id: uid('canvas_asset'),
+        projectId,
+        userId: USER_ID,
+        type: assetType,
+        source: task.operation === 'image_edit' || task.operation === 'image_compose' ? 'ai_edited' : 'ai_generated',
+        title: `${operationLabel(task.operation)} · ${response.provider}/${response.model}`,
+        mimeType: assetOut.mimeType ?? null,
+        storageKey: assetOut.filePath ?? null,
+        url: displayUrl || null,
+        thumbnailUrl: assetType === 'image' ? (displayUrl || null) : null,
+        contentText: assetOut.contentText ?? null,
+        ...(assetOut.width != null ? { width: assetOut.width } : {}),
+        ...(assetOut.height != null ? { height: assetOut.height } : {}),
+        ...(assetOut.durationMs != null ? { durationMs: assetOut.durationMs } : {}),
+        metadata: {
+          taskId,
+          provider: response.provider,
+          model: response.model,
+          requestId: response.requestId ?? null,
+          filePath: assetOut.filePath ?? null,
+        },
+        createdAt: at,
+        updatedAt: at,
+      }
+      const nodeType: CanvasNode['type'] =
+        assetType === 'text' ? 'text'
+          : assetType === 'image' ? 'image'
+            : assetType === 'audio' ? 'audio'
+              : assetType === 'video' ? 'video' : 'text'
+      const nodeData: CanvasNode['data'] =
+        nodeType === 'text'
+          ? { text: asset.contentText ?? '', format: 'plain' }
+          : { message: assetOut.filePath ?? asset.title ?? 'media asset' }
+      if (nodeType !== 'text') {
+        if (displayUrl) nodeData.url = displayUrl
+        if (asset.mimeType) nodeData.mimeType = asset.mimeType
+        if (assetType === 'image' && asset.thumbnailUrl) nodeData.thumbnailUrl = asset.thumbnailUrl
+      }
+      const resultNode = createNodeBase({
+        projectId,
+        boardId: task.boardId,
+        type: nodeType,
+        title: asset.title ?? null,
+        assetId: asset.id,
+        x: taskNode.x + 380 + index * 48,
+        y: taskNode.y + index * 48,
+        width: nodeType === 'image' ? 280 : nodeType === 'video' ? 320 : 300,
+        height: nodeType === 'image' ? 210 : nodeType === 'video' ? 200 : 164,
+        data: nodeData,
+      })
+      task.outputAssetIds.push(asset.id)
+      task.outputNodeIds.push(resultNode.id)
+      db.assets.push(asset)
+      db.nodes.push(resultNode)
+      db.edges.push({
+        id: uid('canvas_edge'),
+        projectId,
+        boardId: task.boardId,
+        userId: USER_ID,
+        sourceNodeId: taskNode.id,
+        targetNodeId: resultNode.id,
+        type: 'generated',
+        taskId,
+        metadata: {},
+        createdAt: at,
+      })
+    })
+
+    taskNode.data = {
+      ...taskNode.data,
+      status: 'completed',
+      progress: 100,
+      message: `${response.assets.length} 个产物已写回画布`,
+    }
+    taskNode.updatedAt = now()
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 拉取当前可用的多媒体 provider 列表（不含 API key） */
+  async listMediaCapabilities(): Promise<CanvasMediaCapabilitiesListResponse> {
+    return window.spark.invoke('canvas:media-capabilities:list', {})
+  },
+
+  /**
+   * 从 SQLite 恢复画布数据到 localStorage（迁移 / 跨窗口恢复）。
+   *
+   * 只恢复 localStorage 中不存在的 projectId（不覆盖本地较新的数据）。
+   * 启动时调用一次，保证 SQLite 里的项目在画布中可见。
+   */
+  async hydrateFromStorage(): Promise<{ restored: number }> {
+    let db: CanvasDb
+    try {
+      db = readDb()
+    } catch {
+      db = emptyDb()
+    }
+    const existing = new Set(db.projects.map((p) => p.id))
+    let restored = 0
+    try {
+      const { projects } = await window.spark.invoke('canvas:project:list', {})
+      for (const project of projects) {
+        if (project.status === 'deleted' || existing.has(project.id)) continue
+        const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId: project.id })
+        if (!snapshotJson) continue
+        try {
+          const snapshot = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
+          if (snapshot.project) db.projects.push(snapshot.project)
+          if (snapshot.board) db.boards.push(snapshot.board)
+          if (snapshot.nodes) db.nodes.push(...snapshot.nodes)
+          if (snapshot.edges) db.edges.push(...snapshot.edges)
+          if (snapshot.assets) db.assets.push(...snapshot.assets)
+          if (snapshot.tasks) db.tasks.push(...snapshot.tasks)
+          restored += 1
+        } catch {
+          // 单个项目解析失败跳过
+        }
+      }
+      if (restored > 0) {
+        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+      }
+    } catch {
+      // SQLite 不可用时静默降级到 localStorage
+    }
+    return { restored }
   },
 }
 

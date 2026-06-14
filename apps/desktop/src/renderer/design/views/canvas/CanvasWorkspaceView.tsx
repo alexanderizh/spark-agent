@@ -167,6 +167,23 @@ export function CanvasWorkspaceView({
     operation: CanvasOperationType
     prompt: string
   }) => {
+    // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
+    const inputFiles = selectedNodes
+      .map((node) => {
+        if (!node.data.url) return null
+        const type =
+          node.type === 'image' ? 'image' as const
+            : node.type === 'audio' ? 'audio' as const
+              : node.type === 'video' ? 'video' as const
+                : 'file' as const
+        return {
+          type,
+          ...(node.data.url.startsWith('data:') ? { dataUrl: node.data.url } : { url: node.data.url }),
+          ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
+        }
+      })
+      .filter((file): file is NonNullable<typeof file> => file !== null)
+
     await createTask({
       operation,
       prompt,
@@ -174,6 +191,7 @@ export function CanvasWorkspaceView({
       inputAssetIds: selectedNodes
         .map((node) => node.assetId)
         .filter((id): id is string => Boolean(id)),
+      ...(inputFiles.length > 0 ? { inputFiles } : {}),
       outputPlacement: {
         x: selectedNodes[0] ? selectedNodes[0].x + 360 : 360,
         y: selectedNodes[0] ? selectedNodes[0].y + 80 : 260,

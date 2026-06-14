@@ -59,3 +59,13 @@ The tool accepts:
 
 The current implementation uses a global image provider selection. Per-agent
 image-model binding can be added later by extending the agent runtime config.
+
+## Unified Media Stack (Image / Voice / Video)
+
+For image **edit**, **voice** (speech + transcription), and **video**
+generation, see [`multimedia-model-providers.md`](./multimedia-model-providers.md).
+The unified stack introduces a `spark_media` MCP, platform adapters (APIMart /
+xAI), and direct canvas integration. Legacy `imageProvider` / `imageApiType`
+fields are still honored — saving an image provider also syncs
+`mediaProvider` / `mediaApiType` / `mediaCapabilities` so image profiles
+participate in the unified capability registry.

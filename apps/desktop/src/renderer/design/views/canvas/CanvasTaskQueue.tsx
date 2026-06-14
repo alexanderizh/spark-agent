@@ -1,6 +1,6 @@
 import { Button, Tag } from '@lobehub/ui'
 import { Progress } from 'antd'
-import { operationLabel } from './canvas.api'
+import { isMediaOperation, operationLabel } from './canvas.api'
 import type { CanvasTask } from './canvas.types'
 
 export function CanvasTaskQueue({
@@ -35,9 +35,11 @@ export function CanvasTaskQueue({
           <div key={task.id} className="canvas-task-pill">
             <span className="canvas-task-pill-title">
               {task.title ?? operationLabel(task.operation)}
+              {task.provider ? ` · ${task.provider}` : ''}
             </span>
             <Progress percent={task.progress} size="small" />
-            {task.status !== 'completed' && (
+            {/* Demo 完成仅对非多媒体任务（文本/prompt 优化）展示；多媒体任务由 IPC 自动完成或失败 */}
+            {task.status !== 'completed' && !isMediaOperation(task.operation) && (
               <Button size="small" type="text" onClick={() => onCompleteDemoTask(task.id)}>
                 Demo 完成
               </Button>

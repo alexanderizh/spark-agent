@@ -12,6 +12,12 @@ import {
   ProviderExportPayloadSchema,
   ProviderImportModeSchema,
 } from '../provider-export.js'
+import {
+  MediaProviderKindSchema,
+  MediaApiTypeSchema,
+  MediaCapabilityIdSchema,
+  ProviderMediaDefaultsSchema,
+} from '../media-config.js'
 import { LOCAL_CLI_PROVIDER_ID, LOCAL_CODEX_CLI_PROVIDER_ID } from '../local-cli-provider.js'
 
 // ─── 基础 Schema ─────────────────────────────────────────────────────────────
@@ -306,6 +312,14 @@ export const ProviderCreateRequestSchema = z.object({
   imageProvider: z.string().min(1).max(80).nullable().optional(),
   /** 图片模型调用方式 */
   imageApiType: ImageGenApiTypeSchema.nullable().optional(),
+  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+  mediaProvider: MediaProviderKindSchema.nullable().optional(),
+  /** 多媒体调用方式 */
+  mediaApiType: MediaApiTypeSchema.nullable().optional(),
+  /** 已声明支持的多媒体能力列表 */
+  mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
+  /** 多媒体能力默认值 */
+  mediaDefaults: ProviderMediaDefaultsSchema.optional(),
 }).superRefine((value, ctx) => {
   if ((value.defaultModel ?? value.model)?.trim().length) return
   ctx.addIssue({
@@ -335,6 +349,14 @@ export const ProviderUpdateRequestSchema = z.object({
   imageProvider: z.string().min(1).max(80).nullable().optional(),
   /** 图片模型调用方式 */
   imageApiType: ImageGenApiTypeSchema.nullable().optional(),
+  /** 多媒体平台 adapter 种类；传 null 清除 */
+  mediaProvider: MediaProviderKindSchema.nullable().optional(),
+  /** 多媒体调用方式；传 null 清除 */
+  mediaApiType: MediaApiTypeSchema.nullable().optional(),
+  /** 已声明支持的多媒体能力列表；传空数组清空 */
+  mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
+  /** 多媒体能力默认值 */
+  mediaDefaults: ProviderMediaDefaultsSchema.optional(),
 })
 
 export const ProviderDeleteRequestSchema = z.object({

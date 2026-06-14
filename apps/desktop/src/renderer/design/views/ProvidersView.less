@@ -561,3 +561,24 @@
     color: var(--text-secondary);
   }
 }
+
+/* ─── 多媒体能力区块（ProviderEditPanel）─── */
+
+.pv_media_capabilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding: 10px 12px;
+  background: var(--color-fill-1, var(--bg-soft));
+  border-radius: var(--r-xs);
+}
+
+.pv_media_defaults {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+
+  @media (max-width: 720px) {
+    grid-template-columns: 1fr;
+  }
+}

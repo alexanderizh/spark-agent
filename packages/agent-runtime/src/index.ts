@@ -1,4 +1,23 @@
 export { ProviderService } from './services/provider.service.js'
+export { MediaRouterService } from './services/media/media-router.service.js'
+export type {
+  MediaProviderProfile,
+  InvokeOptions as MediaInvokeOptions,
+} from './services/media/media-router.service.js'
+export type {
+  MediaProviderContext,
+  MediaGenerateInput,
+  MediaGenerateOutput,
+  MediaGeneratedAsset,
+  MediaProviderAdapter,
+  MediaProviderError,
+  MediaErrorCode,
+  MediaInputFile,
+  MediaArtifactType,
+} from './services/media/media-adapter.types.js'
+export { MediaArtifactService } from './services/media/media-artifact.service.js'
+export { ApimartMediaAdapter } from './services/media/adapters/apimart-media.adapter.js'
+export { XaiMediaAdapter } from './services/media/adapters/xai-media.adapter.js'
 export { ModelService } from './services/model.service.js'
 export { McpService, MANAGED_MCP_SCOPE, PLAYWRIGHT_MCP_NAME } from './services/mcp-server.service.js'
 export { SkillService } from './services/skill.service.js'

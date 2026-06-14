@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { canvasApi } from './canvas.api'
+import { canvasApi, isMediaOperation } from './canvas.api'
 import type {
   CanvasNode,
   CanvasProject,
   CanvasSnapshot,
   CreateCanvasTaskRequest,
 } from './canvas.types'
+import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
@@ -16,6 +17,12 @@ export function useCanvasProjects() {
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
+      // 先从 SQLite 恢复（生产持久化层），再列项目；失败静默降级到 localStorage
+      try {
+        await canvasApi.hydrateFromStorage()
+      } catch {
+        // SQLite 不可用时忽略
+      }
       setProjects(await canvasApi.listProjects())
     } finally {
       setLoading(false)
@@ -126,10 +133,17 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const createTask = useCallback(
-    async (request: Omit<CreateCanvasTaskRequest, 'boardId'>) => {
+    async (request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+      inputFiles?: CanvasMediaTaskInputFile[]
+    }) => {
       const current = snapshot
       if (!current) return
-      setSnapshot(await canvasApi.createTask(projectId, { ...request, boardId: current.board.id }))
+      // 多媒体 operation 走真实平台 adapter；文本类走 demo 占位
+      if (isMediaOperation(request.operation)) {
+        setSnapshot(await canvasApi.createMediaTask(projectId, request))
+      } else {
+        setSnapshot(await canvasApi.createTask(projectId, { ...request, boardId: current.board.id }))
+      }
     },
     [projectId, snapshot],
   )

@@ -9,6 +9,15 @@ import type {
   ProviderImportResult,
 } from '@spark/protocol'
 import {
+  isMediaApiType,
+  isMediaCapabilityId,
+  isMediaProviderKind,
+  type MediaProviderKind,
+  type MediaApiType,
+  type MediaCapabilityId,
+  type ProviderMediaDefaults,
+} from '@spark/protocol'
+import {
   PROVIDER_EXPORT_VERSION,
   LOCAL_CLI_PROVIDER_ID,
   LOCAL_CLI_PROVIDER_NAME,
@@ -168,6 +177,10 @@ function rowToProfile(row: {
     modelType: normalizeModelType(config.modelType),
     ...(config.imageProvider !== undefined && { imageProvider: config.imageProvider }),
     ...(config.imageApiType !== undefined && { imageApiType: config.imageApiType }),
+    ...(config.mediaProvider !== undefined && { mediaProvider: config.mediaProvider }),
+    ...(config.mediaApiType !== undefined && { mediaApiType: config.mediaApiType }),
+    ...(config.mediaCapabilities !== undefined && { mediaCapabilities: config.mediaCapabilities }),
+    ...(config.mediaDefaults !== undefined && { mediaDefaults: config.mediaDefaults }),
     keystoreRef: row.keystore_ref ?? '',
     isDefault: row.is_default === 1,
     createdAt: row.created_at,
@@ -334,6 +347,10 @@ export class ProviderService {
     modelType?: string
     imageProvider?: string | null
     imageApiType?: 'sync' | 'async' | 'auto' | null
+    mediaProvider?: MediaProviderKind | null
+    mediaApiType?: MediaApiType | null
+    mediaCapabilities?: MediaCapabilityId[]
+    mediaDefaults?: ProviderMediaDefaults
     apiKey: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -375,6 +392,10 @@ export class ProviderService {
         ...(params.modelType !== undefined && { modelType: normalizeModelType(params.modelType) }),
         ...(params.imageProvider !== undefined && { imageProvider: params.imageProvider }),
         ...(params.imageApiType !== undefined && { imageApiType: params.imageApiType }),
+        ...(params.mediaProvider !== undefined && { mediaProvider: params.mediaProvider }),
+        ...(params.mediaApiType !== undefined && { mediaApiType: params.mediaApiType }),
+        ...(params.mediaCapabilities !== undefined && { mediaCapabilities: params.mediaCapabilities }),
+        ...(params.mediaDefaults !== undefined && { mediaDefaults: params.mediaDefaults }),
       }),
       keystoreRef: ref,
       isDefault: params.isDefault ?? false,
@@ -403,6 +424,10 @@ export class ProviderService {
     modelType?: string
     imageProvider?: string | null
     imageApiType?: 'sync' | 'async' | 'auto' | null
+    mediaProvider?: MediaProviderKind | null
+    mediaApiType?: MediaApiType | null
+    mediaCapabilities?: MediaCapabilityId[]
+    mediaDefaults?: ProviderMediaDefaults
     apiKey?: string
     isDefault?: boolean
   }): Promise<ProviderProfile> {
@@ -421,6 +446,11 @@ export class ProviderService {
       params.haikuModel !== undefined ||
       params.sonnetModel !== undefined ||
       params.opusModel !== undefined
+    const mediaTouched =
+      params.mediaProvider !== undefined ||
+      params.mediaApiType !== undefined ||
+      params.mediaCapabilities !== undefined ||
+      params.mediaDefaults !== undefined
     const newConfig =
       nextDefaultModel !== undefined ||
       params.modelIds !== undefined ||
@@ -430,7 +460,8 @@ export class ProviderService {
       tierTouched ||
       params.modelType !== undefined ||
       params.imageProvider !== undefined ||
-      params.imageApiType !== undefined
+      params.imageApiType !== undefined ||
+      mediaTouched
         ? { ...existingConfig }
         : undefined
 
@@ -485,6 +516,27 @@ export class ProviderService {
     if (newConfig !== undefined && params.imageApiType !== undefined) {
       if (params.imageApiType != null) newConfig.imageApiType = params.imageApiType
       else delete newConfig.imageApiType
+    }
+    // ── 多媒体能力更新 ──
+    // 注意：image→media 同步在最后通过 normalizeProviderConfig 统一处理，
+    // 这里只把显式传入的字段写入 newConfig，避免覆盖 image 分支的兜底。
+    if (newConfig !== undefined && params.mediaProvider !== undefined) {
+      if (params.mediaProvider == null) delete newConfig.mediaProvider
+      else newConfig.mediaProvider = params.mediaProvider
+    }
+    if (newConfig !== undefined && params.mediaApiType !== undefined) {
+      if (params.mediaApiType == null) delete newConfig.mediaApiType
+      else newConfig.mediaApiType = params.mediaApiType
+    }
+    if (newConfig !== undefined && params.mediaCapabilities !== undefined) {
+      newConfig.mediaCapabilities = params.mediaCapabilities
+    }
+    if (newConfig !== undefined && params.mediaDefaults !== undefined) {
+      newConfig.mediaDefaults = params.mediaDefaults
+    }
+    // 重新走 normalize，确保 image→media 同步、能力兜底、枚举校验一致
+    if (newConfig !== undefined) {
+      Object.assign(newConfig, normalizeProviderConfig(newConfig))
     }
 
     this.repo.update(params.id, {
@@ -696,6 +748,14 @@ interface ProviderConfig {
   modelType?: ProviderModelType
   imageProvider?: string | null
   imageApiType?: ImageGenApiType | null
+  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+  mediaProvider?: MediaProviderKind | null
+  /** 多媒体调用方式 */
+  mediaApiType?: MediaApiType | null
+  /** 已声明支持的多媒体能力列表 */
+  mediaCapabilities?: MediaCapabilityId[]
+  /** 多媒体能力默认值 */
+  mediaDefaults?: ProviderMediaDefaults
 }
 
 function normalizeProviderType(providerType: string): 'anthropic' | 'openai' {
@@ -710,6 +770,34 @@ function normalizeModelIds(defaultModel: string, modelIds?: string[]): string[] 
 }
 
 type NormalizedProviderConfig = Required<Pick<ProviderConfig, 'defaultModel' | 'modelIds'>> & Omit<ProviderConfig, 'defaultModel' | 'modelIds'>
+
+/**
+ * 把 imageProvider 字符串归一到 mediaProvider 枚举：
+ *   openai / openai-compatible → 'openai-compatible'
+ *   apimart / xai / custom     → 原值
+ *   其它（gemini / seeddance / bailian / zhipu / openrouter …）→ 'custom' 兜底
+ */
+function mediaProviderFromImageProvider(imageProvider: string): MediaProviderKind {
+  const v = imageProvider.trim().toLowerCase()
+  if (v === 'apimart') return 'apimart'
+  if (v === 'xai') return 'xai'
+  if (v === 'custom') return 'custom'
+  if (v === 'openai' || v === 'openai-compatible') return 'openai-compatible'
+  return 'custom'
+}
+
+function normalizeMediaCapabilities(
+  capabilities: MediaCapabilityId[] | undefined,
+  modelType: ProviderModelType | undefined,
+): MediaCapabilityId[] | undefined {
+  const normalized = Array.from(new Set((capabilities ?? []).filter(isMediaCapabilityId)))
+  if (normalized.length > 0) return normalized
+  // 兜底：未显式声明时按 modelType 推默认能力
+  if (modelType === 'image') return ['image.generate']
+  if (modelType === 'voice') return ['audio.speech']
+  if (modelType === 'video') return ['video.generate']
+  return undefined
+}
 
 function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConfig {
   const defaultModel = (config.defaultModel ?? config.model ?? '').trim()
@@ -730,6 +818,49 @@ function normalizeProviderConfig(config: ProviderConfig): NormalizedProviderConf
   else delete normalized.imageProvider
   if (imageApiType !== undefined) normalized.imageApiType = imageApiType
   else delete normalized.imageApiType
+
+  // ── 多媒体能力归一化 ──
+  // modelType=image 时，把 imageProvider/imageApiType 同步到 mediaProvider/mediaApiType，
+  // 并保证 mediaCapabilities 至少包含 image.generate（design doc §5.1 兼容规则）。
+  if (modelType === 'image') {
+    const inferredProvider = mediaProviderFromImageProvider(
+      config.mediaProvider ?? (config.imageProvider ?? 'openai'),
+    )
+    const inferredApiType =
+      config.mediaApiType != null && isMediaApiType(config.mediaApiType)
+        ? config.mediaApiType
+        : (normalizeImageApiType(config.imageApiType) as MediaApiType)
+    normalized.mediaProvider = inferredProvider
+    normalized.mediaApiType = inferredApiType
+    const caps = normalizeMediaCapabilities(config.mediaCapabilities, 'image') ?? ['image.generate']
+    if (!caps.includes('image.generate')) caps.push('image.generate')
+    normalized.mediaCapabilities = caps
+  } else {
+    // 非 image：保留显式声明的 mediaProvider / mediaApiType / mediaCapabilities
+    if (config.mediaProvider != null && isMediaProviderKind(config.mediaProvider)) {
+      normalized.mediaProvider = config.mediaProvider
+    } else if (config.mediaProvider === null) {
+      normalized.mediaProvider = null
+    } else {
+      delete normalized.mediaProvider
+    }
+    if (config.mediaApiType != null && isMediaApiType(config.mediaApiType)) {
+      normalized.mediaApiType = config.mediaApiType
+    } else if (config.mediaApiType === null) {
+      normalized.mediaApiType = null
+    } else {
+      delete normalized.mediaApiType
+    }
+    const inferredCaps = normalizeMediaCapabilities(config.mediaCapabilities, modelType)
+    if (inferredCaps != null) normalized.mediaCapabilities = inferredCaps
+    else delete normalized.mediaCapabilities
+  }
+  if (config.mediaDefaults != null) {
+    normalized.mediaDefaults = config.mediaDefaults
+  } else {
+    delete normalized.mediaDefaults
+  }
+
   return normalized
 }
 
@@ -822,6 +953,10 @@ function rowToExportProfile(
     modelType: normalizeModelType(config.modelType),
     ...(config.imageProvider !== undefined && { imageProvider: config.imageProvider }),
     ...(config.imageApiType !== undefined && { imageApiType: config.imageApiType }),
+    ...(config.mediaProvider !== undefined && { mediaProvider: config.mediaProvider }),
+    ...(config.mediaApiType !== undefined && { mediaApiType: config.mediaApiType }),
+    ...(config.mediaCapabilities !== undefined && { mediaCapabilities: config.mediaCapabilities }),
+    ...(config.mediaDefaults !== undefined && { mediaDefaults: config.mediaDefaults }),
     ...(apiKey && apiKey.length > 0 && { apiKey }),
   }
 }
@@ -844,6 +979,10 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
   modelType?: ProviderModelType
   imageProvider?: string | null
   imageApiType?: ImageGenApiType | null
+  mediaProvider?: MediaProviderKind | null
+  mediaApiType?: MediaApiType | null
+  mediaCapabilities?: MediaCapabilityId[]
+  mediaDefaults?: ProviderMediaDefaults
 } {
   return {
     defaultModel: profile.defaultModel,
@@ -857,5 +996,9 @@ function buildConfigFromExport(profile: ProviderExportProfile): {
     ...(profile.modelType !== undefined && { modelType: profile.modelType }),
     ...(profile.imageProvider !== undefined && { imageProvider: profile.imageProvider }),
     ...(profile.imageApiType !== undefined && { imageApiType: profile.imageApiType }),
+    ...(profile.mediaProvider !== undefined && { mediaProvider: profile.mediaProvider }),
+    ...(profile.mediaApiType !== undefined && { mediaApiType: profile.mediaApiType }),
+    ...(profile.mediaCapabilities !== undefined && { mediaCapabilities: profile.mediaCapabilities }),
+    ...(profile.mediaDefaults !== undefined && { mediaDefaults: profile.mediaDefaults }),
   }
 }

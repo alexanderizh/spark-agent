@@ -1,145 +1,30 @@
 /**
  * SkillLoader + builtin skills unit tests
+ *
+ * 注意：内置 skill 定义已全部迁移到 resources/skills/ 目录以文件形式存储，
+ * 硬编码的 BUILTIN_SKILLS 数组保留为空仅作模块兼容。已安装的 skill 通过
+ * SkillLoader 从 DB（manifest）加载。本测试反映迁移后的现状：
+ *   - BUILTIN_SKILLS 为空数组
+ *   - getBuiltinSkill 对任何 id 返回 undefined（skill 现在在文件系统/DB）
+ *   - buildSkillSystemPrompt（纯函数）行为不变
  */
 import { describe, it, expect } from 'vitest'
 import { BUILTIN_SKILLS, getBuiltinSkill } from '../../skills/builtin/index.js'
 import { buildSkillSystemPrompt } from '../../skills/types.js'
 import type { SkillDefinition } from '../../skills/types.js'
 
-describe('Builtin Skills', () => {
-  it('should have 8 builtin skills', () => {
-    expect(BUILTIN_SKILLS).toHaveLength(8)
+describe('Builtin Skills (migrated to filesystem)', () => {
+  it('BUILTIN_SKILLS is an empty array after migration', () => {
+    // skills 迁移到 resources/skills/ 后，硬编码数组清空（仅保留模块兼容）
+    expect(Array.isArray(BUILTIN_SKILLS)).toBe(true)
+    expect(BUILTIN_SKILLS).toHaveLength(0)
   })
 
-  it('each skill should have required fields', () => {
-    for (const skill of BUILTIN_SKILLS) {
-      expect(skill.id).toBeTruthy()
-      expect(skill.name).toBeTruthy()
-      expect(skill.description).toBeTruthy()
-      expect(skill.version).toBeTruthy()
-      expect(skill.author).toBeTruthy()
-      expect(skill.category).toBeTruthy()
-      expect(skill.tags.length).toBeGreaterThan(0)
-      expect(skill.systemPrompt).toBeTruthy()
-      expect(skill.requiredTools.length).toBeGreaterThan(0)
-      expect(skill.parameters).toBeDefined()
-    }
-  })
-
-  it('each skill id should start with "builtin:"', () => {
-    for (const skill of BUILTIN_SKILLS) {
-      expect(skill.id).toMatch(/^builtin:/)
-    }
-  })
-
-  it('each skill version should be semver', () => {
-    for (const skill of BUILTIN_SKILLS) {
-      expect(skill.version).toMatch(/^\d+\.\d+\.\d+$/)
-    }
-  })
-
-  it('getBuiltinSkill should find existing skills', () => {
-    expect(getBuiltinSkill('builtin:code-review')).toBeDefined()
-    expect(getBuiltinSkill('builtin:translate')).toBeDefined()
-    expect(getBuiltinSkill('builtin:summarize')).toBeDefined()
-    expect(getBuiltinSkill('builtin:test-gen')).toBeDefined()
-    expect(getBuiltinSkill('builtin:refactor')).toBeDefined()
-    expect(getBuiltinSkill('builtin:superpowers')).toBeDefined()
-    expect(getBuiltinSkill('builtin:browser-automation')).toBeDefined()
-    expect(getBuiltinSkill('builtin:edu-explain')).toBeDefined()
-  })
-
-  it('getBuiltinSkill should return undefined for unknown IDs', () => {
+  it('getBuiltinSkill returns undefined for any id (skills now live in filesystem/DB)', () => {
+    expect(getBuiltinSkill('builtin:code-review')).toBeUndefined()
+    expect(getBuiltinSkill('builtin:translate')).toBeUndefined()
     expect(getBuiltinSkill('builtin:nonexistent')).toBeUndefined()
-    expect(getBuiltinSkill('other:id')).toBeUndefined()
     expect(getBuiltinSkill('')).toBeUndefined()
-  })
-})
-
-describe('Skill: code-review', () => {
-  const skill = getBuiltinSkill('builtin:code-review')!
-
-  it('should have correct metadata', () => {
-    expect(skill.name).toBe('代码审查')
-    expect(skill.category).toBe('coding')
-    expect(skill.requiredTools).toContain('read_file')
-    expect(skill.requiredTools).toContain('grep_files')
-  })
-
-  it('should have focus parameter with default', () => {
-    const focusParam = skill.parameters.find((p) => p.name === 'focus')
-    expect(focusParam).toBeDefined()
-    expect(focusParam!.type).toBe('string')
-    expect(focusParam!.defaultValue).toBe('全面审查')
-  })
-})
-
-describe('Skill: translate', () => {
-  const skill = getBuiltinSkill('builtin:translate')!
-
-  it('should have correct metadata', () => {
-    expect(skill.name).toBe('翻译助手')
-    expect(skill.category).toBe('writing')
-    expect(skill.requiredTools).toContain('read_file')
-    expect(skill.requiredTools).toContain('write_file')
-  })
-
-  it('should have sourceLang and targetLang parameters', () => {
-    expect(skill.parameters.find((p) => p.name === 'sourceLang')).toBeDefined()
-    expect(skill.parameters.find((p) => p.name === 'targetLang')).toBeDefined()
-    const target = skill.parameters.find((p) => p.name === 'targetLang')!
-    expect(target.required).toBe(true)
-    expect(target.options).toBeDefined()
-    expect(target.options!.length).toBeGreaterThan(0)
-  })
-})
-
-describe('Skill: summarize', () => {
-  const skill = getBuiltinSkill('builtin:summarize')!
-
-  it('should have correct metadata', () => {
-    expect(skill.name).toBe('文档摘要')
-    expect(skill.category).toBe('analysis')
-  })
-
-  it('should have ratio and style parameters', () => {
-    expect(skill.parameters.find((p) => p.name === 'ratio')).toBeDefined()
-    expect(skill.parameters.find((p) => p.name === 'style')).toBeDefined()
-  })
-})
-
-describe('Skill: test-gen', () => {
-  const skill = getBuiltinSkill('builtin:test-gen')!
-
-  it('should have correct metadata', () => {
-    expect(skill.name).toBe('测试生成器')
-    expect(skill.category).toBe('coding')
-    expect(skill.requiredTools).toContain('read_file')
-    expect(skill.requiredTools).toContain('write_file')
-  })
-
-  it('should have framework and testType parameters', () => {
-    expect(skill.parameters.find((p) => p.name === 'framework')).toBeDefined()
-    expect(skill.parameters.find((p) => p.name === 'testType')).toBeDefined()
-  })
-})
-
-describe('Skill: refactor', () => {
-  const skill = getBuiltinSkill('builtin:refactor')!
-
-  it('should have correct metadata', () => {
-    expect(skill.name).toBe('重构助手')
-    expect(skill.category).toBe('coding')
-    expect(skill.requiredTools).toContain('read_file')
-    expect(skill.requiredTools).toContain('write_file')
-    expect(skill.requiredTools).toContain('edit_file')
-  })
-
-  it('should have refocus parameter', () => {
-    const param = skill.parameters.find((p) => p.name === 'refocus')
-    expect(param).toBeDefined()
-    expect(param!.type).toBe('select')
-    expect(param!.options!.length).toBeGreaterThan(0)
   })
 })
 

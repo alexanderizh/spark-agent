@@ -191,6 +191,10 @@ vi.mock('@spark/storage', () => {
       const limit = params.limit ?? rows.length
       return { events: rows.slice(0, limit), hasMore: rows.length > limit }
     }
+
+    queryDialogueEvents(_sessionId: string, _limit: number): EventRow[] {
+      return []
+    }
   }
 
   class RulesRepository { list(): unknown[] { return [] } }

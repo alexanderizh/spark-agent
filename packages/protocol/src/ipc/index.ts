@@ -19,6 +19,13 @@
 import type { AgentEvent, SessionId, TurnId, TeamA2ATask, TeamA2AReply } from '../events/index.js'
 import type { HookNode } from '../hooks.js'
 import type {
+  ProviderMediaDefaults,
+  MediaProviderKind,
+  MediaApiType,
+  MediaCapabilityId,
+  CanvasOperationType,
+} from '../media-config.js'
+import type {
   ProviderExportPayload,
   ProviderImportResult,
   ProviderImportMode,
@@ -353,6 +360,14 @@ export interface ProviderProfile {
   imageProvider?: string | null
   /** 图片模型调用方式 */
   imageApiType?: 'sync' | 'async' | 'auto' | null
+  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+  mediaProvider?: MediaProviderKind | null
+  /** 多媒体调用方式（sync/async/auto） */
+  mediaApiType?: MediaApiType | null
+  /** 已声明支持的多媒体能力列表 */
+  mediaCapabilities?: MediaCapabilityId[]
+  /** 多媒体能力默认值（尺寸/语音/时长/轮询等） */
+  mediaDefaults?: ProviderMediaDefaults
   /** Keychain 引用 ID（非明文 Key）*/
   keystoreRef: string
   /** 是否为默认 Profile */
@@ -386,6 +401,14 @@ export interface ProviderCreateRequest {
   imageProvider?: string | null
   /** 图片模型调用方式，仅 modelType=image 时使用 */
   imageApiType?: 'sync' | 'async' | 'auto' | null
+  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+  mediaProvider?: MediaProviderKind | null
+  /** 多媒体调用方式 */
+  mediaApiType?: MediaApiType | null
+  /** 已声明支持的多媒体能力列表 */
+  mediaCapabilities?: MediaCapabilityId[]
+  /** 多媒体能力默认值 */
+  mediaDefaults?: ProviderMediaDefaults
   /** 明文 API Key（主进程收到后立即存入 Keychain，不落 SQLite）*/
   apiKey: string
   isDefault?: boolean
@@ -419,6 +442,14 @@ export interface ProviderUpdateRequest {
   imageProvider?: string | null
   /** 图片模型调用方式，仅 modelType=image 时使用 */
   imageApiType?: 'sync' | 'async' | 'auto' | null
+  /** 多媒体平台 adapter 种类；传 null 清除 */
+  mediaProvider?: MediaProviderKind | null
+  /** 多媒体调用方式；传 null 清除 */
+  mediaApiType?: MediaApiType | null
+  /** 已声明支持的多媒体能力列表；传空数组清空 */
+  mediaCapabilities?: MediaCapabilityId[]
+  /** 多媒体能力默认值 */
+  mediaDefaults?: ProviderMediaDefaults
 }
 
 export interface ProviderUpdateResponse {
@@ -3308,6 +3339,143 @@ export interface HookShowNotificationResponse {
   shown: boolean
 }
 
+// ─── Canvas Media Generation Channels ────────────────────────────────────────
+
+/**
+ * `canvas:media-capabilities:list` — 列出当前可用于画布多媒体任务的 provider profile。
+ *
+ * 返回的 profile 不含 API key（key 只在主进程内用于实际调用）。
+ * 渲染进程据此决定哪些 operation（文生图 / 文生音频 / 文生视频 / 图生视频）可用。
+ */
+export interface CanvasMediaCapabilityItem {
+  providerProfileId: string
+  name: string
+  defaultModel: string
+  mediaProvider: MediaProviderKind | null
+  mediaApiType: MediaApiType | null
+  mediaCapabilities: MediaCapabilityId[]
+}
+
+export interface CanvasMediaCapabilitiesListRequest {}
+
+export interface CanvasMediaCapabilitiesListResponse {
+  providers: CanvasMediaCapabilityItem[]
+}
+
+/**
+ * `canvas:task:create-media` — 通过平台 adapter 执行一次多媒体生成。
+ *
+ * 主进程解析可用 provider + API key（不外泄），调用 MediaRouterService，
+ * 把产物落盘到 `.spark-artifacts/media/<kind>`，返回 asset 元信息。
+ */
+export interface CanvasMediaTaskInputFile {
+  path?: string
+  url?: string
+  dataUrl?: string
+  mimeType?: string
+  type: 'image' | 'audio' | 'video' | 'file'
+}
+
+export interface CanvasMediaTaskCreateRequest {
+  operation: CanvasOperationType
+  prompt?: string
+  negativePrompt?: string
+  inputFiles?: CanvasMediaTaskInputFile[]
+  /** 指定 provider profile；缺省由 router 自动选择首个支持该 capability 的 */
+  providerProfileId?: string | null
+  modelParams?: Record<string, unknown>
+  /** 产物落盘根目录；缺省使用 userData/.spark-artifacts/media */
+  outputDir?: string
+}
+
+export interface CanvasMediaTaskAsset {
+  type: 'image' | 'audio' | 'video' | 'text'
+  filePath?: string
+  url?: string
+  /** 图片预览用的 data URL（仅小图回传，避免 renderer 无法访问 file://） */
+  previewDataUrl?: string
+  mimeType?: string
+  width?: number
+  height?: number
+  durationMs?: number
+  contentText?: string
+}
+
+export interface CanvasMediaTaskCreateResponse {
+  providerProfileId: string
+  provider: string
+  model: string
+  mode: 'sync' | 'async'
+  requestId?: string
+  assets: CanvasMediaTaskAsset[]
+  rawResponse?: unknown
+  error?: { code: string; message: string }
+}
+
+// ─── Canvas Persistence Channels (SQLite-backed) ────────────────────────────
+
+/**
+ * `canvas:snapshot:save` — 把整张画布快照（projects/boards/nodes/edges/assets/tasks）
+ * 持久化到 SQLite canvas_snapshots 表（生产级存储，替代纯 localStorage demo）。
+ */
+export interface CanvasSnapshotSaveRequest {
+  projectId: string
+  /** 整个画布的序列化 JSON（renderer 侧 localStorage db 的快照） */
+  snapshotJson: string
+  /** 项目元数据（用于 canvas_projects 列表展示） */
+  meta?: {
+    title?: string
+    description?: string | null
+    status?: 'active' | 'archived' | 'deleted'
+    nodeCount?: number
+    assetCount?: number
+    taskCount?: number
+    coverAssetId?: string | null
+  }
+}
+
+export interface CanvasSnapshotSaveResponse {
+  saved: boolean
+  updatedAt: string
+}
+
+/** `canvas:snapshot:load` — 从 SQLite 读回某项目的完整快照 */
+export interface CanvasSnapshotLoadRequest {
+  projectId: string
+}
+export interface CanvasSnapshotLoadResponse {
+  snapshotJson: string | null
+}
+
+/** `canvas:project:list` — 列出所有已持久化的画布项目（不含快照体） */
+export interface CanvasProjectListRequest {
+  includeDeleted?: boolean
+}
+export interface CanvasProjectListItem {
+  id: string
+  title: string
+  description: string | null
+  status: 'active' | 'archived' | 'deleted'
+  nodeCount: number
+  assetCount: number
+  taskCount: number
+  lastOpenedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+export interface CanvasProjectListResponse {
+  projects: CanvasProjectListItem[]
+}
+
+/** `canvas:project:delete` — 软删除（status=deleted）或物理删除项目+快照 */
+export interface CanvasProjectDeleteRequest {
+  projectId: string
+  hard?: boolean
+}
+export interface CanvasProjectDeleteResponse {
+  deleted: boolean
+}
+
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
 
 /**
@@ -3571,6 +3739,16 @@ export interface IpcChannelMap {
   'file:save-image': [FileSaveImageRequest, FileSaveImageResponse]
   'file:save-pasted-image': [FileSavePastedImageRequest, FileSavePastedImageResponse]
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
+
+  // Canvas Media Generation (infinite canvas → platform adapter)
+  'canvas:media-capabilities:list': [CanvasMediaCapabilitiesListRequest, CanvasMediaCapabilitiesListResponse]
+  'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
+
+  // Canvas Persistence (SQLite-backed production storage)
+  'canvas:snapshot:save': [CanvasSnapshotSaveRequest, CanvasSnapshotSaveResponse]
+  'canvas:snapshot:load': [CanvasSnapshotLoadRequest, CanvasSnapshotLoadResponse]
+  'canvas:project:list': [CanvasProjectListRequest, CanvasProjectListResponse]
+  'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
 
   // Remote Connections
   'remote:list': [RemoteListRequest, RemoteListResponse]

@@ -42,6 +42,9 @@ import {
   getUniqueVendorIds,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
+  MEDIA_PROVIDER_KINDS,
+  MEDIA_API_TYPES,
+  MEDIA_CAPABILITY_IDS,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -52,6 +55,10 @@ import type {
   ProviderExportPayload,
   ProviderImportMode,
   ImageGenApiType,
+  MediaProviderKind,
+  MediaApiType,
+  MediaCapabilityId,
+  ProviderMediaDefaults,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
@@ -82,6 +89,165 @@ type ProviderForm = {
   imageProvider: ImageProviderKind
   /** 图片模型调用方式 */
   imageApiType: ImageGenApiType
+  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+  mediaProvider: MediaProviderKind | ''
+  /** 多媒体调用方式 */
+  mediaApiType: MediaApiType
+  /** 已选多媒体能力 */
+  mediaCapabilities: MediaCapabilityId[]
+  /** 多媒体能力默认值（按族分组的字符串表单值，提交时归一） */
+  mediaImageSize: string
+  mediaImageN: string
+  mediaImageQuality: string
+  mediaAudioVoice: string
+  mediaAudioFormat: string
+  mediaVideoAspectRatio: string
+  mediaVideoDuration: string
+  mediaVideoQuality: string
+  mediaPollInterval: string
+  mediaPollTimeout: string
+}
+
+const EMPTY_MEDIA_FORM = {
+  mediaProvider: '' as MediaProviderKind | '',
+  mediaApiType: 'auto' as MediaApiType,
+  mediaCapabilities: [] as MediaCapabilityId[],
+  mediaImageSize: '',
+  mediaImageN: '',
+  mediaImageQuality: '',
+  mediaAudioVoice: '',
+  mediaAudioFormat: '',
+  mediaVideoAspectRatio: '',
+  mediaVideoDuration: '',
+  mediaVideoQuality: '',
+  mediaPollInterval: '',
+  mediaPollTimeout: '',
+} as const
+
+const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
+  apimart: 'APIMart',
+  xai: 'xAI',
+  'openai-compatible': 'OpenAI Compatible',
+  custom: '自定义',
+}
+
+const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
+  'image.generate': '生图',
+  'image.edit': '图片编辑',
+  'image.variations': '图片变体',
+  'audio.speech': '语音合成',
+  'audio.transcription': '语音转写',
+  'video.generate': '文生视频',
+  'video.image_to_video': '图生视频',
+}
+
+/** 从 imageProvider 字符串推导 mediaProvider 兜底值 */
+function mediaProviderFromImageKind(imageProvider: ImageProviderKind): MediaProviderKind {
+  if (imageProvider === 'apimart') return 'apimart'
+  if (imageProvider === 'xai') return 'xai'
+  if (imageProvider === 'custom') return 'custom'
+  return 'openai-compatible'
+}
+
+/** 把 preset 的 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults 投影成 ProviderForm 媒体字段 */
+function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
+  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities'
+  | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
+  | 'mediaAudioVoice' | 'mediaAudioFormat'
+  | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
+  | 'mediaPollInterval' | 'mediaPollTimeout'> {
+  const d = preset.mediaDefaults
+  return {
+    mediaProvider: preset.mediaProvider ?? '',
+    mediaApiType: preset.mediaApiType ?? 'auto',
+    mediaCapabilities: preset.mediaCapabilities ?? [],
+    mediaImageSize: d?.image?.size ?? '',
+    mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
+    mediaImageQuality: d?.image?.quality ?? '',
+    mediaAudioVoice: d?.audio?.voice ?? '',
+    mediaAudioFormat: d?.audio?.format ?? '',
+    mediaVideoAspectRatio: d?.video?.aspectRatio ?? '',
+    mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
+    mediaVideoQuality: d?.video?.quality ?? '',
+    mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
+    mediaPollTimeout: d?.polling?.timeoutMs != null ? String(d.polling.timeoutMs) : '',
+  }
+}
+
+/** 把已保存 profile 的 media 字段投影成 ProviderForm 媒体字段 */
+function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
+  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities'
+  | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
+  | 'mediaAudioVoice' | 'mediaAudioFormat'
+  | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
+  | 'mediaPollInterval' | 'mediaPollTimeout'> {
+  const d = p.mediaDefaults
+  return {
+    mediaProvider: p.mediaProvider ?? '',
+    mediaApiType: p.mediaApiType ?? 'auto',
+    mediaCapabilities: p.mediaCapabilities ?? [],
+    mediaImageSize: d?.image?.size ?? '',
+    mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
+    mediaImageQuality: d?.image?.quality ?? '',
+    mediaAudioVoice: d?.audio?.voice ?? '',
+    mediaAudioFormat: d?.audio?.format ?? '',
+    mediaVideoAspectRatio: d?.video?.aspectRatio ?? '',
+    mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
+    mediaVideoQuality: d?.video?.quality ?? '',
+    mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
+    mediaPollTimeout: d?.polling?.timeoutMs != null ? String(d.polling.timeoutMs) : '',
+  }
+}
+
+/**
+ * 把 ProviderForm 的媒体字段归一成 create/update 请求中要下发的字段。
+ * - 非多媒体模型类型：清空媒体字段（传 null/[]）。
+ * - 多媒体模型类型：下发 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults。
+ */
+function buildMediaUpdateFields(form: ProviderForm): Pick<ProviderUpdateRequest,
+  'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults'> {
+  const isMediaModelType = form.modelType === 'image' || form.modelType === 'voice' || form.modelType === 'video'
+  if (!isMediaModelType) {
+    return { mediaProvider: null, mediaApiType: null, mediaCapabilities: [] }
+  }
+  const provider = (form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
+  const result: Pick<ProviderUpdateRequest,
+    'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults'> = {
+    mediaProvider: provider,
+    mediaApiType: form.mediaApiType,
+    mediaCapabilities: form.mediaCapabilities,
+  }
+  const defaults = buildMediaDefaults(form)
+  if (defaults) result.mediaDefaults = defaults
+  return result
+}
+
+/** 把 ProviderForm 中的字符串表单值归一为 ProviderMediaDefaults（空值剔除） */
+function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefined {
+  const image = {
+    ...(form.mediaImageSize.trim() ? { size: form.mediaImageSize.trim() } : {}),
+    ...(form.mediaImageN.trim() ? { n: Number(form.mediaImageN) } : {}),
+    ...(form.mediaImageQuality.trim() ? { quality: form.mediaImageQuality.trim() } : {}),
+  }
+  const audio = {
+    ...(form.mediaAudioVoice.trim() ? { voice: form.mediaAudioVoice.trim() } : {}),
+    ...(form.mediaAudioFormat.trim() ? { format: form.mediaAudioFormat.trim() as 'mp3' | 'wav' | 'opus' | 'aac' | 'flac' | 'pcm' } : {}),
+  }
+  const video = {
+    ...(form.mediaVideoAspectRatio.trim() ? { aspectRatio: form.mediaVideoAspectRatio.trim() } : {}),
+    ...(form.mediaVideoDuration.trim() ? { durationSeconds: Number(form.mediaVideoDuration) } : {}),
+    ...(form.mediaVideoQuality.trim() ? { quality: form.mediaVideoQuality.trim() } : {}),
+  }
+  const polling = {
+    ...(form.mediaPollInterval.trim() ? { intervalMs: Number(form.mediaPollInterval) } : {}),
+    ...(form.mediaPollTimeout.trim() ? { timeoutMs: Number(form.mediaPollTimeout) } : {}),
+  }
+  const result: ProviderMediaDefaults = {}
+  if (Object.keys(image).length > 0) result.image = image
+  if (Object.keys(audio).length > 0) result.audio = audio
+  if (Object.keys(video).length > 0) result.video = video
+  if (Object.keys(polling).length > 0) result.polling = polling
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
@@ -926,6 +1092,7 @@ export function ProviderEditPanel({
     modelType: 'multimodal',
     imageProvider: 'openai',
     imageApiType: 'sync',
+    ...EMPTY_MEDIA_FORM,
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -970,6 +1137,7 @@ export function ProviderEditPanel({
               modelType: preset.modelType ?? 'multimodal',
               imageProvider: normalizeImageProvider(preset.imageProvider),
               imageApiType: normalizeImageApiType(preset.imageApiType),
+              ...presetMediaForm(preset),
             })
           }, 0)
           return () => window.clearTimeout(id)
@@ -991,6 +1159,7 @@ export function ProviderEditPanel({
           modelType: 'multimodal',
           imageProvider: 'openai',
           imageApiType: 'sync',
+          ...EMPTY_MEDIA_FORM,
         })
       }, 0)
       return () => window.clearTimeout(id)
@@ -1016,6 +1185,7 @@ export function ProviderEditPanel({
             modelType: (p.modelType as ProviderModelType) ?? 'multimodal',
             imageProvider: normalizeImageProvider(p.imageProvider),
             imageApiType: normalizeImageApiType(p.imageApiType),
+            ...profileMediaForm(p),
           })
         }
       })
@@ -1049,9 +1219,14 @@ export function ProviderEditPanel({
     () =>
       PROVIDER_PRESETS.filter((preset) => {
         if (preset.provider !== form.provider) return false
-        return form.modelType === 'image'
-          ? preset.modelType === 'image'
-          : preset.modelType !== 'image'
+        // 选了图片/语音/视频/多模态能力类型时，只展示同类型的多媒体预设；
+        // 文本/多模态保留通用 LLM 预设（非 image/voice/video）。
+        const isMediaSelected =
+          form.modelType === 'image' || form.modelType === 'voice' || form.modelType === 'video'
+        if (isMediaSelected) {
+          return preset.modelType === form.modelType
+        }
+        return preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video'
       }),
     [form.modelType, form.provider],
   )
@@ -1090,6 +1265,7 @@ export function ProviderEditPanel({
           modelType: form.modelType,
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
           imageApiType: form.modelType === 'image' ? form.imageApiType : null,
+          ...buildMediaUpdateFields(form),
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
         if (form.apiKey.trim()) req.apiKey = form.apiKey
@@ -1111,6 +1287,7 @@ export function ProviderEditPanel({
           modelType: form.modelType,
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
           imageApiType: form.modelType === 'image' ? form.imageApiType : null,
+          ...buildMediaUpdateFields(form),
         })
       }
       onClose()
@@ -1140,6 +1317,7 @@ export function ProviderEditPanel({
       modelType: preset.modelType ?? 'multimodal',
       imageProvider: normalizeImageProvider(preset.imageProvider),
       imageApiType: normalizeImageApiType(preset.imageApiType),
+      ...presetMediaForm(preset),
     }))
   }
 
@@ -1335,6 +1513,117 @@ export function ProviderEditPanel({
                       { label: 'auto · 自动兼容', value: 'auto' },
                     ]}
                   />
+                </>
+              )}
+
+              {/* ─── 多媒体能力（图片 / 语音 / 视频）─── */}
+              {(form.modelType === 'image' || form.modelType === 'voice' || form.modelType === 'video') && (
+                <>
+                  <label className="pv_form_label">
+                    平台适配器
+                    <span className="pv_form_sub">决定图片 / 语音 / 视频请求的端点与异步轮询策略</span>
+                  </label>
+                  <Select
+                    value={form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)}
+                    onChange={(v) => set('mediaProvider', v as MediaProviderKind)}
+                    options={MEDIA_PROVIDER_KINDS.map((kind) => ({
+                      label: MEDIA_PROVIDER_LABELS[kind],
+                      value: kind,
+                    }))}
+                  />
+
+                  <label className="pv_form_label">
+                    调用方式
+                    <span className="pv_form_sub">sync 同步 / async 任务轮询 / auto 自动兼容</span>
+                  </label>
+                  <Select
+                    value={form.mediaApiType}
+                    onChange={(v) => set('mediaApiType', v as MediaApiType)}
+                    options={MEDIA_API_TYPES.map((mode) => ({
+                      label: mode === 'sync' ? 'sync · 同步返回' : mode === 'async' ? 'async · 任务轮询' : 'auto · 自动兼容',
+                      value: mode,
+                    }))}
+                  />
+
+                  <label className="pv_form_label">
+                    支持能力
+                    <span className="pv_form_sub">勾选该 provider 声明支持的多媒体能力</span>
+                  </label>
+                  <div className="pv_media_capabilities">
+                    {MEDIA_CAPABILITY_IDS.map((capability) => (
+                      <Checkbox
+                        key={capability}
+                        checked={form.mediaCapabilities.includes(capability)}
+                        onChange={(checked: boolean) => {
+                          setForm((prev) => {
+                            const set = new Set(prev.mediaCapabilities)
+                            if (checked) set.add(capability)
+                            else set.delete(capability)
+                            return { ...prev, mediaCapabilities: [...set] }
+                          })
+                        }}
+                      >
+                        {MEDIA_CAPABILITY_LABELS[capability]}
+                      </Checkbox>
+                    ))}
+                  </div>
+
+                  <label className="pv_form_label">
+                    参数默认值
+                    <span className="pv_form_sub">留空则使用平台默认；视频/异步任务建议设置轮询间隔与超时</span>
+                  </label>
+                  <div className="pv_media_defaults">
+                    <Input
+                      value={form.mediaImageSize}
+                      onChange={(e) => set('mediaImageSize', e.target.value)}
+                      placeholder="图片尺寸 (1024x1024 / 16:9)"
+                    />
+                    <Input
+                      value={form.mediaImageN}
+                      onChange={(e) => set('mediaImageN', e.target.value)}
+                      placeholder="图片数量 n"
+                    />
+                    <Input
+                      value={form.mediaImageQuality}
+                      onChange={(e) => set('mediaImageQuality', e.target.value)}
+                      placeholder="图片质量 (hd / standard)"
+                    />
+                    <Input
+                      value={form.mediaAudioVoice}
+                      onChange={(e) => set('mediaAudioVoice', e.target.value)}
+                      placeholder="语音 voice (alloy / nova)"
+                    />
+                    <Input
+                      value={form.mediaAudioFormat}
+                      onChange={(e) => set('mediaAudioFormat', e.target.value)}
+                      placeholder="语音格式 (mp3 / wav)"
+                    />
+                    <Input
+                      value={form.mediaVideoAspectRatio}
+                      onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
+                      placeholder="视频比例 (16:9)"
+                    />
+                    <Input
+                      value={form.mediaVideoDuration}
+                      onChange={(e) => set('mediaVideoDuration', e.target.value)}
+                      placeholder="视频时长 (秒)"
+                    />
+                    <Input
+                      value={form.mediaVideoQuality}
+                      onChange={(e) => set('mediaVideoQuality', e.target.value)}
+                      placeholder="视频质量 (hd)"
+                    />
+                    <Input
+                      value={form.mediaPollInterval}
+                      onChange={(e) => set('mediaPollInterval', e.target.value)}
+                      placeholder="轮询间隔 ms"
+                    />
+                    <Input
+                      value={form.mediaPollTimeout}
+                      onChange={(e) => set('mediaPollTimeout', e.target.value)}
+                      placeholder="轮询超时 ms"
+                    />
+                  </div>
                 </>
               )}
 

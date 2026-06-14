@@ -44,6 +44,8 @@ export {
   ScheduledTaskRepository,
   TaskExecutionRepository,
   MemoryRepository,
+  CanvasProjectRepository,
+  CanvasSnapshotRepository,
 } from './repositories/index.js'
 
 export type {
@@ -107,4 +109,7 @@ export type {
   ExecutionQueryOptions,
   ExecutionStats,
   MemoryEntryRow,
+  CanvasProjectRow,
+  CanvasSnapshotRow,
+  UpsertCanvasProjectParams,
 } from './repositories/index.js'

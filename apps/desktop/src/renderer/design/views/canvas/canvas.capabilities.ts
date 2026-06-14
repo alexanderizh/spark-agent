@@ -64,6 +64,33 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     enabled: true,
     paramsSchema: {},
   },
+  {
+    id: 'canvas.text-to-audio',
+    label: '文生音频',
+    operation: 'text_to_audio',
+    inputTypes: ['text', 'prompt'],
+    outputTypes: ['audio'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
+    id: 'canvas.audio-transcribe',
+    label: '语音转写',
+    operation: 'audio_transcribe',
+    inputTypes: ['audio'],
+    outputTypes: ['text'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
+    id: 'canvas.text-to-video',
+    label: '文生视频',
+    operation: 'text_to_video',
+    inputTypes: ['text', 'prompt'],
+    outputTypes: ['video'],
+    enabled: true,
+    paramsSchema: {},
+  },
 ]
 
 export function getCanvasCapability(operation: CanvasOperationType): CanvasCapability | undefined {

@@ -303,6 +303,8 @@ export interface SDKExecutorConfig {
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
   imageGenerationMcpServer?: SDKMcpServerConfig | undefined
+  /** 统一多媒体 MCP server（spark_media）：图片/语音/视频生成 */
+  mediaGenerationMcpServer?: SDKMcpServerConfig | undefined
   /** Team Mode：in-process spark_team MCP server（Host 调用成员的 agent_dispatch 工具） */
   teamMcpServer?: SDKMcpServerConfig | undefined
   /** Platform management MCP server (auto-injected for all sessions) */

@@ -1,7 +1,7 @@
 export type CanvasProjectStatus = 'active' | 'archived' | 'deleted'
 
-export type CanvasNodeType = 'image' | 'video' | 'text' | 'prompt' | 'task' | 'group'
-export type CanvasAssetType = 'image' | 'video' | 'text' | 'prompt' | 'file'
+export type CanvasNodeType = 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'task' | 'group'
+export type CanvasAssetType = 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'file'
 export type CanvasAssetSource = 'upload' | 'ai_generated' | 'ai_edited' | 'imported' | 'manual'
 
 export type CanvasOperationType =
@@ -12,6 +12,9 @@ export type CanvasOperationType =
   | 'text_generate'
   | 'text_rewrite'
   | 'prompt_optimize'
+  | 'text_to_audio'
+  | 'audio_transcribe'
+  | 'text_to_video'
   | 'image_to_video'
 
 export type CanvasTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -123,6 +126,12 @@ export type CanvasTask = {
   outputAssetIds: string[]
   providerProfileId?: string | null
   modelId?: string | null
+  /** provider adapter 种类（apimart/xai/...），用于资产抽屉展示 */
+  provider?: string | null
+  /** 异步任务的 request/task id（用于血缘追溯） */
+  requestId?: string | null
+  /** provider 原始响应摘要（不含敏感信息） */
+  rawResponse?: unknown
   agentId?: string | null
   agentMode?: 'local' | 'cloud' | null
   agentUrl?: string | null

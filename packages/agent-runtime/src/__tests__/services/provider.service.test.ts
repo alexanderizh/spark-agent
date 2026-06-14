@@ -23,6 +23,25 @@ vi.mock('@spark/shared', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }))
 
+// Hoisted mock for node:util promisify — 让 isLocalCliAvailable 平台测试可控。
+// 用 hoisted 可变 map，避免 vi.doMock + resetModules 的时序竞态（原 flaky 根因）。
+const cliExecMock = vi.hoisted(() => ({
+  /** 返回 true 表示该命令"存在"（--version 成功） */
+  resolve: (_cmd: string): boolean => false,
+}))
+vi.mock('node:util', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:util')>()
+  return {
+    ...actual,
+    promisify: () => async (cmd: string) => {
+      if (cliExecMock.resolve(cmd)) return { stdout: 'claude x.y.z\n', stderr: '' }
+      const err = new Error(`ENOENT: ${cmd}`) as NodeJS.ErrnoException
+      err.code = 'ENOENT'
+      throw err
+    },
+  }
+})
+
 import * as keystore from '@spark/shared/keystore'
 
 function makeRepo() {
@@ -109,18 +128,139 @@ describe('ProviderService', () => {
     })
 
     expect(repo.create).toHaveBeenCalledWith(expect.objectContaining({
-      config: {
+      config: expect.objectContaining({
         defaultModel: 'gpt-image-2',
         modelIds: ['gpt-image-2'],
         apiEndpoint: 'https://api.apimart.ai/v1',
         modelType: 'image',
         imageProvider: 'apimart',
         imageApiType: 'async',
-      },
+      }),
     }))
     expect(profile.modelType).toBe('image')
     expect(profile.imageProvider).toBe('apimart')
     expect(profile.imageApiType).toBe('async')
+  })
+
+  it('createProvider syncs image provider fields to media config', async () => {
+    const profile = await service.createProvider({
+      name: 'APIMart Images',
+      provider: 'openai',
+      defaultModel: 'gpt-image-2',
+      modelIds: ['gpt-image-2'],
+      apiEndpoint: 'https://api.apimart.ai/v1',
+      apiKey: 'sk-image',
+      modelType: 'image',
+      imageProvider: 'apimart',
+      imageApiType: 'async',
+    })
+
+    expect(profile.mediaProvider).toBe('apimart')
+    expect(profile.mediaApiType).toBe('async')
+    expect(profile.mediaCapabilities).toContain('image.generate')
+  })
+
+  it('createProvider stores APIMart video media config', async () => {
+    const profile = await service.createProvider({
+      name: 'APIMart VEO 3',
+      provider: 'openai',
+      defaultModel: 'veo3',
+      modelIds: ['veo3'],
+      apiEndpoint: 'https://api.apimart.ai/v1',
+      apiKey: 'sk-video',
+      modelType: 'video',
+      mediaProvider: 'apimart',
+      mediaApiType: 'async',
+      mediaCapabilities: ['video.generate', 'video.image_to_video'],
+      mediaDefaults: { video: { durationSeconds: 8 }, polling: { intervalMs: 6000 } },
+    })
+
+    expect(profile.modelType).toBe('video')
+    expect(profile.mediaProvider).toBe('apimart')
+    expect(profile.mediaApiType).toBe('async')
+    expect(profile.mediaCapabilities).toEqual(['video.generate', 'video.image_to_video'])
+    expect(profile.mediaDefaults?.video?.durationSeconds).toBe(8)
+    expect(profile.mediaDefaults?.polling?.intervalMs).toBe(6000)
+  })
+
+  it('createProvider stores xAI voice media config without writing image-only fields', async () => {
+    const profile = await service.createProvider({
+      name: 'xAI TTS',
+      provider: 'openai',
+      defaultModel: 'grok-tts',
+      modelIds: ['grok-tts'],
+      apiEndpoint: 'https://api.x.ai/v1',
+      apiKey: 'sk-voice',
+      modelType: 'voice',
+      mediaProvider: 'xai',
+      mediaApiType: 'sync',
+      mediaCapabilities: ['audio.speech'],
+      mediaDefaults: { audio: { voice: 'alloy', format: 'mp3' } },
+    })
+
+    expect(profile.modelType).toBe('voice')
+    expect(profile.mediaProvider).toBe('xai')
+    expect(profile.mediaApiType).toBe('sync')
+    expect(profile.mediaCapabilities).toEqual(['audio.speech'])
+    expect(profile.mediaDefaults?.audio?.voice).toBe('alloy')
+    // voice 模型不应写入 image-only 字段
+    expect(profile.imageProvider).toBeUndefined()
+    expect(profile.imageApiType).toBeUndefined()
+  })
+
+  it('updateProvider infers media config when switching modelType to image', async () => {
+    repo.rows.set('id-image-switch', {
+      id: 'id-image-switch',
+      provider_type: 'openai',
+      name: 'Switch',
+      config_json: '{"defaultModel":"gpt-image-2","modelIds":["gpt-image-2"]}',
+      enabled: 1,
+      keystore_ref: 'openai-id-image-switch',
+      is_default: 0,
+      created_at: '',
+      updated_at: '',
+    })
+
+    await service.updateProvider({
+      id: 'id-image-switch',
+      modelType: 'image',
+      imageProvider: 'apimart',
+      imageApiType: 'async',
+    })
+
+    expect(repo.update).toHaveBeenCalledWith('id-image-switch', expect.objectContaining({
+      config: expect.objectContaining({
+        modelType: 'image',
+        imageProvider: 'apimart',
+        mediaProvider: 'apimart',
+        mediaApiType: 'async',
+        mediaCapabilities: expect.arrayContaining(['image.generate']),
+      }),
+    }))
+  })
+
+  it('exportProviders roundtrips media config fields', async () => {
+    await service.createProvider({
+      name: 'APIMart Whisper',
+      provider: 'openai',
+      defaultModel: 'whisper-1',
+      modelIds: ['whisper-1'],
+      apiEndpoint: 'https://api.apimart.ai/v1',
+      apiKey: 'sk-whisper',
+      modelType: 'voice',
+      mediaProvider: 'apimart',
+      mediaApiType: 'sync',
+      mediaCapabilities: ['audio.transcription'],
+      mediaDefaults: { audio: { language: 'zh' } },
+    })
+
+    const payload = await service.exportProviders([])
+    const profile = payload.profiles.find((item) => item.name === 'APIMart Whisper')
+    expect(profile).toBeDefined()
+    expect(profile!.mediaProvider).toBe('apimart')
+    expect(profile!.mediaApiType).toBe('sync')
+    expect(profile!.mediaCapabilities).toEqual(['audio.transcription'])
+    expect(profile!.mediaDefaults?.audio?.language).toBe('zh')
   })
 
   it('createProvider stores custom apiEndpoint in config and returned profile', async () => {
@@ -537,33 +677,18 @@ describe('ProviderService', () => {
       Object.defineProperty(process, 'platform', { value: platform, configurable: true })
     }
 
-    function mockExecFile(map: (cmd: string) => boolean): void {
-      const calls: Array<{ cmd: string }> = []
-      vi.resetModules()
-      vi.doMock('node:util', async () => {
-        const actual = await vi.importActual<typeof import('node:util')>('node:util')
-        return {
-          ...actual,
-          promisify: () => async (cmd: string, args: string[] = []) => {
-            calls.push({ cmd })
-            if (map(cmd)) return { stdout: 'claude x.y.z\n', stderr: '' }
-            const err = new Error(`ENOENT: ${cmd}`) as NodeJS.ErrnoException
-            err.code = 'ENOENT'
-            throw err
-          },
-        }
-      })
-    }
-
     afterEach(() => {
       setPlatform(realPlatform)
-      vi.doUnmock('node:util')
+      cliExecMock.resolve = () => false
       vi.resetModules()
     })
 
     it('windows: tries claude.cmd shim when bare claude is not in PATH', async () => {
       setPlatform('win32')
-      mockExecFile((cmd) => cmd === 'claude.cmd')
+      // win32 下 tryCliVersion 走 execAsync(`${cmd} --version`)，命令是带参数的整串；
+      // 用 includes 兼容 execFileAsync('claude.cmd') 和 execAsync('claude.cmd --version')
+      cliExecMock.resolve = (cmd) => cmd.includes('claude.cmd')
+      vi.resetModules()
       const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
@@ -574,7 +699,8 @@ describe('ProviderService', () => {
 
     it('windows: returns false when no claude shim variant is resolvable', async () => {
       setPlatform('win32')
-      mockExecFile(() => false)
+      cliExecMock.resolve = () => false
+      vi.resetModules()
       const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
@@ -586,10 +712,11 @@ describe('ProviderService', () => {
     it('unix: tries bare claude only', async () => {
       setPlatform('darwin')
       const seen: string[] = []
-      mockExecFile((cmd) => {
+      cliExecMock.resolve = (cmd) => {
         seen.push(cmd)
         return cmd === 'claude'
-      })
+      }
+      vi.resetModules()
       const { ProviderService: FreshProviderService } = await import('../../services/provider.service.js')
       const fresh = new FreshProviderService(repo as never)
 
