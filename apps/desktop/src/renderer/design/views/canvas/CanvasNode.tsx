@@ -17,6 +17,7 @@ export type CanvasFlowNodeData = {
   selectedCount: number
   actions: {
     duplicateNode: (nodeId: string) => void
+    editNode: (nodeId: string) => void
     deleteNode: (nodeId: string) => void
     toggleLockNode: (nodeId: string) => void
     bringNodeToFront: (nodeId: string) => void
@@ -50,6 +51,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     className: 'canvas-node-context-menu',
     items: [
       { key: 'duplicate', label: (<span className="canvas-menu-item"><Icons.Copy size={14} /> 复制节点</span>), onClick: () => actions.duplicateNode(node.id) },
+      { key: 'edit', label: (<span className="canvas-menu-item"><Icons.Edit size={14} /> 编辑节点</span>), onClick: () => actions.editNode(node.id) },
       { key: 'ai', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> AI 操作</span>), onClick: () => actions.openAiComposer(node.id) },
       { key: 'group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 创建组</span>), onClick: () => actions.createGroupFromSelection() },
       ...(isGroup

@@ -706,6 +706,48 @@
   white-space: nowrap;
 }
 
+.canvas-form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.canvas-form-label-row label {
+  min-width: 0;
+}
+
+.canvas-param-empty {
+  padding: 8px 10px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.canvas-custom-param-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.canvas-custom-param-row {
+  display: grid;
+  grid-template-columns: minmax(104px, 1fr) minmax(86px, 0.72fr) minmax(112px, 1fr) 28px;
+  gap: 6px;
+  align-items: center;
+}
+
+.canvas-custom-param-row .ant-btn {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .canvas-selection-list {
   display: flex;
   flex-direction: column;
@@ -803,6 +845,37 @@
 
 .canvas-node-edit-field .ant-input-number {
   width: 100%;
+}
+
+.canvas-node-edit-modal .ant-modal-body {
+  padding-top: 8px;
+}
+
+.canvas-node-edit-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.canvas-node-edit-dialog-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 2px;
+}
+
+.canvas-node-edit-dialog-head span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-node-edit-dialog textarea {
+  resize: vertical;
 }
 
 .canvas-task-param-panel {
@@ -1266,5 +1339,13 @@
   .canvas-inline-ai-composer {
     left: 50%;
     width: min(520px, calc(100% - 32px));
+  }
+
+  .canvas-custom-param-row {
+    grid-template-columns: minmax(0, 1fr) minmax(86px, 0.6fr) 28px;
+  }
+
+  .canvas-custom-param-row > :nth-child(3) {
+    grid-column: 1 / -2;
   }
 }

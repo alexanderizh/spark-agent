@@ -42,6 +42,7 @@ function createFlowNode(
       selectedCount: 0,
       actions: {
         duplicateNode: () => undefined,
+        editNode: () => undefined,
         deleteNode: () => undefined,
         toggleLockNode: () => undefined,
         bringNodeToFront: () => undefined,

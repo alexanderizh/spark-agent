@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Tag } from '@lobehub/ui'
-import { Spin, message } from 'antd'
+import { Input, InputNumber, Modal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
 import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
@@ -174,6 +174,7 @@ export function CanvasWorkspaceView({
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(null)
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
+  const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const [canvasViewport, setCanvasViewport] = useState<CanvasStageViewport | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const activeToolRef = useRef<CanvasTool>('select')
@@ -181,6 +182,10 @@ export function CanvasWorkspaceView({
   const selectedNodes = useMemo(
     () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
     [selectedNodeIds, snapshot?.nodes],
+  )
+  const editingNode = useMemo(
+    () => snapshot?.nodes.find((node) => node.id === editingNodeId) ?? null,
+    [editingNodeId, snapshot?.nodes],
   )
   const selectedGroups = useMemo(
     () => selectedNodes.filter((node) => node.type === 'group'),
@@ -320,6 +325,20 @@ export function CanvasWorkspaceView({
       setInlineAiOpen(true)
     },
     [selectedNodeIds],
+  )
+
+  const handleEditNode = useCallback((nodeId: string) => {
+    setSelectedNodeIds([nodeId])
+    setEditingNodeId(nodeId)
+  }, [])
+
+  const handleSaveNodeEdit = useCallback(
+    async (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => {
+      await patchNodes([node.id], patch)
+      await updateNodeData(node.id, data)
+      setEditingNodeId(null)
+    },
+    [patchNodes, updateNodeData],
   )
 
   if (loading) {
@@ -547,6 +566,7 @@ export function CanvasWorkspaceView({
           onRemoveNodeFromGroup={(nodeId) => handleRemoveFromGroup([nodeId])}
           onDissolveGroup={handleDissolveGroup}
           onOpenAiComposer={handleOpenInlineAi}
+          onEditNode={handleEditNode}
           onViewportChange={setCanvasViewport}
         />
         <CanvasInlineAiComposer
@@ -599,6 +619,12 @@ export function CanvasWorkspaceView({
         assets={snapshot.assets}
         onClose={() => setAssetDrawerOpen(false)}
       />
+      <CanvasNodeEditModal
+        node={editingNode}
+        open={Boolean(editingNode)}
+        onClose={() => setEditingNodeId(null)}
+        onSave={handleSaveNodeEdit}
+      />
       <input
         ref={fileInputRef}
         type="file"
@@ -607,5 +633,179 @@ export function CanvasWorkspaceView({
         onChange={(event) => void handleFileChange(event)}
       />
     </div>
+  )
+}
+
+function CanvasNodeEditModal({
+  node,
+  open,
+  onClose,
+  onSave,
+}: {
+  node: CanvasNode | null
+  open: boolean
+  onClose: () => void
+  onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
+}) {
+  const [saving, setSaving] = useState(false)
+  const [title, setTitle] = useState('')
+  const [x, setX] = useState(0)
+  const [y, setY] = useState(0)
+  const [width, setWidth] = useState(280)
+  const [height, setHeight] = useState(180)
+  const [text, setText] = useState('')
+  const [prompt, setPrompt] = useState('')
+  const [messageText, setMessageText] = useState('')
+  const [url, setUrl] = useState('')
+
+  useEffect(() => {
+    if (!node) return
+    setSaving(false)
+    setTitle(node.title ?? '')
+    setX(Math.round(node.x))
+    setY(Math.round(node.y))
+    setWidth(Math.round(node.width))
+    setHeight(Math.round(node.height))
+    setText(node.data.text ?? '')
+    setPrompt(node.data.prompt ?? '')
+    setMessageText(node.data.message ?? '')
+    setUrl(node.data.url ?? '')
+  }, [node])
+
+  const save = async () => {
+    if (!node) return
+    setSaving(true)
+    try {
+      const nextData: CanvasNode['data'] = { ...node.data }
+      if (node.type === 'text' || node.type === 'prompt' || node.type === 'group') {
+        nextData.text = text
+      }
+      if (node.type === 'task') {
+        nextData.prompt = prompt
+      }
+      if (node.type === 'image' || node.type === 'video' || node.type === 'audio') {
+        nextData.url = url.trim()
+      }
+      if (node.type !== 'text' && node.type !== 'prompt') {
+        nextData.message = messageText
+      }
+
+      await onSave(
+        node,
+        {
+          title: title.trim().length > 0 ? title.trim() : null,
+          x: Number.isFinite(x) ? x : node.x,
+          y: Number.isFinite(y) ? y : node.y,
+          width: Math.max(node.type === 'group' ? 320 : 120, Number.isFinite(width) ? width : node.width),
+          height: Math.max(node.type === 'group' ? 200 : 96, Number.isFinite(height) ? height : node.height),
+        },
+        nextData,
+      )
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存节点失败')
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Modal
+      className="canvas-node-edit-modal"
+      title="编辑节点"
+      open={open}
+      width={560}
+      destroyOnHidden
+      confirmLoading={saving}
+      okText="保存"
+      cancelText="取消"
+      onOk={() => void save()}
+      onCancel={onClose}
+    >
+      {node && (
+        <div className="canvas-node-edit-dialog">
+          <div className="canvas-node-edit-dialog-head">
+            <Tag color="default" bordered>
+              {node.type}
+            </Tag>
+            <span>{node.id}</span>
+          </div>
+          <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+            <span>标题</span>
+            <Input value={title} placeholder="节点标题" onChange={(event) => setTitle(event.target.value)} />
+          </label>
+          <div className="canvas-node-edit-grid">
+            <NodeEditNumberField label="X" value={x} onChange={setX} />
+            <NodeEditNumberField label="Y" value={y} onChange={setY} />
+            <NodeEditNumberField label="宽" value={width} min={120} onChange={setWidth} />
+            <NodeEditNumberField label="高" value={height} min={96} onChange={setHeight} />
+          </div>
+          {(node.type === 'text' || node.type === 'prompt' || node.type === 'group') && (
+            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+              <span>{node.type === 'group' ? '组说明' : '内容'}</span>
+              <Input.TextArea
+                value={text}
+                rows={node.type === 'group' ? 3 : 7}
+                placeholder="输入节点内容"
+                onChange={(event) => setText(event.target.value)}
+              />
+            </label>
+          )}
+          {node.type === 'task' && (
+            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+              <span>任务指令</span>
+              <Input.TextArea
+                value={prompt}
+                rows={4}
+                placeholder="任务使用的 prompt"
+                onChange={(event) => setPrompt(event.target.value)}
+              />
+            </label>
+          )}
+          {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
+            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+              <span>媒体 URL</span>
+              <Input value={url} placeholder="https:// 或 data: URL" onChange={(event) => setUrl(event.target.value)} />
+            </label>
+          )}
+          {node.type !== 'text' && node.type !== 'prompt' && (
+            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+              <span>备注 / 展示文本</span>
+              <Input.TextArea
+                value={messageText}
+                rows={3}
+                placeholder="节点内展示的辅助文本"
+                onChange={(event) => setMessageText(event.target.value)}
+              />
+            </label>
+          )}
+        </div>
+      )}
+    </Modal>
+  )
+}
+
+function NodeEditNumberField({
+  label,
+  value,
+  min,
+  onChange,
+}: {
+  label: string
+  value: number
+  min?: number
+  onChange: (value: number) => void
+}) {
+  return (
+    <label className="canvas-node-edit-field">
+      <span>{label}</span>
+      <InputNumber
+        value={value}
+        step={1}
+        controls={false}
+        {...(min !== undefined ? { min } : {})}
+        onChange={(next) => {
+          if (typeof next === 'number') onChange(next)
+        }}
+      />
+    </label>
   )
 }

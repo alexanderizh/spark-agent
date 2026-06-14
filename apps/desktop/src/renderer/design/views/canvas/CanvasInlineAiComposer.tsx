@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Button, Input, Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
@@ -25,6 +25,7 @@ export function CanvasInlineAiComposer({
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState<string>('')
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
+  const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
@@ -114,8 +115,11 @@ export function CanvasInlineAiComposer({
     ) ?? null
   }, [mediaCapabilityIds, selectedModel])
   const parameterFields = useMemo(
-    () => schemaFields(selectedCapability?.paramSchema ?? {}),
-    [selectedCapability],
+    () => mergeSchemaFields(
+      schemaFields(selectedCapability?.paramSchema ?? {}),
+      modelSuggestedFields(selectedModel),
+    ),
+    [selectedCapability, selectedModel],
   )
 
   useEffect(() => {
@@ -141,6 +145,10 @@ export function CanvasInlineAiComposer({
       if (firstModel) setSelectedModelKey(mediaModelKey(firstModel))
     }
   }, [selectedModelKey, supportedMediaModels])
+
+  useEffect(() => {
+    if (!open) setCustomParams([])
+  }, [open])
 
   const handleDragStart = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement
@@ -261,11 +269,11 @@ export function CanvasInlineAiComposer({
       </div>
       {parameterFields.length > 0 && (
         <div className="canvas-form-row">
-          <label>参数</label>
+          <label>模型参数</label>
           <div className="canvas-param-grid">
             {parameterFields.map((field) => (
               <div key={field.name} className="canvas-param-field">
-                <span>{field.title}</span>
+                <span title={field.description}>{field.title}</span>
                 {field.enumValues.length > 0 ? (
                   <LobeSelect
                     value={modelParamDraft[field.name] || undefined}
@@ -302,6 +310,70 @@ export function CanvasInlineAiComposer({
           </div>
         </div>
       )}
+      <div className="canvas-form-row">
+        <div className="canvas-form-label-row">
+          <label>自定义参数</label>
+          <Button
+            size="small"
+            icon={<Icons.Plus size={13} />}
+            onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
+          >
+            添加
+          </Button>
+        </div>
+        {customParams.length === 0 ? (
+          <div className="canvas-param-empty">可添加模型私有参数，例如 google_search、seed、negative_prompt。</div>
+        ) : (
+          <div className="canvas-custom-param-list">
+            {customParams.map((param) => (
+              <div key={param.id} className="canvas-custom-param-row">
+                <Input
+                  value={param.name}
+                  placeholder="字段名"
+                  onChange={(e) => updateCustomParam(setCustomParams, param.id, { name: e.target.value })}
+                />
+                <LobeSelect
+                  value={param.type}
+                  options={[
+                    { value: 'string', label: '文本' },
+                    { value: 'number', label: '数字' },
+                    { value: 'integer', label: '整数' },
+                    { value: 'boolean', label: '布尔' },
+                    { value: 'json', label: 'JSON' },
+                  ]}
+                  onChange={(value) => updateCustomParam(setCustomParams, param.id, { type: String(value) as CustomParamType })}
+                />
+                {param.type === 'boolean' ? (
+                  <LobeSelect
+                    value={param.value || undefined}
+                    placeholder="值"
+                    allowClear
+                    options={[
+                      { value: 'true', label: 'true' },
+                      { value: 'false', label: 'false' },
+                    ]}
+                    onChange={(value) => updateCustomParam(setCustomParams, param.id, { value: value == null ? '' : String(value) })}
+                  />
+                ) : (
+                  <Input
+                    value={param.value}
+                    placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                    type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
+                    onChange={(e) => updateCustomParam(setCustomParams, param.id, { value: e.target.value })}
+                  />
+                )}
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<Icons.Trash size={13} />}
+                  aria-label="删除自定义参数"
+                  onClick={() => setCustomParams((prev) => prev.filter((item) => item.id !== param.id))}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       <div className="canvas-inline-ai-footer">
         <Button size="small" onClick={onClose}>
           取消
@@ -312,7 +384,10 @@ export function CanvasInlineAiComposer({
           icon={<Icons.Sparkles size={15} />}
           disabled={!canSubmit}
           onClick={() => {
-            const modelParams = buildModelParams(parameterFields, modelParamDraft)
+            const modelParams = {
+              ...buildModelParams(parameterFields, modelParamDraft),
+              ...buildCustomModelParams(customParams),
+            }
             const effectivePrompt = prompt.trim() || fallbackPromptForOperation(operation)
             const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown> } = {
               operation,
@@ -368,7 +443,17 @@ type SchemaField = {
   title: string
   type: string
   enumValues: string[]
+  description?: string
   placeholder?: string
+}
+
+type CustomParamType = 'string' | 'number' | 'integer' | 'boolean' | 'json'
+
+type CustomParamDraft = {
+  id: string
+  name: string
+  type: CustomParamType
+  value: string
 }
 
 function schemaFields(schema: Record<string, unknown>): SchemaField[] {
@@ -388,9 +473,89 @@ function schemaFields(schema: Record<string, unknown>): SchemaField[] {
       title: typeof spec.title === 'string' ? spec.title : name,
       type,
       enumValues,
+      ...(typeof spec.description === 'string' ? { description: spec.description } : {}),
       ...(examples[0] ? { placeholder: examples[0] } : {}),
     }
   })
+}
+
+function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): SchemaField[] {
+  if (!model) return []
+  const fingerprint = [
+    model.manifestId,
+    model.modelId,
+    model.effectiveModelId,
+    model.displayName,
+  ].join(' ').toLowerCase()
+  const fields: SchemaField[] = []
+
+  if (fingerprint.includes('gemini') || fingerprint.includes('imagen') || fingerprint.includes('veo')) {
+    fields.push(
+      {
+        name: 'google_search',
+        title: 'google_search',
+        type: 'boolean',
+        enumValues: [],
+        description: 'Gemini / Google 系模型常见的搜索增强开关。',
+      },
+      {
+        name: 'person_generation',
+        title: 'person_generation',
+        type: 'string',
+        enumValues: ['allow_adult', 'dont_allow'],
+        description: 'Google 图像模型人物生成策略。',
+      },
+    )
+  }
+  if (fingerprint.includes('gpt-image')) {
+    fields.push(
+      { name: 'quality', title: 'quality', type: 'string', enumValues: ['auto', 'low', 'medium', 'high'] },
+      { name: 'background', title: 'background', type: 'string', enumValues: ['auto', 'transparent', 'opaque'] },
+      { name: 'moderation', title: 'moderation', type: 'string', enumValues: ['auto', 'low'] },
+    )
+  }
+  if (fingerprint.includes('seed') || fingerprint.includes('kling') || fingerprint.includes('wan') || fingerprint.includes('pixverse') || fingerprint.includes('hailuo') || fingerprint.includes('minimax')) {
+    fields.push(
+      { name: 'negative_prompt', title: 'negative_prompt', type: 'string', enumValues: [], placeholder: '不希望出现的内容' },
+      { name: 'camera_control', title: 'camera_control', type: 'string', enumValues: [], placeholder: 'push_in / pull_out / pan_left ...' },
+      { name: 'seed', title: 'seed', type: 'integer', enumValues: [] },
+    )
+  }
+  if (model.capabilities.some((capability) => capability.id.startsWith('video.'))) {
+    fields.push(
+      { name: 'motion_strength', title: 'motion_strength', type: 'number', enumValues: [], placeholder: '0.5' },
+      { name: 'fps', title: 'fps', type: 'integer', enumValues: [], placeholder: '24' },
+    )
+  }
+  return fields
+}
+
+function mergeSchemaFields(baseFields: SchemaField[], suggestedFields: SchemaField[]): SchemaField[] {
+  const seen = new Set(baseFields.map((field) => field.name))
+  const result = [...baseFields]
+  for (const field of suggestedFields) {
+    if (seen.has(field.name)) continue
+    seen.add(field.name)
+    result.push(field)
+  }
+  return result.slice(0, 18)
+}
+
+function createCustomParamDraft(): CustomParamDraft {
+  return {
+    id: `custom-param-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    name: '',
+    type: 'string',
+    value: '',
+  }
+}
+
+function updateCustomParam(
+  setCustomParams: Dispatch<SetStateAction<CustomParamDraft[]>>,
+  id: string,
+  patch: Partial<CustomParamDraft>,
+) {
+  setCustomParams((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
 }
 
 function buildModelParams(fields: SchemaField[], draft: Record<string, string>): Record<string, unknown> {
@@ -408,6 +573,33 @@ function buildModelParams(fields: SchemaField[], draft: Record<string, string>):
       params[field.name] = raw === 'true'
     } else {
       params[field.name] = raw
+    }
+  }
+  return params
+}
+
+function buildCustomModelParams(drafts: CustomParamDraft[]): Record<string, unknown> {
+  const params: Record<string, unknown> = {}
+  for (const draft of drafts) {
+    const name = draft.name.trim()
+    const raw = draft.value.trim()
+    if (!name || !raw) continue
+    if (draft.type === 'integer') {
+      const value = Number.parseInt(raw, 10)
+      if (Number.isFinite(value)) params[name] = value
+    } else if (draft.type === 'number') {
+      const value = Number(raw)
+      if (Number.isFinite(value)) params[name] = value
+    } else if (draft.type === 'boolean') {
+      params[name] = raw === 'true'
+    } else if (draft.type === 'json') {
+      try {
+        params[name] = JSON.parse(raw)
+      } catch {
+        params[name] = raw
+      }
+    } else {
+      params[name] = raw
     }
   }
   return params

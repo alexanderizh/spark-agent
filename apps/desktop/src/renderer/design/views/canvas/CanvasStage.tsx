@@ -114,6 +114,7 @@ export function CanvasStage({
   onRemoveNodeFromGroup,
   onDissolveGroup,
   onOpenAiComposer,
+  onEditNode,
   onViewportChange,
 }: {
   snapshot: CanvasSnapshot
@@ -131,6 +132,7 @@ export function CanvasStage({
   onRemoveNodeFromGroup: (nodeId: string) => void
   onDissolveGroup: (groupId: string) => void
   onOpenAiComposer: (nodeId: string) => void
+  onEditNode: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
@@ -144,6 +146,7 @@ export function CanvasStage({
       removeNodeFromGroup: onRemoveNodeFromGroup,
       dissolveGroup: onDissolveGroup,
       openAiComposer: onOpenAiComposer,
+      editNode: onEditNode,
     }),
     [
       onAddSelectionToGroup,
@@ -152,6 +155,7 @@ export function CanvasStage({
       onDeleteNode,
       onDissolveGroup,
       onDuplicateNode,
+      onEditNode,
       onOpenAiComposer,
       onRemoveNodeFromGroup,
       onToggleLockNode,
