@@ -6,6 +6,7 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
+  ViewportPortal,
   applyNodeChanges,
   type Connection,
   type Edge,
@@ -15,6 +16,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
+import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import type { CanvasEdge, CanvasNode as SparkCanvasNode, CanvasSnapshot } from './canvas.types'
 
@@ -152,8 +154,10 @@ export function CanvasStage({
   const [flowNodes, setFlowNodes] = useState(nodes)
   const flowNodesRef = useRef(nodes)
   const syncFrameRef = useRef<number | null>(null)
+  const guideFrameRef = useRef<number | null>(null)
   const viewportInteractingRef = useRef(false)
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
+  const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
 
   const cancelScheduledSync = useCallback(() => {
@@ -183,6 +187,10 @@ export function CanvasStage({
   }, [nodes, syncFlowNodes])
 
   useEffect(() => () => cancelScheduledSync(), [cancelScheduledSync])
+
+  useEffect(() => () => {
+    if (guideFrameRef.current != null) window.cancelAnimationFrame(guideFrameRef.current)
+  }, [])
 
   const flushPendingNodesSync = useCallback(() => {
     const pendingNodes = pendingNodesSyncRef.current
@@ -226,6 +234,34 @@ export function CanvasStage({
     [onConnectNodes],
   )
 
+  const clearAlignmentGuides = useCallback(() => {
+    if (guideFrameRef.current != null) {
+      window.cancelAnimationFrame(guideFrameRef.current)
+      guideFrameRef.current = null
+    }
+    setAlignmentGuides([])
+  }, [])
+
+  const handleNodeDrag = useCallback(
+    (_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>, draggedNodes: Node<CanvasFlowNodeData>[]) => {
+      if (guideFrameRef.current != null) window.cancelAnimationFrame(guideFrameRef.current)
+      const movingNodes = draggedNodes.length > 0 ? draggedNodes : [node]
+      const nextNodes = flowNodesRef.current.map((flowNode) => {
+        const moving = movingNodes.find((item) => item.id === flowNode.id)
+        return moving ? { ...flowNode, position: moving.position } : flowNode
+      })
+      guideFrameRef.current = window.requestAnimationFrame(() => {
+        guideFrameRef.current = null
+        setAlignmentGuides(computeCanvasAlignmentGuides(nextNodes, movingNodes))
+      })
+    },
+    [],
+  )
+
+  const handleNodeDragStop = useCallback(() => {
+    clearAlignmentGuides()
+  }, [clearAlignmentGuides])
+
   return (
     <ReactFlowProvider>
       <div className="canvas-stage">
@@ -247,6 +283,8 @@ export function CanvasStage({
           selectionOnDrag={activeTool === 'select'}
           onNodesChange={handleNodesChange}
           onConnect={handleConnect}
+          onNodeDrag={handleNodeDrag}
+          onNodeDragStop={handleNodeDragStop}
           onMoveStart={handleViewportMoveStart}
           onMoveEnd={handleViewportMoveEnd}
           onSelectionChange={({ nodes: selected }) =>
@@ -270,6 +308,31 @@ export function CanvasStage({
                 variant={BackgroundVariant.Lines}
               />
             </>
+          )}
+          {alignmentGuides.length > 0 && (
+            <ViewportPortal>
+              <div className="canvas-alignment-guides" aria-hidden>
+                {alignmentGuides.map((guide) => (
+                  <div
+                    key={guide.id}
+                    className={`canvas-alignment-guide canvas-alignment-guide-${guide.orientation} canvas-alignment-guide-${guide.kind}`}
+                    style={
+                      guide.orientation === 'vertical'
+                        ? {
+                            left: guide.position,
+                            top: guide.start,
+                            height: guide.end - guide.start,
+                          }
+                        : {
+                            top: guide.position,
+                            left: guide.start,
+                            width: guide.end - guide.start,
+                          }
+                    }
+                  />
+                ))}
+              </div>
+            </ViewportPortal>
           )}
           <MiniMap
             className="canvas-minimap"
