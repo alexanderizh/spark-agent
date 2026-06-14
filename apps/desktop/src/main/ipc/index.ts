@@ -103,7 +103,7 @@ import type {
   SessionRenamedHandler,
 } from '@spark/agent-runtime'
 import { getFileWatcherService } from '../services/FileWatcherService.js'
-import { toSafeFileUrl } from '../services/SafeFileProtocol.js'
+import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtocol.js'
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
@@ -3801,7 +3801,7 @@ export function registerAllIpcHandlers(): void {
 
   // ─── File Save Image Handler ──────────────────────────────────────────
   //
-  // 让用户把生成的图片（路径在 userData/.spark-artifacts/...）另存到本地。
+  // 让用户把生成的图片（路径在 userData 或 workspace 的 .spark-artifacts 下）另存到本地。
   // 源文件必须在 safe-file 白名单目录下，与 safe-file 协议保持一致的安全约束。
 
   typedIpcHandle('file:save-image', async (req) => {
@@ -3817,16 +3817,9 @@ export function registerAllIpcHandlers(): void {
       return { saved: false, savedPath: '', error: '源文件不存在' }
     }
 
-    // 源文件必须在 safe-file 白名单内（userData / temp）
+    // 源文件必须在 safe-file 白名单内（userData / temp / workspace .spark-artifacts）
     const resolvedSource = path.resolve(sourcePath)
-    const userDataRoot = path.resolve(app.getPath('userData'))
-    const tempRoot = path.resolve(app.getPath('temp'))
-    const allowed =
-      resolvedSource === userDataRoot ||
-      resolvedSource.startsWith(userDataRoot + path.sep) ||
-      resolvedSource === tempRoot ||
-      resolvedSource.startsWith(tempRoot + path.sep)
-    if (!allowed) {
+    if (!isSafeFilePathAllowed(resolvedSource)) {
       log.warn(`file:save-image rejected: source outside allowed roots, path=${sourcePath}`)
       return { saved: false, savedPath: '', error: '源文件不在允许范围内' }
     }

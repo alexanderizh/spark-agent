@@ -2736,14 +2736,14 @@ export interface FileReadResponse {
  * `file:save-image` — 让用户把生成的图片 / 附件另存到本地。
  *
  * 使用场景：
- *   - 会话里 agent 生成的图片（路径在 userData/.spark-artifacts 下），
+ *   - 会话里 agent 生成的图片（路径在 userData 或 workspace 的 .spark-artifacts 下），
  *     用户想保存到自己的下载目录或桌面。
  *   - 附件中的图片想"另存为"。
  *
  * 行为：
  *   - 主进程会调 `dialog.showSaveDialog` 让用户选择目标位置 + 文件名，
  *     然后把源文件复制过去。如果用户取消对话框，返回 saved:false 且无 error。
- *   - 源文件必须在 safe-file 白名单目录（userData / temp）下，
+ *   - 源文件必须在 safe-file 白名单目录（userData / temp / workspace .spark-artifacts）下，
  *     与协议保持一致的安全约束。
  */
 export interface FileSaveImageRequest {
