@@ -10,6 +10,8 @@ import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { useCanvasWorkspace } from './canvas.store'
+import { isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
+import { useApp } from '../../AppContext'
 import type { CanvasInputTransport, CanvasNode, CanvasOperationType, CanvasTask } from './canvas.types'
 import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import './CanvasWorkspaceView.less'
@@ -256,6 +258,104 @@ export function CanvasWorkspaceView({
   const [canvasViewport, setCanvasViewport] = useState<CanvasStageViewport | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const activeToolRef = useRef<CanvasTool>('select')
+  const { registerNavGuard } = useApp()
+  const [dirty, setDirty] = useState(() => isCanvasDirty())
+  const [saving, setSaving] = useState(false)
+  const [leaveOpen, setLeaveOpen] = useState(false)
+  const savingRef = useRef(false)
+  const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
+
+  const doSave = useCallback(async (): Promise<boolean> => {
+    if (savingRef.current) return false
+    savingRef.current = true
+    setSaving(true)
+    try {
+      const ok = await saveCanvas()
+      if (ok) {
+        message.success('画布已保存')
+      } else {
+        message.error('保存失败，请查看控制台日志')
+      }
+      return ok
+    } finally {
+      savingRef.current = false
+      setSaving(false)
+    }
+  }, [])
+
+  // 监听 dirty 变化，刷新「未保存」徽标
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ dirty?: boolean }>).detail
+      setDirty(Boolean(detail?.dirty))
+    }
+    window.addEventListener('canvas:dirty', handler as EventListener)
+    return () => window.removeEventListener('canvas:dirty', handler as EventListener)
+  }, [])
+
+  // Ctrl / Cmd + S 手动保存（不在输入框内时）
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey
+      if (!mod || event.shiftKey || event.altKey) return
+      if (event.key.toLowerCase() !== 's') return
+      if (isEditableKeyboardTarget(event.target)) return
+      event.preventDefault()
+      event.stopPropagation()
+      void doSave()
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [doSave])
+
+  // 离开确认：返回用户选择（'save' 表示弹窗内已完成落库）
+  const askLeave = useCallback((): Promise<'save' | 'discard' | 'cancel'> => {
+    return new Promise((resolve) => {
+      leaveResolveRef.current = resolve
+      setLeaveOpen(true)
+    })
+  }, [])
+
+  // 注册导航守卫：侧边栏切换视图时若 dirty，先弹离开确认
+  useEffect(() => {
+    registerNavGuard(async () => {
+      if (!isCanvasDirty()) return true
+      const choice = await askLeave()
+      if (choice === 'cancel') return false
+      if (choice === 'discard') await revertProject(projectId)
+      return true
+    })
+    return () => registerNavGuard(null)
+  }, [registerNavGuard, askLeave, projectId])
+
+  const handleBackWithGuard = useCallback(async () => {
+    if (!isCanvasDirty()) {
+      onBack()
+      return
+    }
+    const choice = await askLeave()
+    if (choice === 'cancel') return
+    if (choice === 'discard') await revertProject(projectId)
+    onBack()
+  }, [askLeave, onBack, projectId])
+
+  const onLeaveSave = useCallback(async () => {
+    const ok = await doSave()
+    if (!ok) return // 保存失败：保持弹窗打开，不离开
+    setLeaveOpen(false)
+    leaveResolveRef.current?.('save')
+    leaveResolveRef.current = null
+  }, [doSave])
+  const onLeaveDiscard = useCallback(() => {
+    setLeaveOpen(false)
+    leaveResolveRef.current?.('discard')
+    leaveResolveRef.current = null
+  }, [])
+  const onLeaveCancel = useCallback(() => {
+    setLeaveOpen(false)
+    leaveResolveRef.current?.('cancel')
+    leaveResolveRef.current = null
+  }, [])
 
   const selectedNodes = useMemo(
     () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
@@ -573,7 +673,7 @@ export function CanvasWorkspaceView({
       <header className="canvas-workspace-header">
         <div className="canvas-workspace-topbar">
           <div className="canvas-workspace-title">
-            <Button size="small" type="text" icon={<Icons.ArrowLeft size={15} />} onClick={onBack}>
+            <Button size="small" type="text" icon={<Icons.ArrowLeft size={15} />} onClick={() => void handleBackWithGuard()}>
               项目
             </Button>
             <div className="canvas-workspace-heading">
@@ -585,9 +685,17 @@ export function CanvasWorkspaceView({
             </div>
           </div>
           <div className="canvas-workspace-actions">
-            <Tag color="green">
-              Local draft
+            <Tag color={dirty ? 'orange' : 'green'}>
+              {dirty ? '未保存' : '已保存'}
             </Tag>
+            <Button
+              size="small"
+              icon={<Icons.Check size={15} />}
+              disabled={saving || !dirty}
+              onClick={() => void doSave()}
+            >
+              保存
+            </Button>
             <Button
               size="small"
               icon={<Icons.Package size={15} />}
@@ -714,6 +822,21 @@ export function CanvasWorkspaceView({
         style={{ display: 'none' }}
         onChange={(event) => void handleFileChange(event)}
       />
+      <Modal
+        open={leaveOpen}
+        title="画布有未保存的改动"
+        closable={false}
+        maskClosable={false}
+        footer={[
+          <Button key="discard" danger onClick={onLeaveDiscard}>不保存</Button>,
+          <Button key="cancel" onClick={onLeaveCancel}>取消</Button>,
+          <Button key="save" type="primary" loading={saving} onClick={() => void onLeaveSave()}>
+            保存并离开
+          </Button>,
+        ]}
+      >
+        离开前是否保存当前画布？未保存的改动不会写入应用数据库，离开后即丢失。
+      </Modal>
     </div>
   )
 }

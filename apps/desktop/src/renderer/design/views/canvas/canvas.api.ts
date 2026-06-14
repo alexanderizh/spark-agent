@@ -28,36 +28,25 @@ const STORAGE_KEY = 'spark-canvas:v1'
 const USER_ID = 0
 
 /**
- * SQLite 是画布的生产权威存储：localStorage 仅做即时热存储（响应快、拖拽不掉帧），
- * 关键变更后必须落库，保证「重启不丢 / 可备份 / 跨窗口一致」。
+ * SQLite 是画布的生产权威存储。手动保存模型（避免「自动保存却没真正落库」的静默丢数据）：
+ *   - writeDb 只写 localStorage（即时热存储）并置 dirty=true，不自动落 SQLite。
+ *   - 保存动作（Ctrl+S / 保存按钮 / 离开确认）→ saveCanvas() → flushPersist()，
+ *     把全量快照写进 SQLite，成功后清掉 dirty。
+ *   - 项目生命周期（创建/重命名/归档/删除/打开）仍立即 flush，保证项目壳与元数据不丢。
  *
- *   - schedulePersist：500ms 防抖，合并高频写入（如节点拖拽 updateNodes）。
- *   - flushPersist：立即落库，供 createProject / updateProject / openSnapshot 等
- *     生命周期操作 await，确保关闭应用前数据已进入应用数据库。
+ * dirty 状态通过 'canvas:dirty' CustomEvent 广播，供工作区刷新「未保存」徽标。
  */
-let persistTimer: ReturnType<typeof setTimeout> | null = null
-let persistInFlight: Promise<void> = Promise.resolve()
+let persistInFlight: Promise<number> = Promise.resolve(0)
+let canvasDirty = false
 
-function schedulePersist(): void {
-  if (persistTimer != null) clearTimeout(persistTimer)
-  persistTimer = setTimeout(() => {
-    persistTimer = null
-    persistInFlight = persistAllProjects(readDb())
-  }, 500)
-}
-
-/** 立即落库：清掉防抖定时器，等在途任务完成后把当前全量快照写进 SQLite。 */
-async function flushPersist(): Promise<void> {
-  if (persistTimer != null) {
-    clearTimeout(persistTimer)
-    persistTimer = null
+function dispatchDirty(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('canvas:dirty', { detail: { dirty: canvasDirty } }))
   }
-  await persistInFlight
-  persistInFlight = persistAllProjects(readDb())
-  await persistInFlight
 }
 
-async function persistAllProjects(db: CanvasDb): Promise<void> {
+async function persistAllProjects(db: CanvasDb): Promise<number> {
+  let failed = 0
   for (const project of db.projects) {
     if (project.status === 'deleted') continue
     const snapshot = {
@@ -76,20 +65,67 @@ async function persistAllProjects(db: CanvasDb): Promise<void> {
     try {
       await window.spark.invoke('canvas:snapshot:save', req)
     } catch (err) {
+      failed += 1
       // 落库失败不阻断画布交互，但必须显式记录——这是「重启丢数据」的根因之一。
       console.error('[canvas] snapshot persist failed', project.id, err)
     }
   }
+  return failed
 }
 
-// 应用/窗口关闭前尽力 flush 一次，避免防抖队列里最后一批改动随关闭丢失。
-// （Electron 关闭进程时 beforeunload 不保证 await 完成，关键操作仍由 flushPersist 兜底。）
-if (typeof window !== 'undefined') {
-  const flushBeforeUnload = (): void => {
-    void flushPersist()
+/** 立即把全量快照写进 SQLite；全部成功（failed=0）返回 true 并清掉 dirty。 */
+async function flushPersist(): Promise<boolean> {
+  await persistInFlight
+  persistInFlight = persistAllProjects(readDb())
+  const failed = await persistInFlight
+  if (failed === 0) {
+    canvasDirty = false
+    dispatchDirty()
+    return true
   }
-  window.addEventListener('pagehide', flushBeforeUnload)
-  window.addEventListener('beforeunload', flushBeforeUnload)
+  return false
+}
+
+/** 手动保存：全量落库，返回是否成功。 */
+export async function saveCanvas(): Promise<boolean> {
+  return flushPersist()
+}
+
+/**
+ * 用户选择「不保存离开」：把指定项目回滚到 SQLite 上次保存的状态，并清掉 dirty。
+ * 否则被丢弃的改动仍留在 localStorage 里，会在下一次全量落库
+ * （saveCanvas / openSnapshot）时被悄悄写回，违背「不保存」的语义。
+ */
+export async function revertProject(projectId: string): Promise<void> {
+  const db = readDb()
+  db.projects = db.projects.filter((p) => p.id !== projectId)
+  db.boards = db.boards.filter((b) => b.projectId !== projectId)
+  db.nodes = db.nodes.filter((n) => n.projectId !== projectId)
+  db.edges = db.edges.filter((e) => e.projectId !== projectId)
+  db.assets = db.assets.filter((a) => a.projectId !== projectId)
+  db.tasks = db.tasks.filter((t) => t.projectId !== projectId)
+  try {
+    const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+    if (snapshotJson) {
+      const snap = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
+      if (snap.project) db.projects.push(snap.project)
+      if (snap.board) db.boards.push(snap.board)
+      if (snap.nodes) db.nodes.push(...snap.nodes)
+      if (snap.edges) db.edges.push(...snap.edges)
+      if (snap.assets) db.assets.push(...snap.assets)
+      if (snap.tasks) db.tasks.push(...snap.tasks)
+    }
+  } catch (err) {
+    // SQLite 读不到快照时，项目就地清空（等同丢弃）。
+    console.error('[canvas] revertProject load failed', projectId, err)
+  }
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+  canvasDirty = false
+  dispatchDirty()
+}
+
+export function isCanvasDirty(): boolean {
+  return canvasDirty
 }
 
 /** 构造 CanvasSnapshotSaveRequest.meta，跳过 undefined 字段（exactOptionalPropertyTypes） */
@@ -160,8 +196,9 @@ function readDb(): CanvasDb {
 
 function writeDb(db: CanvasDb): void {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
-  // localStorage 仍是即时热存储；SQLite 是生产权威源（防抖写入，见 flushPersist）
-  schedulePersist()
+  // localStorage 仍是即时热存储；SQLite 只在手动保存(Ctrl+S)或项目生命周期操作时写入。
+  canvasDirty = true
+  dispatchDirty()
 }
 
 function createNodeBase(input: {

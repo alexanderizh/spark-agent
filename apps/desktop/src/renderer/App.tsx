@@ -443,7 +443,6 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
               { key: 'remote', label: menuLabel(<Icons.Globe size={14} />, '远程连接') },
               { key: 'github', label: menuLabel(<Icons.GitHub size={14} />, 'GitHub') },
               { key: 'settings', label: menuLabel(<Icons.Settings size={14} />, 'Settings') },
-              { key: 'lobe-preview', label: menuLabel(<Icons.Layers size={14} />, 'Lobe UI 沙箱') },
             ],
             onClick: ({ key }: { key: string }) => {
               switch (key) {
