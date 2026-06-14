@@ -475,6 +475,7 @@ export function CanvasWorkspaceView({
             selectedNodes={selectedNodes}
             nodes={snapshot.nodes}
             edges={snapshot.edges}
+            assets={snapshot.assets}
             tasks={snapshot.tasks}
             onDuplicate={() => void duplicateNodes(selectedNodeIds)}
             onToggleLock={() => void handleToggleLock()}
@@ -489,6 +490,9 @@ export function CanvasWorkspaceView({
             canDissolveGroup={canDissolveGroup}
             onSaveText={(node, text) => {
               void updateNodeData(node.id, { ...node.data, text })
+            }}
+            onPatchNode={(node, patch) => {
+              void patchNodes([node.id], patch)
             }}
           />
         </aside>
