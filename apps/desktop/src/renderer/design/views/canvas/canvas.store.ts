@@ -111,7 +111,16 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const createImageNode = useCallback(
-    async (input: { file: File; dataUrl: string; x: number; y: number }) => {
+    async (input: {
+      file: File
+      dataUrl: string
+      x: number
+      y: number
+      width?: number
+      height?: number
+      imageWidth?: number
+      imageHeight?: number
+    }) => {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createImageNode({

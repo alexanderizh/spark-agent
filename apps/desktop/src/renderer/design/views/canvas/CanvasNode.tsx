@@ -118,70 +118,72 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           </div>
         )}
 
-        {node.type === 'image' ? (
-          node.data.url ? (
-            <img
-              className="canvas-node-image"
-              src={node.data.thumbnailUrl ?? node.data.url}
-              alt={title}
-            />
+        <div className="canvas-node-body">
+          {node.type === 'image' ? (
+            node.data.url ? (
+              <img
+                className="canvas-node-image"
+                src={node.data.thumbnailUrl ?? node.data.url}
+                alt={title}
+              />
+            ) : (
+              <div className="canvas-node-image-placeholder">
+                <Icons.Image size={30} />
+                <span>{node.data.message ?? '等待图片 URL'}</span>
+              </div>
+            )
+          ) : node.type === 'audio' ? (
+            node.data.url ? (
+              <div className="canvas-node-audio">
+                <Icons.Play size={22} />
+                <audio className="canvas-node-audio-player" src={node.data.url} controls preload="metadata" />
+                <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
+              </div>
+            ) : (
+              <div className="canvas-node-image-placeholder">
+                <Icons.Play size={30} />
+                <span>{node.data.message ?? '等待音频结果'}</span>
+              </div>
+            )
+          ) : node.type === 'video' ? (
+            node.data.url ? (
+              <video className="canvas-node-image" src={node.data.url} controls preload="metadata" />
+            ) : (
+              <div className="canvas-node-image-placeholder">
+                <Icons.Play size={30} />
+                <span>{node.data.message ?? '等待视频结果'}</span>
+              </div>
+            )
+          ) : node.type === 'group' ? (
+            <div className="canvas-node-group-body">
+              <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
+              <div className="canvas-node-group-hint">{node.data.message ?? '节点已在组内排列'}</div>
+            </div>
+          ) : node.type === 'task' ? (
+            <div className="canvas-node-task">
+              <div className="canvas-node-task-row">
+                <span>{node.data.operation ? operationLabel(node.data.operation) : 'AI task'}</span>
+                <span>{node.data.status ?? 'pending'}</span>
+              </div>
+              <Progress
+                percent={node.data.progress ?? 0}
+                size="small"
+                status={
+                  node.data.status === 'failed'
+                    ? 'exception'
+                    : node.data.status === 'completed'
+                      ? 'success'
+                      : 'active'
+                }
+              />
+              <div className="canvas-node-task-msg">
+                {node.data.message ?? node.data.prompt ?? '准备执行'}
+              </div>
+            </div>
           ) : (
-            <div className="canvas-node-image-placeholder">
-              <Icons.Image size={30} />
-              <span>{node.data.message ?? '等待图片 URL'}</span>
-            </div>
-          )
-        ) : node.type === 'audio' ? (
-          node.data.url ? (
-            <div className="canvas-node-audio">
-              <Icons.Play size={22} />
-              <audio className="canvas-node-audio-player" src={node.data.url} controls preload="metadata" />
-              <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
-            </div>
-          ) : (
-            <div className="canvas-node-image-placeholder">
-              <Icons.Play size={30} />
-              <span>{node.data.message ?? '等待音频结果'}</span>
-            </div>
-          )
-        ) : node.type === 'video' ? (
-          node.data.url ? (
-            <video className="canvas-node-image" src={node.data.url} controls preload="metadata" />
-          ) : (
-            <div className="canvas-node-image-placeholder">
-              <Icons.Play size={30} />
-              <span>{node.data.message ?? '等待视频结果'}</span>
-            </div>
-          )
-        ) : node.type === 'group' ? (
-          <div className="canvas-node-group-body">
-            <div className="canvas-node-group-count">{node.data.text ?? '组'}</div>
-            <div className="canvas-node-group-hint">{node.data.message ?? '节点已在组内排列'}</div>
-          </div>
-        ) : node.type === 'task' ? (
-          <div className="canvas-node-task">
-            <div className="canvas-node-task-row">
-              <span>{node.data.operation ? operationLabel(node.data.operation) : 'AI task'}</span>
-              <span>{node.data.status ?? 'pending'}</span>
-            </div>
-            <Progress
-              percent={node.data.progress ?? 0}
-              size="small"
-              status={
-                node.data.status === 'failed'
-                  ? 'exception'
-                  : node.data.status === 'completed'
-                    ? 'success'
-                    : 'active'
-              }
-            />
-            <div className="canvas-node-task-msg">
-              {node.data.message ?? node.data.prompt ?? '准备执行'}
-            </div>
-          </div>
-        ) : (
-          <div className="canvas-node-text">{node.data.text ?? node.data.message ?? 'Empty'}</div>
-        )}
+            <div className="canvas-node-text">{node.data.text ?? node.data.message ?? 'Empty'}</div>
+          )}
+        </div>
         <Handle type="source" position={Position.Right} className="canvas-node-handle" />
       </div>
     </Dropdown>

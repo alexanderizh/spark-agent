@@ -337,6 +337,30 @@ function updateProjectCounts(db: CanvasDb, projectId: string): void {
   project.updatedAt = now()
 }
 
+function fitMediaNodeSize(
+  type: CanvasAssetType,
+  width?: number | null,
+  height?: number | null,
+): { width: number; height: number } {
+  if (type === 'image' || type === 'video') {
+    const headerHeight = 36
+    if (width && height) {
+      const aspect = height / width
+      let nodeWidth = Math.min(Math.max(width, type === 'video' ? 320 : 260), type === 'video' ? 520 : 420)
+      let bodyHeight = Math.round(nodeWidth * aspect)
+      const maxBodyHeight = type === 'video' ? 420 : 680
+      if (bodyHeight > maxBodyHeight) {
+        bodyHeight = maxBodyHeight
+        nodeWidth = Math.max(type === 'video' ? 300 : 220, Math.round(bodyHeight / aspect))
+      }
+      return { width: Math.round(nodeWidth), height: Math.max(type === 'video' ? 220 : 220, bodyHeight + headerHeight) }
+    }
+    return type === 'video' ? { width: 360, height: 240 } : { width: 320, height: 260 }
+  }
+  if (type === 'audio') return { width: 320, height: 164 }
+  return { width: 300, height: 164 }
+}
+
 export const canvasApi = {
   async listProjects(): Promise<CanvasProject[]> {
     const db = readDb()
@@ -466,6 +490,10 @@ export const canvasApi = {
     dataUrl: string
     x: number
     y: number
+    width?: number
+    height?: number
+    imageWidth?: number
+    imageHeight?: number
   }): Promise<CanvasNode> {
     const db = readDb()
     const asset: CanvasAsset = {
@@ -478,6 +506,8 @@ export const canvasApi = {
       mimeType: input.file.type,
       url: input.dataUrl,
       thumbnailUrl: input.dataUrl,
+      width: input.imageWidth ?? null,
+      height: input.imageHeight ?? null,
       sizeBytes: input.file.size,
       metadata: { storageAdapter: 'localStorage-demo' },
       createdAt: now(),
@@ -491,8 +521,8 @@ export const canvasApi = {
       assetId: asset.id,
       x: input.x,
       y: input.y,
-      width: 280,
-      height: 210,
+      width: input.width ?? 320,
+      height: input.height ?? 260,
       data: { url: input.dataUrl, thumbnailUrl: input.dataUrl, mimeType: input.file.type },
     })
     db.assets.push(asset)
@@ -1186,6 +1216,7 @@ export const canvasApi = {
         if (asset.mimeType) nodeData.mimeType = asset.mimeType
         if (assetType === 'image' && asset.thumbnailUrl) nodeData.thumbnailUrl = asset.thumbnailUrl
       }
+      const resultNodeSize = fitMediaNodeSize(assetType, assetOut.width, assetOut.height)
       const resultNode = createNodeBase({
         projectId,
         boardId: task.boardId,
@@ -1194,8 +1225,8 @@ export const canvasApi = {
         assetId: asset.id,
         x: taskNode.x + 380 + index * 48,
         y: taskNode.y + index * 48,
-        width: nodeType === 'image' ? 280 : nodeType === 'video' ? 320 : 300,
-        height: nodeType === 'image' ? 210 : nodeType === 'video' ? 200 : 164,
+        width: resultNodeSize.width,
+        height: resultNodeSize.height,
         data: nodeData,
       })
       task.outputAssetIds.push(asset.id)

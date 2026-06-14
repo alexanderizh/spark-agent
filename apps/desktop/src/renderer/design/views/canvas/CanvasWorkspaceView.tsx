@@ -22,6 +22,31 @@ function readFileAsDataUrl(file: File): Promise<string> {
   })
 }
 
+function readImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 })
+    image.onerror = () => resolve({ width: 0, height: 0 })
+    image.src = src
+  })
+}
+
+function fitImageNodeSize(width: number, height: number): { width: number; height: number } {
+  const headerHeight = 36
+  if (!width || !height) return { width: 320, height: 260 }
+  const aspect = height / width
+  let nodeWidth = Math.min(Math.max(width, 260), 420)
+  let bodyHeight = Math.round(nodeWidth * aspect)
+  if (bodyHeight > 680) {
+    bodyHeight = 680
+    nodeWidth = Math.max(220, Math.round(bodyHeight / aspect))
+  }
+  return {
+    width: Math.round(nodeWidth),
+    height: Math.max(220, bodyHeight + headerHeight),
+  }
+}
+
 function areNodeIdsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
@@ -153,11 +178,17 @@ export function CanvasWorkspaceView({
       return
     }
     const dataUrl = await readFileAsDataUrl(file)
+    const dimensions = await readImageDimensions(dataUrl)
+    const nodeSize = fitImageNodeSize(dimensions.width, dimensions.height)
     await createImageNode({
       file,
       dataUrl,
       x: 220 + snapshot.nodes.length * 24,
       y: 180 + snapshot.nodes.length * 24,
+      width: nodeSize.width,
+      height: nodeSize.height,
+      imageWidth: dimensions.width,
+      imageHeight: dimensions.height,
     })
   }
 

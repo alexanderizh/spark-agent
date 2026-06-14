@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
@@ -25,6 +25,8 @@ export function CanvasInlineAiComposer({
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState<string>('')
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
+  const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
+  const panelRef = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -65,6 +67,10 @@ export function CanvasInlineAiComposer({
       })),
     [selectedNodes],
   )
+  const creativeActions = useMemo(() => {
+    const recommended = capabilities.filter((capability) => capability.recommended)
+    return (recommended.length > 0 ? recommended : capabilities).slice(0, 6)
+  }, [capabilities])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
   const supportedMediaModels = useMemo(() => {
@@ -120,11 +126,45 @@ export function CanvasInlineAiComposer({
     }
   }, [selectedModelKey, supportedMediaModels])
 
+  const handleDragStart = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement
+    if (target.closest('button,input,textarea,.ant-select,.ant-tag')) return
+    const panel = panelRef.current
+    if (!panel) return
+    const parent = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : null
+    const parentRect = parent?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    const panelRect = panel.getBoundingClientRect()
+    const offsetX = event.clientX - panelRect.left
+    const offsetY = event.clientY - panelRect.top
+    const maxX = Math.max(8, parentRect.width - panelRect.width - 8)
+    const maxY = Math.max(8, parentRect.height - panelRect.height - 8)
+    const move = (moveEvent: PointerEvent) => {
+      const nextX = Math.min(Math.max(8, moveEvent.clientX - parentRect.left - offsetX), maxX)
+      const nextY = Math.min(Math.max(8, moveEvent.clientY - parentRect.top - offsetY), maxY)
+      setPanelPosition({ x: nextX, y: nextY })
+    }
+    const stop = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', stop)
+    }
+    setPanelPosition({
+      x: Math.min(Math.max(8, panelRect.left - parentRect.left), maxX),
+      y: Math.min(Math.max(8, panelRect.top - parentRect.top), maxY),
+    })
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', stop)
+    event.preventDefault()
+  }, [])
+
   if (!open) return null
 
   return (
-    <section className="canvas-inline-ai-composer">
-      <div className="canvas-inline-ai-head">
+    <section
+      ref={panelRef}
+      className="canvas-inline-ai-composer"
+      style={panelPosition ? { left: panelPosition.x, top: panelPosition.y, transform: 'none' } : undefined}
+    >
+      <div className="canvas-inline-ai-head canvas-inline-ai-drag-handle" onPointerDown={handleDragStart}>
         <div>
           <h3>AI 操作</h3>
           <div className="canvas-inline-ai-subtitle">基于画布选择创建任务</div>
@@ -152,6 +192,18 @@ export function CanvasInlineAiComposer({
             label: capability.recommended ? `推荐 / ${capability.label}` : capability.label,
           }))}
         />
+        <div className="canvas-creative-actions">
+          {creativeActions.map((capability) => (
+            <Button
+              key={capability.operation}
+              size="small"
+              type={capability.operation === operation ? 'primary' : 'default'}
+              onClick={() => setOperation(capability.operation)}
+            >
+              {capability.label}
+            </Button>
+          ))}
+        </div>
       </div>
       {mediaCapabilityIds.length > 0 && (
         <div className="canvas-form-row">
@@ -165,10 +217,21 @@ export function CanvasInlineAiComposer({
             allowClear
           />
           <div className="canvas-model-hint">
-            {selectedModel
-              ? `${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}`
-              : '未选择 manifest 模型时，将按 provider 能力自动路由。'}
+            {modelsLoading
+              ? '正在读取已启用模型...'
+              : supportedMediaModels.length > 0
+                ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
+                : '当前能力暂无已启用模型，可继续使用自动路由或先到 Provider 绑定模型。'}
           </div>
+          {supportedMediaModels.length > 0 && (
+            <div className="canvas-model-chip-row">
+              {supportedMediaModels.slice(0, 4).map((model) => (
+                <Tag key={mediaModelKey(model)} color={mediaModelKey(model) === selectedModelKey ? 'blue' : 'default'} bordered>
+                  {model.providerName ?? model.providerKind} / {model.displayName}
+                </Tag>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div className="canvas-form-row">
