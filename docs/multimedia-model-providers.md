@@ -50,6 +50,14 @@ uses the selected `modelId` as the effective model, polls according to
 results. Existing APIMart/xAI adapters remain as compatibility fallbacks for
 profiles without manifests or for richer provider-specific protocols.
 
+The same manifest path is now available to the agent-facing `spark_media` MCP
+server. Generation tools accept an optional `model` argument; when it matches a
+manifest id Spark uses that manifest and sends the manifest `modelId` to the
+provider, while a provider model id can still be passed directly for advanced
+overrides. MCP arguments plus `extraJson` are merged with capability defaults,
+then aliases such as `aspectRatio -> aspect_ratio` are applied before rendering
+the provider request template.
+
 ### Compatibility with legacy image providers
 
 When a provider is saved with `modelType=image`, Spark automatically syncs:
@@ -122,6 +130,16 @@ mcp__spark_media__cancel_task        — cancel pending/running task when suppor
 - If a provider has `mediaModelRefs`, the session injects those manifests into
   `spark_media` via `SPARK_MEDIA_MANIFESTS_JSON`; otherwise the MCP server falls
   back to a minimal env-derived model description.
+- `generate_image`, `edit_image`, `generate_audio`, `transcribe_audio`, and
+  `generate_video` can all select a configured manifest through the optional
+  `model` parameter. The tool chooses the matching capability
+  (`image.generate`, `image.image_to_image`, `image.edit`,
+  `audio.speech`, `audio.transcription`, `video.generate`, or
+  `video.image_to_video`) from the injected manifest catalog.
+- Manifest responses support direct URL/base64/binary results and task-polling
+  results. If a task-polling response already includes a result URL, the MCP
+  server materializes it immediately; otherwise it extracts the task id, polls
+  `statusEndpoint`, then writes the final artifact locally.
 - Generation/edit/transcription tools return a local `taskId`. In the current
   MCP process this is an in-memory lifecycle record for `get_task` and
   `cancel_task`; the next runtime step is to back these tools with the shared

@@ -73,13 +73,16 @@ export class TemplateMediaAdapter {
     let requestId: string | undefined
 
     if (manifest.invocation.response.kind === 'task_poll') {
-      const taskId = firstStringAtPaths(raw, manifest.invocation.response.taskIdPaths)
-      if (!taskId) {
-        throw new MediaProviderError('provider_http_error', `No task id in response: ${JSON.stringify(raw).slice(0, 800)}`)
+      const immediateResult = firstStringAtPaths(raw, manifest.invocation.response.resultPaths)
+      if (!immediateResult) {
+        const taskId = firstStringAtPaths(raw, manifest.invocation.response.taskIdPaths)
+        if (!taskId) {
+          throw new MediaProviderError('provider_http_error', `No task id in response: ${JSON.stringify(raw).slice(0, 800)}`)
+        }
+        requestId = taskId
+        mode = 'async'
+        raw = await this.pollManifestTask(manifest, taskId, ctx, headers)
       }
-      requestId = taskId
-      mode = 'async'
-      raw = await this.pollManifestTask(manifest, taskId, ctx, headers)
     }
 
     const assets = await this.materialize(manifest.invocation.response, raw, input, capability, ctx)

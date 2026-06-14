@@ -76,6 +76,7 @@ const TOOLS = [
       required: ['prompt'],
       properties: {
         prompt: { type: 'string', description: 'Detailed image prompt.' },
+        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
         size: { type: 'string', description: 'Size or aspect ratio (e.g. 1024x1024, 16:9, portrait).' },
         n: { type: 'integer', minimum: 1, maximum: 4, description: 'Number of images. Default 1.' },
         inputImages: {
@@ -98,6 +99,7 @@ const TOOLS = [
         prompt: { type: 'string', description: 'Edit instruction.' },
         imageUrls: { type: 'array', items: { type: 'string' } },
         imageFiles: { type: 'array', items: { type: 'string' }, description: 'Local file paths.' },
+        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
         mask: { type: 'string' },
         size: { type: 'string' },
         n: { type: 'integer', minimum: 1, maximum: 4 },
@@ -114,6 +116,7 @@ const TOOLS = [
       required: ['text'],
       properties: {
         text: { type: 'string', description: 'Text to synthesize.' },
+        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
         voice: { type: 'string', description: 'Voice id (provider-specific).' },
         format: { type: 'string', description: 'mp3, wav, opus, aac, flac, pcm.' },
         speed: { type: 'number' },
@@ -130,6 +133,7 @@ const TOOLS = [
       properties: {
         audioFile: { type: 'string', description: 'Local audio file path.' },
         audioUrl: { type: 'string', description: 'Remote audio url.' },
+        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
         language: { type: 'string' },
         responseFormat: { type: 'string' },
         extraJson: { type: 'object', additionalProperties: true },
@@ -144,6 +148,7 @@ const TOOLS = [
       required: ['prompt'],
       properties: {
         prompt: { type: 'string' },
+        model: { type: 'string', description: 'Optional manifest id or provider model id from list_models.' },
         inputImages: {
           type: 'array',
           items: { type: 'string' },
@@ -421,13 +426,331 @@ async function writeTextAsset(config, text, filename) {
   return file
 }
 
+// ── manifest-driven executor ──────────────────────────────────────────────
+
+const TOOL_CAPABILITY_CANDIDATES = {
+  generate_image: (args) => Array.isArray(args.inputImages) && args.inputImages.length > 0
+    ? ['image.image_to_image', 'image.edit', 'image.generate']
+    : ['image.generate'],
+  edit_image: () => ['image.edit', 'image.compose', 'image.image_to_image'],
+  generate_audio: () => ['audio.speech'],
+  transcribe_audio: () => ['audio.transcription'],
+  generate_video: (args) => Array.isArray(args.inputImages) && args.inputImages.length > 0
+    ? ['video.image_to_video', 'video.generate']
+    : ['video.generate'],
+}
+
+function resolveManifestForTool(config, toolName, args) {
+  if (!Array.isArray(config.manifests) || config.manifests.length === 0) return null
+  const candidates = TOOL_CAPABILITY_CANDIDATES[toolName]?.(args) || []
+  if (candidates.length === 0) return null
+  const requestedModel = typeof args.model === 'string' ? args.model.trim() : ''
+  const manifests = requestedModel
+    ? config.manifests.filter((manifest) =>
+      manifest.id === requestedModel ||
+      manifest.modelId === requestedModel ||
+      manifest.displayName === requestedModel)
+    : config.manifests.filter((manifest) => !config.model || manifest.modelId === config.model || manifest.id === config.model)
+  const pool = manifests.length > 0 ? manifests : config.manifests
+  for (const capabilityId of candidates) {
+    for (const manifest of pool) {
+      const capability = (manifest.capabilities || []).find((item) => item?.id === capabilityId)
+      if (capability) return { manifest, capability, capabilityId }
+    }
+  }
+  return null
+}
+
+function argsToModelParams(toolName, args) {
+  const params = { ...(args.extraJson && typeof args.extraJson === 'object' ? args.extraJson : {}) }
+  for (const key of ['size', 'n', 'mask', 'voice', 'format', 'speed', 'language', 'responseFormat', 'aspectRatio', 'durationSeconds', 'filename']) {
+    if (args[key] !== undefined && args[key] !== null && args[key] !== '') params[key] = args[key]
+  }
+  if (toolName === 'transcribe_audio' && args.responseFormat && params.response_format == null) {
+    params.response_format = args.responseFormat
+  }
+  return params
+}
+
+function buildManifestVariables(toolName, args, manifest, capability, modelId) {
+  const params = {
+    ...(capability.defaults || {}),
+    ...argsToModelParams(toolName, args),
+  }
+  const providerParams = {}
+  for (const [key, value] of Object.entries(params)) {
+    const providerKey = capability.aliases?.[key] || key
+    providerParams[providerKey] = value
+  }
+  const inputImages = Array.isArray(args.inputImages) ? args.inputImages.filter((item) => typeof item === 'string') : []
+  const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls.filter((item) => typeof item === 'string') : []
+  const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles.filter((item) => typeof item === 'string') : []
+  const images = [...inputImages, ...imageUrls, ...imageFiles]
+  const audio = typeof args.audioUrl === 'string' && args.audioUrl ? args.audioUrl : typeof args.audioFile === 'string' ? args.audioFile : ''
+  const prompt = typeof args.prompt === 'string' ? args.prompt : ''
+  const text = typeof args.text === 'string' ? args.text : prompt
+  return {
+    modelId,
+    prompt,
+    text,
+    audio,
+    audioUrl: args.audioUrl || '',
+    audioFile: args.audioFile || '',
+    image: images[0] || '',
+    images,
+    params,
+    providerParams,
+    ...params,
+    manifestId: manifest.id,
+  }
+}
+
+async function handleManifestTool(config, toolName, args, match) {
+  if (!config.apiKey) throw new Error('No media API key configured')
+  const { manifest, capability } = match
+  const requestedModel = typeof args.model === 'string' ? args.model.trim() : ''
+  const modelId = requestedModel && requestedModel !== manifest.id
+    ? requestedModel
+    : manifest.modelId || config.model
+  if (!modelId) throw new Error('No media model configured')
+  if (manifest.invocation?.contentType !== 'json') return null
+
+  const variables = buildManifestVariables(toolName, args, manifest, capability, modelId)
+  const endpoint = renderTemplateString(manifest.invocation.endpoint || '', variables)
+  const url = resolveManifestUrl(config.baseUrl, endpoint)
+  const requestBody = mergeProviderParams(
+    renderTemplate(manifest.invocation.requestTemplate || {}, variables),
+    variables.providerParams,
+  )
+  const responseSpec = manifest.invocation.response || { kind: 'url', jsonPaths: ['data[].url'], download: true }
+  let raw = await fetchJson(
+    url,
+    {
+      method: manifest.invocation.method || 'POST',
+      headers: authHeaders(config),
+      body: JSON.stringify(requestBody),
+    },
+    60_000,
+    responseSpec.kind === 'binary_response',
+  )
+  let mode = manifest.invocation.mode === 'async_polling' ? 'async' : 'sync'
+  let requestId = ''
+
+  if (responseSpec.kind === 'task_poll') {
+    const immediate = firstStringAtPaths(raw, responseSpec.resultPaths || [])
+    if (!immediate) {
+      const taskId = firstStringAtPaths(raw, responseSpec.taskIdPaths || [])
+      if (!taskId) throw new Error(`No task id in response: ${JSON.stringify(raw).slice(0, 800)}`)
+      requestId = taskId
+      mode = 'async'
+      raw = await pollManifestTask(config, manifest, responseSpec, taskId)
+    }
+  }
+
+  const materialized = await materializeManifestResult(config, responseSpec, raw, capability, args)
+  return {
+    success: true,
+    provider: `${manifest.providerKind}/${modelId}`,
+    manifestId: manifest.id,
+    model: modelId,
+    mode,
+    ...(requestId ? { requestId } : {}),
+    ...materialized,
+  }
+}
+
+async function pollManifestTask(config, manifest, responseSpec, taskId) {
+  const polling = manifest.invocation?.polling || {}
+  const pollUrl = resolveManifestUrl(
+    config.baseUrl,
+    renderTemplateString(responseSpec.statusEndpoint || '', { taskId }),
+  )
+  const deadline = Date.now() + (config.mediaDefaults?.polling?.timeoutMs || polling.timeoutMs || 600_000)
+  let interval = Math.max(1, config.mediaDefaults?.polling?.intervalMs || polling.intervalMs || 5000)
+  while (Date.now() < deadline) {
+    const data = await fetchJson(pollUrl, { headers: authHeaders(config) }, 30_000)
+    if (firstStringAtPaths(data, responseSpec.resultPaths || [])) return data
+    const status = String(extractStatus(data) || '').toLowerCase()
+    const mapped = polling.statusMap?.[status]
+    if (mapped === 'succeeded') return data
+    if (mapped === 'failed' || mapped === 'cancelled') throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
+    if (FAILED_STATUSES.includes(status)) throw new Error(`Task failed: ${JSON.stringify(data).slice(0, 800)}`)
+    await new Promise((resolve) => setTimeout(resolve, interval))
+    interval = Math.min(Math.max(interval * 1.3, interval), 15_000)
+  }
+  throw new Error('Task timed out')
+}
+
+async function materializeManifestResult(config, responseSpec, raw, capability, args) {
+  const outputKind = primaryOutputKind(capability)
+  const filename = args.filename || ''
+  if (responseSpec.kind === 'binary_response') {
+    if (!Buffer.isBuffer(raw)) throw new Error('binary_response did not return binary data')
+    if (outputKind === 'text') {
+      const text = raw.toString('utf8')
+      return { files: [await writeTextAsset(config, text, filename)], text }
+    }
+    if (outputKind === 'image') {
+      const image = { kind: 'base64', value: raw.toString('base64'), mimeType: 'image/png' }
+      return { files: [await materializeImage(config, image, filename, 0, 1)] }
+    }
+    const dataUrl = `data:${defaultMime(outputKind, args)};base64,${raw.toString('base64')}`
+    return { files: [await downloadMedia(config, dataUrl, outputKind === 'audio' ? 'audio' : 'video', filename)] }
+  }
+  const paths = responseSpec.kind === 'task_poll'
+    ? responseSpec.resultPaths || []
+    : responseSpec.jsonPaths || []
+  const values = stringsAtPaths(raw, paths)
+  if (values.length === 0) throw new Error('No media artifacts in manifest response')
+  const files = []
+  let text = ''
+  for (let i = 0; i < values.length; i++) {
+    const value = values[i]
+    if (outputKind === 'text') {
+      text = text ? `${text}\n${value}` : value
+      files.push(await writeTextAsset(config, value, filename))
+    } else if (outputKind === 'image') {
+      const image = isHttpUrl(value)
+        ? { kind: 'url', value }
+        : { kind: 'base64', value: normalizeBase64(value), mimeType: mimeFromDataUrl(value) || 'image/png' }
+      files.push(await materializeImage(config, image, filename, i, values.length))
+    } else {
+      const source = isHttpUrl(value) ? value : `data:${defaultMime(outputKind, args)};base64,${normalizeBase64(value)}`
+      files.push(await downloadMedia(config, source, outputKind === 'audio' ? 'audio' : 'video', filename))
+    }
+  }
+  return { files, ...(text ? { text } : {}) }
+}
+
+function renderTemplate(value, variables) {
+  if (typeof value === 'string') return renderTemplateStringOrValue(value, variables)
+  if (Array.isArray(value)) return value.map((item) => renderTemplate(item, variables)).filter((item) => item !== undefined)
+  if (isPlainRecord(value)) {
+    const rendered = {}
+    for (const [key, child] of Object.entries(value)) {
+      const next = renderTemplate(child, variables)
+      if (next !== undefined && next !== '') rendered[key] = next
+    }
+    return rendered
+  }
+  return value
+}
+
+function renderTemplateStringOrValue(template, variables) {
+  const exact = template.match(/^{{\s*([^}]+?)\s*}}$/)
+  if (exact) return getPath(variables, exact[1]?.trim() || '')
+  return renderTemplateString(template, variables)
+}
+
+function renderTemplateString(template, variables) {
+  return String(template).replace(/{{\s*([^}]+?)\s*}}/g, (_match, key) => {
+    const value = getPath(variables, key.trim())
+    return value == null ? '' : String(value)
+  })
+}
+
+function mergeProviderParams(body, providerParams) {
+  if (!isPlainRecord(body) || !isPlainRecord(providerParams)) return body
+  const next = { ...body }
+  for (const [key, value] of Object.entries(providerParams)) {
+    if (value !== undefined && value !== null && value !== '') next[key] = value
+  }
+  return next
+}
+
+function resolveManifestUrl(baseUrl, endpoint) {
+  if (/^https?:\/\//i.test(endpoint)) return endpoint
+  const cleanBase = String(baseUrl || '').replace(/\/+$/, '')
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`
+  return `${cleanBase}${cleanEndpoint}`
+}
+
+function stringsAtPaths(data, paths) {
+  const values = (paths || []).flatMap((path) => valuesAtPath(data, path))
+  return [...new Set(values.filter((value) => typeof value === 'string' && value.length > 0))]
+}
+
+function firstStringAtPaths(data, paths) {
+  return stringsAtPaths(data, paths)[0] || ''
+}
+
+function valuesAtPath(root, path) {
+  const parts = String(path || '').split('.').filter(Boolean)
+  let current = [root]
+  for (const part of parts) {
+    const isArray = part.endsWith('[]')
+    const key = isArray ? part.slice(0, -2) : part
+    const next = []
+    for (const item of current) {
+      const value = key ? getProperty(item, key) : item
+      if (isArray) {
+        if (Array.isArray(value)) next.push(...value)
+      } else {
+        next.push(value)
+      }
+    }
+    current = next
+  }
+  return current.filter((value) => value !== undefined && value !== null)
+}
+
+function getPath(root, path) {
+  return String(path || '').split('.').filter(Boolean).reduce((value, key) => getProperty(value, key), root)
+}
+
+function getProperty(value, key) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined
+  return value[key]
+}
+
+function isPlainRecord(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function primaryOutputKind(capability) {
+  const first = capability?.output?.types?.[0]
+  if (first === 'audio' || first === 'video' || first === 'text') return first
+  return 'image'
+}
+
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(value)
+}
+
+function normalizeBase64(value) {
+  const raw = String(value || '')
+  const comma = raw.indexOf(',')
+  return raw.startsWith('data:') && comma >= 0 ? raw.slice(comma + 1) : raw
+}
+
+function mimeFromDataUrl(value) {
+  const match = String(value || '').match(/^data:([^;,]+)[;,]/)
+  return match?.[1]
+}
+
+function defaultMime(kind, args) {
+  if (kind === 'audio') {
+    const format = String(args.format || args.extraJson?.format || 'mp3').toLowerCase()
+    if (format === 'wav') return 'audio/wav'
+    if (format === 'opus') return 'audio/opus'
+    if (format === 'aac') return 'audio/aac'
+    if (format === 'flac') return 'audio/flac'
+    if (format === 'pcm') return 'audio/pcm'
+    return 'audio/mpeg'
+  }
+  if (kind === 'image') return 'image/png'
+  return 'video/mp4'
+}
+
 // ── tool handlers ──────────────────────────────────────────────────────────
 
 async function handleGenerateImage(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
-  if (!config.model) throw new Error('No media model configured')
   const prompt = String(args.prompt || '').trim()
   if (!prompt) throw new Error('prompt is required')
+  const manifestMatch = resolveManifestForTool(config, 'generate_image', args)
+  if (manifestMatch) return handleManifestTool(config, 'generate_image', args, manifestMatch)
+  if (!config.model) throw new Error('No media model configured')
   const n = Math.max(1, Math.min(4, Number.parseInt(args.n || '1', 10) || 1))
   const body = {
     model: config.model,
@@ -462,6 +785,8 @@ async function handleGenerateImage(config, args) {
 async function handleEditImage(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const prompt = String(args.prompt || '').trim()
+  const manifestMatch = resolveManifestForTool(config, 'edit_image', args)
+  if (manifestMatch) return handleManifestTool(config, 'edit_image', args, manifestMatch)
   const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls : []
   const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles : []
   const refs = [...imageUrls, ...imageFiles].filter((s) => typeof s === 'string' && s.length > 0)
@@ -488,6 +813,9 @@ async function handleGenerateAudio(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const text = String(args.text || '').trim()
   if (!text) throw new Error('text is required')
+  const manifestMatch = resolveManifestForTool(config, 'generate_audio', args)
+  if (manifestMatch) return handleManifestTool(config, 'generate_audio', args, manifestMatch)
+  if (!config.model) throw new Error('No media model configured')
   const audioDefaults = config.mediaDefaults?.audio || {}
   const format = args.format || audioDefaults.format || 'mp3'
   const body = {
@@ -506,6 +834,9 @@ async function handleGenerateAudio(config, args) {
 
 async function handleTranscribeAudio(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
+  const manifestMatch = resolveManifestForTool(config, 'transcribe_audio', args)
+  if (manifestMatch) return handleManifestTool(config, 'transcribe_audio', args, manifestMatch)
+  if (!config.model) throw new Error('No media model configured')
   const url = `${config.baseUrl}/audio/transcriptions`
   let data
   if (args.audioUrl) {
@@ -534,6 +865,9 @@ async function handleGenerateVideo(config, args) {
   if (!config.apiKey) throw new Error('No media API key configured')
   const prompt = String(args.prompt || '').trim()
   if (!prompt) throw new Error('prompt is required')
+  const manifestMatch = resolveManifestForTool(config, 'generate_video', args)
+  if (manifestMatch) return handleManifestTool(config, 'generate_video', args, manifestMatch)
+  if (!config.model) throw new Error('No media model configured')
   const videoDefaults = config.mediaDefaults?.video || {}
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages : []
   const body = {

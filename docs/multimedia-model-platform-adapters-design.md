@@ -307,11 +307,18 @@ packages/agent-runtime/src/services/media/media-artifact.service.ts
 
 MCP server 输入 schema:
 
-- `generate_image`: prompt, size, n, inputImages, filename, extraJson。
-- `edit_image`: prompt, imageFiles/imageUrls, mask, size, n, filename, extraJson。
-- `generate_audio`: text, voice, format, filename, extraJson。
-- `transcribe_audio`: audioFile/audioUrl, language, responseFormat, extraJson。
-- `generate_video`: prompt, inputImages, aspectRatio, durationSeconds, filename, extraJson。
+- `generate_image`: prompt, model, size, n, inputImages, filename, extraJson。
+- `edit_image`: prompt, model, imageFiles/imageUrls, mask, size, n, filename, extraJson。
+- `generate_audio`: text, model, voice, format, filename, extraJson。
+- `transcribe_audio`: audioFile/audioUrl, model, language, responseFormat, extraJson。
+- `generate_video`: prompt, model, inputImages, aspectRatio, durationSeconds, filename, extraJson。
+
+MCP manifest executor:
+
+- `model` 可以是 manifest id、provider model id 或 displayName；未传时使用 provider 的默认模型或首个匹配 capability 的 manifest。
+- 工具按输入形态选择 capability：例如 `generate_image + inputImages` 优先匹配 `image.image_to_image`，`generate_video + inputImages` 优先匹配 `video.image_to_video`。
+- `extraJson` 与工具标准参数先合并，再与 capability defaults 合并；最终通过 capability aliases 映射成供应商字段。
+- JSON invocation 使用 `requestTemplate` 渲染请求体，`response.jsonPaths` / `response.resultPaths` 提取 URL、base64 或文本，`task_poll` 响应没有立即产物时再按 `statusEndpoint` 轮询。
 
 Agent system prompt 增补:
 

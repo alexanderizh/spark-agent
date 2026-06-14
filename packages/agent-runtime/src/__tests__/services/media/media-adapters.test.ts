@@ -470,4 +470,54 @@ describe('MediaRouterService', () => {
     expect(output.assets[0]?.type).toBe('video')
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
   })
+
+  it('materializes manifest task_poll response when the first response already has a result', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70])
+    const manifest: MediaModelManifest = {
+      id: 'custom:immediate-video-template',
+      providerKind: 'custom-platform',
+      modelId: 'manifest-video-model',
+      displayName: 'Immediate Template Video',
+      domains: ['video'],
+      capabilities: [
+        {
+          id: 'video.generate',
+          label: '文生视频',
+          input: { required: ['prompt'] },
+          output: { types: ['video'], mimeTypes: ['video/mp4'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'async_polling',
+        endpoint: '/template/immediate-videos',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: {
+          kind: 'task_poll',
+          taskIdPaths: ['task_id'],
+          statusEndpoint: '/template/immediate-videos/{{taskId}}',
+          resultPaths: ['data[].url'],
+        },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const fetchMock = makeFetch([
+      { match: '/template/immediate-videos', respond: () => ({ ok: true, status: 200, body: { data: [{ url: 'https://cdn/immediate.mp4' }] } }) },
+      { match: 'https://cdn/immediate.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    const { output } = await router.invoke(
+      { operation: 'text_to_video', capability: 'video.generate', outputDir: tmpDir, prompt: 'instant result' },
+      {
+        providers: [makeProvider({ mediaProvider: 'custom', mediaCapabilities: [], mediaModelManifests: [manifest] })],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(output.requestId).toBeUndefined()
+    expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
+    expect(fetchMock.calls.some((call) => call.url.includes('/template/immediate-videos/'))).toBe(false)
+  })
 })
