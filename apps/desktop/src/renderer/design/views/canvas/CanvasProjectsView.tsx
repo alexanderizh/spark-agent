@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Dropdown, Empty, Modal, Tag } from '@lobehub/ui'
 import { Modal as AntdModal, Spin, message } from 'antd'
 import { Icons } from '../../Icons'
@@ -9,7 +9,11 @@ import { useCanvasProjects, type CanvasViewMode } from './canvas.store'
 import { CanvasWorkspaceView } from './CanvasWorkspaceView'
 import './CanvasProjectsView.less'
 
-export function CanvasProjectsView() {
+export function CanvasProjectsView({
+  onWorkspaceActiveChange,
+}: {
+  onWorkspaceActiveChange?: (active: boolean) => void
+}) {
   const { projects, loading, refresh } = useCanvasProjects()
   const [viewMode, setViewMode] = useState<CanvasViewMode>({ mode: 'projects' })
   const [query, setQuery] = useState('')
@@ -28,6 +32,10 @@ export function CanvasProjectsView() {
         (project.description ?? '').toLowerCase().includes(keyword),
     )
   }, [projects, query])
+
+  useEffect(() => {
+    onWorkspaceActiveChange?.(viewMode.mode === 'workspace')
+  }, [onWorkspaceActiveChange, viewMode.mode])
 
   if (viewMode.mode === 'workspace') {
     return (

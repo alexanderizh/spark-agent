@@ -523,6 +523,7 @@ function Shell() {
   useAppearanceEffects()
   const [approvalRequests, setApprovalRequests] = useState<Record<string, PermissionApprovalRequest>>({})
   const [userQuestions, setUserQuestions] = useState<Record<string, UserQuestionRequest>>({})
+  const [canvasWorkspaceActive, setCanvasWorkspaceActive] = useState(false)
 
   // Shared "start a brand new conversation" handler.
   // - Clears any active session/workspace so the chat view renders in fresh
@@ -541,6 +542,7 @@ function Shell() {
   useEffect(() => {
     viewRef.current = t.view
     chatModeRef.current = t.chatMode
+    if (t.view !== 'canvas') setCanvasWorkspaceActive(false)
   }, [t.chatMode, t.view])
 
   const handleNewBlankSession = useCallback(() => {
@@ -732,7 +734,7 @@ function Shell() {
       case 'board':
         return <BoardView />
       case 'canvas':
-        return <CanvasProjectsView />
+        return <CanvasProjectsView onWorkspaceActiveChange={setCanvasWorkspaceActive} />
       case 'scheduled-tasks':
         return <ScheduledTasksView />
       case 'skills':
@@ -780,7 +782,7 @@ function Shell() {
     >
       <FloatingSidebar onNewTask={handleNewBlankSession} />
 
-      <div className={`main-content-area${t.view === 'canvas' ? ' main-content-canvas' : ''}`}>
+      <div className={`main-content-area${t.view === 'canvas' && canvasWorkspaceActive ? ' main-content-canvas-workspace' : ''}`}>
         {/* Windows: custom title bar spanning full width with drag region */}
         {isPlatformWin32 && (
           <div className="win-titlebar">

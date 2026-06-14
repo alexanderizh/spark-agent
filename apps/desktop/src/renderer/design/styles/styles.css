@@ -864,9 +864,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   padding-right: 80px;
 }
 
-.app.sidebar-hidden .main-content-area.main-content-canvas {
+.app.sidebar-hidden .main-content-area.main-content-canvas-workspace {
   padding-left: 0;
   padding-right: 0;
+}
+
+.app.sidebar-hidden.platform-darwin .main-content-area.main-content-canvas-workspace .transparent-header {
+  padding-left: 88px;
 }
 
 /* ============================================================
