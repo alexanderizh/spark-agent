@@ -59,13 +59,6 @@ last_hit_at: null
 source_session_id: sess_xxx         # 抽取自哪个 session（可空，手动写入时为 null）
 links: [ui-tech-stack]              # 关联到其它 memory.name
 archived: false
----
-
-新增 UI 组件统一用 @arco-design/web-react，禁止引入新的 @radix-ui/*。
-
-**Why:** 历史包袱，混用样式会冲突。
-**How to apply:** 写新前端组件时优先查 Arco；review PR 时若引入 Radix 直接驳回。
-```
 
 **SQLite 索引表**：
 
@@ -209,8 +202,6 @@ RECENT_CONTEXT:
 ```
 # Long-term Memory
 
-<user-memory>
-- [usr_xxx] prefer-arco-not-radix (feedback): 用户偏好 Arco Design，禁止新增 Radix 依赖
 - [usr_yyy] senior-fullstack (user): 全栈工程师，偏好先讨论再动手
 </user-memory>
 

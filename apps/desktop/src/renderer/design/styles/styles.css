@@ -1161,11 +1161,6 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   pointer-events: none;
   z-index: 1;
 }
-
-/* NOTE: global bare-input/select fallback rules removed — antd v6 now
-   owns all form controls. Old `:not(.arco-input)` whitelists were hitting
-   antd's internal inputs and producing double borders. */
-
 /* Size variants */
 .select-sm .spark-select,
 .spark-select.sm {
@@ -1181,145 +1176,10 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* textarea 滚动条样式由全局规则统一处理（见 * { scrollbar-width/color }）。
    此处不再写 `::-webkit-scrollbar*` —— 否则新版 Chromium 会对该 textarea 强制走经典
    渲染路径（带箭头按钮、直角端头），全局现代滚动条规则失效。 */
-/* NOTE: global bare-textarea fallback removed — antd Input.TextArea owns
-   textareas now. The `:not(.arco-textarea)` whitelist hit antd's internal
-   <textarea> and overlaid its own border. */
-
 /* ============================================================
    SPARK CHECKBOX — Arco Checkbox 主题覆盖
    ============================================================ */
 
-.spark-confirm-dialog {
-  width: min(420px, calc(100vw - 32px));
-  max-width: 420px;
-}
-/* Dialog fallback styles. The ui-kit dialog also supplies Tailwind
-   utility classes, but renderer builds can miss those generated utilities. */
-.spark-dialog-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal, 400);
-  background: rgba(0, 0, 0, 0.6);
-}
-.spark-dialog-content,
-[role="dialog"].spark-confirm-dialog {
-  position: fixed;
-  left: 50%;
-  top: 50%;
-  z-index: var(--z-modal, 400);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  width: min(420px, calc(100vw - 32px));
-  max-width: 420px;
-  max-height: calc(100vh - 48px);
-  padding: 20px;
-  transform: translate(-50%, -50%);
-  overflow: auto;
-  background: var(--panel-elev);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-  color: var(--text);
-}
-.spark-dialog-close {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-}
-.spark-dialog-close:hover {
-  background: var(--hover);
-  color: var(--text);
-}
-.spark-dialog-title {
-  margin: 0;
-  padding-right: 24px;
-  color: var(--text-strong);
-  font-size: var(--font-lg);
-  font-weight: 600;
-}
-.spark-dialog-description {
-  color: var(--text-muted);
-  font-size: var(--font-sm);
-}
-[role="dialog"].spark-confirm-dialog input,
-[role="dialog"].spark-confirm-dialog textarea {
-  width: 100%;
-}
-.spark-dialog-header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-bottom: 2px;
-}
-.spark-dialog-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 4px;
-}
-.spark-dialog-content .spark-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  height: 28px;
-  min-width: 64px;
-  padding: 0 12px;
-  border: 1px solid transparent;
-  border-radius: var(--r-sm);
-  font-family: inherit;
-  font-size: var(--font-sm);
-  font-weight: 500;
-  line-height: 1;
-  cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s, opacity 0.12s;
-}
-.spark-dialog-content .spark-button:focus,
-.spark-dialog-content .spark-button:focus-visible,
-.spark-dialog-content input:focus,
-.spark-dialog-content textarea:focus {
-  outline: none !important;
-  box-shadow: none !important;
-}
-.spark-dialog-content .spark-button-secondary {
-  background: transparent;
-  border-color: var(--border);
-  color: var(--text-muted);
-}
-.spark-dialog-content .spark-button-secondary:hover {
-  background: var(--hover);
-  border-color: var(--border-strong);
-  color: var(--text);
-}
-.spark-dialog-content .spark-button-primary {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--primary-fg);
-}
-.spark-dialog-content .spark-button-primary:hover {
-  background: var(--primary-hover);
-  border-color: var(--primary-hover);
-}
-.spark-dialog-content .spark-button-danger {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: var(--text-inverse);
-}
-.spark-dialog-content .spark-button-danger:hover {
-  opacity: 0.9;
-}
 /* Size variants */
 .select-full .spark-select,
 .spark-select.full {

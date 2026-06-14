@@ -570,11 +570,44 @@ async function initializeApp(): Promise<void> {
   log.info('Spark Agent initialized')
 }
 
+/**
+ * 设置应用菜单。
+ *
+ * macOS 自带默认菜单（已含 ⌘⌥I 切换 DevTools），无需覆盖；
+ * Windows / Linux 在无边框窗口 + 未设置菜单的情况下，F12 / Ctrl+R 等开发者
+ * 快捷键不可用（Chromium 的默认 DevTools 快捷键依赖应用菜单 role）。这里
+ * 补一个最小菜单：F12 切换 DevTools、Ctrl+R 刷新，同时附带缩放/全屏。
+ * `autoHideMenuBar: true` 让菜单栏默认隐藏，按 Alt 才显示，accelerator 始终生效。
+ */
+function setupApplicationMenu(): void {
+  if (process.platform === 'darwin') return
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      label: '视图',
+      submenu: [
+        { role: 'reload', accelerator: 'Ctrl+R' },
+        { role: 'toggleDevTools', accelerator: 'F12' },
+        { type: 'separator' },
+        { role: 'resetZoom', accelerator: 'Ctrl+0' },
+        { role: 'zoomIn', accelerator: 'Ctrl+=' },
+        { role: 'zoomOut', accelerator: 'Ctrl+-' },
+        { type: 'separator' },
+        { role: 'togglefullscreen', accelerator: 'F11' },
+      ],
+    },
+  ]
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template))
+}
+
 // Electron 生命周期：所有窗口就绪时初始化应用
 app.whenReady().then(() => {
   // 必须在 createWindow() 之前注册协议 handler，
   // 否则首次加载的 HTML 里的 <img src="safe-file://..."> 会得到 ERR_UNKNOWN_URL_SCHEME
   registerSafeFileProtocol()
+
+  // 注册应用菜单，使 F12 切换 DevTools 等快捷键生效
+  setupApplicationMenu()
 
   initializeApp().catch((err) => {
     log.error(`Failed to initialize app: ${String(err)}`)

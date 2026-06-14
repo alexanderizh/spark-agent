@@ -9,7 +9,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMe
 import './ChatView.less'
 import './ToolDropdown.less'
 import type { JSX, ReactNode, RefObject } from 'react'
-import { Button, Tag as LobeTag } from '@lobehub/ui'
+import { Button, Popover, Tag as LobeTag } from '@lobehub/ui'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import {
@@ -52,6 +52,11 @@ import { CODING_AGENT_TOOLS } from '../data/available-tools'
 import { useIpcInvoke, useIpcStream } from '../hooks/useIpc'
 import { useAppearanceSettings, readAppearance } from '../hooks/useAppearance'
 import { MessageBuilder } from '../services/event-mapper'
+import {
+  isComposerSessionWorking,
+  resolveComposerRunningAgentIds,
+} from '../services/composer-working-state'
+import { shouldShowScrollToBottom } from './chat-scroll'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
 import {
@@ -473,6 +478,9 @@ export function ChatView({
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [clearTrigger, setClearTrigger] = useState(0)
+  // 用户发送消息时立即贴底（不等 user_message 事件从后端回来）：bump 这个计数器，
+  // ChatStream 内部 effect 监听到变化即 scrollTop = scrollHeight。
+  const [scrollToBottomTrigger, setScrollToBottomTrigger] = useState(0)
   const [replyTo, setReplyTo] = useState<ReplyToState | null>(null)
   const { toast } = useToast()
 
@@ -552,6 +560,14 @@ export function ChatView({
     },
     [active, setSessionStatus],
   )
+
+  // 用户点了「发送」：立刻贴底 + 维护 session running 状态 + 会话列表计数。
+  // 单独抽出回调，给两个 ComposerV2 分支共用，保证 scrollToBottomTrigger 一定 bump。
+  const handleUserSent = useCallback((sessionId: SessionId) => {
+    setSessionStatus(sessionId, 'running')
+    sessionCtx.bumpSessionMessageCount(sessionId)
+    setScrollToBottomTrigger((n) => n + 1)
+  }, [setSessionStatus, sessionCtx])
 
   // ── Handlers ──
   const handleClearMessages = useCallback(() => {
@@ -650,7 +666,7 @@ export function ChatView({
   useEffect(() => {
     const handler = () => {
       // Scroll chat area to bottom
-      const scrollEl = chatAreaRef.current?.querySelector('.chat-stream-inner')
+      const scrollEl = chatAreaRef.current?.querySelector('.chat-stream')
       if (scrollEl) scrollEl.scrollTop = scrollEl.scrollHeight
       // Trigger composer focus (increment counter → ComposerV2 reacts)
       setComposerFocusTrigger((n) => n + 1)
@@ -718,14 +734,7 @@ export function ChatView({
         : [],
     [activeMessages, activeSession?.status, effectiveHostAgentId, teamConfig.enabled, teamConfig.hostAgentId],
   )
-  const composerIsWorking =
-    activeSession?.status === 'running' &&
-    !(
-      teamConfig.enabled &&
-      runningTeamAgentIds.length === 0 &&
-      approvalRequest == null &&
-      userQuestion == null
-    )
+  const composerIsWorking = isComposerSessionWorking(activeSession?.status)
 
   const composerNode = active == null ? (
     <ComposerV2
@@ -746,7 +755,7 @@ export function ChatView({
       onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
       onSwitchBranch={handleSwitchBranch}
       onCancelSession={handleCancelSession}
-      onSent={(sessionId) => { setSessionStatus(sessionId, 'running'); sessionCtx.bumpSessionMessageCount(sessionId) }}
+      onSent={handleUserSent}
       showProjectPicker
       focusTrigger={composerFocusTrigger}
       resendRequest={resendRequest}
@@ -782,7 +791,7 @@ export function ChatView({
       onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
       onSwitchBranch={handleSwitchBranch}
       onCancelSession={handleCancelSession}
-      onSent={(sessionId) => { setSessionStatus(sessionId, 'running'); sessionCtx.bumpSessionMessageCount(sessionId) }}
+      onSent={handleUserSent}
       showProjectPicker={showEmptyHero}
       focusTrigger={composerFocusTrigger}
       resendRequest={resendRequest}
@@ -850,6 +859,7 @@ export function ChatView({
               onPlanProposed={setProposedPlan}
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
+              scrollToBottomTrigger={scrollToBottomTrigger}
               teamConfig={teamConfig}
               onFilePreview={handleFilePreview}
               onResendMessage={handleResendMessage}
@@ -1168,6 +1178,7 @@ function ChatStream({
   onPlanProposed,
   onTurnPromptSnapshotsChange,
   clearTrigger,
+  scrollToBottomTrigger,
   teamConfig,
   onReplyTo,
   onFilePreview,
@@ -1186,6 +1197,8 @@ function ChatStream({
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
+  /** 递增时立即把会话内容区滚到底部（用户发送消息瞬间触发，无需等 user_message 事件回流） */
+  scrollToBottomTrigger?: number
   /** 当前会话历史的加载状态变化（用于父级抑制「空会话 hero」误闪） */
   onLoadingChange?: (loading: boolean) => void
   teamConfig: TeamModeConfig
@@ -1480,15 +1493,35 @@ function ChatStream({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearTrigger])
 
+  // 用户点了「发送」时立即贴底（IM 即时反馈）。
+  // 不等 user_message 事件从后端回来——bump 后立刻 scrollTop = scrollHeight，并清掉
+  // 用户上滚状态/「回到最新」按钮，保证发送瞬间体感「自己的消息立刻出现在底部」。
+  // 跨多帧 + 短延后兜底，兼容随后异步内容（user_message + 即将到来的 agent_thinking）撑高。
+  useEffect(() => {
+    if (scrollToBottomTrigger === undefined || scrollToBottomTrigger === 0) return
+    const el = streamRef.current
+    if (!el) return
+    userScrolledRef.current = false
+    setShowScrollToBottom(false)
+    const pin = () => { el.scrollTop = el.scrollHeight }
+    pin()
+    requestAnimationFrame(() => {
+      pin()
+      requestAnimationFrame(pin)
+    })
+    const t = window.setTimeout(pin, 120)
+    return () => window.clearTimeout(t)
+  }, [scrollToBottomTrigger])
+
   // Track user scroll position to avoid auto-scrolling when user scrolls up
   useEffect(() => {
     const el = streamRef.current
     if (!el) return
     const handleScroll = () => {
-      const threshold = 80
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
-      userScrolledRef.current = distanceFromBottom > threshold
-      setShowScrollToBottom(distanceFromBottom > threshold)
+      const shouldShowButton = shouldShowScrollToBottom(distanceFromBottom)
+      userScrolledRef.current = shouldShowButton
+      setShowScrollToBottom(shouldShowButton)
       // 接近顶部时懒加载更早一页（窗口化）。
       // 必须等初始贴底完成（initialScrollDoneRef），且当前确实有可向下滚动的内容
       // （distanceFromBottom>0，排除内容不溢出时的误触发），否则会从最早开始狂翻页。
@@ -1759,8 +1792,8 @@ function ChatStream({
 
   return (
     <div className="chat-stream-viewport">
-      <div className="chat-stream">
-        <div className="chat-stream-inner" ref={streamRef}>
+      <div className="chat-stream" ref={streamRef}>
+        <div className="chat-stream-inner">
           {isLoadingOlder && (
             <div className="chat-load-older" aria-hidden="true">
               <span className="chat-loading-spinner" />
@@ -1874,7 +1907,7 @@ function ChatStream({
           title="滚动到底部"
           aria-label="滚动到底部"
         >
-          <Icons.ChevronDown size={18} />
+          <Icons.ArrowDown size={16} />
         </button>
       )}
     </div>
@@ -5941,13 +5974,17 @@ function ComposerV2({
     effectiveModelId.length > 0
   const showTaskQueue = queuedMessages.length > 0
   const runningTeamAgents = useMemo(() => {
-    if (!teamConfig.enabled || runningTeamAgentIds.length === 0) return []
-    const uniqueIds = Array.from(new Set(runningTeamAgentIds))
+    const uniqueIds = resolveComposerRunningAgentIds({
+      teamEnabled: teamConfig.enabled,
+      runningAgentIds: runningTeamAgentIds,
+      isWorking,
+      fallbackAgentId: activeAgent?.id ?? null,
+    })
     return uniqueIds.map((id) => {
       const agent = agents.find((item) => item.id === id)
       return { id, name: agent?.name ?? id }
     })
-  }, [agents, runningTeamAgentIds, teamConfig.enabled])
+  }, [activeAgent, agents, isWorking, runningTeamAgentIds, teamConfig.enabled])
   const visibleRunningTeamAgents = runningTeamAgents.slice(0, 3)
   const hiddenRunningTeamAgentCount = Math.max(0, runningTeamAgents.length - visibleRunningTeamAgents.length)
   const handleRunningAgentTagClick = useCallback((agentId: string) => {
@@ -9112,7 +9149,7 @@ function ChatConfigPanel({
 
   return (
     <div
-      className="inspector scroll"
+      className="inspector-frame"
       style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
     >
       <div
@@ -9123,6 +9160,7 @@ function ChatConfigPanel({
         onPointerUp={handleResizeEnd}
         onPointerCancel={handleResizeEnd}
       />
+      <div className="inspector scroll">
 
       {/* Skills — 显示本次会话可用的所有 skills（agent 配置 + 会话额外添加） */}
       {session != null && skillConfig != null && (() => {
@@ -9297,6 +9335,7 @@ function ChatConfigPanel({
           </div>
         )}
       </div>
+      </div>
     </div>
   )
 }
@@ -9372,7 +9411,7 @@ function ChatInspector({
 
   return (
     <div
-      className="inspector scroll"
+      className="inspector-frame"
       style={{ '--inspector-width': `${width}px` } as React.CSSProperties}
     >
       <div
@@ -9383,6 +9422,7 @@ function ChatInspector({
         onPointerUp={handleResizeEnd}
         onPointerCancel={handleResizeEnd}
       />
+      <div className="inspector scroll">
       {teamConfig.enabled && (
         <TeamInspectorSection
           config={teamConfig}
@@ -9461,6 +9501,25 @@ function ChatInspector({
         )}
       </div>
 
+      {inspectorTasks.length > 0 && (
+        <div className="inspector-section">
+          <h4>
+            <Icons.CheckSquare size={11} /> 任务
+            <span className="inspector-count">{inspectorTasks.length}</span>
+          </h4>
+          <TaskListSection tasks={inspectorTasks} />
+        </div>
+      )}
+
+      {plans.length > 0 && (
+        <div className="inspector-section">
+          <h4>计划</h4>
+          {plans.map((plan) => (
+            <PlanSummary key={plan.id} plan={plan} />
+          ))}
+        </div>
+      )}
+
       {session != null && projectContext != null && (
         <div className="inspector-section">
           <h4>
@@ -9519,25 +9578,6 @@ function ChatInspector({
           ) : (
             <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
           )}
-        </div>
-      )}
-
-      {plans.length > 0 && (
-        <div className="inspector-section">
-          <h4>计划</h4>
-          {plans.map((plan) => (
-            <PlanSummary key={plan.id} plan={plan} />
-          ))}
-        </div>
-      )}
-
-      {inspectorTasks.length > 0 && (
-        <div className="inspector-section">
-          <h4>
-            <Icons.CheckSquare size={11} /> 任务
-            <span className="inspector-count">{inspectorTasks.length}</span>
-          </h4>
-          <TaskListSection tasks={inspectorTasks} />
         </div>
       )}
 
@@ -9644,6 +9684,7 @@ function ChatInspector({
 
       {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
       {turnPromptSnapshots.length > 0 && <PromptInspectorSection snapshots={turnPromptSnapshots} />}
+      </div>
     </div>
   )
 }
@@ -9841,9 +9882,11 @@ function PlanSummary({ plan }: { plan: SidebarPlan }) {
       <div className="inspector-plan-items">
         {plan.items.map((item, index) => (
           <div key={`${item.text}-${index}`} className={`inspector-plan-item ${item.status}`}>
-            <span className="inspector-plan-dot">
-              {item.status === 'done' && <Icons.Check size={10} />}
-              {item.status === 'running' && <Icons.Spinner size={10} />}
+            <span className="inspector-plan-dot-wrap">
+              <span className="inspector-plan-dot">
+                {item.status === 'done' && <Icons.Check size={10} />}
+                {item.status === 'running' && <Icons.Spinner size={10} />}
+              </span>
             </span>
             <span className="text">{renderPlanInline(item.text)}</span>
           </div>
@@ -9897,26 +9940,70 @@ function TaskListSection({ tasks }: { tasks: InspectorTask[] }) {
       </div>
       <div className="inspector-plan-items">
         {tasks.map((task) => (
-          <div
-            key={task.id}
-            className={`inspector-plan-item ${
-              task.status === 'completed' ? 'done' : task.status === 'in_progress' ? 'running' : ''
-            }`}
-          >
-            <span className="inspector-plan-dot">
-              {task.status === 'completed' && <Icons.Check size={10} />}
-              {task.status === 'in_progress' && <Icons.Spinner size={10} />}
-            </span>
-            <span className="text">
-              <span className="mono-sm" style={{ marginRight: 4, color: 'var(--text-muted)' }}>
-                {task.id}
-              </span>
-              {task.status === 'in_progress' ? (task.activeForm ?? task.subject) : task.subject}
-            </span>
-          </div>
+          <TaskListItem key={task.id} task={task} />
         ))}
       </div>
     </div>
+  )
+}
+
+/**
+ * TaskListItem — 单个任务的渲染单元。
+ * 文本超出 2 行时显示省略号;当内容被截断或带 description 时,
+ * 鼠标悬浮展示 Popover,呈现 subject(标题)+ description(内容)。
+ */
+function TaskListItem({ task }: { task: InspectorTask }) {
+  const textRef = useRef<HTMLSpanElement>(null)
+  const [isTruncated, setIsTruncated] = useState(false)
+
+  useLayoutEffect(() => {
+    const el = textRef.current
+    if (!el) return
+    const check = () => setIsTruncated(el.scrollHeight - el.clientHeight > 1)
+    check()
+    const ro = new ResizeObserver(check)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [task.subject, task.activeForm, task.description])
+
+  const statusClass =
+    task.status === 'completed' ? 'done' : task.status === 'in_progress' ? 'running' : ''
+  const primaryText =
+    task.status === 'in_progress' ? task.activeForm ?? task.subject : task.subject
+  const needsPopover = isTruncated || Boolean(task.description)
+
+  const item = (
+    <div className={`inspector-plan-item ${statusClass}`}>
+      <span className="inspector-plan-dot-wrap">
+        <span className="inspector-plan-dot">
+          {task.status === 'completed' && <Icons.Check size={10} />}
+          {task.status === 'in_progress' && <Icons.Spinner size={10} />}
+        </span>
+      </span>
+      <span className="text" ref={textRef}>
+        <span className="mono-sm" style={{ marginRight: 4, color: 'var(--text-muted)' }}>
+          {task.id}
+        </span>
+        {primaryText}
+      </span>
+    </div>
+  )
+
+  if (!needsPopover) return item
+
+  return (
+    <Popover
+      content={
+        <div className="inspector-plan-item-popover">
+          <div className="inspector-plan-item-popover-title">{task.subject}</div>
+          {task.description && (
+            <div className="inspector-plan-item-popover-desc">{task.description}</div>
+          )}
+        </div>
+      }
+    >
+      {item}
+    </Popover>
   )
 }
 
@@ -10329,14 +10416,58 @@ function isTaskToolName(name: string): boolean {
 
 function parseTaskIdFromOutput(output: string | undefined): string | null {
   if (!output) return null
-  const match = output.match(/Task\s+(#[A-Za-z0-9_-]+)\s+created/i)
+  // 兼容 Claude Agent SDK 实际格式 `{"task":{"id":"1","subject":"..."}}`
+  const json = extractJsonObject(output)
+  if (json?.task != null && typeof json.task === 'object') {
+    const id = (json.task as Record<string, unknown>).id
+    if (typeof id === 'string' && id.length > 0) return id
+  }
+  // 兜底：旧版纯文本 `Task #N created`
+  const match = output.match(/Task\s+([#A-Za-z0-9_-]+)\s+created/i)
   return match?.[1] ?? null
+}
+
+function extractJsonObject(text: string): Record<string, unknown> | null {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]+?)\s*```/i)
+  const candidate = fenced?.[1] ?? text.trim()
+  if (!candidate.startsWith('{') && !candidate.startsWith('[')) return null
+  try {
+    const parsed = JSON.parse(candidate) as unknown
+    if (parsed != null && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>
+    }
+  } catch {
+    // fall through
+  }
+  return null
+}
+
+/** 去掉前导 `#`；用于 task_create 注册的 id 与 task_update 入参 id 的模糊匹配。 */
+function normalizeTaskId(id: string): string {
+  return id.replace(/^#+/, '')
+}
+
+function findTaskById(
+  tasks: Map<string, InspectorTask>,
+  rawId: string,
+): InspectorTask | undefined {
+  const direct = tasks.get(rawId)
+  if (direct != null) return direct
+  // 兼容 task_update 用 "1"、task_create 注册 "#1" 的常见 ID 格式差
+  const target = normalizeTaskId(rawId)
+  if (!target) return undefined
+  for (const task of tasks.values()) {
+    if (normalizeTaskId(task.id) === target) return task
+  }
+  return undefined
 }
 
 /**
  * 按时间顺序聚合会话中的 TaskCreate / TaskUpdate 工具调用，
- * 输出当前最新的任务视图。TaskCreate 的 id 来自 tool result 文本
- * （"Task #N created"），找不到时退回按出现顺序自增的占位 id。
+ * 输出当前最新的任务视图。TaskCreate 的 id 优先从 tool result JSON
+ * (`{"task":{"id":"1",...}}`) 提取，找不到时再退回纯文本正则；
+ * 仍找不到时按出现顺序自增占位 id。
+ * task_update 的 taskId 允许带或不带前导 `#`（自动归一化匹配）。
  * TaskUpdate 的 status=deleted 表示删除任务。
  */
 function extractInspectorTasks(messages: UIMessage[]): InspectorTask[] {
@@ -10375,13 +10506,16 @@ function extractInspectorTasks(messages: UIMessage[]): InspectorTask[] {
       const rawId = input.taskId ?? input.task_id ?? input.id
       const id = typeof rawId === 'string' ? rawId : ''
       if (!id) continue
-      const existing = tasks.get(id)
+      const existing = findTaskById(tasks, id)
       if (!existing) continue
 
       const status = input.status
       if (typeof status === 'string') {
         if (status === 'deleted') {
-          tasks.delete(id)
+          const keyToDelete = Array.from(tasks.entries()).find(
+            ([, task]) => task === existing,
+          )?.[0]
+          if (keyToDelete != null) tasks.delete(keyToDelete)
           continue
         }
         if (status === 'pending' || status === 'in_progress' || status === 'completed') {

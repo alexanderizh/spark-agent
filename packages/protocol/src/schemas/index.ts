@@ -243,6 +243,7 @@ export const SessionGetHistoryRequestSchema = z.object({
   sessionId: SessionIdSchema,
   full: z.boolean().optional().default(false),
   limit: z.number().int().min(1).max(1000).optional().default(50),
+  turnLimit: z.number().int().min(1).max(500).optional(),
   beforeSeq: z.number().int().nonnegative().optional(),
 })
 

@@ -220,6 +220,133 @@ describe('Renderer Smoke Tests', () => {
     expect(container.textContent).toContain('当前默认策略会跳过人工审批')
   })
 
+  it('omits blank optional runtime fields when creating a project session', async () => {
+    const workspaceId = '00000000-0000-4000-8000-000000000101'
+    const providerId = '00000000-0000-4000-8000-000000000201'
+    const createRequests: Array<Record<string, unknown> | undefined> = []
+    const invoke = vi.fn(async (channel: string, request?: Record<string, unknown>) => {
+      if (channel === 'workspace:list') {
+        return {
+          workspaces: [{
+            id: workspaceId,
+            name: 'Spark Agent',
+            rootPath: '/tmp/spark-agent',
+            projectKind: 'node',
+            pinnedAt: null,
+            archivedAt: null,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+          total: 1,
+        }
+      }
+      if (channel === 'session:list') return { sessions: [], total: 0 }
+      if (channel === 'workspace:get-current') return { workspace: null }
+      if (channel === 'provider:list') {
+        return {
+          profiles: [{
+            id: providerId,
+            name: 'Claude CLI',
+            provider: 'anthropic',
+            defaultModel: 'claude-sonnet-4-20250514',
+            modelIds: ['claude-sonnet-4-20250514'],
+            apiEndpoint: null,
+            keystoreRef: null,
+            isDefault: true,
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+        }
+      }
+      if (channel === 'agent:list') {
+        return {
+          agents: [{
+            id: 'platform-manager-agent',
+            name: 'Platform Manager',
+            description: '',
+            builtIn: true,
+            enabled: true,
+            isDefault: true,
+            providerProfileId: providerId,
+            modelId: '',
+            agentAdapter: 'claude-sdk',
+            permissionMode: 'claude-auto-edits',
+            reasoningEffort: 'medium',
+            prompt: '',
+            ruleIds: [],
+            skillIds: [],
+            disabledSkillIds: [],
+            mcpServerIds: [],
+            hookConfig: {},
+            workflowId: null,
+            metadata: {},
+            createdAt: '2026-05-27T00:00:00.000Z',
+            updatedAt: '2026-05-27T00:00:00.000Z',
+          }],
+        }
+      }
+      if (channel === 'session:create') {
+        createRequests.push(request)
+        return { sessionId: 'session-created', createdAt: '2026-05-27T00:00:00.000Z' }
+      }
+      if (channel === 'settings:set') return { ok: true }
+      return {}
+    })
+    vi.stubGlobal('spark', {
+      invoke,
+      on: vi.fn(() => vi.fn()),
+    })
+    localStorage.setItem('spark-agent:composer-prefs', JSON.stringify({
+      modelId: '',
+      agentId: '',
+      providerProfileId: providerId,
+    }))
+    vi.doMock('../design/AppContext', () => ({
+      useApp: () => ({
+        requestConfirm: vi.fn(),
+        requestPrompt: vi.fn(),
+      }),
+    }))
+
+    const { SessionSidebarProvider, useSessionSidebar } = await import('../design/SessionSidebarContext')
+    vi.doUnmock('../design/AppContext')
+    const latestCtxRef: { current: ReturnType<typeof useSessionSidebar> | null } = { current: null }
+    function CaptureSessionSidebarContext() {
+      latestCtxRef.current = useSessionSidebar()
+      return null
+    }
+
+    await act(async () => {
+      root = createRoot(container)
+      root.render(
+        React.createElement(ToastProvider, null,
+          React.createElement(SessionSidebarProvider, null, React.createElement(CaptureSessionSidebarContext)),
+        ),
+      )
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    })
+    expect(latestCtxRef.current?.workspaces).toHaveLength(1)
+    expect(latestCtxRef.current?.providers).toHaveLength(1)
+    expect(latestCtxRef.current?.agents).toHaveLength(1)
+
+    await act(async () => {
+      await latestCtxRef.current?.handleNewSession(workspaceId)
+    })
+
+    expect(createRequests).toHaveLength(1)
+    expect(latestCtxRef.current?.activeSessionId).toBe('session-created')
+    expect(createRequests[0]).toEqual(expect.objectContaining({
+      providerProfileId: providerId,
+      workspaceId,
+      agentId: 'platform-manager-agent',
+    }))
+    expect(createRequests[0]).not.toHaveProperty('modelId')
+  })
+
   it('renders the floating sidebar panel with navigation items', async () => {
     const { App } = await import('../App')
 
@@ -2305,7 +2432,9 @@ describe('Renderer Smoke Tests', () => {
 
     await vi.waitFor(() => {
       expect(historyCalls).toHaveLength(1)
-      expect(historyCalls[0]).toEqual(expect.objectContaining({ full: true }))
+      // 窗口化：首屏加载最新一页（limit），不再一次性 full 拉全量
+      expect(historyCalls[0]).toEqual(expect.objectContaining({ turnLimit: expect.any(Number) }))
+      expect(historyCalls[0]).not.toHaveProperty('full')
     })
 
     await vi.waitFor(() => {

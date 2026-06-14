@@ -5,7 +5,7 @@
   height: 22px;
   position: relative;
   flex-shrink: 0;
-  opacity: 0;
+  opacity: 1;
   color: var(--text-muted);
 
   &:hover {
@@ -14,7 +14,6 @@
 
   &.is-active,
   &.is-open {
-    opacity: 1;
     color: var(--text);
   }
 
@@ -27,10 +26,6 @@
     border-radius: 50%;
     background: var(--primary, #2f6cff);
   }
-}
-
-.proj-head:hover .sidebar-filter-btn {
-  opacity: 1;
 }
 
 /* 主菜单容器 */
@@ -179,13 +174,15 @@
   flex-shrink: 0;
 }
 
-/* Arco Trigger 弹层默认带 padding/box-shadow,这里去掉避免重复 */
-.sidebar-filter-trigger,
-.sidebar-filter-sub-trigger {
-  &.ant-popover {
-    background: transparent;
-    border: 0;
-    box-shadow: none;
-    padding: 0;
-  }
+/* antd Popover 默认在 .ant-popover-inner / .ant-popover-inner-content 自带一套
+   padding+背景+阴影,而内部 .sidebar-filter-menu / .sidebar-filter-submenu 已经
+   自带 chrome(背景+边框+阴影+padding)。不去掉 antd 那层就会叠出"双层框"。
+   这里把 antd 的 padding 清零即可,背景/阴影由 antd token 提供,主题随 ConfigProvider。 */
+.sidebar-filter-popover .ant-popover-inner,
+.sidebar-filter-popover .ant-popover-inner-content,
+.sidebar-filter-sub-popover .ant-popover-inner,
+.sidebar-filter-sub-popover .ant-popover-inner-content {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
 }

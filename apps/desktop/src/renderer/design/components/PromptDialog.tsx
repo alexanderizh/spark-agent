@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Modal, Button, Input } from '@lobehub/ui'
+import { Modal, Input } from '@lobehub/ui'
 
 type PromptDialogProps = {
   open: boolean
@@ -34,14 +34,20 @@ export function PromptDialog({
 
   return (
     <Modal
+      centered
       open={open}
-      onCancel={() => onOpenChange(false)}
       title={title}
-      footer={null}
       width={440}
+      okText={confirmText}
+      cancelText={cancelText}
+      onCancel={() => onOpenChange(false)}
+      onOk={() => {
+        void onConfirm(draft)
+        onOpenChange(false)
+      }}
       className="spark-confirm-dialog"
     >
-      {description != null ? <p>{description}</p> : null}
+      {description != null ? <div style={{ marginBottom: 12 }}>{description}</div> : null}
       <Input
         value={draft}
         placeholder={placeholder ?? ''}
@@ -54,18 +60,6 @@ export function PromptDialog({
           }
         }}
       />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-        <Button onClick={() => onOpenChange(false)}>{cancelText}</Button>
-        <Button
-          type="primary"
-          onClick={() => {
-            void onConfirm(draft)
-            onOpenChange(false)
-          }}
-        >
-          {confirmText}
-        </Button>
-      </div>
     </Modal>
   )
 }

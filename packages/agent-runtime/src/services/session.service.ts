@@ -2787,22 +2787,37 @@ export class SessionService {
     sessionId: string
     full?: boolean
     limit?: number
+    turnLimit?: number
     beforeSeq?: number
   }): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
     const eventRepo = new EventRepository(this.db)
     if (params.full === true) {
       const rows = eventRepo.queryAllBySession(params.sessionId)
       return {
-        events: rows.map((row) => JSON.parse(row.event_json) as AgentEvent),
+        events: rows.map((row) => trimHistoryEvent(JSON.parse(row.event_json) as AgentEvent)),
         hasMore: false,
       }
     }
-    const { events: rows, hasMore } = eventRepo.queryBySession({
+    // 按「轮次」分页（UI 历史加载首选）：每页都是完整轮次，永不把一个 agentic 轮次切碎，
+    // 同时排除流式 delta、裁剪超大 prompt 快照，兼顾「完整查看」与「不卡顿」。
+    if (params.turnLimit != null) {
+      const { events: rows, hasMore } = eventRepo.queryRenderableTurns({
+        sessionId: params.sessionId,
+        turnLimit: params.turnLimit,
+        ...(params.beforeSeq != null ? { beforeSeq: params.beforeSeq } : {}),
+      })
+      return {
+        events: rows.map((row) => trimHistoryEvent(JSON.parse(row.event_json) as AgentEvent)),
+        hasMore,
+      }
+    }
+    // 事件级分页（其余调用方，如远程回复查找 / ProjectView 预览）：排除 delta 的最近 N 条。
+    const { events: rows, hasMore } = eventRepo.queryRenderablePage({
       sessionId: params.sessionId,
-      limit: params.limit ?? 50,
+      limit: params.limit ?? 80,
       ...(params.beforeSeq != null ? { beforeSeq: params.beforeSeq } : {}),
     })
-    const events = rows.map((row) => JSON.parse(row.event_json) as AgentEvent)
+    const events = rows.map((row) => trimHistoryEvent(JSON.parse(row.event_json) as AgentEvent))
     return { events, hasMore }
   }
 
@@ -4240,4 +4255,35 @@ function uniqueSkillSummaries<T extends { id: string }>(skills: T[]): T[] {
     result.push(skill)
   }
   return result
+}
+
+/** 历史加载时单个 prompt 段落内容的字符上限（超出截断，原始长度仍由 charCount 记录）。 */
+const HISTORY_PROMPT_SECTION_CHAR_CAP = 800
+
+/**
+ * trimHistoryEvent — 历史加载时裁剪超大事件载荷。
+ *
+ * 目前针对 turn_prompt_snapshot.systemPromptSections：完整系统提示词（CLAUDE.md/技能/
+ * 工具/项目上下文）按「每回合」存一份，1M 上下文打满时单字段可达数 MB，每次加载、每回合
+ * 都要序列化+传输+解析，是大会话卡顿的主因之一。这里把每段 content 截断到上限，charCount
+ * 仍保留真实长度，Inspector 可据此提示「已截断」。其余字段（label/charCount/模型/工具数等）
+ * 不动，提示词审计的概览仍可用；如需完整内容可后续按需单独拉取。
+ */
+function trimHistoryEvent(event: AgentEvent): AgentEvent {
+  if (event.type !== 'turn_prompt_snapshot') return event
+  const sections = event.systemPromptSections
+  if (!Array.isArray(sections) || sections.length === 0) return event
+  let trimmedAny = false
+  const trimmedSections = sections.map((section) => {
+    if (
+      typeof section.content === 'string' &&
+      section.content.length > HISTORY_PROMPT_SECTION_CHAR_CAP
+    ) {
+      trimmedAny = true
+      return { ...section, content: section.content.slice(0, HISTORY_PROMPT_SECTION_CHAR_CAP) }
+    }
+    return section
+  })
+  if (!trimmedAny) return event
+  return { ...event, systemPromptSections: trimmedSections }
 }

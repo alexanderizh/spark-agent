@@ -499,10 +499,22 @@ function ProjectSessionGroup({
           void onSelectWorkspace(group.workspace)
         }}
       >
-        <span className="proj-toggle">
+        <span
+          className="proj-toggle"
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen(prev => {
+              const next = !prev
+              setProjectCollapsed(group.workspace.id, !next)
+              return next
+            })
+          }}
+          role="button"
+          aria-label={open ? '折叠项目' : '展开项目'}
+          title={open ? '折叠项目' : '展开项目'}
+        >
           {open ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />}
         </span>
-        {open ? <Icons.FolderOpen size={17} className="proj-folder-icon" /> : <Icons.ProjectFolder size={17} className="proj-folder-icon" />}
         {group.workspace.pinnedAt != null && <Icons.Pin size={12} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
         <span className="proj-count">{group.sessions.length}</span>
@@ -513,7 +525,6 @@ function ProjectSessionGroup({
         >
           <Icons.Plus size={12} />
         </button>
-        {filterSlot}
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
           <Dropdown
             menu={{ items: [] }}
@@ -544,6 +555,8 @@ function ProjectSessionGroup({
             </button>
           </Dropdown>
         </div>
+        {filterSlot}
+
       </div>
       {open && (
         <div className="proj-sessions">
@@ -568,12 +581,19 @@ function ProjectSessionGroup({
                   onDelete={onDeleteSession}
                 />
               ))}
-              {hasMore && !showAllSessions && (
+              {hasMore && (
                 <button
                   className="proj-show-more-btn"
-                  onClick={() => setShowAllSessions(true)}
+                  onClick={() => setShowAllSessions(prev => !prev)}
                 >
-                  ...更多 {sessions.length - MAX_VISIBLE}
+                  {showAllSessions ? (
+                    <span className="proj-show-more-label">收起</span>
+                  ) : (
+                    <>
+                      <span className="proj-show-more-label">显示更多</span>
+                      <span className="proj-show-more-count">{sessions.length - MAX_VISIBLE}</span>
+                    </>
+                  )}
                 </button>
               )}
             </>

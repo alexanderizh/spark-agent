@@ -1,4 +1,4 @@
-import { Modal, Button } from 'antd'
+import { Modal } from '@lobehub/ui'
 
 type ConfirmDialogProps = {
   open: boolean
@@ -23,27 +23,21 @@ export function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <Modal
+      centered
       open={open}
-      onCancel={() => onOpenChange(false)}
       title={title}
-      footer={null}
       width={440}
+      okText={confirmText}
+      cancelText={cancelText}
+      okButtonProps={{ danger: danger ?? false }}
+      onCancel={() => onOpenChange(false)}
+      onOk={() => {
+        void onConfirm()
+        onOpenChange(false)
+      }}
       className="spark-confirm-dialog"
     >
-      {description != null ? <p>{description}</p> : null}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-        <Button onClick={() => onOpenChange(false)}>{cancelText}</Button>
-        <Button
-          type="primary"
-          danger={danger ?? false}
-          onClick={() => {
-            void onConfirm()
-            onOpenChange(false)
-          }}
-        >
-          {confirmText}
-        </Button>
-      </div>
+      {description != null ? <div>{description}</div> : null}
     </Modal>
   )
 }

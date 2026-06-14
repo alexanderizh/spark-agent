@@ -1,24 +1,3 @@
-/**
- * ProvidersView — 模型供应商与协议配置（独立视图）
- *
- * 原嵌在 SettingsView 的 ProvidersSection 已抽到此处，作为一级菜单入口。
- * 包含：
- *   - ProvidersView（默认导出）：列表 + 预设模板目录
- *   - ProviderEditPanel（命名导出）：滑入式编辑面板（基于 @lobehub/ui Drawer）
- *
- * 本次重设计（2026-06 arco-refresh → 2026-06 spark-to-lobe）：
- *   - 全部使用 @lobehub/ui 组件（Button / Tag / Checkbox / Drawer / Switch / Alert / Modal /
- *     Input / Select / Radio / FlexBasic）
- *   - 样式落在组件级 ProvidersView.less（pv_ 前缀），不再依赖 views.css 的 .provider-card / .preset-card /
- *     .slide-panel 等旧全局类，避免与其他 view 相互污染。
- *   - 布局优先使用 Tailwind 原子类，复杂状态/动画用 LESS。
- *
- * 导入/导出（2026-06 import-export）行为保持：
- *   - 顶部"导入/导出"按钮组：写文件 + 复制到剪贴板
- *   - 多选模式：勾选卡片 → 批量导出 / 删除
- *   - 导入预览 Modal：显示 conflict、模式 merge/replace
- *   - API Key 随导入导出一并处理
- */
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
   Button, Tag, Checkbox, Drawer, Alert, Input, InputPassword, Select,
