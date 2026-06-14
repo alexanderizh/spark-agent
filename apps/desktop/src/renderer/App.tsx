@@ -780,7 +780,7 @@ function Shell() {
     >
       <FloatingSidebar onNewTask={handleNewBlankSession} />
 
-      <div className="main-content-area">
+      <div className={`main-content-area${t.view === 'canvas' ? ' main-content-canvas' : ''}`}>
         {/* Windows: custom title bar spanning full width with drag region */}
         {isPlatformWin32 && (
           <div className="win-titlebar">

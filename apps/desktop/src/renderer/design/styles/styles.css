@@ -864,6 +864,11 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   padding-right: 80px;
 }
 
+.app.sidebar-hidden .main-content-area.main-content-canvas {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 /* ============================================================
    MAIN CONTENT
    ============================================================ */
