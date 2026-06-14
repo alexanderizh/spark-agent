@@ -27,6 +27,7 @@ export function CanvasInlineAiComposer({
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
+  const lastOpenRef = useRef(false)
 
   useEffect(() => {
     if (!open) return
@@ -47,6 +48,9 @@ export function CanvasInlineAiComposer({
       cancelled = true
     }
   }, [open])
+
+  const nodePromptContext = useMemo(() => buildPromptContext(selectedNodes), [selectedNodes])
+  const canSubmit = prompt.trim().length > 0 || nodePromptContext.length > 0 || canRunFromInputOnly(operation, selectedNodes)
 
   const selectedSummary = useMemo(() => {
     if (selectedNodes.length === 0) return '未选择节点'
@@ -71,6 +75,18 @@ export function CanvasInlineAiComposer({
     const recommended = capabilities.filter((capability) => capability.recommended)
     return (recommended.length > 0 ? recommended : capabilities).slice(0, 6)
   }, [capabilities])
+
+  useEffect(() => {
+    if (!open) {
+      lastOpenRef.current = false
+      return
+    }
+    if (lastOpenRef.current) return
+    lastOpenRef.current = true
+    const recommended = capabilities.find((capability) => capability.recommended)
+    if (recommended) setOperation(recommended.operation)
+    setPrompt(nodePromptContext)
+  }, [capabilities, nodePromptContext, open])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
   const supportedMediaModels = useMemo(() => {
@@ -239,7 +255,7 @@ export function CanvasInlineAiComposer({
         <LobeTextArea
           value={prompt}
           rows={4}
-          placeholder="描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务"
+          placeholder={nodePromptContext ? '已自动带入选中节点内容，可继续补充要求' : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'}
           onChange={(e) => setPrompt(e.target.value)}
         />
       </div>
@@ -294,12 +310,13 @@ export function CanvasInlineAiComposer({
           size="small"
           type="primary"
           icon={<Icons.Sparkles size={15} />}
-          disabled={prompt.trim().length === 0}
+          disabled={!canSubmit}
           onClick={() => {
             const modelParams = buildModelParams(parameterFields, modelParamDraft)
+            const effectivePrompt = prompt.trim() || fallbackPromptForOperation(operation)
             const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown> } = {
               operation,
-              prompt: prompt.trim(),
+              prompt: effectivePrompt,
             }
             if (selectedModel?.providerProfileId) payload.providerProfileId = selectedModel.providerProfileId
             if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
@@ -318,6 +335,32 @@ export function CanvasInlineAiComposer({
 
 function mediaModelKey(model: CanvasMediaModelSummary): string {
   return `${model.providerProfileId ?? 'catalog'}::${model.manifestId}::${model.effectiveModelId}`
+}
+
+function buildPromptContext(nodes: CanvasNode[]): string {
+  const textParts = nodes
+    .filter((node) => node.type === 'text' || node.type === 'prompt')
+    .map((node) => node.data.text?.trim())
+    .filter((text): text is string => Boolean(text))
+  return textParts.join('\n\n')
+}
+
+function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]): boolean {
+  if (!['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'audio_transcribe'].includes(operation)) {
+    return false
+  }
+  const inputTypes = new Set(nodes.map((node) => node.type))
+  if (operation === 'audio_transcribe') return inputTypes.has('audio')
+  return inputTypes.has('image')
+}
+
+function fallbackPromptForOperation(operation: CanvasOperationType): string {
+  if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
+  if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
+  if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
+  if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
+  if (operation === 'audio_transcribe') return '请转写输入音频内容。'
+  return ''
 }
 
 type SchemaField = {

@@ -433,6 +433,20 @@ function fitMediaNodeSize(
   return { width: 300, height: 164 }
 }
 
+function readDisplayImageDimensions(src: string): Promise<{ width: number; height: number } | null> {
+  if (typeof Image === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      const width = image.naturalWidth || image.width || 0
+      const height = image.naturalHeight || image.height || 0
+      resolve(width > 0 && height > 0 ? { width, height } : null)
+    }
+    image.onerror = () => resolve(null)
+    image.src = src
+  })
+}
+
 export const canvasApi = {
   async listProjects(): Promise<CanvasProject[]> {
     const db = readDb()
@@ -1404,7 +1418,7 @@ export const canvasApi = {
     task.rawResponse = response.rawResponse
 
     const at = now()
-    response.assets.forEach((assetOut, index) => {
+    for (const [index, assetOut] of response.assets.entries()) {
       const assetType = (assetOut.type || 'file') as CanvasAssetType
       // 优先用 base64 预览（小图快），否则把磁盘路径编码成 safe-file:// 供 <audio>/<video>/<img> 加载
       const displayUrl = resolveMediaDisplayUrl({
@@ -1412,6 +1426,12 @@ export const canvasApi = {
         dataUrl: assetOut.previewDataUrl,
         filePath: assetOut.filePath,
       })
+      const detectedImageSize =
+        assetType === 'image' && displayUrl && (assetOut.width == null || assetOut.height == null)
+          ? await readDisplayImageDimensions(displayUrl)
+          : null
+      const assetWidth = assetOut.width ?? detectedImageSize?.width ?? null
+      const assetHeight = assetOut.height ?? detectedImageSize?.height ?? null
       const asset: CanvasAsset = {
         id: uid('canvas_asset'),
         projectId,
@@ -1424,8 +1444,8 @@ export const canvasApi = {
         url: displayUrl || null,
         thumbnailUrl: assetType === 'image' ? (displayUrl || null) : null,
         contentText: assetOut.contentText ?? null,
-        ...(assetOut.width != null ? { width: assetOut.width } : {}),
-        ...(assetOut.height != null ? { height: assetOut.height } : {}),
+        ...(assetWidth != null ? { width: assetWidth } : {}),
+        ...(assetHeight != null ? { height: assetHeight } : {}),
         ...(assetOut.durationMs != null ? { durationMs: assetOut.durationMs } : {}),
         metadata: {
           taskId,
@@ -1451,7 +1471,7 @@ export const canvasApi = {
         if (asset.mimeType) nodeData.mimeType = asset.mimeType
         if (assetType === 'image' && asset.thumbnailUrl) nodeData.thumbnailUrl = asset.thumbnailUrl
       }
-      const resultNodeSize = fitMediaNodeSize(assetType, assetOut.width, assetOut.height)
+      const resultNodeSize = fitMediaNodeSize(assetType, assetWidth, assetHeight)
       const resultNode = createNodeBase({
         projectId,
         boardId: task.boardId,
@@ -1480,7 +1500,7 @@ export const canvasApi = {
         metadata: {},
         createdAt: at,
       })
-    })
+    }
 
     taskNode.data = {
       ...taskNode.data,

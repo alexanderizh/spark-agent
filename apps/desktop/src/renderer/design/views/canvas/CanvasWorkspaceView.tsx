@@ -97,6 +97,32 @@ function buildTaskInputFiles(nodes: CanvasNode[]) {
     .filter((file): file is NonNullable<typeof file> => file !== null)
 }
 
+function buildPromptContext(nodes: CanvasNode[]): string {
+  return nodes
+    .filter((node) => node.type === 'text' || node.type === 'prompt')
+    .map((node) => node.data.text?.trim())
+    .filter((text): text is string => Boolean(text))
+    .join('\n\n')
+}
+
+function mergePromptWithNodeContext(prompt: string, nodes: CanvasNode[]): string {
+  const trimmedPrompt = prompt.trim()
+  const context = buildPromptContext(nodes)
+  if (!context) return trimmedPrompt
+  if (!trimmedPrompt) return context
+  if (trimmedPrompt.includes(context)) return trimmedPrompt
+  return `${trimmedPrompt}\n\n画布节点内容：\n${context}`
+}
+
+function fallbackPromptForOperation(operation: CanvasOperationType): string {
+  if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
+  if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
+  if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
+  if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
+  if (operation === 'audio_transcribe') return '请转写输入音频内容。'
+  return ''
+}
+
 function areNodeIdsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
@@ -327,10 +353,12 @@ export function CanvasWorkspaceView({
   }) => {
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const inputFiles = buildTaskInputFiles(selectedNodes)
+    const mergedPrompt = mergePromptWithNodeContext(prompt, selectedNodes)
+    const effectivePrompt = mergedPrompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
 
     await createTask({
       operation,
-      prompt,
+      prompt: effectivePrompt,
       inputNodeIds: selectedNodeIds,
       inputAssetIds: selectedNodes
         .map((node) => node.assetId)
