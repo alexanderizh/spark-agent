@@ -15,7 +15,7 @@ its `config_json` (all backward compatible):
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `mediaProvider` | `apimart` \| `xai` \| `openai-compatible` \| `custom` | Platform adapter that implements the HTTP calls |
+| `mediaProvider` | `apimart` \| `xai` \| `openai-compatible` \| `openai-images` \| `google-generative-ai` \| `volcengine-ark` \| `kling` \| `pixverse` \| `minimax-hailuo` \| `wan` \| `happyhorse` \| `omni` \| `custom` | Platform/manifest adapter kind used for routing and diagnostics |
 | `mediaApiType` | `sync` \| `async` \| `auto` | sync returns media directly; async polls a task; auto adapts |
 | `mediaCapabilities` | `MediaCapabilityId[]` | Declared capabilities (`image.generate`, `audio.speech`, `video.generate`, …) |
 | `mediaDefaults` | object | Default size / voice / aspect ratio / polling interval / timeout |

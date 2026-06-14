@@ -790,10 +790,13 @@ type NormalizedProviderConfig = Required<Pick<ProviderConfig, 'defaultModel' | '
  */
 function mediaProviderFromImageProvider(imageProvider: string): MediaProviderKind {
   const v = imageProvider.trim().toLowerCase()
+  if (isMediaProviderKind(v)) return v
   if (v === 'apimart') return 'apimart'
   if (v === 'xai') return 'xai'
   if (v === 'custom') return 'custom'
   if (v === 'openai' || v === 'openai-compatible') return 'openai-compatible'
+  if (v === 'gemini' || v === 'google') return 'google-generative-ai'
+  if (v === 'seeddance' || v === 'seedance' || v === 'volcengine') return 'volcengine-ark'
   return 'custom'
 }
 

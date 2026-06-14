@@ -24,6 +24,7 @@ import {
   MEDIA_PROVIDER_KINDS,
   MEDIA_API_TYPES,
   MEDIA_CAPABILITY_IDS,
+  isMediaProviderKind,
 } from '@spark/protocol'
 import type {
   ProviderPreset,
@@ -112,6 +113,15 @@ const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   apimart: 'APIMart',
   xai: 'xAI',
   'openai-compatible': 'OpenAI Compatible',
+  'openai-images': 'OpenAI Images',
+  'google-generative-ai': 'Google Gemini / Veo',
+  'volcengine-ark': 'Volcengine Ark / Seedance',
+  kling: 'Kling',
+  pixverse: 'PixVerse',
+  'minimax-hailuo': 'MiniMax Hailuo',
+  wan: 'Wan',
+  happyhorse: 'HappyHorse',
+  omni: 'Omni',
   custom: '自定义',
 }
 
@@ -278,6 +288,7 @@ function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: Provide
 }
 
 function adapterKindFromManifestProvider(providerKind: string): MediaProviderKind {
+  if (isMediaProviderKind(providerKind)) return providerKind
   if (providerKind === 'apimart') return 'apimart'
   if (providerKind === 'xai') return 'xai'
   if (providerKind === 'custom') return 'custom'
@@ -1313,7 +1324,7 @@ export function ProviderEditPanel({
         ...prev,
         mediaModelRefs: [...existing.values()],
         mediaCapabilities: [...capabilitySet],
-        mediaProvider: prev.mediaProvider || adapterKindFromManifestProvider(model.providerKind),
+        mediaProvider: checked ? adapterKindFromManifestProvider(model.providerKind) : prev.mediaProvider,
         defaultModel: prev.defaultModel.trim() ? prev.defaultModel : model.effectiveModelId,
         modelIds,
       }

@@ -13,7 +13,20 @@
 import { z } from 'zod'
 
 /** 多媒体平台 adapter 种类 */
-export type MediaProviderKind = 'apimart' | 'xai' | 'openai-compatible' | 'custom'
+export type MediaProviderKind =
+  | 'apimart'
+  | 'xai'
+  | 'openai-compatible'
+  | 'openai-images'
+  | 'google-generative-ai'
+  | 'volcengine-ark'
+  | 'kling'
+  | 'pixverse'
+  | 'minimax-hailuo'
+  | 'wan'
+  | 'happyhorse'
+  | 'omni'
+  | 'custom'
 /** 调用方式：同步 / 异步轮询 / 自动兼容 */
 export type MediaApiType = 'sync' | 'async' | 'auto'
 
@@ -34,6 +47,15 @@ export const MEDIA_PROVIDER_KINDS = [
   'apimart',
   'xai',
   'openai-compatible',
+  'openai-images',
+  'google-generative-ai',
+  'volcengine-ark',
+  'kling',
+  'pixverse',
+  'minimax-hailuo',
+  'wan',
+  'happyhorse',
+  'omni',
   'custom',
 ] as const satisfies readonly MediaProviderKind[]
 
