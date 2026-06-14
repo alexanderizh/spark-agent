@@ -6,7 +6,7 @@ import { capabilityForOperation } from '@spark/protocol'
 import type { CanvasMediaModelSummary } from '@spark/protocol'
 import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
-import type { CanvasNode, CanvasOperationType } from './canvas.types'
+import type { CanvasInputTransport, CanvasNode, CanvasOperationType } from './canvas.types'
 
 export function CanvasInlineAiComposer({
   open,
@@ -17,7 +17,7 @@ export function CanvasInlineAiComposer({
   open: boolean
   selectedNodes: CanvasNode[]
   onClose: () => void
-  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown> }) => void
+  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
@@ -26,6 +26,7 @@ export function CanvasInlineAiComposer({
   const [selectedModelKey, setSelectedModelKey] = useState<string>('')
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
+  const [inputTransport, setInputTransport] = useState<CanvasInputTransport>('auto')
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
@@ -114,6 +115,10 @@ export function CanvasInlineAiComposer({
       (mediaCapabilityIds as readonly string[]).includes(capability.id),
     ) ?? null
   }, [mediaCapabilityIds, selectedModel])
+  const needsImageInput = useMemo(
+    () => operationNeedsImageInput(operation) && selectedNodes.some((node) => node.type === 'image'),
+    [operation, selectedNodes],
+  )
   const parameterFields = useMemo(
     () => mergeSchemaFields(
       schemaFields(selectedCapability?.paramSchema ?? {}),
@@ -258,6 +263,23 @@ export function CanvasInlineAiComposer({
           )}
         </div>
       )}
+      {needsImageInput && (
+        <div className="canvas-form-row">
+          <label>输入图片</label>
+          <LobeSelect
+            value={inputTransport}
+            onChange={(value) => setInputTransport((value ?? 'auto') as CanvasInputTransport)}
+            options={[
+              { value: 'auto', label: selectedModel?.providerKind === 'xai' ? '自动：Base64' : '自动：云端公网链接' },
+              { value: 'cloud_url', label: '云端公网链接' },
+              { value: 'base64', label: 'Base64 直传' },
+            ]}
+          />
+          <div className="canvas-model-hint">
+            APIMart 等平台需要公网链接；xAI 在国内公网地址不可达时建议使用 Base64。
+          </div>
+        </div>
+      )}
       <div className="canvas-form-row">
         <label>指令</label>
         <LobeTextArea
@@ -389,7 +411,10 @@ export function CanvasInlineAiComposer({
               ...buildCustomModelParams(customParams),
             }
             const effectivePrompt = prompt.trim() || fallbackPromptForOperation(operation)
-            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown> } = {
+            const effectiveInputTransport = inputTransport === 'auto'
+              ? selectedModel?.providerKind === 'xai' ? 'base64' : 'cloud_url'
+              : inputTransport
+            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport } = {
               operation,
               prompt: effectivePrompt,
             }
@@ -397,6 +422,7 @@ export function CanvasInlineAiComposer({
             if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
             if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
             if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
+            if (needsImageInput) payload.inputTransport = effectiveInputTransport
             onCreateTask(payload)
             setPrompt('')
           }}
@@ -427,6 +453,10 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
   const inputTypes = new Set(nodes.map((node) => node.type))
   if (operation === 'audio_transcribe') return inputTypes.has('audio')
   return inputTypes.has('image')
+}
+
+function operationNeedsImageInput(operation: CanvasOperationType): boolean {
+  return ['image_to_image', 'image_edit', 'image_compose', 'image_to_video'].includes(operation)
 }
 
 function fallbackPromptForOperation(operation: CanvasOperationType): string {

@@ -312,10 +312,70 @@ describe('MediaRouterService', () => {
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 
+  it('APIMart image.edit uploads dataUrl input before generation', async () => {
+    const fetchMock = makeFetch([
+      { match: '/uploads/images', respond: () => ({ ok: true, status: 200, body: { data: [{ url: 'https://cdn/uploaded.png' }] } }) },
+      { match: '/images/generations', respond: (init) => {
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        expect(body.image_urls).toEqual(['https://cdn/uploaded.png'])
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    const { output } = await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'refine this image',
+        inputFiles: [{ type: 'image', dataUrl: `data:image/png;base64,${PNG_PIXEL}` }],
+      },
+      {
+        providers: [makeProvider()],
+        fetch: fetchMock,
+      },
+    )
+    expect(output.provider).toBe('apimart')
+    expect(fetchMock.calls.some((call) => call.url.includes('/uploads/images'))).toBe(true)
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
   it('xAI does not support audio.transcription', () => {
     const xai = new XaiMediaAdapter()
     expect(xai.supports('audio.transcription')).toBe(false)
     expect(xai.supports('audio.speech')).toBe(true)
+  })
+
+  it('xAI image.edit accepts dataUrl input directly', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const fetchMock = makeFetch([
+      { match: '/images/edits', respond: (init) => {
+        postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    const { output } = await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'cleanup',
+        inputFiles: [{ type: 'image', dataUrl: `data:image/png;base64,${PNG_PIXEL}` }],
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          name: 'xAI Imagine',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(output.provider).toBe('xai')
+    expect(postedBody?.image).toBe(`data:image/png;base64,${PNG_PIXEL}`)
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 
   it('provider_http_error on non-ok response', async () => {

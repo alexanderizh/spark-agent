@@ -958,7 +958,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     imageApiType: 'sync',
     mediaProvider: 'xai',
     mediaApiType: 'sync',
-    mediaCapabilities: ['image.generate'],
+    mediaCapabilities: ['image.generate', 'image.edit'],
     mediaDefaults: { image: { aspectRatio: '1:1', n: 1, outputFormat: 'png' } },
     sourceUrls: [
       'https://docs.x.ai/developers/model-capabilities/imagine',

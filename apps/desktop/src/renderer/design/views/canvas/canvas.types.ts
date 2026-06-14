@@ -17,6 +17,8 @@ export type CanvasOperationType =
   | 'text_to_video'
   | 'image_to_video'
 
+export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
+
 export type CanvasTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
 export type CanvasEdgeType =
   | 'derived_from'

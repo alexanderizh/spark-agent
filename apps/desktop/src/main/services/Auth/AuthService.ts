@@ -13,6 +13,8 @@
  */
 
 import { createLogger } from '@spark/shared'
+import { readFile } from 'node:fs/promises'
+import { basename, extname } from 'node:path'
 import type {
   AuthCaptchaResponse,
   AuthChangePasswordResponse,
@@ -26,6 +28,7 @@ import type {
   AuthWechatBindEmailSendCodeResponse,
   AuthWechatBindEmailResponse,
   AuthBootstrapResponse,
+  AuthUploadFileResponse,
 } from '@spark/protocol'
 import { EduServerClient } from './EduServerClient'
 import { TokenStore } from './TokenStore'
@@ -224,6 +227,16 @@ export class AuthService {
     return { baseUrl: this.client.getBaseUrl(), source: this.baseUrlSource }
   }
 
+  uploadFile = async (params: {
+    dataUrl?: string
+    filePath?: string
+    fileName?: string
+    mimeType?: string
+  }): Promise<AuthUploadFileResponse> => {
+    const prepared = await prepareUploadPayload(params)
+    return this.client.uploadFile(prepared)
+  }
+
   setBaseUrl(url: string): { baseUrl: string } {
     this.client.setBaseUrl(url)
     const baseUrl = this.client.getBaseUrl()
@@ -282,6 +295,68 @@ export class AuthService {
       log.warn(`failed to emit ${channel}: ${(e as Error).message}`)
     }
   }
+}
+
+async function prepareUploadPayload(params: {
+  dataUrl?: string
+  filePath?: string
+  fileName?: string
+  mimeType?: string
+}): Promise<{ buffer: Buffer; fileName: string; mimeType?: string }> {
+  if (params.dataUrl) {
+    const parsed = parseDataUrl(params.dataUrl)
+    const mimeType = params.mimeType ?? parsed.mimeType
+    return {
+      buffer: parsed.buffer,
+      fileName: ensureFileName(params.fileName, mimeType),
+      ...(mimeType ? { mimeType } : {}),
+    }
+  }
+  if (params.filePath) {
+    const buffer = await readFile(params.filePath)
+    const mimeType = params.mimeType ?? mimeFromExt(params.filePath)
+    return {
+      buffer,
+      fileName: ensureFileName(params.fileName ?? basename(params.filePath), mimeType),
+      ...(mimeType ? { mimeType } : {}),
+    }
+  }
+  throw new Error('缺少上传文件内容')
+}
+
+function parseDataUrl(dataUrl: string): { buffer: Buffer; mimeType?: string } {
+  const match = /^data:([^;,]+)?;base64,(.*)$/i.exec(dataUrl)
+  if (!match) throw new Error('仅支持 base64 dataUrl 上传')
+  return {
+    buffer: Buffer.from(match[2] ?? '', 'base64'),
+    ...(match[1] ? { mimeType: match[1] } : {}),
+  }
+}
+
+function ensureFileName(fileName: string | undefined, mimeType: string | undefined): string {
+  const trimmed = fileName?.trim()
+  const fallback = `canvas-input${extFromMime(mimeType)}`
+  const name = trimmed && trimmed.length > 0 ? trimmed : fallback
+  return extname(name) ? name : `${name}${extFromMime(mimeType)}`
+}
+
+function extFromMime(mimeType: string | undefined): string {
+  const normalized = (mimeType ?? '').split(';')[0]?.toLowerCase()
+  if (normalized === 'image/jpeg' || normalized === 'image/jpg') return '.jpg'
+  if (normalized === 'image/webp') return '.webp'
+  if (normalized === 'image/svg+xml') return '.svg'
+  if (normalized === 'application/pdf') return '.pdf'
+  return '.png'
+}
+
+function mimeFromExt(filePath: string): string | undefined {
+  const ext = extname(filePath).toLowerCase()
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg'
+  if (ext === '.png') return 'image/png'
+  if (ext === '.webp') return 'image/webp'
+  if (ext === '.svg') return 'image/svg+xml'
+  if (ext === '.pdf') return 'application/pdf'
+  return undefined
 }
 
 /** 单例（主进程共用一个 AuthService 实例）*/

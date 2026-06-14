@@ -10,7 +10,8 @@ import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { useCanvasWorkspace } from './canvas.store'
-import type { CanvasNode, CanvasOperationType, CanvasTask } from './canvas.types'
+import type { CanvasInputTransport, CanvasNode, CanvasOperationType, CanvasTask } from './canvas.types'
+import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import './CanvasWorkspaceView.less'
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -79,7 +80,7 @@ function positionNodeInViewport(
   }
 }
 
-function buildTaskInputFiles(nodes: CanvasNode[]) {
+function buildTaskInputFiles(nodes: CanvasNode[]): CanvasMediaTaskInputFile[] {
   return nodes
     .map((node) => {
       if (!node.data.url) return null
@@ -95,6 +96,83 @@ function buildTaskInputFiles(nodes: CanvasNode[]) {
       }
     })
     .filter((file): file is NonNullable<typeof file> => file !== null)
+}
+
+async function buildCloudTaskInputFiles(
+  nodes: CanvasNode[],
+  inputTransport: CanvasInputTransport | undefined,
+): Promise<CanvasMediaTaskInputFile[]> {
+  const files = buildTaskInputFiles(nodes)
+  if (files.length === 0) return files
+  if (inputTransport === 'base64') {
+    return Promise.all(files.map(async (file) => {
+      if (file.type !== 'image' || file.dataUrl || !file.url?.startsWith('safe-file://')) return file
+      return {
+        ...file,
+        dataUrl: await readUrlAsDataUrl(file.url),
+      }
+    }))
+  }
+  if (inputTransport !== 'cloud_url') return files
+  return Promise.all(files.map(async (file, index) => {
+    if (file.type !== 'image') return file
+    if (file.url && /^https?:\/\//i.test(file.url)) return file
+    const filePath = file.url ? decodeSafeFileUrl(file.url) : null
+    const uploaded = await window.spark.invoke('auth:upload-file', {
+      ...(file.dataUrl ? { dataUrl: file.dataUrl } : {}),
+      ...(filePath ? { filePath } : {}),
+      fileName: `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`,
+      ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+    })
+    return {
+      type: file.type,
+      url: uploaded.aiUrl,
+      ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+    }
+  }))
+}
+
+function readUrlAsDataUrl(url: string): Promise<string> {
+  return fetch(url)
+    .then((response) => response.blob())
+    .then((blob) => new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'))
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.readAsDataURL(blob)
+    }))
+}
+
+async function ensureCanvasWorkflowLogin(): Promise<boolean> {
+  try {
+    await window.spark.invoke('auth:me', {})
+    return true
+  } catch {
+    message.warning('请先登录云账户后使用画布 AI 工作流')
+    return false
+  }
+}
+
+function extensionFromMime(mimeType: string | undefined): string {
+  const mime = (mimeType ?? '').toLowerCase()
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg'
+  if (mime.includes('webp')) return 'webp'
+  return 'png'
+}
+
+function decodeSafeFileUrl(safeFileUrl: string): string | null {
+  try {
+    if (!safeFileUrl.startsWith('safe-file://')) return null
+    const rest = safeFileUrl.slice('safe-file://'.length)
+    const slashIndex = rest.indexOf('/')
+    if (slashIndex < 0) return null
+    const encoded = rest.slice(slashIndex + 1)
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
+    const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
+    return decodeURIComponent(escape(atob(base64 + padding)))
+  } catch {
+    return null
+  }
 }
 
 function buildPromptContext(nodes: CanvasNode[]): string {
@@ -420,6 +498,7 @@ export function CanvasWorkspaceView({
     manifestId,
     modelId,
     modelParams,
+    inputTransport,
   }: {
     operation: CanvasOperationType
     prompt: string
@@ -427,9 +506,11 @@ export function CanvasWorkspaceView({
     manifestId?: string
     modelId?: string
     modelParams?: Record<string, unknown>
+    inputTransport?: CanvasInputTransport
   }) => {
+    if (!(await ensureCanvasWorkflowLogin())) return
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
-    const inputFiles = buildTaskInputFiles(selectedNodes)
+    const inputFiles = await buildCloudTaskInputFiles(selectedNodes, inputTransport)
     const mergedPrompt = mergePromptWithNodeContext(prompt, selectedNodes)
     const effectivePrompt = mergedPrompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
 
@@ -453,9 +534,10 @@ export function CanvasWorkspaceView({
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
+    if (!(await ensureCanvasWorkflowLogin())) return
     const inputNodes = snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id))
     const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
-    const inputFiles = buildTaskInputFiles(inputNodes)
+    const inputFiles = await buildCloudTaskInputFiles(inputNodes, task.provider === 'xai' ? 'base64' : 'cloud_url')
     await createTask({
       operation: task.operation,
       prompt: task.prompt ?? '',

@@ -14,7 +14,7 @@
  */
 
 import { createLogger } from '@spark/shared'
-import type { AuthSession } from '@spark/protocol'
+import type { AuthSession, AuthUploadFileResponse } from '@spark/protocol'
 import type { EduApiResult } from './types'
 import type { TokenStore } from './TokenStore'
 
@@ -168,6 +168,37 @@ export class EduServerClient {
     return this.request<T>('PATCH', path, body, options)
   }
 
+  async uploadFile(
+    input: { buffer: Buffer; fileName: string; mimeType?: string },
+  ): Promise<AuthUploadFileResponse> {
+    const doUpload = (token?: string) => this.rawUpload('/upload', input, token)
+    let res = await doUpload(this.tokenStore.get().token)
+    if (res.status === 401) {
+      const refreshed = await this.tryRefresh()
+      if (refreshed) {
+        res = await doUpload(refreshed.token)
+      } else {
+        this.onSessionExpired()
+        const json = await safeParseJson<EduApiResult<unknown>>(res)
+        throw new Error(json?.message ?? '登录已过期，请重新登录')
+      }
+    }
+    const json = await safeParseJson<EduApiResult<AuthUploadFileResponse>>(res)
+    if (json?.code !== 0) {
+      throw new Error(json?.message ?? `上传失败 (${res.status})`)
+    }
+    const data = json?.data
+    if (!data?.aiUrl || !data.fileKey) {
+      throw new Error('上传响应缺少 aiUrl/fileKey')
+    }
+    return {
+      ...data,
+      fileName: data.fileName || input.fileName,
+      staticUrl: data.staticUrl || data.fileUrl || data.aiUrl,
+      aiUrl: data.aiUrl,
+    }
+  }
+
   // ─── 内部：refresh ────────────────────────────────────────────────────────────
 
   /**
@@ -217,6 +248,31 @@ export class EduServerClient {
     // edu-server 统一前缀 /api/v1
     if (p.startsWith('/api/')) return `${base}${p}`
     return `${base}/api/v1${p}`
+  }
+
+  private async rawUpload(
+    path: string,
+    input: { buffer: Buffer; fileName: string; mimeType?: string },
+    token: string | undefined,
+  ): Promise<Response> {
+    const url = this.resolveUrl(path)
+    const form = new FormData()
+    const bytes = new Uint8Array(input.buffer)
+    form.append('file', new Blob([bytes], { type: input.mimeType ?? 'application/octet-stream' }), input.fileName)
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (token) headers.Authorization = `Bearer ${token}`
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs)
+    try {
+      return await fetch(url, {
+        method: 'POST',
+        headers,
+        body: form,
+        signal: controller.signal,
+      })
+    } finally {
+      clearTimeout(timer)
+    }
   }
 }
 

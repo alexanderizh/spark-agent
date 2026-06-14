@@ -3933,6 +3933,8 @@ export interface IpcChannelMap {
   'auth:get-base-url': [AuthGetBaseUrlRequest, AuthGetBaseUrlResponse]
   /** 启动时尝试自动登录（从 keytar 读取已存 token 并验证有效性）*/
   'auth:bootstrap': [AuthBootstrapRequest, AuthBootstrapResponse]
+  /** 登录后上传文件到云端存储，返回可供模型访问的公网链接 */
+  'auth:upload-file': [AuthUploadFileRequest, AuthUploadFileResponse]
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -4221,5 +4223,20 @@ export type AuthBootstrapResponse = {
   keytarAvailable?: boolean
   /** keytar 最近一次错误信息（诊断用，不含敏感数据）*/
   keytarError?: string
+}
+
+/** 云端文件上传。dataUrl 和 filePath 二选一，桌面端会带登录 token 调用 edu-server /upload。 */
+export interface AuthUploadFileRequest {
+  dataUrl?: string
+  filePath?: string
+  fileName?: string
+  mimeType?: string
+}
+export type AuthUploadFileResponse = {
+  fileName: string
+  fileKey: string
+  staticUrl: string
+  aiUrl: string
+  fileUrl?: string
 }
 export type IpcStreamPayload<C extends IpcStreamChannel> = IpcStreamChannelMap[C]

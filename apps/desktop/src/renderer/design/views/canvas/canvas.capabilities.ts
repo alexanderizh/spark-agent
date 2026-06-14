@@ -11,17 +11,8 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     paramsSchema: {},
   },
   {
-    id: 'canvas.image-to-image',
-    label: '图生图',
-    operation: 'image_to_image',
-    inputTypes: ['image'],
-    outputTypes: ['image'],
-    enabled: true,
-    paramsSchema: {},
-  },
-  {
     id: 'canvas.image-edit',
-    label: '图片编辑',
+    label: '图生图 / 图片编辑',
     operation: 'image_edit',
     inputTypes: ['image', 'text', 'prompt'],
     outputTypes: ['image'],
@@ -94,6 +85,9 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
 ]
 
 export function getCanvasCapability(operation: CanvasOperationType): CanvasCapability | undefined {
+  if (operation === 'image_to_image') {
+    return CANVAS_CAPABILITIES.find((capability) => capability.operation === 'image_edit')
+  }
   return CANVAS_CAPABILITIES.find((capability) => capability.operation === operation)
 }
 

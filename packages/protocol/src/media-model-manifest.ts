@@ -251,7 +251,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       },
       {
         id: 'image.edit',
-        label: '图片编辑',
+        label: '图生图 / 图片编辑',
         input: { required: ['prompt', 'image'], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['image'], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         paramSchema: imageSizeSchema,
@@ -318,6 +318,14 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         id: 'image.generate',
         label: '文生图',
         input: { required: ['prompt'] },
+        output: { types: ['image'], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: imageSizeSchema,
+        defaults: { n: 1 },
+      },
+      {
+        id: 'image.edit',
+        label: '图生图 / 图片编辑',
+        input: { required: ['prompt', 'image'], maxImages: 10, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['image'], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         paramSchema: imageSizeSchema,
         defaults: { n: 1 },

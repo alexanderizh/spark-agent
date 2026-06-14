@@ -838,4 +838,10 @@ export const IpcSchemaRegistry = {
   }),
   'auth:get-base-url': z.object({}),
   'auth:bootstrap': z.object({}),
+  'auth:upload-file': z.object({
+    dataUrl: z.string().max(100_000_000).optional(),
+    filePath: z.string().max(4000).optional(),
+    fileName: z.string().max(300).optional(),
+    mimeType: z.string().max(160).optional(),
+  }),
 } as const

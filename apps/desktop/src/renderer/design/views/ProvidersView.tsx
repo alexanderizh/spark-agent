@@ -127,7 +127,7 @@ const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
 
 const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
   'image.generate': '生图',
-  'image.edit': '图片编辑',
+  'image.edit': '图生图 / 图片编辑',
   'image.variations': '图片变体',
   'audio.speech': '语音合成',
   'audio.transcription': '语音转写',

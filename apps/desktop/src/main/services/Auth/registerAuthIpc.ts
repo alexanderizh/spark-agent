@@ -90,4 +90,13 @@ export function registerAuthIpc(): void {
   typedIpcHandle('auth:get-base-url', async () => auth().getBaseUrl())
 
   typedIpcHandle('auth:bootstrap', async () => auth().bootstrap())
+
+  typedIpcHandle('auth:upload-file', async (req) =>
+    auth().uploadFile({
+      ...(req.dataUrl !== undefined ? { dataUrl: req.dataUrl } : {}),
+      ...(req.filePath !== undefined ? { filePath: req.filePath } : {}),
+      ...(req.fileName !== undefined ? { fileName: req.fileName } : {}),
+      ...(req.mimeType !== undefined ? { mimeType: req.mimeType } : {}),
+    }),
+  )
 }

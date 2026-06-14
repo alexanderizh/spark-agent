@@ -210,11 +210,11 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
     case 'text_to_image':
       return ['image.generate']
     case 'image_to_image':
-      return ['image.edit', 'image.generate']
+      return ['image.edit']
     case 'image_edit':
       return ['image.edit']
     case 'image_compose':
-      return ['image.edit', 'image.generate']
+      return ['image.edit']
     case 'text_to_audio':
       return ['audio.speech']
     case 'audio_transcribe':

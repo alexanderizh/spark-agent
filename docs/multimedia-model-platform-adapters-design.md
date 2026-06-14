@@ -198,9 +198,9 @@ operation 到 capability 映射:
 | Canvas operation | Capability | 输入 | 输出 |
 | --- | --- | --- | --- |
 | `text_to_image` | `image.generate` | prompt/text | image |
-| `image_to_image` | `image.generate` 或 `image.edit` | image + prompt | image |
+| `image_to_image` | `image.edit` | image + prompt | image |
 | `image_edit` | `image.edit` | image + prompt | image |
-| `image_compose` | `image.edit` 或 provider-specific multi-reference | 多 image + prompt | image |
+| `image_compose` | `image.edit` | 多 image + prompt | image |
 | `text_to_audio` | `audio.speech` | text/prompt | audio |
 | `audio_transcribe` | `audio.transcription` | audio | text |
 | `text_to_video` | `video.generate` | prompt | video |
@@ -268,7 +268,7 @@ interface MediaProviderAdapter {
 能力策略:
 
 - 图片: 优先走 OpenAI compatible `/images/generations` 或对应 APIMart model path。若响应无直接图片但有 task/request/job id，则进入轮询。
-- 图片编辑/多图参考: 从 `modelParams` 中透传 APIMart 对应模型支持的字段，input image 以 URL 或 multipart/data URL 形式传入；首版可先支持 URL/data URL，multipart 作为后续增强。
+- 图片编辑/多图参考: 统一视为 `image.edit`。APIMart `gpt-image-2` 使用 `/images/generations` + `image_urls`；本地 dataUrl / safe-file 输入先通过登录用户的云上传 `/api/v1/upload` 获取 `aiUrl`，公网 URL 则直接传入。
 - 语音转文字: Whisper 类模型，输入 audio file，输出 text asset。
 - 语音合成: TTS 类模型，输出 audio asset。
 - 视频: VEO/Sora/Runway/Kling 等异步模型，创建 task 后轮询状态，完成后下载视频 URL 到 `.spark-artifacts/media/videos`。
@@ -288,6 +288,7 @@ interface MediaProviderAdapter {
 能力策略:
 
 - 图片生成: `/images/generations`，默认模型由 profile.defaultModel 决定，例如 `grok-imagine-image`。
+- 图片编辑/图生图: `/images/edits`，支持 public URL、base64 data URI、file_id；画布默认对 xAI 使用 base64，以规避国内公网地址不可访问的问题。
 - 视频生成: `/videos/generations` 创建请求，保存 `request_id`，轮询获取最终 video URL，下载为本地视频 asset。
 - 语音合成: `/audio/speech`，默认模型由 profile.defaultModel 决定，例如 xAI voice/TTS 模型；voice、format、speed 从 `mediaDefaults.audio` 或 `modelParams` 读取。
 - xAI 图片/视频的 quality、aspect_ratio、duration 等字段不在 UI 中硬编码死，允许通过 `modelParams` 透传，并在 preset 中给常用默认值。

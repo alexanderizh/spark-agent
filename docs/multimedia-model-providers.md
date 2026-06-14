@@ -42,13 +42,14 @@ Spark now has a first-pass model manifest registry:
   mirrored into legacy `mediaCapabilities` for adapter compatibility.
 
 Phase 1 manifests started as capability/schema metadata, and now also drive a
-first generic HTTP path. When a provider is bound to a matching
-`MediaModelManifest`, `MediaRouterService` prefers the manifest-driven template
+first generic HTTP path. Built-in provider adapters such as APIMart and xAI keep
+priority for provider-specific protocols, while `MediaModelManifest` supplies
+model discovery, parameter schemas, defaults, and effective `modelId`
+selection. Custom or unsupported providers use the manifest-driven template
 adapter: it renders `requestTemplate`, applies capability defaults and aliases,
 uses the selected `modelId` as the effective model, polls according to
 `invocation.polling` when needed, and materializes URL/base64/binary/text
-results. Existing APIMart/xAI adapters remain as compatibility fallbacks for
-profiles without manifests or for richer provider-specific protocols.
+results.
 
 The same manifest path is now available to the agent-facing `spark_media` MCP
 server. Generation tools accept an optional `model` argument; when it matches a
@@ -204,7 +205,7 @@ canvas:project:delete            — soft/hard delete a project
 | Canvas operation | Capability | Input | Output |
 | --- | --- | --- | --- |
 | `text_to_image` | `image.generate` | prompt/text | image |
-| `image_to_image` | `image.edit` / `image.generate` | image + prompt | image |
+| `image_to_image` | `image.edit` | image + prompt | image |
 | `image_edit` | `image.edit` | image + prompt | image |
 | `image_compose` | `image.edit` | images + prompt | image |
 | `text_to_audio` | `audio.speech` | text/prompt | audio |

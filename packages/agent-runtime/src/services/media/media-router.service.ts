@@ -157,7 +157,10 @@ export class MediaRouterService {
     if (options.modelId !== undefined) manifestOptions.modelId = options.modelId
     const manifestMatch = resolveManifestMatch(chosen, capability, manifestOptions)
     const effectiveModelId = options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
-    if (manifestMatch) {
+    const kind = effectiveProviderKind(chosen)
+    const adapter = kind ? this.adapters.get(kind) : undefined
+    const shouldUseManifestAdapter = Boolean(manifestMatch && (!adapter || !adapter.supports(capability) || kind === 'custom'))
+    if (manifestMatch && shouldUseManifestAdapter) {
       const ctx: MediaProviderContext = {
         apiKey: chosen.apiKey,
         apiEndpoint: chosen.apiEndpoint ?? '',
@@ -178,8 +181,6 @@ export class MediaRouterService {
       return { output, providerProfileId: chosen.id }
     }
 
-    const kind = effectiveProviderKind(chosen)
-    const adapter = kind ? this.adapters.get(kind) : undefined
     if (!adapter) {
       throw new MediaProviderError(
         'provider_not_configured',
@@ -195,6 +196,8 @@ export class MediaRouterService {
       ...(chosen.modelIds ? { modelIds: chosen.modelIds } : {}),
       mediaProvider: kind ?? 'custom',
       mediaApiType: chosen.mediaApiType ?? 'auto',
+      ...(manifestMatch?.manifest ? { mediaManifest: manifestMatch.manifest } : {}),
+      ...(manifestMatch?.capability ? { mediaManifestCapability: manifestMatch.capability } : {}),
       ...(options.extraParams ? { extraParams: options.extraParams } : {}),
       ...(options.fetch ? { fetch: options.fetch } : {}),
     }
