@@ -103,6 +103,8 @@ mcp__spark_media__transcribe_audio   — audio-to-text transcription
 mcp__spark_media__generate_video     — text-to-video / image-to-video
 mcp__spark_media__list_models        — list configured media manifests
 mcp__spark_media__describe_model     — inspect a model manifest and parameter schema
+mcp__spark_media__get_task           — inspect a task returned by generation tools
+mcp__spark_media__cancel_task        — cancel pending/running task when supported
 ```
 
 - API keys are injected only into the local Spark media MCP server process —
@@ -113,6 +115,10 @@ mcp__spark_media__describe_model     — inspect a model manifest and parameter 
 - If a provider has `mediaModelRefs`, the session injects those manifests into
   `spark_media` via `SPARK_MEDIA_MANIFESTS_JSON`; otherwise the MCP server falls
   back to a minimal env-derived model description.
+- Generation/edit/transcription tools return a local `taskId`. In the current
+  MCP process this is an in-memory lifecycle record for `get_task` and
+  `cancel_task`; the next runtime step is to back these tools with the shared
+  `MediaTaskRuntimeService` repository.
 
 ## 4. Infinite Canvas Integration
 

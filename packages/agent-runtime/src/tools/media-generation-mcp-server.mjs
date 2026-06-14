@@ -156,7 +156,102 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'get_task',
+    description: 'Inspect a media task created by this Spark media MCP process.',
+    inputSchema: {
+      type: 'object',
+      required: ['taskId'],
+      properties: {
+        taskId: { type: 'string', description: 'Task id returned by a generate/edit/transcribe tool.' },
+      },
+    },
+  },
+  {
+    name: 'cancel_task',
+    description: 'Cancel a pending/running media task when supported by this Spark media MCP process.',
+    inputSchema: {
+      type: 'object',
+      required: ['taskId'],
+      properties: {
+        taskId: { type: 'string', description: 'Task id returned by a generate/edit/transcribe tool.' },
+      },
+    },
+  },
 ]
+
+const TASKS = new Map()
+
+function createTaskRecord(toolName, args, config) {
+  const taskId = `media_task_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+  const now = new Date().toISOString()
+  const record = {
+    taskId,
+    toolName,
+    status: 'running',
+    provider: config.provider,
+    model: config.model,
+    prompt: typeof args.prompt === 'string' ? args.prompt : typeof args.text === 'string' ? args.text : undefined,
+    createdAt: now,
+    updatedAt: now,
+  }
+  TASKS.set(taskId, record)
+  return record
+}
+
+function completeTaskRecord(task, data) {
+  const now = new Date().toISOString()
+  const record = {
+    ...task,
+    status: 'succeeded',
+    mode: data.mode || null,
+    files: Array.isArray(data.files) ? data.files : [],
+    requestId: data.requestId || null,
+    text: data.text || undefined,
+    updatedAt: now,
+    completedAt: now,
+  }
+  TASKS.set(task.taskId, record)
+  return record
+}
+
+function failTaskRecord(task, err) {
+  const now = new Date().toISOString()
+  const record = {
+    ...task,
+    status: 'failed',
+    error: {
+      code: 'tool_error',
+      message: err instanceof Error ? err.message : String(err),
+    },
+    updatedAt: now,
+    completedAt: now,
+  }
+  TASKS.set(task.taskId, record)
+  return record
+}
+
+function handleGetTask(args) {
+  const taskId = String(args.taskId || '').trim()
+  if (!taskId) throw new Error('taskId is required')
+  const task = TASKS.get(taskId)
+  if (!task) throw new Error(`Unknown media task: ${taskId}`)
+  return { success: true, task }
+}
+
+function handleCancelTask(args) {
+  const taskId = String(args.taskId || '').trim()
+  if (!taskId) throw new Error('taskId is required')
+  const task = TASKS.get(taskId)
+  if (!task) throw new Error(`Unknown media task: ${taskId}`)
+  if (task.status !== 'pending' && task.status !== 'running') {
+    return { success: true, cancelled: false, task, message: `Task is already ${task.status}` }
+  }
+  const now = new Date().toISOString()
+  const cancelled = { ...task, status: 'cancelled', updatedAt: now, completedAt: now }
+  TASKS.set(taskId, cancelled)
+  return { success: true, cancelled: true, task: cancelled }
+}
 
 function configFromEnv() {
   let mediaDefaults = {}
@@ -488,14 +583,32 @@ async function handle(request) {
       const args = request.params?.arguments || {}
       const config = configFromEnv()
       let data
+      let task = null
       switch (name) {
         case 'list_models': data = handleListModels(config, args); break
         case 'describe_model': data = handleDescribeModel(config, args); break
-        case 'generate_image': data = await handleGenerateImage(config, args); break
-        case 'edit_image': data = await handleEditImage(config, args); break
-        case 'generate_audio': data = await handleGenerateAudio(config, args); break
-        case 'transcribe_audio': data = await handleTranscribeAudio(config, args); break
-        case 'generate_video': data = await handleGenerateVideo(config, args); break
+        case 'get_task': data = handleGetTask(args); break
+        case 'cancel_task': data = handleCancelTask(args); break
+        case 'generate_image':
+          task = createTaskRecord(name, args, config)
+          try { data = await handleGenerateImage(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          break
+        case 'edit_image':
+          task = createTaskRecord(name, args, config)
+          try { data = await handleEditImage(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          break
+        case 'generate_audio':
+          task = createTaskRecord(name, args, config)
+          try { data = await handleGenerateAudio(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          break
+        case 'transcribe_audio':
+          task = createTaskRecord(name, args, config)
+          try { data = await handleTranscribeAudio(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          break
+        case 'generate_video':
+          task = createTaskRecord(name, args, config)
+          try { data = await handleGenerateVideo(config, args); data.taskId = task.taskId; data.task = completeTaskRecord(task, data) } catch (err) { failTaskRecord(task, err); throw err }
+          break
         default: throw new Error(`Unknown tool: ${name}`)
       }
       const files = Array.isArray(data.files) ? data.files : []

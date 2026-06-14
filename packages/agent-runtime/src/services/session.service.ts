@@ -1593,6 +1593,8 @@ export class SessionService {
         'mcp__spark_media__generate_audio',
         'mcp__spark_media__transcribe_audio',
         'mcp__spark_media__generate_video',
+        'mcp__spark_media__get_task',
+        'mcp__spark_media__cancel_task',
       ])
     }
     if (config.teamMcpServer != null) {
@@ -3769,6 +3771,8 @@ function buildMediaGenerationSystemPrompt(input: {
     '- `mcp__spark_media__generate_audio` — text-to-speech.',
     '- `mcp__spark_media__transcribe_audio` — audio-to-text transcription.',
     '- `mcp__spark_media__generate_video` — text-to-video / image-to-video.',
+    '- `mcp__spark_media__get_task` — inspect a media task returned by generation tools.',
+    '- `mcp__spark_media__cancel_task` — cancel a pending/running media task when supported.',
     '',
     'After success, show the generated `files` from the structured result. Local file paths can be shown as Markdown links.',
     'Do not auto-retry after a provider failure; report the error and suggest model, prompt, or provider-configuration adjustments.',
