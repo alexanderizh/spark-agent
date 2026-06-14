@@ -391,6 +391,20 @@ export const Icons = {
       <circle cx="12" cy="12" r="3" />
     </IconBase>
   ),
+  MousePointer: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M4 3l7.5 17 2.2-7 6.3-2.8L4 3z" />
+      <path d="M13.6 13.6l4.2 4.2" />
+    </IconBase>
+  ),
+  Hand: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M8 11V6.5a1.5 1.5 0 0 1 3 0V11" />
+      <path d="M11 10V5.5a1.5 1.5 0 0 1 3 0V11" />
+      <path d="M14 10.5V7a1.5 1.5 0 0 1 3 0v6" />
+      <path d="M8 11.5 6.6 10a1.7 1.7 0 0 0-2.4 2.4l4.8 5.2A6 6 0 0 0 13.4 20H14a6 6 0 0 0 6-6v-2a1.5 1.5 0 0 0-3 0" />
+    </IconBase>
+  ),
   Command: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M15 6V4a2 2 0 1 1 2 2h-2zM9 6V4a2 2 0 1 0-2 2h2zM15 18v2a2 2 0 1 0 2-2h-2zM9 18v2a2 2 0 1 1-2-2h2zM6 9H4a2 2 0 1 0 2 2V9zM18 9h2a2 2 0 1 1-2 2V9zM6 15H4a2 2 0 1 1 2-2v2zM18 15h2a2 2 0 1 0-2-2v2z" />

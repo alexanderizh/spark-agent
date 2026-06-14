@@ -32,7 +32,7 @@ export function CanvasToolbar({
           <Button
             size="small"
             type={activeTool === 'select' ? 'primary' : 'default'}
-            icon={<Icons.Command size={15} />}
+            icon={<Icons.MousePointer size={15} />}
             aria-label="选择"
             onClick={() => onToolChange('select')}
           />
@@ -41,7 +41,7 @@ export function CanvasToolbar({
           <Button
             size="small"
             type={activeTool === 'pan' ? 'primary' : 'default'}
-            icon={<Icons.Compass size={15} />}
+            icon={<Icons.Hand size={15} />}
             aria-label="平移"
             onClick={() => onToolChange('pan')}
           />
