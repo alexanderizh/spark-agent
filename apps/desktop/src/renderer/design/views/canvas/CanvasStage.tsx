@@ -114,15 +114,54 @@ export function CanvasStage({
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
   const flowNodesRef = useRef(nodes)
+  const syncFrameRef = useRef<number | null>(null)
+  const viewportInteractingRef = useRef(false)
+  const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
 
+  const cancelScheduledSync = useCallback(() => {
+    if (syncFrameRef.current == null) return
+    window.cancelAnimationFrame(syncFrameRef.current)
+    syncFrameRef.current = null
+  }, [])
+
+  const syncFlowNodes = useCallback(
+    (nextNodes: Node<CanvasFlowNodeData>[]) => {
+      cancelScheduledSync()
+      syncFrameRef.current = window.requestAnimationFrame(() => {
+        syncFrameRef.current = null
+        flowNodesRef.current = nextNodes
+        setFlowNodes(nextNodes)
+      })
+    },
+    [cancelScheduledSync],
+  )
+
   useEffect(() => {
-    flowNodesRef.current = nodes
-    const syncId = window.setTimeout(() => {
-      setFlowNodes(nodes)
-    }, 0)
-    return () => window.clearTimeout(syncId)
-  }, [nodes])
+    if (viewportInteractingRef.current) {
+      pendingNodesSyncRef.current = nodes
+      return
+    }
+    syncFlowNodes(nodes)
+  }, [nodes, syncFlowNodes])
+
+  useEffect(() => () => cancelScheduledSync(), [cancelScheduledSync])
+
+  const flushPendingNodesSync = useCallback(() => {
+    const pendingNodes = pendingNodesSyncRef.current
+    pendingNodesSyncRef.current = null
+    if (pendingNodes) syncFlowNodes(pendingNodes)
+  }, [syncFlowNodes])
+
+  const handleViewportMoveStart = useCallback(() => {
+    viewportInteractingRef.current = true
+    cancelScheduledSync()
+  }, [cancelScheduledSync])
+
+  const handleViewportMoveEnd = useCallback(() => {
+    viewportInteractingRef.current = false
+    flushPendingNodesSync()
+  }, [flushPendingNodesSync])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
@@ -162,6 +201,7 @@ export function CanvasStage({
           minZoom={0.18}
           maxZoom={2.2}
           nodeOrigin={defaultNodeOrigin}
+          onlyRenderVisibleElements
           nodesDraggable={activeTool === 'select'}
           nodesConnectable
           elementsSelectable
@@ -170,6 +210,8 @@ export function CanvasStage({
           selectionOnDrag={activeTool === 'select'}
           onNodesChange={handleNodesChange}
           onConnect={handleConnect}
+          onMoveStart={handleViewportMoveStart}
+          onMoveEnd={handleViewportMoveEnd}
           onSelectionChange={({ nodes: selected }) =>
             onSelectionChange(selected.map((node) => node.id))
           }
