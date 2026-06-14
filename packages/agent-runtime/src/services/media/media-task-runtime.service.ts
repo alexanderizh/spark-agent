@@ -129,6 +129,8 @@ export class MediaTaskRuntimeService {
         ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
       }
       const { output, providerProfileId } = await this.router.invoke(input, invokeOptions)
+      const latest = this.repo.getById(row.id)
+      if (latest?.status === 'cancelled') return rowToRecord(latest)
       const completed = this.repo.update(row.id, {
         providerProfileId,
         providerKind: output.provider,
@@ -142,6 +144,8 @@ export class MediaTaskRuntimeService {
       })
       return rowToRecord(completed ?? this.repo.getById(row.id) ?? row)
     } catch (err) {
+      const latest = this.repo.getById(row.id)
+      if (latest?.status === 'cancelled') return rowToRecord(latest)
       const code = err instanceof MediaProviderError ? err.code : 'provider_http_error'
       const message = err instanceof Error ? err.message : String(err)
       const failed = this.repo.update(row.id, {

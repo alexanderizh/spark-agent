@@ -1761,6 +1761,26 @@ export function registerAllIpcHandlers(): void {
     }
   })
 
+  typedIpcHandle('canvas:task:cancel-media', async (req) => {
+    const record = getMediaTaskRuntimeService().cancel(req.runtimeTaskId)
+    if (!record) {
+      return {
+        runtimeTaskId: req.runtimeTaskId,
+        cancelled: false,
+        status: null,
+        error: {
+          code: 'task_not_found',
+          message: `Media task not found: ${req.runtimeTaskId}`,
+        },
+      }
+    }
+    return {
+      runtimeTaskId: record.id,
+      cancelled: record.status === 'cancelled',
+      status: record.status,
+    }
+  })
+
   // ─── Canvas 持久化 Handlers（SQLite-backed 生产存储） ─────────────────────
 
   typedIpcHandle('canvas:snapshot:save', async (req) => {

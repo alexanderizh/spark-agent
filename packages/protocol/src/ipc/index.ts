@@ -3486,6 +3486,17 @@ export interface CanvasMediaTaskCreateResponse {
   error?: { code: string; message: string }
 }
 
+export interface CanvasMediaTaskCancelRequest {
+  runtimeTaskId: string
+}
+
+export interface CanvasMediaTaskCancelResponse {
+  runtimeTaskId: string
+  cancelled: boolean
+  status: 'pending' | 'running' | 'succeeded' | 'failed' | 'cancelled' | null
+  error?: { code: string; message: string }
+}
+
 export interface CanvasMediaTaskStreamPayload {
   projectId?: string
   clientTaskId?: string
@@ -3827,6 +3838,7 @@ export interface IpcChannelMap {
   'canvas:media-models:list': [CanvasMediaModelsListRequest, CanvasMediaModelsListResponse]
   'canvas:media-models:describe': [CanvasMediaModelDescribeRequest, CanvasMediaModelDescribeResponse]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
+  'canvas:task:cancel-media': [CanvasMediaTaskCancelRequest, CanvasMediaTaskCancelResponse]
 
   // Canvas Persistence (SQLite-backed production storage)
   'canvas:snapshot:save': [CanvasSnapshotSaveRequest, CanvasSnapshotSaveResponse]

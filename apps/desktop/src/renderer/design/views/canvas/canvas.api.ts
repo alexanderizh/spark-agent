@@ -1166,6 +1166,19 @@ export const canvasApi = {
       return this.openSnapshot(projectId)
     }
 
+    if (task.requestId) {
+      try {
+        const runtimeCancel = await window.spark.invoke('canvas:task:cancel-media', {
+          runtimeTaskId: task.requestId,
+        })
+        if (runtimeCancel.status === 'succeeded' || runtimeCancel.status === 'failed') {
+          return this.openSnapshot(projectId)
+        }
+      } catch {
+        // Renderer-local cancellation still updates the canvas; runtime may already be gone after restart.
+      }
+    }
+
     const at = now()
     task.status = 'cancelled'
     task.progress = 100

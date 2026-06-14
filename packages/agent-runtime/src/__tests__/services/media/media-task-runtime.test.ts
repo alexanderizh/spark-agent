@@ -112,6 +112,48 @@ describe('MediaTaskRuntimeService', () => {
     expect(cancelled?.status).toBe('cancelled')
     expect(cancelled?.completedAt).toBeTruthy()
   })
+
+  it('keeps background tasks cancelled when provider completes later', async () => {
+    const repo = createRepo()
+    let finishProvider!: () => void
+    const providerDone = new Promise<void>((resolve) => {
+      finishProvider = resolve
+    })
+    const service = new MediaTaskRuntimeService(repo, {
+      async invoke() {
+        await providerDone
+        return {
+          providerProfileId: 'provider-1',
+          output: {
+            provider: 'apimart',
+            model: 'gpt-image-2',
+            mode: 'sync',
+            requestId: 'req-late',
+            assets: [{ type: 'image', filePath: '/tmp/late.png', mimeType: 'image/png' }],
+          },
+        }
+      },
+    })
+    const statuses: string[] = []
+    const completed = new Promise<void>((resolve) => {
+      service.submitBackground(
+        { operation: 'text_to_image', prompt: 'hello', outputDir: '/tmp/media' },
+        { providers: [], providerProfileId: 'provider-1' },
+        (record) => {
+          statuses.push(record.status)
+          if (record.status === 'cancelled') resolve()
+        },
+      )
+    })
+
+    expect(service.cancel('media-task-1')?.status).toBe('cancelled')
+    finishProvider()
+    await completed
+
+    expect(statuses).toEqual(['running', 'cancelled'])
+    expect(service.inquire('media-task-1')?.status).toBe('cancelled')
+    expect(service.materialize('media-task-1')).toBeNull()
+  })
 })
 
 function createRepo(): MediaGenerationTaskRepository {

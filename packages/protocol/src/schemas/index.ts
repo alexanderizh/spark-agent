@@ -683,6 +683,9 @@ export const IpcSchemaRegistry = {
     waitForCompletion: z.boolean().optional(),
     outputDir: z.string().max(2000).optional(),
   }),
+  'canvas:task:cancel-media': z.object({
+    runtimeTaskId: z.string().min(1).max(200),
+  }),
 
   // Remote Connections
   'remote:list': z.object({}),
