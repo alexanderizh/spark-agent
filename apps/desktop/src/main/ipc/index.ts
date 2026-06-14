@@ -54,6 +54,7 @@ import {
   RuleCompositionEngine,
   SessionService,
   WorkspaceService,
+  GitWorktreeService,
   PermissionService,
   ModelService,
   McpService,
@@ -2033,6 +2034,67 @@ export function registerAllIpcHandlers(): void {
       throw new Error('Unable to determine current git branch after switch')
     }
     return { currentBranch: result.currentBranch, branches: result.branches }
+  })
+
+  typedIpcHandle('workspace:list-worktrees', async (req) => {
+    log.info(`workspace:list-worktrees requested, workspaceId=${req.workspaceId}`)
+    const db = getDatabase()
+    const wsRepo = new WorkspaceRepository(db)
+    const sessionRepo = new SessionRepository(db)
+    const workspace = wsRepo.findByIdOrFail(req.workspaceId)
+    const git = new GitWorktreeService()
+    try {
+      const mainRepoRoot = await git.resolveMainRepoRoot(workspace.root_path)
+      const baseBranch = await git.detectBaseBranch(mainRepoRoot)
+      const raw = await git.listWorktrees(mainRepoRoot)
+      const registered = wsRepo.findWorktreesByBaseRepo(mainRepoRoot)
+      const byPath = new Map(registered.map((w) => [path.resolve(w.root_path), w]))
+      const currentPath = path.resolve(workspace.root_path)
+
+      const worktrees = await Promise.all(
+        raw.map(async (w) => {
+          const matched = byPath.get(path.resolve(w.path))
+          let sessionTitle: string | undefined
+          if (matched) {
+            const { sessions } = sessionRepo.list({ workspaceId: matched.id, limit: 1 })
+            sessionTitle = sessions[0]?.title
+          }
+          const isMerged =
+            w.branch != null && !w.isMain ? await git.isMerged(mainRepoRoot, w.branch, baseBranch) : false
+          return {
+            path: w.path,
+            branch: w.branch,
+            head: w.head,
+            isMain: w.isMain,
+            isCurrent: path.resolve(w.path) === currentPath,
+            isMerged,
+            ...(matched ? { workspaceId: matched.id } : {}),
+            ...(sessionTitle ? { sessionTitle } : {}),
+          }
+        }),
+      )
+      return { isGitRepo: true, baseBranch, worktrees }
+    } catch {
+      return { isGitRepo: false, baseBranch: null, worktrees: [] }
+    }
+  })
+
+  typedIpcHandle('workspace:create-worktree', async (req) => {
+    log.info(`workspace:create-worktree requested, base=${req.baseWorkspaceId}, branch=${req.branch}`)
+    const workspace = await getWorkspaceService().createWorktreeWorkspace({
+      baseWorkspaceId: req.baseWorkspaceId,
+      branch: req.branch,
+      ...(req.baseBranch !== undefined && { baseBranch: req.baseBranch }),
+    })
+    return { workspace: toWorkspaceInfo(workspace) }
+  })
+
+  typedIpcHandle('workspace:remove-worktree', async (req) => {
+    log.info(`workspace:remove-worktree requested, workspaceId=${req.workspaceId}`)
+    await getWorkspaceService().removeWorktreeWorkspace(req.workspaceId, {
+      ...(req.force !== undefined && { force: req.force }),
+    })
+    return { removed: true }
   })
 
   // ─── File Watcher Handlers ──────────────────────────────────────────────
@@ -4318,6 +4380,7 @@ function toWorkspaceInfo(workspace: {
   updated_at: string
   pinned_at: string | null
   archived_at: string | null
+  worktree_meta_json?: string | null
 }): WorkspaceInfo {
   return {
     id: workspace.id,
@@ -4327,6 +4390,18 @@ function toWorkspaceInfo(workspace: {
     archivedAt: workspace.archived_at,
     createdAt: workspace.created_at,
     updatedAt: workspace.updated_at,
+    worktreeMeta: (() => {
+      if (workspace.worktree_meta_json == null) return null
+      try {
+        return JSON.parse(workspace.worktree_meta_json) as {
+          baseRepoRoot: string
+          branch: string
+          baseBranch: string
+        }
+      } catch {
+        return null
+      }
+    })(),
   }
 }
 
