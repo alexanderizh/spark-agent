@@ -46,7 +46,9 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
   }, [workspaceId, listWorktrees])
 
   useEffect(() => {
-    refresh()
+    // 延迟到下一个 tick，避免在 effect 体内同步 setState（cascading renders）
+    const id = window.setTimeout(() => refresh(), 0)
+    return () => window.clearTimeout(id)
   }, [refresh])
 
   const handleMerge = useCallback(
