@@ -3406,6 +3406,8 @@ export interface CanvasMediaModelsListRequest {
   providerKind?: string
   capability?: string
   enabledOnly?: boolean
+  /** Return global manifest catalog instead of only configured provider-bound models. */
+  catalogOnly?: boolean
 }
 
 export interface CanvasMediaModelsListResponse {

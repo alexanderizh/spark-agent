@@ -564,6 +564,83 @@
 
 /* ─── 多媒体能力区块（ProviderEditPanel）─── */
 
+.pv_media_manifest_list {
+  max-height: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+}
+
+.pv_media_manifest_empty {
+  padding: 14px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.pv_media_manifest_item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+
+  &:hover {
+    border-color: var(--border-strong, var(--primary));
+  }
+}
+
+.pv_media_manifest_item_selected {
+  border-color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.pv_media_manifest_main {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pv_media_manifest_title,
+.pv_media_manifest_caps {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.pv_media_manifest_title > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-strong);
+  font-size: 12px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pv_media_manifest_meta {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .pv_media_capabilities {
   display: flex;
   flex-wrap: wrap;

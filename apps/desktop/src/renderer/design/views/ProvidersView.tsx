@@ -38,6 +38,8 @@ import type {
   MediaApiType,
   MediaCapabilityId,
   ProviderMediaDefaults,
+  ProviderMediaModelRef,
+  CanvasMediaModelSummary,
 } from '@spark/protocol'
 import MultiSelectToolbar from './provider-import-export/MultiSelectToolbar'
 import ImportPreviewModal from './provider-import-export/ImportPreviewModal'
@@ -74,6 +76,8 @@ type ProviderForm = {
   mediaApiType: MediaApiType
   /** 已选多媒体能力 */
   mediaCapabilities: MediaCapabilityId[]
+  /** 已启用的 manifest 模型引用 */
+  mediaModelRefs: ProviderMediaModelRef[]
   /** 多媒体能力默认值（按族分组的字符串表单值，提交时归一） */
   mediaImageSize: string
   mediaImageN: string
@@ -91,6 +95,7 @@ const EMPTY_MEDIA_FORM = {
   mediaProvider: '' as MediaProviderKind | '',
   mediaApiType: 'auto' as MediaApiType,
   mediaCapabilities: [] as MediaCapabilityId[],
+  mediaModelRefs: [] as ProviderMediaModelRef[],
   mediaImageSize: '',
   mediaImageN: '',
   mediaImageQuality: '',
@@ -130,7 +135,7 @@ function mediaProviderFromImageKind(imageProvider: ImageProviderKind): MediaProv
 
 /** 把 preset 的 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults 投影成 ProviderForm 媒体字段 */
 function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
-  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities'
+  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs'
   | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
   | 'mediaAudioVoice' | 'mediaAudioFormat'
   | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
@@ -140,6 +145,7 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
     mediaProvider: preset.mediaProvider ?? '',
     mediaApiType: preset.mediaApiType ?? 'auto',
     mediaCapabilities: preset.mediaCapabilities ?? [],
+    mediaModelRefs: [],
     mediaImageSize: d?.image?.size ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
     mediaImageQuality: d?.image?.quality ?? '',
@@ -155,7 +161,7 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
 
 /** 把已保存 profile 的 media 字段投影成 ProviderForm 媒体字段 */
 function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
-  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities'
+  | 'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaModelRefs'
   | 'mediaImageSize' | 'mediaImageN' | 'mediaImageQuality'
   | 'mediaAudioVoice' | 'mediaAudioFormat'
   | 'mediaVideoAspectRatio' | 'mediaVideoDuration' | 'mediaVideoQuality'
@@ -165,6 +171,7 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
     mediaProvider: p.mediaProvider ?? '',
     mediaApiType: p.mediaApiType ?? 'auto',
     mediaCapabilities: p.mediaCapabilities ?? [],
+    mediaModelRefs: p.mediaModelRefs ?? [],
     mediaImageSize: d?.image?.size ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
     mediaImageQuality: d?.image?.quality ?? '',
@@ -184,20 +191,36 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
  * - 多媒体模型类型：下发 mediaProvider/mediaApiType/mediaCapabilities/mediaDefaults。
  */
 function buildMediaUpdateFields(form: ProviderForm): Pick<ProviderUpdateRequest,
-  'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults'> {
+  'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults' | 'mediaModelRefs'> {
   const isMediaModelType = form.modelType === 'image' || form.modelType === 'voice' || form.modelType === 'video'
   if (!isMediaModelType) {
-    return { mediaProvider: null, mediaApiType: null, mediaCapabilities: [] }
+    return { mediaProvider: null, mediaApiType: null, mediaCapabilities: [], mediaModelRefs: [] }
   }
   const provider = (form.mediaProvider || mediaProviderFromImageKind(form.imageProvider)) as MediaProviderKind
   const result: Pick<ProviderUpdateRequest,
-    'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults'> = {
+    'mediaProvider' | 'mediaApiType' | 'mediaCapabilities' | 'mediaDefaults' | 'mediaModelRefs'> = {
     mediaProvider: provider,
     mediaApiType: form.mediaApiType,
     mediaCapabilities: form.mediaCapabilities,
+    mediaModelRefs: normalizeMediaModelRefs(form.mediaModelRefs),
   }
   const defaults = buildMediaDefaults(form)
   if (defaults) result.mediaDefaults = defaults
+  return result
+}
+
+function normalizeMediaModelRefs(refs: ProviderMediaModelRef[]): ProviderMediaModelRef[] {
+  const seen = new Set<string>()
+  const result: ProviderMediaModelRef[] = []
+  for (const ref of refs) {
+    const manifestId = ref.manifestId.trim()
+    if (!manifestId || seen.has(manifestId)) continue
+    seen.add(manifestId)
+    const next: ProviderMediaModelRef = { manifestId, enabled: ref.enabled !== false }
+    if (ref.modelId?.trim()) next.modelId = ref.modelId.trim()
+    if (ref.defaults !== undefined) next.defaults = ref.defaults
+    result.push(next)
+  }
   return result
 }
 
@@ -227,6 +250,38 @@ function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefin
   if (Object.keys(video).length > 0) result.video = video
   if (Object.keys(polling).length > 0) result.polling = polling
   return Object.keys(result).length > 0 ? result : undefined
+}
+
+function mediaModelMatchesType(model: CanvasMediaModelSummary, modelType: ProviderModelType): boolean {
+  if (modelType === 'image') {
+    return model.domains.includes('image') || model.capabilities.some((capability) => capability.id.startsWith('image.'))
+  }
+  if (modelType === 'voice') {
+    return model.domains.includes('audio') || model.capabilities.some((capability) => capability.id.startsWith('audio.'))
+  }
+  if (modelType === 'video') {
+    return model.domains.includes('video') || model.capabilities.some((capability) => capability.id.startsWith('video.'))
+  }
+  return false
+}
+
+function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: ProviderForm): boolean {
+  const candidates = new Set<string>()
+  if (form.mediaProvider) candidates.add(form.mediaProvider)
+  candidates.add(mediaProviderFromImageKind(form.imageProvider))
+  candidates.add(form.imageProvider)
+  if (form.imageProvider === 'gemini') candidates.add('google')
+  if (form.imageProvider === 'seeddance') candidates.add('volcengine')
+  if (form.mediaProvider === 'openai-compatible') candidates.add('openai')
+  if (form.mediaProvider === 'custom') return true
+  return candidates.has(model.providerKind)
+}
+
+function adapterKindFromManifestProvider(providerKind: string): MediaProviderKind {
+  if (providerKind === 'apimart') return 'apimart'
+  if (providerKind === 'xai') return 'xai'
+  if (providerKind === 'custom') return 'custom'
+  return 'openai-compatible'
 }
 
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
@@ -1075,10 +1130,13 @@ export function ProviderEditPanel({
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
+  const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
+  const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
 
   // 防抖更新 modelIds：避免每个字符输入都往列表里加模型
   const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
@@ -1171,6 +1229,15 @@ export function ProviderEditPanel({
       .catch(console.error)
   }, [listProviders, profileId, initialPresetId, visible])
 
+  useEffect(() => {
+    if (!visible) return
+    setMediaCatalogLoading(true)
+    listMediaModels({ catalogOnly: true, enabledOnly: true })
+      .then((res) => setMediaCatalog(res.models))
+      .catch(() => setMediaCatalog([]))
+      .finally(() => setMediaCatalogLoading(false))
+  }, [listMediaModels, visible])
+
   // ── 衍生：当前选中 preset 对应的 vendor（用于 hero 渲染真实 logo） ──
   const currentVendor: VendorMeta | null = useMemo(() => {
     if (form.presetId !== 'custom') {
@@ -1209,6 +1276,49 @@ export function ProviderEditPanel({
       }),
     [form.modelType, form.provider],
   )
+  const mediaCatalogForForm = useMemo(() => {
+    const byType = mediaCatalog.filter((model) => mediaModelMatchesType(model, form.modelType))
+    const providerFiltered = byType.filter((model) => mediaModelMatchesProvider(model, form))
+    return providerFiltered.length > 0 ? providerFiltered : byType
+  }, [form, mediaCatalog])
+  const selectedManifestIds = useMemo(
+    () => new Set(form.mediaModelRefs.filter((ref) => ref.enabled !== false).map((ref) => ref.manifestId)),
+    [form.mediaModelRefs],
+  )
+
+  const toggleMediaModelRef = (model: CanvasMediaModelSummary, checked: boolean) => {
+    setForm((prev) => {
+      const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
+      if (checked) {
+        existing.set(model.manifestId, {
+          manifestId: model.manifestId,
+          modelId: model.effectiveModelId,
+          enabled: true,
+        })
+      } else {
+        existing.delete(model.manifestId)
+      }
+      const capabilitySet = new Set(prev.mediaCapabilities)
+      if (checked) {
+        for (const capability of model.capabilities) {
+          if ((MEDIA_CAPABILITY_IDS as readonly string[]).includes(capability.id)) {
+            capabilitySet.add(capability.id as MediaCapabilityId)
+          }
+        }
+      }
+      const modelIds = checked
+        ? uniqPreserveOrder([model.effectiveModelId, ...prev.modelIds])
+        : prev.modelIds
+      return {
+        ...prev,
+        mediaModelRefs: [...existing.values()],
+        mediaCapabilities: [...capabilitySet],
+        mediaProvider: prev.mediaProvider || adapterKindFromManifestProvider(model.providerKind),
+        defaultModel: prev.defaultModel.trim() ? prev.defaultModel : model.effectiveModelId,
+        modelIds,
+      }
+    })
+  }
 
   const handleSave = async () => {
     if (!form.name.trim() || !form.defaultModel.trim()) {
@@ -1523,6 +1633,50 @@ export function ProviderEditPanel({
                       value: mode,
                     }))}
                   />
+
+                  <label className="pv_form_label">
+                    模型清单
+                    <span className="pv_form_sub">勾选后会写入 mediaModelRefs，agent 与无限画布可立即发现参数 schema</span>
+                  </label>
+                  <div className="pv_media_manifest_list">
+                    {mediaCatalogLoading ? (
+                      <div className="pv_media_manifest_empty">正在加载模型清单…</div>
+                    ) : mediaCatalogForForm.length === 0 ? (
+                      <div className="pv_media_manifest_empty">暂无匹配的内置模型清单</div>
+                    ) : (
+                      mediaCatalogForForm.map((model) => (
+                        <label
+                          key={model.manifestId}
+                          className={[
+                            'pv_media_manifest_item',
+                            selectedManifestIds.has(model.manifestId) ? 'pv_media_manifest_item_selected' : '',
+                          ].filter(Boolean).join(' ')}
+                        >
+                          <Checkbox
+                            checked={selectedManifestIds.has(model.manifestId)}
+                            onChange={(checked: boolean) => toggleMediaModelRef(model, checked)}
+                          />
+                          <div className="pv_media_manifest_main">
+                            <div className="pv_media_manifest_title">
+                              <span>{model.displayName}</span>
+                              <Tag size="small" color="gray">{model.providerKind}</Tag>
+                              <Tag size="small" color="blue">{model.invocationMode}</Tag>
+                            </div>
+                            <div className="pv_media_manifest_meta">
+                              {model.effectiveModelId}
+                            </div>
+                            <div className="pv_media_manifest_caps">
+                              {model.capabilities.slice(0, 4).map((capability) => (
+                                <Tag key={capability.id} size="small" color="gray">
+                                  {capability.label}
+                                </Tag>
+                              ))}
+                            </div>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
 
                   <label className="pv_form_label">
                     支持能力

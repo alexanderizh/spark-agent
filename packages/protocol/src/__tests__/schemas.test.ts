@@ -149,8 +149,10 @@ describe('IPC schemas', () => {
       providerProfileId: 'provider-media-1',
       capability: 'image.generate',
       enabledOnly: true,
+      catalogOnly: true,
     })
     expect(listRequest.capability).toBe('image.generate')
+    expect(listRequest.catalogOnly).toBe(true)
 
     const describeRequest = IpcSchemaRegistry['canvas:media-models:describe'].parse({
       manifestId: 'apimart:gpt-image-2',

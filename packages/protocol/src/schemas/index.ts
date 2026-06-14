@@ -645,6 +645,7 @@ export const IpcSchemaRegistry = {
     providerKind: z.string().min(1).max(120).optional(),
     capability: z.string().min(1).max(120).optional(),
     enabledOnly: z.boolean().optional(),
+    catalogOnly: z.boolean().optional(),
   }),
   'canvas:media-models:describe': z.object({
     manifestId: z.string().min(1).max(160),

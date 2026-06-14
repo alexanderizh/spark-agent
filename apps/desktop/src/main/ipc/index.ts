@@ -1603,6 +1603,23 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('canvas:media-models:list', async (req) => {
     const catalog = getMediaModelCatalogService()
+    if (req.catalogOnly === true) {
+      const models = catalog
+        .list({
+          ...(req.providerKind !== undefined ? { providerKind: req.providerKind } : {}),
+          ...(req.capability !== undefined ? { capability: req.capability } : {}),
+          enabledOnly: req.enabledOnly !== false,
+        })
+        .map((item) => {
+          const manifest = catalog.describe(item.id)
+          return manifest ? toCanvasMediaModelSummary(manifest, {
+            effectiveModelId: item.modelId,
+            enabled: item.enabled,
+          }) : null
+        })
+        .filter((model): model is CanvasMediaModelSummary => model != null)
+      return { models }
+    }
     const profiles = await getProviderService().listProviders()
     const models: CanvasMediaModelSummary[] = []
     const providerProfiles = req.providerProfileId

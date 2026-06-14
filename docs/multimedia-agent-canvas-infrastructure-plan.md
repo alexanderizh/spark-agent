@@ -521,8 +521,9 @@ type MediaRuntimeError = {
 - 新增 `MediaModelManifest` 类型、schema、存储表。
 - 扩展 Provider profile，支持 `mediaModelRefs`。
 - 新增画布模型 discovery IPC：`canvas:media-models:list`、`canvas:media-models:describe`。
+- Provider 编辑面板可通过 catalog 模式选择内置 manifest，并保存为 `mediaModelRefs`。
 - Inline AI Composer 可以读取 manifest 模型目录，按能力选择 provider/model，并把 `modelId` 传入真实任务调用。
-- Provider UI 从固定字段升级为“模型能力清单 + 参数默认值”。
+- Provider UI 从固定字段升级为“模型能力清单 + 参数默认值”（第一版已支持 manifest 勾选，动态参数表单继续深化）。
 - 增加 `list_models`、`describe_model` 能力。
 
 ### Phase 2：Media Runtime 任务化

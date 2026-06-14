@@ -37,6 +37,9 @@ Spark now has a first-pass model manifest registry:
 - Built-in seeds cover APIMart, xAI, OpenAI Images, Google/Veo, Volcengine Seedance, and placeholder manifests for Kling, PixVerse, Wan, HappyHorse, Omni, and MiniMax-Hailuo.
 - SQLite persistence uses `media_model_manifests` and `media_provider_models` (`028_media_model_manifests.sql`).
 - `MediaModelCatalogService` seeds built-ins and exposes list/describe/link operations.
+- Provider edit UI can load the global manifest catalog (`catalogOnly`) and save
+  selected models into `mediaModelRefs`; selected manifest capabilities are also
+  mirrored into legacy `mediaCapabilities` for adapter compatibility.
 
 Phase 1 manifests are intentionally capability/schema metadata first. Existing
 adapters still own provider HTTP behavior. This keeps APIMart/xAI canvas and MCP
@@ -166,7 +169,7 @@ IPC channels:
 
 ```text
 canvas:media-capabilities:list   — available media providers + model summaries (no keys)
-canvas:media-models:list         — manifest-driven model catalog for canvas parameter panels
+canvas:media-models:list         — manifest-driven model catalog for canvas/provider parameter panels
 canvas:media-models:describe     — full manifest details for one model
 canvas:task:create-media         — run a media generation task, optionally with providerProfileId/modelId
 canvas:snapshot:save             — persist project snapshot to SQLite
