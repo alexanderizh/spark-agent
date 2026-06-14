@@ -52,14 +52,24 @@ export class GitWorktreeService {
     return result
   }
 
-  /** branch 是否已被 baseBranch 包含（已合并） */
-  async isMerged(repoRoot: string, branch: string, baseBranch: string): Promise<boolean> {
+  /** 列出所有已合并进 baseBranch 的本地分支（一次性查询，避免逐分支 spawn） */
+  async listMergedBranches(repoRoot: string, baseBranch: string): Promise<string[]> {
     try {
       const { stdout } = await this.exec('git', ['branch', '--merged', baseBranch, '--format=%(refname:short)'], { cwd: repoRoot })
-      return stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).includes(branch)
+      return stdout.split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
     } catch {
-      return false
+      return []
     }
+  }
+
+  /** branch 是否已被 baseBranch 包含（已合并） */
+  async isMerged(repoRoot: string, branch: string, baseBranch: string): Promise<boolean> {
+    return (await this.listMergedBranches(repoRoot, baseBranch)).includes(branch)
+  }
+
+  /** 删除本地分支（-D 强制，因 worktree 已移除后分支通常未合并） */
+  async deleteBranch(repoRoot: string, branch: string): Promise<void> {
+    await this.exec('git', ['branch', '-D', branch], { cwd: repoRoot })
   }
 
   /** 推导 base 分支：优先 origin/HEAD，回退 main/master，再回退当前分支 */

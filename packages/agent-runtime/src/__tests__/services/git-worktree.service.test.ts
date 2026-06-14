@@ -81,3 +81,31 @@ describe('GitWorktreeService merge & base helpers', () => {
     expect(resolved).toBe(realRepo)
   })
 })
+
+describe('GitWorktreeService listMergedBranches & deleteBranch', () => {
+  let repo: string
+  const svc = new GitWorktreeService()
+  beforeEach(async () => { repo = await initRepo() })
+  afterEach(async () => { await rm(repo, { recursive: true, force: true }) })
+
+  it('listMergedBranches includes a branch only after it is merged', async () => {
+    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-m')
+    await execFileAsync('git', ['worktree', 'add', '-b', 'feat-m', wtPath], { cwd: repo })
+    await writeFile(path.join(wtPath, 'm.txt'), 'm\n')
+    await execFileAsync('git', ['add', '.'], { cwd: wtPath })
+    await execFileAsync('git', ['commit', '-m', 'm'], { cwd: wtPath })
+
+    expect(await svc.listMergedBranches(repo, 'main')).not.toContain('feat-m')
+    await execFileAsync('git', ['merge', 'feat-m'], { cwd: repo })
+    expect(await svc.listMergedBranches(repo, 'main')).toContain('feat-m')
+  })
+
+  it('deleteBranch removes a branch after its worktree is removed', async () => {
+    const wtPath = path.join(repo, '.spark', 'worktrees', 'feat-d')
+    await execFileAsync('git', ['worktree', 'add', '-b', 'feat-d', wtPath], { cwd: repo })
+    await svc.removeWorktree(repo, wtPath, { force: true })
+    await svc.deleteBranch(repo, 'feat-d')
+    const { stdout } = await execFileAsync('git', ['branch', '--format=%(refname:short)'], { cwd: repo })
+    expect(stdout).not.toContain('feat-d')
+  })
+})

@@ -679,6 +679,8 @@ export interface WorkspaceListWorktreesRequest {
 export interface WorkspaceListWorktreesResponse {
   isGitRepo: boolean
   baseBranch: string | null
+  /** 主仓库根的绝对路径；合并需在主仓库执行（base 分支无法在子 worktree 检出） */
+  baseRepoRoot: string | null
   worktrees: WorktreeInfo[]
 }
 

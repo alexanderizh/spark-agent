@@ -403,8 +403,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       // 勾选了「为本会话创建隔离 worktree」：先创建 worktree workspace，改用其 id。
       // 注意放在 unusedSession 查找之前——新 worktree workspace 下必无可复用会话。
       if (options.createWorktree === true && wsId != null) {
-        // 默认分支名 spark/YYYYMMDD-HHmm
-        const ts = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-')
+        // 默认分支名 spark/YYYYMMDD-HHmmss（精确到秒，避免同分钟连建冲突）
+        const ts = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
         const branch = nonEmptyString(options.worktreeBranch) ?? `spark/${ts}`
         try {
           const res = await createWorktree({ baseWorkspaceId: wsId, branch })

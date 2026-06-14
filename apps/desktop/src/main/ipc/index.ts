@@ -149,7 +149,7 @@ import type { RemoteInboundMessage } from '../services/RemoteConnectionService.j
 import { getDatabase, getDatabasePath } from '../db.js'
 import { getMainWindow } from '../windows/index.js'
 import { applyHunkPatch } from '../services/FilePatchService.js'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 
 const log = createLogger('ipc:register')
@@ -2048,34 +2048,36 @@ export function registerAllIpcHandlers(): void {
       const baseBranch = await git.detectBaseBranch(mainRepoRoot)
       const raw = await git.listWorktrees(mainRepoRoot)
       const registered = wsRepo.findWorktreesByBaseRepo(mainRepoRoot)
-      const byPath = new Map(registered.map((w) => [path.resolve(w.root_path), w]))
-      const currentPath = path.resolve(workspace.root_path)
-
-      const worktrees = await Promise.all(
-        raw.map(async (w) => {
-          const matched = byPath.get(path.resolve(w.path))
-          let sessionTitle: string | undefined
-          if (matched) {
-            const { sessions } = sessionRepo.list({ workspaceId: matched.id, limit: 1 })
-            sessionTitle = sessions[0]?.title
-          }
-          const isMerged =
-            w.branch != null && !w.isMain ? await git.isMerged(mainRepoRoot, w.branch, baseBranch) : false
-          return {
-            path: w.path,
-            branch: w.branch,
-            head: w.head,
-            isMain: w.isMain,
-            isCurrent: path.resolve(w.path) === currentPath,
-            isMerged,
-            ...(matched ? { workspaceId: matched.id } : {}),
-            ...(sessionTitle ? { sessionTitle } : {}),
-          }
-        }),
+      // 路径相等比较前统一 realpath 归一化，避免软链导致的失配（如 /var→/private/var）
+      const byPath = new Map(
+        registered.map((w) => [normalizeRealPath(w.root_path), w] as const),
       )
-      return { isGitRepo: true, baseBranch, worktrees }
+      const currentPath = normalizeRealPath(workspace.root_path)
+      // 一次性取已合并分支集合，避免逐 worktree spawn git
+      const mergedBranches = new Set(await git.listMergedBranches(mainRepoRoot, baseBranch))
+
+      const worktrees = raw.map((w) => {
+        const matched = byPath.get(normalizeRealPath(w.path))
+        let sessionTitle: string | undefined
+        if (matched) {
+          const { sessions } = sessionRepo.list({ workspaceId: matched.id, limit: 1 })
+          sessionTitle = sessions[0]?.title
+        }
+        const isMerged = w.branch != null && !w.isMain ? mergedBranches.has(w.branch) : false
+        return {
+          path: w.path,
+          branch: w.branch,
+          head: w.head,
+          isMain: w.isMain,
+          isCurrent: normalizeRealPath(w.path) === currentPath,
+          isMerged,
+          ...(matched ? { workspaceId: matched.id } : {}),
+          ...(sessionTitle ? { sessionTitle } : {}),
+        }
+      })
+      return { isGitRepo: true, baseBranch, baseRepoRoot: mainRepoRoot, worktrees }
     } catch {
-      return { isGitRepo: false, baseBranch: null, worktrees: [] }
+      return { isGitRepo: false, baseBranch: null, baseRepoRoot: null, worktrees: [] }
     }
   })
 
@@ -4514,6 +4516,19 @@ function isWorkflowNodeKind(kind: string): kind is ProtocolWorkflowItem['graph']
     kind === 'review' ||
     kind === 'artifact'
   )
+}
+
+/**
+ * 归一化路径用于相等比较：先 path.resolve，再尝试 realpath 解软链。
+ * realpath 失败（路径不存在）时回退到 resolve 结果。
+ */
+function normalizeRealPath(p: string): string {
+  const resolved = path.resolve(p)
+  try {
+    return realpathSync(resolved)
+  } catch {
+    return resolved
+  }
 }
 
 async function getWorkspaceBranches(

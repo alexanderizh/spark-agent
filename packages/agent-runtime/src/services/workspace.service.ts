@@ -176,6 +176,9 @@ export class WorkspaceService {
 
         const childPath = path.join(dirPath, child.name)
         const childRelativePath = toPosixPath(path.join(relativePrefix, child.name))
+        // 跳过隔离 worktree 容器：它在主仓库 .spark/worktrees 下存放整份工作树副本，
+        // 不应污染主项目的文件树。
+        if (childRelativePath === '.spark/worktrees') continue
         const isDirectory = child.isDirectory()
         const childEntries = isDirectory ? await readVisibleChildren(childPath) : []
         const extension = !isDirectory && !child.isSymbolicLink() ? path.extname(child.name).slice(1).toLowerCase() : ''
@@ -278,6 +281,13 @@ export class WorkspaceService {
     await this.git.removeWorktree(meta.baseRepoRoot, ws.root_path, {
       ...(opts.force !== undefined && { force: opts.force }),
     })
+    // worktree 移除后分支不再被检出，删除它（确认框已告知用户「及其分支」）。
+    // 容错：分支删除失败不应阻断 workspace 记录的清理。
+    try {
+      await this.git.deleteBranch(meta.baseRepoRoot, meta.branch)
+    } catch {
+      /* 分支可能已被手动删除或不存在 */
+    }
     if (this.currentWorkspace?.id === workspaceId) this.currentWorkspace = null
     this.repo.delete(workspaceId)
   }

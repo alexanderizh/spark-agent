@@ -26,6 +26,7 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
 
   const [isGitRepo, setIsGitRepo] = useState(true)
   const [baseBranch, setBaseBranch] = useState<string | null>(null)
+  const [baseRepoRoot, setBaseRepoRoot] = useState<string | null>(null)
   const [worktrees, setWorktrees] = useState<WorktreeInfo[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -36,6 +37,7 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
       .then((res) => {
         setIsGitRepo(res.isGitRepo)
         setBaseBranch(res.baseBranch)
+        setBaseRepoRoot(res.baseRepoRoot)
         setWorktrees(res.worktrees)
       })
       .catch(() => {
@@ -53,13 +55,16 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
 
   const handleMerge = useCallback(
     async (wt: WorktreeInfo) => {
-      if (sessionId == null || wt.branch == null || baseBranch == null) return
+      if (sessionId == null || wt.branch == null || baseBranch == null || baseRepoRoot == null) return
+      // 注意：base 分支已在主工作树检出，无法在当前 worktree 内 checkout，
+      // 因此合并必须在主仓库目录执行（git -C <baseRepoRoot>）。
       const message =
-        `请将当前 worktree 分支 \`${wt.branch}\` 合并回 \`${baseBranch}\` 分支：\n` +
-        `1. 切到 ${baseBranch} 分支\n` +
-        `2. 合并 ${wt.branch}\n` +
-        `3. 如有冲突，逐一解决并说明你的处理\n` +
-        `4. 完成后报告合并结果`
+        `请将分支 \`${wt.branch}\` 合并回主仓库的 \`${baseBranch}\` 分支。\n` +
+        `主仓库位于：\`${baseRepoRoot}\`（注意：base 分支已在主仓库检出，不能在当前 worktree 内切换）。\n` +
+        `请在主仓库目录执行合并，例如：\n` +
+        `1. \`git -C "${baseRepoRoot}" merge ${wt.branch}\`（或先切到主仓库目录再操作）\n` +
+        `2. 如有冲突，逐一解决并说明你的处理\n` +
+        `3. 完成后报告合并结果`
       try {
         await sendTurn({ sessionId, message })
         toast.success('已向 Agent 发送合并指令')
@@ -67,7 +72,7 @@ export function WorktreePanel({ workspaceId, sessionId }: WorktreePanelProps) {
         toast.error(err instanceof Error ? err.message : '发送合并指令失败')
       }
     },
-    [sessionId, baseBranch, sendTurn, toast],
+    [sessionId, baseBranch, baseRepoRoot, sendTurn, toast],
   )
 
   const handleRemove = useCallback(
