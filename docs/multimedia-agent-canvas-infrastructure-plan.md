@@ -18,10 +18,11 @@
 - 新增 `media_generation_tasks` 落库和 `MediaTaskRuntimeService.submit / submitBackground / inquire / cancel / materialize` 生命周期。
 - 无限画布媒体任务默认后台提交：`canvas:task:create-media` 可传 `waitForCompletion:false` 立即返回 running task，完成/失败后通过 `stream:canvas:media-task` 单次推送写回画布。
 - 画布参数面板已能读取 manifest `paramSchema`，把用户参数作为 `modelParams` 随任务提交，并在 Inspector 中展示实际调用参数。
+- 新增 manifest-driven `TemplateMediaAdapter`：当 provider 绑定了匹配 capability 的 `MediaModelManifest` 时，`MediaRouterService` 会优先按 `requestTemplate` 组装 JSON 请求、按 `response`/`polling` 提取 task id 和产物，并把画布选择的 `modelId` 作为 effective model 真正传给 provider。
 
 尚未完成：
 
-- manifest requestTemplate 驱动的通用 adapter。
+- multipart/binary/file-job/回调式 manifest invocation 的通用化。
 - 无限画布 UI/UX 重构、流程编排节点和重跑/分支比较等生产工作台能力。
 
 ## 1. 目标

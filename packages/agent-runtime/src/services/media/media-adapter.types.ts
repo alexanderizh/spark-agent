@@ -15,6 +15,8 @@ import type {
   CanvasOperationType,
   MediaApiType,
   MediaCapabilityId,
+  MediaModelCapabilityManifest,
+  MediaModelManifest,
   MediaProviderKind,
   ProviderMediaDefaults,
 } from '@spark/protocol'
@@ -28,6 +30,10 @@ export interface MediaProviderContext {
   mediaProvider: MediaProviderKind
   mediaApiType: MediaApiType
   mediaDefaults?: ProviderMediaDefaults
+  /** 当前调用命中的 manifest；存在时 adapter 可按 requestTemplate/response 组装调用。 */
+  mediaManifest?: MediaModelManifest
+  /** 当前 capability 在 manifest 中的配置。 */
+  mediaManifestCapability?: MediaModelCapabilityManifest
   /** 透传的 provider-level extra params（来自 modelParams 的非标量字段） */
   extraParams?: Record<string, unknown>
   /** 可注入的 fetch（测试用 mock）；缺省走全局 fetch */

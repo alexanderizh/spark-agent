@@ -17,6 +17,7 @@ import type {
   MediaProviderKind,
   ProviderMediaDefaults,
   MediaModelManifest,
+  MediaModelCapabilityManifest,
 } from '@spark/protocol'
 import { capabilityForOperation, isMediaCapabilityId, isMediaProviderKind, mediaManifestCapabilities } from '@spark/protocol'
 import { MediaProviderError } from './media-adapter.types.js'
@@ -28,6 +29,7 @@ import type {
 } from './media-adapter.types.js'
 import { ApimartMediaAdapter } from './adapters/apimart-media.adapter.js'
 import { XaiMediaAdapter } from './adapters/xai-media.adapter.js'
+import { TemplateMediaAdapter } from './adapters/template-media.adapter.js'
 
 /**
  * 最小化 provider profile 视图：router 只关心调用所需的字段，
@@ -42,7 +44,7 @@ export interface MediaProviderProfile {
   mediaProvider?: MediaProviderKind | null
   mediaApiType?: 'sync' | 'async' | 'auto' | null
   mediaCapabilities?: MediaCapabilityId[]
-  mediaModelManifests?: Array<Pick<MediaModelManifest, 'id' | 'modelId' | 'capabilities'>>
+  mediaModelManifests?: MediaModelManifest[]
   mediaDefaults?: ProviderMediaDefaults
   apiKey: string
   modelParams?: Record<string, unknown>
@@ -55,6 +57,10 @@ export interface InvokeOptions {
   providers: MediaProviderProfile[]
   /** 显式覆盖 capability（不传则由 operation 推导） */
   capability?: MediaCapabilityId
+  /** 指定 provider 内实际调用的模型；用于匹配 manifest 并覆盖 defaultModel。 */
+  modelId?: string | null
+  /** 指定 manifest；优先级高于 modelId 自动匹配。 */
+  manifestId?: string | null
   /** 透传给 adapter 的 extra params（如 voice/aspect_ratio 等） */
   extraParams?: Record<string, unknown>
   /** 注入 fetch（测试用） */
@@ -63,6 +69,7 @@ export interface InvokeOptions {
 
 export class MediaRouterService {
   private readonly adapters = new Map<MediaProviderKind, MediaProviderAdapter>()
+  private readonly templateAdapter = new TemplateMediaAdapter()
 
   constructor() {
     this.register(new ApimartMediaAdapter())
@@ -98,11 +105,12 @@ export class MediaRouterService {
   supports(profile: MediaProviderProfile, capability: MediaCapabilityId): boolean {
     const kind = effectiveProviderKind(profile)
     const adapter = kind ? this.adapters.get(kind) : undefined
-    if (!adapter) return false
     const declared = mediaCapabilitiesForProfile(profile)
     // 声明了能力列表就以列表为准；未声明则信任 adapter
-    if (declared.length > 0) return declared.includes(capability) && adapter.supports(capability)
-    return adapter.supports(capability)
+    if (declared.length > 0) {
+      return declared.includes(capability) && (Boolean(adapter?.supports(capability)) || hasManifestCapability(profile, capability))
+    }
+    return Boolean(adapter?.supports(capability))
   }
 
   /**
@@ -144,6 +152,32 @@ export class MediaRouterService {
       throw new MediaProviderError('api_key_missing', `Provider ${chosen.name} has no API key`)
     }
 
+    const manifestOptions: { manifestId?: string | null; modelId?: string | null } = {}
+    if (options.manifestId !== undefined) manifestOptions.manifestId = options.manifestId
+    if (options.modelId !== undefined) manifestOptions.modelId = options.modelId
+    const manifestMatch = resolveManifestMatch(chosen, capability, manifestOptions)
+    const effectiveModelId = options.modelId ?? manifestMatch?.manifest.modelId ?? chosen.defaultModel
+    if (manifestMatch) {
+      const ctx: MediaProviderContext = {
+        apiKey: chosen.apiKey,
+        apiEndpoint: chosen.apiEndpoint ?? '',
+        defaultModel: effectiveModelId,
+        ...(chosen.mediaDefaults ? { mediaDefaults: chosen.mediaDefaults } : {}),
+        ...(chosen.modelIds ? { modelIds: chosen.modelIds } : {}),
+        mediaProvider: effectiveProviderKind(chosen) ?? 'custom',
+        mediaApiType: chosen.mediaApiType ?? 'auto',
+        mediaManifest: manifestMatch.manifest,
+        mediaManifestCapability: manifestMatch.capability,
+        ...(options.extraParams ? { extraParams: options.extraParams } : {}),
+        ...(options.fetch ? { fetch: options.fetch } : {}),
+      }
+      const output = await this.templateAdapter.invoke(
+        { ...input, capability },
+        ctx,
+      )
+      return { output, providerProfileId: chosen.id }
+    }
+
     const kind = effectiveProviderKind(chosen)
     const adapter = kind ? this.adapters.get(kind) : undefined
     if (!adapter) {
@@ -156,7 +190,7 @@ export class MediaRouterService {
     const ctx: MediaProviderContext = {
       apiKey: chosen.apiKey,
       apiEndpoint: chosen.apiEndpoint ?? '',
-      defaultModel: chosen.defaultModel,
+      defaultModel: effectiveModelId,
       ...(chosen.mediaDefaults ? { mediaDefaults: chosen.mediaDefaults } : {}),
       ...(chosen.modelIds ? { modelIds: chosen.modelIds } : {}),
       mediaProvider: kind ?? 'custom',
@@ -178,6 +212,36 @@ function mediaCapabilitiesForProfile(profile: Pick<MediaProviderProfile, 'mediaC
     .flatMap((manifest) => mediaManifestCapabilities(manifest))
     .filter(isMediaCapabilityId)
   return Array.from(new Set([...declared, ...fromManifests]))
+}
+
+function hasManifestCapability(profile: Pick<MediaProviderProfile, 'mediaModelManifests'>, capability: MediaCapabilityId): boolean {
+  return (profile.mediaModelManifests ?? []).some((manifest) =>
+    manifest.capabilities.some((item) => item.id === capability),
+  )
+}
+
+function resolveManifestMatch(
+  profile: Pick<MediaProviderProfile, 'mediaModelManifests'>,
+  capability: MediaCapabilityId,
+  options: { manifestId?: string | null; modelId?: string | null },
+): { manifest: MediaModelManifest; capability: MediaModelCapabilityManifest } | null {
+  const manifests = profile.mediaModelManifests ?? []
+  const candidates = manifests
+    .map((manifest) => ({
+      manifest,
+      capability: manifest.capabilities.find((item) => item.id === capability),
+    }))
+    .filter((item): item is { manifest: MediaModelManifest; capability: MediaModelCapabilityManifest } => item.capability != null)
+  if (candidates.length === 0) return null
+  if (options.manifestId) {
+    const exact = candidates.find((item) => item.manifest.id === options.manifestId)
+    if (exact) return exact
+  }
+  if (options.modelId) {
+    const byModel = candidates.find((item) => item.manifest.modelId === options.modelId)
+    if (byModel) return byModel
+  }
+  return candidates[0] ?? null
 }
 
 /** 解析 provider profile 的有效 mediaProvider：优先显式字段，其次由 imageProvider 推断 */

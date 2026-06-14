@@ -41,10 +41,14 @@ Spark now has a first-pass model manifest registry:
   selected models into `mediaModelRefs`; selected manifest capabilities are also
   mirrored into legacy `mediaCapabilities` for adapter compatibility.
 
-Phase 1 manifests are intentionally capability/schema metadata first. Existing
-adapters still own provider HTTP behavior. This keeps APIMart/xAI canvas and MCP
-generation backward compatible while giving Agent tools and future canvas UI a
-stable way to discover available models and parameter schemas.
+Phase 1 manifests started as capability/schema metadata, and now also drive a
+first generic HTTP path. When a provider is bound to a matching
+`MediaModelManifest`, `MediaRouterService` prefers the manifest-driven template
+adapter: it renders `requestTemplate`, applies capability defaults and aliases,
+uses the selected `modelId` as the effective model, polls according to
+`invocation.polling` when needed, and materializes URL/base64/binary/text
+results. Existing APIMart/xAI adapters remain as compatibility fallbacks for
+profiles without manifests or for richer provider-specific protocols.
 
 ### Compatibility with legacy image providers
 
@@ -132,7 +136,7 @@ production-grade SQLite persistence and inline media playback:
 Renderer (localStorage hot store)
    │ canvas:task:create-media
    ▼
-Main process ── MediaRouterService ── APIMart / xAI adapter ── .spark-artifacts/media/*
+Main process ── MediaRouterService ── Manifest template / APIMart / xAI adapter ── .spark-artifacts/media/*
    │ canvas:snapshot:save (debounced, every mutation)                    │
    ▼                                                                     ▼
 SQLite canvas_projects + canvas_snapshots                    safe-file:// protocol
@@ -204,7 +208,8 @@ Flow:
 5. In the background, the main process resolves
    available providers + API keys (never exposed), selects an adapter via
    `MediaRouterService`, applies the selected `modelId` as the effective model,
-   runs sync or async polling, and downloads artifacts.
+   renders manifest templates when available, runs sync or async polling, and
+   downloads artifacts.
 6. When the runtime task completes/fails/cancels, the main process pushes
    `stream:canvas:media-task` with `projectId`, `clientTaskId`, `runtimeTaskId`,
    status, and the normalized response. The renderer applies it once and writes
@@ -247,11 +252,14 @@ pnpm --filter @spark/desktop typecheck
 
 To add a new platform (e.g. Runway, Kling, Seedream video, OpenAI Audio):
 
-1. Create `packages/agent-runtime/src/services/media/adapters/<vendor>-media.adapter.ts`
-   extending `OpenAiCompatibleMediaAdapter` (or implementing `MediaProviderAdapter`
-   directly for non-OpenAI-compatible APIs).
-2. Register it in `MediaRouterService` constructor.
-3. Add a `MediaProviderKind` literal + preset in `packages/protocol/src/`.
-4. Add the vendor to `VENDOR_CATALOG` so the Providers UI can render its logo.
+1. Prefer adding or updating a `MediaModelManifest` first when the provider uses
+   JSON submit, optional polling, and URL/base64/binary/text results.
+2. Bind the manifest from the provider edit UI (`mediaModelRefs`) so canvas and
+   agents can discover its schema.
+3. Create `packages/agent-runtime/src/services/media/adapters/<vendor>-media.adapter.ts`
+   only when the provider needs custom auth, multipart upload, callback flows,
+   file job handling, or provider-specific cancellation.
+4. Register dedicated adapters in `MediaRouterService` constructor and add
+   provider presets/UI vendor metadata as needed.
 
 The canvas, MCP, and capability registry pick up the new adapter automatically.

@@ -13,7 +13,7 @@ import {
   extractTaskId,
   extractText,
 } from '../../../services/media/media-http.util.js'
-import { capabilityForOperation } from '@spark/protocol'
+import { capabilityForOperation, type MediaModelManifest } from '@spark/protocol'
 
 // ─── 测试 fixtures ─────────────────────────────────────────────────────────
 
@@ -341,5 +341,133 @@ describe('MediaRouterService', () => {
       { providers: [first, second], providerProfileId: 'second', fetch: fetchMock },
     )
     expect(providerProfileId).toBe('second')
+  })
+
+  it('uses manifest requestTemplate with selected modelId and parameter aliases', async () => {
+    let postedBody: Record<string, unknown> | null = null
+    const manifest: MediaModelManifest = {
+      id: 'custom:image-template',
+      providerKind: 'custom-platform',
+      modelId: 'manifest-image-model',
+      displayName: 'Template Image',
+      domains: ['image'],
+      capabilities: [
+        {
+          id: 'image.generate',
+          label: '文生图',
+          input: { required: ['prompt'] },
+          output: { types: ['image'], mimeTypes: ['image/png'] },
+          paramSchema: {},
+          defaults: { n: 1 },
+          aliases: { aspectRatio: 'aspect_ratio' },
+        },
+      ],
+      invocation: {
+        mode: 'sync',
+        endpoint: '/template/images',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'url', jsonPaths: ['data[].url'], download: true },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const fetchMock = makeFetch([
+      {
+        match: '/template/images',
+        respond: (init) => {
+          postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ url: 'https://cdn/template.png' }] } }
+        },
+      },
+      { match: 'https://cdn/template.png', respond: () => ({ ok: true, status: 200, body: null, binary: Buffer.from(PNG_PIXEL, 'base64') }) },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'template cat',
+        modelParams: { aspectRatio: '16:9', filename: 'template-cat' },
+      },
+      {
+        providers: [makeProvider({ mediaProvider: 'custom', mediaCapabilities: [], mediaModelManifests: [manifest] })],
+        modelId: 'provider-image-v2',
+        fetch: fetchMock,
+      },
+    )
+
+    expect(output.provider).toBe('custom-platform')
+    expect(output.model).toBe('provider-image-v2')
+    expect(postedBody).toMatchObject({
+      model: 'provider-image-v2',
+      prompt: 'template cat',
+      aspect_ratio: '16:9',
+      n: 1,
+    })
+    expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('uses manifest task polling and materializes video results', async () => {
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const manifest: MediaModelManifest = {
+      id: 'custom:video-template',
+      providerKind: 'custom-platform',
+      modelId: 'manifest-video-model',
+      displayName: 'Template Video',
+      domains: ['video'],
+      capabilities: [
+        {
+          id: 'video.generate',
+          label: '文生视频',
+          input: { required: ['prompt'] },
+          output: { types: ['video'], mimeTypes: ['video/mp4'] },
+          paramSchema: {},
+        },
+      ],
+      invocation: {
+        mode: 'async_polling',
+        endpoint: '/template/videos',
+        method: 'POST',
+        contentType: 'json',
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: {
+          kind: 'task_poll',
+          taskIdPaths: ['task_id'],
+          statusEndpoint: '/template/videos/{{taskId}}',
+          resultPaths: ['data[].url'],
+        },
+        polling: {
+          intervalMs: 1,
+          timeoutMs: 5_000,
+          statusMap: { queued: 'queued', running: 'running', complete: 'succeeded', failed: 'failed' },
+        },
+      },
+      docs: { sourceUrls: [] },
+    }
+    const fetchMock = makeFetch([
+      { match: '/template/videos', respond: (init) => init?.method === 'POST'
+        ? { ok: true, status: 200, body: { task_id: 'tpl-vid-1' } }
+        : { ok: true, status: 200, body: { status: 'queued' } } },
+      { match: '/template/videos/tpl-vid-1', respond: (_init, count) =>
+        count >= 2
+          ? { ok: true, status: 200, body: { status: 'complete', data: [{ url: 'https://cdn/template.mp4' }] } }
+          : { ok: true, status: 200, body: { status: 'running' } } },
+      { match: 'https://cdn/template.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    const { output } = await router.invoke(
+      { operation: 'text_to_video', capability: 'video.generate', outputDir: tmpDir, prompt: 'template sunset' },
+      {
+        providers: [makeProvider({ mediaProvider: 'custom', mediaCapabilities: [], mediaModelManifests: [manifest] })],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(output.mode).toBe('async')
+    expect(output.requestId).toBe('tpl-vid-1')
+    expect(output.assets[0]?.type).toBe('video')
+    expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
   })
 })

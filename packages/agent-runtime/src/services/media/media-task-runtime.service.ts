@@ -52,6 +52,7 @@ export interface MediaTaskSubmitOptions {
   providers: MediaProviderProfile[]
   providerProfileId?: string | null
   manifestId?: string | null
+  modelId?: string | null
   capability?: MediaCapabilityId
   extraParams?: Record<string, unknown>
   fetch?: typeof fetch
@@ -121,6 +122,8 @@ export class MediaTaskRuntimeService {
       const invokeOptions: InvokeOptions = {
         providers: options.providers,
         ...(options.providerProfileId !== undefined ? { providerProfileId: options.providerProfileId } : {}),
+        ...(options.modelId !== undefined ? { modelId: options.modelId } : {}),
+        ...(options.manifestId !== undefined ? { manifestId: options.manifestId } : {}),
         ...(options.capability !== undefined ? { capability: options.capability } : {}),
         ...(options.extraParams !== undefined ? { extraParams: options.extraParams } : {}),
         ...(options.fetch !== undefined ? { fetch: options.fetch } : {}),
