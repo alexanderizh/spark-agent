@@ -1,0 +1,13 @@
+{
+  "id": "5611eff9-b593-4d71-99d4-6013f5881a3d",
+  "scope": "user",
+  "name": "全栈开发标准流程",
+  "version": "1.0.0",
+  "graph_json": "{\"nodes\":[{\"id\":\"n1\",\"kind\":\"agent\",\"title\":\"需求理解\",\"x\":-100,\"y\":-610,\"config\":{}},{\"id\":\"n2\",\"kind\":\"agent\",\"title\":\"影响分析\",\"x\":183,\"y\":-454,\"config\":{}},{\"id\":\"n3\",\"kind\":\"agent\",\"title\":\"方案设计\",\"x\":454,\"y\":-279,\"config\":{}},{\"id\":\"n4\",\"kind\":\"agent\",\"title\":\"编码实现\",\"x\":740,\"y\":-44,\"config\":{}},{\"id\":\"n5\",\"kind\":\"agent\",\"title\":\"测试修复\",\"x\":1018,\"y\":114,\"config\":{}},{\"id\":\"n6\",\"kind\":\"agent\",\"title\":\"验证交付\",\"x\":1292,\"y\":252,\"config\":{}}],\"edges\":[{\"id\":\"n1-n2\",\"from\":\"n1\",\"to\":\"n2\"},{\"id\":\"n3-n4\",\"from\":\"n3\",\"to\":\"n4\"},{\"id\":\"n5-n6\",\"from\":\"n5\",\"to\":\"n6\"},{\"id\":\"n2-n3-mqch9h8p\",\"from\":\"n2\",\"to\":\"n3\"},{\"id\":\"n4-n5-mqch9q3m\",\"from\":\"n4\",\"to\":\"n5\"}]}",
+  "created_at": "2026-06-13T09:31:03.804Z",
+  "updated_at": "2026-06-13T14:56:15.458Z",
+  "description": "通用全栈编码 Agent 默认执行流程:需求理解 → 影响分析 → 方案设计 → 编码实现 → 测试修复 → 验证交付",
+  "status": "archived",
+  "tags_json": "[\"coding\",\"fullstack\",\"sdlc\"]",
+  "enabled": 1
+}

@@ -1,0 +1,24 @@
+[
+  {
+    "id": "5611eff9-b593-4d71-99d4-6013f5881a3d",
+    "name": "全栈开发标准流程",
+    "scope": "user",
+    "version": "1.0.0",
+    "description": "通用全栈编码 Agent 默认执行流程:需求理解 → 影响分析 → 方案设计 → 编码实现 → 测试修复 → 验证交付",
+    "status": "archived",
+    "tags_json": "[\"coding\",\"fullstack\",\"sdlc\"]",
+    "enabled": 1,
+    "gsize": 650
+  },
+  {
+    "id": "f67ac8d8-d89b-4ec3-9ef4-2fe8d4f8fa4c",
+    "name": "全栈开发标准流程",
+    "scope": "system",
+    "version": "1.0.0",
+    "description": "通用全栈编码 Agent 默认执行流程:需求理解 → 影响分析 → 方案设计 → 编码实现 → 测试修复 → 验证交付",
+    "status": "active",
+    "tags_json": "[\"coding\",\"fullstack\",\"sdlc\"]",
+    "enabled": 1,
+    "gsize": 629
+  }
+]
