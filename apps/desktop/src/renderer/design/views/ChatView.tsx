@@ -42,6 +42,7 @@ import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
 import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
+import { WorktreePanel } from '../components/WorktreePanel'
 import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
@@ -9537,6 +9538,12 @@ function ChatInspector({
           <div className="inspector-muted">未选择会话</div>
         )}
       </div>
+
+      {workspace && (
+        <div className="inspector-section">
+          <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />
+        </div>
+      )}
 
       {inspectorTasks.length > 0 && (
         <div className="inspector-section">
