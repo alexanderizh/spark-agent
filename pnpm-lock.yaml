@@ -53,9 +53,6 @@ importers:
       '@spark/storage':
         specifier: workspace:*
         version: link:../../packages/storage
-      '@spark/ui-kit':
-        specifier: workspace:*
-        version: link:../../packages/ui-kit
       '@xyflow/react':
         specifier: ^12.3.5
         version: 12.11.0(@types/react-dom@19.2.3(@types/react@19.2.15))(@types/react@19.2.15)(immer@11.1.8)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)

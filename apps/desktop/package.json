@@ -38,7 +38,6 @@
     "@spark/protocol": "workspace:*",
     "@spark/shared": "workspace:*",
     "@spark/storage": "workspace:*",
-    "@spark/ui-kit": "workspace:*",
     "@xyflow/react": "^12.3.5",
     "antd": "^6.4.4",
     "better-sqlite3": "^11.10.0",

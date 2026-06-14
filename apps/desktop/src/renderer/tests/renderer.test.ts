@@ -55,12 +55,6 @@ describe('Renderer Smoke Tests', () => {
     vi.unstubAllGlobals()
   })
 
-  it('should have cn utility function', async () => {
-    const { cn } = await import('@spark/ui-kit')
-    expect(typeof cn).toBe('function')
-    expect(cn('foo', 'bar')).toBe('foo bar')
-  })
-
   it('saves the OpenAI Responses API kind from the provider edit panel', async () => {
     const invoke = vi.fn(async (channel: string) => {
       if (channel === 'provider:create') {

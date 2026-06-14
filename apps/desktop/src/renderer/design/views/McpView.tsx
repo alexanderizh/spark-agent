@@ -3,11 +3,11 @@
  *
  * 设计要点
  * ────────
- * - 与 ProvidersView 对齐，全部使用 Arco Design 组件 + `@arco-design/web-react/icon`。
+ * - Aligns with ProvidersView and uses the current `@lobehub/ui` + `antd` stack.
  * - 顶部 Header：标题 + 计数 + 搜索 + 刷新 + 添加按钮。
  * - 工具栏：状态过滤 chip（全部 / 在线 / 需注意 / 错误 / 未启用）+ 作用域 segmented。
  * - 卡片网格：每张卡片展示 logo / 名称 / 作用域 / 传输 / 描述 / 状态 / 工具数 / 启停开关。
- * - 添加 / 编辑：使用 Arco Drawer，结构化分组（基本信息 / 启动配置 / 环境变量）。
+ * - Add / edit flows use a structured drawer with grouped fields.
  * - 样式落在 `McpView.less`（mv_ 前缀），不再依赖 views.css 的旧全局类。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
