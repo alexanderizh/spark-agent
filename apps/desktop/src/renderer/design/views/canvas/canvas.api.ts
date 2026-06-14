@@ -963,12 +963,15 @@ export const canvasApi = {
 
     // 调 IPC（API key 只在主进程）
     const ipcRequest: CanvasMediaTaskCreateRequest = {
+      projectId,
+      clientTaskId: taskId,
       operation: request.operation,
       ...(request.prompt != null ? { prompt: request.prompt } : {}),
       ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
       ...(request.providerProfileId != null ? { providerProfileId: request.providerProfileId } : {}),
       ...(request.modelId != null ? { modelId: request.modelId } : {}),
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
+      waitForCompletion: false,
     }
     let response: CanvasMediaTaskCreateResponse
     try {
@@ -983,7 +986,38 @@ export const canvasApi = {
         error: { code: 'ipc_error', message: err instanceof Error ? err.message : String(err) },
       }
     }
+    if (response.status === 'running') {
+      return this.markMediaTaskSubmitted(projectId, taskId, response)
+    }
     return this.applyMediaTaskResult(projectId, taskId, response)
+  },
+
+  async markMediaTaskSubmitted(
+    projectId: string,
+    taskId: string,
+    response: CanvasMediaTaskCreateResponse,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const task = db.tasks.find((item) => item.id === taskId)
+    const taskNode = db.nodes.find((item) => item.taskId === taskId)
+    if (!task || !taskNode) return this.openSnapshot(projectId)
+    task.status = 'running'
+    task.progress = Math.max(task.progress, 35)
+    task.requestId = response.runtimeTaskId ?? response.requestId ?? null
+    task.providerProfileId = response.providerProfileId || task.providerProfileId || null
+    task.provider = response.provider || task.provider || null
+    task.modelId = response.model || task.modelId || null
+    task.updatedAt = now()
+    taskNode.data = {
+      ...taskNode.data,
+      status: 'running',
+      progress: task.progress,
+      message: '后台任务已提交，等待 provider 返回产物',
+    }
+    taskNode.updatedAt = now()
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
   },
 
   /** 把平台 adapter 的输出写回 canvas_assets / canvas_nodes / canvas_edges */
@@ -997,17 +1031,30 @@ export const canvasApi = {
     const taskNode = db.nodes.find((item) => item.taskId === taskId)
     if (!task || !taskNode) return this.openSnapshot(projectId)
 
-    if (response.error) {
-      task.status = 'failed'
+    const responseRequestId = response.requestId ?? response.runtimeTaskId ?? null
+    if (
+      !response.error
+      && response.status === 'succeeded'
+      && task.status === 'completed'
+      && task.outputAssetIds.length > 0
+      && task.requestId === responseRequestId
+    ) {
+      return this.openSnapshot(projectId)
+    }
+
+    if (response.error || response.status === 'failed' || response.status === 'cancelled') {
+      const isCancelled = response.status === 'cancelled'
+      task.status = isCancelled ? 'cancelled' : 'failed'
       task.progress = 100
-      task.errorMsg = response.error.code
-      task.errorDetail = response.error.message
+      task.errorMsg = response.error?.code ?? (isCancelled ? 'cancelled' : 'provider_task_failed')
+      task.errorDetail = response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed')
+      task.requestId = responseRequestId
       task.updatedAt = now()
       taskNode.data = {
         ...taskNode.data,
-        status: 'failed',
+        status: task.status,
         progress: 100,
-        message: `失败：${response.error.message}`,
+        message: isCancelled ? '任务已取消' : `失败：${task.errorDetail}`,
       }
       taskNode.updatedAt = now()
       updateProjectCounts(db, projectId)
@@ -1022,7 +1069,7 @@ export const canvasApi = {
     if (response.providerProfileId) task.providerProfileId = response.providerProfileId
     if (response.model) task.modelId = response.model
     task.provider = response.provider || null
-    task.requestId = response.requestId ?? null
+    task.requestId = responseRequestId
     task.rawResponse = response.rawResponse
 
     const at = now()
@@ -1053,7 +1100,7 @@ export const canvasApi = {
           taskId,
           provider: response.provider,
           model: response.model,
-          requestId: response.requestId ?? null,
+          requestId: responseRequestId,
           filePath: assetOut.filePath ?? null,
         },
         createdAt: at,

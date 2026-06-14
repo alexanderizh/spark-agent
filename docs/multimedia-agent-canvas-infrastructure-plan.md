@@ -15,12 +15,14 @@
 - Provider 配置、导入导出和运行时 `config_json` 已支持 `mediaModelRefs`。
 - `spark_media` MCP 新增 `list_models`、`describe_model`，SessionService 会把 provider 的 manifest refs 注入 `SPARK_MEDIA_MANIFESTS_JSON`。
 - `MediaRouterService` 的能力判断已能读取 manifest capabilities，但 HTTP 调用仍保持旧 adapter 逻辑，避免兼容性风险。
+- 新增 `media_generation_tasks` 落库和 `MediaTaskRuntimeService.submit / submitBackground / inquire / cancel / materialize` 生命周期。
+- 无限画布媒体任务默认后台提交：`canvas:task:create-media` 可传 `waitForCompletion:false` 立即返回 running task，完成/失败后通过 `stream:canvas:media-task` 单次推送写回画布。
+- 画布参数面板已能读取 manifest `paramSchema`，把用户参数作为 `modelParams` 随任务提交，并在 Inspector 中展示实际调用参数。
 
 尚未完成：
 
-- `submit / inquire / cancel / materialize` 任务生命周期拆分。
 - manifest requestTemplate 驱动的通用 adapter。
-- 无限画布 UI/UX 重构和 schema-driven 参数表单。
+- 无限画布 UI/UX 重构、流程编排节点和重跑/分支比较等生产工作台能力。
 
 ## 1. 目标
 
@@ -437,7 +439,7 @@ Renderer 不直接调用 provider。流程：
 3. Runtime 解析 provider、manifest、参数 schema。
 4. Adapter 调远程模型，处理轮询/同步返回。
 5. ArtifactService 下载产物并写资产。
-6. Renderer 订阅 task 状态，产物完成后写回 canvas asset/node/edge。
+6. Renderer 订阅 `stream:canvas:media-task`，只在完成/失败/取消时写回 canvas asset/node/edge，避免拖拽/滑步过程中被高频进度刷新打断。
 
 ## 12. 错误处理
 

@@ -158,12 +158,12 @@ consistency without rewriting the canvas data layer.
 
 Media generation requests are also persisted in SQLite through
 `media_generation_tasks` (migration 029). The first Phase 2 runtime exposes
-`submit / inquire / cancel / materialize` through `MediaTaskRuntimeService`.
-Today, `submit` still wraps the existing adapter invocation and may wait for the
-provider result, but every request now records status, provider/model, request
-id, assets, raw response summary, and error details. This is the compatibility
-layer that will let us move async providers to a background runner without
-changing canvas or agent call sites.
+`submit / submitBackground / inquire / cancel / materialize` through
+`MediaTaskRuntimeService`. Canvas media tasks use `submitBackground` by default:
+the IPC call returns a persisted `running` runtime task immediately, then the
+main process sends exactly one low-frequency completion event when the provider
+finishes or fails. Every request records status, provider/model, request id,
+assets, raw response summary, and error details.
 
 IPC channels:
 
@@ -171,7 +171,8 @@ IPC channels:
 canvas:media-capabilities:list   — available media providers + model summaries (no keys)
 canvas:media-models:list         — manifest-driven model catalog for canvas/provider parameter panels
 canvas:media-models:describe     — full manifest details for one model
-canvas:task:create-media         — run a media generation task, optionally with providerProfileId/modelId
+canvas:task:create-media         — submit a media generation task; waitForCompletion:false returns immediately
+stream:canvas:media-task         — low-frequency media task completion/failure event for canvas writeback
 canvas:snapshot:save             — persist project snapshot to SQLite
 canvas:snapshot:load             — load project snapshot from SQLite
 canvas:project:list              — list persisted projects
@@ -196,13 +197,20 @@ Flow:
    manifest-backed provider/model, fill the manifest-derived parameter panel,
    then enter the prompt.
 3. The canvas creates an optimistic `running` task node.
-4. The renderer calls `canvas:task:create-media`. The main process resolves
+4. The renderer calls `canvas:task:create-media` with `waitForCompletion:false`.
+   The main process persists a runtime task and returns a `running` response
+   immediately, so canvas pan/zoom/drag interactions are not blocked by long
+   video or image jobs.
+5. In the background, the main process resolves
    available providers + API keys (never exposed), selects an adapter via
    `MediaRouterService`, applies the selected `modelId` as the effective model,
    runs sync or async polling, and downloads artifacts.
-5. Output assets/nodes are written back to the canvas with provider, model,
-   requestId, and raw response metadata. Task node shows progress/status.
-6. Selecting a task node in the Inspector shows provider/model/request metadata
+6. When the runtime task completes/fails/cancels, the main process pushes
+   `stream:canvas:media-task` with `projectId`, `clientTaskId`, `runtimeTaskId`,
+   status, and the normalized response. The renderer applies it once and writes
+   output assets/nodes back to the canvas with provider, model, requestId, and
+   raw response metadata.
+7. Selecting a task node in the Inspector shows provider/model/request metadata
    and the exact `modelParams` used for that run.
 
 ## 5. Error Handling

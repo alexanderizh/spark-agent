@@ -26,6 +26,7 @@ export type {
   MediaTaskRecord,
   MediaTaskRouterLike,
   MediaTaskSubmitOptions,
+  MediaTaskUpdateHandler,
 } from './services/media/media-task-runtime.service.js'
 export { ApimartMediaAdapter } from './services/media/adapters/apimart-media.adapter.js'
 export { XaiMediaAdapter } from './services/media/adapters/xai-media.adapter.js'

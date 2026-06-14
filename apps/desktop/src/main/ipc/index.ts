@@ -68,6 +68,7 @@ import {
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
+  MediaTaskRecord,
   MediaProviderError,
 } from '@spark/agent-runtime'
 import * as keystore from '@spark/shared/keystore'
@@ -373,6 +374,44 @@ async function readImagePreviewDataUrl(filePath: string, mimeType: string | unde
     return `data:${mime};base64,${buffer.toString('base64')}`
   } catch {
     return undefined
+  }
+}
+
+async function canvasResponseFromMediaTaskRecord(record: MediaTaskRecord): Promise<CanvasMediaTaskCreateResponse> {
+  const assets: CanvasMediaTaskCreateResponse['assets'] = await Promise.all(
+    record.assets.map(async (asset) => {
+      const base = {
+        type: asset.type,
+        ...(asset.filePath != null ? { filePath: asset.filePath } : {}),
+        ...(asset.url != null ? { url: asset.url } : {}),
+        ...(asset.mimeType != null ? { mimeType: asset.mimeType } : {}),
+        ...(asset.width != null ? { width: asset.width } : {}),
+        ...(asset.height != null ? { height: asset.height } : {}),
+        ...(asset.durationMs != null ? { durationMs: asset.durationMs } : {}),
+        ...(asset.contentText != null ? { contentText: asset.contentText } : {}),
+      }
+      if (asset.type === 'image' && asset.filePath) {
+        const previewDataUrl = await readImagePreviewDataUrl(asset.filePath, asset.mimeType)
+        if (previewDataUrl) return { ...base, previewDataUrl }
+      }
+      return base
+    }),
+  )
+  const status: NonNullable<CanvasMediaTaskCreateResponse['status']> =
+    record.status === 'succeeded' ? 'succeeded'
+      : record.status === 'pending' ? 'running'
+        : record.status
+  return {
+    runtimeTaskId: record.id,
+    status,
+    providerProfileId: record.providerProfileId ?? '',
+    provider: record.providerKind ?? '',
+    model: record.modelId ?? '',
+    mode: record.mode ?? 'sync',
+    assets,
+    ...(record.requestId != null ? { requestId: record.requestId } : {}),
+    ...(record.rawResponse != null ? { rawResponse: record.rawResponse } : {}),
+    ...(record.error != null ? { error: record.error } : {}),
   }
 }
 
@@ -1664,76 +1703,51 @@ export function registerAllIpcHandlers(): void {
     const outputDir = req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
     // capability 由 router 按 operation 推导（input.capability 留空）
     try {
-      const task = await taskRuntime.submit(
-        {
-          operation: req.operation,
-          ...(req.prompt != null ? { prompt: req.prompt } : {}),
-          ...(req.negativePrompt != null ? { negativePrompt: req.negativePrompt } : {}),
-          ...(req.inputFiles != null
-            ? {
-                inputFiles: req.inputFiles.map((file) => ({
-                  type: file.type,
-                  ...(file.path != null ? { path: file.path } : {}),
-                  ...(file.url != null ? { url: file.url } : {}),
-                  ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
-                  ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
-                })),
-              }
-            : {}),
-          ...(req.modelParams != null ? { modelParams: req.modelParams } : {}),
-          outputDir,
-        },
-        {
-          providers,
-          ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
-        },
-      )
-      if (task.error) {
-        const response: CanvasMediaTaskCreateResponse = {
-          providerProfileId: task.providerProfileId ?? '',
-          provider: task.providerKind ?? '',
-          model: task.modelId ?? '',
-          mode: task.mode ?? 'sync',
-          assets: [],
-          error: task.error,
-        }
-        return response
+      const input = {
+        operation: req.operation,
+        ...(req.prompt != null ? { prompt: req.prompt } : {}),
+        ...(req.negativePrompt != null ? { negativePrompt: req.negativePrompt } : {}),
+        ...(req.inputFiles != null
+          ? {
+              inputFiles: req.inputFiles.map((file) => ({
+                type: file.type,
+                ...(file.path != null ? { path: file.path } : {}),
+                ...(file.url != null ? { url: file.url } : {}),
+                ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
+                ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
+              })),
+            }
+          : {}),
+        ...(req.modelParams != null ? { modelParams: req.modelParams } : {}),
+        outputDir,
       }
-      // 为图片产物附带 previewDataUrl，便于 renderer 直接展示；映射为 IPC 响应 asset 类型
-      const assets: CanvasMediaTaskCreateResponse['assets'] = await Promise.all(
-        task.assets.map(async (asset) => {
-          const base = {
-            type: asset.type,
-            ...(asset.filePath != null ? { filePath: asset.filePath } : {}),
-            ...(asset.url != null ? { url: asset.url } : {}),
-            ...(asset.mimeType != null ? { mimeType: asset.mimeType } : {}),
-            ...(asset.width != null ? { width: asset.width } : {}),
-            ...(asset.height != null ? { height: asset.height } : {}),
-            ...(asset.durationMs != null ? { durationMs: asset.durationMs } : {}),
-            ...(asset.contentText != null ? { contentText: asset.contentText } : {}),
-          }
-          if (asset.type === 'image' && asset.filePath) {
-            const previewDataUrl = await readImagePreviewDataUrl(asset.filePath, asset.mimeType)
-            if (previewDataUrl) return { ...base, previewDataUrl }
-          }
-          return base
-        }),
-      )
-      const response: CanvasMediaTaskCreateResponse = {
-        providerProfileId: task.providerProfileId ?? req.providerProfileId ?? '',
-        provider: task.providerKind ?? '',
-        model: task.modelId ?? '',
-        mode: task.mode ?? 'sync',
-        assets,
-        ...(task.requestId != null ? { requestId: task.requestId } : {}),
-        ...(task.rawResponse != null ? { rawResponse: task.rawResponse } : {}),
+      const options = {
+        providers,
+        ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
       }
-      return response
+      if (req.waitForCompletion === false) {
+        const task = taskRuntime.submitBackground(input, options, (record) => {
+          if (record.status === 'running') return
+          void canvasResponseFromMediaTaskRecord(record).then((response) => {
+            pushStreamEvent('stream:canvas:media-task', {
+              ...(req.projectId !== undefined ? { projectId: req.projectId } : {}),
+              ...(req.clientTaskId !== undefined ? { clientTaskId: req.clientTaskId } : {}),
+              runtimeTaskId: record.id,
+              status: record.status === 'succeeded' ? 'succeeded' : record.status,
+              response,
+            })
+          })
+        })
+        return canvasResponseFromMediaTaskRecord(task)
+      }
+      const task = await taskRuntime.submit(input, options)
+      return canvasResponseFromMediaTaskRecord(task)
     } catch (err) {
       const code = (err as MediaProviderError)?.code ?? 'provider_http_error'
       const message = err instanceof Error ? err.message : String(err)
       log.warn(`canvas:task:create-media failed: ${code} ${message}`)
       const response: CanvasMediaTaskCreateResponse = {
+        status: 'failed',
         providerProfileId: '',
         provider: '',
         model: '',

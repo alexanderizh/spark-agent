@@ -64,6 +64,8 @@ export interface MediaTaskRouterLike {
   }>
 }
 
+export type MediaTaskUpdateHandler = (record: MediaTaskRecord) => void | Promise<void>
+
 export class MediaTaskRuntimeService {
   constructor(
     private readonly repo: MediaGenerationTaskRepository,
@@ -73,8 +75,29 @@ export class MediaTaskRuntimeService {
   }
 
   async submit(input: MediaGenerateInput, options: MediaTaskSubmitOptions): Promise<MediaTaskRecord> {
+    const row = this.createRunningTask(input, options)
+    return this.execute(row, input, options)
+  }
+
+  submitBackground(
+    input: MediaGenerateInput,
+    options: MediaTaskSubmitOptions,
+    onUpdate?: MediaTaskUpdateHandler,
+  ): MediaTaskRecord {
+    const row = this.createRunningTask(input, options)
+    const started = rowToRecord(row)
+    void Promise.resolve(onUpdate?.(started)).catch(() => {})
+    queueMicrotask(() => {
+      void this.execute(row, input, options)
+        .then((record) => onUpdate?.(record))
+        .catch(() => {})
+    })
+    return started
+  }
+
+  private createRunningTask(input: MediaGenerateInput, options: MediaTaskSubmitOptions): MediaGenerationTaskRow {
     const submittedAt = new Date().toISOString()
-    const row = this.repo.create({
+    return this.repo.create({
       providerProfileId: options.providerProfileId ?? null,
       manifestId: options.manifestId ?? null,
       operation: input.operation,
@@ -87,7 +110,13 @@ export class MediaTaskRuntimeService {
       outputDir: input.outputDir,
       submittedAt,
     })
+  }
 
+  private async execute(
+    row: MediaGenerationTaskRow,
+    input: MediaGenerateInput,
+    options: MediaTaskSubmitOptions,
+  ): Promise<MediaTaskRecord> {
     try {
       const invokeOptions: InvokeOptions = {
         providers: options.providers,
@@ -108,7 +137,7 @@ export class MediaTaskRuntimeService {
         rawResponseJson: output.rawResponse === undefined ? null : JSON.stringify(output.rawResponse),
         completedAt: new Date().toISOString(),
       })
-      return rowToRecord(completed ?? row)
+      return rowToRecord(completed ?? this.repo.getById(row.id) ?? row)
     } catch (err) {
       const code = err instanceof MediaProviderError ? err.code : 'provider_http_error'
       const message = err instanceof Error ? err.message : String(err)
@@ -118,7 +147,7 @@ export class MediaTaskRuntimeService {
         errorMessage: message,
         completedAt: new Date().toISOString(),
       })
-      return rowToRecord(failed ?? row)
+      return rowToRecord(failed ?? this.repo.getById(row.id) ?? row)
     }
   }
 

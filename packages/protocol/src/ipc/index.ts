@@ -3439,6 +3439,10 @@ export interface CanvasMediaTaskInputFile {
 }
 
 export interface CanvasMediaTaskCreateRequest {
+  /** Renderer-local canvas project id, used only for async stream routing. */
+  projectId?: string
+  /** Renderer-local canvas task id, used only for async stream routing. */
+  clientTaskId?: string
   operation: CanvasOperationType
   prompt?: string
   negativePrompt?: string
@@ -3448,6 +3452,8 @@ export interface CanvasMediaTaskCreateRequest {
   /** 指定 provider 内实际调用的模型；缺省使用 Provider defaultModel / manifest 默认模型 */
   modelId?: string | null
   modelParams?: Record<string, unknown>
+  /** false means return immediately and push completion through stream:canvas:media-task. */
+  waitForCompletion?: boolean
   /** 产物落盘根目录；缺省使用 userData/.spark-artifacts/media */
   outputDir?: string
 }
@@ -3466,6 +3472,8 @@ export interface CanvasMediaTaskAsset {
 }
 
 export interface CanvasMediaTaskCreateResponse {
+  runtimeTaskId?: string
+  status?: 'running' | 'succeeded' | 'failed' | 'cancelled'
   providerProfileId: string
   provider: string
   model: string
@@ -3474,6 +3482,14 @@ export interface CanvasMediaTaskCreateResponse {
   assets: CanvasMediaTaskAsset[]
   rawResponse?: unknown
   error?: { code: string; message: string }
+}
+
+export interface CanvasMediaTaskStreamPayload {
+  projectId?: string
+  clientTaskId?: string
+  runtimeTaskId: string
+  status: 'running' | 'succeeded' | 'failed' | 'cancelled'
+  response: CanvasMediaTaskCreateResponse
 }
 
 // ─── Canvas Persistence Channels (SQLite-backed) ────────────────────────────
@@ -3950,6 +3966,8 @@ export interface IpcStreamChannelMap {
     action: 'create' | 'update' | 'delete' | 'import'
     id?: string
   }
+  /** Canvas media task status update. Pushed at task start/completion, not on every UI frame. */
+  'stream:canvas:media-task': CanvasMediaTaskStreamPayload
   /** Remote connection config/runtime changed */
   'stream:remote:changed': {
     reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'

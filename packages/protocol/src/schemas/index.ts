@@ -652,6 +652,8 @@ export const IpcSchemaRegistry = {
     providerProfileId: z.string().min(1).max(200).optional(),
   }),
   'canvas:task:create-media': z.object({
+    projectId: z.string().min(1).max(200).optional(),
+    clientTaskId: z.string().min(1).max(200).optional(),
     operation: z.enum([
       'text_to_image',
       'image_to_image',
@@ -677,6 +679,7 @@ export const IpcSchemaRegistry = {
     providerProfileId: z.string().min(1).max(200).nullable().optional(),
     modelId: z.string().min(1).max(200).nullable().optional(),
     modelParams: z.record(z.unknown()).optional(),
+    waitForCompletion: z.boolean().optional(),
     outputDir: z.string().max(2000).optional(),
   }),
 

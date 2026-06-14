@@ -58,6 +58,42 @@ describe('MediaTaskRuntimeService', () => {
     expect(service.materialize(record.id)).toBeNull()
   })
 
+  it('returns immediately for background submit and emits completion updates', async () => {
+    const service = new MediaTaskRuntimeService(createRepo(), {
+      async invoke() {
+        return {
+          providerProfileId: 'provider-1',
+          output: {
+            provider: 'apimart',
+            model: 'gpt-image-2',
+            mode: 'sync',
+            requestId: 'req-bg',
+            assets: [{ type: 'image', filePath: '/tmp/bg.png', mimeType: 'image/png' }],
+          },
+        }
+      },
+    })
+    const statuses: string[] = []
+    const completed = new Promise<void>((resolve) => {
+      service.submitBackground(
+        { operation: 'text_to_image', prompt: 'hello', outputDir: '/tmp/media' },
+        { providers: [], providerProfileId: 'provider-1' },
+        (record) => {
+          statuses.push(record.status)
+          if (record.status === 'succeeded') resolve()
+        },
+      )
+    })
+
+    const running = service.inquire('media-task-1')
+    expect(running?.status).toBe('running')
+
+    await completed
+
+    expect(statuses).toEqual(['running', 'succeeded'])
+    expect(service.inquire('media-task-1')?.requestId).toBe('req-bg')
+  })
+
   it('cancels pending or running tasks', () => {
     const repo = createRepo()
     const row = repo.create({

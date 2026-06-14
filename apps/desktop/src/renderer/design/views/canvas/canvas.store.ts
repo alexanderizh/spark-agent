@@ -6,7 +6,7 @@ import type {
   CanvasSnapshot,
   CreateCanvasTaskRequest,
 } from './canvas.types'
-import type { CanvasMediaTaskInputFile } from '@spark/protocol'
+import type { CanvasMediaTaskInputFile, CanvasMediaTaskStreamPayload } from '@spark/protocol'
 
 export type CanvasViewMode = { mode: 'projects' } | { mode: 'workspace'; projectId: string }
 
@@ -57,6 +57,28 @@ export function useCanvasWorkspace(projectId: string) {
   useEffect(() => {
     void refresh()
   }, [refresh])
+
+  useEffect(() => {
+    let active = true
+    const unsubscribe = window.spark.on('stream:canvas:media-task', (payload: CanvasMediaTaskStreamPayload) => {
+      if (!active) return
+      if (payload.projectId && payload.projectId !== projectId) return
+      if (!payload.clientTaskId) return
+      if (payload.status === 'running') return
+      void canvasApi
+        .applyMediaTaskResult(projectId, payload.clientTaskId, payload.response)
+        .then((next) => {
+          if (active) setSnapshot(next)
+        })
+        .catch(() => {
+          // 后台事件不能打断画布拖拽/编辑；失败详情已写入 task runtime。
+        })
+    })
+    return () => {
+      active = false
+      unsubscribe()
+    }
+  }, [projectId])
 
   const updateNodes = useCallback(
     async (nodes: CanvasNode[]) => {
