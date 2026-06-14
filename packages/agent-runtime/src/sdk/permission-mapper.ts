@@ -104,7 +104,6 @@ export function mergeToolPermissions(
 /**
  * Map Spark reasoning effort levels to SDK effort levels.
  */
-export function mapReasoningEffort(effort?: 'low' | 'medium' | 'high' | 'xhigh'): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
-  if (effort === 'xhigh') return 'max'
-  return effort
+export function mapReasoningEffort(effort?: 'medium' | 'high' | 'xhigh' | 'max'): 'medium' | 'high' | 'xhigh' | 'max' | undefined {
+  return effort === 'xhigh' ? 'max' : effort
 }

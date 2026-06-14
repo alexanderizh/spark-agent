@@ -25,6 +25,9 @@ export interface UIMessage {
   eventIds: string[]
   /** 团队模式：该用户消息通过 @ 指定的 Agent ID（未填 → Host 主循环） */
   mentionAgentId?: string
+  /** Assistant Agent snapshot captured when this message was created. */
+  agentId?: string
+  agentName?: string
 }
 
 export interface FileChangeSummary {
@@ -246,6 +249,8 @@ export class MessageBuilder {
             usage: null,
             timestamp: event.timestamp,
             eventIds: [event.id],
+            ...(event.agentId != null ? { agentId: event.agentId } : {}),
+            ...(event.agentName != null ? { agentName: event.agentName } : {}),
           }
           this.messages.push(msg)
           this.currentAssistantId = msg.id
@@ -253,6 +258,7 @@ export class MessageBuilder {
           if (!msg.eventIds.includes(event.id)) {
             msg.eventIds.push(event.id)
           }
+          this.applyAgentSnapshot(msg, event)
         }
 
         if (event.mode === 'complete') {
@@ -279,6 +285,7 @@ export class MessageBuilder {
 
       case 'agent_thinking': {
         const msg = this.getOrCreateAssistant(event.id, event.timestamp)
+        this.applyAgentSnapshot(msg, event)
         if (event.mode === 'complete') {
           this.applySegmentComplete(msg.blocks, 'thinking', event.content, event.segmentId)
         } else {
@@ -385,6 +392,7 @@ export class MessageBuilder {
           : null
         if (msg) {
           if (!msg.eventIds.includes(event.id)) msg.eventIds.push(event.id)
+          this.applyAgentSnapshot(msg, event)
           if (event.status === 'completed') {
             msg.status = 'completed'
             this.finishStreamingBlocks(msg, 'completed')
@@ -774,13 +782,18 @@ export class MessageBuilder {
     this.turnSummaryEmitted = false
   }
 
-  private getOrCreateAssistant(eventId: string, timestamp?: string | undefined): UIMessage {
+  private getOrCreateAssistant(
+    eventId: string,
+    timestamp?: string | undefined,
+    event?: { agentId?: string; agentName?: string },
+  ): UIMessage {
     if (this.currentAssistantId) {
       const existing = this.messages.find((m) => m.id === this.currentAssistantId)
       if (existing) {
         if (!existing.eventIds.includes(eventId)) {
           existing.eventIds.push(eventId)
         }
+        if (event != null) this.applyAgentSnapshot(existing, event)
         return existing
       }
     }
@@ -792,6 +805,8 @@ export class MessageBuilder {
       usage: null,
       timestamp,
       eventIds: [eventId],
+      ...(event?.agentId != null ? { agentId: event.agentId } : {}),
+      ...(event?.agentName != null ? { agentName: event.agentName } : {}),
     }
     this.messages.push(msg)
     this.currentAssistantId = msg.id
@@ -800,6 +815,14 @@ export class MessageBuilder {
     this.currentTurnCheckpointId = undefined
     this.turnSummaryEmitted = false
     return msg
+  }
+
+  private applyAgentSnapshot(
+    msg: UIMessage,
+    event: { agentId?: string; agentName?: string },
+  ): void {
+    if (msg.agentId == null && event.agentId != null) msg.agentId = event.agentId
+    if (msg.agentName == null && event.agentName != null) msg.agentName = event.agentName
   }
 
   /**

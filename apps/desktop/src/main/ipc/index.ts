@@ -2415,22 +2415,24 @@ export function registerAllIpcHandlers(): void {
       version: 1,
       exportedAt: new Date().toISOString(),
       exportedBy: 'spark-agent',
-      agents: toExport.map((a) => ({
-        name: a.name,
-        description: a.description,
-        agentAdapter: a.agentAdapter as SessionAgentAdapter,
-        permissionMode: a.permissionMode as SessionPermissionMode,
-        reasoningEffort: a.reasoningEffort as SessionReasoningEffort,
-        prompt: a.prompt,
-        skillIds: a.skillIds,
-        disabledSkillIds: a.disabledSkillIds,
-        mcpServerIds: a.mcpServerIds,
-        ruleIds: a.ruleIds,
-        hookConfig: a.hookConfig,
-        workflowId: a.workflowId ?? null,
-        metadata: a.metadata,
-      })),
-    }
+      agents: toExport.map((a) => {
+        const agent = toManagedAgent(a)
+        return {
+          name: agent.name,
+          description: agent.description,
+          agentAdapter: agent.agentAdapter,
+          permissionMode: agent.permissionMode,
+          reasoningEffort: agent.reasoningEffort,
+          prompt: a.prompt,
+          skillIds: a.skillIds,
+          disabledSkillIds: a.disabledSkillIds,
+          mcpServerIds: a.mcpServerIds,
+          ruleIds: a.ruleIds,
+          hookConfig: a.hookConfig,
+          workflowId: a.workflowId ?? null,
+          metadata: a.metadata,
+        }
+      }),    }
 
     const datePart = new Date().toISOString().slice(0, 10)
     const defaultName = `spark-agent-export-${datePart}.json`
@@ -4230,7 +4232,7 @@ function isProtocolPermissionMode(value: string): value is ManagedAgent['permiss
 }
 
 function isProtocolReasoning(value: string): value is ManagedAgent['reasoningEffort'] {
-  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh'
+  return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
 }
 
 function isWorkflowNodeKind(kind: string): kind is ProtocolWorkflowItem['graph']['nodes'][number]['kind'] {

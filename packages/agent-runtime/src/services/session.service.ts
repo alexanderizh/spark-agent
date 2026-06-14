@@ -148,7 +148,7 @@ type SessionRuntimePatch = {
   agentAdapter?: AgentAdapterKind
   permissionMode?: SessionPermissionMode
   chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+  reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
 }
 type PendingTurn = {
   turnId: string
@@ -255,7 +255,7 @@ export class SessionService {
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+    reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
     title?: string
     workspaceId?: string
   }): Promise<SessionCreateResponse> {
@@ -566,7 +566,7 @@ export class SessionService {
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+    reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
     /** 可选：要使用的 Skill ID */
     skillId?: string
     /** 可选：Skill 参数 */
@@ -1199,7 +1199,7 @@ export class SessionService {
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
         ...(session.reasoning_effort != null
-          ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' }
+          ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
           : {}),
         ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
         ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
@@ -1259,7 +1259,7 @@ export class SessionService {
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
       ...(session.reasoning_effort != null
-        ? { reasoningEffort: session.reasoning_effort as 'low' | 'medium' | 'high' | 'xhigh' }
+        ? { reasoningEffort: normalizeReasoningEffort(session.reasoning_effort) }
         : {}),
       ...(turnAttachments.length > 0 ? { attachments: turnAttachments } : {}),
       ...(attachmentDirectories.length > 0 ? { additionalDirectories: attachmentDirectories } : {}),
@@ -1504,9 +1504,10 @@ export class SessionService {
     const mentionMemberContext = mentionAgentId != null
       ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
       : undefined
+    const turnAgent = this.resolveAgent(options.agentId)
     executor.onEvent((event) => {
       if (event.type === 'file_change') changedFiles.add(event.path)
-      let outgoing: AgentEvent = event
+      let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
           outgoing = {
@@ -1722,9 +1723,10 @@ export class SessionService {
       mentionAgentId != null
         ? { dispatchId: `mention:${turnId}`, memberAgentId: mentionAgentId }
         : undefined
+    const turnAgent = this.resolveAgent(options.agentId)
 
     executor.onEvent((event) => {
-      let outgoing: AgentEvent = event
+      let outgoing: AgentEvent = withAgentSnapshot(event, turnAgent)
       if (mentionAgentId != null) {
         if (event.type === 'assistant_message' && typeof event.content === 'string') {
           outgoing = {
@@ -2827,7 +2829,7 @@ export class SessionService {
         getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
       ),
       chatMode: getChatModeFromSession(row.chat_mode),
-      reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
+      reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
       status: row.status as 'idle' | 'running' | 'error',
       pinnedAt: row.pinned_at,
       archivedAt: row.archived_at,
@@ -2915,7 +2917,7 @@ export class SessionService {
     agentAdapter?: AgentAdapterKind
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+    reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
@@ -2991,7 +2993,7 @@ export class SessionService {
           getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
         ),
         chatMode: getChatModeFromSession(row.chat_mode),
-        reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
+      reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
         status: row.status as 'idle' | 'running' | 'error',
         pinnedAt: row.pinned_at,
         archivedAt: row.archived_at,
@@ -3032,7 +3034,7 @@ export class SessionService {
         getAgentAdapterFromSession(row.agent_adapter, row.chat_mode, null),
       ),
       chatMode: getChatModeFromSession(row.chat_mode),
-      reasoningEffort: (row.reasoning_effort ?? 'medium') as 'low' | 'medium' | 'high' | 'xhigh',
+        reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
       status: row.status as 'idle' | 'running' | 'error',
       availableModels,
     }
@@ -3522,9 +3524,24 @@ function normalizePermissionMode(value: string | null | undefined): SessionPermi
 
 function normalizeReasoningEffort(
   value: string | null | undefined,
-): 'low' | 'medium' | 'high' | 'xhigh' {
-  if (value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh') return value
+): 'medium' | 'high' | 'xhigh' | 'max' {
+  if (value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max') return value
   return 'medium'
+}
+
+function withAgentSnapshot(event: AgentEvent, agent: AgentItem): AgentEvent {
+  if (
+    event.type !== 'assistant_message' &&
+    event.type !== 'agent_thinking' &&
+    event.type !== 'agent_status'
+  ) {
+    return event
+  }
+  return {
+    ...event,
+    agentId: event.agentId ?? agent.id,
+    agentName: event.agentName ?? agent.name,
+  } as AgentEvent
 }
 
 // ── Team Mode helpers ────────────────────────────────────────────────────────

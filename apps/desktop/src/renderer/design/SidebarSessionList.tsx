@@ -370,6 +370,8 @@ function ChatListItem({
             const dotStatus =
               displayStatus === 'waiting_permission' || displayStatus === 'waiting_user'
                 ? displayStatus
+                : displayStatus === 'error'
+                  ? 'error'
                 : displayStatus === 'completed' && unreviewed
                   ? 'completed'
                   : null
@@ -378,7 +380,9 @@ function ChatListItem({
                 className={`session-status-dot session-status-dot-${dotStatus}`}
                 title={dotStatus === 'completed' ? '新完成，未查看' : badgeInfo.title}
                 aria-hidden
-              />
+              >
+                {dotStatus === 'error' && <Icons.AlertTriangle size={12} />}
+              </span>
             ) : null
           })()}
           {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}

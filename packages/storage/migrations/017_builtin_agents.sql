@@ -43,7 +43,7 @@ INSERT OR IGNORE INTO agents (
   'secretary-agent',
   '个人秘书',
   '整理待办、撰写邮件与会议纪要、提炼要点、跨任务追踪进度；轻量任务的快速响应入口。',
-  1, 1, 'claude-sdk', 'claude-ask', 'low',
+  1, 1, 'claude-sdk', 'claude-ask', 'medium',
   '你是 Spark Agent 的个人秘书。你的目标是把用户从重复事务中解放出来。
 
 工作原则：

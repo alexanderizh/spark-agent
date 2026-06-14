@@ -36,6 +36,21 @@ describe('IPC schemas', () => {
     })
   })
 
+  it('accepts max reasoning effort and rejects removed low effort', () => {
+    const request = SessionCreateRequestSchema.parse({
+      providerProfileId: '00000000-0000-4000-8000-000000000001',
+      reasoningEffort: 'max',
+    })
+
+    expect(request.reasoningEffort).toBe('max')
+    expect(() =>
+      SessionCreateRequestSchema.parse({
+        providerProfileId: '00000000-0000-4000-8000-000000000001',
+        reasoningEffort: 'low',
+      }),
+    ).toThrow()
+  })
+
   it('preserves selected agent fields during session updates', () => {
     const request = SessionUpdateRequestSchema.parse({
       sessionId: '00000000-0000-4000-8000-000000000002',

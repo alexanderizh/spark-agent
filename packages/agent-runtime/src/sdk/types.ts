@@ -140,7 +140,7 @@ export type SDKPermissionMode =
   | 'dontAsk'
   | 'auto'
 
-export type SDKEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+export type SDKEffort = 'medium' | 'high' | 'xhigh' | 'max'
 
 export type SDKPermissionDecisionClassification =
   | 'user_temporary'
@@ -300,7 +300,7 @@ export interface SDKExecutorConfig {
   contextWindowTokens?: number | undefined
   maxBudgetUsd?: number | undefined
   workspaceRootPath: string
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | undefined
+  reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max' | undefined
   mcpServers?: Record<string, SDKMcpServerConfig> | undefined
   imageGenerationMcpServer?: SDKMcpServerConfig | undefined
   /** 统一多媒体 MCP server（spark_media）：图片/语音/视频生成 */

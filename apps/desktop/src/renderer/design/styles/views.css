@@ -1029,7 +1029,7 @@ body.sidebar-resizing {
 }
 .chat-stream-inner {
   flex: 1 0 auto;
-  width: min(100%, calc(900px + (var(--pad-xl) * 2)));
+  width: min(100%, 900px);
   min-width: 0;
   margin: 0 auto;
   padding: 0 var(--pad-xl);
@@ -1259,6 +1259,7 @@ body.sidebar-resizing {
 /* 用户消息：hover bar 右对齐（气泡外右下角） */
 .msg-hover-right {
   justify-content: flex-end;
+  margin-right: 46px;
 }
 
 /* Agent 消息：hover bar 左对齐（气泡内左下角） */
@@ -3105,19 +3106,7 @@ body.sidebar-resizing {
   min-height: 92px;
   max-height: 320px;
   transition: height 0.12s ease;
-  /* 隐藏原生滚动条但保留滚动能力（必须 !important，否则会被全局 * 规则覆盖） */
-  scrollbar-width: none !important;
-  scrollbar-color: transparent transparent !important;
-  -ms-overflow-style: none;
   overflow-y: auto;
-}
-.composer-v2 textarea::-webkit-scrollbar,
-.composer-v2 textarea::-webkit-scrollbar-thumb,
-.composer-v2 textarea::-webkit-scrollbar-track {
-  width: 0 !important;
-  height: 0 !important;
-  display: none !important;
-  background: transparent !important;
 }
 .composer-expand-btn {
   position: absolute;

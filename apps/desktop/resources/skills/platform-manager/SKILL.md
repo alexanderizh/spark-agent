@@ -75,7 +75,7 @@ Agent 可通过这些工具查看和修改当前会话的运行时参数，实�
 - **mcp__spark_platform__sessions_switch_provider**（参数：providerProfileId）— 切换当前会话的 AI 供应商，模型也会变更为新供应商的默认模型
 - **mcp__spark_platform__sessions_switch_mode**（参数：chatMode）— 切换聊天模式：`agent`（正常对话）、`ask`（仅回答不执行）、`edit`（编辑模式）、`review`（代码审查模式）
 - **mcp__spark_platform__sessions_switch_permission**（参数：permissionMode）— 切换权限模式：`default`（需确认高风险）、`claude-auto-edits`（自动编辑）、`bypassPermissions`（完全自动，慎用）
-- **mcp__spark_platform__sessions_switch_reasoning_effort**（参数：reasoningEffort）— 切换推理强度：`low`（快速）、`medium`（平衡）、`high`（深度分析）、`xhigh`（极致推理）
+- **mcp__spark_platform__sessions_switch_reasoning_effort**（参数：reasoningEffort）— 切换推理强度：`medium`（平衡）、`high`（深度分析）、`xhigh`（极致推理）、`max`（最高推理）
 
 ### 8. 看板任务管理
 - **mcp__spark_platform__board_list**（参数：status?, priority?, assignee?, project?, query?, includeDeleted?）— 列出看板任务（每条任务包含关联的项目名和附件信息）

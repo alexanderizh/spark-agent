@@ -91,6 +91,8 @@ export interface AssistantMessageEvent extends BaseEvent {
    * 的文本在时间线上各自保留。缺省（历史事件）时退回“complete 替换最近流式文本”。
    */
   segmentId?: string
+  agentId?: string
+  agentName?: string
 }
 
 // ─── 工具类事件 ──────────────────────────────────────────────────────────────
@@ -385,6 +387,8 @@ export interface AgentStatusEvent extends BaseEvent {
   status: AgentStatusValue
   /** 状态描述（显示在 Agent Card 上）*/
   message?: string
+  agentId?: string
+  agentName?: string
 }
 
 /** Agent 思考过程（extended thinking，可折叠展示） */
@@ -394,6 +398,8 @@ export interface AgentThinkingEvent extends BaseEvent {
   content: string
   /** 同 AssistantMessageEvent.segmentId：complete 只替换同 segment 的思考文本 */
   segmentId?: string
+  agentId?: string
+  agentName?: string
 }
 
 // ─── 资源使用类事件 ──────────────────────────────────────────────────────────

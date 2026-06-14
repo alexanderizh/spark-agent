@@ -1105,29 +1105,33 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
    只用 `::-webkit-scrollbar*` 时，较新的 Chromium 会走经典模式，
    在 Windows 上仍带箭头方块、直角端头，这就是用户看到"尖锐方头 + 点击块"的根因。 */
 * {
-  scrollbar-width: thin !important;
-  scrollbar-color: color-mix(in srgb, var(--text-muted) 28%, transparent) transparent !important;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 24%, transparent) transparent;
 }
 *::-webkit-scrollbar,
 *::-webkit-scrollbar:hover {
-  width: 4px !important;
-  height: 4px !important;
+  width: 7px;
+  height: 7px;
 }
 *::-webkit-scrollbar-track {
-  background: transparent !important;
+  background: transparent;
 }
 *::-webkit-scrollbar-thumb {
   min-height: 24px;
-  background: color-mix(in srgb, var(--text-muted) 28%, transparent) !important;
-  border-radius: 999px !important;
-  border: 1px solid transparent !important;
-  background-clip: padding-box !important;
+  background: color-mix(in srgb, var(--text-muted) 0%, transparent);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*:hover::-webkit-scrollbar-thumb,
+*:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-muted) 24%, transparent);
 }
 *::-webkit-scrollbar-thumb:hover {
-  background: color-mix(in srgb, var(--text-muted) 45%, transparent) !important;
+  background: color-mix(in srgb, var(--text-muted) 44%, transparent);
 }
 *::-webkit-scrollbar-corner {
-  background: transparent !important;
+  background: transparent;
 }
 *::-webkit-scrollbar-button,
 *::-webkit-scrollbar-button:start,
@@ -1137,10 +1141,10 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 *::-webkit-scrollbar-button:horizontal:start,
 *::-webkit-scrollbar-button:horizontal:end {
   display: none !important;
-  width: 0 !important;
-  height: 0 !important;
-  border: 0 !important;
-  background: transparent !important;
+  width: 0;
+  height: 0;
+  border: 0;
+  background: transparent;
   -webkit-appearance: none !important;
 }
 

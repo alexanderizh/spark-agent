@@ -18,6 +18,9 @@
   border-radius: 999px;
   background: var(--text-muted);
   pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 /* Completed but user hasn't opened yet — static blue dot (no pulse; completed is a terminal state) */
@@ -35,6 +38,15 @@
 .session-status-dot-waiting-user {
   background: var(--info);
   animation: session-dot-pulse-info 1.6s ease-in-out infinite;
+}
+
+.session-status-dot-error {
+  left: 5px;
+  width: 14px;
+  height: 14px;
+  background: transparent;
+  color: var(--danger);
+  filter: drop-shadow(0 0 2px color-mix(in srgb, var(--danger) 22%, transparent));
 }
 
 @keyframes session-dot-pulse-warning {
@@ -209,19 +221,6 @@
   position: relative;
   border-left-color: transparent;
   background: transparent;
-
-  &::before {
-    content: '';
-    position: absolute;
-    left: 8px;
-    top: 50%;
-    width: 6px;
-    height: 6px;
-    border-radius: 999px;
-    background: var(--danger);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--danger) 14%, transparent);
-    transform: translateY(-50%);
-  }
 }
 
 .proj-session.is-cancelled {

@@ -43,6 +43,10 @@ process.stderr?.on('error', ignoreEpipe)
 //     Loopback binding keeps the surface local-only.
 app.commandLine.appendSwitch('remote-debugging-port', '9223')
 app.commandLine.appendSwitch('remote-allow-origins', '*')
+app.commandLine.appendSwitch(
+  'enable-features',
+  'OverlayScrollbar,OverlayScrollbarFlashAfterAnyScrollUpdate,OverlayScrollbarFlashWhenMouseEnter',
+)
 
 // ─── Overlay scrollbars (modern, no arrows, rounded ends) ───────────────────
 // 不启用 OverlayScrollbar feature —— overlay 模式下 Chromium 会自动在 hover 时

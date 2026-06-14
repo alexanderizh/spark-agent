@@ -129,6 +129,59 @@ describe('MessageBuilder', () => {
     })
   })
 
+  it('keeps the assistant agent snapshot attached to the message turn', () => {
+    const builder = new MessageBuilder()
+
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-1',
+      type: 'user_message',
+      content: 'first',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-1',
+      type: 'assistant_message',
+      mode: 'complete',
+      content: 'first answer',
+      provider: 'codex',
+      isFinal: true,
+      agentId: 'agent-a',
+      agentName: 'Agent A',
+    })
+    builder.processEvent({
+      ...baseEvent('user_message'),
+      id: 'user-2',
+      type: 'user_message',
+      turnId: 'turn-2',
+      content: 'second',
+    })
+    builder.processEvent({
+      ...baseEvent('assistant_message'),
+      id: 'assistant-2',
+      type: 'assistant_message',
+      turnId: 'turn-2',
+      mode: 'complete',
+      content: 'second answer',
+      provider: 'codex',
+      isFinal: true,
+      agentId: 'agent-b',
+      agentName: 'Agent B',
+    })
+
+    const messages = builder.getAllMessages()
+    expect(messages[1]).toMatchObject({
+      role: 'assistant',
+      agentId: 'agent-a',
+      agentName: 'Agent A',
+    })
+    expect(messages[3]).toMatchObject({
+      role: 'assistant',
+      agentId: 'agent-b',
+      agentName: 'Agent B',
+    })
+  })
+
   it('keeps a non-final complete assistant segment streaming until agent status completes', () => {
     const builder = new MessageBuilder()
 

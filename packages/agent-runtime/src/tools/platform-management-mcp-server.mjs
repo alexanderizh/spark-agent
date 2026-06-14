@@ -386,7 +386,7 @@ function toolDefinitions() {
           description: { type: 'string', description: '描述' },
           agentAdapter: { type: 'string', description: '适配器类型：claude-sdk/claude/codex', enum: ['claude-sdk', 'claude', 'codex'] },
           permissionMode: { type: 'string', description: '权限模式' },
-          reasoningEffort: { type: 'string', description: '推理强度：low/medium/high/xhigh', enum: ['low', 'medium', 'high', 'xhigh'] },
+          reasoningEffort: { type: 'string', description: '推理强度：medium/high/xhigh/max', enum: ['medium', 'high', 'xhigh', 'max'] },
           prompt: { type: 'string', description: '系统提示词' },
           skillIds: { type: 'array', items: { type: 'string' }, description: '关联的 Skill ID 列表' },
           mcpServerIds: { type: 'array', items: { type: 'string' }, description: '关联的 MCP 服务器 ID 列表' },
@@ -414,7 +414,7 @@ function toolDefinitions() {
           description: { type: 'string', description: '新描述' },
           agentAdapter: { type: 'string', description: '新适配器类型' },
           permissionMode: { type: 'string', description: '新权限模式' },
-          reasoningEffort: { type: 'string', description: '新推理强度：low/medium/high/xhigh', enum: ['low', 'medium', 'high', 'xhigh'] },
+          reasoningEffort: { type: 'string', description: '新推理强度：medium/high/xhigh/max', enum: ['medium', 'high', 'xhigh', 'max'] },
           prompt: { type: 'string', description: '新系统提示词' },
           skillIds: { type: 'array', items: { type: 'string' }, description: '新的 Skill ID 列表' },
           mcpServerIds: { type: 'array', items: { type: 'string' }, description: '新的 MCP 服务器 ID 列表' },
@@ -725,12 +725,12 @@ function toolDefinitions() {
     },
     {
       name: 'sessions_switch_reasoning_effort',
-      description: '切换当前会话的推理强度。low（快速简答）、medium（平衡）、high（深度分析）、xhigh（极致推理，消耗更多 token）。',
+      description: '切换当前会话的推理强度。medium（平衡）、high（深度分析）、xhigh（极致推理）、max（最高推理，消耗更多 token）。',
       inputSchema: {
         type: 'object',
         required: ['reasoningEffort'],
         properties: {
-          reasoningEffort: { type: 'string', description: '推理强度', enum: ['low', 'medium', 'high', 'xhigh'] },
+          reasoningEffort: { type: 'string', description: '推理强度', enum: ['medium', 'high', 'xhigh', 'max'] },
         },
       },
     },

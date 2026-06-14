@@ -47,7 +47,7 @@ import type {
 } from '../history-import.js'
 
 export type SessionChatMode = 'agent' | 'ask' | 'edit' | 'review'
-export type SessionReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
+export type SessionReasoningEffort = 'medium' | 'high' | 'xhigh' | 'max'
 export type SessionAgentAdapter = 'claude' | 'claude-sdk' | 'codex'
 export type SessionPermissionMode =
   | 'claude-ask'

@@ -43,11 +43,15 @@ const adapterOptions = [
 ]
 
 const reasoningOptions = [
-  { label: 'low', value: 'low' },
   { label: 'medium', value: 'medium' },
   { label: 'high', value: 'high' },
   { label: 'xhigh', value: 'xhigh' },
+  { label: 'max', value: 'max' },
 ]
+
+function normalizeReasoningEffort(value: unknown): SessionReasoningEffort {
+  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'medium'
+}
 
 type AgentDraft = {
   id?: string
@@ -486,7 +490,7 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
           description: agent.description,
           agentAdapter: agent.agentAdapter,
           permissionMode: agent.permissionMode,
-          reasoningEffort: agent.reasoningEffort,
+          reasoningEffort: normalizeReasoningEffort(agent.reasoningEffort),
           prompt: agent.prompt,
           skillIds: agent.skillIds,
           disabledSkillIds: agent.disabledSkillIds,
@@ -947,7 +951,7 @@ function agentToDraft(agent: ManagedAgent): AgentDraft {
     modelId: agent.modelId ?? '',
     agentAdapter: agent.agentAdapter,
     permissionMode: agent.permissionMode,
-    reasoningEffort: agent.reasoningEffort,
+    reasoningEffort: normalizeReasoningEffort(agent.reasoningEffort),
     prompt: agent.prompt,
     skillIds: agent.skillIds,
     mcpServerIds: agent.mcpServerIds,
@@ -969,7 +973,7 @@ function draftToPayload(draft: AgentDraft) {
     modelId: draft.modelId || null,
     agentAdapter: draft.agentAdapter,
     permissionMode: draft.permissionMode,
-    reasoningEffort: draft.reasoningEffort,
+    reasoningEffort: normalizeReasoningEffort(draft.reasoningEffort),
     prompt: draft.prompt,
     skillIds: draft.skillIds,
     disabledSkillIds: [] as string[],

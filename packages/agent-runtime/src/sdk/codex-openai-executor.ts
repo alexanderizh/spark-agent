@@ -6,6 +6,16 @@ import type { SDKExecutorConfig, SDKTurnAttachment } from './types.js'
 
 type Listener = (event: AgentEvent) => void
 type EventBase = { id: string; sessionId: string; turnId: string; timestamp: string; seq: number }
+type ResponsesStreamEvent = {
+  type: string
+  delta?: string
+  response?: {
+    usage?: {
+      input_tokens?: number
+      output_tokens?: number
+    } | null
+  }
+}
 
 export class CodexOpenAIExecutor {
   private listeners = new Set<Listener>()
@@ -127,39 +137,44 @@ export class CodexOpenAIExecutor {
     controller: AbortController,
   ): Promise<string> {
     let finalText = ''
-    const stream = await client.responses.create(
-      {
-        model: config.model,
-        input: prompt,
-        stream: true,
-        ...(config.reasoningEffort != null
-          ? { reasoning: { effort: config.reasoningEffort } }
-          : {}),
-      },
+    const requestBody = {
+      model: config.model,
+      input: prompt,
+      stream: true,
+      ...(config.reasoningEffort != null
+        ? { reasoning: { effort: config.reasoningEffort } }
+        : {}),
+    }
+    const stream = await (client.responses.create as unknown as (
+      body: typeof requestBody,
+      options: { signal: AbortSignal },
+    ) => Promise<AsyncIterable<ResponsesStreamEvent>>)(
+      requestBody,
       { signal: controller.signal },
     )
     for await (const event of stream) {
-      if (event.type === 'response.output_text.delta' && event.delta.length > 0) {
-        finalText += event.delta
+      if (event.type === 'response.output_text.delta' && (event.delta?.length ?? 0) > 0) {
+        const delta = event.delta ?? ''
+        finalText += delta
         this.emit({
           ...makeBase(),
           type: 'assistant_message',
           mode: 'delta',
-          content: event.delta,
+          content: delta,
           provider: 'codex',
           isFinal: false,
           segmentId: `codex-api-${makeBase().turnId}`,
         })
-      } else if (event.type === 'response.reasoning_text.delta' && event.delta.length > 0) {
+      } else if (event.type === 'response.reasoning_text.delta' && (event.delta?.length ?? 0) > 0) {
         this.emit({
           ...makeBase(),
           type: 'agent_thinking',
           mode: 'delta',
-          content: event.delta,
+          content: event.delta ?? '',
           segmentId: `codex-api-thinking-${makeBase().turnId}`,
         })
       } else if (event.type === 'response.completed') {
-        const usage = event.response.usage
+        const usage = event.response?.usage
         if (usage != null) {
           this.emit({
             ...makeBase(),

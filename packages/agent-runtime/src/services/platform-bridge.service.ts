@@ -29,6 +29,14 @@ import type { SettingsRepository } from '@spark/storage'
 
 const log = createLogger('platform-bridge')
 
+function normalizePlatformReasoningEffort(
+  value: unknown,
+): 'medium' | 'high' | 'xhigh' | 'max' | undefined {
+  if (value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max') return value
+  if (value === 'low') return 'medium'
+  return undefined
+}
+
 // ─── Types ────────────────────────────────────────────────────────────
 
 export interface PlatformBridgeDeps {
@@ -53,7 +61,7 @@ export interface PlatformBridgeDeps {
       agentAdapter?: 'claude' | 'claude-sdk' | 'codex'
       permissionMode?: string
       chatMode?: 'agent' | 'ask' | 'edit' | 'review'
-      reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh'
+      reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
     }): Promise<{ session: Record<string, unknown> }>
     getSessionRuntimeState(sessionId: string): Promise<Record<string, unknown>>
   }
@@ -718,7 +726,7 @@ export class PlatformBridgeService {
 
   private async sessionSwitchReasoningEffort(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const sessionId = String(params.sessionId ?? '')
-    const reasoningEffort = params.reasoningEffort as 'low' | 'medium' | 'high' | 'xhigh' | undefined
+    const reasoningEffort = normalizePlatformReasoningEffort(params.reasoningEffort)
     if (!sessionId) throw new Error('Missing parameter: sessionId')
     if (!reasoningEffort) throw new Error('Missing parameter: reasoningEffort')
     const result = await d.sessionService.updateSession({ sessionId, reasoningEffort })

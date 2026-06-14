@@ -198,7 +198,7 @@ export class AgentRepository extends BaseRepository {
       modelId: row.model_id,
       agentAdapter: row.agent_adapter,
       permissionMode: row.permission_mode,
-      reasoningEffort: row.reasoning_effort,
+      reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
       prompt: row.prompt,
       ruleIds: this.fromJson<string[]>(row.rule_ids_json, []),
       skillIds: this.fromJson<string[]>(row.skill_ids_json, []),
@@ -211,6 +211,10 @@ export class AgentRepository extends BaseRepository {
       updatedAt: row.updated_at,
     }
   }
+}
+
+function normalizeReasoningEffort(value: string): string {
+  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'medium'
 }
 
 function withDefaultAvatar(metadata: Record<string, unknown> | undefined, name: string): Record<string, unknown> {

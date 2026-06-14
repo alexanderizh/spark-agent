@@ -649,6 +649,14 @@ export function ChatView({
     () => (teamConfig.enabled ? extractRunningTeamMemberIds(activeMessages) : []),
     [activeMessages, teamConfig.enabled],
   )
+  const composerIsWorking =
+    activeSession?.status === 'running' &&
+    !(
+      teamConfig.enabled &&
+      runningTeamAgentIds.length === 0 &&
+      approvalRequest == null &&
+      userQuestion == null
+    )
 
   const composerNode = active == null ? (
     <ComposerV2
@@ -661,7 +669,7 @@ export function ChatView({
       branchState={branchState}
       contextInputTokens={contextInputTokens}
       contextUsage={contextUsage}
-      isWorking={activeSession?.status === 'running'}
+      isWorking={composerIsWorking}
       approvalRequest={approvalRequest}
       {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
       onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
@@ -696,7 +704,7 @@ export function ChatView({
       branchState={branchState}
       contextInputTokens={contextInputTokens}
       contextUsage={contextUsage}
-      isWorking={activeSession?.status === 'running'}
+      isWorking={composerIsWorking}
       approvalRequest={approvalRequest}
       {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
       onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
@@ -1543,28 +1551,37 @@ function ChatStream({
               >
                 {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
               </UserMsg>
-            ) : (
-              <AssistantMessageRows
-                key={msg.id}
-                sessionId={sessionId}
-                blocks={msg.blocks}
-                messageStatus={msg.status}
-                isLatest={index === messages.length - 1}
-                assistantId={assistantAgentId}
-                assistantName={assistantName}
-                assistantAvatarSrc={assistantAvatarSrc}
-                usage={msg.usage}
-                {...(onFilePreview != null ? { onFilePreview } : {})}
-                {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
-                {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
-                {...(msg.status !== 'streaming'
-                  ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
-                  : {})}
-                {...(onReplyTo != null && msg.status !== 'streaming'
-                  ? { onReply: () => onReplyTo(msg, assistantAgentId, assistantName) }
-                  : {})}
-              />
-            ),
+            ) : (() => {
+              const identity = resolveAssistantIdentity(
+                msg,
+                agents,
+                assistantAgentId,
+                assistantName,
+                assistantAvatarSrc,
+              )
+              return (
+                <AssistantMessageRows
+                  key={msg.id}
+                  sessionId={sessionId}
+                  blocks={msg.blocks}
+                  messageStatus={msg.status}
+                  isLatest={index === messages.length - 1}
+                  assistantId={identity.id}
+                  assistantName={identity.name}
+                  assistantAvatarSrc={identity.avatarSrc}
+                  usage={msg.usage}
+                  {...(onFilePreview != null ? { onFilePreview } : {})}
+                  {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+                  {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                  {...(msg.status !== 'streaming'
+                    ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                    : {})}
+                  {...(onReplyTo != null && msg.status !== 'streaming'
+                    ? { onReply: () => onReplyTo(msg, identity.id, identity.name) }
+                    : {})}
+                />
+              )
+            })(),
           )}
           {showWaitingAgent && (
             <AgentMsg
@@ -3698,6 +3715,23 @@ function useUserAvatarSrc(): string {
   return src
 }
 
+function resolveAssistantIdentity(
+  msg: UIMessage,
+  agents: ManagedAgent[],
+  fallbackId: string,
+  fallbackName: string,
+  fallbackAvatarSrc: string,
+): { id: string; name: string; avatarSrc: string } {
+  const id = msg.agentId ?? fallbackId
+  const agent = agents.find((item) => item.id === id)
+  const name = msg.agentName ?? agent?.name ?? fallbackName
+  if (msg.agentId == null) {
+    return { id: fallbackId, name: fallbackName, avatarSrc: fallbackAvatarSrc }
+  }
+  const avatar = getAgentAvatarConfig(agent?.metadata, id, name)
+  return { id, name, avatarSrc: resolveAvatarSrc(avatar) }
+}
+
 function UserMessageAttachments({ attachments }: { attachments: MessageAttachment[] }) {
   const imageAttachments = attachments.filter((attachment) => attachment.type === 'image')
   const fileAttachments = attachments.filter((attachment) => attachment.type === 'file')
@@ -5659,6 +5693,28 @@ function ComposerV2({
     }))
   }, [updateDraft])
 
+  const clearDraftBuckets = useCallback((keys: Array<string | null | undefined>) => {
+    const uniqueKeys = Array.from(new Set(keys.filter((key): key is string => !!key)))
+    if (uniqueKeys.length === 0) return
+    setDrafts((current) => {
+      let changed = false
+      const next = { ...current }
+      for (const key of uniqueKeys) {
+        const existing = next[key]
+        if (
+          existing != null &&
+          (existing.value !== '' || existing.attachments.length > 0)
+        ) {
+          next[key] = { ...existing, value: '', attachments: [] }
+          changed = true
+        }
+      }
+      if (!changed) return current
+      writeComposerDrafts(next)
+      return next
+    })
+  }, [])
+
   const rememberRuntimePatch = useCallback((patch: SessionRuntimePatch) => {
     pendingRuntimePatchRef.current = { ...pendingRuntimePatchRef.current, ...patch }
   }, [])
@@ -5952,13 +6008,17 @@ function ComposerV2({
               setQueueVisible(false)
             }
             await refreshQueueState(sessionId)
+            clearDraftBuckets([draftBucketKey, sessionId, 'draft:new'])
             onSent(sessionId)
             return
           }
           // 命令结果已通过事件流注入到聊天中，无需 Toast
           if (res.session != null) onCommandComplete(res.session)
           await refreshQueueState(sessionId)
-          if (res.started === true) onSent(sessionId)
+          if (res.started === true) {
+            clearDraftBuckets([draftBucketKey, sessionId, 'draft:new'])
+            onSent(sessionId)
+          }
         } catch (err) {
           console.error('命令执行失败', err)
           toast.error(err instanceof Error ? err.message : '命令执行失败')
@@ -6012,6 +6072,7 @@ function ComposerV2({
           setQueueVisible(false)
         }
         await refreshQueueState(targetSessionId)
+        clearDraftBuckets([draftBucketKey, targetSessionId, 'draft:new'])
         onSent(targetSessionId)
       } catch (err) {
         console.error('发送失败', err)
@@ -6029,6 +6090,8 @@ function ComposerV2({
       effectivePermissionMode,
       effectiveReasoning,
       effectiveHostAgentId,
+      clearDraftBuckets,
+      draftBucketKey,
       flushPendingRuntimePatch,
       getCurrentRuntimePatch,
       onCreateSession,
@@ -6879,10 +6942,11 @@ function ComposerV2({
   const handleAgentChange = async (agentId: string) => {
     const agent = agents.find((item) => item.id === agentId)
     if (agent == null) return
+    const agentReasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'medium'
     setDraftAgentId(agent.id)
     setDraftAdapter(agent.agentAdapter)
     setDraftPermissionMode(agent.permissionMode)
-    setDraftReasoning(agent.reasoningEffort)
+    setDraftReasoning(agentReasoning)
 
     const provider =
       providers.find((item) => item.id === agent.providerProfileId) ??
@@ -6899,7 +6963,7 @@ function ComposerV2({
       ...(provider?.id !== undefined ? { providerProfileId: provider.id } : {}),
       modelId: model,
       permissionMode: agent.permissionMode,
-      reasoningEffort: agent.reasoningEffort,
+      reasoningEffort: agentReasoning,
     })
     if (session != null) {
       await persistRuntimePatch({
@@ -6908,7 +6972,7 @@ function ComposerV2({
         modelId: model || null,
         agentAdapter: agent.agentAdapter,
         permissionMode: agent.permissionMode,
-        reasoningEffort: agent.reasoningEffort,
+        reasoningEffort: agentReasoning,
       })
     }
   }
@@ -8194,13 +8258,23 @@ function normalizeRuntimePermissionPrefs(value: unknown): {
   }
 }
 
+function normalizeComposerReasoningEffort(value: unknown): SessionReasoningEffort | undefined {
+  if (value == null) return undefined
+  return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'medium'
+}
+
 function readComposerPrefs(): ComposerPrefs {
   if (typeof window === 'undefined') return {}
   try {
     const raw = window.localStorage.getItem(COMPOSER_PREFS_KEY)
     if (raw == null) return {}
     const parsed = JSON.parse(raw) as ComposerPrefs
-    return parsed && typeof parsed === 'object' ? parsed : {}
+    if (parsed == null || typeof parsed !== 'object') return {}
+    const reasoningEffort = normalizeComposerReasoningEffort(parsed.reasoningEffort)
+    return {
+      ...parsed,
+      ...(reasoningEffort !== undefined ? { reasoningEffort } : {}),
+    }
   } catch {
     return {}
   }
@@ -8209,7 +8283,13 @@ function readComposerPrefs(): ComposerPrefs {
 function writeComposerPrefs(patch: ComposerPrefs): void {
   if (typeof window === 'undefined') return
   const prev = readComposerPrefs()
-  const next: ComposerPrefs = { ...prev, ...patch }
+  const normalizedPatch: ComposerPrefs = { ...patch }
+  if (patch.reasoningEffort !== undefined) {
+    const reasoningEffort = normalizeComposerReasoningEffort(patch.reasoningEffort)
+    if (reasoningEffort !== undefined) normalizedPatch.reasoningEffort = reasoningEffort
+    else delete normalizedPatch.reasoningEffort
+  }
+  const next: ComposerPrefs = { ...prev, ...normalizedPatch }
   for (const key of Object.keys(next) as Array<keyof ComposerPrefs>) {
     if (next[key] === undefined) delete next[key]
   }
@@ -8409,17 +8489,17 @@ function getReasoningOptions(
 ): Array<{ value: SessionReasoningEffort; label: string }> {
   if (isClaudeAdapter(adapter)) {
     return [
-      { value: 'low', label: 'low' },
       { value: 'medium', label: 'middle' },
       { value: 'high', label: 'high' },
       { value: 'xhigh', label: 'xhigh' },
+      { value: 'max', label: 'max' },
     ]
   }
   return [
-    { value: 'low', label: '低' },
     { value: 'medium', label: '中' },
     { value: 'high', label: '高' },
     { value: 'xhigh', label: '超高' },
+    { value: 'max', label: 'Max' },
   ]
 }
 
