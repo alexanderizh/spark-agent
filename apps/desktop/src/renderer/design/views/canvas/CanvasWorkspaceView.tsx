@@ -37,6 +37,7 @@ export function CanvasWorkspaceView({
     snapshot,
     loading,
     updateNodes,
+    connectNodes,
     createTextNode,
     createImageNode,
     createGroupNode,
@@ -276,6 +277,7 @@ export function CanvasWorkspaceView({
           selectedNodeIds={selectedNodeIds}
           onSelectionChange={handleSelectionChange}
           onNodesPersist={(nodes) => void updateNodes(nodes)}
+          onConnectNodes={(input) => void connectNodes(input)}
           onDuplicateNode={handleDuplicateNode}
           onDeleteNode={handleDeleteNode}
           onToggleLockNode={handleToggleLockNode}

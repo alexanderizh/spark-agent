@@ -88,6 +88,13 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  const connectNodes = useCallback(
+    async (input: { sourceNodeId: string; targetNodeId: string }) => {
+      setSnapshot(await canvasApi.connectNodes(projectId, input))
+    },
+    [projectId],
+  )
+
   const createTextNode = useCallback(
     async (input: { text: string; isPrompt?: boolean; x: number; y: number }) => {
       const current = snapshot
@@ -182,6 +189,7 @@ export function useCanvasWorkspace(projectId: string) {
     loading,
     refresh,
     updateNodes,
+    connectNodes,
     createTextNode,
     createImageNode,
     createGroupNode,

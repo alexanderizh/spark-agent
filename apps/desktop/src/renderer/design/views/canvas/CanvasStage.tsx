@@ -5,7 +5,6 @@ import {
   MiniMap,
   ReactFlow,
   ReactFlowProvider,
-  addEdge,
   applyNodeChanges,
   type Connection,
   type Edge,
@@ -14,7 +13,6 @@ import {
   type NodeOrigin,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { message } from 'antd'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
 import type { CanvasEdge, CanvasNode as SparkCanvasNode, CanvasSnapshot } from './canvas.types'
@@ -96,6 +94,7 @@ export function CanvasStage({
   selectedNodeIds,
   onSelectionChange,
   onNodesPersist,
+  onConnectNodes,
   onDuplicateNode,
   onDeleteNode,
   onToggleLockNode,
@@ -108,6 +107,7 @@ export function CanvasStage({
   selectedNodeIds: string[]
   onSelectionChange: (nodeIds: string[]) => void
   onNodesPersist: (nodes: SparkCanvasNode[]) => void
+  onConnectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => void
   onDuplicateNode: (nodeId: string) => void
   onDeleteNode: (nodeId: string) => void
   onToggleLockNode: (nodeId: string) => void
@@ -219,10 +219,10 @@ export function CanvasStage({
 
   const handleConnect = useCallback(
     (connection: Connection) => {
-      void addEdge(connection, edges)
-      message.info('血缘边将在后端 API 接入后保存')
+      if (!connection.source || !connection.target) return
+      onConnectNodes({ sourceNodeId: connection.source, targetNodeId: connection.target })
     },
-    [edges],
+    [onConnectNodes],
   )
 
   return (

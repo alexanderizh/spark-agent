@@ -612,6 +612,70 @@ export const canvasApi = {
     writeDb(db)
   },
 
+  async connectNodes(
+    projectId: string,
+    input: {
+      sourceNodeId: string
+      targetNodeId: string
+      type?: CanvasEdge['type']
+    },
+  ): Promise<CanvasSnapshot> {
+    if (!input.sourceNodeId || !input.targetNodeId || input.sourceNodeId === input.targetNodeId) {
+      return this.openSnapshot(projectId)
+    }
+    const db = readDb()
+    const source = db.nodes.find((node) => node.id === input.sourceNodeId && node.projectId === projectId && !node.hidden)
+    const target = db.nodes.find((node) => node.id === input.targetNodeId && node.projectId === projectId && !node.hidden)
+    const board = db.boards.find((item) => item.projectId === projectId)
+    if (!source || !target || !board) return this.openSnapshot(projectId)
+
+    const edgeType: CanvasEdge['type'] = input.type
+      ?? (target.type === 'task' ? 'used_as_input' : source.type === 'task' ? 'generated' : 'references')
+    const duplicate = db.edges.some((edge) =>
+      edge.projectId === projectId &&
+      edge.sourceNodeId === source.id &&
+      edge.targetNodeId === target.id &&
+      edge.type === edgeType,
+    )
+    if (duplicate) return this.openSnapshot(projectId)
+
+    const taskId = target.type === 'task'
+      ? target.taskId
+      : source.type === 'task'
+        ? source.taskId
+        : null
+    const at = now()
+    const edge: CanvasEdge = {
+      id: uid('canvas_edge'),
+      projectId,
+      boardId: board.id,
+      userId: USER_ID,
+      sourceNodeId: source.id,
+      targetNodeId: target.id,
+      type: edgeType,
+      taskId: taskId ?? null,
+      metadata: { manual: true },
+      createdAt: at,
+    }
+    db.edges.push(edge)
+
+    const task = taskId ? db.tasks.find((item) => item.id === taskId) : undefined
+    if (task && edgeType === 'used_as_input') {
+      if (!task.inputNodeIds.includes(source.id)) task.inputNodeIds.push(source.id)
+      if (source.assetId && !task.inputAssetIds.includes(source.assetId)) task.inputAssetIds.push(source.assetId)
+      task.updatedAt = at
+    }
+    if (task && edgeType === 'generated') {
+      if (!task.outputNodeIds.includes(target.id)) task.outputNodeIds.push(target.id)
+      if (target.assetId && !task.outputAssetIds.includes(target.assetId)) task.outputAssetIds.push(target.assetId)
+      task.updatedAt = at
+    }
+
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
   async patchNodes(
     projectId: string,
     nodeIds: string[],
