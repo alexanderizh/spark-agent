@@ -87,6 +87,12 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
     void refresh()
   }, [refresh])
 
+  useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'team') void refresh()
+    }) ?? (() => {})
+  }, [refresh])
+
   const agentById = useMemo(() => new Map(agents.map((a) => [a.id, a])), [agents])
   const enabledAgents = useMemo(() => agents.filter((a) => a.enabled), [agents])
 

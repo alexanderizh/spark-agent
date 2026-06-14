@@ -80,6 +80,12 @@ function writeComposerPrefs(prefs: ComposerPrefs): void {
   try { window.localStorage.setItem(COMPOSER_PREFS_KEY, JSON.stringify(prefs)) } catch { /* */ }
 }
 
+function nonEmptyString(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
 function getPreferredProvider(
   providers: ProviderProfile[],
   prefs: ComposerPrefs,
@@ -326,7 +332,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return window.spark?.on?.('stream:config:changed', (event) => {
-      if (event.scope === 'provider' || event.scope === 'agent') {
+      if (event.scope === 'provider' || event.scope === 'agent' || event.scope === 'team') {
         refreshData().catch(console.error)
       }
     }) ?? (() => {})
@@ -410,16 +416,21 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       const knownProviders = providers.length > 0 ? providers : (await listProviders({})).profiles
       if (providers.length === 0) setProviders(knownProviders)
       const prefs = readComposerPrefs()
+      const optionAgentId = nonEmptyString(options.agentId)
+      const prefsAgentId = nonEmptyString(prefs.agentId)
+      const optionProviderProfileId = nonEmptyString(options.providerProfileId)
+      const selectedProvider = nonEmptyString(selectedProviderId)
+      const optionModelId = nonEmptyString(options.modelId)
       const defaultAgent = agents.find(a => a.isDefault && a.enabled)
-      const selectedAgent = agents.find(a => a.id === (options.agentId as string)) ??
-        agents.find(a => a.id === prefs.agentId) ?? defaultAgent ?? agents[0]
+      const selectedAgent = agents.find(a => a.id === optionAgentId) ??
+        agents.find(a => a.id === prefsAgentId) ?? defaultAgent ?? agents[0]
       const preferredAdapter = (options.agentAdapter as SessionAgentAdapter) ?? prefs.adapter ?? selectedAgent?.agentAdapter ?? DEFAULT_AGENT_ADAPTER
-      const profile = knownProviders.find(p => p.id === (options.providerProfileId as string)) ??
+      const profile = knownProviders.find(p => p.id === optionProviderProfileId) ??
         knownProviders.find(p =>
           p.id === selectedAgent?.providerProfileId &&
           isProviderCompatibleWithAdapter(p, preferredAdapter),
         ) ??
-        knownProviders.find(p => p.id === selectedProviderId && isProviderCompatibleWithAdapter(p, preferredAdapter)) ??
+        knownProviders.find(p => p.id === selectedProvider && isProviderCompatibleWithAdapter(p, preferredAdapter)) ??
         getPreferredProvider(knownProviders, prefs, preferredAdapter)
       if (!profile) {
         void requestConfirm({
@@ -434,11 +445,12 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         (selectedAgent?.providerProfileId === profile.id ? selectedAgent?.agentAdapter : undefined) ??
         getProviderAdapterKind(profile)
       const permissionMode = (options.permissionMode as SessionPermissionMode) ?? selectedAgent?.permissionMode ?? getValidPermissionMode(prefs.permissionMode, agentAdapter)
-      const modelId = (options.modelId as string) ?? selectedAgent?.modelId ?? (prefs.providerProfileId === profile.id && prefs.modelId ? prefs.modelId : undefined)
+      const modelId = optionModelId ?? nonEmptyString(selectedAgent?.modelId) ?? (prefs.providerProfileId === profile.id ? nonEmptyString(prefs.modelId) : undefined)
+      const agentId = optionAgentId ?? nonEmptyString(selectedAgent?.id) ?? 'platform-manager-agent'
       const res = await createSession({
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
-        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'platform-manager-agent',
+        agentId,
         agentAdapter,
         permissionMode,
         ...(options.chatMode !== undefined ? { chatMode: options.chatMode as SessionChatMode } : {}),
@@ -457,7 +469,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       if (options.skipRefresh !== true) await refreshData()
       writeComposerPrefs({
         adapter: agentAdapter,
-        agentId: (options.agentId as string) ?? selectedAgent?.id ?? 'platform-manager-agent',
+        agentId,
         providerProfileId: profile.id,
         ...(modelId !== undefined ? { modelId } : {}),
         permissionMode,
@@ -602,8 +614,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   const handleDeleteSession = useCallback(async (session: SessionSummary) => {
     const confirmed = await requestConfirm({
-      title: `删除会话「${session.title ?? '未命名'}」？`,
-      description: '该会话记录会从本地删除。',
+      title: '确认',
+      description: `是否确定删除会话「${session.title ?? '未命名'}」？`,
       confirmText: '删除',
       danger: true,
     })

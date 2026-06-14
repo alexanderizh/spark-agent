@@ -150,7 +150,7 @@ const RUNTIME_PERMISSION_SETTINGS_CATEGORY = 'runtime-permissions'
 const RUNTIME_PERMISSION_SETTINGS_KEY = 'defaults'
 const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 
-type ConfigChangedScope = 'provider' | 'agent' | 'skill' | 'mcp' | 'rule' | 'prompt'
+type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'rule' | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
 
 function pushConfigChanged(scope: ConfigChangedScope, action: ConfigChangedAction, id?: string): void {
@@ -2522,6 +2522,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('team:update', async (req) => {
     log.info(`team:update requested, sessionId=${req.sessionId}, enabled=${req.config.enabled}`)
     new SessionRepository(getDatabase()).patchMetadata(req.sessionId, { team: req.config })
+    pushConfigChanged('team', 'update', req.sessionId)
     return { config: req.config }
   })
 
@@ -2605,6 +2606,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.enabled !== undefined ? { enabled: req.enabled } : {}),
       ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
     })
+    pushConfigChanged('team', 'create', team.id)
     return { team: toManagedTeam(team) }
   })
 
@@ -2633,6 +2635,7 @@ export function registerAllIpcHandlers(): void {
       ...(req.metadata !== undefined ? { metadata: req.metadata } : {}),
     })
     if (team == null) throw new Error(`Team ${req.id} not found after update`)
+    pushConfigChanged('team', 'update', team.id)
     return { team: toManagedTeam(team) }
   })
 
@@ -2641,7 +2644,9 @@ export function registerAllIpcHandlers(): void {
     const existing = repo.get(req.id)
     if (existing == null) return { deleted: false }
     if (existing.builtIn) throw new Error('内置团队不可删除，可在编辑面板停用或修改配置')
-    return { deleted: repo.delete(req.id) }
+    const deleted = repo.delete(req.id)
+    if (deleted) pushConfigChanged('team', 'delete', req.id)
+    return { deleted }
   })
 
   // ─── Workflow Handlers ────────────────────────────────────────────────

@@ -174,8 +174,14 @@ export interface SessionGetHistoryRequest {
   sessionId: SessionId
   /** 一次性取完整历史，避免大会话切换时反复 IPC 分页。 */
   full?: boolean
-  /** 分页：取最近 N 个事件 */
+  /** 分页：取最近 N 个事件（事件级，排除流式 delta 行） */
   limit?: number
+  /**
+   * 按「轮次」分页：取最近 N 个完整轮次（turn）的可渲染事件。
+   * Agentic 会话里一个轮次可能有上千条事件，按事件数分页会把一个轮次切碎、
+   * 导致只显示「一条消息」；按轮次分页则每页都是完整对话、永不切碎。
+   */
+  turnLimit?: number
   /** 分页：游标（上次返回的最小 seq）*/
   beforeSeq?: number
 }
@@ -3880,7 +3886,7 @@ export interface IpcStreamChannelMap {
   'stream:history-import:progress': HistoryImportProgress
   /** Global runtime configuration changed; renderer should refresh cached pickers/lists. */
   'stream:config:changed': {
-    scope: 'provider' | 'agent' | 'skill' | 'mcp' | 'rule' | 'prompt'
+    scope: 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'rule' | 'prompt'
     action: 'create' | 'update' | 'delete' | 'import'
     id?: string
   }

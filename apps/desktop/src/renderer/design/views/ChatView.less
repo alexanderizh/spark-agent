@@ -84,8 +84,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  backdrop-filter: blur(1px);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  /* 不用 backdrop-filter: blur —— 它会让合成器每帧重采样整块背景，
+     主线程正忙于加载历史时尤其拖累，spinner 也跟着卡。用纯半透明底即可。 */
   animation: chat-switching-fade-in 0.12s ease;
   pointer-events: none;
 
@@ -110,9 +111,17 @@
   padding: 16px;
   gap: 16px;
 
-  /* 滚动条样式交由全局规则统一处理（见 styles.css）。
-     此处不要再写 `::-webkit-scrollbar*` —— 否则新版 Chromium 会对该元素强制走
-     经典渲染路径（带箭头按钮、直角端头），全局现代滚动条规则失效。 */
+  /* 全局滚动条默认透明、仅 hover 才显形（见 styles.css），会话内容区太长、需要常驻可见
+     的滚动位置指示，这里只覆盖 thumb 颜色让它默认可见（宽度/隐藏箭头仍走全局规则，
+     不影响现代滚动条路径）。 */
+  &::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--text-muted) 24%, transparent);
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--text-muted) 44%, transparent);
+  }
+  /* 现代滚动条路径（scrollbar-width:thin）下也常驻可见 */
+  scrollbar-color: color-mix(in srgb, var(--text-muted) 30%, transparent) transparent;
 }
 
 .chat-layout > .inspector {
@@ -167,36 +176,39 @@
 
 .scroll-to-bottom-btn {
   position: absolute;
-  bottom: 16px;
+  bottom: 12px;
   right: 16px;
-  z-index: 10;
-  width: 36px;
-  height: 36px;
+  z-index: 20;
+  width: 28px;
+  height: 28px;
+  padding: 0;
   border-radius: 50%;
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--text-muted);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  color: var(--text);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-  transition: all 0.2s ease;
-  animation: scroll-btn-fade-in 0.2s ease;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  animation: scroll-btn-fade-in 0.18s ease;
 
   &:hover {
-    background: var(--hover);
-    color: var(--text);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+    background: var(--panel);
+    color: var(--primary);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
   }
 
   &:active {
-    transform: scale(0.92);
+    transform: scale(0.94);
   }
 
   svg {
-    width: 18px;
-    height: 18px;
+    width: 14px;
+    height: 14px;
   }
 }
 
@@ -219,8 +231,8 @@
   margin-top: 4px;
   padding: 2px 10px;
   border-radius: var(--r-xs);
-  background: var(--c-primary-1, #e8f3ff);
-  color: var(--c-primary, #165dff);
+  background: var(--primary-soft);
+  color: var(--primary);
   font-size: 12px;
   line-height: 20px;
   width: fit-content;
@@ -236,7 +248,7 @@
     width: 2px;
     height: 2px;
     border-radius: 50%;
-    background: var(--c-primary, #165dff);
+    background: var(--primary);
     animation: dot-bounce 1.4s infinite ease-in-out both;
 
     &:nth-child(1) {
@@ -266,6 +278,15 @@
   max-width: min(220px, 100%);
   margin: 0;
   line-height: 20px;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    transform 0.16s ease;
+
+  &:hover {
+    transform: translateY(-1px);
+  }
 }
 
 .composer-running-agent-tag .ant-tag-content,

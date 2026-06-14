@@ -312,6 +312,7 @@ export function ChatView({
   //   - sessions.metadata.team(IPC team:update)：会话级权威来源，Phase 3 运行时读取。
   const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
   const { invoke: listTeamMembers } = useIpcInvoke('team:list-members')
+  const { invoke: getTeamDef } = useIpcInvoke('team:get-def')
   const defaultTeamConfig = useCallback((): TeamModeConfig => {
     const prefs = readComposerPrefs()
     const memberIds = prefs.teamMemberAgentIds ?? []
@@ -355,12 +356,24 @@ export function ChatView({
     : null
   // 切换 active session 时从 metadata 拉取会话级 team config 回显；
   // 历史团队会话能正常恢复底部参数与右侧 Inspector 的团队信息。
-  useEffect(() => {
+  const reloadActiveTeamConfig = useCallback(async () => {
     if (active == null) {
       setTeamConfig(defaultTeamConfig())
       return
     }
+    const res = await listTeamMembers({ sessionId: active as SessionId })
+    if (res.config != null) setTeamConfig(res.config)
+    else setTeamConfig(defaultTeamConfig())
+  }, [active, defaultTeamConfig, listTeamMembers])
+
+  useEffect(() => {
     let cancelled = false
+    if (active == null) {
+      setTeamConfig(defaultTeamConfig())
+      return () => {
+        cancelled = true
+      }
+    }
     void listTeamMembers({ sessionId: active as SessionId })
       .then((res) => {
         if (cancelled) return
@@ -373,7 +386,44 @@ export function ChatView({
     return () => {
       cancelled = true
     }
-  }, [active, listTeamMembers, defaultTeamConfig])
+  }, [active, defaultTeamConfig, listTeamMembers])
+
+  useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope !== 'team') return
+      if (active == null) {
+        setTeamConfig(defaultTeamConfig())
+        return
+      }
+      if (
+        teamConfig.teamId != null &&
+        event.id === teamConfig.teamId &&
+        (event.action === 'update' || event.action === 'delete')
+      ) {
+        if (event.action === 'delete') {
+          updateTeamConfig({ enabled: false, teamId: undefined })
+          return
+        }
+        void getTeamDef({ id: teamConfig.teamId })
+          .then((res) => {
+            if (res.team == null) return
+            updateTeamConfig({
+              enabled: true,
+              hostAgentId: res.team.hostAgentId,
+              memberAgentIds: res.team.memberAgentIds,
+              maxDepth: res.team.maxDepth,
+              allowNesting: res.team.allowNesting,
+              teamId: res.team.id,
+            })
+          })
+          .catch(() => {
+            void reloadActiveTeamConfig().catch(() => {})
+          })
+        return
+      }
+      void reloadActiveTeamConfig().catch(() => {})
+    }) ?? (() => {})
+  }, [active, defaultTeamConfig, getTeamDef, reloadActiveTeamConfig, teamConfig.teamId, updateTeamConfig])
 
   // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / Config 面板，
   // 否则它们会沿用上一个会话的展开态继续遮挡空白聊天区。
@@ -405,6 +455,9 @@ export function ChatView({
   useLayoutEffect(() => {
     if (active != null) setActiveSessionLoading(true)
   }, [active])
+  // ComposerV2 发送中（含 createSession + sendTurn + 命令路径）。
+  // 用于：抑制首条消息发送瞬间的 hero 闪现（覆盖 status 还没切到 running 的窗口）。
+  const [composerDispatching, setComposerDispatching] = useState(false)
   const [contextInputTokens, setContextInputTokens] = useState(0)
   const [sessionUsageData, setSessionUsageData] = useState<SessionUsageData>({
     inputTokens: 0,
@@ -564,7 +617,16 @@ export function ChatView({
   )
   // 仅在「无活跃会话」或「活跃会话历史已加载完且确实为空」时显示新建会话 hero；
   // 历史加载中不显示，避免老会话进入时先闪一下空会话。
-  const showEmptyHero = active == null || (activeMessages.length === 0 && !activeSessionLoading)
+  // 三层排除：
+  //  - activeSessionLoading：历史未加载完不显示
+  //  - activeSession?.status === 'running'：sendTurn 已成功但首条流式消息还没到的窗口不显示
+  //  - composerDispatching：发送瞬间到 onSent/status 切换之间的兜底，避免任何时序错位闪现 hero
+  const showEmptyHero =
+    active == null ||
+    (activeMessages.length === 0 &&
+      !activeSessionLoading &&
+      activeSession?.status !== 'running' &&
+      !composerDispatching)
 
   useEffect(() => {
     if (activeSession?.providerProfileId) {
@@ -646,8 +708,15 @@ export function ChatView({
   )
 
   const runningTeamAgentIds = useMemo(
-    () => (teamConfig.enabled ? extractRunningTeamMemberIds(activeMessages) : []),
-    [activeMessages, teamConfig.enabled],
+    () =>
+      teamConfig.enabled
+        ? extractRunningTeamAgentIds(
+            activeMessages,
+            effectiveHostAgentId ?? teamConfig.hostAgentId,
+            activeSession?.status === 'running',
+          )
+        : [],
+    [activeMessages, activeSession?.status, effectiveHostAgentId, teamConfig.enabled, teamConfig.hostAgentId],
   )
   const composerIsWorking =
     activeSession?.status === 'running' &&
@@ -692,6 +761,7 @@ export function ChatView({
       onOpenTeamInspector={() => setShowInspector(true)}
       runningTeamAgentIds={runningTeamAgentIds}
       replyTo={null}
+      onDispatchStateChange={setComposerDispatching}
     />
   ) : (
     <ComposerV2
@@ -728,6 +798,7 @@ export function ChatView({
       runningTeamAgentIds={runningTeamAgentIds}
       replyTo={showEmptyHero ? null : replyTo}
       onClearReply={() => setReplyTo(null)}
+      onDispatchStateChange={setComposerDispatching}
     />
   )
 
@@ -1128,6 +1199,9 @@ function ChatStream({
   const [agentIsRunning, setAgentIsRunning] = useState(false)
   const [showScrollToBottom, setShowScrollToBottom] = useState(false)
   const [isLoadingHistory, setIsLoadingHistory] = useState(false)
+  // 窗口化加载：是否还有更早历史 + 是否正在加载更早一页（顶部 loading 指示）
+  const [hasMoreHistory, setHasMoreHistory] = useState(false)
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false)
   const builderRef = useRef(new MessageBuilder())
   const rafRef = useRef<number | null>(null)
   const isStreamingRef = useRef(false)
@@ -1135,6 +1209,11 @@ function ChatStream({
   const hydratingRef = useRef(false)
   const bufferedEventsRef = useRef<AgentEvent[]>([])
   const historyLoadIdRef = useRef(0)
+  // 切换/初始加载后需要把视图强制贴到底部（展示最新消息）；置位后由自动滚动 effect 处理。
+  const scrollToBottomPendingRef = useRef(false)
+  // 初始贴底完成前，禁止「滚动到顶懒加载更早」触发——否则初次加载 scrollTop≈0 会立刻
+  // 触发翻页 + 锚定，把视图一路拉到最早的消息（用户报告的「从最早开始 / 卡住」根因）。
+  const initialScrollDoneRef = useRef(false)
   const usageRef = useRef<SessionUsageData>({
     inputTokens: 0,
     outputTokens: 0,
@@ -1155,8 +1234,14 @@ function ChatStream({
   const assistantAvatarSrc = resolveAvatarSrc(assistantAvatar)
 
   // ── 历史加载状态 ──
-  // loadedEventsRef：当前已加载到内存的历史 + 实时 event，用于删除消息时同步剔除对应 event。
+  // loadedEventsRef：当前已加载到内存的历史 + 实时 event；既用于删除消息时同步剔除，
+  // 也作为「加载更早」时增量重建消息的唯一数据源。
   const loadedEventsRef = useRef<AgentEvent[]>([])
+  // 窗口化：当前已加载最旧 event 的 seq（向上翻页 beforeSeq）、是否还有更早、是否正在翻页
+  const oldestSeqRef = useRef<number | undefined>(undefined)
+  const hasMoreHistoryRef = useRef(false)
+  const loadingOlderRef = useRef(false)
+  const loadOlderRef = useRef<() => void>(() => {})
   const viewCallbacksRef = useRef({
     onMessagesChange,
     onUsageChange,
@@ -1237,13 +1322,20 @@ function ChatStream({
     [],
   )
 
-  // 切换会话时加载完整历史，保证旧会话能恢复全部上下文与消息。
+  // 切换会话时加载历史：窗口化——只取最新一页，立即展示最近消息并滚到底部（IM 体感），
+  // 更早历史在用户向上滚动时按需懒加载。
   useEffect(() => {
     const loadId = historyLoadIdRef.current + 1
     historyLoadIdRef.current = loadId
     hydratingRef.current = true
     bufferedEventsRef.current = []
     loadedEventsRef.current = []
+    oldestSeqRef.current = undefined
+    hasMoreHistoryRef.current = false
+    loadingOlderRef.current = false
+    initialScrollDoneRef.current = false
+    setHasMoreHistory(false)
+    setIsLoadingOlder(false)
     let cancelled = false
 
     // 不清空旧消息（保留当前内容 + 遮罩 loading，避免空白闪屏）；交由 onLoadingChange 抑制 hero。
@@ -1256,11 +1348,16 @@ function ChatStream({
     viewCallbacksRef.current.onProjectContextChange(null)
     viewCallbacksRef.current.onTurnPromptSnapshotsChange([])
 
-    loadCompleteSessionHistory(getHistory, sessionId)
-      .then((historyEvents) => {
+    loadSessionHistoryPage(getHistory, sessionId)
+      .then(({ events: pageEvents, hasMore }) => {
         if (cancelled || historyLoadIdRef.current !== loadId) return
-        const events = mergeSessionEvents(historyEvents, bufferedEventsRef.current)
+        const events = mergeSessionEvents(pageEvents, bufferedEventsRef.current)
         loadedEventsRef.current = events
+        oldestSeqRef.current = events[0]?.seq
+        hasMoreHistoryRef.current = hasMore
+        setHasMoreHistory(hasMore)
+        // 进入会话先展示最新消息：提交后强制贴底（IM 体感）
+        scrollToBottomPendingRef.current = true
         commitEventsToView(events, true)
       })
       .catch((err) => {
@@ -1270,6 +1367,7 @@ function ChatStream({
           const bufferedEvents = bufferedEventsRef.current
           if (bufferedEvents.length > 0) {
             loadedEventsRef.current = [...bufferedEvents]
+            scrollToBottomPendingRef.current = true
             commitEventsToView(bufferedEvents, true)
           }
         }
@@ -1295,6 +1393,50 @@ function ChatStream({
     commitEventsToView,
     sessionId,
   ])
+
+  // 加载更早一页历史（用户滚动到顶部时触发）。prepend 后锚定 scrollTop，避免内容跳动。
+  const loadOlderHistory = useCallback(() => {
+    if (loadingOlderRef.current || !hasMoreHistoryRef.current) return
+    const beforeSeq = oldestSeqRef.current
+    if (beforeSeq === undefined) return
+    const loadIdAtRequest = historyLoadIdRef.current
+    loadingOlderRef.current = true
+    setIsLoadingOlder(true)
+    const el = streamRef.current
+    const prevScrollHeight = el?.scrollHeight ?? 0
+    const prevScrollTop = el?.scrollTop ?? 0
+    loadSessionHistoryPage(getHistory, sessionId, beforeSeq)
+      .then(({ events: olderEvents, hasMore }) => {
+        // 会话已切走（historyLoadIdRef 被切换 effect 递增）则丢弃
+        if (historyLoadIdRef.current !== loadIdAtRequest) return
+        if (olderEvents.length > 0) {
+          const merged = mergeSessionEvents(olderEvents, loadedEventsRef.current)
+          loadedEventsRef.current = merged
+          oldestSeqRef.current = merged[0]?.seq ?? oldestSeqRef.current
+          // 只重建消息，保留 live 维护的 usage/status
+          commitEventsToView(merged, false)
+          // 下一帧（DOM 已更新）按高度增量恢复 scrollTop，保持视觉锚点不动
+          requestAnimationFrame(() => {
+            const el2 = streamRef.current
+            if (el2 != null) {
+              el2.scrollTop = prevScrollTop + (el2.scrollHeight - prevScrollHeight)
+            }
+          })
+        }
+        hasMoreHistoryRef.current = hasMore
+        setHasMoreHistory(hasMore)
+      })
+      .catch((err) => console.error('Failed to load older history:', err))
+      .finally(() => {
+        if (historyLoadIdRef.current !== loadIdAtRequest) return
+        loadingOlderRef.current = false
+        setIsLoadingOlder(false)
+      })
+  }, [getHistory, commitEventsToView, sessionId])
+  // 让滚动处理（[] deps、闭包固定）始终调用到最新的 loadOlderHistory
+  useEffect(() => {
+    loadOlderRef.current = loadOlderHistory
+  }, [loadOlderHistory])
 
   // 使用 requestAnimationFrame 批量更新，确保 text_delta 立即渲染无延迟
   const flushMessages = useCallback(() => {
@@ -1347,6 +1489,18 @@ function ChatStream({
       const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
       userScrolledRef.current = distanceFromBottom > threshold
       setShowScrollToBottom(distanceFromBottom > threshold)
+      // 接近顶部时懒加载更早一页（窗口化）。
+      // 必须等初始贴底完成（initialScrollDoneRef），且当前确实有可向下滚动的内容
+      // （distanceFromBottom>0，排除内容不溢出时的误触发），否则会从最早开始狂翻页。
+      if (
+        initialScrollDoneRef.current &&
+        el.scrollTop < 200 &&
+        distanceFromBottom > 0 &&
+        hasMoreHistoryRef.current &&
+        !loadingOlderRef.current
+      ) {
+        loadOlderRef.current()
+      }
     }
     el.addEventListener('scroll', handleScroll, { passive: true })
     return () => el.removeEventListener('scroll', handleScroll)
@@ -1464,29 +1618,84 @@ function ChatStream({
     ],
   )
 
-  // 智能自动滚动：只在用户未主动上滚时自动跟随
-  // 当有新用户消息时，强制重置滚动状态并滚动到底部
+  // 智能自动滚动：
+  //  - 初始/切换加载：强制贴底展示最新消息，跨多帧重试以兼容异步内容（markdown/代码块/图片）
+  //    撑高后才到真正底部；贴底完成后才解锁「滚动到顶懒加载」。
+  //  - 新用户消息：强制贴底。
+  //  - Agent 流式：仅在用户未主动上滚时跟随。
   useEffect(() => {
     const el = streamRef.current
     if (!el) return
+
+    if (scrollToBottomPendingRef.current) {
+      scrollToBottomPendingRef.current = false
+      userScrolledRef.current = false
+      const pin = () => { el.scrollTop = el.scrollHeight }
+      pin()
+      // 连续多帧 + 一次延后兜底，确保异步内容撑高后仍贴底
+      requestAnimationFrame(() => {
+        pin()
+        requestAnimationFrame(() => {
+          pin()
+          window.setTimeout(() => {
+            pin()
+            // 解锁懒加载（略延后，避免贴底过程中的 scroll 事件误触发翻页）
+            initialScrollDoneRef.current = true
+          }, 120)
+        })
+      })
+      return
+    }
 
     // 检测最新消息是否为用户消息（表示用户刚发送了新消息）
     const latestMsg = messages[messages.length - 1]
     const isNewUserMessage = latestMsg?.role === 'user'
 
     if (isNewUserMessage) {
-      // 用户发送新消息，强制滚动到底部并重置滚动状态
       userScrolledRef.current = false
+      setShowScrollToBottom(false)
       requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight
       })
     } else if (!userScrolledRef.current) {
-      // Agent回复时，只在用户未主动上滚时自动跟随
       requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight
       })
+    } else {
+      setShowScrollToBottom(true)
     }
   }, [messages, agentIsRunning])
+
+  // 「贴底跟随」兜底（IM 标准行为）：
+  // 流式文本、思考区展开/折叠、代码块/图片撑高等很多高度变化并不会触发 ChatStream 重渲染，
+  // 仅靠 messages 变化的 effect 跟不住。这里用 MutationObserver 监听内容区任意 DOM 变化，
+  // 每帧节流地在「跟随中」时贴底；用户上滚（userScrolledRef=true）即暂停，滚回底部即恢复
+  // （滚动处理按 distanceFromBottom 维护 userScrolledRef）。
+  useEffect(() => {
+    const el = streamRef.current
+    if (!el) return
+    let rafId: number | null = null
+    const observer = new MutationObserver(() => {
+      if (rafId != null) return
+      rafId = requestAnimationFrame(() => {
+        rafId = null
+        // 初始贴底进行中、或用户已上滚，则不跟随
+        if (scrollToBottomPendingRef.current || userScrolledRef.current) return
+        el.scrollTop = el.scrollHeight
+      })
+    })
+    observer.observe(el, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    })
+    return () => {
+      observer.disconnect()
+      if (rafId != null) cancelAnimationFrame(rafId)
+    }
+  }, [])
 
   // 是否有正在流式传输的消息
   const hasStreamingMsg = messages.some((m) => m.status === 'streaming')
@@ -1519,10 +1728,44 @@ function ChatStream({
     setShowScrollToBottom(false)
   }, [])
 
+  useEffect(() => {
+    const handleScrollToRunningAgent = (event: Event) => {
+      const agentId = (event as CustomEvent<{ agentId?: string }>).detail?.agentId
+      const root = streamRef.current
+      if (!root || !agentId) return
+      const escapedAgentId =
+        typeof CSS !== 'undefined' && typeof CSS.escape === 'function'
+          ? CSS.escape(agentId)
+          : agentId.replace(/["\\]/g, '\\$&')
+      const runningMatches = Array.from(
+        root.querySelectorAll<HTMLElement>(
+          `[data-running-agent-id="${escapedAgentId}"][data-running="true"]`,
+        ),
+      )
+      const allMatches = Array.from(
+        root.querySelectorAll<HTMLElement>(`[data-running-agent-id="${escapedAgentId}"]`),
+      )
+      const target = runningMatches.at(-1) ?? allMatches.at(-1)
+      if (target == null) return
+      userScrolledRef.current = true
+      setShowScrollToBottom(true)
+      target.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    }
+    window.addEventListener('spark:team-running-agent:scroll', handleScrollToRunningAgent)
+    return () => {
+      window.removeEventListener('spark:team-running-agent:scroll', handleScrollToRunningAgent)
+    }
+  }, [])
+
   return (
     <div className="chat-stream-viewport">
       <div className="chat-stream">
         <div className="chat-stream-inner" ref={streamRef}>
+          {isLoadingOlder && (
+            <div className="chat-load-older" aria-hidden="true">
+              <span className="chat-loading-spinner" />
+            </div>
+          )}
           {messages.map((msg, index) =>
             msg.role === 'user' ? (
               <UserMsg
@@ -1642,19 +1885,32 @@ type GetSessionHistory = (request: {
   sessionId: SessionId
   full?: boolean
   limit?: number
+  turnLimit?: number
   beforeSeq?: number
 }) => Promise<{ events: AgentEvent[]; hasMore: boolean }>
 
-// Load the full session history so reopening a session restores every message.
-async function loadCompleteSessionHistory(
+/**
+ * 窗口化加载的单页大小：按「轮次」分页（而非事件数）。
+ * Agentic 会话里一个轮次可能有上千条事件，按事件数会把单个轮次切碎成「一条消息」；
+ * 按轮次分页则每页都是完整对话。后端已排除流式 delta 行，单页载荷大幅缩小。
+ */
+const SESSION_HISTORY_TURN_PAGE = 6
+
+/**
+ * loadSessionHistoryPage — 加载会话历史的「一页」（最近 N 个完整轮次）。
+ * 不带 beforeSeq → 最新一页（进会话先看到的最近轮次）；带 beforeSeq → 更早的轮次（向上翻页）。
+ */
+async function loadSessionHistoryPage(
   getHistory: GetSessionHistory,
   sessionId: SessionId,
-): Promise<AgentEvent[]> {
+  beforeSeq?: number,
+): Promise<{ events: AgentEvent[]; hasMore: boolean }> {
   const res = await getHistory({
     sessionId,
-    full: true,
+    turnLimit: SESSION_HISTORY_TURN_PAGE,
+    ...(beforeSeq !== undefined ? { beforeSeq } : {}),
   })
-  return res.events
+  return { events: res.events, hasMore: res.hasMore }
 }
 
 function mergeSessionEvents(historyEvents: AgentEvent[], liveEvents: AgentEvent[]): AgentEvent[] {
@@ -3958,7 +4214,12 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
         }
         if (segment.kind === 'team_member_activity') {
           return (
-            <div key={`team-member-activity-${index}`} className="team-timeline-segment">
+            <div
+              key={`team-member-activity-${index}`}
+              className="team-timeline-segment"
+              data-running-agent-id={segment.memberContext.memberAgentId}
+              data-running={segment.running ? 'true' : 'false'}
+            >
               <TeamMemberActivityBlockView
                 memberAgentId={segment.memberContext.memberAgentId}
                 blocks={segment.blocks}
@@ -3969,6 +4230,7 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             </div>
           )
         }
+        const segmentRunning = segmentIsLatest && status === 'running' && isHostActivityRunning(segment.blocks)
         return (
           <AgentMsg
             key={`agent-${index}`}
@@ -3979,8 +4241,9 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             assistantName={assistantName}
             assistantAvatarSrc={assistantAvatarSrc}
             usage={usage}
+            running={segmentRunning}
             {...(onFilePreview != null ? { onFilePreview } : {})}
-            {...(status != null ? { status } : {})}
+            {...(segmentRunning ? { status: 'running' as const } : {})}
             {...(messageStatus != null ? { messageStatus } : {})}
             {...(timestamp != null ? { timestamp } : {})}
             {...(onDelete != null ? { onDelete } : {})}
@@ -4004,21 +4267,21 @@ type AssistantMessageSegment =
 
 function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment[] {
   const segments: AssistantMessageSegment[] = []
-  const teamMemberSegments = new Map<
+  const latestTeamMemberSegments = new Map<
     string,
     Extract<AssistantMessageSegment, { kind: 'team_member_activity' }>
   >()
   const runningDispatches = new Set<string>()
-  // 单一 agent segment：Host 的所有 blocks 合并到一个气泡中，
-  // 避免 team dispatch/activity 打断后产生多个独立气泡。
-  let agentSegment: Extract<AssistantMessageSegment, { kind: 'agent' }> | null = null
-
+  // Preserve timeline order: host/member blocks only merge while they remain contiguous.
+  // This keeps host follow-up after member output visible as a new bubble at the bottom.
   const ensureAgentSegment = () => {
-    if (agentSegment == null) {
-      agentSegment = { kind: 'agent', blocks: [] }
-      segments.push(agentSegment)
+    const previous = segments.at(-1)
+    if (previous?.kind === 'agent') {
+      return previous
     }
-    return agentSegment
+    const segment: Extract<AssistantMessageSegment, { kind: 'agent' }> = { kind: 'agent', blocks: [] }
+    segments.push(segment)
+    return segment
   }
 
   for (const block of blocks) {
@@ -4031,7 +4294,7 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
       const isRunning = block.state === 'pending' || block.state === 'working'
       if (isRunning) runningDispatches.add(key)
       else runningDispatches.delete(key)
-      const segment = teamMemberSegments.get(key)
+      const segment = latestTeamMemberSegments.get(key)
       if (segment != null) segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
       segments.push({ kind: 'team', blocks: [block] })
       continue
@@ -4039,7 +4302,12 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
     const memberContext = getBlockTeamMemberContext(block)
     if (memberContext != null) {
       const key = teamMemberContextKey(memberContext)
-      let segment = teamMemberSegments.get(key)
+      const previous = segments.at(-1)
+      let segment =
+        previous?.kind === 'team_member_activity' &&
+        teamMemberContextKey(previous.memberContext) === key
+          ? previous
+          : null
       if (segment == null) {
         segment = {
           kind: 'team_member_activity',
@@ -4047,9 +4315,9 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
           blocks: [],
           running: runningDispatches.has(key),
         }
-        teamMemberSegments.set(key, segment)
         segments.push(segment)
       }
+      latestTeamMemberSegments.set(key, segment)
       segment.blocks.push(block)
       segment.running = runningDispatches.has(key) || isTeamMemberActivityRunning(segment.blocks)
       continue
@@ -4077,6 +4345,17 @@ function getBlockTeamMemberContext(block: UIBlock): TeamMemberEventContext | und
   return undefined
 }
 
+function isHostActivityRunning(blocks: UIBlock[]): boolean {
+  return blocks.some((block) => {
+    if (getBlockTeamMemberContext(block) != null) return false
+    if (block.kind === 'text' || block.kind === 'thinking') return block.isStreaming
+    if (block.kind === 'tool_call') return block.status === 'pending' || block.status === 'running'
+    if (block.kind === 'terminal') return block.isStreaming
+    if (block.kind === 'subagent') return block.status === 'running'
+    return false
+  })
+}
+
 const AgentMsg = React.memo(function AgentMsg({
   sessionId,
   status,
@@ -4088,6 +4367,7 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantName,
   assistantAvatarSrc,
   usage,
+  running,
   onDelete,
   onReply,
   onFilePreview,
@@ -4102,6 +4382,7 @@ const AgentMsg = React.memo(function AgentMsg({
   assistantName: string
   assistantAvatarSrc: string
   usage?: UIMessage['usage'] | undefined
+  running?: boolean
   onDelete?: () => void
   onReply?: () => void
   onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
@@ -4193,6 +4474,8 @@ const AgentMsg = React.memo(function AgentMsg({
   return (
     <div
       className={`msg msg-agent ${isCancelled ? 'is-cancelled' : ''} ${isPureError ? 'is-error' : ''}`}
+      data-running-agent-id={assistantId}
+      data-running={running === true ? 'true' : 'false'}
     >
       <div className="msg-agent-avatar">
         <AvatarImage src={assistantAvatarSrc} seed={assistantId} name={assistantName} />
@@ -4273,38 +4556,47 @@ function ThinkingSection({
   const contentRef = useRef<HTMLDivElement>(null)
   const [needsCollapse, setNeedsCollapse] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const wasThinkingRef = useRef(false)
+  // 每个 section 至多自动展开一次；用户手动折叠/展开后，后续思考不再自动展开（尊重用户）。
+  const autoExpandedRef = useRef(false)
+  const userToggledRef = useRef(false)
 
   const isThinkingActive = streaming && blocks.some((b) => b.isStreaming)
 
-  // Auto-expand when thinking starts, collapse when thinking ends
+  // 仅首次开始思考时自动展开一次；之后（含多段思考）不再反复自动展开/折叠。
   useEffect(() => {
-    if (isThinkingActive && !wasThinkingRef.current) {
+    if (isThinkingActive && !autoExpandedRef.current && !userToggledRef.current) {
+      autoExpandedRef.current = true
       setOpen(true)
-      wasThinkingRef.current = true
-    }
-    if (!isThinkingActive && wasThinkingRef.current) {
-      wasThinkingRef.current = false
-      // Don't auto-collapse — let user see the result
     }
   }, [isThinkingActive])
 
+  // 稳定计算是否需要截断：恒按内容高度判断，不再随「思考活跃/结束」在 全高 ↔ 200px 间来回切换，
+  // 避免一段一段思考时外层高度反复抖动、内容区跟着跳动。
   useEffect(() => {
-    if (isThinkingActive) {
-      setNeedsCollapse(false)
-      return
-    }
+    if (!open) return
     const el = contentRef.current
-    if (el) setNeedsCollapse(el.scrollHeight > 200)
-  }, [blocks, isThinkingActive])
+    if (el) setNeedsCollapse(el.scrollHeight > 240)
+  }, [blocks, open])
 
   const isCollapsed = needsCollapse && !expanded
+
+  // 截断态下，流式思考时把内层滚到底，露出最新思考（外层高度仍稳定，不抖动）。
+  useEffect(() => {
+    if (!isThinkingActive || !isCollapsed) return
+    const el = contentRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [blocks, isThinkingActive, isCollapsed])
+
+  const handleToggleOpen = () => {
+    userToggledRef.current = true
+    setOpen((v) => !v)
+  }
 
   return (
     <div
       className={`thinking-section ${open ? 'open' : ''} ${isThinkingActive ? 'is-active' : ''}`}
     >
-      <button className="thinking-toggle" onClick={() => setOpen(!open)}>
+      <button className="thinking-toggle" onClick={handleToggleOpen}>
         <Icons.ChevronRight size={12} className={`chev ${open ? 'chev-open' : ''}`} />
         <span className="thinking-label">思考过程</span>
         {isThinkingActive && <Icons.Spinner size={10} className="thinking-spinner" />}
@@ -4319,7 +4611,7 @@ function ThinkingSection({
           <div
             ref={contentRef}
             className={`thinking-content ${isCollapsed ? 'is-collapsed' : ''}`}
-            style={isCollapsed ? { maxHeight: '200px' } : undefined}
+            style={isCollapsed ? { maxHeight: '240px', overflowY: 'auto' } : undefined}
           >
             {blocks.map((block, i) => (
               <pre key={i}>{block.content}</pre>
@@ -5456,6 +5748,7 @@ function ComposerV2({
   onClearReply,
   focusTrigger = 0,
   resendRequest = null,
+  onDispatchStateChange,
 }: {
   session: SessionSummary | null
   workspace: WorkspaceInfo | null
@@ -5515,6 +5808,9 @@ function ComposerV2({
     requestId: number
     payload: { text: string; attachments: MessageAttachment[] }
   } | null
+  // 暴露发送中状态给父组件。父组件用它在发送期间抑制 hero，
+  // 覆盖 createSession→sendTurn→status=running 之间 hero 闪现的窗口。
+  onDispatchStateChange?: (dispatching: boolean) => void
 }) {
   const { toast } = useToast()
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
@@ -5522,6 +5818,9 @@ function ComposerV2({
   const initialPrefs = initialPrefsRef.current
   const [drafts, setDrafts] = useState<Record<string, ComposerDraftSnapshot>>(() => readComposerDrafts())
   const [sending, setSending] = useState(false)
+  useEffect(() => {
+    onDispatchStateChange?.(sending)
+  }, [sending, onDispatchStateChange])
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueVisible, setQueueVisible] = useState(true)
   const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
@@ -5651,6 +5950,13 @@ function ComposerV2({
   }, [agents, runningTeamAgentIds, teamConfig.enabled])
   const visibleRunningTeamAgents = runningTeamAgents.slice(0, 3)
   const hiddenRunningTeamAgentCount = Math.max(0, runningTeamAgents.length - visibleRunningTeamAgents.length)
+  const handleRunningAgentTagClick = useCallback((agentId: string) => {
+    window.dispatchEvent(
+      new CustomEvent('spark:team-running-agent:scroll', {
+        detail: { agentId },
+      }),
+    )
+  }, [])
 
   const updateDraft = useCallback(
     (updater: (draft: ComposerDraftSnapshot) => ComposerDraftSnapshot) => {
@@ -7163,6 +7469,7 @@ function ComposerV2({
                   color="blue"
                   size="small"
                   title={`${agent.name} 执行中...`}
+                  onClick={() => handleRunningAgentTagClick(agent.id)}
                 >
                   <span className="composer-running-agent-dot" aria-hidden="true" />
                   <span className="composer-running-agent-name">{agent.name}</span>
@@ -7641,6 +7948,10 @@ function AgentPicker({
   // 长期团队列表（用于「选择团队」分组）。打开下拉时按需加载，避免每次会话切换都拉。
   const { invoke: listTeamDefs } = useIpcInvoke('team:list-defs')
   const [teams, setTeams] = useState<ManagedTeam[]>([])
+  const refreshTeams = useCallback(async () => {
+    const res = await listTeamDefs({})
+    setTeams(res.teams)
+  }, [listTeamDefs])
   useEffect(() => {
     if (!open) return
     let cancelled = false
@@ -7655,6 +7966,11 @@ function AgentPicker({
       cancelled = true
     }
   }, [open, listTeamDefs])
+  useEffect(() => {
+    return window.spark?.on?.('stream:config:changed', (event) => {
+      if (event.scope === 'team' && open) void refreshTeams().catch(() => {})
+    }) ?? (() => {})
+  }, [open, refreshTeams])
 
   const teamMode = teamConfig.enabled
   // 团队模式下，选择器代表 Host；否则代表当前对话 Agent。
@@ -9873,6 +10189,25 @@ function extractRunningTeamMemberIds(messages: UIMessage[]): string[] {
       }
       if (block.kind === 'terminal' && block.isStreaming) {
         running.add(memberContext.memberAgentId)
+      }
+    }
+  }
+  return Array.from(running)
+}
+
+function extractRunningTeamAgentIds(
+  messages: UIMessage[],
+  hostAgentId: string | null | undefined,
+  hostSessionRunning: boolean,
+): string[] {
+  const running = new Set<string>(extractRunningTeamMemberIds(messages))
+  if (hostAgentId != null && hostSessionRunning) {
+    const latestAssistant = [...messages].reverse().find((message) => message.role === 'assistant')
+    if (latestAssistant != null) {
+      const segments = splitAssistantMessageBlocks(latestAssistant.blocks)
+      const latestSegment = [...segments].reverse().find((segment) => segment.kind !== 'team')
+      if (latestSegment?.kind === 'agent' && isHostActivityRunning(latestSegment.blocks)) {
+        running.add(hostAgentId)
       }
     }
   }
