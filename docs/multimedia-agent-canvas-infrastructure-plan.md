@@ -527,8 +527,10 @@ type MediaRuntimeError = {
 
 ### Phase 2：Media Runtime 任务化
 
-- `MediaRouterService.invoke` 拆为 `submit/inquire/cancel/materialize`。
-- 新增 media task repository 和后台 runner。
+- 新增 `media_generation_tasks` 存储表和 `MediaGenerationTaskRepository`。
+- 新增 `MediaTaskRuntimeService`，提供 `submit/inquire/cancel/materialize` 生命周期 facade。
+- `canvas:task:create-media` 已通过 `MediaTaskRuntimeService.submit` 记录任务状态、产物、request id 和错误。
+- 后续把 `MediaRouterService.invoke` 的同步等待拆成后台 runner。
 - 统一错误对象、retryable 标记、状态映射。
 - `spark_media` MCP 改为 runtime thin wrapper。
 - `spark_image` 委托统一 runtime。

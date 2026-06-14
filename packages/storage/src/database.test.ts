@@ -74,6 +74,7 @@ describe('SparkDatabase', () => {
     expect(tableNames).toContain('resource_samples')
     expect(tableNames).toContain('media_model_manifests')
     expect(tableNames).toContain('media_provider_models')
+    expect(tableNames).toContain('media_generation_tasks')
   })
 
   it('should not re-apply already applied migrations', () => {

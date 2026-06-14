@@ -21,6 +21,12 @@ export type {
   MediaArtifactType,
 } from './services/media/media-adapter.types.js'
 export { MediaArtifactService } from './services/media/media-artifact.service.js'
+export { MediaTaskRuntimeService } from './services/media/media-task-runtime.service.js'
+export type {
+  MediaTaskRecord,
+  MediaTaskRouterLike,
+  MediaTaskSubmitOptions,
+} from './services/media/media-task-runtime.service.js'
 export { ApimartMediaAdapter } from './services/media/adapters/apimart-media.adapter.js'
 export { XaiMediaAdapter } from './services/media/adapters/xai-media.adapter.js'
 export { ModelService } from './services/model.service.js'

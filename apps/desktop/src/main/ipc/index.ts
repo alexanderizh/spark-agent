@@ -27,6 +27,7 @@ import {
   EventRepository,
   ProviderProfileRepository,
   MediaModelManifestRepository,
+  MediaGenerationTaskRepository,
   CanvasProjectRepository,
   CanvasSnapshotRepository,
   RulesRepository,
@@ -63,6 +64,7 @@ import {
   RuntimeCompositionService,
   MediaRouterService,
   MediaModelCatalogService,
+  MediaTaskRuntimeService,
 } from '@spark/agent-runtime'
 import type {
   MediaProviderProfile as MediaProviderProfileRuntime,
@@ -193,6 +195,17 @@ function getMediaModelCatalogService(): MediaModelCatalogService {
     mediaModelCatalogSeeded = true
   }
   return mediaModelCatalogService
+}
+
+let mediaTaskRuntimeService: MediaTaskRuntimeService | null = null
+function getMediaTaskRuntimeService(): MediaTaskRuntimeService {
+  if (mediaTaskRuntimeService == null) {
+    mediaTaskRuntimeService = new MediaTaskRuntimeService(
+      new MediaGenerationTaskRepository(getDatabase()),
+      getMediaRouterService(),
+    )
+  }
+  return mediaTaskRuntimeService
 }
 
 /** 画布多媒体产物默认落盘根目录 */
@@ -1622,7 +1635,7 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('canvas:task:create-media', async (req) => {
-    const router = getMediaRouterService()
+    const taskRuntime = getMediaTaskRuntimeService()
     const resolvedProviders = await resolveCanvasMediaProviders()
     const providers = req.modelId
       ? resolvedProviders.map((provider) => {
@@ -1634,7 +1647,7 @@ export function registerAllIpcHandlers(): void {
     const outputDir = req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
     // capability 由 router 按 operation 推导（input.capability 留空）
     try {
-      const { output, providerProfileId } = await router.invoke(
+      const task = await taskRuntime.submit(
         {
           operation: req.operation,
           ...(req.prompt != null ? { prompt: req.prompt } : {}),
@@ -1658,9 +1671,20 @@ export function registerAllIpcHandlers(): void {
           ...(req.providerProfileId != null ? { providerProfileId: req.providerProfileId } : {}),
         },
       )
+      if (task.error) {
+        const response: CanvasMediaTaskCreateResponse = {
+          providerProfileId: task.providerProfileId ?? '',
+          provider: task.providerKind ?? '',
+          model: task.modelId ?? '',
+          mode: task.mode ?? 'sync',
+          assets: [],
+          error: task.error,
+        }
+        return response
+      }
       // 为图片产物附带 previewDataUrl，便于 renderer 直接展示；映射为 IPC 响应 asset 类型
       const assets: CanvasMediaTaskCreateResponse['assets'] = await Promise.all(
-        output.assets.map(async (asset) => {
+        task.assets.map(async (asset) => {
           const base = {
             type: asset.type,
             ...(asset.filePath != null ? { filePath: asset.filePath } : {}),
@@ -1679,13 +1703,13 @@ export function registerAllIpcHandlers(): void {
         }),
       )
       const response: CanvasMediaTaskCreateResponse = {
-        providerProfileId,
-        provider: output.provider,
-        model: output.model,
-        mode: output.mode,
+        providerProfileId: task.providerProfileId ?? req.providerProfileId ?? '',
+        provider: task.providerKind ?? '',
+        model: task.modelId ?? '',
+        mode: task.mode ?? 'sync',
         assets,
-        ...(output.requestId != null ? { requestId: output.requestId } : {}),
-        ...(output.rawResponse != null ? { rawResponse: output.rawResponse } : {}),
+        ...(task.requestId != null ? { requestId: task.requestId } : {}),
+        ...(task.rawResponse != null ? { rawResponse: task.rawResponse } : {}),
       }
       return response
     } catch (err) {

@@ -147,6 +147,15 @@ On startup, `hydrateFromStorage` restores any SQLite projects missing from
 localStorage. This gives production-grade durability, backup, and cross-window
 consistency without rewriting the canvas data layer.
 
+Media generation requests are also persisted in SQLite through
+`media_generation_tasks` (migration 029). The first Phase 2 runtime exposes
+`submit / inquire / cancel / materialize` through `MediaTaskRuntimeService`.
+Today, `submit` still wraps the existing adapter invocation and may wait for the
+provider result, but every request now records status, provider/model, request
+id, assets, raw response summary, and error details. This is the compatibility
+layer that will let us move async providers to a background runner without
+changing canvas or agent call sites.
+
 IPC channels:
 
 ```text

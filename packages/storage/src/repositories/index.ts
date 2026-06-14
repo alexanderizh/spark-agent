@@ -29,6 +29,14 @@ export type {
   UpsertMediaModelManifestParams,
   UpsertMediaProviderModelParams,
 } from './media-model-manifest.repository.js'
+export { MediaGenerationTaskRepository } from './media-generation-task.repository.js'
+export type {
+  MediaGenerationTaskRow,
+  MediaGenerationTaskStatus,
+  CreateMediaGenerationTaskParams,
+  UpdateMediaGenerationTaskParams,
+  ListMediaGenerationTasksParams,
+} from './media-generation-task.repository.js'
 export { McpServerRepository } from './mcp-server.repository.js'
 export type { McpServerRow } from './mcp-server.repository.js'
 export { SkillRepository } from './skill.repository.js'
