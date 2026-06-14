@@ -295,6 +295,8 @@ export function CanvasWorkspaceView({
         <aside className="canvas-side-panel">
           <CanvasInspector
             selectedNodes={selectedNodes}
+            nodes={snapshot.nodes}
+            edges={snapshot.edges}
             tasks={snapshot.tasks}
             onDuplicate={() => void duplicateNodes(selectedNodeIds)}
             onToggleLock={() => void handleToggleLock()}

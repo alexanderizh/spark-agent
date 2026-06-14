@@ -2,10 +2,12 @@ import { useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
 import { Descriptions, Empty, Space } from 'antd'
 import { TextArea as LobeTextArea } from '@lobehub/ui'
-import type { CanvasNode, CanvasTask } from './canvas.types'
+import type { CanvasEdge, CanvasNode, CanvasTask } from './canvas.types'
 
 export function CanvasInspector({
   selectedNodes,
+  nodes,
+  edges,
   tasks,
   onDuplicate,
   onToggleLock,
@@ -13,6 +15,8 @@ export function CanvasInspector({
   onSaveText,
 }: {
   selectedNodes: CanvasNode[]
+  nodes: CanvasNode[]
+  edges: CanvasEdge[]
   tasks: CanvasTask[]
   onDuplicate: () => void
   onToggleLock: () => void
@@ -115,7 +119,64 @@ export function CanvasInspector({
       {task && (
         <TaskParamsInspector task={task} />
       )}
+      <LineageInspector node={node} nodes={nodes} edges={edges} tasks={tasks} />
     </section>
+  )
+}
+
+function LineageInspector({
+  node,
+  nodes,
+  edges,
+  tasks,
+}: {
+  node: CanvasNode
+  nodes: CanvasNode[]
+  edges: CanvasEdge[]
+  tasks: CanvasTask[]
+}) {
+  const relatedEdges = edges.filter((edge) => edge.sourceNodeId === node.id || edge.targetNodeId === node.id)
+  if (relatedEdges.length === 0) return null
+
+  const nodeById = new Map(nodes.map((item) => [item.id, item]))
+  const taskById = new Map(tasks.map((item) => [item.id, item]))
+  const incoming = relatedEdges.filter((edge) => edge.targetNodeId === node.id)
+  const outgoing = relatedEdges.filter((edge) => edge.sourceNodeId === node.id)
+
+  return (
+    <div className="canvas-lineage-panel">
+      <div className="canvas-task-param-title">流程血缘</div>
+      <div className="canvas-lineage-summary">
+        <Tag color="blue" bordered>
+          输入 {incoming.length}
+        </Tag>
+        <Tag color="green" bordered>
+          输出 {outgoing.length}
+        </Tag>
+      </div>
+      <div className="canvas-lineage-list">
+        {relatedEdges.slice(0, 10).map((edge) => {
+          const peerId = edge.sourceNodeId === node.id ? edge.targetNodeId : edge.sourceNodeId
+          const peer = nodeById.get(peerId)
+          const task = edge.taskId ? taskById.get(edge.taskId) : undefined
+          const direction = edge.sourceNodeId === node.id ? '下游' : '上游'
+          return (
+            <div key={edge.id} className="canvas-lineage-row">
+              <div className="canvas-lineage-row-main">
+                <span>{direction}</span>
+                <strong>{peer?.title ?? peer?.type ?? peerId}</strong>
+              </div>
+              <div className="canvas-lineage-row-meta">
+                <Tag color={edge.type === 'generated' ? 'green' : edge.type === 'used_as_input' ? 'blue' : 'default'} bordered>
+                  {edge.type}
+                </Tag>
+                {task ? <span>{task.title ?? task.operation}</span> : null}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

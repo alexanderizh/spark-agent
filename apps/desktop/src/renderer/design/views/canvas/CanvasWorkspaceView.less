@@ -270,6 +270,53 @@
   white-space: nowrap;
 }
 
+.canvas-node-head-actions {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-node-ai-action {
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.canvas-node-ai-action:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.canvas-node-lineage-strip {
+  height: 26px;
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--divider);
+  background: color-mix(in srgb, var(--bg-soft) 76%, var(--panel));
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.canvas-node-lineage-strip span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
 .canvas-node-image {
   width: 100%;
   min-height: 0;
@@ -581,6 +628,64 @@
 .canvas-task-param-row code {
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.canvas-lineage-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.canvas-lineage-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-lineage-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.canvas-lineage-row {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  background: var(--panel);
+}
+
+.canvas-lineage-row-main,
+.canvas-lineage-row-meta {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-lineage-row-main span,
+.canvas-lineage-row-meta span {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-lineage-row-main strong,
+.canvas-lineage-row-meta span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.canvas-lineage-row-main strong {
+  color: var(--text);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .canvas-task-queue {

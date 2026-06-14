@@ -23,13 +23,21 @@ const nodeTypes = { sparkCanvasNode: CanvasNode }
 const defaultNodeOrigin: NodeOrigin = [0, 0]
 
 type CanvasNodeActions = CanvasFlowNodeData['actions']
+type CanvasLineageSummary = CanvasFlowNodeData['lineage']
 
 function toFlowNode(
   node: SparkCanvasNode,
   actions: CanvasNodeActions,
+  lineage: CanvasLineageSummary,
   selectedCount: number,
   selected: boolean,
 ): Node<CanvasFlowNodeData> {
+  const data: CanvasFlowNodeData = {
+    actions,
+    canvasNode: node,
+    selectedCount,
+    ...(lineage ? { lineage } : {}),
+  }
   const flowNode: Node<CanvasFlowNodeData> = {
     id: node.id,
     type: 'sparkCanvasNode',
@@ -41,7 +49,7 @@ function toFlowNode(
     draggable: !node.locked,
     selectable: !node.locked,
     selected,
-    data: { actions, canvasNode: node, selectedCount },
+    data,
   }
   if (node.parentNodeId) {
     flowNode.parentId = node.parentNodeId
@@ -59,6 +67,27 @@ function toFlowEdge(edge: CanvasEdge): Edge {
     label: edge.type === 'generated' ? 'output' : 'input',
     className: `canvas-edge-${edge.type}`,
   }
+}
+
+function buildLineageSummaries(edges: CanvasEdge[]): Map<string, CanvasLineageSummary> {
+  const byNodeId = new Map<string, NonNullable<CanvasLineageSummary>>()
+  const ensure = (nodeId: string) => {
+    let summary = byNodeId.get(nodeId)
+    if (!summary) {
+      summary = { incoming: 0, outgoing: 0, generated: 0, usedAsInput: 0 }
+      byNodeId.set(nodeId, summary)
+    }
+    return summary
+  }
+  for (const edge of edges) {
+    const source = ensure(edge.sourceNodeId)
+    const target = ensure(edge.targetNodeId)
+    source.outgoing += 1
+    target.incoming += 1
+    if (edge.type === 'generated') source.generated += 1
+    if (edge.type === 'used_as_input') source.usedAsInput += 1
+  }
+  return byNodeId
 }
 
 export function CanvasStage({
@@ -105,12 +134,19 @@ export function CanvasStage({
     ],
   )
   const selectedNodeIdSet = useMemo(() => new Set(selectedNodeIds), [selectedNodeIds])
+  const lineageSummaries = useMemo(() => buildLineageSummaries(snapshot.edges), [snapshot.edges])
   const nodes = useMemo(
     () =>
       snapshot.nodes.map((node) =>
-        toFlowNode(node, nodeActions, selectedNodeIds.length, selectedNodeIdSet.has(node.id)),
+        toFlowNode(
+          node,
+          nodeActions,
+          lineageSummaries.get(node.id),
+          selectedNodeIds.length,
+          selectedNodeIdSet.has(node.id),
+        ),
       ),
-    [nodeActions, selectedNodeIdSet, selectedNodeIds.length, snapshot.nodes],
+    [lineageSummaries, nodeActions, selectedNodeIdSet, selectedNodeIds.length, snapshot.nodes],
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
   const flowNodesRef = useRef(nodes)

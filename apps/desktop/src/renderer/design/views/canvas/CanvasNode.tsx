@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
-import { Dropdown, Tag } from '@lobehub/ui'
+import { Dropdown, Tag, Tooltip } from '@lobehub/ui'
 import { Progress } from 'antd'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
@@ -8,6 +8,12 @@ import type { CanvasNode as SparkCanvasNode } from './canvas.types'
 
 export type CanvasFlowNodeData = {
   canvasNode: SparkCanvasNode
+  lineage?: {
+    incoming: number
+    outgoing: number
+    generated: number
+    usedAsInput: number
+  }
   selectedCount: number
   actions: {
     duplicateNode: (nodeId: string) => void
@@ -30,10 +36,11 @@ const typeColor: Record<SparkCanvasNode['type'], string> = {
 }
 
 export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps) {
-  const { actions, canvasNode: node, selectedCount } = data as CanvasFlowNodeData
+  const { actions, canvasNode: node, lineage, selectedCount } = data as CanvasFlowNodeData
   const title = node.title ?? node.type
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
+  const hasLineage = Boolean(lineage && (lineage.incoming > 0 || lineage.outgoing > 0))
 
   const menu = {
     className: 'canvas-node-context-menu',
@@ -72,10 +79,44 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             {node.type === 'group' && <Icons.Layers size={14} />}
             <span>{title}</span>
           </div>
-          <Tag color={typeColor[node.type]} bordered>
-            {node.type}
-          </Tag>
+          <div className="canvas-node-head-actions">
+            <Tooltip title="基于此节点继续 AI 操作">
+              <button
+                type="button"
+                className="canvas-node-ai-action nodrag nopan"
+                aria-label="基于此节点继续 AI 操作"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  actions.openAiComposer(node.id)
+                }}
+              >
+                <Icons.Sparkles size={13} />
+              </button>
+            </Tooltip>
+            <Tag color={typeColor[node.type]} bordered>
+              {node.type}
+            </Tag>
+          </div>
         </div>
+
+        {hasLineage && (
+          <div className="canvas-node-lineage-strip">
+            <span>
+              <Icons.ArrowDown size={12} />
+              {lineage?.incoming ?? 0}
+            </span>
+            <span>
+              <Icons.ArrowUp size={12} />
+              {lineage?.outgoing ?? 0}
+            </span>
+            {lineage?.generated ? (
+              <span>
+                <Icons.GitBranch size={12} />
+                {lineage.generated}
+              </span>
+            ) : null}
+          </div>
+        )}
 
         {node.type === 'image' ? (
           node.data.url ? (

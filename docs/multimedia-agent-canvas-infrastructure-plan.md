@@ -21,6 +21,7 @@
 - 新增 manifest-driven `TemplateMediaAdapter`：当 provider 绑定了匹配 capability 的 `MediaModelManifest` 时，`MediaRouterService` 会优先按 `requestTemplate` 组装 JSON 请求、按 `response`/`polling` 提取 task id 和产物，并把画布选择的 `modelId` 作为 effective model 真正传给 provider。
 - `spark_media` MCP 的生成/编辑/转写工具已支持可选 `model`，可以按 manifest id 或 provider model id 选择模型；MCP 内部复用 manifest 的 defaults、aliases、requestTemplate、response/resultPaths 和 polling 配置，把 agent 对话入口也接到同一套数据化调用路径。
 - 新增 MCP manifest executor 回归测试，覆盖 manifest 模板渲染、参数别名/defaults 合并、provider 请求体组装、远程 URL 产物下载落盘。
+- 无限画布节点已能展示输入/输出 lineage 计数，Inspector 可查看所选节点的上游/下游节点、边类型和关联任务；节点卡片提供基于当前节点继续创建 AI 任务的快捷入口，为后续流程编排/节点级 agent 调用打基础。
 
 尚未完成：
 
