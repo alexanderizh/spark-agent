@@ -237,6 +237,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const { invoke: searchSessionsRpc } = useIpcInvoke('session:search')
   const { invoke: updateSession } = useIpcInvoke('session:update')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
+  const { invoke: createWorktree } = useIpcInvoke('workspace:create-worktree')
+  const { invoke: removeWorktree } = useIpcInvoke('workspace:remove-worktree')
   const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
   const { invoke: openWorkspace } = useIpcInvoke('workspace:open')
   const { invoke: updateWorkspace } = useIpcInvoke('workspace:update')
@@ -398,6 +400,22 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         setActiveWorkspaceId(noProjectId)
       }
 
+      // 勾选了「为本会话创建隔离 worktree」：先创建 worktree workspace，改用其 id。
+      // 注意放在 unusedSession 查找之前——新 worktree workspace 下必无可复用会话。
+      if (options.createWorktree === true && wsId != null) {
+        // 默认分支名 spark/YYYYMMDD-HHmm
+        const ts = new Date().toISOString().slice(0, 16).replace(/[-:]/g, '').replace('T', '-')
+        const branch = nonEmptyString(options.worktreeBranch) ?? `spark/${ts}`
+        try {
+          const res = await createWorktree({ baseWorkspaceId: wsId, branch })
+          wsId = res.workspace.id
+          setActiveWorkspaceId(res.workspace.id)
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : '创建 worktree 失败')
+          return null
+        }
+      }
+
       // 如果该项目下有未使用的会话（没有消息、未归档），直接复用
       const unusedSession = sessions.find(
         s => s.workspaceIds.includes(wsId!) && s.messageCount === 0 && s.archivedAt == null,
@@ -480,7 +498,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       toast.error(err instanceof Error ? err.message : '创建会话失败')
       return null
     }
-  }, [activeWorkspaceId, agents, createSession, ensureNoProjectWorkspace, listProviders, providers, refreshData, requestConfirm, selectedProviderId, sessions, toast])
+  }, [activeWorkspaceId, agents, createSession, createWorktree, ensureNoProjectWorkspace, listProviders, providers, refreshData, requestConfirm, selectedProviderId, sessions, toast])
 
   // Search
   const searchSessions = useCallback(async (query: string): Promise<SessionSearchResult[]> => {
@@ -620,9 +638,31 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       danger: true,
     })
     if (!confirmed) return
-    try { await deleteSession({ sessionId: session.id }); if (active === session.id) setActive(null); await refreshData() }
-    catch (err) { toast.error(err instanceof Error ? err.message : '删除会话失败') }
-  }, [active, deleteSession, refreshData, requestConfirm, toast])
+    // 若该会话工作区是 worktree，额外询问是否清理 worktree 及其分支
+    const wsId = session.workspaceIds[0]
+    const ws = wsId != null ? workspaces.find((w) => w.id === wsId) : undefined
+    let cleanupWorktree = false
+    if (ws?.worktreeMeta != null) {
+      cleanupWorktree = await requestConfirm({
+        title: '清理 worktree',
+        description: `该会话在隔离 worktree（分支 ${ws.worktreeMeta.branch}）中运行，是否一并删除该 worktree 及其分支？`,
+        confirmText: '一并删除',
+        danger: true,
+      })
+    }
+    try {
+      await deleteSession({ sessionId: session.id })
+      if (cleanupWorktree && wsId != null) {
+        await removeWorktree({ workspaceId: wsId, force: true }).catch((err) => {
+          toast.error(err instanceof Error ? err.message : '删除 worktree 失败（可能有未提交改动）')
+        })
+      }
+      if (active === session.id) setActive(null)
+      await refreshData()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '删除会话失败')
+    }
+  }, [active, deleteSession, removeWorktree, refreshData, requestConfirm, toast, workspaces])
 
   const handleArchiveSession = useCallback(async (session: SessionSummary) => {
     try { await updateSession({ sessionId: session.id, archived: true }); await refreshData() }
