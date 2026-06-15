@@ -482,6 +482,16 @@ async function initializeApp(): Promise<void> {
     log.warn(`Failed to register Playwright MCP: ${String(err)}`)
   }
 
+  // 3.6 启动所有已启用的用户/项目级 MCP 服务器(Managed 域除外 — Playwright 走
+  // ensurePlaywrightRegistered 路径,启动后会被 startAllEnabled 一起拉起)。
+  // 必须放在 Playwright 注册之后,否则重启后已启用的 MCP 不会自动恢复连接。
+  try {
+    const { getMcpService } = await import('./ipc/index.js')
+    await getMcpService().startAllEnabled()
+  } catch (err) {
+    log.warn(`Failed to start enabled MCP servers: ${String(err)}`)
+  }
+
   // 4. 初始化自动更新服务
   const updateService = getUpdateService()
   updateService.initialize({

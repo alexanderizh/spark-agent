@@ -1,0 +1,687 @@
+[
+  {
+    "provider": "minimax",
+    "modelId": "MiniMax-Hailuo-2.3",
+    "displayName": "MiniMax Hailuo 2.3",
+    "capabilities": ["video.generate"],
+    "endpoint": "https://api.minimaxi.com/v1/video_generation",
+    "requestBody": {
+      "model": {
+        "type": "string",
+        "required": true,
+        "enum": ["MiniMax-Hailuo-2.3", "MiniMax-Hailuo-02", "T2V-01-Director", "T2V-01"]
+      },
+      "prompt": {
+        "type": "string",
+        "required": true,
+        "maxLength": 2000,
+        "description": "视频文本描述，支持[指令]运镜语法"
+      },
+      "prompt_optimizer": {
+        "type": "boolean",
+        "required": false,
+        "default": true,
+        "description": "是否自动优化prompt"
+      },
+      "fast_pretreatment": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否缩短优化耗时"
+      },
+      "duration": {
+        "type": "integer",
+        "required": false,
+        "default": 6,
+        "enum": [6, 10],
+        "description": "视频时长（秒）"
+      },
+      "resolution": {
+        "type": "string",
+        "required": false,
+        "default": "768P",
+        "enum": ["768P", "1080P"],
+        "note": "10秒时长仅支持768P"
+      },
+      "callback_url": {
+        "type": "string",
+        "required": false,
+        "description": "回调URL"
+      },
+      "aigc_watermark": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否添加水印"
+      }
+    },
+    "defaults": {
+      "prompt_optimizer": true,
+      "fast_pretreatment": false,
+      "duration": 6,
+      "resolution": "768P",
+      "aigc_watermark": false
+    },
+    "limits": {
+      "promptMaxLength": 2000,
+      "durationOptions": [6, 10],
+      "resolutionNotes": "10秒时长仅支持768P"
+    },
+    "response": {
+      "taskIdPath": "task_id",
+      "statusPath": "base_resp.status_code",
+      "successCode": 0
+    },
+    "cameraInstructions": {
+      "left_right_pan": ["[左移]", "[右移]"],
+      "left_right_tilt": ["[左摇]", "[右摇]"],
+      "push_pull": ["[推进]", "[拉远]"],
+      "up_down": ["[上升]", "[下降]"],
+      "up_down_tilt": ["[上摇]", "[下摇]"],
+      "zoom": ["[变焦推近]", "[变焦拉远]"],
+      "other": ["[晃动]", "[跟随]", "[固定]"]
+    },
+    "errors": {
+      "0": "请求成功",
+      "1002": "触发限流",
+      "1004": "账号鉴权失败",
+      "1008": "账号余额不足",
+      "1026": "视频描述涉及敏感内容",
+      "2013": "传入参数异常",
+      "2049": "无效的api key"
+    },
+    "docs": ["https://platform.minimaxi.com/docs/api-reference/video-generation-t2v"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "minimax",
+    "modelId": "Speech-2.8-HD",
+    "displayName": "Speech 2.8 HD",
+    "capabilities": ["audio.speech_generate"],
+    "endpoint": "https://api.minimaxi.com/v1/t2a_v2",
+    "requestBody": {
+      "model": {
+        "type": "string",
+        "required": true,
+        "enum": ["speech-2.8-hd", "speech-2.8-turbo", "speech-2.6-hd", "speech-2.6-turbo", "speech-02-hd", "speech-02-turbo", "speech-01-hd", "speech-01-turbo"],
+        "default": "speech-2.8-hd"
+      },
+      "text": {
+        "type": "string",
+        "required": true,
+        "maxLength": 10000,
+        "description": "要转换的文本，最长10000字符；超过3000字符建议使用流式"
+      },
+      "stream": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否使用流式输出"
+      },
+      "voice_setting": {
+        "type": "object",
+        "required": false,
+        "description": "语音设置",
+        "properties": {
+          "voice_id": {
+            "type": "string",
+            "required": true,
+            "description": "音色ID，使用系统音色或克隆音色"
+          },
+          "speed": {
+            "type": "number",
+            "required": false,
+            "default": 1,
+            "min": 0.5,
+            "max": 2,
+            "description": "语速"
+          },
+          "vol": {
+            "type": "number",
+            "required": false,
+            "default": 1,
+            "min": 0,
+            "max": 10,
+            "description": "音量"
+          },
+          "pitch": {
+            "type": "integer",
+            "required": false,
+            "default": 0,
+            "min": -12,
+            "max": 12,
+            "description": "音调"
+          },
+          "emotion": {
+            "type": "string",
+            "required": false,
+            "default": "auto",
+            "enum": ["happy", "sad", "angry", "fearful", "disgusted", "surprised", "calm", "fluent", "whisper", "auto"],
+            "description": "情感风格，fluent和whisper仅支持speech-2.6-*模型"
+          }
+        }
+      },
+      "audio_setting": {
+        "type": "object",
+        "required": false,
+        "description": "音频设置",
+        "properties": {
+          "sample_rate": {
+            "type": "integer",
+            "required": false,
+            "default": 32000,
+            "enum": [8000, 16000, 22050, 24000, 32000, 44100],
+            "description": "采样率"
+          },
+          "bitrate": {
+            "type": "integer",
+            "required": false,
+            "default": 128000,
+            "enum": [32000, 64000, 128000, 256000],
+            "description": "比特率（仅mp3）"
+          },
+          "format": {
+            "type": "string",
+            "required": false,
+            "default": "mp3",
+            "enum": ["mp3", "pcm", "flac", "wav", "pcmu_raw", "pcmu_wav", "opus"],
+            "description": "音频格式"
+          },
+          "channel": {
+            "type": "integer",
+            "required": false,
+            "default": 1,
+            "enum": [1, 2],
+            "description": "声道数，1=单声道，2=立体声"
+          }
+        }
+      },
+      "language_boost": {
+        "type": "string",
+        "required": false,
+        "default": null,
+        "enum": ["Chinese", "Chinese,Yue", "English", "Arabic", "Russian", "Spanish", "French", "Portuguese", "German", "Turkish", "Dutch", "Ukrainian", "Vietnamese", "Indonesian", "Japanese", "Italian", "Korean", "Thai", "Polish", "Romanian", "Greek", "Czech", "Finnish", "Hindi", "Bulgarian", "Danish", "Hebrew", "Malay", "Persian", "Slovak", "Swedish", "Croatian", "Filipino", "Hungarian", "Norwegian", "Slovenian", "Catalan", "Nynorsk", "Tamil", "Afrikaans", "auto"],
+        "description": "语言增强"
+      },
+      "output_format": {
+        "type": "string",
+        "required": false,
+        "default": "hex",
+        "enum": ["url", "hex"],
+        "description": "输出格式，非流式时有效，URL有效期24小时"
+      },
+      "aigc_watermark": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否添加水印（非流式）"
+      },
+      "subtitle_enable": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否启用字幕"
+      },
+      "subtitle_type": {
+        "type": "string",
+        "required": false,
+        "default": "sentence",
+        "enum": ["sentence", "word", "word_streaming"],
+        "description": "字幕类型"
+      }
+    },
+    "defaults": {
+      "stream": false,
+      "output_format": "hex",
+      "aigc_watermark": false,
+      "voice_setting": {
+        "speed": 1,
+        "vol": 1,
+        "pitch": 0
+      },
+      "audio_setting": {
+        "sample_rate": 32000,
+        "bitrate": 128000,
+        "format": "mp3",
+        "channel": 1
+      }
+    },
+    "limits": {
+      "textMaxLength": 10000,
+      "streamRecommendedThreshold": 3000,
+      "speedRange": [0.5, 2],
+      "volRange": [0, 10],
+      "pitchRange": [-12, 12]
+    },
+    "response": {
+      "audioPath": "data.audio",
+      "subtitlePath": "data.subtitle_file",
+      "statusPath": "data.status",
+      "extraInfoPath": "extra_info",
+      "successStatus": 2,
+      "inProgressStatus": 1
+    },
+    "errors": {
+      "0": "成功",
+      "1000": "未知错误",
+      "1001": "超时",
+      "1002": "触发限流",
+      "1004": "鉴权失败",
+      "1039": "TPM限流",
+      "1042": "无效字符超过10%",
+      "2013": "参数异常"
+    },
+    "docs": ["https://platform.minimaxi.com/docs/api-reference/speech-t2a-http"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "minimax",
+    "modelId": "Speech-2.8-Turbo",
+    "displayName": "Speech 2.8 Turbo",
+    "capabilities": ["audio.speech_generate"],
+    "endpoint": "https://api.minimaxi.com/v1/t2a_v2",
+    "requestBody": {
+      "model": {
+        "type": "string",
+        "required": true,
+        "enum": ["speech-2.8-hd", "speech-2.8-turbo", "speech-2.6-hd", "speech-2.6-turbo", "speech-02-hd", "speech-02-turbo", "speech-01-hd", "speech-01-turbo"],
+        "default": "speech-2.8-turbo"
+      },
+      "text": {
+        "type": "string",
+        "required": true,
+        "maxLength": 10000,
+        "description": "要转换的文本，最长10000字符"
+      },
+      "stream": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否使用流式输出"
+      },
+      "voice_setting": {
+        "type": "object",
+        "required": false,
+        "description": "语音设置",
+        "properties": {
+          "voice_id": {
+            "type": "string",
+            "required": true,
+            "description": "音色ID"
+          },
+          "speed": {
+            "type": "number",
+            "required": false,
+            "default": 1,
+            "min": 0.5,
+            "max": 2
+          },
+          "vol": {
+            "type": "number",
+            "required": false,
+            "default": 1,
+            "min": 0,
+            "max": 10
+          },
+          "pitch": {
+            "type": "integer",
+            "required": false,
+            "default": 0,
+            "min": -12,
+            "max": 12
+          },
+          "emotion": {
+            "type": "string",
+            "required": false,
+            "default": "auto",
+            "enum": ["happy", "sad", "angry", "fearful", "disgusted", "surprised", "calm", "fluent", "whisper", "auto"]
+          }
+        }
+      },
+      "audio_setting": {
+        "type": "object",
+        "required": false,
+        "description": "音频设置",
+        "properties": {
+          "sample_rate": {
+            "type": "integer",
+            "required": false,
+            "default": 32000,
+            "enum": [8000, 16000, 22050, 24000, 32000, 44100]
+          },
+          "bitrate": {
+            "type": "integer",
+            "required": false,
+            "default": 128000,
+            "enum": [32000, 64000, 128000, 256000]
+          },
+          "format": {
+            "type": "string",
+            "required": false,
+            "default": "mp3",
+            "enum": ["mp3", "pcm", "flac", "wav", "pcmu_raw", "pcmu_wav", "opus"]
+          },
+          "channel": {
+            "type": "integer",
+            "required": false,
+            "default": 1,
+            "enum": [1, 2]
+          }
+        }
+      },
+      "language_boost": {
+        "type": "string",
+        "required": false,
+        "default": null,
+        "enum": ["Chinese", "Chinese,Yue", "English", "Arabic", "Russian", "Spanish", "French", "Portuguese", "German", "Turkish", "Dutch", "Ukrainian", "Vietnamese", "Indonesian", "Japanese", "Italian", "Korean", "Thai", "Polish", "Romanian", "Greek", "Czech", "Finnish", "Hindi", "Bulgarian", "Danish", "Hebrew", "Malay", "Persian", "Slovak", "Swedish", "Croatian", "Filipino", "Hungarian", "Norwegian", "Slovenian", "Catalan", "Nynorsk", "Tamil", "Afrikaans", "auto"]
+      },
+      "output_format": {
+        "type": "string",
+        "required": false,
+        "default": "hex",
+        "enum": ["url", "hex"]
+      },
+      "aigc_watermark": {
+        "type": "boolean",
+        "required": false,
+        "default": false
+      }
+    },
+    "defaults": {
+      "stream": false,
+      "output_format": "hex",
+      "aigc_watermark": false,
+      "voice_setting": {
+        "speed": 1,
+        "vol": 1,
+        "pitch": 0
+      },
+      "audio_setting": {
+        "sample_rate": 32000,
+        "bitrate": 128000,
+        "format": "mp3",
+        "channel": 1
+      }
+    },
+    "limits": {
+      "textMaxLength": 10000,
+      "streamRecommendedThreshold": 3000,
+      "speedRange": [0.5, 2],
+      "volRange": [0, 10],
+      "pitchRange": [-12, 12]
+    },
+    "response": {
+      "audioPath": "data.audio",
+      "subtitlePath": "data.subtitle_file",
+      "statusPath": "data.status",
+      "successStatus": 2,
+      "inProgressStatus": 1
+    },
+    "errors": {
+      "0": "成功",
+      "1000": "未知错误",
+      "1001": "超时",
+      "1002": "触发限流",
+      "1004": "鉴权失败",
+      "1039": "TPM限流",
+      "1042": "无效字符超过10%",
+      "2013": "参数异常"
+    },
+    "docs": ["https://platform.minimaxi.com/docs/api-reference/speech-t2a-http"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "minimax",
+    "modelId": "image-01",
+    "displayName": "Image 01",
+    "capabilities": ["image.generate"],
+    "endpoint": "https://api.minimaxi.com/v1/image_generation",
+    "requestBody": {
+      "model": {
+        "type": "string",
+        "required": true,
+        "enum": ["image-01", "image-01-live"],
+        "default": "image-01"
+      },
+      "prompt": {
+        "type": "string",
+        "required": true,
+        "maxLength": 1500,
+        "description": "文本描述，最长1500字符"
+      },
+      "aspect_ratio": {
+        "type": "string",
+        "required": false,
+        "default": "1:1",
+        "enum": ["1:1", "16:9", "4:3", "3:2", "2:3", "3:4", "9:16", "21:9"],
+        "description": "宽高比"
+      },
+      "width": {
+        "type": "integer",
+        "required": false,
+        "min": 512,
+        "max": 2048,
+        "description": "宽度，需为8的倍数（仅image-01模型）"
+      },
+      "height": {
+        "type": "integer",
+        "required": false,
+        "min": 512,
+        "max": 2048,
+        "description": "高度，需为8的倍数（仅image-01模型）"
+      },
+      "response_format": {
+        "type": "string",
+        "required": false,
+        "default": "url",
+        "enum": ["url", "base64"],
+        "description": "响应格式"
+      },
+      "seed": {
+        "type": "integer",
+        "required": false,
+        "description": "随机种子，用于复现结果"
+      },
+      "n": {
+        "type": "integer",
+        "required": false,
+        "default": 1,
+        "min": 1,
+        "max": 9,
+        "description": "单次生成图片数量"
+      },
+      "prompt_optimizer": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否开启prompt自动优化"
+      },
+      "aigc_watermark": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否添加水印"
+      },
+      "style": {
+        "type": "object",
+        "required": false,
+        "description": "风格设置（仅image-01-live生效）",
+        "properties": {
+          "style_type": {
+            "type": "string",
+            "description": "风格类型"
+          },
+          "style_weight": {
+            "type": "number",
+            "description": "风格权重"
+          }
+        }
+      }
+    },
+    "defaults": {
+      "aspect_ratio": "1:1",
+      "response_format": "url",
+      "n": 1,
+      "prompt_optimizer": false,
+      "aigc_watermark": false
+    },
+    "limits": {
+      "promptMaxLength": 1500,
+      "widthRange": [512, 2048],
+      "heightRange": [512, 2048],
+      "nRange": [1, 9],
+      "sizeMultiple": 8
+    },
+    "response": {
+      "imageUrlsPath": "data.image_urls",
+      "imageBase64Path": "data.image_base64",
+      "successCountPath": "metadata.success_count",
+      "failedCountPath": "metadata.failed_count"
+    },
+    "errors": {
+      "0": "成功",
+      "1002": "限流",
+      "1004": "鉴权失败",
+      "1008": "余额不足",
+      "1026": "敏感内容",
+      "2013": "参数异常",
+      "2049": "无效API key"
+    },
+    "docs": ["https://platform.minimaxi.com/docs/api-reference/image-generation-t2i"],
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "minimax",
+    "modelId": "music-2.6",
+    "displayName": "Music 2.6",
+    "capabilities": ["audio.music_generate"],
+    "endpoint": "https://api.minimaxi.com/v1/music_generation",
+    "requestBody": {
+      "model": {
+        "type": "string",
+        "required": true,
+        "enum": ["music-2.6", "music-cover", "music-2.6-free", "music-cover-free"],
+        "default": "music-2.6",
+        "description": "music-2.6: 文本生成音乐; music-cover: 翻唱生成; -free: 限免版本"
+      },
+      "prompt": {
+        "type": "string",
+        "required": true,
+        "description": "音乐风格描述，如：独立民谣,忧郁,内省"
+      },
+      "lyrics": {
+        "type": "string",
+        "required": false,
+        "description": "歌词内容，支持[verse]/[chorus]等标签"
+      },
+      "stream": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否使用流式输出"
+      },
+      "output_format": {
+        "type": "string",
+        "required": false,
+        "default": "hex",
+        "enum": ["url", "hex"],
+        "description": "输出格式"
+      },
+      "aigc_watermark": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否添加水印"
+      },
+      "lyrics_optimizer": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否优化歌词"
+      },
+      "is_instrumental": {
+        "type": "boolean",
+        "required": false,
+        "default": false,
+        "description": "是否为纯音乐"
+      },
+      "audio_url": {
+        "type": "string",
+        "required": false,
+        "description": "参考音频URL（music-cover模式）"
+      },
+      "audio_base64": {
+        "type": "string",
+        "required": false,
+        "description": "参考音频Base64（music-cover模式）"
+      },
+      "cover_feature_id": {
+        "type": "string",
+        "required": false,
+        "description": "翻唱特征ID"
+      },
+      "audio_setting": {
+        "type": "object",
+        "required": false,
+        "description": "音频设置",
+        "properties": {
+          "sample_rate": {
+            "type": "integer",
+            "required": false,
+            "default": 44100,
+            "enum": [16000, 24000, 32000, 44100],
+            "description": "采样率"
+          },
+          "bitrate": {
+            "type": "integer",
+            "required": false,
+            "default": 256000,
+            "enum": [32000, 64000, 128000, 256000],
+            "description": "比特率"
+          },
+          "format": {
+            "type": "string",
+            "required": false,
+            "default": "mp3",
+            "enum": ["mp3", "wav", "pcm"],
+            "description": "音频格式"
+          }
+        }
+      }
+    },
+    "defaults": {
+      "stream": false,
+      "output_format": "hex",
+      "aigc_watermark": false,
+      "lyrics_optimizer": false,
+      "is_instrumental": false,
+      "audio_setting": {
+        "sample_rate": 44100,
+        "bitrate": 256000,
+        "format": "mp3"
+      }
+    },
+    "limits": {
+      "sampleRateOptions": [16000, 24000, 32000, 44100],
+      "bitrateOptions": [32000, 64000, 128000, 256000],
+      "formatOptions": ["mp3", "wav", "pcm"]
+    },
+    "response": {
+      "audioPath": "data.audio",
+      "taskIdPath": "data.task_id",
+      "statusPath": "base_resp.status_code",
+      "successCode": 0
+    },
+    "errors": {
+      "0": "成功",
+      "1002": "触发限流",
+      "1004": "鉴权失败",
+      "1008": "余额不足",
+      "1026": "敏感内容",
+      "2013": "参数异常",
+      "2049": "无效API key"
+    },
+    "docs": ["https://platform.minimaxi.com/docs/api-reference/music-generation"],
+    "status": "COMPLETE"
+  }
+]

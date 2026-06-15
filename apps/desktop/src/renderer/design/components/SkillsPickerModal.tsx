@@ -18,7 +18,7 @@ export interface SkillsPickerModalProps {
   onClose: () => void
 }
 
-type StatusFilter = 'all' | 'enabled' | 'disabled'
+type StatusFilter = 'all' | 'configured' | 'unconfigured'
 
 export function SkillsPickerModal({
   visible,
@@ -32,19 +32,23 @@ export function SkillsPickerModal({
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
 
   const counts = useMemo(() => {
-    const enabled = skills.filter((s) => s.enabled).length
-    return { all: skills.length, enabled, disabled: skills.length - enabled }
-  }, [skills])
+    const configured = skills.filter((s) => selectedSet.has(s.id)).length
+    return {
+      all: skills.length,
+      configured,
+      unconfigured: skills.length - configured,
+    }
+  }, [skills, selectedSet])
 
   const filteredSkills = useMemo(() => {
     const lower = searchText.trim().toLowerCase()
     return skills.filter((s) => {
-      if (statusFilter === 'enabled' && !s.enabled) return false
-      if (statusFilter === 'disabled' && s.enabled) return false
+      if (statusFilter === 'configured' && !selectedSet.has(s.id)) return false
+      if (statusFilter === 'unconfigured' && selectedSet.has(s.id)) return false
       if (lower && !s.name.toLowerCase().includes(lower)) return false
       return true
     })
-  }, [skills, searchText, statusFilter])
+  }, [skills, searchText, statusFilter, selectedSet])
 
   const handleSelect = (id: string, checked: boolean) => {
     if (checked) {
@@ -113,22 +117,20 @@ export function SkillsPickerModal({
           <button
             type="button"
             role="tab"
-            aria-selected={statusFilter === 'enabled'}
-            className={`skills-picker-tab ${statusFilter === 'enabled' ? 'is-active' : ''}`}
-            onClick={() => setStatusFilter('enabled')}
+            aria-selected={statusFilter === 'configured'}
+            className={`skills-picker-tab ${statusFilter === 'configured' ? 'is-active' : ''}`}
+            onClick={() => setStatusFilter('configured')}
           >
-            <span className="skills-picker-dot skills-picker-dot--green" />
-            启用 <span className="skills-picker-tab-count">{counts.enabled}</span>
+            已配置 <span className="skills-picker-tab-count">{counts.configured}</span>
           </button>
           <button
             type="button"
             role="tab"
-            aria-selected={statusFilter === 'disabled'}
-            className={`skills-picker-tab ${statusFilter === 'disabled' ? 'is-active' : ''}`}
-            onClick={() => setStatusFilter('disabled')}
+            aria-selected={statusFilter === 'unconfigured'}
+            className={`skills-picker-tab ${statusFilter === 'unconfigured' ? 'is-active' : ''}`}
+            onClick={() => setStatusFilter('unconfigured')}
           >
-            <span className="skills-picker-dot skills-picker-dot--gray" />
-            停用 <span className="skills-picker-tab-count">{counts.disabled}</span>
+            未配置 <span className="skills-picker-tab-count">{counts.unconfigured}</span>
           </button>
         </div>
       </div>

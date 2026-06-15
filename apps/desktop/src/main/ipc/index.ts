@@ -2540,17 +2540,20 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('mcp:create', async (req) => {
     const server = getMcpService().createServer(req)
+    pushConfigChanged('mcp', 'create', server.id)
     return { server }
   })
 
   typedIpcHandle('mcp:update', async (req) => {
     const { id, ...fields } = req
     const server = getMcpService().updateServer(id, fields)
+    pushConfigChanged('mcp', 'update', id)
     return { server }
   })
 
   typedIpcHandle('mcp:delete', async (req) => {
     const success = getMcpService().deleteServer(req.id)
+    if (success) pushConfigChanged('mcp', 'delete', req.id)
     return { success }
   })
 
@@ -2558,12 +2561,14 @@ export function registerAllIpcHandlers(): void {
     log.info(`mcp:start-server requested, serverId=${req.serverId}`)
     await getMcpService().startServer(req.serverId)
     const status = getMcpService().getServerStatus(req.serverId)
+    pushConfigChanged('mcp', 'update', req.serverId)
     return { started: true, toolCount: status.toolCount }
   })
 
   typedIpcHandle('mcp:stop-server', async (req) => {
     log.info(`mcp:stop-server requested, serverId=${req.serverId}`)
     await getMcpService().stopServer(req.serverId)
+    pushConfigChanged('mcp', 'update', req.serverId)
     return { stopped: true }
   })
 

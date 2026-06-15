@@ -5049,15 +5049,11 @@ function ToolLogGroup({
       return (block.exitCode ?? 0) !== 0 || block.stderr.trim().length > 0
     return block.status === 'error' || Boolean(block.error)
   })
-  const [open, setOpen] = useState(running && surface === 'main')
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      if (running) {
-        setOpen(true)
-        return
-      }
-      if (readAppearance().autoCollapseTools) setOpen(false)
+      if (!running && readAppearance().autoCollapseTools) setOpen(false)
     })
     return () => window.cancelAnimationFrame(frame)
   }, [running])

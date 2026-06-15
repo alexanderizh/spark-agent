@@ -161,9 +161,27 @@
   z-index: 5;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
   overflow-x: auto;
   padding: 0;
+}
+
+.canvas-toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.canvas-toolbar-tools {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.canvas-toolbar-save {
+  flex-shrink: 0;
 }
 
 .canvas-toolbar .ant-btn {
@@ -194,6 +212,10 @@
       transparent 28%
     ),
     var(--bg-sunken);
+}
+
+.canvas-stage-tool-select .react-flow__pane {
+  cursor: default;
 }
 
 .canvas-stage .react-flow {

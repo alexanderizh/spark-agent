@@ -735,29 +735,6 @@ export function CanvasWorkspaceView({
               </span>
             </div>
           </div>
-          <div className="canvas-workspace-actions">
-            <Tag color={dirty ? 'orange' : 'green'}>
-              {dirty ? '未保存' : '已保存'}
-            </Tag>
-            <Button
-              size="small"
-              icon={<Icons.Check size={15} />}
-              disabled={saving || !dirty}
-              onClick={() => void doSave()}
-            >
-              保存
-            </Button>
-            <Button
-              size="small"
-              icon={<Icons.Package size={15} />}
-              onClick={() => setAssetDrawerOpen(true)}
-            >
-              资产
-            </Button>
-            <Button size="small" icon={<Icons.Download size={15} />}>
-              导出
-            </Button>
-          </div>
         </div>
         <CanvasToolbar
           activeTool={activeTool}
@@ -776,6 +753,10 @@ export function CanvasWorkspaceView({
           canAddToGroup={canAddToGroup}
           canRemoveFromGroup={canRemoveFromGroup}
           canDissolveGroup={canDissolveGroup}
+          saveState={{ dirty, saving }}
+          onSave={() => void doSave()}
+          onOpenAssets={() => setAssetDrawerOpen(true)}
+          onExport={() => {}}
         />
       </header>
 

@@ -61,6 +61,7 @@ import type {
 } from '../core/index.js'
 import * as keystore from '@spark/shared/keystore'
 import { McpService } from './mcp-server.service.js'
+import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService } from './platform-bridge.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
@@ -180,12 +181,20 @@ export class SessionService {
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
-  private approvalOverrides = new Map<string, boolean>() // sessionId → approval enabled
   private iterationOverrides = new Map<string, number>() // sessionId → per-session max turn iterations override
   private readonly commandRegistry = createBuiltinRegistry()
   private readonly mcpService: McpService
   private teamDispatchService: TeamDispatchService | null = null
   private readonly platformBridge: PlatformBridgeService
+
+  /**
+   * Increments whenever any MCP server is created/updated/deleted/started/stopped/
+   * changes its tool list. Compared against `lastBuiltMcpVersion` at SDK turn build
+   * time so that a change forces the next turn to start a fresh SDK query (i.e.
+   * `continueSession: false`), bypassing the SDK's frozen tool list snapshot.
+   */
+  private mcpVersion = 0
+  private lastBuiltMcpVersion = -1
 
   private getTeamDispatchService(): TeamDispatchService {
     if (this.teamDispatchService == null) {
@@ -206,6 +215,9 @@ export class SessionService {
   ) {
     this.mcpService = new McpService(new McpServerRepository(db))
     this.platformBridge = new PlatformBridgeService()
+    this.mcpService.onChange((_event: McpChangeEvent) => {
+      this.mcpVersion += 1
+    })
     this.recoverInterruptedSessions()
   }
 
@@ -346,7 +358,7 @@ export class SessionService {
       },
       getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
       setApprovalMode: (id, enabled) => {
-        this.approvalOverrides.set(id, enabled)
+        this.applyApprovalToggle(id, enabled)
       },
       getWorkspacePath: () => workspacePath,
       execShell: async (command, cwd) => {
@@ -449,7 +461,7 @@ export class SessionService {
       getProviderName: (id) => providerRepo.get(id)?.name ?? null,
       getProviderModelIds: (id) => getProviderModelIds(providerRepo.get(id)?.config_json),
       setApprovalMode: (id, enabled) => {
-        this.approvalOverrides.set(id, enabled)
+        this.applyApprovalToggle(id, enabled)
       },
       getWorkspacePath: () => workspacePath,
       execShell: async (command, cwd) => {
@@ -762,14 +774,11 @@ export class SessionService {
           agentAdapter,
           isMentionTurn ? `mention:${agent.id}:${turnId}` : turnId,
         )
-    const storedPermissionMode = isMentionTurn
+    // 选中的模式即唯一权威：mention turn 用被 @ 成员自身的模式，否则用会话存储的模式。
+    // 不再叠加 /approval override 层——bypass 一旦选中就不会被任何旁路降级。
+    const permissionMode = isMentionTurn
       ? normalizePermissionMode(agent.permissionMode)
       : getPermissionModeFromSession(session.permission_mode, agentAdapter)
-    const permissionMode = this.getEffectivePermissionMode(
-      sessionId,
-      agentAdapter,
-      storedPermissionMode,
-    )
 
     log.debug('Resolved runtime for turn', {
       sparkSessionId: sessionId,
@@ -914,6 +923,7 @@ export class SessionService {
           teamConfig,
           workspaceRootPath,
           eventRepo,
+          hostPermissionMode: permissionMode,
         })) ?? undefined
     }
     // Mention 路由：注入"被 @ 的 Member 视角"，告诉它自己身份 + 上下文继承策略。
@@ -1473,6 +1483,16 @@ export class SessionService {
       mcpServers.spark_platform = config.platformManagementMcpServer
     }
 
+    // MCP hot-reload: if the MCP set changed since the last SDK query was built,
+    // force a fresh SDK session so the new tool inventory takes effect. The SDK
+    // freezes the tool list at query start (ClaudeSDKExecutor passes mcpServers
+    // into sdk.query once), so we can't mutate an in-flight session — but we can
+    // guarantee the NEXT turn starts cleanly.
+    if (this.mcpVersion !== this.lastBuiltMcpVersion) {
+      config.continueSession = false
+      this.lastBuiltMcpVersion = this.mcpVersion
+    }
+
     const executor = new ClaudeSDKExecutor()
     const changedFiles = new Set<string>()
     let validationSuggestionEmitted = false
@@ -1718,6 +1738,13 @@ export class SessionService {
     const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
     if (config.platformManagementMcpServer != null) {
       mcpServers.spark_platform = config.platformManagementMcpServer
+    }
+
+    // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
+    // set changed since the last build.
+    if (this.mcpVersion !== this.lastBuiltMcpVersion) {
+      config.continueSession = false
+      this.lastBuiltMcpVersion = this.mcpVersion
     }
 
     const executor = config.useLocalConfig === true
@@ -2215,6 +2242,8 @@ export class SessionService {
     eventRepo: EventRepository
     /** 本层 dispatch 的深度（Host=0，嵌套时递增） */
     currentDepth?: number
+    /** 宿主会话的生效权限模式：宿主选 bypass/full-access 时，成员同样完全放行（用户已信任整个会话）。 */
+    hostPermissionMode?: SessionPermissionMode
   }): Promise<SDKMcpServerConfig | null> {
     const factory = await loadSdkMcpFactory()
     if (factory == null) return null
@@ -2264,6 +2293,9 @@ export class SessionService {
               memberDepth,
               members: ctx.members,
               teamConfig: ctx.teamConfig,
+              ...(ctx.hostPermissionMode != null
+                ? { hostPermissionMode: ctx.hostPermissionMode }
+                : {}),
             }),
         },
         { parallel },
@@ -2364,9 +2396,19 @@ export class SessionService {
     memberDepth: number
     members: AgentItem[]
     teamConfig: TeamModeConfig
+    /** 宿主会话的生效权限模式（用于成员继承 bypass/full-access） */
+    hostPermissionMode?: SessionPermissionMode
   }): Promise<TeamMemberExecutionResult> {
-    const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal, memberDepth, members, teamConfig } =
+    const { member, task, dispatchId, sessionId, turnId, workspaceRootPath, eventRepo, signal, memberDepth, members, teamConfig, hostPermissionMode } =
       args
+
+    // 宿主选了完全放行（bypass / full-access）时，被调度成员同样完全放行：
+    // 用户已对整个会话授予最高信任，不应在子 agent 上再弹审批窗。否则沿用成员自身配置。
+    const hostIsFullAccess =
+      hostPermissionMode === 'claude-bypass' || hostPermissionMode === 'codex-full-access'
+    const effectiveMemberMode = (
+      hostIsFullAccess ? hostPermissionMode : member.permissionMode
+    ) as SDKExecutorConfig['permissionMode']
 
     // 解析 member 的 provider/apiKey/model；member 未配置 provider 时回落到会话 provider。
     const sessionRepo = new SessionRepository(this.db)
@@ -2411,6 +2453,9 @@ export class SessionService {
           workspaceRootPath,
           eventRepo,
           currentDepth: memberDepth,
+          ...(hostIsFullAccess && hostPermissionMode != null
+            ? { hostPermissionMode }
+            : {}),
         })) ?? undefined
       if (nestedTeamServer != null) memberMcpServers.spark_team = nestedTeamServer
     }
@@ -2419,7 +2464,7 @@ export class SessionService {
       apiKey,
       model,
       workspaceRootPath,
-      permissionMode: member.permissionMode as SDKExecutorConfig['permissionMode'],
+      permissionMode: effectiveMemberMode,
       ...(providerConfig.apiEndpoint != null ? { apiEndpoint: providerConfig.apiEndpoint } : {}),
       ...(providerConfig.haikuModel != null ? { haikuModel: providerConfig.haikuModel } : {}),
       ...(providerConfig.sonnetModel != null ? { sonnetModel: providerConfig.sonnetModel } : {}),
@@ -2744,20 +2789,27 @@ export class SessionService {
     this.onQueueChanged?.(this.queueSnapshot(sessionId))
   }
 
-  private getEffectivePermissionMode(
-    sessionId: string,
-    adapter: AgentAdapterKind,
-    storedMode: SessionPermissionMode,
-  ): SessionPermissionMode {
-    const override = this.approvalOverrides.get(sessionId)
-    if (override === false) return adapter === 'claude' ? 'claude-bypass' : 'codex-full-access'
-    if (
-      override === true &&
-      (storedMode === 'claude-bypass' || storedMode === 'codex-full-access')
-    ) {
-      return adapter === 'claude' ? 'claude-ask' : 'codex-default'
-    }
-    return storedMode
+  /**
+   * `/approval on|off` 的实现：直接改写会话的 permission_mode（唯一权威），
+   * 而不是维护一个会与下拉选择冲突的并行 override 开关。
+   *   - off → 完全放行（claude-bypass / codex-full-access）
+   *   - on  → 逐次审批（claude-ask / codex-default）
+   * 适配器按当前 stored mode 的前缀判断，避免再查 agent 配置。
+   * updateSession 会同时持久化并热切换正在运行的 executor。
+   */
+  private applyApprovalToggle(sessionId: string, enabled: boolean): void {
+    const sessionRepo = new SessionRepository(this.db)
+    const isCodex = (sessionRepo.get(sessionId)?.permission_mode ?? '').startsWith('codex-')
+    const mode: SessionPermissionMode = enabled
+      ? isCodex
+        ? 'codex-default'
+        : 'claude-ask'
+      : isCodex
+        ? 'codex-full-access'
+        : 'claude-bypass'
+    void this.updateSession({ sessionId, permissionMode: mode }).catch((err) => {
+      log.warn(`/approval toggle failed for ${sessionId}: ${String(err)}`)
+    })
   }
 
   /**
@@ -2805,7 +2857,6 @@ export class SessionService {
     this.pendingTurns.delete(sessionId)
     this.pendingPlanApprovals.delete(sessionId)
     this.seqCounters.delete(sessionId)
-    this.approvalOverrides.delete(sessionId)
     this.iterationOverrides.delete(sessionId)
     TodoStore.clear(sessionId)
     this.onApprovalCancel?.(sessionId)
@@ -3811,37 +3862,61 @@ function mergeUniqueStrings(a: string[] | undefined, b: string[]): string[] {
   return [...new Set([...(a ?? []), ...b])]
 }
 
-/** All 25 platform management tool names (SDK namespace: mcp__spark_platform__) */
+/**
+ * All 48 platform management tool names (SDK namespace: mcp__spark_platform__).
+ *
+ * The Platform Management MCP server (`packages/agent-runtime/src/tools/platform-management-mcp-server.mjs`)
+ * exposes this set; if you add a new tool to `toolDefinitions()` in that file,
+ * also append its SDK-namespaced name here, otherwise Claude SDK will refuse
+ * to dispatch the tool call (it filters by the `allowedTools` allow-list).
+ */
 const PLATFORM_TOOL_NAMES: string[] = [
+  // Skills
   'mcp__spark_platform__skills_list',
   'mcp__spark_platform__skills_search',
   'mcp__spark_platform__skills_install',
   'mcp__spark_platform__skills_uninstall',
   'mcp__spark_platform__skills_toggle',
+  // MCP Servers
   'mcp__spark_platform__mcp_list',
   'mcp__spark_platform__mcp_create',
   'mcp__spark_platform__mcp_update',
   'mcp__spark_platform__mcp_delete',
   'mcp__spark_platform__mcp_status',
+  // Providers
   'mcp__spark_platform__providers_list',
+  'mcp__spark_platform__providers_get',
   'mcp__spark_platform__providers_create',
   'mcp__spark_platform__providers_update',
   'mcp__spark_platform__providers_delete',
   'mcp__spark_platform__providers_health_check',
+  'mcp__spark_platform__providers_set_default',
+  'mcp__spark_platform__providers_set_default_model',
+  // Workflows
   'mcp__spark_platform__workflows_list',
   'mcp__spark_platform__workflows_get',
   'mcp__spark_platform__workflows_create',
   'mcp__spark_platform__workflows_update',
   'mcp__spark_platform__workflows_delete',
+  // Agents
   'mcp__spark_platform__agents_list',
   'mcp__spark_platform__agents_get',
   'mcp__spark_platform__agents_create',
   'mcp__spark_platform__agents_update',
   'mcp__spark_platform__agents_delete',
+  // Settings
   'mcp__spark_platform__settings_get',
   'mcp__spark_platform__settings_set',
   'mcp__spark_platform__settings_get_category',
   'mcp__spark_platform__settings_get_all',
+  // Sessions (self-management)
+  'mcp__spark_platform__sessions_get',
+  'mcp__spark_platform__sessions_switch_model',
+  'mcp__spark_platform__sessions_switch_provider',
+  'mcp__spark_platform__sessions_switch_mode',
+  'mcp__spark_platform__sessions_switch_permission',
+  'mcp__spark_platform__sessions_switch_reasoning_effort',
+  // Board Tasks
   'mcp__spark_platform__board_list',
   'mcp__spark_platform__board_get',
   'mcp__spark_platform__board_create',
@@ -3857,8 +3932,11 @@ const PLATFORM_TOOL_NAMES: string[] = [
 function resolvePlatformManagementMcpServerPath(): string | null {
   const here = path.dirname(fileURLToPath(import.meta.url))
   const candidates = [
+    // Packed desktop build: `apps/desktop/out/main/index.js` + copied `tools/*.mjs`
     path.resolve(here, 'tools/platform-management-mcp-server.mjs'),
+    // When bundled one level deeper (defensive)
     path.resolve(here, '../tools/platform-management-mcp-server.mjs'),
+    // Dev / monorepo source checkout
     path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/platform-management-mcp-server.mjs'),
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
@@ -3874,10 +3952,11 @@ const PLATFORM_MANAGEMENT_SYSTEM_PROMPT = [
   'Available capabilities:',
   '- **Skills**: list, search, install, uninstall, toggle',
   '- **MCP Servers**: list, create, update, delete, status',
-  '- **Providers**: list, create, update, delete, health_check',
+  '- **Providers**: list, get, create, update, delete, health_check, set_default, set_default_model',
   '- **Workflows**: list, get, create, update, delete',
   '- **Agents**: list, get, create, update, delete',
   '- **Settings**: get, set, get_category, get_all',
+  '- **Sessions (self)**: get, switch_model, switch_provider, switch_mode, switch_permission, switch_reasoning_effort',
   '- **Board Tasks**: list, get, create, update, delete, batch_create, batch_update, batch_delete, restore, permanent_delete',
   '',
   'When the user asks to manage any of these, use the corresponding tool directly.',

@@ -10,11 +10,26 @@
 
 import type { McpServerRepository, McpServerRow } from '@spark/storage'
 import type { McpServerItem } from '@spark/protocol'
+import { EventEmitter } from 'node:events'
 import { McpClient } from '../mcp/index.js'
 import type { McpTransportConfig } from '../mcp/index.js'
 import { createLogger } from '@spark/shared'
 
 const log = createLogger('mcp:service')
+
+export type McpChangeAction =
+  | 'create'
+  | 'update'
+  | 'delete'
+  | 'start'
+  | 'stop'
+  | 'tools-changed'
+
+export interface McpChangeEvent {
+  action: McpChangeAction
+  id: string
+  serverName?: string
+}
 
 /**
  * Scope reserved for internally-managed MCP servers (auto-registered by the app).
@@ -30,8 +45,26 @@ export const PLAYWRIGHT_MCP_NAME = 'playwright'
 
 export class McpService {
   private clients = new Map<string, McpClient>()
+  private changeEmitter = new EventEmitter()
 
   constructor(private readonly repo: McpServerRepository) {}
+
+  // ─── Change Events ────────────────────────────────────────────────────────
+
+  /**
+   * 订阅 MCP 生命周期事件(create/update/delete/start/stop/tools-changed)。
+   * SessionService 用此维护 mcpVersion 计数器,以便 MCP 变化时让下次 turn 走新配置。
+   */
+  onChange(handler: (event: McpChangeEvent) => void): () => void {
+    this.changeEmitter.on('change', handler)
+    return () => {
+      this.changeEmitter.off('change', handler)
+    }
+  }
+
+  private emitChange(action: McpChangeAction, id: string, serverName?: string): void {
+    this.changeEmitter.emit('change', { action, id, ...(serverName != null ? { serverName } : {}) })
+  }
 
   // ─── CRUD Operations ─────────────────────────────────────────────────────
 
@@ -42,6 +75,18 @@ export class McpService {
 
   createServer(params: { scope: string; name: string; configJson: string; enabled?: boolean }): McpServerItem {
     const row = this.repo.create(params)
+    this.emitChange('create', row.id, row.name)
+
+    // Auto-start when enabled is not explicitly false. Fire-and-forget so the IPC
+    // response isn't blocked on the connection handshake; start failures are logged
+    // and surface via getServerStatus without rolling back the DB row.
+    if (params.enabled !== false) {
+      void this.startServer(row.id).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        log.warn(`Auto-start failed for newly created MCP server ${row.name}: ${message}`)
+      })
+    }
+
     return toMcpServerItem(row)
   }
 
@@ -57,12 +102,20 @@ export class McpService {
     const row = this.repo.update(id, fields)
     if (row == null) throw new Error(`MCP server not found: ${id}`)
 
+    this.emitChange('update', id, row.name)
+
     // If the server is currently connected, reconnect it
     if (this.clients.has(id)) {
       void this.stopServer(id).then(() => {
         if (row.enabled === 1) {
           void this.startServer(id)
         }
+      })
+    } else if (row.enabled === 1 && fields.enabled === true) {
+      // Toggling from disabled → enabled on an unconnected server: start it.
+      void this.startServer(id).catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : String(err)
+        log.warn(`Failed to start MCP server ${row.name} after enable: ${message}`)
       })
     }
 
@@ -84,7 +137,9 @@ export class McpService {
     if (this.clients.has(id)) {
       void this.stopServer(id)
     }
-    return this.repo.deleteById(id)
+    const deleted = this.repo.deleteById(id)
+    if (deleted) this.emitChange('delete', id, existing.name)
+    return deleted
   }
 
   // ─── Lifecycle Management ────────────────────────────────────────────────
@@ -108,10 +163,14 @@ export class McpService {
 
     const config = this.parseConfig(row.config_json, row.id, row.name)
     const client = new McpClient(row.id, row.name, config)
+    client.setToolsChangedHandler((payload) => {
+      this.emitChange('tools-changed', payload.serverId, payload.serverName)
+    })
 
     try {
       await client.connect()
       this.clients.set(serverId, client)
+      this.emitChange('start', serverId, row.name)
       log.info(`MCP server started: ${row.name} (${serverId})`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -130,14 +189,18 @@ export class McpService {
       return
     }
 
+    const row = this.repo.get(serverId)
+
     try {
       await client.disconnect()
       this.clients.delete(serverId)
-      log.info(`MCP server stopped: ${serverId}`)
+      this.emitChange('stop', serverId, row?.name)
+      log.info(`MCP server stopped: ${row?.name ?? serverId}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
       log.warn(`Error stopping MCP server ${serverId}: ${message}`)
       this.clients.delete(serverId)
+      this.emitChange('stop', serverId, row?.name)
     }
   }
 

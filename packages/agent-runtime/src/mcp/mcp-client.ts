@@ -77,6 +77,7 @@ export class McpClient {
   private serverCapabilities: McpServerCapabilities | {}
   private tools: McpToolDefinition[] = []
   private _connected = false
+  private toolsChangedEmitter: ((payload: { serverId: string; serverName: string; toolCount: number }) => void) | null = null
 
   constructor(
     private readonly serverId: string,
@@ -85,6 +86,14 @@ export class McpClient {
   ) {
     this.serverCapabilities = {}
     this.transport = this.createTransport(config)
+  }
+
+  /**
+   * 注入工具列表变更回调。MCP 服务端发送 `notifications/tools/list_changed` 时,
+   * 客户端会自动 refreshTools 并触发该回调(由 McpService.startServer 调用方传入)。
+   */
+  setToolsChangedHandler(handler: (payload: { serverId: string; serverName: string; toolCount: number }) => void): void {
+    this.toolsChangedEmitter = handler
   }
 
   /** 连接并初始化 MCP 服务器 */
@@ -128,6 +137,27 @@ export class McpClient {
 
     // Fetch tool list
     await this.refreshTools()
+
+    // Subscribe to server-initiated tool list changes if the server advertises the capability.
+    // Per MCP spec: when `capabilities.tools.listChanged === true`, the server may send
+    // `notifications/tools/list_changed` to announce its tool set has changed.
+    if ((this.serverCapabilities as McpServerCapabilities).tools?.listChanged === true) {
+      this.transport.onNotification((notification) => {
+        if (notification.method === 'notifications/tools/list_changed') {
+          log.info(`MCP server ${this.serverName} announced tool list change`)
+          void this.refreshTools().then(() => {
+            this.toolsChangedEmitter?.({
+              serverId: this.serverId,
+              serverName: this.serverName,
+              toolCount: this.tools.length,
+            })
+          }).catch((err: unknown) => {
+            const message = err instanceof Error ? err.message : String(err)
+            log.warn(`Failed to refresh tools for ${this.serverName} after list_changed: ${message}`)
+          })
+        }
+      })
+    }
 
     this._connected = true
     log.info(`MCP server connected: ${this.serverName}, tools: ${this.tools.length}`)

@@ -1,0 +1,98 @@
+[
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedance-2.0",
+    "displayName": "Doubao Seedance 2.0",
+    "capabilities": ["video.generate", "video.image_to_video"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedance-2.0-fast",
+    "displayName": "Doubao Seedance 2.0 Fast",
+    "capabilities": ["video.generate", "video.image_to_video"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedream-5.0-lite",
+    "displayName": "Doubao Seedream 5.0 Lite",
+    "capabilities": ["image.generate"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seedream-4.5",
+    "displayName": "Doubao Seedream 4.5",
+    "capabilities": ["image.generate"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Seed3D-2.0",
+    "displayName": "Doubao Seed3D 2.0",
+    "capabilities": ["3d.generate"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Podcast-Voice",
+    "displayName": "Doubao 语音播客",
+    "capabilities": ["audio.speech_generate", "audio.podcast"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-Voice-Design",
+    "displayName": "Doubao 音色设计",
+    "capabilities": ["audio.voice_design"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "volcengine",
+    "modelId": "Doubao-TTS-2.0",
+    "displayName": "Doubao 语音合成 2.0",
+    "capabilities": ["audio.speech_generate"],
+    "endpoint": "待确认 - 需登录火山控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录火山控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://console.volcengine.com/ark/region:ark+cn-beijing/model?groupType=ModelGroups&vendor=Bytedance&view=DEFAULT_VIEW"],
+    "status": "NEEDS_LOGIN"
+  }
+]

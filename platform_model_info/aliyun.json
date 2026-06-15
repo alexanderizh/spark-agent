@@ -1,0 +1,50 @@
+[
+  {
+    "provider": "aliyun",
+    "modelId": "HappyHorse-1.0-T2V",
+    "displayName": "HappyHorse 1.0 Text-to-Video",
+    "capabilities": ["video.generate"],
+    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "wan2.7-image-pro",
+    "displayName": "Wan 2.7 Image Pro",
+    "capabilities": ["image.generate", "image.edit"],
+    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "wan2.7-i2v-2026-04-25",
+    "displayName": "Wan 2.7 Image-to-Video",
+    "capabilities": ["video.image_to_video"],
+    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
+    "status": "NEEDS_LOGIN"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "qwen3-tts-flash",
+    "displayName": "Qwen3 TTS Flash",
+    "capabilities": ["audio.speech_generate"],
+    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
+    "requestBody": {
+      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
+    },
+    "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
+    "status": "NEEDS_LOGIN"
+  }
+]

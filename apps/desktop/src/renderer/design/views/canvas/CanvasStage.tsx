@@ -321,7 +321,10 @@ export function CanvasStage({
 
   return (
     <ReactFlowProvider>
-      <div className="canvas-stage" ref={stageRef}>
+      <div
+        className={`canvas-stage canvas-stage-tool-${activeTool === 'pan' ? 'pan' : 'select'}`}
+        ref={stageRef}
+      >
         <ReactFlow
           nodes={flowNodes}
           edges={edges}
