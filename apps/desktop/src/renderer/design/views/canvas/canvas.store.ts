@@ -113,7 +113,7 @@ export function useCanvasWorkspace(projectId: string) {
   const createImageNode = useCallback(
     async (input: {
       file: File
-      dataUrl: string
+      filePath: string
       x: number
       y: number
       width?: number

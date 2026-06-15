@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Drawer, Tag } from '@lobehub/ui'
 import { Empty, List } from 'antd'
 import { SearchBar as LobeSearchBar, Select as LobeSelect } from '@lobehub/ui'
+import { normalizeEduAssetUrl } from '@spark/shared'
 import type { CanvasAsset, CanvasAssetType } from './canvas.types'
 
 type AssetFilter = 'all' | CanvasAssetType
@@ -64,7 +65,7 @@ export function CanvasAssetDrawer({
               <div className="canvas-asset-item">
                 <div className="canvas-asset-thumb">
                   {asset.thumbnailUrl || asset.url ? (
-                    <img src={asset.thumbnailUrl ?? asset.url ?? ''} alt="" />
+                    <img src={normalizeEduAssetUrl(asset.thumbnailUrl ?? asset.url ?? '')} alt="" />
                   ) : (
                     asset.type.slice(0, 1).toUpperCase()
                   )}

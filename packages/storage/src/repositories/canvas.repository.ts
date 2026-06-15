@@ -131,7 +131,10 @@ export class CanvasSnapshotRepository extends BaseRepository {
   }
 
   get(projectId: string): CanvasSnapshotRow | null {
-    return this.findById<CanvasSnapshotRow>(projectId)
+    const row = this.raw
+      .prepare(`SELECT * FROM canvas_snapshots WHERE project_id = ?`)
+      .get(projectId) as CanvasSnapshotRow | undefined
+    return row ?? null
   }
 
   exists(projectId: string): boolean {

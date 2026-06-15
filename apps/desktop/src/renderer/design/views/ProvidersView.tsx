@@ -153,7 +153,7 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
   const d = preset.mediaDefaults
   return {
     mediaProvider: preset.mediaProvider ?? '',
-    mediaApiType: preset.mediaApiType ?? 'auto',
+    mediaApiType: preset.mediaApiType ?? preset.imageApiType ?? 'auto',
     mediaCapabilities: preset.mediaCapabilities ?? [],
     mediaModelRefs: [],
     mediaImageSize: d?.image?.size ?? '',
@@ -179,7 +179,7 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
   const d = p.mediaDefaults
   return {
     mediaProvider: p.mediaProvider ?? '',
-    mediaApiType: p.mediaApiType ?? 'auto',
+    mediaApiType: p.mediaApiType ?? p.imageApiType ?? 'auto',
     mediaCapabilities: p.mediaCapabilities ?? [],
     mediaModelRefs: p.mediaModelRefs ?? [],
     mediaImageSize: d?.image?.size ?? '',
@@ -1206,7 +1206,7 @@ export function ProviderEditPanel({
               ...EMPTY_TIER_MODELS,
               modelType: preset.modelType ?? 'multimodal',
               imageProvider: normalizeImageProvider(preset.imageProvider),
-              imageApiType: normalizeImageApiType(preset.imageApiType),
+              imageApiType: normalizeImageApiType(preset.mediaApiType ?? preset.imageApiType),
               ...presetMediaForm(preset),
             })
           }, 0)
@@ -1254,7 +1254,7 @@ export function ProviderEditPanel({
             opusModel: p.opusModel ?? '',
             modelType: (p.modelType as ProviderModelType) ?? 'multimodal',
             imageProvider: normalizeImageProvider(p.imageProvider),
-            imageApiType: normalizeImageApiType(p.imageApiType),
+            imageApiType: normalizeImageApiType(p.mediaApiType ?? p.imageApiType),
             ...profileMediaForm(p),
           })
         }
@@ -1264,11 +1264,14 @@ export function ProviderEditPanel({
 
   useEffect(() => {
     if (!visible) return
-    setMediaCatalogLoading(true)
-    listMediaModels({ catalogOnly: true, enabledOnly: true })
-      .then((res) => setMediaCatalog(res.models))
-      .catch(() => setMediaCatalog([]))
-      .finally(() => setMediaCatalogLoading(false))
+    const id = window.setTimeout(() => {
+      setMediaCatalogLoading(true)
+      listMediaModels({ catalogOnly: true, enabledOnly: true })
+        .then((res) => setMediaCatalog(res.models))
+        .catch(() => setMediaCatalog([]))
+        .finally(() => setMediaCatalogLoading(false))
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [listMediaModels, visible])
 
   // ── 衍生：当前选中 preset 对应的 vendor（用于 hero 渲染真实 logo） ──
@@ -1434,7 +1437,7 @@ export function ProviderEditPanel({
           opusModel: opus.length > 0 ? opus : null,
           modelType: form.modelType,
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
-          imageApiType: form.modelType === 'image' ? form.imageApiType : null,
+          imageApiType: form.modelType === 'image' ? form.mediaApiType : null,
           ...buildMediaUpdateFields(form),
         }
         if (form.provider === 'openai') req.codexApiKind = form.codexApiKind
@@ -1456,7 +1459,7 @@ export function ProviderEditPanel({
           ...(opus.length > 0 && { opusModel: opus }),
           modelType: form.modelType,
           imageProvider: form.modelType === 'image' ? form.imageProvider : null,
-          imageApiType: form.modelType === 'image' ? form.imageApiType : null,
+          imageApiType: form.modelType === 'image' ? form.mediaApiType : null,
           ...buildMediaUpdateFields(form),
         })
       }
@@ -1486,7 +1489,7 @@ export function ProviderEditPanel({
       ...EMPTY_TIER_MODELS,
       modelType: preset.modelType ?? 'multimodal',
       imageProvider: normalizeImageProvider(preset.imageProvider),
-      imageApiType: normalizeImageApiType(preset.imageApiType),
+      imageApiType: normalizeImageApiType(preset.mediaApiType ?? preset.imageApiType),
       ...presetMediaForm(preset),
     }))
   }
@@ -1520,7 +1523,7 @@ export function ProviderEditPanel({
           message={
             [
               form.modelType === 'image'
-                ? `生图模型 · ${form.imageProvider}/${form.imageApiType}`
+                ? `生图模型 · ${form.imageProvider}/${form.mediaApiType}`
                 : form.provider === 'anthropic'
                   ? 'Anthropic 格式'
                   : 'OpenAI 格式',
@@ -1660,6 +1663,8 @@ export function ProviderEditPanel({
                         provider: 'openai',
                         imageProvider,
                         imageApiType: defaults.mode,
+                        mediaProvider: mediaProviderFromImageKind(imageProvider),
+                        mediaApiType: defaults.mode,
                         endpoint: defaults.endpoint || prev.endpoint,
                         codexApiKind: 'chat',
                       }))
@@ -1670,19 +1675,6 @@ export function ProviderEditPanel({
                     }))}
                   />
 
-                  <label className="pv_form_label">
-                    生图调用方式
-                    <span className="pv_form_sub">同步直接返回图片；异步会提交任务并轮询；auto 可兼容混合响应</span>
-                  </label>
-                  <Select
-                    value={form.imageApiType}
-                    onChange={(v) => set('imageApiType', normalizeImageApiType(v))}
-                    options={[
-                      { label: 'sync · 同步返回', value: 'sync' },
-                      { label: 'async · 任务轮询', value: 'async' },
-                      { label: 'auto · 自动兼容', value: 'auto' },
-                    ]}
-                  />
                 </>
               )}
 
@@ -1708,7 +1700,16 @@ export function ProviderEditPanel({
                   </label>
                   <Select
                     value={form.mediaApiType}
-                    onChange={(v) => set('mediaApiType', v as MediaApiType)}
+                    onChange={(v) => {
+                      const mediaApiType = v as MediaApiType
+                      setForm((prev) => ({
+                        ...prev,
+                        mediaApiType,
+                        imageApiType: prev.modelType === 'image'
+                          ? normalizeImageApiType(mediaApiType)
+                          : prev.imageApiType,
+                      }))
+                    }}
                     options={MEDIA_API_TYPES.map((mode) => ({
                       label: mode === 'sync' ? 'sync · 同步返回' : mode === 'async' ? 'async · 任务轮询' : 'auto · 自动兼容',
                       value: mode,
@@ -1719,76 +1720,78 @@ export function ProviderEditPanel({
                     模型清单
                     <span className="pv_form_sub">勾选后会写入 mediaModelRefs，agent 与无限画布可立即发现参数 schema</span>
                   </label>
-                  <div className="pv_media_manifest_list">
-                    {mediaCatalogLoading ? (
-                      <div className="pv_media_manifest_empty">正在加载模型清单…</div>
-                    ) : mediaCatalogForForm.length === 0 ? (
-                      <div className="pv_media_manifest_empty">暂无匹配的内置模型清单</div>
-                    ) : (
-                      mediaCatalogForForm.map((model) => (
-                        <label
-                          key={model.manifestId}
-                          className={[
-                            'pv_media_manifest_item',
-                            selectedManifestIds.has(model.manifestId) ? 'pv_media_manifest_item_selected' : '',
-                          ].filter(Boolean).join(' ')}
-                        >
-                          <Checkbox
-                            checked={selectedManifestIds.has(model.manifestId)}
-                            onChange={(checked: boolean) => toggleMediaModelRef(model, checked)}
-                          />
-                          <div className="pv_media_manifest_main">
-                            <div className="pv_media_manifest_title">
-                              <span>{model.displayName}</span>
-                              <Tag size="small" color="gray">{model.providerKind}</Tag>
-                              <Tag size="small" color="blue">{model.invocationMode}</Tag>
+                  <div className="pv_media_model_refs">
+                    <div className="pv_media_manifest_list">
+                      {mediaCatalogLoading ? (
+                        <div className="pv_media_manifest_empty">正在加载模型清单…</div>
+                      ) : mediaCatalogForForm.length === 0 ? (
+                        <div className="pv_media_manifest_empty">暂无匹配的内置模型清单</div>
+                      ) : (
+                        mediaCatalogForForm.map((model) => (
+                          <label
+                            key={model.manifestId}
+                            className={[
+                              'pv_media_manifest_item',
+                              selectedManifestIds.has(model.manifestId) ? 'pv_media_manifest_item_selected' : '',
+                            ].filter(Boolean).join(' ')}
+                          >
+                            <Checkbox
+                              checked={selectedManifestIds.has(model.manifestId)}
+                              onChange={(checked: boolean) => toggleMediaModelRef(model, checked)}
+                            />
+                            <div className="pv_media_manifest_main">
+                              <div className="pv_media_manifest_title">
+                                <span>{model.displayName}</span>
+                                <Tag size="small" color="gray">{model.providerKind}</Tag>
+                                <Tag size="small" color="blue">{model.invocationMode}</Tag>
+                              </div>
+                              <div className="pv_media_manifest_meta">
+                                {model.effectiveModelId}
+                              </div>
+                              <div className="pv_media_manifest_caps">
+                                {model.capabilities.slice(0, 4).map((capability) => (
+                                  <Tag key={capability.id} size="small" color="gray">
+                                    {capability.label}
+                                  </Tag>
+                                ))}
+                              </div>
                             </div>
-                            <div className="pv_media_manifest_meta">
-                              {model.effectiveModelId}
+                          </label>
+                        ))
+                      )}
+                    </div>
+
+                    {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
+                    {customModelRefs.length > 0 && (
+                      <div className="pv_media_manifest_list">
+                        {customModelRefs.map((ref) => (
+                          <div key={ref.manifestId} className="pv_media_manifest_item pv_media_manifest_item_selected pv_media_manifest_item_static">
+                            <div className="pv_media_manifest_main">
+                              <div className="pv_media_manifest_title">
+                                <span>{ref.modelId}</span>
+                                <Tag size="small" color="purple">自定义</Tag>
+                                <Tag size="small" color="gray">{form.mediaProvider || form.imageProvider}</Tag>
+                              </div>
+                              <div className="pv_media_manifest_meta">
+                                {form.defaultModel.trim() === ref.modelId?.trim()
+                                  ? `${ref.modelId} · 当前默认`
+                                  : ref.modelId}
+                              </div>
                             </div>
-                            <div className="pv_media_manifest_caps">
-                              {model.capabilities.slice(0, 4).map((capability) => (
-                                <Tag key={capability.id} size="small" color="gray">
-                                  {capability.label}
-                                </Tag>
-                              ))}
-                            </div>
+                            <Button
+                              size="small"
+                              type="text"
+                              danger
+                              icon={<Icons.X />}
+                              onClick={() => removeMediaModelRef(ref.manifestId)}
+                              title="移除自定义模型"
+                              aria-label={`移除自定义模型 ${ref.modelId}`}
+                            />
                           </div>
-                        </label>
-                      ))
+                        ))}
+                      </div>
                     )}
                   </div>
-
-                  {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
-                  {customModelRefs.length > 0 && (
-                    <div className="pv_media_manifest_list">
-                      {customModelRefs.map((ref) => (
-                        <div key={ref.manifestId} className="pv_media_manifest_item pv_media_manifest_item_selected pv_media_manifest_item_static">
-                          <div className="pv_media_manifest_main">
-                            <div className="pv_media_manifest_title">
-                              <span>{ref.modelId}</span>
-                              <Tag size="small" color="purple">自定义</Tag>
-                              <Tag size="small" color="gray">{form.mediaProvider || form.imageProvider}</Tag>
-                            </div>
-                            <div className="pv_media_manifest_meta">
-                              {form.defaultModel.trim() === ref.modelId?.trim()
-                                ? `${ref.modelId} · 当前默认`
-                                : ref.modelId}
-                            </div>
-                          </div>
-                          <Button
-                            size="small"
-                            type="text"
-                            danger
-                            icon={<Icons.X />}
-                            onClick={() => removeMediaModelRef(ref.manifestId)}
-                            title="移除自定义模型"
-                            aria-label={`移除自定义模型 ${ref.modelId}`}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
 
                   <label className="pv_form_label">
                     添加自定义模型

@@ -3187,6 +3187,7 @@ body.sidebar-resizing {
   gap: 4px;
   min-width: 0;
   flex: 0 1 auto;
+  background: var(--bg-hover);
 }
 .composer-submit-picks .composer-select {
   max-width: 168px;

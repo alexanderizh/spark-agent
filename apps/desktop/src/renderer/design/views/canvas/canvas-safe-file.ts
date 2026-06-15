@@ -10,6 +10,8 @@
  * `<audio src>` / `<video src>` / `<img src>`（Electron webSecurity 下 file:// 被拦）。
  */
 
+import { normalizeEduAssetUrl } from '@spark/shared'
+
 const SAFE_FILE_SCHEME = 'safe-file'
 
 export function encodeToSafeFileUrl(absolutePath: string): string {
@@ -24,9 +26,9 @@ export function encodeToSafeFileUrl(absolutePath: string): string {
  * 把媒体产物的磁盘路径转成 renderer 可直接加载的 URL。
  *
  * 优先级：
- *   1. 已有 data: URL（图片预览 base64）→ 直接返回。
- *   2. 有 http(s) URL → 直接返回。
- *   3. 有本地文件路径 → 编码成 safe-file:// 返回。
+ *   1. 有本地文件路径 → 编码成 safe-file:// 返回，避免把大段 base64 持久化进 localStorage。
+ *   2. 已有 data: URL（仅在没有 filePath 时使用）→ 直接返回。
+ *   3. 有 http(s) URL → 直接返回。
  *   4. 都没有 → 返回空串。
  */
 export function resolveMediaDisplayUrl(opts: {
@@ -34,8 +36,8 @@ export function resolveMediaDisplayUrl(opts: {
   dataUrl?: string | null | undefined
   filePath?: string | null | undefined
 }): string {
-  if (opts.dataUrl) return opts.dataUrl
-  if (opts.url && /^(data:|https?:)/i.test(opts.url)) return opts.url
   if (opts.filePath) return encodeToSafeFileUrl(opts.filePath)
+  if (opts.dataUrl) return opts.dataUrl
+  if (opts.url && /^(data:|https?:)/i.test(opts.url)) return normalizeEduAssetUrl(opts.url)
   return ''
 }

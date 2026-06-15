@@ -2819,8 +2819,8 @@ export interface FileSaveImageResponse {
 }
 
 /**
- * `file:save-pasted-image` — 把渲染进程剪贴板里的图片数据写入本地临时目录，
- * 返回绝对路径，供会话附件继续复用现有的 `SessionAttachment` 流程。
+ * `file:save-pasted-image` — 把渲染进程剪贴板里的图片数据写入本地目录，
+ * 返回绝对路径，供会话附件或画布资产继续复用。
  */
 export interface FileSavePastedImageRequest {
   /** `data:image/png;base64,...` 形式的数据 URL */
@@ -2829,6 +2829,8 @@ export interface FileSavePastedImageRequest {
   mimeType?: string
   /** 可选建议文件名前缀，不含扩展名 */
   suggestedBaseName?: string
+  /** 默认写临时目录；画布项目使用持久目录。 */
+  storageScope?: 'temp' | 'canvas'
 }
 
 export interface FileSavePastedImageResponse {

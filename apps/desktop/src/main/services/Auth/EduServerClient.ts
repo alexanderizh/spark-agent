@@ -13,7 +13,7 @@
  *   - token 存储（那是 TokenStore 的事）
  */
 
-import { createLogger } from '@spark/shared'
+import { createLogger, normalizeEduAssetUrl } from '@spark/shared'
 import type { AuthSession, AuthUploadFileResponse } from '@spark/protocol'
 import type { EduApiResult } from './types'
 import type { TokenStore } from './TokenStore'
@@ -194,8 +194,9 @@ export class EduServerClient {
     return {
       ...data,
       fileName: data.fileName || input.fileName,
-      staticUrl: data.staticUrl || data.fileUrl || data.aiUrl,
-      aiUrl: data.aiUrl,
+      staticUrl: normalizeEduAssetUrl(data.staticUrl || data.fileUrl || data.aiUrl),
+      aiUrl: normalizeEduAssetUrl(data.aiUrl),
+      ...(data.fileUrl ? { fileUrl: normalizeEduAssetUrl(data.fileUrl) } : {}),
     }
   }
 

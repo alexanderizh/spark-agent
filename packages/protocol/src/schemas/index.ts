@@ -221,6 +221,7 @@ export const FileSavePastedImageRequestSchema = z.object({
   dataUrl: z.string().min(1).max(40_000_000),
   mimeType: z.string().min(1).max(120).optional(),
   suggestedBaseName: z.string().min(1).max(120).optional(),
+  storageScope: z.enum(['temp', 'canvas']).optional(),
 })
 
 export const FilePrepareImagePreviewRequestSchema = z.object({

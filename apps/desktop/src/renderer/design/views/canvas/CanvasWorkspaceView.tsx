@@ -569,6 +569,12 @@ export function CanvasWorkspaceView({
     }
     const dataUrl = await readFileAsDataUrl(file)
     const dimensions = await readImageDimensions(dataUrl)
+    const savedImage = await window.spark.invoke('file:save-pasted-image', {
+      dataUrl,
+      mimeType: file.type,
+      suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
+      storageScope: 'canvas',
+    })
     const nodeSize = fitImageNodeSize(dimensions.width, dimensions.height)
     const position = positionNodeInViewport(
       canvasViewport,
@@ -581,7 +587,7 @@ export function CanvasWorkspaceView({
     )
     await createImageNode({
       file,
-      dataUrl,
+      filePath: savedImage.filePath,
       x: position.x,
       y: position.y,
       width: nodeSize.width,

@@ -17,7 +17,7 @@ import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import path from 'node:path'
 import { promisify } from 'node:util'
-import { createLogger, deriveTeamAvatar } from '@spark/shared'
+import { createLogger, deriveTeamAvatar, normalizeEduAssetUrl } from '@spark/shared'
 import { getAppSkillsManager } from '../services/AppSkillsManager.js'
 import { HistoryImportService } from '../services/HistoryImport/HistoryImportService.js'
 import type { ImportProviderResolution } from '../services/HistoryImport/HistoryImportService.js'
@@ -384,7 +384,7 @@ async function canvasResponseFromMediaTaskRecord(record: MediaTaskRecord): Promi
       const base = {
         type: asset.type,
         ...(asset.filePath != null ? { filePath: asset.filePath } : {}),
-        ...(asset.url != null ? { url: asset.url } : {}),
+        ...(asset.url != null ? { url: normalizeEduAssetUrl(asset.url) } : {}),
         ...(asset.mimeType != null ? { mimeType: asset.mimeType } : {}),
         ...(asset.width != null ? { width: asset.width } : {}),
         ...(asset.height != null ? { height: asset.height } : {}),
@@ -4202,7 +4202,9 @@ export function registerAllIpcHandlers(): void {
                     ? 'heif'
                     : 'png'
 
-    const rootDir = path.join(app.getPath('temp'), 'spark-agent-pasted-images')
+    const rootDir = req.storageScope === 'canvas'
+      ? getDefaultCanvasMediaDir()
+      : path.join(app.getPath('temp'), 'spark-agent-pasted-images')
     await fs.mkdir(rootDir, { recursive: true })
     const baseName = (req.suggestedBaseName?.trim() || 'pasted-image').replace(/[^a-zA-Z0-9._-]+/g, '-')
     const fileName = `${baseName}-${crypto.randomUUID()}.${extension}`

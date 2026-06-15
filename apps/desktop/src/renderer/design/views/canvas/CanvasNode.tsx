@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { Handle, NodeResizer, Position, type NodeProps } from '@xyflow/react'
 import { Dropdown, Tag, Tooltip } from '@lobehub/ui'
 import { Progress } from 'antd'
+import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { operationLabel } from './canvas.api'
 import type { CanvasNode as SparkCanvasNode } from './canvas.types'
@@ -46,6 +47,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const isGroup = node.type === 'group'
   const isGroupedChild = Boolean(node.parentNodeId)
   const hasLineage = Boolean(lineage && (lineage.incoming > 0 || lineage.outgoing > 0))
+  const imageSrc = node.data.thumbnailUrl ?? node.data.url
+  const normalizedImageSrc = imageSrc ? normalizeEduAssetUrl(imageSrc) : ''
+  const normalizedAudioSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
+  const normalizedVideoSrc = node.data.url ? normalizeEduAssetUrl(node.data.url) : ''
 
   const menu = {
     className: 'canvas-node-context-menu',
@@ -140,7 +145,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             node.data.url ? (
               <img
                 className="canvas-node-image"
-                src={node.data.thumbnailUrl ?? node.data.url}
+                src={normalizedImageSrc}
                 alt={title}
               />
             ) : (
@@ -153,7 +158,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             node.data.url ? (
               <div className="canvas-node-audio">
                 <Icons.Play size={22} />
-                <audio className="canvas-node-audio-player" src={node.data.url} controls preload="metadata" />
+                <audio className="canvas-node-audio-player" src={normalizedAudioSrc} controls preload="metadata" />
                 <span className="canvas-node-audio-name">{node.data.message ?? 'audio'}</span>
               </div>
             ) : (
@@ -164,7 +169,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
             )
           ) : node.type === 'video' ? (
             node.data.url ? (
-              <video className="canvas-node-image" src={node.data.url} controls preload="metadata" />
+              <video className="canvas-node-image" src={normalizedVideoSrc} controls preload="metadata" />
             ) : (
               <div className="canvas-node-image-placeholder">
                 <Icons.Play size={30} />

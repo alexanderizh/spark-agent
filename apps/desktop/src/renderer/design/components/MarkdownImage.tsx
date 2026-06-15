@@ -17,6 +17,7 @@
  * 同时支持普通 http(s)/data URL（用于网络图片）。
  */
 
+import { normalizeEduAssetUrl } from '@spark/shared'
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import type { ReactNode } from 'react'
 import { Icons } from '../Icons'
@@ -51,7 +52,9 @@ function resolveImageSrc(src: string): string {
     lower.startsWith(`${SAFE_FILE_SCHEME}:`) ||
     lower.startsWith('blob:')
   ) {
-    return trimmed
+    return lower.startsWith('http://') || lower.startsWith('https://')
+      ? normalizeEduAssetUrl(trimmed)
+      : trimmed
   }
 
   if (lower.startsWith('file://')) {

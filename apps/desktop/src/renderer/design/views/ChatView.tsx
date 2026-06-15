@@ -104,7 +104,7 @@ import {
   VENDOR_CATALOG,
   type VendorMeta,
 } from '@spark/protocol'
-import { resolveProviderContextWindow } from '@spark/shared'
+import { normalizeEduAssetUrl, resolveProviderContextWindow } from '@spark/shared'
 import { ProviderLogo } from '../components/ProviderLogo'
 
 const SETTINGS_GENERAL_KEY = 'spark-settings-general'
@@ -8486,7 +8486,9 @@ function resolveComposerImageSrc(filePath: string): string {
     lower.startsWith('blob:') ||
     lower.startsWith(`${SAFE_FILE_SCHEME}:`)
   ) {
-    return trimmed
+    return lower.startsWith('http://') || lower.startsWith('https://')
+      ? normalizeEduAssetUrl(trimmed)
+      : trimmed
   }
   if (lower.startsWith('file://')) {
     try {

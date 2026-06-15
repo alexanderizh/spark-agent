@@ -11,7 +11,7 @@ import type {
   CreateCanvasTaskRequest,
 } from './canvas.types'
 import { getCanvasCapability } from './canvas.capabilities'
-import { resolveMediaDisplayUrl } from './canvas-safe-file'
+import { encodeToSafeFileUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -21,6 +21,7 @@ import type {
   CanvasMediaModelDescribeResponse,
   CanvasMediaModelsListRequest,
   CanvasMediaModelsListResponse,
+  CanvasProjectListItem,
   CanvasSnapshotSaveRequest,
 } from '@spark/protocol'
 
@@ -184,6 +185,13 @@ function now(): string {
   return new Date().toISOString()
 }
 
+function toCanvasProject(project: CanvasProjectListItem): CanvasProject {
+  return {
+    ...project,
+    userId: USER_ID,
+  }
+}
+
 function readDb(): CanvasDb {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
@@ -199,6 +207,138 @@ function writeDb(db: CanvasDb): void {
   // localStorage 仍是即时热存储；SQLite 只在手动保存(Ctrl+S)或项目生命周期操作时写入。
   canvasDirty = true
   dispatchDirty()
+}
+
+function writeHotDb(db: CanvasDb, dirty: boolean): void {
+  const serialized = JSON.stringify(db)
+  try {
+    window.localStorage.setItem(STORAGE_KEY, serialized)
+  } catch (err) {
+    window.localStorage.removeItem(STORAGE_KEY)
+    window.localStorage.setItem(STORAGE_KEY, serialized)
+  }
+  canvasDirty = dirty
+  dispatchDirty()
+}
+
+function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
+  const projectId = snapshot.project.id
+  db.projects = db.projects.filter((item) => item.id !== projectId)
+  db.boards = db.boards.filter((item) => item.projectId !== projectId)
+  db.nodes = db.nodes.filter((item) => item.projectId !== projectId)
+  db.edges = db.edges.filter((item) => item.projectId !== projectId)
+  db.assets = db.assets.filter((item) => item.projectId !== projectId)
+  db.tasks = db.tasks.filter((item) => item.projectId !== projectId)
+  db.projects.push(snapshot.project)
+  if (snapshot.board) db.boards.push(snapshot.board)
+  db.nodes.push(...snapshot.nodes)
+  db.edges.push(...snapshot.edges)
+  db.assets.push(...snapshot.assets)
+  db.tasks.push(...snapshot.tasks)
+}
+
+function snapshotFromDb(db: CanvasDb, projectId: string): CanvasSnapshot {
+  const project = db.projects.find((item) => item.id === projectId)
+  const board = db.boards.find((item) => item.projectId === projectId)
+  if (!project || !board) throw new Error('Canvas project not found')
+  return {
+    project,
+    board,
+    nodes: sortCanvasNodes(db.nodes.filter((node) => node.projectId === projectId && !node.hidden)),
+    edges: db.edges.filter((edge) => edge.projectId === projectId),
+    assets: db.assets.filter((asset) => asset.projectId === projectId),
+    tasks: db.tasks.filter((task) => task.projectId === projectId),
+  }
+}
+
+function isImageDataUrl(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^data:image\/[^;,]+;base64,/i.test(value)
+}
+
+async function materializeImageDataUrl(
+  dataUrl: string,
+  suggestedBaseName: string,
+  mimeType?: string | null,
+): Promise<{ filePath: string; fileUrl: string } | null> {
+  try {
+    const saved = await window.spark.invoke('file:save-pasted-image', {
+      dataUrl,
+      ...(mimeType ? { mimeType } : {}),
+      suggestedBaseName,
+      storageScope: 'canvas',
+    })
+    return { filePath: saved.filePath, fileUrl: encodeToSafeFileUrl(saved.filePath) }
+  } catch {
+    return null
+  }
+}
+
+async function normalizeSnapshotForHotStorage(snapshot: CanvasSnapshot): Promise<{ snapshot: CanvasSnapshot; changed: boolean }> {
+  const cache = new Map<string, Promise<{ filePath: string; fileUrl: string } | null>>()
+  let changed = false
+  const materialize = (dataUrl: string, name: string, mimeType?: string | null) => {
+    const existing = cache.get(dataUrl)
+    if (existing) return existing
+    const next = materializeImageDataUrl(dataUrl, name, mimeType)
+    cache.set(dataUrl, next)
+    return next
+  }
+
+  for (const asset of snapshot.assets) {
+    const baseName = (asset.title ?? asset.id).replace(/\.[^.]+$/, '')
+    if (isImageDataUrl(asset.url)) {
+      const saved = await materialize(asset.url, baseName, asset.mimeType)
+      if (saved) {
+        asset.url = saved.fileUrl
+        asset.storageKey = saved.filePath
+        asset.metadata = { ...asset.metadata, storageAdapter: 'local-file', filePath: saved.filePath }
+        changed = true
+      }
+    }
+    if (isImageDataUrl(asset.thumbnailUrl)) {
+      const saved = await materialize(asset.thumbnailUrl, `${baseName}-thumb`, asset.mimeType)
+      if (saved) {
+        asset.thumbnailUrl = saved.fileUrl
+        asset.thumbnailKey = saved.filePath
+        changed = true
+      }
+    }
+  }
+
+  for (const node of snapshot.nodes) {
+    const baseName = node.title ?? node.id
+    if (isImageDataUrl(node.data.url)) {
+      const saved = await materialize(node.data.url, baseName, node.data.mimeType)
+      if (saved) {
+        node.data.url = saved.fileUrl
+        changed = true
+      }
+    }
+    if (isImageDataUrl(node.data.thumbnailUrl)) {
+      const saved = await materialize(node.data.thumbnailUrl, `${baseName}-thumb`, node.data.mimeType)
+      if (saved) {
+        node.data.thumbnailUrl = saved.fileUrl
+        changed = true
+      }
+    }
+  }
+
+  return { snapshot, changed }
+}
+
+async function loadSnapshotFromStorage(projectId: string): Promise<{ snapshot: CanvasSnapshot; changed: boolean } | null> {
+  const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+  if (!snapshotJson) return null
+  const snapshot = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
+  if (!snapshot.project || !snapshot.board) return null
+  return normalizeSnapshotForHotStorage({
+    project: snapshot.project,
+    board: snapshot.board,
+    nodes: snapshot.nodes ?? [],
+    edges: snapshot.edges ?? [],
+    assets: snapshot.assets ?? [],
+    tasks: snapshot.tasks ?? [],
+  })
 }
 
 function createNodeBase(input: {
@@ -459,8 +599,15 @@ function logCanvasMediaCall(
 
 export const canvasApi = {
   async listProjects(): Promise<CanvasProject[]> {
-    const db = readDb()
-    return db.projects.filter((project) => project.status !== 'deleted')
+    try {
+      const { projects } = await window.spark.invoke('canvas:project:list', {})
+      return projects
+        .filter((project) => project.status !== 'deleted')
+        .map(toCanvasProject)
+    } catch {
+      const db = readDb()
+      return db.projects.filter((project) => project.status !== 'deleted')
+    }
   },
 
   async createProject(input: { title: string; description?: string }): Promise<CanvasSnapshot> {
@@ -518,21 +665,27 @@ export const canvasApi = {
   },
 
   async openSnapshot(projectId: string): Promise<CanvasSnapshot> {
+    if (!canvasDirty) {
+      try {
+        const snapshot = await loadSnapshotFromStorage(projectId)
+        if (snapshot) {
+          snapshot.snapshot.project.lastOpenedAt = now()
+          const db = emptyDb()
+          replaceProjectSnapshot(db, snapshot.snapshot)
+          writeHotDb(db, false)
+          return snapshotFromDb(db, projectId)
+        }
+      } catch {
+        // SQLite 不可用时回退到 localStorage 热存储。
+      }
+    }
+
     const db = readDb()
     const project = db.projects.find((item) => item.id === projectId)
-    const board = db.boards.find((item) => item.projectId === projectId)
-    if (!project || !board) throw new Error('Canvas project not found')
+    if (!project) throw new Error('Canvas project not found')
     project.lastOpenedAt = now()
     writeDb(db)
-    await flushPersist()
-    return {
-      project,
-      board,
-      nodes: sortCanvasNodes(db.nodes.filter((node) => node.projectId === projectId && !node.hidden)),
-      edges: db.edges.filter((edge) => edge.projectId === projectId),
-      assets: db.assets.filter((asset) => asset.projectId === projectId),
-      tasks: db.tasks.filter((task) => task.projectId === projectId),
-    }
+    return snapshotFromDb(db, projectId)
   },
 
   async updateViewport(projectId: string, viewport: CanvasBoard['viewport']): Promise<void> {
@@ -588,7 +741,7 @@ export const canvasApi = {
     projectId: string
     boardId: string
     file: File
-    dataUrl: string
+    filePath: string
     x: number
     y: number
     width?: number
@@ -597,6 +750,7 @@ export const canvasApi = {
     imageHeight?: number
   }): Promise<CanvasNode> {
     const db = readDb()
+    const fileUrl = encodeToSafeFileUrl(input.filePath)
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
       projectId: input.projectId,
@@ -605,12 +759,13 @@ export const canvasApi = {
       source: 'upload',
       title: input.file.name,
       mimeType: input.file.type,
-      url: input.dataUrl,
-      thumbnailUrl: input.dataUrl,
+      storageKey: input.filePath,
+      url: fileUrl,
+      thumbnailUrl: fileUrl,
       width: input.imageWidth ?? null,
       height: input.imageHeight ?? null,
       sizeBytes: input.file.size,
-      metadata: { storageAdapter: 'localStorage-demo' },
+      metadata: { storageAdapter: 'local-file', filePath: input.filePath },
       createdAt: now(),
       updatedAt: now(),
     }
@@ -624,7 +779,7 @@ export const canvasApi = {
       y: input.y,
       width: input.width ?? 320,
       height: input.height ?? 260,
-      data: { url: input.dataUrl, thumbnailUrl: input.dataUrl, mimeType: input.file.type },
+      data: { url: fileUrl, thumbnailUrl: fileUrl, mimeType: input.file.type },
     })
     db.assets.push(asset)
     db.nodes.push(node)
@@ -1551,39 +1706,31 @@ export const canvasApi = {
   /**
    * 从 SQLite 恢复画布数据到 localStorage（迁移 / 跨窗口恢复）。
    *
-   * 只恢复 localStorage 中不存在的 projectId（不覆盖本地较新的数据）。
-   * 启动时调用一次，保证 SQLite 里的项目在画布中可见。
+   * SQLite 是重启后的权威来源；如果当前会话已有未保存修改，则保留 localStorage 热存储。
+   * 否则用 SQLite 快照重建 localStorage，避免旧缓存里的项目 ID 和列表不一致。
    */
   async hydrateFromStorage(): Promise<{ restored: number }> {
-    let db: CanvasDb
-    try {
-      db = readDb()
-    } catch {
-      db = emptyDb()
-    }
-    const existing = new Set(db.projects.map((p) => p.id))
+    if (canvasDirty) return { restored: 0 }
+    const db = emptyDb()
     let restored = 0
+    let migrated = false
     try {
       const { projects } = await window.spark.invoke('canvas:project:list', {})
       for (const project of projects) {
-        if (project.status === 'deleted' || existing.has(project.id)) continue
-        const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId: project.id })
-        if (!snapshotJson) continue
+        if (project.status === 'deleted') continue
         try {
-          const snapshot = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
-          if (snapshot.project) db.projects.push(snapshot.project)
-          if (snapshot.board) db.boards.push(snapshot.board)
-          if (snapshot.nodes) db.nodes.push(...snapshot.nodes)
-          if (snapshot.edges) db.edges.push(...snapshot.edges)
-          if (snapshot.assets) db.assets.push(...snapshot.assets)
-          if (snapshot.tasks) db.tasks.push(...snapshot.tasks)
+          const snapshot = await loadSnapshotFromStorage(project.id)
+          if (!snapshot) continue
+          replaceProjectSnapshot(db, snapshot.snapshot)
+          migrated = migrated || snapshot.changed
           restored += 1
         } catch {
           // 单个项目解析失败跳过
         }
       }
-      if (restored > 0) {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+      writeHotDb(db, false)
+      if (migrated) {
+        await persistAllProjects(db)
       }
     } catch {
       // SQLite 不可用时静默降级到 localStorage
