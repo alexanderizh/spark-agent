@@ -22,6 +22,7 @@ import type {
   SessionReasoningEffort,
   AgentEvent,
   AgentStatusValue,
+  TeamModeConfig,
 } from '@spark/protocol'
 import {
   getPreferredProviderForAdapter,
@@ -255,6 +256,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   const { invoke: searchSessionsRpc } = useIpcInvoke('session:search')
   const { invoke: updateSession } = useIpcInvoke('session:update')
   const { invoke: deleteSession } = useIpcInvoke('session:delete')
+  const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
   const { invoke: createWorktree } = useIpcInvoke('workspace:create-worktree')
   const { invoke: removeWorktree } = useIpcInvoke('workspace:remove-worktree')
   const { invoke: listWorkspaces } = useIpcInvoke('workspace:list')
@@ -512,6 +514,13 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
         workspaceId: wsId,
       })
       justCreatedSessionRef.current = res.sessionId
+      // 团队模式下创建会话：在激活（setActive→ChatView 重新加载 team 配置）之前，
+      // 先把 team 配置落库到新会话 metadata。否则新会话被激活时 team:list-members 还读不到配置，
+      // 会按「无 team 配置 = 单 agent」回退，导致团队会话短暂显示成单 agent（worktree 等路径）。
+      const newTeamConfig = options.teamConfig as TeamModeConfig | undefined
+      if (newTeamConfig != null && newTeamConfig.enabled) {
+        await persistTeamConfig({ sessionId: res.sessionId, config: newTeamConfig }).catch(() => {})
+      }
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
       setActiveWorkspaceId(uiWorkspaceId)
@@ -534,7 +543,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       toast.error(err instanceof Error ? err.message : '创建会话失败')
       return null
     }
-  }, [activeWorkspaceId, agents, createSession, createWorktree, ensureNoProjectWorkspace, listProviders, providers, refreshData, requestConfirm, selectedProviderId, sessions, toast])
+  }, [activeWorkspaceId, agents, createSession, createWorktree, ensureNoProjectWorkspace, listProviders, persistTeamConfig, providers, refreshData, requestConfirm, selectedProviderId, sessions, toast])
 
   // Search
   const searchSessions = useCallback(async (query: string): Promise<SessionSearchResult[]> => {

@@ -2,6 +2,9 @@ import { randomUUID } from 'crypto'
 import { BaseRepository } from './base.repository.js'
 import type { SparkDatabase } from '../database.js'
 
+/** 内置平台管理 Skill ID，所有 agent 创建时强制注入 */
+export const PLATFORM_MANAGER_SKILL_ID = 'builtin:platform-manager'
+
 export interface AgentRow {
   id: string
   name: string
@@ -92,6 +95,7 @@ export class AgentRepository extends BaseRepository {
     const metadata = withDefaultAvatar(params.metadata, params.name)
     const isDefault = params.isDefault === true ? 1 : 0
     if (isDefault) this.clearDefaultFlag()
+    const skillIds = mergeUniqueStrings(params.skillIds, PLATFORM_MANAGER_SKILL_ID)
     this.raw
       .prepare(
         `INSERT INTO agents (
@@ -115,7 +119,7 @@ export class AgentRepository extends BaseRepository {
         params.reasoningEffort ?? 'medium',
         params.prompt ?? '',
         this.toJson(params.ruleIds ?? []),
-        this.toJson(params.skillIds ?? []),
+        this.toJson(skillIds),
         this.toJson(params.disabledSkillIds ?? []),
         this.toJson(params.mcpServerIds ?? []),
         this.toJson(params.hookConfig ?? {}),
@@ -153,7 +157,10 @@ export class AgentRepository extends BaseRepository {
     if (fields.reasoningEffort !== undefined) add('reasoning_effort', fields.reasoningEffort)
     if (fields.prompt !== undefined) add('prompt', fields.prompt)
     if (fields.ruleIds !== undefined) add('rule_ids_json', this.toJson(fields.ruleIds))
-    if (fields.skillIds !== undefined) add('skill_ids_json', this.toJson(fields.skillIds))
+    if (fields.skillIds !== undefined) {
+      const merged = mergeUniqueStrings(fields.skillIds, PLATFORM_MANAGER_SKILL_ID)
+      add('skill_ids_json', this.toJson(merged))
+    }
     if (fields.disabledSkillIds !== undefined) {
       add('disabled_skill_ids_json', this.toJson(fields.disabledSkillIds))
     }
@@ -215,6 +222,12 @@ export class AgentRepository extends BaseRepository {
 
 function normalizeReasoningEffort(value: string): string {
   return value === 'high' || value === 'xhigh' || value === 'max' ? value : 'medium'
+}
+
+function mergeUniqueStrings(existing: string[] | undefined, required: string): string[] {
+  const list = Array.isArray(existing) ? existing.filter((s) => typeof s === 'string' && s.length > 0) : []
+  if (list.includes(required)) return list
+  return [...list, required]
 }
 
 function withDefaultAvatar(metadata: Record<string, unknown> | undefined, name: string): Record<string, unknown> {

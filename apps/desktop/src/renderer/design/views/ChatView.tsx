@@ -170,9 +170,7 @@ type ComposerPrefs = {
   permissionMode?: PermissionModeChoice
   reasoningEffort?: SessionReasoningEffort
   agentId?: string
-  /** Team Mode：是否启用团队模式（设计文档 §5.1 持久化到 composer-prefs） */
-  teamMode?: boolean
-  /** Team Mode：上次使用的 Host Agent */
+  /** Team Mode：上次使用的 Host Agent（仅作显式开启团队时的便捷预填，不决定是否启用） */
   teamHostAgentId?: string
   /** Team Mode：上次勾选的成员 Agent */
   teamMemberAgentIds?: string[]
@@ -337,6 +335,13 @@ export function ChatView({
   const { invoke: persistTeamConfig } = useIpcInvoke('team:update')
   const { invoke: listTeamMembers } = useIpcInvoke('team:list-members')
   const { invoke: getTeamDef } = useIpcInvoke('team:get-def')
+  // 构建「无会话级 team 配置」时兜底的 TeamModeConfig。
+  // 关键原则（修复跨会话串台）：team 是否启用一律以「会话级 metadata」为唯一真相，
+  // 绝不从全局 composer-prefs 继承 enabled —— 否则在别的会话开过 team 后，回到
+  // 一个从未配置过 team 的单 agent 会话，会被全局 prefs 误判成 team（参数串台 bug）。
+  // 因此 enabled 恒为 false：新会话 / 空白 composer / 无 team 配置的老会话都单 agent 起步，
+  // 需要团队时由用户在该会话内显式开启（onEnableTeamMode 会把 host 设为当前会话 agent）。
+  // host/members 仍保留「上次使用」prefs，仅作为用户显式开启团队时的便捷预填，团队关闭时不影响显示。
   const defaultTeamConfig = useCallback((): TeamModeConfig => {
     const prefs = readComposerPrefs()
     const memberIds = prefs.teamMemberAgentIds ?? []
@@ -347,7 +352,7 @@ export function ChatView({
       prefs.agentId ??
       'platform-manager-agent'
     return {
-      enabled: prefs.teamMode ?? false,
+      enabled: false,
       hostAgentId: candidateHost,
       memberAgentIds: memberIds,
       maxDepth: 1,
@@ -359,8 +364,9 @@ export function ChatView({
     (patch: Partial<TeamModeConfig>) => {
       setTeamConfig((prev) => {
         const next = { ...prev, ...patch }
+        // 仅缓存 host/members 作为「下次显式开启团队」时的便捷预填；
+        // 不再缓存 enabled —— team 是否启用一律以会话级 metadata 为准（见 defaultTeamConfig）。
         writeComposerPrefs({
-          teamMode: next.enabled,
           teamHostAgentId: next.hostAgentId,
           teamMemberAgentIds: next.memberAgentIds,
         })
@@ -1197,6 +1203,17 @@ function ChatTabbar({
           <>
             <ToolDropdown kind="ide" rootPath={workspace.rootPath} />
             <ToolDropdown kind="terminal" rootPath={workspace.rootPath} />
+            <button
+              className="icon-btn"
+              title="在文件夹中打开"
+              onClick={() => {
+                void window.spark
+                  .invoke('tool:open-folder', { rootPath: workspace.rootPath })
+                  .catch((err) => console.error('Failed to open folder:', err))
+              }}
+            >
+              <Icons.FolderOpen size={14} />
+            </button>
           </>
         )}
         {showClearConfirm && onClearMessages && (
@@ -6040,6 +6057,9 @@ function ComposerV2({
     createWorktree?: boolean
     worktreeBranch?: string
     worktreeTaskText?: string
+    // 团队模式下创建会话：把 team 配置随创建一并落库（在 setActive→reload 之前），
+    // 避免新建团队会话在「创建到首发持久化」之间被回退逻辑误判成单 agent。
+    teamConfig?: TeamModeConfig
   }) => Promise<SessionId | null>
   onUpdateSession: (patch: {
     providerProfileId?: string
@@ -6356,7 +6376,6 @@ function ComposerV2({
       effectiveModelId,
       effectivePermissionMode,
       effectiveReasoning,
-      effectiveAgentId,
       selectedProvider?.id,
     ],
   )
@@ -6579,6 +6598,7 @@ function ComposerV2({
               agentId: effectiveAgentId,
               agentAdapter: adapter,
               permissionMode: effectivePermissionMode,
+              ...(teamConfig.enabled ? { teamConfig } : {}),
               ...(createWorktree
                 ? {
                     createWorktree: true,
@@ -6659,6 +6679,7 @@ function ComposerV2({
             permissionMode: effectivePermissionMode,
             chatMode: effectiveMode,
             reasoningEffort: effectiveReasoning,
+            ...(teamConfig.enabled ? { teamConfig } : {}),
             ...(createWorktree
               ? {
                   createWorktree: true,

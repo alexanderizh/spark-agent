@@ -2422,6 +2422,17 @@ export interface ToolOpenProjectResponse {
   opened: boolean
 }
 
+export interface ToolOpenFolderRequest {
+  /** Folder path to open in the OS file manager (Finder on macOS, Explorer on Windows) */
+  rootPath: string
+}
+
+export interface ToolOpenFolderResponse {
+  opened: boolean
+  /** Error message returned by shell.openPath when it fails; undefined on success */
+  error?: string
+}
+
 // ─── Command Channels ────────────────────────────────────────────────────────
 
 export type CommandLayer = 'sdk' | 'builtin' | 'skill'
@@ -3811,6 +3822,7 @@ export interface IpcChannelMap {
   // External Tools (IDE / Terminal)
   'tool:detect': [ToolDetectRequest, ToolDetectResponse]
   'tool:open-project': [ToolOpenProjectRequest, ToolOpenProjectResponse]
+  'tool:open-folder': [ToolOpenFolderRequest, ToolOpenFolderResponse]
 
   // Command
   'command:execute': [CommandExecuteRequest, CommandExecuteResponse]

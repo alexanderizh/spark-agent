@@ -3,7 +3,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react'
-import { Avatar, Button, Form, Input, Modal } from 'antd'
+import { Button, Form, Input, Modal } from 'antd'
 import { useAuth } from '../auth/AuthContext'
 import { useToast } from '../components/Toast'
 import { AuthGate } from '../auth/AuthGate'
@@ -92,7 +92,7 @@ function AuthenticatedAccountView(): React.ReactElement {
 
       <div className="account-profile-card">
         <div className="account-profile">
-          <Avatar size={64} className="account-profile-avatar" src={null}>
+          <div className="account-profile-avatar">
             <AvatarImage
               src={auth.user?.avatarUrl || ''}
               seed={auth.user?.account || displayName}
@@ -100,7 +100,7 @@ function AuthenticatedAccountView(): React.ReactElement {
               alt={displayName}
               className="account-profile-avatar-image"
             />
-          </Avatar>
+          </div>
           <div className="account-profile-info">
             <div className="account-profile-nickname">{displayName}</div>
             <div className="account-profile-account">{displayAccount}</div>
@@ -120,7 +120,9 @@ function AuthenticatedAccountView(): React.ReactElement {
                 修改密码
               </Button>
             )}
-            <Button onClick={handleLogout}>退出登录</Button>
+            <Button size="small" onClick={handleLogout}>
+              退出登录
+            </Button>
           </div>
         </div>
         <div className="account-profile-meta">

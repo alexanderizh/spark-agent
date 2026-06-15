@@ -3884,6 +3884,12 @@ export function registerAllIpcHandlers(): void {
     return { opened }
   })
 
+  typedIpcHandle('tool:open-folder', async (req) => {
+    log.info(`tool:open-folder requested, rootPath=${req.rootPath}`)
+    const errorMessage = await shell.openPath(req.rootPath)
+    return { opened: errorMessage === '', error: errorMessage || undefined }
+  })
+
   // ─── SDK Integrity Handlers ─────────────────────────────────────────────
 
   typedIpcHandle('sdk:integrity-check', async (req) => {
