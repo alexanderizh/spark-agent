@@ -5859,10 +5859,13 @@ function ComposerV2({
   }, [sending, onDispatchStateChange])
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([])
   const [queueVisible, setQueueVisible] = useState(true)
-  // 「为本会话创建隔离 worktree」开关（仅空会话且 git 项目可用）
+  // 「为本会话创建隔离 worktree」开关（新会话或尚无消息的空会话、且 git 项目可用）
   const [createWorktree, setCreateWorktree] = useState(false)
   const [worktreeBranch, setWorktreeBranch] = useState('')
   const isGitWorkspace = branchState.currentBranch != null
+  // 无活跃会话（hero）或活跃会话尚无消息（如从项目「+」新建的空会话）时，
+  // 允许勾选 worktree——worktree 必须在会话产生消息前绑定。
+  const isNewSessionComposer = session == null || session.messageCount === 0
   const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
   const [slashFilter, setSlashFilter] = useState('')
   const [slashOpen, setSlashOpen] = useState(false)
@@ -6307,8 +6310,9 @@ function ComposerV2({
       if (text.startsWith('/')) {
         setSending(true)
         try {
-          // 如果没有活跃 session，先创建一个（命令需要 session 上下文）
-          let sessionId = session?.id ?? null
+          // 如果没有活跃 session，先创建一个（命令需要 session 上下文）。
+          // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
+          let sessionId = createWorktree ? null : (session?.id ?? null)
           if (sessionId == null) {
             if (selectedProvider == null) {
               toast.warning('请先选择 Provider 再执行命令。')
@@ -6386,7 +6390,8 @@ function ComposerV2({
       if (selectedProvider == null) return
       setSending(true)
       try {
-        let targetSessionId = session?.id ?? null
+        // 勾选 worktree 时不复用现有空会话——需新建一个绑定 worktree 的会话。
+        let targetSessionId = createWorktree ? null : (session?.id ?? null)
         if (targetSessionId == null) {
           targetSessionId = await onCreateSession({
             ...(selectedProvider?.id !== undefined
@@ -6457,6 +6462,8 @@ function ComposerV2({
       selectedProvider,
       sendTurn,
       session?.id,
+      createWorktree,
+      worktreeBranch,
       setAttachments,
       setValue,
       teamConfig,
@@ -7582,6 +7589,18 @@ function ComposerV2({
           >
             {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
           </button>
+          {isNewSessionComposer && createWorktree && (
+            <div className="composer-worktree-branch-row">
+              <Icons.GitBranch size={13} />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="worktree 分支名（留空自动生成 spark/时间戳）"
+                value={worktreeBranch}
+                onChange={(e) => setWorktreeBranch(e.target.value)}
+              />
+            </div>
+          )}
           <div className="composer-submit-row">
             <div className="composer-submit-picks">
               <ProviderModelPicker
@@ -7612,7 +7631,7 @@ function ComposerV2({
                   options={branchOptions}
                 />
               )}
-              {session?.id == null && (
+              {isNewSessionComposer && (
                 <label
                   className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
                   title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : '当前项目不是 git 仓库'}
@@ -7625,16 +7644,6 @@ function ComposerV2({
                   />
                   <Icons.GitBranch size={13} />
                   <span>隔离 worktree</span>
-                  {createWorktree && (
-                    <input
-                      className="composer-worktree-branch"
-                      type="text"
-                      placeholder="分支名（留空自动生成）"
-                      value={worktreeBranch}
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => setWorktreeBranch(e.target.value)}
-                    />
-                  )}
                 </label>
               )}
             </div>
