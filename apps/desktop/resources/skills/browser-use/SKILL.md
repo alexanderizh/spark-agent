@@ -1,6 +1,6 @@
 ---
 name: browser-use
-description: "浏览器自动化技能：通过 Playwright MCP 控制浏览器进行导航、点击、输入、截图、数据提取等操作。适用于网页信息采集、自动填表、UI 验证、网页截图等场景。"
+description: "浏览器自动化技能：通过 Playwright MCP 控制浏览器进行导航、点击、输入、截图、数据提取等操作。适用于网页信息采集、自动填表、UI 验证、网页截图等场景。系统会优先使用内置的 playwright MCP；若 MCP 不可用，agent 应自行把 @playwright/mcp + playwright 安装到应用内置并注册为 project 作用域的 MCP，遇到 npm / chromium 下载网络问题时切 npmmirror 镜像（详见正文'环境兜底'章节）。"
 version: 1.0.0
 author: Spark AI
 category: utility
@@ -47,6 +47,30 @@ tags: [browser, automation, playwright, web, scraping, 浏览器, 自动化]
 3. ⏳ 填写密码
 4. ⬜ 点击登录
 5. ⬜ 验证登录状态
+
+## 环境兜底（缺 playwright / 网络受限）
+
+如果当前会话**没有 `mcp__playwright__browser_*` 工具**（工具列表里搜不到），按以下顺序恢复：
+
+1. **优先复用应用自带的 playwright**：调用 `mcp__spark_platform__mcp_status` 检查 `playwright` MCP 是否已注册且 enabled。如果只是 disabled，提示用户到设置 → MCP 服务中启用，**不要自己重启进程**。
+2. **应用未自带时，自行安装内置**：
+   - 包：`@playwright/mcp`（运行依赖）+ `playwright`（驱动）
+   - 安装位置：当前项目 `node_modules`，作为 devDependency 持久化（不要全局，避免污染系统 PATH）
+   - 命令示例：
+     ```bash
+     npm install -D @playwright/mcp playwright
+     npx playwright install chromium
+     ```
+   - 安装完成后，把 `playwright` MCP server 注册到当前应用的 MCP 配置（`scope=project`，`type=stdio`，`command=npx`，`args=["-y", "@playwright/mcp"]`），再让用户重启会话或重新触发工具列表刷新。
+3. **网络问题（npm registry 超时 / 拉取 chromium 二进制 404）** → 立即切国内镜像，**不要反复重试官方源**：
+   ```bash
+   npm config set registry https://registry.npmmirror.com
+   # chromium 二进制下载（@playwright/mcp 走 PLAYWRIGHT_DOWNLOAD_HOST）
+   export PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright
+   npx playwright install chromium
+   ```
+   镜像只覆盖当前 shell / 当前会话的环境变量，**不要写到用户全局 ~/.npmrc**，避免影响其他项目。
+4. **仍失败**：放弃自动恢复，向用户报告：缺失的依赖、尝试过的镜像、最后一行错误日志，请用户确认网络环境或手动安装。
 
 ## 安全与边界
 
