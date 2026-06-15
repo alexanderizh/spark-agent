@@ -22,6 +22,8 @@ export function CanvasProjectsView({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [exportingProjectId, setExportingProjectId] = useState<string | null>(null)
 
   const filteredProjects = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -119,6 +121,33 @@ export function CanvasProjectsView({
     })
   }
 
+  const handleImportProject = async () => {
+    setImporting(true)
+    try {
+      const snapshot = await canvasApi.importProjectFromFile()
+      if (!snapshot) return
+      message.success(`已导入「${snapshot.project.title}」`)
+      await refresh()
+      setViewMode({ mode: 'workspace', projectId: snapshot.project.id })
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '导入 Canvas 项目失败')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleExportProject = async (projectId: string) => {
+    setExportingProjectId(projectId)
+    try {
+      const result = await canvasApi.exportProjectToFile(projectId)
+      if (result.exported) message.success('Canvas 项目已导出')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '导出 Canvas 项目失败')
+    } finally {
+      setExportingProjectId(null)
+    }
+  }
+
   return (
     <div className="canvas-projects-view">
       <MacWindowDragHeader />
@@ -127,9 +156,14 @@ export function CanvasProjectsView({
           <h2>Canvas Projects</h2>
           <p>以项目为入口管理无限画布、素材、任务和生成血缘。</p>
         </div>
-        <Button type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
-          新建项目
-        </Button>
+        <div className="canvas-projects-header-actions">
+          <Button icon={<Icons.Upload size={15} />} loading={importing} onClick={() => void handleImportProject()}>
+            导入项目
+          </Button>
+          <Button type="primary" icon={<Icons.Plus size={15} />} onClick={openCreate}>
+            新建项目
+          </Button>
+        </div>
       </header>
 
       <div className="canvas-projects-toolbar">
@@ -203,12 +237,18 @@ export function CanvasProjectsView({
                         menu={{
                           items: [
                             { key: 'rename', label: '重命名', onClick: () => openEdit(project.id) },
+                            { key: 'export', label: '导出', onClick: () => void handleExportProject(project.id) },
                             { key: 'archive', label: project.status === 'archived' ? '恢复' : '归档', onClick: () => void handleArchiveProject(project.id) },
                             { key: 'delete', label: '删除', onClick: () => void handleDeleteProject(project.id) },
                           ],
                         }}
                       >
-                        <Button size="small" type="text" icon={<Icons.More size={13} />} />
+                        <Button
+                          size="small"
+                          type="text"
+                          loading={exportingProjectId === project.id}
+                          icon={<Icons.More size={13} />}
+                        />
                       </Dropdown>
                       <Button size="small" type="text" icon={<Icons.ChevronRight size={13} />}>
                         打开

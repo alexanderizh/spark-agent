@@ -49,6 +49,7 @@ export interface MediaInputFile {
   dataUrl?: string
   mimeType?: string
   type: 'image' | 'audio' | 'video' | 'file'
+  role?: 'input' | 'first_frame' | 'last_frame' | 'reference' | 'mask'
 }
 
 export interface MediaGenerateInput {

@@ -1733,6 +1733,7 @@ export function registerAllIpcHandlers(): void {
                 ...(file.url != null ? { url: file.url } : {}),
                 ...(file.dataUrl != null ? { dataUrl: file.dataUrl } : {}),
                 ...(file.mimeType != null ? { mimeType: file.mimeType } : {}),
+                ...(file.role != null ? { role: file.role } : {}),
               })),
             }
           : {}),

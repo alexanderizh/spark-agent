@@ -1,5 +1,38 @@
 /* FloatingSidebar — collapsible nav styles */
 
+/* ─── Pin button on nav items ───
+   - 默认隐藏；菜单项 hover 时显示
+   - 已固定项 hover 时显示主色（取消固定）
+   - 点击切换固定/取消固定，事件不冒泡到外层 button */
+.nav-pin-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: auto;
+  flex-shrink: 0;
+  border-radius: var(--r-sm, 4px);
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+.nav-item:hover .nav-pin-btn {
+  opacity: 1;
+}
+.nav-pin-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.nav-pin-btn.is-pinned {
+  color: var(--primary);
+}
+.nav-pin-btn.is-pinned:hover {
+  color: var(--primary-hover, var(--primary));
+  background: var(--primary-soft);
+}
+
 .nav-collapsed {
   display: grid;
   grid-template-rows: 0fr;

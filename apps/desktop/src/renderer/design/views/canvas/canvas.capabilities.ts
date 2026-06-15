@@ -56,6 +56,15 @@ export const CANVAS_CAPABILITIES: CanvasCapability[] = [
     paramsSchema: {},
   },
   {
+    id: 'canvas.video-edit',
+    label: '视频编辑',
+    operation: 'video_edit',
+    inputTypes: ['video', 'image', 'text', 'prompt'],
+    outputTypes: ['video'],
+    enabled: true,
+    paramsSchema: {},
+  },
+  {
     id: 'canvas.text-to-audio',
     label: '文生音频',
     operation: 'text_to_audio',

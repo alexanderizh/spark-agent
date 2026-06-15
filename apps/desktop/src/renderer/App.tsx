@@ -171,6 +171,23 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const [navExpanded, setNavExpanded] = useState(false)
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
+  const [pinnedNavIds, setPinnedNavIds] = useState<string[]>(() => {
+    if (typeof window === 'undefined') return []
+    try {
+      const raw = window.localStorage.getItem('spark-agent:pinned-nav')
+      if (!raw) return []
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === 'string')
+      }
+    } catch {
+      // ignore corrupted storage
+    }
+    return []
+  })
+  useEffect(() => {
+    window.localStorage.setItem('spark-agent:pinned-nav', JSON.stringify(pinnedNavIds))
+  }, [pinnedNavIds])
   // 已登录时使用云端用户头像/昵称；未登录时使用产品 logo（白底）作为占位
   const userAvatarSrc = auth.isAuthenticated
     ? (auth.user?.avatarUrl || resolveAvatarSrc(getUserAvatarConfig(null)))
@@ -196,23 +213,46 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
 
   const navItem = (viewId: string, title: string, Icon: React.FC<{ size?: number }>) => {
     const isActive = t.view === viewId
+    const isPinned = pinnedNavIds.includes(viewId)
+    const togglePin = (e: React.MouseEvent) => {
+      e.stopPropagation()
+      e.preventDefault()
+      setPinnedNavIds((cur) =>
+        isPinned ? cur.filter((id) => id !== viewId) : [...cur, viewId],
+      )
+    }
     return (
       <button
         key={viewId}
-        className={`nav-item ${isActive ? 'active' : ''}`}
+        className={`nav-item ${isActive ? 'active' : ''}${isPinned ? ' nav-item-pinned' : ''}`}
         onClick={() => setTweak('view', viewId as typeof t.view)}
         title={title}
       >
         <span className="nav-icon"><Icon /></span>
         <span className="nav-label">{title}</span>
+        <span
+          className={`nav-pin-btn${isPinned ? ' is-pinned' : ''}`}
+          onClick={togglePin}
+          title={isPinned ? '取消固定' : '固定到顶部'}
+          aria-label={isPinned ? '取消固定' : '固定到顶部'}
+        >
+          <Icons.Pin size={12} />
+        </span>
       </button>
     )
   }
 
   const VISIBLE_COUNT = 3 // nav items visible before fold (excludes "新建任务")
   const resolvedNavItems = NAV_ITEMS.map((item) => ({ ...item, label: tr(item.labelKey) }))
-  const visibleItems = resolvedNavItems.slice(0, VISIBLE_COUNT)
-  const collapsedItems = resolvedNavItems.slice(VISIBLE_COUNT)
+  // 已固定的菜单项始终排在最前，且始终显示在可见区域
+  const pinnedItems = resolvedNavItems.filter((item) => pinnedNavIds.includes(item.id))
+  const unpinnedItems = resolvedNavItems.filter((item) => !pinnedNavIds.includes(item.id))
+  const remainingVisibleSlots = Math.max(0, VISIBLE_COUNT - pinnedItems.length)
+  const visibleItems = [
+    ...pinnedItems,
+    ...unpinnedItems.slice(0, remainingVisibleSlots),
+  ]
+  const collapsedItems = unpinnedItems.slice(remainingVisibleSlots)
   const hasCollapsed = collapsedItems.length > 0
 
   // Resize handlers

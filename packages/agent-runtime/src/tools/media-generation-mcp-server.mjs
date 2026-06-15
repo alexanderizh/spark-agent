@@ -9,7 +9,7 @@
  *   edit_image         — 图片编辑（imageFiles/imageUrls + prompt）
  *   generate_audio     — 语音合成（text → audio）
  *   transcribe_audio   — 语音转写（audioFile/audioUrl → text）
- *   generate_video     — 文生视频 / 图生视频（prompt + 可选 inputImages）
+ *   generate_video     — 文生视频 / 图生视频 / 视频编辑（prompt + 可选 inputImages/inputVideos）
  *
  * 配置全部来自环境变量（API key 仅在本子进程内存内，不外泄）：
  *   SPARK_MEDIA_API_KEY       API key（必填）
@@ -154,7 +154,7 @@ const TOOLS = [
   },
   {
     name: 'generate_video',
-    description: 'Generate a video from a prompt (text-to-video) or image + prompt (image-to-video).',
+    description: 'Generate or edit a video from a prompt, first/last frames, reference images, or an input video.',
     inputSchema: {
       type: 'object',
       required: ['prompt'],
@@ -166,10 +166,25 @@ const TOOLS = [
           items: { type: 'string' },
           description: 'Optional reference image urls / data urls for image-to-video.',
         },
+        firstFrame: { type: 'string', description: 'Optional first-frame image url / data url.' },
+        lastFrame: { type: 'string', description: 'Optional last-frame image url / data url.' },
+        referenceImages: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional reference image urls / data urls for video edit.',
+        },
+        inputVideos: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional input video urls / file paths for video edit.',
+        },
+        videoUrl: { type: 'string', description: 'Optional remote input video url for video edit.' },
+        videoFile: { type: 'string', description: 'Optional local input video file path for video edit.' },
         aspectRatio: { type: 'string', enum: ['auto', 'adaptive', '1:1', '4:3', '3:4', '3:2', '2:3', '16:9', '9:16', '21:9'] },
         durationSeconds: { type: 'integer', minimum: 1, maximum: 120 },
         resolution: { type: 'string', enum: ['480p', '720p', '1080p', '768P', '1080P'] },
         mode: { type: 'string', enum: ['standard', 'professional'] },
+        editStrength: { type: 'number', minimum: 0, maximum: 1 },
         negative_prompt: { type: 'string' },
         seed: { type: 'integer' },
         generate_audio: { type: 'boolean' },
@@ -456,9 +471,16 @@ const TOOL_CAPABILITY_CANDIDATES = {
   edit_image: () => ['image.edit', 'image.compose', 'image.image_to_image'],
   generate_audio: () => ['audio.speech'],
   transcribe_audio: () => ['audio.transcription'],
-  generate_video: (args) => Array.isArray(args.inputImages) && args.inputImages.length > 0
-    ? ['video.image_to_video', 'video.generate']
-    : ['video.generate'],
+  generate_video: (args) => {
+    const hasInputVideo = Boolean(args.videoUrl || args.videoFile) ||
+      (Array.isArray(args.inputVideos) && args.inputVideos.some((item) => typeof item === 'string' && item.length > 0))
+    const hasInputImage = Boolean(args.firstFrame || args.lastFrame) ||
+      (Array.isArray(args.inputImages) && args.inputImages.some((item) => typeof item === 'string' && item.length > 0)) ||
+      (Array.isArray(args.referenceImages) && args.referenceImages.some((item) => typeof item === 'string' && item.length > 0))
+    if (hasInputVideo) return ['video.edit', 'video.image_to_video', 'video.generate']
+    if (hasInputImage) return ['video.image_to_video', 'video.edit', 'video.generate']
+    return ['video.generate']
+  },
 }
 
 function resolveManifestForTool(config, toolName, args) {
@@ -499,6 +521,7 @@ function argsToModelParams(toolName, args) {
     'resolution',
     'durationSeconds',
     'mode',
+    'editStrength',
     'negative_prompt',
     'seed',
     'generate_audio',
@@ -527,9 +550,18 @@ function buildManifestVariables(toolName, args, manifest, capability, modelId) {
     providerParams[providerKey] = value
   }
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages.filter((item) => typeof item === 'string') : []
+  const referenceImages = Array.isArray(args.referenceImages) ? args.referenceImages.filter((item) => typeof item === 'string') : []
   const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls.filter((item) => typeof item === 'string') : []
   const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles.filter((item) => typeof item === 'string') : []
-  const images = [...inputImages, ...imageUrls, ...imageFiles]
+  const firstFrame = typeof args.firstFrame === 'string' ? args.firstFrame : ''
+  const lastFrame = typeof args.lastFrame === 'string' ? args.lastFrame : ''
+  const images = [firstFrame, ...inputImages, ...imageUrls, ...imageFiles, lastFrame, ...referenceImages].filter(Boolean)
+  const inputVideos = Array.isArray(args.inputVideos) ? args.inputVideos.filter((item) => typeof item === 'string') : []
+  const video = typeof args.videoUrl === 'string' && args.videoUrl
+    ? args.videoUrl
+    : typeof args.videoFile === 'string' && args.videoFile
+      ? args.videoFile
+      : inputVideos[0] || ''
   const audio = typeof args.audioUrl === 'string' && args.audioUrl ? args.audioUrl : typeof args.audioFile === 'string' ? args.audioFile : ''
   const prompt = typeof args.prompt === 'string' ? args.prompt : ''
   const text = typeof args.text === 'string' ? args.text : prompt
@@ -542,6 +574,10 @@ function buildManifestVariables(toolName, args, manifest, capability, modelId) {
     audioFile: args.audioFile || '',
     image: images[0] || '',
     images,
+    firstFrame: firstFrame || images[0] || '',
+    lastFrame,
+    referenceImages,
+    video,
     params,
     providerParams,
     ...params,
@@ -936,12 +972,27 @@ async function handleGenerateVideo(config, args) {
   if (!config.model) throw new Error('No media model configured')
   const videoDefaults = config.mediaDefaults?.video || {}
   const inputImages = Array.isArray(args.inputImages) ? args.inputImages : []
+  const firstFrame = typeof args.firstFrame === 'string' && args.firstFrame
+    ? args.firstFrame
+    : inputImages[0]
+  const lastFrame = typeof args.lastFrame === 'string' ? args.lastFrame : ''
+  const referenceImages = Array.isArray(args.referenceImages) ? args.referenceImages.filter((item) => typeof item === 'string' && item.length > 0) : []
+  const inputVideos = Array.isArray(args.inputVideos) ? args.inputVideos.filter((item) => typeof item === 'string' && item.length > 0) : []
+  const video = typeof args.videoUrl === 'string' && args.videoUrl
+    ? args.videoUrl
+    : typeof args.videoFile === 'string' && args.videoFile
+      ? args.videoFile
+      : inputVideos[0] || ''
   const body = {
     model: config.model,
     prompt,
     ...(args.aspectRatio || videoDefaults.aspectRatio ? { aspect_ratio: args.aspectRatio || videoDefaults.aspectRatio } : {}),
     ...(args.durationSeconds || videoDefaults.durationSeconds ? { duration: args.durationSeconds || videoDefaults.durationSeconds } : {}),
-    ...(inputImages.length > 0 ? { image: inputImages[0] } : {}),
+    ...(firstFrame ? { image: firstFrame, first_frame_image: firstFrame } : {}),
+    ...(lastFrame ? { last_frame_image: lastFrame } : {}),
+    ...(referenceImages.length > 0 ? { reference_images: referenceImages.map((url) => ({ url })) } : {}),
+    ...(video ? { video, video_url: video } : {}),
+    ...(args.editStrength != null ? { edit_strength: args.editStrength } : {}),
     ...(args.extraJson || {}),
   }
   const url = `${config.baseUrl}/videos/generations`

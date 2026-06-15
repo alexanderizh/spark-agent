@@ -32,6 +32,14 @@
   font-size: var(--font-sm);
 }
 
+.canvas-projects-header-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .canvas-projects-toolbar {
   display: flex;
   align-items: center;
@@ -220,6 +228,10 @@
   .canvas-projects-toolbar {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .canvas-projects-header-actions {
+    justify-content: flex-start;
   }
 
   .canvas-projects-search {

@@ -230,6 +230,20 @@ export function buildVariables(
       return file.path ?? ''
     })
     .filter((value) => value.length > 0)
+  const imageFiles = inputFiles.filter((file) => file.type === 'image' || file.type === 'file')
+  const firstFrame = imageFiles.find((file) => file.role === 'first_frame')
+  const lastFrame = imageFiles.find((file) => file.role === 'last_frame')
+  const referenceFiles = imageFiles.some((file) => file.role === 'reference')
+    ? imageFiles.filter((file) => file.role === 'reference')
+    : imageFiles.filter((file) => file !== (firstFrame ?? imageFiles[0]) && file !== lastFrame)
+  const videoFile = inputFiles.find((file) => file.type === 'video' || ((file.type === 'file') && file.role === 'input'))
+  const refForFile = (file: typeof inputFiles[number] | undefined): string => {
+    if (!file) return ''
+    if (file.url && /^https?:\/\//i.test(file.url)) return file.url
+    if (file.dataUrl) return file.dataUrl
+    if (file.url && !file.url.startsWith('safe-file://')) return file.url
+    return file.path ?? ''
+  }
   const explicitParams = removeBlankParams(input.modelParams ?? {})
   const params = {
     ...(capability.defaults ?? {}),
@@ -251,6 +265,10 @@ export function buildVariables(
     inputFiles,
     image: imageRefs[0] ?? '',
     images: imageRefs,
+    firstFrame: refForFile(firstFrame) || imageRefs[0] || '',
+    lastFrame: refForFile(lastFrame) || '',
+    referenceImages: referenceFiles.map((file) => refForFile(file)).filter(Boolean),
+    video: refForFile(videoFile),
     params,
     providerParams,
     ...params,

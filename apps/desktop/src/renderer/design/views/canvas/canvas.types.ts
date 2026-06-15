@@ -16,6 +16,7 @@ export type CanvasOperationType =
   | 'audio_transcribe'
   | 'text_to_video'
   | 'image_to_video'
+  | 'video_edit'
 
 export type CanvasInputTransport = 'auto' | 'cloud_url' | 'base64'
 

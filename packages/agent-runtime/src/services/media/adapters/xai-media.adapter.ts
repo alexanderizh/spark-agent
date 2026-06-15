@@ -36,6 +36,7 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
         'audio.speech',
         'video.generate',
         'video.image_to_video',
+        'video.edit',
       ],
       videoTaskPath: (taskId) => `/videos/${encodeURIComponent(taskId)}`,
       genericTaskPath: (taskId) => `/videos/${encodeURIComponent(taskId)}`,

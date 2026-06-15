@@ -55,6 +55,7 @@ export type MediaCapabilityId =
   | 'audio.transcription'
   | 'video.generate'
   | 'video.image_to_video'
+  | 'video.edit'
 
 export const MEDIA_PROVIDER_KINDS = [
   'apimart',
@@ -82,6 +83,7 @@ export const MEDIA_CAPABILITY_IDS = [
   'audio.transcription',
   'video.generate',
   'video.image_to_video',
+  'video.edit',
 ] as const satisfies readonly MediaCapabilityId[]
 
 /** image.generate / image.edit / image.variations */
@@ -95,10 +97,11 @@ export const AUDIO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'audio.speech',
   'audio.transcription',
 ]
-/** video.generate / video.image_to_video */
+/** video.generate / video.image_to_video / video.edit */
 export const VIDEO_CAPABILITIES: readonly MediaCapabilityId[] = [
   'video.generate',
   'video.image_to_video',
+  'video.edit',
 ]
 
 export function isMediaCapabilityId(value: unknown): value is MediaCapabilityId {
@@ -222,6 +225,7 @@ export type CanvasOperationType =
   | 'audio_transcribe'
   | 'text_to_video'
   | 'image_to_video'
+  | 'video_edit'
 
 /** operation → 所需 capability（多候选时取首个 provider 支持的） */
 export function capabilityForOperation(operation: CanvasOperationType): MediaCapabilityId[] {
@@ -242,6 +246,8 @@ export function capabilityForOperation(operation: CanvasOperationType): MediaCap
       return ['video.generate']
     case 'image_to_video':
       return ['video.image_to_video']
+    case 'video_edit':
+      return ['video.edit']
     // text_generate / text_rewrite / prompt_optimize 走文本模型，不经过 media adapter
     case 'text_generate':
     case 'text_rewrite':

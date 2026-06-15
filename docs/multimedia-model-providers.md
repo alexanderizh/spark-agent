@@ -26,7 +26,7 @@ The unified capability ids are:
 ```text
 image.generate · image.edit · image.variations
 audio.speech   · audio.transcription
-video.generate · video.image_to_video
+video.generate · video.image_to_video · video.edit
 ```
 
 ### Media Model Manifest
@@ -121,10 +121,10 @@ Current built-in coverage:
 
 | Platform | Models / families | Parameters surfaced |
 | --- | --- | --- |
-| APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, audio flags |
-| xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, response format, voice/audio format |
-| Kling | O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, negative prompt, audio flag where supported |
-| MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution |
+| APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, first/last frame, audio flags |
+| xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, first/last frame, response format, voice/audio format |
+| Kling | O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, first/last frame, negative prompt, audio flag where supported |
+| MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution, first/last frame |
 
 阿里云百炼和火山方舟在 `platform_model_info` 中仍标记为 `NEEDS_LOGIN`，
 当前只保留资料记录，未作为“开箱即用”的内置可调用 manifest 发布。等登录
@@ -138,7 +138,7 @@ xAI Grok Imagine Video (`xai-imagine-video`) uses:
   "mediaApiType": "async",
   "defaultModel": "grok-imagine-video",
   "modelIds": ["grok-imagine-video"],
-  "mediaCapabilities": ["video.generate", "video.image_to_video"],
+  "mediaCapabilities": ["video.generate", "video.image_to_video", "video.edit"],
   "mediaModelRefs": [
     { "manifestId": "xai:grok-imagine-video", "modelId": "grok-imagine-video", "enabled": true }
   ],
@@ -174,7 +174,7 @@ mcp__spark_media__generate_image     — text-to-image / image-to-image
 mcp__spark_media__edit_image         — edit / compose existing images
 mcp__spark_media__generate_audio     — text-to-speech
 mcp__spark_media__transcribe_audio   — audio-to-text transcription
-mcp__spark_media__generate_video     — text-to-video / image-to-video
+mcp__spark_media__generate_video     — text-to-video / image-to-video / video edit
 mcp__spark_media__list_models        — list configured media manifests
 mcp__spark_media__describe_model     — inspect a model manifest and parameter schema
 mcp__spark_media__get_task           — inspect a task returned by generation tools
@@ -196,8 +196,12 @@ mcp__spark_media__cancel_task        — cancel pending/running task when suppor
   `negative_prompt`, `seed`, `output_format`, `prompt_optimizer`, and provider
   audio flags. The tool chooses the matching capability
   (`image.generate`, `image.image_to_image`, `image.edit`,
-  `audio.speech`, `audio.transcription`, `video.generate`, or
-  `video.image_to_video`) from the injected manifest catalog.
+  `audio.speech`, `audio.transcription`, `video.generate`,
+  `video.image_to_video`, or `video.edit`) from the injected manifest catalog.
+- `generate_video` accepts `inputImages`, `firstFrame`, `lastFrame`,
+  `referenceImages`, `inputVideos`, `videoUrl`, `videoFile`, and `editStrength`.
+  When an input video is present it prefers `video.edit`; when only image inputs
+  are present it prefers `video.image_to_video`.
 - Manifest responses support direct URL/base64/binary results and task-polling
   results. If a task-polling response already includes a result URL, the MCP
   server materializes it immediately; otherwise it extracts the task id, polls
@@ -276,6 +280,7 @@ canvas:project:delete            — soft/hard delete a project
 | `audio_transcribe` | `audio.transcription` | audio | text |
 | `text_to_video` | `video.generate` | prompt | video |
 | `image_to_video` | `video.image_to_video` | image + prompt | video |
+| `video_edit` | `video.edit` | video and optional first/last/reference images + prompt | video |
 
 Flow:
 
@@ -284,6 +289,11 @@ Flow:
    manifest-backed provider/model, fill the manifest-derived parameter panel
    (dropdowns are driven by the selected model's `paramSchema`), then enter the
    prompt.
+   For `image_to_video` and `video_edit`, selected image nodes can be assigned
+   as first frame, last frame, or reference images. If the user leaves the frame
+   selectors untouched, canvas falls back to selected-image order: first image
+   is `first_frame`, second image is `last_frame`, remaining images are
+   `reference`.
 3. The canvas creates an optimistic `running` task node.
 4. The renderer calls `canvas:task:create-media` with `waitForCompletion:false`.
    The main process persists a runtime task and returns a `running` response

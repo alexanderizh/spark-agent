@@ -153,6 +153,7 @@ const MEDIA_OPERATIONS = new Set<CanvasOperationType>([
   'audio_transcribe',
   'text_to_video',
   'image_to_video',
+  'video_edit',
 ])
 
 export function isMediaOperation(operation: CanvasOperationType): boolean {
@@ -176,6 +177,14 @@ const emptyDb = (): CanvasDb => ({
   assets: [],
   tasks: [],
 })
+
+type CanvasProjectExportPayload = {
+  kind: 'spark.canvas.project'
+  version: 1
+  exportedAt: string
+  app: 'Spark-Agent'
+  snapshot: CanvasSnapshot
+}
 
 function uid(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
@@ -237,6 +246,20 @@ function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
   db.tasks.push(...snapshot.tasks)
 }
 
+function fullSnapshotFromDb(db: CanvasDb, projectId: string): CanvasSnapshot {
+  const project = db.projects.find((item) => item.id === projectId)
+  const board = db.boards.find((item) => item.projectId === projectId)
+  if (!project || !board) throw new Error('Canvas project not found')
+  return {
+    project,
+    board,
+    nodes: sortCanvasNodes(db.nodes.filter((node) => node.projectId === projectId)),
+    edges: db.edges.filter((edge) => edge.projectId === projectId),
+    assets: db.assets.filter((asset) => asset.projectId === projectId),
+    tasks: db.tasks.filter((task) => task.projectId === projectId),
+  }
+}
+
 function snapshotFromDb(db: CanvasDb, projectId: string): CanvasSnapshot {
   const project = db.projects.find((item) => item.id === projectId)
   const board = db.boards.find((item) => item.projectId === projectId)
@@ -249,6 +272,174 @@ function snapshotFromDb(db: CanvasDb, projectId: string): CanvasSnapshot {
     assets: db.assets.filter((asset) => asset.projectId === projectId),
     tasks: db.tasks.filter((task) => task.projectId === projectId),
   }
+}
+
+function cloneJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T
+}
+
+function sanitizeFileName(value: string): string {
+  const cleaned = value.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-')
+  return cleaned.length > 0 ? cleaned.slice(0, 80) : 'canvas-project'
+}
+
+async function mediaUrlToDataUrl(url: string): Promise<string | null> {
+  if (url.startsWith('data:')) return url
+  if (!url.startsWith('safe-file://')) return null
+  try {
+    const response = await fetch(url)
+    if (!response.ok) return null
+    const blob = await response.blob()
+    return await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onerror = () => reject(reader.error ?? new Error('Failed to read media'))
+      reader.onload = () => resolve(String(reader.result ?? ''))
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    return null
+  }
+}
+
+async function embedExportableImages(snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
+  const next = cloneJson(snapshot)
+  const cache = new Map<string, Promise<string | null>>()
+  const embed = (url: string | null | undefined, mimeType?: string | null): Promise<string | null> => {
+    if (!url) return Promise.resolve(null)
+    if (mimeType && !mimeType.toLowerCase().startsWith('image/')) return Promise.resolve(null)
+    if (!url.startsWith('safe-file://') && !url.startsWith('data:image/')) return Promise.resolve(null)
+    const existing = cache.get(url)
+    if (existing) return existing
+    const promise = mediaUrlToDataUrl(url)
+    cache.set(url, promise)
+    return promise
+  }
+
+  for (const asset of next.assets) {
+    if (asset.type !== 'image') continue
+    const dataUrl = await embed(asset.url, asset.mimeType)
+    if (dataUrl) asset.url = dataUrl
+    const thumbnailDataUrl = await embed(asset.thumbnailUrl, asset.mimeType)
+    if (thumbnailDataUrl) asset.thumbnailUrl = thumbnailDataUrl
+  }
+
+  for (const node of next.nodes) {
+    if (node.type !== 'image') continue
+    const dataUrl = await embed(node.data.url, node.data.mimeType)
+    if (dataUrl) node.data.url = dataUrl
+    const thumbnailDataUrl = await embed(node.data.thumbnailUrl, node.data.mimeType)
+    if (thumbnailDataUrl) node.data.thumbnailUrl = thumbnailDataUrl
+  }
+
+  return next
+}
+
+function remapUnknownIds(value: unknown, idMap: Map<string, string>): unknown {
+  if (typeof value === 'string') return idMap.get(value) ?? value
+  if (Array.isArray(value)) return value.map((item) => remapUnknownIds(item, idMap))
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, child]) => [key, remapUnknownIds(child, idMap)]),
+  )
+}
+
+function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
+  const next = cloneJson(snapshot)
+  const at = now()
+  const idMap = new Map<string, string>()
+  const mapId = (id: string, prefix: string): string => {
+    const existing = idMap.get(id)
+    if (existing) return existing
+    const mapped = uid(prefix)
+    idMap.set(id, mapped)
+    return mapped
+  }
+
+  const projectId = mapId(next.project.id, 'canvas_project')
+  const boardId = mapId(next.board.id, 'canvas_board')
+  for (const asset of next.assets) mapId(asset.id, 'canvas_asset')
+  for (const node of next.nodes) mapId(node.id, 'canvas_node')
+  for (const task of next.tasks) mapId(task.id, 'canvas_task')
+  for (const edge of next.edges) mapId(edge.id, 'canvas_edge')
+
+  next.project = {
+    ...next.project,
+    id: projectId,
+    userId: USER_ID,
+    title: `${next.project.title || 'Canvas Project'}（导入）`,
+    status: 'active',
+    lastOpenedAt: at,
+    createdAt: at,
+    updatedAt: at,
+  }
+  next.board = {
+    ...next.board,
+    id: boardId,
+    projectId,
+    userId: USER_ID,
+    createdAt: at,
+    updatedAt: at,
+  }
+  next.assets = next.assets.map((asset) => ({
+    ...asset,
+    id: mapId(asset.id, 'canvas_asset'),
+    projectId,
+    userId: USER_ID,
+    metadata: remapUnknownIds(asset.metadata ?? {}, idMap) as Record<string, unknown>,
+  }))
+  next.nodes = next.nodes.map((node) => ({
+    ...node,
+    id: mapId(node.id, 'canvas_node'),
+    projectId,
+    boardId,
+    userId: USER_ID,
+    ...(node.assetId ? { assetId: mapId(node.assetId, 'canvas_asset') } : {}),
+    ...(node.taskId ? { taskId: mapId(node.taskId, 'canvas_task') } : {}),
+    ...(node.parentNodeId ? { parentNodeId: mapId(node.parentNodeId, 'canvas_node') } : {}),
+  }))
+  next.tasks = next.tasks.map((task) => ({
+    ...task,
+    id: mapId(task.id, 'canvas_task'),
+    projectId,
+    boardId,
+    userId: USER_ID,
+    inputNodeIds: task.inputNodeIds.map((id) => idMap.get(id) ?? id),
+    inputAssetIds: task.inputAssetIds.map((id) => idMap.get(id) ?? id),
+    outputNodeIds: task.outputNodeIds.map((id) => idMap.get(id) ?? id),
+    outputAssetIds: task.outputAssetIds.map((id) => idMap.get(id) ?? id),
+  }))
+  next.edges = next.edges.map((edge) => ({
+    ...edge,
+    id: mapId(edge.id, 'canvas_edge'),
+    projectId,
+    boardId,
+    userId: USER_ID,
+    sourceNodeId: idMap.get(edge.sourceNodeId) ?? edge.sourceNodeId,
+    targetNodeId: idMap.get(edge.targetNodeId) ?? edge.targetNodeId,
+    ...(edge.taskId ? { taskId: idMap.get(edge.taskId) ?? edge.taskId } : {}),
+    metadata: remapUnknownIds(edge.metadata ?? {}, idMap) as Record<string, unknown>,
+  }))
+  updateSnapshotCounts(next)
+  return next
+}
+
+function updateSnapshotCounts(snapshot: CanvasSnapshot): void {
+  snapshot.project.nodeCount = snapshot.nodes.filter((node) => !node.hidden).length
+  snapshot.project.assetCount = snapshot.assets.length
+  snapshot.project.taskCount = snapshot.tasks.length
+  snapshot.project.updatedAt = now()
+}
+
+function parseCanvasProjectExport(raw: string): CanvasSnapshot {
+  const parsed = JSON.parse(raw) as Partial<CanvasProjectExportPayload> | Partial<CanvasSnapshot>
+  const maybePayload = parsed as Partial<CanvasProjectExportPayload>
+  const snapshot = maybePayload.kind === 'spark.canvas.project' && maybePayload.snapshot
+    ? maybePayload.snapshot
+    : parsed as Partial<CanvasSnapshot>
+  if (!snapshot.project || !snapshot.board || !Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.edges) || !Array.isArray(snapshot.assets) || !Array.isArray(snapshot.tasks)) {
+    throw new Error('无效的 Canvas 项目文件')
+  }
+  return snapshot as CanvasSnapshot
 }
 
 function isImageDataUrl(value: string | null | undefined): value is string {
@@ -658,6 +849,63 @@ export const canvasApi = {
     // 覆盖 rename / archive / delete(soft)：状态变更立即落库，避免删了的项目重启后又冒回来。
     await flushPersist()
     return project
+  },
+
+  async exportProjectToFile(projectId: string): Promise<{ exported: boolean; filePath?: string }> {
+    const db = readDb()
+    let snapshot: CanvasSnapshot | null = null
+    try {
+      snapshot = fullSnapshotFromDb(db, projectId)
+    } catch {
+      try {
+        const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+        if (snapshotJson) snapshot = parseCanvasProjectExport(snapshotJson)
+      } catch {
+        snapshot = null
+      }
+    }
+    if (!snapshot) throw new Error('Canvas project not found')
+
+    const portableSnapshot = await embedExportableImages(snapshot)
+    const payload: CanvasProjectExportPayload = {
+      kind: 'spark.canvas.project',
+      version: 1,
+      exportedAt: now(),
+      app: 'Spark-Agent',
+      snapshot: portableSnapshot,
+    }
+    const result = await window.spark.invoke('dialog:save-file', {
+      title: '导出 Canvas 项目',
+      defaultPath: `${sanitizeFileName(snapshot.project.title)}.spark-canvas.json`,
+      filters: [
+        { name: 'Spark Canvas Project', extensions: ['json'] },
+      ],
+    })
+    if (result.canceled || !result.filePath) return { exported: false }
+    await window.spark.invoke('file:write-text', {
+      path: result.filePath,
+      content: JSON.stringify(payload, null, 2),
+    })
+    return { exported: true, filePath: result.filePath }
+  },
+
+  async importProjectFromFile(): Promise<CanvasSnapshot | null> {
+    const result = await window.spark.invoke('dialog:open-file', {
+      title: '导入 Canvas 项目',
+      filters: [
+        { name: 'Spark Canvas Project', extensions: ['json'] },
+      ],
+    })
+    if (result.canceled || !result.filePath) return null
+    const { content } = await window.spark.invoke('file:read-text', { path: result.filePath })
+    const parsedSnapshot = parseCanvasProjectExport(content)
+    const clonedSnapshot = cloneImportedSnapshot(parsedSnapshot)
+    const normalized = await normalizeSnapshotForHotStorage(clonedSnapshot)
+    const db = readDb()
+    replaceProjectSnapshot(db, normalized.snapshot)
+    writeDb(db)
+    await flushPersist()
+    return normalized.snapshot
   },
 
   async deleteProject(projectId: string): Promise<void> {

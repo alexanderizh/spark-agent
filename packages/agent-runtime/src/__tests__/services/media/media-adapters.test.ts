@@ -98,6 +98,7 @@ describe('capabilityForOperation mapping', () => {
     expect(capabilityForOperation('audio_transcribe')).toEqual(['audio.transcription'])
     expect(capabilityForOperation('text_to_video')).toEqual(['video.generate'])
     expect(capabilityForOperation('image_to_video')).toEqual(['video.image_to_video'])
+    expect(capabilityForOperation('video_edit')).toEqual(['video.edit'])
     expect(capabilityForOperation('image_to_image')).toContain('image.edit')
   })
 })
@@ -404,6 +405,66 @@ describe('MediaRouterService', () => {
     expect(output.provider).toBe('xai')
     expect(output.mode).toBe('async')
     expect(output.requestId).toBe('xai-video-1')
+    expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
+  })
+
+  it('xAI grok-imagine-video video_edit sends first frame, last frame, input video, and edit strength', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const fetchMock = makeFetch([
+      { match: '/videos/xai-edit-1', respond: () =>
+        ({ ok: true, status: 200, body: { status: 'completed', video_url: 'https://cdn/xai-edited.mp4' } }) },
+      { match: '/videos/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { request_id: 'xai-edit-1' } }
+      } },
+      { match: 'https://cdn/xai-edited.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'video_edit',
+        capability: 'video.edit',
+        outputDir: tmpDir,
+        prompt: 'make the motion smoother',
+        inputFiles: [
+          { type: 'video', role: 'input', url: 'https://cdn/source.mp4' },
+          { type: 'image', role: 'first_frame', dataUrl: `data:image/png;base64,${PNG_PIXEL}` },
+          { type: 'image', role: 'last_frame', url: 'https://cdn/last.png' },
+          { type: 'image', role: 'reference', url: 'https://cdn/ref.png' },
+        ],
+        modelParams: { editStrength: 0.6 },
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-video',
+          name: 'xAI Imagine Video',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          mediaApiType: 'async',
+          defaultModel: 'grok-imagine-video',
+          mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+          mediaDefaults: {
+            polling: { intervalMs: 1, timeoutMs: 5_000 },
+          },
+        })],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body).toMatchObject({
+      model: 'grok-imagine-video',
+      prompt: 'make the motion smoother',
+      image: { url: `data:image/png;base64,${PNG_PIXEL}` },
+      last_frame_image: 'https://cdn/last.png',
+      video: 'https://cdn/source.mp4',
+      video_url: 'https://cdn/source.mp4',
+      edit_strength: 0.6,
+    })
+    expect(captured.body.reference_images).toEqual([{ url: 'https://cdn/ref.png' }])
+    expect(output.provider).toBe('xai')
+    expect(output.mode).toBe('async')
+    expect(output.requestId).toBe('xai-edit-1')
     expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
   })
 

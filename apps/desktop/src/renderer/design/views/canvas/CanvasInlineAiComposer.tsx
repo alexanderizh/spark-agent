@@ -3,12 +3,13 @@ import { Button, Input, Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { capabilityForOperation } from '@spark/protocol'
-import type { CanvasMediaModelSummary } from '@spark/protocol'
+import type { CanvasMediaModelSummary, CanvasMediaTaskInputFile } from '@spark/protocol'
 import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import type { CanvasInputTransport, CanvasNode, CanvasOperationType } from './canvas.types'
 
 const COMPOSER_CACHE_KEY = 'spark-canvas:inline-ai-composer:v1'
+type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 
 export function CanvasInlineAiComposer({
   open,
@@ -19,7 +20,7 @@ export function CanvasInlineAiComposer({
   open: boolean
   selectedNodes: CanvasNode[]
   onClose: () => void
-  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport }) => void
+  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport; inputRoles?: Record<string, CanvasTaskInputRole> }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
@@ -29,6 +30,8 @@ export function CanvasInlineAiComposer({
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
   const [inputTransport, setInputTransport] = useState<CanvasInputTransport>('auto')
+  const [firstFrameNodeId, setFirstFrameNodeId] = useState<string>('')
+  const [lastFrameNodeId, setLastFrameNodeId] = useState<string>('')
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
@@ -59,6 +62,7 @@ export function CanvasInlineAiComposer({
 
   const nodePromptContext = useMemo(() => buildPromptContext(selectedNodes), [selectedNodes])
   const canSubmit = prompt.trim().length > 0 || nodePromptContext.length > 0 || canRunFromInputOnly(operation, selectedNodes)
+  const selectedImageNodes = useMemo(() => selectedNodes.filter((node) => node.type === 'image' && Boolean(node.data.url)), [selectedNodes])
 
   const selectedSummary = useMemo(() => {
     if (selectedNodes.length === 0) return '未选择节点'
@@ -125,6 +129,10 @@ export function CanvasInlineAiComposer({
     () => operationNeedsImageInput(operation) && selectedNodes.some((node) => node.type === 'image'),
     [operation, selectedNodes],
   )
+  const supportsVideoFrameRoles = useMemo(
+    () => operationSupportsVideoFrameRoles(operation) && selectedImageNodes.length > 0,
+    [operation, selectedImageNodes.length],
+  )
   const parameterFields = useMemo(
     () => mergeSchemaFields(
       schemaFields(selectedCapability?.paramSchema ?? {}),
@@ -166,6 +174,17 @@ export function CanvasInlineAiComposer({
   useEffect(() => {
     if (!open) setCustomParams([])
   }, [open])
+
+  useEffect(() => {
+    if (!supportsVideoFrameRoles) {
+      setFirstFrameNodeId('')
+      setLastFrameNodeId('')
+      return
+    }
+    const imageIds = new Set(selectedImageNodes.map((node) => node.id))
+    setFirstFrameNodeId((prev) => (prev && imageIds.has(prev) ? prev : selectedImageNodes[0]?.id ?? ''))
+    setLastFrameNodeId((prev) => (prev && imageIds.has(prev) ? prev : selectedImageNodes[1]?.id ?? ''))
+  }, [selectedImageNodes, supportsVideoFrameRoles])
 
   const handleDragStart = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement
@@ -289,6 +308,37 @@ export function CanvasInlineAiComposer({
           />
           <div className="canvas-model-hint">
             APIMart 等平台需要公网链接；xAI 在国内公网地址不可达时建议使用 Base64。
+          </div>
+        </div>
+      )}
+      {supportsVideoFrameRoles && (
+        <div className="canvas-form-row">
+          <label>视频帧</label>
+          <div className="canvas-frame-role-grid">
+            <div className="canvas-param-field">
+              <span>首帧</span>
+              <LobeSelect
+                value={firstFrameNodeId || undefined}
+                allowClear
+                onChange={(value) => setFirstFrameNodeId(value == null ? '' : String(value))}
+                options={selectedImageNodes.map((node, index) => ({
+                  value: node.id,
+                  label: node.title?.trim() || `图片 ${index + 1}`,
+                }))}
+              />
+            </div>
+            <div className="canvas-param-field">
+              <span>尾帧</span>
+              <LobeSelect
+                value={lastFrameNodeId || undefined}
+                allowClear
+                onChange={(value) => setLastFrameNodeId(value == null ? '' : String(value))}
+                options={selectedImageNodes.map((node, index) => ({
+                  value: node.id,
+                  label: node.title?.trim() || `图片 ${index + 1}`,
+                }))}
+              />
+            </div>
           </div>
         </div>
       )}
@@ -426,7 +476,10 @@ export function CanvasInlineAiComposer({
             const effectiveInputTransport = inputTransport === 'auto'
               ? selectedModel?.providerKind === 'xai' ? 'base64' : 'cloud_url'
               : inputTransport
-            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport } = {
+            const inputRoles = supportsVideoFrameRoles
+              ? buildVideoFrameInputRoles(selectedImageNodes, firstFrameNodeId, lastFrameNodeId)
+              : undefined
+            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport; inputRoles?: Record<string, CanvasTaskInputRole> } = {
               operation,
               prompt: effectivePrompt,
             }
@@ -435,6 +488,7 @@ export function CanvasInlineAiComposer({
             if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
             if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
             if (needsImageInput) payload.inputTransport = effectiveInputTransport
+            if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
             writeComposerCacheEntry(cacheKey, {
               operation,
               modelKey: selectedModelKey || 'auto',
@@ -467,16 +521,21 @@ function buildPromptContext(nodes: CanvasNode[]): string {
 }
 
 function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]): boolean {
-  if (!['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'audio_transcribe'].includes(operation)) {
+  if (!['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'video_edit', 'audio_transcribe'].includes(operation)) {
     return false
   }
   const inputTypes = new Set(nodes.map((node) => node.type))
   if (operation === 'audio_transcribe') return inputTypes.has('audio')
+  if (operation === 'video_edit') return inputTypes.has('video') || inputTypes.has('image')
   return inputTypes.has('image')
 }
 
 function operationNeedsImageInput(operation: CanvasOperationType): boolean {
-  return ['image_to_image', 'image_edit', 'image_compose', 'image_to_video'].includes(operation)
+  return ['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'video_edit'].includes(operation)
+}
+
+function operationSupportsVideoFrameRoles(operation: CanvasOperationType): boolean {
+  return operation === 'image_to_video' || operation === 'video_edit'
 }
 
 function fallbackPromptForOperation(operation: CanvasOperationType): string {
@@ -484,8 +543,29 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
   if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
   if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
   if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
+  if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
   if (operation === 'audio_transcribe') return '请转写输入音频内容。'
   return ''
+}
+
+function buildVideoFrameInputRoles(
+  imageNodes: CanvasNode[],
+  firstFrameNodeId: string,
+  lastFrameNodeId: string,
+): Record<string, CanvasTaskInputRole> {
+  const roles: Record<string, CanvasTaskInputRole> = {}
+  for (const node of imageNodes) {
+    if (node.id === firstFrameNodeId) {
+      roles[node.id] = 'first_frame'
+      continue
+    }
+    if (node.id === lastFrameNodeId) {
+      roles[node.id] = 'last_frame'
+      continue
+    }
+    roles[node.id] = 'reference'
+  }
+  return roles
 }
 
 type SchemaField = {
@@ -588,8 +668,8 @@ function operationSuggestedFields(operation: CanvasOperationType): SchemaField[]
       },
     ]
   }
-  if (['text_to_video', 'image_to_video'].includes(operation)) {
-    return [
+  if (['text_to_video', 'image_to_video', 'video_edit'].includes(operation)) {
+    const fields: SchemaField[] = [
       {
         name: 'aspectRatio',
         title: '视频比例 aspectRatio',
@@ -615,6 +695,17 @@ function operationSuggestedFields(operation: CanvasOperationType): SchemaField[]
         enumValues: [],
       },
     ]
+    if (operation === 'video_edit') {
+      fields.push(
+        {
+          name: 'editStrength',
+          title: '编辑强度 editStrength',
+          type: 'number',
+          enumValues: ['0.25', '0.5', '0.75'],
+        },
+      )
+    }
+    return fields
   }
   if (operation === 'text_to_audio') {
     return [

@@ -133,6 +133,7 @@ const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
   'audio.transcription': '语音转写',
   'video.generate': '文生视频',
   'video.image_to_video': '图生视频',
+  'video.edit': '视频编辑',
 }
 
 /** 从 imageProvider 字符串推导 mediaProvider 兜底值 */
@@ -322,7 +323,7 @@ function isCustomModelRef(ref: ProviderMediaModelRef): ref is ProviderMediaModel
 function capabilitiesForModelType(modelType: ProviderModelType): MediaCapabilityId[] {
   if (modelType === 'image') return ['image.generate', 'image.edit']
   if (modelType === 'voice') return ['audio.speech', 'audio.transcription']
-  if (modelType === 'video') return ['video.generate', 'video.image_to_video']
+  if (modelType === 'video') return ['video.generate', 'video.image_to_video', 'video.edit']
   return []
 }
 

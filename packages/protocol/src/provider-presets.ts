@@ -934,7 +934,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'apimart',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
       { manifestId: 'apimart:veo3', modelId: 'veo3', enabled: true },
     ],
@@ -959,7 +959,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'apimart',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
       { manifestId: 'apimart:sora-2', modelId: 'sora-2', enabled: true },
     ],
@@ -1008,7 +1008,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'xai',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
       { manifestId: 'xai:grok-imagine-video', modelId: 'grok-imagine-video', enabled: true },
     ],
@@ -1052,7 +1052,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'kling',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
       { manifestId: 'kling:kling-v2.6-pro', modelId: 'kling-v2.6-pro', enabled: true },
       { manifestId: 'kling:kling-v2.6-std', modelId: 'kling-v2.6-std', enabled: true },
@@ -1127,7 +1127,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     modelType: 'video',
     mediaProvider: 'minimax-hailuo',
     mediaApiType: 'async',
-    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
       { manifestId: 'minimax:hailuo-2.3', modelId: 'MiniMax-Hailuo-2.3', enabled: true },
     ],

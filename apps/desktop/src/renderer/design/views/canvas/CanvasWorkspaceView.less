@@ -711,6 +711,12 @@
   gap: 8px;
 }
 
+.canvas-frame-role-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
 .canvas-param-field {
   min-width: 0;
   display: flex;
@@ -1407,5 +1413,9 @@
 
   .canvas-custom-param-row > :nth-child(3) {
     grid-column: 1 / -2;
+  }
+
+  .canvas-frame-role-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

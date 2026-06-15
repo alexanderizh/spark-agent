@@ -49,6 +49,7 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
         'audio.transcription',
         'video.generate',
         'video.image_to_video',
+        'video.edit',
       ],
       // APIMart 视频任务通常用 /videos/generations/{id} 查询，部分模型走 /tasks/{id}。
       // extractMediaUrls/extractStatus 对两种返回都兼容，这里给一条兜底 path，

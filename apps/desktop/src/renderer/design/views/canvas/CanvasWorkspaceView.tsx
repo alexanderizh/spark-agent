@@ -10,11 +10,13 @@ import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { useCanvasWorkspace } from './canvas.store'
-import { isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
+import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { useApp } from '../../AppContext'
 import type { CanvasInputTransport, CanvasNode, CanvasOperationType, CanvasTask } from './canvas.types'
 import type { CanvasMediaTaskInputFile } from '@spark/protocol'
 import './CanvasWorkspaceView.less'
+
+type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -82,17 +84,26 @@ function positionNodeInViewport(
   }
 }
 
-function buildTaskInputFiles(nodes: CanvasNode[]): CanvasMediaTaskInputFile[] {
+function buildTaskInputFiles(
+  nodes: CanvasNode[],
+  inputRoles?: Record<string, CanvasTaskInputRole>,
+): CanvasMediaTaskInputFile[] {
+  let imageIndex = 0
   return nodes
     .map((node) => {
       if (!node.data.url) return null
       const type =
         node.type === 'image' ? 'image' as const
           : node.type === 'audio' ? 'audio' as const
-            : node.type === 'video' ? 'video' as const
-              : 'file' as const
+              : node.type === 'video' ? 'video' as const
+                : 'file' as const
+      const currentImageIndex = node.type === 'image' ? imageIndex++ : -1
+      const role = inputRoles?.[node.id] ?? (currentImageIndex >= 0
+        ? currentImageIndex === 0 ? 'first_frame' as const : currentImageIndex === 1 ? 'last_frame' as const : 'reference' as const
+        : 'input' as const)
       return {
         type,
+        role,
         ...(node.data.url.startsWith('data:') ? { dataUrl: node.data.url } : { url: node.data.url }),
         ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
       }
@@ -103,8 +114,9 @@ function buildTaskInputFiles(nodes: CanvasNode[]): CanvasMediaTaskInputFile[] {
 async function buildCloudTaskInputFiles(
   nodes: CanvasNode[],
   inputTransport: CanvasInputTransport | undefined,
+  inputRoles?: Record<string, CanvasTaskInputRole>,
 ): Promise<CanvasMediaTaskInputFile[]> {
-  const files = buildTaskInputFiles(nodes)
+  const files = buildTaskInputFiles(nodes, inputRoles)
   if (files.length === 0) return files
   if (inputTransport === 'base64') {
     return Promise.all(files.map(async (file) => {
@@ -128,6 +140,7 @@ async function buildCloudTaskInputFiles(
     })
     return {
       type: file.type,
+      ...(file.role ? { role: file.role } : {}),
       url: uploaded.aiUrl,
       ...(file.mimeType ? { mimeType: file.mimeType } : {}),
     }
@@ -236,6 +249,7 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
   if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
   if (operation === 'image_compose') return '请将输入图片自然合成为一张高质量图片。'
   if (operation === 'image_to_video') return '请基于输入图片生成一段自然流畅的视频。'
+  if (operation === 'video_edit') return '请基于输入视频和参考帧进行自然视频编辑。'
   if (operation === 'audio_transcribe') return '请转写输入音频内容。'
   return ''
 }
@@ -646,6 +660,7 @@ export function CanvasWorkspaceView({
     modelId,
     modelParams,
     inputTransport,
+    inputRoles,
   }: {
     operation: CanvasOperationType
     prompt: string
@@ -654,10 +669,11 @@ export function CanvasWorkspaceView({
     modelId?: string
     modelParams?: Record<string, unknown>
     inputTransport?: CanvasInputTransport
+    inputRoles?: Record<string, CanvasTaskInputRole>
   }) => {
     if (!(await ensureCanvasWorkflowLogin())) return
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
-    const inputFiles = await buildCloudTaskInputFiles(aiInputNodes, inputTransport)
+    const inputFiles = await buildCloudTaskInputFiles(aiInputNodes, inputTransport, inputRoles)
     const mergedPrompt = mergePromptWithNodeContext(prompt, aiInputNodes)
     const effectivePrompt = mergedPrompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
     const placementSource = selectedNodes[0] ?? aiInputNodes[0]
@@ -718,6 +734,15 @@ export function CanvasWorkspaceView({
     await patchNodes(selectedNodeIds, { zIndex: maxZ + 1 })
   }
 
+  const handleExportProject = async () => {
+    try {
+      const result = await canvasApi.exportProjectToFile(projectId)
+      if (result.exported) message.success('Canvas 项目已导出')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '导出 Canvas 项目失败')
+    }
+  }
+
   return (
     <div className="canvas-workspace">
       <MacWindowDragHeader />
@@ -756,7 +781,7 @@ export function CanvasWorkspaceView({
           saveState={{ dirty, saving }}
           onSave={() => void doSave()}
           onOpenAssets={() => setAssetDrawerOpen(true)}
-          onExport={() => {}}
+          onExport={() => void handleExportProject()}
         />
       </header>
 

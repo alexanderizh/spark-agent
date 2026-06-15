@@ -322,6 +322,9 @@ const videoSchema = {
     resolution: { type: 'string', title: '分辨率', examples: ['720p', '1080p'] },
     fps: { type: 'integer', title: '帧率', minimum: 1, maximum: 120 },
     seed: { type: 'integer', title: '随机种子' },
+    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
+    editStrength: { type: 'number', title: '编辑强度', minimum: 0, maximum: 1 },
   },
 }
 
@@ -333,6 +336,8 @@ const xaiVideoSchema = {
     durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 15, default: 8 },
     resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
     user: { type: 'string', title: '用户标识' },
+    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
   },
 }
 
@@ -358,6 +363,8 @@ const apimartSeedance2VideoSchema = {
     seed: { type: 'integer', title: '随机种子' },
     generate_audio: { type: 'boolean', title: '生成音频', default: false },
     return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
+    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
   },
 }
 
@@ -370,6 +377,8 @@ const klingVideoSchema = {
     mode: { type: 'string', title: '模式', enum: ['standard', 'professional'] },
     negative_prompt: { type: 'string', title: '负面提示词' },
     audio: { type: 'boolean', title: '生成音频', default: false },
+    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
   },
 }
 
@@ -431,6 +440,8 @@ const minimaxHailuoVideoSchema = {
     prompt_optimizer: { type: 'boolean', title: '提示词优化', default: true },
     fast_pretreatment: { type: 'boolean', title: '快速预处理', default: false },
     aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
   },
 }
 
@@ -512,7 +523,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: videoSchema,
         defaults: { aspectRatio: '16:9', durationSeconds: 8 },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.image_to_video',
@@ -520,7 +531,15 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+      },
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: videoSchema,
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
     ],
     invocation: {
@@ -528,7 +547,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       endpoint: '/videos/generations',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
       response: { kind: 'task_poll', taskIdPaths: ['task_id', 'request_id', 'id'], statusEndpoint: '/videos/generations/{{taskId}}', resultPaths: ['video_url', 'data[].url', 'output.url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },
@@ -604,7 +623,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         defaults: entry.modelId === 'doubao-seedance-2.0'
           ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
           : { aspectRatio: '16:9', durationSeconds: 5 },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.image_to_video',
@@ -615,7 +634,18 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         defaults: entry.modelId === 'doubao-seedance-2.0'
           ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
           : undefined,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+      },
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: entry.modelId === 'doubao-seedance-2.0' ? apimartSeedance2VideoSchema : videoSchema,
+        defaults: entry.modelId === 'doubao-seedance-2.0'
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
+          : undefined,
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
     ],
     invocation: {
@@ -623,7 +653,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       endpoint: '/videos/generations',
       method: 'POST' as const,
       contentType: 'json' as const,
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
       response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'request_id', 'id'], statusEndpoint: '/videos/generations/{{taskId}}', resultPaths: ['video_url', 'data[].url', 'output.url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },
@@ -683,7 +713,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: xaiVideoSchema,
         defaults: { durationSeconds: 8, resolution: '720p' },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.image_to_video',
@@ -692,7 +722,16 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: xaiVideoSchema,
         defaults: { durationSeconds: 8, resolution: '720p' },
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+      },
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: xaiVideoSchema,
+        defaults: { durationSeconds: 8, resolution: '720p' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
     ],
     invocation: {
@@ -700,7 +739,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       endpoint: '/videos/generations',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', image: { url: '{{image}}' } },
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', image: { url: '{{firstFrame}}' }, last_frame_image: '{{lastFrame}}', video: '{{video}}' },
       response: { kind: 'task_poll', taskIdPaths: ['request_id', 'id'], statusEndpoint: '/videos/{{taskId}}', resultPaths: ['video_url', 'data[].url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },
@@ -862,7 +901,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           input: { required: ['prompt'] as MediaManifestInputKind[] },
           output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
           paramSchema: schema,
-          aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+          aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
         },
         {
           id: 'video.image_to_video',
@@ -870,7 +909,15 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
           input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
           output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
           paramSchema: schema,
-          aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+          aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+        },
+        {
+          id: 'video.edit',
+          label: '视频编辑',
+          input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+          output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+          paramSchema: schema,
+          aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
         },
       ],
       invocation: {
@@ -878,7 +925,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         endpoint: '/v1/videos/text2video',
         method: 'POST' as const,
         contentType: 'json' as const,
-        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
         response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'id'], statusEndpoint: '/v1/videos/text2video/{{taskId}}', resultPaths: ['video_url', 'output.video_url', 'data.video_url', 'data.url'] },
         polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
       },
@@ -999,7 +1046,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxHailuoVideoSchema,
         defaults: { durationSeconds: 6, resolution: '768P', prompt_optimizer: true, fast_pretreatment: false, aigc_watermark: false },
-        aliases: { durationSeconds: 'duration' },
+        aliases: { durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.image_to_video',
@@ -1008,7 +1055,16 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: minimaxHailuoVideoSchema,
         defaults: { durationSeconds: 6, resolution: '768P', prompt_optimizer: true, fast_pretreatment: false, aigc_watermark: false },
-        aliases: { durationSeconds: 'duration' },
+        aliases: { durationSeconds: 'duration', editStrength: 'edit_strength' },
+      },
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxHailuoVideoSchema,
+        defaults: { durationSeconds: 6, resolution: '768P', prompt_optimizer: true, fast_pretreatment: false, aigc_watermark: false },
+        aliases: { durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
     ],
     invocation: {
@@ -1016,7 +1072,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       endpoint: '/v1/video_generation',
       method: 'POST',
       contentType: 'json',
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{image}}' },
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
       response: { kind: 'task_poll', taskIdPaths: ['task_id', 'data.task_id'], statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}', resultPaths: ['data.video_url', 'data.file_url', 'file_url', 'video_url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },
@@ -1041,7 +1097,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
       {
         id: 'video.image_to_video',
@@ -1049,7 +1105,15 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
         paramSchema: videoSchema,
-        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
+      },
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: videoSchema,
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', editStrength: 'edit_strength' },
       },
     ],
     invocation: {
@@ -1057,7 +1121,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       endpoint: '/tasks',
       method: 'POST' as const,
       contentType: 'json' as const,
-      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
       response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'id'], statusEndpoint: '/tasks/{{taskId}}', resultPaths: ['video_url', 'output.video_url', 'data.url'] },
       polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
     },

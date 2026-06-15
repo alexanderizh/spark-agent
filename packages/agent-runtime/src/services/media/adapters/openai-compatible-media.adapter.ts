@@ -99,6 +99,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         return this.transcribe(input, ctx)
       case 'video.generate':
       case 'video.image_to_video':
+      case 'video.edit':
         return this.generateVideo(input, ctx)
       default:
         throw new MediaProviderError('capability_not_supported', `Unsupported capability: ${capability}`)
@@ -386,8 +387,16 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     }
     const model = ctx.defaultModel
     const videoDefaults = ctx.mediaDefaults?.video
-    const firstImage = (input.inputFiles ?? []).find((f) => f.type === 'image' || f.type === 'file')
+    const inputFiles = input.inputFiles ?? []
+    const firstImage = inputFiles.find((f) => (f.type === 'image' || f.type === 'file') && f.role === 'first_frame') ??
+      inputFiles.find((f) => f.type === 'image' || f.type === 'file')
+    const lastImage = inputFiles.find((f) => (f.type === 'image' || f.type === 'file') && f.role === 'last_frame')
+    const referenceImages = inputFiles.filter((f) => (f.type === 'image' || f.type === 'file') && f.role === 'reference')
+    const inputVideo = inputFiles.find((f) => f.type === 'video' || ((f.type === 'file') && f.role === 'input'))
     const firstImageRef = firstImage ? mediaInputRef(firstImage, ctx.mediaProvider) : undefined
+    const lastImageRef = lastImage ? mediaInputRef(lastImage, ctx.mediaProvider) : undefined
+    const referenceImageRefs = referenceImages.map((file) => mediaInputRef(file, ctx.mediaProvider)).filter((ref): ref is string => Boolean(ref))
+    const inputVideoRef = inputVideo ? mediaInputRef(inputVideo, ctx.mediaProvider) : undefined
     const body: Record<string, unknown> = {
       model,
       prompt,
@@ -410,20 +419,31 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(firstImageRef
         ? ctx.mediaProvider === 'xai'
           ? { image: { url: firstImageRef } }
-          : { image: firstImageRef }
+          : { image: firstImageRef, first_frame_image: firstImageRef }
         : {}),
+      ...(lastImageRef ? { last_frame_image: lastImageRef } : {}),
+      ...(referenceImageRefs.length > 0 ? { reference_images: referenceImageRefs.map((url) => ({ url })) } : {}),
+      ...(inputVideoRef ? { video: inputVideoRef, video_url: inputVideoRef } : {}),
+      ...(input.modelParams?.editStrength != null ? { edit_strength: input.modelParams.editStrength } : {}),
       ...extraAllowed(ctx.extraParams, input.modelParams, [
         'aspectRatio',
         'aspect_ratio',
         'duration',
         'durationSeconds',
+        'editStrength',
+        'edit_strength',
         'fps',
         'image',
         'image_url',
         'image_urls',
+        'first_frame_image',
+        'last_frame_image',
         'quality',
+        'reference_images',
         'resolution',
         'seed',
+        'video',
+        'video_url',
       ]),
     }
     const url = `${baseEndpoint(ctx)}/videos/generations`
