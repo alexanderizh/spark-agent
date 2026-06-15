@@ -372,10 +372,15 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     const found = sessions.find(s => s.id === active)
     const id = window.setTimeout(() => {
       if (!found) setActive(null)
-      else if (activeWorkspaceId == null && found.workspaceIds.length > 0) setActiveWorkspaceId(found.workspaceIds[0] ?? null)
+      else if (activeWorkspaceId == null && found.workspaceIds.length > 0) {
+        // 会话工作区可能是 worktree——UI 当前项目解析为其 base 项目
+        const first = found.workspaceIds[0]
+        const ws = first != null ? workspaces.find(w => w.id === first) : undefined
+        setActiveWorkspaceId(ws?.worktreeMeta?.baseWorkspaceId ?? first ?? null)
+      }
     }, 0)
     return () => window.clearTimeout(id)
-  }, [active, activeWorkspaceId, sessions])
+  }, [active, activeWorkspaceId, sessions, workspaces])
 
   const updateSessionInList = useCallback((sessionId: SessionId, patch: Partial<SessionSummary>) => {
     setSessions(prev => prev.map(item => item.id === sessionId ? { ...item, ...patch } : item))
@@ -411,14 +416,19 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
   ): Promise<SessionId | null> => {
     try {
       let wsId = workspaceId
+      // UI「当前项目」始终指向真实（base）项目；worktree 仅作为会话的后台 cwd，
+      // 不应成为可选项目，否则会污染项目选择器、默认项目、分支切换等。
+      let uiWorkspaceId = workspaceId
       if (wsId == null) {
         const noProjectId = await ensureNoProjectWorkspace()
         if (noProjectId == null) return null
         wsId = noProjectId
+        uiWorkspaceId = noProjectId
         setActiveWorkspaceId(noProjectId)
       }
 
-      // 勾选了「为本会话创建隔离 worktree」：先创建 worktree workspace，改用其 id。
+      // 勾选了「为本会话创建隔离 worktree」：创建 worktree workspace 并把会话绑定到它，
+      // 但 UI 当前项目仍保持 base（uiWorkspaceId 不变）。
       // 注意放在 unusedSession 查找之前——新 worktree workspace 下必无可复用会话。
       // 分支名：用户显式填写则用之；否则交给 main 进程调用 LLM 按任务文本生成。
       if (options.createWorktree === true && wsId != null) {
@@ -434,8 +444,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
             ...(providerProfileId ? { providerProfileId } : {}),
             ...(model ? { model } : {}),
           })
+          // 会话绑定 worktree workspace；UI 当前项目保持 base（不切到 worktree）。
           wsId = res.workspace.id
-          setActiveWorkspaceId(res.workspace.id)
         } catch (err) {
           toast.error(err instanceof Error ? err.message : '创建 worktree 失败')
           return null
@@ -448,7 +458,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       )
       if (unusedSession) {
         if (options.activate !== false) setActive(unusedSession.id)
-        setActiveWorkspaceId(wsId)
+        setActiveWorkspaceId(uiWorkspaceId)
         // 复用「未使用」会话时，将其视为新会话：清空此前残留的输入草稿，
         // 避免用户切换/新建会话时旧输入内容仍残留在输入框。
         window.dispatchEvent(new CustomEvent('spark:composer:reset-draft', {
@@ -504,7 +514,7 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
       justCreatedSessionRef.current = res.sessionId
       if (options.activate !== false) setActive(res.sessionId)
       setSelectedProviderId(profile.id)
-      setActiveWorkspaceId(wsId)
+      setActiveWorkspaceId(uiWorkspaceId)
       // 新建会话时清空输入草稿（包括 'draft:new' 与该会话 id 的 bucket），
       // 确保用户进入新会话时输入框是空的。
       window.dispatchEvent(new CustomEvent('spark:composer:reset-draft', {

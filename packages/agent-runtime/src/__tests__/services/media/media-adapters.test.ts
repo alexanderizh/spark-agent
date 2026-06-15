@@ -213,6 +213,36 @@ describe('MediaRouterService', () => {
     expect(fetchMock.calls.some((call) => call.url.includes('/tasks/task-123'))).toBe(true)
   })
 
+  it('APIMart image.generate maps aspect_ratio to vertical size instead of default square size', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      {
+        match: '/images/generations',
+        respond: (init) => {
+          captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+          return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+        },
+      },
+    ])
+
+    await router.invoke(
+      {
+        operation: 'text_to_image',
+        capability: 'image.generate',
+        outputDir: tmpDir,
+        prompt: 'portrait poster',
+        modelParams: { aspect_ratio: '9:16' },
+      },
+      {
+        providers: [makeProvider({ mediaDefaults: { image: { n: 1, size: '1024x1024' } } })],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body.size).toBe('1024x1536')
+    expect(captured.body.aspect_ratio).toBeUndefined()
+  })
+
   it('APIMart audio.speech: writes binary audio to disk', async () => {
     const audioBuf = Buffer.from([0x49, 0x44, 0x33, 0x04]) // fake mp3 header
     const fetchMock = makeFetch([
@@ -310,6 +340,71 @@ describe('MediaRouterService', () => {
     )
     expect(output.provider).toBe('xai')
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('xAI grok-imagine-video image_to_video uses image.url and polls video output', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const videoBuf = Buffer.from([0x00, 0x00, 0x00, 0x20, 0x66, 0x74, 0x79, 0x70])
+    const fetchMock = makeFetch([
+      { match: '/videos/xai-video-1', respond: (_init, count) =>
+        count >= 2
+          ? { ok: true, status: 200, body: { status: 'completed', video_url: 'https://cdn/xai-video.mp4' } }
+          : { ok: true, status: 200, body: { status: 'processing' } } },
+      { match: '/videos/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { request_id: 'xai-video-1' } }
+      } },
+      { match: 'https://cdn/xai-video.mp4', respond: () => ({ ok: true, status: 200, body: null, binary: videoBuf }) },
+    ])
+
+    const { output } = await router.invoke(
+      {
+        operation: 'image_to_video',
+        capability: 'video.image_to_video',
+        outputDir: tmpDir,
+        prompt: 'animate this product shot',
+        inputFiles: [
+          {
+            type: 'image',
+            url: 'safe-file://x/not-for-provider',
+            dataUrl: `data:image/png;base64,${PNG_PIXEL}`,
+          },
+        ],
+        modelParams: { durationSeconds: 8, resolution: '720p', seed: 42 },
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-video',
+          name: 'xAI Imagine Video',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          mediaApiType: 'async',
+          defaultModel: 'grok-imagine-video',
+          mediaCapabilities: ['video.generate', 'video.image_to_video'],
+          mediaDefaults: {
+            video: { aspectRatio: '9:16', quality: 'hd' },
+            polling: { intervalMs: 1, timeoutMs: 5_000 },
+          },
+        })],
+        fetch: fetchMock,
+      },
+    )
+
+    expect(captured.body).toMatchObject({
+      model: 'grok-imagine-video',
+      prompt: 'animate this product shot',
+      image: { url: `data:image/png;base64,${PNG_PIXEL}` },
+      aspect_ratio: '9:16',
+      duration: 8,
+      quality: 'hd',
+      resolution: '720p',
+      seed: 42,
+    })
+    expect(captured.body.image_url).toBeUndefined()
+    expect(output.provider).toBe('xai')
+    expect(output.mode).toBe('async')
+    expect(output.requestId).toBe('xai-video-1')
+    expect(readFileSync(output.assets[0]!.filePath!)).toEqual(videoBuf)
   })
 
   it('APIMart image.edit uploads dataUrl input before generation', async () => {
@@ -553,7 +648,7 @@ describe('MediaRouterService', () => {
           input: { required: ['prompt'] },
           output: { types: ['image'], mimeTypes: ['image/png'] },
           paramSchema: {},
-          defaults: { n: 1 },
+          defaults: { n: 1, size: '1024x1024' },
           aliases: { aspectRatio: 'aspect_ratio' },
         },
       ],
@@ -601,6 +696,7 @@ describe('MediaRouterService', () => {
       aspect_ratio: '16:9',
       n: 1,
     })
+    expect((postedBody as Record<string, unknown> | null)?.size).toBeUndefined()
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
   })
 

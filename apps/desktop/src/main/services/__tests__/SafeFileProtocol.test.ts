@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 
 const workspaceRoot = join('G:', 'spark', 'spark-agent')
 
@@ -31,6 +33,7 @@ vi.mock('../../db.js', () => ({
 }))
 
 import {
+  createSafeFileResponse,
   getSafeFileAllowedRoots,
   isSafeFilePathAllowed,
 } from '../SafeFileProtocol.js'
@@ -49,6 +52,28 @@ describe('SafeFileProtocol', () => {
   })
 
   it('exposes workspace artifact roots in the allowlist', () => {
-    expect(getSafeFileAllowedRoots()).toContain(join(workspaceRoot, '.spark-artifacts'))
+    expect(getSafeFileAllowedRoots()).toContain(resolve(join(workspaceRoot, '.spark-artifacts')))
+  })
+
+  it('serves video range requests with partial content headers', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'safe-file-test-'))
+    const file = join(dir, 'clip.mp4')
+    writeFileSync(file, Buffer.from([0, 1, 2, 3, 4, 5, 6, 7]))
+
+    try {
+      const request = new Request('safe-file://x/test', {
+        headers: { range: 'bytes=2-5' },
+      })
+      const response = createSafeFileResponse(file, request)
+
+      expect(response.status).toBe(206)
+      expect(response.headers.get('content-type')).toBe('video/mp4')
+      expect(response.headers.get('accept-ranges')).toBe('bytes')
+      expect(response.headers.get('content-range')).toBe('bytes 2-5/8')
+      expect(response.headers.get('content-length')).toBe('4')
+      expect([...new Uint8Array(await response.arrayBuffer())]).toEqual([2, 3, 4, 5])
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

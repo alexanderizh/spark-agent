@@ -18,6 +18,8 @@
 - 新增 `media_generation_tasks` 落库和 `MediaTaskRuntimeService.submit / submitBackground / inquire / cancel / materialize` 生命周期。
 - 无限画布媒体任务默认后台提交：`canvas:task:create-media` 可传 `waitForCompletion:false` 立即返回 running task，完成/失败后通过 `stream:canvas:media-task` 单次推送写回画布。
 - 画布参数面板已能读取 manifest `paramSchema`，把用户参数作为 `modelParams` 随任务提交，并在 Inspector 中展示实际调用参数。
+- 画布 AI 操作已支持组合节点输入展开：选中 group 发起图片编辑、多图合成、图生视频等任务时，会自动把组内图片/音频/视频作为 `inputFiles`，把组内文本/Prompt 合并进 prompt，并把实际成员节点写入任务输入血缘。
+- Inline AI Composer 已补充常用模型参数预设与本地缓存：图片尺寸、比例、分辨率、质量、数量，视频比例/时长/质量，音频 voice/format/speed 等可从下拉项选择；创建任务后会按 operation + model 记住 `modelParams`、自定义参数和输入传输方式。
 - 新增 manifest-driven `TemplateMediaAdapter`：当 provider 绑定了匹配 capability 的 `MediaModelManifest` 时，`MediaRouterService` 会优先按 `requestTemplate` 组装 JSON 请求、按 `response`/`polling` 提取 task id 和产物，并把画布选择的 `modelId` 作为 effective model 真正传给 provider。
 - `spark_media` MCP 的生成/编辑/转写工具已支持可选 `model`，可以按 manifest id 或 provider model id 选择模型；MCP 内部复用 manifest 的 defaults、aliases、requestTemplate、response/resultPaths 和 polling 配置，把 agent 对话入口也接到同一套数据化调用路径。
 - 新增 MCP manifest executor 回归测试，覆盖 manifest 模板渲染、参数别名/defaults 合并、provider 请求体组装、远程 URL 产物下载落盘。

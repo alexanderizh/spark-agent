@@ -687,6 +687,10 @@ export const IpcSchemaRegistry = {
   'canvas:task:cancel-media': z.object({
     runtimeTaskId: z.string().min(1).max(200),
   }),
+  'canvas:project:delete': z.object({
+    projectId: z.string().min(1).max(200),
+    hard: z.boolean().optional(),
+  }),
 
   // Remote Connections
   'remote:list': z.object({}),

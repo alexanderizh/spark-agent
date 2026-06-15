@@ -724,8 +724,8 @@ body.sidebar-resizing {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin: 2px 6px 4px 8px;
-  padding: 4px 6px;
+  margin: 2px 6px 4px 0px;
+  padding: 4px 15px;
   border: none;
   border-radius: var(--r-sm);
   background: transparent;
@@ -856,7 +856,7 @@ body.sidebar-resizing {
   align-items: center;
   gap: 7px;
   height: 30px;
-  padding: 0 7px 0 22px;
+  padding: 0 7px 0 15px;
 }
 .chat-item-compact .chat-item-title-compact {
   display: flex;

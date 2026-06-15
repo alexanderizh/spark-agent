@@ -661,7 +661,13 @@ export const canvasApi = {
   },
 
   async deleteProject(projectId: string): Promise<void> {
-    await this.updateProject(projectId, { status: 'deleted' })
+    await window.spark.invoke('canvas:project:delete', { projectId })
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (project) {
+      Object.assign(project, { status: 'deleted' as const, updatedAt: now() })
+      writeHotDb(db, false)
+    }
   },
 
   async openSnapshot(projectId: string): Promise<CanvasSnapshot> {

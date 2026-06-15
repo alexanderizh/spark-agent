@@ -272,7 +272,8 @@ export class WorkspaceService {
       projectKind: base.project_kind,
       worktreeMeta: meta,
     })
-    this.currentWorkspace = workspace
+    // 不把 worktree 设为「当前 workspace」：它只是会话的后台 cwd，
+    // 当前项目应保持 base，避免 get-current 返回 worktree 污染 UI 项目选择。
     return workspace
   }
 

@@ -7,7 +7,7 @@
  *     image_urls（最多 3 图）传入源图。xAI 不支持 OpenAI 风格 /images/edits
  *     （multipart 被拒；JSON body 下 image 字段会被当作字符串解析，触发
  *     HTTP 422 "expected struct ImageUrl"）。
- *   - 视频生成：/videos/generations → 返回 request_id → 轮询 /videos/generations/{id}
+ *   - 视频生成：/videos/generations → 返回 request_id → 轮询 /videos/{id}
  *   - 语音合成：/audio/speech（默认 grok-tts）
  *
  * xAI 暂未公开通用语音转写（Whisper）端点，因此 capability 集不含 audio.transcription。
@@ -37,8 +37,8 @@ export class XaiMediaAdapter extends OpenAiCompatibleMediaAdapter {
         'video.generate',
         'video.image_to_video',
       ],
-      videoTaskPath: (taskId) => `/videos/generations/${encodeURIComponent(taskId)}`,
-      genericTaskPath: (taskId) => `/videos/generations/${encodeURIComponent(taskId)}`,
+      videoTaskPath: (taskId) => `/videos/${encodeURIComponent(taskId)}`,
+      genericTaskPath: (taskId) => `/videos/${encodeURIComponent(taskId)}`,
     })
   }
 

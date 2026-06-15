@@ -28,7 +28,12 @@ import {
   pollTask,
 } from '../media-http.util.js'
 import { MediaArtifactService } from '../media-artifact.service.js'
-import { extraAllowed, filenameHelper } from './openai-compatible-media.adapter.js'
+import {
+  buildImageRequestParams,
+  extraAllowed,
+  filenameHelper,
+  normalizeImageAliasParams,
+} from './openai-compatible-media.adapter.js'
 
 const FAILED_STATUSES = ['failed', 'error', 'cancelled', 'canceled']
 
@@ -64,16 +69,19 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
     }
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
+    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider)
     const imageUrls = await Promise.all(imageFiles.map((file) => resolveApimartImageUrl(file, ctx)))
     const body: Record<string, unknown> = {
       model,
       prompt,
       image_urls: imageUrls,
-      n: clampCount(input.modelParams?.n, defaults?.n),
-      ...(defaults?.size || input.modelParams?.size ? { size: input.modelParams?.size ?? defaults?.size } : {}),
-      ...(defaults?.quality || input.modelParams?.quality ? { quality: input.modelParams?.quality ?? defaults?.quality } : {}),
+      n: imageParams.n,
+      ...(imageParams.size ? { size: imageParams.size } : {}),
+      ...(imageParams.quality ? { quality: imageParams.quality } : {}),
       ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
-      ...extraAllowed(ctx.extraParams, input.modelParams, [
+      ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
+        'aspectRatio',
+        'aspect_ratio',
         'image',
         'image_url',
         'image_urls',
@@ -166,11 +174,4 @@ function authHeaders(ctx: MediaProviderContext): Record<string, string> {
 
 function isAsync(ctx: MediaProviderContext): boolean {
   return ctx.mediaApiType === 'async' || ctx.mediaApiType === 'auto'
-}
-
-function clampCount(value: unknown, fallback?: number): number {
-  const raw = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : NaN
-  if (Number.isFinite(raw)) return Math.max(1, Math.min(raw, 4))
-  if (fallback != null) return Math.max(1, Math.min(fallback, 4))
-  return 1
 }

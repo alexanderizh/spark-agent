@@ -4,6 +4,7 @@ import type {
   MediaCapabilityId,
   ProviderMediaDefaults,
 } from './media-config.js'
+import type { ProviderMediaModelRef } from './media-model-manifest.js'
 
 export type ProviderPresetKind = 'anthropic' | 'openai'
 
@@ -30,6 +31,8 @@ export interface ProviderPreset {
   mediaCapabilities?: MediaCapabilityId[]
   /** 多媒体能力默认值 */
   mediaDefaults?: ProviderMediaDefaults
+  /** 默认启用的多媒体模型 manifest 引用 */
+  mediaModelRefs?: ProviderMediaModelRef[]
 }
 
 /* ─── Vendor 元数据（用于 UI 展示：emoji logo + 颜色 + 描述） ─── */
@@ -978,6 +981,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaProvider: 'xai',
     mediaApiType: 'async',
     mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaModelRefs: [
+      { manifestId: 'xai:grok-imagine-video', modelId: 'grok-imagine-video', enabled: true },
+    ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 6, quality: 'hd' },
       polling: { intervalMs: 5000, timeoutMs: 600_000 },

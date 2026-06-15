@@ -6095,6 +6095,11 @@ function ComposerV2({
   // 无活跃会话（hero）或活跃会话尚无消息（如从项目「+」新建的空会话）时，
   // 允许勾选 worktree——worktree 必须在会话产生消息前绑定。
   const isNewSessionComposer = session == null || session.messageCount === 0
+  // worktree 开关不缓存：切换会话时重置，避免上一次勾选被带入下一个新会话
+  useEffect(() => {
+    setCreateWorktree(false)
+    setWorktreeBranch('')
+  }, [session?.id])
   const [slashCmds, setSlashCmds] = useState<CommandListItem[]>([])
   const [slashFilter, setSlashFilter] = useState('')
   const [slashOpen, setSlashOpen] = useState(false)
@@ -8154,10 +8159,10 @@ function ProjectPicker({
   const rootRef = useRef<HTMLDivElement | null>(null)
   useCloseOnOutside(rootRef, () => setOpen(false), open)
 
-  // 最近项目：按更新时间倒序，最多 5 个，且不包括 "不使用项目"
+  // 最近项目：按更新时间倒序，最多 5 个，排除 "不使用项目" 与 worktree（worktree 不是可选项目）
   const recent = useMemo(() => {
     return workspaces
-      .filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME)
+      .filter((w) => w.name !== NO_PROJECT_WORKSPACE_NAME && w.worktreeMeta == null)
       .sort((a, b) => {
         const ta = new Date(a.updatedAt ?? a.createdAt ?? 0).getTime()
         const tb = new Date(b.updatedAt ?? b.createdAt ?? 0).getTime()
@@ -8168,9 +8173,11 @@ function ProjectPicker({
 
   const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
   const isNoProject = activeWorkspaceId != null && noProjectWorkspace?.id === activeWorkspaceId
-  const selectedProject = isNoProject
-    ? null
-    : (workspaces.find((w) => w.id === activeWorkspaceId) ?? null)
+  // 若当前活动 workspace 恰是 worktree（理论上不应发生），显示其 base 项目，避免误导
+  const rawSelected = isNoProject ? null : (workspaces.find((w) => w.id === activeWorkspaceId) ?? null)
+  const selectedProject = rawSelected?.worktreeMeta?.baseWorkspaceId != null
+    ? (workspaces.find((w) => w.id === rawSelected.worktreeMeta?.baseWorkspaceId) ?? rawSelected)
+    : rawSelected
 
   const triggerLabel =
     selectedProject?.name ?? (isNoProject ? NO_PROJECT_WORKSPACE_NAME : '选择项目')

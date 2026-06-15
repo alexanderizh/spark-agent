@@ -194,6 +194,43 @@ function mergePromptWithNodeContext(prompt: string, nodes: CanvasNode[]): string
   return `${trimmedPrompt}\n\n画布节点内容：\n${context}`
 }
 
+function expandCanvasInputNodes(selectedNodes: CanvasNode[], allNodes: CanvasNode[]): CanvasNode[] {
+  const byId = new Map(allNodes.map((node) => [node.id, node]))
+  const result: CanvasNode[] = []
+  const seen = new Set<string>()
+  const pushNode = (node: CanvasNode) => {
+    if (node.hidden || seen.has(node.id)) return
+    seen.add(node.id)
+    result.push(node)
+  }
+
+  for (const node of selectedNodes) {
+    if (node.type !== 'group') {
+      pushNode(node)
+      continue
+    }
+    const members = allNodes
+      .filter((item) => item.parentNodeId === node.id && !item.hidden)
+      .sort((left, right) => {
+        const leftX = node.x + left.x
+        const rightX = node.x + right.x
+        const leftY = node.y + left.y
+        const rightY = node.y + right.y
+        return leftX - rightX || leftY - rightY || left.zIndex - right.zIndex
+      })
+    if (members.length === 0) {
+      pushNode(node)
+      continue
+    }
+    for (const member of members) {
+      const latest = byId.get(member.id) ?? member
+      pushNode(latest)
+    }
+  }
+
+  return result
+}
+
 function fallbackPromptForOperation(operation: CanvasOperationType): string {
   if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
   if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
@@ -360,6 +397,10 @@ export function CanvasWorkspaceView({
   const selectedNodes = useMemo(
     () => snapshot?.nodes.filter((node) => selectedNodeIds.includes(node.id)) ?? [],
     [selectedNodeIds, snapshot?.nodes],
+  )
+  const aiInputNodes = useMemo(
+    () => expandCanvasInputNodes(selectedNodes, snapshot?.nodes ?? []),
+    [selectedNodes, snapshot?.nodes],
   )
   const editingNode = useMemo(
     () => snapshot?.nodes.find((node) => node.id === editingNodeId) ?? null,
@@ -616,15 +657,16 @@ export function CanvasWorkspaceView({
   }) => {
     if (!(await ensureCanvasWorkflowLogin())) return
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
-    const inputFiles = await buildCloudTaskInputFiles(selectedNodes, inputTransport)
-    const mergedPrompt = mergePromptWithNodeContext(prompt, selectedNodes)
+    const inputFiles = await buildCloudTaskInputFiles(aiInputNodes, inputTransport)
+    const mergedPrompt = mergePromptWithNodeContext(prompt, aiInputNodes)
     const effectivePrompt = mergedPrompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+    const placementSource = selectedNodes[0] ?? aiInputNodes[0]
 
     await createTask({
       operation,
       prompt: effectivePrompt,
-      inputNodeIds: selectedNodeIds,
-      inputAssetIds: selectedNodes
+      inputNodeIds: aiInputNodes.map((node) => node.id),
+      inputAssetIds: aiInputNodes
         .map((node) => node.assetId)
         .filter((id): id is string => Boolean(id)),
       ...(inputFiles.length > 0 ? { inputFiles } : {}),
@@ -633,15 +675,18 @@ export function CanvasWorkspaceView({
       ...(modelId != null ? { modelId } : {}),
       ...(modelParams != null ? { modelParams } : {}),
       outputPlacement: {
-        x: selectedNodes[0] ? selectedNodes[0].x + 360 : 360,
-        y: selectedNodes[0] ? selectedNodes[0].y + 80 : 260,
+        x: placementSource ? placementSource.x + 360 : 360,
+        y: placementSource ? placementSource.y + 80 : 260,
       },
     })
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
     if (!(await ensureCanvasWorkflowLogin())) return
-    const inputNodes = snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id))
+    const inputNodes = expandCanvasInputNodes(
+      snapshot.nodes.filter((node) => task.inputNodeIds.includes(node.id)),
+      snapshot.nodes,
+    )
     const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
     const inputFiles = await buildCloudTaskInputFiles(inputNodes, task.provider === 'xai' ? 'base64' : 'cloud_url')
     await createTask({
@@ -767,7 +812,7 @@ export function CanvasWorkspaceView({
         />
         <CanvasInlineAiComposer
           open={inlineAiOpen}
-          selectedNodes={selectedNodes}
+          selectedNodes={aiInputNodes}
           onClose={() => setInlineAiOpen(false)}
           onCreateTask={(input) => {
             void handleCreateTask(input)

@@ -23,17 +23,36 @@
  * 3. 渲染进程拿到路径后，构造 `safe-file://<base64(path)>` 给 `<img src>` 使用
  */
 
-import { app, protocol, net } from 'electron'
-import { pathToFileURL } from 'node:url'
+import { app, protocol } from 'electron'
 import { createLogger } from '@spark/shared'
-import { existsSync } from 'node:fs'
-import { join, resolve as resolvePath, isAbsolute, sep } from 'node:path'
+import { createReadStream, existsSync, statSync } from 'node:fs'
+import { join, resolve as resolvePath, isAbsolute, sep, extname } from 'node:path'
+import { Readable } from 'node:stream'
 import { getDatabase } from '../db.js'
 
 const log = createLogger('safe-file')
 
 /** 自定义协议 scheme 名 */
 export const SAFE_FILE_SCHEME = 'safe-file'
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.aac': 'audio/aac',
+  '.flac': 'audio/flac',
+  '.gif': 'image/gif',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.m4a': 'audio/mp4',
+  '.m4v': 'video/mp4',
+  '.mov': 'video/quicktime',
+  '.mp3': 'audio/mpeg',
+  '.mp4': 'video/mp4',
+  '.ogg': 'audio/ogg',
+  '.opus': 'audio/opus',
+  '.png': 'image/png',
+  '.wav': 'audio/wav',
+  '.webm': 'video/webm',
+  '.webp': 'image/webp',
+}
 
 /**
  * 路径白名单根目录集合。
@@ -174,7 +193,8 @@ function decodeSafeFileUrl(url: string): string | null {
  * 处理逻辑：
  *   1. 解析 URL -> 绝对路径
  *   2. 校验路径在白名单内
- *   3. 用 net.fetch 读取本地文件（复用 Electron 内部 HTTP 缓存与 mime 推断）
+ *   3. 返回带 Content-Type/Content-Length/Accept-Ranges 的文件响应。
+ *      音视频元素会发 Range 请求读取 metadata 和拖动播放，因此这里显式支持 206。
  */
 export function registerSafeFileProtocol(): void {
   protocol.handle(SAFE_FILE_SCHEME, async (request) => {
@@ -197,11 +217,7 @@ export function registerSafeFileProtocol(): void {
     }
 
     try {
-      // pathToFileURL 把本地路径转成 file:// URL，net.fetch 内部走 file 协议，
-      // 仍然受 webSecurity 保护（与之前的 file:// 行为不同——这里是因为我们通过
-      // 自定义 scheme 走，且 scheme 已被声明为 secure）
-      const fileUrl = pathToFileURL(absolutePath).toString()
-      return await net.fetch(fileUrl)
+      return createSafeFileResponse(absolutePath, request)
     } catch (err) {
       log.error(`safe-file: failed to fetch ${absolutePath}: ${String(err)}`)
       return new Response('Internal Error', { status: 500 })
@@ -209,4 +225,86 @@ export function registerSafeFileProtocol(): void {
   })
 
   log.info(`safe-file:// protocol registered (allowed roots: ${getSafeFileAllowedRoots().length})`)
+}
+
+export function createSafeFileResponse(absolutePath: string, request: Request): Response {
+  const stat = statSync(absolutePath)
+  if (!stat.isFile()) return new Response('Not Found', { status: 404 })
+
+  const size = stat.size
+  const mimeType = mimeTypeForPath(absolutePath)
+  const baseHeaders = {
+    'accept-ranges': 'bytes',
+    'content-type': mimeType,
+  }
+
+  if (size === 0) {
+    return new Response(request.method === 'HEAD' ? null : new Uint8Array(), {
+      status: 200,
+      headers: { ...baseHeaders, 'content-length': '0' },
+    })
+  }
+
+  const range = parseRangeHeader(request.headers.get('range'), size)
+  if (range === 'invalid') {
+    return new Response(null, {
+      status: 416,
+      headers: {
+        ...baseHeaders,
+        'content-range': `bytes */${size}`,
+      },
+    })
+  }
+
+  const start = range?.start ?? 0
+  const end = range?.end ?? size - 1
+  const contentLength = end - start + 1
+  const headers: Record<string, string> = {
+    ...baseHeaders,
+    'content-length': String(contentLength),
+  }
+  if (range) headers['content-range'] = `bytes ${start}-${end}/${size}`
+
+  const body = request.method === 'HEAD'
+    ? null
+    : Readable.toWeb(createReadStream(absolutePath, { start, end })) as unknown as ConstructorParameters<typeof Response>[0]
+
+  return new Response(body, {
+    status: range ? 206 : 200,
+    headers,
+  })
+}
+
+function mimeTypeForPath(filePath: string): string {
+  return MIME_BY_EXT[extname(filePath).toLowerCase()] ?? 'application/octet-stream'
+}
+
+function parseRangeHeader(
+  rangeHeader: string | null,
+  size: number,
+): { start: number; end: number } | 'invalid' | null {
+  if (!rangeHeader) return null
+  const match = rangeHeader.match(/^bytes=(\d*)-(\d*)$/)
+  if (!match) return 'invalid'
+  const startRaw = match[1] ?? ''
+  const endRaw = match[2] ?? ''
+  if (!startRaw && !endRaw) return 'invalid'
+
+  let start: number
+  let end: number
+
+  if (!startRaw) {
+    const suffixLength = Number.parseInt(endRaw, 10)
+    if (!Number.isFinite(suffixLength) || suffixLength <= 0) return 'invalid'
+    start = Math.max(0, size - suffixLength)
+    end = size - 1
+  } else {
+    start = Number.parseInt(startRaw, 10)
+    end = endRaw ? Number.parseInt(endRaw, 10) : size - 1
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return 'invalid'
+    if (end >= size) end = size - 1
+  }
+
+  if (start < 0 || end < start || start >= size) return 'invalid'
+  return { start, end }
 }

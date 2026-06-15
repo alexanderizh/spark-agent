@@ -8,6 +8,8 @@ import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
 import type { CanvasInputTransport, CanvasNode, CanvasOperationType } from './canvas.types'
 
+const COMPOSER_CACHE_KEY = 'spark-canvas:inline-ai-composer:v1'
+
 export function CanvasInlineAiComposer({
   open,
   selectedNodes,
@@ -30,6 +32,10 @@ export function CanvasInlineAiComposer({
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
+  const cacheKey = useMemo(
+    () => composerCacheKey(operation, selectedModelKey || 'auto'),
+    [operation, selectedModelKey],
+  )
 
   useEffect(() => {
     if (!open) return
@@ -122,23 +128,27 @@ export function CanvasInlineAiComposer({
   const parameterFields = useMemo(
     () => mergeSchemaFields(
       schemaFields(selectedCapability?.paramSchema ?? {}),
+      operationSuggestedFields(operation),
       modelSuggestedFields(selectedModel),
     ),
-    [selectedCapability, selectedModel],
+    [operation, selectedCapability, selectedModel],
   )
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
-    setModelParamDraft((prev) => {
+    const cached = readComposerCacheEntry(cacheKey)
+    setModelParamDraft(() => {
       const next: Record<string, string> = {}
       for (const field of parameterFields) {
-        const existing = prev[field.name]
         const defaultValue = defaults[field.name]
-        next[field.name] = existing ?? (defaultValue == null ? '' : String(defaultValue))
+        const cachedValue = cached?.modelParamDraft[field.name]
+        next[field.name] = cachedValue ?? (defaultValue == null ? '' : String(defaultValue))
       }
       return next
     })
-  }, [parameterFields, selectedCapability])
+    setCustomParams(cached?.customParams ?? [])
+    if (cached?.inputTransport) setInputTransport(cached.inputTransport)
+  }, [cacheKey, parameterFields, selectedCapability])
 
   useEffect(() => {
     if (supportedMediaModels.length === 0) {
@@ -146,10 +156,12 @@ export function CanvasInlineAiComposer({
       return
     }
     if (!supportedMediaModels.some((model) => mediaModelKey(model) === selectedModelKey)) {
-      const firstModel = supportedMediaModels[0]
+      const cachedModelKey = readLastModelKey(operation)
+      const cachedModel = supportedMediaModels.find((model) => mediaModelKey(model) === cachedModelKey)
+      const firstModel = cachedModel ?? supportedMediaModels[0]
       if (firstModel) setSelectedModelKey(mediaModelKey(firstModel))
     }
-  }, [selectedModelKey, supportedMediaModels])
+  }, [operation, selectedModelKey, supportedMediaModels])
 
   useEffect(() => {
     if (!open) setCustomParams([])
@@ -406,10 +418,10 @@ export function CanvasInlineAiComposer({
           icon={<Icons.Sparkles size={15} />}
           disabled={!canSubmit}
           onClick={() => {
-            const modelParams = {
+            const modelParams = normalizeModelParamsForSubmit({
               ...buildModelParams(parameterFields, modelParamDraft),
               ...buildCustomModelParams(customParams),
-            }
+            }, selectedCapability?.defaults ?? {})
             const effectivePrompt = prompt.trim() || fallbackPromptForOperation(operation)
             const effectiveInputTransport = inputTransport === 'auto'
               ? selectedModel?.providerKind === 'xai' ? 'base64' : 'cloud_url'
@@ -423,6 +435,14 @@ export function CanvasInlineAiComposer({
             if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
             if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
             if (needsImageInput) payload.inputTransport = effectiveInputTransport
+            writeComposerCacheEntry(cacheKey, {
+              operation,
+              modelKey: selectedModelKey || 'auto',
+              modelParamDraft: pickDraftForFields(parameterFields, modelParamDraft),
+              customParams: customParams.filter((param) => param.name.trim() && param.value.trim()),
+              inputTransport,
+            })
+            if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
             onCreateTask(payload)
             setPrompt('')
           }}
@@ -486,6 +506,19 @@ type CustomParamDraft = {
   value: string
 }
 
+type ComposerCacheEntry = {
+  operation: CanvasOperationType
+  modelKey: string
+  modelParamDraft: Record<string, string>
+  customParams: CustomParamDraft[]
+  inputTransport: CanvasInputTransport
+}
+
+type ComposerCache = {
+  entries?: Record<string, ComposerCacheEntry>
+  lastModelByOperation?: Partial<Record<CanvasOperationType, string>>
+}
+
 function schemaFields(schema: Record<string, unknown>): SchemaField[] {
   const properties = schema.properties
   if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return []
@@ -507,6 +540,119 @@ function schemaFields(schema: Record<string, unknown>): SchemaField[] {
       ...(examples[0] ? { placeholder: examples[0] } : {}),
     }
   })
+}
+
+function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {
+  if (['text_to_image', 'image_to_image', 'image_edit', 'image_compose'].includes(operation)) {
+    return [
+      {
+        name: 'size',
+        title: '图片尺寸 size',
+        type: 'string',
+        enumValues: ['1024x1024', '1536x1024', '1024x1536', '1792x1024', '1024x1792', '512x512'],
+        description: 'OpenAI 兼容图像模型常用尺寸。',
+      },
+      {
+        name: 'aspect_ratio',
+        title: '比例 aspect_ratio',
+        type: 'string',
+        enumValues: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'],
+        description: 'xAI、模板类图像模型常用画幅比例。',
+      },
+      {
+        name: 'resolution',
+        title: '清晰度 resolution',
+        type: 'string',
+        enumValues: ['auto', '1k', '2k'],
+        description: '支持分辨率参数的图像模型会透传该值。',
+      },
+      {
+        name: 'quality',
+        title: '质量 quality',
+        type: 'string',
+        enumValues: ['auto', 'low', 'medium', 'high', 'standard', 'hd'],
+      },
+      {
+        name: 'image_format',
+        title: '格式 image_format',
+        type: 'string',
+        enumValues: ['png', 'jpeg', 'webp'],
+      },
+      {
+        name: 'n',
+        title: '数量 n',
+        type: 'integer',
+        enumValues: ['1', '2', '3', '4'],
+      },
+    ]
+  }
+  if (['text_to_video', 'image_to_video'].includes(operation)) {
+    return [
+      {
+        name: 'aspectRatio',
+        title: '视频比例 aspectRatio',
+        type: 'string',
+        enumValues: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+      },
+      {
+        name: 'durationSeconds',
+        title: '时长 durationSeconds',
+        type: 'integer',
+        enumValues: ['3', '5', '8', '10'],
+      },
+      {
+        name: 'quality',
+        title: '质量 quality',
+        type: 'string',
+        enumValues: ['standard', 'high', '720p', '1080p'],
+      },
+      {
+        name: 'seed',
+        title: 'seed',
+        type: 'integer',
+        enumValues: [],
+      },
+    ]
+  }
+  if (operation === 'text_to_audio') {
+    return [
+      {
+        name: 'voice',
+        title: '音色 voice',
+        type: 'string',
+        enumValues: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'],
+      },
+      {
+        name: 'format',
+        title: '格式 format',
+        type: 'string',
+        enumValues: ['mp3', 'wav', 'aac', 'flac', 'opus'],
+      },
+      {
+        name: 'speed',
+        title: '语速 speed',
+        type: 'number',
+        enumValues: ['0.75', '1', '1.25', '1.5'],
+      },
+    ]
+  }
+  if (operation === 'audio_transcribe') {
+    return [
+      {
+        name: 'language',
+        title: '语言 language',
+        type: 'string',
+        enumValues: ['zh', 'en', 'ja', 'ko', 'fr', 'de', 'es'],
+      },
+      {
+        name: 'response_format',
+        title: '格式 response_format',
+        type: 'string',
+        enumValues: ['json', 'text', 'srt', 'verbose_json', 'vtt'],
+      },
+    ]
+  }
+  return []
 }
 
 function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): SchemaField[] {
@@ -560,15 +706,96 @@ function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): Schem
   return fields
 }
 
-function mergeSchemaFields(baseFields: SchemaField[], suggestedFields: SchemaField[]): SchemaField[] {
-  const seen = new Set(baseFields.map((field) => field.name))
-  const result = [...baseFields]
-  for (const field of suggestedFields) {
+function mergeSchemaFields(baseFields: SchemaField[], ...suggestedFieldGroups: SchemaField[][]): SchemaField[] {
+  const seen = new Set<string>()
+  const result: SchemaField[] = []
+  for (const field of baseFields) {
     if (seen.has(field.name)) continue
     seen.add(field.name)
     result.push(field)
   }
+  for (const field of suggestedFieldGroups.flat()) {
+    const existingIndex = result.findIndex((item) => item.name === field.name)
+    if (existingIndex >= 0) {
+      const existing = result[existingIndex]
+      if (!existing) continue
+      result[existingIndex] = {
+        ...field,
+        ...existing,
+        enumValues: existing.enumValues.length > 0
+          ? existing.enumValues
+          : field.enumValues,
+      }
+      continue
+    }
+    seen.add(field.name)
+    result.push(field)
+  }
   return result.slice(0, 18)
+}
+
+function readComposerCache(): ComposerCache {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = window.localStorage.getItem(COMPOSER_CACHE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as ComposerCache
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeComposerCache(cache: ComposerCache): void {
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(COMPOSER_CACHE_KEY, JSON.stringify(cache))
+  } catch {
+    // 参数缓存不应影响创建任务。
+  }
+}
+
+function composerCacheKey(operation: CanvasOperationType, modelKey: string): string {
+  return `${operation}::${modelKey}`
+}
+
+function readComposerCacheEntry(key: string): ComposerCacheEntry | null {
+  return readComposerCache().entries?.[key] ?? null
+}
+
+function writeComposerCacheEntry(key: string, entry: ComposerCacheEntry): void {
+  const cache = readComposerCache()
+  writeComposerCache({
+    ...cache,
+    entries: {
+      ...(cache.entries ?? {}),
+      [key]: entry,
+    },
+  })
+}
+
+function readLastModelKey(operation: CanvasOperationType): string | undefined {
+  return readComposerCache().lastModelByOperation?.[operation]
+}
+
+function writeLastModelKey(operation: CanvasOperationType, modelKey: string): void {
+  const cache = readComposerCache()
+  writeComposerCache({
+    ...cache,
+    lastModelByOperation: {
+      ...(cache.lastModelByOperation ?? {}),
+      [operation]: modelKey,
+    },
+  })
+}
+
+function pickDraftForFields(fields: SchemaField[], draft: Record<string, string>): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const field of fields) {
+    const value = draft[field.name]
+    if (value != null && value.trim()) result[field.name] = value
+  }
+  return result
 }
 
 function createCustomParamDraft(): CustomParamDraft {
@@ -633,4 +860,22 @@ function buildCustomModelParams(drafts: CustomParamDraft[]): Record<string, unkn
     }
   }
   return params
+}
+
+function normalizeModelParamsForSubmit(
+  params: Record<string, unknown>,
+  defaults: Record<string, unknown>,
+): Record<string, unknown> {
+  const next = { ...params }
+  const aspect = stringParam(next.aspectRatio) ?? stringParam(next.aspect_ratio)
+  const size = stringParam(next.size)
+  const defaultSize = stringParam(defaults.size)
+  if (aspect && size && defaultSize && size === defaultSize) {
+    delete next.size
+  }
+  return next
+}
+
+function stringParam(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
 }

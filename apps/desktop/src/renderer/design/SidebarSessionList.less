@@ -286,6 +286,23 @@
   border-color: var(--color-primary-5);
 }
 
+/* ─── Project head 右侧操作按钮：默认折叠为 0 宽度 ───
+   之前 `.proj-add-session-btn` 和 `.item-menu-wrap` 一直以 `opacity: 0` 占据 ~22+22+gap 的宽度
+   把左侧项目名挤窄。这里在 .proj-head 默认隐藏整个按钮组，仅在 hover / 焦点 / 菜单打开时显示，
+   让项目名占满可用宽度。基础 `opacity: 0 → 1` 的淡入仍由 views.css 控制。 */
+.proj-head .proj-add-session-btn,
+.proj-head .item-menu-wrap {
+  display: none;
+}
+
+.proj-head:hover .proj-add-session-btn,
+.proj-head:focus-within .proj-add-session-btn,
+.proj-head:hover .item-menu-wrap,
+.proj-head:focus-within .item-menu-wrap,
+.proj-head .item-menu-wrap.menu-open {
+  display: flex;
+}
+
 /* worktree 会话指示符：会话标题前的彩色分支图标 */
 .chat-item-title-compact .worktree-branch-icon {
   display: inline-flex;

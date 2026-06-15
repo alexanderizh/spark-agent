@@ -111,14 +111,21 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     if (!prompt) throw new MediaProviderError('invalid_input', 'prompt is required')
     const model = ctx.defaultModel
     const defaults = ctx.mediaDefaults?.image
+    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider)
     const body: Record<string, unknown> = {
       model,
       prompt,
-      n: clampInt(input.modelParams?.n, defaults?.n, 1, 1, 4),
-      ...(defaults?.size || input.modelParams?.size ? { size: input.modelParams?.size ?? defaults?.size } : {}),
-      ...(defaults?.quality || input.modelParams?.quality ? { quality: input.modelParams?.quality ?? defaults?.quality } : {}),
+      n: imageParams.n,
+      ...(imageParams.size ? { size: imageParams.size } : {}),
+      ...(imageParams.quality ? { quality: imageParams.quality } : {}),
       ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
-      ...extraAllowed(ctx.extraParams, input.modelParams, ['size', 'n', 'quality', 'response_format']),
+      ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
+        'size',
+        'n',
+        'quality',
+        'response_format',
+        ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
+      ]),
     }
     const url = `${baseEndpoint(ctx)}/images/generations`
     logMediaCall({
@@ -181,6 +188,8 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       throw new MediaProviderError('invalid_input', 'image edit requires input image(s) or prompt')
     }
     const model = ctx.defaultModel
+    const defaults = ctx.mediaDefaults?.image
+    const imageParams = buildImageRequestParams(input.modelParams, defaults, ctx.mediaProvider)
     const imageRefs = inputs
       .filter((file) => file.type === 'image' || file.type === 'file')
       .map((file) => file.url ?? file.dataUrl ?? file.path ?? '')
@@ -190,7 +199,17 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       prompt,
       ...(imageRefs.length > 0 ? { image: imageRefs[0] } : {}),
       ...(imageRefs.length > 1 ? { image_url: imageRefs } : {}),
-      ...extraAllowed(ctx.extraParams, input.modelParams, ['size', 'n', 'quality', 'response_format', 'mask']),
+      n: imageParams.n,
+      ...(imageParams.size ? { size: imageParams.size } : {}),
+      ...(imageParams.quality ? { quality: imageParams.quality } : {}),
+      ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
+        'size',
+        'n',
+        'quality',
+        'response_format',
+        'mask',
+        ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
+      ]),
     }
     const url = `${baseEndpoint(ctx)}/images/edits`
     logMediaCall({
@@ -358,6 +377,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     const model = ctx.defaultModel
     const videoDefaults = ctx.mediaDefaults?.video
     const firstImage = (input.inputFiles ?? []).find((f) => f.type === 'image' || f.type === 'file')
+    const firstImageRef = firstImage ? mediaInputRef(firstImage, ctx.mediaProvider) : undefined
     const body: Record<string, unknown> = {
       model,
       prompt,
@@ -367,8 +387,32 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(videoDefaults?.durationSeconds != null || input.modelParams?.durationSeconds != null
         ? { duration: input.modelParams?.durationSeconds ?? videoDefaults?.durationSeconds }
         : {}),
-      ...(firstImage ? { image: firstImage.url ?? firstImage.dataUrl ?? firstImage.path } : {}),
-      ...extraAllowed(ctx.extraParams, input.modelParams, ['aspect_ratio', 'duration', 'quality', 'fps', 'image', 'seed']),
+      ...(videoDefaults?.quality || input.modelParams?.quality
+        ? { quality: input.modelParams?.quality ?? videoDefaults?.quality }
+        : {}),
+      ...(videoDefaults?.fps != null || input.modelParams?.fps != null
+        ? { fps: input.modelParams?.fps ?? videoDefaults?.fps }
+        : {}),
+      ...(input.modelParams?.resolution ? { resolution: input.modelParams.resolution } : {}),
+      ...(input.modelParams?.seed != null ? { seed: input.modelParams.seed } : {}),
+      ...(firstImageRef
+        ? ctx.mediaProvider === 'xai'
+          ? { image: { url: firstImageRef } }
+          : { image: firstImageRef }
+        : {}),
+      ...extraAllowed(ctx.extraParams, input.modelParams, [
+        'aspectRatio',
+        'aspect_ratio',
+        'duration',
+        'durationSeconds',
+        'fps',
+        'image',
+        'image_url',
+        'image_urls',
+        'quality',
+        'resolution',
+        'seed',
+      ]),
     }
     const url = `${baseEndpoint(ctx)}/videos/generations`
     logMediaCall({
@@ -440,11 +484,78 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
 
 // ─── helpers ──────────────────────────────────────────────────────────────
 
+function mediaInputRef(
+  file: { url?: string | undefined; dataUrl?: string | undefined; path?: string | undefined },
+  provider: MediaProviderKind,
+): string | undefined {
+  if (provider === 'xai') {
+    if (file.url && /^https?:\/\//i.test(file.url)) return file.url
+    if (file.dataUrl) return file.dataUrl
+    if (file.url && !file.url.startsWith('safe-file://')) return file.url
+    return file.path
+  }
+  return file.url ?? file.dataUrl ?? file.path
+}
+
 function clampInt(value: unknown, fallback: number | undefined, def: number, min: number, max: number): number {
   const raw = typeof value === 'number' ? value : typeof value === 'string' ? Number.parseInt(value, 10) : NaN
   if (Number.isFinite(raw)) return Math.max(min, Math.min(max, raw))
   if (fallback != null) return Math.max(min, Math.min(max, fallback))
   return def
+}
+
+function buildImageRequestParams(
+  modelParams: Record<string, unknown> | undefined,
+  defaults: ProviderMediaDefaults['image'] | undefined,
+  provider: MediaProviderKind,
+): { n: number; size?: string; quality?: unknown } {
+  const params = normalizeImageAliasParams(modelParams)
+  const aspectRatio = stringParam(params.aspect_ratio)
+  const explicitSize = stringParam(params.size)
+  const defaultSize = stringParam(defaults?.size)
+  const size = explicitSize ?? (provider === 'xai' ? undefined : sizeForAspectRatio(aspectRatio) ?? defaultSize)
+  const quality = params.quality ?? defaults?.quality
+  return {
+    n: clampInt(params.n, defaults?.n, 1, 1, 4),
+    ...(size ? { size } : {}),
+    ...(quality != null && quality !== '' ? { quality } : {}),
+  }
+}
+
+function normalizeImageAliasParams(
+  modelParams: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const next = removeBlankParams(modelParams)
+  if (next.aspect_ratio == null && next.aspectRatio != null) next.aspect_ratio = next.aspectRatio
+  if (next.output_format == null) {
+    if (next.outputFormat != null) next.output_format = next.outputFormat
+    if (next.image_format != null) next.output_format = next.image_format
+  }
+  if (next.image_format == null && next.output_format != null) next.image_format = next.output_format
+  return next
+}
+
+function removeBlankParams(params: Record<string, unknown> | undefined): Record<string, unknown> {
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(params ?? {})) {
+    if (value === undefined || value === null) continue
+    if (typeof value === 'string' && value.trim().length === 0) continue
+    next[key] = value
+  }
+  return next
+}
+
+function stringParam(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined
+}
+
+function sizeForAspectRatio(aspectRatio: string | undefined): string | undefined {
+  if (!aspectRatio) return undefined
+  const normalized = aspectRatio.replace(/\s+/g, '').toLowerCase()
+  if (normalized === '1:1') return '1024x1024'
+  if (normalized === '16:9' || normalized === '3:2' || normalized === '4:3') return '1536x1024'
+  if (normalized === '9:16' || normalized === '2:3' || normalized === '3:4') return '1024x1536'
+  return undefined
 }
 
 function filename(input: MediaGenerateInput, prefix: string, index: number, total: number): string {
@@ -510,4 +621,12 @@ async function buildMultipart(
   return { body: Buffer.concat(parts), contentType: `multipart/form-data; boundary=${boundary}` }
 }
 
-export { clampInt, extraAllowed, filename as filenameHelper, mimeFromFormat, buildMultipart }
+export {
+  buildImageRequestParams,
+  clampInt,
+  extraAllowed,
+  filename as filenameHelper,
+  mimeFromFormat,
+  buildMultipart,
+  normalizeImageAliasParams,
+}

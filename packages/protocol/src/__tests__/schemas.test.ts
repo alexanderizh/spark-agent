@@ -168,5 +168,10 @@ describe('IPC schemas', () => {
       modelParams: { size: '1024x1024' },
     })
     expect(taskRequest.modelId).toBe('gpt-image-2')
+
+    const deleteRequest = IpcSchemaRegistry['canvas:project:delete'].parse({
+      projectId: 'canvas_project_1',
+    })
+    expect(deleteRequest.projectId).toBe('canvas_project_1')
   })
 })

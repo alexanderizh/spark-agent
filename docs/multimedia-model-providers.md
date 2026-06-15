@@ -98,6 +98,32 @@ xai-imagine-video        — xAI Imagine 视频 (async)
 xai-tts                  — xAI 语音合成
 ```
 
+xAI Grok Imagine Video (`xai-imagine-video`) uses:
+
+```json
+{
+  "mediaProvider": "xai",
+  "mediaApiType": "async",
+  "defaultModel": "grok-imagine-video",
+  "modelIds": ["grok-imagine-video"],
+  "mediaCapabilities": ["video.generate", "video.image_to_video"],
+  "mediaModelRefs": [
+    { "manifestId": "xai:grok-imagine-video", "modelId": "grok-imagine-video", "enabled": true }
+  ],
+  "mediaDefaults": {
+    "video": { "aspectRatio": "16:9", "durationSeconds": 6, "quality": "hd" },
+    "polling": { "intervalMs": 5000, "timeoutMs": 600000 }
+  }
+}
+```
+
+The xAI adapter posts video jobs to `/videos/generations`, polls
+`/videos/{request_id}`, and downloads the returned video URL into
+`.spark-artifacts/media/videos`. For image-to-video, Spark sends the selected
+canvas image as `image: { url: ... }`; when the canvas node also has an internal
+`safe-file://` display URL, the adapter prefers the base64 `dataUrl` so xAI
+receives an externally valid URL/data URI instead of Spark's renderer-only URL.
+
 Default endpoints:
 
 | Provider | Endpoint |
@@ -168,7 +194,10 @@ Generated artifacts land under `userData/.spark-artifacts/media/{images,audio,vi
 The renderer encodes file paths into `safe-file://x/<base64>` URLs (whitelisted
 to userData + temp) so `<audio>`, `<video>`, and `<img>` can load them directly
 inside canvas nodes — no `file://` webSecurity issues, no need to inline large
-base64 blobs. See [`canvas-safe-file.ts`](../apps/desktop/src/renderer/design/views/canvas/canvas-safe-file.ts).
+base64 blobs. The renderer CSP explicitly allows `media-src safe-file:`, and
+the main-process safe-file protocol returns `Accept-Ranges`, `Content-Type`,
+and `Content-Length` so video metadata loading, playback, and seeking work
+inside canvas video nodes. See [`canvas-safe-file.ts`](../apps/desktop/src/renderer/design/views/canvas/canvas-safe-file.ts).
 
 ### SQLite persistence
 

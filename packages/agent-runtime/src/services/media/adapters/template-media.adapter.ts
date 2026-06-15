@@ -223,11 +223,20 @@ export function buildVariables(
   const inputFiles = input.inputFiles ?? []
   const imageRefs = inputFiles
     .filter((file) => file.type === 'image' || file.type === 'file')
-    .map((file) => file.url ?? file.dataUrl ?? file.path ?? '')
+    .map((file) => {
+      if (file.url && /^https?:\/\//i.test(file.url)) return file.url
+      if (file.dataUrl) return file.dataUrl
+      if (file.url && !file.url.startsWith('safe-file://')) return file.url
+      return file.path ?? ''
+    })
     .filter((value) => value.length > 0)
+  const explicitParams = removeBlankParams(input.modelParams ?? {})
   const params = {
     ...(capability.defaults ?? {}),
-    ...(input.modelParams ?? {}),
+    ...explicitParams,
+  }
+  if (hasAspectParam(explicitParams) && !hasNonBlankParam(explicitParams, 'size')) {
+    delete params.size
   }
   const providerParams: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(params)) {
@@ -255,6 +264,26 @@ function mergeProviderParams(body: unknown, providerParams: unknown): unknown {
     if (value !== undefined && value !== null && value !== '') next[key] = value
   }
   return next
+}
+
+function removeBlankParams(params: Record<string, unknown>): Record<string, unknown> {
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null) continue
+    if (typeof value === 'string' && value.trim().length === 0) continue
+    next[key] = value
+  }
+  return next
+}
+
+function hasAspectParam(params: Record<string, unknown>): boolean {
+  return hasNonBlankParam(params, 'aspectRatio') || hasNonBlankParam(params, 'aspect_ratio')
+}
+
+function hasNonBlankParam(params: Record<string, unknown>, key: string): boolean {
+  const value = params[key]
+  if (value === undefined || value === null) return false
+  return typeof value !== 'string' || value.trim().length > 0
 }
 
 function renderTemplate(value: unknown, variables: Record<string, unknown>): unknown {
