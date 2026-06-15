@@ -890,6 +890,7 @@ export class SessionService {
     const imageGenerationContext = await this.resolveImageGenerationContext(workspaceRootPath)
     const mediaGenerationContext = await this.resolveMediaGenerationContext(workspaceRootPath)
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
+    const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
@@ -978,6 +979,7 @@ export class SessionService {
       imageGenerationContext?.systemPrompt,
       mediaGenerationContext?.systemPrompt,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
+      webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
     )
 
     // Initialize seq counter from existing event count
@@ -1207,6 +1209,7 @@ export class SessionService {
         ...(platformMcpServer != null
           ? { platformManagementMcpServer: platformMcpServer }
           : {}),
+        ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
@@ -1268,6 +1271,7 @@ export class SessionService {
       ...(platformMcpServer != null
         ? { platformManagementMcpServer: platformMcpServer }
         : {}),
+      ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
       ...(session.reasoning_effort != null
@@ -1483,6 +1487,11 @@ export class SessionService {
       mcpServers.spark_platform = config.platformManagementMcpServer
     }
 
+    // Built-in web search MCP server — auto-registered for all sessions
+    if (config.webSearchMcpServer != null) {
+      mcpServers.spark_search = config.webSearchMcpServer
+    }
+
     // MCP hot-reload: if the MCP set changed since the last SDK query was built,
     // force a fresh SDK session so the new tool inventory takes effect. The SDK
     // freezes the tool list at query start (ClaudeSDKExecutor passes mcpServers
@@ -1626,6 +1635,9 @@ export class SessionService {
     if (config.platformManagementMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, PLATFORM_TOOL_NAMES)
     }
+    if (config.webSearchMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SEARCH_TOOL_NAMES)
+    }
 
     const sdkConfig: SDKExecutorConfig = {
       ...config,
@@ -1738,6 +1750,9 @@ export class SessionService {
     const mcpServers = this.buildMcpServersForSDK(options.allowedMcpServerIds)
     if (config.platformManagementMcpServer != null) {
       mcpServers.spark_platform = config.platformManagementMcpServer
+    }
+    if (config.webSearchMcpServer != null) {
+      mcpServers.spark_search = config.webSearchMcpServer
     }
 
     // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
@@ -2009,6 +2024,44 @@ export class SessionService {
     } catch (err) {
       log.warn(`Failed to start platform bridge: ${err instanceof Error ? err.message : String(err)}`)
       return null
+    }
+  }
+
+  /**
+   * 解析内置联网搜索 MCP server（spark_search），对所有 session 默认挂载。
+   *
+   * 免密默认链（cn.bing → 百度 → DuckDuckGo）零配置可用；若 app_settings 的
+   * `webSearch` 分类配置了 keyed provider（bocha/tavily/serper）+ apiKey，则
+   * 自动优先走它。key 仅注入子进程环境变量，不外泄。
+   */
+  private async resolveWebSearchMcpServer(workspaceRootPath: string): Promise<SDKMcpServerConfig | null> {
+    const serverPath = resolveWebSearchMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Web search MCP server script not found')
+      return null
+    }
+    let provider = ''
+    let apiKey = ''
+    let baseUrl = ''
+    try {
+      const settings = new SettingsRepository(this.db).getByCategory('webSearch')
+      if (typeof settings.provider === 'string') provider = settings.provider.trim()
+      if (typeof settings.apiKey === 'string') apiKey = settings.apiKey.trim()
+      if (typeof settings.baseUrl === 'string') baseUrl = settings.baseUrl.trim()
+    } catch {
+      // settings 不可用时静默走免密默认链
+    }
+    return {
+      type: 'stdio',
+      command: process.execPath,
+      args: [serverPath],
+      cwd: workspaceRootPath,
+      env: {
+        ELECTRON_RUN_AS_NODE: '1',
+        ...(provider ? { SPARK_SEARCH_PROVIDER: provider } : {}),
+        ...(apiKey ? { SPARK_SEARCH_API_KEY: apiKey } : {}),
+        ...(baseUrl ? { SPARK_SEARCH_BASE_URL: baseUrl } : {}),
+      },
     }
   }
 
@@ -2439,6 +2492,9 @@ export class SessionService {
 
     // Member 自身的 MCP 工具
     const memberMcpServers = this.buildMcpServersForSDK(getAllowedMcpServerIds(member, null))
+    // 内置联网搜索对团队成员同样默认挂载
+    const memberWebSearchServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
+    if (memberWebSearchServer != null) memberMcpServers.spark_search = memberWebSearchServer
     // 嵌套：仅当 allowNesting 且 member 的 dispatch 深度仍 < maxDepth 时，给 member 注入
     // spark_team 工具（深度 = memberDepth），使其可再调用下一层成员。
     let nestedTeamServer: SDKMcpServerConfig | undefined
@@ -2471,9 +2527,9 @@ export class SessionService {
       ...(providerConfig.opusModel != null ? { opusModel: providerConfig.opusModel } : {}),
       ...(memberSystemPrompt.trim().length > 0 ? { systemPrompt: memberSystemPrompt } : {}),
       ...(Object.keys(memberMcpServers).length > 0 ? { mcpServers: memberMcpServers } : {}),
-      // 嵌套时预批准 dispatch 工具；始终禁用内置 Task（§7.4）。
+      // 嵌套时预批准 dispatch 工具（含内置搜索）；始终禁用内置 Task（§7.4）。
       ...(nestedTeamServer != null
-        ? { allowedTools: ['mcp__spark_team__agent_dispatch', 'mcp__spark_team__agent_dispatch_batch'] }
+        ? { allowedTools: ['mcp__spark_team__agent_dispatch', 'mcp__spark_team__agent_dispatch_batch', ...SEARCH_TOOL_NAMES] }
         : {}),
       disallowedTools: ['Task'],
       enableCheckpoints: false,
@@ -3941,6 +3997,38 @@ function resolvePlatformManagementMcpServerPath(): string | null {
   ]
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
+
+function resolveWebSearchMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/web-search-mcp-server.mjs'),
+    path.resolve(here, '../tools/web-search-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/web-search-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
+/** SDK-namespaced tool names exposed by the spark_search MCP server. */
+const SEARCH_TOOL_NAMES: string[] = [
+  'mcp__spark_search__web_search',
+  'mcp__spark_search__fetch_url',
+]
+
+/**
+ * System prompt section injected when the built-in web search MCP server is
+ * available. The whole point: SDK 自带 WebSearch/WebFetch 在第三方 provider 下失效，
+ * 这里指引模型改用始终可用的 spark_search 工具。
+ */
+const WEB_SEARCH_SYSTEM_PROMPT = [
+  '## Web Search Capability (built-in, always available)',
+  'You have a built-in internet search that works regardless of the model provider:',
+  '- `mcp__spark_search__web_search` — search the web, returns ranked {title, url, snippet}.',
+  '- `mcp__spark_search__fetch_url` — fetch a page and return its readable text.',
+  '',
+  'Use these whenever you need current information, to verify facts, or to read a page.',
+  'Prefer them over the SDK built-in `WebSearch`/`WebFetch`, which are unavailable when',
+  'running on third-party (non-Anthropic) API providers. Cite the source URLs you used.',
+].join('\n')
 
 /**
  * System prompt section injected when the Platform Management MCP server is available.

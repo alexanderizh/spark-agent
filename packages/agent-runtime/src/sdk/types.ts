@@ -309,6 +309,8 @@ export interface SDKExecutorConfig {
   teamMcpServer?: SDKMcpServerConfig | undefined
   /** Platform management MCP server (auto-injected for all sessions) */
   platformManagementMcpServer?: SDKMcpServerConfig | undefined
+  /** Built-in web search MCP server (spark_search) — auto-injected for all sessions */
+  webSearchMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined

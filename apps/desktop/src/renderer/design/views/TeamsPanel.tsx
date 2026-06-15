@@ -14,7 +14,14 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { Checkbox as LobeCheckbox, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { AvatarImage } from '../components/AvatarImage'
-import { getAgentAvatarConfig, resolveAvatarSrc } from '../avatar'
+import { AvatarPicker } from '../components/AvatarPicker'
+import {
+  generateDefaultAvatarUrl,
+  getAgentAvatarConfig,
+  normalizeAvatarConfig,
+  resolveAvatarSrc,
+  type SparkAvatarConfig,
+} from '../avatar'
 import type { ManagedAgent, ManagedTeam } from '@spark/protocol'
 
 interface TeamDraft {
@@ -28,6 +35,7 @@ interface TeamDraft {
   prompt: string
   enabled: boolean
   builtIn: boolean
+  avatar: SparkAvatarConfig
 }
 
 const EMPTY_DRAFT: TeamDraft = {
@@ -41,6 +49,7 @@ const EMPTY_DRAFT: TeamDraft = {
   prompt: '',
   enabled: true,
   builtIn: false,
+  avatar: { kind: 'url', url: generateDefaultAvatarUrl('Team') },
 }
 
 function teamToDraft(t: ManagedTeam): TeamDraft {
@@ -55,7 +64,18 @@ function teamToDraft(t: ManagedTeam): TeamDraft {
     prompt: t.prompt,
     enabled: t.enabled,
     builtIn: t.builtIn,
+    avatar:
+      normalizeAvatarConfig(t.metadata?.avatar) ??
+      { kind: 'url', url: generateDefaultAvatarUrl(t.name || t.id) },
   }
+}
+
+/** 列表卡片头像：优先 team 自定义，回退主持人 Agent 头像 */
+function resolveTeamAvatarConfig(team: ManagedTeam, host: ManagedAgent | undefined): SparkAvatarConfig {
+  const custom = normalizeAvatarConfig(team.metadata?.avatar)
+  if (custom != null) return custom
+  if (host != null) return getAgentAvatarConfig(host.metadata, host.id, host.name)
+  return { kind: 'url', url: generateDefaultAvatarUrl(team.name || team.id) }
 }
 
 export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
@@ -153,6 +173,7 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
         allowNesting: draft.allowNesting,
         prompt: draft.prompt,
         enabled: draft.enabled,
+        metadata: { avatar: draft.avatar },
       }
       if (draft.id == null) {
         await createDef(payload)
@@ -212,20 +233,17 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
           <div className="agents-card-grid">
             {teams.map((team) => {
               const host = agentById.get(team.hostAgentId)
+              const teamAvatar = resolveTeamAvatarConfig(team, host)
               return (
                 <button key={team.id} className="teams-card" onClick={() => openTeam(team)}>
                   <span className="teams-card-head">
                     <span className="teams-card-avatar">
-                      {host ? (
-                        <AvatarImage
-                          src={resolveAvatarSrc(getAgentAvatarConfig(host.metadata, host.id, host.name))}
-                          seed={host.id}
-                          name={host.name}
-                          alt={host.name}
-                        />
-                      ) : (
-                        <Icons.Team size={20} />
-                      )}
+                      <AvatarImage
+                        src={resolveAvatarSrc(teamAvatar)}
+                        seed={team.id}
+                        name={team.name}
+                        alt={team.name}
+                      />
                     </span>
                     <span className={`teams-card-status ${team.enabled ? 'enabled' : 'disabled'}`}>
                       {team.enabled ? '启用' : '停用'}
@@ -315,6 +333,15 @@ export function TeamsPanel({ agents }: { agents: ManagedAgent[] }) {
             <div className="teams-section-head">
               <div className="teams-section-title">基本信息</div>
               <div className="teams-section-hint">名称会展示在 AgentPicker「已保存团队」列表里</div>
+            </div>
+            <div className="teams-avatar-row">
+              <AvatarPicker
+                value={draft.avatar}
+                defaultSeed={draft.name || draft.id || 'team'}
+                title="团队头像"
+                description="未单独设置时，列表卡片会回退使用主持人 Agent 的头像。"
+                onChange={(avatar) => updateDraft('avatar', avatar)}
+              />
             </div>
             <div className="teams-field-grid">
               <div className="teams-field">

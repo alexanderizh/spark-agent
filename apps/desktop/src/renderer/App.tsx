@@ -288,14 +288,14 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
   }
 
   const renderUpdateButtonIcon = () => {
-    if (updateState === 'checking') return <Icons.Refresh size={15} className="spin" />
+    if (updateState === 'checking') return <Icons.Spinner size={15} />
     if (updateState === 'available') return <Icons.Download size={15} />
     if (updateState === 'downloading') {
       return <CircularProgressGlyph progress={updateProgressPercent} />
     }
     if (updateState === 'downloaded') return <Icons.CheckCircle size={15} />
     if (updateState === 'error') return <Icons.AlertTriangle size={15} />
-    return <Icons.Refresh size={15} />
+    return <Icons.Bell size={15} />
   }
 
   const menuLabel = (
@@ -331,7 +331,7 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             title="导入对话历史"
             aria-label="导入对话历史"
           >
-            <Icons.Download size={15} />
+            <Icons.Upload size={15} />
           </button>
           <button
             className={`icon-btn sidebar-update-btn state-${updateState}`}

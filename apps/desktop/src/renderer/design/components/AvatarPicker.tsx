@@ -3,6 +3,7 @@ import { Modal, Slider } from 'antd'
 import { Icons } from '../Icons'
 import { createDefaultAvatar, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
 import { AvatarImage } from './AvatarImage'
+import { useToast } from './Toast'
 
 export interface AvatarPickerProps {
   value: SparkAvatarConfig
@@ -25,31 +26,63 @@ const OUTPUT_SIZE = 256
 const STAGE_SIZE = 280
 
 export function AvatarPicker({ value, defaultSeed, title, description, onChange }: AvatarPickerProps) {
+  const { toast } = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const [crop, setCrop] = useState<CropState | null>(null)
   const src = useMemo(() => resolveAvatarSrc(value), [value])
 
-  const handleFile = (file: File | undefined) => {
-    if (file == null || !file.type.startsWith('image/')) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      if (typeof reader.result !== 'string') return
-      const tmp = new Image()
-      tmp.onload = () => {
-        const scale = Math.max(STAGE_SIZE / tmp.naturalWidth, STAGE_SIZE / tmp.naturalHeight)
-        setCrop({
-          src: reader.result as string,
-          zoom: 1,
-          offsetX: 0,
-          offsetY: 0,
-          imgW: tmp.naturalWidth * scale,
-          imgH: tmp.naturalHeight * scale,
-        })
+  const handleFile = useCallback(
+    (file: File | undefined) => {
+      if (file == null) return
+      if (!file.type.startsWith('image/')) {
+        toast.error('请选择图片文件')
+        return
       }
-      tmp.src = reader.result as string
+      // 16MB 兜底，避免超大图片撑爆 IPC payload
+      if (file.size > 16 * 1024 * 1024) {
+        toast.error('图片过大，请选小于 16MB 的图')
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = () => {
+        if (typeof reader.result !== 'string') return
+        const tmp = new Image()
+        tmp.onload = () => {
+          const scale = Math.max(STAGE_SIZE / tmp.naturalWidth, STAGE_SIZE / tmp.naturalHeight)
+          setCrop({
+            src: reader.result as string,
+            zoom: 1,
+            offsetX: 0,
+            offsetY: 0,
+            imgW: tmp.naturalWidth * scale,
+            imgH: tmp.naturalHeight * scale,
+          })
+        }
+        tmp.onerror = () => toast.error('图片解码失败，请换一张')
+        tmp.src = reader.result as string
+      }
+      reader.onerror = () => toast.error('图片读取失败：' + (reader.error?.message ?? '未知错误'))
+      reader.readAsDataURL(file)
+    },
+    [toast],
+  )
+
+  const openPicker = useCallback(() => {
+    // 部分环境下 hidden input click() 不开选择框，先 reset value 再触发
+    if (fileRef.current != null) {
+      fileRef.current.value = ''
+      fileRef.current.click()
     }
-    reader.readAsDataURL(file)
-  }
+  }, [])
+
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      const file = e.dataTransfer.files?.[0]
+      if (file != null) handleFile(file)
+    },
+    [handleFile],
+  )
 
   const applyCrop = useCallback(() => {
     if (crop == null) return
@@ -76,7 +109,12 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange 
   }, [crop, onChange])
 
   return (
-    <div className="avatar-picker">
+    <div
+      className="avatar-picker"
+      onDragOver={(e) => e.preventDefault()}
+      onDrop={onDrop}
+      title="可点击上传，也可直接拖入图片"
+    >
       <div className="avatar-picker-preview">
         <AvatarImage src={src} seed={defaultSeed} name={title} alt={title} />
       </div>
@@ -84,7 +122,7 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange 
         <div className="avatar-picker-title">{title}</div>
         {description != null && <div className="avatar-picker-desc">{description}</div>}
         <div className="avatar-picker-actions">
-          <button type="button" className="btn ghost sm" onClick={() => fileRef.current?.click()}>
+          <button type="button" className="btn ghost sm" onClick={openPicker}>
             <Icons.Upload size={12} /> 上传
           </button>
           <button
@@ -101,14 +139,29 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange 
         type="file"
         accept="image/*"
         className="avatar-picker-file"
+        style={{
+          position: 'absolute',
+          width: 1,
+          height: 1,
+          padding: 0,
+          margin: -1,
+          overflow: 'hidden',
+          clip: 'rect(0,0,0,0)',
+          border: 0,
+          opacity: 0,
+        }}
         onChange={(event) => {
-          handleFile(event.target.files?.[0])
-          event.currentTarget.value = ''
+          const file = event.target.files?.[0]
+          // 异步清空，避免某些环境下重挂载导致 file 引用丢失
+          window.setTimeout(() => {
+            if (fileRef.current != null) fileRef.current.value = ''
+          }, 0)
+          handleFile(file)
         }}
       />
 
       <Modal
-        visible={crop != null}
+        open={crop != null}
         title="裁剪头像"
         okText="使用头像"
         cancelText="取消"
@@ -116,6 +169,7 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange 
         onCancel={() => setCrop(null)}
         className="avatar-crop-modal"
         maskClosable={false}
+        destroyOnHidden
       >
         {crop != null && <DragCropper crop={crop} onChange={setCrop} />}
       </Modal>
