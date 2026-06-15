@@ -793,10 +793,11 @@ function mediaProviderFromImageProvider(imageProvider: string): MediaProviderKin
   if (isMediaProviderKind(v)) return v
   if (v === 'apimart') return 'apimart'
   if (v === 'xai') return 'xai'
+  if (v === 'bailian') return 'bailian'
+  if (v === 'seeddance' || v === 'seedance' || v === 'volcengine') return 'volcengine-ark'
   if (v === 'custom') return 'custom'
   if (v === 'openai' || v === 'openai-compatible') return 'openai-compatible'
   if (v === 'gemini' || v === 'google') return 'google-generative-ai'
-  if (v === 'seeddance' || v === 'seedance' || v === 'volcengine') return 'volcengine-ark'
   return 'custom'
 }
 

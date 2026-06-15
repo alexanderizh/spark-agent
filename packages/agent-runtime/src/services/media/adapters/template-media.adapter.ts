@@ -58,6 +58,7 @@ export class TemplateMediaAdapter {
     const headers = {
       'content-type': 'application/json',
       authorization: `Bearer ${ctx.apiKey}`,
+      ...(manifest.invocation.headers ? renderHeaders(manifest.invocation.headers, variables) : {}),
     }
 
     const requestBody = renderTemplate(manifest.invocation.requestTemplate, variables)
@@ -221,29 +222,22 @@ export function buildVariables(
   modelId: string,
 ): Record<string, unknown> {
   const inputFiles = input.inputFiles ?? []
-  const imageRefs = inputFiles
-    .filter((file) => file.type === 'image' || file.type === 'file')
-    .map((file) => {
-      if (file.url && /^https?:\/\//i.test(file.url)) return file.url
-      if (file.dataUrl) return file.dataUrl
-      if (file.url && !file.url.startsWith('safe-file://')) return file.url
-      return file.path ?? ''
-    })
-    .filter((value) => value.length > 0)
-  const imageFiles = inputFiles.filter((file) => file.type === 'image' || file.type === 'file')
-  const firstFrame = imageFiles.find((file) => file.role === 'first_frame')
-  const lastFrame = imageFiles.find((file) => file.role === 'last_frame')
-  const referenceFiles = imageFiles.some((file) => file.role === 'reference')
-    ? imageFiles.filter((file) => file.role === 'reference')
-    : imageFiles.filter((file) => file !== (firstFrame ?? imageFiles[0]) && file !== lastFrame)
-  const videoFile = inputFiles.find((file) => file.type === 'video' || ((file.type === 'file') && file.role === 'input'))
-  const refForFile = (file: typeof inputFiles[number] | undefined): string => {
+  const resolveRef = (file: typeof inputFiles[number] | undefined): string => {
     if (!file) return ''
     if (file.url && /^https?:\/\//i.test(file.url)) return file.url
     if (file.dataUrl) return file.dataUrl
     if (file.url && !file.url.startsWith('safe-file://')) return file.url
     return file.path ?? ''
   }
+  const imageFiles = inputFiles.filter((file) => file.type === 'image' || file.type === 'file')
+  const videoFiles = inputFiles.filter((file) => file.type === 'video' || (file.type === 'file' && file.role === 'input'))
+  const imageRefs = imageFiles.map(resolveRef).filter((value) => value.length > 0)
+  const videoRefs = videoFiles.map(resolveRef).filter((value) => value.length > 0)
+  const firstFrame = imageFiles.find((file) => file.role === 'first_frame')
+  const lastFrame = imageFiles.find((file) => file.role === 'last_frame')
+  const referenceFiles = imageFiles.some((file) => file.role === 'reference')
+    ? imageFiles.filter((file) => file.role === 'reference')
+    : imageFiles.filter((file) => file !== (firstFrame ?? imageFiles[0]) && file !== lastFrame)
   const explicitParams = removeBlankParams(input.modelParams ?? {})
   const params = {
     ...(capability.defaults ?? {}),
@@ -264,15 +258,37 @@ export function buildVariables(
     negativePrompt: input.negativePrompt ?? '',
     inputFiles,
     image: imageRefs[0] ?? '',
+    imageUrl: imageRefs[0] ?? '',
     images: imageRefs,
-    firstFrame: refForFile(firstFrame) || imageRefs[0] || '',
-    lastFrame: refForFile(lastFrame) || '',
-    referenceImages: referenceFiles.map((file) => refForFile(file)).filter(Boolean),
-    video: refForFile(videoFile),
+    inputImages: imageRefs,
+    inputImageUrls: imageRefs,
+    imageUrls: imageRefs,
+    firstFrame: resolveRef(firstFrame) || imageRefs[0] || '',
+    firstFrameImage: resolveRef(firstFrame) || imageRefs[0] || '',
+    lastFrame: resolveRef(lastFrame) || '',
+    lastFrameImage: resolveRef(lastFrame) || '',
+    referenceImages: referenceFiles.map(resolveRef).filter(Boolean),
+    referenceImageUrls: referenceFiles.map(resolveRef).filter(Boolean),
+    video: videoRefs[0] || '',
+    videoUrl: videoRefs[0] || '',
+    videos: videoRefs,
+    inputVideos: videoRefs,
+    inputVideoUrls: videoRefs,
+    firstClip: videoRefs[0] || '',
     params,
     providerParams,
     ...params,
   }
+}
+
+function renderHeaders(headers: Record<string, unknown>, variables: Record<string, unknown>): Record<string, string> {
+  const rendered: Record<string, string> = {}
+  for (const [key, value] of Object.entries(headers)) {
+    const next = renderTemplate(value, variables)
+    if (next === undefined || next === null || next === '') continue
+    rendered[key] = typeof next === 'string' ? next : JSON.stringify(next)
+  }
+  return rendered
 }
 
 function mergeProviderParams(body: unknown, providerParams: unknown): unknown {

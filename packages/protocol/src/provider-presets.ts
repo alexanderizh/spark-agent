@@ -57,6 +57,7 @@ export const VENDOR_CATALOG: VendorMeta[] = [
   { id: 'google-gemini',    name: 'Google Gemini',   emoji: 'G',   color: '#4285f4', desc: 'Gemini 2.5 Pro / Flash', logoPath: 'providers/google-gemini.svg' },
   { id: 'tencent-coding-plan',  name: '腾讯云 Coding Plan',  emoji: 'TX', color: '#006eff', desc: '混元 / MiniMax / Kimi / GLM 聚合', logoPath: 'providers/tencent-coding-plan.png' },
   { id: 'aliyun-bailian-coding-plan', name: '阿里云百炼 Coding Plan', emoji: 'AL', color: '#ff6a00', desc: 'Qwen3 / GLM / Kimi / MiniMax 聚合', logoPath: 'providers/aliyun-bailian-coding-plan.svg' },
+  { id: 'bailian',         name: '阿里云百炼',       emoji: 'AL',  color: '#ff6a00', desc: 'Wan / HappyHorse / Qwen3 TTS / 多媒体聚合', logoPath: 'providers/aliyun-bailian-coding-plan.svg' },
   { id: 'zhipu-glm-coding-plan', name: '智谱 GLM Coding Plan', emoji: 'GL', color: '#3b5cff', desc: 'GLM-5 / GLM-4.7 / GLM-4.5-air', logoPath: 'providers/zhipu-glm-coding-plan.png' },
   { id: 'qwen-standard',    name: '通义千问',         emoji: 'QW',  color: '#6f42c1', desc: 'Qwen3 / Qwen3-Coder 系列模型', logoPath: 'providers/qwen-standard.png' },
   { id: 'deepseek-api',     name: 'DeepSeek',        emoji: 'DS',  color: '#4d6bfe', desc: 'DeepSeek-V4 Flash / Pro', logoPath: 'providers/deepseek-api.svg' },
@@ -1021,6 +1022,97 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
   },
 
+  /* ─── 阿里云百炼多媒体 ─── */
+  {
+    id: 'bailian-images',
+    vendorId: 'bailian',
+    name: '阿里云百炼 图片',
+    provider: 'openai',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
+    defaultModel: 'wan2.7-image-pro',
+    modelIds: ['wan2.7-image-pro', 'wan2.7-image'],
+    modelType: 'image',
+    mediaProvider: 'bailian',
+    mediaApiType: 'async',
+    mediaCapabilities: ['image.generate', 'image.edit'],
+    mediaModelRefs: [
+      { manifestId: 'bailian:wan2.7-image-pro', modelId: 'wan2.7-image-pro', enabled: true },
+    ],
+    mediaDefaults: {
+      image: { size: '1:1', resolution: '2K', n: 1, outputFormat: 'png' },
+      polling: { intervalMs: 5000, timeoutMs: 600_000 },
+    },
+    sourceUrls: [
+      'https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market',
+    ],
+  },
+  {
+    id: 'bailian-video-happyhorse',
+    vendorId: 'bailian',
+    name: '阿里云百炼 HappyHorse 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
+    defaultModel: 'HappyHorse-1.0-T2V',
+    modelIds: ['HappyHorse-1.0-T2V'],
+    modelType: 'video',
+    mediaProvider: 'bailian',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate'],
+    mediaModelRefs: [
+      { manifestId: 'bailian:HappyHorse-1.0-T2V', modelId: 'HappyHorse-1.0-T2V', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
+      polling: { intervalMs: 5000, timeoutMs: 600_000 },
+    },
+    sourceUrls: [
+      'https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market',
+    ],
+  },
+  {
+    id: 'bailian-video-wan-i2v',
+    vendorId: 'bailian',
+    name: '阿里云百炼 Wan 图生视频',
+    provider: 'openai',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/api/v1/services/aigc',
+    defaultModel: 'wan2.7-i2v-2026-04-25',
+    modelIds: ['wan2.7-i2v-2026-04-25'],
+    modelType: 'video',
+    mediaProvider: 'bailian',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.image_to_video', 'video.edit'],
+    mediaModelRefs: [
+      { manifestId: 'bailian:wan2.7-i2v-2026-04-25', modelId: 'wan2.7-i2v-2026-04-25', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p' },
+      polling: { intervalMs: 5000, timeoutMs: 600_000 },
+    },
+    sourceUrls: [
+      'https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market',
+    ],
+  },
+  {
+    id: 'bailian-audio-tts',
+    vendorId: 'bailian',
+    name: '阿里云百炼 语音合成',
+    provider: 'openai',
+    apiEndpoint: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+    defaultModel: 'qwen3-tts-flash',
+    modelIds: ['qwen3-tts-flash'],
+    modelType: 'voice',
+    mediaProvider: 'bailian',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaModelRefs: [
+      { manifestId: 'bailian:qwen3-tts-flash', modelId: 'qwen3-tts-flash', enabled: true },
+    ],
+    mediaDefaults: { audio: { voice: 'default', format: 'mp3', speed: 1 } },
+    sourceUrls: [
+      'https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market',
+    ],
+  },
+
   /* ─── 火山方舟视频（Seedance 2.0）─── */
   {
     id: 'volcengine-seedance-video',
@@ -1075,13 +1167,15 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'Kling 可灵视频',
     provider: 'openai',
     apiEndpoint: 'https://api.klingai.com',
-    defaultModel: 'kling-v2.6-pro',
-    modelIds: ['kling-v2.6-pro', 'kling-v2.6-std', 'kling-v2.5-turbo', 'kling-video-o1'],
+    defaultModel: 'kling-video-3.0',
+    modelIds: ['kling-video-3.0', 'kling-video-3.0-omni', 'kling-v2.6-pro', 'kling-v2.6-std', 'kling-v2.5-turbo', 'kling-video-o1'],
     modelType: 'video',
     mediaProvider: 'kling',
     mediaApiType: 'async',
     mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
     mediaModelRefs: [
+      { manifestId: 'kling:kling-video-3.0', modelId: 'kling-video-3.0', enabled: true },
+      { manifestId: 'kling:kling-video-3.0-omni', modelId: 'kling-video-3.0-omni', enabled: true },
       { manifestId: 'kling:kling-v2.6-pro', modelId: 'kling-v2.6-pro', enabled: true },
       { manifestId: 'kling:kling-v2.6-std', modelId: 'kling-v2.6-std', enabled: true },
       { manifestId: 'kling:kling-v2.5-turbo', modelId: 'kling-v2.5-turbo', enabled: true },

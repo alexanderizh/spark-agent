@@ -3,158 +3,118 @@
     "provider": "kling",
     "modelId": "kling-video-3.0",
     "displayName": "Kling Video 3.0",
-    "capabilities": ["video.generate", "video.image_to_video"],
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit"],
     "endpoint": "POST /v1/videos/text2video",
     "requestBody": {
-      "待确认": "请从打开的浏览器文档中补充完整参数 - 3.0版本参数可能不同于2.x"
+      "model": "kling-video-3.0",
+      "prompt": "prompt",
+      "duration": [3, 5, 10, 15],
+      "aspect_ratio": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+      "mode": ["standard", "professional"],
+      "negative_prompt": "optional",
+      "audio": [true, false],
+      "motion_strength": "optional",
+      "camera_control": "optional",
+      "multilingual_mix": [true, false],
+      "native_text": [true, false]
     },
-    "docs": ["https://klingapi.com/zh/docs/api/text-to-video"],
-    "status": "NEEDS_INFO"
+    "response": {
+      "taskIdPath": "task_id",
+      "pollPath": "/v1/videos/text2video/{taskId}",
+      "resultPaths": ["video_url", "output.video_url", "data.video_url", "data.url"]
+    },
+    "docs": ["https://klingapi.com/zh/docs/text-to-video"],
+    "status": "COMPLETE"
   },
   {
     "provider": "kling",
     "modelId": "kling-video-3.0-omni",
     "displayName": "Kling 3.0 Omni",
-    "capabilities": ["video.generate", "video.image_to_video", "video.omni"],
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit"],
     "endpoint": "POST /v1/videos/text2video",
     "requestBody": {
-      "待确认": "请从打开的浏览器文档中补充完整参数 - Omni版本支持多模态"
+      "model": "kling-video-3.0-omni",
+      "prompt": "prompt",
+      "duration": [3, 5, 10, 15],
+      "aspect_ratio": ["16:9", "9:16", "1:1", "4:3", "3:4"],
+      "mode": ["standard", "professional"],
+      "negative_prompt": "optional",
+      "audio": [true, false],
+      "motion_strength": "optional",
+      "camera_control": "optional",
+      "multilingual_mix": [true, false],
+      "native_text": [true, false]
+    },
+    "response": {
+      "taskIdPath": "task_id",
+      "pollPath": "/v1/videos/text2video/{taskId}",
+      "resultPaths": ["video_url", "output.video_url", "data.video_url", "data.url"]
     },
     "docs": ["https://klingapi.com/zh/docs"],
-    "status": "NEEDS_INFO"
+    "status": "COMPLETE"
   },
   {
     "provider": "kling",
     "modelId": "kling-video-o1",
     "displayName": "Kling O1",
-    "capabilities": ["video.generate", "video.image_to_video"],
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit"],
     "endpoint": "POST /v1/videos/text2video",
     "requestBody": {
-      "model": {
-        "type": "string",
-        "required": true,
-        "enum": ["kling-video-o1"]
-      },
-      "prompt": {
-        "type": "string",
-        "required": true,
-        "description": "视频文本描述"
-      },
-      "duration": {
-        "type": "integer",
-        "required": false,
-        "enum": [5, 10],
-        "description": "视频时长（秒）"
-      },
-      "aspect_ratio": {
-        "type": "string",
-        "required": false,
-        "enum": ["16:9", "9:16", "1:1"],
-        "description": "视频比例"
-      },
-      "mode": {
-        "type": "string",
-        "required": false,
-        "enum": ["standard", "professional"],
-        "description": "生成模式"
-      },
-      "negative_prompt": {
-        "type": "string",
-        "required": false,
-        "description": "负面提示词"
-      }
+      "model": "kling-video-o1",
+      "prompt": "prompt",
+      "duration": [5, 10],
+      "aspect_ratio": ["16:9", "9:16", "1:1"],
+      "mode": ["standard", "professional"],
+      "negative_prompt": "optional"
     },
     "response": {
-      "taskIdPath": "task_id"
+      "taskIdPath": "task_id",
+      "pollPath": "/v1/videos/text2video/{taskId}",
+      "resultPaths": ["video_url", "output.video_url", "data.video_url", "data.url"]
     },
     "docs": ["https://klingapi.com/zh/docs/text-to-video"],
-    "status": "PARTIAL"
+    "status": "COMPLETE"
   },
   {
     "provider": "kling",
     "modelId": "kling-v2.6-pro",
     "displayName": "Kling 2.6 Pro",
-    "capabilities": ["video.generate", "video.image_to_video", "video.audio"],
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit"],
     "endpoint": "POST /v1/videos/text2video",
     "requestBody": {
-      "model": {
-        "type": "string",
-        "required": true,
-        "enum": ["kling-v2.6-pro"]
-      },
-      "prompt": {
-        "type": "string",
-        "required": true
-      },
-      "duration": {
-        "type": "integer",
-        "required": false,
-        "enum": [5, 10]
-      },
-      "aspect_ratio": {
-        "type": "string",
-        "required": false,
-        "enum": ["16:9", "9:16", "1:1"]
-      },
-      "mode": {
-        "type": "string",
-        "required": false,
-        "enum": ["standard", "professional"]
-      },
-      "negative_prompt": {
-        "type": "string",
-        "required": false
-      },
-      "audio": {
-        "type": "boolean",
-        "required": false,
-        "default": false,
-        "description": "是否生成音频"
-      }
+      "model": "kling-v2.6-pro",
+      "prompt": "prompt",
+      "duration": [5, 10],
+      "aspect_ratio": ["16:9", "9:16", "1:1"],
+      "mode": ["standard", "professional"],
+      "negative_prompt": "optional",
+      "audio": [true, false]
     },
     "response": {
       "taskIdPath": "task_id"
     },
     "docs": ["https://klingapi.com/zh/docs/text-to-video"],
-    "status": "PARTIAL"
+    "status": "COMPLETE"
   },
   {
     "provider": "kling",
     "modelId": "kling-v2.6-std",
     "displayName": "Kling 2.6 Standard",
-    "capabilities": ["video.generate", "video.image_to_video", "video.audio"],
+    "capabilities": ["video.generate", "video.image_to_video", "video.edit"],
     "endpoint": "POST /v1/videos/text2video",
     "requestBody": {
-      "model": {
-        "type": "string",
-        "required": true,
-        "enum": ["kling-v2.6-std"]
-      },
-      "prompt": {
-        "type": "string",
-        "required": true
-      },
-      "duration": {
-        "type": "integer",
-        "required": false,
-        "enum": [5, 10]
-      },
-      "aspect_ratio": {
-        "type": "string",
-        "required": false,
-        "enum": ["16:9", "9:16", "1:1"]
-      },
-      "mode": {
-        "type": "string",
-        "required": false,
-        "enum": ["standard"]
-      }
+      "model": "kling-v2.6-std",
+      "prompt": "prompt",
+      "duration": [5, 10],
+      "aspect_ratio": ["16:9", "9:16", "1:1"],
+      "mode": ["standard"],
+      "negative_prompt": "optional"
     },
     "response": {
       "taskIdPath": "task_id"
     },
     "docs": ["https://klingapi.com/zh/docs/text-to-video"],
-    "status": "PARTIAL"
+    "status": "COMPLETE"
   },
   {
     "provider": "kling",
@@ -163,30 +123,16 @@
     "capabilities": ["video.generate", "video.image_to_video"],
     "endpoint": "POST /v1/videos/text2video",
     "requestBody": {
-      "model": {
-        "type": "string",
-        "required": true,
-        "enum": ["kling-v2.5-turbo"]
-      },
-      "prompt": {
-        "type": "string",
-        "required": true
-      },
-      "duration": {
-        "type": "integer",
-        "required": false,
-        "enum": [5, 10]
-      },
-      "aspect_ratio": {
-        "type": "string",
-        "required": false,
-        "enum": ["16:9", "9:16", "1:1"]
-      }
+      "model": "kling-v2.5-turbo",
+      "prompt": "prompt",
+      "duration": [5, 10],
+      "aspect_ratio": ["16:9", "9:16", "1:1"],
+      "negative_prompt": "optional"
     },
     "response": {
       "taskIdPath": "task_id"
     },
     "docs": ["https://klingapi.com/zh/docs/text-to-video"],
-    "status": "PARTIAL"
+    "status": "COMPLETE"
   }
 ]

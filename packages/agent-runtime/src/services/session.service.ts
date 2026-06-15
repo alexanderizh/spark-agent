@@ -44,8 +44,10 @@ import type { SessionPermissionMode } from '@spark/protocol'
 import {
   LOCAL_CLI_DEFAULT_MODEL,
   LOCAL_CODEX_CLI_DEFAULT_MODEL,
+  isMediaProviderKind,
   isBuiltInLocalCliProvider,
   isLocalCodexCliProvider,
+  type MediaProviderKind,
 } from '@spark/protocol'
 import { TeamDispatchService } from './team-dispatch.service.js'
 import type { TeamMemberExecutionResult } from './team-dispatch.service.js'
@@ -2145,7 +2147,7 @@ export class SessionService {
     const catalog = new MediaModelCatalogService(new MediaModelManifestRepository(this.db))
     catalog.seedBuiltinManifests()
     const VOICE_VIDEO = new Set(['audio.speech', 'audio.transcription', 'video.generate', 'video.image_to_video', 'video.edit'])
-    const mediaProvider = providerRepo
+    const selectedProvider = providerRepo
       .listAll()
       .find((row) => {
         if (row.enabled !== 1) return false
@@ -2171,12 +2173,12 @@ export class SessionService {
           return false
         }
       })
-    if (mediaProvider == null || mediaProvider.keystore_ref == null) return null
+    if (selectedProvider == null || selectedProvider.keystore_ref == null) return null
 
-    const apiKey = await keystore.getSecret(mediaProvider.keystore_ref as keystore.KeystoreRef)
+    const apiKey = await keystore.getSecret(selectedProvider.keystore_ref as keystore.KeystoreRef)
     if (apiKey == null || apiKey.trim().length === 0) return null
 
-    const config = JSON.parse(mediaProvider.config_json) as {
+    const config = JSON.parse(selectedProvider.config_json) as {
       defaultModel?: string
       model?: string
       apiEndpoint?: string
@@ -2196,7 +2198,8 @@ export class SessionService {
     }
 
     const outputDir = path.join(workspaceRootPath, '.spark-artifacts', 'media')
-    const providerName = (config.mediaProvider?.trim() || 'openai-compatible') as 'apimart' | 'xai' | 'openai-compatible' | 'custom'
+    const mediaProviderKindValue = typeof config.mediaProvider === 'string' ? config.mediaProvider.trim() : ''
+    const providerName = (isMediaProviderKind(mediaProviderKindValue) ? mediaProviderKindValue : 'openai-compatible') as MediaProviderKind
     const apiType = config.mediaApiType ?? 'auto'
     const mediaManifests = (Array.isArray(config.mediaModelRefs) ? config.mediaModelRefs : [])
       .filter((ref) => ref.enabled !== false)
@@ -2227,7 +2230,7 @@ export class SessionService {
         },
       },
       systemPrompt: buildMediaGenerationSystemPrompt({
-        name: mediaProvider.name,
+        name: selectedProvider.name,
         model,
         provider: providerName,
         apiType,

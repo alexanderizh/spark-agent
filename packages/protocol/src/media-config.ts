@@ -19,6 +19,7 @@ export type MediaProviderKind =
   | 'openai-compatible'
   | 'openai-images'
   | 'google-generative-ai'
+  | 'bailian'
   | 'volcengine-ark'
   | 'kling'
   | 'pixverse'
@@ -63,6 +64,7 @@ export const MEDIA_PROVIDER_KINDS = [
   'openai-compatible',
   'openai-images',
   'google-generative-ai',
+  'bailian',
   'volcengine-ark',
   'kling',
   'pixverse',

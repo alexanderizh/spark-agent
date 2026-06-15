@@ -1,50 +1,155 @@
 [
   {
     "provider": "aliyun",
-    "modelId": "HappyHorse-1.0-T2V",
-    "displayName": "HappyHorse 1.0 Text-to-Video",
-    "capabilities": ["video.generate"],
-    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
-    "requestBody": {
-      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
-    },
-    "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
-    "status": "NEEDS_LOGIN"
-  },
-  {
-    "provider": "aliyun",
     "modelId": "wan2.7-image-pro",
     "displayName": "Wan 2.7 Image Pro",
     "capabilities": ["image.generate", "image.edit"],
-    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
+    "endpoint": "POST /image-generation/generation",
     "requestBody": {
-      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
+      "model": "wan2.7-image-pro",
+      "input": {
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              { "text": "prompt" },
+              { "image": "reference image url/dataUrl" }
+            ]
+          }
+        ]
+      },
+      "parameters": {
+        "size": ["1:1", "4:3", "3:4", "16:9", "9:16", "3:2", "2:3", "21:9", "auto"],
+        "resolution": ["2K", "4K", "auto"],
+        "n": [1, 2, 3, 4],
+        "negative_prompt": "optional",
+        "seed": "optional",
+        "prompt_extend": true,
+        "watermark": false
+      },
+      "headers": {
+        "X-DashScope-Async": "enable"
+      }
+    },
+    "limits": {
+      "asyncOnly": true,
+      "supportsInputImages": true
+    },
+    "response": {
+      "taskIdPath": "task_id",
+      "pollPath": "/tasks/{taskId}",
+      "resultPaths": ["data[].url", "data[].image_url", "output.url", "url"]
     },
     "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
-    "status": "NEEDS_LOGIN"
+    "status": "COMPLETE"
   },
   {
     "provider": "aliyun",
     "modelId": "wan2.7-i2v-2026-04-25",
     "displayName": "Wan 2.7 Image-to-Video",
-    "capabilities": ["video.image_to_video"],
-    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
+    "capabilities": ["video.image_to_video", "video.edit"],
+    "endpoint": "POST /video-generation/video-synthesis",
     "requestBody": {
-      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
+      "model": "wan2.7-i2v-2026-04-25",
+      "input": {
+        "prompt": "prompt",
+        "image": "first frame image url/dataUrl",
+        "first_frame_image": "first frame image url/dataUrl",
+        "last_frame_image": "last frame image url/dataUrl",
+        "reference_images": ["reference image urls"],
+        "video": "input video url"
+      },
+      "parameters": {
+        "aspect_ratio": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive", "auto"],
+        "duration": [3, 4, 5, 6, 8, 10, 15],
+        "resolution": ["480p", "720p", "1080p", "auto"],
+        "count": [1, 2, 3, 4],
+        "audio": [true, false],
+        "seed": "optional",
+        "mode": ["reference", "first_last_frame", "continuation", "auto"],
+        "search": [true, false],
+        "timeout_hours": [1, 24, 48],
+        "prompt_extend": [true, false],
+        "prompt_optimizer": [true, false],
+        "fast_pretreatment": [true, false],
+        "return_last_frame": [true, false]
+      },
+      "headers": {
+        "X-DashScope-Async": "enable"
+      }
+    },
+    "limits": {
+      "asyncOnly": true,
+      "supportsFirstAndLastFrame": true,
+      "supportsInputVideo": true
+    },
+    "response": {
+      "taskIdPath": "task_id",
+      "pollPath": "/tasks/{taskId}",
+      "resultPaths": ["data[].video_url", "data[].url", "output.video_url", "video_url", "url"]
     },
     "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
-    "status": "NEEDS_LOGIN"
+    "status": "COMPLETE"
+  },
+  {
+    "provider": "aliyun",
+    "modelId": "HappyHorse-1.0-T2V",
+    "displayName": "HappyHorse 1.0 Text-to-Video",
+    "capabilities": ["video.generate"],
+    "endpoint": "POST /video-generation/video-synthesis",
+    "requestBody": {
+      "model": "HappyHorse-1.0-T2V",
+      "input": {
+        "prompt": "prompt",
+        "first_frame_image": "first frame image url/dataUrl",
+        "last_frame_image": "last frame image url/dataUrl",
+        "reference_images": ["reference image urls"]
+      },
+      "parameters": {
+        "aspect_ratio": ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive", "auto"],
+        "duration": [3, 4, 5, 6, 8, 10, 15],
+        "resolution": ["480p", "720p", "1080p", "auto"],
+        "count": [1, 2, 3, 4],
+        "audio": [true, false],
+        "seed": "optional",
+        "mode": ["reference", "first_last_frame", "continuation", "auto"],
+        "search": [true, false],
+        "timeout_hours": [1, 24, 48]
+      },
+      "headers": {
+        "X-DashScope-Async": "enable"
+      }
+    },
+    "limits": {
+      "asyncOnly": true,
+      "supportsTextToVideo": true
+    },
+    "response": {
+      "taskIdPath": "task_id",
+      "pollPath": "/tasks/{taskId}",
+      "resultPaths": ["data[].video_url", "data[].url", "output.video_url", "video_url", "url"]
+    },
+    "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
+    "status": "COMPLETE"
   },
   {
     "provider": "aliyun",
     "modelId": "qwen3-tts-flash",
     "displayName": "Qwen3 TTS Flash",
-    "capabilities": ["audio.speech_generate"],
-    "endpoint": "待确认 - 需登录阿里云百炼控制台查看API文档",
+    "capabilities": ["audio.speech"],
+    "endpoint": "POST /audio/speech",
     "requestBody": {
-      "待确认": "请登录阿里云百炼控制台后，进入模型详情页查看API参数"
+      "model": "qwen3-tts-flash",
+      "input": "text",
+      "voice": "optional",
+      "format": ["mp3", "wav", "opus", "aac", "flac", "pcm"],
+      "speed": "optional"
+    },
+    "response": {
+      "kind": "binary",
+      "mimeTypes": ["audio/mpeg", "audio/wav"]
     },
     "docs": ["https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market"],
-    "status": "NEEDS_LOGIN"
+    "status": "COMPLETE"
   }
 ]

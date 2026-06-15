@@ -67,6 +67,7 @@ export interface MediaModelManifest {
     endpoint: string
     method: 'GET' | 'POST'
     contentType: MediaRequestContentType
+    headers?: Record<string, unknown> | undefined
     requestTemplate: Record<string, unknown>
     response: MediaArtifactRetrieval
     polling?: {
@@ -148,6 +149,7 @@ export const MediaModelManifestSchema: z.ZodType<MediaModelManifest> = z.object(
     endpoint: z.string().min(1).max(500),
     method: z.enum(['GET', 'POST']),
     contentType: z.enum(['json', 'multipart', 'binary']),
+    headers: JsonObjectSchema.optional(),
     requestTemplate: JsonObjectSchema,
     response: MediaArtifactRetrievalSchema,
     polling: z.object({
@@ -353,6 +355,20 @@ const xaiImageSchema = {
   },
 }
 
+const bailianImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: { type: 'string', title: '画幅', enum: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9', 'auto'], default: '1:1' },
+    resolution: { type: 'string', title: '分辨率', enum: ['2K', '4K', 'auto'], default: '2K' },
+    n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+    negative_prompt: { type: 'string', title: '负面提示词' },
+    seed: { type: 'integer', title: '随机种子' },
+    prompt_extend: { type: 'boolean', title: '提示词扩展', default: false },
+    watermark: { type: 'boolean', title: '水印', default: false },
+  },
+}
+
 const apimartSeedance2VideoSchema = {
   type: 'object',
   additionalProperties: true,
@@ -492,6 +508,28 @@ const audioSpeechSchema = {
     voice: { type: 'string', title: '音色' },
     format: { type: 'string', title: '格式', enum: ['mp3', 'wav', 'opus', 'aac', 'flac', 'pcm'] },
     speed: { type: 'number', title: '速度', minimum: 0.25, maximum: 4 },
+  },
+}
+
+const bailianVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '视频比例', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '21:9', 'adaptive', 'auto'], default: '16:9' },
+    durationSeconds: { type: 'integer', title: '时长', minimum: 3, maximum: 30, default: 5 },
+    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p', 'auto'], default: '720p' },
+    count: { type: 'integer', title: '生成数量', minimum: 1, maximum: 4, default: 1 },
+    audio: { type: 'boolean', title: '生成音频', default: false },
+    seed: { type: 'integer', title: '随机种子' },
+    mode: { type: 'string', title: '生成模式', enum: ['reference', 'first_last_frame', 'continuation', 'auto'], default: 'auto' },
+    search: { type: 'boolean', title: '联网搜索', default: false },
+    timeoutHours: { type: 'integer', title: '超时时间（小时）', minimum: 1, maximum: 48, default: 24 },
+    prompt_extend: { type: 'boolean', title: '提示词扩展', default: false },
+    prompt_optimizer: { type: 'boolean', title: '提示词优化', default: false },
+    fast_pretreatment: { type: 'boolean', title: '快速预处理', default: false },
+    return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
+    useFirstFrame: { type: 'boolean', title: '使用首帧', default: true },
+    useLastFrame: { type: 'boolean', title: '使用尾帧', default: false },
   },
 }
 
@@ -813,6 +851,230 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     docs: { sourceUrls: ['https://docs.x.ai/developers/model-capabilities/audio/text-to-speech'] },
   },
   {
+    id: 'bailian:wan2.7-image-pro',
+    providerKind: 'bailian',
+    modelId: 'wan2.7-image-pro',
+    displayName: 'Wan 2.7 Image Pro',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: bailianImageSchema,
+        defaults: { size: '1:1', resolution: '2K', n: 1, prompt_extend: false, watermark: false },
+        aliases: { aspectRatio: 'size', outputFormat: 'output_format' },
+      },
+      {
+        id: 'image.edit',
+        label: '图生图 / 图片编辑',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: bailianImageSchema,
+        defaults: { size: '1:1', resolution: '2K', n: 1, prompt_extend: false, watermark: false },
+        aliases: { aspectRatio: 'size', outputFormat: 'output_format' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/image-generation/generation',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          messages: [
+            {
+              role: 'user',
+              content: [
+                { text: '{{prompt}}' },
+                { image: '{{image}}' },
+                { image: '{{firstFrame}}' },
+                { image: '{{lastFrame}}' },
+              ],
+            },
+          ],
+        },
+        parameters: {
+          size: '{{size}}',
+          resolution: '{{resolution}}',
+          n: '{{n}}',
+          negative_prompt: '{{negative_prompt}}',
+          seed: '{{seed}}',
+          prompt_extend: '{{prompt_extend}}',
+          watermark: '{{watermark}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['data[].url', 'data[].image_url', 'data.image_url', 'output.url', 'url'],
+      },
+      polling: { intervalMs: 5000, timeoutMs: 600000, statusMap: commonStatusMap },
+    },
+    docs: { sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'] },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 50 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:wan2.7-i2v-2026-04-25',
+    providerKind: 'bailian',
+    modelId: 'wan2.7-i2v-2026-04-25',
+    displayName: 'Wan 2.7 Image-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.image_to_video',
+        label: '图生视频',
+        input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: bailianVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', count: 1, audio: false, mode: 'first_last_frame', prompt_extend: false, prompt_optimizer: false, fast_pretreatment: false, return_last_frame: false },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', timeoutHours: 'timeout_hours' },
+      },
+      {
+        id: 'video.edit',
+        label: '视频编辑',
+        input: { required: ['prompt', 'video'] as MediaManifestInputKind[], maxImages: 2, acceptedMimeTypes: ['video/mp4', 'image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: bailianVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', count: 1, audio: false, mode: 'continuation', prompt_extend: false, prompt_optimizer: false, fast_pretreatment: false, return_last_frame: false },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', timeoutHours: 'timeout_hours' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          prompt: '{{prompt}}',
+          image: '{{image}}',
+          first_frame_image: '{{firstFrame}}',
+          last_frame_image: '{{lastFrame}}',
+          reference_images: '{{referenceImages}}',
+          video: '{{video}}',
+          video_url: '{{video}}',
+        },
+        parameters: {
+          aspect_ratio: '{{aspectRatio}}',
+          duration: '{{durationSeconds}}',
+          resolution: '{{resolution}}',
+          count: '{{count}}',
+          audio: '{{audio}}',
+          seed: '{{seed}}',
+          mode: '{{mode}}',
+          search: '{{search}}',
+          timeout_hours: '{{timeoutHours}}',
+          prompt_extend: '{{prompt_extend}}',
+          prompt_optimizer: '{{prompt_optimizer}}',
+          fast_pretreatment: '{{fast_pretreatment}}',
+          return_last_frame: '{{return_last_frame}}',
+          use_first_frame: '{{useFirstFrame}}',
+          use_last_frame: '{{useLastFrame}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 5000, timeoutMs: 600000, statusMap: commonStatusMap },
+    },
+    docs: { sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'] },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:HappyHorse-1.0-T2V',
+    providerKind: 'bailian',
+    modelId: 'HappyHorse-1.0-T2V',
+    displayName: 'HappyHorse 1.0 Text-to-Video',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] as MediaManifestInputKind[] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: bailianVideoSchema,
+        defaults: { aspectRatio: '16:9', durationSeconds: 5, resolution: '720p', count: 1, audio: false, mode: 'reference', prompt_extend: false, prompt_optimizer: false, fast_pretreatment: false, return_last_frame: false },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration', timeoutHours: 'timeout_hours' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/video-generation/video-synthesis',
+      method: 'POST',
+      contentType: 'json',
+      headers: { 'X-DashScope-Async': 'enable' },
+      requestTemplate: {
+        model: '{{modelId}}',
+        input: {
+          prompt: '{{prompt}}',
+          first_frame_image: '{{firstFrame}}',
+          last_frame_image: '{{lastFrame}}',
+          reference_images: '{{referenceImages}}',
+        },
+        parameters: {
+          aspect_ratio: '{{aspectRatio}}',
+          duration: '{{durationSeconds}}',
+          resolution: '{{resolution}}',
+          count: '{{count}}',
+          audio: '{{audio}}',
+          seed: '{{seed}}',
+          mode: '{{mode}}',
+          search: '{{search}}',
+          timeout_hours: '{{timeoutHours}}',
+          prompt_extend: '{{prompt_extend}}',
+          prompt_optimizer: '{{prompt_optimizer}}',
+          fast_pretreatment: '{{fast_pretreatment}}',
+          return_last_frame: '{{return_last_frame}}',
+        },
+      },
+      response: {
+        kind: 'task_poll',
+        taskIdPaths: ['task_id', 'request_id', 'id'],
+        statusEndpoint: '/tasks/{{taskId}}',
+        resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
+      },
+      polling: { intervalMs: 5000, timeoutMs: 600000, statusMap: commonStatusMap },
+    },
+    docs: { sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'] },
+    safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
+  },
+  {
+    id: 'bailian:qwen3-tts-flash',
+    providerKind: 'bailian',
+    modelId: 'qwen3-tts-flash',
+    displayName: 'Qwen3 TTS Flash',
+    domains: ['audio'],
+    capabilities: [
+      {
+        id: 'audio.speech',
+        label: '文生音频',
+        input: { required: ['text'] as MediaManifestInputKind[] },
+        output: { types: ['audio'] as MediaManifestOutputKind[], mimeTypes: ['audio/mpeg', 'audio/wav', 'audio/ogg'] },
+        paramSchema: audioSpeechSchema,
+        defaults: { format: 'mp3', voice: 'default', speed: 1 },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/audio/speech',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', input: '{{text}}', voice: '{{voice}}', format: '{{format}}', speed: '{{speed}}' },
+      response: { kind: 'binary_response' },
+    },
+    docs: { sourceUrls: ['https://bailian.console.aliyun.com/cn-beijing/?tab=model#/model-market'] },
+  },
+  {
     id: 'openai:gpt-image-1',
     providerKind: 'openai-images',
     modelId: 'gpt-image-1',
@@ -935,7 +1197,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v3/contents/generations/{{taskId}}',
         resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 172800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: 7200000, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1000,7 +1262,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         statusEndpoint: '/v3/contents/generations/{{taskId}}',
         resultPaths: ['data[].video_url', 'data[].url', 'data.video_url', 'output.video_url', 'output.url', 'video_url', 'url'],
       },
-      polling: { intervalMs: 5000, timeoutMs: 172800000, statusMap: commonStatusMap },
+      polling: { intervalMs: 5000, timeoutMs: 7200000, statusMap: commonStatusMap },
     },
     docs: {
       sourceUrls: [
@@ -1011,6 +1273,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },
   ...[
+    { id: 'kling:kling-video-3.0', modelId: 'kling-video-3.0', displayName: 'Kling Video 3.0', modes: ['standard', 'professional'], audio: true },
+    { id: 'kling:kling-video-3.0-omni', modelId: 'kling-video-3.0-omni', displayName: 'Kling 3.0 Omni', modes: ['standard', 'professional'], audio: true },
     { id: 'kling:kling-video-o1', modelId: 'kling-video-o1', displayName: 'Kling O1', modes: ['standard', 'professional'] },
     { id: 'kling:kling-v2.6-pro', modelId: 'kling-v2.6-pro', displayName: 'Kling 2.6 Pro', modes: ['standard', 'professional'], audio: true },
     { id: 'kling:kling-v2.6-std', modelId: 'kling-v2.6-std', displayName: 'Kling 2.6 Standard', modes: ['standard'], audio: true },
@@ -1020,8 +1284,22 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
       ...klingVideoSchema,
       properties: {
         ...klingVideoSchema.properties,
+        ...(entry.modelId.includes('3.0')
+          ? {
+              durationSeconds: { type: 'integer', title: '时长', enum: [3, 5, 10, 15] },
+              aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4'] },
+            }
+          : {}),
         ...(entry.modes.length > 0 ? { mode: { type: 'string', title: '模式', enum: entry.modes } } : {}),
         ...(entry.audio ? {} : { audio: { type: 'boolean', title: '生成音频', readOnly: true, default: false } }),
+        ...(entry.modelId.includes('3.0') || entry.modelId.includes('omni')
+          ? {
+              motion_strength: { type: 'number', title: '运动强度', minimum: 0, maximum: 1 },
+              camera_control: { type: 'string', title: '镜头控制' },
+              multilingual_mix: { type: 'boolean', title: '多语言混合', default: false },
+              native_text: { type: 'boolean', title: '原生文本', default: false },
+            }
+          : {}),
       },
     }
     return {
@@ -1061,7 +1339,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         endpoint: '/v1/videos/text2video',
         method: 'POST' as const,
         contentType: 'json' as const,
-        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}' },
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{firstFrame}}', last_frame_image: '{{lastFrame}}', video: '{{video}}', reference_images: '{{referenceImages}}' },
         response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'id'], statusEndpoint: '/v1/videos/text2video/{{taskId}}', resultPaths: ['video_url', 'output.video_url', 'data.video_url', 'data.url'] },
         polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
       },

@@ -16,7 +16,7 @@ its `config_json` (all backward compatible):
 
 | Field | Type | Description |
 | --- | --- | --- |
-| `mediaProvider` | `apimart` \| `xai` \| `openai-compatible` \| `openai-images` \| `google-generative-ai` \| `volcengine-ark` \| `kling` \| `pixverse` \| `minimax-hailuo` \| `wan` \| `happyhorse` \| `omni` \| `custom` | Platform/manifest adapter kind used for routing and diagnostics |
+| `mediaProvider` | `apimart` \| `xai` \| `bailian` \| `openai-compatible` \| `openai-images` \| `google-generative-ai` \| `volcengine-ark` \| `kling` \| `pixverse` \| `minimax-hailuo` \| `wan` \| `happyhorse` \| `omni` \| `custom` | Platform/manifest adapter kind used for routing and diagnostics |
 | `mediaApiType` | `sync` \| `async` \| `auto` | sync returns media directly; async polls a task; auto adapts |
 | `mediaCapabilities` | `MediaCapabilityId[]` | Declared capabilities (`image.generate`, `audio.speech`, `video.generate`, …) |
 | `mediaDefaults` | object | Default size / voice / aspect ratio / polling interval / timeout |
@@ -35,7 +35,7 @@ video.generate · video.image_to_video · video.edit
 Spark now has a first-pass model manifest registry:
 
 - Protocol types and zod schemas live in `packages/protocol/src/media-model-manifest.ts`.
-- Built-in seeds cover APIMart, xAI, OpenAI Images, Google/Veo, Volcengine Seedance 2.0 / Fast, and placeholder manifests for Kling, PixVerse, Wan, HappyHorse, Omni, and MiniMax-Hailuo.
+- Built-in seeds cover APIMart, xAI, Alibaba Bailian, OpenAI Images, Google/Veo, Volcengine Seedance 2.0 / Fast, and the Kling / PixVerse / Wan / HappyHorse / Omni / MiniMax-Hailuo families.
 - SQLite persistence uses `media_model_manifests` and `media_provider_models` (`028_media_model_manifests.sql`).
 - `MediaModelCatalogService` seeds built-ins and exposes list/describe/link operations.
 - Provider edit UI can load the global manifest catalog (`catalogOnly`) and save
@@ -97,8 +97,12 @@ apimart-video-sora2      — APIMart 视频 (Sora 2, async)
 xai-imagine-image        — xAI Imagine 图片
 xai-imagine-video        — xAI Imagine 视频 (async)
 xai-tts                  — xAI 语音合成
+bailian-images           — 阿里云百炼 图片
+bailian-video-happyhorse — 阿里云百炼 HappyHorse 视频
+bailian-video-wan-i2v    — 阿里云百炼 Wan 图生视频
+bailian-audio-tts        — 阿里云百炼 语音合成
 volcengine-seedance-video — 火山方舟 Seedance 视频 (async)
-kling-video              — Kling 可灵视频 (async)
+kling-video              — Kling 可灵视频 (3.0 / 2.x, async)
 minimax-image            — MiniMax 图片 (Image 01)
 minimax-speech           — MiniMax 语音合成 (Speech 2.8)
 minimax-hailuo-video     — MiniMax Hailuo 2.3 视频 (async)
@@ -125,38 +129,41 @@ Current built-in coverage:
 | --- | --- | --- |
 | APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, first/last frame, audio flags |
 | xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, first/last frame, response format, voice/audio format |
+| 阿里云百炼 | Wan 2.7 Image Pro, Wan 2.7 I2V, HappyHorse 1.0 T2V, Qwen3 TTS Flash | size / resolution, prompt extension, watermark, count, video mode, audio flag, search, timeout, first/last frame, continuation / video edit |
 | Volcengine | Doubao Seedance 2.0 / 2.0 Fast | generation mode, aspect ratio, resolution, duration mode, duration, count, output audio, seed, search toggle, timeout, fps, first/last frame, video edit |
-| Kling | O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, first/last frame, negative prompt, audio flag where supported |
+| Kling | Video 3.0 / 3.0 Omni, O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, first/last frame, negative prompt, audio flag where supported, motion / camera controls |
 | MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution, first/last frame |
 
 Volcengine Seedance 2.0 / Fast 已完成内置接入；`platform_model_info/volcengine.json`
 中其余火山模型仍保留为资料记录，后续补齐参数后可继续转成内置 manifest。
 
-xAI Grok Imagine Video (`xai-imagine-video`) uses:
+Alibaba Bailian Video (`bailian-video-wan-i2v`) uses:
 
 ```json
 {
-  "mediaProvider": "xai",
+  "mediaProvider": "bailian",
   "mediaApiType": "async",
-  "defaultModel": "grok-imagine-video",
-  "modelIds": ["grok-imagine-video"],
-  "mediaCapabilities": ["video.generate", "video.image_to_video", "video.edit"],
+  "defaultModel": "wan2.7-i2v-2026-04-25",
+  "modelIds": ["wan2.7-i2v-2026-04-25"],
+  "mediaCapabilities": ["video.image_to_video", "video.edit"],
   "mediaModelRefs": [
-    { "manifestId": "xai:grok-imagine-video", "modelId": "grok-imagine-video", "enabled": true }
+    { "manifestId": "bailian:wan2.7-i2v-2026-04-25", "modelId": "wan2.7-i2v-2026-04-25", "enabled": true }
   ],
   "mediaDefaults": {
-    "video": { "aspectRatio": "16:9", "durationSeconds": 8, "resolution": "720p" },
+    "video": { "aspectRatio": "16:9", "durationSeconds": 5, "resolution": "720p" },
     "polling": { "intervalMs": 5000, "timeoutMs": 600000 }
   }
 }
 ```
 
-The xAI adapter posts video jobs to `/videos/generations`, polls
-`/videos/{request_id}`, and downloads the returned video URL into
-`.spark-artifacts/media/videos`. For image-to-video, Spark sends the selected
-canvas image as `image: { url: ... }`; when the canvas node also has an internal
-`safe-file://` display URL, the adapter prefers the base64 `dataUrl` so xAI
-receives an externally valid URL/data URI instead of Spark's renderer-only URL.
+The Bailian template adapter posts video jobs to
+`/video-generation/video-synthesis`, adds `X-DashScope-Async: enable`, polls
+`/tasks/{taskId}`, and downloads the returned video URL into
+`.spark-artifacts/media/videos`. For image-to-video and video-edit flows, Spark
+sends the selected canvas image(s) and/or input video URL via the manifest
+variables `firstFrame`, `lastFrame`, `referenceImages`, and `video` so the
+template can render first-frame, first/last-frame, and continuation payloads
+without hard-coding UI logic.
 
 Default endpoints:
 
@@ -164,6 +171,7 @@ Default endpoints:
 | --- | --- |
 | APIMart | `https://api.apimart.ai/v1` |
 | xAI | `https://api.x.ai/v1` |
+| Alibaba Bailian | `https://dashscope.aliyuncs.com/api/v1/services/aigc` |
 | Volcengine | `https://ark.cn-beijing.volces.com/api` |
 
 ## 4. Agent Skill (spark_media MCP)

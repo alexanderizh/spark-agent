@@ -112,6 +112,7 @@ const EMPTY_MEDIA_FORM = {
 const MEDIA_PROVIDER_LABELS: Record<MediaProviderKind, string> = {
   apimart: 'APIMart',
   xai: 'xAI',
+  bailian: '阿里百炼',
   'openai-compatible': 'OpenAI Compatible',
   'openai-images': 'OpenAI Images',
   'google-generative-ai': 'Google Gemini / Veo',
@@ -140,6 +141,8 @@ const MEDIA_CAPABILITY_LABELS: Record<MediaCapabilityId, string> = {
 function mediaProviderFromImageKind(imageProvider: ImageProviderKind): MediaProviderKind {
   if (imageProvider === 'apimart') return 'apimart'
   if (imageProvider === 'xai') return 'xai'
+  if (imageProvider === 'bailian') return 'bailian'
+  if (imageProvider === 'seeddance') return 'volcengine-ark'
   if (imageProvider === 'custom') return 'custom'
   return 'openai-compatible'
 }
@@ -337,6 +340,7 @@ function adapterKindFromManifestProvider(providerKind: string): MediaProviderKin
 
 function vendorForMediaProvider(kind: string | undefined): VendorMeta | null {
   if (!kind) return null
+  if (kind === 'bailian') return getVendorMeta('bailian') ?? null
   if (kind === 'kling') return getVendorMeta('kuaishou') ?? null
   if (kind === 'minimax-hailuo') return getVendorMeta('minimax') ?? null
   if (kind === 'volcengine-ark') return getVendorMeta('volcengine') ?? null

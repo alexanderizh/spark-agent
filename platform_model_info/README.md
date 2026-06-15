@@ -9,10 +9,10 @@
 | `apimart.json` | ApiMart | ✅ 完成 | 9个模型，包含文生图、视频生成模型的完整参数 |
 | `xai.json` | xAI | ⚠️ 部分完成 | 2个模型，已获取定价和基础信息，需补充完整参数枚举 |
 | `minimax.json` | MiniMax | ⚠️ 部分完成 | 6个模型，Hailuo 2.3完整，其他需补充 |
-| `kling.json` | Kling | ⚠️ 部分完成 | 6个模型，已有基础参数，3.0/Omni版本需补充 |
+| `kling.json` | Kling | ✅ 完成 | 8个模型，3.0 / 3.0 Omni / 2.6 / 2.5 / O1 参数已补齐 |
 | `openrouter.json` | OpenRouter |  |
 | `volcengine.json` | 火山引擎 | Seedance 2.0 / Fast 已完成，其余模型待补 |
-| `aliyun.json` | 阿里云百炼 | |
+| `aliyun.json` | 阿里云百炼 | ✅ 完成 | Wan 2.7 Image Pro / Wan 2.7 I2V / HappyHorse 1.0 T2V / Qwen3 TTS Flash |
 
 ## 模型能力统计
 
