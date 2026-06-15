@@ -508,7 +508,10 @@ export function ChatView({
   })
   const [contextUsage, setContextUsage] = useState<ContextUsageState | null>(null)
   const [projectContext, setProjectContext] = useState<ProjectContextState | null>(null)
-  const [proposedPlan, setProposedPlan] = useState<string | null>(null)
+  // 待审批计划绑定到其所属会话，避免单一全局状态在切换会话时残留 / 把批准发到错误会话。
+  const [proposedPlan, setProposedPlan] = useState<{ sessionId: SessionId; plan: string } | null>(
+    null,
+  )
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
   const [clearTrigger, setClearTrigger] = useState(0)
@@ -934,7 +937,9 @@ export function ChatView({
               onSessionStatusChange={handleActiveSessionStatusChange}
               onContextUsageChange={setContextUsage}
               onProjectContextChange={setProjectContext}
-              onPlanProposed={setProposedPlan}
+              onPlanProposed={(plan) =>
+                setProposedPlan(plan == null || active == null ? null : { sessionId: active, plan })
+              }
               onTurnPromptSnapshotsChange={setTurnPromptSnapshots}
               clearTrigger={clearTrigger}
               scrollToBottomTrigger={scrollToBottomTrigger}
@@ -993,10 +998,10 @@ export function ChatView({
         />
       )}
 
-      {proposedPlan != null && active != null && (
+      {proposedPlan != null && active != null && proposedPlan.sessionId === active && (
         <PlanApprovalModal
-          sessionId={active}
-          plan={proposedPlan}
+          sessionId={proposedPlan.sessionId}
+          plan={proposedPlan.plan}
           onClose={() => setProposedPlan(null)}
         />
       )}
@@ -1283,7 +1288,8 @@ function ChatStream({
   onSessionStatusChange: (status: SessionSummary['status']) => void
   onContextUsageChange: (snapshot: ContextUsageState | null) => void
   onProjectContextChange: (snapshot: ProjectContextState | null) => void
-  onPlanProposed: (plan: string) => void
+  /** 上报当前会话「待审批计划」状态：有则传 plan 文本，无则传 null（清空，避免切换会话后残留） */
+  onPlanProposed: (plan: string | null) => void
   onTurnPromptSnapshotsChange: (snapshots: TurnPromptSnapshotEvent[]) => void
   /** 递增时清空 ChatStream 内部消息状态 */
   clearTrigger?: number
@@ -1423,8 +1429,9 @@ function ChatStream({
     callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
     // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
     // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
-    const pendingPlan = builder.getPendingPlan()
-    if (pendingPlan != null) callbacks.onPlanProposed(pendingPlan)
+    // 始终上报（无 pending 时传 null）：这样切换到「无待审批计划」的会话时能清空
+    // 上一个会话残留的审批弹窗，避免弹窗跨会话泄漏。
+    callbacks.onPlanProposed(builder.getPendingPlan())
     return nextMessages
   }, [])
 
@@ -1701,6 +1708,11 @@ function ChatStream({
 
       if (event.type === 'plan_proposed') {
         onPlanProposed(event.plan)
+      }
+
+      // 新用户消息抵达 = 上一个待审批计划已被处理（批准/拒绝后再发言），清空审批弹窗状态。
+      if (event.type === 'user_message') {
+        onPlanProposed(null)
       }
 
       if (event.type === 'turn_prompt_snapshot') {
@@ -5449,15 +5461,16 @@ function PlanApprovalModal({
     setBusy(true)
     try {
       const message = `批准上述计划。请按如下计划继续执行：\n\n${planText}`
-      // 直接在 send-turn 中传递 permissionMode，避免先调用 session:update 导致的时序问题：
-      // 1. session:update 清空 pendingPlanApprovals 后，plan turn 的 finally 可能还没执行完
-      // 2. 此时 activeLoops 可能还存在，导致 send-turn 的消息被入队而不是立即执行
-      // 3. interruptActive: true 会中断当前 loop（如果有）并立即启动新 turn
+      // 「先终止挂起的 plan turn，再发送批准消息」两步式（取代以往单次 send-turn + interruptActive）：
+      // plan turn 在 plan 模式下卡在 ExitPlanMode 权限闸门、仍占用 activeLoops；若在同一次 send-turn
+      // 里中断+起跑，旧 SDK query 尚未拆卸完，新 turn 会被入队、表现为「卡住，需手动结束会话才发出」。
+      // 这里先 await session:cancel 让循环/权限闸门彻底释放并置 idle，再普通 send-turn——
+      // 目标会话已 idle，新 turn 立即起跑。await 保证两步有序，规避时序竞态。
+      await window.spark.invoke('session:cancel', { sessionId })
       await window.spark.invoke('session:send-turn', {
         sessionId,
         message,
         permissionMode: 'claude-auto',
-        interruptActive: true,
       })
       toast.success('计划已批准，已切换为 auto 模式继续执行')
       onClose()
