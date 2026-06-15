@@ -555,7 +555,12 @@ export interface WorkspaceInfo {
   createdAt: string
   updatedAt: string
   /** 该 workspace 为 git worktree 时的元数据，否则 null */
-  worktreeMeta: { baseRepoRoot: string; branch: string; baseBranch: string; baseWorkspaceId?: string } | null
+  worktreeMeta: {
+    baseRepoRoot: string
+    branch: string
+    baseBranch: string
+    baseWorkspaceId?: string
+  } | null
 }
 
 export interface WorkspaceOpenRequest {
@@ -2726,13 +2731,22 @@ export interface BrowserPopInResponse {
 // ─── Window Control Channels ───────────────────────────────────────────────────
 
 export interface WindowMinimizeRequest {}
-export interface WindowMinimizeResponse { success: boolean }
+export interface WindowMinimizeResponse {
+  success: boolean
+}
 export interface WindowMaximizeRequest {}
-export interface WindowMaximizeResponse { success: boolean; maximized: boolean }
+export interface WindowMaximizeResponse {
+  success: boolean
+  maximized: boolean
+}
 export interface WindowCloseRequest {}
-export interface WindowCloseResponse { success: boolean }
+export interface WindowCloseResponse {
+  success: boolean
+}
 export interface WindowIsMaximizedRequest {}
-export interface WindowIsMaximizedResponse { maximized: boolean }
+export interface WindowIsMaximizedResponse {
+  maximized: boolean
+}
 
 // ─── File Patch Channels ───────────────────────────────────────────────────────
 
@@ -3157,7 +3171,12 @@ export interface TaskExecutionStatsResponse {
 // ─── Remote Connections Channels ────────────────────────────────────────────
 
 export type RemoteChannelType = 'telegram' | 'feishu' | 'qq' | 'wechat-claw'
-export type RemoteConnectionStatus = 'disabled' | 'draft' | 'pending-pairing' | 'connected' | 'error'
+export type RemoteConnectionStatus =
+  | 'disabled'
+  | 'draft'
+  | 'pending-pairing'
+  | 'connected'
+  | 'error'
 export type RemotePairingMode = 'code' | 'qr'
 
 export interface RemoteConnectionCredentials {
@@ -3689,6 +3708,21 @@ export interface CanvasAssetCopyToProjectResponse {
   error?: string
 }
 
+export interface CanvasAssetDownloadRequest {
+  sourcePath?: string
+  sourceUrl?: string
+  contentText?: string
+  mimeType?: string | null
+  type?: 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'file'
+  suggestedFileName?: string
+  defaultDirectory?: string
+}
+export interface CanvasAssetDownloadResponse {
+  saved: boolean
+  savedPath?: string
+  error?: string
+}
+
 export interface CanvasProjectExportPackageRequest {
   projectId: string
   title?: string
@@ -3745,7 +3779,10 @@ export interface IpcChannelMap {
   'session:send-turn': [SessionSendTurnRequest, SessionSendTurnResponse]
   'session:get-queue': [SessionGetQueueRequest, SessionGetQueueResponse]
   'session:cancel-queued-turn': [SessionCancelQueuedTurnRequest, SessionCancelQueuedTurnResponse]
-  'session:send-queued-turn-now': [SessionSendQueuedTurnNowRequest, SessionSendQueuedTurnNowResponse]
+  'session:send-queued-turn-now': [
+    SessionSendQueuedTurnNowRequest,
+    SessionSendQueuedTurnNowResponse,
+  ]
   'session:cancel': [SessionCancelRequest, SessionCancelResponse]
   'session:get-history': [SessionGetHistoryRequest, SessionGetHistoryResponse]
   'session:list': [SessionListRequest, SessionListResponse]
@@ -3992,9 +4029,15 @@ export interface IpcChannelMap {
   'file:prepare-image-preview': [FilePrepareImagePreviewRequest, FilePrepareImagePreviewResponse]
 
   // Canvas Media Generation (infinite canvas → platform adapter)
-  'canvas:media-capabilities:list': [CanvasMediaCapabilitiesListRequest, CanvasMediaCapabilitiesListResponse]
+  'canvas:media-capabilities:list': [
+    CanvasMediaCapabilitiesListRequest,
+    CanvasMediaCapabilitiesListResponse,
+  ]
   'canvas:media-models:list': [CanvasMediaModelsListRequest, CanvasMediaModelsListResponse]
-  'canvas:media-models:describe': [CanvasMediaModelDescribeRequest, CanvasMediaModelDescribeResponse]
+  'canvas:media-models:describe': [
+    CanvasMediaModelDescribeRequest,
+    CanvasMediaModelDescribeResponse,
+  ]
   'canvas:task:create-media': [CanvasMediaTaskCreateRequest, CanvasMediaTaskCreateResponse]
   'canvas:task:cancel-media': [CanvasMediaTaskCancelRequest, CanvasMediaTaskCancelResponse]
 
@@ -4004,12 +4047,28 @@ export interface IpcChannelMap {
   'canvas:project:list': [CanvasProjectListRequest, CanvasProjectListResponse]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
   'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]
-  'canvas:project:ensure-directory': [CanvasProjectEnsureDirectoryRequest, CanvasProjectEnsureDirectoryResponse]
+  'canvas:project:ensure-directory': [
+    CanvasProjectEnsureDirectoryRequest,
+    CanvasProjectEnsureDirectoryResponse,
+  ]
   'canvas:asset:write-data-url': [CanvasAssetWriteDataUrlRequest, CanvasAssetWriteDataUrlResponse]
-  'canvas:asset:copy-to-project': [CanvasAssetCopyToProjectRequest, CanvasAssetCopyToProjectResponse]
-  'canvas:project:export-package': [CanvasProjectExportPackageRequest, CanvasProjectExportPackageResponse]
-  'canvas:project:migrate-assets': [CanvasProjectMigrateAssetsRequest, CanvasProjectMigrateAssetsResponse]
-  'canvas:project:cleanup-orphans': [CanvasProjectCleanupOrphansRequest, CanvasProjectCleanupOrphansResponse]
+  'canvas:asset:copy-to-project': [
+    CanvasAssetCopyToProjectRequest,
+    CanvasAssetCopyToProjectResponse,
+  ]
+  'canvas:asset:download': [CanvasAssetDownloadRequest, CanvasAssetDownloadResponse]
+  'canvas:project:export-package': [
+    CanvasProjectExportPackageRequest,
+    CanvasProjectExportPackageResponse,
+  ]
+  'canvas:project:migrate-assets': [
+    CanvasProjectMigrateAssetsRequest,
+    CanvasProjectMigrateAssetsResponse,
+  ]
+  'canvas:project:cleanup-orphans': [
+    CanvasProjectCleanupOrphansRequest,
+    CanvasProjectCleanupOrphansResponse,
+  ]
 
   // Remote Connections
   'remote:list': [RemoteListRequest, RemoteListResponse]
@@ -4054,8 +4113,14 @@ export interface IpcChannelMap {
   'scheduled-task:run-now': [ScheduledTaskRunNowRequest, ScheduledTaskRunNowResponse]
   'scheduled-task:export': [ScheduledTaskExportRequest, ScheduledTaskExportResponse]
   'scheduled-task:import': [ScheduledTaskImportRequest, ScheduledTaskImportResponse]
-  'scheduled-task:export-to-file': [ScheduledTaskExportToFileRequest, ScheduledTaskExportToFileResponse]
-  'scheduled-task:import-from-file': [ScheduledTaskImportFromFileRequest, ScheduledTaskImportFromFileResponse]
+  'scheduled-task:export-to-file': [
+    ScheduledTaskExportToFileRequest,
+    ScheduledTaskExportToFileResponse,
+  ]
+  'scheduled-task:import-from-file': [
+    ScheduledTaskImportFromFileRequest,
+    ScheduledTaskImportFromFileResponse,
+  ]
   'task-execution:list': [TaskExecutionListRequest, TaskExecutionListResponse]
   'task-execution:get': [TaskExecutionGetRequest, TaskExecutionGetResponse]
   'task-execution:cancel': [TaskExecutionCancelRequest, TaskExecutionCancelResponse]

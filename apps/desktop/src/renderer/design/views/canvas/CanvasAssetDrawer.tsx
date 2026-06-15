@@ -1,11 +1,35 @@
 import { useMemo, useState } from 'react'
-import { Drawer, Tag } from '@lobehub/ui'
-import { Empty, List } from 'antd'
+import { Button, Drawer, Tag } from '@lobehub/ui'
+import { Empty, List, Tooltip, message } from 'antd'
 import { SearchBar as LobeSearchBar, Select as LobeSelect } from '@lobehub/ui'
 import { normalizeEduAssetUrl } from '@spark/shared'
+import { Icons } from '../../Icons'
 import type { CanvasAsset, CanvasAssetType } from './canvas.types'
 
 type AssetFilter = 'all' | CanvasAssetType
+
+function isAbsolutePath(value: string | null | undefined): value is string {
+  return typeof value === 'string' && (value.startsWith('/') || /^[A-Za-z]:[\\/]/.test(value))
+}
+
+function assetSourceUrl(asset: CanvasAsset): string | undefined {
+  const url = asset.url ?? asset.thumbnailUrl ?? undefined
+  return url ? normalizeEduAssetUrl(url) : undefined
+}
+
+function assetFileName(asset: CanvasAsset): string {
+  const title = asset.title?.trim()
+  if (title) return title
+  const source = asset.url ?? asset.storageKey ?? asset.thumbnailUrl ?? ''
+  const basename = source.split(/[?#]/)[0]?.split(/[\\/]/).filter(Boolean).pop()
+  return basename || `canvas-${asset.type}-${asset.id}`
+}
+
+function canDownloadAsset(asset: CanvasAsset): boolean {
+  return Boolean(
+    asset.url || asset.thumbnailUrl || asset.contentText || isAbsolutePath(asset.storageKey),
+  )
+}
 
 export function CanvasAssetDrawer({
   open,
@@ -18,6 +42,7 @@ export function CanvasAssetDrawer({
 }) {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<AssetFilter>('all')
+  const [downloadingAssetId, setDownloadingAssetId] = useState<string | null>(null)
 
   const filteredAssets = useMemo(() => {
     const keyword = query.trim().toLowerCase()
@@ -29,6 +54,34 @@ export function CanvasAssetDrawer({
         .some((value) => String(value).toLowerCase().includes(keyword))
     })
   }, [assets, query, typeFilter])
+
+  const handleDownload = async (asset: CanvasAsset): Promise<void> => {
+    if (!canDownloadAsset(asset)) {
+      message.warning('该资产没有可下载内容')
+      return
+    }
+    setDownloadingAssetId(asset.id)
+    try {
+      const sourceUrl = assetSourceUrl(asset)
+      const result = await window.spark.invoke('canvas:asset:download', {
+        ...(isAbsolutePath(asset.storageKey) ? { sourcePath: asset.storageKey } : {}),
+        ...(sourceUrl ? { sourceUrl } : {}),
+        ...(asset.contentText != null ? { contentText: asset.contentText } : {}),
+        ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
+        type: asset.type,
+        suggestedFileName: assetFileName(asset),
+      })
+      if (result.saved) {
+        message.success(result.savedPath ? `资产已下载到 ${result.savedPath}` : '资产已下载')
+      } else if (result.error) {
+        message.error(`下载失败：${result.error}`)
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '下载资产失败')
+    } finally {
+      setDownloadingAssetId(null)
+    }
+  }
 
   return (
     <Drawer title="项目资产" open={open} onClose={onClose} width={420} footer={null}>
@@ -47,7 +100,9 @@ export function CanvasAssetDrawer({
             { label: '全部类型', value: 'all' },
             { label: '图片', value: 'image' },
             { label: '视频', value: 'video' },
+            { label: '音频', value: 'audio' },
             { label: '文本', value: 'text' },
+            { label: 'Prompt', value: 'prompt' },
             { label: '文件', value: 'file' },
           ]}
         />
@@ -82,6 +137,17 @@ export function CanvasAssetDrawer({
                       {asset.source}
                     </Tag>
                   </div>
+                </div>
+                <div className="canvas-asset-actions">
+                  <Tooltip title="下载资产">
+                    <Button
+                      size="small"
+                      icon={<Icons.Download size={14} />}
+                      disabled={!canDownloadAsset(asset)}
+                      loading={downloadingAssetId === asset.id}
+                      onClick={() => void handleDownload(asset)}
+                    />
+                  </Tooltip>
                 </div>
               </div>
             </List.Item>

@@ -8,10 +8,7 @@
  */
 
 import { z } from 'zod'
-import {
-  ProviderExportPayloadSchema,
-  ProviderImportModeSchema,
-} from '../provider-export.js'
+import { ProviderExportPayloadSchema, ProviderImportModeSchema } from '../provider-export.js'
 import {
   MediaProviderKindSchema,
   MediaApiTypeSchema,
@@ -34,7 +31,14 @@ export const RuleIdSchema = z.string().uuid()
 
 export const RuleScopeSchema = z.enum(['system', 'team', 'user', 'project', 'session'])
 export const RuntimeConfigScopeSchema = z.enum(['system', 'agent', 'project', 'session'])
-export const LocalSkillSourceSchema = z.enum(['claude', 'codex', 'agents', 'bundled', 'linked', 'custom'])
+export const LocalSkillSourceSchema = z.enum([
+  'claude',
+  'codex',
+  'agents',
+  'bundled',
+  'linked',
+  'custom',
+])
 export const SessionChatModeSchema = z.enum(['agent', 'ask', 'edit', 'review'])
 export const SessionReasoningEffortSchema = z.enum(['medium', 'high', 'xhigh', 'max'])
 export const SessionAgentAdapterSchema = z.enum(['claude', 'claude-sdk', 'codex'])
@@ -288,52 +292,60 @@ export const SessionSetMaxIterationsRequestSchema = z.object({
 
 // ─── Provider Schema ──────────────────────────────────────────────────────────
 
-const ProviderKindSchema = z.enum(['anthropic', 'openai', 'deepseek', 'ollama', 'openai-compatible'])
+const ProviderKindSchema = z.enum([
+  'anthropic',
+  'openai',
+  'deepseek',
+  'ollama',
+  'openai-compatible',
+])
 
 export const ProviderModelTypeSchema = z.enum(['image', 'text', 'multimodal', 'voice', 'video'])
 export type ProviderModelType = z.infer<typeof ProviderModelTypeSchema>
 export const ImageGenApiTypeSchema = z.enum(['sync', 'async', 'auto'])
 
-export const ProviderCreateRequestSchema = z.object({
-  name: z.string().min(1).max(100),
-  provider: ProviderKindSchema,
-  defaultModel: z.string().min(1).max(200).optional(),
-  modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
-  model: z.string().min(1).max(200).optional(),
-  apiEndpoint: z.string().min(1).max(500).optional(),
-  apiKey: z.string().min(1).max(500),
-  isDefault: z.boolean().optional().default(false),
-  supportsMillionContext: z.boolean().optional().default(false),
-  /** 子 agent 默认走 Haiku 档；可选。留空则回落 defaultModel。 */
-  haikuModel: z.string().min(1).max(200).optional(),
-  /** 主对话档；可选。留空则回落 defaultModel。 */
-  sonnetModel: z.string().min(1).max(200).optional(),
-  /** Plan/Review 等高能力 agent；可选。留空则回落 defaultModel。 */
-  opusModel: z.string().min(1).max(200).optional(),
-  /** 模型能力类型 */
-  modelType: ProviderModelTypeSchema.optional().default('multimodal'),
-  /** 图片模型供应商类型 */
-  imageProvider: z.string().min(1).max(80).nullable().optional(),
-  /** 图片模型调用方式 */
-  imageApiType: ImageGenApiTypeSchema.nullable().optional(),
-  /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
-  mediaProvider: MediaProviderKindSchema.nullable().optional(),
-  /** 多媒体调用方式 */
-  mediaApiType: MediaApiTypeSchema.nullable().optional(),
-  /** 已声明支持的多媒体能力列表 */
-  mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
-  /** 多媒体能力默认值 */
-  mediaDefaults: ProviderMediaDefaultsSchema.optional(),
-  /** 启用的多媒体模型 manifest 引用 */
-  mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
-}).superRefine((value, ctx) => {
-  if ((value.defaultModel ?? value.model)?.trim().length) return
-  ctx.addIssue({
-    code: z.ZodIssueCode.custom,
-    message: 'defaultModel is required',
-    path: ['defaultModel'],
+export const ProviderCreateRequestSchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    provider: ProviderKindSchema,
+    defaultModel: z.string().min(1).max(200).optional(),
+    modelIds: z.array(z.string().min(1).max(200)).max(200).optional(),
+    model: z.string().min(1).max(200).optional(),
+    apiEndpoint: z.string().min(1).max(500).optional(),
+    apiKey: z.string().min(1).max(500),
+    isDefault: z.boolean().optional().default(false),
+    supportsMillionContext: z.boolean().optional().default(false),
+    /** 子 agent 默认走 Haiku 档；可选。留空则回落 defaultModel。 */
+    haikuModel: z.string().min(1).max(200).optional(),
+    /** 主对话档；可选。留空则回落 defaultModel。 */
+    sonnetModel: z.string().min(1).max(200).optional(),
+    /** Plan/Review 等高能力 agent；可选。留空则回落 defaultModel。 */
+    opusModel: z.string().min(1).max(200).optional(),
+    /** 模型能力类型 */
+    modelType: ProviderModelTypeSchema.optional().default('multimodal'),
+    /** 图片模型供应商类型 */
+    imageProvider: z.string().min(1).max(80).nullable().optional(),
+    /** 图片模型调用方式 */
+    imageApiType: ImageGenApiTypeSchema.nullable().optional(),
+    /** 多媒体平台 adapter 种类（图片/语音/视频统一） */
+    mediaProvider: MediaProviderKindSchema.nullable().optional(),
+    /** 多媒体调用方式 */
+    mediaApiType: MediaApiTypeSchema.nullable().optional(),
+    /** 已声明支持的多媒体能力列表 */
+    mediaCapabilities: z.array(MediaCapabilityIdSchema).max(20).optional(),
+    /** 多媒体能力默认值 */
+    mediaDefaults: ProviderMediaDefaultsSchema.optional(),
+    /** 启用的多媒体模型 manifest 引用 */
+    mediaModelRefs: z.array(ProviderMediaModelRefSchema).max(200).optional(),
   })
-})
+  .superRefine((value, ctx) => {
+    if ((value.defaultModel ?? value.model)?.trim().length) return
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'defaultModel is required',
+      path: ['defaultModel'],
+    })
+  })
 
 export const ProviderUpdateRequestSchema = z.object({
   id: ProfileIdSchema,
@@ -484,7 +496,10 @@ export const IpcSchemaRegistry = {
   'provider:delete': ProviderDeleteRequestSchema,
   // Provider 导入/导出 schema
   'provider:export': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
-  'provider:import': z.object({ payload: ProviderExportPayloadSchema, mode: ProviderImportModeSchema }),
+  'provider:import': z.object({
+    payload: ProviderExportPayloadSchema,
+    mode: ProviderImportModeSchema,
+  }),
   'provider:export-to-file': z.object({ ids: z.array(z.string().min(1).max(200)).max(500) }),
   'provider:import-from-file': z.object({}),
   'workspace:open': WorkspaceOpenRequestSchema,
@@ -519,18 +534,45 @@ export const IpcSchemaRegistry = {
   'rules:delete': RulesDeleteRequestSchema,
   'rules:compose': RulesComposeRequestSchema,
   'permission:list-profiles': z.object({}),
-  'permission:create-profile': z.object({ name: z.string().min(1).max(80), sandboxLevel: z.number().int().min(0).max(4).optional() }),
+  'permission:create-profile': z.object({
+    name: z.string().min(1).max(80),
+    sandboxLevel: z.number().int().min(0).max(4).optional(),
+  }),
   'permission:delete-profile': z.object({ id: z.string().min(1) }),
-  'permission:update-sandbox': z.object({ profileId: z.string().min(1), sandboxLevel: z.number().int().min(0).max(4) }),
-  'permission:update-rule': z.object({ profileId: z.string().min(1), action: z.string().min(1), mode: z.enum(['allow', 'ask', 'ask-twice', 'deny']) }),
+  'permission:update-sandbox': z.object({
+    profileId: z.string().min(1),
+    sandboxLevel: z.number().int().min(0).max(4),
+  }),
+  'permission:update-rule': z.object({
+    profileId: z.string().min(1),
+    action: z.string().min(1),
+    mode: z.enum(['allow', 'ask', 'ask-twice', 'deny']),
+  }),
   'permission:set-active-profile': z.object({ profileId: z.string().min(1) }),
   'permission:approval-respond': z.object({
     requestId: z.string().min(1),
-    decision: z.enum(['allow-once', 'allow-session', 'allow-project', 'allow-global', 'deny', 'deny-project', 'deny-global']),
+    decision: z.enum([
+      'allow-once',
+      'allow-session',
+      'allow-project',
+      'allow-global',
+      'deny',
+      'deny-project',
+      'deny-global',
+    ]),
   }),
   'model:list': z.object({ providerId: z.string().uuid().optional() }),
-  'model:create': z.object({ providerId: z.string().uuid(), name: z.string().min(1).max(200), configJson: z.string().optional() }),
-  'model:update': z.object({ id: z.string().uuid(), name: z.string().min(1).max(200).optional(), configJson: z.string().optional(), enabled: z.boolean().optional() }),
+  'model:create': z.object({
+    providerId: z.string().uuid(),
+    name: z.string().min(1).max(200),
+    configJson: z.string().optional(),
+  }),
+  'model:update': z.object({
+    id: z.string().uuid(),
+    name: z.string().min(1).max(200).optional(),
+    configJson: z.string().optional(),
+    enabled: z.boolean().optional(),
+  }),
   'model:delete': z.object({ id: z.string().uuid() }),
   'mcp:list': z.object({ scope: z.string().min(1).max(80).optional() }),
   'mcp:create': z.object({
@@ -580,10 +622,15 @@ export const IpcSchemaRegistry = {
     source: LocalSkillSourceSchema.optional(),
   }),
   'skill:import-batch-local': z.object({
-    candidates: z.array(z.object({
-      rootPath: z.string().min(1).max(1000),
-      source: LocalSkillSourceSchema,
-    })).min(1).max(100),
+    candidates: z
+      .array(
+        z.object({
+          rootPath: z.string().min(1).max(1000),
+          source: LocalSkillSourceSchema,
+        }),
+      )
+      .min(1)
+      .max(100),
   }),
   'skill:import-file': z.object({
     filePath: z.string().min(1).max(1000),
@@ -672,14 +719,19 @@ export const IpcSchemaRegistry = {
     ]),
     prompt: z.string().max(100_000).optional(),
     negativePrompt: z.string().max(100_000).optional(),
-    inputFiles: z.array(z.object({
-      path: z.string().max(2000).optional(),
-      url: z.string().max(4000).optional(),
-      dataUrl: z.string().max(100_000_000).optional(),
-      mimeType: z.string().max(160).optional(),
-      type: z.enum(['image', 'audio', 'video', 'file']),
-      role: z.enum(['input', 'first_frame', 'last_frame', 'reference', 'mask']).optional(),
-    })).max(64).optional(),
+    inputFiles: z
+      .array(
+        z.object({
+          path: z.string().max(2000).optional(),
+          url: z.string().max(4000).optional(),
+          dataUrl: z.string().max(100_000_000).optional(),
+          mimeType: z.string().max(160).optional(),
+          type: z.enum(['image', 'audio', 'video', 'file']),
+          role: z.enum(['input', 'first_frame', 'last_frame', 'reference', 'mask']).optional(),
+        }),
+      )
+      .max(64)
+      .optional(),
     providerProfileId: z.string().min(1).max(200).nullable().optional(),
     manifestId: z.string().min(1).max(160).nullable().optional(),
     modelId: z.string().min(1).max(200).nullable().optional(),
@@ -693,16 +745,18 @@ export const IpcSchemaRegistry = {
   'canvas:snapshot:save': z.object({
     projectId: z.string().min(1).max(200),
     snapshotJson: z.string().min(1),
-    meta: z.object({
-      title: z.string().max(300).optional(),
-      description: z.string().max(2000).nullable().optional(),
-      status: z.enum(['active', 'archived', 'deleted']).optional(),
-      nodeCount: z.number().int().min(0).optional(),
-      assetCount: z.number().int().min(0).optional(),
-      taskCount: z.number().int().min(0).optional(),
-      coverAssetId: z.string().max(200).nullable().optional(),
-      rootPath: z.string().max(2000).nullable().optional(),
-    }).optional(),
+    meta: z
+      .object({
+        title: z.string().max(300).optional(),
+        description: z.string().max(2000).nullable().optional(),
+        status: z.enum(['active', 'archived', 'deleted']).optional(),
+        nodeCount: z.number().int().min(0).optional(),
+        assetCount: z.number().int().min(0).optional(),
+        taskCount: z.number().int().min(0).optional(),
+        coverAssetId: z.string().max(200).nullable().optional(),
+        rootPath: z.string().max(2000).nullable().optional(),
+      })
+      .optional(),
   }),
   'canvas:snapshot:load': z.object({
     projectId: z.string().min(1).max(200),
@@ -736,6 +790,15 @@ export const IpcSchemaRegistry = {
     sourceUrl: z.string().max(8000).optional(),
     suggestedBaseName: z.string().min(1).max(160).optional(),
     type: z.enum(['image', 'audio', 'video', 'file']).optional(),
+  }),
+  'canvas:asset:download': z.object({
+    sourcePath: z.string().max(4000).optional(),
+    sourceUrl: z.string().max(8000).optional(),
+    contentText: z.string().max(20_000_000).optional(),
+    mimeType: z.string().max(160).nullable().optional(),
+    type: z.enum(['image', 'audio', 'video', 'text', 'prompt', 'file']).optional(),
+    suggestedFileName: z.string().min(1).max(220).optional(),
+    defaultDirectory: z.string().max(2000).optional(),
   }),
   'canvas:project:export-package': z.object({
     projectId: z.string().min(1).max(200),

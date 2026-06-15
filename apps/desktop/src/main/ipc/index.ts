@@ -47,7 +47,11 @@ import {
   ScheduledTaskRepository,
   TaskExecutionRepository,
 } from '@spark/storage'
-import type { AgentItem as StorageAgentItem, WorkflowItem as StorageWorkflowItem, AgentTeamItem as StorageAgentTeamItem } from '@spark/storage'
+import type {
+  AgentItem as StorageAgentItem,
+  WorkflowItem as StorageWorkflowItem,
+  AgentTeamItem as StorageAgentTeamItem,
+} from '@spark/storage'
 import {
   ProviderService,
   RulesService,
@@ -165,7 +169,11 @@ const NO_PROJECT_WORKSPACE_NAME = '不使用项目'
 type ConfigChangedScope = 'provider' | 'agent' | 'team' | 'skill' | 'mcp' | 'rule' | 'prompt'
 type ConfigChangedAction = 'create' | 'update' | 'delete' | 'import'
 
-function pushConfigChanged(scope: ConfigChangedScope, action: ConfigChangedAction, id?: string): void {
+function pushConfigChanged(
+  scope: ConfigChangedScope,
+  action: ConfigChangedAction,
+  id?: string,
+): void {
   pushStreamEvent('stream:config:changed', {
     scope,
     action,
@@ -193,7 +201,9 @@ let mediaModelCatalogService: MediaModelCatalogService | null = null
 let mediaModelCatalogSeeded = false
 function getMediaModelCatalogService(): MediaModelCatalogService {
   if (mediaModelCatalogService == null) {
-    mediaModelCatalogService = new MediaModelCatalogService(new MediaModelManifestRepository(getDatabase()))
+    mediaModelCatalogService = new MediaModelCatalogService(
+      new MediaModelManifestRepository(getDatabase()),
+    )
   }
   if (!mediaModelCatalogSeeded) {
     mediaModelCatalogService.seedBuiltinManifests()
@@ -231,7 +241,9 @@ function getCanvasSettingsValue(): { projectsRootPath?: string } {
 
 function getDefaultCanvasProjectsRoot(): string {
   const configured = getCanvasSettingsValue().projectsRootPath?.trim()
-  return configured ? path.resolve(configured) : path.join(app.getPath('userData'), 'canvas-projects')
+  return configured
+    ? path.resolve(configured)
+    : path.join(app.getPath('userData'), 'canvas-projects')
 }
 
 function sanitizeCanvasPathSegment(value: string | undefined, fallback: string): string {
@@ -250,7 +262,10 @@ function canvasAssetSubdir(kind: CanvasAssetKind | undefined): string {
   return 'files'
 }
 
-function extensionFromMimeType(mimeType: string | undefined, kind: CanvasAssetKind | undefined): string {
+function extensionFromMimeType(
+  mimeType: string | undefined,
+  kind: CanvasAssetKind | undefined,
+): string {
   const mime = (mimeType ?? '').toLowerCase()
   if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg'
   if (mime.includes('png')) return 'png'
@@ -269,7 +284,8 @@ function extensionFromMimeType(mimeType: string | undefined, kind: CanvasAssetKi
 
 function guessAssetKindFromPath(filePath: string): CanvasAssetKind {
   const ext = path.extname(filePath).toLowerCase()
-  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.heic', '.heif'].includes(ext)) return 'image'
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.heic', '.heif'].includes(ext))
+    return 'image'
   if (['.mp4', '.mov', '.webm', '.m4v'].includes(ext)) return 'video'
   if (['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.opus'].includes(ext)) return 'audio'
   return 'file'
@@ -336,7 +352,10 @@ async function ensureCanvasProjectDirectoryById(
   })
 }
 
-function parseDataUrl(dataUrl: string, fallbackMimeType?: string): { buffer: Buffer; mimeType: string } {
+function parseDataUrl(
+  dataUrl: string,
+  fallbackMimeType?: string,
+): { buffer: Buffer; mimeType: string } {
   const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/)
   if (match == null) throw new Error('Invalid data URL')
   const mimeType = (match[1] ?? fallbackMimeType ?? 'application/octet-stream').toLowerCase()
@@ -356,7 +375,15 @@ async function writeCanvasAssetDataUrl(input: {
   type?: CanvasAssetKind
 }): Promise<{ filePath: string; fileName: string; relativePath: string }> {
   const parsed = parseDataUrl(input.dataUrl, input.mimeType)
-  const kind = input.type ?? (parsed.mimeType.startsWith('image/') ? 'image' : parsed.mimeType.startsWith('video/') ? 'video' : parsed.mimeType.startsWith('audio/') ? 'audio' : 'file')
+  const kind =
+    input.type ??
+    (parsed.mimeType.startsWith('image/')
+      ? 'image'
+      : parsed.mimeType.startsWith('video/')
+        ? 'video'
+        : parsed.mimeType.startsWith('audio/')
+          ? 'audio'
+          : 'file')
   const directory = await ensureCanvasProjectDirectoryById(input.projectId, input.projectRootPath)
   const fileName = `${sanitizeCanvasPathSegment(input.suggestedBaseName, 'asset')}-${crypto.randomUUID()}.${extensionFromMimeType(parsed.mimeType, kind)}`
   const relativePath = path.join('assets', canvasAssetSubdir(kind), fileName)
@@ -373,7 +400,13 @@ async function copyCanvasAssetToProject(input: {
   sourceUrl?: string
   suggestedBaseName?: string
   type?: CanvasAssetKind
-}): Promise<{ copied: boolean; filePath?: string; fileName?: string; relativePath?: string; error?: string }> {
+}): Promise<{
+  copied: boolean
+  filePath?: string
+  fileName?: string
+  relativePath?: string
+  error?: string
+}> {
   const decodedSource = decodeSafeFileUrl(input.sourceUrl)
   const sourcePath = input.sourcePath ?? decodedSource ?? undefined
   if (!sourcePath) return { copied: false, error: 'sourcePath is required' }
@@ -382,7 +415,10 @@ async function copyCanvasAssetToProject(input: {
     const stat = await fs.stat(resolvedSource)
     if (!stat.isFile()) return { copied: false, error: 'source is not a file' }
     const directory = await ensureCanvasProjectDirectoryById(input.projectId, input.projectRootPath)
-    if (resolvedSource === directory.rootPath || resolvedSource.startsWith(directory.rootPath + path.sep)) {
+    if (
+      resolvedSource === directory.rootPath ||
+      resolvedSource.startsWith(directory.rootPath + path.sep)
+    ) {
       return {
         copied: false,
         filePath: resolvedSource,
@@ -401,6 +437,133 @@ async function copyCanvasAssetToProject(input: {
   } catch (err) {
     return { copied: false, error: err instanceof Error ? err.message : String(err) }
   }
+}
+
+type CanvasAssetDownloadKind = CanvasAssetKind | 'text' | 'prompt'
+
+type CanvasAssetDownloadSource =
+  | { kind: 'file'; sourcePath: string }
+  | { kind: 'buffer'; buffer: Buffer; mimeType?: string }
+
+type CanvasMigratedAssetRef = {
+  id?: string
+  url?: string
+  thumbnailUrl?: string
+  storageKey?: string
+}
+
+function kindFromCanvasDownloadType(
+  type: CanvasAssetDownloadKind | undefined,
+): CanvasAssetKind | undefined {
+  if (type === 'image' || type === 'audio' || type === 'video' || type === 'file') return type
+  return undefined
+}
+
+function fileExtensionFromUrl(url: string | undefined): string {
+  if (!url) return ''
+  try {
+    const parsed = new URL(url)
+    return path.extname(parsed.pathname)
+  } catch {
+    return path.extname(url.split(/[?#]/)[0] ?? '')
+  }
+}
+
+function ensureFileNameExtension(
+  value: string | undefined,
+  input: {
+    mimeType?: string | null
+    type?: CanvasAssetDownloadKind
+    sourcePath?: string
+    sourceUrl?: string
+  },
+): string {
+  const baseName = sanitizeCanvasPathSegment(value?.replace(/\.[^.]+$/, ''), 'canvas-asset')
+  const existingExt =
+    path.extname(value ?? '') ||
+    path.extname(input.sourcePath ?? '') ||
+    fileExtensionFromUrl(input.sourceUrl)
+  const ext =
+    existingExt ||
+    `.${extensionFromMimeType(input.mimeType ?? undefined, kindFromCanvasDownloadType(input.type))}`
+  return `${baseName}${ext}`
+}
+
+function canvasAssetDownloadFilters(
+  type: CanvasAssetDownloadKind | undefined,
+): Electron.FileFilter[] {
+  if (type === 'image') {
+    return [
+      { name: '图片', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'] },
+      { name: '所有文件', extensions: ['*'] },
+    ]
+  }
+  if (type === 'video') {
+    return [
+      { name: '视频', extensions: ['mp4', 'mov', 'webm', 'm4v'] },
+      { name: '所有文件', extensions: ['*'] },
+    ]
+  }
+  if (type === 'audio') {
+    return [
+      { name: '音频', extensions: ['mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus'] },
+      { name: '所有文件', extensions: ['*'] },
+    ]
+  }
+  if (type === 'text' || type === 'prompt') {
+    return [
+      { name: '文本', extensions: ['txt', 'md'] },
+      { name: '所有文件', extensions: ['*'] },
+    ]
+  }
+  return [{ name: '所有文件', extensions: ['*'] }]
+}
+
+async function resolveCanvasAssetDownloadSource(input: {
+  sourcePath?: string
+  sourceUrl?: string
+  contentText?: string
+  mimeType?: string | null
+}): Promise<CanvasAssetDownloadSource> {
+  const decodedPath = decodeSafeFileUrl(input.sourceUrl)
+  const sourcePath = input.sourcePath ?? decodedPath ?? undefined
+  if (sourcePath) {
+    const resolvedSource = path.resolve(sourcePath)
+    const stat = await fs.stat(resolvedSource)
+    if (!stat.isFile()) throw new Error('源文件不是文件')
+    if (!isSafeFilePathAllowed(resolvedSource)) throw new Error('源文件不在允许范围内')
+    return { kind: 'file', sourcePath: resolvedSource }
+  }
+
+  const sourceUrl = input.sourceUrl?.trim()
+  if (sourceUrl?.startsWith('data:')) {
+    const parsed = parseDataUrl(sourceUrl, input.mimeType ?? undefined)
+    return { kind: 'buffer', buffer: parsed.buffer, mimeType: parsed.mimeType }
+  }
+
+  if (sourceUrl?.startsWith('http://') || sourceUrl?.startsWith('https://')) {
+    const response = await fetch(sourceUrl)
+    if (!response.ok) throw new Error(`下载远程资产失败：HTTP ${response.status}`)
+    const buffer = Buffer.from(await response.arrayBuffer())
+    if (buffer.length === 0) throw new Error('远程资产为空')
+    const mimeType = response.headers.get('content-type') ?? input.mimeType ?? undefined
+    return {
+      kind: 'buffer',
+      buffer,
+      ...(mimeType !== undefined ? { mimeType } : {}),
+    }
+  }
+
+  if (input.contentText != null) {
+    const mimeType = input.mimeType ?? 'text/plain'
+    return {
+      kind: 'buffer',
+      buffer: Buffer.from(input.contentText, 'utf8'),
+      mimeType,
+    }
+  }
+
+  throw new Error('资产没有可下载内容')
 }
 
 function collectCanvasSnapshotLocalPaths(snapshot: any): Set<string> {
@@ -436,7 +599,8 @@ function rewriteCanvasSnapshotRootPaths(value: unknown, fromRoot: string, toRoot
     }
     return value
   }
-  if (Array.isArray(value)) return value.map((item) => rewriteCanvasSnapshotRootPaths(item, fromRoot, toRoot))
+  if (Array.isArray(value))
+    return value.map((item) => rewriteCanvasSnapshotRootPaths(item, fromRoot, toRoot))
   if (!value || typeof value !== 'object') return value
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([key, child]) => [
@@ -454,7 +618,8 @@ async function writeCanvasProjectPackageFiles(input: {
 }): Promise<void> {
   const exportedAt = input.exportedAt ?? new Date().toISOString()
   const parsed = JSON.parse(input.snapshotJson)
-  const snapshot = parsed?.kind === 'spark.canvas.project' && parsed.snapshot ? parsed.snapshot : parsed
+  const snapshot =
+    parsed?.kind === 'spark.canvas.project' && parsed.snapshot ? parsed.snapshot : parsed
   if (snapshot?.project) snapshot.project.rootPath = input.rootPath
   const payload = {
     kind: 'spark.canvas.project',
@@ -469,10 +634,22 @@ async function writeCanvasProjectPackageFiles(input: {
     title: snapshot?.project?.title,
     rootPath: input.rootPath,
   })
-  await fs.writeFile(path.join(directory.rootPath, 'project.json'), JSON.stringify(payload, null, 2), 'utf-8')
-  await fs.writeFile(path.join(directory.snapshotsDir, 'latest.json'), JSON.stringify(snapshot, null, 2), 'utf-8')
+  await fs.writeFile(
+    path.join(directory.rootPath, 'project.json'),
+    JSON.stringify(payload, null, 2),
+    'utf-8',
+  )
+  await fs.writeFile(
+    path.join(directory.snapshotsDir, 'latest.json'),
+    JSON.stringify(snapshot, null, 2),
+    'utf-8',
+  )
   const stamp = exportedAt.replace(/[:.]/g, '-')
-  await fs.writeFile(path.join(directory.snapshotsDir, `${stamp}.json`), JSON.stringify(snapshot, null, 2), 'utf-8')
+  await fs.writeFile(
+    path.join(directory.snapshotsDir, `${stamp}.json`),
+    JSON.stringify(snapshot, null, 2),
+    'utf-8',
+  )
 }
 
 /** Canvas 持久化 Repository（SQLite-backed，见 migration 027） */
@@ -498,7 +675,10 @@ async function resolveCanvasMediaProviders(): Promise<MediaProviderProfileRuntim
       .filter((ref) => ref.enabled !== false)
       .map((ref) => catalog.describe(ref.manifestId))
       .filter((manifest): manifest is NonNullable<typeof manifest> => manifest != null)
-    const isMediaModel = profile.modelType === 'image' || profile.modelType === 'voice' || profile.modelType === 'video'
+    const isMediaModel =
+      profile.modelType === 'image' ||
+      profile.modelType === 'voice' ||
+      profile.modelType === 'video'
     if (!isMediaModel && caps.length === 0 && mediaModelManifests.length === 0) continue
     if (!profile.keystoreRef) continue
     try {
@@ -557,7 +737,8 @@ function toCanvasMediaModelSummary(
     sourceUrls: manifest.docs.sourceUrls,
     enabled: options?.enabled !== false,
   }
-  if (options?.providerProfileId !== undefined) summary.providerProfileId = options.providerProfileId
+  if (options?.providerProfileId !== undefined)
+    summary.providerProfileId = options.providerProfileId
   if (options?.providerName !== undefined) summary.providerName = options.providerName
   if (options?.defaults !== undefined) summary.defaults = options.defaults
   return summary
@@ -571,7 +752,8 @@ function providerKindCandidates(profile: ProviderProfile): string[] {
     const lower = normalized.toLowerCase()
     candidates.add(normalized)
     if (lower.includes('openai')) candidates.add('openai')
-    if (lower.includes('google') || lower.includes('gemini') || lower.includes('veo')) candidates.add('google')
+    if (lower.includes('google') || lower.includes('gemini') || lower.includes('veo'))
+      candidates.add('google')
     if (lower.includes('volc') || lower.includes('seed')) candidates.add('volcengine')
   }
   return [...candidates]
@@ -585,7 +767,8 @@ function profileMediaModelSummaries(
   const summaries: CanvasMediaModelSummary[] = []
   const seen = new Set<string>()
   const capabilityMatches = (manifest: MediaModelManifest): boolean =>
-    filters?.capability == null || manifest.capabilities.some((capability) => capability.id === filters.capability)
+    filters?.capability == null ||
+    manifest.capabilities.some((capability) => capability.id === filters.capability)
   const providerKindMatches = (manifest: MediaModelManifest): boolean =>
     filters?.providerKind == null || manifest.providerKind === filters.providerKind
 
@@ -606,27 +789,37 @@ function profileMediaModelSummaries(
 
   if (summaries.length > 0) return summaries
 
-  const modelIds = new Set([profile.defaultModel, ...profile.modelIds].filter((value) => value.trim().length > 0))
+  const modelIds = new Set(
+    [profile.defaultModel, ...profile.modelIds].filter((value) => value.trim().length > 0),
+  )
   for (const providerKind of providerKindCandidates(profile)) {
-    for (const item of catalog.list({ providerKind, enabledOnly: filters?.enabledOnly !== false })) {
+    for (const item of catalog.list({
+      providerKind,
+      enabledOnly: filters?.enabledOnly !== false,
+    })) {
       if (seen.has(item.id)) continue
       if (modelIds.size > 0 && !modelIds.has(item.modelId)) continue
       const manifest = catalog.describe(item.id)
       if (!manifest || !capabilityMatches(manifest) || !providerKindMatches(manifest)) continue
       seen.add(manifest.id)
-      summaries.push(toCanvasMediaModelSummary(manifest, {
-        providerProfileId: profile.id,
-        providerName: profile.name,
-        effectiveModelId: manifest.modelId,
-        enabled: item.enabled,
-      }))
+      summaries.push(
+        toCanvasMediaModelSummary(manifest, {
+          providerProfileId: profile.id,
+          providerName: profile.name,
+          effectiveModelId: manifest.modelId,
+          enabled: item.enabled,
+        }),
+      )
     }
   }
   return summaries
 }
 
 /** 把图片文件读取为 data URL，供 renderer 预览（仅小图，限制 2MB） */
-async function readImagePreviewDataUrl(filePath: string, mimeType: string | undefined): Promise<string | undefined> {
+async function readImagePreviewDataUrl(
+  filePath: string,
+  mimeType: string | undefined,
+): Promise<string | undefined> {
   try {
     const stat = await fs.stat(filePath)
     if (stat.size > 2 * 1024 * 1024) return undefined
@@ -638,7 +831,9 @@ async function readImagePreviewDataUrl(filePath: string, mimeType: string | unde
   }
 }
 
-async function canvasResponseFromMediaTaskRecord(record: MediaTaskRecord): Promise<CanvasMediaTaskCreateResponse> {
+async function canvasResponseFromMediaTaskRecord(
+  record: MediaTaskRecord,
+): Promise<CanvasMediaTaskCreateResponse> {
   const assets: CanvasMediaTaskCreateResponse['assets'] = await Promise.all(
     record.assets.map(async (asset) => {
       const base = {
@@ -659,8 +854,10 @@ async function canvasResponseFromMediaTaskRecord(record: MediaTaskRecord): Promi
     }),
   )
   const status: NonNullable<CanvasMediaTaskCreateResponse['status']> =
-    record.status === 'succeeded' ? 'succeeded'
-      : record.status === 'pending' ? 'running'
+    record.status === 'succeeded'
+      ? 'succeeded'
+      : record.status === 'pending'
+        ? 'running'
         : record.status
   return {
     runtimeTaskId: record.id,
@@ -778,7 +975,9 @@ function readBoardTasks(): BoardTaskRecord[] {
     })
     if (needsMigration) writeBoardTasks(tasks)
     return tasks
-  } catch { return [] }
+  } catch {
+    return []
+  }
 }
 
 function writeBoardTasks(tasks: BoardTaskRecord[]): void {
@@ -800,7 +999,8 @@ async function ensureNoProjectWorkspacePath(workspaceId: string): Promise<void> 
   const currentRoot = path.resolve(workspace.root_path)
   const desiredRoot = getPersistentNoProjectRootPath()
   const currentExists = await pathExists(currentRoot)
-  const shouldRelocate = currentRoot !== desiredRoot && (!currentExists || isTemporaryWorkspaceRoot(currentRoot))
+  const shouldRelocate =
+    currentRoot !== desiredRoot && (!currentExists || isTemporaryWorkspaceRoot(currentRoot))
 
   if (shouldRelocate) {
     await fs.mkdir(getPersistentProjectsDir(), { recursive: true })
@@ -808,7 +1008,9 @@ async function ensureNoProjectWorkspacePath(workspaceId: string): Promise<void> 
       rootPath: desiredRoot,
       relocatedFrom: [currentRoot],
     })
-    log.info(`Relocated no-project workspace ${workspace.id} to persistent path ${updated.root_path}`)
+    log.info(
+      `Relocated no-project workspace ${workspace.id} to persistent path ${updated.root_path}`,
+    )
     return
   }
 
@@ -838,7 +1040,9 @@ export async function ensureNoProjectDirectoryExists(): Promise<void> {
     _noProjectDirEnsured = true
     log.info(`Ensured no-project directory: ${noProjectDir}`)
   } catch (err) {
-    log.warn(`Failed to ensure no-project directory: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `Failed to ensure no-project directory: ${err instanceof Error ? err.message : String(err)}`,
+    )
   }
 }
 
@@ -864,7 +1068,7 @@ function getNoProjectWorkspaceId(): string | null {
 }
 
 let _mcpService: McpService | null = null
-function getMcpService(): McpService {
+export function getMcpService(): McpService {
   if (_mcpService == null) {
     _mcpService = new McpService(new McpServerRepository(getDatabase()))
   }
@@ -973,9 +1177,14 @@ function mapTaskPermissionMode(
   if (mode == null || mode === '') return undefined
   // 已经是合法的 SessionPermissionMode，直接透传
   if (
-    mode === 'claude-ask' || mode === 'claude-auto-edits' || mode === 'claude-plan' ||
-    mode === 'claude-auto' || mode === 'claude-bypass' ||
-    mode === 'codex-default' || mode === 'codex-auto-review' || mode === 'codex-full-access'
+    mode === 'claude-ask' ||
+    mode === 'claude-auto-edits' ||
+    mode === 'claude-plan' ||
+    mode === 'claude-auto' ||
+    mode === 'claude-bypass' ||
+    mode === 'codex-default' ||
+    mode === 'codex-auto-review' ||
+    mode === 'codex-full-access'
   ) {
     return mode
   }
@@ -1017,9 +1226,7 @@ async function resolveScheduledTaskRuntime(params: {
 
   // 1. 任务里挑了 modelId：找拥有这个 model 的 provider
   if (modelId) {
-    const owner = profiles.find(
-      (p) => p.defaultModel === modelId || p.modelIds.includes(modelId!),
-    )
+    const owner = profiles.find((p) => p.defaultModel === modelId || p.modelIds.includes(modelId!))
     if (owner) providerProfileId = owner.id
   }
 
@@ -1078,8 +1285,8 @@ const scheduledTaskExecutor: TaskExecutorFn = async (params) => {
   // 把表单的 'auto' / 'bypass' 映射到当前 agentAdapter 下的合法 SessionPermissionMode
   const runtimeDefaults = getRuntimePermissionDefaults()
   const mappedPermissionMode =
-    mapTaskPermissionMode(params.permissionMode, runtime.agentAdapter)
-    ?? runtimeDefaults.permissionMode
+    mapTaskPermissionMode(params.permissionMode, runtime.agentAdapter) ??
+    runtimeDefaults.permissionMode
 
   // Create a new session for this execution
   await ensureNoProjectDirectoryExists()
@@ -1222,7 +1429,10 @@ let _sessionService: SessionService | null = null
 let pendingQuestionResolvers = new Map<string, (answers: Record<string, unknown>) => void>()
 const remoteTurnTargets = new Map<string, { connectionId: string; externalId: string }>()
 
-function registerRemoteTurn(turnId: string, target: { connectionId: string; externalId: string }): void {
+function registerRemoteTurn(
+  turnId: string,
+  target: { connectionId: string; externalId: string },
+): void {
   remoteTurnTargets.set(turnId, target)
   if (remoteTurnTargets.size > 500) {
     const oldest = remoteTurnTargets.keys().next().value
@@ -1237,14 +1447,18 @@ function handleRemoteTurnEvent(event: Parameters<SessionEventHandler>[0]): void 
     remoteTurnTargets.delete(event.turnId)
     const content = event.content.trim()
     if (content.length === 0) return
-    void getRemoteConnectionService().sendReply(target.connectionId, target.externalId, content).catch((err) => {
-      log.warn(`Failed to send remote assistant reply: ${String(err)}`)
-    })
+    void getRemoteConnectionService()
+      .sendReply(target.connectionId, target.externalId, content)
+      .catch((err) => {
+        log.warn(`Failed to send remote assistant reply: ${String(err)}`)
+      })
   } else if (event.type === 'agent_error') {
     remoteTurnTargets.delete(event.turnId)
-    void getRemoteConnectionService().sendReply(target.connectionId, target.externalId, `处理失败：${event.message}`).catch((err) => {
-      log.warn(`Failed to send remote error reply: ${String(err)}`)
-    })
+    void getRemoteConnectionService()
+      .sendReply(target.connectionId, target.externalId, `处理失败：${event.message}`)
+      .catch((err) => {
+        log.warn(`Failed to send remote error reply: ${String(err)}`)
+      })
   }
 }
 
@@ -1254,16 +1468,21 @@ async function sendRemoteTurnReplyFromHistory(
   target: { connectionId: string; externalId: string },
 ): Promise<boolean> {
   const history = await getSessionService().getHistory({ sessionId, limit: 200 })
-  const final = history.events.find((event) => (
-    event.turnId === turnId &&
-    event.type === 'assistant_message' &&
-    event.isFinal &&
-    event.content.trim().length > 0
-  ))
+  const final = history.events.find(
+    (event) =>
+      event.turnId === turnId &&
+      event.type === 'assistant_message' &&
+      event.isFinal &&
+      event.content.trim().length > 0,
+  )
   if (final == null || final.type !== 'assistant_message') return false
   if (remoteTurnTargets.get(turnId) !== target) return true
   remoteTurnTargets.delete(turnId)
-  await getRemoteConnectionService().sendReply(target.connectionId, target.externalId, final.content.trim())
+  await getRemoteConnectionService().sendReply(
+    target.connectionId,
+    target.externalId,
+    final.content.trim(),
+  )
   return true
 }
 
@@ -1348,7 +1567,11 @@ async function resolveImportProvider(
       profileId = pickFallback('anthropic')?.id
     }
     if (profileId == null) throw new Error('没有可用的 Provider，请先在「Providers」中添加')
-    return { providerProfileId: profileId, agentAdapter: 'claude-sdk', permissionMode: 'claude-ask' }
+    return {
+      providerProfileId: profileId,
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-ask',
+    }
   }
 
   let profileId: string | undefined
@@ -1470,27 +1693,44 @@ function getStartupSettings(): { supported: boolean; openAtLogin: boolean; openA
   }
 }
 
-function parseRemoteCommand(message: string, prefix: string): { name: string; args: string[]; text: string } {
+function parseRemoteCommand(
+  message: string,
+  prefix: string,
+): { name: string; args: string[]; text: string } {
   const trimmed = message.trim()
   const effectivePrefix = prefix.trim() || '/'
-  const body = trimmed.startsWith(effectivePrefix) ? trimmed.slice(effectivePrefix.length).trim() : `send ${trimmed}`
+  const body = trimmed.startsWith(effectivePrefix)
+    ? trimmed.slice(effectivePrefix.length).trim()
+    : `send ${trimmed}`
   const [name = 'help', ...args] = body.split(/\s+/).filter(Boolean)
   return { name: name.toLowerCase(), args, text: body }
 }
 
-function formatRows(rows: Array<{ id: string; label: string; meta?: string }>, empty: string): string {
+function formatRows(
+  rows: Array<{ id: string; label: string; meta?: string }>,
+  empty: string,
+): string {
   if (rows.length === 0) return empty
-  return rows.map((row, index) => `${index + 1}. ${row.label}\n   ${row.id}${row.meta != null ? ` · ${row.meta}` : ''}`).join('\n')
+  return rows
+    .map(
+      (row, index) =>
+        `${index + 1}. ${row.label}\n   ${row.id}${row.meta != null ? ` · ${row.meta}` : ''}`,
+    )
+    .join('\n')
 }
 
-async function createRemoteSession(connectionId: string, workspaceId?: string): Promise<{ sessionId: string; connectionName: string }> {
+async function createRemoteSession(
+  connectionId: string,
+  workspaceId?: string,
+): Promise<{ sessionId: string; connectionName: string }> {
   const remoteService = getRemoteConnectionService()
   const connection = remoteService.list().connections.find((item) => item.id === connectionId)
   if (connection == null) throw new Error('远程连接不存在')
   const providers = await getProviderService().listProviders()
-  const provider = connection.defaultProviderProfileId != null
-    ? providers.find((item) => item.id === connection.defaultProviderProfileId)
-    : providers.find((item) => item.isDefault) ?? providers[0]
+  const provider =
+    connection.defaultProviderProfileId != null
+      ? providers.find((item) => item.id === connection.defaultProviderProfileId)
+      : (providers.find((item) => item.isDefault) ?? providers[0])
   if (provider == null) {
     throw new Error('没有可用 Provider，请先在设置中配置模型 Provider。')
   }
@@ -1513,16 +1753,23 @@ async function createRemoteSession(connectionId: string, workspaceId?: string): 
   return { sessionId: created.sessionId, connectionName: connection.name }
 }
 
-async function executeRemoteCommand(connectionId: string, message: string, explicitSessionId?: string): Promise<{ ok: boolean; title: string; text: string }> {
+async function executeRemoteCommand(
+  connectionId: string,
+  message: string,
+  explicitSessionId?: string,
+): Promise<{ ok: boolean; title: string; text: string }> {
   const remoteService = getRemoteConnectionService()
   const store = remoteService.list()
   const connection = store.connections.find((item) => item.id === connectionId)
-  if (connection == null) return { ok: false, title: '连接不存在', text: '请先在设置中创建远程连接。' }
+  if (connection == null)
+    return { ok: false, title: '连接不存在', text: '请先在设置中创建远程连接。' }
   if (!connection.enabled) return { ok: false, title: '连接未启用', text: '请先启用该远程连接。' }
 
   const command = parseRemoteCommand(message, connection.commandPrefix)
   const sessionId = explicitSessionId ?? connection.defaultSessionId
-  const requireCapability = (capability: keyof typeof connection.capabilities): { ok: boolean; title: string; text: string } | null => {
+  const requireCapability = (
+    capability: keyof typeof connection.capabilities,
+  ): { ok: boolean; title: string; text: string } | null => {
     if (connection.capabilities[capability]) return null
     return { ok: false, title: '功能未授权', text: `该连接没有启用 ${capability} 能力。` }
   }
@@ -1568,7 +1815,8 @@ async function executeRemoteCommand(connectionId: string, message: string, expli
     const blocked = requireCapability('switchSession')
     if (blocked != null) return blocked
     const target = command.args[0]
-    if (target == null) return { ok: false, title: '缺少 sessionId', text: '用法：/use-session <sessionId>' }
+    if (target == null)
+      return { ok: false, title: '缺少 sessionId', text: '用法：/use-session <sessionId>' }
     remoteService.updateConnectionDefaults(connection.id, { defaultSessionId: target })
     return { ok: true, title: '已切换默认会话', text: target }
   }
@@ -1581,7 +1829,11 @@ async function executeRemoteCommand(connectionId: string, message: string, expli
       ok: true,
       title: '模型配置',
       text: formatRows(
-        models.map((item) => ({ id: item.id, label: item.name, meta: item.enabled ? 'enabled' : 'disabled' })),
+        models.map((item) => ({
+          id: item.id,
+          label: item.name,
+          meta: item.enabled ? 'enabled' : 'disabled',
+        })),
         '暂无模型配置',
       ),
     }
@@ -1618,7 +1870,9 @@ async function executeRemoteCommand(connectionId: string, message: string, expli
   if (command.name === 'workspaces') {
     const blocked = requireCapability('manageWorkspace')
     if (blocked != null) return blocked
-    const list = getWorkspaceService().listWorkspaces(12, 0, { includeArchived: false }).map(toWorkspaceInfo)
+    const list = getWorkspaceService()
+      .listWorkspaces(12, 0, { includeArchived: false })
+      .map(toWorkspaceInfo)
     return {
       ok: true,
       title: '工作区',
@@ -1641,17 +1895,29 @@ async function executeRemoteCommand(connectionId: string, message: string, expli
     const blocked = requireCapability('manageWorkspace')
     if (blocked != null) return blocked
     const rootPath = command.text.replace(/^open-workspace\s*/i, '').trim()
-    if (rootPath.length === 0) return { ok: false, title: '缺少项目路径', text: '用法：/open-workspace <path>' }
-    const workspace = await getWorkspaceService().openWorkspace(rootPath, undefined, { create: false })
-    return { ok: true, title: '已打开项目', text: `${workspace.name}\n${workspace.id}\n${workspace.root_path}` }
+    if (rootPath.length === 0)
+      return { ok: false, title: '缺少项目路径', text: '用法：/open-workspace <path>' }
+    const workspace = await getWorkspaceService().openWorkspace(rootPath, undefined, {
+      create: false,
+    })
+    return {
+      ok: true,
+      title: '已打开项目',
+      text: `${workspace.name}\n${workspace.id}\n${workspace.root_path}`,
+    }
   }
 
-  if (command.name === 'use-model' || command.name === 'use-provider' || command.name === 'use-agent') {
+  if (
+    command.name === 'use-model' ||
+    command.name === 'use-provider' ||
+    command.name === 'use-agent'
+  ) {
     const capability = command.name === 'use-agent' ? 'switchAgent' : 'switchModel'
     const blocked = requireCapability(capability)
     if (blocked != null) return blocked
     const target = command.args[0]
-    if (target == null) return { ok: false, title: '缺少目标 ID', text: `用法：/${command.name} <id>` }
+    if (target == null)
+      return { ok: false, title: '缺少目标 ID', text: `用法：/${command.name} <id>` }
     if (sessionId != null) {
       await getSessionService().updateSession({
         sessionId,
@@ -1672,44 +1938,69 @@ async function executeRemoteCommand(connectionId: string, message: string, expli
     const blocked = requireCapability('sendMessages')
     if (blocked != null) return blocked
     const text = command.text.replace(/^send\s*/i, '').trim()
-    if (sessionId == null) return { ok: false, title: '缺少默认会话', text: '请先使用 /use-session <sessionId> 绑定会话。' }
+    if (sessionId == null)
+      return {
+        ok: false,
+        title: '缺少默认会话',
+        text: '请先使用 /use-session <sessionId> 绑定会话。',
+      }
     if (text.length === 0) return { ok: false, title: '消息为空', text: '用法：/send <message>' }
     const result = await getSessionService().sendTurn({
       sessionId,
       message: text,
-      ...(connection.defaultProviderProfileId != null ? { providerProfileId: connection.defaultProviderProfileId } : {}),
+      ...(connection.defaultProviderProfileId != null
+        ? { providerProfileId: connection.defaultProviderProfileId }
+        : {}),
       ...(connection.defaultModelId != null ? { modelId: connection.defaultModelId } : {}),
       ...(connection.defaultAgentId != null ? { agentId: connection.defaultAgentId } : {}),
     })
-    return { ok: true, title: result.started ? '已发送' : '已加入队列', text: `turnId: ${result.turnId}` }
+    return {
+      ok: true,
+      title: result.started ? '已发送' : '已加入队列',
+      text: `turnId: ${result.turnId}`,
+    }
   }
 
   return { ok: false, title: '未知命令', text: '发送 /help 查看可用命令。' }
 }
 
-async function handleRemoteInboundMessage(message: RemoteInboundMessage): Promise<{ title: string; text: string } | void> {
+async function handleRemoteInboundMessage(
+  message: RemoteInboundMessage,
+): Promise<{ title: string; text: string } | void> {
   const prefix = message.connection.commandPrefix.trim() || '/'
   const isCommandMessage = message.text.trim().startsWith(prefix)
   if (isCommandMessage) {
     if (!message.connection.capabilities.runCommands) {
       return { title: '功能未授权', text: '该连接没有启用远程命令能力。' }
     }
-    const result = await executeRemoteCommand(message.connection.id, message.text, message.connection.defaultSessionId)
+    const result = await executeRemoteCommand(
+      message.connection.id,
+      message.text,
+      message.connection.defaultSessionId,
+    )
     return { title: result.title, text: result.text }
   }
 
   if (!message.connection.capabilities.sendMessages) {
     return { title: '功能未授权', text: '该连接没有启用消息投递能力。' }
   }
-  const sessionId = message.connection.defaultSessionId ?? (await createRemoteSession(message.connection.id)).sessionId
+  const sessionId =
+    message.connection.defaultSessionId ??
+    (await createRemoteSession(message.connection.id)).sessionId
   await ensureSessionWorkspacePaths(sessionId)
 
   const result = await getSessionService().sendTurn({
     sessionId,
     message: message.text,
-    ...(message.connection.defaultProviderProfileId != null ? { providerProfileId: message.connection.defaultProviderProfileId } : {}),
-    ...(message.connection.defaultModelId != null ? { modelId: message.connection.defaultModelId } : {}),
-    ...(message.connection.defaultAgentId != null ? { agentId: message.connection.defaultAgentId } : {}),
+    ...(message.connection.defaultProviderProfileId != null
+      ? { providerProfileId: message.connection.defaultProviderProfileId }
+      : {}),
+    ...(message.connection.defaultModelId != null
+      ? { modelId: message.connection.defaultModelId }
+      : {}),
+    ...(message.connection.defaultAgentId != null
+      ? { agentId: message.connection.defaultAgentId }
+      : {}),
   })
   const target = {
     connectionId: message.connection.id,
@@ -1724,9 +2015,11 @@ async function handleRemoteInboundMessage(message: RemoteInboundMessage): Promis
 
 export function registerAllIpcHandlers(): void {
   log.info('Registering IPC handlers...')
-  void getRemoteConnectionService().startRuntime(handleRemoteInboundMessage).catch((err) => {
-    log.warn(`Failed to start remote runtime: ${String(err)}`)
-  })
+  void getRemoteConnectionService()
+    .startRuntime(handleRemoteInboundMessage)
+    .catch((err) => {
+      log.warn(`Failed to start remote runtime: ${String(err)}`)
+    })
 
   // 启动时仅在宿主机存在对应 CLI 时补种内置本地 provider。
   // 失败仅记日志，不阻塞后续注册。
@@ -1738,7 +2031,11 @@ export function registerAllIpcHandlers(): void {
     if (await svc.isLocalCodexCliAvailable()) {
       await svc.ensureLocalCodexCliProvider()
     }
-  })().catch((err) => log.warn(`Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`))
+  })().catch((err) =>
+    log.warn(
+      `Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`,
+    ),
+  )
 
   // ─── Session Handlers ──────────────────────────────────────────────────
 
@@ -1897,10 +2194,16 @@ export function registerAllIpcHandlers(): void {
     const providers = profiles
       .map((profile) => {
         const isMediaModel =
-          profile.modelType === 'image' || profile.modelType === 'voice' || profile.modelType === 'video'
+          profile.modelType === 'image' ||
+          profile.modelType === 'voice' ||
+          profile.modelType === 'video'
         const caps = profile.mediaCapabilities ?? []
         const mediaModels = profileMediaModelSummaries(profile, catalog, { enabledOnly: true })
-        if ((!isMediaModel && caps.length === 0 && mediaModels.length === 0) || !profile.keystoreRef) return null
+        if (
+          (!isMediaModel && caps.length === 0 && mediaModels.length === 0) ||
+          !profile.keystoreRef
+        )
+          return null
         return {
           providerProfileId: profile.id,
           name: profile.name,
@@ -1926,10 +2229,12 @@ export function registerAllIpcHandlers(): void {
         })
         .map((item) => {
           const manifest = catalog.describe(item.id)
-          return manifest ? toCanvasMediaModelSummary(manifest, {
-            effectiveModelId: item.modelId,
-            enabled: item.enabled,
-          }) : null
+          return manifest
+            ? toCanvasMediaModelSummary(manifest, {
+                effectiveModelId: item.modelId,
+                enabled: item.enabled,
+              })
+            : null
         })
         .filter((model): model is CanvasMediaModelSummary => model != null)
       return { models }
@@ -1940,11 +2245,13 @@ export function registerAllIpcHandlers(): void {
       ? profiles.filter((profile) => profile.id === req.providerProfileId)
       : profiles.filter((profile) => !!profile.keystoreRef)
     for (const profile of providerProfiles) {
-      models.push(...profileMediaModelSummaries(profile, catalog, {
-        ...(req.capability !== undefined ? { capability: req.capability } : {}),
-        ...(req.providerKind !== undefined ? { providerKind: req.providerKind } : {}),
-        enabledOnly: req.enabledOnly !== false,
-      }))
+      models.push(
+        ...profileMediaModelSummaries(profile, catalog, {
+          ...(req.capability !== undefined ? { capability: req.capability } : {}),
+          ...(req.providerKind !== undefined ? { providerKind: req.providerKind } : {}),
+          enabledOnly: req.enabledOnly !== false,
+        }),
+      )
     }
     return { models }
   })
@@ -1958,8 +2265,10 @@ export function registerAllIpcHandlers(): void {
       const profiles = await getProviderService().listProviders()
       const profile = profiles.find((item) => item.id === req.providerProfileId)
       if (profile) {
-        model = profileMediaModelSummaries(profile, catalog, { enabledOnly: false })
-          .find((item) => item.manifestId === req.manifestId) ?? null
+        model =
+          profileMediaModelSummaries(profile, catalog, { enabledOnly: false }).find(
+            (item) => item.manifestId === req.manifestId,
+          ) ?? null
       }
     }
     return { manifest, model }
@@ -1971,11 +2280,14 @@ export function registerAllIpcHandlers(): void {
     const providers = req.modelId
       ? resolvedProviders.map((provider) => {
           const shouldOverride =
-            req.providerProfileId != null ? provider.id === req.providerProfileId : provider.modelIds?.includes(req.modelId ?? '') === true
+            req.providerProfileId != null
+              ? provider.id === req.providerProfileId
+              : provider.modelIds?.includes(req.modelId ?? '') === true
           return shouldOverride ? { ...provider, defaultModel: req.modelId as string } : provider
         })
       : resolvedProviders
-    const outputDir = req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
+    const outputDir =
+      req.outputDir && req.outputDir.trim().length > 0 ? req.outputDir : getDefaultCanvasMediaDir()
     // capability 由 router 按 operation 推导（input.capability 留空）
     try {
       const input = {
@@ -2187,13 +2499,48 @@ export function registerAllIpcHandlers(): void {
     })
   })
 
+  typedIpcHandle('canvas:asset:download', async (req) => {
+    const suggestedFileName = ensureFileNameExtension(req.suggestedFileName, {
+      ...(req.mimeType !== undefined ? { mimeType: req.mimeType } : {}),
+      ...(req.type !== undefined ? { type: req.type } : {}),
+      ...(req.sourcePath !== undefined ? { sourcePath: req.sourcePath } : {}),
+      ...(req.sourceUrl !== undefined ? { sourceUrl: req.sourceUrl } : {}),
+    })
+    const defaultDirectory = req.defaultDirectory?.trim() || app.getPath('downloads')
+    const result = await dialog.showSaveDialog({
+      title: '下载项目资产',
+      defaultPath: path.join(defaultDirectory, suggestedFileName),
+      filters: canvasAssetDownloadFilters(req.type),
+    })
+
+    if (result.canceled || !result.filePath) return { saved: false }
+
+    try {
+      const source = await resolveCanvasAssetDownloadSource({
+        ...(req.sourcePath !== undefined ? { sourcePath: req.sourcePath } : {}),
+        ...(req.sourceUrl !== undefined ? { sourceUrl: req.sourceUrl } : {}),
+        ...(req.contentText !== undefined ? { contentText: req.contentText } : {}),
+        ...(req.mimeType !== undefined ? { mimeType: req.mimeType } : {}),
+      })
+      if (source.kind === 'file') await fs.copyFile(source.sourcePath, result.filePath)
+      else await fs.writeFile(result.filePath, source.buffer)
+      return { saved: true, savedPath: result.filePath }
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err)
+      log.warn(`canvas:asset:download failed, target=${result.filePath}, error=${error}`)
+      return { saved: false, error }
+    }
+  })
+
   typedIpcHandle('canvas:project:export-package', async (req) => {
     const targetParent = req.targetParentDirectory?.trim()
       ? path.resolve(req.targetParentDirectory)
-      : (await dialog.showOpenDialog({
-          title: '选择 Canvas 项目包导出位置',
-          properties: ['openDirectory', 'createDirectory'],
-        })).filePaths[0]
+      : (
+          await dialog.showOpenDialog({
+            title: '选择 Canvas 项目包导出位置',
+            properties: ['openDirectory', 'createDirectory'],
+          })
+        ).filePaths[0]
     if (!targetParent) return { exported: false }
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     const packageDir = path.join(
@@ -2216,7 +2563,11 @@ export function registerAllIpcHandlers(): void {
     if (sourceRoot) {
       try {
         const normalizedSourceRoot = path.resolve(sourceRoot)
-        const rewritten = rewriteCanvasSnapshotRootPaths(JSON.parse(req.snapshotJson), normalizedSourceRoot, packageDir)
+        const rewritten = rewriteCanvasSnapshotRootPaths(
+          JSON.parse(req.snapshotJson),
+          normalizedSourceRoot,
+          packageDir,
+        )
         snapshotJson = JSON.stringify(rewritten)
       } catch {
         snapshotJson = req.snapshotJson
@@ -2231,7 +2582,10 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('canvas:project:migrate-assets', async (req) => {
-    const directory = await ensureCanvasProjectDirectoryById(req.projectId, req.projectRootPath ?? null)
+    const directory = await ensureCanvasProjectDirectoryById(
+      req.projectId,
+      req.projectRootPath ?? null,
+    )
     const snapshot = JSON.parse(req.snapshotJson)
     const urlMap = new Map<string, string>()
     let movedAssets = 0
@@ -2241,7 +2595,12 @@ export function registerAllIpcHandlers(): void {
       title: string | undefined,
       kind: CanvasAssetKind | undefined,
     ): Promise<string | null> => {
-      if (typeof value !== 'string' || value.length === 0 || value.startsWith('data:') || /^https?:\/\//i.test(value)) {
+      if (
+        typeof value !== 'string' ||
+        value.length === 0 ||
+        value.startsWith('data:') ||
+        /^https?:\/\//i.test(value)
+      ) {
         return null
       }
       const cached = urlMap.get(value)
@@ -2253,8 +2612,8 @@ export function registerAllIpcHandlers(): void {
         projectId: req.projectId,
         projectRootPath: directory.rootPath,
         sourcePath,
-        suggestedBaseName: title,
-        type: kind,
+        ...(title !== undefined ? { suggestedBaseName: title } : {}),
+        ...(kind !== undefined ? { type: kind } : {}),
       })
       if (!copied.filePath) {
         skippedAssets += 1
@@ -2268,27 +2627,49 @@ export function registerAllIpcHandlers(): void {
     }
 
     for (const asset of Array.isArray(snapshot.assets) ? snapshot.assets : []) {
-      const kind = (asset.type === 'audio' || asset.type === 'video' || asset.type === 'image') ? asset.type : 'file'
-      const nextUrl = await migrateRef(asset.url ?? asset.storageKey ?? asset.metadata?.filePath, asset.title ?? asset.id, kind)
+      const kind =
+        asset.type === 'audio' || asset.type === 'video' || asset.type === 'image'
+          ? asset.type
+          : 'file'
+      const nextUrl = await migrateRef(
+        asset.url ?? asset.storageKey ?? asset.metadata?.filePath,
+        asset.title ?? asset.id,
+        kind,
+      )
       if (nextUrl) {
         const nextPath = decodeSafeFileUrl(nextUrl)
         asset.url = nextUrl
         asset.storageKey = nextPath
-        asset.metadata = { ...(asset.metadata ?? {}), storageAdapter: 'local-file', filePath: nextPath }
+        asset.metadata = {
+          ...(asset.metadata ?? {}),
+          storageAdapter: 'local-file',
+          filePath: nextPath,
+        }
         if (kind === 'image') asset.thumbnailUrl = nextUrl
       }
-      const nextThumbUrl = await migrateRef(asset.thumbnailUrl ?? asset.thumbnailKey, `${asset.title ?? asset.id}-thumb`, 'image')
+      const nextThumbUrl = await migrateRef(
+        asset.thumbnailUrl ?? asset.thumbnailKey,
+        `${asset.title ?? asset.id}-thumb`,
+        'image',
+      )
       if (nextThumbUrl) {
         asset.thumbnailUrl = nextThumbUrl
         asset.thumbnailKey = decodeSafeFileUrl(nextThumbUrl)
       }
     }
 
-    const assetById = new Map((Array.isArray(snapshot.assets) ? snapshot.assets : []).map((asset: any) => [asset.id, asset]))
+    const assetById = new Map<string, CanvasMigratedAssetRef>(
+      (Array.isArray(snapshot.assets) ? (snapshot.assets as unknown[]) : [])
+        .filter((asset: unknown): asset is CanvasMigratedAssetRef => {
+          return typeof asset === 'object' && asset != null && 'id' in asset
+        })
+        .map((asset) => [String(asset.id), asset]),
+    )
     for (const node of Array.isArray(snapshot.nodes) ? snapshot.nodes : []) {
       const asset = node.assetId ? assetById.get(node.assetId) : null
       if (asset?.url) node.data = { ...(node.data ?? {}), url: asset.url }
-      if (asset?.thumbnailUrl) node.data = { ...(node.data ?? {}), thumbnailUrl: asset.thumbnailUrl }
+      if (asset?.thumbnailUrl)
+        node.data = { ...(node.data ?? {}), thumbnailUrl: asset.thumbnailUrl }
       if (asset?.storageKey && node.data?.url && urlMap.has(node.data.url)) {
         node.data.url = urlMap.get(node.data.url)
       }
@@ -2306,8 +2687,8 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('canvas:project:cleanup-orphans', async (req) => {
     const root = getDefaultCanvasMediaDir()
     const used = new Set<string>()
-    const rows = getDatabase().raw
-      .prepare('SELECT snapshot_json FROM canvas_snapshots')
+    const rows = getDatabase()
+      .raw.prepare('SELECT snapshot_json FROM canvas_snapshots')
       .all() as Array<{ snapshot_json: string }>
     for (const row of rows) {
       try {
@@ -2321,7 +2702,11 @@ export function registerAllIpcHandlers(): void {
     let deletedFiles = 0
     let deletedBytes = 0
     const visit = async (dir: string): Promise<void> => {
-      let entries: Awaited<ReturnType<typeof fs.readdir>>
+      let entries: Array<{
+        name: string
+        isDirectory: () => boolean
+        isFile: () => boolean
+      }>
       try {
         entries = await fs.readdir(dir, { withFileTypes: true })
       } catch {
@@ -2402,7 +2787,9 @@ export function registerAllIpcHandlers(): void {
     try {
       const json = JSON.stringify(payload, null, 2)
       await fs.writeFile(result.filePath, json, 'utf-8')
-      log.info(`provider:export-to-file wrote ${payload.profiles.length} profiles to ${result.filePath}`)
+      log.info(
+        `provider:export-to-file wrote ${payload.profiles.length} profiles to ${result.filePath}`,
+      )
       return { filePath: result.filePath, count: payload.profiles.length }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -2459,7 +2846,9 @@ export function registerAllIpcHandlers(): void {
     )
     // 二次确认：zod literal 已经校验过 version，但额外提示更友好
     if (parsed.version !== PROVIDER_EXPORT_VERSION) {
-      log.info(`provider:import-from-file accepting older version ${parsed.version} (current: ${PROVIDER_EXPORT_VERSION})`)
+      log.info(
+        `provider:import-from-file accepting older version ${parsed.version} (current: ${PROVIDER_EXPORT_VERSION})`,
+      )
     }
 
     return { payload: parsed as ProviderExportPayload, filePath }
@@ -2516,7 +2905,8 @@ export function registerAllIpcHandlers(): void {
     if (workspace != null) {
       await ensureNoProjectWorkspacePath(workspace.id)
     }
-    const refreshed = workspace == null ? null : new WorkspaceRepository(getDatabase()).get(workspace.id)
+    const refreshed =
+      workspace == null ? null : new WorkspaceRepository(getDatabase()).get(workspace.id)
     return { workspace: refreshed == null ? null : toWorkspaceInfo(refreshed) }
   })
 
@@ -2614,9 +3004,7 @@ export function registerAllIpcHandlers(): void {
       const raw = await git.listWorktrees(mainRepoRoot)
       const registered = wsRepo.findWorktreesByBaseRepo(mainRepoRoot)
       // 路径相等比较前统一 realpath 归一化，避免软链导致的失配（如 /var→/private/var）
-      const byPath = new Map(
-        registered.map((w) => [normalizeRealPath(w.root_path), w] as const),
-      )
+      const byPath = new Map(registered.map((w) => [normalizeRealPath(w.root_path), w] as const))
       const currentPath = normalizeRealPath(workspace.root_path)
       // 一次性取已合并分支集合，避免逐 worktree spawn git
       const mergedBranches = new Set(await git.listMergedBranches(mainRepoRoot, baseBranch))
@@ -2922,11 +3310,15 @@ export function registerAllIpcHandlers(): void {
             await fs.rm(full, { recursive: true, force: true })
             clearedOrphanProjects = true
           } catch (err) {
-            log.warn(`prune orphan ${full} failed: ${err instanceof Error ? err.message : String(err)}`)
+            log.warn(
+              `prune orphan ${full} failed: ${err instanceof Error ? err.message : String(err)}`,
+            )
           }
         }
       } catch (err) {
-        log.warn(`prune orphan projects scan failed: ${err instanceof Error ? err.message : String(err)}`)
+        log.warn(
+          `prune orphan projects scan failed: ${err instanceof Error ? err.message : String(err)}`,
+        )
       }
     }
 
@@ -3242,9 +3634,7 @@ export function registerAllIpcHandlers(): void {
     log.info(`agent:export-to-file requested, ids=${count}`)
 
     const allAgents = getAgentRepository().list({ includeDisabled: true })
-    const toExport = count > 0
-      ? allAgents.filter((a) => req.ids.includes(a.id))
-      : allAgents
+    const toExport = count > 0 ? allAgents.filter((a) => req.ids.includes(a.id)) : allAgents
 
     const payload: import('@spark/protocol').AgentExportPayload = {
       version: 1,
@@ -3267,7 +3657,8 @@ export function registerAllIpcHandlers(): void {
           workflowId: a.workflowId ?? null,
           metadata: a.metadata,
         }
-      }),    }
+      }),
+    }
 
     const datePart = new Date().toISOString().slice(0, 10)
     const defaultName = `spark-agent-export-${datePart}.json`
@@ -3339,15 +3730,19 @@ export function registerAllIpcHandlers(): void {
 
     // Basic runtime validation
     if (
-      typeof json !== 'object' || json == null ||
-      !('version' in json) || !('agents' in json) ||
+      typeof json !== 'object' ||
+      json == null ||
+      !('version' in json) ||
+      !('agents' in json) ||
       !Array.isArray((json as Record<string, unknown>).agents)
     ) {
       throw new Error('无效的 Agent 配置文件格式')
     }
 
     const payload = json as import('@spark/protocol').AgentExportPayload
-    log.info(`agent:import-from-file parsed ${payload.agents.length} agents, version=${payload.version}`)
+    log.info(
+      `agent:import-from-file parsed ${payload.agents.length} agents, version=${payload.version}`,
+    )
 
     return { payload, filePath }
   })
@@ -3378,7 +3773,9 @@ export function registerAllIpcHandlers(): void {
       capabilitiesSummary: a.description.slice(0, 240),
     })
     const members = agents.filter((a) => a.id !== hostAgentId && memberIds.has(a.id)).map(toCard)
-    const candidates = agents.filter((a) => a.id !== hostAgentId && !memberIds.has(a.id)).map(toCard)
+    const candidates = agents
+      .filter((a) => a.id !== hostAgentId && !memberIds.has(a.id))
+      .map(toCard)
     // 顺带返回完整 TeamModeConfig 供前端恢复会话状态（团队模式开关 / 嵌套深度等）
     const config: TeamModeConfig | null =
       team != null
@@ -3396,7 +3793,9 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('team:list-dispatches', async (req) => {
     const repo = new TeamDispatchRepository(getDatabase())
     const rows =
-      req.turnId != null ? repo.listByTurn(req.turnId) : repo.listBySession(req.sessionId, req.limit ?? 50)
+      req.turnId != null
+        ? repo.listByTurn(req.turnId)
+        : repo.listBySession(req.sessionId, req.limit ?? 50)
     const dispatches = rows.map((row) => ({
       id: row.id,
       state: row.state,
@@ -3740,8 +4139,8 @@ export function registerAllIpcHandlers(): void {
     }
     if (req.query) {
       const q = req.query.toLowerCase()
-      tasks = tasks.filter((t) =>
-        t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
+      tasks = tasks.filter(
+        (t) => t.title?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q),
       )
     }
     return { tasks: tasks.map(boardRecordToTask), total: tasks.length }
@@ -3759,11 +4158,13 @@ export function registerAllIpcHandlers(): void {
     const now = new Date().toISOString()
     const status = req.status ?? 'todo'
     // Auto-assign sortOrder: place at the end of the same-status column
-    const sortOrder = req.sortOrder ?? (() => {
-      const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
-      if (sameStatus.length === 0) return 0
-      return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
-    })()
+    const sortOrder =
+      req.sortOrder ??
+      (() => {
+        const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
+        if (sameStatus.length === 0) return 0
+        return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
+      })()
     const task: BoardTaskRecord = {
       id: boardTaskUid(),
       title: req.title ?? '',
@@ -3805,11 +4206,18 @@ export function registerAllIpcHandlers(): void {
       project: req.project !== undefined ? req.project : base.project,
       tags: req.tags !== undefined ? req.tags : base.tags,
       dueDate: req.dueDate !== undefined ? req.dueDate : base.dueDate,
-      processingAgent: req.processingAgent !== undefined ? req.processingAgent : (base.processingAgent ?? ''),
-      acceptanceCriteria: req.acceptanceCriteria !== undefined ? req.acceptanceCriteria : (base.acceptanceCriteria ?? ''),
+      processingAgent:
+        req.processingAgent !== undefined ? req.processingAgent : (base.processingAgent ?? ''),
+      acceptanceCriteria:
+        req.acceptanceCriteria !== undefined
+          ? req.acceptanceCriteria
+          : (base.acceptanceCriteria ?? ''),
       testAgent: req.testAgent !== undefined ? req.testAgent : (base.testAgent ?? ''),
       commentsJson: base.commentsJson ?? '[]',
-      attachmentsJson: req.attachments !== undefined ? JSON.stringify(req.attachments) : (base.attachmentsJson ?? '[]'),
+      attachmentsJson:
+        req.attachments !== undefined
+          ? JSON.stringify(req.attachments)
+          : (base.attachmentsJson ?? '[]'),
       sortOrder: req.sortOrder !== undefined ? req.sortOrder : (base.sortOrder ?? 0),
       createdAt: base.createdAt,
       updatedAt: now,
@@ -3836,11 +4244,13 @@ export function registerAllIpcHandlers(): void {
     for (const item of req.tasks ?? []) {
       const now = new Date().toISOString()
       const status = item.status ?? 'todo'
-      const sortOrder = item.sortOrder ?? (() => {
-        const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
-        if (sameStatus.length === 0) return 0
-        return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
-      })()
+      const sortOrder =
+        item.sortOrder ??
+        (() => {
+          const sameStatus = tasks.filter((t) => t.status === status && !t.deletedAt)
+          if (sameStatus.length === 0) return 0
+          return Math.max(...sameStatus.map((t) => t.sortOrder ?? 0)) + 100
+        })()
       const task: BoardTaskRecord = {
         id: boardTaskUid(),
         title: item.title ?? '',
@@ -3886,11 +4296,18 @@ export function registerAllIpcHandlers(): void {
         project: upd.project !== undefined ? upd.project : base.project,
         tags: upd.tags !== undefined ? upd.tags : base.tags,
         dueDate: upd.dueDate !== undefined ? upd.dueDate : base.dueDate,
-        processingAgent: upd.processingAgent !== undefined ? upd.processingAgent : (base.processingAgent ?? ''),
-        acceptanceCriteria: upd.acceptanceCriteria !== undefined ? upd.acceptanceCriteria : (base.acceptanceCriteria ?? ''),
+        processingAgent:
+          upd.processingAgent !== undefined ? upd.processingAgent : (base.processingAgent ?? ''),
+        acceptanceCriteria:
+          upd.acceptanceCriteria !== undefined
+            ? upd.acceptanceCriteria
+            : (base.acceptanceCriteria ?? ''),
         testAgent: upd.testAgent !== undefined ? upd.testAgent : (base.testAgent ?? ''),
         commentsJson: base.commentsJson ?? '[]',
-        attachmentsJson: upd.attachments !== undefined ? JSON.stringify(upd.attachments) : (base.attachmentsJson ?? '[]'),
+        attachmentsJson:
+          upd.attachments !== undefined
+            ? JSON.stringify(upd.attachments)
+            : (base.attachmentsJson ?? '[]'),
         sortOrder: upd.sortOrder !== undefined ? upd.sortOrder : (base.sortOrder ?? 0),
         createdAt: base.createdAt,
         updatedAt: now,
@@ -3922,7 +4339,11 @@ export function registerAllIpcHandlers(): void {
     const tasks = readBoardTasks()
     const idx = tasks.findIndex((t) => t.id === req.id)
     if (idx === -1) throw new Error(`Task not found: ${req.id}`)
-    tasks[idx] = { ...tasks[idx], deletedAt: null, updatedAt: new Date().toISOString() } as BoardTaskRecord
+    tasks[idx] = {
+      ...tasks[idx],
+      deletedAt: null,
+      updatedAt: new Date().toISOString(),
+    } as BoardTaskRecord
     writeBoardTasks(tasks)
     return { task: boardRecordToTask(tasks[idx]!) }
   })
@@ -3940,8 +4361,13 @@ export function registerAllIpcHandlers(): void {
     const tasks = readBoardTasks()
     const task = tasks.find((t) => t.id === req.taskId)
     if (!task) throw new Error(`Task not found: ${req.taskId}`)
-    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
-      JSON.parse(task.commentsJson ?? '[]')
+    const comments: Array<{
+      id: string
+      taskId: string
+      author: string
+      content: string
+      createdAt: string
+    }> = JSON.parse(task.commentsJson ?? '[]')
     return { comments }
   })
 
@@ -3950,8 +4376,13 @@ export function registerAllIpcHandlers(): void {
     const idx = tasks.findIndex((t) => t.id === req.taskId)
     if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
     const task = tasks[idx]!
-    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
-      JSON.parse(task.commentsJson ?? '[]')
+    const comments: Array<{
+      id: string
+      taskId: string
+      author: string
+      content: string
+      createdAt: string
+    }> = JSON.parse(task.commentsJson ?? '[]')
     const comment = {
       id: `cmt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       taskId: req.taskId,
@@ -3972,8 +4403,13 @@ export function registerAllIpcHandlers(): void {
     const idx = tasks.findIndex((t) => t.id === req.taskId)
     if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
     const task = tasks[idx]!
-    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
-      JSON.parse(task.commentsJson ?? '[]')
+    const comments: Array<{
+      id: string
+      taskId: string
+      author: string
+      content: string
+      createdAt: string
+    }> = JSON.parse(task.commentsJson ?? '[]')
     const filtered = comments.filter((c) => c.id !== req.commentId)
     task.commentsJson = JSON.stringify(filtered)
     task.updatedAt = new Date().toISOString()
@@ -3987,8 +4423,13 @@ export function registerAllIpcHandlers(): void {
     const idx = tasks.findIndex((t) => t.id === req.taskId)
     if (idx === -1) throw new Error(`Task not found: ${req.taskId}`)
     const task = tasks[idx]!
-    const comments: Array<{ id: string; taskId: string; author: string; content: string; createdAt: string }> =
-      JSON.parse(task.commentsJson ?? '[]')
+    const comments: Array<{
+      id: string
+      taskId: string
+      author: string
+      content: string
+      createdAt: string
+    }> = JSON.parse(task.commentsJson ?? '[]')
     const cmt = comments.find((c) => c.id === req.commentId)
     if (!cmt) throw new Error(`Comment not found: ${req.commentId}`)
     cmt.content = req.content
@@ -4242,7 +4683,9 @@ export function registerAllIpcHandlers(): void {
     try {
       const json = JSON.stringify(payload, null, 2)
       await fs.writeFile(result.filePath, json, 'utf-8')
-      log.info(`scheduled-task:export-to-file wrote ${payload.tasks.length} tasks to ${result.filePath}`)
+      log.info(
+        `scheduled-task:export-to-file wrote ${payload.tasks.length} tasks to ${result.filePath}`,
+      )
       return { filePath: result.filePath, count: payload.tasks.length }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err)
@@ -4407,7 +4850,10 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('tool:open-folder', async (req) => {
     log.info(`tool:open-folder requested, rootPath=${req.rootPath}`)
     const errorMessage = await shell.openPath(req.rootPath)
-    return { opened: errorMessage === '', error: errorMessage || undefined }
+    return {
+      opened: errorMessage === '',
+      ...(errorMessage ? { error: errorMessage } : {}),
+    }
   })
 
   // ─── SDK Integrity Handlers ─────────────────────────────────────────────
@@ -4538,7 +4984,9 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('context:set-preference', async (req) => {
-    log.info(`context:set-preference requested, workspaceId=${req.workspaceId}, filePath=${req.filePath}, action=${req.action}`)
+    log.info(
+      `context:set-preference requested, workspaceId=${req.workspaceId}, filePath=${req.filePath}, action=${req.action}`,
+    )
     const repo = new ContextPreferenceRepository(getDatabase())
     const row = repo.upsert({
       id: crypto.randomUUID(),
@@ -4738,7 +5186,10 @@ export function registerAllIpcHandlers(): void {
         ? getDefaultCanvasMediaDir()
         : path.join(app.getPath('temp'), 'spark-agent-pasted-images')
     await fs.mkdir(rootDir, { recursive: true })
-    const baseName = (req.suggestedBaseName?.trim() || 'pasted-image').replace(/[^a-zA-Z0-9._-]+/g, '-')
+    const baseName = (req.suggestedBaseName?.trim() || 'pasted-image').replace(
+      /[^a-zA-Z0-9._-]+/g,
+      '-',
+    )
     const fileName = `${baseName}-${crypto.randomUUID()}.${extension}`
     const filePath = path.join(rootDir, fileName)
     await fs.writeFile(filePath, buffer)
@@ -4795,7 +5246,8 @@ export function registerAllIpcHandlers(): void {
     log.info(`playwright:install requested, target=${req.target}`)
     let lastPercent: number | null = null
     const emitInstallProgress = (
-      patch: Partial<PlaywrightInstallProgress> & Pick<PlaywrightInstallProgress, 'state' | 'message'>,
+      patch: Partial<PlaywrightInstallProgress> &
+        Pick<PlaywrightInstallProgress, 'state' | 'message'>,
     ) => {
       pushStreamEvent('stream:playwright:install-progress', {
         target: req.target,
@@ -4831,10 +5283,7 @@ export function registerAllIpcHandlers(): void {
         logLine: text,
       })
     }
-    const result =
-      req.target === 'mcp'
-        ? await installMcp(onLog)
-        : await installBrowser(onLog)
+    const result = req.target === 'mcp' ? await installMcp(onLog) : await installBrowser(onLog)
     // Refresh state after install completes
     detectIntegrity()
     pushStreamEvent('stream:playwright:status', buildPlaywrightStatus())
@@ -4911,7 +5360,9 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('browser:open-external', async (req) => {
     log.info('browser:open-external requested')
-    await shell.openExternal(req.url && req.url.trim().length > 0 ? req.url : 'https://www.yiqibyte.com')
+    await shell.openExternal(
+      req.url && req.url.trim().length > 0 ? req.url : 'https://www.yiqibyte.com',
+    )
     return { success: true }
   })
 
@@ -5006,9 +5457,7 @@ function toManagedAgent(agent: StorageAgentItem): ManagedAgent {
     permissionMode: isProtocolPermissionMode(agent.permissionMode)
       ? agent.permissionMode
       : 'claude-ask',
-    reasoningEffort: isProtocolReasoning(agent.reasoningEffort)
-      ? agent.reasoningEffort
-      : 'medium',
+    reasoningEffort: isProtocolReasoning(agent.reasoningEffort) ? agent.reasoningEffort : 'medium',
   }
 }
 
@@ -5045,17 +5494,19 @@ function toWorkflowGraph(value: Record<string, unknown>): WorkflowGraph {
         const id = typeof record.id === 'string' ? record.id : ''
         if (!id) return []
         const kind = typeof record.kind === 'string' ? record.kind : 'agent'
-        return [{
-          id,
-          kind: isWorkflowNodeKind(kind) ? kind : 'agent',
-          title: typeof record.title === 'string' ? record.title : id,
-          x: typeof record.x === 'number' ? record.x : 80,
-          y: typeof record.y === 'number' ? record.y : 80,
-          config:
-            record.config != null && typeof record.config === 'object'
-              ? (record.config as Record<string, unknown>)
-              : {},
-        }]
+        return [
+          {
+            id,
+            kind: isWorkflowNodeKind(kind) ? kind : 'agent',
+            title: typeof record.title === 'string' ? record.title : id,
+            x: typeof record.x === 'number' ? record.x : 80,
+            y: typeof record.y === 'number' ? record.y : 80,
+            config:
+              record.config != null && typeof record.config === 'object'
+                ? (record.config as Record<string, unknown>)
+                : {},
+          },
+        ]
       })
     : []
   const edges = Array.isArray(value.edges)
@@ -5065,11 +5516,13 @@ function toWorkflowGraph(value: Record<string, unknown>): WorkflowGraph {
         const from = typeof record.from === 'string' ? record.from : ''
         const to = typeof record.to === 'string' ? record.to : ''
         if (!from || !to) return []
-        return [{
-          id: typeof record.id === 'string' ? record.id : `${from}-${to}`,
-          from,
-          to,
-        }]
+        return [
+          {
+            id: typeof record.id === 'string' ? record.id : `${from}-${to}`,
+            from,
+            to,
+          },
+        ]
       })
     : []
   return { nodes, edges }
@@ -5092,7 +5545,9 @@ function isProtocolReasoning(value: string): value is ManagedAgent['reasoningEff
   return value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
 }
 
-function isWorkflowNodeKind(kind: string): kind is ProtocolWorkflowItem['graph']['nodes'][number]['kind'] {
+function isWorkflowNodeKind(
+  kind: string,
+): kind is ProtocolWorkflowItem['graph']['nodes'][number]['kind'] {
   return (
     kind === 'input' ||
     kind === 'agent' ||
@@ -5139,7 +5594,9 @@ async function resolveWorktreeBranchName(req: {
   const localSlug = sanitizeBranchSlug(taskText)
   try {
     if (req.providerProfileId != null && req.providerProfileId !== '') {
-      const profile = (await getProviderService().listProviders()).find((p) => p.id === req.providerProfileId)
+      const profile = (await getProviderService().listProviders()).find(
+        (p) => p.id === req.providerProfileId,
+      )
       if (profile != null && profile.keystoreRef) {
         const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
         const model = req.model?.trim() || profile.defaultModel
@@ -5156,7 +5613,9 @@ async function resolveWorktreeBranchName(req: {
       }
     }
   } catch (err) {
-    log.warn(`resolveWorktreeBranchName LLM step failed: ${err instanceof Error ? err.message : String(err)}`)
+    log.warn(
+      `resolveWorktreeBranchName LLM step failed: ${err instanceof Error ? err.message : String(err)}`,
+    )
   }
 
   return localSlug.length > 0 ? `spark/${localSlug}` : timestampWorktreeBranch()

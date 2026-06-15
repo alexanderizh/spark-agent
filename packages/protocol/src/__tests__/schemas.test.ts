@@ -173,5 +173,13 @@ describe('IPC schemas', () => {
       projectId: 'canvas_project_1',
     })
     expect(deleteRequest.projectId).toBe('canvas_project_1')
+
+    const downloadRequest = IpcSchemaRegistry['canvas:asset:download'].parse({
+      sourceUrl: 'safe-file://x/YXNzZXQ',
+      type: 'image',
+      mimeType: 'image/png',
+      suggestedFileName: 'result.png',
+    })
+    expect(downloadRequest.suggestedFileName).toBe('result.png')
   })
 })

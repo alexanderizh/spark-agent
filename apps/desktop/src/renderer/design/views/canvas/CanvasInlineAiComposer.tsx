@@ -9,11 +9,12 @@ import {
 } from 'react'
 import { Button, Checkbox as LobeCheckbox, Input, Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
-import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import { Select as LobeSelect } from '@lobehub/ui'
 import { capabilityForOperation } from '@spark/protocol'
 import type { CanvasMediaModelSummary, CanvasMediaTaskInputFile } from '@spark/protocol'
 import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
+import { CanvasPromptEditor } from './CanvasPromptEditor'
 import type {
   CanvasInputTransport,
   CanvasNode,
@@ -54,6 +55,7 @@ export function CanvasInlineAiComposer({
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
+  const [negativePrompt, setNegativePrompt] = useState('')
   const [includeProjectPrompt, setIncludeProjectPrompt] = useState(false)
   const [includeNegativePrompt, setIncludeNegativePrompt] = useState(false)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
@@ -212,6 +214,7 @@ export function CanvasInlineAiComposer({
   const canSubmit =
     prompt.trim().length > 0 ||
     nodePromptContext.length > 0 ||
+    negativePrompt.trim().length > 0 ||
     (includeProjectPrompt && projectPrompt.length > 0) ||
     canRunFromInputOnly(operation, selectedNodes) ||
     hasExplicitFrameInput
@@ -297,7 +300,7 @@ export function CanvasInlineAiComposer({
 
   const handleDragStart = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement
-    if (target.closest('button,input,textarea,.ant-select,.ant-tag')) return
+    if (target.closest('button,input,textarea,.ant-select,.ant-tag,.canvas-prompt-editor')) return
     const panel = panelRef.current
     if (!panel) return
     const parent = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : null
@@ -525,19 +528,27 @@ export function CanvasInlineAiComposer({
           </div>
         </div>
       )}
-      <div className="canvas-form-row">
-        <label>指令</label>
-        <LobeTextArea
-          value={prompt}
-          rows={4}
-          placeholder={
-            nodePromptContext
-              ? '已自动带入选中节点内容，可继续补充要求'
-              : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'
-          }
-          onChange={(e) => setPrompt(e.target.value)}
-        />
-      </div>
+      <CanvasPromptEditor
+        prompt={prompt}
+        negativePrompt={negativePrompt}
+        promptPlaceholder={
+          nodePromptContext
+            ? '已自动带入选中节点内容，可继续补充要求'
+            : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'
+        }
+        optimizeDisabled={prompt.trim().length === 0 && nodePromptContext.length === 0}
+        onPromptChange={setPrompt}
+        onNegativePromptChange={setNegativePrompt}
+        onOptimizePrompt={() => {
+          const sourcePrompt = prompt.trim() || nodePromptContext
+          if (!sourcePrompt) return
+          onCreateTask({
+            operation: 'prompt_optimize',
+            prompt: buildPromptOptimizationPrompt(sourcePrompt, negativePrompt),
+            ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+          })
+        }}
+      />
       <div className="canvas-form-row">
         <label>项目提示词</label>
         <div className="canvas-prompt-injection-list">
@@ -712,7 +723,10 @@ export function CanvasInlineAiComposer({
               prompt.trim() || fallbackPromptForOperation(operation),
               includeProjectPrompt ? projectPrompt : '',
             )
-            const effectiveNegativePrompt = includeNegativePrompt ? projectNegativePrompt : ''
+            const effectiveNegativePrompt = mergeNegativePrompt(
+              negativePrompt,
+              includeNegativePrompt ? projectNegativePrompt : '',
+            )
             const effectiveInputTransport =
               inputTransport === 'auto'
                 ? selectedModel?.providerKind === 'xai'
@@ -772,6 +786,7 @@ export function CanvasInlineAiComposer({
             if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
             onCreateTask(payload)
             setPrompt('')
+            setNegativePrompt('')
           }}
         >
           创建任务
@@ -800,6 +815,27 @@ function mergeProjectPrompt(prompt: string, projectPrompt: string): string {
   if (!trimmedPrompt) return `项目统一提示词：\n${trimmedProjectPrompt}`
   if (trimmedPrompt.includes(trimmedProjectPrompt)) return trimmedPrompt
   return `${trimmedPrompt}\n\n项目统一提示词：\n${trimmedProjectPrompt}`
+}
+
+function mergeNegativePrompt(negativePrompt: string, projectNegativePrompt: string): string {
+  const trimmedNegativePrompt = negativePrompt.trim()
+  const trimmedProjectNegativePrompt = projectNegativePrompt.trim()
+  if (!trimmedProjectNegativePrompt) return trimmedNegativePrompt
+  if (!trimmedNegativePrompt) return trimmedProjectNegativePrompt
+  if (trimmedNegativePrompt.includes(trimmedProjectNegativePrompt)) return trimmedNegativePrompt
+  return `${trimmedNegativePrompt}\n${trimmedProjectNegativePrompt}`
+}
+
+function buildPromptOptimizationPrompt(prompt: string, negativePrompt: string): string {
+  const sections = [
+    '请优化以下画布 AI 任务提示词，使其更清晰、可执行、包含必要约束，并保持用户原始意图。',
+    `原提示词：\n${prompt.trim()}`,
+  ]
+  if (negativePrompt.trim()) {
+    sections.push(`反向提示词：\n${negativePrompt.trim()}`)
+  }
+  sections.push('请只输出优化后的提示词正文。')
+  return sections.join('\n\n')
 }
 
 function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]): boolean {
