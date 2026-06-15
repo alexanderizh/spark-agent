@@ -11,7 +11,7 @@
 | `minimax.json` | MiniMax | ⚠️ 部分完成 | 6个模型，Hailuo 2.3完整，其他需补充 |
 | `kling.json` | Kling | ⚠️ 部分完成 | 6个模型，已有基础参数，3.0/Omni版本需补充 |
 | `openrouter.json` | OpenRouter |  |
-| `volcengine.json` | 火山引擎 | |
+| `volcengine.json` | 火山引擎 | Seedance 2.0 / Fast 已完成，其余模型待补 |
 | `aliyun.json` | 阿里云百炼 | |
 
 ## 模型能力统计
@@ -53,7 +53,7 @@
 ## 待完成工作
 
 ### 高优先级
-1. **火山引擎/阿里云**: 需用户登录
+1. **火山引擎/阿里云**: Seedance 2.0 / Fast 已完成，其他火山模型与阿里云模型仍待补
 2. **xAI**: 补充 grok-imagine-video 的 aspect_ratio、duration、quality 枚举值
 3. **Kling**: 补充 Kling 3.0 和 3.0 Omni 的详细参数
 

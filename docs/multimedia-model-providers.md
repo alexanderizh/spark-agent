@@ -2,8 +2,9 @@
 
 Spark Agent supports unified image, voice, and video generation through a
 **media capability registry + platform adapter** architecture. This document
-covers APIMart and xAI configuration, the agent `spark_media` MCP, and how the
-infinite canvas drives real generation through platform adapters.
+covers APIMart, xAI, and Volcengine configuration, the agent `spark_media`
+MCP, and how the infinite canvas drives real generation through platform
+adapters.
 
 > Design reference: [`multimedia-model-platform-adapters-design.md`](./multimedia-model-platform-adapters-design.md)
 > Image-only provider docs (legacy `spark_image` MCP): [`image-generation-providers.md`](./image-generation-providers.md)
@@ -34,7 +35,7 @@ video.generate · video.image_to_video · video.edit
 Spark now has a first-pass model manifest registry:
 
 - Protocol types and zod schemas live in `packages/protocol/src/media-model-manifest.ts`.
-- Built-in seeds cover APIMart, xAI, OpenAI Images, Google/Veo, Volcengine Seedance, and placeholder manifests for Kling, PixVerse, Wan, HappyHorse, Omni, and MiniMax-Hailuo.
+- Built-in seeds cover APIMart, xAI, OpenAI Images, Google/Veo, Volcengine Seedance 2.0 / Fast, and placeholder manifests for Kling, PixVerse, Wan, HappyHorse, Omni, and MiniMax-Hailuo.
 - SQLite persistence uses `media_model_manifests` and `media_provider_models` (`028_media_model_manifests.sql`).
 - `MediaModelCatalogService` seeds built-ins and exposes list/describe/link operations.
 - Provider edit UI can load the global manifest catalog (`catalogOnly`) and save
@@ -96,6 +97,7 @@ apimart-video-sora2      — APIMart 视频 (Sora 2, async)
 xai-imagine-image        — xAI Imagine 图片
 xai-imagine-video        — xAI Imagine 视频 (async)
 xai-tts                  — xAI 语音合成
+volcengine-seedance-video — 火山方舟 Seedance 视频 (async)
 kling-video              — Kling 可灵视频 (async)
 minimax-image            — MiniMax 图片 (Image 01)
 minimax-speech           — MiniMax 语音合成 (Speech 2.8)
@@ -123,12 +125,12 @@ Current built-in coverage:
 | --- | --- | --- |
 | APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, first/last frame, audio flags |
 | xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, first/last frame, response format, voice/audio format |
+| Volcengine | Doubao Seedance 2.0 / 2.0 Fast | generation mode, aspect ratio, resolution, duration mode, duration, count, output audio, seed, search toggle, timeout, fps, first/last frame, video edit |
 | Kling | O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, first/last frame, negative prompt, audio flag where supported |
 | MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution, first/last frame |
 
-阿里云百炼和火山方舟在 `platform_model_info` 中仍标记为 `NEEDS_LOGIN`，
-当前只保留资料记录，未作为“开箱即用”的内置可调用 manifest 发布。等登录
-控制台确认 endpoint、任务查询路径和返回产物字段后，再补入内置配置。
+Volcengine Seedance 2.0 / Fast 已完成内置接入；`platform_model_info/volcengine.json`
+中其余火山模型仍保留为资料记录，后续补齐参数后可继续转成内置 manifest。
 
 xAI Grok Imagine Video (`xai-imagine-video`) uses:
 
@@ -162,6 +164,7 @@ Default endpoints:
 | --- | --- |
 | APIMart | `https://api.apimart.ai/v1` |
 | xAI | `https://api.x.ai/v1` |
+| Volcengine | `https://ark.cn-beijing.volces.com/api` |
 
 ## 4. Agent Skill (spark_media MCP)
 

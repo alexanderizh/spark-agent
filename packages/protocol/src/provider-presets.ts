@@ -1021,6 +1021,34 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     ],
   },
 
+  /* ─── 火山方舟视频（Seedance 2.0）─── */
+  {
+    id: 'volcengine-seedance-video',
+    vendorId: 'volcengine',
+    name: '火山方舟 Seedance 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api',
+    defaultModel: 'doubao-seedance-2-0-260128',
+    modelIds: ['doubao-seedance-2-0-260128', 'doubao-seedance-2-0-fast-260128'],
+    modelType: 'video',
+    mediaProvider: 'volcengine-ark',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video', 'video.edit'],
+    mediaModelRefs: [
+      { manifestId: 'volcengine:doubao-seedance-2-0-260128', modelId: 'doubao-seedance-2-0-260128', enabled: true },
+      { manifestId: 'volcengine:doubao-seedance-2-0-fast-260128', modelId: 'doubao-seedance-2-0-fast-260128', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { aspectRatio: '智能比例', durationSeconds: 5, resolution: '720p', fps: 24 },
+      polling: { intervalMs: 5000, timeoutMs: 172_800_000 },
+    },
+    sourceUrls: [
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-260128&tab=GenVideo',
+      'https://console.volcengine.com/ark/region:ark+cn-beijing/experience/vision?modelId=doubao-seedance-2-0-fast-260128&tab=GenVideo',
+      'https://seed.bytedance.com/zh/seedance2_0',
+    ],
+  },
+
   /* ─── xAI 语音合成（TTS）─── */
   {
     id: 'xai-tts',
