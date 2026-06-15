@@ -774,10 +774,12 @@ export interface AppGetStorageStatsRequest {}
 export interface AppGetStorageStatsResponse {
   userDataPath: string
   projectsDir: string
+  canvasProjectsRoot: string
   databasePath: string
   databaseBytes: number
   cacheBytes: number
   projectsBytes: number
+  canvasProjectsBytes: number
   totalBytes: number
 }
 
@@ -2848,6 +2850,8 @@ export interface FileSavePastedImageRequest {
   suggestedBaseName?: string
   /** 默认写临时目录；画布项目使用持久目录。 */
   storageScope?: 'temp' | 'canvas'
+  /** 画布项目目录；提供时写入该项目的 assets/images。 */
+  projectRootPath?: string
 }
 
 export interface FileSavePastedImageResponse {
@@ -3588,6 +3592,7 @@ export interface CanvasSnapshotSaveRequest {
     assetCount?: number
     taskCount?: number
     coverAssetId?: string | null
+    rootPath?: string | null
   }
 }
 
@@ -3613,6 +3618,7 @@ export interface CanvasProjectListItem {
   title: string
   description: string | null
   status: 'active' | 'archived' | 'deleted'
+  rootPath: string | null
   nodeCount: number
   assetCount: number
   taskCount: number
@@ -3631,6 +3637,90 @@ export interface CanvasProjectDeleteRequest {
 }
 export interface CanvasProjectDeleteResponse {
   deleted: boolean
+}
+
+export interface CanvasProjectDefaultRootRequest {}
+export interface CanvasProjectDefaultRootResponse {
+  rootPath: string
+}
+
+export interface CanvasProjectEnsureDirectoryRequest {
+  projectId: string
+  title?: string
+  /** Parent folder selected by the user. The app creates a project subfolder inside it. */
+  parentDirectory?: string
+  /** Existing final project directory; used when reopening/migrating old projects. */
+  rootPath?: string | null
+}
+export interface CanvasProjectEnsureDirectoryResponse {
+  rootPath: string
+  created: boolean
+  assetsDir: string
+  snapshotsDir: string
+}
+
+export interface CanvasAssetWriteDataUrlRequest {
+  projectId: string
+  projectRootPath?: string | null
+  dataUrl: string
+  mimeType?: string
+  suggestedBaseName?: string
+  type?: 'image' | 'audio' | 'video' | 'file'
+}
+export interface CanvasAssetWriteDataUrlResponse {
+  filePath: string
+  fileName: string
+  relativePath: string
+}
+
+export interface CanvasAssetCopyToProjectRequest {
+  projectId: string
+  projectRootPath?: string | null
+  sourcePath?: string
+  sourceUrl?: string
+  suggestedBaseName?: string
+  type?: 'image' | 'audio' | 'video' | 'file'
+}
+export interface CanvasAssetCopyToProjectResponse {
+  copied: boolean
+  filePath?: string
+  fileName?: string
+  relativePath?: string
+  error?: string
+}
+
+export interface CanvasProjectExportPackageRequest {
+  projectId: string
+  title?: string
+  projectRootPath?: string | null
+  snapshotJson: string
+  targetParentDirectory?: string
+}
+export interface CanvasProjectExportPackageResponse {
+  exported: boolean
+  directoryPath?: string
+}
+
+export interface CanvasProjectMigrateAssetsRequest {
+  projectId: string
+  projectRootPath?: string | null
+  snapshotJson: string
+}
+export interface CanvasProjectMigrateAssetsResponse {
+  migrated: boolean
+  movedAssets: number
+  skippedAssets: number
+  snapshotJson: string
+}
+
+export interface CanvasProjectCleanupOrphansRequest {
+  dryRun?: boolean
+}
+export interface CanvasProjectCleanupOrphansResponse {
+  deletedFiles: number
+  deletedBytes: number
+  scannedFiles: number
+  dryRun: boolean
 }
 
 // ─── IPC Channel Map ─────────────────────────────────────────────────────────
@@ -3913,6 +4003,13 @@ export interface IpcChannelMap {
   'canvas:snapshot:load': [CanvasSnapshotLoadRequest, CanvasSnapshotLoadResponse]
   'canvas:project:list': [CanvasProjectListRequest, CanvasProjectListResponse]
   'canvas:project:delete': [CanvasProjectDeleteRequest, CanvasProjectDeleteResponse]
+  'canvas:project:default-root': [CanvasProjectDefaultRootRequest, CanvasProjectDefaultRootResponse]
+  'canvas:project:ensure-directory': [CanvasProjectEnsureDirectoryRequest, CanvasProjectEnsureDirectoryResponse]
+  'canvas:asset:write-data-url': [CanvasAssetWriteDataUrlRequest, CanvasAssetWriteDataUrlResponse]
+  'canvas:asset:copy-to-project': [CanvasAssetCopyToProjectRequest, CanvasAssetCopyToProjectResponse]
+  'canvas:project:export-package': [CanvasProjectExportPackageRequest, CanvasProjectExportPackageResponse]
+  'canvas:project:migrate-assets': [CanvasProjectMigrateAssetsRequest, CanvasProjectMigrateAssetsResponse]
+  'canvas:project:cleanup-orphans': [CanvasProjectCleanupOrphansRequest, CanvasProjectCleanupOrphansResponse]
 
   // Remote Connections
   'remote:list': [RemoteListRequest, RemoteListResponse]

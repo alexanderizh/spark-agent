@@ -23,6 +23,7 @@ export interface CanvasProjectRow {
   node_count: number
   asset_count: number
   task_count: number
+  root_path: string | null
   last_opened_at: string | null
   created_at: string
   updated_at: string
@@ -38,6 +39,7 @@ export interface UpsertCanvasProjectParams {
   nodeCount?: number
   assetCount?: number
   taskCount?: number
+  rootPath?: string | null
   lastOpenedAt?: string | null
   createdAt?: string
 }
@@ -68,6 +70,7 @@ export class CanvasProjectRepository extends BaseRepository {
       node_count: params.nodeCount ?? existing?.node_count ?? 0,
       asset_count: params.assetCount ?? existing?.asset_count ?? 0,
       task_count: params.taskCount ?? existing?.task_count ?? 0,
+      root_path: params.rootPath ?? existing?.root_path ?? null,
       last_opened_at: params.lastOpenedAt ?? existing?.last_opened_at ?? null,
       created_at: params.createdAt ?? existing?.created_at ?? now,
       updated_at: now,
@@ -75,12 +78,13 @@ export class CanvasProjectRepository extends BaseRepository {
     this.raw
       .prepare(
         `INSERT INTO canvas_projects
-           (id, user_id, title, description, status, cover_asset_id, node_count, asset_count, task_count, last_opened_at, created_at, updated_at)
-         VALUES (@id, @user_id, @title, @description, @status, @cover_asset_id, @node_count, @asset_count, @task_count, @last_opened_at, @created_at, @updated_at)
+           (id, user_id, title, description, status, cover_asset_id, node_count, asset_count, task_count, root_path, last_opened_at, created_at, updated_at)
+         VALUES (@id, @user_id, @title, @description, @status, @cover_asset_id, @node_count, @asset_count, @task_count, @root_path, @last_opened_at, @created_at, @updated_at)
          ON CONFLICT(id) DO UPDATE SET
            user_id=excluded.user_id, title=excluded.title, description=excluded.description,
            status=excluded.status, cover_asset_id=excluded.cover_asset_id,
            node_count=excluded.node_count, asset_count=excluded.asset_count, task_count=excluded.task_count,
+           root_path=excluded.root_path,
            last_opened_at=excluded.last_opened_at, updated_at=excluded.updated_at`,
       )
       .run(row)

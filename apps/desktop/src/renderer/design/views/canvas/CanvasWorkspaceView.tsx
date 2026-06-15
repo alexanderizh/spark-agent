@@ -629,6 +629,7 @@ export function CanvasWorkspaceView({
       mimeType: file.type,
       suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
       storageScope: 'canvas',
+      ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
     })
     const nodeSize = fitImageNodeSize(dimensions.width, dimensions.height)
     const position = positionNodeInViewport(
@@ -736,10 +737,19 @@ export function CanvasWorkspaceView({
 
   const handleExportProject = async () => {
     try {
-      const result = await canvasApi.exportProjectToFile(projectId)
-      if (result.exported) message.success('Canvas 项目已导出')
+      const result = await canvasApi.exportProjectPackage(projectId)
+      if (result.exported) message.success('Canvas 项目包已导出')
     } catch (error) {
       message.error(error instanceof Error ? error.message : '导出 Canvas 项目失败')
+    }
+  }
+
+  const handleOpenProjectFolder = async () => {
+    try {
+      const result = await canvasApi.openProjectFolder(projectId)
+      if (!result.opened) message.error(result.error || '打开项目文件夹失败')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '打开项目文件夹失败')
     }
   }
 
@@ -826,6 +836,15 @@ export function CanvasWorkspaceView({
           }}
         />
         <aside className="canvas-side-panel">
+          <div className="canvas-project-folder-card">
+            <div className="canvas-project-folder-info">
+              <span>项目文件夹</span>
+              <strong>{snapshot.project.rootPath || '默认位置'}</strong>
+            </div>
+            <Button size="small" icon={<Icons.Folder size={14} />} onClick={() => void handleOpenProjectFolder()}>
+              打开
+            </Button>
+          </div>
           <CanvasTaskQueue
             tasks={snapshot.tasks}
             nodes={snapshot.nodes}

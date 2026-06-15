@@ -15,6 +15,7 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
+import { canvasApi } from './canvas/canvas.api'
 // Provider 相关 UI 已抽到 ProvidersView；保留 ProviderEditPanel 的 re-export
 // 以便现有测试（apps/desktop/src/renderer/tests/renderer.test.ts）等其他消费者
 // 仍能通过原路径 import。
@@ -3903,14 +3904,18 @@ function StorageSection() {
   const [stats, setStats] = useState<{
     userDataPath: string
     projectsDir: string
+    canvasProjectsRoot: string
     databasePath: string
     databaseBytes: number
     cacheBytes: number
     projectsBytes: number
+    canvasProjectsBytes: number
     totalBytes: number
   } | null>(null)
+  const [canvasProjectsRoot, setCanvasProjectsRoot] = useState('')
   const [statsLoading, setStatsLoading] = useState(false)
   const [clearing, setClearing] = useState(false)
+  const [canvasMaintaining, setCanvasMaintaining] = useState(false)
   const { toast } = useToast()
   const { requestConfirm } = useApp()
   const { invoke: getCurrentWorkspace } = useIpcInvoke('workspace:get-current')
@@ -3920,6 +3925,8 @@ function StorageSection() {
   const { invoke: getStorageStats } = useIpcInvoke('app:get-storage-stats')
   const { invoke: clearCache } = useIpcInvoke('app:clear-cache')
   const { invoke: openDataDir } = useIpcInvoke('app:open-data-dir')
+  const { invoke: getSetting } = useIpcInvoke('settings:get')
+  const { invoke: setSetting } = useIpcInvoke('settings:set')
 
   const refreshWorkspace = useCallback(async () => {
     const res = await getCurrentWorkspace({})
@@ -3931,6 +3938,7 @@ function StorageSection() {
     try {
       const res = await getStorageStats({})
       setStats(res)
+      setCanvasProjectsRoot((current) => current || res.canvasProjectsRoot)
     } catch (err) {
       console.error('加载存储统计失败', err)
     } finally {
@@ -3944,8 +3952,14 @@ function StorageSection() {
         setError(err instanceof Error ? err.message : String(err)),
       )
       refreshStats().catch(console.error)
+      getSetting({ category: 'canvas', key: 'data' })
+        .then((res) => {
+          const value = res.value as { projectsRootPath?: string } | null
+          if (value?.projectsRootPath) setCanvasProjectsRoot(value.projectsRootPath)
+        })
+        .catch(console.error)
     })
-  }, [refreshWorkspace, refreshStats])
+  }, [getSetting, refreshWorkspace, refreshStats])
 
   const handleOpenDataDir = async () => {
     try {
@@ -3990,6 +4004,77 @@ function StorageSection() {
     }
   }
 
+  const handleChooseCanvasRoot = async () => {
+    try {
+      const selected = await openDirectory({
+        title: '选择 Canvas 项目默认保存位置',
+        ...(canvasProjectsRoot ? { defaultPath: canvasProjectsRoot } : {}),
+      })
+      if (selected.canceled || selected.filePath === undefined) return
+      const current = await getSetting({ category: 'canvas', key: 'data' })
+      const currentValue = current.value && typeof current.value === 'object'
+        ? current.value as Record<string, unknown>
+        : {}
+      await setSetting({
+        category: 'canvas',
+        key: 'data',
+        value: { ...currentValue, projectsRootPath: selected.filePath },
+      })
+      setCanvasProjectsRoot(selected.filePath)
+      toast.success('已更新 Canvas 项目默认位置')
+      await refreshStats()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '更新 Canvas 项目位置失败')
+    }
+  }
+
+  const handleMigrateCanvasAssets = async () => {
+    const confirmed = await requestConfirm({
+      title: '迁移旧画布资源？',
+      description: '会把旧全局目录里的画布图片/视频复制到各自项目目录，并更新项目快照。',
+      confirmText: '迁移',
+    })
+    if (!confirmed) return
+    setCanvasMaintaining(true)
+    try {
+      await canvasApi.hydrateFromStorage()
+      const projects = await canvasApi.listProjects()
+      let moved = 0
+      let skipped = 0
+      for (const project of projects) {
+        const result = await canvasApi.migrateProjectAssetsToDirectory(project.id)
+        moved += result.movedAssets
+        skipped += result.skippedAssets
+      }
+      toast.success(`迁移完成：${moved} 个资源已归档到项目目录${skipped > 0 ? `，${skipped} 个跳过` : ''}`)
+      await refreshStats()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '迁移画布资源失败')
+    } finally {
+      setCanvasMaintaining(false)
+    }
+  }
+
+  const handleCleanupCanvasAssets = async () => {
+    const confirmed = await requestConfirm({
+      title: '清理旧画布资源？',
+      description: '只清理旧全局画布资源目录中不再被快照引用的文件，项目目录内资源不会删除。',
+      confirmText: '清理',
+      danger: true,
+    })
+    if (!confirmed) return
+    setCanvasMaintaining(true)
+    try {
+      const result = await canvasApi.cleanupLegacyCanvasAssets()
+      toast.success(`已清理 ${result.deletedFiles} 个文件，共 ${formatBytes(result.deletedBytes)}`)
+      await refreshStats()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : '清理旧画布资源失败')
+    } finally {
+      setCanvasMaintaining(false)
+    }
+  }
+
   const handleCloseWorkspace = async () => {
     if (workspace === null) return
     await closeWorkspace({ workspaceId: workspace.id })
@@ -4030,6 +4115,16 @@ function StorageSection() {
             关闭
           </button>
         </div>
+
+        <label>
+          Canvas 项目根目录<span className="sub">新建画布项目默认保存位置</span>
+        </label>
+        <div className="control">
+          <Input className="flex1" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
+          <button className="btn" onClick={() => void handleChooseCanvasRoot()}>
+            <Icons.Folder size={12} /> 选择
+          </button>
+        </div>
       </div>
 
       {error !== null && <div className="card storage-card">{error}</div>}
@@ -4061,6 +4156,11 @@ function StorageSection() {
               label="项目工作目录 (projects/)"
               used={formatBytes(stats.projectsBytes)}
               pct={percent(stats.projectsBytes, stats.totalBytes)}
+            />
+            <UsageRow
+              label="Canvas 项目目录"
+              used={formatBytes(stats.canvasProjectsBytes)}
+              pct={percent(stats.canvasProjectsBytes, stats.totalBytes)}
             />
             <UsageRow
               label="浏览器缓存 (Cache / GPU / 共享词典)"
@@ -4131,6 +4231,32 @@ function StorageSection() {
               disabled={clearing}
             >
               {clearing ? '清理中...' : '清空'}
+            </button>
+          }
+        />
+        <SettingsRow
+          title="迁移旧画布资源到项目目录"
+          desc="将旧全局 media 目录中的画布资源复制进对应 Canvas 项目文件夹，并重写快照引用。"
+          right={
+            <button
+              className="btn ghost sm"
+              onClick={() => void handleMigrateCanvasAssets()}
+              disabled={canvasMaintaining}
+            >
+              {canvasMaintaining ? '处理中...' : '迁移'}
+            </button>
+          }
+        />
+        <SettingsRow
+          title="清理旧画布孤儿资源"
+          desc="清理旧全局画布资源目录中不再被任何快照引用的图片、音频或视频文件。"
+          right={
+            <button
+              className="btn ghost sm danger-btn"
+              onClick={() => void handleCleanupCanvasAssets()}
+              disabled={canvasMaintaining}
+            >
+              {canvasMaintaining ? '处理中...' : '清理'}
             </button>
           }
         />

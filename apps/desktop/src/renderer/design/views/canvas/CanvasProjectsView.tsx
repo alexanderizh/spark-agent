@@ -21,6 +21,7 @@ export function CanvasProjectsView({
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null)
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
+  const [projectParentDirectory, setProjectParentDirectory] = useState('')
   const [saving, setSaving] = useState(false)
   const [importing, setImporting] = useState(false)
   const [exportingProjectId, setExportingProjectId] = useState<string | null>(null)
@@ -55,6 +56,9 @@ export function CanvasProjectsView({
     setEditingProjectId(null)
     setTitle('')
     setDescription('')
+    void canvasApi.getDefaultProjectsRoot()
+      .then(setProjectParentDirectory)
+      .catch(() => setProjectParentDirectory(''))
     setCreateOpen(true)
   }
 
@@ -64,7 +68,20 @@ export function CanvasProjectsView({
     setEditingProjectId(projectId)
     setTitle(project.title)
     setDescription(project.description ?? '')
+    setProjectParentDirectory(project.rootPath ?? '')
     setCreateOpen(true)
+  }
+
+  const handleChooseProjectLocation = async () => {
+    try {
+      const selected = await window.spark.invoke('dialog:open-directory', {
+        title: editingProjectId == null ? '选择 Canvas 项目保存位置' : '选择 Canvas 项目目录',
+        ...(projectParentDirectory ? { defaultPath: projectParentDirectory } : {}),
+      })
+      if (!selected.canceled && selected.filePath) setProjectParentDirectory(selected.filePath)
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '选择项目位置失败')
+    }
   }
 
   const handleSaveProject = async () => {
@@ -78,10 +95,12 @@ export function CanvasProjectsView({
         const snapshot = await canvasApi.createProject({
           title: title.trim(),
           description: description.trim(),
+          ...(projectParentDirectory ? { parentDirectory: projectParentDirectory } : {}),
         })
         setCreateOpen(false)
         setTitle('')
         setDescription('')
+        setProjectParentDirectory('')
         await refresh()
         setViewMode({ mode: 'workspace', projectId: snapshot.project.id })
       } else {
@@ -124,7 +143,20 @@ export function CanvasProjectsView({
   const handleImportProject = async () => {
     setImporting(true)
     try {
-      const snapshot = await canvasApi.importProjectFromFile()
+      let targetParentDirectory = ''
+      try {
+        targetParentDirectory = await canvasApi.getDefaultProjectsRoot()
+      } catch {
+        targetParentDirectory = ''
+      }
+      const selectedDirectory = await window.spark.invoke('dialog:open-directory', {
+        title: '选择导入项目保存位置',
+        ...(targetParentDirectory ? { defaultPath: targetParentDirectory } : {}),
+      })
+      if (!selectedDirectory.canceled && selectedDirectory.filePath) {
+        targetParentDirectory = selectedDirectory.filePath
+      }
+      const snapshot = await canvasApi.importProjectFromFile(targetParentDirectory || undefined)
       if (!snapshot) return
       message.success(`已导入「${snapshot.project.title}」`)
       await refresh()
@@ -136,11 +168,20 @@ export function CanvasProjectsView({
     }
   }
 
+  const handleOpenProjectFolder = async (projectId: string) => {
+    try {
+      const result = await canvasApi.openProjectFolder(projectId)
+      if (!result.opened) message.error(result.error || '打开项目文件夹失败')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '打开项目文件夹失败')
+    }
+  }
+
   const handleExportProject = async (projectId: string) => {
     setExportingProjectId(projectId)
     try {
-      const result = await canvasApi.exportProjectToFile(projectId)
-      if (result.exported) message.success('Canvas 项目已导出')
+      const result = await canvasApi.exportProjectPackage(projectId)
+      if (result.exported) message.success('Canvas 项目包已导出')
     } catch (error) {
       message.error(error instanceof Error ? error.message : '导出 Canvas 项目失败')
     } finally {
@@ -237,6 +278,7 @@ export function CanvasProjectsView({
                         menu={{
                           items: [
                             { key: 'rename', label: '重命名', onClick: () => openEdit(project.id) },
+                            { key: 'open-folder', label: '打开文件夹', onClick: () => void handleOpenProjectFolder(project.id) },
                             { key: 'export', label: '导出', onClick: () => void handleExportProject(project.id) },
                             { key: 'archive', label: project.status === 'archived' ? '恢复' : '归档', onClick: () => void handleArchiveProject(project.id) },
                             { key: 'delete', label: '删除', onClick: () => void handleDeleteProject(project.id) },
@@ -289,6 +331,22 @@ export function CanvasProjectsView({
               placeholder="这个项目要生成什么、有哪些素材和风格约束"
               rows={4}
             />
+          </label>
+          <label>
+            项目位置
+            <div className="canvas-create-location">
+              <LobeInput
+                value={projectParentDirectory || '使用默认 Canvas 项目根目录'}
+                readOnly
+              />
+              <Button
+                icon={<Icons.Folder size={14} />}
+                onClick={() => void handleChooseProjectLocation()}
+                disabled={editingProjectId != null}
+              >
+                选择
+              </Button>
+            </div>
           </label>
         </div>
       </Modal>

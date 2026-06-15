@@ -34,6 +34,7 @@ export type CanvasProject = {
   title: string
   description?: string | null
   coverAssetId?: string | null
+  rootPath?: string | null
   status: CanvasProjectStatus
   nodeCount: number
   assetCount: number

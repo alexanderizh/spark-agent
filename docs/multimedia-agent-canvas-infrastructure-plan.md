@@ -26,11 +26,47 @@
 - 无限画布节点已能展示输入/输出 lineage 计数，Inspector 可查看所选节点的上游/下游节点、边类型和关联任务；节点卡片提供基于当前节点继续创建 AI 任务的快捷入口，为后续流程编排/节点级 agent 调用打基础。
 - 无限画布手动连线已持久化：素材/Prompt 连到任务节点会同步为 `used_as_input` 并写入任务输入，任务节点连到产物节点会同步为 `generated` 并写入任务输出，其它连线保存为 `references`，打开项目后血缘关系仍可恢复。
 - 无限画布项目已支持导入/导出 `.spark-canvas.json`：导出包包含项目快照、节点、素材、任务和血缘；图片类本地素材会内联为 data URL，导入时重新生成项目/节点/素材/任务 ID 并作为新项目落库，避免覆盖现有项目。
+- 无限画布项目目录化已落地：`canvas_projects.root_path` 记录每个项目的独立文件夹，快照双写到 SQLite 与项目目录，上传/生成资源默认进入项目 `assets/`，设置页支持修改新项目默认根目录，并提供旧全局资源迁移与孤儿资源清理。
 
 尚未完成：
 
 - multipart/binary/file-job/回调式 manifest invocation 的通用化。
 - 无限画布 UI/UX 重构、流程编排节点和重跑/分支比较等生产工作台能力。
+
+## 0.1 Canvas 项目目录结构与迁移策略
+
+从 2026-06-15 起，无限画布采用“一个项目一个目录”的资源管理方式。SQLite 继续承担列表、索引、搜索和兼容缓存职责；项目目录是用户可备份、可移动、可导入导出的完整资源容器。
+
+默认目录来自设置项 `canvas/data.projectsRootPath`，未配置时回退到 Electron `userData/canvas-projects`。新建项目时用户可以选择父目录，应用会自动创建规范化项目子目录，避免把多个项目文件直接散落到用户选择的文件夹根部。
+
+目录结构：
+
+```text
+<canvasProjectsRoot>/
+  <title>-<canvas_project_id>/
+    project.json
+    snapshots/
+      latest.json
+      2026-06-15T06-30-00-000Z.json
+    assets/
+      images/
+      videos/
+      audio/
+      files/
+    thumbnails/
+    tasks/
+    exports/
+```
+
+关键规则：
+
+- `canvas:snapshot:save` 会把快照写入 SQLite，同时写入 `project.json`、`snapshots/latest.json` 和时间戳快照。
+- 画布上传图片、导入 JSON 中的 data URL 图片、AI 生成的图片/视频/音频都会优先写入项目 `assets/`。
+- `safe-file://` 白名单包含已配置的 Canvas 根目录和已登记的项目目录，所以自定义到 Windows 非 C 盘后仍可预览/播放。
+- 完整导出使用项目包目录，包含 `project.json`、`snapshots/`、`assets/`；旧 `.spark-canvas.json` 仍保留兼容。
+- 项目列表菜单和画布右侧栏都提供“打开文件夹”入口，方便直接查看项目资源。
+- 导入项目包时允许选择新项目保存位置，会重新生成项目/节点/任务 ID，并把包内资源复制到新项目目录，避免引用原机器上的绝对路径。
+- 设置页提供“迁移旧画布资源到项目目录”和“清理旧画布孤儿资源”。迁移只复制并重写快照引用；清理只处理旧全局 `.spark-artifacts/media` 中未被快照引用的文件，不删除项目目录资产。
 
 ## 1. 目标
 

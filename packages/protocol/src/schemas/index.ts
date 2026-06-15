@@ -222,6 +222,7 @@ export const FileSavePastedImageRequestSchema = z.object({
   mimeType: z.string().min(1).max(120).optional(),
   suggestedBaseName: z.string().min(1).max(120).optional(),
   storageScope: z.enum(['temp', 'canvas']).optional(),
+  projectRootPath: z.string().min(1).max(2000).optional(),
 })
 
 export const FilePrepareImagePreviewRequestSchema = z.object({
@@ -689,9 +690,67 @@ export const IpcSchemaRegistry = {
   'canvas:task:cancel-media': z.object({
     runtimeTaskId: z.string().min(1).max(200),
   }),
+  'canvas:snapshot:save': z.object({
+    projectId: z.string().min(1).max(200),
+    snapshotJson: z.string().min(1),
+    meta: z.object({
+      title: z.string().max(300).optional(),
+      description: z.string().max(2000).nullable().optional(),
+      status: z.enum(['active', 'archived', 'deleted']).optional(),
+      nodeCount: z.number().int().min(0).optional(),
+      assetCount: z.number().int().min(0).optional(),
+      taskCount: z.number().int().min(0).optional(),
+      coverAssetId: z.string().max(200).nullable().optional(),
+      rootPath: z.string().max(2000).nullable().optional(),
+    }).optional(),
+  }),
+  'canvas:snapshot:load': z.object({
+    projectId: z.string().min(1).max(200),
+  }),
+  'canvas:project:list': z.object({
+    includeDeleted: z.boolean().optional(),
+  }),
   'canvas:project:delete': z.object({
     projectId: z.string().min(1).max(200),
     hard: z.boolean().optional(),
+  }),
+  'canvas:project:default-root': z.object({}),
+  'canvas:project:ensure-directory': z.object({
+    projectId: z.string().min(1).max(200),
+    title: z.string().max(300).optional(),
+    parentDirectory: z.string().min(1).max(2000).optional(),
+    rootPath: z.string().max(2000).nullable().optional(),
+  }),
+  'canvas:asset:write-data-url': z.object({
+    projectId: z.string().min(1).max(200),
+    projectRootPath: z.string().max(2000).nullable().optional(),
+    dataUrl: z.string().min(1).max(100_000_000),
+    mimeType: z.string().min(1).max(160).optional(),
+    suggestedBaseName: z.string().min(1).max(160).optional(),
+    type: z.enum(['image', 'audio', 'video', 'file']).optional(),
+  }),
+  'canvas:asset:copy-to-project': z.object({
+    projectId: z.string().min(1).max(200),
+    projectRootPath: z.string().max(2000).nullable().optional(),
+    sourcePath: z.string().max(4000).optional(),
+    sourceUrl: z.string().max(8000).optional(),
+    suggestedBaseName: z.string().min(1).max(160).optional(),
+    type: z.enum(['image', 'audio', 'video', 'file']).optional(),
+  }),
+  'canvas:project:export-package': z.object({
+    projectId: z.string().min(1).max(200),
+    title: z.string().max(300).optional(),
+    projectRootPath: z.string().max(2000).nullable().optional(),
+    snapshotJson: z.string().min(1),
+    targetParentDirectory: z.string().min(1).max(2000).optional(),
+  }),
+  'canvas:project:migrate-assets': z.object({
+    projectId: z.string().min(1).max(200),
+    projectRootPath: z.string().max(2000).nullable().optional(),
+    snapshotJson: z.string().min(1),
+  }),
+  'canvas:project:cleanup-orphans': z.object({
+    dryRun: z.boolean().optional(),
   }),
 
   // Remote Connections

@@ -77,6 +77,7 @@ export function getSafeFileAllowedRoots(): string[] {
     log.warn(`Failed to resolve temp path: ${String(err)}`)
   }
   roots.push(...getWorkspaceArtifactRoots())
+  roots.push(...getCanvasProjectRoots())
   return [...new Set(roots)]
 }
 
@@ -94,6 +95,41 @@ function getWorkspaceArtifactRoots(): string[] {
     // available on later requests after the database is ready.
     return []
   }
+}
+
+function getCanvasProjectRoots(): string[] {
+  const roots: string[] = []
+  try {
+    const settingsRows = getDatabase().raw
+      .prepare(`SELECT value FROM app_settings WHERE category = 'canvas' AND key = 'data'`)
+      .all() as Array<{ value?: unknown }>
+    for (const row of settingsRows) {
+      try {
+        const parsed = typeof row.value === 'string' ? JSON.parse(row.value) as { projectsRootPath?: unknown } : null
+        if (typeof parsed?.projectsRootPath === 'string' && parsed.projectsRootPath.trim().length > 0) {
+          roots.push(resolvePath(parsed.projectsRootPath))
+        }
+      } catch {
+        // Ignore malformed user settings; userData remains allowed.
+      }
+    }
+  } catch {
+    // app_settings may not exist during early startup/migration.
+  }
+  try {
+    const rows = getDatabase().raw
+      .prepare('SELECT root_path FROM canvas_projects WHERE root_path IS NOT NULL AND status != ?')
+      .all('deleted') as Array<{ root_path?: unknown }>
+    roots.push(
+      ...rows
+        .map((row) => (typeof row.root_path === 'string' ? row.root_path : ''))
+        .filter((rootPath) => rootPath.length > 0)
+        .map((rootPath) => resolvePath(rootPath)),
+    )
+  } catch {
+    // canvas_projects/root_path may not exist until migrations complete.
+  }
+  return roots
 }
 
 /**

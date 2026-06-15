@@ -140,6 +140,7 @@ function buildProjectMeta(project: CanvasProject): NonNullable<CanvasSnapshotSav
   }
   if (project.description !== undefined) meta.description = project.description
   if (project.coverAssetId !== undefined) meta.coverAssetId = project.coverAssetId
+  if (project.rootPath !== undefined) meta.rootPath = project.rootPath
   return meta
 }
 
@@ -180,9 +181,10 @@ const emptyDb = (): CanvasDb => ({
 
 type CanvasProjectExportPayload = {
   kind: 'spark.canvas.project'
-  version: 1
+  version: 1 | 2
   exportedAt: string
   app: 'Spark-Agent'
+  projectRootPath?: string
   snapshot: CanvasSnapshot
 }
 
@@ -199,6 +201,26 @@ function toCanvasProject(project: CanvasProjectListItem): CanvasProject {
     ...project,
     userId: USER_ID,
   }
+}
+
+async function getDefaultCanvasProjectsRoot(): Promise<string> {
+  const { rootPath } = await window.spark.invoke('canvas:project:default-root', {})
+  return rootPath
+}
+
+async function ensureCanvasProjectDirectory(input: {
+  projectId: string
+  title?: string
+  rootPath?: string | null
+  parentDirectory?: string
+}): Promise<string> {
+  const result = await window.spark.invoke('canvas:project:ensure-directory', {
+    projectId: input.projectId,
+    ...(input.title !== undefined ? { title: input.title } : {}),
+    ...(input.rootPath !== undefined ? { rootPath: input.rootPath } : {}),
+    ...(input.parentDirectory !== undefined ? { parentDirectory: input.parentDirectory } : {}),
+  })
+  return result.rootPath
 }
 
 function readDb(): CanvasDb {
@@ -368,6 +390,7 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
     userId: USER_ID,
     title: `${next.project.title || 'Canvas Project'}（导入）`,
     status: 'active',
+    rootPath: null,
     lastOpenedAt: at,
     createdAt: at,
     updatedAt: at,
@@ -450,14 +473,25 @@ async function materializeImageDataUrl(
   dataUrl: string,
   suggestedBaseName: string,
   mimeType?: string | null,
+  projectId?: string,
+  projectRootPath?: string | null,
 ): Promise<{ filePath: string; fileUrl: string } | null> {
   try {
-    const saved = await window.spark.invoke('file:save-pasted-image', {
-      dataUrl,
-      ...(mimeType ? { mimeType } : {}),
-      suggestedBaseName,
-      storageScope: 'canvas',
-    })
+    const saved = projectId
+      ? await window.spark.invoke('canvas:asset:write-data-url', {
+          projectId,
+          dataUrl,
+          ...(mimeType ? { mimeType } : {}),
+          suggestedBaseName,
+          type: 'image',
+          ...(projectRootPath ? { projectRootPath } : {}),
+        })
+      : await window.spark.invoke('file:save-pasted-image', {
+          dataUrl,
+          ...(mimeType ? { mimeType } : {}),
+          suggestedBaseName,
+          storageScope: 'canvas',
+        })
     return { filePath: saved.filePath, fileUrl: encodeToSafeFileUrl(saved.filePath) }
   } catch {
     return null
@@ -470,7 +504,7 @@ async function normalizeSnapshotForHotStorage(snapshot: CanvasSnapshot): Promise
   const materialize = (dataUrl: string, name: string, mimeType?: string | null) => {
     const existing = cache.get(dataUrl)
     if (existing) return existing
-    const next = materializeImageDataUrl(dataUrl, name, mimeType)
+    const next = materializeImageDataUrl(dataUrl, name, mimeType, snapshot.project.id, snapshot.project.rootPath)
     cache.set(dataUrl, next)
     return next
   }
@@ -522,6 +556,12 @@ async function loadSnapshotFromStorage(projectId: string): Promise<{ snapshot: C
   if (!snapshotJson) return null
   const snapshot = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
   if (!snapshot.project || !snapshot.board) return null
+  if (!snapshot.project.rootPath) {
+    snapshot.project.rootPath = await ensureCanvasProjectDirectory({
+      projectId,
+      title: snapshot.project.title,
+    })
+  }
   return normalizeSnapshotForHotStorage({
     project: snapshot.project,
     board: snapshot.board,
@@ -801,17 +841,27 @@ export const canvasApi = {
     }
   },
 
-  async createProject(input: { title: string; description?: string }): Promise<CanvasSnapshot> {
+  async getDefaultProjectsRoot(): Promise<string> {
+    return getDefaultCanvasProjectsRoot()
+  },
+
+  async createProject(input: { title: string; description?: string; parentDirectory?: string }): Promise<CanvasSnapshot> {
     const db = readDb()
     const at = now()
     const projectId = uid('canvas_project')
     const boardId = uid('canvas_board')
+    const rootPath = await ensureCanvasProjectDirectory({
+      projectId,
+      title: input.title,
+      ...(input.parentDirectory ? { parentDirectory: input.parentDirectory } : {}),
+    })
     const project: CanvasProject = {
       id: projectId,
       userId: USER_ID,
       title: input.title,
       description: input.description ?? null,
       status: 'active',
+      rootPath,
       nodeCount: 0,
       assetCount: 0,
       taskCount: 0,
@@ -869,9 +919,10 @@ export const canvasApi = {
     const portableSnapshot = await embedExportableImages(snapshot)
     const payload: CanvasProjectExportPayload = {
       kind: 'spark.canvas.project',
-      version: 1,
+      version: 2,
       exportedAt: now(),
       app: 'Spark-Agent',
+      ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
       snapshot: portableSnapshot,
     }
     const result = await window.spark.invoke('dialog:save-file', {
@@ -889,7 +940,64 @@ export const canvasApi = {
     return { exported: true, filePath: result.filePath }
   },
 
-  async importProjectFromFile(): Promise<CanvasSnapshot | null> {
+  async exportProjectPackage(projectId: string): Promise<{ exported: boolean; directoryPath?: string }> {
+    const db = readDb()
+    let snapshot: CanvasSnapshot | null = null
+    try {
+      snapshot = fullSnapshotFromDb(db, projectId)
+    } catch {
+      try {
+        const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+        if (snapshotJson) snapshot = parseCanvasProjectExport(snapshotJson)
+      } catch {
+        snapshot = null
+      }
+    }
+    if (!snapshot) throw new Error('Canvas project not found')
+    const result = await window.spark.invoke('dialog:open-directory', {
+      title: '选择 Canvas 项目包导出位置',
+      ...(snapshot.project.rootPath ? { defaultPath: snapshot.project.rootPath } : {}),
+    })
+    if (result.canceled || !result.filePath) return { exported: false }
+    const response = await window.spark.invoke('canvas:project:export-package', {
+      projectId,
+      title: snapshot.project.title,
+      projectRootPath: snapshot.project.rootPath ?? null,
+      snapshotJson: JSON.stringify(snapshot),
+      targetParentDirectory: result.filePath,
+    })
+    return response
+  },
+
+  async openProjectFolder(projectId: string): Promise<{ opened: boolean; rootPath?: string; error?: string }> {
+    const db = readDb()
+    let project = db.projects.find((item) => item.id === projectId)
+    if (!project) {
+      const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
+      if (snapshotJson) {
+        const snapshot = parseCanvasProjectExport(snapshotJson)
+        replaceProjectSnapshot(db, snapshot)
+        project = snapshot.project
+      }
+    }
+    if (!project) throw new Error('Canvas project not found')
+    if (!project.rootPath) {
+      project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: project.title,
+      })
+      writeDb(db)
+      await flushPersist()
+    }
+    const result = await window.spark.invoke('tool:open-folder', { rootPath: project.rootPath })
+    return {
+      opened: result.opened,
+      rootPath: project.rootPath,
+      ...(result.error !== undefined ? { error: result.error } : {}),
+    }
+  },
+
+  async importProjectFromFile(parentDirectory?: string): Promise<CanvasSnapshot | null> {
     const result = await window.spark.invoke('dialog:open-file', {
       title: '导入 Canvas 项目',
       filters: [
@@ -900,12 +1008,58 @@ export const canvasApi = {
     const { content } = await window.spark.invoke('file:read-text', { path: result.filePath })
     const parsedSnapshot = parseCanvasProjectExport(content)
     const clonedSnapshot = cloneImportedSnapshot(parsedSnapshot)
+    clonedSnapshot.project.rootPath = await ensureCanvasProjectDirectory({
+      projectId: clonedSnapshot.project.id,
+      title: clonedSnapshot.project.title,
+      ...(parentDirectory ? { parentDirectory } : {}),
+    })
+    try {
+      const migrated = await window.spark.invoke('canvas:project:migrate-assets', {
+        projectId: clonedSnapshot.project.id,
+        projectRootPath: clonedSnapshot.project.rootPath,
+        snapshotJson: JSON.stringify(clonedSnapshot),
+      })
+      clonedSnapshot.project = (JSON.parse(migrated.snapshotJson) as CanvasSnapshot).project
+      Object.assign(clonedSnapshot, JSON.parse(migrated.snapshotJson) as CanvasSnapshot)
+    } catch {
+      // Import remains compatible with pure JSON projects even if local asset copy is unavailable.
+    }
     const normalized = await normalizeSnapshotForHotStorage(clonedSnapshot)
     const db = readDb()
     replaceProjectSnapshot(db, normalized.snapshot)
     writeDb(db)
     await flushPersist()
     return normalized.snapshot
+  },
+
+  async migrateProjectAssetsToDirectory(projectId: string): Promise<{ movedAssets: number; skippedAssets: number }> {
+    const db = readDb()
+    const snapshot = fullSnapshotFromDb(db, projectId)
+    if (!snapshot.project.rootPath) {
+      snapshot.project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: snapshot.project.title,
+      })
+    }
+    const result = await window.spark.invoke('canvas:project:migrate-assets', {
+      projectId,
+      projectRootPath: snapshot.project.rootPath,
+      snapshotJson: JSON.stringify(snapshot),
+    })
+    const migrated = JSON.parse(result.snapshotJson) as CanvasSnapshot
+    replaceProjectSnapshot(db, migrated)
+    writeDb(db)
+    await flushPersist()
+    return { movedAssets: result.movedAssets, skippedAssets: result.skippedAssets }
+  },
+
+  async cleanupLegacyCanvasAssets(): Promise<{ deletedFiles: number; deletedBytes: number; scannedFiles: number }> {
+    const result = await window.spark.invoke('canvas:project:cleanup-orphans', {})
+    return {
+      deletedFiles: result.deletedFiles,
+      deletedBytes: result.deletedBytes,
+      scannedFiles: result.scannedFiles,
+    }
   },
 
   async deleteProject(projectId: string): Promise<void> {
@@ -937,6 +1091,12 @@ export const canvasApi = {
     const db = readDb()
     const project = db.projects.find((item) => item.id === projectId)
     if (!project) throw new Error('Canvas project not found')
+    if (!project.rootPath) {
+      project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: project.title,
+      })
+    }
     project.lastOpenedAt = now()
     writeDb(db)
     return snapshotFromDb(db, projectId)
@@ -1659,6 +1819,12 @@ export const canvasApi = {
     const board = db.boards.find((item) => item.projectId === projectId)
     const project = db.projects.find((item) => item.id === projectId)
     if (!board || !project) throw new Error('Canvas board not found')
+    if (!project.rootPath) {
+      project.rootPath = await ensureCanvasProjectDirectory({
+        projectId,
+        title: project.title,
+      })
+    }
     const at = now()
     const taskId = uid('canvas_task')
     const x = request.outputPlacement?.x ?? 360
@@ -1738,6 +1904,7 @@ export const canvasApi = {
       ...(request.manifestId != null ? { manifestId: request.manifestId } : {}),
       ...(request.modelId != null ? { modelId: request.modelId } : {}),
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
+      outputDir: `${project.rootPath}/assets`,
       waitForCompletion: false,
     }
     // 调 IPC 前打印彩色参数块，便于排查「prompt/model/inputs/params 没拼对」。

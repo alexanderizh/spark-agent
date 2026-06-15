@@ -218,6 +218,263 @@ function getDefaultCanvasMediaDir(): string {
   return path.join(app.getPath('userData'), '.spark-artifacts', 'media')
 }
 
+type CanvasAssetKind = 'image' | 'audio' | 'video' | 'file'
+
+const CANVAS_SETTINGS_CATEGORY = 'canvas'
+const CANVAS_SETTINGS_KEY = 'data'
+
+function getCanvasSettingsValue(): { projectsRootPath?: string } {
+  const raw = getSettingsService().get(CANVAS_SETTINGS_CATEGORY, CANVAS_SETTINGS_KEY)
+  if (raw && typeof raw === 'object') return raw as { projectsRootPath?: string }
+  return {}
+}
+
+function getDefaultCanvasProjectsRoot(): string {
+  const configured = getCanvasSettingsValue().projectsRootPath?.trim()
+  return configured ? path.resolve(configured) : path.join(app.getPath('userData'), 'canvas-projects')
+}
+
+function sanitizeCanvasPathSegment(value: string | undefined, fallback: string): string {
+  const cleaned = (value ?? '')
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/^-+|-+$/g, '')
+  return (cleaned || fallback).slice(0, 80)
+}
+
+function canvasAssetSubdir(kind: CanvasAssetKind | undefined): string {
+  if (kind === 'image') return 'images'
+  if (kind === 'video') return 'videos'
+  if (kind === 'audio') return 'audio'
+  return 'files'
+}
+
+function extensionFromMimeType(mimeType: string | undefined, kind: CanvasAssetKind | undefined): string {
+  const mime = (mimeType ?? '').toLowerCase()
+  if (mime.includes('jpeg') || mime.includes('jpg')) return 'jpg'
+  if (mime.includes('png')) return 'png'
+  if (mime.includes('webp')) return 'webp'
+  if (mime.includes('gif')) return 'gif'
+  if (mime.includes('mp4')) return 'mp4'
+  if (mime.includes('quicktime')) return 'mov'
+  if (mime.includes('webm')) return 'webm'
+  if (mime.includes('mpeg')) return kind === 'audio' ? 'mp3' : 'mpg'
+  if (mime.includes('wav')) return 'wav'
+  if (kind === 'video') return 'mp4'
+  if (kind === 'audio') return 'mp3'
+  if (kind === 'image') return 'png'
+  return 'bin'
+}
+
+function guessAssetKindFromPath(filePath: string): CanvasAssetKind {
+  const ext = path.extname(filePath).toLowerCase()
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.bmp', '.tiff', '.heic', '.heif'].includes(ext)) return 'image'
+  if (['.mp4', '.mov', '.webm', '.m4v'].includes(ext)) return 'video'
+  if (['.mp3', '.wav', '.m4a', '.aac', '.flac', '.ogg', '.opus'].includes(ext)) return 'audio'
+  return 'file'
+}
+
+function decodeSafeFileUrl(url: string | undefined): string | null {
+  if (!url?.startsWith('safe-file://')) return null
+  try {
+    const rest = url.slice('safe-file://'.length)
+    const slashIdx = rest.indexOf('/')
+    if (slashIdx < 0) return null
+    const encoded = rest.slice(slashIdx + 1)
+    const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/')
+    const padding = base64.length % 4 === 0 ? '' : '='.repeat(4 - (base64.length % 4))
+    const decoded = Buffer.from(base64 + padding, 'base64').toString('utf8')
+    return path.isAbsolute(decoded) ? decoded : null
+  } catch {
+    return null
+  }
+}
+
+async function ensureCanvasProjectDirectory(input: {
+  projectId: string
+  title?: string
+  parentDirectory?: string
+  rootPath?: string | null
+}): Promise<{ rootPath: string; created: boolean; assetsDir: string; snapshotsDir: string }> {
+  const existing = input.rootPath?.trim()
+  const rootPath = existing
+    ? path.resolve(existing)
+    : path.join(
+        path.resolve(input.parentDirectory?.trim() || getDefaultCanvasProjectsRoot()),
+        `${sanitizeCanvasPathSegment(input.title, 'canvas-project')}-${input.projectId}`,
+      )
+  let created = false
+  try {
+    await fs.access(rootPath)
+  } catch {
+    created = true
+  }
+  const assetsDir = path.join(rootPath, 'assets')
+  const snapshotsDir = path.join(rootPath, 'snapshots')
+  await fs.mkdir(path.join(assetsDir, 'images'), { recursive: true })
+  await fs.mkdir(path.join(assetsDir, 'videos'), { recursive: true })
+  await fs.mkdir(path.join(assetsDir, 'audio'), { recursive: true })
+  await fs.mkdir(path.join(assetsDir, 'files'), { recursive: true })
+  await fs.mkdir(path.join(rootPath, 'thumbnails'), { recursive: true })
+  await fs.mkdir(path.join(rootPath, 'tasks'), { recursive: true })
+  await fs.mkdir(path.join(rootPath, 'exports'), { recursive: true })
+  await fs.mkdir(snapshotsDir, { recursive: true })
+  return { rootPath, created, assetsDir, snapshotsDir }
+}
+
+async function ensureCanvasProjectDirectoryById(
+  projectId: string,
+  rootPath?: string | null,
+  title?: string,
+): Promise<{ rootPath: string; created: boolean; assetsDir: string; snapshotsDir: string }> {
+  const row = getCanvasProjectRepo().get(projectId)
+  return ensureCanvasProjectDirectory({
+    projectId,
+    title: title ?? row?.title ?? projectId,
+    rootPath: rootPath ?? row?.root_path ?? null,
+  })
+}
+
+function parseDataUrl(dataUrl: string, fallbackMimeType?: string): { buffer: Buffer; mimeType: string } {
+  const match = dataUrl.match(/^data:([^;,]+)?;base64,(.+)$/)
+  if (match == null) throw new Error('Invalid data URL')
+  const mimeType = (match[1] ?? fallbackMimeType ?? 'application/octet-stream').toLowerCase()
+  const payload = match[2]
+  if (!payload) throw new Error('Data URL is empty')
+  const buffer = Buffer.from(payload, 'base64')
+  if (buffer.length === 0) throw new Error('Data URL is empty')
+  return { buffer, mimeType }
+}
+
+async function writeCanvasAssetDataUrl(input: {
+  projectId: string
+  projectRootPath?: string | null
+  dataUrl: string
+  mimeType?: string
+  suggestedBaseName?: string
+  type?: CanvasAssetKind
+}): Promise<{ filePath: string; fileName: string; relativePath: string }> {
+  const parsed = parseDataUrl(input.dataUrl, input.mimeType)
+  const kind = input.type ?? (parsed.mimeType.startsWith('image/') ? 'image' : parsed.mimeType.startsWith('video/') ? 'video' : parsed.mimeType.startsWith('audio/') ? 'audio' : 'file')
+  const directory = await ensureCanvasProjectDirectoryById(input.projectId, input.projectRootPath)
+  const fileName = `${sanitizeCanvasPathSegment(input.suggestedBaseName, 'asset')}-${crypto.randomUUID()}.${extensionFromMimeType(parsed.mimeType, kind)}`
+  const relativePath = path.join('assets', canvasAssetSubdir(kind), fileName)
+  const filePath = path.join(directory.rootPath, relativePath)
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
+  await fs.writeFile(filePath, parsed.buffer)
+  return { filePath, fileName, relativePath }
+}
+
+async function copyCanvasAssetToProject(input: {
+  projectId: string
+  projectRootPath?: string | null
+  sourcePath?: string
+  sourceUrl?: string
+  suggestedBaseName?: string
+  type?: CanvasAssetKind
+}): Promise<{ copied: boolean; filePath?: string; fileName?: string; relativePath?: string; error?: string }> {
+  const decodedSource = decodeSafeFileUrl(input.sourceUrl)
+  const sourcePath = input.sourcePath ?? decodedSource ?? undefined
+  if (!sourcePath) return { copied: false, error: 'sourcePath is required' }
+  const resolvedSource = path.resolve(sourcePath)
+  try {
+    const stat = await fs.stat(resolvedSource)
+    if (!stat.isFile()) return { copied: false, error: 'source is not a file' }
+    const directory = await ensureCanvasProjectDirectoryById(input.projectId, input.projectRootPath)
+    if (resolvedSource === directory.rootPath || resolvedSource.startsWith(directory.rootPath + path.sep)) {
+      return {
+        copied: false,
+        filePath: resolvedSource,
+        fileName: path.basename(resolvedSource),
+        relativePath: path.relative(directory.rootPath, resolvedSource),
+      }
+    }
+    const kind = input.type ?? guessAssetKindFromPath(resolvedSource)
+    const ext = path.extname(resolvedSource) || `.${extensionFromMimeType(undefined, kind)}`
+    const fileName = `${sanitizeCanvasPathSegment(input.suggestedBaseName ?? path.basename(resolvedSource, ext), 'asset')}-${crypto.randomUUID()}${ext}`
+    const relativePath = path.join('assets', canvasAssetSubdir(kind), fileName)
+    const filePath = path.join(directory.rootPath, relativePath)
+    await fs.mkdir(path.dirname(filePath), { recursive: true })
+    await fs.copyFile(resolvedSource, filePath)
+    return { copied: true, filePath, fileName, relativePath }
+  } catch (err) {
+    return { copied: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+function collectCanvasSnapshotLocalPaths(snapshot: any): Set<string> {
+  const paths = new Set<string>()
+  const add = (value: unknown) => {
+    if (typeof value !== 'string' || value.length === 0) return
+    const decoded = decodeSafeFileUrl(value)
+    if (decoded) paths.add(path.resolve(decoded))
+    else if (path.isAbsolute(value)) paths.add(path.resolve(value))
+  }
+  for (const asset of Array.isArray(snapshot?.assets) ? snapshot.assets : []) {
+    add(asset?.storageKey)
+    add(asset?.thumbnailKey)
+    add(asset?.url)
+    add(asset?.thumbnailUrl)
+    add(asset?.metadata?.filePath)
+  }
+  for (const node of Array.isArray(snapshot?.nodes) ? snapshot.nodes : []) {
+    add(node?.data?.url)
+    add(node?.data?.thumbnailUrl)
+  }
+  return paths
+}
+
+function rewriteCanvasSnapshotRootPaths(value: unknown, fromRoot: string, toRoot: string): unknown {
+  if (typeof value === 'string') {
+    const decoded = decodeSafeFileUrl(value)
+    if (decoded && path.resolve(decoded).startsWith(fromRoot + path.sep)) {
+      return toSafeFileUrl(path.join(toRoot, path.relative(fromRoot, path.resolve(decoded))))
+    }
+    if (path.isAbsolute(value) && path.resolve(value).startsWith(fromRoot + path.sep)) {
+      return path.join(toRoot, path.relative(fromRoot, path.resolve(value)))
+    }
+    return value
+  }
+  if (Array.isArray(value)) return value.map((item) => rewriteCanvasSnapshotRootPaths(item, fromRoot, toRoot))
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, child]) => [
+      key,
+      rewriteCanvasSnapshotRootPaths(child, fromRoot, toRoot),
+    ]),
+  )
+}
+
+async function writeCanvasProjectPackageFiles(input: {
+  projectId: string
+  rootPath: string
+  snapshotJson: string
+  exportedAt?: string
+}): Promise<void> {
+  const exportedAt = input.exportedAt ?? new Date().toISOString()
+  const parsed = JSON.parse(input.snapshotJson)
+  const snapshot = parsed?.kind === 'spark.canvas.project' && parsed.snapshot ? parsed.snapshot : parsed
+  if (snapshot?.project) snapshot.project.rootPath = input.rootPath
+  const payload = {
+    kind: 'spark.canvas.project',
+    version: 2,
+    exportedAt,
+    app: 'Spark-Agent',
+    projectRootPath: input.rootPath,
+    snapshot,
+  }
+  const directory = await ensureCanvasProjectDirectory({
+    projectId: input.projectId,
+    title: snapshot?.project?.title,
+    rootPath: input.rootPath,
+  })
+  await fs.writeFile(path.join(directory.rootPath, 'project.json'), JSON.stringify(payload, null, 2), 'utf-8')
+  await fs.writeFile(path.join(directory.snapshotsDir, 'latest.json'), JSON.stringify(snapshot, null, 2), 'utf-8')
+  const stamp = exportedAt.replace(/[:.]/g, '-')
+  await fs.writeFile(path.join(directory.snapshotsDir, `${stamp}.json`), JSON.stringify(snapshot, null, 2), 'utf-8')
+}
+
 /** Canvas 持久化 Repository（SQLite-backed，见 migration 027） */
 function getCanvasProjectRepo(): CanvasProjectRepository {
   return new CanvasProjectRepository(getDatabase())
@@ -1805,6 +2062,24 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('canvas:snapshot:save', async (req) => {
     const snapshotRepo = getCanvasSnapshotRepo()
     const projectRepo = getCanvasProjectRepo()
+    const directory = await ensureCanvasProjectDirectoryById(
+      req.projectId,
+      req.meta?.rootPath ?? null,
+      req.meta?.title ?? req.projectId,
+    )
+    let snapshotJson = req.snapshotJson
+    try {
+      const snapshot = JSON.parse(req.snapshotJson)
+      if (snapshot?.project) snapshot.project.rootPath = directory.rootPath
+      snapshotJson = JSON.stringify(snapshot)
+      await writeCanvasProjectPackageFiles({
+        projectId: req.projectId,
+        rootPath: directory.rootPath,
+        snapshotJson,
+      })
+    } catch (err) {
+      log.warn(`canvas:snapshot:save project files failed: ${String(err)}`)
+    }
     projectRepo.upsert({
       id: req.projectId,
       title: req.meta?.title ?? req.projectId,
@@ -1814,13 +2089,24 @@ export function registerAllIpcHandlers(): void {
       ...(req.meta?.assetCount !== undefined ? { assetCount: req.meta.assetCount } : {}),
       ...(req.meta?.taskCount !== undefined ? { taskCount: req.meta.taskCount } : {}),
       ...(req.meta?.coverAssetId !== undefined ? { coverAssetId: req.meta.coverAssetId } : {}),
+      rootPath: directory.rootPath,
       lastOpenedAt: new Date().toISOString(),
     })
-    snapshotRepo.save(req.projectId, 0, req.snapshotJson)
+    snapshotRepo.save(req.projectId, 0, snapshotJson)
     return { saved: true, updatedAt: new Date().toISOString() }
   })
 
   typedIpcHandle('canvas:snapshot:load', async (req) => {
+    const project = getCanvasProjectRepo().get(req.projectId)
+    if (project?.root_path) {
+      const latestPath = path.join(project.root_path, 'snapshots', 'latest.json')
+      try {
+        const snapshotJson = await fs.readFile(latestPath, 'utf-8')
+        return { snapshotJson }
+      } catch {
+        // Directory snapshots are preferred but SQLite remains a compatibility fallback.
+      }
+    }
     const row = getCanvasSnapshotRepo().get(req.projectId)
     return { snapshotJson: row ? row.snapshot_json : null }
   })
@@ -1832,6 +2118,7 @@ export function registerAllIpcHandlers(): void {
       title: row.title,
       description: row.description,
       status: row.status,
+      rootPath: row.root_path,
       nodeCount: row.node_count,
       assetCount: row.asset_count,
       taskCount: row.task_count,
@@ -1849,6 +2136,215 @@ export function registerAllIpcHandlers(): void {
       getCanvasProjectRepo().softDelete(req.projectId)
     }
     return { deleted: true }
+  })
+
+  typedIpcHandle('canvas:project:default-root', async () => {
+    const rootPath = getDefaultCanvasProjectsRoot()
+    await fs.mkdir(rootPath, { recursive: true })
+    return { rootPath }
+  })
+
+  typedIpcHandle('canvas:project:ensure-directory', async (req) => {
+    const directory = await ensureCanvasProjectDirectory(req)
+    const row = getCanvasProjectRepo().get(req.projectId)
+    if (row) {
+      getCanvasProjectRepo().upsert({
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        status: row.status,
+        coverAssetId: row.cover_asset_id,
+        nodeCount: row.node_count,
+        assetCount: row.asset_count,
+        taskCount: row.task_count,
+        lastOpenedAt: row.last_opened_at,
+        createdAt: row.created_at,
+        rootPath: directory.rootPath,
+      })
+    }
+    return directory
+  })
+
+  typedIpcHandle('canvas:asset:write-data-url', async (req) => {
+    return writeCanvasAssetDataUrl({
+      projectId: req.projectId,
+      projectRootPath: req.projectRootPath ?? null,
+      dataUrl: req.dataUrl,
+      ...(req.mimeType !== undefined ? { mimeType: req.mimeType } : {}),
+      ...(req.suggestedBaseName !== undefined ? { suggestedBaseName: req.suggestedBaseName } : {}),
+      ...(req.type !== undefined ? { type: req.type } : {}),
+    })
+  })
+
+  typedIpcHandle('canvas:asset:copy-to-project', async (req) => {
+    return copyCanvasAssetToProject({
+      projectId: req.projectId,
+      projectRootPath: req.projectRootPath ?? null,
+      ...(req.sourcePath !== undefined ? { sourcePath: req.sourcePath } : {}),
+      ...(req.sourceUrl !== undefined ? { sourceUrl: req.sourceUrl } : {}),
+      ...(req.suggestedBaseName !== undefined ? { suggestedBaseName: req.suggestedBaseName } : {}),
+      ...(req.type !== undefined ? { type: req.type } : {}),
+    })
+  })
+
+  typedIpcHandle('canvas:project:export-package', async (req) => {
+    const targetParent = req.targetParentDirectory?.trim()
+      ? path.resolve(req.targetParentDirectory)
+      : (await dialog.showOpenDialog({
+          title: '选择 Canvas 项目包导出位置',
+          properties: ['openDirectory', 'createDirectory'],
+        })).filePaths[0]
+    if (!targetParent) return { exported: false }
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+    const packageDir = path.join(
+      targetParent,
+      `${sanitizeCanvasPathSegment(req.title, 'canvas-project')}-${stamp}`,
+    )
+    await fs.mkdir(packageDir, { recursive: true })
+    const sourceRoot = req.projectRootPath?.trim()
+    if (sourceRoot) {
+      try {
+        await fs.cp(path.join(sourceRoot, 'assets'), path.join(packageDir, 'assets'), {
+          recursive: true,
+          force: true,
+        })
+      } catch {
+        // Some legacy projects have no project-local assets yet; snapshot export still succeeds.
+      }
+    }
+    let snapshotJson = req.snapshotJson
+    if (sourceRoot) {
+      try {
+        const normalizedSourceRoot = path.resolve(sourceRoot)
+        const rewritten = rewriteCanvasSnapshotRootPaths(JSON.parse(req.snapshotJson), normalizedSourceRoot, packageDir)
+        snapshotJson = JSON.stringify(rewritten)
+      } catch {
+        snapshotJson = req.snapshotJson
+      }
+    }
+    await writeCanvasProjectPackageFiles({
+      projectId: req.projectId,
+      rootPath: packageDir,
+      snapshotJson,
+    })
+    return { exported: true, directoryPath: packageDir }
+  })
+
+  typedIpcHandle('canvas:project:migrate-assets', async (req) => {
+    const directory = await ensureCanvasProjectDirectoryById(req.projectId, req.projectRootPath ?? null)
+    const snapshot = JSON.parse(req.snapshotJson)
+    const urlMap = new Map<string, string>()
+    let movedAssets = 0
+    let skippedAssets = 0
+    const migrateRef = async (
+      value: unknown,
+      title: string | undefined,
+      kind: CanvasAssetKind | undefined,
+    ): Promise<string | null> => {
+      if (typeof value !== 'string' || value.length === 0 || value.startsWith('data:') || /^https?:\/\//i.test(value)) {
+        return null
+      }
+      const cached = urlMap.get(value)
+      if (cached) return cached
+      const sourcePath = decodeSafeFileUrl(value) ?? (path.isAbsolute(value) ? value : null)
+      if (!sourcePath) return null
+      if (path.resolve(sourcePath).startsWith(directory.rootPath + path.sep)) return null
+      const copied = await copyCanvasAssetToProject({
+        projectId: req.projectId,
+        projectRootPath: directory.rootPath,
+        sourcePath,
+        suggestedBaseName: title,
+        type: kind,
+      })
+      if (!copied.filePath) {
+        skippedAssets += 1
+        return null
+      }
+      const nextUrl = toSafeFileUrl(copied.filePath)
+      urlMap.set(value, nextUrl)
+      urlMap.set(sourcePath, nextUrl)
+      movedAssets += copied.copied ? 1 : 0
+      return nextUrl
+    }
+
+    for (const asset of Array.isArray(snapshot.assets) ? snapshot.assets : []) {
+      const kind = (asset.type === 'audio' || asset.type === 'video' || asset.type === 'image') ? asset.type : 'file'
+      const nextUrl = await migrateRef(asset.url ?? asset.storageKey ?? asset.metadata?.filePath, asset.title ?? asset.id, kind)
+      if (nextUrl) {
+        const nextPath = decodeSafeFileUrl(nextUrl)
+        asset.url = nextUrl
+        asset.storageKey = nextPath
+        asset.metadata = { ...(asset.metadata ?? {}), storageAdapter: 'local-file', filePath: nextPath }
+        if (kind === 'image') asset.thumbnailUrl = nextUrl
+      }
+      const nextThumbUrl = await migrateRef(asset.thumbnailUrl ?? asset.thumbnailKey, `${asset.title ?? asset.id}-thumb`, 'image')
+      if (nextThumbUrl) {
+        asset.thumbnailUrl = nextThumbUrl
+        asset.thumbnailKey = decodeSafeFileUrl(nextThumbUrl)
+      }
+    }
+
+    const assetById = new Map((Array.isArray(snapshot.assets) ? snapshot.assets : []).map((asset: any) => [asset.id, asset]))
+    for (const node of Array.isArray(snapshot.nodes) ? snapshot.nodes : []) {
+      const asset = node.assetId ? assetById.get(node.assetId) : null
+      if (asset?.url) node.data = { ...(node.data ?? {}), url: asset.url }
+      if (asset?.thumbnailUrl) node.data = { ...(node.data ?? {}), thumbnailUrl: asset.thumbnailUrl }
+      if (asset?.storageKey && node.data?.url && urlMap.has(node.data.url)) {
+        node.data.url = urlMap.get(node.data.url)
+      }
+    }
+    if (snapshot.project) snapshot.project.rootPath = directory.rootPath
+    const snapshotJson = JSON.stringify(snapshot)
+    await writeCanvasProjectPackageFiles({
+      projectId: req.projectId,
+      rootPath: directory.rootPath,
+      snapshotJson,
+    })
+    return { migrated: movedAssets > 0, movedAssets, skippedAssets, snapshotJson }
+  })
+
+  typedIpcHandle('canvas:project:cleanup-orphans', async (req) => {
+    const root = getDefaultCanvasMediaDir()
+    const used = new Set<string>()
+    const rows = getDatabase().raw
+      .prepare('SELECT snapshot_json FROM canvas_snapshots')
+      .all() as Array<{ snapshot_json: string }>
+    for (const row of rows) {
+      try {
+        const snapshot = JSON.parse(row.snapshot_json)
+        for (const item of collectCanvasSnapshotLocalPaths(snapshot)) used.add(item)
+      } catch {
+        // Skip malformed legacy snapshots.
+      }
+    }
+    let scannedFiles = 0
+    let deletedFiles = 0
+    let deletedBytes = 0
+    const visit = async (dir: string): Promise<void> => {
+      let entries: Awaited<ReturnType<typeof fs.readdir>>
+      try {
+        entries = await fs.readdir(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name)
+        if (entry.isDirectory()) {
+          await visit(full)
+          continue
+        }
+        if (!entry.isFile()) continue
+        scannedFiles += 1
+        const resolved = path.resolve(full)
+        if (used.has(resolved)) continue
+        const st = await fs.stat(full)
+        deletedFiles += 1
+        deletedBytes += st.size
+        if (req.dryRun !== true) await fs.unlink(full)
+      }
+    }
+    await visit(root)
+    return { deletedFiles, deletedBytes, scannedFiles, dryRun: req.dryRun === true }
   })
   //
   // 流程：
@@ -2287,6 +2783,7 @@ export function registerAllIpcHandlers(): void {
     const path = await import('node:path')
     const userDataPath = app.getPath('userData')
     const projectsDir = path.join(userDataPath, 'projects')
+    const canvasProjectsRoot = getDefaultCanvasProjectsRoot()
     const databasePath = getDatabasePath()
 
     const dirSize = async (dir: string): Promise<number> => {
@@ -2341,15 +2838,18 @@ export function registerAllIpcHandlers(): void {
       (await fileSize(`${databasePath}-wal`))
 
     const projectsBytes = await dirSize(projectsDir)
+    const canvasProjectsBytes = await dirSize(canvasProjectsRoot)
 
     return {
       userDataPath,
       projectsDir,
+      canvasProjectsRoot,
       databasePath,
       databaseBytes,
       cacheBytes,
       projectsBytes,
-      totalBytes: databaseBytes + cacheBytes + projectsBytes,
+      canvasProjectsBytes,
+      totalBytes: databaseBytes + cacheBytes + projectsBytes + canvasProjectsBytes,
     }
   })
 
@@ -4232,9 +4732,11 @@ export function registerAllIpcHandlers(): void {
                     ? 'heif'
                     : 'png'
 
-    const rootDir = req.storageScope === 'canvas'
-      ? getDefaultCanvasMediaDir()
-      : path.join(app.getPath('temp'), 'spark-agent-pasted-images')
+    const rootDir = req.projectRootPath?.trim()
+      ? path.join(path.resolve(req.projectRootPath), 'assets', 'images')
+      : req.storageScope === 'canvas'
+        ? getDefaultCanvasMediaDir()
+        : path.join(app.getPath('temp'), 'spark-agent-pasted-images')
     await fs.mkdir(rootDir, { recursive: true })
     const baseName = (req.suggestedBaseName?.trim() || 'pasted-image').replace(/[^a-zA-Z0-9._-]+/g, '-')
     const fileName = `${baseName}-${crypto.randomUUID()}.${extension}`

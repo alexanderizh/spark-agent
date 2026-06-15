@@ -223,6 +223,13 @@
   font-weight: 600;
 }
 
+.canvas-create-location {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
 @media (max-width: 860px) {
   .canvas-projects-header,
   .canvas-projects-toolbar {
@@ -240,5 +247,9 @@
 
   .canvas-projects-stats {
     justify-content: flex-start;
+  }
+
+  .canvas-create-location {
+    grid-template-columns: 1fr;
   }
 }

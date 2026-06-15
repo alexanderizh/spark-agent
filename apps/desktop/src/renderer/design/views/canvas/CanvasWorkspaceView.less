@@ -98,6 +98,43 @@
   background: var(--bg-sunken);
 }
 
+.canvas-side-panel {
+  min-width: 0;
+}
+
+.canvas-project-folder-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+  background: var(--panel);
+}
+
+.canvas-project-folder-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.canvas-project-folder-info span {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.canvas-project-folder-info strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .canvas-tool-switch-hint {
   position: absolute;
   z-index: 8;
