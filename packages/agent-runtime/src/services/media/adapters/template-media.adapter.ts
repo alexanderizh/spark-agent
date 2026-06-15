@@ -23,6 +23,7 @@ import type {
 } from '../media-adapter.types.js'
 import { MediaArtifactService } from '../media-artifact.service.js'
 import { extractStatus, fetchJson, pollTask } from '../media-http.util.js'
+import { logMediaCall } from '../media-debug-log.js'
 import { filenameHelper, mimeFromFormat } from './openai-compatible-media.adapter.js'
 
 type TemplateValue = string | number | boolean | null | TemplateValue[] | { [key: string]: TemplateValue }
@@ -61,6 +62,19 @@ export class TemplateMediaAdapter {
 
     const requestBody = renderTemplate(manifest.invocation.requestTemplate, variables)
     const body = mergeProviderParams(requestBody, variables.providerParams)
+    logMediaCall({
+      provider: manifest.providerKind,
+      capability: input.capability,
+      model,
+      method: manifest.invocation.method,
+      url,
+      body,
+      extra: {
+        manifest: manifest.id,
+        prompt: (input.prompt ?? '').slice(0, 120),
+        mode: manifest.invocation.mode,
+      },
+    })
     let raw = await fetchJson(url, {
       method: manifest.invocation.method,
       headers,

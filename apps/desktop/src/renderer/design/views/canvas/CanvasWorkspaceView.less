@@ -1025,7 +1025,7 @@
 
 .canvas-task-queue-list {
   min-height: 0;
-  max-height: 360px;
+  max-height: min(620px, 58vh);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1214,6 +1214,30 @@
 .canvas-task-error-log strong {
   color: var(--danger);
   font-size: 12px;
+}
+
+.canvas-task-request-call {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-task-request-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.canvas-task-request-line code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
 }
 
 .canvas-task-log-list {

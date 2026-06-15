@@ -236,6 +236,20 @@ function TaskDetailModal({
           <pre>{formatJson(task.modelParams)}</pre>
         </DetailBlock>
 
+        {task.requestCall && (
+          <DetailBlock title="请求摘要">
+            <div className="canvas-task-request-call">
+              <div className="canvas-task-request-line">
+                <Tag size="small" color="blue">{task.requestCall.method}</Tag>
+                <code>{task.requestCall.url}</code>
+              </div>
+              {task.requestCall.body != null && (
+                <pre>{formatJson(task.requestCall.body)}</pre>
+              )}
+            </div>
+          </DetailBlock>
+        )}
+
         {(task.errorMsg || task.errorDetail) && (
           <DetailBlock title="错误日志">
             <div className="canvas-task-error-log">

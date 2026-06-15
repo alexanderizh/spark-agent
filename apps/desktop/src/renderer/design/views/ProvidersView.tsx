@@ -287,6 +287,27 @@ function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: Provide
   return candidates.has(model.providerKind)
 }
 
+/** 自定义模型 manifestId 前缀：不匹配内置目录，不会在 mediaCatalogForForm 中出现，单独渲染。 */
+const CUSTOM_MODEL_REF_PREFIX = 'custom:'
+
+/** 自定义模型引用：manifestId 以 custom: 开头、携带用户填写的 modelId。 */
+interface CustomMediaModelRef {
+  manifestId: string
+  modelId: string
+}
+
+function isCustomModelRef(ref: ProviderMediaModelRef): ref is ProviderMediaModelRef & CustomMediaModelRef {
+  return ref.manifestId.startsWith(CUSTOM_MODEL_REF_PREFIX)
+}
+
+/** 按模型类型推导自定义模型声明的多媒体能力（内置目录 manifest 自带能力，无需推导）。 */
+function capabilitiesForModelType(modelType: ProviderModelType): MediaCapabilityId[] {
+  if (modelType === 'image') return ['image.generate', 'image.edit']
+  if (modelType === 'voice') return ['audio.speech', 'audio.transcription']
+  if (modelType === 'video') return ['video.generate', 'video.image_to_video']
+  return []
+}
+
 function adapterKindFromManifestProvider(providerKind: string): MediaProviderKind {
   if (isMediaProviderKind(providerKind)) return providerKind
   if (providerKind === 'apimart') return 'apimart'
@@ -1143,6 +1164,7 @@ export function ProviderEditPanel({
   const [error, setError] = useState('')
   const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
   const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
+  const [customModelInput, setCustomModelInput] = useState('')
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
@@ -1297,6 +1319,14 @@ export function ProviderEditPanel({
     [form.mediaModelRefs],
   )
 
+  // 自定义模型引用（manifestId 以 custom: 开头）——不依赖内置目录，
+  // 渲染在清单下方，可手动添加 / 移除。原生 adapter（xAI/APIMart）按 defaultModel 调用，
+  // 因此即便没有目录 manifest，自定义模型仍可用于实际请求。
+  const customModelRefs = useMemo(
+    () => form.mediaModelRefs.filter(isCustomModelRef),
+    [form.mediaModelRefs],
+  )
+
   const toggleMediaModelRef = (model: CanvasMediaModelSummary, checked: boolean) => {
     setForm((prev) => {
       const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
@@ -1328,6 +1358,46 @@ export function ProviderEditPanel({
         defaultModel: prev.defaultModel.trim() ? prev.defaultModel : model.effectiveModelId,
         modelIds,
       }
+    })
+  }
+
+  const addCustomMediaModel = (rawModelId: string) => {
+    const modelId = rawModelId.trim()
+    if (!modelId) return
+    const manifestId = `${CUSTOM_MODEL_REF_PREFIX}${modelId.toLowerCase().replace(/[^a-z0-9._-]+/g, '-')}`
+    setForm((prev) => {
+      // 已存在（内置或自定义）同名引用则不重复添加
+      const exists = prev.mediaModelRefs.some(
+        (ref) => ref.manifestId === manifestId || (ref.modelId?.trim() === modelId),
+      )
+      const existing = new Map(prev.mediaModelRefs.map((ref) => [ref.manifestId, ref]))
+      if (!exists) {
+        existing.set(manifestId, { manifestId, modelId, enabled: true })
+      }
+      const capabilitySet = new Set([
+        ...prev.mediaCapabilities,
+        ...capabilitiesForModelType(prev.modelType),
+      ])
+      const modelIds = uniqPreserveOrder([modelId, ...prev.modelIds])
+      return {
+        ...prev,
+        mediaModelRefs: [...existing.values()],
+        mediaCapabilities: [...capabilitySet],
+        // 确保有可用的实际调用模型：defaultModel 为空时用自定义模型兜底
+        defaultModel: prev.defaultModel.trim() ? prev.defaultModel : modelId,
+        modelIds,
+      }
+    })
+  }
+
+  const removeMediaModelRef = (manifestId: string) => {
+    setForm((prev) => {
+      const remaining = prev.mediaModelRefs.filter((ref) => ref.manifestId !== manifestId)
+      const removed = prev.mediaModelRefs.find((ref) => ref.manifestId === manifestId)
+      const modelIds = removed?.modelId
+        ? prev.modelIds.filter((id) => id !== removed.modelId)
+        : prev.modelIds
+      return { ...prev, mediaModelRefs: remaining, modelIds }
     })
   }
 
@@ -1687,6 +1757,75 @@ export function ProviderEditPanel({
                         </label>
                       ))
                     )}
+                  </div>
+
+                  {/* ─── 自定义模型引用（不在内置目录里，可手动增删） ─── */}
+                  {customModelRefs.length > 0 && (
+                    <div className="pv_media_manifest_list">
+                      {customModelRefs.map((ref) => (
+                        <div key={ref.manifestId} className="pv_media_manifest_item pv_media_manifest_item_selected pv_media_manifest_item_static">
+                          <div className="pv_media_manifest_main">
+                            <div className="pv_media_manifest_title">
+                              <span>{ref.modelId}</span>
+                              <Tag size="small" color="purple">自定义</Tag>
+                              <Tag size="small" color="gray">{form.mediaProvider || form.imageProvider}</Tag>
+                            </div>
+                            <div className="pv_media_manifest_meta">
+                              {form.defaultModel.trim() === ref.modelId?.trim()
+                                ? `${ref.modelId} · 当前默认`
+                                : ref.modelId}
+                            </div>
+                          </div>
+                          <Button
+                            size="small"
+                            type="text"
+                            danger
+                            icon={<Icons.X />}
+                            onClick={() => removeMediaModelRef(ref.manifestId)}
+                            title="移除自定义模型"
+                            aria-label={`移除自定义模型 ${ref.modelId}`}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <label className="pv_form_label">
+                    添加自定义模型
+                    <span className="pv_form_sub">内置清单之外？直接输入模型 ID 添加（原生 adapter 按默认模型 ID 调用）</span>
+                  </label>
+                  <div className="pv_custom_model_add">
+                    <Input
+                      value={customModelInput}
+                      onChange={(e) => setCustomModelInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          if (customModelInput.trim()) {
+                            addCustomMediaModel(customModelInput)
+                            setCustomModelInput('')
+                          }
+                        }
+                      }}
+                      placeholder={
+                        form.modelType === 'image' ? '如 nano-banana、flux-pro、seedream-4.0…'
+                          : form.modelType === 'video' ? '如 veo2、kling-v2、hailuo-02…'
+                            : '输入模型 ID 后按 Enter 添加'
+                      }
+                    />
+                    <Button
+                      type="primary"
+                      icon={<Icons.Plus />}
+                      disabled={!customModelInput.trim()}
+                      onClick={() => {
+                        if (customModelInput.trim()) {
+                          addCustomMediaModel(customModelInput)
+                          setCustomModelInput('')
+                        }
+                      }}
+                    >
+                      添加
+                    </Button>
                   </div>
 
                   <label className="pv_form_label">

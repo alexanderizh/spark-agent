@@ -18,6 +18,7 @@ import type {
   ProviderMediaDefaults,
   MediaModelManifest,
   MediaModelCapabilityManifest,
+  MediaRequestCall,
 } from '@spark/protocol'
 import { capabilityForOperation, isMediaCapabilityId, isMediaProviderKind, mediaManifestCapabilities } from '@spark/protocol'
 import { MediaProviderError } from './media-adapter.types.js'
@@ -30,6 +31,7 @@ import type {
 import { ApimartMediaAdapter } from './adapters/apimart-media.adapter.js'
 import { XaiMediaAdapter } from './adapters/xai-media.adapter.js'
 import { TemplateMediaAdapter } from './adapters/template-media.adapter.js'
+import { compactForLog } from './media-debug-log.js'
 
 /**
  * 最小化 provider profile 视图：router 只关心调用所需的字段，
@@ -160,6 +162,10 @@ export class MediaRouterService {
     const kind = effectiveProviderKind(chosen)
     const adapter = kind ? this.adapters.get(kind) : undefined
     const shouldUseManifestAdapter = Boolean(manifestMatch && (!adapter || !adapter.supports(capability) || kind === 'custom'))
+    // 包装 fetch，捕获发给 provider 的请求（method + url + body），用于任务详情展示。
+    // 只取最后一个带 body 的 POST：adapter 内部对单次能力调用只发一个主请求；
+    // APIMart 编辑会先 POST /uploads/images 再 POST /images/generations，取后者即主请求。
+    const capture = createRequestCapture(options.fetch)
     if (manifestMatch && shouldUseManifestAdapter) {
       const ctx: MediaProviderContext = {
         apiKey: chosen.apiKey,
@@ -172,13 +178,18 @@ export class MediaRouterService {
         mediaManifest: manifestMatch.manifest,
         mediaManifestCapability: manifestMatch.capability,
         ...(options.extraParams ? { extraParams: options.extraParams } : {}),
-        ...(options.fetch ? { fetch: options.fetch } : {}),
+        fetch: capture.fetch,
       }
-      const output = await this.templateAdapter.invoke(
-        { ...input, capability },
-        ctx,
-      )
-      return { output, providerProfileId: chosen.id }
+      try {
+        const output = await this.templateAdapter.invoke(
+          { ...input, capability },
+          ctx,
+        )
+        return { output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() }, providerProfileId: chosen.id }
+      } catch (err) {
+        attachCapturedRequest(err, capture)
+        throw err
+      }
     }
 
     if (!adapter) {
@@ -199,14 +210,69 @@ export class MediaRouterService {
       ...(manifestMatch?.manifest ? { mediaManifest: manifestMatch.manifest } : {}),
       ...(manifestMatch?.capability ? { mediaManifestCapability: manifestMatch.capability } : {}),
       ...(options.extraParams ? { extraParams: options.extraParams } : {}),
-      ...(options.fetch ? { fetch: options.fetch } : {}),
+      fetch: capture.fetch,
     }
-    const output = await adapter.invoke(
-      { ...input, capability },
-      ctx,
-    )
-    return { output, providerProfileId: chosen.id }
+    try {
+      const output = await adapter.invoke(
+        { ...input, capability },
+        ctx,
+      )
+      return { output: { ...output, requestCall: output.requestCall ?? capture.getCaptured() }, providerProfileId: chosen.id }
+    } catch (err) {
+      attachCapturedRequest(err, capture)
+      throw err
+    }
   }
+}
+
+/**
+ * 包装 fetch，捕获「带 body 的 POST 请求」摘要（最后一个胜出），供任务详情展示请求地址与参数。
+ * body 中的 base64 / data: URI 会被截断（复用 compactForLog），避免大图刷屏/落库。
+ */
+function createRequestCapture(fetchImpl?: typeof fetch): {
+  fetch: typeof fetch
+  getCaptured: () => MediaRequestCall | undefined
+} {
+  const baseFetch = fetchImpl ?? fetch
+  let captured: MediaRequestCall | undefined
+  const wrappedFetch: typeof fetch = (input, init) => {
+    const method = (init?.method ?? 'GET').toUpperCase()
+    if (method === 'POST' && init?.body != null) {
+      captured = { method, url: String(input), body: summarizeRequestBody(init.body) }
+    }
+    return baseFetch(input, init)
+  }
+  return { fetch: wrappedFetch, getCaptured: () => captured }
+}
+
+/** 把请求体归一为可展示形式：JSON 解析后截断 base64；非 JSON 字符串整体截断；二进制给字节占位。 */
+function summarizeRequestBody(body: unknown): unknown {
+  if (typeof body === 'string') {
+    const trimmed = body.trimStart()
+    if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
+      try {
+        return compactForLog(JSON.parse(body))
+      } catch {
+        return truncateLongString(body)
+      }
+    }
+    return truncateLongString(body)
+  }
+  if (body instanceof Uint8Array) {
+    return `[binary ${body.byteLength} bytes]`
+  }
+  return '[non-string body]'
+}
+
+function truncateLongString(value: string): string {
+  return value.length <= 200 ? value : `${value.slice(0, 120)}…<truncated, len=${value.length}>`
+}
+
+/** 失败的 provider 调用：把 fetch 捕获到的请求摘要挂到 MediaProviderError 上，便于任务详情排查。 */
+function attachCapturedRequest(err: unknown, capture: { getCaptured: () => MediaRequestCall | undefined }): void {
+  if (!(err instanceof MediaProviderError)) return
+  const captured = capture.getCaptured()
+  if (captured && !err.requestCall) err.requestCall = captured
 }
 
 function mediaCapabilitiesForProfile(profile: Pick<MediaProviderProfile, 'mediaCapabilities' | 'mediaModelManifests'>): MediaCapabilityId[] {

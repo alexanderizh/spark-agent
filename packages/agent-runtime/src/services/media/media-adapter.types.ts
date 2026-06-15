@@ -18,6 +18,7 @@ import type {
   MediaModelCapabilityManifest,
   MediaModelManifest,
   MediaProviderKind,
+  MediaRequestCall,
   ProviderMediaDefaults,
 } from '@spark/protocol'
 
@@ -81,6 +82,8 @@ export interface MediaGenerateOutput {
   requestId?: string | undefined
   assets: MediaGeneratedAsset[]
   rawResponse?: unknown
+  /** 实际发给 provider 的请求摘要（method + url + 已截断的 body），供任务详情展示。 */
+  requestCall?: MediaRequestCall | undefined
 }
 
 export type MediaErrorCode =
@@ -96,6 +99,8 @@ export type MediaErrorCode =
 export class MediaProviderError extends Error {
   readonly code: MediaErrorCode
   readonly statusCode?: number
+  /** 失败请求的摘要（method + url + 已截断 body）：router 在抛错前挂上，便于任务详情排查。 */
+  requestCall?: MediaRequestCall
   constructor(code: MediaErrorCode, message: string, statusCode?: number) {
     super(message)
     this.name = 'MediaProviderError'

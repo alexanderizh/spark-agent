@@ -370,6 +370,93 @@ function readDisplayImageDimensions(src: string): Promise<{ width: number; heigh
   })
 }
 
+// ─── 画布 AI 调用彩色日志（DevTools %c CSS） ───────────────────────────────
+// 在 createMediaTask 发 IPC 前，把组装好的参数按产物类型分色打印成一块，
+// 方便排查「prompt/model/inputFiles/modelParams 没拼对」。
+// 颜色与主进程 adapter 的 ANSI 配色保持一致：image=品红 / audio=青 / video=黄 / text=绿。
+type MediaCallKind = 'image' | 'audio' | 'video' | 'text' | 'other'
+
+const MEDIA_CALL_STYLES: Record<MediaCallKind, { emoji: string; color: string }> = {
+  image: { emoji: '🎨', color: '#a855f7' },
+  audio: { emoji: '🔊', color: '#0891b2' },
+  video: { emoji: '🎬', color: '#ca8a04' },
+  text: { emoji: '📝', color: '#16a34a' },
+  other: { emoji: '⚡', color: '#6b7280' },
+}
+
+function mediaCallKind(operation: CanvasOperationType): MediaCallKind {
+  if (operation.includes('video')) return 'video'
+  if (operation.includes('image')) return 'image'
+  if (operation.includes('audio')) return 'audio'
+  return 'text'
+}
+
+const LOG_PREVIEW_MAX = 80
+
+function previewText(value: string | null | undefined): string {
+  const text = (value ?? '').replace(/\s+/g, ' ').trim()
+  if (text.length <= LOG_PREVIEW_MAX) return text || '(空)'
+  return `${text.slice(0, LOG_PREVIEW_MAX)}…`
+}
+
+/** 截断 dataUrl 等 base64 内容，避免日志被一张图刷屏 */
+function previewInputFiles(
+  files: CanvasMediaTaskInputFile[] | undefined,
+): { summary: string; types: string[] } {
+  if (!files || files.length === 0) return { summary: '无', types: [] }
+  const types = files.map((file) => file.type)
+  const detail = files
+    .map((file) => {
+      const ref = file.url ?? file.dataUrl ?? file.path ?? '(空)'
+      // dataUrl/base64 只保留前 50 字符
+      const shown = ref.startsWith('data:') || ref.length > 60 ? `${ref.slice(0, 50)}…<len=${ref.length}>` : ref
+      return `${file.type}:${shown}`
+    })
+    .join(', ')
+  return { summary: `${files.length} 个：${detail}`, types }
+}
+
+function logCanvasMediaCall(
+  operation: CanvasOperationType,
+  request: {
+    prompt?: string | null
+    providerProfileId?: string | null
+    manifestId?: string | null
+    modelId?: string | null
+    modelParams?: Record<string, unknown> | null
+    inputFiles?: CanvasMediaTaskInputFile[]
+  },
+): void {
+  if (typeof console === 'undefined' || typeof console.log !== 'function') return
+  const kind = mediaCallKind(operation)
+  const style = MEDIA_CALL_STYLES[kind]
+  const dim = 'color:#9ca3af;font-weight:normal'
+  const val = `color:${style.color};font-weight:600`
+  const header = `color:#fff;background:${style.color};font-weight:bold;padding:2px 8px;border-radius:3px`
+
+  const { summary: inputsSummary, types: inputTypes } = previewInputFiles(request.inputFiles)
+  const params = request.modelParams && Object.keys(request.modelParams).length > 0
+    ? JSON.stringify(request.modelParams)
+    : '(默认)'
+
+  const segments: Array<[string, string]> = [
+    [`${style.emoji} ${operationLabel(operation)}`, header],
+    [` → canvas:task:create-media\n`, dim],
+    [`  prompt:   `, dim],
+    [`${previewText(request.prompt)}\n`, val],
+    [`  provider: `, dim],
+    [`${request.providerProfileId || '(自动选择)'}\n`, val],
+    [`  model:    `, dim],
+    [`${request.modelId || '(默认)'}${request.manifestId ? `  · manifest=${request.manifestId}` : ''}\n`, val],
+    [`  inputs:   `, dim],
+    [`${inputsSummary}${inputTypes.length > 0 ? `  [${inputTypes.join(', ')}]` : ''}\n`, val],
+    [`  params:   `, dim],
+    [params, val],
+  ]
+  const format = segments.map(([text]) => `%c${text}`).join('')
+  console.log(format, ...segments.map(([, css]) => css))
+}
+
 export const canvasApi = {
   async listProjects(): Promise<CanvasProject[]> {
     const db = readDb()
@@ -1244,6 +1331,8 @@ export const canvasApi = {
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
       waitForCompletion: false,
     }
+    // 调 IPC 前打印彩色参数块，便于排查「prompt/model/inputs/params 没拼对」。
+    logCanvasMediaCall(request.operation, request)
     let response: CanvasMediaTaskCreateResponse
     try {
       response = await window.spark.invoke('canvas:task:create-media', ipcRequest)
@@ -1279,6 +1368,7 @@ export const canvasApi = {
     task.providerProfileId = response.providerProfileId || task.providerProfileId || null
     task.provider = response.provider || task.provider || null
     task.modelId = response.model || task.modelId || null
+    task.requestCall = response.requestCall ?? task.requestCall ?? null
     task.updatedAt = now()
     taskNode.data = {
       ...taskNode.data,
@@ -1344,6 +1434,7 @@ export const canvasApi = {
     task.provider = response.provider || null
     task.requestId = responseRequestId
     task.rawResponse = response.rawResponse
+    task.requestCall = response.requestCall ?? null
 
     const at = now()
     for (const [index, assetOut] of response.assets.entries()) {

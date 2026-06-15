@@ -13,7 +13,7 @@ import type {
   MediaGenerationTaskRow,
   MediaGenerationTaskStatus,
 } from '@spark/storage'
-import type { MediaCapabilityId } from '@spark/protocol'
+import type { MediaCapabilityId, MediaRequestCall } from '@spark/protocol'
 import { MediaProviderError } from './media-adapter.types.js'
 import type {
   MediaGeneratedAsset,
@@ -41,6 +41,8 @@ export interface MediaTaskRecord {
   requestId: string | null
   assets: MediaGeneratedAsset[]
   rawResponse: unknown
+  /** 实际发给 provider 的请求摘要（method + url + 已截断 body），来自 router 的 fetch 捕获。 */
+  requestCall: MediaRequestCall | null
   error: { code: string; message: string } | null
   createdAt: string
   updatedAt: string
@@ -142,7 +144,11 @@ export class MediaTaskRuntimeService {
         rawResponseJson: output.rawResponse === undefined ? null : JSON.stringify(output.rawResponse),
         completedAt: new Date().toISOString(),
       })
-      return rowToRecord(completed ?? this.repo.getById(row.id) ?? row)
+      const record = rowToRecord(completed ?? this.repo.getById(row.id) ?? row)
+      // requestCall 仅存在于内存的 router output 中（不落 media_generation_tasks 表），
+      // 在此处挂到 record 上，经 IPC 传给画布任务，由画布快照负责持久化。
+      record.requestCall = output.requestCall ?? null
+      return record
     } catch (err) {
       const latest = this.repo.getById(row.id)
       if (latest?.status === 'cancelled') return rowToRecord(latest)
@@ -154,7 +160,10 @@ export class MediaTaskRuntimeService {
         errorMessage: message,
         completedAt: new Date().toISOString(),
       })
-      return rowToRecord(failed ?? this.repo.getById(row.id) ?? row)
+      const record = rowToRecord(failed ?? this.repo.getById(row.id) ?? row)
+      // 失败任务也带上请求摘要（router 已挂到 error 上），方便在详情里排查 422/参数错误。
+      record.requestCall = err instanceof MediaProviderError ? err.requestCall ?? null : null
+      return record
     }
   }
 
@@ -194,6 +203,8 @@ function rowToRecord(row: MediaGenerationTaskRow): MediaTaskRecord {
     requestId: row.request_id,
     assets: parseJson(row.assets_json, []),
     rawResponse: parseJson(row.raw_response_json, null),
+    // requestCall 不落 DB，仅由 execute() 从内存 output 挂载；rowToRecord 给 null 兜底。
+    requestCall: null,
     error: row.error_code || row.error_message
       ? { code: row.error_code ?? 'unknown', message: row.error_message ?? 'Unknown media task error' }
       : null,

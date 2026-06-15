@@ -31,6 +31,7 @@ import {
   fetchJson,
   pollTask,
 } from '../media-http.util.js'
+import { logMediaCall, logMediaResult } from '../media-debug-log.js'
 
 export interface OpenAiCompatibleAdapterOptions {
   id: MediaProviderKind
@@ -120,6 +121,15 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...extraAllowed(ctx.extraParams, input.modelParams, ['size', 'n', 'quality', 'response_format']),
     }
     const url = `${baseEndpoint(ctx)}/images/generations`
+    logMediaCall({
+      provider: this.id,
+      capability: 'image.generate',
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { prompt: prompt.slice(0, 120) },
+    })
     const data = await fetchJson(url, {
       method: 'POST',
       headers: authHeaders(ctx),
@@ -151,8 +161,10 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       }
     }
     if (images.length === 0) {
+      logMediaResult({ provider: this.id, capability: 'image.generate', ok: false, error: 'No images in response' })
       throw new MediaProviderError('provider_http_error', `No images in response: ${JSON.stringify(data).slice(0, 800)}`)
     }
+    logMediaResult({ provider: this.id, capability: 'image.generate', ok: true, assetCount: images.length, requestId })
     const assets = await Promise.all(
       images.map((image, i) =>
         this.artifact.writeImage(image, input.outputDir, filename(input, 'img', i, images.length), ctx.fetch),
@@ -181,6 +193,18 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...extraAllowed(ctx.extraParams, input.modelParams, ['size', 'n', 'quality', 'response_format', 'mask']),
     }
     const url = `${baseEndpoint(ctx)}/images/edits`
+    logMediaCall({
+      provider: this.id,
+      capability: 'image.edit',
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: {
+        prompt: prompt.slice(0, 120),
+        inputImages: imageRefs.length,
+      },
+    })
     const data = await fetchJson(url, {
       method: 'POST',
       headers: authHeaders(ctx),
@@ -190,8 +214,10 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     })
     const images = extractImages(data)
     if (images.length === 0) {
+      logMediaResult({ provider: this.id, capability: 'image.edit', ok: false, error: 'No images in edit response' })
       throw new MediaProviderError('provider_http_error', `No images in edit response: ${JSON.stringify(data).slice(0, 800)}`)
     }
+    logMediaResult({ provider: this.id, capability: 'image.edit', ok: true, assetCount: images.length })
     const assets = await Promise.all(
       images.map((image, i) =>
         this.artifact.writeImage(image, input.outputDir, filename(input, 'edit', i, images.length), ctx.fetch),
@@ -219,6 +245,15 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...extraAllowed(ctx.extraParams, input.modelParams, ['voice', 'response_format', 'speed', 'input']),
     }
     const url = `${baseEndpoint(ctx)}/audio/speech`
+    logMediaCall({
+      provider: this.id,
+      capability: 'audio.speech',
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: { text: text.slice(0, 120), voice: body.voice },
+    })
     const buffer = await fetchJson<Buffer>(url, {
       method: 'POST',
       headers: authHeaders(ctx),
@@ -227,6 +262,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       timeoutMs: 60_000,
       binary: true,
     })
+    logMediaResult({ provider: this.id, capability: 'audio.speech', ok: true, assetCount: 1 })
     const mimeType = mimeFromFormat((body.response_format as string) ?? 'mp3')
     const asset = await this.artifact.writeBinaryAsset(
       'audio',
@@ -252,6 +288,15 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
         ...(ctx.mediaDefaults?.audio?.language ? { language: ctx.mediaDefaults.audio.language } : {}),
         ...extraAllowed(ctx.extraParams, input.modelParams, ['language', 'response_format', 'prompt', 'url']),
       }
+      logMediaCall({
+        provider: this.id,
+        capability: 'audio.transcription',
+        model,
+        method: 'POST',
+        url,
+        body,
+        extra: { source: 'url', url: file.url.slice(0, 80) },
+      })
       const data = await fetchJson(url, {
         method: 'POST',
         headers: authHeaders(ctx),
@@ -275,6 +320,15 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       },
       [{ field: 'file', filename: 'audio.dat', content: buffer }],
     )
+    logMediaCall({
+      provider: this.id,
+      capability: 'audio.transcription',
+      model,
+      method: 'POST',
+      url,
+      body: { model, language: ctx.mediaDefaults?.audio?.language, file: `[multipart ${buffer.length} bytes]` },
+      extra: { source: file.dataUrl ? 'dataUrl' : 'path', bytes: buffer.length },
+    })
     const data = await fetchJson(url, {
       method: 'POST',
       headers: { authorization: `Bearer ${ctx.apiKey}`, 'content-type': form.contentType },
@@ -317,6 +371,18 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...extraAllowed(ctx.extraParams, input.modelParams, ['aspect_ratio', 'duration', 'quality', 'fps', 'image', 'seed']),
     }
     const url = `${baseEndpoint(ctx)}/videos/generations`
+    logMediaCall({
+      provider: this.id,
+      capability: input.capability,
+      model,
+      method: 'POST',
+      url,
+      body,
+      extra: {
+        prompt: prompt.slice(0, 120),
+        firstImage: firstImage ? 'yes' : 'none',
+      },
+    })
     const data = await fetchJson(url, {
       method: 'POST',
       headers: authHeaders(ctx),
@@ -332,6 +398,7 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
     if (videoUrls.length === 0) {
       const taskId = extractTaskId(data)
       if (!taskId || !this.videoTaskPath) {
+        logMediaResult({ provider: this.id, capability: input.capability, ok: false, error: 'No video url or task id' })
         throw new MediaProviderError('provider_http_error', `No video url or task id: ${JSON.stringify(data).slice(0, 800)}`)
       }
       requestId = taskId
@@ -351,8 +418,10 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       videoUrls = extractMediaUrls(raw, { kind: 'video' })
     }
     if (videoUrls.length === 0) {
+      logMediaResult({ provider: this.id, capability: input.capability, ok: false, error: 'No video produced' })
       throw new MediaProviderError('provider_http_error', `No video produced: ${JSON.stringify(raw).slice(0, 800)}`)
     }
+    logMediaResult({ provider: this.id, capability: input.capability, ok: true, assetCount: videoUrls.length, requestId })
     const assets = await Promise.all(
       videoUrls.map((u, i) =>
         this.artifact.downloadMediaAsset('video', u, input.outputDir, filename(input, 'video', i, videoUrls.length), ctx.fetch),

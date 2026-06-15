@@ -135,6 +135,8 @@ export type CanvasTask = {
   requestId?: string | null
   /** provider 原始响应摘要（不含敏感信息） */
   rawResponse?: unknown
+  /** 实际发给 provider 的请求摘要（method + url + 已截断 body），用于任务详情展示 */
+  requestCall?: { method: string; url: string; body?: unknown } | null
   agentId?: string | null
   agentMode?: 'local' | 'cloud' | null
   agentUrl?: string | null

@@ -412,6 +412,7 @@ async function canvasResponseFromMediaTaskRecord(record: MediaTaskRecord): Promi
     assets,
     ...(record.requestId != null ? { requestId: record.requestId } : {}),
     ...(record.rawResponse != null ? { rawResponse: record.rawResponse } : {}),
+    ...(record.requestCall != null ? { requestCall: record.requestCall } : {}),
     ...(record.error != null ? { error: record.error } : {}),
   }
 }

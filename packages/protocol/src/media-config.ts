@@ -27,6 +27,19 @@ export type MediaProviderKind =
   | 'happyhorse'
   | 'omni'
   | 'custom'
+
+/**
+ * 一次 provider HTTP 调用的摘要，用于在任务详情里展示「请求地址 + 请求参数」。
+ *
+ * body 已经过截断处理（base64 / data: URI 压缩成 `…<truncated>`），
+ * 既避免一张图刷屏，也避免把大体积 base64 落进画布快照。
+ * multipart / binary 等非 JSON 体用字符串占位（如 `[multipart N bytes]`）。
+ */
+export interface MediaRequestCall {
+  method: string
+  url: string
+  body?: unknown
+}
 /** 调用方式：同步 / 异步轮询 / 自动兼容 */
 export type MediaApiType = 'sync' | 'async' | 'auto'
 

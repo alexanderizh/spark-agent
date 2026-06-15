@@ -345,11 +345,13 @@ describe('MediaRouterService', () => {
     expect(xai.supports('audio.speech')).toBe(true)
   })
 
-  it('xAI image.edit accepts dataUrl input directly', async () => {
-    let postedBody: Record<string, unknown> | null = null
+  it('xAI image.edit routes through /images/generations with image_url (dataUrl)', async () => {
+    // 用 holder 对象承载抓取到的 body/url，避免 CFA 把 let 变量收窄成 never。
+    const captured: { body: Record<string, unknown>; url: string } = { body: {}, url: '' }
     const fetchMock = makeFetch([
-      { match: '/images/edits', respond: (init) => {
-        postedBody = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+      { match: '/images/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        captured.url = '/images/generations'
         return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
       } },
     ])
@@ -374,8 +376,122 @@ describe('MediaRouterService', () => {
       },
     )
     expect(output.provider).toBe('xai')
-    expect(postedBody?.image).toBe(`data:image/png;base64,${PNG_PIXEL}`)
+    // xAI 编辑复用 /images/generations，源图按 image_url（单图）传入，绝不发往 /images/edits。
+    expect(captured.url).toBe('/images/generations')
+    expect(captured.body.image_url).toBe(`data:image/png;base64,${PNG_PIXEL}`)
+    expect(captured.body.image).toBeUndefined()
+    expect(captured.body.images).toBeUndefined()
     expect(existsSync(output.assets[0]!.filePath!)).toBe(true)
+  })
+
+  it('xAI image.edit uses image_urls array for multiple inputs', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'combine these',
+        inputFiles: [
+          { type: 'image', url: 'https://cdn/a.png' },
+          { type: 'image', url: 'https://cdn/b.png' },
+        ],
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(captured.body.image_urls).toEqual(['https://cdn/a.png', 'https://cdn/b.png'])
+    expect(captured.body.image_url).toBeUndefined()
+  })
+
+  it('xAI image.edit passes through native params (aspect_ratio/resolution) from modelParams', async () => {
+    const captured: { body: Record<string, unknown> } = { body: {} }
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: (init) => {
+        captured.body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'wider',
+        inputFiles: [{ type: 'image', url: 'https://cdn/a.png' }],
+        modelParams: { aspect_ratio: '16:9', resolution: '2k', image_format: 'png' },
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(captured.body.image_url).toBe('https://cdn/a.png')
+    expect(captured.body.aspect_ratio).toBe('16:9')
+    expect(captured.body.resolution).toBe('2k')
+    expect(captured.body.image_format).toBe('png')
+  })
+
+  it('returns requestCall with method/url/body and truncates base64 in the body', async () => {
+    const longBase64 = `data:image/png;base64,${PNG_PIXEL.repeat(20)}`
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: (init) => {
+        // 校验发往 provider 的真实 body 仍是完整的 dataUrl（截断只发生在 requestCall 摘要里）
+        const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
+        expect(body.image_url).toBe(longBase64)
+        return { ok: true, status: 200, body: { data: [{ b64_json: PNG_PIXEL }] } }
+      } },
+    ])
+    const { output } = await router.invoke(
+      {
+        operation: 'image_edit',
+        capability: 'image.edit',
+        outputDir: tmpDir,
+        prompt: 'cleanup',
+        inputFiles: [{ type: 'image', dataUrl: longBase64 }],
+      },
+      {
+        providers: [makeProvider({
+          id: 'xai-1',
+          apiEndpoint: XAI_ENDPOINT,
+          mediaProvider: 'xai',
+          defaultModel: 'grok-imagine-image',
+          mediaCapabilities: ['image.generate', 'image.edit'],
+        })],
+        fetch: fetchMock,
+      },
+    )
+    expect(output.requestCall).toBeDefined()
+    expect(output.requestCall?.method).toBe('POST')
+    expect(output.requestCall?.url).toContain('/images/generations')
+    const reqBody = output.requestCall?.body as Record<string, unknown>
+    expect(reqBody.model).toBe('grok-imagine-image')
+    expect(reqBody.prompt).toBe('cleanup')
+    // requestCall 摘要里 base64 dataUrl 必须被截断（不能原样带回上千字符）
+    const summarized = String(reqBody.image_url)
+    expect(summarized.startsWith('data:image/png')).toBe(true)
+    expect(summarized.length).toBeLessThan(longBase64.length)
+    expect(summarized).toContain('truncated')
   })
 
   it('provider_http_error on non-ok response', async () => {
@@ -388,6 +504,25 @@ describe('MediaRouterService', () => {
         { providers: [makeProvider()], fetch: fetchMock },
       ),
     ).rejects.toBeInstanceOf(MediaProviderError)
+  })
+
+  it('attaches requestCall to the error even when the provider call fails (422)', async () => {
+    const fetchMock = makeFetch([
+      { match: '/images/generations', respond: () => ({ ok: false, status: 422, body: { error: 'expected struct ImageUrl' } }) },
+    ])
+    let err: MediaProviderError | null = null
+    try {
+      await router.invoke(
+        { operation: 'text_to_image', capability: 'image.generate', outputDir: tmpDir, prompt: 'cat' },
+        { providers: [makeProvider()], fetch: fetchMock },
+      )
+    } catch (e) {
+      err = e instanceof MediaProviderError ? e : null
+    }
+    expect(err).toBeInstanceOf(MediaProviderError)
+    expect(err?.requestCall).toBeDefined()
+    expect(err?.requestCall?.url).toContain('/images/generations')
+    expect((err?.requestCall?.body as Record<string, unknown>).prompt).toBe('cat')
   })
 
   it('respects explicit providerProfileId over capability match', async () => {

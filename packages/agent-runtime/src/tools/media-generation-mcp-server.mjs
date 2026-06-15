@@ -790,6 +790,28 @@ async function handleEditImage(config, args) {
   const imageUrls = Array.isArray(args.imageUrls) ? args.imageUrls : []
   const imageFiles = Array.isArray(args.imageFiles) ? args.imageFiles : []
   const refs = [...imageUrls, ...imageFiles].filter((s) => typeof s === 'string' && s.length > 0)
+  // xAI does NOT support the OpenAI-style /images/edits endpoint (multipart is rejected,
+  // and a JSON body there fails with HTTP 422 "expected struct ImageUrl"). Image editing
+  // on xAI reuses /images/generations with image_url (single) / image_urls (up to 3).
+  // See https://docs.x.ai/docs/guides/image-generations.
+  if (config.provider === 'xai') {
+    if (refs.length === 0) throw new Error('xAI image edit requires input image(s)')
+    const editRefs = refs.slice(0, 3)
+    const body = {
+      model: config.model,
+      prompt,
+      ...(editRefs.length === 1 ? { image_url: editRefs[0] } : { image_urls: editRefs }),
+      ...(args.extraJson || {}),
+    }
+    const data = await fetchJson(`${config.baseUrl}/images/generations`, { method: 'POST', headers: authHeaders(config), body: JSON.stringify(body) }, 120_000)
+    const images = extractImages(data)
+    if (images.length === 0) throw new Error(`No images in xAI edit response: ${JSON.stringify(data).slice(0, 800)}`)
+    const files = []
+    for (let i = 0; i < images.length; i++) {
+      files.push(await materializeImage(config, images[i], args.filename || '', i, images.length))
+    }
+    return { success: true, provider: `${config.provider}/${config.model}`, mode: 'sync', files }
+  }
   const body = {
     model: config.model,
     prompt,

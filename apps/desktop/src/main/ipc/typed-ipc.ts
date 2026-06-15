@@ -62,7 +62,7 @@ export function typedIpcHandle<C extends IpcChannel>(
   handler: (request: IpcRequest<C>, event: IpcMainInvokeEvent) => Promise<IpcResponse<C>>,
 ): void {
   ipcMain.handle(channel, async (event, rawRequest: unknown): Promise<IpcResult<IpcResponse<C>>> => {
-    log.debug(`← ${channel}`, maskSensitiveData(channel, rawRequest))
+    log.debug(`← ${channel}`, maskSensitiveData(rawRequest))
 
     try {
       // 1. Schema 校验（如果 channel 在注册表中有对应的 schema）
@@ -136,24 +136,62 @@ function handleIpcError(
 }
 
 /**
- * 脱敏处理请求数据中的敏感字段
+ * 脱敏处理请求数据中的敏感/超长字段。
  *
- * 避免在日志中暴露 API Key 等敏感信息
+ *   - apiKey：截断掩码，只保留前 4 位（避免日志泄露密钥）
+ *   - dataUrl / previewDataUrl / thumbnailUrl / base64 等 base64 字段、以及任何
+ *     `data:` 开头的字符串：只保留前 50 个字符。画布里图片/语音常以 base64 透传，
+ *     一张图就能产出几万字符的 dataUrl，整段打印会淹没日志、拖慢排查。
+ *
+ * 递归处理嵌套对象与数组，返回新对象（不改入参）；用 WeakSet 防循环引用。
  */
-function maskSensitiveData(channel: string, data: unknown): unknown {
-  if (data == null || typeof data !== 'object') return data
+const SENSITIVE_TRUNCATABLE_KEYS = new Set([
+  'dataUrl',
+  'previewDataUrl',
+  'thumbnailUrl',
+  'base64',
+  'b64Json',
+  'b64_json',
+  'content',
+])
+const LOG_TRUNCATE_MAX = 50
 
-  const obj = data as Record<string, unknown>
+function truncateForLog(value: string): string {
+  if (value.length <= LOG_TRUNCATE_MAX) return value
+  return `${value.slice(0, LOG_TRUNCATE_MAX)}…<truncated, len=${value.length}>`
+}
 
-  // 对包含 apiKey 的请求做掩码处理
-  if ('apiKey' in obj && typeof obj['apiKey'] === 'string') {
-    return {
-      ...obj,
-      apiKey: obj['apiKey'].slice(0, 4) + '****',
-    }
+function maskSensitiveData(data: unknown): unknown {
+  return sanitizeForLog(data)
+}
+
+function sanitizeForLog(value: unknown, seen: WeakSet<object> = new WeakSet()): unknown {
+  if (value == null) return value
+  if (typeof value === 'string') {
+    // 形如 data:image/png;base64,xxxx 的 data URL 整体截断
+    return value.startsWith('data:') ? truncateForLog(value) : value
+  }
+  if (typeof value !== 'object') return value
+  // 防循环引用
+  if (seen.has(value as object)) return '[Circular]'
+  seen.add(value as object)
+
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeForLog(item, seen))
   }
 
-  return data
+  const obj = value as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  for (const [key, val] of Object.entries(obj)) {
+    if (key === 'apiKey' && typeof val === 'string') {
+      out[key] = val.length > 0 ? `${val.slice(0, 4)}****` : val
+    } else if (typeof val === 'string' && (SENSITIVE_TRUNCATABLE_KEYS.has(key) || val.startsWith('data:'))) {
+      out[key] = truncateForLog(val)
+    } else {
+      out[key] = sanitizeForLog(val, seen)
+    }
+  }
+  return out
 }
 
 // ─── 流式事件推送 ───────────────────────────────────────────────────────
