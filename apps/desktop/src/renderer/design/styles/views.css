@@ -3197,11 +3197,6 @@ body.sidebar-resizing {
 .composer-submit-picks .composer-select-trigger span {
   max-width: 120px;
 }
-/* 模型选择器移入输入框内部底部后，菜单较宽，向右对齐避免溢出右边缘 */
-.composer-submit-picks .composer-model-menu {
-  right: 0;
-  left: auto;
-}
 .composer-v2.has-workspace-picks textarea {
   padding-right: 70px;
   padding-bottom: 84px;
@@ -3282,7 +3277,6 @@ body.sidebar-resizing {
 }
 .composer-select:hover {
   background: var(--hover);
-  border-color: var(--border);
 }
 .composer-select.is-disabled {
   opacity: 0.5;
@@ -3427,8 +3421,19 @@ body.sidebar-resizing {
   right: 0;
   left: auto;
 }
+.composer-dropdown-menu {
+  min-width: 158px;
+  max-width: min(220px, calc(100vw - 24px));
+  max-height: 320px;
+  overflow: auto;
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-lg);
+}
 .composer-model-menu {
-  width: min(384px, calc(100vw - 24px));
+  width: min(220px, calc(100vw - 24px));
 }
 .composer-menu-item {
   display: flex;
@@ -4211,7 +4216,7 @@ body.sidebar-resizing {
   position: relative;
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  max-height: 100vh;
 }
 .inspector {
   flex: 1 1 auto;
@@ -6685,7 +6690,6 @@ body.inspector-resizing {
   font-weight: 700;
   flex-shrink: 0;
   background: var(--bg-soft);
-  border: 1px solid var(--border);
 }
 .provider-info {
   flex: 1;

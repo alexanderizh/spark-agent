@@ -116,6 +116,14 @@
     justify-content: center;
     color: var(--text-faint);
     flex-shrink: 0;
+
+    > img,
+    > .spark-avatar-fallback {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
   }
 
   &-status {
@@ -357,6 +365,14 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+
+    > img,
+    > .spark-avatar-fallback {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
   }
   &-name {
     flex: 1;
@@ -389,6 +405,17 @@
     overflow: hidden;
     flex-shrink: 0;
     background: var(--bg-default);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    > img,
+    > .spark-avatar-fallback {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+    }
   }
   &-name {
     flex: 1;

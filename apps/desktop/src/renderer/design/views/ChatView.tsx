@@ -5,11 +5,19 @@
  * This component only renders the main chat area (hero/composer/stream).
  * Session/workspace/provider data is read from SessionSidebarContext.
  */
-import React, { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo, Fragment } from 'react'
+import React, {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useCallback,
+  useMemo,
+  Fragment,
+} from 'react'
 import './ChatView.less'
 import './ToolDropdown.less'
 import type { JSX, ReactNode, RefObject } from 'react'
-import { Button, Popover, Tag as LobeTag } from '@lobehub/ui'
+import { Button, Dropdown, Popover, Tag as LobeTag } from '@lobehub/ui'
 import { Icons } from '../Icons'
 import { useApp } from '../AppContext'
 import {
@@ -36,7 +44,12 @@ import { Input as LobeInput, TextArea as LobeTextArea } from '@lobehub/ui'
 import { ImagePreviewModal } from '../components/ImagePreviewModal'
 import { MarkdownImage } from '../components/MarkdownImage'
 import { MarkdownCodeBlock } from '../components/MarkdownCodeBlock'
-import { ClickableFilePath, ClickableUrl, extractFilePaths, extractUrlsAndEmails } from '../components/ClickableFilePath'
+import {
+  ClickableFilePath,
+  ClickableUrl,
+  extractFilePaths,
+  extractUrlsAndEmails,
+} from '../components/ClickableFilePath'
 import { FilePreviewPanel } from '../components/FilePreviewPanel'
 import { TeamDispatchCard } from '../components/TeamDispatchCard'
 import { TeamMemberBubble } from '../components/TeamMemberBubble'
@@ -66,7 +79,12 @@ import {
   isClaudeAdapter,
   isProviderCompatibleWithAdapter,
 } from '../utils/provider-adapter'
-import { getAgentAvatarConfig, getUserAvatarConfig, hasCustomAvatar, resolveAvatarSrc } from '../avatar'
+import {
+  getAgentAvatarConfig,
+  getUserAvatarConfig,
+  hasCustomAvatar,
+  resolveAvatarSrc,
+} from '../avatar'
 import type { UIMessage, UIBlock, FileChangeSummary } from '../services/event-mapper'
 import type {
   AgentEvent,
@@ -278,12 +296,12 @@ const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, 
  * InlineQuestionCard as a fallback when the CLI tool_result output
  * can't be parsed into structured answer summaries.
  */
-const questionAnswerCache = new Map<string, Array<{ question: string; answer: string; skipped?: boolean }>>()
+const questionAnswerCache = new Map<
+  string,
+  Array<{ question: string; answer: string; skipped?: boolean }>
+>()
 
-function getQuestionAnswerCacheKey(
-  questions: UserQuestionPrompt[],
-  sessionId?: string,
-): string {
+function getQuestionAnswerCacheKey(questions: UserQuestionPrompt[], sessionId?: string): string {
   return `${sessionId ?? 'global'}::${questions.map((q) => q.question).join('\0')}`
 }
 
@@ -395,41 +413,50 @@ export function ChatView({
   }, [active, defaultTeamConfig, listTeamMembers])
 
   useEffect(() => {
-    return window.spark?.on?.('stream:config:changed', (event) => {
-      if (event.scope !== 'team') return
-      if (active == null) {
-        setTeamConfig(defaultTeamConfig())
-        return
-      }
-      if (
-        teamConfig.teamId != null &&
-        event.id === teamConfig.teamId &&
-        (event.action === 'update' || event.action === 'delete')
-      ) {
-        if (event.action === 'delete') {
-          updateTeamConfig({ enabled: false, teamId: undefined })
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope !== 'team') return
+        if (active == null) {
+          setTeamConfig(defaultTeamConfig())
           return
         }
-        void getTeamDef({ id: teamConfig.teamId })
-          .then((res) => {
-            if (res.team == null) return
-            updateTeamConfig({
-              enabled: true,
-              hostAgentId: res.team.hostAgentId,
-              memberAgentIds: res.team.memberAgentIds,
-              maxDepth: res.team.maxDepth,
-              allowNesting: res.team.allowNesting,
-              teamId: res.team.id,
+        if (
+          teamConfig.teamId != null &&
+          event.id === teamConfig.teamId &&
+          (event.action === 'update' || event.action === 'delete')
+        ) {
+          if (event.action === 'delete') {
+            updateTeamConfig({ enabled: false, teamId: undefined })
+            return
+          }
+          void getTeamDef({ id: teamConfig.teamId })
+            .then((res) => {
+              if (res.team == null) return
+              updateTeamConfig({
+                enabled: true,
+                hostAgentId: res.team.hostAgentId,
+                memberAgentIds: res.team.memberAgentIds,
+                maxDepth: res.team.maxDepth,
+                allowNesting: res.team.allowNesting,
+                teamId: res.team.id,
+              })
             })
-          })
-          .catch(() => {
-            void reloadActiveTeamConfig().catch(() => {})
-          })
-        return
-      }
-      void reloadActiveTeamConfig().catch(() => {})
-    }) ?? (() => {})
-  }, [active, defaultTeamConfig, getTeamDef, reloadActiveTeamConfig, teamConfig.teamId, updateTeamConfig])
+            .catch(() => {
+              void reloadActiveTeamConfig().catch(() => {})
+            })
+          return
+        }
+        void reloadActiveTeamConfig().catch(() => {})
+      }) ?? (() => {})
+    )
+  }, [
+    active,
+    defaultTeamConfig,
+    getTeamDef,
+    reloadActiveTeamConfig,
+    teamConfig.teamId,
+    updateTeamConfig,
+  ])
 
   // 进入空白新会话（新建任务 / active 被清空）时，关闭 Inspector / Config 面板，
   // 否则它们会沿用上一个会话的展开态继续遮挡空白聊天区。
@@ -527,8 +554,7 @@ export function ChatView({
           }
         })
         .filter(
-          (item): item is { question: string; answer: string; skipped?: boolean } =>
-            item != null,
+          (item): item is { question: string; answer: string; skipped?: boolean } => item != null,
         )
       if (summaries.length > 0) {
         questionAnswerCache.set(
@@ -552,9 +578,12 @@ export function ChatView({
   }, [answerQuestion, onUserQuestionClose, userQuestion])
 
   // ── Session status updates via context ──
-  const setSessionStatus = useCallback((sessionId: SessionId, status: SessionSummary['status']) => {
-    sessionCtx.updateSessionInList(sessionId, { status })
-  }, [sessionCtx.updateSessionInList])
+  const setSessionStatus = useCallback(
+    (sessionId: SessionId, status: SessionSummary['status']) => {
+      sessionCtx.updateSessionInList(sessionId, { status })
+    },
+    [sessionCtx.updateSessionInList],
+  )
   const handleActiveSessionStatusChange = useCallback(
     (status: SessionSummary['status']) => {
       if (active != null) setSessionStatus(active, status)
@@ -564,11 +593,14 @@ export function ChatView({
 
   // 用户点了「发送」：立刻贴底 + 维护 session running 状态 + 会话列表计数。
   // 单独抽出回调，给两个 ComposerV2 分支共用，保证 scrollToBottomTrigger 一定 bump。
-  const handleUserSent = useCallback((sessionId: SessionId) => {
-    setSessionStatus(sessionId, 'running')
-    sessionCtx.bumpSessionMessageCount(sessionId)
-    setScrollToBottomTrigger((n) => n + 1)
-  }, [setSessionStatus, sessionCtx])
+  const handleUserSent = useCallback(
+    (sessionId: SessionId) => {
+      setSessionStatus(sessionId, 'running')
+      sessionCtx.bumpSessionMessageCount(sessionId)
+      setScrollToBottomTrigger((n) => n + 1)
+    },
+    [setSessionStatus, sessionCtx],
+  )
 
   // ── Handlers ──
   const handleClearMessages = useCallback(() => {
@@ -601,9 +633,12 @@ export function ChatView({
     }
   }, [openDirectoryDialog, openWorkspace, sessionCtx, setActiveWorkspaceId, toast])
 
-  const switchToWorkspace = useCallback((workspaceId: string) => {
-    setActiveWorkspaceId(workspaceId)
-  }, [setActiveWorkspaceId])
+  const switchToWorkspace = useCallback(
+    (workspaceId: string) => {
+      setActiveWorkspaceId(workspaceId)
+    },
+    [setActiveWorkspaceId],
+  )
 
   const handleCancelSession = useCallback(
     async (sessionId: SessionId) => {
@@ -658,9 +693,15 @@ export function ChatView({
     }
     let cancelled = false
     listBranches({ workspaceId: activeWorkspaceId })
-      .then((res) => { if (!cancelled) setBranchState(res) })
-      .catch(() => { if (!cancelled) setBranchState({ currentBranch: null, branches: [] }) })
-    return () => { cancelled = true }
+      .then((res) => {
+        if (!cancelled) setBranchState(res)
+      })
+      .catch(() => {
+        if (!cancelled) setBranchState({ currentBranch: null, branches: [] })
+      })
+    return () => {
+      cancelled = true
+    }
   }, [activeWorkspaceId, listBranches])
 
   // Listen for Ctrl/Cmd+L focus-composer event from global shortcut handler
@@ -693,20 +734,17 @@ export function ChatView({
     }
   }
 
-  const handleReplyTo = useCallback(
-    (msg: UIMessage, agentId?: string, agentName?: string) => {
-      const preview = extractTextFromBlocks(msg.blocks).slice(0, 80).replace(/\n/g, ' ')
-      setReplyTo({
-        messageId: msg.id,
-        role: msg.role,
-        ...(agentId != null ? { agentId } : {}),
-        ...(agentName != null ? { agentName } : {}),
-        contentPreview: preview || '(附件/图片)',
-      })
-      setComposerFocusTrigger((n) => n + 1)
-    },
-    [],
-  )
+  const handleReplyTo = useCallback((msg: UIMessage, agentId?: string, agentName?: string) => {
+    const preview = extractTextFromBlocks(msg.blocks).slice(0, 80).replace(/\n/g, ' ')
+    setReplyTo({
+      messageId: msg.id,
+      role: msg.role,
+      ...(agentId != null ? { agentId } : {}),
+      ...(agentName != null ? { agentName } : {}),
+      contentPreview: preview || '(附件/图片)',
+    })
+    setComposerFocusTrigger((n) => n + 1)
+  }, [])
 
   /**
    * 处理用户消息"重发"动作：把文本和附件打包成 resendRequest，
@@ -733,101 +771,128 @@ export function ChatView({
             activeSession?.status === 'running',
           )
         : [],
-    [activeMessages, activeSession?.status, effectiveHostAgentId, teamConfig.enabled, teamConfig.hostAgentId],
+    [
+      activeMessages,
+      activeSession?.status,
+      effectiveHostAgentId,
+      teamConfig.enabled,
+      teamConfig.hostAgentId,
+    ],
   )
   const composerIsWorking = isComposerSessionWorking(activeSession?.status)
 
-  const composerNode = active == null ? (
-    <ComposerV2
-      session={activeSession}
-      workspace={activeWorkspace}
-      providers={providers}
-      agents={agents}
-      selectedProviderId={selectedProviderId}
-      setSelectedProviderId={setSelectedProviderId}
-      branchState={branchState}
-      contextInputTokens={contextInputTokens}
-      contextUsage={contextUsage}
-      isWorking={composerIsWorking}
-      approvalRequest={approvalRequest}
-      {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-      onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
-      onUpdateSession={handleUpdateActiveSession}
-      onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
-      onSwitchBranch={handleSwitchBranch}
-      onCancelSession={handleCancelSession}
-      onSent={handleUserSent}
-      showProjectPicker
-      focusTrigger={composerFocusTrigger}
-      resendRequest={resendRequest}
-      workspaces={workspaces}
-      activeWorkspaceId={activeWorkspaceId}
-      onPickProject={pickProjectFolder}
-      onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
-      onSwitchWorkspace={switchToWorkspace}
-      teamConfig={teamConfig}
-      effectiveHostAgentId={effectiveHostAgentId}
-      onChangeTeamConfig={updateTeamConfig}
-      onOpenTeamInspector={() => setShowInspector(true)}
-      runningTeamAgentIds={runningTeamAgentIds}
-      replyTo={null}
-      onDispatchStateChange={setComposerDispatching}
-    />
-  ) : (
-    <ComposerV2
-      session={activeSession}
-      workspace={activeWorkspace}
-      providers={providers}
-      agents={agents}
-      selectedProviderId={selectedProviderId}
-      setSelectedProviderId={setSelectedProviderId}
-      branchState={branchState}
-      contextInputTokens={contextInputTokens}
-      contextUsage={contextUsage}
-      isWorking={composerIsWorking}
-      approvalRequest={approvalRequest}
-      {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
-      onCreateSession={(options) => sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)}
-      onUpdateSession={handleUpdateActiveSession}
-      onCommandComplete={(summary) => { sessionCtx.updateSessionInList(summary.id, summary) }}
-      onSwitchBranch={handleSwitchBranch}
-      onCancelSession={handleCancelSession}
-      onSent={handleUserSent}
-      showProjectPicker={showEmptyHero}
-      focusTrigger={composerFocusTrigger}
-      resendRequest={resendRequest}
-      workspaces={workspaces}
-      activeWorkspaceId={activeWorkspaceId}
-      onPickProject={pickProjectFolder}
-      onUseNoProject={() => void sessionCtx.ensureNoProjectWorkspace().then(id => { if (id) setActiveWorkspaceId(id) })}
-      onSwitchWorkspace={switchToWorkspace}
-      teamConfig={teamConfig}
-      effectiveHostAgentId={effectiveHostAgentId}
-      onChangeTeamConfig={updateTeamConfig}
-      onOpenTeamInspector={() => setShowInspector(true)}
-      runningTeamAgentIds={runningTeamAgentIds}
-      replyTo={showEmptyHero ? null : replyTo}
-      onClearReply={() => setReplyTo(null)}
-      onDispatchStateChange={setComposerDispatching}
-    />
-  )
+  const composerNode =
+    active == null ? (
+      <ComposerV2
+        session={activeSession}
+        workspace={activeWorkspace}
+        providers={providers}
+        agents={agents}
+        selectedProviderId={selectedProviderId}
+        setSelectedProviderId={setSelectedProviderId}
+        branchState={branchState}
+        contextInputTokens={contextInputTokens}
+        contextUsage={contextUsage}
+        isWorking={composerIsWorking}
+        approvalRequest={approvalRequest}
+        {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+        onCreateSession={(options) =>
+          sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)
+        }
+        onUpdateSession={handleUpdateActiveSession}
+        onCommandComplete={(summary) => {
+          sessionCtx.updateSessionInList(summary.id, summary)
+        }}
+        onSwitchBranch={handleSwitchBranch}
+        onCancelSession={handleCancelSession}
+        onSent={handleUserSent}
+        showProjectPicker
+        focusTrigger={composerFocusTrigger}
+        resendRequest={resendRequest}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onPickProject={pickProjectFolder}
+        onUseNoProject={() =>
+          void sessionCtx.ensureNoProjectWorkspace().then((id) => {
+            if (id) setActiveWorkspaceId(id)
+          })
+        }
+        onSwitchWorkspace={switchToWorkspace}
+        teamConfig={teamConfig}
+        effectiveHostAgentId={effectiveHostAgentId}
+        onChangeTeamConfig={updateTeamConfig}
+        onOpenTeamInspector={() => setShowInspector(true)}
+        runningTeamAgentIds={runningTeamAgentIds}
+        replyTo={null}
+        onDispatchStateChange={setComposerDispatching}
+      />
+    ) : (
+      <ComposerV2
+        session={activeSession}
+        workspace={activeWorkspace}
+        providers={providers}
+        agents={agents}
+        selectedProviderId={selectedProviderId}
+        setSelectedProviderId={setSelectedProviderId}
+        branchState={branchState}
+        contextInputTokens={contextInputTokens}
+        contextUsage={contextUsage}
+        isWorking={composerIsWorking}
+        approvalRequest={approvalRequest}
+        {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
+        onCreateSession={(options) =>
+          sessionCtx.handleNewSession(activeWorkspaceId, options as Record<string, unknown>)
+        }
+        onUpdateSession={handleUpdateActiveSession}
+        onCommandComplete={(summary) => {
+          sessionCtx.updateSessionInList(summary.id, summary)
+        }}
+        onSwitchBranch={handleSwitchBranch}
+        onCancelSession={handleCancelSession}
+        onSent={handleUserSent}
+        showProjectPicker={showEmptyHero}
+        focusTrigger={composerFocusTrigger}
+        resendRequest={resendRequest}
+        workspaces={workspaces}
+        activeWorkspaceId={activeWorkspaceId}
+        onPickProject={pickProjectFolder}
+        onUseNoProject={() =>
+          void sessionCtx.ensureNoProjectWorkspace().then((id) => {
+            if (id) setActiveWorkspaceId(id)
+          })
+        }
+        onSwitchWorkspace={switchToWorkspace}
+        teamConfig={teamConfig}
+        effectiveHostAgentId={effectiveHostAgentId}
+        onChangeTeamConfig={updateTeamConfig}
+        onOpenTeamInspector={() => setShowInspector(true)}
+        runningTeamAgentIds={runningTeamAgentIds}
+        replyTo={showEmptyHero ? null : replyTo}
+        onClearReply={() => setReplyTo(null)}
+        onDispatchStateChange={setComposerDispatching}
+      />
+    )
 
   return (
-    <div className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}>
-
-      <div className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`} ref={chatAreaRef}>
+    <div
+      className={`chat-layout chat-layout-no-sidebar${teamConfig.enabled ? ' team-mode-active' : ''}`}
+    >
+      <div
+        className={`chat-main ${showEmptyHero ? 'chat-main-empty' : 'chat-main-active'}`}
+        ref={chatAreaRef}
+      >
         {showEmptyHero && (
           <div
             className="chat-sidebar-topbar"
-            onDoubleClick={() => { window.spark.invoke('window:maximize', {}).catch(() => {}) }}
+            onDoubleClick={() => {
+              window.spark.invoke('window:maximize', {}).catch(() => {})
+            }}
           >
             {t.sidebarHidden && <SidebarExpandButton />}
           </div>
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
-        {showEmptyHero && (
-          <h1 className="chat-hero-title">Spark Agent，go go go！</h1>
-        )}
+        {showEmptyHero && <h1 className="chat-hero-title">Spark Agent，go go go！</h1>}
         {showEmptyHero && (
           <span className="chat-hero-span">您可以让我创建Agent、安装Skill、安装工作环境！</span>
         )}
@@ -841,9 +906,15 @@ export function ChatView({
                 workspace={activeWorkspace}
                 agentStatus={agentStatus}
                 showInspector={showInspector}
-                setShowInspector={(v: boolean) => { setShowInspector(v); if (v) setShowConfigPanel(false) }}
+                setShowInspector={(v: boolean) => {
+                  setShowInspector(v)
+                  if (v) setShowConfigPanel(false)
+                }}
                 showConfigPanel={showConfigPanel}
-                setShowConfigPanel={(v: boolean) => { setShowConfigPanel(v); if (v) setShowInspector(false) }}
+                setShowConfigPanel={(v: boolean) => {
+                  setShowConfigPanel(v)
+                  if (v) setShowInspector(false)
+                }}
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
               />
             )}
@@ -994,8 +1065,7 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
   const availableTools = tools.filter((t) => t.available)
 
   // 触发器图标优先级：用户上次选中的工具 > 当前检测到的第一个可用工具 > 通用兜底
-  const triggerTool =
-    availableTools.find((t) => t.id === selectedId) ?? availableTools[0]
+  const triggerTool = availableTools.find((t) => t.id === selectedId) ?? availableTools[0]
   const triggerTitle = triggerTool
     ? `${tooltip}（当前：${triggerTool.name}）`
     : `${tooltip}（未检测到已安装的${isIde ? '编辑器' : '终端'}）`
@@ -1089,7 +1159,9 @@ function ChatTabbar({
   return (
     <div
       className="chat-tabbar"
-      onDoubleClick={() => { window.spark.invoke('window:maximize', {}).catch(() => {}) }}
+      onDoubleClick={() => {
+        window.spark.invoke('window:maximize', {}).catch(() => {})
+      }}
     >
       {t.sidebarHidden && <SidebarExpandButton />}
       <div className="chat-title-block">
@@ -1241,10 +1313,16 @@ function ChatStream({
   const userAvatarSrc = useUserAvatarSrc()
   const { sessions, agents } = useSessionSidebar()
   const session = sessions.find((item) => item.id === sessionId)
-  const assistantAgentId = teamConfig.enabled ? teamConfig.hostAgentId : (session?.agentId ?? 'platform-manager-agent')
+  const assistantAgentId = teamConfig.enabled
+    ? teamConfig.hostAgentId
+    : (session?.agentId ?? 'platform-manager-agent')
   const assistantAgent = agents.find((item) => item.id === assistantAgentId)
   const assistantName = assistantAgent?.name ?? 'Spark Agent'
-  const assistantAvatar = getAgentAvatarConfig(assistantAgent?.metadata, assistantAgentId, assistantName)
+  const assistantAvatar = getAgentAvatarConfig(
+    assistantAgent?.metadata,
+    assistantAgentId,
+    assistantName,
+  )
   const assistantAvatarSrc = resolveAvatarSrc(assistantAvatar)
 
   // ── 历史加载状态 ──
@@ -1288,53 +1366,50 @@ function ChatStream({
    * deriveMeta=false 时只重建消息列表，保留实时事件维护的 usage/status（加载更早，
    * 避免把 live 累积的用量/状态覆盖回历史快照）。
    */
-  const commitEventsToView = useCallback(
-    (events: AgentEvent[], deriveMeta: boolean) => {
-      const callbacks = viewCallbacksRef.current
-      const builder = new MessageBuilder()
-      for (const event of events) builder.processEvent(event)
-      builderRef.current = builder
-      const nextMessages = builder.getAllMessages()
-      setMessages(nextMessages)
-      callbacks.onMessagesChange(nextMessages)
-      if (!deriveMeta) return nextMessages
+  const commitEventsToView = useCallback((events: AgentEvent[], deriveMeta: boolean) => {
+    const callbacks = viewCallbacksRef.current
+    const builder = new MessageBuilder()
+    for (const event of events) builder.processEvent(event)
+    builderRef.current = builder
+    const nextMessages = builder.getAllMessages()
+    setMessages(nextMessages)
+    callbacks.onMessagesChange(nextMessages)
+    if (!deriveMeta) return nextMessages
 
-      callbacks.onUsageChange(getLatestInputTokens(events))
-      const historyUsage = buildUsageDataFromEvents(events)
-      usageRef.current = historyUsage
-      callbacks.onUsageDataChange(historyUsage)
-      const latestStatus = getLatestAgentStatus(events)
-      setAgentIsRunning(isRunningAgentStatus(latestStatus))
-      if (latestStatus != null) {
-        applyAgentStatus(
-          latestStatus,
-          callbacks.onStatusChange,
-          callbacks.onSessionStatusChange,
-          isStreamingRef,
-          userScrolledRef,
-        )
-      }
-      const latestContext = getLatestContextUsageEvent(events)
-      callbacks.onContextUsageChange(
-        latestContext != null
-          ? {
-              estimatedTokens: latestContext.estimatedTokens,
-              softLimitTokens: latestContext.softLimitTokens,
-              contextWindowTokens: latestContext.contextWindowTokens,
-              compactedThisTurn: latestContext.compacted,
-            }
-          : null,
+    callbacks.onUsageChange(getLatestInputTokens(events))
+    const historyUsage = buildUsageDataFromEvents(events)
+    usageRef.current = historyUsage
+    callbacks.onUsageDataChange(historyUsage)
+    const latestStatus = getLatestAgentStatus(events)
+    setAgentIsRunning(isRunningAgentStatus(latestStatus))
+    if (latestStatus != null) {
+      applyAgentStatus(
+        latestStatus,
+        callbacks.onStatusChange,
+        callbacks.onSessionStatusChange,
+        isStreamingRef,
+        userScrolledRef,
       )
-      callbacks.onProjectContextChange(getLatestProjectContextEvent(events))
-      callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
-      // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
-      // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
-      const pendingPlan = builder.getPendingPlan()
-      if (pendingPlan != null) callbacks.onPlanProposed(pendingPlan)
-      return nextMessages
-    },
-    [],
-  )
+    }
+    const latestContext = getLatestContextUsageEvent(events)
+    callbacks.onContextUsageChange(
+      latestContext != null
+        ? {
+            estimatedTokens: latestContext.estimatedTokens,
+            softLimitTokens: latestContext.softLimitTokens,
+            contextWindowTokens: latestContext.contextWindowTokens,
+            compactedThisTurn: latestContext.compacted,
+          }
+        : null,
+    )
+    callbacks.onProjectContextChange(getLatestProjectContextEvent(events))
+    callbacks.onTurnPromptSnapshotsChange(builder.getTurnPromptSnapshots())
+    // 历史里若存在未被后续 user_message / agent_status 解决的 plan_proposed
+    // （例如 APP_RESTARTED 期间用户没有审批），重新弹出审批弹窗。
+    const pendingPlan = builder.getPendingPlan()
+    if (pendingPlan != null) callbacks.onPlanProposed(pendingPlan)
+    return nextMessages
+  }, [])
 
   // 切换会话时加载历史：窗口化——只取最新一页，立即展示最近消息并滚到底部（IM 体感），
   // 更早历史在用户向上滚动时按需懒加载。
@@ -1402,11 +1477,7 @@ function ChatStream({
         bufferedEventsRef.current = []
       }
     }
-  }, [
-    getHistory,
-    commitEventsToView,
-    sessionId,
-  ])
+  }, [getHistory, commitEventsToView, sessionId])
 
   // 加载更早一页历史（用户滚动到顶部时触发）。prepend 后锚定 scrollTop，避免内容跳动。
   const loadOlderHistory = useCallback(() => {
@@ -1504,7 +1575,9 @@ function ChatStream({
     if (!el) return
     userScrolledRef.current = false
     setShowScrollToBottom(false)
-    const pin = () => { el.scrollTop = el.scrollHeight }
+    const pin = () => {
+      el.scrollTop = el.scrollHeight
+    }
     pin()
     requestAnimationFrame(() => {
       pin()
@@ -1664,7 +1737,9 @@ function ChatStream({
     if (scrollToBottomPendingRef.current) {
       scrollToBottomPendingRef.current = false
       userScrolledRef.current = false
-      const pin = () => { el.scrollTop = el.scrollHeight }
+      const pin = () => {
+        el.scrollTop = el.scrollHeight
+      }
       pin()
       // 连续多帧 + 一次延后兜底，确保异步内容撑高后仍贴底
       requestAnimationFrame(() => {
@@ -1828,37 +1903,39 @@ function ChatStream({
               >
                 {renderBlocks(msg.blocks, onFilePreview != null ? { onFilePreview } : {})}
               </UserMsg>
-            ) : (() => {
-              const identity = resolveAssistantIdentity(
-                msg,
-                agents,
-                assistantAgentId,
-                assistantName,
-                assistantAvatarSrc,
-              )
-              return (
-                <AssistantMessageRows
-                  key={msg.id}
-                  sessionId={sessionId}
-                  blocks={msg.blocks}
-                  messageStatus={msg.status}
-                  isLatest={index === messages.length - 1}
-                  assistantId={identity.id}
-                  assistantName={identity.name}
-                  assistantAvatarSrc={identity.avatarSrc}
-                  usage={msg.usage}
-                  {...(onFilePreview != null ? { onFilePreview } : {})}
-                  {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
-                  {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
-                  {...(msg.status !== 'streaming'
-                    ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
-                    : {})}
-                  {...(onReplyTo != null && msg.status !== 'streaming'
-                    ? { onReply: () => onReplyTo(msg, identity.id, identity.name) }
-                    : {})}
-                />
-              )
-            })(),
+            ) : (
+              (() => {
+                const identity = resolveAssistantIdentity(
+                  msg,
+                  agents,
+                  assistantAgentId,
+                  assistantName,
+                  assistantAvatarSrc,
+                )
+                return (
+                  <AssistantMessageRows
+                    key={msg.id}
+                    sessionId={sessionId}
+                    blocks={msg.blocks}
+                    messageStatus={msg.status}
+                    isLatest={index === messages.length - 1}
+                    assistantId={identity.id}
+                    assistantName={identity.name}
+                    assistantAvatarSrc={identity.avatarSrc}
+                    usage={msg.usage}
+                    {...(onFilePreview != null ? { onFilePreview } : {})}
+                    {...(msg.status === 'streaming' ? { status: 'running' as const } : {})}
+                    {...(msg.timestamp != null ? { timestamp: msg.timestamp } : {})}
+                    {...(msg.status !== 'streaming'
+                      ? { onDelete: () => handleDeleteMessage(msg.id, msg.eventIds) }
+                      : {})}
+                    {...(onReplyTo != null && msg.status !== 'streaming'
+                      ? { onReply: () => onReplyTo(msg, identity.id, identity.name) }
+                      : {})}
+                  />
+                )
+              })()
+            ),
           )}
           {showWaitingAgent && (
             <AgentMsg
@@ -2037,7 +2114,11 @@ function applyAgentStatus(
 
 function renderBlocks(
   blocks: UIBlock[],
-  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void } = {},
+  options: {
+    surface?: 'main' | 'inspector'
+    sessionId?: SessionId
+    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
   return blocks.map((block, i) => {
@@ -2045,7 +2126,11 @@ function renderBlocks(
       case 'text':
         return (
           <div key={i} className="md-surface">
-            <MarkdownText content={block.content} isStreaming={block.isStreaming} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
+            <MarkdownText
+              content={block.content}
+              isStreaming={block.isStreaming}
+              {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+            />
           </div>
         )
       case 'thinking':
@@ -2066,9 +2151,13 @@ function renderBlocks(
               ? ('error' as const)
               : null
         // 对于 Bash 相关工具，优先显示 command 字段作为完整内容
-        const isBashLike = block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
-        const commandValue = isBashLike && typeof block.toolInput.command === 'string' ? block.toolInput.command : null
-        const toolArg = commandValue ? commandValue.slice(0, surface === 'main' ? 48 : 80) : JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
+        const isBashLike =
+          block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
+        const commandValue =
+          isBashLike && typeof block.toolInput.command === 'string' ? block.toolInput.command : null
+        const toolArg = commandValue
+          ? commandValue.slice(0, surface === 'main' ? 48 : 80)
+          : JSON.stringify(block.toolInput).slice(0, surface === 'main' ? 48 : 80)
         const fullToolArg = commandValue || JSON.stringify(block.toolInput)
         const isPending = block.status === 'pending' || block.status === 'running'
         const isTodoWrite = block.toolName === 'todo_write'
@@ -2213,8 +2302,7 @@ function renderBlocks(
               totalDels={block.totalDels}
               {...(canUndo
                 ? {
-                    onUndo: () =>
-                      executeCheckpointRestore(sid as SessionId, cpId as string),
+                    onUndo: () => executeCheckpointRestore(sid as SessionId, cpId as string),
                   }
                 : {})}
               {...(canReapply ? { onReapply: () => reapplyTurnFiles(filesWithDiff) } : {})}
@@ -2254,7 +2342,13 @@ function renderBlocks(
         return <TeamDispatchBlockView key={i} block={block} />
       }
       case 'team_member_message': {
-        return <TeamMemberMessageBlockView key={i} block={block} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
+        return (
+          <TeamMemberMessageBlockView
+            key={i}
+            block={block}
+            {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+          />
+        )
       }
       default:
         return null
@@ -2266,11 +2360,17 @@ type ToolLogGroupKind = 'read' | 'write' | 'command' | 'tool'
 
 function renderBlocksGrouped(
   blocks: UIBlock[],
-  options: { surface?: 'main' | 'inspector'; sessionId?: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void } = {},
+  options: {
+    surface?: 'main' | 'inspector'
+    sessionId?: SessionId
+    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  } = {},
 ): ReactNode {
   const surface = options.surface ?? 'main'
   const nodes: ReactNode[] = []
-  let batch: Array<Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>> = []
+  let batch: Array<
+    Extract<UIBlock, { kind: 'tool_call' }> | Extract<UIBlock, { kind: 'terminal' }>
+  > = []
   let batchKind: ToolLogGroupKind | null = null
 
   const flush = (key: string) => {
@@ -2290,21 +2390,27 @@ function renderBlocksGrouped(
     }
 
     flush(`tool-log-${index}`)
-    nodes.push(
-      <Fragment key={`block-${index}`}>{renderBlocks([block], options)}</Fragment>,
-    )
+    nodes.push(<Fragment key={`block-${index}`}>{renderBlocks([block], options)}</Fragment>)
   })
 
   flush('tool-log-end')
   return nodes
 }
 
-function getToolLogGroupKind(block: UIBlock, surface: 'main' | 'inspector'): ToolLogGroupKind | null {
+function getToolLogGroupKind(
+  block: UIBlock,
+  surface: 'main' | 'inspector',
+): ToolLogGroupKind | null {
   if (block.kind === 'terminal') return surface === 'inspector' ? 'command' : null
   if (block.kind !== 'tool_call' || isHiddenTimelineBlock(block)) return null
   const name = normalizeToolName(block.toolName)
   if (name === 'todo_write') return null
-  if (name === 'bash' || name === 'run_command' || name.includes('shell') || name.includes('terminal')) {
+  if (
+    name === 'bash' ||
+    name === 'run_command' ||
+    name.includes('shell') ||
+    name.includes('terminal')
+  ) {
     return 'command'
   }
   if (
@@ -2332,7 +2438,10 @@ function getToolLogGroupKind(block: UIBlock, surface: 'main' | 'inspector'): Too
 }
 
 function normalizeToolName(name: string): string {
-  return name.replace(/^functions__/, '').replace(/^mcp__[^_]+__/, '').toLowerCase()
+  return name
+    .replace(/^functions__/, '')
+    .replace(/^mcp__[^_]+__/, '')
+    .toLowerCase()
 }
 
 /** 解析 agentId → 显示名（取自 SessionSidebarContext 的 agents） */
@@ -2375,28 +2484,46 @@ function TeamMemberMessageBlockView({
         running={running}
         onOpenDetail={() => setDrawerOpen(true)}
       >
-        <MarkdownText content={block.content} isStreaming={block.isStreaming} agents={agents.map(a => ({ id: a.id, name: a.name }))} onMentionClick={(agentId) => { setDrawerAgentId(agentId); setDrawerOpen(true) }} {...(onFilePreview != null ? { onFilePreview } : {})} />
+        <MarkdownText
+          content={block.content}
+          isStreaming={block.isStreaming}
+          agents={agents.map((a) => ({ id: a.id, name: a.name }))}
+          onMentionClick={(agentId) => {
+            setDrawerAgentId(agentId)
+            setDrawerOpen(true)
+          }}
+          {...(onFilePreview != null ? { onFilePreview } : {})}
+        />
       </TeamMemberBubble>
-      {drawerOpen && drawerAgentId && (() => {
-        const mentionedAgent = agents.find(a => a.id === drawerAgentId)
-        const mentionedName = mentionedAgent?.name ?? drawerAgentId
-        const mentionedAvatar = getAgentAvatarConfig(mentionedAgent?.metadata, drawerAgentId, mentionedName)
-        return (
-          <TeamMemberDrawer
-            member={{
-              agentId: drawerAgentId,
-              name: mentionedName,
-              description: mentionedAgent?.description ?? '',
-              providerProfileId: mentionedAgent?.providerProfileId ?? null,
-              modelId: mentionedAgent?.modelId ?? null,
-              skillCount: mentionedAgent?.skillIds.length ?? 0,
-              mcpCount: mentionedAgent?.mcpServerIds.length ?? 0,
-              avatarSrc: resolveAvatarSrc(mentionedAvatar),
-            }}
-            onClose={() => { setDrawerOpen(false); setDrawerAgentId(null) }}
-          />
-        )
-      })()}
+      {drawerOpen &&
+        drawerAgentId &&
+        (() => {
+          const mentionedAgent = agents.find((a) => a.id === drawerAgentId)
+          const mentionedName = mentionedAgent?.name ?? drawerAgentId
+          const mentionedAvatar = getAgentAvatarConfig(
+            mentionedAgent?.metadata,
+            drawerAgentId,
+            mentionedName,
+          )
+          return (
+            <TeamMemberDrawer
+              member={{
+                agentId: drawerAgentId,
+                name: mentionedName,
+                description: mentionedAgent?.description ?? '',
+                providerProfileId: mentionedAgent?.providerProfileId ?? null,
+                modelId: mentionedAgent?.modelId ?? null,
+                skillCount: mentionedAgent?.skillIds.length ?? 0,
+                mcpCount: mentionedAgent?.mcpServerIds.length ?? 0,
+                avatarSrc: resolveAvatarSrc(mentionedAvatar),
+              }}
+              onClose={() => {
+                setDrawerOpen(false)
+                setDrawerAgentId(null)
+              }}
+            />
+          )
+        })()}
     </>
   )
 }
@@ -2429,7 +2556,10 @@ function TeamMemberActivityBlockView({
         running={running}
         onOpenDetail={() => setDrawerOpen(true)}
       >
-        {renderTeamMemberActivityBlocks(blocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}
+        {renderTeamMemberActivityBlocks(
+          blocks,
+          onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+        )}
       </TeamMemberBubble>
       {drawerOpen && (
         <TeamMemberDrawer
@@ -2452,7 +2582,10 @@ function TeamMemberActivityBlockView({
 
 function renderTeamMemberActivityBlocks(
   blocks: UIBlock[],
-  options: { sessionId: SessionId; onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void },
+  options: {
+    sessionId: SessionId
+    onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
+  },
 ): ReactNode {
   const logBlocks = blocks.filter(isTeamMemberLogBlock)
   const resultBlocks = blocks.filter((block) => !isTeamMemberLogBlock(block))
@@ -2476,7 +2609,11 @@ function renderTeamMemberActivityBlocks(
           if (block.content.trim().length === 0) return null
           return (
             <div key={index} className="md-surface">
-              <MarkdownText content={block.content} isStreaming={block.isStreaming} {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})} />
+              <MarkdownText
+                content={block.content}
+                isStreaming={block.isStreaming}
+                {...(options.onFilePreview != null ? { onFilePreview: options.onFilePreview } : {})}
+              />
             </div>
           )
         }
@@ -2861,7 +2998,9 @@ function InlineQuestionCard({
   return (
     <div className="chat-card">
       <div className="chat-card-h info">
-        <span className="ico"><Icons.HelpCircle size={14} /></span>
+        <span className="ico">
+          <Icons.HelpCircle size={14} />
+        </span>
         <span>Agent 提问</span>
         {block.answered && (
           <span className="badge" style={{ marginLeft: 8, fontSize: 10, color: 'var(--c-ok)' }}>
@@ -2918,9 +3057,7 @@ function InlineQuestionCard({
             共 {total} 题
           </span>
           {!block.answered && (
-            <span style={{ fontSize: 12, color: 'var(--c-dim)' }}>
-              请在底部问答面板中逐题作答
-            </span>
+            <span style={{ fontSize: 12, color: 'var(--c-dim)' }}>请在底部问答面板中逐题作答</span>
           )}
         </div>
       </div>
@@ -2929,11 +3066,7 @@ function InlineQuestionCard({
 }
 
 /** Inline card showing Context Ledger token breakdown */
-function ContextLedgerCard({
-  block,
-}: {
-  block: Extract<UIBlock, { kind: 'context_ledger' }>
-}) {
+function ContextLedgerCard({ block }: { block: Extract<UIBlock, { kind: 'context_ledger' }> }) {
   const barMaxWidth = 180
   const usageColor =
     block.usagePercent > 90
@@ -3066,19 +3199,15 @@ function ContextSummarizedCard({
     >
       <Icons.File size={14} style={{ opacity: 0.6, flexShrink: 0 }} />
       <span style={{ opacity: 0.7 }}>
-        Context Governor summarized {block.summarizedEntryCount} older exchanges
-        (saved ~{block.tokensSaved.toLocaleString()} tokens)
+        Context Governor summarized {block.summarizedEntryCount} older exchanges (saved ~
+        {block.tokensSaved.toLocaleString()} tokens)
       </span>
     </div>
   )
 }
 
 /** Inline card showing a self-correction retry trail */
-function RetryTrailCard({
-  block,
-}: {
-  block: Extract<UIBlock, { kind: 'retry_trail' }>
-}) {
+function RetryTrailCard({ block }: { block: Extract<UIBlock, { kind: 'retry_trail' }> }) {
   const outcomeColor =
     block.finalOutcome === 'success'
       ? 'var(--c-ok, #22c55e)'
@@ -3154,7 +3283,14 @@ function RetryTrailCard({
                 {attempt.attempt}
               </span>
               {icon}
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <span
+                style={{
+                  flex: 1,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {attempt.action}
               </span>
               {attempt.durationMs != null && (
@@ -3165,7 +3301,15 @@ function RetryTrailCard({
         })}
       </div>
       {block.attempts.some((a) => a.failureSummary) && (
-        <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 4, background: 'rgba(239,68,68,0.08)', fontSize: 11 }}>
+        <div
+          style={{
+            marginTop: 6,
+            padding: '6px 8px',
+            borderRadius: 4,
+            background: 'rgba(239,68,68,0.08)',
+            fontSize: 11,
+          }}
+        >
           {block.attempts
             .filter((a) => a.failureSummary)
             .map((a, idx) => (
@@ -3183,9 +3327,7 @@ function RetryTrailCard({
  * 重新正向应用一组文件的 unified diff（每个文件可包含多个 hunk）。
  * 用于 TurnFileSummaryCard 在「撤销」后的「重新应用」。
  */
-async function reapplyTurnFiles(
-  files: Array<FileChangeSummary & { diff: string }>,
-): Promise<void> {
+async function reapplyTurnFiles(files: Array<FileChangeSummary & { diff: string }>): Promise<void> {
   const wsRes = await window.spark.invoke('workspace:get-current', {})
   const workspaceRootPath = wsRes?.workspace?.rootPath
   if (workspaceRootPath == null) throw new Error('无法确定工作区路径')
@@ -3252,10 +3394,18 @@ export function MarkdownText({
         switch (block.kind) {
           case 'heading': {
             const Tag = `h${Math.min(block.level, 6)}` as keyof JSX.IntrinsicElements
-            return <Tag key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</Tag>
+            return (
+              <Tag key={index}>
+                {renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}
+              </Tag>
+            )
           }
           case 'paragraph':
-            return <p key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</p>
+            return (
+              <p key={index}>
+                {renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}
+              </p>
+            )
           case 'code':
             return (
               <MarkdownCodeBlock
@@ -3276,7 +3426,11 @@ export function MarkdownText({
               />
             )
           case 'quote':
-            return <blockquote key={index}>{renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}</blockquote>
+            return (
+              <blockquote key={index}>
+                {renderInlineMarkdown(block.text, agents, onMentionClick, onFilePreview)}
+              </blockquote>
+            )
           case 'list': {
             const ListTag = block.ordered ? 'ol' : 'ul'
             return (
@@ -3287,13 +3441,11 @@ export function MarkdownText({
                     className={item.checked !== undefined ? 'md-task' : undefined}
                   >
                     {item.checked !== undefined && (
-                      <input
-                        type="checkbox"
-                        checked={item.checked}
-                        readOnly
-                      />
+                      <input type="checkbox" checked={item.checked} readOnly />
                     )}
-                    <span>{renderInlineMarkdown(item.text, agents, onMentionClick, onFilePreview)}</span>
+                    <span>
+                      {renderInlineMarkdown(item.text, agents, onMentionClick, onFilePreview)}
+                    </span>
                   </li>
                 ))}
               </ListTag>
@@ -3306,7 +3458,9 @@ export function MarkdownText({
                   <thead>
                     <tr>
                       {block.headers.map((header, headerIndex) => (
-                        <th key={headerIndex}>{renderInlineMarkdown(header, agents, onMentionClick, onFilePreview)}</th>
+                        <th key={headerIndex}>
+                          {renderInlineMarkdown(header, agents, onMentionClick, onFilePreview)}
+                        </th>
                       ))}
                     </tr>
                   </thead>
@@ -3314,7 +3468,14 @@ export function MarkdownText({
                     {block.rows.map((row, rowIndex) => (
                       <tr key={rowIndex}>
                         {block.headers.map((_, cellIndex) => (
-                          <td key={cellIndex}>{renderInlineMarkdown(row[cellIndex] ?? '', agents, onMentionClick, onFilePreview)}</td>
+                          <td key={cellIndex}>
+                            {renderInlineMarkdown(
+                              row[cellIndex] ?? '',
+                              agents,
+                              onMentionClick,
+                              onFilePreview,
+                            )}
+                          </td>
                         ))}
                       </tr>
                     ))}
@@ -3474,14 +3635,15 @@ function highlightMentions(
   const parts: ReactNode[] = []
   let cursor = 0
   let match: RegExpExecArray | null
-  const agentMap = agents
-    ? new Map(agents.map((a) => [a.name.toLowerCase(), a.id]))
-    : null
+  const agentMap = agents ? new Map(agents.map((a) => [a.name.toLowerCase(), a.id])) : null
   while ((match = mentionPattern.exec(text)) != null) {
     const prefix = match[1] ?? ''
     const mention = match[2] ?? ''
     const mentionStart = match.index + prefix.length
-    if (mentionStart > cursor) parts.push(...highlightFilePaths(text.slice(cursor, mentionStart), onFilePreview, `fp-${cursor}`))
+    if (mentionStart > cursor)
+      parts.push(
+        ...highlightFilePaths(text.slice(cursor, mentionStart), onFilePreview, `fp-${cursor}`),
+      )
     const agentId = agentMap?.get(mention.slice(1).toLowerCase())
     const clickable = onMentionClick != null && agentId != null
     parts.push(
@@ -3510,7 +3672,8 @@ function highlightMentions(
     )
     cursor = mentionStart + mention.length
   }
-  if (cursor < text.length) parts.push(...highlightFilePaths(text.slice(cursor), onFilePreview, `fp-${cursor}`))
+  if (cursor < text.length)
+    parts.push(...highlightFilePaths(text.slice(cursor), onFilePreview, `fp-${cursor}`))
   return parts.length > 0 ? parts : [text]
 }
 
@@ -3571,7 +3734,15 @@ function renderInlineMarkdown(
   let match: RegExpExecArray | null
 
   while ((match = pattern.exec(text)) != null) {
-    if (match.index > cursor) nodes.push(...highlightMentions(text.slice(cursor, match.index), agents, onMentionClick, onFilePreview))
+    if (match.index > cursor)
+      nodes.push(
+        ...highlightMentions(
+          text.slice(cursor, match.index),
+          agents,
+          onMentionClick,
+          onFilePreview,
+        ),
+      )
     const token = match[0]
     const key = `${match.index}-${token}`
     const link = token.match(/^(!?)\[([^\]]+)]\(([^)]+)\)$/)
@@ -3582,7 +3753,13 @@ function renderInlineMarkdown(
         nodes.push(<MarkdownImage key={key} src={link[3] ?? ''} alt={link[2] ?? ''} />)
       } else {
         nodes.push(
-          <a key={key} className="clickable-url" href={link[3] ?? '#'} target="_blank" rel="noreferrer">
+          <a
+            key={key}
+            className="clickable-url"
+            href={link[3] ?? '#'}
+            target="_blank"
+            rel="noreferrer"
+          >
             {link[2] ?? ''}
           </a>,
         )
@@ -3599,7 +3776,8 @@ function renderInlineMarkdown(
     cursor = match.index + token.length
   }
 
-  if (cursor < text.length) nodes.push(...highlightMentions(text.slice(cursor), agents, onMentionClick, onFilePreview))
+  if (cursor < text.length)
+    nodes.push(...highlightMentions(text.slice(cursor), agents, onMentionClick, onFilePreview))
   const rendered: ReactNode[] = []
   nodes.forEach((node, index) => {
     if (typeof node !== 'string') {
@@ -3669,9 +3847,7 @@ function MessageHoverBar({
     <div className={`msg-hover-bar msg-hover-${position}`}>
       {time && <span className="msg-hover-time">{time}</span>}
       {showTokenCount && (
-        <span className="msg-hover-tokens">
-          {usage.inputTokens + usage.outputTokens} tokens
-        </span>
+        <span className="msg-hover-tokens">{usage.inputTokens + usage.outputTokens} tokens</span>
       )}
       {onResend && (
         <button className="msg-hover-resend" title="重发" onClick={onResend}>
@@ -3746,13 +3922,7 @@ function InlineContextMenu({
   )
 }
 
-function TextEditContextMenu({
-  menu,
-  onClose,
-}: {
-  menu: TextEditMenuState
-  onClose: () => void
-}) {
+function TextEditContextMenu({ menu, onClose }: { menu: TextEditMenuState; onClose: () => void }) {
   const { target, hasSelection, isEditable } = menu
   const items = useMemo<ContextMenuItem[]>(() => {
     const result: ContextMenuItem[] = []
@@ -3821,14 +3991,13 @@ async function editTextSelection(
   document.execCommand(action)
 }
 
-function insertTextIntoControl(
-  target: HTMLTextAreaElement | HTMLInputElement,
-  text: string,
-): void {
+function insertTextIntoControl(target: HTMLTextAreaElement | HTMLInputElement, text: string): void {
   const start = target.selectionStart ?? target.value.length
   const end = target.selectionEnd ?? start
   target.setRangeText(text, start, end, 'end')
-  target.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+  target.dispatchEvent(
+    new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }),
+  )
 }
 
 /** 从 blocks 中提取纯文本内容（用于复制） */
@@ -3840,139 +4009,145 @@ function extractTextFromBlocks(blocks: UIBlock[]): string {
     .trim()
 }
 
-const UserMsg = React.memo(function UserMsg({
-  children,
-  timestamp,
-  blocks,
-  avatarSrc,
-  attachments = [],
-  onDelete,
-  mentionAgentName,
-  onReply,
-  onResend,
-}: {
-  children: ReactNode
-  timestamp?: string | undefined
-  blocks: UIBlock[]
-  avatarSrc: string
-  attachments?: MessageAttachment[]
-  onDelete?: () => void
-  /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
-  mentionAgentName?: string | undefined
-  onReply?: () => void
-  /** 重发：把这条消息的文本+附件重新塞回输入区 */
-  onResend?: () => void
-}) {
-  const textContent = extractTextFromBlocks(blocks)
-  const [contextMenu, setContextMenu] = useState<{
-    x: number
-    y: number
-    imageSrc?: string
-  } | null>(null)
+const UserMsg = React.memo(
+  function UserMsg({
+    children,
+    timestamp,
+    blocks,
+    avatarSrc,
+    attachments = [],
+    onDelete,
+    mentionAgentName,
+    onReply,
+    onResend,
+  }: {
+    children: ReactNode
+    timestamp?: string | undefined
+    blocks: UIBlock[]
+    avatarSrc: string
+    attachments?: MessageAttachment[]
+    onDelete?: () => void
+    /** 团队模式：用户 @ 指定的 Agent 名称（已解析）；用于显示"→ 已直接由 @X 处理"提示 */
+    mentionAgentName?: string | undefined
+    onReply?: () => void
+    /** 重发：把这条消息的文本+附件重新塞回输入区 */
+    onResend?: () => void
+  }) {
+    const textContent = extractTextFromBlocks(blocks)
+    const [contextMenu, setContextMenu] = useState<{
+      x: number
+      y: number
+      imageSrc?: string
+    } | null>(null)
 
-  const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
-    event.preventDefault()
-    const target = event.target as HTMLElement | null
-    const image = target?.closest('img') as HTMLImageElement | null
-    setContextMenu({
-      x: event.clientX,
-      y: event.clientY,
-      ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
-    })
-  }, [])
+    const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+      event.preventDefault()
+      const target = event.target as HTMLElement | null
+      const image = target?.closest('img') as HTMLImageElement | null
+      setContextMenu({
+        x: event.clientX,
+        y: event.clientY,
+        ...(image != null ? { imageSrc: image.currentSrc || image.src } : {}),
+      })
+    }, [])
 
-  const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
-    if (contextMenu == null) return []
-    const items: ContextMenuItem[] = []
-    if (contextMenu.imageSrc != null) {
-      items.push({
-        key: 'copy-image',
-        label: '复制图片',
-        icon: <Icons.Image size={14} />,
-        onClick: () => {
-          if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
-        },
-      })
-    } else if (textContent.length > 0) {
-      items.push({
-        key: 'copy-text',
-        label: '复制内容',
-        icon: <Icons.Copy size={14} />,
-        onClick: () => {
-          void navigator.clipboard.writeText(textContent)
-        },
-      })
-    }
-    if (onReply != null) {
-      items.push({
-        key: 'reply',
-        label: '回复',
-        icon: <Icons.CornerUpLeft size={14} />,
-        onClick: onReply,
-      })
-    }
-    if (onDelete != null) {
-      items.push({
-        key: 'delete',
-        label: '删除',
-        icon: <Icons.Trash size={14} />,
-        danger: true,
-        onClick: onDelete,
-      })
-    }
-    return items
-  }, [contextMenu, onDelete, onReply, textContent])
+    const contextMenuItems = useMemo<ContextMenuItem[]>(() => {
+      if (contextMenu == null) return []
+      const items: ContextMenuItem[] = []
+      if (contextMenu.imageSrc != null) {
+        items.push({
+          key: 'copy-image',
+          label: '复制图片',
+          icon: <Icons.Image size={14} />,
+          onClick: () => {
+            if (contextMenu.imageSrc != null)
+              void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+          },
+        })
+      } else if (textContent.length > 0) {
+        items.push({
+          key: 'copy-text',
+          label: '复制内容',
+          icon: <Icons.Copy size={14} />,
+          onClick: () => {
+            void navigator.clipboard.writeText(textContent)
+          },
+        })
+      }
+      if (onReply != null) {
+        items.push({
+          key: 'reply',
+          label: '回复',
+          icon: <Icons.CornerUpLeft size={14} />,
+          onClick: onReply,
+        })
+      }
+      if (onDelete != null) {
+        items.push({
+          key: 'delete',
+          label: '删除',
+          icon: <Icons.Trash size={14} />,
+          danger: true,
+          onClick: onDelete,
+        })
+      }
+      return items
+    }, [contextMenu, onDelete, onReply, textContent])
 
-  return (
-    <div className="msg msg-user">
-      {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
-      <div className="msg-user-line">
-        <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
-          <div className="msg-content">{children}</div>
+    return (
+      <div className="msg msg-user">
+        {attachments.length > 0 && <UserMessageAttachments attachments={attachments} />}
+        <div className="msg-user-line">
+          <div className="msg-bubble msg-bubble-user" onContextMenu={handleContextMenu}>
+            <div className="msg-content">{children}</div>
+          </div>
+          <div className="msg-user-avatar">
+            <AvatarImage src={avatarSrc} seed="spark-user" name="User" alt="用户头像" />
+          </div>
         </div>
-        <div className="msg-user-avatar">
-          <AvatarImage src={avatarSrc} seed="spark-user" name="User" alt="用户头像" />
-        </div>
-      </div>
-      {mentionAgentName != null && mentionAgentName.length > 0 && (
-        <div className="msg-user-mention-hint">
-          → 已直接由 <strong>@{mentionAgentName}</strong> 处理
-        </div>
-      )}
-      <MessageHoverBar
-        timestamp={timestamp}
-        textContent={textContent}
-        position="right"
-        {...(onDelete ? { onDelete } : {})}
-        {...(onResend ? { onResend } : {})}
-      />
-      {contextMenu != null && contextMenuItems.length > 0 && (
-        <InlineContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onClose={() => setContextMenu(null)}
-          items={contextMenuItems}
+        {mentionAgentName != null && mentionAgentName.length > 0 && (
+          <div className="msg-user-mention-hint">
+            → 已直接由 <strong>@{mentionAgentName}</strong> 处理
+          </div>
+        )}
+        <MessageHoverBar
+          timestamp={timestamp}
+          textContent={textContent}
+          position="right"
+          {...(onDelete ? { onDelete } : {})}
+          {...(onResend ? { onResend } : {})}
         />
-      )}
-    </div>
-  )
-}, (prev, next) => {
-  // 用户消息创建后不再变化：blocks 引用稳定即可跳过重渲染（忽略 children/回调标识）。
-  return (
-    prev.blocks === next.blocks &&
-    prev.avatarSrc === next.avatarSrc &&
-    prev.attachments === next.attachments &&
-    prev.mentionAgentName === next.mentionAgentName &&
-    prev.timestamp === next.timestamp
-  )
-})
+        {contextMenu != null && contextMenuItems.length > 0 && (
+          <InlineContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onClose={() => setContextMenu(null)}
+            items={contextMenuItems}
+          />
+        )}
+      </div>
+    )
+  },
+  (prev, next) => {
+    // 用户消息创建后不再变化：blocks 引用稳定即可跳过重渲染（忽略 children/回调标识）。
+    return (
+      prev.blocks === next.blocks &&
+      prev.avatarSrc === next.avatarSrc &&
+      prev.attachments === next.attachments &&
+      prev.mentionAgentName === next.mentionAgentName &&
+      prev.timestamp === next.timestamp
+    )
+  },
+)
 
 function useUserAvatarSrc(): string {
   const readLocal = useCallback(() => {
     try {
       const raw = window.localStorage.getItem(SETTINGS_GENERAL_KEY)
       if (raw == null) return resolveAvatarSrc(getUserAvatarConfig(null))
-      return resolveAvatarSrc(getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar))
+      return resolveAvatarSrc(
+        getUserAvatarConfig((JSON.parse(raw) as Record<string, unknown>).userAvatar),
+      )
     } catch {
       return resolveAvatarSrc(getUserAvatarConfig(null))
     }
@@ -3986,9 +4161,10 @@ function useUserAvatarSrc(): string {
       ?.invoke('settings:get', { category: 'general', key: 'data' })
       .then((res) => {
         if (cancelled) return
-        const value = res.value != null && typeof res.value === 'object'
-          ? (res.value as Record<string, unknown>).userAvatar
-          : null
+        const value =
+          res.value != null && typeof res.value === 'object'
+            ? (res.value as Record<string, unknown>).userAvatar
+            : null
         setSrc(resolveAvatarSrc(getUserAvatarConfig(value)))
       })
       .catch(() => {})
@@ -4079,7 +4255,10 @@ function UserMessageImageAttachment({ attachment }: { attachment: MessageAttachm
       !lower.startsWith('blob:') &&
       !lower.startsWith(`${SAFE_FILE_SCHEME}:`)
 
-    if (!needsPreparedPreview) return () => { cancelled = true }
+    if (!needsPreparedPreview)
+      return () => {
+        cancelled = true
+      }
 
     void prepareImagePreview({ sourcePath: attachment.path })
       .then((preview) => {
@@ -4242,7 +4421,10 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
         if (segment.kind === 'team') {
           return (
             <div key={`team-${index}`} className="team-timeline-segment">
-              {renderBlocks(segment.blocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}
+              {renderBlocks(
+                segment.blocks,
+                onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+              )}
             </div>
           )
         }
@@ -4264,7 +4446,8 @@ const AssistantMessageRows = React.memo(function AssistantMessageRows({
             </div>
           )
         }
-        const segmentRunning = segmentIsLatest && status === 'running' && isHostActivityRunning(segment.blocks)
+        const segmentRunning =
+          segmentIsLatest && status === 'running' && isHostActivityRunning(segment.blocks)
         return (
           <AgentMsg
             key={`agent-${index}`}
@@ -4313,7 +4496,10 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
     if (previous?.kind === 'agent') {
       return previous
     }
-    const segment: Extract<AssistantMessageSegment, { kind: 'agent' }> = { kind: 'agent', blocks: [] }
+    const segment: Extract<AssistantMessageSegment, { kind: 'agent' }> = {
+      kind: 'agent',
+      blocks: [],
+    }
     segments.push(segment)
     return segment
   }
@@ -4329,7 +4515,8 @@ function splitAssistantMessageBlocks(blocks: UIBlock[]): AssistantMessageSegment
       if (isRunning) runningDispatches.add(key)
       else runningDispatches.delete(key)
       const segment = latestTeamMemberSegments.get(key)
-      if (segment != null) segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
+      if (segment != null)
+        segment.running = isRunning || isTeamMemberActivityRunning(segment.blocks)
       segments.push({ kind: 'team', blocks: [block] })
       continue
     }
@@ -4424,7 +4611,13 @@ const AgentMsg = React.memo(function AgentMsg({
   const thinkingBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'thinking' }> => b.kind === 'thinking',
   )
-  const contentBlocks = blocks.filter((b) => b.kind !== 'thinking' && b.kind !== 'error' && b.kind !== 'terminal' && !isHiddenTimelineBlock(b))
+  const contentBlocks = blocks.filter(
+    (b) =>
+      b.kind !== 'thinking' &&
+      b.kind !== 'error' &&
+      b.kind !== 'terminal' &&
+      !isHiddenTimelineBlock(b),
+  )
   const toolCallBlocks = blocks.filter(
     (b): b is Extract<UIBlock, { kind: 'tool_call' }> =>
       b.kind === 'tool_call' && !isHiddenTimelineBlock(b),
@@ -4472,7 +4665,8 @@ const AgentMsg = React.memo(function AgentMsg({
         label: '复制图片',
         icon: <Icons.Image size={14} />,
         onClick: () => {
-          if (contextMenu.imageSrc != null) void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
+          if (contextMenu.imageSrc != null)
+            void copyImageFromSrc(contextMenu.imageSrc).catch(() => {})
         },
       })
     } else if (textContent.length > 0) {
@@ -4519,53 +4713,63 @@ const AgentMsg = React.memo(function AgentMsg({
           <span className="msg-agent-name">{assistantName}</span>
         </div>
         <div className="msg-bubble msg-bubble-agent" onContextMenu={handleContextMenu}>
-                {thinkingBlocks.length > 0 && (
-          <ThinkingSection blocks={thinkingBlocks} streaming={isStreaming} />
-        )}
-        {activeToolCount > 1 && (
-          <div className="parallel-tools-indicator">
-            <Icons.Layers size={11} />
-            <span>{activeToolCount} 个工具并行执行</span>
+          {thinkingBlocks.length > 0 && (
+            <ThinkingSection blocks={thinkingBlocks} streaming={isStreaming} />
+          )}
+          {activeToolCount > 1 && (
+            <div className="parallel-tools-indicator">
+              <Icons.Layers size={11} />
+              <span>{activeToolCount} 个工具并行执行</span>
+            </div>
+          )}
+          {contentBlocks.length > 0 && isLatest && (
+            <div className="msg-content">
+              {renderBlocksGrouped(
+                contentBlocks,
+                onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+              )}
+            </div>
+          )}
+          {contentBlocks.length > 0 && !isLatest && (
+            <CollapsibleContent maxHeight={500} streaming={isStreaming}>
+              <div className="msg-content">
+                {renderBlocksGrouped(
+                  contentBlocks,
+                  onFilePreview != null ? { sessionId, onFilePreview } : { sessionId },
+                )}
+              </div>
+            </CollapsibleContent>
+          )}
+          {errorBlocks.map((block, i) => (
+            <StreamingErrorCard
+              key={`error-${i}`}
+              sessionId={sessionId}
+              message={(block as Extract<UIBlock, { kind: 'error' }>).message}
+              code={(block as Extract<UIBlock, { kind: 'error' }>).code}
+              retryable={(block as Extract<UIBlock, { kind: 'error' }>).retryable}
+            />
+          ))}
+          {isCancelled && <StoppedMarker />}
+          {isFinished && textContent && (
+            <MessageHoverBar
+              timestamp={timestamp}
+              textContent={textContent}
+              position="left"
+              usage={usage}
+              {...(onDelete ? { onDelete } : {})}
+            />
+          )}
+        </div>
+        {isStreaming && (
+          <div className="agent-task-running-tag">
+            <span>执行任务中</span>
+            <span className="agent-task-running-dots">
+              <span />
+              <span />
+              <span />
+            </span>
           </div>
         )}
-        {contentBlocks.length > 0 && isLatest && (
-          <div className="msg-content">{renderBlocksGrouped(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
-        )}
-        {contentBlocks.length > 0 && !isLatest && (
-          <CollapsibleContent maxHeight={500} streaming={isStreaming}>
-            <div className="msg-content">{renderBlocksGrouped(contentBlocks, onFilePreview != null ? { sessionId, onFilePreview } : { sessionId })}</div>
-          </CollapsibleContent>
-        )}
-        {errorBlocks.map((block, i) => (
-          <StreamingErrorCard
-            key={`error-${i}`}
-            sessionId={sessionId}
-            message={(block as Extract<UIBlock, { kind: 'error' }>).message}
-            code={(block as Extract<UIBlock, { kind: 'error' }>).code}
-            retryable={(block as Extract<UIBlock, { kind: 'error' }>).retryable}
-          />
-        ))}
-                {isCancelled && <StoppedMarker />}
-        {isFinished && textContent && (
-          <MessageHoverBar
-            timestamp={timestamp}
-            textContent={textContent}
-            position="left"
-            usage={usage}
-            {...(onDelete ? { onDelete } : {})}
-          />
-        )}
-      </div>
-      {isStreaming && (
-        <div className="agent-task-running-tag">
-          <span>执行任务中</span>
-          <span className="agent-task-running-dots">
-            <span />
-            <span />
-            <span />
-          </span>
-        </div>
-      )}
       </div>
       {contextMenu != null && contextMenuItems.length > 0 && (
         <InlineContextMenu
@@ -4777,7 +4981,9 @@ function ToolCall({
       <div className="tool-call-head" onClick={() => setOpen(!open)}>
         {iconMap[name] || <Icons.Wrench className="tool-icon" />}
         <span className="tool-name">{name}</span>
-        <span className="tool-arg" title={fullArg || arg}>{arg}</span>
+        <span className="tool-arg" title={fullArg || arg}>
+          {arg}
+        </span>
         <span className="tool-call-actions">
           {pending && <Icons.Spinner size={12} className="tool-status spinner" />}
           {status === 'ok' && <Icons.Check size={12} className="tool-status ok" />}
@@ -4810,7 +5016,8 @@ function ToolLogGroup({
     return block.status === 'pending' || block.status === 'running'
   })
   const hasError = blocks.some((block) => {
-    if (block.kind === 'terminal') return (block.exitCode ?? 0) !== 0 || block.stderr.trim().length > 0
+    if (block.kind === 'terminal')
+      return (block.exitCode ?? 0) !== 0 || block.stderr.trim().length > 0
     return block.status === 'error' || Boolean(block.error)
   })
   const [open, setOpen] = useState(running && surface === 'main')
@@ -4846,7 +5053,9 @@ function ToolLogGroup({
           : Icons.Wrench
 
   return (
-    <div className={`tool-log-group ${open ? 'is-open' : ''} ${running ? 'is-running' : ''} ${hasError ? 'is-error' : 'is-success'}`}>
+    <div
+      className={`tool-log-group ${open ? 'is-open' : ''} ${running ? 'is-running' : ''} ${hasError ? 'is-error' : 'is-success'}`}
+    >
       <Button
         className="tool-log-summary"
         type="text"
@@ -4882,7 +5091,11 @@ function ToolLogEntry({
   if (block.kind === 'terminal') {
     return (
       <div className="tool-log-entry">
-        <ToolLogEntryHead icon={<Icons.Terminal size={13} />} title="终端" subtitle={`#${index + 1}`} />
+        <ToolLogEntryHead
+          icon={<Icons.Terminal size={13} />}
+          title="终端"
+          subtitle={`#${index + 1}`}
+        />
         <div className="tool-log-card">
           {block.stdout && <ToolLogSection label="输出" content={block.stdout} />}
           {block.stderr && <ToolLogSection label="错误" content={block.stderr} tone="error" />}
@@ -4949,7 +5162,8 @@ function ToolLogSection({
 }
 
 function formatToolLogInput(block: Extract<UIBlock, { kind: 'tool_call' }>): string {
-  const isBashLike = block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
+  const isBashLike =
+    block.toolName === 'Bash' || block.toolName === 'bash' || block.toolName === 'run_command'
   if (isBashLike && typeof block.toolInput.command === 'string') return block.toolInput.command
   try {
     return JSON.stringify(block.toolInput, null, 2)
@@ -4961,9 +5175,17 @@ function formatToolLogInput(block: Extract<UIBlock, { kind: 'tool_call' }>): str
 function getToolLogIcon(name: string): ReactNode {
   const normalized = normalizeToolName(name)
   if (normalized === 'bash' || normalized === 'run_command') return <Icons.BashCommand size={13} />
-  if (normalized === 'grep' || normalized === 'grep_files' || normalized.includes('search')) return <Icons.Search size={13} />
-  if (normalized === 'edit' || normalized === 'edit_file' || normalized === 'apply_patch') return <Icons.Edit size={13} />
-  if (normalized === 'read' || normalized === 'read_file' || normalized === 'write' || normalized === 'write_file') return <Icons.File size={13} />
+  if (normalized === 'grep' || normalized === 'grep_files' || normalized.includes('search'))
+    return <Icons.Search size={13} />
+  if (normalized === 'edit' || normalized === 'edit_file' || normalized === 'apply_patch')
+    return <Icons.Edit size={13} />
+  if (
+    normalized === 'read' ||
+    normalized === 'read_file' ||
+    normalized === 'write' ||
+    normalized === 'write_file'
+  )
+    return <Icons.File size={13} />
   return <Icons.Wrench size={13} />
 }
 
@@ -5255,9 +5477,7 @@ function PlanApprovalModal({
           <div>
             <div className="modal-title">
               计划已就绪，等待你审批
-              {isEdited && !editing && (
-                <span className="plan-approval-edited-badge">已编辑</span>
-              )}
+              {isEdited && !editing && <span className="plan-approval-edited-badge">已编辑</span>}
             </div>
             <div className="modal-subtitle">
               {editing
@@ -5304,11 +5524,7 @@ function PlanApprovalModal({
             </button>
           )}
           {editing && (
-            <button
-              className="btn"
-              disabled={editBuffer === draft}
-              onClick={saveEdit}
-            >
+            <button className="btn" disabled={editBuffer === draft} onClick={saveEdit}>
               <Icons.Check size={12} /> 保存编辑
             </button>
           )}
@@ -5351,9 +5567,18 @@ function formatGitDiffContent(content: string): string {
     }
 
     // Exit diff mode when we see non-diff content after diff
-    if (isDiffMode && line.trim() && !line.startsWith('diff') && !line.startsWith('index') &&
-        !line.startsWith('---') && !line.startsWith('+++') && !line.startsWith('@@') &&
-        !line.startsWith('+') && !line.startsWith('-') && !line.startsWith(' ')) {
+    if (
+      isDiffMode &&
+      line.trim() &&
+      !line.startsWith('diff') &&
+      !line.startsWith('index') &&
+      !line.startsWith('---') &&
+      !line.startsWith('+++') &&
+      !line.startsWith('@@') &&
+      !line.startsWith('+') &&
+      !line.startsWith('-') &&
+      !line.startsWith(' ')
+    ) {
       isDiffMode = false
     }
 
@@ -5408,7 +5633,8 @@ function escapeHtml(text: string): string {
  */
 function GitDiffContent({ content }: { content: string }) {
   // Check if content looks like git diff
-  const isGitDiff = content.includes('diff --git') || content.includes('@@') || content.match(/^[\+\-]/m)
+  const isGitDiff =
+    content.includes('diff --git') || content.includes('@@') || content.match(/^[\+\-]/m)
 
   if (!isGitDiff) {
     // Not a git diff, render as regular markdown
@@ -5853,7 +6079,9 @@ function ComposerV2({
   const initialPrefsRef = useRef<ComposerPrefs | null>(null)
   if (initialPrefsRef.current == null) initialPrefsRef.current = readComposerPrefs()
   const initialPrefs = initialPrefsRef.current
-  const [drafts, setDrafts] = useState<Record<string, ComposerDraftSnapshot>>(() => readComposerDrafts())
+  const [drafts, setDrafts] = useState<Record<string, ComposerDraftSnapshot>>(() =>
+    readComposerDrafts(),
+  )
   const [sending, setSending] = useState(false)
   useEffect(() => {
     onDispatchStateChange?.(sending)
@@ -5900,7 +6128,9 @@ function ComposerV2({
   /** `@` 字符在 textarea value 中的索引（含 @ 本身）。-1 表示未激活 */
   const mentionStartRef = useRef<number>(-1)
   /** 已选择的 mention：name 用于校验文本是否仍含该片段；agentId 用于 sendTurn 时携带 */
-  const [pendingMention, setPendingMention] = useState<{ agentId: string; name: string } | null>(null)
+  const [pendingMention, setPendingMention] = useState<{ agentId: string; name: string } | null>(
+    null,
+  )
   const runtimeSettingsHydratedRef = useRef(false)
   // ── Input history (↑↓) ──
   const sentHistoryRef = useRef<string[]>([])
@@ -5997,7 +6227,10 @@ function ComposerV2({
     })
   }, [activeAgent, agents, isWorking, runningTeamAgentIds, teamConfig.enabled])
   const visibleRunningTeamAgents = runningTeamAgents.slice(0, 3)
-  const hiddenRunningTeamAgentCount = Math.max(0, runningTeamAgents.length - visibleRunningTeamAgents.length)
+  const hiddenRunningTeamAgentCount = Math.max(
+    0,
+    runningTeamAgents.length - visibleRunningTeamAgents.length,
+  )
   const handleRunningAgentTagClick = useCallback((agentId: string) => {
     window.dispatchEvent(
       new CustomEvent('spark:team-running-agent:scroll', {
@@ -6026,26 +6259,35 @@ function ComposerV2({
     [draftBucketKey],
   )
 
-  const setValue = useCallback((next: React.SetStateAction<string>) => {
-    updateDraft((draft) => ({
-      ...draft,
-      value: typeof next === 'function' ? next(draft.value) : next,
-    }))
-  }, [updateDraft])
+  const setValue = useCallback(
+    (next: React.SetStateAction<string>) => {
+      updateDraft((draft) => ({
+        ...draft,
+        value: typeof next === 'function' ? next(draft.value) : next,
+      }))
+    },
+    [updateDraft],
+  )
 
-  const setAttachments = useCallback((next: React.SetStateAction<ComposerAttachment[]>) => {
-    updateDraft((draft) => ({
-      ...draft,
-      attachments: typeof next === 'function' ? next(draft.attachments) : next,
-    }))
-  }, [updateDraft])
+  const setAttachments = useCallback(
+    (next: React.SetStateAction<ComposerAttachment[]>) => {
+      updateDraft((draft) => ({
+        ...draft,
+        attachments: typeof next === 'function' ? next(draft.attachments) : next,
+      }))
+    },
+    [updateDraft],
+  )
 
-  const setManualExpanded = useCallback((next: React.SetStateAction<boolean>) => {
-    updateDraft((draft) => ({
-      ...draft,
-      manualExpanded: typeof next === 'function' ? next(draft.manualExpanded) : next,
-    }))
-  }, [updateDraft])
+  const setManualExpanded = useCallback(
+    (next: React.SetStateAction<boolean>) => {
+      updateDraft((draft) => ({
+        ...draft,
+        manualExpanded: typeof next === 'function' ? next(draft.manualExpanded) : next,
+      }))
+    },
+    [updateDraft],
+  )
 
   const clearDraftBuckets = useCallback((keys: Array<string | null | undefined>) => {
     const uniqueKeys = Array.from(new Set(keys.filter((key): key is string => !!key)))
@@ -6055,10 +6297,7 @@ function ComposerV2({
       const next = { ...current }
       for (const key of uniqueKeys) {
         const existing = next[key]
-        if (
-          existing != null &&
-          (existing.value !== '' || existing.attachments.length > 0)
-        ) {
+        if (existing != null && (existing.value !== '' || existing.attachments.length > 0)) {
           next[key] = { ...existing, value: '', attachments: [] }
           changed = true
         }
@@ -6166,7 +6405,10 @@ function ComposerV2({
             runtimePrefs.adapter,
           )
           if (fallbackProvider != null) {
-            const nextModel = getProviderDefaultModel(fallbackProvider, fallbackProvider.modelIds[0])
+            const nextModel = getProviderDefaultModel(
+              fallbackProvider,
+              fallbackProvider.modelIds[0],
+            )
             setSelectedProviderId(fallbackProvider.id)
             setDraftModelId(nextModel)
             writeComposerPrefs({
@@ -6305,7 +6547,11 @@ function ComposerV2({
   }, [draftBucketKey])
 
   const dispatchMessage = useCallback(
-    async (text: string, turnAttachments: ComposerAttachment[], replySnapshot?: ReplyToState | null) => {
+    async (
+      text: string,
+      turnAttachments: ComposerAttachment[],
+      replySnapshot?: ReplyToState | null,
+    ) => {
       const requestAttachments = toSessionAttachments(turnAttachments)
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
       if (text.startsWith('/')) {
@@ -6355,12 +6601,12 @@ function ComposerV2({
               ...(teamConfig.enabled && effectiveHostAgentId != null
                 ? { teamConfig, agentId: effectiveHostAgentId }
                 : {}),
-          ...(teamConfig.enabled &&
-          pendingMention != null &&
-          text.includes(`@${pendingMention.name}`) &&
-          pendingMention.agentId !== effectiveHostAgentId
-            ? { mentionAgentId: pendingMention.agentId }
-            : {}),
+              ...(teamConfig.enabled &&
+              pendingMention != null &&
+              text.includes(`@${pendingMention.name}`) &&
+              pendingMention.agentId !== effectiveHostAgentId
+                ? { mentionAgentId: pendingMention.agentId }
+                : {}),
               ...(replySnapshot?.agentId != null ? { mentionAgentId: replySnapshot.agentId } : {}),
             })
             if (!sendRes.started) {
@@ -6481,25 +6727,28 @@ function ComposerV2({
     ],
   )
 
-  const appendAttachments = useCallback((nextAttachments: ComposerAttachment[]) => {
-    let truncated = false
-    let added = 0
-    setAttachments((current) => {
-      const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
-      for (const attachment of nextAttachments) {
-        if (byPath.size >= 20) {
-          truncated = true
-          break
+  const appendAttachments = useCallback(
+    (nextAttachments: ComposerAttachment[]) => {
+      let truncated = false
+      let added = 0
+      setAttachments((current) => {
+        const byPath = new Map(current.map((attachment) => [attachment.path, attachment]))
+        for (const attachment of nextAttachments) {
+          if (byPath.size >= 20) {
+            truncated = true
+            break
+          }
+          if (byPath.has(attachment.path)) continue
+          byPath.set(attachment.path, attachment)
+          added += 1
         }
-        if (byPath.has(attachment.path)) continue
-        byPath.set(attachment.path, attachment)
-        added += 1
-      }
-      return Array.from(byPath.values())
-    })
-    if (truncated) toast.info('单轮最多添加 20 个附件。')
-    return added
-  }, [setAttachments, toast])
+        return Array.from(byPath.values())
+      })
+      if (truncated) toast.info('单轮最多添加 20 个附件。')
+      return added
+    },
+    [setAttachments, toast],
+  )
 
   const handleAddAttachments = useCallback(async () => {
     try {
@@ -6876,7 +7125,8 @@ function ComposerV2({
       // 把 mirror 内的相对偏移映射回 textarea 视口位置（减去 mirror 偏移再加上 textarea 偏移，
       // 并对 textarea 滚动量做修正）
       const left = taRect.left + (markerRect.left - mirrorRect.left) - textarea.scrollLeft
-      const top = taRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop + markerRect.height + 4
+      const top =
+        taRect.top + (markerRect.top - mirrorRect.top) - textarea.scrollTop + markerRect.height + 4
       document.body.removeChild(mirror)
       return { left, top }
     },
@@ -7068,13 +7318,19 @@ function ComposerV2({
     }
 
     // ── ↑↓ input history navigation (only when input is empty or matches a history entry) ──
-    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && !event.shiftKey && !event.ctrlKey && !event.metaKey) {
+    if (
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
+      !event.shiftKey &&
+      !event.ctrlKey &&
+      !event.metaKey
+    ) {
       const history = sentHistoryRef.current
       if (history.length === 0) return // let native cursor movement work
 
       const el = textareaRef.current
       const atStart = el != null && el.selectionStart === 0 && el.selectionEnd === 0
-      const atEnd = el != null && el.selectionStart === el.value.length && el.selectionEnd === el.value.length
+      const atEnd =
+        el != null && el.selectionStart === el.value.length && el.selectionEnd === el.value.length
 
       if (event.key === 'ArrowUp' && atStart) {
         event.preventDefault()
@@ -7200,7 +7456,9 @@ function ComposerV2({
         }
       }),
     ).then((results) => {
-      const updates = results.filter((r): r is { index: number; previewPath: string; previewUrl: string } => r != null)
+      const updates = results.filter(
+        (r): r is { index: number; previewPath: string; previewUrl: string } => r != null,
+      )
       if (updates.length === 0) return
       setAttachments((currentList) =>
         currentList.map((item) => {
@@ -7322,11 +7580,15 @@ function ComposerV2({
 
     const provider =
       providers.find((item) => item.id === agent.providerProfileId) ??
-      getPreferredProvider(providers, { ...readComposerPrefs(), agentId: agent.id }, agent.agentAdapter)
+      getPreferredProvider(
+        providers,
+        { ...readComposerPrefs(), agentId: agent.id },
+        agent.agentAdapter,
+      )
     const model =
       provider != null && isLocalCliProvider(provider)
         ? getProviderDefaultModel(provider)
-        : agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? ''
+        : (agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? '')
     if (provider != null) setSelectedProviderId(provider.id)
     setDraftModelId(model)
     writeComposerPrefs({
@@ -7381,17 +7643,15 @@ function ComposerV2({
         {visibleApprovalRequest && (
           <InlineApprovalRequest
             request={visibleApprovalRequest}
-            {...(
-              onApprovalClose !== undefined
-                ? {
-                    onClose: () =>
-                      onApprovalClose(
-                        visibleApprovalRequest.sessionId,
-                        visibleApprovalRequest.requestId,
-                      ),
-                  }
-                : {}
-            )}
+            {...(onApprovalClose !== undefined
+              ? {
+                  onClose: () =>
+                    onApprovalClose(
+                      visibleApprovalRequest.sessionId,
+                      visibleApprovalRequest.requestId,
+                    ),
+                }
+              : {})}
           />
         )}
         {showTaskQueue && queueVisible && (
@@ -7577,10 +7837,7 @@ function ComposerV2({
             }}
           />
           {textEditMenu != null && (
-            <TextEditContextMenu
-              menu={textEditMenu}
-              onClose={() => setTextEditMenu(null)}
-            />
+            <TextEditContextMenu menu={textEditMenu} onClose={() => setTextEditMenu(null)} />
           )}
           <MentionPopover
             open={mentionOpen && filteredMentionCandidates.length > 0 && teamConfig.enabled}
@@ -7665,9 +7922,7 @@ function ComposerV2({
                 effectiveAgentId
               onChangeTeamConfig({ enabled: true, hostAgentId: fallbackHost, teamId: undefined })
             }}
-            onDisableTeamMode={() =>
-              onChangeTeamConfig({ enabled: false, teamId: undefined })
-            }
+            onDisableTeamMode={() => onChangeTeamConfig({ enabled: false, teamId: undefined })}
             onChangeHost={(agentId) =>
               onChangeTeamConfig({ hostAgentId: agentId, teamId: undefined })
             }
@@ -7743,8 +7998,7 @@ function ComposerV2({
               title={queueVisible ? '隐藏队列' : '显示队列'}
               onClick={() => setQueueVisible((prev) => !prev)}
             >
-              {queueVisible ? '隐藏队列' : '显示队列'} ·{' '}
-              {queuedMessages.length}
+              {queueVisible ? '隐藏队列' : '显示队列'} · {queuedMessages.length}
             </button>
           )}
           <div className="spacer" />
@@ -7775,7 +8029,8 @@ function ComposerV2({
             </div>
           )}
           <span className="composer-hint">
-            <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行 &nbsp;<span className="kbd">⇧Tab</span> 权限 &nbsp;<span className="kbd">↑↓</span> 历史
+            <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行 &nbsp;
+            <span className="kbd">⇧Tab</span> 权限 &nbsp;<span className="kbd">↑↓</span> 历史
           </span>
           <button
             className="btn primary sm composer-send-btn"
@@ -7915,9 +8170,10 @@ function ProjectPicker({
   const isNoProject = activeWorkspaceId != null && noProjectWorkspace?.id === activeWorkspaceId
   const selectedProject = isNoProject
     ? null
-    : workspaces.find((w) => w.id === activeWorkspaceId) ?? null
+    : (workspaces.find((w) => w.id === activeWorkspaceId) ?? null)
 
-  const triggerLabel = selectedProject?.name ?? (isNoProject ? NO_PROJECT_WORKSPACE_NAME : '选择项目')
+  const triggerLabel =
+    selectedProject?.name ?? (isNoProject ? NO_PROJECT_WORKSPACE_NAME : '选择项目')
   const triggerIcon = selectedProject ? (
     <Icons.Folder size={13} />
   ) : isNoProject ? (
@@ -7932,11 +8188,7 @@ function ProjectPicker({
       : '选择项目'
 
   return (
-    <div
-      ref={rootRef}
-      className="composer-select composer-project-picker"
-      title={triggerTitle}
-    >
+    <div ref={rootRef} className="composer-select composer-project-picker" title={triggerTitle}>
       <span className="composer-select-icon">{triggerIcon}</span>
       <button
         type="button"
@@ -8059,9 +8311,11 @@ function AgentPicker({
     }
   }, [open, listTeamDefs])
   useEffect(() => {
-    return window.spark?.on?.('stream:config:changed', (event) => {
-      if (event.scope === 'team' && open) void refreshTeams().catch(() => {})
-    }) ?? (() => {})
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope === 'team' && open) void refreshTeams().catch(() => {})
+      }) ?? (() => {})
+    )
   }, [open, refreshTeams])
 
   const teamMode = teamConfig.enabled
@@ -8082,7 +8336,11 @@ function AgentPicker({
   // - 团队模式 + 已应用某个已保存团队：显示该团队头像
   // - 团队模式 + 临时团队：显示 Host agent 头像
   // 没有自定义头像时保持原来的默认图标（Team / Code / Bot）。
-  const triggerAvatarTarget: { id: string; metadata: Record<string, unknown> | undefined; name: string } | null = (() => {
+  const triggerAvatarTarget: {
+    id: string
+    metadata: Record<string, unknown> | undefined
+    name: string
+  } | null = (() => {
     if (teamMode && activeTeam != null) {
       return { id: activeTeam.id, metadata: activeTeam.metadata, name: activeTeam.name }
     }
@@ -8091,15 +8349,26 @@ function AgentPicker({
     }
     return null
   })()
-  const showTriggerAvatar = triggerAvatarTarget != null && hasCustomAvatar(triggerAvatarTarget.metadata)
+  const showTriggerAvatar =
+    triggerAvatarTarget != null && hasCustomAvatar(triggerAvatarTarget.metadata)
 
   return (
-    <div ref={rootRef} className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : teamMode ? '团队模式' : 'Agent'}>
+    <div
+      ref={rootRef}
+      className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`}
+      title={disabled ? '会话运行中不可切换' : teamMode ? '团队模式' : 'Agent'}
+    >
       <span className="composer-select-icon">
         {showTriggerAvatar && triggerAvatarTarget ? (
           <AvatarImage
             className="composer-agent-picker-avatar"
-            src={resolveAvatarSrc(getAgentAvatarConfig(triggerAvatarTarget.metadata, triggerAvatarTarget.id, triggerAvatarTarget.name))}
+            src={resolveAvatarSrc(
+              getAgentAvatarConfig(
+                triggerAvatarTarget.metadata,
+                triggerAvatarTarget.id,
+                triggerAvatarTarget.name,
+              ),
+            )}
             seed={triggerAvatarTarget.id}
             name={triggerAvatarTarget.name}
             alt={`${triggerAvatarTarget.name} 头像`}
@@ -8123,11 +8392,11 @@ function AgentPicker({
               ? activeTeam != null
                 ? `团队：${activeTeam.name}（主持：${selected?.name ?? '平台管理'}）`
                 : `团队模式（当前对话：${selected?.name ?? '平台管理'}）`
-              : selected?.name ?? '平台管理'
+              : (selected?.name ?? '平台管理')
         }
         onClick={() => setOpen((prev) => !prev)}
       >
-        <span>{activeTeam != null ? activeTeam.name : selected?.name ?? '平台管理'}</span>
+        <span>{activeTeam != null ? activeTeam.name : (selected?.name ?? '平台管理')}</span>
         <Icons.ChevronDown size={12} />
       </button>
       {teamMode && (
@@ -8201,7 +8470,9 @@ function AgentPicker({
                         {teamHasAvatar ? (
                           <AvatarImage
                             className="composer-menu-avatar"
-                            src={resolveAvatarSrc(getAgentAvatarConfig(team.metadata, team.id, team.name))}
+                            src={resolveAvatarSrc(
+                              getAgentAvatarConfig(team.metadata, team.id, team.name),
+                            )}
                             seed={team.id}
                             name={team.name}
                             alt={`${team.name} 头像`}
@@ -8215,9 +8486,7 @@ function AgentPicker({
                       <span className="composer-menu-item-desc">
                         {host ? `主持：${host.name}` : ''}
                         {host && team.memberAgentIds.length > 0 ? ' · ' : ''}
-                        {team.memberAgentIds.length > 0
-                          ? `${team.memberAgentIds.length} 成员`
-                          : ''}
+                        {team.memberAgentIds.length > 0 ? `${team.memberAgentIds.length} 成员` : ''}
                       </span>
                     </span>
                     {active && <Icons.Check size={14} />}
@@ -8227,44 +8496,48 @@ function AgentPicker({
             </>
           )}
           <div className="composer-menu-divider" />
-          <div className="composer-menu-group-title">{teamMode ? '当前对话 Agent' : '选择 Agent'}</div>
+          <div className="composer-menu-group-title">
+            {teamMode ? '当前对话 Agent' : '选择 Agent'}
+          </div>
           {agents.map((agent) => {
             const agentHasAvatar = hasCustomAvatar(agent.metadata)
             return (
-            <button
-              key={agent.id}
-              type="button"
-              className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
-              onClick={() => {
-                setOpen(false)
-                if (teamMode) onChangeHost(agent.id)
-                else void onChange(agent.id)
-              }}
-            >
-              <span className="composer-menu-item-copy">
-                <span className="composer-menu-item-label">
-                  {agentHasAvatar ? (
-                    <AvatarImage
-                      className="composer-menu-avatar"
-                      src={resolveAvatarSrc(getAgentAvatarConfig(agent.metadata, agent.id, agent.name))}
-                      seed={agent.id}
-                      name={agent.name}
-                      alt={`${agent.name} 头像`}
-                    />
-                  ) : agent.builtIn ? (
-                    <Icons.Code size={13} />
-                  ) : (
-                    <Icons.Bot size={13} />
+              <button
+                key={agent.id}
+                type="button"
+                className={`composer-menu-item ${agent.id === selected?.id ? 'active' : ''}`}
+                onClick={() => {
+                  setOpen(false)
+                  if (teamMode) onChangeHost(agent.id)
+                  else void onChange(agent.id)
+                }}
+              >
+                <span className="composer-menu-item-copy">
+                  <span className="composer-menu-item-label">
+                    {agentHasAvatar ? (
+                      <AvatarImage
+                        className="composer-menu-avatar"
+                        src={resolveAvatarSrc(
+                          getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
+                        )}
+                        seed={agent.id}
+                        name={agent.name}
+                        alt={`${agent.name} 头像`}
+                      />
+                    ) : agent.builtIn ? (
+                      <Icons.Code size={13} />
+                    ) : (
+                      <Icons.Bot size={13} />
+                    )}
+                    <span>{agent.name}</span>
+                  </span>
+                  {agent.description && (
+                    <span className="composer-menu-item-desc">{agent.description}</span>
                   )}
-                  <span>{agent.name}</span>
                 </span>
-                {agent.description && (
-                  <span className="composer-menu-item-desc">{agent.description}</span>
-                )}
-              </span>
-              {agent.workflowId && <Icons.Workflow size={13} />}
-              {agent.id === selected?.id && <Icons.Check size={14} />}
-            </button>
+                {agent.workflowId && <Icons.Workflow size={13} />}
+                {agent.id === selected?.id && <Icons.Check size={14} />}
+              </button>
             )
           })}
         </div>
@@ -8290,33 +8563,53 @@ function ProviderModelPicker({
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
-  useCloseOnOutside(rootRef, () => setOpen(false), open)
+  const [placement, setPlacement] = useState<'topLeft' | 'topRight'>('topLeft')
   const selectedProvider =
     providers.find((provider) => provider.id === selectedProviderId) ?? providers[0]
   const label = getModelDisplayLabel(selectedProvider, selectedModelId)
   const selectedVendor = resolveProviderVendor(selectedProvider)
 
+  useLayoutEffect(() => {
+    if (!open) return
+    const root = rootRef.current
+    if (root == null || typeof window === 'undefined') return
+
+    const updatePlacement = () => {
+      const viewportWidth = window.innerWidth
+      const gutter = 12
+      const rootRect = root.getBoundingClientRect()
+      const estimatedMenuWidth = Math.min(220, Math.max(158, viewportWidth - gutter * 2))
+      const availableLeft = rootRect.right - gutter
+      const availableRight = viewportWidth - rootRect.left - gutter
+      setPlacement(
+        availableRight >= estimatedMenuWidth || availableRight >= availableLeft
+          ? 'topLeft'
+          : 'topRight',
+      )
+    }
+
+    updatePlacement()
+    window.addEventListener('resize', updatePlacement)
+    return () => {
+      window.removeEventListener('resize', updatePlacement)
+    }
+  }, [open])
+
   return (
-    <div ref={rootRef} className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`} title={disabled ? '会话运行中不可切换' : '供应商模型'}>
-      <span className="composer-select-icon">
-        {selectedVendor ? (
-          <ProviderLogo vendor={selectedVendor} size={18} shape="rounded" />
-        ) : (
-          icon
-        )}
-      </span>
-      <button
-        type="button"
-        className="composer-select-trigger"
-        disabled={disabled || providers.length === 0}
-        title={disabled ? '会话运行中不可切换' : undefined}
-        onClick={() => setOpen((prev) => !prev)}
-      >
-        <span>{label}</span>
-        <Icons.ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className="composer-menu composer-model-menu">
+    <Dropdown
+      menu={{ items: [] }}
+      open={open}
+      trigger={['click']}
+      placement={placement}
+      onOpenChange={(nextOpen) => {
+        if (disabled || providers.length === 0) {
+          setOpen(false)
+          return
+        }
+        setOpen(nextOpen)
+      }}
+      popupRender={() => (
+        <div className="composer-dropdown-menu composer-model-menu">
           {providers.length === 0 && <div className="composer-menu-empty">未配置</div>}
           {providers.map((provider) => {
             const models = provider.modelIds.length
@@ -8357,7 +8650,26 @@ function ProviderModelPicker({
           })}
         </div>
       )}
-    </div>
+    >
+      <div
+        ref={rootRef}
+        className={`composer-select composer-model-picker${disabled ? ' is-disabled' : ''}`}
+        title={disabled ? '会话运行中不可切换' : '供应商模型'}
+      >
+        <span className="composer-select-icon">
+          {selectedVendor ? <ProviderLogo vendor={selectedVendor} size={18} shape="rounded" /> : icon}
+        </span>
+        <button
+          type="button"
+          className="composer-select-trigger"
+          disabled={disabled || providers.length === 0}
+          title={disabled ? '会话运行中不可切换' : undefined}
+        >
+          <span>{label}</span>
+          <Icons.ChevronDown size={12} />
+        </button>
+      </div>
+    </Dropdown>
   )
 }
 
@@ -8449,22 +8761,21 @@ const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: Permis
     },
   ]
 
-const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> =
-  [
-    { value: 'codex-default', label: 'Default', description: '使用 Codex CLI 默认权限策略' },
-    {
-      value: 'codex-auto-review',
-      label: 'Auto review',
-      description: '允许自动读写，保留关键确认',
-      tone: 'auto',
-    },
-    {
-      value: 'codex-full-access',
-      label: 'Full access',
-      description: '危险：Codex CLI 完全访问',
-      tone: 'danger',
-    },
-  ]
+const CODEX_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption & { value: PermissionModeChoice }> = [
+  { value: 'codex-default', label: 'Default', description: '使用 Codex CLI 默认权限策略' },
+  {
+    value: 'codex-auto-review',
+    label: 'Auto review',
+    description: '允许自动读写，保留关键确认',
+    tone: 'auto',
+  },
+  {
+    value: 'codex-full-access',
+    label: 'Full access',
+    description: '危险：Codex CLI 完全访问',
+    tone: 'danger',
+  },
+]
 
 const IMAGE_ATTACHMENT_EXTENSIONS = new Set([
   'png',
@@ -8531,7 +8842,8 @@ function ComposerImageCard({
 }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null)
   const [imgError, setImgError] = useState(false)
-  const resolvedSrc = attachment.previewUrl ?? resolveComposerImageSrc(attachment.previewPath ?? attachment.path)
+  const resolvedSrc =
+    attachment.previewUrl ?? resolveComposerImageSrc(attachment.previewPath ?? attachment.path)
 
   useEffect(() => {
     setImgError(false)
@@ -9086,7 +9398,9 @@ function ChatConfigPanel({
     try {
       const res = await listAllSkills({})
       setAllSkills(res.skills ?? [])
-    } catch { /* non-critical */ }
+    } catch {
+      /* non-critical */
+    }
   }, [listAllSkills])
 
   useEffect(() => {
@@ -9101,7 +9415,9 @@ function ChatConfigPanel({
   }, [loadRuntimeConfig, sessionId])
 
   // 首次渲染时加载全量 skills
-  useEffect(() => { void loadAllSkills() }, [loadAllSkills])
+  useEffect(() => {
+    void loadAllSkills()
+  }, [loadAllSkills])
 
   useEffect(() => {
     if (sessionId == null) {
@@ -9218,180 +9534,216 @@ function ChatConfigPanel({
         onPointerCancel={handleResizeEnd}
       />
       <div className="inspector scroll">
-
-      {/* Skills — 显示本次会话可用的所有 skills（agent 配置 + 会话额外添加） */}
-      {session != null && skillConfig != null && (() => {
-        const agentSkillSet = new Set(skillConfig.agentSkillIds)
-        const effectiveSet = new Set(skillConfig.effectiveSkillIds)
-        const visibleSkills = skillConfig.skills.filter((s) => effectiveSet.has(s.id))
-        // Picker 中可选的 skills = 全量 skills 中尚未在 effective 中的
-        const pickerSkills = allSkills.filter((s) => !effectiveSet.has(s.id))
-        return (
-          <div className="inspector-section">
-            <h4 className="config-panel-header" onClick={() => setSkillsCollapsed(!skillsCollapsed)}>
-              <Icons.Skills size={11} />
-              Skills
-              <span className="inspector-count">{visibleSkills.length}</span>
-              <span className="spacer" />
-              {!skillsCollapsed && (
-                <button
-                  type="button"
-                  className="btn ghost sm"
-                  style={{ fontSize: 10, padding: '2px 8px', marginRight: 4 }}
-                  onClick={(e) => { e.stopPropagation(); setShowSkillPicker(true) }}
-                  title="为本次会话添加额外 Skill"
+        {/* Skills — 显示本次会话可用的所有 skills（agent 配置 + 会话额外添加） */}
+        {session != null &&
+          skillConfig != null &&
+          (() => {
+            const agentSkillSet = new Set(skillConfig.agentSkillIds)
+            const effectiveSet = new Set(skillConfig.effectiveSkillIds)
+            const visibleSkills = skillConfig.skills.filter((s) => effectiveSet.has(s.id))
+            // Picker 中可选的 skills = 全量 skills 中尚未在 effective 中的
+            const pickerSkills = allSkills.filter((s) => !effectiveSet.has(s.id))
+            return (
+              <div className="inspector-section">
+                <h4
+                  className="config-panel-header"
+                  onClick={() => setSkillsCollapsed(!skillsCollapsed)}
                 >
-                  <Icons.Plus size={10} /> 添加
-                </button>
-              )}
-              <Icons.ChevronRight
-                size={10}
-                className={`chev ${skillsCollapsed ? '' : 'chev-open'}`}
-              />
-            </h4>
-            {!skillsCollapsed && (
-              <>
-                <div className="runtime-skill-list">
-                  {visibleSkills.map((skill) => {
-                    const isAgentSkill = agentSkillSet.has(skill.id)
-                    const meta = parseSkillManifest(skill.manifestJson)
-                    return (
-                      <div className="runtime-skill-row" key={skill.id}>
-                        <div className="runtime-skill-main min-w-0">
-                          <div className="runtime-skill-name truncate">
-                            {skill.name}
-                            {isAgentSkill && (
-                              <span style={{ display:'inline-block', marginLeft:4, padding:'0 4px', borderRadius:4, fontSize:9, fontWeight:700, lineHeight:'16px', background:'var(--primary-soft)', color:'var(--primary)' }} title="来自 Agent 配置">A</span>
+                  <Icons.Skills size={11} />
+                  Skills
+                  <span className="inspector-count">{visibleSkills.length}</span>
+                  <span className="spacer" />
+                  {!skillsCollapsed && (
+                    <button
+                      type="button"
+                      className="btn ghost sm"
+                      style={{ fontSize: 10, padding: '2px 8px', marginRight: 4 }}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        setShowSkillPicker(true)
+                      }}
+                      title="为本次会话添加额外 Skill"
+                    >
+                      <Icons.Plus size={10} /> 添加
+                    </button>
+                  )}
+                  <Icons.ChevronRight
+                    size={10}
+                    className={`chev ${skillsCollapsed ? '' : 'chev-open'}`}
+                  />
+                </h4>
+                {!skillsCollapsed && (
+                  <>
+                    <div className="runtime-skill-list">
+                      {visibleSkills.map((skill) => {
+                        const isAgentSkill = agentSkillSet.has(skill.id)
+                        const meta = parseSkillManifest(skill.manifestJson)
+                        return (
+                          <div className="runtime-skill-row" key={skill.id}>
+                            <div className="runtime-skill-main min-w-0">
+                              <div className="runtime-skill-name truncate">
+                                {skill.name}
+                                {isAgentSkill && (
+                                  <span
+                                    style={{
+                                      display: 'inline-block',
+                                      marginLeft: 4,
+                                      padding: '0 4px',
+                                      borderRadius: 4,
+                                      fontSize: 9,
+                                      fontWeight: 700,
+                                      lineHeight: '16px',
+                                      background: 'var(--primary-soft)',
+                                      color: 'var(--primary)',
+                                    }}
+                                    title="来自 Agent 配置"
+                                  >
+                                    A
+                                  </span>
+                                )}
+                              </div>
+                              <div className="runtime-skill-desc truncate">
+                                {meta.source}
+                                {meta.desc ? ` · ${meta.desc}` : ''}
+                              </div>
+                            </div>
+                            {/* 会话级额外添加的 skill 可移除（× 按钮） */}
+                            {!isAgentSkill && sessionId != null && (
+                              <button
+                                type="button"
+                                className="btn ghost sm"
+                                style={{
+                                  padding: '0 4px',
+                                  minWidth: 20,
+                                  fontSize: 11,
+                                  lineHeight: '18px',
+                                  color: 'var(--text-muted)',
+                                }}
+                                title="从本次会话移除此 Skill"
+                                disabled={savingRuntime}
+                                onClick={() =>
+                                  void toggleRuntimeSkill('session', sessionId, skill.id, false)
+                                }
+                              >
+                                ×
+                              </button>
                             )}
                           </div>
-                          <div className="runtime-skill-desc truncate">
-                            {meta.source}{meta.desc ? ` · ${meta.desc}` : ''}
-                          </div>
+                        )
+                      })}
+                      {visibleSkills.length === 0 && (
+                        <div
+                          className="runtime-skill-empty"
+                          style={{ color: 'var(--text-muted)', fontSize: 11, padding: '8px 0' }}
+                        >
+                          当前 Agent 尚未配置 Skill，点击「添加」为会话补充
                         </div>
-                        {/* 会话级额外添加的 skill 可移除（× 按钮） */}
-                        {!isAgentSkill && sessionId != null && (
-                          <button
-                            type="button"
-                            className="btn ghost sm"
-                            style={{ padding: '0 4px', minWidth: 20, fontSize: 11, lineHeight: '18px', color: 'var(--text-muted)' }}
-                            title="从本次会话移除此 Skill"
-                            disabled={savingRuntime}
-                            onClick={() => void toggleRuntimeSkill('session', sessionId, skill.id, false)}
-                          >
-                            ×
-                          </button>
-                        )}
-                      </div>
-                    )
-                  })}
-                  {visibleSkills.length === 0 && (
-                    <div className="runtime-skill-empty" style={{ color: 'var(--text-muted)', fontSize: 11, padding: '8px 0' }}>
-                      当前 Agent 尚未配置 Skill，点击「添加」为会话补充
+                      )}
                     </div>
-                  )}
-                </div>
-                <div className="inspector-muted runtime-hint">
-                  {visibleSkills.length > 0
-                    ? 'A = Agent 配置；点击「添加」为本会话补充额外 Skill'
-                    : '在 Agent 管理中配置 Skills，或点击「添加」为本会话补充'}
-                </div>
+                    <div className="inspector-muted runtime-hint">
+                      {visibleSkills.length > 0
+                        ? 'A = Agent 配置；点击「添加」为本会话补充额外 Skill'
+                        : '在 Agent 管理中配置 Skills，或点击「添加」为本会话补充'}
+                    </div>
+                  </>
+                )}
+                <SkillsPickerModal
+                  visible={showSkillPicker}
+                  skills={pickerSkills.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled }))}
+                  selectedIds={[]}
+                  onChange={(ids) => {
+                    setShowSkillPicker(false)
+                    if (ids.length > 0) void handleAddSessionSkills(ids)
+                  }}
+                  onClose={() => setShowSkillPicker(false)}
+                />
+              </div>
+            )
+          })()}
+
+        {/* 提示词 */}
+        {session != null && promptConfig != null && (
+          <div className="inspector-section">
+            <h4
+              className="config-panel-header"
+              onClick={() => setPromptsCollapsed(!promptsCollapsed)}
+            >
+              <Icons.Edit size={11} />
+              提示词
+              <span className="spacer" />
+              <Icons.ChevronRight
+                size={10}
+                className={`chev ${promptsCollapsed ? '' : 'chev-open'}`}
+              />
+            </h4>
+            {!promptsCollapsed && (
+              <>
+                {workspaceId != null && (
+                  <div className="runtime-prompt-block">
+                    <div className="runtime-prompt-title">项目提示词</div>
+                    <textarea
+                      className="spark-textarea inspector-textarea"
+                      value={projectPromptDraft}
+                      onChange={(event) => setProjectPromptDraft(event.target.value)}
+                      placeholder="当前项目会话通用提示词..."
+                    />
+                    <button
+                      className="btn ghost sm runtime-save-btn"
+                      disabled={savingRuntime}
+                      onClick={() =>
+                        void savePromptLayer('project', workspaceId, projectPromptDraft)
+                      }
+                    >
+                      保存项目
+                    </button>
+                  </div>
+                )}
+                {sessionId != null && (
+                  <div className="runtime-prompt-block">
+                    <div className="runtime-prompt-title">会话提示词</div>
+                    <textarea
+                      className="spark-textarea inspector-textarea"
+                      value={sessionPromptDraft}
+                      onChange={(event) => setSessionPromptDraft(event.target.value)}
+                      placeholder="仅对当前会话生效..."
+                    />
+                    <button
+                      className="btn ghost sm runtime-save-btn"
+                      disabled={savingRuntime}
+                      onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
+                    >
+                      保存会话
+                    </button>
+                  </div>
+                )}
               </>
             )}
-            <SkillsPickerModal
-              visible={showSkillPicker}
-              skills={pickerSkills.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled }))}
-              selectedIds={[]}
-              onChange={(ids) => {
-                setShowSkillPicker(false)
-                if (ids.length > 0) void handleAddSessionSkills(ids)
-              }}
-              onClose={() => setShowSkillPicker(false)}
-            />
-          </div>
-        )
-      })()}
-
-      {/* 提示词 */}
-      {session != null && promptConfig != null && (
-        <div className="inspector-section">
-          <h4
-            className="config-panel-header"
-            onClick={() => setPromptsCollapsed(!promptsCollapsed)}
-          >
-            <Icons.Edit size={11} />
-            提示词
-            <span className="spacer" />
-            <Icons.ChevronRight
-              size={10}
-              className={`chev ${promptsCollapsed ? '' : 'chev-open'}`}
-            />
-          </h4>
-          {!promptsCollapsed && (
-            <>
-              {workspaceId != null && (
-                <div className="runtime-prompt-block">
-                  <div className="runtime-prompt-title">项目提示词</div>
-                  <textarea
-                    className="spark-textarea inspector-textarea"
-                    value={projectPromptDraft}
-                    onChange={(event) => setProjectPromptDraft(event.target.value)}
-                    placeholder="当前项目会话通用提示词..."
-                  />
-                  <button
-                    className="btn ghost sm runtime-save-btn"
-                    disabled={savingRuntime}
-                    onClick={() => void savePromptLayer('project', workspaceId, projectPromptDraft)}
-                  >
-                    保存项目
-                  </button>
-                </div>
-              )}
-              {sessionId != null && (
-                <div className="runtime-prompt-block">
-                  <div className="runtime-prompt-title">会话提示词</div>
-                  <textarea
-                    className="spark-textarea inspector-textarea"
-                    value={sessionPromptDraft}
-                    onChange={(event) => setSessionPromptDraft(event.target.value)}
-                    placeholder="仅对当前会话生效..."
-                  />
-                  <button
-                    className="btn ghost sm runtime-save-btn"
-                    disabled={savingRuntime}
-                    onClick={() => void savePromptLayer('session', sessionId, sessionPromptDraft)}
-                  >
-                    保存会话
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-
-      {/* 可用工具 */}
-      <div className="inspector-section">
-        <h4 className="config-panel-header" onClick={() => setToolsCollapsed(!toolsCollapsed)}>
-          <Icons.Wrench size={11} />
-          可用工具
-          <span className="inspector-count">{CODING_AGENT_TOOLS.length}</span>
-          <Icons.ChevronRight size={10} className={`chev ${toolsCollapsed ? '' : 'chev-open'}`} />
-        </h4>
-        {!toolsCollapsed && (
-          <div className="tool-chip-list">
-            {CODING_AGENT_TOOLS.map((tool) => (
-              <span
-                key={tool.name}
-                className="tool-chip"
-                title={`${tool.group} · ${tool.status === 'built-in' ? '内置' : '扩展接入'}`}
-              >
-                <Icons.Wrench />
-                {tool.name}
-              </span>
-            ))}
           </div>
         )}
-      </div>
+
+        {/* 可用工具 */}
+        <div className="inspector-section">
+          <h4 className="config-panel-header" onClick={() => setToolsCollapsed(!toolsCollapsed)}>
+            <Icons.Wrench size={11} />
+            可用工具
+            <span className="inspector-count">{CODING_AGENT_TOOLS.length}</span>
+            <Icons.ChevronRight size={10} className={`chev ${toolsCollapsed ? '' : 'chev-open'}`} />
+          </h4>
+          {!toolsCollapsed && (
+            <div className="tool-chip-list">
+              {CODING_AGENT_TOOLS.map((tool) => (
+                <span
+                  key={tool.name}
+                  className="tool-chip"
+                  title={`${tool.group} · ${tool.status === 'built-in' ? '内置' : '扩展接入'}`}
+                >
+                  <Icons.Wrench />
+                  {tool.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
@@ -9480,273 +9832,277 @@ function ChatInspector({
         onPointerCancel={handleResizeEnd}
       />
       <div className="inspector scroll">
-      {teamConfig.enabled && (
-        <TeamInspectorSection
-          config={teamConfig}
-          agents={agents.map((a) => ({
-            id: a.id,
-            name: a.name,
-            description: a.description,
-            builtIn: a.builtIn,
-            providerProfileId: a.providerProfileId ?? null,
-            modelId: a.modelId ?? null,
-            skillCount: a.skillIds.length,
-            mcpCount: a.mcpServerIds.length,
-            metadata: a.metadata,
-          }))}
-          runningAgentIds={runningTeamAgentIds}
-          onToggleMember={(agentId, enabled) =>
-            onChangeTeamConfig({
-              memberAgentIds: enabled
-                ? [...teamConfig.memberAgentIds, agentId]
-                : teamConfig.memberAgentIds.filter((id) => id !== agentId),
-            })
-          }
-          onChangeConfig={onChangeTeamConfig}
-        />
-      )}
-      <div className="inspector-section">
-        <h4>会话信息</h4>
-        {session ? (
-          <>
-            <div className="kv-row">
-              <span className="k">ID</span>
-              <span className="v mono-sm inspector-v-id">
-                {(session.id as string).slice(0, 16)}…
-              </span>
-            </div>
-            <div className="kv-row">
-              <span className="k">状态</span>
-              <span className="v">{session.status}</span>
-            </div>
-            <div className="kv-row">
-              <span className="k">消息数</span>
-              <span className="v">{session.messageCount}</span>
-            </div>
-            <div className="kv-row">
-              <span className="k">项目</span>
-              <span className="v truncate">{workspace?.name ?? '未归属'}</span>
-            </div>
-            {workspace && (
-              <div className="kv-row">
-                <span className="k">路径</span>
-                <span className="v mono-sm truncate inspector-path" title={workspace.rootPath}>
-                  {workspace.rootPath}
-                </span>
-              </div>
-            )}
-            {workspace && (
-              <button
-                className="btn ghost sm inspector-open-folder-btn"
-                onClick={onOpenProjectFolder}
-              >
-                <Icons.Folder size={12} />
-                <span>打开文件夹</span>
-              </button>
-            )}
-            <div className="kv-row">
-              <span className="k">创建时间</span>
-              <span className="v">{new Date(session.createdAt).toLocaleString()}</span>
-            </div>
-            <div className="kv-row">
-              <span className="k">更新时间</span>
-              <span className="v">{new Date(session.updatedAt).toLocaleString()}</span>
-            </div>
-          </>
-        ) : (
-          <div className="inspector-muted">未选择会话</div>
+        {teamConfig.enabled && (
+          <TeamInspectorSection
+            config={teamConfig}
+            agents={agents.map((a) => ({
+              id: a.id,
+              name: a.name,
+              description: a.description,
+              builtIn: a.builtIn,
+              providerProfileId: a.providerProfileId ?? null,
+              modelId: a.modelId ?? null,
+              skillCount: a.skillIds.length,
+              mcpCount: a.mcpServerIds.length,
+              metadata: a.metadata,
+            }))}
+            runningAgentIds={runningTeamAgentIds}
+            onToggleMember={(agentId, enabled) =>
+              onChangeTeamConfig({
+                memberAgentIds: enabled
+                  ? [...teamConfig.memberAgentIds, agentId]
+                  : teamConfig.memberAgentIds.filter((id) => id !== agentId),
+              })
+            }
+            onChangeConfig={onChangeTeamConfig}
+          />
         )}
-      </div>
-
-      {workspace && (
         <div className="inspector-section">
-          <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />
-        </div>
-      )}
-
-      {inspectorTasks.length > 0 && (
-        <div className="inspector-section">
-          <h4>
-            <Icons.CheckSquare size={11} /> 任务
-            <span className="inspector-count">{inspectorTasks.length}</span>
-          </h4>
-          <TaskListSection tasks={inspectorTasks} />
-        </div>
-      )}
-
-      {plans.length > 0 && (
-        <div className="inspector-section">
-          <h4>计划</h4>
-          {plans.map((plan) => (
-            <PlanSummary key={plan.id} plan={plan} />
-          ))}
-        </div>
-      )}
-
-      {session != null && projectContext != null && (
-        <div className="inspector-section">
-          <h4>
-            项目上下文
-            <span className="inspector-count">{projectContextSources.length}</span>
-          </h4>
-          <div className="kv-row">
-            <span className="k">规则</span>
-            <span className="v">{projectContext.counts.rules}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Skills</span>
-            <span className="v">{projectContext.counts.skills}</span>
-          </div>
-          <div className="kv-row">
-            <span className="k">Agents</span>
-            <span className="v">{projectContext.counts.agents}</span>
-          </div>
-          {projectContext.budget != null && (
+          <h4>会话信息</h4>
+          {session ? (
             <>
               <div className="kv-row">
-                <span className="k">模式</span>
-                <span className="v">{projectContext.budget.mode}</span>
-              </div>
-              <div className="kv-row">
-                <span className="k">预算</span>
-                <span className="v">
-                  {formatTokenCount(projectContext.budget.usedTokens)} /{' '}
-                  {formatTokenCount(projectContext.budget.budgetTokens)}
+                <span className="k">ID</span>
+                <span className="v mono-sm inspector-v-id">
+                  {(session.id as string).slice(0, 16)}…
                 </span>
               </div>
-            </>
-          )}
-          {projectContextSources.length > 0 ? (
-            <div className="runtime-skill-list">
-              {projectContextSources.map((source) => (
-                <div
-                  className={`runtime-skill-row ${source.included === false ? 'disabled' : ''}`}
-                  key={`${source.kind}:${source.path}`}
+              <div className="kv-row">
+                <span className="k">状态</span>
+                <span className="v">{session.status}</span>
+              </div>
+              <div className="kv-row">
+                <span className="k">消息数</span>
+                <span className="v">{session.messageCount}</span>
+              </div>
+              <div className="kv-row">
+                <span className="k">项目</span>
+                <span className="v truncate">{workspace?.name ?? '未归属'}</span>
+              </div>
+              {workspace && (
+                <div className="kv-row">
+                  <span className="k">路径</span>
+                  <span className="v mono-sm truncate inspector-path" title={workspace.rootPath}>
+                    {workspace.rootPath}
+                  </span>
+                </div>
+              )}
+              {workspace && (
+                <button
+                  className="btn ghost sm inspector-open-folder-btn"
+                  onClick={onOpenProjectFolder}
                 >
+                  <Icons.Folder size={12} />
+                  <span>打开文件夹</span>
+                </button>
+              )}
+              <div className="kv-row">
+                <span className="k">创建时间</span>
+                <span className="v">{new Date(session.createdAt).toLocaleString()}</span>
+              </div>
+              <div className="kv-row">
+                <span className="k">更新时间</span>
+                <span className="v">{new Date(session.updatedAt).toLocaleString()}</span>
+              </div>
+            </>
+          ) : (
+            <div className="inspector-muted">未选择会话</div>
+          )}
+        </div>
+
+        {workspace && (
+          <div className="inspector-section">
+            <WorktreePanel workspaceId={workspace.id} sessionId={session?.id ?? null} />
+          </div>
+        )}
+
+        {inspectorTasks.length > 0 && (
+          <div className="inspector-section">
+            <h4>
+              <Icons.CheckSquare size={11} /> 任务
+              <span className="inspector-count">{inspectorTasks.length}</span>
+            </h4>
+            <TaskListSection tasks={inspectorTasks} />
+          </div>
+        )}
+
+        {plans.length > 0 && (
+          <div className="inspector-section">
+            <h4>计划</h4>
+            {plans.map((plan) => (
+              <PlanSummary key={plan.id} plan={plan} />
+            ))}
+          </div>
+        )}
+
+        {session != null && projectContext != null && (
+          <div className="inspector-section">
+            <h4>
+              项目上下文
+              <span className="inspector-count">{projectContextSources.length}</span>
+            </h4>
+            <div className="kv-row">
+              <span className="k">规则</span>
+              <span className="v">{projectContext.counts.rules}</span>
+            </div>
+            <div className="kv-row">
+              <span className="k">Skills</span>
+              <span className="v">{projectContext.counts.skills}</span>
+            </div>
+            <div className="kv-row">
+              <span className="k">Agents</span>
+              <span className="v">{projectContext.counts.agents}</span>
+            </div>
+            {projectContext.budget != null && (
+              <>
+                <div className="kv-row">
+                  <span className="k">模式</span>
+                  <span className="v">{projectContext.budget.mode}</span>
+                </div>
+                <div className="kv-row">
+                  <span className="k">预算</span>
+                  <span className="v">
+                    {formatTokenCount(projectContext.budget.usedTokens)} /{' '}
+                    {formatTokenCount(projectContext.budget.budgetTokens)}
+                  </span>
+                </div>
+              </>
+            )}
+            {projectContextSources.length > 0 ? (
+              <div className="runtime-skill-list">
+                {projectContextSources.map((source) => (
+                  <div
+                    className={`runtime-skill-row ${source.included === false ? 'disabled' : ''}`}
+                    key={`${source.kind}:${source.path}`}
+                  >
+                    <div className="runtime-skill-main min-w-0">
+                      <div className="runtime-skill-name truncate">{source.name}</div>
+                      <div className="runtime-skill-desc truncate">
+                        {source.kind} · {source.path}
+                        {source.estimatedTokens != null
+                          ? ` · ${formatTokenCount(source.estimatedTokens)}`
+                          : ''}
+                        {source.included === false ? ' · excluded' : ''}
+                        {source.truncated ? ' · truncated' : ''}
+                        {source.reason != null ? ` · ${source.reason}` : ''}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
+            )}
+          </div>
+        )}
+
+        {fileChangeSummaries.length > 0 && (
+          <div className="inspector-section">
+            <h4>
+              Change Review
+              <span className="inspector-count">{fileChangeSummaries.length}</span>
+            </h4>
+            <div className="runtime-skill-list">
+              {fileChangeSummaries.map((change) => (
+                <div className="runtime-skill-row" key={change.id}>
                   <div className="runtime-skill-main min-w-0">
-                    <div className="runtime-skill-name truncate">{source.name}</div>
+                    <div className="runtime-skill-name truncate">{change.path}</div>
                     <div className="runtime-skill-desc truncate">
-                      {source.kind} · {source.path}
-                      {source.estimatedTokens != null
-                        ? ` · ${formatTokenCount(source.estimatedTokens)}`
+                      {change.changeType} · +{change.adds} -{change.dels}
+                      {!change.hasDiff ? ' · no diff' : ''}
+                      {change.checkpointIds.length > 0
+                        ? ` · checkpoint ${change.checkpointIds.join(', ')}`
                         : ''}
-                      {source.included === false ? ' · excluded' : ''}
-                      {source.truncated ? ' · truncated' : ''}
-                      {source.reason != null ? ` · ${source.reason}` : ''}
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="inspector-muted">本轮未发现项目级规则、skills 或 agents。</div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
 
-      {fileChangeSummaries.length > 0 && (
-        <div className="inspector-section">
-          <h4>
-            Change Review
-            <span className="inspector-count">{fileChangeSummaries.length}</span>
-          </h4>
-          <div className="runtime-skill-list">
-            {fileChangeSummaries.map((change) => (
-              <div className="runtime-skill-row" key={change.id}>
-                <div className="runtime-skill-main min-w-0">
-                  <div className="runtime-skill-name truncate">{change.path}</div>
-                  <div className="runtime-skill-desc truncate">
-                    {change.changeType} · +{change.adds} -{change.dels}
-                    {!change.hasDiff ? ' · no diff' : ''}
-                    {change.checkpointIds.length > 0
-                      ? ` · checkpoint ${change.checkpointIds.join(', ')}`
-                      : ''}
+        {subagents.length > 0 && (
+          <div className="inspector-section">
+            <h4>
+              <Icons.Bot size={11} /> 子 Agent
+              <span className="inspector-count">{subagents.length}</span>
+            </h4>
+            <div className="runtime-skill-list">
+              {subagents.map((sa, idx) => (
+                <div
+                  className={`runtime-skill-row${sa.status === 'running' ? ' running' : ''}`}
+                  key={`${sa.toolCallId}-${idx}`}
+                  title={sa.output ? '点击查看输出' : undefined}
+                  style={sa.output ? { cursor: 'pointer' } : undefined}
+                >
+                  <div className="runtime-skill-main min-w-0">
+                    <div className="runtime-skill-name truncate">
+                      {sa.status === 'running' ? (
+                        <Icons.Spinner size={10} className="thinking-spinner" />
+                      ) : (
+                        <Icons.Check size={10} style={{ color: 'var(--c-ok, #22c55e)' }} />
+                      )}{' '}
+                      {sa.name}
+                    </div>
+                    <div className="runtime-skill-desc truncate">{sa.task || sa.role || '-'}</div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {subagents.length > 0 && (
+        {/* Token Usage Section */}
         <div className="inspector-section">
           <h4>
-            <Icons.Bot size={11} /> 子 Agent
-            <span className="inspector-count">{subagents.length}</span>
+            <Icons.Cpu size={11} /> Token 用量
           </h4>
-          <div className="runtime-skill-list">
-            {subagents.map((sa, idx) => (
-              <div
-                className={`runtime-skill-row${sa.status === 'running' ? ' running' : ''}`}
-                key={`${sa.toolCallId}-${idx}`}
-                title={sa.output ? '点击查看输出' : undefined}
-                style={sa.output ? { cursor: 'pointer' } : undefined}
-              >
-                <div className="runtime-skill-main min-w-0">
-                  <div className="runtime-skill-name truncate">
-                    {sa.status === 'running' ? <Icons.Spinner size={10} className="thinking-spinner" /> : <Icons.Check size={10} style={{ color: 'var(--c-ok, #22c55e)' }} />}
-                    {' '}{sa.name}
-                  </div>
-                  <div className="runtime-skill-desc truncate">
-                    {sa.task || sa.role || '-'}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Token Usage Section */}
-      <div className="inspector-section">
-        <h4>
-          <Icons.Cpu size={11} /> Token 用量
-        </h4>
-        <TokenUsagePanel
-          inputTokens={usageData.inputTokens}
-          outputTokens={usageData.outputTokens}
-          totalTokens={usageData.inputTokens + usageData.outputTokens}
-          cacheHitTokens={usageData.cacheHitTokens}
-          estimatedCostUsd={usageData.estimatedCostUsd}
-        />
-      </div>
-
-      {/* Context Window Section — 仅在已知上下文窗口大小时展示 */}
-      {contextWindow > 0 && (
-        <div className="inspector-section">
-          <h4>
-            <Icons.Database size={11} /> 上下文窗口
-            {isContextCritical && (
-              <span className="badge danger dot usage-warning-badge">即将满</span>
-            )}
-            {!isContextCritical && isContextWarning && (
-              <span className="badge warning dot usage-warning-badge">接近满</span>
-            )}
-          </h4>
-          <ContextWindowVisualization
-            usedTokens={currentContextTokens}
-            totalTokens={contextWindow}
-            ratio={contextRatio}
-            isWarning={isContextWarning}
-            isCritical={isContextCritical}
+          <TokenUsagePanel
+            inputTokens={usageData.inputTokens}
+            outputTokens={usageData.outputTokens}
+            totalTokens={usageData.inputTokens + usageData.outputTokens}
+            cacheHitTokens={usageData.cacheHitTokens}
+            estimatedCostUsd={usageData.estimatedCostUsd}
           />
         </div>
-      )}
 
-      {/* Per-Turn Token Chart */}
-      {usageData.turns.length > 0 && (
-        <div className="inspector-section">
-          <h4>
-            <Icons.Activity size={11} /> 轮次用量
-            <span className="inspector-count">{usageData.turns.length} 轮</span>
-          </h4>
-          <TurnUsageChart turns={usageData.turns.slice(-20)} />
-        </div>
-      )}
+        {/* Context Window Section — 仅在已知上下文窗口大小时展示 */}
+        {contextWindow > 0 && (
+          <div className="inspector-section">
+            <h4>
+              <Icons.Database size={11} /> 上下文窗口
+              {isContextCritical && (
+                <span className="badge danger dot usage-warning-badge">即将满</span>
+              )}
+              {!isContextCritical && isContextWarning && (
+                <span className="badge warning dot usage-warning-badge">接近满</span>
+              )}
+            </h4>
+            <ContextWindowVisualization
+              usedTokens={currentContextTokens}
+              totalTokens={contextWindow}
+              ratio={contextRatio}
+              isWarning={isContextWarning}
+              isCritical={isContextCritical}
+            />
+          </div>
+        )}
 
-      {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
-      {turnPromptSnapshots.length > 0 && <PromptInspectorSection snapshots={turnPromptSnapshots} />}
+        {/* Per-Turn Token Chart */}
+        {usageData.turns.length > 0 && (
+          <div className="inspector-section">
+            <h4>
+              <Icons.Activity size={11} /> 轮次用量
+              <span className="inspector-count">{usageData.turns.length} 轮</span>
+            </h4>
+            <TurnUsageChart turns={usageData.turns.slice(-20)} />
+          </div>
+        )}
+
+        {/* 白盒提示词面板 — 展示每轮 SDK 调用的全量提示词快照 */}
+        {turnPromptSnapshots.length > 0 && (
+          <PromptInspectorSection snapshots={turnPromptSnapshots} />
+        )}
       </div>
     </div>
   )
@@ -10032,7 +10388,7 @@ function TaskListItem({ task }: { task: InspectorTask }) {
   const statusClass =
     task.status === 'completed' ? 'done' : task.status === 'in_progress' ? 'running' : ''
   const primaryText =
-    task.status === 'in_progress' ? task.activeForm ?? task.subject : task.subject
+    task.status === 'in_progress' ? (task.activeForm ?? task.subject) : task.subject
   const needsPopover = isTruncated || Boolean(task.description)
 
   const item = (
@@ -10334,7 +10690,10 @@ function extractRunningTeamMemberIds(messages: UIMessage[]): string[] {
       }
       const memberContext = getBlockTeamMemberContext(block)
       if (memberContext == null) continue
-      if (block.kind === 'tool_call' && (block.status === 'pending' || block.status === 'running')) {
+      if (
+        block.kind === 'tool_call' &&
+        (block.status === 'pending' || block.status === 'running')
+      ) {
         running.add(memberContext.memberAgentId)
       }
       if (block.kind === 'terminal' && block.isStreaming) {
@@ -10474,7 +10833,12 @@ interface InspectorTask {
 
 function isTaskToolName(name: string): boolean {
   const lower = name.toLowerCase()
-  return lower === 'task_create' || lower === 'taskcreate' || lower === 'task_update' || lower === 'taskupdate'
+  return (
+    lower === 'task_create' ||
+    lower === 'taskcreate' ||
+    lower === 'task_update' ||
+    lower === 'taskupdate'
+  )
 }
 
 function parseTaskIdFromOutput(output: string | undefined): string | null {
@@ -10510,10 +10874,7 @@ function normalizeTaskId(id: string): string {
   return id.replace(/^#+/, '')
 }
 
-function findTaskById(
-  tasks: Map<string, InspectorTask>,
-  rawId: string,
-): InspectorTask | undefined {
+function findTaskById(tasks: Map<string, InspectorTask>, rawId: string): InspectorTask | undefined {
   const direct = tasks.get(rawId)
   if (direct != null) return direct
   // 兼容 task_update 用 "1"、task_create 注册 "#1" 的常见 ID 格式差
@@ -10575,9 +10936,7 @@ function extractInspectorTasks(messages: UIMessage[]): InspectorTask[] {
       const status = input.status
       if (typeof status === 'string') {
         if (status === 'deleted') {
-          const keyToDelete = Array.from(tasks.entries()).find(
-            ([, task]) => task === existing,
-          )?.[0]
+          const keyToDelete = Array.from(tasks.entries()).find(([, task]) => task === existing)?.[0]
           if (keyToDelete != null) tasks.delete(keyToDelete)
           continue
         }
@@ -10657,10 +11016,14 @@ function UserQuestionWizard({
   if (currentQuestion == null) return null
 
   const total = data.questions.length
-  const answeredCount = data.questions.filter((_, index) => isQuestionAnswered(data.questions[index]!, drafts[index])).length
+  const answeredCount = data.questions.filter((_, index) =>
+    isQuestionAnswered(data.questions[index]!, drafts[index]),
+  ).length
   const canGoBack = currentIndex > 0
   const canGoNext = currentIndex < total - 1
-  const canSubmit = data.questions.every((question, index) => isQuestionReadyForSubmit(question, drafts[index]))
+  const canSubmit = data.questions.every((question, index) =>
+    isQuestionReadyForSubmit(question, drafts[index]),
+  )
   const choiceOptions = getChoiceOptions(currentQuestion)
   const otherLabel = getOtherOptionLabel(currentQuestion)
   const otherInputPlaceholder = getOtherPlaceholder(currentQuestion)
@@ -10744,7 +11107,9 @@ function UserQuestionWizard({
               <div className="question-options">
                 {choiceOptions.map((opt, optIndex) => {
                   const selected = currentDraft.selectedLabel === opt.label
-                  const tooltipText = opt.description ? `${opt.label}\n${opt.description}` : opt.label
+                  const tooltipText = opt.description
+                    ? `${opt.label}\n${opt.description}`
+                    : opt.label
                   return (
                     <button
                       key={`${opt.label}-${optIndex}`}
@@ -10829,7 +11194,11 @@ function UserQuestionWizard({
           >
             跳过
           </button>
-          <button className="user-question-btn secondary" onClick={handleCancel} disabled={submitted}>
+          <button
+            className="user-question-btn secondary"
+            onClick={handleCancel}
+            disabled={submitted}
+          >
             取消
           </button>
           <button
@@ -10848,7 +11217,11 @@ function UserQuestionWizard({
               下一题
             </button>
           ) : (
-            <button className="user-question-btn primary" onClick={handleSubmit} disabled={submitted || !canSubmit}>
+            <button
+              className="user-question-btn primary"
+              onClick={handleSubmit}
+              disabled={submitted || !canSubmit}
+            >
               {submitted ? <Icons.Spinner size={12} /> : null}
               提交答案
             </button>
@@ -10879,7 +11252,10 @@ function getChoiceOptions(question: UserQuestionPrompt): UserQuestionOption[] {
   return question.options ?? []
 }
 
-function isQuestionAnswered(question: UserQuestionPrompt, draft: UserQuestionDraft | undefined): boolean {
+function isQuestionAnswered(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+): boolean {
   if (draft?.skipped) return true
   if (draft == null) return false
   if (isChoiceQuestion(question)) {
@@ -10891,7 +11267,10 @@ function isQuestionAnswered(question: UserQuestionPrompt, draft: UserQuestionDra
   return (draft.text?.trim().length ?? 0) > 0
 }
 
-function isQuestionReadyForSubmit(question: UserQuestionPrompt, draft: UserQuestionDraft | undefined): boolean {
+function isQuestionReadyForSubmit(
+  question: UserQuestionPrompt,
+  draft: UserQuestionDraft | undefined,
+): boolean {
   if (draft?.skipped) return true
   return isQuestionAnswered(question, draft)
 }
@@ -10949,7 +11328,9 @@ function buildQuestionCancelAnswer(questions: UserQuestionPrompt[]): Record<stri
 }
 
 /** Sticky reply panel for AskUserQuestion so users always have an in-context reply path */
-function UserQuestionDock(props: Omit<Parameters<typeof UserQuestionWizard>[0], 'currentIndex' | 'onCurrentIndexChange'>) {
+function UserQuestionDock(
+  props: Omit<Parameters<typeof UserQuestionWizard>[0], 'currentIndex' | 'onCurrentIndexChange'>,
+) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const total = props.data.questions.length
 

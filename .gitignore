@@ -99,3 +99,5 @@ pnpm-debug.log*
 .opencode
 # Mavis Team 内部状态
 .mavis/
+.spark/worktrees/
+.spark-artifacts/
