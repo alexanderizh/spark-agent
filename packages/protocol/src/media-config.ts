@@ -118,9 +118,11 @@ export interface ProviderMediaDefaults {
   image?: {
     size?: string | undefined
     aspectRatio?: string | undefined
+    resolution?: string | undefined
     quality?: string | undefined
     n?: number | undefined
     outputFormat?: 'png' | 'jpeg' | 'webp' | undefined
+    responseFormat?: 'url' | 'b64_json' | 'base64' | undefined
   } | undefined
   audio?: {
     voice?: string | undefined
@@ -132,6 +134,7 @@ export interface ProviderMediaDefaults {
     aspectRatio?: string | undefined
     durationSeconds?: number | undefined
     quality?: string | undefined
+    resolution?: string | undefined
     fps?: number | undefined
   } | undefined
   polling?: {
@@ -163,9 +166,11 @@ export const ProviderMediaDefaultsSchema = z.object({
     .object({
       size: z.string().max(80).optional(),
       aspectRatio: z.string().max(40).optional(),
+      resolution: z.string().max(80).optional(),
       quality: z.string().max(80).optional(),
       n: z.number().int().min(1).max(16).optional(),
       outputFormat: z.enum(['png', 'jpeg', 'webp']).optional(),
+      responseFormat: z.enum(['url', 'b64_json', 'base64']).optional(),
     })
     .optional(),
   audio: z
@@ -181,6 +186,7 @@ export const ProviderMediaDefaultsSchema = z.object({
       aspectRatio: z.string().max(40).optional(),
       durationSeconds: z.number().int().min(1).max(600).optional(),
       quality: z.string().max(80).optional(),
+      resolution: z.string().max(80).optional(),
       fps: z.number().int().min(1).max(120).optional(),
     })
     .optional(),

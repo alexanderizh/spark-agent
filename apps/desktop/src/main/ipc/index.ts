@@ -105,6 +105,7 @@ import type {
   MediaModelManifest,
   ProviderProfile,
 } from '@spark/protocol'
+import type { SessionListResponse } from '@spark/protocol'
 import type {
   SessionEventHandler,
   ApprovalHandler,
@@ -678,6 +679,19 @@ function getRulesService(): RulesService {
 }
 
 let _scheduledTaskService: ScheduledTaskService | null = null
+/**
+ * 供系统托盘菜单（Tray）使用：列出最近活跃会话。
+ *
+ * 与 IPC handler `session:list` 共享同一 SessionService 实例，避免重复初始化；
+ * 默认取 8 条、按 updatedAt 倒序。
+ */
+export async function getRecentSessionsForTray(
+  limit = 8,
+): Promise<SessionListResponse['sessions']> {
+  const result = await getSessionService().listSessions({ includeArchived: false, limit })
+  return result.sessions
+}
+
 export function getScheduledTaskService(): ScheduledTaskService {
   if (_scheduledTaskService == null) {
     _scheduledTaskService = new ScheduledTaskService(

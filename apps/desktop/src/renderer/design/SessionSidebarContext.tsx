@@ -352,6 +352,24 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
     }) ?? (() => {})
   }, [refreshData])
 
+  // 用户从系统托盘菜单触发「新建会话」：走 renderer 标准新建流程（含 worktree 复用 / 草稿清空等）。
+  // 主进程在发送事件前已展示主窗口，这里只负责新建。
+  useEffect(() => {
+    return window.spark?.on?.('stream:tray:new-session', () => {
+      handleNewSession().catch((err) => console.error('Tray new-session failed', err))
+    }) ?? (() => {})
+  }, [handleNewSession])
+
+  // 用户从系统托盘菜单点击某条最近会话：刷新数据后切到该会话。
+  // 主进程在发送事件前已展示主窗口，这里只负责切换 active。
+  useEffect(() => {
+    return window.spark?.on?.('stream:tray:open-session', (payload: { sessionId: string }) => {
+      refreshData()
+        .then(() => setActive(payload.sessionId))
+        .catch((err) => console.error('Tray open-session failed', err))
+    }) ?? (() => {})
+  }, [refreshData])
+
   useEffect(() => {
     return window.spark?.on?.('stream:config:changed', (event) => {
       if (event.scope === 'provider' || event.scope === 'agent' || event.scope === 'team') {

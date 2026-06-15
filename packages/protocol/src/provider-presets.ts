@@ -849,15 +849,34 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     provider: 'openai',
     apiEndpoint: 'https://api.apimart.ai/v1',
     defaultModel: 'gpt-image-2',
-    modelIds: ['gpt-image-2', 'gpt-image-1'],
+    modelIds: [
+      'gpt-image-2',
+      'wan2.7-image',
+      'qwen-image-2.0',
+      'doubao-seedream-5-0-lite',
+      'gemini-3.1-flash-image-preview',
+      'gemini-3-pro-image-preview',
+      'gemini-2.5-flash-image-preview',
+      'imagen-4.0-apimart',
+    ],
     modelType: 'image',
     imageProvider: 'apimart',
     imageApiType: 'async',
     mediaProvider: 'apimart',
     mediaApiType: 'auto',
     mediaCapabilities: ['image.generate', 'image.edit'],
+    mediaModelRefs: [
+      { manifestId: 'apimart:gpt-image-2', modelId: 'gpt-image-2', enabled: true },
+      { manifestId: 'apimart:wan2.7-image', modelId: 'wan2.7-image', enabled: true },
+      { manifestId: 'apimart:qwen-image-2.0', modelId: 'qwen-image-2.0', enabled: true },
+      { manifestId: 'apimart:doubao-seedream-5-0-lite', modelId: 'doubao-seedream-5-0-lite', enabled: true },
+      { manifestId: 'apimart:gemini-3.1-flash-image-preview', modelId: 'gemini-3.1-flash-image-preview', enabled: true },
+      { manifestId: 'apimart:gemini-3-pro-image-preview', modelId: 'gemini-3-pro-image-preview', enabled: true },
+      { manifestId: 'apimart:gemini-2.5-flash-image-preview', modelId: 'gemini-2.5-flash-image-preview', enabled: true },
+      { manifestId: 'apimart:imagen-4.0-apimart', modelId: 'imagen-4.0-apimart', enabled: true },
+    ],
     mediaDefaults: {
-      image: { size: '1024x1024', n: 1, outputFormat: 'png' },
+      image: { size: '1:1', n: 1, resolution: '1k', outputFormat: 'png' },
       polling: { intervalMs: 4000, timeoutMs: 240_000 },
     },
     sourceUrls: [
@@ -916,6 +935,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaProvider: 'apimart',
     mediaApiType: 'async',
     mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaModelRefs: [
+      { manifestId: 'apimart:veo3', modelId: 'veo3', enabled: true },
+    ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
       polling: { intervalMs: 6000, timeoutMs: 600_000 },
@@ -938,6 +960,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaProvider: 'apimart',
     mediaApiType: 'async',
     mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaModelRefs: [
+      { manifestId: 'apimart:sora-2', modelId: 'sora-2', enabled: true },
+    ],
     mediaDefaults: {
       video: { aspectRatio: '16:9', durationSeconds: 8, quality: 'hd' },
       polling: { intervalMs: 6000, timeoutMs: 600_000 },
@@ -954,15 +979,18 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     name: 'xAI Imagine 图片',
     provider: 'openai',
     apiEndpoint: 'https://api.x.ai/v1',
-    defaultModel: 'grok-imagine-image',
-    modelIds: ['grok-imagine-image'],
+    defaultModel: 'grok-imagine-image-quality',
+    modelIds: ['grok-imagine-image-quality', 'grok-imagine-image-quality-latest', 'grok-imagine-image-pro', 'grok-imagine-image'],
     modelType: 'image',
     imageProvider: 'xai',
     imageApiType: 'sync',
     mediaProvider: 'xai',
     mediaApiType: 'sync',
     mediaCapabilities: ['image.generate', 'image.edit'],
-    mediaDefaults: { image: { aspectRatio: '1:1', n: 1, outputFormat: 'png' } },
+    mediaModelRefs: [
+      { manifestId: 'xai:grok-imagine-image', modelId: 'grok-imagine-image-quality', enabled: true },
+    ],
+    mediaDefaults: { image: { aspectRatio: '1:1', n: 1, outputFormat: 'png', responseFormat: 'url' } },
     sourceUrls: [
       'https://docs.x.ai/developers/model-capabilities/imagine',
     ],
@@ -985,7 +1013,7 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
       { manifestId: 'xai:grok-imagine-video', modelId: 'grok-imagine-video', enabled: true },
     ],
     mediaDefaults: {
-      video: { aspectRatio: '16:9', durationSeconds: 6, quality: 'hd' },
+      video: { aspectRatio: '16:9', durationSeconds: 8, resolution: '720p' },
       polling: { intervalMs: 5000, timeoutMs: 600_000 },
     },
     sourceUrls: [
@@ -1009,6 +1037,106 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     mediaDefaults: { audio: { voice: 'alloy', format: 'mp3', speed: 1 } },
     sourceUrls: [
       'https://docs.x.ai/developers/model-capabilities/audio/text-to-speech',
+    ],
+  },
+
+  /* ─── Kling 视频 ─── */
+  {
+    id: 'kling-video',
+    vendorId: 'kuaishou',
+    name: 'Kling 可灵视频',
+    provider: 'openai',
+    apiEndpoint: 'https://api.klingai.com',
+    defaultModel: 'kling-v2.6-pro',
+    modelIds: ['kling-v2.6-pro', 'kling-v2.6-std', 'kling-v2.5-turbo', 'kling-video-o1'],
+    modelType: 'video',
+    mediaProvider: 'kling',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaModelRefs: [
+      { manifestId: 'kling:kling-v2.6-pro', modelId: 'kling-v2.6-pro', enabled: true },
+      { manifestId: 'kling:kling-v2.6-std', modelId: 'kling-v2.6-std', enabled: true },
+      { manifestId: 'kling:kling-v2.5-turbo', modelId: 'kling-v2.5-turbo', enabled: true },
+      { manifestId: 'kling:kling-video-o1', modelId: 'kling-video-o1', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { aspectRatio: '16:9', durationSeconds: 5 },
+      polling: { intervalMs: 5000, timeoutMs: 1_200_000 },
+    },
+    sourceUrls: [
+      'https://klingapi.com/zh/docs/text-to-video',
+    ],
+  },
+
+  /* ─── MiniMax 图片 ─── */
+  {
+    id: 'minimax-image',
+    vendorId: 'minimax',
+    name: 'MiniMax 图片',
+    provider: 'openai',
+    apiEndpoint: 'https://api.minimaxi.com',
+    defaultModel: 'image-01',
+    modelIds: ['image-01', 'image-01-live'],
+    modelType: 'image',
+    imageProvider: 'custom',
+    imageApiType: 'sync',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['image.generate'],
+    mediaModelRefs: [
+      { manifestId: 'minimax:image-01', modelId: 'image-01', enabled: true },
+    ],
+    mediaDefaults: { image: { aspectRatio: '1:1', n: 1, responseFormat: 'url' } },
+    sourceUrls: [
+      'https://platform.minimaxi.com/document/image_generation',
+    ],
+  },
+
+  /* ─── MiniMax 语音 ─── */
+  {
+    id: 'minimax-speech',
+    vendorId: 'minimax',
+    name: 'MiniMax 语音合成',
+    provider: 'openai',
+    apiEndpoint: 'https://api.minimaxi.com',
+    defaultModel: 'speech-2.8-turbo',
+    modelIds: ['speech-2.8-turbo', 'speech-2.8-hd'],
+    modelType: 'voice',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'sync',
+    mediaCapabilities: ['audio.speech'],
+    mediaModelRefs: [
+      { manifestId: 'minimax:speech-2.8-turbo', modelId: 'speech-2.8-turbo', enabled: true },
+      { manifestId: 'minimax:speech-2.8-hd', modelId: 'speech-2.8-hd', enabled: true },
+    ],
+    mediaDefaults: { audio: { format: 'mp3', speed: 1 } },
+    sourceUrls: [
+      'https://platform.minimaxi.com/document/text-to-speech',
+    ],
+  },
+
+  /* ─── MiniMax Hailuo 视频 ─── */
+  {
+    id: 'minimax-hailuo-video',
+    vendorId: 'minimax',
+    name: 'MiniMax Hailuo 视频',
+    provider: 'openai',
+    apiEndpoint: 'https://api.minimaxi.com',
+    defaultModel: 'MiniMax-Hailuo-2.3',
+    modelIds: ['MiniMax-Hailuo-2.3'],
+    modelType: 'video',
+    mediaProvider: 'minimax-hailuo',
+    mediaApiType: 'async',
+    mediaCapabilities: ['video.generate', 'video.image_to_video'],
+    mediaModelRefs: [
+      { manifestId: 'minimax:hailuo-2.3', modelId: 'MiniMax-Hailuo-2.3', enabled: true },
+    ],
+    mediaDefaults: {
+      video: { durationSeconds: 6, resolution: '768P' },
+      polling: { intervalMs: 5000, timeoutMs: 1_200_000 },
+    },
+    sourceUrls: [
+      'https://platform.minimaxi.com/document/video_generation',
     ],
   },
 ]

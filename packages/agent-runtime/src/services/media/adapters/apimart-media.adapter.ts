@@ -78,6 +78,9 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
       n: imageParams.n,
       ...(imageParams.size ? { size: imageParams.size } : {}),
       ...(imageParams.quality ? { quality: imageParams.quality } : {}),
+      ...(imageParams.resolution ? { resolution: imageParams.resolution } : {}),
+      ...(imageParams.response_format ? { response_format: imageParams.response_format } : {}),
+      ...(imageParams.output_format ? { output_format: imageParams.output_format } : {}),
       ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
       ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
         'aspectRatio',
@@ -89,6 +92,8 @@ export class ApimartMediaAdapter extends OpenAiCompatibleMediaAdapter {
         'n',
         'prompt',
         'quality',
+        'resolution',
+        'output_format',
         'response_format',
         'size',
       ]),

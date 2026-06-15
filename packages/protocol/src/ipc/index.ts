@@ -4107,6 +4107,10 @@ export interface IpcStreamChannelMap {
     error?: string
     sessionId?: string
   }
+  /** 用户从系统托盘菜单触发「新建会话」（主进程展示主窗口后推送，渲染端走新建会话流程）*/
+  'stream:tray:new-session': Record<string, never>
+  /** 用户从系统托盘菜单点击某个最近会话（主进程展示主窗口后推送，渲染端切换到该会话）*/
+  'stream:tray:open-session': { sessionId: string }
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap

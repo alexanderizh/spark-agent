@@ -72,6 +72,7 @@ import {
   registerSafeFileSchemes,
 } from './services/SafeFileProtocol.js'
 import { getDatabase } from './db.js'
+import { getRecentSessionsForTray } from './ipc/index.js'
 import { createLogger } from '@spark/shared'
 import type { UpdateInfo, UpdateStatus } from '@spark/protocol'
 import { SettingsService } from '@spark/agent-runtime'
@@ -251,8 +252,68 @@ function createTray(): void {
 
   tray = new Tray(image)
   tray.setToolTip('Spark Agent')
+  refreshTrayMenu().catch((err) => log.warn('Failed to refresh tray menu on init', err))
+  tray.on('click', () => {
+    // 每次点击前刷新菜单（最近会话变化），再展示主窗口
+    refreshTrayMenu().catch((err) => log.warn('Failed to refresh tray menu on click', err))
+    showMainWindow()
+  })
+}
+
+/**
+ * 重新构建托盘右键菜单。
+ *
+ * 最近会话来自 SessionService（与 sidebar 共享同一实例）；点击时通过 stream 事件
+ * 通知渲染端切换/新建会话，主进程仅负责显示主窗口。
+ */
+async function refreshTrayMenu(): Promise<void> {
+  if (tray == null) return
+
+  let recentItems: Array<{ id: string; title: string; updatedAt: string; status: string; messageCount: number }> = []
+  try {
+    recentItems = await getRecentSessionsForTray(8)
+  } catch (err) {
+    log.warn('Failed to list recent sessions for tray menu', err)
+  }
+
+  const recentSubmenu = recentItems.length === 0
+    ? [{ label: '（暂无会话）', enabled: false }]
+    : recentItems.map((item) => ({
+        label: formatSessionLabel(item.title, item.status, item.messageCount),
+        click: () => {
+          showMainWindow()
+          sendToMainWindow('stream:tray:open-session', { sessionId: item.id })
+        },
+      }))
+
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: '显示 Spark Agent', click: showMainWindow },
+    { label: '打开 Spark Agent', click: showMainWindow },
+    { type: 'separator' },
+    {
+      label: '新建会话',
+      click: () => {
+        showMainWindow()
+        sendToMainWindow('stream:tray:new-session', {})
+      },
+    },
+    {
+      label: '最近会话',
+      submenu: recentSubmenu,
+    },
+    { type: 'separator' },
+    {
+      label: '打开内部控制台',
+      click: () => {
+        const win = BrowserWindow.getAllWindows()[0]
+        if (win == null) {
+          showMainWindow()
+          return
+        }
+        win.show()
+        win.focus()
+        win.webContents.openDevTools({ mode: 'detach' })
+      },
+    },
     { type: 'separator' },
     {
       label: '退出',
@@ -262,7 +323,13 @@ function createTray(): void {
       },
     },
   ]))
-  tray.on('click', showMainWindow)
+}
+
+function formatSessionLabel(title: string, status: string, messageCount: number): string {
+  const safeTitle = (title?.trim() || '新会话').slice(0, 32)
+  const statusTag = status === 'running' ? ' ●' : status === 'error' ? ' ✕' : ''
+  const countTag = messageCount > 0 ? ` · ${messageCount}条` : ''
+  return `${safeTitle}${statusTag}${countTag}`
 }
 
 /**

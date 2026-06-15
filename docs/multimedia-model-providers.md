@@ -96,7 +96,39 @@ apimart-video-sora2      — APIMart 视频 (Sora 2, async)
 xai-imagine-image        — xAI Imagine 图片
 xai-imagine-video        — xAI Imagine 视频 (async)
 xai-tts                  — xAI 语音合成
+kling-video              — Kling 可灵视频 (async)
+minimax-image            — MiniMax 图片 (Image 01)
+minimax-speech           — MiniMax 语音合成 (Speech 2.8)
+minimax-hailuo-video     — MiniMax Hailuo 2.3 视频 (async)
 ```
+
+## 3. Model Parameter Coverage
+
+Spark's built-in multimedia manifests are now generated from the collected
+`platform_model_info` material plus official public docs when available. The
+manifest `paramSchema` is the single source for:
+
+- Provider edit defaults: common fields become dropdowns when the selected
+  model exposes enums, such as aspect ratio, duration, resolution, output
+  format, and mode.
+- Infinite canvas AI operation nodes: the model parameter panel is populated
+  from the selected manifest capability schema, then merged with conservative
+  operation-level suggestions.
+- `spark_media` MCP tools: tool schemas expose the common parameters directly,
+  and advanced provider-specific fields remain available through `extraJson`.
+
+Current built-in coverage:
+
+| Platform | Models / families | Parameters surfaced |
+| --- | --- | --- |
+| APIMart | GPT Image 2, Wan 2.7 Image, Qwen Image 2.0, Seedream 5.0 Lite, Gemini image previews, Imagen 4.0, Sora/Veo/Kling/Seedance/Hailuo video families | image size/aspect, resolution, count, output format, sequential generation, search toggles, video duration, resolution, audio flags |
+| xAI | Grok Imagine Image Quality, Grok Imagine Video, Grok TTS | aspect ratio, duration, resolution, response format, voice/audio format |
+| Kling | O1, 2.6 Pro, 2.6 Standard, 2.5 Turbo | duration, aspect ratio, mode, negative prompt, audio flag where supported |
+| MiniMax | Image 01, Speech 2.8 HD/Turbo, Music 2.6, Hailuo 2.3 | aspect ratio, size, response format, voice settings, language boost, subtitles, prompt optimizer, duration, resolution |
+
+阿里云百炼和火山方舟在 `platform_model_info` 中仍标记为 `NEEDS_LOGIN`，
+当前只保留资料记录，未作为“开箱即用”的内置可调用 manifest 发布。等登录
+控制台确认 endpoint、任务查询路径和返回产物字段后，再补入内置配置。
 
 xAI Grok Imagine Video (`xai-imagine-video`) uses:
 
@@ -111,7 +143,7 @@ xAI Grok Imagine Video (`xai-imagine-video`) uses:
     { "manifestId": "xai:grok-imagine-video", "modelId": "grok-imagine-video", "enabled": true }
   ],
   "mediaDefaults": {
-    "video": { "aspectRatio": "16:9", "durationSeconds": 6, "quality": "hd" },
+    "video": { "aspectRatio": "16:9", "durationSeconds": 8, "resolution": "720p" },
     "polling": { "intervalMs": 5000, "timeoutMs": 600000 }
   }
 }
@@ -131,7 +163,7 @@ Default endpoints:
 | APIMart | `https://api.apimart.ai/v1` |
 | xAI | `https://api.x.ai/v1` |
 
-## 3. Agent Skill (spark_media MCP)
+## 4. Agent Skill (spark_media MCP)
 
 When a session has an enabled provider with voice/video media capabilities
 (image generation continues to use `spark_image`), Spark injects an internal
@@ -159,7 +191,10 @@ mcp__spark_media__cancel_task        — cancel pending/running task when suppor
   back to a minimal env-derived model description.
 - `generate_image`, `edit_image`, `generate_audio`, `transcribe_audio`, and
   `generate_video` can all select a configured manifest through the optional
-  `model` parameter. The tool chooses the matching capability
+  `model` parameter. Their input schemas now expose common manifest-backed
+  fields such as `aspectRatio`, `resolution`, `durationSeconds`, `mode`,
+  `negative_prompt`, `seed`, `output_format`, `prompt_optimizer`, and provider
+  audio flags. The tool chooses the matching capability
   (`image.generate`, `image.image_to_image`, `image.edit`,
   `audio.speech`, `audio.transcription`, `video.generate`, or
   `video.image_to_video`) from the injected manifest catalog.
@@ -172,7 +207,7 @@ mcp__spark_media__cancel_task        — cancel pending/running task when suppor
   `cancel_task`; the next runtime step is to back these tools with the shared
   `MediaTaskRuntimeService` repository.
 
-## 4. Infinite Canvas Integration
+## 5. Infinite Canvas Integration
 
 The infinite canvas drives real media generation through the main process, with
 production-grade SQLite persistence and inline media playback:
@@ -246,8 +281,9 @@ Flow:
 
 1. Select a text/prompt node (for text→*) or an image/audio node (for image/audio→*).
 2. Open the inline AI composer, pick the operation, optionally choose a
-   manifest-backed provider/model, fill the manifest-derived parameter panel,
-   then enter the prompt.
+   manifest-backed provider/model, fill the manifest-derived parameter panel
+   (dropdowns are driven by the selected model's `paramSchema`), then enter the
+   prompt.
 3. The canvas creates an optimistic `running` task node.
 4. The renderer calls `canvas:task:create-media` with `waitForCompletion:false`.
    The main process persists a runtime task and returns a `running` response

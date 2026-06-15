@@ -118,11 +118,16 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       n: imageParams.n,
       ...(imageParams.size ? { size: imageParams.size } : {}),
       ...(imageParams.quality ? { quality: imageParams.quality } : {}),
+      ...(imageParams.resolution ? { resolution: imageParams.resolution } : {}),
+      ...(imageParams.response_format ? { response_format: imageParams.response_format } : {}),
+      ...(imageParams.output_format ? { output_format: imageParams.output_format } : {}),
       ...(input.negativePrompt ? { negative_prompt: input.negativePrompt } : {}),
       ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
         'size',
         'n',
         'quality',
+        'resolution',
+        'output_format',
         'response_format',
         ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
       ]),
@@ -202,10 +207,15 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       n: imageParams.n,
       ...(imageParams.size ? { size: imageParams.size } : {}),
       ...(imageParams.quality ? { quality: imageParams.quality } : {}),
+      ...(imageParams.resolution ? { resolution: imageParams.resolution } : {}),
+      ...(imageParams.response_format ? { response_format: imageParams.response_format } : {}),
+      ...(imageParams.output_format ? { output_format: imageParams.output_format } : {}),
       ...extraAllowed(ctx.extraParams, normalizeImageAliasParams(input.modelParams), [
         'size',
         'n',
         'quality',
+        'resolution',
+        'output_format',
         'response_format',
         'mask',
         ...(ctx.mediaProvider === 'xai' ? ['aspectRatio'] : ['aspectRatio', 'aspect_ratio']),
@@ -393,7 +403,9 @@ export abstract class OpenAiCompatibleMediaAdapter implements MediaProviderAdapt
       ...(videoDefaults?.fps != null || input.modelParams?.fps != null
         ? { fps: input.modelParams?.fps ?? videoDefaults?.fps }
         : {}),
-      ...(input.modelParams?.resolution ? { resolution: input.modelParams.resolution } : {}),
+      ...(videoDefaults?.resolution || input.modelParams?.resolution
+        ? { resolution: input.modelParams?.resolution ?? videoDefaults?.resolution }
+        : {}),
       ...(input.modelParams?.seed != null ? { seed: input.modelParams.seed } : {}),
       ...(firstImageRef
         ? ctx.mediaProvider === 'xai'
@@ -508,17 +520,23 @@ function buildImageRequestParams(
   modelParams: Record<string, unknown> | undefined,
   defaults: ProviderMediaDefaults['image'] | undefined,
   provider: MediaProviderKind,
-): { n: number; size?: string; quality?: unknown } {
+): { n: number; size?: string; quality?: unknown; resolution?: string; response_format?: string; output_format?: string } {
   const params = normalizeImageAliasParams(modelParams)
   const aspectRatio = stringParam(params.aspect_ratio)
   const explicitSize = stringParam(params.size)
   const defaultSize = stringParam(defaults?.size)
   const size = explicitSize ?? (provider === 'xai' ? undefined : sizeForAspectRatio(aspectRatio) ?? defaultSize)
   const quality = params.quality ?? defaults?.quality
+  const resolution = stringParam(params.resolution) ?? defaults?.resolution
+  const responseFormat = stringParam(params.response_format) ?? defaults?.responseFormat
+  const outputFormat = stringParam(params.output_format) ?? defaults?.outputFormat
   return {
     n: clampInt(params.n, defaults?.n, 1, 1, 4),
     ...(size ? { size } : {}),
     ...(quality != null && quality !== '' ? { quality } : {}),
+    ...(resolution ? { resolution } : {}),
+    ...(responseFormat ? { response_format: responseFormat } : {}),
+    ...(outputFormat ? { output_format: outputFormat } : {}),
   }
 }
 

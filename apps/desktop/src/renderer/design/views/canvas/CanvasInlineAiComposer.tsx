@@ -526,7 +526,9 @@ function schemaFields(schema: Record<string, unknown>): SchemaField[] {
     const spec = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
     const type = typeof spec.type === 'string' ? spec.type : 'string'
     const enumValues = Array.isArray(spec.enum)
-      ? spec.enum.filter((value): value is string => typeof value === 'string')
+      ? spec.enum
+        .filter((value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+        .map((value) => String(value))
       : []
     const examples = Array.isArray(spec.examples)
       ? spec.examples.filter((value): value is string => typeof value === 'string')

@@ -11913,6 +11913,8 @@ body.inspector-resizing {
   overflow: hidden;
   user-select: none;
 }
+
+.provider-logo-rounded .lobe-flex { border-radius: var(--r-sm) !important; }
 .provider-logo-rounded { border-radius: var(--r-sm) !important; }
 .provider-logo-circle { border-radius: 50% !important; }
 .provider-logo-img {

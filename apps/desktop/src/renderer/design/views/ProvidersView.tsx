@@ -156,14 +156,14 @@ function presetMediaForm(preset: ProviderPreset): Pick<ProviderForm,
     mediaApiType: preset.mediaApiType ?? preset.imageApiType ?? 'auto',
     mediaCapabilities: preset.mediaCapabilities ?? [],
     mediaModelRefs: preset.mediaModelRefs ?? [],
-    mediaImageSize: d?.image?.size ?? '',
+    mediaImageSize: d?.image?.size ?? d?.image?.aspectRatio ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
-    mediaImageQuality: d?.image?.quality ?? '',
+    mediaImageQuality: d?.image?.resolution ?? d?.image?.quality ?? '',
     mediaAudioVoice: d?.audio?.voice ?? '',
     mediaAudioFormat: d?.audio?.format ?? '',
     mediaVideoAspectRatio: d?.video?.aspectRatio ?? '',
     mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
-    mediaVideoQuality: d?.video?.quality ?? '',
+    mediaVideoQuality: d?.video?.resolution ?? d?.video?.quality ?? '',
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
     mediaPollTimeout: d?.polling?.timeoutMs != null ? String(d.polling.timeoutMs) : '',
   }
@@ -182,14 +182,14 @@ function profileMediaForm(p: ProviderProfile): Pick<ProviderForm,
     mediaApiType: p.mediaApiType ?? p.imageApiType ?? 'auto',
     mediaCapabilities: p.mediaCapabilities ?? [],
     mediaModelRefs: p.mediaModelRefs ?? [],
-    mediaImageSize: d?.image?.size ?? '',
+    mediaImageSize: d?.image?.size ?? d?.image?.aspectRatio ?? '',
     mediaImageN: d?.image?.n != null ? String(d.image.n) : '',
-    mediaImageQuality: d?.image?.quality ?? '',
+    mediaImageQuality: d?.image?.resolution ?? d?.image?.quality ?? '',
     mediaAudioVoice: d?.audio?.voice ?? '',
     mediaAudioFormat: d?.audio?.format ?? '',
     mediaVideoAspectRatio: d?.video?.aspectRatio ?? '',
     mediaVideoDuration: d?.video?.durationSeconds != null ? String(d.video.durationSeconds) : '',
-    mediaVideoQuality: d?.video?.quality ?? '',
+    mediaVideoQuality: d?.video?.resolution ?? d?.video?.quality ?? '',
     mediaPollInterval: d?.polling?.intervalMs != null ? String(d.polling.intervalMs) : '',
     mediaPollTimeout: d?.polling?.timeoutMs != null ? String(d.polling.timeoutMs) : '',
   }
@@ -236,10 +236,20 @@ function normalizeMediaModelRefs(refs: ProviderMediaModelRef[]): ProviderMediaMo
 
 /** 把 ProviderForm 中的字符串表单值归一为 ProviderMediaDefaults（空值剔除） */
 function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefined {
+  const imageSizeValue = form.mediaImageSize.trim()
+  const imageSizeField = imageSizeValue
+    ? (form.mediaProvider === 'xai' || form.mediaProvider === 'minimax-hailuo') && imageSizeValue.includes(':')
+      ? { aspectRatio: imageSizeValue }
+      : { size: imageSizeValue }
+    : {}
   const image = {
-    ...(form.mediaImageSize.trim() ? { size: form.mediaImageSize.trim() } : {}),
+    ...imageSizeField,
     ...(form.mediaImageN.trim() ? { n: Number(form.mediaImageN) } : {}),
-    ...(form.mediaImageQuality.trim() ? { quality: form.mediaImageQuality.trim() } : {}),
+    ...(form.mediaImageQuality.trim()
+      ? /k$/i.test(form.mediaImageQuality.trim())
+        ? { resolution: form.mediaImageQuality.trim() }
+        : { quality: form.mediaImageQuality.trim() }
+      : {}),
   }
   const audio = {
     ...(form.mediaAudioVoice.trim() ? { voice: form.mediaAudioVoice.trim() } : {}),
@@ -248,7 +258,11 @@ function buildMediaDefaults(form: ProviderForm): ProviderMediaDefaults | undefin
   const video = {
     ...(form.mediaVideoAspectRatio.trim() ? { aspectRatio: form.mediaVideoAspectRatio.trim() } : {}),
     ...(form.mediaVideoDuration.trim() ? { durationSeconds: Number(form.mediaVideoDuration) } : {}),
-    ...(form.mediaVideoQuality.trim() ? { quality: form.mediaVideoQuality.trim() } : {}),
+    ...(form.mediaVideoQuality.trim()
+      ? /p$/i.test(form.mediaVideoQuality.trim())
+        ? { resolution: form.mediaVideoQuality.trim() }
+        : { quality: form.mediaVideoQuality.trim() }
+      : {}),
   }
   const polling = {
     ...(form.mediaPollInterval.trim() ? { intervalMs: Number(form.mediaPollInterval) } : {}),
@@ -273,6 +287,10 @@ function mediaModelMatchesType(model: CanvasMediaModelSummary, modelType: Provid
     return model.domains.includes('video') || model.capabilities.some((capability) => capability.id.startsWith('video.'))
   }
   return false
+}
+
+function isMediaProviderModelType(modelType: ProviderModelType): boolean {
+  return modelType === 'image' || modelType === 'voice' || modelType === 'video'
 }
 
 function mediaModelMatchesProvider(model: CanvasMediaModelSummary, form: ProviderForm): boolean {
@@ -314,6 +332,49 @@ function adapterKindFromManifestProvider(providerKind: string): MediaProviderKin
   if (providerKind === 'xai') return 'xai'
   if (providerKind === 'custom') return 'custom'
   return 'openai-compatible'
+}
+
+function vendorForMediaProvider(kind: string | undefined): VendorMeta | null {
+  if (!kind) return null
+  if (kind === 'kling') return getVendorMeta('kuaishou') ?? null
+  if (kind === 'minimax-hailuo') return getVendorMeta('minimax') ?? null
+  if (kind === 'volcengine-ark') return getVendorMeta('volcengine') ?? null
+  if (kind === 'google-generative-ai') return getVendorMeta('google-gemini') ?? null
+  if (kind === 'apimart' || kind === 'xai' || kind === 'openrouter') return getVendorMeta(kind) ?? null
+  return null
+}
+
+function mediaProviderDisplayName(kind: string | undefined): string {
+  if (!kind) return '多媒体适配器'
+  return MEDIA_PROVIDER_LABELS[kind as MediaProviderKind] ?? kind
+}
+
+function enumOptionsFromModels(
+  models: CanvasMediaModelSummary[],
+  fieldNames: string[],
+): Array<{ label: string; value: string }> {
+  const values = new Set<string>()
+  for (const model of models) {
+    for (const capability of model.capabilities) {
+      const properties = capability.paramSchema?.properties
+      if (!properties || typeof properties !== 'object' || Array.isArray(properties)) continue
+      for (const name of fieldNames) {
+        const spec = (properties as Record<string, unknown>)[name]
+        if (!spec || typeof spec !== 'object' || Array.isArray(spec)) continue
+        const rawEnum = (spec as Record<string, unknown>).enum
+        if (Array.isArray(rawEnum)) {
+          rawEnum
+            .filter((value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+            .forEach((value) => values.add(String(value)))
+        }
+        const defaultValue = (spec as Record<string, unknown>).default
+        if (typeof defaultValue === 'string' || typeof defaultValue === 'number' || typeof defaultValue === 'boolean') {
+          values.add(String(defaultValue))
+        }
+      }
+    }
+  }
+  return [...values].map((value) => ({ label: value, value }))
 }
 
 const EMPTY_TIER_MODELS = { haikuModel: '', sonnetModel: '', opusModel: '' } as const
@@ -779,6 +840,7 @@ function ProvidersView() {
               const status = h == null ? 'unknown' : h.healthy ? 'ok' : 'error'
               const vendor =
                 resolveBuiltinLocalCliVendor(p) ??
+                vendorForMediaProvider(p.mediaProvider ?? p.imageProvider ?? undefined) ??
                 guessVendorByName(p.name, getUniqueVendorIds()) ??
                 (p.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META)
               const builtin = isBuiltInLocalCliProvider(p)
@@ -793,7 +855,9 @@ function ProvidersView() {
                   desc={
                     builtin
                       ? builtinDesc
-                      : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
+                      : isMediaProviderModelType((p.modelType as ProviderModelType) ?? 'multimodal')
+                        ? `${mediaProviderDisplayName(p.mediaProvider ?? p.imageProvider ?? undefined)} · 默认 ${p.defaultModel}`
+                        : `${p.provider === 'anthropic' ? 'Anthropic 格式' : 'OpenAI 格式'} · 默认 ${p.defaultModel}`
                   }
                   status={status}
                   modelIds={builtin ? [] : p.modelIds}
@@ -1276,6 +1340,9 @@ export function ProviderEditPanel({
 
   // ── 衍生：当前选中 preset 对应的 vendor（用于 hero 渲染真实 logo） ──
   const currentVendor: VendorMeta | null = useMemo(() => {
+    if (isMediaProviderModelType(form.modelType)) {
+      return vendorForMediaProvider(form.mediaProvider || mediaProviderFromImageKind(form.imageProvider))
+    }
     if (form.presetId !== 'custom') {
       const preset = getProviderPresetById(form.presetId)
       if (preset) {
@@ -1296,18 +1363,17 @@ export function ProviderEditPanel({
     }
     // 未匹配到当前格式的供应商 → 按协议格式显示官方图标（openai → OpenAI，anthropic → Claude）
     return form.provider === 'openai' ? OPENAI_VENDOR_META : CLAUDE_VENDOR_META
-  }, [form.presetId, form.name, form.provider])
+  }, [form.modelType, form.mediaProvider, form.imageProvider, form.presetId, form.name, form.provider])
   const availablePresets = useMemo(
     () =>
       PROVIDER_PRESETS.filter((preset) => {
-        if (preset.provider !== form.provider) return false
         // 选了图片/语音/视频/多模态能力类型时，只展示同类型的多媒体预设；
         // 文本/多模态保留通用 LLM 预设（非 image/voice/video）。
-        const isMediaSelected =
-          form.modelType === 'image' || form.modelType === 'voice' || form.modelType === 'video'
+        const isMediaSelected = isMediaProviderModelType(form.modelType)
         if (isMediaSelected) {
           return preset.modelType === form.modelType
         }
+        if (preset.provider !== form.provider) return false
         return preset.modelType !== 'image' && preset.modelType !== 'voice' && preset.modelType !== 'video'
       }),
     [form.modelType, form.provider],
@@ -1321,6 +1387,18 @@ export function ProviderEditPanel({
     () => new Set(form.mediaModelRefs.filter((ref) => ref.enabled !== false).map((ref) => ref.manifestId)),
     [form.mediaModelRefs],
   )
+  const selectedMediaCatalogModels = useMemo(
+    () => mediaCatalogForForm.filter((model) => selectedManifestIds.has(model.manifestId)),
+    [mediaCatalogForForm, selectedManifestIds],
+  )
+  const mediaDefaultOptionSets = useMemo(() => ({
+    imageSize: enumOptionsFromModels(selectedMediaCatalogModels, ['size', 'aspectRatio', 'aspect_ratio']),
+    imageQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality']),
+    audioFormat: enumOptionsFromModels(selectedMediaCatalogModels, ['format', 'output_format', 'response_format']),
+    videoAspectRatio: enumOptionsFromModels(selectedMediaCatalogModels, ['aspectRatio', 'aspect_ratio', 'size']),
+    videoDuration: enumOptionsFromModels(selectedMediaCatalogModels, ['durationSeconds', 'duration']),
+    videoQuality: enumOptionsFromModels(selectedMediaCatalogModels, ['quality', 'resolution']),
+  }), [selectedMediaCatalogModels])
 
   // 自定义模型引用（manifestId 以 custom: 开头）——不依赖内置目录，
   // 渲染在清单下方，可手动添加 / 移除。原生 adapter（xAI/APIMart）按 defaultModel 调用，
@@ -1358,6 +1436,9 @@ export function ProviderEditPanel({
         mediaModelRefs: [...existing.values()],
         mediaCapabilities: [...capabilitySet],
         mediaProvider: checked ? adapterKindFromManifestProvider(model.providerKind) : prev.mediaProvider,
+        mediaApiType: checked
+          ? model.invocationMode === 'sync' ? 'sync' : model.invocationMode === 'async_polling' ? 'async' : prev.mediaApiType
+          : prev.mediaApiType,
         defaultModel: prev.defaultModel.trim() ? prev.defaultModel : model.effectiveModelId,
         modelIds,
       }
@@ -1522,8 +1603,8 @@ export function ProviderEditPanel({
           type="info"
           message={
             [
-              form.modelType === 'image'
-                ? `生图模型 · ${form.imageProvider}/${form.mediaApiType}`
+              isMediaProviderModelType(form.modelType)
+                ? `${form.modelType === 'image' ? '生图模型' : form.modelType === 'voice' ? '语音模型' : '视频模型'} · ${mediaProviderDisplayName(form.mediaProvider || mediaProviderFromImageKind(form.imageProvider))}/${form.mediaApiType}`
                 : form.provider === 'anthropic'
                   ? 'Anthropic 格式'
                   : 'OpenAI 格式',
@@ -1553,7 +1634,34 @@ export function ProviderEditPanel({
           </div>
           <div className="pv_section_body">
             <div className="pv_form_grid">
-              {form.modelType !== 'image' && (
+              <label className="pv_form_label">模型类型</label>
+              <Select
+                value={form.modelType}
+                onChange={(v) => {
+                  const modelType = v as ProviderModelType
+                  const isMedia = isMediaProviderModelType(modelType)
+                  setForm((prev) => ({
+                    ...prev,
+                    modelType,
+                    presetId: 'custom',
+                    provider: isMedia ? 'openai' : prev.provider,
+                    codexApiKind: isMedia ? 'chat' : prev.codexApiKind,
+                    imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
+                    imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
+                    mediaProvider: isMedia ? (prev.mediaProvider || mediaProviderFromImageKind(prev.imageProvider)) : '',
+                    mediaApiType: isMedia ? prev.mediaApiType : 'auto',
+                  }))
+                }}
+                options={[
+                  { label: '生图模型', value: 'image' },
+                  { label: '文本（含编码）模型', value: 'text' },
+                  { label: '多模态（含编码、生图）模型', value: 'multimodal' },
+                  { label: '语音模型', value: 'voice' },
+                  { label: '视频模型', value: 'video' },
+                ]}
+              />
+
+              {!isMediaProviderModelType(form.modelType) && (
                 <>
                   <label className="pv_form_label">
                     API 协议格式
@@ -1576,30 +1684,6 @@ export function ProviderEditPanel({
                   />
                 </>
               )}
-
-              <label className="pv_form_label">模型类型</label>
-              <Select
-                value={form.modelType}
-                onChange={(v) => {
-                  const modelType = v as ProviderModelType
-                  setForm((prev) => ({
-                    ...prev,
-                    modelType,
-                    presetId: 'custom',
-                    provider: modelType === 'image' ? 'openai' : prev.provider,
-                    codexApiKind: modelType === 'image' ? 'chat' : prev.codexApiKind,
-                    imageProvider: modelType === 'image' ? prev.imageProvider : 'openai',
-                    imageApiType: modelType === 'image' ? prev.imageApiType : 'sync',
-                  }))
-                }}
-                options={[
-                  { label: '生图模型', value: 'image' },
-                  { label: '文本（含编码）模型', value: 'text' },
-                  { label: '多模态（含编码、生图）模型', value: 'multimodal' },
-                  { label: '语音模型', value: 'voice' },
-                  { label: '视频模型', value: 'video' },
-                ]}
-              />
 
               {availablePresets.length > 0 && (
                 <>
@@ -1859,46 +1943,106 @@ export function ProviderEditPanel({
                     <span className="pv_form_sub">留空则使用平台默认；视频/异步任务建议设置轮询间隔与超时</span>
                   </label>
                   <div className="pv_media_defaults">
-                    <Input
-                      value={form.mediaImageSize}
-                      onChange={(e) => set('mediaImageSize', e.target.value)}
-                      placeholder="图片尺寸 (1024x1024 / 16:9)"
-                    />
+                    {mediaDefaultOptionSets.imageSize.length > 0 ? (
+                      <Select
+                        value={form.mediaImageSize || undefined}
+                        allowClear
+                        onChange={(value) => set('mediaImageSize', value == null ? '' : String(value))}
+                        placeholder="图片尺寸 / 比例"
+                        options={mediaDefaultOptionSets.imageSize}
+                      />
+                    ) : (
+                      <Input
+                        value={form.mediaImageSize}
+                        onChange={(e) => set('mediaImageSize', e.target.value)}
+                        placeholder="图片尺寸 (1024x1024 / 16:9)"
+                      />
+                    )}
                     <Input
                       value={form.mediaImageN}
                       onChange={(e) => set('mediaImageN', e.target.value)}
                       placeholder="图片数量 n"
                     />
-                    <Input
-                      value={form.mediaImageQuality}
-                      onChange={(e) => set('mediaImageQuality', e.target.value)}
-                      placeholder="图片质量 (hd / standard)"
-                    />
+                    {mediaDefaultOptionSets.imageQuality.length > 0 ? (
+                      <Select
+                        value={form.mediaImageQuality || undefined}
+                        allowClear
+                        onChange={(value) => set('mediaImageQuality', value == null ? '' : String(value))}
+                        placeholder="图片质量"
+                        options={mediaDefaultOptionSets.imageQuality}
+                      />
+                    ) : (
+                      <Input
+                        value={form.mediaImageQuality}
+                        onChange={(e) => set('mediaImageQuality', e.target.value)}
+                        placeholder="图片质量 (hd / standard)"
+                      />
+                    )}
                     <Input
                       value={form.mediaAudioVoice}
                       onChange={(e) => set('mediaAudioVoice', e.target.value)}
                       placeholder="语音 voice (alloy / nova)"
                     />
-                    <Input
-                      value={form.mediaAudioFormat}
-                      onChange={(e) => set('mediaAudioFormat', e.target.value)}
-                      placeholder="语音格式 (mp3 / wav)"
-                    />
-                    <Input
-                      value={form.mediaVideoAspectRatio}
-                      onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
-                      placeholder="视频比例 (16:9)"
-                    />
-                    <Input
-                      value={form.mediaVideoDuration}
-                      onChange={(e) => set('mediaVideoDuration', e.target.value)}
-                      placeholder="视频时长 (秒)"
-                    />
-                    <Input
-                      value={form.mediaVideoQuality}
-                      onChange={(e) => set('mediaVideoQuality', e.target.value)}
-                      placeholder="视频质量 (hd)"
-                    />
+                    {mediaDefaultOptionSets.audioFormat.length > 0 ? (
+                      <Select
+                        value={form.mediaAudioFormat || undefined}
+                        allowClear
+                        onChange={(value) => set('mediaAudioFormat', value == null ? '' : String(value))}
+                        placeholder="语音格式 / 输出格式"
+                        options={mediaDefaultOptionSets.audioFormat}
+                      />
+                    ) : (
+                      <Input
+                        value={form.mediaAudioFormat}
+                        onChange={(e) => set('mediaAudioFormat', e.target.value)}
+                        placeholder="语音格式 (mp3 / wav)"
+                      />
+                    )}
+                    {mediaDefaultOptionSets.videoAspectRatio.length > 0 ? (
+                      <Select
+                        value={form.mediaVideoAspectRatio || undefined}
+                        allowClear
+                        onChange={(value) => set('mediaVideoAspectRatio', value == null ? '' : String(value))}
+                        placeholder="视频比例"
+                        options={mediaDefaultOptionSets.videoAspectRatio}
+                      />
+                    ) : (
+                      <Input
+                        value={form.mediaVideoAspectRatio}
+                        onChange={(e) => set('mediaVideoAspectRatio', e.target.value)}
+                        placeholder="视频比例 (16:9)"
+                      />
+                    )}
+                    {mediaDefaultOptionSets.videoDuration.length > 0 ? (
+                      <Select
+                        value={form.mediaVideoDuration || undefined}
+                        allowClear
+                        onChange={(value) => set('mediaVideoDuration', value == null ? '' : String(value))}
+                        placeholder="视频时长 (秒)"
+                        options={mediaDefaultOptionSets.videoDuration}
+                      />
+                    ) : (
+                      <Input
+                        value={form.mediaVideoDuration}
+                        onChange={(e) => set('mediaVideoDuration', e.target.value)}
+                        placeholder="视频时长 (秒)"
+                      />
+                    )}
+                    {mediaDefaultOptionSets.videoQuality.length > 0 ? (
+                      <Select
+                        value={form.mediaVideoQuality || undefined}
+                        allowClear
+                        onChange={(value) => set('mediaVideoQuality', value == null ? '' : String(value))}
+                        placeholder="视频质量 / 分辨率"
+                        options={mediaDefaultOptionSets.videoQuality}
+                      />
+                    ) : (
+                      <Input
+                        value={form.mediaVideoQuality}
+                        onChange={(e) => set('mediaVideoQuality', e.target.value)}
+                        placeholder="视频质量 (hd)"
+                      />
+                    )}
                     <Input
                       value={form.mediaPollInterval}
                       onChange={(e) => set('mediaPollInterval', e.target.value)}
@@ -1913,7 +2057,7 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              {form.provider === 'openai' && form.modelType !== 'image' && (
+              {form.provider === 'openai' && !isMediaProviderModelType(form.modelType) && (
                 <>
                   <label className="pv_form_label">
                     Codex API 类型
@@ -1934,7 +2078,7 @@ export function ProviderEditPanel({
 
               <label className="pv_form_label">
                 默认模型 ID
-                <span className="pv_form_sub">作为主对话默认；同时自动加入下方可用模型列表（带星标）</span>
+                <span className="pv_form_sub">{isMediaProviderModelType(form.modelType) ? '作为 adapter 默认调用模型；勾选模型清单时会自动补齐' : '作为主对话默认；同时自动加入下方可用模型列表（带星标）'}</span>
               </label>
               <Input
                 value={form.defaultModel}
@@ -1953,7 +2097,9 @@ export function ProviderEditPanel({
                 value={form.endpoint}
                 onChange={(e) => set('endpoint', e.target.value)}
                 placeholder={
-                  form.modelType === 'image'
+                  isMediaProviderModelType(form.modelType)
+                    ? 'https://api.example.com'
+                    : form.modelType === 'image'
                     ? imageProviderDefaults(form.imageProvider).endpoint || 'https://api.example.com/v1'
                     : form.provider === 'anthropic'
                     ? 'https://api.anthropic.com'
@@ -1961,7 +2107,7 @@ export function ProviderEditPanel({
                 }
               />
 
-              {form.modelType !== 'image' && (
+              {!isMediaProviderModelType(form.modelType) && (
                 <>
                   <label className="pv_form_label">
                     支持 1M 上下文
@@ -1980,7 +2126,7 @@ export function ProviderEditPanel({
                 </>
               )}
 
-              <label className="pv_form_label">{form.modelType === 'image' ? '默认生图模型' : '默认 Provider'}</label>
+              <label className="pv_form_label">{isMediaProviderModelType(form.modelType) ? '默认调用模型' : '默认 Provider'}</label>
               <div className="pv_form_control_inline">
                 <Switch
                   size="small"
@@ -1989,8 +2135,8 @@ export function ProviderEditPanel({
                 />
                 <span className="pv_form_hint">
                   {form.isDefault
-                    ? (form.modelType === 'image' ? '默认生图' : '系统默认')
-                    : (form.modelType === 'image' ? '备选生图' : '备选 Provider')}
+                    ? (isMediaProviderModelType(form.modelType) ? '默认多媒体' : '系统默认')
+                    : (isMediaProviderModelType(form.modelType) ? '备选多媒体' : '备选 Provider')}
                 </span>
               </div>
             </div>
@@ -2021,7 +2167,7 @@ export function ProviderEditPanel({
           </div>
         </div>
 
-        {form.modelType !== 'image' && (
+        {!isMediaProviderModelType(form.modelType) && (
           <>
             {/* ─── 可用模型 ─── */}
             <div className="pv_section">

@@ -195,6 +195,124 @@ const imageSizeSchema = {
   },
 }
 
+const apimartGptImage2Schema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    size: {
+      type: 'string',
+      title: '画幅',
+      enum: ['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '5:4', '4:5', '16:9', '9:16', '2:1', '1:2', '3:1', '1:3', '21:9', '9:21'],
+      default: '1:1',
+    },
+    resolution: { type: 'string', title: '分辨率', enum: ['1k', '2k', '4k'], default: '1k' },
+    n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
+    official_fallback: { type: 'boolean', title: '官方兜底', default: false },
+  },
+}
+
+const apimartImageModelSchemas: Record<string, { schema: Record<string, unknown>; defaults: Record<string, unknown> }> = {
+  'wan2.7-image': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅 / 尺寸', enum: ['1K', '2K', '4K', '1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'] },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        negative_prompt: { type: 'string', title: '负面提示词' },
+        seed: { type: 'integer', title: '随机种子', minimum: 0, maximum: 2147483647 },
+        thinking_mode: { type: 'boolean', title: '思考模式', default: true },
+        enable_sequential: { type: 'boolean', title: '连续生成', default: false },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { n: 1, thinking_mode: true, enable_sequential: false, watermark: false },
+  },
+  'imagen-4.0-apimart': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '4:3', '3:4', '16:9', '9:16'], default: '16:9' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 1, default: 1 },
+      },
+    },
+    defaults: { n: 1, size: '16:9' },
+  },
+  'qwen-image-2.0': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3'], default: '1:1' },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 6, default: 1 },
+        negative_prompt: { type: 'string', title: '负面提示词', maxLength: 500 },
+      },
+    },
+    defaults: { size: '1:1', resolution: '1K', n: 1 },
+  },
+  'doubao-seedream-5-0-lite': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['1:1', '4:3', '3:4', '16:9', '9:16', '3:2', '2:3', '21:9', 'auto'], default: '1:1' },
+        resolution: { type: 'string', title: '分辨率', enum: ['2K', '3K', '4K'], default: '2K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 15, default: 1 },
+        output_format: { type: 'string', title: '输出格式', enum: ['jpeg', 'png'], default: 'jpeg' },
+        sequential_image_generation: { type: 'string', title: '连续生成', enum: ['disabled', 'auto'], default: 'disabled' },
+        watermark: { type: 'boolean', title: '水印', default: false },
+      },
+    },
+    defaults: { size: '1:1', resolution: '2K', n: 1, output_format: 'jpeg', sequential_image_generation: 'disabled', watermark: false },
+  },
+  'gemini-3.1-flash-image-preview': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '3:2', '2:3', '4:3', '3:4', '16:9', '9:16', '5:4', '4:5', '21:9', '1:4', '4:1', '1:8', '8:1'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['0.5K', '1K', '2K', '4K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        google_search: { type: 'boolean', title: 'Google 搜索', default: false },
+        google_image_search: { type: 'boolean', title: 'Google 图片搜索', default: false },
+        official_fallback: { type: 'boolean', title: '官方兜底', default: false },
+      },
+    },
+    defaults: { resolution: '1K', n: 1, google_search: false, google_image_search: false, official_fallback: false },
+  },
+  'gemini-3-pro-image-preview': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K', '2K', '4K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        mask_url: { type: 'string', title: '遮罩 URL' },
+        official_fallback: { type: 'boolean', title: '官方兜底', default: false },
+      },
+    },
+    defaults: { resolution: '1K', n: 1, official_fallback: false },
+  },
+  'gemini-2.5-flash-image-preview': {
+    schema: {
+      type: 'object',
+      additionalProperties: true,
+      properties: {
+        size: { type: 'string', title: '画幅', enum: ['auto', '1:1', '2:3', '3:2', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'] },
+        resolution: { type: 'string', title: '分辨率', enum: ['1K'], default: '1K' },
+        n: { type: 'integer', title: '数量', minimum: 1, maximum: 4, default: 1 },
+        mask_url: { type: 'string', title: '遮罩 URL' },
+        official_fallback: { type: 'boolean', title: '官方兜底', default: false },
+      },
+    },
+    defaults: { resolution: '1K', n: 1, official_fallback: false },
+  },
+}
+
 const videoSchema = {
   type: 'object',
   additionalProperties: false,
@@ -204,6 +322,115 @@ const videoSchema = {
     resolution: { type: 'string', title: '分辨率', examples: ['720p', '1080p'] },
     fps: { type: 'integer', title: '帧率', minimum: 1, maximum: 120 },
     seed: { type: 'integer', title: '随机种子' },
+  },
+}
+
+const xaiVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', enum: ['1:1', '16:9', '9:16', '4:3', '3:4', '3:2', '2:3'] },
+    durationSeconds: { type: 'integer', title: '时长', minimum: 1, maximum: 15, default: 8 },
+    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '720p' },
+    user: { type: 'string', title: '用户标识' },
+  },
+}
+
+const xaiImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', enum: ['1:1', '3:4', '4:3', '9:16', '16:9', '2:3', '3:2', '9:19.5', '19.5:9', '9:20', '20:9', '1:2', '2:1', 'auto'] },
+    resolution: { type: 'string', title: '分辨率', enum: ['1k', '2k'] },
+    n: { type: 'integer', title: '数量', minimum: 1, default: 1 },
+    response_format: { type: 'string', title: '响应格式', enum: ['url', 'b64_json'], default: 'url' },
+    user: { type: 'string', title: '用户标识' },
+  },
+}
+
+const apimartSeedance2VideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    durationSeconds: { type: 'integer', title: '时长', minimum: 4, maximum: 15, default: 5 },
+    aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'], default: '16:9' },
+    resolution: { type: 'string', title: '分辨率', enum: ['480p', '720p', '1080p'], default: '480p' },
+    seed: { type: 'integer', title: '随机种子' },
+    generate_audio: { type: 'boolean', title: '生成音频', default: false },
+    return_last_frame: { type: 'boolean', title: '返回尾帧', default: false },
+  },
+}
+
+const klingVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', enum: ['16:9', '9:16', '1:1'] },
+    durationSeconds: { type: 'integer', title: '时长', enum: [5, 10] },
+    mode: { type: 'string', title: '模式', enum: ['standard', 'professional'] },
+    negative_prompt: { type: 'string', title: '负面提示词' },
+    audio: { type: 'boolean', title: '生成音频', default: false },
+  },
+}
+
+const minimaxImageSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    aspectRatio: { type: 'string', title: '比例', enum: ['1:1', '16:9', '4:3', '3:2', '2:3', '3:4', '9:16', '21:9'], default: '1:1' },
+    width: { type: 'integer', title: '宽度', minimum: 512, maximum: 2048 },
+    height: { type: 'integer', title: '高度', minimum: 512, maximum: 2048 },
+    response_format: { type: 'string', title: '响应格式', enum: ['url', 'base64'], default: 'url' },
+    seed: { type: 'integer', title: '随机种子' },
+    n: { type: 'integer', title: '数量', minimum: 1, maximum: 9, default: 1 },
+    prompt_optimizer: { type: 'boolean', title: '提示词优化', default: false },
+    aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+  },
+}
+
+const minimaxSpeechSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    voice: { type: 'string', title: '音色 ID', description: '映射到 MiniMax voice_setting.voice_id' },
+    speed: { type: 'number', title: '语速', minimum: 0.5, maximum: 2, default: 1 },
+    vol: { type: 'number', title: '音量', minimum: 0, maximum: 10, default: 1 },
+    pitch: { type: 'integer', title: '音调', minimum: -12, maximum: 12, default: 0 },
+    language_boost: {
+      type: 'string',
+      title: '语言增强',
+      enum: ['Chinese', 'Chinese,Yue', 'English', 'Japanese', 'Korean', 'French', 'German', 'Spanish', 'Portuguese', 'Russian', 'auto'],
+    },
+    format: { type: 'string', title: '音频格式', enum: ['mp3', 'wav', 'pcm', 'flac'], default: 'mp3' },
+    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'hex' },
+    aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+    subtitle_enable: { type: 'boolean', title: '字幕', default: false },
+    subtitle_type: { type: 'string', title: '字幕粒度', enum: ['sentence', 'word', 'word_streaming'], default: 'sentence' },
+  },
+}
+
+const minimaxMusicSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    lyrics: { type: 'string', title: '歌词' },
+    output_format: { type: 'string', title: '输出格式', enum: ['url', 'hex'], default: 'hex' },
+    aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
+    lyrics_optimizer: { type: 'boolean', title: '歌词优化', default: false },
+    is_instrumental: { type: 'boolean', title: '纯音乐', default: false },
+    format: { type: 'string', title: '音频格式', enum: ['mp3', 'wav', 'pcm', 'flac'], default: 'mp3' },
+  },
+}
+
+const minimaxHailuoVideoSchema = {
+  type: 'object',
+  additionalProperties: true,
+  properties: {
+    durationSeconds: { type: 'integer', title: '时长', enum: [6, 10], default: 6 },
+    resolution: { type: 'string', title: '分辨率', enum: ['768P', '1080P'], default: '768P' },
+    prompt_optimizer: { type: 'boolean', title: '提示词优化', default: true },
+    fast_pretreatment: { type: 'boolean', title: '快速预处理', default: false },
+    aigc_watermark: { type: 'boolean', title: 'AIGC 水印', default: false },
   },
 }
 
@@ -245,8 +472,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生图',
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        paramSchema: imageSizeSchema,
-        defaults: { n: 1, size: '1024x1024' },
+        paramSchema: apimartGptImage2Schema,
+        defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
         aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
       },
       {
@@ -254,7 +481,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '图生图 / 图片编辑',
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        paramSchema: imageSizeSchema,
+        paramSchema: apimartGptImage2Schema,
+        defaults: { n: 1, size: '1:1', resolution: '1k', official_fallback: false },
         aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
       },
     ],
@@ -308,11 +536,13 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     safety: { maxPromptLength: 8000, allowLocalFiles: true, maxInputBytes: 100 * 1024 * 1024 },
   },
   ...[
-    { id: 'apimart:gpt-image-1', modelId: 'gpt-image-1', displayName: 'APIMart GPT Image 1' },
-    { id: 'apimart:gemini-2-5-flash-image', modelId: 'gemini-2.5-flash-image-preview', displayName: 'APIMart Gemini 2.5 Flash Image (nano-banana)' },
-    { id: 'apimart:flux-kontext-pro', modelId: 'flux-kontext-pro', displayName: 'APIMart Flux Kontext Pro' },
-    { id: 'apimart:doubao-seedream', modelId: 'doubao-seedream-4-0-250828', displayName: 'APIMart Doubao Seedream 4.0' },
-    { id: 'apimart:imagen', modelId: 'imagen-4.0-generate-001', displayName: 'APIMart Google Imagen 4' },
+    { id: 'apimart:wan2.7-image', modelId: 'wan2.7-image', displayName: 'APIMart Wan 2.7 Image' },
+    { id: 'apimart:qwen-image-2.0', modelId: 'qwen-image-2.0', displayName: 'APIMart Qwen Image 2.0' },
+    { id: 'apimart:doubao-seedream-5-0-lite', modelId: 'doubao-seedream-5-0-lite', displayName: 'APIMart Seedream 5.0 Lite' },
+    { id: 'apimart:gemini-3.1-flash-image-preview', modelId: 'gemini-3.1-flash-image-preview', displayName: 'APIMart Gemini 3.1 Flash Image' },
+    { id: 'apimart:gemini-3-pro-image-preview', modelId: 'gemini-3-pro-image-preview', displayName: 'APIMart Gemini 3 Pro Image' },
+    { id: 'apimart:gemini-2.5-flash-image-preview', modelId: 'gemini-2.5-flash-image-preview', displayName: 'APIMart Gemini 2.5 Flash Image (nano-banana)' },
+    { id: 'apimart:imagen-4.0-apimart', modelId: 'imagen-4.0-apimart', displayName: 'APIMart Imagen 4.0' },
   ].map((entry) => ({
     id: entry.id,
     providerKind: 'apimart',
@@ -325,8 +555,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生图',
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        paramSchema: imageSizeSchema,
-        defaults: { n: 1, size: '1024x1024' },
+        paramSchema: apimartImageModelSchemas[entry.modelId]?.schema ?? imageSizeSchema,
+        defaults: apimartImageModelSchemas[entry.modelId]?.defaults ?? { n: 1 },
         aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
       },
       {
@@ -334,7 +564,8 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '图生图 / 图片编辑',
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 8, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        paramSchema: imageSizeSchema,
+        paramSchema: apimartImageModelSchemas[entry.modelId]?.schema ?? imageSizeSchema,
+        defaults: apimartImageModelSchemas[entry.modelId]?.defaults ?? { n: 1 },
         aliases: { aspectRatio: 'aspect_ratio', outputFormat: 'output_format' },
       },
     ],
@@ -355,6 +586,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     { id: 'apimart:veo2', modelId: 'veo2', displayName: 'APIMart VEO 2' },
     { id: 'apimart:kling-v2', modelId: 'kling-v2-master', displayName: 'APIMart Kling V2' },
     { id: 'apimart:seedance', modelId: 'seedance-1-0-pro-i2v', displayName: 'APIMart Seedance 1.0 Pro' },
+    { id: 'apimart:doubao-seedance-2.0', modelId: 'doubao-seedance-2.0', displayName: 'APIMart Doubao Seedance 2.0' },
     { id: 'apimart:hailuo-02', modelId: 'hailuo-02', displayName: 'APIMart Hailuo 02' },
   ].map((entry) => ({
     id: entry.id,
@@ -368,8 +600,10 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生视频',
         input: { required: ['prompt'] as MediaManifestInputKind[] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
-        defaults: { aspectRatio: '16:9', durationSeconds: 5 },
+        paramSchema: entry.modelId === 'doubao-seedance-2.0' ? apimartSeedance2VideoSchema : videoSchema,
+        defaults: entry.modelId === 'doubao-seedance-2.0'
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
+          : { aspectRatio: '16:9', durationSeconds: 5 },
         aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
       },
       {
@@ -377,7 +611,10 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '图生视频',
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
+        paramSchema: entry.modelId === 'doubao-seedance-2.0' ? apimartSeedance2VideoSchema : videoSchema,
+        defaults: entry.modelId === 'doubao-seedance-2.0'
+          ? { aspectRatio: '16:9', durationSeconds: 5, resolution: '480p', generate_audio: false, return_last_frame: false }
+          : undefined,
         aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
       },
     ],
@@ -396,7 +633,7 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
   {
     id: 'xai:grok-imagine-image',
     providerKind: 'xai',
-    modelId: 'grok-imagine-image',
+    modelId: 'grok-imagine-image-quality',
     displayName: 'xAI Grok Imagine Image',
     domains: ['image'],
     capabilities: [
@@ -405,16 +642,18 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生图',
         input: { required: ['prompt'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        paramSchema: imageSizeSchema,
-        defaults: { n: 1 },
+        paramSchema: xaiImageSchema,
+        defaults: { n: 1, response_format: 'url' },
+        aliases: { aspectRatio: 'aspect_ratio' },
       },
       {
         id: 'image.edit',
         label: '图生图 / 图片编辑',
         input: { required: ['prompt', 'image'], maxImages: 10, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
-        paramSchema: imageSizeSchema,
-        defaults: { n: 1 },
+        paramSchema: xaiImageSchema,
+        defaults: { n: 1, response_format: 'url' },
+        aliases: { aspectRatio: 'aspect_ratio' },
       },
     ],
     invocation: {
@@ -442,14 +681,18 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
         label: '文生视频',
         input: { required: ['prompt'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
+        paramSchema: xaiVideoSchema,
+        defaults: { durationSeconds: 8, resolution: '720p' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
       },
       {
         id: 'video.image_to_video',
         label: '图生视频',
         input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
         output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
-        paramSchema: videoSchema,
+        paramSchema: xaiVideoSchema,
+        defaults: { durationSeconds: 8, resolution: '720p' },
+        aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
       },
     ],
     invocation: {
@@ -593,9 +836,195 @@ export const BUILTIN_MEDIA_MODEL_MANIFESTS: readonly MediaModelManifest[] = [
     safety: { maxPromptLength: 8000, allowLocalFiles: true },
   },
   ...[
-    { id: 'kling:kling-video', providerKind: 'kling', modelId: 'kling-video', displayName: 'Kling Video' },
+    { id: 'kling:kling-video-o1', modelId: 'kling-video-o1', displayName: 'Kling O1', modes: ['standard', 'professional'] },
+    { id: 'kling:kling-v2.6-pro', modelId: 'kling-v2.6-pro', displayName: 'Kling 2.6 Pro', modes: ['standard', 'professional'], audio: true },
+    { id: 'kling:kling-v2.6-std', modelId: 'kling-v2.6-std', displayName: 'Kling 2.6 Standard', modes: ['standard'], audio: true },
+    { id: 'kling:kling-v2.5-turbo', modelId: 'kling-v2.5-turbo', displayName: 'Kling 2.5 Turbo', modes: [] },
+  ].map((entry) => {
+    const schema = {
+      ...klingVideoSchema,
+      properties: {
+        ...klingVideoSchema.properties,
+        ...(entry.modes.length > 0 ? { mode: { type: 'string', title: '模式', enum: entry.modes } } : {}),
+        ...(entry.audio ? {} : { audio: { type: 'boolean', title: '生成音频', readOnly: true, default: false } }),
+      },
+    }
+    return {
+      id: entry.id,
+      providerKind: 'kling',
+      modelId: entry.modelId,
+      displayName: entry.displayName,
+      domains: ['video'] as MediaDomain[],
+      capabilities: [
+        {
+          id: 'video.generate',
+          label: '文生视频',
+          input: { required: ['prompt'] as MediaManifestInputKind[] },
+          output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+          paramSchema: schema,
+          aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        },
+        {
+          id: 'video.image_to_video',
+          label: '图生视频',
+          input: { required: ['prompt', 'image'] as MediaManifestInputKind[], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+          output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+          paramSchema: schema,
+          aliases: { aspectRatio: 'aspect_ratio', durationSeconds: 'duration' },
+        },
+      ],
+      invocation: {
+        mode: 'async_polling' as MediaInvocationMode,
+        endpoint: '/v1/videos/text2video',
+        method: 'POST' as const,
+        contentType: 'json' as const,
+        requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+        response: { kind: 'task_poll' as const, taskIdPaths: ['task_id', 'id'], statusEndpoint: '/v1/videos/text2video/{{taskId}}', resultPaths: ['video_url', 'output.video_url', 'data.video_url', 'data.url'] },
+        polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
+      },
+      docs: { sourceUrls: ['https://klingapi.com/zh/docs/text-to-video'] },
+      safety: { maxPromptLength: 2500, allowLocalFiles: true },
+    }
+  }),
+  {
+    id: 'minimax:image-01',
+    providerKind: 'minimax-hailuo',
+    modelId: 'image-01',
+    displayName: 'MiniMax Image 01',
+    domains: ['image'],
+    capabilities: [
+      {
+        id: 'image.generate',
+        label: '文生图',
+        input: { required: ['prompt'] },
+        output: { types: ['image'] as MediaManifestOutputKind[], mimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        paramSchema: minimaxImageSchema,
+        defaults: { aspectRatio: '1:1', response_format: 'url', n: 1, prompt_optimizer: false, aigc_watermark: false },
+        aliases: { aspectRatio: 'aspect_ratio' },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/v1/image_generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}' },
+      response: { kind: 'url', jsonPaths: ['data.image_urls[]', 'data.image_base64[]'], download: true },
+    },
+    docs: { sourceUrls: ['https://platform.minimaxi.com/document/image_generation'] },
+    safety: { maxPromptLength: 1500 },
+  },
+  ...[
+    { id: 'minimax:speech-2.8-hd', modelId: 'speech-2.8-hd', displayName: 'MiniMax Speech 2.8 HD', subtitles: true },
+    { id: 'minimax:speech-2.8-turbo', modelId: 'speech-2.8-turbo', displayName: 'MiniMax Speech 2.8 Turbo', subtitles: false },
+  ].map((entry) => ({
+    id: entry.id,
+    providerKind: 'minimax-hailuo',
+    modelId: entry.modelId,
+    displayName: entry.displayName,
+    domains: ['audio'] as MediaDomain[],
+    capabilities: [
+      {
+        id: 'audio.speech',
+        label: '文生音频',
+        input: { required: ['text'] as MediaManifestInputKind[] },
+        output: { types: ['audio'] as MediaManifestOutputKind[], mimeTypes: ['audio/mpeg', 'audio/wav'] },
+        paramSchema: entry.subtitles ? minimaxSpeechSchema : {
+          ...minimaxSpeechSchema,
+          properties: Object.fromEntries(Object.entries(minimaxSpeechSchema.properties).filter(([key]) => key !== 'subtitle_enable' && key !== 'subtitle_type')),
+        },
+        defaults: { format: 'mp3', output_format: 'url', speed: 1, vol: 1, pitch: 0, aigc_watermark: false },
+      },
+    ],
+    invocation: {
+      mode: 'sync' as MediaInvocationMode,
+      endpoint: '/v1/t2a_v2',
+      method: 'POST' as const,
+      contentType: 'json' as const,
+      requestTemplate: {
+        model: '{{modelId}}',
+        text: '{{text}}',
+        stream: false,
+        output_format: '{{output_format}}',
+        aigc_watermark: '{{aigc_watermark}}',
+        voice_setting: { voice_id: '{{voice}}', speed: '{{speed}}', vol: '{{vol}}', pitch: '{{pitch}}' },
+        audio_setting: { format: '{{format}}' },
+        language_boost: '{{language_boost}}',
+        subtitle_enable: '{{subtitle_enable}}',
+        subtitle_type: '{{subtitle_type}}',
+      },
+      response: { kind: 'url' as const, jsonPaths: ['data.audio', 'data.audio_file', 'data.url'], download: true },
+    },
+    docs: { sourceUrls: ['https://platform.minimaxi.com/document/text-to-speech'] },
+    safety: { maxPromptLength: 10000 },
+  })),
+  {
+    id: 'minimax:music-2.6',
+    providerKind: 'minimax-hailuo',
+    modelId: 'music-2.6',
+    displayName: 'MiniMax Music 2.6',
+    domains: ['audio'],
+    capabilities: [
+      {
+        id: 'audio.music',
+        label: '文生音乐',
+        input: { required: ['prompt'] },
+        output: { types: ['audio'] as MediaManifestOutputKind[], mimeTypes: ['audio/mpeg', 'audio/wav'] },
+        paramSchema: minimaxMusicSchema,
+        defaults: { output_format: 'url', format: 'mp3', aigc_watermark: false, lyrics_optimizer: false, is_instrumental: false },
+      },
+    ],
+    invocation: {
+      mode: 'sync',
+      endpoint: '/v1/music_generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', output_format: '{{output_format}}' },
+      response: { kind: 'url', jsonPaths: ['data.audio', 'data.url'], download: true },
+    },
+    docs: { sourceUrls: ['https://platform.minimaxi.com/document/music_generation'] },
+    safety: { maxPromptLength: 3000 },
+  },
+  {
+    id: 'minimax:hailuo-2.3',
+    providerKind: 'minimax-hailuo',
+    modelId: 'MiniMax-Hailuo-2.3',
+    displayName: 'MiniMax Hailuo 2.3',
+    domains: ['video'],
+    capabilities: [
+      {
+        id: 'video.generate',
+        label: '文生视频',
+        input: { required: ['prompt'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxHailuoVideoSchema,
+        defaults: { durationSeconds: 6, resolution: '768P', prompt_optimizer: true, fast_pretreatment: false, aigc_watermark: false },
+        aliases: { durationSeconds: 'duration' },
+      },
+      {
+        id: 'video.image_to_video',
+        label: '图生视频',
+        input: { required: ['prompt', 'image'], maxImages: 1, acceptedMimeTypes: ['image/png', 'image/jpeg', 'image/webp'] },
+        output: { types: ['video'] as MediaManifestOutputKind[], mimeTypes: ['video/mp4'] },
+        paramSchema: minimaxHailuoVideoSchema,
+        defaults: { durationSeconds: 6, resolution: '768P', prompt_optimizer: true, fast_pretreatment: false, aigc_watermark: false },
+        aliases: { durationSeconds: 'duration' },
+      },
+    ],
+    invocation: {
+      mode: 'async_polling',
+      endpoint: '/v1/video_generation',
+      method: 'POST',
+      contentType: 'json',
+      requestTemplate: { model: '{{modelId}}', prompt: '{{prompt}}', first_frame_image: '{{image}}' },
+      response: { kind: 'task_poll', taskIdPaths: ['task_id', 'data.task_id'], statusEndpoint: '/v1/query/video_generation?task_id={{taskId}}', resultPaths: ['data.video_url', 'data.file_url', 'file_url', 'video_url'] },
+      polling: { intervalMs: 5000, timeoutMs: 1200000, statusMap: commonStatusMap },
+    },
+    docs: { sourceUrls: ['https://platform.minimaxi.com/document/video_generation'] },
+    safety: { maxPromptLength: 2000, allowLocalFiles: true },
+  },
+  ...[
     { id: 'pixverse:video', providerKind: 'pixverse', modelId: 'pixverse-video', displayName: 'PixVerse Video' },
-    { id: 'minimax:hailuo-video', providerKind: 'minimax-hailuo', modelId: 'hailuo-video', displayName: 'MiniMax Hailuo Video' },
     { id: 'wan:video', providerKind: 'wan', modelId: 'wan-video', displayName: 'Wan Video' },
     { id: 'happyhorse:video', providerKind: 'happyhorse', modelId: 'happyhorse-video', displayName: 'HappyHorse Video' },
     { id: 'omni:media', providerKind: 'omni', modelId: 'omni-media', displayName: 'Omni Media' },
