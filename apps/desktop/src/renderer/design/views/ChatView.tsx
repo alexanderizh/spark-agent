@@ -672,6 +672,11 @@ export function ChatView({
     activeWorkspaceId == null
       ? null
       : (workspaces.find((item) => item.id === activeWorkspaceId) ?? null)
+  const activeSessionWorkspace = (() => {
+    const sessionWorkspaceId = activeSession?.workspaceIds[0]
+    if (sessionWorkspaceId == null) return activeWorkspace
+    return workspaces.find((item) => item.id === sessionWorkspaceId) ?? activeWorkspace
+  })()
   const activeProvider = providers.find((item) => item.id === activeSession?.providerProfileId)
   const activeProviderContextWindow = resolveProviderContextWindow(
     activeProvider?.supportsMillionContext === true,
@@ -696,12 +701,12 @@ export function ChatView({
   }, [activeSession?.providerProfileId, setSelectedProviderId])
 
   useEffect(() => {
-    if (activeWorkspaceId == null) {
+    if (activeSessionWorkspace == null) {
       setBranchState({ currentBranch: null, branches: [] })
       return
     }
     let cancelled = false
-    listBranches({ workspaceId: activeWorkspaceId })
+    listBranches({ workspaceId: activeSessionWorkspace.id })
       .then((res) => {
         if (!cancelled) setBranchState(res)
       })
@@ -711,7 +716,7 @@ export function ChatView({
     return () => {
       cancelled = true
     }
-  }, [activeWorkspaceId, listBranches])
+  }, [activeSessionWorkspace?.id, listBranches])
 
   // Listen for Ctrl/Cmd+L focus-composer event from global shortcut handler
   useEffect(() => {
@@ -733,9 +738,9 @@ export function ChatView({
   }
 
   const handleSwitchBranch = async (branch: string) => {
-    if (activeWorkspace == null || !branch || branch === branchState.currentBranch) return
+    if (activeSessionWorkspace == null || !branch || branch === branchState.currentBranch) return
     try {
-      const res = await switchBranch({ workspaceId: activeWorkspace.id, branch })
+      const res = await switchBranch({ workspaceId: activeSessionWorkspace.id, branch })
       setBranchState(res)
       toast.success(`已切换到 ${res.currentBranch}`)
     } catch (err) {
@@ -979,7 +984,7 @@ export function ChatView({
       {showInspector && (
         <ChatInspector
           session={activeSession}
-          workspace={activeWorkspace}
+          workspace={activeSessionWorkspace ?? activeWorkspace}
           messages={active == null ? [] : activeMessages}
           usageData={sessionUsageData}
           projectContext={projectContext}
@@ -993,7 +998,8 @@ export function ChatView({
           agents={agents}
           onChangeTeamConfig={updateTeamConfig}
           onOpenProjectFolder={() => {
-            if (activeWorkspace) void sessionCtx.handleOpenProjectFolder(activeWorkspace)
+            const workspaceToOpen = activeSessionWorkspace ?? activeWorkspace
+            if (workspaceToOpen) void sessionCtx.handleOpenProjectFolder(workspaceToOpen)
           }}
         />
       )}
