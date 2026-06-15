@@ -1,5 +1,10 @@
 export type CanvasProjectStatus = 'active' | 'archived' | 'deleted'
 
+export type CanvasProjectSettings = {
+  prompt?: string
+  negativePrompt?: string
+}
+
 export type CanvasNodeType = 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'task' | 'group'
 export type CanvasAssetType = 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'file'
 export type CanvasAssetSource = 'upload' | 'ai_generated' | 'ai_edited' | 'imported' | 'manual'
@@ -36,6 +41,7 @@ export type CanvasProject = {
   coverAssetId?: string | null
   rootPath?: string | null
   status: CanvasProjectStatus
+  settings?: CanvasProjectSettings
   nodeCount: number
   assetCount: number
   taskCount: number

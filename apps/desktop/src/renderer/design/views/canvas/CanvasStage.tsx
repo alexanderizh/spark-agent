@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+} from 'react'
 import {
   Background,
   BackgroundVariant,
@@ -17,6 +24,7 @@ import {
   type Viewport,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
+import { Icons } from '../../Icons'
 import { CanvasNode, type CanvasFlowNodeData } from './CanvasNode'
 import { computeCanvasAlignmentGuides, type CanvasAlignmentGuide } from './canvasAlignmentGuides'
 import { persistCanvasNodeLayoutChanges } from './canvasStageLayout'
@@ -27,6 +35,12 @@ const defaultNodeOrigin: NodeOrigin = [0, 0]
 
 type CanvasNodeActions = CanvasFlowNodeData['actions']
 type CanvasLineageSummary = CanvasFlowNodeData['lineage']
+type CanvasStagePoint = { x: number; y: number }
+type PaneContextMenuState = {
+  left: number
+  top: number
+  flowPosition: CanvasStagePoint
+}
 
 export type CanvasStageViewport = Viewport & {
   width: number
@@ -115,6 +129,8 @@ export function CanvasStage({
   onDissolveGroup,
   onOpenAiComposer,
   onEditNode,
+  onAddTextAtPosition,
+  onAddImageAtPosition,
   onViewportChange,
 }: {
   snapshot: CanvasSnapshot
@@ -133,6 +149,8 @@ export function CanvasStage({
   onDissolveGroup: (groupId: string) => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
+  onAddTextAtPosition: (position: CanvasStagePoint) => void
+  onAddImageAtPosition: (position: CanvasStagePoint) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
@@ -178,6 +196,7 @@ export function CanvasStage({
   )
   const [flowNodes, setFlowNodes] = useState(nodes)
   const stageRef = useRef<HTMLDivElement>(null)
+  const flowInstanceRef = useRef<ReactFlowInstance<Node<CanvasFlowNodeData>, Edge> | null>(null)
   const flowNodesRef = useRef(nodes)
   const latestViewportRef = useRef<Viewport>(snapshot.board.viewport)
   const syncFrameRef = useRef<number | null>(null)
@@ -185,6 +204,7 @@ export function CanvasStage({
   const viewportInteractingRef = useRef(false)
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
+  const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
   const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
 
   const notifyViewportChange = useCallback(
@@ -228,9 +248,12 @@ export function CanvasStage({
 
   useEffect(() => () => cancelScheduledSync(), [cancelScheduledSync])
 
-  useEffect(() => () => {
-    if (guideFrameRef.current != null) window.cancelAnimationFrame(guideFrameRef.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (guideFrameRef.current != null) window.cancelAnimationFrame(guideFrameRef.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     const element = stageRef.current
@@ -248,22 +271,107 @@ export function CanvasStage({
   }, [syncFlowNodes])
 
   const handleViewportMoveStart = useCallback(() => {
+    setPaneContextMenu(null)
     viewportInteractingRef.current = true
     cancelScheduledSync()
   }, [cancelScheduledSync])
 
-  const handleViewportMoveEnd = useCallback((_event?: MouseEvent | TouchEvent | null, viewport?: Viewport) => {
-    viewportInteractingRef.current = false
-    flushPendingNodesSync()
-    if (viewport) notifyViewportChange(viewport)
-  }, [flushPendingNodesSync, notifyViewportChange])
+  const handleViewportMoveEnd = useCallback(
+    (_event?: MouseEvent | TouchEvent | null, viewport?: Viewport) => {
+      viewportInteractingRef.current = false
+      flushPendingNodesSync()
+      if (viewport) notifyViewportChange(viewport)
+    },
+    [flushPendingNodesSync, notifyViewportChange],
+  )
+
+  const handleViewportMove = useCallback(
+    (_event: MouseEvent | TouchEvent | null, viewport: Viewport) => {
+      notifyViewportChange(viewport)
+    },
+    [notifyViewportChange],
+  )
 
   const handleInit = useCallback(
     (instance: ReactFlowInstance<Node<CanvasFlowNodeData>, Edge>) => {
+      flowInstanceRef.current = instance
       notifyViewportChange(instance.getViewport())
     },
     [notifyViewportChange],
   )
+
+  const handlePaneContextMenu = useCallback(
+    (event: MouseEvent | ReactMouseEvent<Element, MouseEvent>) => {
+      const rect = stageRef.current?.getBoundingClientRect()
+      const instance = flowInstanceRef.current
+      if (!rect || !instance) return
+
+      event.preventDefault()
+      event.stopPropagation()
+
+      const menuWidth = 188
+      const menuHeight = 132
+      const minInset = 8
+      const left = Math.min(
+        Math.max(event.clientX - rect.left, minInset),
+        Math.max(rect.width - menuWidth - minInset, minInset),
+      )
+      const top = Math.min(
+        Math.max(event.clientY - rect.top, minInset),
+        Math.max(rect.height - menuHeight - minInset, minInset),
+      )
+
+      setPaneContextMenu({
+        left,
+        top,
+        flowPosition: instance.screenToFlowPosition({
+          x: event.clientX,
+          y: event.clientY,
+        }),
+      })
+    },
+    [],
+  )
+
+  const closePaneContextMenu = useCallback(() => {
+    setPaneContextMenu(null)
+  }, [])
+
+  useEffect(() => {
+    if (!paneContextMenu) return undefined
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closePaneContextMenu()
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('blur', closePaneContextMenu)
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('blur', closePaneContextMenu)
+    }
+  }, [closePaneContextMenu, paneContextMenu])
+
+  const handleResetZoom = useCallback(() => {
+    const instance = flowInstanceRef.current
+    if (!instance) return
+    const nextViewport = { ...latestViewportRef.current, zoom: 1 }
+    closePaneContextMenu()
+    void instance.setViewport(nextViewport, { duration: 180 })
+    notifyViewportChange(nextViewport)
+  }, [closePaneContextMenu, notifyViewportChange])
+
+  const handleAddTextFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    const position = paneContextMenu.flowPosition
+    closePaneContextMenu()
+    onAddTextAtPosition(position)
+  }, [closePaneContextMenu, onAddTextAtPosition, paneContextMenu])
+
+  const handleAddImageFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    const position = paneContextMenu.flowPosition
+    closePaneContextMenu()
+    onAddImageAtPosition(position)
+  }, [closePaneContextMenu, onAddImageAtPosition, paneContextMenu])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
@@ -300,7 +408,11 @@ export function CanvasStage({
   }, [])
 
   const handleNodeDrag = useCallback(
-    (_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>, draggedNodes: Node<CanvasFlowNodeData>[]) => {
+    (
+      _event: MouseEvent | TouchEvent,
+      node: Node<CanvasFlowNodeData>,
+      draggedNodes: Node<CanvasFlowNodeData>[],
+    ) => {
       if (guideFrameRef.current != null) window.cancelAnimationFrame(guideFrameRef.current)
       const movingNodes = draggedNodes.length > 0 ? draggedNodes : [node]
       const nextNodes = flowNodesRef.current.map((flowNode) => {
@@ -346,7 +458,10 @@ export function CanvasStage({
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onInit={handleInit}
+          onPaneClick={closePaneContextMenu}
+          onPaneContextMenu={handlePaneContextMenu}
           onMoveStart={handleViewportMoveStart}
+          onMove={handleViewportMove}
           onMoveEnd={handleViewportMoveEnd}
           onSelectionChange={({ nodes: selected }) =>
             onSelectionChange(selected.map((node) => node.id))
@@ -407,6 +522,28 @@ export function CanvasStage({
           />
           <Controls className="canvas-controls" />
         </ReactFlow>
+        {paneContextMenu && (
+          <div
+            className="canvas-pane-context-menu"
+            style={{ left: paneContextMenu.left, top: paneContextMenu.top }}
+            role="menu"
+            onContextMenu={(event) => event.preventDefault()}
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <button type="button" role="menuitem" onClick={handleResetZoom}>
+              <Icons.RotateCcw size={14} />
+              <span>复原缩放比例</span>
+            </button>
+            <button type="button" role="menuitem" onClick={handleAddTextFromPane}>
+              <Icons.File size={14} />
+              <span>添加文本节点</span>
+            </button>
+            <button type="button" role="menuitem" onClick={handleAddImageFromPane}>
+              <Icons.Image size={14} />
+              <span>添加图片节点</span>
+            </button>
+          </div>
+        )}
       </div>
     </ReactFlowProvider>
   )

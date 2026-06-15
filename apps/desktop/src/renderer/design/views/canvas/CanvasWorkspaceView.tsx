@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Tag } from '@lobehub/ui'
-import { Input, InputNumber, Modal, Spin, message } from 'antd'
+import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
+import { Input, InputNumber, Modal, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
 import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
@@ -12,11 +12,56 @@ import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { useCanvasWorkspace } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { useApp } from '../../AppContext'
-import type { CanvasInputTransport, CanvasNode, CanvasOperationType, CanvasTask } from './canvas.types'
+import type {
+  CanvasInputTransport,
+  CanvasNode,
+  CanvasOperationType,
+  CanvasProject,
+  CanvasProjectSettings,
+  CanvasTask,
+} from './canvas.types'
 import type { CanvasMediaTaskInputFile } from '@spark/protocol'
+import type {
+  CSSProperties,
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+} from 'react'
 import './CanvasWorkspaceView.less'
 
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
+type CanvasPoint = { x: number; y: number }
+type PreparedImageUpload = {
+  file: File
+  filePath: string
+  width: number
+  height: number
+  imageWidth: number
+  imageHeight: number
+}
+
+const CANVAS_SIDE_PANEL_WIDTH_KEY = 'spark-canvas:side-panel-width'
+const CANVAS_SIDE_PANEL_DEFAULT_WIDTH = 360
+const CANVAS_SIDE_PANEL_MIN_WIDTH = 300
+const CANVAS_SIDE_PANEL_MAX_WIDTH = 640
+const CANVAS_SIDE_PANEL_KEYBOARD_STEP = 24
+const GROUP_IMAGE_GAP = 18
+const GROUP_IMAGE_PADDING_X = 28
+const GROUP_IMAGE_HEADER_HEIGHT = 56
+const GROUP_IMAGE_PADDING_BOTTOM = 28
+
+function clampSidePanelWidth(width: number): number {
+  return Math.min(Math.max(width, CANVAS_SIDE_PANEL_MIN_WIDTH), CANVAS_SIDE_PANEL_MAX_WIDTH)
+}
+
+function readSidePanelWidth(): number {
+  if (typeof window === 'undefined') return CANVAS_SIDE_PANEL_DEFAULT_WIDTH
+  try {
+    const parsed = Number(window.localStorage.getItem(CANVAS_SIDE_PANEL_WIDTH_KEY))
+    return Number.isFinite(parsed) ? clampSidePanelWidth(parsed) : CANVAS_SIDE_PANEL_DEFAULT_WIDTH
+  } catch {
+    return CANVAS_SIDE_PANEL_DEFAULT_WIDTH
+  }
+}
 
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -30,7 +75,8 @@ function readFileAsDataUrl(file: File): Promise<string> {
 function readImageDimensions(src: string): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
     const image = new Image()
-    image.onload = () => resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 })
+    image.onload = () =>
+      resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 })
     image.onerror = () => resolve({ width: 0, height: 0 })
     image.src = src
   })
@@ -52,6 +98,82 @@ function fitImageNodeSize(width: number, height: number): { width: number; heigh
   }
 }
 
+function fitGroupedImageNodeSize(width: number, height: number): { width: number; height: number } {
+  const headerHeight = 36
+  const nodeWidth = 220
+  if (!width || !height) return { width: nodeWidth, height: 196 }
+  const aspect = height / width
+  const bodyHeight = Math.min(Math.max(Math.round(nodeWidth * aspect), 120), 260)
+  return {
+    width: nodeWidth,
+    height: bodyHeight + headerHeight,
+  }
+}
+
+function getImageGridColumns(count: number): number {
+  if (count <= 1) return 1
+  return Math.min(3, Math.ceil(Math.sqrt(count)))
+}
+
+function getImageGridMetrics(items: { width: number; height: number }[]): {
+  columns: number
+  columnWidths: number[]
+  rowHeights: number[]
+  width: number
+  height: number
+} {
+  const columns = getImageGridColumns(items.length)
+  const rows = Math.ceil(items.length / columns)
+  const columnWidths = Array.from({ length: columns }, () => 0)
+  const rowHeights = Array.from({ length: rows }, () => 0)
+
+  items.forEach((item, index) => {
+    const column = index % columns
+    const row = Math.floor(index / columns)
+    columnWidths[column] = Math.max(columnWidths[column] ?? 0, item.width)
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, item.height)
+  })
+
+  return {
+    columns,
+    columnWidths,
+    rowHeights,
+    width:
+      columnWidths.reduce((total, width) => total + width, 0) +
+      Math.max(0, columns - 1) * GROUP_IMAGE_GAP,
+    height:
+      rowHeights.reduce((total, height) => total + height, 0) +
+      Math.max(0, rows - 1) * GROUP_IMAGE_GAP,
+  }
+}
+
+function layoutGroupedImages(
+  items: PreparedImageUpload[],
+  groupPosition: CanvasPoint,
+): (PreparedImageUpload & CanvasPoint)[] {
+  const metrics = getImageGridMetrics(items)
+  const columnOffsets = metrics.columnWidths.map(
+    (_, index) =>
+      metrics.columnWidths.slice(0, index).reduce((total, width) => total + width, 0) +
+      index * GROUP_IMAGE_GAP,
+  )
+  const rowOffsets = metrics.rowHeights.map(
+    (_, index) =>
+      metrics.rowHeights.slice(0, index).reduce((total, height) => total + height, 0) +
+      index * GROUP_IMAGE_GAP,
+  )
+
+  return items.map((item, index) => {
+    const column = index % metrics.columns
+    const row = Math.floor(index / metrics.columns)
+    return {
+      ...item,
+      x: Math.round(groupPosition.x + GROUP_IMAGE_PADDING_X + (columnOffsets[column] ?? 0)),
+      y: Math.round(groupPosition.y + GROUP_IMAGE_HEADER_HEIGHT + (rowOffsets[row] ?? 0)),
+    }
+  })
+}
+
 function clampPosition(value: number, min: number, max: number): number {
   if (max < min) return min
   return Math.min(Math.max(value, min), max)
@@ -61,7 +183,6 @@ function positionNodeInViewport(
   viewport: CanvasStageViewport | null,
   size: { width: number; height: number },
   fallback: { x: number; y: number },
-  offset = 0,
 ): { x: number; y: number } {
   if (!viewport || viewport.width <= 0 || viewport.height <= 0 || viewport.zoom <= 0) {
     return fallback
@@ -76,10 +197,18 @@ function positionNodeInViewport(
 
   return {
     x: Math.round(
-      clampPosition(centerX - size.width / 2 + offset, visibleLeft + 24, visibleRight - size.width - 24),
+      clampPosition(
+        centerX - size.width / 2,
+        visibleLeft + 24,
+        visibleRight - size.width - 24,
+      ),
     ),
     y: Math.round(
-      clampPosition(centerY - size.height / 2 + offset, visibleTop + 24, visibleBottom - size.height - 24),
+      clampPosition(
+        centerY - size.height / 2,
+        visibleTop + 24,
+        visibleBottom - size.height - 24,
+      ),
     ),
   }
 }
@@ -93,18 +222,29 @@ function buildTaskInputFiles(
     .map((node) => {
       if (!node.data.url) return null
       const type =
-        node.type === 'image' ? 'image' as const
-          : node.type === 'audio' ? 'audio' as const
-              : node.type === 'video' ? 'video' as const
-                : 'file' as const
+        node.type === 'image'
+          ? ('image' as const)
+          : node.type === 'audio'
+            ? ('audio' as const)
+            : node.type === 'video'
+              ? ('video' as const)
+              : ('file' as const)
       const currentImageIndex = node.type === 'image' ? imageIndex++ : -1
-      const role = inputRoles?.[node.id] ?? (currentImageIndex >= 0
-        ? currentImageIndex === 0 ? 'first_frame' as const : currentImageIndex === 1 ? 'last_frame' as const : 'reference' as const
-        : 'input' as const)
+      const role =
+        inputRoles?.[node.id] ??
+        (currentImageIndex >= 0
+          ? currentImageIndex === 0
+            ? ('first_frame' as const)
+            : currentImageIndex === 1
+              ? ('last_frame' as const)
+              : ('reference' as const)
+          : ('input' as const))
       return {
         type,
         role,
-        ...(node.data.url.startsWith('data:') ? { dataUrl: node.data.url } : { url: node.data.url }),
+        ...(node.data.url.startsWith('data:')
+          ? { dataUrl: node.data.url }
+          : { url: node.data.url }),
         ...(node.data.mimeType ? { mimeType: node.data.mimeType } : {}),
       }
     })
@@ -119,43 +259,51 @@ async function buildCloudTaskInputFiles(
   const files = buildTaskInputFiles(nodes, inputRoles)
   if (files.length === 0) return files
   if (inputTransport === 'base64') {
-    return Promise.all(files.map(async (file) => {
-      if (file.type !== 'image' || file.dataUrl || !file.url?.startsWith('safe-file://')) return file
-      return {
-        ...file,
-        dataUrl: await readUrlAsDataUrl(file.url),
-      }
-    }))
+    return Promise.all(
+      files.map(async (file) => {
+        if (file.type !== 'image' || file.dataUrl || !file.url?.startsWith('safe-file://'))
+          return file
+        return {
+          ...file,
+          dataUrl: await readUrlAsDataUrl(file.url),
+        }
+      }),
+    )
   }
   if (inputTransport !== 'cloud_url') return files
-  return Promise.all(files.map(async (file, index) => {
-    if (file.type !== 'image') return file
-    if (file.url && /^https?:\/\//i.test(file.url)) return file
-    const filePath = file.url ? decodeSafeFileUrl(file.url) : null
-    const uploaded = await window.spark.invoke('auth:upload-file', {
-      ...(file.dataUrl ? { dataUrl: file.dataUrl } : {}),
-      ...(filePath ? { filePath } : {}),
-      fileName: `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`,
-      ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-    })
-    return {
-      type: file.type,
-      ...(file.role ? { role: file.role } : {}),
-      url: uploaded.aiUrl,
-      ...(file.mimeType ? { mimeType: file.mimeType } : {}),
-    }
-  }))
+  return Promise.all(
+    files.map(async (file, index) => {
+      if (file.type !== 'image') return file
+      if (file.url && /^https?:\/\//i.test(file.url)) return file
+      const filePath = file.url ? decodeSafeFileUrl(file.url) : null
+      const uploaded = await window.spark.invoke('auth:upload-file', {
+        ...(file.dataUrl ? { dataUrl: file.dataUrl } : {}),
+        ...(filePath ? { filePath } : {}),
+        fileName: `canvas-input-${index + 1}.${extensionFromMime(file.mimeType)}`,
+        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+      })
+      return {
+        type: file.type,
+        ...(file.role ? { role: file.role } : {}),
+        url: uploaded.aiUrl,
+        ...(file.mimeType ? { mimeType: file.mimeType } : {}),
+      }
+    }),
+  )
 }
 
 function readUrlAsDataUrl(url: string): Promise<string> {
   return fetch(url)
     .then((response) => response.blob())
-    .then((blob) => new Promise<string>((resolve, reject) => {
-      const reader = new FileReader()
-      reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'))
-      reader.onload = () => resolve(String(reader.result ?? ''))
-      reader.readAsDataURL(blob)
-    }))
+    .then(
+      (blob) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onerror = () => reject(reader.error ?? new Error('Failed to read image'))
+          reader.onload = () => resolve(String(reader.result ?? ''))
+          reader.readAsDataURL(blob)
+        }),
+    )
 }
 
 async function ensureCanvasWorkflowLogin(): Promise<boolean> {
@@ -207,6 +355,20 @@ function mergePromptWithNodeContext(prompt: string, nodes: CanvasNode[]): string
   return `${trimmedPrompt}\n\n画布节点内容：\n${context}`
 }
 
+function placeNodeRightOfNodes(
+  nodes: CanvasNode[],
+  fallback: { x: number; y: number },
+  gap = 80,
+): { x: number; y: number } {
+  if (nodes.length === 0) return fallback
+  const right = Math.max(...nodes.map((node) => node.x + node.width))
+  const top = Math.min(...nodes.map((node) => node.y))
+  return {
+    x: Math.round(right + gap),
+    y: Math.round(top),
+  }
+}
+
 function expandCanvasInputNodes(selectedNodes: CanvasNode[], allNodes: CanvasNode[]): CanvasNode[] {
   const byId = new Map(allNodes.map((node) => [node.id, node]))
   const result: CanvasNode[] = []
@@ -244,6 +406,13 @@ function expandCanvasInputNodes(selectedNodes: CanvasNode[], allNodes: CanvasNod
   return result
 }
 
+function resolveCanvasInputNodes(nodeIds: string[] | undefined, allNodes: CanvasNode[]): CanvasNode[] {
+  if (!nodeIds || nodeIds.length === 0) return []
+  const byId = new Map(allNodes.map((node) => [node.id, node]))
+  const orderedNodes = nodeIds.map((id) => byId.get(id)).filter((node): node is CanvasNode => Boolean(node))
+  return expandCanvasInputNodes(orderedNodes, allNodes)
+}
+
 function fallbackPromptForOperation(operation: CanvasOperationType): string {
   if (operation === 'image_edit') return '请基于输入图片进行自然编辑，保持主体与画面质量。'
   if (operation === 'image_to_image') return '请基于输入图片生成一个高质量变体。'
@@ -266,7 +435,11 @@ function isEditableKeyboardTarget(target: EventTarget | null): boolean {
     tagName === 'textarea' ||
     tagName === 'select' ||
     target.isContentEditable ||
-    Boolean(target.closest('[contenteditable="true"], .canvas-inline-ai-composer, .ant-modal, .ant-drawer'))
+    Boolean(
+      target.closest(
+        '[contenteditable="true"], .canvas-inline-ai-composer, .ant-modal, .ant-drawer',
+      ),
+    )
   )
 }
 
@@ -296,18 +469,24 @@ export function CanvasWorkspaceView({
     duplicateNodes,
     patchNodes,
     updateNodeData,
+    updateProjectSettings,
     createTask,
     completeDemoTask,
     cancelTask,
   } = useCanvasWorkspace(projectId)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
-  const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(null)
+  const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
+    null,
+  )
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
+  const [sidePanelTab, setSidePanelTab] = useState<'details' | 'project'>('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
-  const [canvasViewport, setCanvasViewport] = useState<CanvasStageViewport | null>(null)
+  const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
+  const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const pendingImagePositionRef = useRef<CanvasPoint | null>(null)
   const activeToolRef = useRef<CanvasTool>('select')
   const { registerNavGuard } = useApp()
   const [dirty, setDirty] = useState(() => isCanvasDirty())
@@ -315,6 +494,78 @@ export function CanvasWorkspaceView({
   const [leaveOpen, setLeaveOpen] = useState(false)
   const savingRef = useRef(false)
   const leaveResolveRef = useRef<((choice: 'save' | 'discard' | 'cancel') => void) | null>(null)
+  const sidePanelStyle = useMemo(
+    () =>
+      ({
+        '--canvas-side-panel-width': `${sidePanelWidth}px`,
+      }) as CSSProperties,
+    [sidePanelWidth],
+  )
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CANVAS_SIDE_PANEL_WIDTH_KEY, String(sidePanelWidth))
+    } catch {
+      // Ignore storage failures; the current session still keeps the resized panel.
+    }
+  }, [sidePanelWidth])
+
+  useEffect(
+    () => () => {
+      document.body.classList.remove('canvas-side-panel-resizing')
+    },
+    [],
+  )
+
+  const updateSidePanelWidth = useCallback((width: number) => {
+    setSidePanelWidth(Math.round(clampSidePanelWidth(width)))
+  }, [])
+
+  const handleSidePanelResizeStart = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) return
+      event.preventDefault()
+      const startX = event.clientX
+      const startWidth = sidePanelWidth
+      const body = document.body
+      body.classList.add('canvas-side-panel-resizing')
+
+      const handlePointerMove = (moveEvent: PointerEvent) => {
+        updateSidePanelWidth(startWidth + startX - moveEvent.clientX)
+      }
+
+      const handlePointerUp = () => {
+        body.classList.remove('canvas-side-panel-resizing')
+        window.removeEventListener('pointermove', handlePointerMove)
+        window.removeEventListener('pointerup', handlePointerUp)
+        window.removeEventListener('pointercancel', handlePointerUp)
+      }
+
+      window.addEventListener('pointermove', handlePointerMove)
+      window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerUp)
+    },
+    [sidePanelWidth, updateSidePanelWidth],
+  )
+
+  const handleSidePanelResizeKeyDown = useCallback(
+    (event: ReactKeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault()
+        updateSidePanelWidth(sidePanelWidth + CANVAS_SIDE_PANEL_KEYBOARD_STEP)
+      } else if (event.key === 'ArrowRight') {
+        event.preventDefault()
+        updateSidePanelWidth(sidePanelWidth - CANVAS_SIDE_PANEL_KEYBOARD_STEP)
+      } else if (event.key === 'Home') {
+        event.preventDefault()
+        updateSidePanelWidth(CANVAS_SIDE_PANEL_MIN_WIDTH)
+      } else if (event.key === 'End') {
+        event.preventDefault()
+        updateSidePanelWidth(CANVAS_SIDE_PANEL_MAX_WIDTH)
+      }
+    },
+    [sidePanelWidth, updateSidePanelWidth],
+  )
 
   const doSave = useCallback(async (): Promise<boolean> => {
     if (savingRef.current) return false
@@ -432,9 +683,9 @@ export function CanvasWorkspaceView({
     () => selectedNodes.filter((node) => Boolean(node.parentNodeId)),
     [selectedNodes],
   )
-  const canCreateGroup = selectedNodes.length >= 2 && selectedNodes.every(
-    (node) => node.type !== 'group' && !node.parentNodeId,
-  )
+  const canCreateGroup =
+    selectedNodes.length >= 2 &&
+    selectedNodes.every((node) => node.type !== 'group' && !node.parentNodeId)
   const canAddToGroup = selectedGroups.length === 1 && selectedTopLevelNodes.length > 0
   const canRemoveFromGroup = selectedGroupedNodes.length > 0
   const canDissolveGroup = selectedGroups.length === 1
@@ -467,7 +718,8 @@ export function CanvasWorkspaceView({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      if (event.key !== 'Tab' || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey)
+        return
       if (isEditableKeyboardTarget(event.target)) return
       event.preventDefault()
       togglePointerTool()
@@ -483,6 +735,10 @@ export function CanvasWorkspaceView({
     setSelectedNodeIds((previousIds) =>
       areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
     )
+  }, [])
+
+  const handleCanvasViewportChange = useCallback((viewport: CanvasStageViewport) => {
+    canvasViewportRef.current = viewport
   }, [])
 
   const handleDeleteNode = useCallback(
@@ -527,7 +783,10 @@ export function CanvasWorkspaceView({
     (groupId?: string) => {
       const targetGroupId = groupId ?? selectedGroups[0]?.id
       if (!targetGroupId || selectedTopLevelNodes.length === 0) return
-      void addNodesToGroup(targetGroupId, selectedTopLevelNodes.map((node) => node.id))
+      void addNodesToGroup(
+        targetGroupId,
+        selectedTopLevelNodes.map((node) => node.id),
+      )
     },
     [addNodesToGroup, selectedGroups, selectedTopLevelNodes],
   )
@@ -590,72 +849,159 @@ export function CanvasWorkspaceView({
     )
   }
 
-  const addText = async (isPrompt = false) => {
-    const position = positionNodeInViewport(
-      canvasViewport,
-      { width: 280, height: 164 },
-      {
-        x: 140 + snapshot.nodes.length * 24,
-        y: 120 + snapshot.nodes.length * 24,
-      },
-      (snapshot.nodes.length % 6) * 18,
-    )
+  const addText = async (preferredPosition?: CanvasPoint) => {
+    const position = preferredPosition
+      ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+      : positionNodeInViewport(
+          canvasViewportRef.current,
+          { width: 280, height: 164 },
+          {
+            x: 140,
+            y: 120,
+          },
+        )
     await createTextNode({
-      text: isPrompt
-        ? '描述你想生成的画面、风格、主体、限制条件...'
-        : '双击后续版本可直接编辑文本内容。',
-      isPrompt,
+      text: '双击后续版本可直接编辑文本内容。',
       x: position.x,
       y: position.y,
     })
   }
 
-  const uploadFirstImage = () => {
+  const uploadFirstImage = (preferredPosition?: CanvasPoint) => {
+    pendingImagePositionRef.current = preferredPosition
+      ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+      : null
     fileInputRef.current?.click()
   }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
+    const selectedFiles = Array.from(event.target.files ?? [])
+    const preferredPosition = pendingImagePositionRef.current
+    pendingImagePositionRef.current = null
     event.target.value = ''
-    if (!file) return
-    if (!file.type.startsWith('image/')) {
+    if (selectedFiles.length === 0) return
+
+    const imageFiles = selectedFiles.filter((file) => file.type.startsWith('image/'))
+    if (imageFiles.length === 0) {
       message.warning('请选择图片文件')
       return
     }
-    const dataUrl = await readFileAsDataUrl(file)
-    const dimensions = await readImageDimensions(dataUrl)
-    const savedImage = await window.spark.invoke('file:save-pasted-image', {
-      dataUrl,
-      mimeType: file.type,
-      suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
-      storageScope: 'canvas',
-      ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
-    })
-    const nodeSize = fitImageNodeSize(dimensions.width, dimensions.height)
-    const position = positionNodeInViewport(
-      canvasViewport,
-      nodeSize,
-      {
-        x: 220 + snapshot.nodes.length * 24,
-        y: 180 + snapshot.nodes.length * 24,
-      },
-      (snapshot.nodes.length % 6) * 18,
-    )
-    await createImageNode({
-      file,
-      filePath: savedImage.filePath,
-      x: position.x,
-      y: position.y,
-      width: nodeSize.width,
-      height: nodeSize.height,
-      imageWidth: dimensions.width,
-      imageHeight: dimensions.height,
-    })
+    if (imageFiles.length < selectedFiles.length) {
+      message.warning('已跳过非图片文件')
+    }
+
+    try {
+      const shouldGroup = imageFiles.length > 1
+      const preparedImages: PreparedImageUpload[] = []
+      for (const file of imageFiles) {
+        const dataUrl = await readFileAsDataUrl(file)
+        const dimensions = await readImageDimensions(dataUrl)
+        const savedImage = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl,
+          mimeType: file.type,
+          suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
+          storageScope: 'canvas',
+          ...(snapshot.project.rootPath ? { projectRootPath: snapshot.project.rootPath } : {}),
+        })
+        const nodeSize = shouldGroup
+          ? fitGroupedImageNodeSize(dimensions.width, dimensions.height)
+          : fitImageNodeSize(dimensions.width, dimensions.height)
+        preparedImages.push({
+          file,
+          filePath: savedImage.filePath,
+          width: nodeSize.width,
+          height: nodeSize.height,
+          imageWidth: dimensions.width,
+          imageHeight: dimensions.height,
+        })
+      }
+
+      if (preparedImages.length === 1) {
+        const [image] = preparedImages
+        if (!image) return
+        const position = preferredPosition
+          ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+          : positionNodeInViewport(
+              canvasViewportRef.current,
+              { width: image.width, height: image.height },
+              {
+                x: 220,
+                y: 180,
+              },
+            )
+        const node = await createImageNode({
+          file: image.file,
+          filePath: image.filePath,
+          x: position.x,
+          y: position.y,
+          width: image.width,
+          height: image.height,
+          imageWidth: image.imageWidth,
+          imageHeight: image.imageHeight,
+        })
+        if (node) setSelectedNodeIds([node.id])
+        return
+      }
+
+      const gridMetrics = getImageGridMetrics(preparedImages)
+      const groupSize = {
+        width: Math.max(360, gridMetrics.width + GROUP_IMAGE_PADDING_X * 2),
+        height: Math.max(
+          220,
+          GROUP_IMAGE_HEADER_HEIGHT + gridMetrics.height + GROUP_IMAGE_PADDING_BOTTOM,
+        ),
+      }
+      const groupPosition = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(
+            canvasViewportRef.current,
+            groupSize,
+            {
+              x: 220,
+              y: 180,
+            },
+          )
+      const placedImages = layoutGroupedImages(preparedImages, groupPosition)
+      const createdNodeIds: string[] = []
+      for (const image of placedImages) {
+        const node = await createImageNode({
+          file: image.file,
+          filePath: image.filePath,
+          x: image.x,
+          y: image.y,
+          width: image.width,
+          height: image.height,
+          imageWidth: image.imageWidth,
+          imageHeight: image.imageHeight,
+        })
+        if (node) createdNodeIds.push(node.id)
+      }
+      if (createdNodeIds.length > 1) {
+        const nextSnapshot = await createGroupNode(createdNodeIds)
+        const createdIdSet = new Set(createdNodeIds)
+        const groupNode = nextSnapshot?.nodes.find((node) => {
+          if (node.type !== 'group') return false
+          const childIds = nextSnapshot.nodes
+            .filter((child) => child.parentNodeId === node.id)
+            .map((child) => child.id)
+          return (
+            createdNodeIds.every((id) => childIds.includes(id)) &&
+            childIds.every((id) => createdIdSet.has(id))
+          )
+        })
+        setSelectedNodeIds(groupNode ? [groupNode.id] : createdNodeIds)
+        message.success(`已添加 ${createdNodeIds.length} 张图片并成组`)
+      }
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '添加图片失败')
+    }
   }
 
   const handleCreateTask = async ({
     operation,
     prompt,
+    negativePrompt,
+    inputNodeIds,
     providerProfileId,
     manifestId,
     modelId,
@@ -665,6 +1011,8 @@ export function CanvasWorkspaceView({
   }: {
     operation: CanvasOperationType
     prompt: string
+    negativePrompt?: string
+    inputNodeIds?: string[]
     providerProfileId?: string
     manifestId?: string
     modelId?: string
@@ -674,16 +1022,30 @@ export function CanvasWorkspaceView({
   }) => {
     if (!(await ensureCanvasWorkflowLogin())) return
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
-    const inputFiles = await buildCloudTaskInputFiles(aiInputNodes, inputTransport, inputRoles)
-    const mergedPrompt = mergePromptWithNodeContext(prompt, aiInputNodes)
-    const effectivePrompt = mergedPrompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
-    const placementSource = selectedNodes[0] ?? aiInputNodes[0]
+    const taskInputNodes =
+      inputNodeIds && inputNodeIds.length > 0
+        ? resolveCanvasInputNodes(inputNodeIds, snapshot.nodes)
+        : aiInputNodes
+    const inputFiles = await buildCloudTaskInputFiles(taskInputNodes, inputTransport, inputRoles)
+    const mergedPrompt = mergePromptWithNodeContext(prompt, taskInputNodes)
+    const effectivePrompt =
+      mergedPrompt || (inputFiles.length > 0 ? fallbackPromptForOperation(operation) : '')
+    const placement = placeNodeRightOfNodes(
+      taskInputNodes.length > 0 ? taskInputNodes : selectedNodes,
+      {
+        x: 360,
+        y: 260,
+      },
+    )
 
     await createTask({
       operation,
       prompt: effectivePrompt,
-      inputNodeIds: aiInputNodes.map((node) => node.id),
-      inputAssetIds: aiInputNodes
+      ...(negativePrompt != null && negativePrompt.trim().length > 0
+        ? { negativePrompt: negativePrompt.trim() }
+        : {}),
+      inputNodeIds: taskInputNodes.map((node) => node.id),
+      inputAssetIds: taskInputNodes
         .map((node) => node.assetId)
         .filter((id): id is string => Boolean(id)),
       ...(inputFiles.length > 0 ? { inputFiles } : {}),
@@ -692,8 +1054,8 @@ export function CanvasWorkspaceView({
       ...(modelId != null ? { modelId } : {}),
       ...(modelParams != null ? { modelParams } : {}),
       outputPlacement: {
-        x: placementSource ? placementSource.x + 360 : 360,
-        y: placementSource ? placementSource.y + 80 : 260,
+        x: placement.x,
+        y: placement.y,
       },
     })
   }
@@ -705,7 +1067,14 @@ export function CanvasWorkspaceView({
       snapshot.nodes,
     )
     const taskNode = snapshot.nodes.find((node) => node.taskId === task.id)
-    const inputFiles = await buildCloudTaskInputFiles(inputNodes, task.provider === 'xai' ? 'base64' : 'cloud_url')
+    const inputFiles = await buildCloudTaskInputFiles(
+      inputNodes,
+      task.provider === 'xai' ? 'base64' : 'cloud_url',
+    )
+    const placement = placeNodeRightOfNodes(taskNode ? [taskNode] : inputNodes, {
+      x: 360,
+      y: 260,
+    })
     await createTask({
       operation: task.operation,
       prompt: task.prompt ?? '',
@@ -717,8 +1086,8 @@ export function CanvasWorkspaceView({
       ...(task.modelId != null ? { modelId: task.modelId } : {}),
       modelParams: task.modelParams ?? {},
       outputPlacement: {
-        x: taskNode ? taskNode.x + 360 : 360,
-        y: taskNode ? taskNode.y + 48 : 260,
+        x: placement.x,
+        y: placement.y,
       },
     })
   }
@@ -759,7 +1128,12 @@ export function CanvasWorkspaceView({
       <header className="canvas-workspace-header">
         <div className="canvas-workspace-topbar">
           <div className="canvas-workspace-title">
-            <Button size="small" type="text" icon={<Icons.ArrowLeft size={15} />} onClick={() => void handleBackWithGuard()}>
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.ArrowLeft size={15} />}
+              onClick={() => void handleBackWithGuard()}
+            >
               项目
             </Button>
             <div className="canvas-workspace-heading">
@@ -774,8 +1148,7 @@ export function CanvasWorkspaceView({
         <CanvasToolbar
           activeTool={activeTool}
           onToolChange={handleToolChange}
-          onAddText={() => void addText(false)}
-          onAddPrompt={() => void addText(true)}
+          onAddText={() => void addText()}
           onUploadImage={uploadFirstImage}
           onCreateGroup={handleCreateGroup}
           onAddToGroup={() => handleAddSelectionToGroup()}
@@ -795,7 +1168,7 @@ export function CanvasWorkspaceView({
         />
       </header>
 
-      <div className="canvas-workspace-body">
+      <div className="canvas-workspace-body" style={sidePanelStyle}>
         {toolSwitchHint && (
           <div
             key={toolSwitchHint.nonce}
@@ -824,60 +1197,91 @@ export function CanvasWorkspaceView({
           onDissolveGroup={handleDissolveGroup}
           onOpenAiComposer={handleOpenInlineAi}
           onEditNode={handleEditNode}
-          onViewportChange={setCanvasViewport}
+          onAddTextAtPosition={(position) => void addText(position)}
+          onAddImageAtPosition={uploadFirstImage}
+          onViewportChange={handleCanvasViewportChange}
         />
         <CanvasInlineAiComposer
           open={inlineAiOpen}
           selectedNodes={aiInputNodes}
+          allNodes={snapshot.nodes}
+          {...(snapshot.project.settings ? { projectSettings: snapshot.project.settings } : {})}
+          onUploadImage={() => uploadFirstImage()}
           onClose={() => setInlineAiOpen(false)}
           onCreateTask={(input) => {
             void handleCreateTask(input)
             setInlineAiOpen(false)
           }}
         />
-        <aside className="canvas-side-panel">
-          <div className="canvas-project-folder-card">
-            <div className="canvas-project-folder-info">
-              <span>项目文件夹</span>
-              <strong>{snapshot.project.rootPath || '默认位置'}</strong>
-            </div>
-            <Button size="small" icon={<Icons.Folder size={14} />} onClick={() => void handleOpenProjectFolder()}>
-              打开
-            </Button>
+        <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
+          <div
+            aria-label="调整右侧面板宽度"
+            aria-orientation="vertical"
+            aria-valuemax={CANVAS_SIDE_PANEL_MAX_WIDTH}
+            aria-valuemin={CANVAS_SIDE_PANEL_MIN_WIDTH}
+            aria-valuenow={sidePanelWidth}
+            className="canvas-side-panel-resize-handle"
+            onDoubleClick={() => updateSidePanelWidth(CANVAS_SIDE_PANEL_DEFAULT_WIDTH)}
+            onKeyDown={handleSidePanelResizeKeyDown}
+            onPointerDown={handleSidePanelResizeStart}
+            role="separator"
+            tabIndex={0}
+            title="拖拽调整面板宽度"
+          />
+          <div className="canvas-side-tabs">
+            <Segmented
+              value={sidePanelTab}
+              onChange={(value) => setSidePanelTab(value as 'details' | 'project')}
+              options={[
+                { label: '属性', value: 'details' },
+                { label: '项目信息', value: 'project' },
+              ]}
+            />
           </div>
-          <CanvasTaskQueue
-            tasks={snapshot.tasks}
-            nodes={snapshot.nodes}
-            assets={snapshot.assets}
-            onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
-            onCancelTask={(taskId) => void cancelTask(taskId)}
-            onRetryTask={(task) => void handleRetryTask(task)}
-            onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
-          />
-          <CanvasInspector
-            selectedNodes={selectedNodes}
-            nodes={snapshot.nodes}
-            edges={snapshot.edges}
-            assets={snapshot.assets}
-            tasks={snapshot.tasks}
-            onDuplicate={() => void duplicateNodes(selectedNodeIds)}
-            onToggleLock={() => void handleToggleLock()}
-            onBringToFront={() => void handleBringToFront()}
-            onCreateGroup={handleCreateGroup}
-            onAddToGroup={() => handleAddSelectionToGroup()}
-            onRemoveFromGroup={() => handleRemoveFromGroup()}
-            onDissolveGroup={() => handleDissolveGroup()}
-            canCreateGroup={canCreateGroup}
-            canAddToGroup={canAddToGroup}
-            canRemoveFromGroup={canRemoveFromGroup}
-            canDissolveGroup={canDissolveGroup}
-            onSaveText={(node, text) => {
-              void updateNodeData(node.id, { ...node.data, text })
-            }}
-            onPatchNode={(node, patch) => {
-              void patchNodes([node.id], patch)
-            }}
-          />
+          {sidePanelTab === 'details' ? (
+            <div className="canvas-side-panel-content">
+              <CanvasTaskQueue
+                tasks={snapshot.tasks}
+                nodes={snapshot.nodes}
+                assets={snapshot.assets}
+                onCompleteDemoTask={(taskId) => void completeDemoTask(taskId)}
+                onCancelTask={(taskId) => void cancelTask(taskId)}
+                onRetryTask={(task) => void handleRetryTask(task)}
+                onSelectNode={(nodeId) => setSelectedNodeIds([nodeId])}
+              />
+              <CanvasInspector
+                selectedNodes={selectedNodes}
+                nodes={snapshot.nodes}
+                edges={snapshot.edges}
+                assets={snapshot.assets}
+                tasks={snapshot.tasks}
+                onDuplicate={() => void duplicateNodes(selectedNodeIds)}
+                onToggleLock={() => void handleToggleLock()}
+                onBringToFront={() => void handleBringToFront()}
+                onCreateGroup={handleCreateGroup}
+                onAddToGroup={() => handleAddSelectionToGroup()}
+                onRemoveFromGroup={() => handleRemoveFromGroup()}
+                onDissolveGroup={() => handleDissolveGroup()}
+                canCreateGroup={canCreateGroup}
+                canAddToGroup={canAddToGroup}
+                canRemoveFromGroup={canRemoveFromGroup}
+                canDissolveGroup={canDissolveGroup}
+                onSaveText={(node, text) => {
+                  void updateNodeData(node.id, { ...node.data, text })
+                }}
+                onPatchNode={(node, patch) => {
+                  void patchNodes([node.id], patch)
+                }}
+              />
+            </div>
+          ) : (
+            <CanvasProjectInfoPanel
+              key={`${snapshot.project.id}:${snapshot.project.updatedAt}:project-info`}
+              project={snapshot.project}
+              onOpenProjectFolder={handleOpenProjectFolder}
+              onSave={(settings) => updateProjectSettings(settings)}
+            />
+          )}
         </aside>
       </div>
       <CanvasAssetDrawer
@@ -895,6 +1299,7 @@ export function CanvasWorkspaceView({
         ref={fileInputRef}
         type="file"
         accept="image/*"
+        multiple
         style={{ display: 'none' }}
         onChange={(event) => void handleFileChange(event)}
       />
@@ -904,8 +1309,12 @@ export function CanvasWorkspaceView({
         closable={false}
         maskClosable={false}
         footer={[
-          <Button key="discard" danger onClick={onLeaveDiscard}>不保存</Button>,
-          <Button key="cancel" onClick={onLeaveCancel}>取消</Button>,
+          <Button key="discard" danger onClick={onLeaveDiscard}>
+            不保存
+          </Button>,
+          <Button key="cancel" onClick={onLeaveCancel}>
+            取消
+          </Button>,
           <Button key="save" type="primary" loading={saving} onClick={() => void onLeaveSave()}>
             保存并离开
           </Button>,
@@ -913,6 +1322,115 @@ export function CanvasWorkspaceView({
       >
         离开前是否保存当前画布？未保存的改动不会写入应用数据库，离开后即丢失。
       </Modal>
+    </div>
+  )
+}
+
+function CanvasProjectInfoPanel({
+  project,
+  onOpenProjectFolder,
+  onSave,
+}: {
+  project: CanvasProject
+  onOpenProjectFolder: () => Promise<void>
+  onSave: (settings: CanvasProjectSettings) => Promise<void>
+}) {
+  const [prompt, setPrompt] = useState(project.settings?.prompt ?? '')
+  const [negativePrompt, setNegativePrompt] = useState(project.settings?.negativePrompt ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await onSave({ prompt, negativePrompt })
+      message.success('项目提示词已更新')
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : '保存项目提示词失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="canvas-side-panel-content canvas-side-panel-content-project">
+      <section className="canvas-panel-section">
+        <div className="canvas-panel-title-row">
+          <h3>项目基础信息</h3>
+          <Tag color={project.status === 'active' ? 'green' : 'default'} bordered>
+            {project.status}
+          </Tag>
+        </div>
+        <div className="canvas-project-info-grid">
+          <CanvasProjectInfoItem label="项目名" value={project.title} />
+          <CanvasProjectInfoItem label="节点" value={project.nodeCount} />
+          <CanvasProjectInfoItem label="素材" value={project.assetCount} />
+          <CanvasProjectInfoItem label="任务" value={project.taskCount} />
+        </div>
+        <div className="canvas-project-folder-card canvas-project-folder-card-inline">
+          <div className="canvas-project-folder-info">
+            <span>项目文件夹</span>
+            <Tooltip title={project.rootPath || '默认位置'} placement="topLeft">
+              <strong>{project.rootPath || '默认位置'}</strong>
+            </Tooltip>
+          </div>
+          <Button
+            size="small"
+            icon={<Icons.Folder size={14} />}
+            onClick={() => void onOpenProjectFolder()}
+          >
+            打开
+          </Button>
+        </div>
+      </section>
+      <section className="canvas-panel-section">
+        <div className="canvas-panel-title-row">
+          <h3>AI 提示词设置</h3>
+          <Tag color={prompt.trim() || negativePrompt.trim() ? 'blue' : 'default'} bordered>
+            {prompt.trim() || negativePrompt.trim() ? '已配置' : '未配置'}
+          </Tag>
+        </div>
+        <div className="canvas-form-row">
+          <label>项目统一提示词</label>
+          <Input.TextArea
+            value={prompt}
+            rows={6}
+            placeholder="例如：统一品牌语气、画面风格、构图偏好、输出格式等"
+            onChange={(event) => setPrompt(event.target.value)}
+          />
+        </div>
+        <div className="canvas-form-row">
+          <label>反向提示词</label>
+          <Input.TextArea
+            value={negativePrompt}
+            rows={5}
+            placeholder="例如：不要出现的元素、不能做的动作、需要规避的风格或内容"
+            onChange={(event) => setNegativePrompt(event.target.value)}
+          />
+        </div>
+        <div className="canvas-project-prompt-actions">
+          <Button
+            size="small"
+            onClick={() => {
+              setPrompt(project.settings?.prompt ?? '')
+              setNegativePrompt(project.settings?.negativePrompt ?? '')
+            }}
+          >
+            重置
+          </Button>
+          <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+            保存设置
+          </Button>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function CanvasProjectInfoItem({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="canvas-project-info-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   )
 }
@@ -977,8 +1495,14 @@ function CanvasNodeEditModal({
           title: title.trim().length > 0 ? title.trim() : null,
           x: Number.isFinite(x) ? x : node.x,
           y: Number.isFinite(y) ? y : node.y,
-          width: Math.max(node.type === 'group' ? 320 : 120, Number.isFinite(width) ? width : node.width),
-          height: Math.max(node.type === 'group' ? 200 : 96, Number.isFinite(height) ? height : node.height),
+          width: Math.max(
+            node.type === 'group' ? 320 : 120,
+            Number.isFinite(width) ? width : node.width,
+          ),
+          height: Math.max(
+            node.type === 'group' ? 200 : 96,
+            Number.isFinite(height) ? height : node.height,
+          ),
         },
         nextData,
       )
@@ -1011,7 +1535,11 @@ function CanvasNodeEditModal({
           </div>
           <label className="canvas-node-edit-field canvas-node-edit-field-wide">
             <span>标题</span>
-            <Input value={title} placeholder="节点标题" onChange={(event) => setTitle(event.target.value)} />
+            <Input
+              value={title}
+              placeholder="节点标题"
+              onChange={(event) => setTitle(event.target.value)}
+            />
           </label>
           <div className="canvas-node-edit-grid">
             <NodeEditNumberField label="X" value={x} onChange={setX} />
@@ -1044,7 +1572,11 @@ function CanvasNodeEditModal({
           {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
             <label className="canvas-node-edit-field canvas-node-edit-field-wide">
               <span>媒体 URL</span>
-              <Input value={url} placeholder="https:// 或 data: URL" onChange={(event) => setUrl(event.target.value)} />
+              <Input
+                value={url}
+                placeholder="https:// 或 data: URL"
+                onChange={(event) => setUrl(event.target.value)}
+              />
             </label>
           )}
           {node.type !== 'text' && node.type !== 'prompt' && (

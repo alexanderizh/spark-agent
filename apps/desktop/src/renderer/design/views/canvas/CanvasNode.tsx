@@ -42,7 +42,10 @@ const typeColor: Record<SparkCanvasNode['type'], string> = {
 
 export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps) {
   const { actions, canvasNode: node, lineage, selectedCount } = data as CanvasFlowNodeData
-  const title = node.title ?? node.type
+  const displayType = node.type === 'prompt' ? 'text' : node.type
+  const title = node.type === 'prompt' && (!node.title || node.title === 'Prompt')
+    ? 'Text note'
+    : node.title ?? displayType
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
   const isGroupedChild = Boolean(node.parentNodeId)
@@ -94,8 +97,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
           <div className="canvas-node-title">
             {node.type === 'image' && <Icons.Image size={14} />}
             {node.type === 'audio' && <Icons.Play size={14} />}
-            {node.type === 'text' && <Icons.File size={14} />}
-            {node.type === 'prompt' && <Icons.Sparkles size={14} />}
+            {(node.type === 'text' || node.type === 'prompt') && <Icons.File size={14} />}
             {node.type === 'task' && <Icons.Activity size={14} />}
             {node.type === 'video' && <Icons.Play size={14} />}
             {node.type === 'group' && <Icons.Layers size={14} />}
@@ -116,7 +118,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
               </button>
             </Tooltip>
             <Tag color={typeColor[node.type]} bordered>
-              {node.type}
+              {displayType}
             </Tag>
           </div>
         </div>

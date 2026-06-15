@@ -36,7 +36,7 @@ export function CanvasAssetDrawer({
         <LobeSearchBar
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索资产、prompt、来源..."
+          placeholder="搜索资产、文本、来源..."
           className="canvas-asset-search"
         />
         <LobeSelect
@@ -48,7 +48,6 @@ export function CanvasAssetDrawer({
             { label: '图片', value: 'image' },
             { label: '视频', value: 'video' },
             { label: '文本', value: 'text' },
-            { label: 'Prompt', value: 'prompt' },
             { label: '文件', value: 'file' },
           ]}
         />

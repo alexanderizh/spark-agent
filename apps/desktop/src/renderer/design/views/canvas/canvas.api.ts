@@ -6,6 +6,7 @@ import type {
   CanvasNode,
   CanvasOperationType,
   CanvasProject,
+  CanvasProjectSettings,
   CanvasSnapshot,
   CanvasTask,
   CreateCanvasTaskRequest,
@@ -200,6 +201,7 @@ function toCanvasProject(project: CanvasProjectListItem): CanvasProject {
   return {
     ...project,
     userId: USER_ID,
+    settings: {},
   }
 }
 
@@ -301,7 +303,10 @@ function cloneJson<T>(value: T): T {
 }
 
 function sanitizeFileName(value: string): string {
-  const cleaned = value.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '-')
+  const cleaned = value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, '-')
+    .replace(/\s+/g, '-')
   return cleaned.length > 0 ? cleaned.slice(0, 80) : 'canvas-project'
 }
 
@@ -326,10 +331,14 @@ async function mediaUrlToDataUrl(url: string): Promise<string | null> {
 async function embedExportableImages(snapshot: CanvasSnapshot): Promise<CanvasSnapshot> {
   const next = cloneJson(snapshot)
   const cache = new Map<string, Promise<string | null>>()
-  const embed = (url: string | null | undefined, mimeType?: string | null): Promise<string | null> => {
+  const embed = (
+    url: string | null | undefined,
+    mimeType?: string | null,
+  ): Promise<string | null> => {
     if (!url) return Promise.resolve(null)
     if (mimeType && !mimeType.toLowerCase().startsWith('image/')) return Promise.resolve(null)
-    if (!url.startsWith('safe-file://') && !url.startsWith('data:image/')) return Promise.resolve(null)
+    if (!url.startsWith('safe-file://') && !url.startsWith('data:image/'))
+      return Promise.resolve(null)
     const existing = cache.get(url)
     if (existing) return existing
     const promise = mediaUrlToDataUrl(url)
@@ -361,7 +370,10 @@ function remapUnknownIds(value: unknown, idMap: Map<string, string>): unknown {
   if (Array.isArray(value)) return value.map((item) => remapUnknownIds(item, idMap))
   if (!value || typeof value !== 'object') return value
   return Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).map(([key, child]) => [key, remapUnknownIds(child, idMap)]),
+    Object.entries(value as Record<string, unknown>).map(([key, child]) => [
+      key,
+      remapUnknownIds(child, idMap),
+    ]),
   )
 }
 
@@ -456,10 +468,18 @@ function updateSnapshotCounts(snapshot: CanvasSnapshot): void {
 function parseCanvasProjectExport(raw: string): CanvasSnapshot {
   const parsed = JSON.parse(raw) as Partial<CanvasProjectExportPayload> | Partial<CanvasSnapshot>
   const maybePayload = parsed as Partial<CanvasProjectExportPayload>
-  const snapshot = maybePayload.kind === 'spark.canvas.project' && maybePayload.snapshot
-    ? maybePayload.snapshot
-    : parsed as Partial<CanvasSnapshot>
-  if (!snapshot.project || !snapshot.board || !Array.isArray(snapshot.nodes) || !Array.isArray(snapshot.edges) || !Array.isArray(snapshot.assets) || !Array.isArray(snapshot.tasks)) {
+  const snapshot =
+    maybePayload.kind === 'spark.canvas.project' && maybePayload.snapshot
+      ? maybePayload.snapshot
+      : (parsed as Partial<CanvasSnapshot>)
+  if (
+    !snapshot.project ||
+    !snapshot.board ||
+    !Array.isArray(snapshot.nodes) ||
+    !Array.isArray(snapshot.edges) ||
+    !Array.isArray(snapshot.assets) ||
+    !Array.isArray(snapshot.tasks)
+  ) {
     throw new Error('无效的 Canvas 项目文件')
   }
   return snapshot as CanvasSnapshot
@@ -498,13 +518,21 @@ async function materializeImageDataUrl(
   }
 }
 
-async function normalizeSnapshotForHotStorage(snapshot: CanvasSnapshot): Promise<{ snapshot: CanvasSnapshot; changed: boolean }> {
+async function normalizeSnapshotForHotStorage(
+  snapshot: CanvasSnapshot,
+): Promise<{ snapshot: CanvasSnapshot; changed: boolean }> {
   const cache = new Map<string, Promise<{ filePath: string; fileUrl: string } | null>>()
   let changed = false
   const materialize = (dataUrl: string, name: string, mimeType?: string | null) => {
     const existing = cache.get(dataUrl)
     if (existing) return existing
-    const next = materializeImageDataUrl(dataUrl, name, mimeType, snapshot.project.id, snapshot.project.rootPath)
+    const next = materializeImageDataUrl(
+      dataUrl,
+      name,
+      mimeType,
+      snapshot.project.id,
+      snapshot.project.rootPath,
+    )
     cache.set(dataUrl, next)
     return next
   }
@@ -516,7 +544,11 @@ async function normalizeSnapshotForHotStorage(snapshot: CanvasSnapshot): Promise
       if (saved) {
         asset.url = saved.fileUrl
         asset.storageKey = saved.filePath
-        asset.metadata = { ...asset.metadata, storageAdapter: 'local-file', filePath: saved.filePath }
+        asset.metadata = {
+          ...asset.metadata,
+          storageAdapter: 'local-file',
+          filePath: saved.filePath,
+        }
         changed = true
       }
     }
@@ -540,7 +572,11 @@ async function normalizeSnapshotForHotStorage(snapshot: CanvasSnapshot): Promise
       }
     }
     if (isImageDataUrl(node.data.thumbnailUrl)) {
-      const saved = await materialize(node.data.thumbnailUrl, `${baseName}-thumb`, node.data.mimeType)
+      const saved = await materialize(
+        node.data.thumbnailUrl,
+        `${baseName}-thumb`,
+        node.data.mimeType,
+      )
       if (saved) {
         node.data.thumbnailUrl = saved.fileUrl
         changed = true
@@ -551,7 +587,9 @@ async function normalizeSnapshotForHotStorage(snapshot: CanvasSnapshot): Promise
   return { snapshot, changed }
 }
 
-async function loadSnapshotFromStorage(projectId: string): Promise<{ snapshot: CanvasSnapshot; changed: boolean } | null> {
+async function loadSnapshotFromStorage(
+  projectId: string,
+): Promise<{ snapshot: CanvasSnapshot; changed: boolean } | null> {
   const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
   if (!snapshotJson) return null
   const snapshot = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
@@ -641,11 +679,7 @@ type GroupMemberLayout = {
   absoluteY: number
 }
 
-function applyGroupLayout(
-  groupNode: CanvasNode,
-  members: GroupMemberLayout[],
-  at: string,
-): void {
+function applyGroupLayout(groupNode: CanvasNode, members: GroupMemberLayout[], at: string): void {
   if (members.length === 0) {
     groupNode.width = Math.max(groupNode.width, 360)
     groupNode.height = Math.max(groupNode.height, 220)
@@ -712,14 +746,20 @@ function fitMediaNodeSize(
     const headerHeight = 36
     if (width && height) {
       const aspect = height / width
-      let nodeWidth = Math.min(Math.max(width, type === 'video' ? 320 : 260), type === 'video' ? 520 : 420)
+      let nodeWidth = Math.min(
+        Math.max(width, type === 'video' ? 320 : 260),
+        type === 'video' ? 520 : 420,
+      )
       let bodyHeight = Math.round(nodeWidth * aspect)
       const maxBodyHeight = type === 'video' ? 420 : 680
       if (bodyHeight > maxBodyHeight) {
         bodyHeight = maxBodyHeight
         nodeWidth = Math.max(type === 'video' ? 300 : 220, Math.round(bodyHeight / aspect))
       }
-      return { width: Math.round(nodeWidth), height: Math.max(type === 'video' ? 220 : 220, bodyHeight + headerHeight) }
+      return {
+        width: Math.round(nodeWidth),
+        height: Math.max(type === 'video' ? 220 : 220, bodyHeight + headerHeight),
+      }
     }
     return type === 'video' ? { width: 360, height: 240 } : { width: 320, height: 260 }
   }
@@ -727,7 +767,9 @@ function fitMediaNodeSize(
   return { width: 300, height: 164 }
 }
 
-function readDisplayImageDimensions(src: string): Promise<{ width: number; height: number } | null> {
+function readDisplayImageDimensions(
+  src: string,
+): Promise<{ width: number; height: number } | null> {
   if (typeof Image === 'undefined') return Promise.resolve(null)
   return new Promise((resolve) => {
     const image = new Image()
@@ -771,16 +813,18 @@ function previewText(value: string | null | undefined): string {
 }
 
 /** 截断 dataUrl 等 base64 内容，避免日志被一张图刷屏 */
-function previewInputFiles(
-  files: CanvasMediaTaskInputFile[] | undefined,
-): { summary: string; types: string[] } {
+function previewInputFiles(files: CanvasMediaTaskInputFile[] | undefined): {
+  summary: string
+  types: string[]
+} {
   if (!files || files.length === 0) return { summary: '无', types: [] }
   const types = files.map((file) => file.type)
   const detail = files
     .map((file) => {
       const ref = file.url ?? file.dataUrl ?? file.path ?? '(空)'
       // dataUrl/base64 只保留前 50 字符
-      const shown = ref.startsWith('data:') || ref.length > 60 ? `${ref.slice(0, 50)}…<len=${ref.length}>` : ref
+      const shown =
+        ref.startsWith('data:') || ref.length > 60 ? `${ref.slice(0, 50)}…<len=${ref.length}>` : ref
       return `${file.type}:${shown}`
     })
     .join(', ')
@@ -806,9 +850,10 @@ function logCanvasMediaCall(
   const header = `color:#fff;background:${style.color};font-weight:bold;padding:2px 8px;border-radius:3px`
 
   const { summary: inputsSummary, types: inputTypes } = previewInputFiles(request.inputFiles)
-  const params = request.modelParams && Object.keys(request.modelParams).length > 0
-    ? JSON.stringify(request.modelParams)
-    : '(默认)'
+  const params =
+    request.modelParams && Object.keys(request.modelParams).length > 0
+      ? JSON.stringify(request.modelParams)
+      : '(默认)'
 
   const segments: Array<[string, string]> = [
     [`${style.emoji} ${operationLabel(operation)}`, header],
@@ -818,7 +863,10 @@ function logCanvasMediaCall(
     [`  provider: `, dim],
     [`${request.providerProfileId || '(自动选择)'}\n`, val],
     [`  model:    `, dim],
-    [`${request.modelId || '(默认)'}${request.manifestId ? `  · manifest=${request.manifestId}` : ''}\n`, val],
+    [
+      `${request.modelId || '(默认)'}${request.manifestId ? `  · manifest=${request.manifestId}` : ''}\n`,
+      val,
+    ],
     [`  inputs:   `, dim],
     [`${inputsSummary}${inputTypes.length > 0 ? `  [${inputTypes.join(', ')}]` : ''}\n`, val],
     [`  params:   `, dim],
@@ -832,9 +880,7 @@ export const canvasApi = {
   async listProjects(): Promise<CanvasProject[]> {
     try {
       const { projects } = await window.spark.invoke('canvas:project:list', {})
-      return projects
-        .filter((project) => project.status !== 'deleted')
-        .map(toCanvasProject)
+      return projects.filter((project) => project.status !== 'deleted').map(toCanvasProject)
     } catch {
       const db = readDb()
       return db.projects.filter((project) => project.status !== 'deleted')
@@ -845,7 +891,11 @@ export const canvasApi = {
     return getDefaultCanvasProjectsRoot()
   },
 
-  async createProject(input: { title: string; description?: string; parentDirectory?: string }): Promise<CanvasSnapshot> {
+  async createProject(input: {
+    title: string
+    description?: string
+    parentDirectory?: string
+  }): Promise<CanvasSnapshot> {
     const db = readDb()
     const at = now()
     const projectId = uid('canvas_project')
@@ -861,6 +911,7 @@ export const canvasApi = {
       title: input.title,
       description: input.description ?? null,
       status: 'active',
+      settings: {},
       rootPath,
       nodeCount: 0,
       assetCount: 0,
@@ -901,6 +952,22 @@ export const canvasApi = {
     return project
   },
 
+  async updateProjectSettings(
+    projectId: string,
+    settings: CanvasProjectSettings,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    project.settings = {
+      prompt: settings.prompt?.trim() ?? '',
+      negativePrompt: settings.negativePrompt?.trim() ?? '',
+    }
+    project.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
   async exportProjectToFile(projectId: string): Promise<{ exported: boolean; filePath?: string }> {
     const db = readDb()
     let snapshot: CanvasSnapshot | null = null
@@ -928,9 +995,7 @@ export const canvasApi = {
     const result = await window.spark.invoke('dialog:save-file', {
       title: '导出 Canvas 项目',
       defaultPath: `${sanitizeFileName(snapshot.project.title)}.spark-canvas.json`,
-      filters: [
-        { name: 'Spark Canvas Project', extensions: ['json'] },
-      ],
+      filters: [{ name: 'Spark Canvas Project', extensions: ['json'] }],
     })
     if (result.canceled || !result.filePath) return { exported: false }
     await window.spark.invoke('file:write-text', {
@@ -940,7 +1005,9 @@ export const canvasApi = {
     return { exported: true, filePath: result.filePath }
   },
 
-  async exportProjectPackage(projectId: string): Promise<{ exported: boolean; directoryPath?: string }> {
+  async exportProjectPackage(
+    projectId: string,
+  ): Promise<{ exported: boolean; directoryPath?: string }> {
     const db = readDb()
     let snapshot: CanvasSnapshot | null = null
     try {
@@ -969,7 +1036,9 @@ export const canvasApi = {
     return response
   },
 
-  async openProjectFolder(projectId: string): Promise<{ opened: boolean; rootPath?: string; error?: string }> {
+  async openProjectFolder(
+    projectId: string,
+  ): Promise<{ opened: boolean; rootPath?: string; error?: string }> {
     const db = readDb()
     let project = db.projects.find((item) => item.id === projectId)
     if (!project) {
@@ -1000,9 +1069,7 @@ export const canvasApi = {
   async importProjectFromFile(parentDirectory?: string): Promise<CanvasSnapshot | null> {
     const result = await window.spark.invoke('dialog:open-file', {
       title: '导入 Canvas 项目',
-      filters: [
-        { name: 'Spark Canvas Project', extensions: ['json'] },
-      ],
+      filters: [{ name: 'Spark Canvas Project', extensions: ['json'] }],
     })
     if (result.canceled || !result.filePath) return null
     const { content } = await window.spark.invoke('file:read-text', { path: result.filePath })
@@ -1032,7 +1099,9 @@ export const canvasApi = {
     return normalized.snapshot
   },
 
-  async migrateProjectAssetsToDirectory(projectId: string): Promise<{ movedAssets: number; skippedAssets: number }> {
+  async migrateProjectAssetsToDirectory(
+    projectId: string,
+  ): Promise<{ movedAssets: number; skippedAssets: number }> {
     const db = readDb()
     const snapshot = fullSnapshotFromDb(db, projectId)
     if (!snapshot.project.rootPath) {
@@ -1053,7 +1122,11 @@ export const canvasApi = {
     return { movedAssets: result.movedAssets, skippedAssets: result.skippedAssets }
   },
 
-  async cleanupLegacyCanvasAssets(): Promise<{ deletedFiles: number; deletedBytes: number; scannedFiles: number }> {
+  async cleanupLegacyCanvasAssets(): Promise<{
+    deletedFiles: number
+    deletedBytes: number
+    scannedFiles: number
+  }> {
     const result = await window.spark.invoke('canvas:project:cleanup-orphans', {})
     return {
       deletedFiles: result.deletedFiles,
@@ -1115,27 +1188,31 @@ export const canvasApi = {
     projectId: string
     boardId: string
     text: string
-    isPrompt?: boolean
     x: number
     y: number
   }): Promise<CanvasNode> {
     const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
     const node = createNodeBase({
       projectId: input.projectId,
       boardId: input.boardId,
-      type: input.isPrompt ? 'prompt' : 'text',
-      title: input.isPrompt ? 'Prompt' : 'Text note',
+      type: 'text',
+      title: 'Text note',
       x: input.x,
       y: input.y,
       width: 280,
       height: 164,
-      data: { text: input.text, format: input.isPrompt ? 'prompt' : 'plain' },
+      data: { text: input.text, format: 'plain' },
     })
+    node.zIndex = maxZ + 1
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
       projectId: input.projectId,
       userId: USER_ID,
-      type: input.isPrompt ? 'prompt' : 'text',
+      type: 'text',
       source: 'manual',
       title: node.title ?? null,
       contentText: input.text,
@@ -1164,6 +1241,10 @@ export const canvasApi = {
     imageHeight?: number
   }): Promise<CanvasNode> {
     const db = readDb()
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === input.projectId).map((node) => node.zIndex),
+    )
     const fileUrl = encodeToSafeFileUrl(input.filePath)
     const asset: CanvasAsset = {
       id: uid('canvas_asset'),
@@ -1195,6 +1276,7 @@ export const canvasApi = {
       height: input.height ?? 260,
       data: { url: fileUrl, thumbnailUrl: fileUrl, mimeType: input.file.type },
     })
+    node.zIndex = maxZ + 1
     db.assets.push(asset)
     db.nodes.push(node)
     updateProjectCounts(db, input.projectId)
@@ -1219,7 +1301,10 @@ export const canvasApi = {
     if (sourceNodes.length < 2) return this.openSnapshot(projectId)
 
     const at = now()
-    const maxZ = Math.max(0, ...db.nodes.filter((node) => node.projectId === projectId).map((node) => node.zIndex))
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((node) => node.projectId === projectId).map((node) => node.zIndex),
+    )
     const memberLayouts = sourceNodes.map((node) => ({
       node,
       absoluteX: node.x,
@@ -1276,13 +1361,18 @@ export const canvasApi = {
   async dissolveGroupNode(projectId: string, groupId: string): Promise<CanvasSnapshot> {
     const db = readDb()
     const groupNode = db.nodes.find(
-      (node) => node.id === groupId && node.projectId === projectId && node.type === 'group' && !node.hidden,
+      (node) =>
+        node.id === groupId &&
+        node.projectId === projectId &&
+        node.type === 'group' &&
+        !node.hidden,
     )
     if (!groupNode) return this.openSnapshot(projectId)
 
     const at = now()
     for (const node of db.nodes) {
-      if (node.projectId !== projectId || node.hidden || node.parentNodeId !== groupNode.id) continue
+      if (node.projectId !== projectId || node.hidden || node.parentNodeId !== groupNode.id)
+        continue
       node.parentNodeId = null
       node.x = groupNode.x + node.x
       node.y = groupNode.y + node.y
@@ -1298,10 +1388,18 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
-  async addNodesToGroup(projectId: string, groupId: string, nodeIds: string[]): Promise<CanvasSnapshot> {
+  async addNodesToGroup(
+    projectId: string,
+    groupId: string,
+    nodeIds: string[],
+  ): Promise<CanvasSnapshot> {
     const db = readDb()
     const groupNode = db.nodes.find(
-      (node) => node.id === groupId && node.projectId === projectId && node.type === 'group' && !node.hidden,
+      (node) =>
+        node.id === groupId &&
+        node.projectId === projectId &&
+        node.type === 'group' &&
+        !node.hidden,
     )
     if (!groupNode) return this.openSnapshot(projectId)
 
@@ -1318,7 +1416,10 @@ export const canvasApi = {
 
     const at = now()
     const existingMembers: GroupMemberLayout[] = db.nodes
-      .filter((node) => node.projectId === projectId && !node.hidden && node.parentNodeId === groupNode.id)
+      .filter(
+        (node) =>
+          node.projectId === projectId && !node.hidden && node.parentNodeId === groupNode.id,
+      )
       .map((node) => ({
         node,
         absoluteX: groupNode.x + node.x,
@@ -1440,26 +1541,33 @@ export const canvasApi = {
       return this.openSnapshot(projectId)
     }
     const db = readDb()
-    const source = db.nodes.find((node) => node.id === input.sourceNodeId && node.projectId === projectId && !node.hidden)
-    const target = db.nodes.find((node) => node.id === input.targetNodeId && node.projectId === projectId && !node.hidden)
+    const source = db.nodes.find(
+      (node) => node.id === input.sourceNodeId && node.projectId === projectId && !node.hidden,
+    )
+    const target = db.nodes.find(
+      (node) => node.id === input.targetNodeId && node.projectId === projectId && !node.hidden,
+    )
     const board = db.boards.find((item) => item.projectId === projectId)
     if (!source || !target || !board) return this.openSnapshot(projectId)
 
-    const edgeType: CanvasEdge['type'] = input.type
-      ?? (target.type === 'task' ? 'used_as_input' : source.type === 'task' ? 'generated' : 'references')
-    const duplicate = db.edges.some((edge) =>
-      edge.projectId === projectId &&
-      edge.sourceNodeId === source.id &&
-      edge.targetNodeId === target.id &&
-      edge.type === edgeType,
+    const edgeType: CanvasEdge['type'] =
+      input.type ??
+      (target.type === 'task'
+        ? 'used_as_input'
+        : source.type === 'task'
+          ? 'generated'
+          : 'references')
+    const duplicate = db.edges.some(
+      (edge) =>
+        edge.projectId === projectId &&
+        edge.sourceNodeId === source.id &&
+        edge.targetNodeId === target.id &&
+        edge.type === edgeType,
     )
     if (duplicate) return this.openSnapshot(projectId)
 
-    const taskId = target.type === 'task'
-      ? target.taskId
-      : source.type === 'task'
-        ? source.taskId
-        : null
+    const taskId =
+      target.type === 'task' ? target.taskId : source.type === 'task' ? source.taskId : null
     const at = now()
     const edge: CanvasEdge = {
       id: uid('canvas_edge'),
@@ -1478,12 +1586,14 @@ export const canvasApi = {
     const task = taskId ? db.tasks.find((item) => item.id === taskId) : undefined
     if (task && edgeType === 'used_as_input') {
       if (!task.inputNodeIds.includes(source.id)) task.inputNodeIds.push(source.id)
-      if (source.assetId && !task.inputAssetIds.includes(source.assetId)) task.inputAssetIds.push(source.assetId)
+      if (source.assetId && !task.inputAssetIds.includes(source.assetId))
+        task.inputAssetIds.push(source.assetId)
       task.updatedAt = at
     }
     if (task && edgeType === 'generated') {
       if (!task.outputNodeIds.includes(target.id)) task.outputNodeIds.push(target.id)
-      if (target.assetId && !task.outputAssetIds.includes(target.assetId)) task.outputAssetIds.push(target.assetId)
+      if (target.assetId && !task.outputAssetIds.includes(target.assetId))
+        task.outputAssetIds.push(target.assetId)
       task.updatedAt = at
     }
 
@@ -1582,7 +1692,9 @@ export const canvasApi = {
     const remove = new Set(nodeIds)
     const removedGroups = new Map(
       db.nodes
-        .filter((node) => remove.has(node.id) && node.projectId === projectId && node.type === 'group')
+        .filter(
+          (node) => remove.has(node.id) && node.projectId === projectId && node.type === 'group',
+        )
         .map((node) => [node.id, node]),
     )
     const at = now()
@@ -1645,6 +1757,7 @@ export const canvasApi = {
       progress: 12,
       title: operationLabel(request.operation),
       prompt: request.prompt ?? null,
+      negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
       outputNodeIds: [],
@@ -1861,6 +1974,7 @@ export const canvasApi = {
       progress: 24,
       title: operationLabel(request.operation),
       prompt: request.prompt ?? null,
+      negativePrompt: request.negativePrompt ?? null,
       inputNodeIds: request.inputNodeIds ?? [],
       inputAssetIds: request.inputAssetIds ?? [],
       outputNodeIds: [],
@@ -1899,8 +2013,11 @@ export const canvasApi = {
       clientTaskId: taskId,
       operation: request.operation,
       ...(request.prompt != null ? { prompt: request.prompt } : {}),
+      ...(request.negativePrompt != null ? { negativePrompt: request.negativePrompt } : {}),
       ...(request.inputFiles != null ? { inputFiles: request.inputFiles } : {}),
-      ...(request.providerProfileId != null ? { providerProfileId: request.providerProfileId } : {}),
+      ...(request.providerProfileId != null
+        ? { providerProfileId: request.providerProfileId }
+        : {}),
       ...(request.manifestId != null ? { manifestId: request.manifestId } : {}),
       ...(request.modelId != null ? { modelId: request.modelId } : {}),
       ...(request.modelParams != null ? { modelParams: request.modelParams } : {}),
@@ -1972,11 +2089,11 @@ export const canvasApi = {
 
     const responseRequestId = response.requestId ?? response.runtimeTaskId ?? null
     if (
-      !response.error
-      && response.status === 'succeeded'
-      && task.status === 'completed'
-      && task.outputAssetIds.length > 0
-      && task.requestId === responseRequestId
+      !response.error &&
+      response.status === 'succeeded' &&
+      task.status === 'completed' &&
+      task.outputAssetIds.length > 0 &&
+      task.requestId === responseRequestId
     ) {
       return this.openSnapshot(projectId)
     }
@@ -1986,7 +2103,8 @@ export const canvasApi = {
       task.status = isCancelled ? 'cancelled' : 'failed'
       task.progress = 100
       task.errorMsg = response.error?.code ?? (isCancelled ? 'cancelled' : 'provider_task_failed')
-      task.errorDetail = response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed')
+      task.errorDetail =
+        response.error?.message ?? (isCancelled ? '任务已取消' : 'Provider task failed')
       task.requestId = responseRequestId
       task.updatedAt = now()
       taskNode.data = {
@@ -2032,12 +2150,15 @@ export const canvasApi = {
         projectId,
         userId: USER_ID,
         type: assetType,
-        source: task.operation === 'image_edit' || task.operation === 'image_compose' ? 'ai_edited' : 'ai_generated',
+        source:
+          task.operation === 'image_edit' || task.operation === 'image_compose'
+            ? 'ai_edited'
+            : 'ai_generated',
         title: `${operationLabel(task.operation)} · ${response.provider}/${response.model}`,
         mimeType: assetOut.mimeType ?? null,
         storageKey: assetOut.filePath ?? null,
         url: displayUrl || null,
-        thumbnailUrl: assetType === 'image' ? (displayUrl || null) : null,
+        thumbnailUrl: assetType === 'image' ? displayUrl || null : null,
         contentText: assetOut.contentText ?? null,
         ...(assetWidth != null ? { width: assetWidth } : {}),
         ...(assetHeight != null ? { height: assetHeight } : {}),
@@ -2053,10 +2174,15 @@ export const canvasApi = {
         updatedAt: at,
       }
       const nodeType: CanvasNode['type'] =
-        assetType === 'text' ? 'text'
-          : assetType === 'image' ? 'image'
-            : assetType === 'audio' ? 'audio'
-              : assetType === 'video' ? 'video' : 'text'
+        assetType === 'text'
+          ? 'text'
+          : assetType === 'image'
+            ? 'image'
+            : assetType === 'audio'
+              ? 'audio'
+              : assetType === 'video'
+                ? 'video'
+                : 'text'
       const nodeData: CanvasNode['data'] =
         nodeType === 'text'
           ? { text: asset.contentText ?? '', format: 'plain' }
@@ -2115,12 +2241,16 @@ export const canvasApi = {
   },
 
   /** 拉取当前画布可用的 manifest 驱动模型列表（不含 API key） */
-  async listMediaModels(request: CanvasMediaModelsListRequest = {}): Promise<CanvasMediaModelsListResponse> {
+  async listMediaModels(
+    request: CanvasMediaModelsListRequest = {},
+  ): Promise<CanvasMediaModelsListResponse> {
     return window.spark.invoke('canvas:media-models:list', request)
   },
 
   /** 查询单个 manifest 的完整调用/参数描述，供参数面板和 agent 节点编排使用 */
-  async describeMediaModel(request: CanvasMediaModelDescribeRequest): Promise<CanvasMediaModelDescribeResponse> {
+  async describeMediaModel(
+    request: CanvasMediaModelDescribeRequest,
+  ): Promise<CanvasMediaModelDescribeResponse> {
     return window.spark.invoke('canvas:media-models:describe', request)
   },
 

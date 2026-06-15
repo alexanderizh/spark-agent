@@ -3,6 +3,7 @@ import { canvasApi, isMediaOperation } from './canvas.api'
 import type {
   CanvasNode,
   CanvasProject,
+  CanvasProjectSettings,
   CanvasSnapshot,
   CreateCanvasTaskRequest,
 } from './canvas.types'
@@ -60,20 +61,23 @@ export function useCanvasWorkspace(projectId: string) {
 
   useEffect(() => {
     let active = true
-    const unsubscribe = window.spark.on('stream:canvas:media-task', (payload: CanvasMediaTaskStreamPayload) => {
-      if (!active) return
-      if (payload.projectId && payload.projectId !== projectId) return
-      if (!payload.clientTaskId) return
-      if (payload.status === 'running') return
-      void canvasApi
-        .applyMediaTaskResult(projectId, payload.clientTaskId, payload.response)
-        .then((next) => {
-          if (active) setSnapshot(next)
-        })
-        .catch(() => {
-          // 后台事件不能打断画布拖拽/编辑；失败详情已写入 task runtime。
-        })
-    })
+    const unsubscribe = window.spark.on(
+      'stream:canvas:media-task',
+      (payload: CanvasMediaTaskStreamPayload) => {
+        if (!active) return
+        if (payload.projectId && payload.projectId !== projectId) return
+        if (!payload.clientTaskId) return
+        if (payload.status === 'running') return
+        void canvasApi
+          .applyMediaTaskResult(projectId, payload.clientTaskId, payload.response)
+          .then((next) => {
+            if (active) setSnapshot(next)
+          })
+          .catch(() => {
+            // 后台事件不能打断画布拖拽/编辑；失败详情已写入 task runtime。
+          })
+      },
+    )
     return () => {
       active = false
       unsubscribe()
@@ -96,7 +100,7 @@ export function useCanvasWorkspace(projectId: string) {
   )
 
   const createTextNode = useCallback(
-    async (input: { text: string; isPrompt?: boolean; x: number; y: number }) => {
+    async (input: { text: string; x: number; y: number }) => {
       const current = snapshot
       if (!current) return
       const node = await canvasApi.createTextNode({
@@ -136,7 +140,9 @@ export function useCanvasWorkspace(projectId: string) {
 
   const createGroupNode = useCallback(
     async (nodeIds: string[]) => {
-      setSnapshot(await canvasApi.createGroupNode(projectId, nodeIds))
+      const nextSnapshot = await canvasApi.createGroupNode(projectId, nodeIds)
+      setSnapshot(nextSnapshot)
+      return nextSnapshot
     },
     [projectId],
   )
@@ -191,17 +197,28 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  const updateProjectSettings = useCallback(
+    async (settings: CanvasProjectSettings) => {
+      setSnapshot(await canvasApi.updateProjectSettings(projectId, settings))
+    },
+    [projectId],
+  )
+
   const createTask = useCallback(
-    async (request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
-      inputFiles?: CanvasMediaTaskInputFile[]
-    }) => {
+    async (
+      request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
+        inputFiles?: CanvasMediaTaskInputFile[]
+      },
+    ) => {
       const current = snapshot
       if (!current) return
       // 多媒体 operation 走真实平台 adapter；文本类走 demo 占位
       if (isMediaOperation(request.operation)) {
         setSnapshot(await canvasApi.createMediaTask(projectId, request))
       } else {
-        setSnapshot(await canvasApi.createTask(projectId, { ...request, boardId: current.board.id }))
+        setSnapshot(
+          await canvasApi.createTask(projectId, { ...request, boardId: current.board.id }),
+        )
       }
     },
     [projectId, snapshot],
@@ -237,6 +254,7 @@ export function useCanvasWorkspace(projectId: string) {
     duplicateNodes,
     patchNodes,
     updateNodeData,
+    updateProjectSettings,
     createTask,
     completeDemoTask,
     cancelTask,

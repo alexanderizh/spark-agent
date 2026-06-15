@@ -1,13 +1,12 @@
 import { Button, Tag, Tooltip } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 
-export type CanvasTool = 'select' | 'pan' | 'text' | 'prompt' | 'image'
+export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
 
 export function CanvasToolbar({
   activeTool,
   onToolChange,
   onAddText,
-  onAddPrompt,
   onUploadImage,
   onCreateGroup,
   onAddToGroup,
@@ -28,7 +27,6 @@ export function CanvasToolbar({
   activeTool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
   onAddText: () => void
-  onAddPrompt: () => void
   onUploadImage: () => void
   onCreateGroup: () => void
   onAddToGroup: () => void
@@ -69,9 +67,6 @@ export function CanvasToolbar({
         </Tooltip>
         <Button size="small" icon={<Icons.File size={15} />} onClick={onAddText}>
           文本
-        </Button>
-        <Button size="small" icon={<Icons.Sparkles size={15} />} onClick={onAddPrompt}>
-          Prompt
         </Button>
         <Button size="small" icon={<Icons.Image size={15} />} onClick={onUploadImage}>
           图片

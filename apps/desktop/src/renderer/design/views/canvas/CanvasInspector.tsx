@@ -68,9 +68,7 @@ export function CanvasInspector({
       <section className="canvas-panel-section">
         <div className="canvas-panel-title-row">
           <h3>属性</h3>
-          <Tag color="blue">
-            {selectedNodes.length} selected
-          </Tag>
+          <Tag color="blue">{selectedNodes.length} selected</Tag>
         </div>
         <Space size={8} wrap>
           <Button
@@ -117,7 +115,8 @@ export function CanvasInspector({
   if (node == null) return null
   const task = node.taskId ? tasks.find((item) => item.id === node.taskId) : undefined
   const asset = node.assetId ? assets.find((item) => item.id === node.assetId) : undefined
-  const childNodes = node.type === 'group' ? nodes.filter((item) => item.parentNodeId === node.id) : []
+  const childNodes =
+    node.type === 'group' ? nodes.filter((item) => item.parentNodeId === node.id) : []
 
   return (
     <section className="canvas-panel-section">
@@ -167,18 +166,12 @@ export function CanvasInspector({
         node={node}
         onPatchNode={onPatchNode}
       />
-      {asset && (
-        <AssetInspector asset={asset} />
-      )}
-      {node.type === 'group' && (
-        <GroupInspector group={node} childNodes={childNodes} />
-      )}
+      {asset && <AssetInspector asset={asset} />}
+      {node.type === 'group' && <GroupInspector group={node} childNodes={childNodes} />}
       {(node.type === 'text' || node.type === 'prompt') && (
         <TextNodeEditor key={`${node.id}:${node.updatedAt}`} node={node} onSaveText={onSaveText} />
       )}
-      {task && (
-        <TaskParamsInspector task={task} />
-      )}
+      {task && <TaskParamsInspector task={task} />}
       <LineageInspector node={node} nodes={nodes} edges={edges} tasks={tasks} />
     </section>
   )
@@ -268,8 +261,14 @@ function AssetInspector({ asset }: { asset: CanvasAsset }) {
           { label: '来源', children: asset.source },
           { label: '类型', children: asset.type },
           { label: 'MIME', children: asset.mimeType ?? '-' },
-          { label: '尺寸', children: asset.width && asset.height ? `${asset.width} x ${asset.height}` : '-' },
-          { label: '时长', children: asset.durationMs ? `${Math.round(asset.durationMs / 1000)}s` : '-' },
+          {
+            label: '尺寸',
+            children: asset.width && asset.height ? `${asset.width} x ${asset.height}` : '-',
+          },
+          {
+            label: '时长',
+            children: asset.durationMs ? `${Math.round(asset.durationMs / 1000)}s` : '-',
+          },
           { label: '存储', children: asset.storageKey ?? '-' },
         ]}
       />
@@ -313,7 +312,9 @@ function LineageInspector({
   edges: CanvasEdge[]
   tasks: CanvasTask[]
 }) {
-  const relatedEdges = edges.filter((edge) => edge.sourceNodeId === node.id || edge.targetNodeId === node.id)
+  const relatedEdges = edges.filter(
+    (edge) => edge.sourceNodeId === node.id || edge.targetNodeId === node.id,
+  )
   if (relatedEdges.length === 0) return null
 
   const nodeById = new Map(nodes.map((item) => [item.id, item]))
@@ -345,7 +346,16 @@ function LineageInspector({
                 <strong>{peer?.title ?? peer?.type ?? peerId}</strong>
               </div>
               <div className="canvas-lineage-row-meta">
-                <Tag color={edge.type === 'generated' ? 'green' : edge.type === 'used_as_input' ? 'blue' : 'default'} bordered>
+                <Tag
+                  color={
+                    edge.type === 'generated'
+                      ? 'green'
+                      : edge.type === 'used_as_input'
+                        ? 'blue'
+                        : 'default'
+                  }
+                  bordered
+                >
                   {edge.type}
                 </Tag>
                 {task ? <span>{task.title ?? task.operation}</span> : null}
@@ -372,6 +382,7 @@ function TaskParamsInspector({ task }: { task: CanvasTask }) {
           { label: 'Manifest', children: task.manifestId ?? '-' },
           { label: '模型', children: task.modelId ?? '-' },
           { label: '状态', children: task.status },
+          { label: '反向提示词', children: task.negativePrompt ?? '-' },
           { label: 'Request', children: task.requestId ?? '-' },
         ]}
       />
@@ -399,7 +410,9 @@ function summarizeSelection(nodes: CanvasNode[]) {
   const maxX = Math.max(...nodes.map((node) => node.x + node.width))
   const maxY = Math.max(...nodes.map((node) => node.y + node.height))
   return {
-    typeText: Object.entries(typeCounts).map(([type, count]) => `${type} ${count}`).join(' / '),
+    typeText: Object.entries(typeCounts)
+      .map(([type, count]) => `${type} ${count}`)
+      .join(' / '),
     width: Math.round(maxX - minX),
     height: Math.round(maxY - minY),
     lockedCount: nodes.filter((node) => node.locked).length,
@@ -408,7 +421,8 @@ function summarizeSelection(nodes: CanvasNode[]) {
 
 function formatParamValue(value: unknown): string {
   if (value == null) return '-'
-  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value)
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+    return String(value)
   return JSON.stringify(value)
 }
 
@@ -424,11 +438,7 @@ function TextNodeEditor({
   return (
     <div className="canvas-form-row">
       <label>内容</label>
-      <LobeTextArea
-        value={textDraft}
-        rows={5}
-        onChange={(e) => setTextDraft(e.target.value)}
-      />
+      <LobeTextArea value={textDraft} rows={5} onChange={(e) => setTextDraft(e.target.value)} />
       <Button size="small" type="primary" onClick={() => onSaveText(node, textDraft)}>
         保存文本
       </Button>

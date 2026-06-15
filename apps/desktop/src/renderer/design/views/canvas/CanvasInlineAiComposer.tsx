@@ -1,12 +1,25 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
-import { Button, Input, Tag } from '@lobehub/ui'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
+import { Button, Checkbox as LobeCheckbox, Input, Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
 import { capabilityForOperation } from '@spark/protocol'
 import type { CanvasMediaModelSummary, CanvasMediaTaskInputFile } from '@spark/protocol'
 import { canvasApi } from './canvas.api'
 import { CANVAS_CAPABILITIES, isCapabilityRecommended } from './canvas.capabilities'
-import type { CanvasInputTransport, CanvasNode, CanvasOperationType } from './canvas.types'
+import type {
+  CanvasInputTransport,
+  CanvasNode,
+  CanvasOperationType,
+  CanvasProjectSettings,
+} from './canvas.types'
 
 const COMPOSER_CACHE_KEY = 'spark-canvas:inline-ai-composer:v1'
 type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
@@ -14,16 +27,35 @@ type CanvasTaskInputRole = NonNullable<CanvasMediaTaskInputFile['role']>
 export function CanvasInlineAiComposer({
   open,
   selectedNodes,
+  allNodes = selectedNodes,
+  projectSettings,
+  onUploadImage,
   onClose,
   onCreateTask,
 }: {
   open: boolean
   selectedNodes: CanvasNode[]
+  allNodes?: CanvasNode[]
+  projectSettings?: CanvasProjectSettings
+  onUploadImage?: () => void
   onClose: () => void
-  onCreateTask: (input: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport; inputRoles?: Record<string, CanvasTaskInputRole> }) => void
+  onCreateTask: (input: {
+    operation: CanvasOperationType
+    prompt: string
+    negativePrompt?: string
+    inputNodeIds?: string[]
+    providerProfileId?: string
+    manifestId?: string
+    modelId?: string
+    modelParams?: Record<string, unknown>
+    inputTransport?: CanvasInputTransport
+    inputRoles?: Record<string, CanvasTaskInputRole>
+  }) => void
 }) {
   const [operation, setOperation] = useState<CanvasOperationType>('text_to_image')
   const [prompt, setPrompt] = useState('')
+  const [includeProjectPrompt, setIncludeProjectPrompt] = useState(false)
+  const [includeNegativePrompt, setIncludeNegativePrompt] = useState(false)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState<string>('')
@@ -32,6 +64,7 @@ export function CanvasInlineAiComposer({
   const [inputTransport, setInputTransport] = useState<CanvasInputTransport>('auto')
   const [firstFrameNodeId, setFirstFrameNodeId] = useState<string>('')
   const [lastFrameNodeId, setLastFrameNodeId] = useState<string>('')
+  const [referenceFrameNodeIds, setReferenceFrameNodeIds] = useState<string[]>([])
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
@@ -39,6 +72,8 @@ export function CanvasInlineAiComposer({
     () => composerCacheKey(operation, selectedModelKey || 'auto'),
     [operation, selectedModelKey],
   )
+  const projectPrompt = projectSettings?.prompt?.trim() ?? ''
+  const projectNegativePrompt = projectSettings?.negativePrompt?.trim() ?? ''
 
   useEffect(() => {
     if (!open) return
@@ -61,8 +96,21 @@ export function CanvasInlineAiComposer({
   }, [open])
 
   const nodePromptContext = useMemo(() => buildPromptContext(selectedNodes), [selectedNodes])
-  const canSubmit = prompt.trim().length > 0 || nodePromptContext.length > 0 || canRunFromInputOnly(operation, selectedNodes)
-  const selectedImageNodes = useMemo(() => selectedNodes.filter((node) => node.type === 'image' && Boolean(node.data.url)), [selectedNodes])
+  const selectedImageNodes = useMemo(
+    () => selectedNodes.filter((node) => node.type === 'image' && Boolean(node.data.url)),
+    [selectedNodes],
+  )
+  const canvasImageNodes = useMemo(
+    () =>
+      allNodes
+        .filter((node) => node.type === 'image' && !node.hidden && Boolean(node.data.url))
+        .sort((left, right) => left.x - right.x || left.y - right.y || left.zIndex - right.zIndex),
+    [allNodes],
+  )
+  const frameCandidateImageNodes = useMemo(
+    () => (canvasImageNodes.length > 0 ? canvasImageNodes : selectedImageNodes),
+    [canvasImageNodes, selectedImageNodes],
+  )
 
   const selectedSummary = useMemo(() => {
     if (selectedNodes.length === 0) return '未选择节点'
@@ -104,7 +152,9 @@ export function CanvasInlineAiComposer({
   const supportedMediaModels = useMemo(() => {
     if (mediaCapabilityIds.length === 0) return []
     return mediaModels.filter((model) =>
-      model.capabilities.some((capability) => (mediaCapabilityIds as readonly string[]).includes(capability.id)),
+      model.capabilities.some((capability) =>
+        (mediaCapabilityIds as readonly string[]).includes(capability.id),
+      ),
     )
   }, [mediaCapabilityIds, mediaModels])
   const modelOptions = useMemo(
@@ -121,24 +171,57 @@ export function CanvasInlineAiComposer({
   )
   const selectedCapability = useMemo(() => {
     if (!selectedModel) return null
-    return selectedModel.capabilities.find((capability) =>
-      (mediaCapabilityIds as readonly string[]).includes(capability.id),
-    ) ?? null
+    return (
+      selectedModel.capabilities.find((capability) =>
+        (mediaCapabilityIds as readonly string[]).includes(capability.id),
+      ) ?? null
+    )
   }, [mediaCapabilityIds, selectedModel])
-  const needsImageInput = useMemo(
-    () => operationNeedsImageInput(operation) && selectedNodes.some((node) => node.type === 'image'),
-    [operation, selectedNodes],
-  )
   const supportsVideoFrameRoles = useMemo(
-    () => operationSupportsVideoFrameRoles(operation) && selectedImageNodes.length > 0,
-    [operation, selectedImageNodes.length],
+    () => operationSupportsVideoFrameRoles(operation) && frameCandidateImageNodes.length > 0,
+    [frameCandidateImageNodes.length, operation],
   )
+  const videoFrameMaxImages = useMemo(
+    () => videoImageLimitForCapability(operation, selectedCapability),
+    [operation, selectedCapability],
+  )
+  const canUseLastFrame = supportsVideoFrameRoles && videoFrameMaxImages > 1
+  const selectedFrameCount =
+    (firstFrameNodeId ? 1 : 0) + (lastFrameNodeId ? 1 : 0) + referenceFrameNodeIds.length
+  const referenceFrameCapacity = Math.max(
+    0,
+    videoFrameMaxImages - (firstFrameNodeId ? 1 : 0) - (lastFrameNodeId ? 1 : 0),
+  )
+  const frameImageOptions = useMemo(
+    () =>
+      frameCandidateImageNodes.map((node, index) => ({
+        value: node.id,
+        label: frameNodeLabel(node, index, selectedImageNodes.some((item) => item.id === node.id)),
+      })),
+    [frameCandidateImageNodes, selectedImageNodes],
+  )
+  const hasExplicitFrameInput =
+    supportsVideoFrameRoles &&
+    Boolean(firstFrameNodeId || lastFrameNodeId || referenceFrameNodeIds.length > 0)
+  const needsImageInput = useMemo(
+    () =>
+      operationNeedsImageInput(operation) &&
+      (selectedNodes.some((node) => node.type === 'image') || hasExplicitFrameInput),
+    [hasExplicitFrameInput, operation, selectedNodes],
+  )
+  const canSubmit =
+    prompt.trim().length > 0 ||
+    nodePromptContext.length > 0 ||
+    (includeProjectPrompt && projectPrompt.length > 0) ||
+    canRunFromInputOnly(operation, selectedNodes) ||
+    hasExplicitFrameInput
   const parameterFields = useMemo(
-    () => mergeSchemaFields(
-      schemaFields(selectedCapability?.paramSchema ?? {}),
-      operationSuggestedFields(operation),
-      modelSuggestedFields(selectedModel),
-    ),
+    () =>
+      mergeSchemaFields(
+        schemaFields(selectedCapability?.paramSchema ?? {}),
+        operationSuggestedFields(operation),
+        modelSuggestedFields(selectedModel),
+      ),
     [operation, selectedCapability, selectedModel],
   )
 
@@ -165,7 +248,9 @@ export function CanvasInlineAiComposer({
     }
     if (!supportedMediaModels.some((model) => mediaModelKey(model) === selectedModelKey)) {
       const cachedModelKey = readLastModelKey(operation)
-      const cachedModel = supportedMediaModels.find((model) => mediaModelKey(model) === cachedModelKey)
+      const cachedModel = supportedMediaModels.find(
+        (model) => mediaModelKey(model) === cachedModelKey,
+      )
       const firstModel = cachedModel ?? supportedMediaModels[0]
       if (firstModel) setSelectedModelKey(mediaModelKey(firstModel))
     }
@@ -179,12 +264,36 @@ export function CanvasInlineAiComposer({
     if (!supportsVideoFrameRoles) {
       setFirstFrameNodeId('')
       setLastFrameNodeId('')
+      setReferenceFrameNodeIds([])
       return
     }
-    const imageIds = new Set(selectedImageNodes.map((node) => node.id))
-    setFirstFrameNodeId((prev) => (prev && imageIds.has(prev) ? prev : selectedImageNodes[0]?.id ?? ''))
-    setLastFrameNodeId((prev) => (prev && imageIds.has(prev) ? prev : selectedImageNodes[1]?.id ?? ''))
-  }, [selectedImageNodes, supportsVideoFrameRoles])
+    const candidateIds = new Set(frameCandidateImageNodes.map((node) => node.id))
+    const selectedImageIds = new Set(selectedImageNodes.map((node) => node.id))
+    const preferredNodes = selectedImageNodes.length > 0 ? selectedImageNodes : frameCandidateImageNodes
+    setFirstFrameNodeId((prev) =>
+      prev && candidateIds.has(prev) && (selectedImageNodes.length === 0 || selectedImageIds.has(prev))
+        ? prev
+        : (preferredNodes[0]?.id ?? ''),
+    )
+    setLastFrameNodeId((prev) =>
+      videoFrameMaxImages > 1 && prev && candidateIds.has(prev) && prev !== firstFrameNodeId
+        ? prev
+        : (videoFrameMaxImages > 1 ? (preferredNodes[1]?.id ?? '') : ''),
+    )
+    setReferenceFrameNodeIds((prev) =>
+      prev
+        .filter((id) => candidateIds.has(id) && id !== firstFrameNodeId && id !== lastFrameNodeId)
+        .slice(0, referenceFrameCapacity),
+    )
+  }, [
+    firstFrameNodeId,
+    frameCandidateImageNodes,
+    lastFrameNodeId,
+    referenceFrameCapacity,
+    selectedImageNodes,
+    supportsVideoFrameRoles,
+    videoFrameMaxImages,
+  ])
 
   const handleDragStart = useCallback((event: React.PointerEvent<HTMLElement>) => {
     const target = event.target as HTMLElement
@@ -192,7 +301,12 @@ export function CanvasInlineAiComposer({
     const panel = panelRef.current
     if (!panel) return
     const parent = panel.offsetParent instanceof HTMLElement ? panel.offsetParent : null
-    const parentRect = parent?.getBoundingClientRect() ?? { left: 0, top: 0, width: window.innerWidth, height: window.innerHeight }
+    const parentRect = parent?.getBoundingClientRect() ?? {
+      left: 0,
+      top: 0,
+      width: window.innerWidth,
+      height: window.innerHeight,
+    }
     const panelRect = panel.getBoundingClientRect()
     const offsetX = event.clientX - panelRect.left
     const offsetY = event.clientY - panelRect.top
@@ -222,17 +336,22 @@ export function CanvasInlineAiComposer({
     <section
       ref={panelRef}
       className="canvas-inline-ai-composer"
-      style={panelPosition ? { left: panelPosition.x, top: panelPosition.y, transform: 'none' } : undefined}
+      style={
+        panelPosition
+          ? { left: panelPosition.x, top: panelPosition.y, transform: 'none' }
+          : undefined
+      }
     >
-      <div className="canvas-inline-ai-head canvas-inline-ai-drag-handle" onPointerDown={handleDragStart}>
+      <div
+        className="canvas-inline-ai-head canvas-inline-ai-drag-handle"
+        onPointerDown={handleDragStart}
+      >
         <div>
           <h3>AI 操作</h3>
           <div className="canvas-inline-ai-subtitle">基于画布选择创建任务</div>
         </div>
         <div className="canvas-inline-ai-head-actions">
-          <Tag color={selectedNodes.length > 0 ? 'blue' : 'default'}>
-            {selectedSummary}
-          </Tag>
+          <Tag color={selectedNodes.length > 0 ? 'blue' : 'default'}>{selectedSummary}</Tag>
           <Button
             size="small"
             type="text"
@@ -286,7 +405,11 @@ export function CanvasInlineAiComposer({
           {supportedMediaModels.length > 0 && (
             <div className="canvas-model-chip-row">
               {supportedMediaModels.slice(0, 4).map((model) => (
-                <Tag key={mediaModelKey(model)} color={mediaModelKey(model) === selectedModelKey ? 'blue' : 'default'} bordered>
+                <Tag
+                  key={mediaModelKey(model)}
+                  color={mediaModelKey(model) === selectedModelKey ? 'blue' : 'default'}
+                  bordered
+                >
                   {model.providerName ?? model.providerKind} / {model.displayName}
                 </Tag>
               ))}
@@ -301,7 +424,11 @@ export function CanvasInlineAiComposer({
             value={inputTransport}
             onChange={(value) => setInputTransport((value ?? 'auto') as CanvasInputTransport)}
             options={[
-              { value: 'auto', label: selectedModel?.providerKind === 'xai' ? '自动：Base64' : '自动：云端公网链接' },
+              {
+                value: 'auto',
+                label:
+                  selectedModel?.providerKind === 'xai' ? '自动：Base64' : '自动：云端公网链接',
+              },
               { value: 'cloud_url', label: '云端公网链接' },
               { value: 'base64', label: 'Base64 直传' },
             ]}
@@ -313,18 +440,35 @@ export function CanvasInlineAiComposer({
       )}
       {supportsVideoFrameRoles && (
         <div className="canvas-form-row">
-          <label>视频帧</label>
+          <div className="canvas-form-label-row">
+            <label>视频帧</label>
+            {onUploadImage && (
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.Upload size={13} />}
+                onClick={onUploadImage}
+              >
+                上传
+              </Button>
+            )}
+          </div>
           <div className="canvas-frame-role-grid">
             <div className="canvas-param-field">
               <span>首帧</span>
               <LobeSelect
                 value={firstFrameNodeId || undefined}
                 allowClear
-                onChange={(value) => setFirstFrameNodeId(value == null ? '' : String(value))}
-                options={selectedImageNodes.map((node, index) => ({
-                  value: node.id,
-                  label: node.title?.trim() || `图片 ${index + 1}`,
-                }))}
+                onChange={(value) => {
+                  const next = value == null ? '' : String(value)
+                  setFirstFrameNodeId(next)
+                  if (next && next === lastFrameNodeId) setLastFrameNodeId('')
+                  if (next) {
+                    setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
+                  }
+                }}
+                options={frameImageOptions}
+                showSearch
               />
             </div>
             <div className="canvas-param-field">
@@ -332,13 +476,52 @@ export function CanvasInlineAiComposer({
               <LobeSelect
                 value={lastFrameNodeId || undefined}
                 allowClear
-                onChange={(value) => setLastFrameNodeId(value == null ? '' : String(value))}
-                options={selectedImageNodes.map((node, index) => ({
-                  value: node.id,
-                  label: node.title?.trim() || `图片 ${index + 1}`,
-                }))}
+                disabled={!canUseLastFrame}
+                onChange={(value) => {
+                  const next = value == null ? '' : String(value)
+                  setLastFrameNodeId(next && next !== firstFrameNodeId ? next : '')
+                  if (next) {
+                    setReferenceFrameNodeIds((prev) => prev.filter((id) => id !== next))
+                  }
+                }}
+                options={frameImageOptions}
+                placeholder={canUseLastFrame ? undefined : '当前模型仅 1 张图'}
+                showSearch
               />
             </div>
+          </div>
+          {videoFrameMaxImages > 2 && (
+            <div className="canvas-param-field">
+              <span>参考图</span>
+              <LobeSelect
+                mode="multiple"
+                value={referenceFrameNodeIds}
+                allowClear
+                disabled={referenceFrameCapacity <= 0}
+                onChange={(value) => {
+                  const values = Array.isArray(value) ? value.map(String) : []
+                  setReferenceFrameNodeIds(
+                    values
+                      .filter((id) => id !== firstFrameNodeId && id !== lastFrameNodeId)
+                      .slice(0, referenceFrameCapacity),
+                  )
+                }}
+                options={frameImageOptions.filter(
+                  (option) => option.value !== firstFrameNodeId && option.value !== lastFrameNodeId,
+                )}
+                placeholder={
+                  referenceFrameCapacity > 0 ? `最多再选 ${referenceFrameCapacity} 张` : '已达上限'
+                }
+                showSearch
+              />
+            </div>
+          )}
+          <div className="canvas-model-hint canvas-frame-role-hint">
+            可从全画布 {frameCandidateImageNodes.length} 张图片中选择；当前模型最多使用{' '}
+            {videoFrameMaxImages} 张图片，已选 {Math.min(selectedFrameCount, videoFrameMaxImages)} 张。
+            {videoFrameMaxImages <= 1
+              ? ' 如需多图参考，先用“多图合成”生成一张新图片节点。'
+              : ''}
           </div>
         </div>
       )}
@@ -347,9 +530,37 @@ export function CanvasInlineAiComposer({
         <LobeTextArea
           value={prompt}
           rows={4}
-          placeholder={nodePromptContext ? '已自动带入选中节点内容，可继续补充要求' : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'}
+          placeholder={
+            nodePromptContext
+              ? '已自动带入选中节点内容，可继续补充要求'
+              : '描述你希望 agent/provider 在画布中完成的生成、编辑、重写或合成任务'
+          }
           onChange={(e) => setPrompt(e.target.value)}
         />
+      </div>
+      <div className="canvas-form-row">
+        <label>项目提示词</label>
+        <div className="canvas-prompt-injection-list">
+          <LobeCheckbox
+            checked={includeProjectPrompt}
+            disabled={projectPrompt.length === 0}
+            onChange={setIncludeProjectPrompt}
+          >
+            注入项目统一提示词
+          </LobeCheckbox>
+          <LobeCheckbox
+            checked={includeNegativePrompt}
+            disabled={projectNegativePrompt.length === 0}
+            onChange={setIncludeNegativePrompt}
+          >
+            注入反向提示词
+          </LobeCheckbox>
+        </div>
+        <div className="canvas-model-hint">
+          {projectPrompt || projectNegativePrompt
+            ? '提交任务时按勾选状态附加项目级约束。'
+            : '可在右侧项目信息中配置项目级提示词。'}
+        </div>
       </div>
       {parameterFields.length > 0 && (
         <div className="canvas-form-row">
@@ -363,7 +574,10 @@ export function CanvasInlineAiComposer({
                     value={modelParamDraft[field.name] || undefined}
                     allowClear
                     onChange={(value) => {
-                      setModelParamDraft((prev) => ({ ...prev, [field.name]: value == null ? '' : String(value) }))
+                      setModelParamDraft((prev) => ({
+                        ...prev,
+                        [field.name]: value == null ? '' : String(value),
+                      }))
                     }}
                     options={field.enumValues.map((value) => ({ value, label: value }))}
                   />
@@ -372,7 +586,10 @@ export function CanvasInlineAiComposer({
                     value={modelParamDraft[field.name] || undefined}
                     allowClear
                     onChange={(value) => {
-                      setModelParamDraft((prev) => ({ ...prev, [field.name]: value == null ? '' : String(value) }))
+                      setModelParamDraft((prev) => ({
+                        ...prev,
+                        [field.name]: value == null ? '' : String(value),
+                      }))
                     }}
                     options={[
                       { value: 'true', label: 'true' },
@@ -406,7 +623,9 @@ export function CanvasInlineAiComposer({
           </Button>
         </div>
         {customParams.length === 0 ? (
-          <div className="canvas-param-empty">可添加模型私有参数，例如 google_search、seed、negative_prompt。</div>
+          <div className="canvas-param-empty">
+            可添加模型私有参数，例如 google_search、seed、negative_prompt。
+          </div>
         ) : (
           <div className="canvas-custom-param-list">
             {customParams.map((param) => (
@@ -414,7 +633,9 @@ export function CanvasInlineAiComposer({
                 <Input
                   value={param.name}
                   placeholder="字段名"
-                  onChange={(e) => updateCustomParam(setCustomParams, param.id, { name: e.target.value })}
+                  onChange={(e) =>
+                    updateCustomParam(setCustomParams, param.id, { name: e.target.value })
+                  }
                 />
                 <LobeSelect
                   value={param.type}
@@ -425,7 +646,11 @@ export function CanvasInlineAiComposer({
                     { value: 'boolean', label: '布尔' },
                     { value: 'json', label: 'JSON' },
                   ]}
-                  onChange={(value) => updateCustomParam(setCustomParams, param.id, { type: String(value) as CustomParamType })}
+                  onChange={(value) =>
+                    updateCustomParam(setCustomParams, param.id, {
+                      type: String(value) as CustomParamType,
+                    })
+                  }
                 />
                 {param.type === 'boolean' ? (
                   <LobeSelect
@@ -436,14 +661,20 @@ export function CanvasInlineAiComposer({
                       { value: 'true', label: 'true' },
                       { value: 'false', label: 'false' },
                     ]}
-                    onChange={(value) => updateCustomParam(setCustomParams, param.id, { value: value == null ? '' : String(value) })}
+                    onChange={(value) =>
+                      updateCustomParam(setCustomParams, param.id, {
+                        value: value == null ? '' : String(value),
+                      })
+                    }
                   />
                 ) : (
                   <Input
                     value={param.value}
                     placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
                     type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
-                    onChange={(e) => updateCustomParam(setCustomParams, param.id, { value: e.target.value })}
+                    onChange={(e) =>
+                      updateCustomParam(setCustomParams, param.id, { value: e.target.value })
+                    }
                   />
                 )}
                 <Button
@@ -451,7 +682,9 @@ export function CanvasInlineAiComposer({
                   type="text"
                   icon={<Icons.Trash size={13} />}
                   aria-label="删除自定义参数"
-                  onClick={() => setCustomParams((prev) => prev.filter((item) => item.id !== param.id))}
+                  onClick={() =>
+                    setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
+                  }
                 />
               </div>
             ))}
@@ -468,26 +701,66 @@ export function CanvasInlineAiComposer({
           icon={<Icons.Sparkles size={15} />}
           disabled={!canSubmit}
           onClick={() => {
-            const modelParams = normalizeModelParamsForSubmit({
-              ...buildModelParams(parameterFields, modelParamDraft),
-              ...buildCustomModelParams(customParams),
-            }, selectedCapability?.defaults ?? {})
-            const effectivePrompt = prompt.trim() || fallbackPromptForOperation(operation)
-            const effectiveInputTransport = inputTransport === 'auto'
-              ? selectedModel?.providerKind === 'xai' ? 'base64' : 'cloud_url'
-              : inputTransport
+            const modelParams = normalizeModelParamsForSubmit(
+              {
+                ...buildModelParams(parameterFields, modelParamDraft),
+                ...buildCustomModelParams(customParams),
+              },
+              selectedCapability?.defaults ?? {},
+            )
+            const effectivePrompt = mergeProjectPrompt(
+              prompt.trim() || fallbackPromptForOperation(operation),
+              includeProjectPrompt ? projectPrompt : '',
+            )
+            const effectiveNegativePrompt = includeNegativePrompt ? projectNegativePrompt : ''
+            const effectiveInputTransport =
+              inputTransport === 'auto'
+                ? selectedModel?.providerKind === 'xai'
+                  ? 'base64'
+                  : 'cloud_url'
+                : inputTransport
+            const videoFrameNodeIds = supportsVideoFrameRoles
+              ? normalizeVideoFrameNodeIds(
+                  firstFrameNodeId,
+                  lastFrameNodeId,
+                  referenceFrameNodeIds,
+                  videoFrameMaxImages,
+                )
+              : []
             const inputRoles = supportsVideoFrameRoles
-              ? buildVideoFrameInputRoles(selectedImageNodes, firstFrameNodeId, lastFrameNodeId)
+              ? buildVideoFrameInputRoles(
+                  videoFrameNodeIds,
+                  firstFrameNodeId,
+                  lastFrameNodeId,
+                  referenceFrameNodeIds,
+                )
               : undefined
-            const payload: { operation: CanvasOperationType; prompt: string; providerProfileId?: string; manifestId?: string; modelId?: string; modelParams?: Record<string, unknown>; inputTransport?: CanvasInputTransport; inputRoles?: Record<string, CanvasTaskInputRole> } = {
+            const inputNodeIds = supportsVideoFrameRoles
+              ? buildTaskInputNodeIds(selectedNodes, videoFrameNodeIds)
+              : undefined
+            const payload: {
+              operation: CanvasOperationType
+              prompt: string
+              negativePrompt?: string
+              inputNodeIds?: string[]
+              providerProfileId?: string
+              manifestId?: string
+              modelId?: string
+              modelParams?: Record<string, unknown>
+              inputTransport?: CanvasInputTransport
+              inputRoles?: Record<string, CanvasTaskInputRole>
+            } = {
               operation,
               prompt: effectivePrompt,
             }
-            if (selectedModel?.providerProfileId) payload.providerProfileId = selectedModel.providerProfileId
+            if (effectiveNegativePrompt) payload.negativePrompt = effectiveNegativePrompt
+            if (selectedModel?.providerProfileId)
+              payload.providerProfileId = selectedModel.providerProfileId
             if (selectedModel?.manifestId) payload.manifestId = selectedModel.manifestId
             if (selectedModel?.effectiveModelId) payload.modelId = selectedModel.effectiveModelId
             if (Object.keys(modelParams).length > 0) payload.modelParams = modelParams
             if (needsImageInput) payload.inputTransport = effectiveInputTransport
+            if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
             if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
             writeComposerCacheEntry(cacheKey, {
               operation,
@@ -520,8 +793,26 @@ function buildPromptContext(nodes: CanvasNode[]): string {
   return textParts.join('\n\n')
 }
 
+function mergeProjectPrompt(prompt: string, projectPrompt: string): string {
+  const trimmedPrompt = prompt.trim()
+  const trimmedProjectPrompt = projectPrompt.trim()
+  if (!trimmedProjectPrompt) return trimmedPrompt
+  if (!trimmedPrompt) return `项目统一提示词：\n${trimmedProjectPrompt}`
+  if (trimmedPrompt.includes(trimmedProjectPrompt)) return trimmedPrompt
+  return `${trimmedPrompt}\n\n项目统一提示词：\n${trimmedProjectPrompt}`
+}
+
 function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]): boolean {
-  if (!['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'video_edit', 'audio_transcribe'].includes(operation)) {
+  if (
+    ![
+      'image_to_image',
+      'image_edit',
+      'image_compose',
+      'image_to_video',
+      'video_edit',
+      'audio_transcribe',
+    ].includes(operation)
+  ) {
     return false
   }
   const inputTypes = new Set(nodes.map((node) => node.type))
@@ -531,11 +822,26 @@ function canRunFromInputOnly(operation: CanvasOperationType, nodes: CanvasNode[]
 }
 
 function operationNeedsImageInput(operation: CanvasOperationType): boolean {
-  return ['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'video_edit'].includes(operation)
+  return ['image_to_image', 'image_edit', 'image_compose', 'image_to_video', 'video_edit'].includes(
+    operation,
+  )
 }
 
 function operationSupportsVideoFrameRoles(operation: CanvasOperationType): boolean {
   return operation === 'image_to_video' || operation === 'video_edit'
+}
+
+function videoImageLimitForCapability(
+  operation: CanvasOperationType,
+  capability: CanvasMediaModelSummary['capabilities'][number] | null,
+): number {
+  const maxImages = capability?.input?.maxImages
+  if (typeof maxImages === 'number' && Number.isFinite(maxImages) && maxImages > 0) {
+    return Math.max(1, Math.floor(maxImages))
+  }
+  if (operation === 'video_edit') return 2
+  if (operation === 'image_to_video') return 1
+  return 1
 }
 
 function fallbackPromptForOperation(operation: CanvasOperationType): string {
@@ -549,23 +855,58 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
 }
 
 function buildVideoFrameInputRoles(
-  imageNodes: CanvasNode[],
+  imageNodeIds: string[],
   firstFrameNodeId: string,
   lastFrameNodeId: string,
+  referenceFrameNodeIds: string[],
 ): Record<string, CanvasTaskInputRole> {
   const roles: Record<string, CanvasTaskInputRole> = {}
-  for (const node of imageNodes) {
-    if (node.id === firstFrameNodeId) {
-      roles[node.id] = 'first_frame'
+  const referenceIds = new Set(referenceFrameNodeIds)
+  for (const nodeId of imageNodeIds) {
+    if (nodeId === firstFrameNodeId) {
+      roles[nodeId] = 'first_frame'
       continue
     }
-    if (node.id === lastFrameNodeId) {
-      roles[node.id] = 'last_frame'
+    if (nodeId === lastFrameNodeId) {
+      roles[nodeId] = 'last_frame'
       continue
     }
-    roles[node.id] = 'reference'
+    if (referenceIds.has(nodeId)) roles[nodeId] = 'reference'
   }
   return roles
+}
+
+function normalizeVideoFrameNodeIds(
+  firstFrameNodeId: string,
+  lastFrameNodeId: string,
+  referenceFrameNodeIds: string[],
+  maxImages: number,
+): string[] {
+  const result: string[] = []
+  const push = (id: string) => {
+    if (!id || result.includes(id) || result.length >= maxImages) return
+    result.push(id)
+  }
+  push(firstFrameNodeId)
+  push(lastFrameNodeId)
+  for (const id of referenceFrameNodeIds) push(id)
+  return result
+}
+
+function buildTaskInputNodeIds(selectedNodes: CanvasNode[], extraNodeIds: string[]): string[] {
+  const result: string[] = []
+  const push = (id: string) => {
+    if (!id || result.includes(id)) return
+    result.push(id)
+  }
+  for (const node of selectedNodes) push(node.id)
+  for (const id of extraNodeIds) push(id)
+  return result
+}
+
+function frameNodeLabel(node: CanvasNode, index: number, selected: boolean): string {
+  const title = node.title?.trim() || `图片 ${index + 1}`
+  return selected ? `${title} / 已选中` : title
 }
 
 type SchemaField = {
@@ -602,26 +943,36 @@ type ComposerCache = {
 function schemaFields(schema: Record<string, unknown>): SchemaField[] {
   const properties = schema.properties
   if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return []
-  return Object.entries(properties as Record<string, unknown>).slice(0, 12).map(([name, raw]) => {
-    const spec = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
-    const type = typeof spec.type === 'string' ? spec.type : 'string'
-    const enumValues = Array.isArray(spec.enum)
-      ? spec.enum
-        .filter((value) => typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
-        .map((value) => String(value))
-      : []
-    const examples = Array.isArray(spec.examples)
-      ? spec.examples.filter((value): value is string => typeof value === 'string')
-      : []
-    return {
-      name,
-      title: typeof spec.title === 'string' ? spec.title : name,
-      type,
-      enumValues,
-      ...(typeof spec.description === 'string' ? { description: spec.description } : {}),
-      ...(examples[0] ? { placeholder: examples[0] } : {}),
-    }
-  })
+  return Object.entries(properties as Record<string, unknown>)
+    .slice(0, 12)
+    .map(([name, raw]) => {
+      const spec =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? (raw as Record<string, unknown>)
+          : {}
+      const type = typeof spec.type === 'string' ? spec.type : 'string'
+      const enumValues = Array.isArray(spec.enum)
+        ? spec.enum
+            .filter(
+              (value) =>
+                typeof value === 'string' ||
+                typeof value === 'number' ||
+                typeof value === 'boolean',
+            )
+            .map((value) => String(value))
+        : []
+      const examples = Array.isArray(spec.examples)
+        ? spec.examples.filter((value): value is string => typeof value === 'string')
+        : []
+      return {
+        name,
+        title: typeof spec.title === 'string' ? spec.title : name,
+        type,
+        enumValues,
+        ...(typeof spec.description === 'string' ? { description: spec.description } : {}),
+        ...(examples[0] ? { placeholder: examples[0] } : {}),
+      }
+    })
 }
 
 function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {
@@ -696,14 +1047,12 @@ function operationSuggestedFields(operation: CanvasOperationType): SchemaField[]
       },
     ]
     if (operation === 'video_edit') {
-      fields.push(
-        {
-          name: 'editStrength',
-          title: '编辑强度 editStrength',
-          type: 'number',
-          enumValues: ['0.25', '0.5', '0.75'],
-        },
-      )
+      fields.push({
+        name: 'editStrength',
+        title: '编辑强度 editStrength',
+        type: 'number',
+        enumValues: ['0.25', '0.5', '0.75'],
+      })
     }
     return fields
   }
@@ -713,7 +1062,18 @@ function operationSuggestedFields(operation: CanvasOperationType): SchemaField[]
         name: 'voice',
         title: '音色 voice',
         type: 'string',
-        enumValues: ['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'],
+        enumValues: [
+          'alloy',
+          'ash',
+          'ballad',
+          'coral',
+          'echo',
+          'fable',
+          'nova',
+          'onyx',
+          'sage',
+          'shimmer',
+        ],
       },
       {
         name: 'format',
@@ -750,15 +1110,16 @@ function operationSuggestedFields(operation: CanvasOperationType): SchemaField[]
 
 function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): SchemaField[] {
   if (!model) return []
-  const fingerprint = [
-    model.manifestId,
-    model.modelId,
-    model.effectiveModelId,
-    model.displayName,
-  ].join(' ').toLowerCase()
+  const fingerprint = [model.manifestId, model.modelId, model.effectiveModelId, model.displayName]
+    .join(' ')
+    .toLowerCase()
   const fields: SchemaField[] = []
 
-  if (fingerprint.includes('gemini') || fingerprint.includes('imagen') || fingerprint.includes('veo')) {
+  if (
+    fingerprint.includes('gemini') ||
+    fingerprint.includes('imagen') ||
+    fingerprint.includes('veo')
+  ) {
     fields.push(
       {
         name: 'google_search',
@@ -778,28 +1139,66 @@ function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): Schem
   }
   if (fingerprint.includes('gpt-image')) {
     fields.push(
-      { name: 'quality', title: 'quality', type: 'string', enumValues: ['auto', 'low', 'medium', 'high'] },
-      { name: 'background', title: 'background', type: 'string', enumValues: ['auto', 'transparent', 'opaque'] },
+      {
+        name: 'quality',
+        title: 'quality',
+        type: 'string',
+        enumValues: ['auto', 'low', 'medium', 'high'],
+      },
+      {
+        name: 'background',
+        title: 'background',
+        type: 'string',
+        enumValues: ['auto', 'transparent', 'opaque'],
+      },
       { name: 'moderation', title: 'moderation', type: 'string', enumValues: ['auto', 'low'] },
     )
   }
-  if (fingerprint.includes('seed') || fingerprint.includes('kling') || fingerprint.includes('wan') || fingerprint.includes('pixverse') || fingerprint.includes('hailuo') || fingerprint.includes('minimax')) {
+  if (
+    fingerprint.includes('seed') ||
+    fingerprint.includes('kling') ||
+    fingerprint.includes('wan') ||
+    fingerprint.includes('pixverse') ||
+    fingerprint.includes('hailuo') ||
+    fingerprint.includes('minimax')
+  ) {
     fields.push(
-      { name: 'negative_prompt', title: 'negative_prompt', type: 'string', enumValues: [], placeholder: '不希望出现的内容' },
-      { name: 'camera_control', title: 'camera_control', type: 'string', enumValues: [], placeholder: 'push_in / pull_out / pan_left ...' },
+      {
+        name: 'negative_prompt',
+        title: 'negative_prompt',
+        type: 'string',
+        enumValues: [],
+        placeholder: '不希望出现的内容',
+      },
+      {
+        name: 'camera_control',
+        title: 'camera_control',
+        type: 'string',
+        enumValues: [],
+        placeholder: 'push_in / pull_out / pan_left ...',
+      },
       { name: 'seed', title: 'seed', type: 'integer', enumValues: [] },
     )
   }
   if (model.capabilities.some((capability) => capability.id.startsWith('video.'))) {
     fields.push(
-      { name: 'motion_strength', title: 'motion_strength', type: 'number', enumValues: [], placeholder: '0.5' },
+      {
+        name: 'motion_strength',
+        title: 'motion_strength',
+        type: 'number',
+        enumValues: [],
+        placeholder: '0.5',
+      },
       { name: 'fps', title: 'fps', type: 'integer', enumValues: [], placeholder: '24' },
     )
   }
   return fields
 }
 
-function mergeSchemaFields(baseFields: SchemaField[], ...suggestedFieldGroups: SchemaField[][]): SchemaField[] {
+function mergeSchemaFields(
+  baseFields: SchemaField[],
+  ...suggestedFieldGroups: SchemaField[][]
+): SchemaField[] {
   const seen = new Set<string>()
   const result: SchemaField[] = []
   for (const field of baseFields) {
@@ -815,9 +1214,7 @@ function mergeSchemaFields(baseFields: SchemaField[], ...suggestedFieldGroups: S
       result[existingIndex] = {
         ...field,
         ...existing,
-        enumValues: existing.enumValues.length > 0
-          ? existing.enumValues
-          : field.enumValues,
+        enumValues: existing.enumValues.length > 0 ? existing.enumValues : field.enumValues,
       }
       continue
     }
@@ -882,7 +1279,10 @@ function writeLastModelKey(operation: CanvasOperationType, modelKey: string): vo
   })
 }
 
-function pickDraftForFields(fields: SchemaField[], draft: Record<string, string>): Record<string, string> {
+function pickDraftForFields(
+  fields: SchemaField[],
+  draft: Record<string, string>,
+): Record<string, string> {
   const result: Record<string, string> = {}
   for (const field of fields) {
     const value = draft[field.name]
@@ -908,7 +1308,10 @@ function updateCustomParam(
   setCustomParams((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
 }
 
-function buildModelParams(fields: SchemaField[], draft: Record<string, string>): Record<string, unknown> {
+function buildModelParams(
+  fields: SchemaField[],
+  draft: Record<string, string>,
+): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const field of fields) {
     const raw = draft[field.name]?.trim()
