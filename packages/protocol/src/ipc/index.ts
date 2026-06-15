@@ -686,8 +686,14 @@ export interface WorkspaceListWorktreesResponse {
 
 export interface WorkspaceCreateWorktreeRequest {
   baseWorkspaceId: string
-  branch: string
+  /** 显式分支名；留空则由 LLM 根据 taskText 生成（回退到任务 slug / 时间戳） */
+  branch?: string
   baseBranch?: string
+  /** 任务描述（通常是首条消息），用于 LLM 生成分支名 */
+  taskText?: string
+  /** 用于生成分支名的 provider profile 与模型（解析 API key/endpoint） */
+  providerProfileId?: string
+  model?: string
 }
 export interface WorkspaceCreateWorktreeResponse {
   workspace: WorkspaceInfo

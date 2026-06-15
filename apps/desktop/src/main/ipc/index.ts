@@ -55,6 +55,8 @@ import {
   SessionService,
   WorkspaceService,
   GitWorktreeService,
+  generateWorktreeName,
+  sanitizeBranchSlug,
   PermissionService,
   ModelService,
   McpService,
@@ -2082,10 +2084,12 @@ export function registerAllIpcHandlers(): void {
   })
 
   typedIpcHandle('workspace:create-worktree', async (req) => {
-    log.info(`workspace:create-worktree requested, base=${req.baseWorkspaceId}, branch=${req.branch}`)
+    // 显式分支名优先；否则调用 LLM 根据任务生成（回退到任务 slug / 时间戳）
+    const branch = req.branch?.trim() ? req.branch.trim() : await resolveWorktreeBranchName(req)
+    log.info(`workspace:create-worktree requested, base=${req.baseWorkspaceId}, branch=${branch}`)
     const workspace = await getWorkspaceService().createWorktreeWorkspace({
       baseWorkspaceId: req.baseWorkspaceId,
-      branch: req.branch,
+      branch,
       ...(req.baseBranch !== undefined && { baseBranch: req.baseBranch }),
     })
     return { workspace: toWorkspaceInfo(workspace) }
@@ -4529,6 +4533,50 @@ function normalizeRealPath(p: string): string {
   } catch {
     return resolved
   }
+}
+
+/** 时间戳兜底分支名 spark/YYYYMMDD-HHmmss */
+function timestampWorktreeBranch(): string {
+  const ts = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
+  return `spark/${ts}`
+}
+
+/**
+ * 解析 worktree 分支名：优先调用 LLM 按任务生成语义化 slug，
+ * 失败则回退到任务文本的本地 slug，最后回退到时间戳。返回含 `spark/` 前缀的完整分支名。
+ */
+async function resolveWorktreeBranchName(req: {
+  taskText?: string
+  providerProfileId?: string
+  model?: string
+}): Promise<string> {
+  const taskText = req.taskText?.trim() ?? ''
+  if (taskText === '') return timestampWorktreeBranch()
+
+  const localSlug = sanitizeBranchSlug(taskText)
+  try {
+    if (req.providerProfileId != null && req.providerProfileId !== '') {
+      const profile = (await getProviderService().listProviders()).find((p) => p.id === req.providerProfileId)
+      if (profile != null && profile.keystoreRef) {
+        const apiKey = await keystore.getSecret(profile.keystoreRef as keystore.KeystoreRef)
+        const model = req.model?.trim() || profile.defaultModel
+        if (apiKey != null && apiKey.trim() !== '' && model != null && model !== '') {
+          const slug = await generateWorktreeName({
+            providerType: profile.provider,
+            apiKey,
+            ...(profile.apiEndpoint != null ? { apiEndpoint: profile.apiEndpoint } : {}),
+            model,
+            taskText,
+          })
+          if (slug != null && slug.length > 0) return `spark/${slug}`
+        }
+      }
+    }
+  } catch (err) {
+    log.warn(`resolveWorktreeBranchName LLM step failed: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  return localSlug.length > 0 ? `spark/${localSlug}` : timestampWorktreeBranch()
 }
 
 async function getWorkspaceBranches(

@@ -72,6 +72,16 @@ export class GitWorktreeService {
     await this.exec('git', ['branch', '-D', branch], { cwd: repoRoot })
   }
 
+  /** 本地分支是否已存在 */
+  async branchExists(repoRoot: string, branch: string): Promise<boolean> {
+    try {
+      await this.exec('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: repoRoot })
+      return true
+    } catch {
+      return false
+    }
+  }
+
   /** 推导 base 分支：优先 origin/HEAD，回退 main/master，再回退当前分支 */
   async detectBaseBranch(repoRoot: string): Promise<string> {
     try {

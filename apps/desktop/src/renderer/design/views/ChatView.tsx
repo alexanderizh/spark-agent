@@ -5813,6 +5813,7 @@ function ComposerV2({
     activate?: boolean
     createWorktree?: boolean
     worktreeBranch?: string
+    worktreeTaskText?: string
   }) => Promise<SessionId | null>
   onUpdateSession: (patch: {
     providerProfileId?: string
@@ -6328,7 +6329,11 @@ function ComposerV2({
               agentAdapter: adapter,
               permissionMode: effectivePermissionMode,
               ...(createWorktree
-                ? { createWorktree: true, ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}) }
+                ? {
+                    createWorktree: true,
+                    worktreeTaskText: text,
+                    ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}),
+                  }
                 : {}),
             })
             if (sessionId == null) {
@@ -6404,7 +6409,11 @@ function ComposerV2({
             chatMode: effectiveMode,
             reasoningEffort: effectiveReasoning,
             ...(createWorktree
-              ? { createWorktree: true, ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}) }
+              ? {
+                  createWorktree: true,
+                  worktreeTaskText: text,
+                  ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}),
+                }
               : {}),
           })
         }
@@ -7595,7 +7604,7 @@ function ComposerV2({
               <input
                 className="form-input"
                 type="text"
-                placeholder="worktree 分支名（留空自动生成 spark/时间戳）"
+                placeholder="worktree 分支名（留空则由 AI 按任务自动命名）"
                 value={worktreeBranch}
                 onChange={(e) => setWorktreeBranch(e.target.value)}
               />
