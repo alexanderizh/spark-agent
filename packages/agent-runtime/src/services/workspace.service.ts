@@ -256,22 +256,45 @@ export class WorkspaceService {
     const mainRepoRoot = await this.git.resolveMainRepoRoot(base.root_path)
     const baseBranch = params.baseBranch ?? (await this.git.detectBaseBranch(mainRepoRoot))
 
-    const slug = slugifyBranch(params.branch)
+    // 确保分支名与目标目录唯一：已存在则追加 -2 / -3 …（如生成的语义名重复）
+    const branch = await this.resolveUniqueBranch(mainRepoRoot, params.branch)
+    const slug = slugifyBranch(branch)
     const targetPath = path.join(mainRepoRoot, '.spark', 'worktrees', slug)
 
     await ensureGitignoreEntry(mainRepoRoot, '.spark/worktrees/')
-    await this.git.addWorktree(mainRepoRoot, { branch: params.branch, targetPath, baseBranch })
+    await this.git.addWorktree(mainRepoRoot, { branch, targetPath, baseBranch })
 
-    const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch: params.branch, baseBranch }
+    const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch, baseBranch, baseWorkspaceId: base.id }
     const workspace = this.repo.create({
       id: randomUUID(),
-      name: `${base.name} · ${params.branch}`,
+      name: `${base.name} · ${branch}`,
       rootPath: targetPath,
       projectKind: base.project_kind,
       worktreeMeta: meta,
     })
     this.currentWorkspace = workspace
     return workspace
+  }
+
+  /** 分支或目标目录已存在时追加数字后缀，返回可用的唯一分支名 */
+  private async resolveUniqueBranch(mainRepoRoot: string, desired: string): Promise<string> {
+    const exists = async (candidate: string): Promise<boolean> => {
+      if (await this.git.branchExists(mainRepoRoot, candidate)) return true
+      const dir = path.join(mainRepoRoot, '.spark', 'worktrees', slugifyBranch(candidate))
+      try {
+        await fs.stat(dir)
+        return true
+      } catch {
+        return false
+      }
+    }
+    let candidate = desired
+    let n = 2
+    while (await exists(candidate)) {
+      candidate = `${desired}-${n}`
+      n += 1
+    }
+    return candidate
   }
 
   async removeWorktreeWorkspace(workspaceId: string, opts: { force?: boolean } = {}): Promise<void> {

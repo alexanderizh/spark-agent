@@ -5813,6 +5813,7 @@ function ComposerV2({
     activate?: boolean
     createWorktree?: boolean
     worktreeBranch?: string
+    worktreeTaskText?: string
   }) => Promise<SessionId | null>
   onUpdateSession: (patch: {
     providerProfileId?: string
@@ -6328,7 +6329,11 @@ function ComposerV2({
               agentAdapter: adapter,
               permissionMode: effectivePermissionMode,
               ...(createWorktree
-                ? { createWorktree: true, ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}) }
+                ? {
+                    createWorktree: true,
+                    worktreeTaskText: text,
+                    ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}),
+                  }
                 : {}),
             })
             if (sessionId == null) {
@@ -6404,7 +6409,11 @@ function ComposerV2({
             chatMode: effectiveMode,
             reasoningEffort: effectiveReasoning,
             ...(createWorktree
-              ? { createWorktree: true, ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}) }
+              ? {
+                  createWorktree: true,
+                  worktreeTaskText: text,
+                  ...(worktreeBranch.trim() ? { worktreeBranch: worktreeBranch.trim() } : {}),
+                }
               : {}),
           })
         }
@@ -7589,18 +7598,6 @@ function ComposerV2({
           >
             {manualExpanded ? <Icons.Minimize size={14} /> : <Icons.Maximize size={14} />}
           </button>
-          {isNewSessionComposer && createWorktree && (
-            <div className="composer-worktree-branch-row">
-              <Icons.GitBranch size={13} />
-              <input
-                className="form-input"
-                type="text"
-                placeholder="worktree 分支名（留空自动生成 spark/时间戳）"
-                value={worktreeBranch}
-                onChange={(e) => setWorktreeBranch(e.target.value)}
-              />
-            </div>
-          )}
           <div className="composer-submit-row">
             <div className="composer-submit-picks">
               <ProviderModelPicker
@@ -7630,21 +7627,6 @@ function ComposerV2({
                   onChange={onSwitchBranch}
                   options={branchOptions}
                 />
-              )}
-              {isNewSessionComposer && (
-                <label
-                  className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
-                  title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : '当前项目不是 git 仓库'}
-                >
-                  <input
-                    type="checkbox"
-                    checked={createWorktree}
-                    disabled={!isGitWorkspace}
-                    onChange={(e) => setCreateWorktree(e.target.checked)}
-                  />
-                  <Icons.GitBranch size={13} />
-                  <span>隔离 worktree</span>
-                </label>
               )}
             </div>
             <button
@@ -7766,6 +7748,32 @@ function ComposerV2({
             </button>
           )}
           <div className="spacer" />
+          {isNewSessionComposer && (
+            <div className="composer-worktree-controls">
+              <label
+                className={`composer-worktree-toggle ${createWorktree ? 'is-active' : ''}`}
+                title={isGitWorkspace ? '在隔离 worktree 中运行本会话' : '当前项目不是 git 仓库'}
+              >
+                <input
+                  type="checkbox"
+                  checked={createWorktree}
+                  disabled={!isGitWorkspace}
+                  onChange={(e) => setCreateWorktree(e.target.checked)}
+                />
+                <Icons.GitBranch size={13} />
+                <span>隔离 worktree</span>
+              </label>
+              {createWorktree && (
+                <input
+                  className="form-input composer-worktree-branch-input"
+                  type="text"
+                  placeholder="分支名（留空 AI 自动命名）"
+                  value={worktreeBranch}
+                  onChange={(e) => setWorktreeBranch(e.target.value)}
+                />
+              )}
+            </div>
+          )}
           <span className="composer-hint">
             <span className="kbd">↵</span> 发送 &nbsp;<span className="kbd">⇧↵</span> 换行 &nbsp;<span className="kbd">⇧Tab</span> 权限 &nbsp;<span className="kbd">↑↓</span> 历史
           </span>

@@ -112,10 +112,28 @@ export function buildProjectGroups(
   workspaces: WorkspaceInfo[],
   sessions: SessionSummary[],
 ): ProjectGroup[] {
-  const userWorkspaces = workspaces.filter(w => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt)
-  return userWorkspaces.map(workspace => ({
+  const visible = workspaces.filter(w => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt)
+  const byId = new Map(visible.map(w => [w.id, w] as const))
+  // 普通（基）项目构成分组；worktree workspace 不单独成组，其会话归并到 base 项目。
+  const baseWorkspaces = visible.filter(w => w.worktreeMeta == null)
+  const baseIds = new Set(baseWorkspaces.map(w => w.id))
+  // base 已不存在的 worktree（孤儿）作为兜底，仍保留自己的分组，避免会话丢失。
+  const orphanWorktrees = visible.filter(
+    w => w.worktreeMeta != null && !(w.worktreeMeta.baseWorkspaceId != null && baseIds.has(w.worktreeMeta.baseWorkspaceId)),
+  )
+  const groupWorkspaces = [...baseWorkspaces, ...orphanWorktrees]
+
+  // 把某 workspace id 解析为其展示分组 id：worktree → base（若 base 存在）。
+  const effectiveWorkspaceId = (wsId: string): string => {
+    const base = byId.get(wsId)?.worktreeMeta?.baseWorkspaceId
+    return base != null && baseIds.has(base) ? base : wsId
+  }
+
+  return groupWorkspaces.map(workspace => ({
     workspace,
-    sessions: sessions.filter(session => session.workspaceIds.includes(workspace.id)),
+    sessions: sessions.filter(session =>
+      session.workspaceIds.some(id => effectiveWorkspaceId(id) === workspace.id),
+    ),
   }))
 }
 
@@ -402,12 +420,20 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
       // 勾选了「为本会话创建隔离 worktree」：先创建 worktree workspace，改用其 id。
       // 注意放在 unusedSession 查找之前——新 worktree workspace 下必无可复用会话。
+      // 分支名：用户显式填写则用之；否则交给 main 进程调用 LLM 按任务文本生成。
       if (options.createWorktree === true && wsId != null) {
-        // 默认分支名 spark/YYYYMMDD-HHmmss（精确到秒，避免同分钟连建冲突）
-        const ts = new Date().toISOString().slice(0, 19).replace(/[-:]/g, '').replace('T', '-')
-        const branch = nonEmptyString(options.worktreeBranch) ?? `spark/${ts}`
+        const explicitBranch = nonEmptyString(options.worktreeBranch)
+        const taskText = nonEmptyString(options.worktreeTaskText)
+        const providerProfileId = nonEmptyString(options.providerProfileId)
+        const model = nonEmptyString(options.modelId)
         try {
-          const res = await createWorktree({ baseWorkspaceId: wsId, branch })
+          const res = await createWorktree({
+            baseWorkspaceId: wsId,
+            ...(explicitBranch ? { branch: explicitBranch } : {}),
+            ...(taskText ? { taskText } : {}),
+            ...(providerProfileId ? { providerProfileId } : {}),
+            ...(model ? { model } : {}),
+          })
           wsId = res.workspace.id
           setActiveWorkspaceId(res.workspace.id)
         } catch (err) {

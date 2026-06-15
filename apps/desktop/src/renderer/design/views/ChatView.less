@@ -677,18 +677,17 @@
   }
 }
 
-/* worktree 分支名输入行：复用全局 .form-input 组件样式，仅控制行布局 */
-.composer-worktree-branch-row {
-  display: flex;
+/* 参数栏中的 worktree 控件组（开关 + 分支名输入），位于右侧 */
+.composer-worktree-controls {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin: 4px 0 2px;
-  color: var(--text-secondary, #888);
 
-  .form-input {
-    flex: 1;
-    height: 28px;
-    padding: 4px 8px;
+  /* 分支名输入：复用全局 .form-input 组件样式，仅压缩为参数栏紧凑尺寸 */
+  .composer-worktree-branch-input {
+    width: 160px;
+    height: 26px;
+    padding: 3px 8px;
     font-size: 12px;
   }
 }
