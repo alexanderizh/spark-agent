@@ -91,12 +91,22 @@ tags: [platform, management, admin, configuration, skills, mcp, provider, workfl
    - 读取任务时，不加 includeDeleted 默认只返回活跃任务
    - board_list 返回的每条任务都会显示其关联的项目名和附件数量
    - 支持 batch 操作，一次性处理多个任务的创建/更新/删除
-4. **破坏性操作必须确认**：执行 delete、uninstall、permanent_delete 前先向用户确认
-5. **创建操作主动收集参数**：创建 Provider、Agent、Workflow、看板任务时，主动询问必要参数
-6. **结果以中文 Markdown 呈现**：用列表和表格展示查询结果
-7. **安全注意**：
+4. **MCP 服务器操作**：
+   - **三种传输类型**（configJson.transport）：
+     - `stdio`：本地子进程，必填 `command`（启动命令），可选 `args`（参数数组）、`env`（环境变量对象）
+     - `http`：远程 HTTP 端点（推荐流式），必填 `url`，可选 `headers`（请求头对象）
+     - `sse`：Server-Sent Events 端点，必填 `url`，可选 `headers`
+   - **作用域**（scope）：`system`（全系统）、`user`（当前用户，默认）、`project`（当前项目）、`team`（团队）、`session`（单会话）。作用域决定配置的可见范围，**编辑已有配置时不要修改 scope**（会破坏配置归属）
+   - **configJson 字段**：`transport`、`command`、`args`、`url`、`headers`、`env`、`description`、`tools`（限制可用工具白名单，留空则加载全部）
+   - **状态查询**：`mcp_status` 返回连接状态、可用工具列表、错误信息。建议在 `mcp_update` 修改配置后调用 `mcp_status` 确认服务可用
+   - **启用/禁用**：`mcp_update` 传 `enabled: false` 可临时禁用而非删除；Agent 调用不再加载该 MCP 工具
+   - **创建/编辑后**：新配置对正在进行的会话生效可能需要新开会话或重连，告知用户
+5. **破坏性操作必须确认**：执行 delete、uninstall、permanent_delete 前先向用户确认
+6. **创建操作主动收集参数**：创建 Provider、Agent、Workflow、看板任务时，主动询问必要参数
+7. **结果以中文 Markdown 呈现**：用列表和表格展示查询结果
+8. **安全注意**：
    - 永远不要泄露或要求用户提供完整 API Key
    - Provider 列表只显示 hasApiKey，不显示 Key 内容
    - 需要设置 API Key 时，引导用户去 Settings → Providers 页面操作
-8. **错误处理**：操作失败时说明原因并建议解决方案
-9. **不主动管理**：除非用户请求，不主动修改平台配置
+9. **错误处理**：操作失败时说明原因并建议解决方案
+10. **不主动管理**：除非用户请求，不主动修改平台配置
