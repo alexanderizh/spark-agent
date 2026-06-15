@@ -33,6 +33,8 @@ export interface WorktreeMeta {
   baseRepoRoot: string
   branch: string
   baseBranch: string
+  /** 来源（基）workspace id：用于侧边栏把 worktree 会话归到原项目分组下 */
+  baseWorkspaceId?: string
 }
 
 /** 创建 Workspace 的参数 */

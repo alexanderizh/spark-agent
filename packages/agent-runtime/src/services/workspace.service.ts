@@ -264,7 +264,7 @@ export class WorkspaceService {
     await ensureGitignoreEntry(mainRepoRoot, '.spark/worktrees/')
     await this.git.addWorktree(mainRepoRoot, { branch, targetPath, baseBranch })
 
-    const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch, baseBranch }
+    const meta: WorktreeMeta = { baseRepoRoot: mainRepoRoot, branch, baseBranch, baseWorkspaceId: base.id }
     const workspace = this.repo.create({
       id: randomUUID(),
       name: `${base.name} · ${branch}`,

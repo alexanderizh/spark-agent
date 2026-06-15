@@ -554,7 +554,7 @@ export interface WorkspaceInfo {
   createdAt: string
   updatedAt: string
   /** 该 workspace 为 git worktree 时的元数据，否则 null */
-  worktreeMeta: { baseRepoRoot: string; branch: string; baseBranch: string } | null
+  worktreeMeta: { baseRepoRoot: string; branch: string; baseBranch: string; baseWorkspaceId?: string } | null
 }
 
 export interface WorkspaceOpenRequest {

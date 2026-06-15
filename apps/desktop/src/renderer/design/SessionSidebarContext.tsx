@@ -112,10 +112,28 @@ export function buildProjectGroups(
   workspaces: WorkspaceInfo[],
   sessions: SessionSummary[],
 ): ProjectGroup[] {
-  const userWorkspaces = workspaces.filter(w => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt)
-  return userWorkspaces.map(workspace => ({
+  const visible = workspaces.filter(w => w.name !== NO_PROJECT_WORKSPACE_NAME && !w.archivedAt)
+  const byId = new Map(visible.map(w => [w.id, w] as const))
+  // 普通（基）项目构成分组；worktree workspace 不单独成组，其会话归并到 base 项目。
+  const baseWorkspaces = visible.filter(w => w.worktreeMeta == null)
+  const baseIds = new Set(baseWorkspaces.map(w => w.id))
+  // base 已不存在的 worktree（孤儿）作为兜底，仍保留自己的分组，避免会话丢失。
+  const orphanWorktrees = visible.filter(
+    w => w.worktreeMeta != null && !(w.worktreeMeta.baseWorkspaceId != null && baseIds.has(w.worktreeMeta.baseWorkspaceId)),
+  )
+  const groupWorkspaces = [...baseWorkspaces, ...orphanWorktrees]
+
+  // 把某 workspace id 解析为其展示分组 id：worktree → base（若 base 存在）。
+  const effectiveWorkspaceId = (wsId: string): string => {
+    const base = byId.get(wsId)?.worktreeMeta?.baseWorkspaceId
+    return base != null && baseIds.has(base) ? base : wsId
+  }
+
+  return groupWorkspaces.map(workspace => ({
     workspace,
-    sessions: sessions.filter(session => session.workspaceIds.includes(workspace.id)),
+    sessions: sessions.filter(session =>
+      session.workspaceIds.some(id => effectiveWorkspaceId(id) === workspace.id),
+    ),
   }))
 }
 

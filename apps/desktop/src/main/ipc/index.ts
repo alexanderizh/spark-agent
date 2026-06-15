@@ -4403,6 +4403,7 @@ function toWorkspaceInfo(workspace: {
           baseRepoRoot: string
           branch: string
           baseBranch: string
+          baseWorkspaceId?: string
         }
       } catch {
         return null

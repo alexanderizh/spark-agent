@@ -345,6 +345,13 @@ function ChatListItem({
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
+  const { workspaces } = useSessionSidebar()
+  // 该会话若运行在隔离 worktree 中，取其分支名用于显示分支图标指示符
+  const worktreeBranch = useMemo(() => {
+    const wsId = s.workspaceIds[0]
+    if (wsId == null) return undefined
+    return workspaces.find(w => w.id === wsId)?.worktreeMeta?.branch
+  }, [s.workspaceIds, workspaces])
   const displayStatus = useMemo(
     () => getSessionDisplayStatus(s.status, agentStatus),
     [s.status, agentStatus]
@@ -386,6 +393,15 @@ function ChatListItem({
             ) : null
           })()}
           {s.pinnedAt != null && <Icons.Pin size={11} className="pinned-icon" />}
+          {worktreeBranch != null && (
+            <span
+              className="worktree-branch-icon"
+              title={`worktree 分支：${worktreeBranch}`}
+              aria-label="worktree 分支"
+            >
+              <Icons.GitBranch size={11} />
+            </span>
+          )}
           <span className="truncate">{s.title || '新会话'}</span>
         </div>
         {displayStatus !== 'idle' && badgeInfo.icon ? (
