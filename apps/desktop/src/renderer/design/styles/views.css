@@ -443,9 +443,8 @@ body.sidebar-resizing {
   padding: 6px;
 }
 
-/* 滚动条样式交由全局规则统一处理（styles.css 中 `* { scrollbar-width: thin; scrollbar-color: ... }`）。
-   不再写局部 `::-webkit-scrollbar*` 覆盖 —— 新版 Chromium 一旦在元素上看到 webkit 滚动条伪元素，
-   就会强制走经典渲染路径（带箭头按钮 + 直角端头），全局现代滚动条规则对它失效。 */
+/* 滚动条样式交由全局规则统一处理（styles.css 顶部的 `::-webkit-scrollbar*` 经典路径：
+   圆头、7px、隐藏箭头、hover 不变宽）。此处不单独写 webkit 滚动条覆盖，避免与全局规则冲突。 */
 
 /* Project bar above the list */
 .chat-sidebar-projbar {
@@ -2475,6 +2474,21 @@ body.sidebar-resizing {
 }
 .composer textarea::placeholder {
   color: var(--text-faint);
+}
+/* 会话输入框：滚动条永远不显示，但内容超出时仍可滚动（滚轮/触控板/键盘）。
+   —— scrollbar-width:none（标准）隐藏现代滚动条；
+   —— ::-webkit-scrollbar{display:none} 兜底经典模式。两者都不改变滚动能力。
+   注意：这里对 textarea 单独写 webkit 规则会把它切到"经典渲染路径"，但配合
+   display:none 后正好让滚动条彻底消失，且不会污染全局其它元素的现代滚动条。 */
+.composer textarea,
+.composer.composer-v2 textarea {
+  scrollbar-width: none;
+}
+.composer textarea::-webkit-scrollbar,
+.composer.composer-v2 textarea::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 .composer-actions {
   display: flex;

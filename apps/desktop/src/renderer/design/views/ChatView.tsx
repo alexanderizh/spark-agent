@@ -6559,8 +6559,8 @@ function ComposerV2({
     const nextHeight = Math.max(minHeight, Math.min(scrollH, maxHeight))
     el.style.height = `${nextHeight}px`
 
-    // 滚动条统一交给 CSS（scrollbar-width: none + ::-webkit-scrollbar { display: none }），
-    // 这里不要再去切换 overflowY，避免 inline style 跟 CSS 互相覆盖
+    // 滚动条统一交给 CSS（views.css 中 .composer textarea 用 scrollbar-width:none 隐藏滚动条，
+    // 但滚动能力保留），这里不要再去切换 overflowY，避免 inline style 跟 CSS 互相覆盖
     requestAnimationFrame(() => {
       el.style.transition = prevTransition || ''
       // 防御性：保证 height 永远不是空 / auto

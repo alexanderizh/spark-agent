@@ -43,16 +43,18 @@ process.stderr?.on('error', ignoreEpipe)
 //     Loopback binding keeps the surface local-only.
 app.commandLine.appendSwitch('remote-debugging-port', '9223')
 app.commandLine.appendSwitch('remote-allow-origins', '*')
-app.commandLine.appendSwitch(
-  'enable-features',
-  'OverlayScrollbar,OverlayScrollbarFlashAfterAnyScrollUpdate,OverlayScrollbarFlashWhenMouseEnter',
-)
 
-// ─── Overlay scrollbars (modern, no arrows, rounded ends) ───────────────────
-// 不启用 OverlayScrollbar feature —— overlay 模式下 Chromium 会自动在 hover 时
-// 扩宽 thumb，且 Windows 下 thumb 形状由系统接管（border-radius 失效，方头）。
-// 改用经典 `::-webkit-scrollbar*` 路径：thumb 宽度/圆角/hover 行为完全由 CSS 控制，
-// 配合 scrollbar-button:display:none 隐藏箭头。
+// ─── Overlay scrollbars ───────────────────────────────────────────────────
+// 【关键】显式【禁用】OverlayScrollbar feature。
+// 在 Windows 10/11 上，Chromium 默认就启用 OverlayScrollbar（即使你不写 enable-features）。
+// 该 feature 一旦激活，Chromium 会接管滚动条渲染：
+//   1) hover 时自动扩宽 thumb（绕过所有 CSS，"悬浮变宽"）；
+//   2) thumb 形状由系统接管，::-webkit-scrollbar-thumb 的 border-radius 失效（方头）。
+// 这正是历史上反复改 CSS 都改不好滚动条的根因。仅"不写 enable-features"是不够的——
+// 必须用 disable-features 强制关闭它，Chromium 才会走经典 ::-webkit-scrollbar 路径，
+// 此时 styles.css 中的 width / border-radius:999px / hover 颜色 才全部生效（圆头、不变宽）。
+// 注意：这是主进程命令行开关，改后必须【完全退出应用】重启（不能只刷新窗口）。
+app.commandLine.appendSwitch('disable-features', 'OverlayScrollbar,OverlayScrollbarFlashAfterAnyScrollUpdate,OverlayScrollbarFlashWhenMouseEnter,OverlayScrollbarWinStyle')
 
 import { is } from '@electron-toolkit/utils'
 import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'

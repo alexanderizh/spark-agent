@@ -1106,31 +1106,35 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .dot-indicator.red { background: var(--danger); }
 .dot-indicator.blue { background: var(--info); }
 
-/* ── Scrollbar — global thin, rounded, no arrow buttons ──
-   两套机制并用：
-   1) 标准 `scrollbar-width: thin` / `scrollbar-color`（Chrome 121+，Electron 30+）
-      —— 强制走"现代滚动条"渲染路径，原生不带两端箭头按钮，自然圆头。
-   2) `::-webkit-scrollbar*` 兼容老版本 Chromium：宽度、圆角、隐藏按钮。
-   只用 `::-webkit-scrollbar*` 时，较新的 Chromium 会走经典模式，
-   在 Windows 上仍带箭头方块、直角端头，这就是用户看到"尖锐方头 + 点击块"的根因。 */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: color-mix(in srgb, var(--text-muted) 24%, transparent) transparent;
-}
-*::-webkit-scrollbar,
-*::-webkit-scrollbar:hover {
-  width: 7px;
-  height: 7px;
+/* ── Scrollbar — global thin, rounded, no arrow buttons, fixed width ──
+   纯 `::-webkit-scrollbar*` 经典路径。
+
+   【为什么不用标准 scrollbar-width/scrollbar-color】Chromium 121+ 一旦在元素上看到
+   `scrollbar-width`/`scrollbar-color`（哪怕只是 `thin`），就会切换到"标准滚动条"渲染路径，
+   该路径【完全忽略】`::-webkit-scrollbar*` 的所有规则——包括 border-radius。
+   标准属性本身不支持圆角，于是 Windows 上滑块呈现直角方头。所以必须【不设】
+   `scrollbar-width`/`scrollbar-color`，才能让下面的 border-radius:999px 真正生效，得到圆头。
+   （这是 Electron 应用，内核恒为 Chromium，无需 Firefox 兼容。）
+
+   【为什么不用 OverlayScrollbar feature】该 feature 会让 Chromium 接管：hover 自动扩宽 thumb，
+   且 border-radius 失效。main/index.ts 已刻意不开启它。
+
+   【hover 宽度不变】这里不写 `::-webkit-scrollbar:hover { width }`，hover 只改 thumb
+   颜色（透明度），不改几何尺寸。 */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
 }
 *::-webkit-scrollbar-track {
   background: transparent;
 }
 *::-webkit-scrollbar-thumb {
-  min-height: 24px;
   background: color-mix(in srgb, var(--text-muted) 0%, transparent);
   border-radius: 999px;
+  /* 用 background-clip:content-box + 透明 border 营造 thumb 与 track 的间隙；
+     不用 padding-box，以免在部分 Chromium 版本上抑制圆角。 */
+  background-clip: content-box;
   border: 2px solid transparent;
-  background-clip: padding-box;
 }
 *:hover::-webkit-scrollbar-thumb,
 *:focus-within::-webkit-scrollbar-thumb {
@@ -1182,9 +1186,9 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 /* ============================================================
    SPARK TEXTAREA — Arco Input.TextArea 主题覆盖
    ============================================================ */
-/* textarea 滚动条样式由全局规则统一处理（见 * { scrollbar-width/color }）。
-   此处不再写 `::-webkit-scrollbar*` —— 否则新版 Chromium 会对该 textarea 强制走经典
-   渲染路径（带箭头按钮、直角端头），全局现代滚动条规则失效。 */
+/* textarea（非 composer 输入框）滚动条样式由全局规则统一处理（见 styles.css 顶部
+   的 `::-webkit-scrollbar*` 经典路径）。此处不单独覆盖，避免与全局圆头/宽度规则冲突。
+   注意：composer 会话输入框的滚动条单独隐藏（见 views.css .composer textarea）。 */
 /* ============================================================
    SPARK CHECKBOX — Arco Checkbox 主题覆盖
    ============================================================ */
