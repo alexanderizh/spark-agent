@@ -327,6 +327,33 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  /** 应用模板：在指定 board 的指定位置生成节点组合（文档 §7.8） */
+  const applyTemplate = useCallback(
+    async (input: {
+      boardId: string
+      originX: number
+      originY: number
+      nodes: Array<{
+        ref: string
+        type: import('./canvas.types').CanvasNodeType
+        title?: string
+        x: number
+        y: number
+        width?: number
+        height?: number
+        data?: Partial<import('./canvas.types').CanvasNodeData>
+      }>
+      edges?: Array<{
+        from: string
+        to: string
+        type?: 'used_as_input' | 'generated' | 'references'
+      }>
+    }) => {
+      setSnapshot(await canvasApi.applyTemplate({ projectId, ...input }))
+    },
+    [projectId],
+  )
+
   return {
     snapshot,
     loading,
@@ -359,6 +386,8 @@ export function useCanvasWorkspace(projectId: string) {
     copyNodesToBoard,
     // 资产
     insertAsset,
+    // 模板
+    applyTemplate,
   }
 }
 

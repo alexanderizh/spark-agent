@@ -2786,3 +2786,120 @@ body.canvas-side-panel-resizing {
   display: flex;
   flex-shrink: 0;
 }
+
+// ── 模板中心（§7.8）──────────────────────────────────────────────────────
+.canvas-template-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-template-filters {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.canvas-template-filter {
+  padding: 4px 10px;
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s;
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+  &.active {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+  }
+}
+
+.canvas-template-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-template-card {
+  padding: 12px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  transition: border-color 0.12s;
+
+  &:hover {
+    border-color: var(--primary);
+  }
+}
+
+.canvas-template-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.canvas-template-card-icon {
+  display: flex;
+  flex-shrink: 0;
+  color: var(--primary);
+  margin-top: 2px;
+}
+
+.canvas-template-card-title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.canvas-template-card-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.canvas-template-type-tag {
+  font-size: 10px !important;
+  padding: 0 5px !important;
+  line-height: 16px !important;
+  margin: 0 !important;
+}
+
+.canvas-template-card-desc {
+  margin: 4px 0 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.canvas-template-card-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.canvas-template-card-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.canvas-template-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--divider);
+  font-size: 11px;
+  color: var(--text-muted);
+}

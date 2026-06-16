@@ -1669,6 +1669,158 @@ export const canvasApi = {
     return this.openSnapshot(projectId, targetBoardId)
   },
 
+  /**
+   * 应用模板：按 blueprint 在指定 board 的指定位置批量创建节点 + 连线（文档 §7.8）。
+   *
+   * 生产级实现：
+   *   - 重映射 blueprint ref → 真实 node id
+   *   - task 节点同步创建 CanvasTask（status=pending，等用户运行）
+   *   - 连线按重映射后的 id 建立 edge
+   *   - origin 标记为 'template'
+   * 返回新 snapshot（已按 board 过滤）。
+   */
+  async applyTemplate(input: {
+    projectId: string
+    boardId: string
+    originX: number
+    originY: number
+    nodes: Array<{
+      ref: string
+      type: CanvasNode['type']
+      title?: string
+      x: number
+      y: number
+      width?: number
+      height?: number
+      data?: Partial<CanvasNode['data']>
+    }>
+    edges?: Array<{
+      from: string
+      to: string
+      type?: 'used_as_input' | 'generated' | 'references'
+    }>
+  }): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === input.boardId && item.projectId === input.projectId)
+    if (!board) throw new Error('Canvas board not found')
+    const at = now()
+    let maxZ = Math.max(
+      0,
+      ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
+    )
+    const refToId = new Map<string, string>()
+
+    // 创建节点
+    for (const bp of input.nodes) {
+      const nodeId = uid('canvas_node')
+      refToId.set(bp.ref, nodeId)
+      const baseData: CanvasNode['data'] = { ...(bp.data ?? {}), origin: 'template' }
+      const defaultSize =
+        bp.type === 'group'
+          ? { width: 360, height: 220 }
+          : bp.type === 'task'
+            ? { width: 300, height: 152 }
+            : { width: 280, height: 164 }
+      const node = createNodeBase({
+        id: nodeId,
+        projectId: input.projectId,
+        boardId: input.boardId,
+        type: bp.type,
+        title: bp.title ?? null,
+        x: input.originX + bp.x,
+        y: input.originY + bp.y,
+        width: bp.width ?? defaultSize.width,
+        height: bp.height ?? defaultSize.height,
+        data: baseData,
+        at,
+      })
+      maxZ += 1
+      node.zIndex = maxZ
+      db.nodes.push(node)
+
+      // text/prompt 节点同步创建 asset（与 createTextNode 一致）
+      if (bp.type === 'text' || bp.type === 'prompt') {
+        const asset: CanvasAsset = {
+          id: uid('canvas_asset'),
+          projectId: input.projectId,
+          userId: USER_ID,
+          type: 'text',
+          source: 'manual',
+          title: bp.title ?? null,
+          contentText: baseData.text ?? '',
+          metadata: { nodeId, origin: 'template' },
+          createdAt: at,
+          updatedAt: at,
+        }
+        node.assetId = asset.id
+        db.assets.push(asset)
+      }
+
+      // task 节点同步创建 CanvasTask（pending，等用户运行）
+      if (bp.type === 'task' && baseData.operation) {
+        const taskId = uid('canvas_task')
+        node.taskId = taskId
+        const task: CanvasTask = {
+          id: taskId,
+          projectId: input.projectId,
+          boardId: input.boardId,
+          userId: USER_ID,
+          operation: baseData.operation,
+          status: 'pending',
+          progress: 0,
+          title: bp.title ?? null,
+          prompt: baseData.prompt ?? null,
+          negativePrompt: null,
+          inputNodeIds: [],
+          inputAssetIds: [],
+          outputNodeIds: [],
+          outputAssetIds: [],
+          modelParams: {},
+          createdAt: at,
+          updatedAt: at,
+        }
+        db.tasks.push(task)
+      }
+    }
+
+    // 创建连线
+    if (input.edges) {
+      for (const edgeBp of input.edges) {
+        const sourceId = refToId.get(edgeBp.from)
+        const targetId = refToId.get(edgeBp.to)
+        if (!sourceId || !targetId) continue
+        const edgeType: CanvasEdge['type'] = edgeBp.type ?? 'used_as_input'
+        db.edges.push({
+          id: uid('canvas_edge'),
+          projectId: input.projectId,
+          boardId: input.boardId,
+          userId: USER_ID,
+          sourceNodeId: sourceId,
+          targetNodeId: targetId,
+          type: edgeType,
+          metadata: { fromTemplate: true },
+          createdAt: at,
+        })
+        // 若目标节点是 task，把源节点加入 task.inputNodeIds（与 connectNodes 行为一致）
+        const targetNode = db.nodes.find((n) => n.id === targetId)
+        if (targetNode?.type === 'task' && targetNode.taskId) {
+          const task = db.tasks.find((t) => t.id === targetNode.taskId)
+          if (task && !task.inputNodeIds.includes(sourceId)) {
+            task.inputNodeIds.push(sourceId)
+            const sourceNode = db.nodes.find((n) => n.id === sourceId)
+            if (sourceNode?.assetId && !task.inputAssetIds.includes(sourceNode.assetId)) {
+              task.inputAssetIds.push(sourceNode.assetId)
+            }
+          }
+        }
+      }
+    }
+
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return this.openSnapshot(input.projectId, input.boardId)
+  },
+
   // ─── 资产 → board 操作（文档 §7.2）───────────────────────────────────────
   // 资产保持项目级共享；插入 = 基于已有 asset 创建引用节点，不复制文件。
 

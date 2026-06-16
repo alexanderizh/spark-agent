@@ -13,7 +13,9 @@ import { CanvasAssetsPanel, downloadAsset } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
+import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
+import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { useApp } from '../../AppContext'
@@ -489,6 +491,7 @@ export function CanvasWorkspaceView({
     // 资产
     insertAsset,
     refresh,
+    applyTemplate,
   } = useCanvasWorkspace(projectId)
   // 工作台 UI 状态
   const {
@@ -501,6 +504,7 @@ export function CanvasWorkspaceView({
   } = useCanvasWorkspaceUi()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [templateOpen, setTemplateOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
     null,
@@ -914,6 +918,27 @@ export function CanvasWorkspaceView({
       message.success('已插入资产到当前视口')
     },
     [insertAsset, snapshot],
+  )
+
+  /** 应用模板：在当前视口中心生成节点组合（文档 §7.8） */
+  const handleApplyTemplate = useCallback(
+    async (template: CanvasTemplate) => {
+      if (!snapshot) return
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 480, height: 320 },
+        { x: 200, y: 160 },
+      )
+      await applyTemplate({
+        boardId: snapshot.board.id,
+        originX: position.x,
+        originY: position.y,
+        nodes: template.nodes,
+        ...(template.edges ? { edges: template.edges } : {}),
+      })
+      setTemplateOpen(false)
+    },
+    [applyTemplate, snapshot],
   )
 
   const referencedAssetIds = useMemo(
@@ -1406,9 +1431,9 @@ export function CanvasWorkspaceView({
                 <Icons.Folder size={16} />
                 <span>目录</span>
               </button>
-              <button type="button" className="canvas-left-utility-btn" onClick={() => setLeftPanelTab('assets')}>
-                <Icons.Upload size={16} />
-                <span>上传</span>
+              <button type="button" className="canvas-left-utility-btn" onClick={() => setTemplateOpen(true)}>
+                <Icons.Layers size={16} />
+                <span>模板</span>
               </button>
               <button type="button" className="canvas-left-utility-btn" onClick={() => message.info('帮助与快捷键')}>
                 <Icons.HelpCircle size={16} />
@@ -1579,6 +1604,15 @@ export function CanvasWorkspaceView({
             if (task) void handleRetryTask(task)
           }}
         />
+      </Drawer>
+      <Drawer
+        title="模板中心"
+        open={templateOpen}
+        onClose={() => setTemplateOpen(false)}
+        width={360}
+        styles={{ body: { padding: 0 } }}
+      >
+        <CanvasTemplatePanel onApply={(template) => void handleApplyTemplate(template)} />
       </Drawer>
       <CanvasNodeEditModal
         node={editingNode}
