@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
-import { Drawer, Input, InputNumber, Modal, Spin, Tooltip, message } from 'antd'
+import { Drawer, Input, Modal, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
@@ -1789,10 +1789,6 @@ function CanvasNodeEditModal({
 }) {
   const [saving, setSaving] = useState(false)
   const [title, setTitle] = useState('')
-  const [x, setX] = useState(0)
-  const [y, setY] = useState(0)
-  const [width, setWidth] = useState(280)
-  const [height, setHeight] = useState(180)
   const [text, setText] = useState('')
   const [prompt, setPrompt] = useState('')
   const [messageText, setMessageText] = useState('')
@@ -1802,10 +1798,6 @@ function CanvasNodeEditModal({
     if (!node) return
     setSaving(false)
     setTitle(node.title ?? '')
-    setX(Math.round(node.x))
-    setY(Math.round(node.y))
-    setWidth(Math.round(node.width))
-    setHeight(Math.round(node.height))
     setText(node.data.text ?? '')
     setPrompt(node.data.prompt ?? '')
     setMessageText(node.data.message ?? '')
@@ -1834,16 +1826,6 @@ function CanvasNodeEditModal({
         node,
         {
           title: title.trim().length > 0 ? title.trim() : null,
-          x: Number.isFinite(x) ? x : node.x,
-          y: Number.isFinite(y) ? y : node.y,
-          width: Math.max(
-            node.type === 'group' ? 320 : 120,
-            Number.isFinite(width) ? width : node.width,
-          ),
-          height: Math.max(
-            node.type === 'group' ? 200 : 96,
-            Number.isFinite(height) ? height : node.height,
-          ),
         },
         nextData,
       )
@@ -1882,12 +1864,6 @@ function CanvasNodeEditModal({
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
-          <div className="canvas-node-edit-grid">
-            <NodeEditNumberField label="X" value={x} onChange={setX} />
-            <NodeEditNumberField label="Y" value={y} onChange={setY} />
-            <NodeEditNumberField label="宽" value={width} min={120} onChange={setWidth} />
-            <NodeEditNumberField label="高" value={height} min={96} onChange={setHeight} />
-          </div>
           {(node.type === 'text' || node.type === 'prompt' || node.type === 'group') && (
             <label className="canvas-node-edit-field canvas-node-edit-field-wide">
               <span>{node.type === 'group' ? '组说明' : '内容'}</span>
@@ -1934,32 +1910,5 @@ function CanvasNodeEditModal({
         </div>
       )}
     </Modal>
-  )
-}
-
-function NodeEditNumberField({
-  label,
-  value,
-  min,
-  onChange,
-}: {
-  label: string
-  value: number
-  min?: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <label className="canvas-node-edit-field">
-      <span>{label}</span>
-      <InputNumber
-        value={value}
-        step={1}
-        controls={false}
-        {...(min !== undefined ? { min } : {})}
-        onChange={(next) => {
-          if (typeof next === 'number') onChange(next)
-        }}
-      />
-    </label>
   )
 }
