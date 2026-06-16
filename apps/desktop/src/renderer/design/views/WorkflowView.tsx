@@ -55,6 +55,18 @@ function createWorkflowNodeId(kind: WorkflowNodeKind): string {
   return `${kind}-${workflowNodeSequence.toString(36)}`
 }
 
+/** 工作流删除二次确认弹窗 —— 列表页与详情页共用。 */
+function confirmDeleteWorkflow(name: string, onOk: () => void) {
+  AntdModal.confirm({
+    title: '删除工作流？',
+    content: `确认删除工作流「${name}」？该操作无法撤销，其下的节点编排将一并移除。`,
+    okText: '删除',
+    cancelText: '取消',
+    okButtonProps: { danger: true },
+    onOk,
+  })
+}
+
 export function WorkflowView() {
   return (
     <ReactFlowProvider>
@@ -233,19 +245,28 @@ function WorkflowViewInner() {
     await refresh()
   }
 
+  const performDelete = useCallback(
+    async (id: string) => {
+      const res = await deleteWorkflow({ id })
+      if (res.deleted) {
+        toast.success('工作流已删除')
+        if (activeIdRef.current === id) {
+          activeIdRef.current = null
+          screenRef.current = 'list'
+          setScreen('list')
+          setActiveId(null)
+          loadWorkflowIntoCanvas(null)
+        }
+        setWorkflows((prev) => prev.filter((item) => item.id !== id))
+        await refresh()
+      }
+    },
+    [deleteWorkflow, loadWorkflowIntoCanvas, refresh],
+  )
+
   const removeWorkflow = async () => {
     if (draft == null) return
-    const res = await deleteWorkflow({ id: draft.id })
-    if (res.deleted) {
-      toast.success('工作流已删除')
-      activeIdRef.current = null
-      screenRef.current = 'list'
-      setWorkflows((prev) => prev.filter((item) => item.id !== draft.id))
-      setActiveId(null)
-      setScreen('list')
-      loadWorkflowIntoCanvas(null)
-      await refresh()
-    }
+    confirmDeleteWorkflow(draft.name, () => void performDelete(draft.id))
   }
 
   const addNode = (kind: WorkflowNodeKind) => {
