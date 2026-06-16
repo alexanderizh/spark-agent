@@ -42,6 +42,11 @@ export type CanvasProject = {
   rootPath?: string | null
   status: CanvasProjectStatus
   settings?: CanvasProjectSettings
+  /**
+   * 项目级扩展元数据（与 asset.metadata 一致的策略：先挂 JSON，后续再结构化）。
+   * 承载行业模式数据，如影视开发的 CanvasFilmProjectMetadata（文档 §7.10）。
+   */
+  metadata?: Record<string, unknown>
   nodeCount: number
   assetCount: number
   taskCount: number

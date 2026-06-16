@@ -1085,6 +1085,23 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
+  /**
+   * 局部更新项目级扩展元数据（浅合并 patch）。
+   * 用于行业模式数据（如影视 CanvasFilmProjectMetadata），第一阶段挂 metadata JSON。
+   */
+  async updateProjectMetadata(
+    projectId: string,
+    patch: Record<string, unknown>,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    project.metadata = { ...(project.metadata ?? {}), ...patch }
+    project.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
   async exportProjectToFile(projectId: string): Promise<{ exported: boolean; filePath?: string }> {
     const db = readDb()
     let snapshot: CanvasSnapshot | null = null
