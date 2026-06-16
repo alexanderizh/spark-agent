@@ -52,7 +52,12 @@ async function persistAllProjects(db: CanvasDb): Promise<number> {
   for (const project of db.projects) {
     if (project.status === 'deleted') continue
     const boards = readProjectBoards(db, project.id)
-    const resolved = resolveActiveBoard(boards)
+    // 序列化激活板优先用用户上次选择（project.metadata.activeBoardId），
+    // 否则回退到 isDefault / 第一个 board
+    const storedActiveBoardId = project.metadata?.activeBoardId
+    const preferredBoardId =
+      typeof storedActiveBoardId === 'string' ? storedActiveBoardId : undefined
+    const resolved = resolveActiveBoard(boards, preferredBoardId)
     // 项目无 board（数据异常）时跳过，避免写空快照覆盖既有数据
     if (!resolved) {
       console.warn('[canvas] persist skipped: no board for project', project.id)
@@ -177,7 +182,7 @@ export function isMediaOperation(operation: CanvasOperationType): boolean {
   return MEDIA_OPERATIONS.has(operation)
 }
 
-type CanvasDb = {
+export type CanvasDb = {
   projects: CanvasProject[]
   boards: CanvasBoard[]
   nodes: CanvasNode[]
@@ -291,7 +296,7 @@ function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
 }
 
 /** 读取项目内全部 board；旧快照（仅 db.boards 或单 board）归一化为数组 */
-function readProjectBoards(db: CanvasDb, projectId: string): CanvasBoard[] {
+export function readProjectBoards(db: CanvasDb, projectId: string): CanvasBoard[] {
   return db.boards.filter((board) => board.projectId === projectId)
 }
 
@@ -299,7 +304,7 @@ function readProjectBoards(db: CanvasDb, projectId: string): CanvasBoard[] {
  * 选择激活 board：优先用传入 boardId，其次 snapshot.activeBoardId，
  * 否则取标记 isDefault 的 board，最后取第一个。返回归一化的 boards 数组与激活 board。
  */
-function resolveActiveBoard(
+export function resolveActiveBoard(
   boards: CanvasBoard[],
   preferredBoardId?: string | null,
 ): { boards: CanvasBoard[]; active: CanvasBoard } | null {
@@ -338,7 +343,7 @@ function fullSnapshotFromDb(
  * 时不要把其他 board 的节点全部渲染进 Stage）。assets 保持项目级（无 boardId）。
  * assets/tasks 不过滤——assets 项目级共享；tasks 仍展示全项目任务以便任务队列复用。
  */
-function snapshotFromDb(
+export function snapshotFromDb(
   db: CanvasDb,
   projectId: string,
   activeBoardId?: string | null,
@@ -1283,6 +1288,14 @@ export const canvasApi = {
     projectId: string,
     activeBoardId?: string | null,
   ): Promise<CanvasSnapshot> {
+    // 解析激活 board 优先级：显式参数 > project.metadata.activeBoardId（用户上次选择）> 默认
+    const resolvePreferredBoard = (db: CanvasDb): string | null | undefined => {
+      if (activeBoardId) return activeBoardId
+      const project = db.projects.find((item) => item.id === projectId)
+      const stored = project?.metadata?.activeBoardId
+      return typeof stored === 'string' ? stored : undefined
+    }
+
     if (!canvasDirty) {
       try {
         const snapshot = await loadSnapshotFromStorage(projectId)
@@ -1291,7 +1304,7 @@ export const canvasApi = {
           const db = emptyDb()
           replaceProjectSnapshot(db, snapshot.snapshot)
           writeHotDb(db, false)
-          return snapshotFromDb(db, projectId, activeBoardId)
+          return snapshotFromDb(db, projectId, resolvePreferredBoard(db))
         }
       } catch {
         // SQLite 不可用时回退到 localStorage 热存储。
@@ -1309,7 +1322,7 @@ export const canvasApi = {
     }
     project.lastOpenedAt = now()
     writeDb(db)
-    return snapshotFromDb(db, projectId, activeBoardId)
+    return snapshotFromDb(db, projectId, resolvePreferredBoard(db))
   },
 
   async updateViewport(
@@ -1373,6 +1386,8 @@ export const canvasApi = {
   /** 删除 board 及其名下节点/边/任务。资产保持项目级共享，不随 board 删除。 */
   async deleteBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
     const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
     const boards = db.boards.filter((item) => item.projectId === projectId)
     // 守卫：最后一个 board 不允许删除（文档 §7.1 注意点）
     if (boards.length <= 1) {
@@ -1395,10 +1410,14 @@ export const canvasApi = {
     )
     db.boards = db.boards.filter((item) => item.id !== boardId)
     updateProjectCounts(db, projectId)
-    writeDb(db)
-    // 删除当前激活板时回退到第一个剩余 board
+    // 删除当前激活板时回退到第一个剩余 board，并同步持久化 activeBoardId
     const remaining = db.boards.filter((item) => item.projectId === projectId)
-    const fallbackId = remaining.find((b) => b.settings?.isDefault)?.id ?? remaining[0]?.id ?? null
+    const fallbackBoard = remaining.find((b) => b.settings?.isDefault) ?? remaining[0]
+    const fallbackId = fallbackBoard?.id ?? null
+    if (fallbackId) {
+      project.metadata = { ...(project.metadata ?? {}), activeBoardId: fallbackId }
+    }
+    writeDb(db)
     return this.openSnapshot(projectId, fallbackId)
   },
 
@@ -1516,8 +1535,25 @@ export const canvasApi = {
   },
 
   /** 切换激活 board：持久化 activeBoardId + viewport，返回新 snapshot */
+  /**
+   * 切换激活 board：直接操作内存 db 并标记 dirty，确保切换立即生效且持久化。
+   *
+   * 不走 openSnapshot 的 loadSnapshotFromStorage 分支——那条路径在 canvasDirty=false 时
+   * 会从 SQLite 重载，覆盖刚切换的 board 选择（这是「多 board 切换无效」的根因）。
+   * activeBoardId 持久化在 project.metadata.activeBoardId，随 snapshot flush 落库。
+   */
   async setActiveBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
-    return this.openSnapshot(projectId, boardId)
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    const targetBoard = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!targetBoard) throw new Error('Canvas board not found')
+    // 持久化用户选择的激活 board（跨会话保留）
+    project.metadata = { ...(project.metadata ?? {}), activeBoardId: boardId }
+    project.lastOpenedAt = now()
+    project.updatedAt = now()
+    writeDb(db)
+    return snapshotFromDb(db, projectId, boardId)
   },
 
   /** 调整 board 顺序：按传入 id 顺序写 sortOrder */
