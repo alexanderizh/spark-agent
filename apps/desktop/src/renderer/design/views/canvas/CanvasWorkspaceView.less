@@ -15,14 +15,39 @@
 
 .canvas-workspace-header {
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
+  flex-direction: row;
+  align-items: center;
   justify-content: flex-start;
-  gap: 8px;
-  padding: 6px 16px 7px 18px;
+  gap: 12px;
+  padding: 2px 12px 2px 14px;
   border-bottom: 1px solid var(--divider);
   background: var(--panel);
   flex-shrink: 0;
+  // macOS：header 自身作为窗口拖拽区（替代独立 MacWindowDragHeader，省 20px）。
+  // 交互元素（按钮/chip）需单独设 no-drag 才能点击。
+  -webkit-app-region: drag;
+}
+
+// header 内所有可交互元素恢复为可点击
+.canvas-workspace-header button,
+.canvas-workspace-header .ant-btn,
+.canvas-workspace-header .ant-tag,
+.canvas-workspace-header .canvas-board-switcher-chip,
+.canvas-workspace-header .ant-segmented {
+  -webkit-app-region: no-drag;
+}
+
+.canvas-workspace-header-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+// 推开右侧工具栏的间隔
+.canvas-workspace-header-spacer {
+  flex: 1 1 auto;
 }
 
 .canvas-workspace-topbar {
@@ -47,7 +72,7 @@
 
 .canvas-workspace-heading {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -95,8 +120,29 @@
   flex: 1;
   min-height: 0;
   --canvas-side-panel-width: 360px;
-  grid-template-columns: minmax(0, 1fr) var(--canvas-side-panel-width);
+  --canvas-left-panel-width: 264px;
+  // 三列布局：左工作台 | 主画布 | 右信息面板（文档 §6）
+  grid-template-columns: var(--canvas-left-panel-width) minmax(0, 1fr) var(--canvas-side-panel-width);
   background: var(--bg-sunken);
+}
+
+// 左工作台折叠时保留窄列（44px）只显示展开按钮，避免展开入口丢失
+.canvas-workspace-body.canvas-left-panel-collapsed {
+  grid-template-columns: 44px minmax(0, 1fr) var(--canvas-side-panel-width);
+}
+
+// 折叠态：tabs 栏变纵向，只保留展开按钮，隐藏其余内容
+.canvas-left-workbench-collapsed {
+  .canvas-left-workbench-tabs {
+    flex-direction: column;
+    padding: 6px 0;
+    border-bottom: none;
+  }
+  .canvas-left-workbench-toggle {
+    width: 100%;
+    padding: 10px 0;
+    justify-content: center;
+  }
 }
 
 .canvas-side-panel {
@@ -199,10 +245,10 @@
   z-index: 5;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 6px;
   overflow-x: auto;
   padding: 0;
+  flex-shrink: 0;
 }
 
 .canvas-toolbar-group {
@@ -220,6 +266,16 @@
 
 .canvas-toolbar-save {
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// 保存状态 Tag 与按钮垂直对齐
+.canvas-toolbar-savetag {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .canvas-toolbar .ant-btn {
@@ -615,6 +671,12 @@
 
 .canvas-pane-context-menu button:hover {
   background: var(--hover);
+}
+
+.canvas-pane-context-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 4px 4px;
 }
 
 .canvas-menu-item {
@@ -1784,5 +1846,792 @@ body.canvas-side-panel-resizing {
 
   .canvas-frame-role-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 左侧工作台（文档 §7.3 / §6）
+// ════════════════════════════════════════════════════════════════════════
+.canvas-left-workbench {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--panel);
+  border-right: 1px solid var(--divider);
+  overflow: hidden;
+}
+
+.canvas-left-workbench-tabs {
+  display: flex;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--divider);
+  background: var(--bg-sunken);
+
+  .canvas-left-workbench-tab {
+    flex: 1;
+    padding: 9px 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+
+    &:hover {
+      color: var(--text);
+      background: var(--hover);
+    }
+    &.active {
+      color: var(--primary);
+      background: var(--panel);
+      box-shadow: inset 0 -2px 0 var(--primary);
+    }
+  }
+}
+
+.canvas-left-workbench-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.canvas-left-workbench-footer {
+  display: flex;
+  flex-shrink: 0;
+  border-top: 1px solid var(--divider);
+  background: var(--bg-sunken);
+
+  .canvas-left-utility-btn {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 2px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 10px;
+    cursor: pointer;
+
+    &:hover {
+      color: var(--text);
+      background: var(--hover);
+    }
+  }
+}
+
+// ── Board sidebar（画布 tab）─────────────────────────────────────────────
+.canvas-board-sidebar {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-board-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px 6px;
+}
+
+.canvas-board-sidebar-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.canvas-board-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.canvas-board-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover {
+    background: var(--hover);
+    .canvas-board-actions {
+      opacity: 1;
+    }
+  }
+  &.canvas-board-item-active {
+    background: var(--primary-bg, rgba(59, 130, 246, 0.1));
+    box-shadow: inset 2px 0 0 var(--primary);
+  }
+}
+
+.canvas-board-thumb {
+  width: 48px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.canvas-board-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.canvas-board-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.canvas-board-name-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-board-default-tag {
+  font-size: 10px !important;
+  padding: 0 4px !important;
+  line-height: 16px !important;
+}
+
+.canvas-board-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.canvas-board-actions {
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+// ── 资产面板（资产 tab）─────────────────────────────────────────────────
+.canvas-assets-panel,
+.canvas-asset-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-assets-panel-filters,
+.canvas-asset-manager-filters {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.canvas-assets-filter-row,
+.canvas-asset-manager-filter-row {
+  display: flex;
+  gap: 8px;
+}
+
+.canvas-assets-list,
+.canvas-asset-manager-list,
+.canvas-asset-manager-grid {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+.canvas-asset-mini {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 8px;
+  transition: background 0.12s;
+
+  &:hover {
+    background: var(--hover);
+    .canvas-asset-mini-actions {
+      opacity: 1;
+    }
+  }
+}
+
+.canvas-asset-mini-thumb {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.canvas-asset-mini-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.canvas-asset-mini-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-asset-mini-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+
+  .ant-tag {
+    margin: 0;
+    font-size: 10px !important;
+    padding: 0 4px !important;
+    line-height: 16px !important;
+  }
+}
+
+.canvas-asset-mini-actions {
+  display: flex;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+// 资产缩略图占位（无图时显示类型图标）
+.canvas-asset-thumb-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+
+.canvas-asset-thumb-icon {
+  display: flex;
+  opacity: 0.55;
+}
+
+.canvas-asset-thumb-letter {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.canvas-assets-empty {
+  padding: 32px 12px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+// ── 资产管理（网格 + 批量栏）────────────────────────────────────────────
+.canvas-asset-manager-batchbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+  border-bottom: 1px solid var(--divider);
+}
+
+.canvas-asset-manager-batchbar-count {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.canvas-asset-manager-batchbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.canvas-asset-manager-list-head {
+  padding: 4px 8px;
+}
+
+.canvas-asset-manager-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.12s;
+
+  &:hover {
+    background: var(--hover);
+  }
+  &.selected {
+    background: var(--primary-bg, rgba(59, 130, 246, 0.1));
+  }
+}
+
+.canvas-asset-manager-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.canvas-asset-manager-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+
+  .ant-tag {
+    margin: 0;
+    font-size: 10px !important;
+    padding: 0 4px !important;
+    line-height: 16px !important;
+  }
+}
+
+.canvas-asset-ref-count {
+  color: var(--primary);
+}
+.canvas-asset-origin-task {
+  color: var(--text-muted);
+}
+
+.canvas-asset-manager-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.canvas-asset-grid-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+
+  &:hover {
+    border-color: var(--primary);
+  }
+  &.selected {
+    border-color: var(--primary);
+    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+  }
+}
+
+.canvas-asset-grid-thumb {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 6px;
+  background: var(--bg-sunken);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-muted);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+.canvas-asset-grid-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+
+.canvas-asset-grid-name {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// ── 资产详情浮层 ─────────────────────────────────────────────────────────
+.canvas-asset-detail-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.canvas-asset-detail-modal {
+  width: 420px;
+  max-width: 90vw;
+  max-height: 80vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.canvas-asset-detail-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--divider);
+
+  h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+  }
+}
+
+.canvas-asset-detail-body {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-asset-detail-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.canvas-asset-detail-label {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.canvas-asset-detail-value {
+  color: var(--text);
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.mono {
+    font-family: var(--font-mono, monospace);
+    font-size: 11px;
+  }
+}
+
+.canvas-asset-detail-section {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--divider);
+}
+
+.canvas-asset-detail-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.canvas-asset-detail-empty {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.canvas-asset-detail-ref {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+  padding: 3px 0;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 底部悬浮工具栏（文档 §7.5）
+// ════════════════════════════════════════════════════════════════════════
+.canvas-stage-area {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+
+  // Stage 作为 flex 子项必须撑满高度，否则 ReactFlow 高度塌陷导致画布/节点不显示
+  > .canvas-stage {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.canvas-bottom-dock {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--panel);
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+.canvas-bottom-dock-collapsed {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.canvas-bottom-dock-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+// dock 内工具激活态：主色高亮
+.canvas-dock-tool-active {
+  color: var(--primary) !important;
+  background: var(--primary-bg, rgba(59, 130, 246, 0.1)) !important;
+}
+
+.canvas-bottom-dock-divider {
+  width: 1px;
+  height: 20px;
+  background: var(--divider);
+  margin: 0 4px;
+}
+
+.canvas-bottom-dock-spacer {
+  flex: 1;
+}
+
+// 节点工厂菜单（文档 §7.7）
+.canvas-add-node-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.canvas-add-node-menu {
+  position: absolute;
+  left: 50%;
+  bottom: 72px;
+  transform: translateX(-50%);
+  z-index: 1000;
+  width: 420px;
+  max-width: 90vw;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 12px;
+  background: var(--panel);
+  border: 1px solid var(--divider);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+}
+
+.canvas-add-node-section {
+  margin-bottom: 10px;
+}
+
+.canvas-add-node-section-title {
+  margin-bottom: 6px;
+}
+
+.canvas-add-node-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.canvas-add-node-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 4px;
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  background: var(--bg-sunken);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+
+  &:hover {
+    border-color: var(--primary);
+    background: var(--hover);
+  }
+}
+
+.canvas-add-node-icon {
+  display: flex;
+  color: var(--primary);
+}
+
+.canvas-add-node-label {
+  font-size: 11px;
+  text-align: center;
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 右键菜单（文档 §7.6）
+// ════════════════════════════════════════════════════════════════════════
+.canvas-context-menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+}
+
+.canvas-context-menu {
+  position: absolute;
+  z-index: 1000;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--divider);
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+}
+
+.canvas-context-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 5px;
+  transition: background 0.1s;
+
+  &:hover:not(:disabled) {
+    background: var(--hover);
+  }
+  &.danger {
+    color: var(--error, #ef4444);
+  }
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.canvas-context-menu-icon {
+  display: flex;
+  color: var(--text-muted);
+}
+
+.canvas-context-menu-item.danger .canvas-context-menu-icon {
+  color: var(--error, #ef4444);
+}
+
+.canvas-context-menu-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 4px 6px;
+}
+
+// ── board 切换条（header 内）─────────────────────────────────────────────
+.canvas-board-switcher {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  overflow-x: auto;
+  // 允许收缩 + 限制最大宽度，chip 过多时内部滚动，避免挤压右侧工具栏
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
+
+  &::-webkit-scrollbar {
+    height: 0;
+  }
+}
+
+.canvas-board-switcher-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--divider);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.12s;
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+  &.active {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
   }
 }

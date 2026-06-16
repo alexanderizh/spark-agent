@@ -131,6 +131,10 @@ export function CanvasStage({
   onEditNode,
   onAddTextAtPosition,
   onAddImageAtPosition,
+  onAddPromptAtPosition,
+  onInsertAssetFromPane,
+  onCreateBoardFromPane,
+  onResetZoomFromPane,
   onViewportChange,
 }: {
   snapshot: CanvasSnapshot
@@ -151,6 +155,14 @@ export function CanvasStage({
   onEditNode: (nodeId: string) => void
   onAddTextAtPosition: (position: CanvasStagePoint) => void
   onAddImageAtPosition: (position: CanvasStagePoint) => void
+  /** 空白右键：新建 Prompt 节点 */
+  onAddPromptAtPosition?: (position: CanvasStagePoint) => void
+  /** 空白右键：从资产插入（打开资产面板） */
+  onInsertAssetFromPane?: () => void
+  /** 空白右键：新建 board */
+  onCreateBoardFromPane?: () => void
+  /** 空白右键：视图重置（适配/居中） */
+  onResetZoomFromPane?: () => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
@@ -310,7 +322,7 @@ export function CanvasStage({
       event.stopPropagation()
 
       const menuWidth = 188
-      const menuHeight = 132
+      const menuHeight = 280
       const minInset = 8
       const left = Math.min(
         Math.max(event.clientX - rect.left, minInset),
@@ -372,6 +384,31 @@ export function CanvasStage({
     closePaneContextMenu()
     onAddImageAtPosition(position)
   }, [closePaneContextMenu, onAddImageAtPosition, paneContextMenu])
+
+  const handleAddPromptFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    const position = paneContextMenu.flowPosition
+    closePaneContextMenu()
+    onAddPromptAtPosition?.(position)
+  }, [closePaneContextMenu, onAddPromptAtPosition, paneContextMenu])
+
+  const handleInsertAssetFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    closePaneContextMenu()
+    onInsertAssetFromPane?.()
+  }, [closePaneContextMenu, onInsertAssetFromPane, paneContextMenu])
+
+  const handleCreateBoardFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    closePaneContextMenu()
+    onCreateBoardFromPane?.()
+  }, [closePaneContextMenu, onCreateBoardFromPane, paneContextMenu])
+
+  const handleResetZoomFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    closePaneContextMenu()
+    onResetZoomFromPane?.()
+  }, [closePaneContextMenu, onResetZoomFromPane, paneContextMenu])
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
@@ -530,17 +567,36 @@ export function CanvasStage({
             onContextMenu={(event) => event.preventDefault()}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <button type="button" role="menuitem" onClick={handleResetZoom}>
-              <Icons.RotateCcw size={14} />
-              <span>复原缩放比例</span>
-            </button>
             <button type="button" role="menuitem" onClick={handleAddTextFromPane}>
               <Icons.File size={14} />
-              <span>添加文本节点</span>
+              <span>添加文本</span>
             </button>
             <button type="button" role="menuitem" onClick={handleAddImageFromPane}>
               <Icons.Image size={14} />
-              <span>添加图片节点</span>
+              <span>上传图片</span>
+            </button>
+            {onAddPromptAtPosition && (
+              <button type="button" role="menuitem" onClick={handleAddPromptFromPane}>
+                <Icons.Edit size={14} />
+                <span>新建 Prompt</span>
+              </button>
+            )}
+            <div className="canvas-pane-context-divider" />
+            {onInsertAssetFromPane && (
+              <button type="button" role="menuitem" onClick={handleInsertAssetFromPane}>
+                <Icons.Folder size={14} />
+                <span>从资产插入</span>
+              </button>
+            )}
+            {onCreateBoardFromPane && (
+              <button type="button" role="menuitem" onClick={handleCreateBoardFromPane}>
+                <Icons.Plus size={14} />
+                <span>新建画布</span>
+              </button>
+            )}
+            <button type="button" role="menuitem" onClick={handleResetZoom}>
+              <Icons.RotateCcw size={14} />
+              <span>复原缩放比例</span>
             </button>
           </div>
         )}

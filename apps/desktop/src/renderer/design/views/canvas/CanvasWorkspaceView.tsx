@@ -2,14 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
 import { Input, InputNumber, Modal, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
-import { MacWindowDragHeader } from '../../components/MacWindowDragHeader'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import { CanvasInspector } from './CanvasInspector'
 import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
-import { useCanvasWorkspace } from './canvas.store'
+import { CanvasBoardSidebar } from './CanvasBoardSidebar'
+import { CanvasAssetsPanel, downloadAsset } from './CanvasAssetsPanel'
+import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
+import { CanvasBottomDock } from './CanvasBottomDock'
+import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
+import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { useApp } from '../../AppContext'
 import type {
@@ -473,7 +477,27 @@ export function CanvasWorkspaceView({
     createTask,
     completeDemoTask,
     cancelTask,
+    // board 管理
+    createBoard,
+    renameBoard,
+    deleteBoard,
+    duplicateBoard,
+    switchBoard,
+    setDefaultBoard,
+    copyNodesToBoard,
+    // 资产
+    insertAsset,
+    refresh,
   } = useCanvasWorkspace(projectId)
+  // 工作台 UI 状态
+  const {
+    leftPanelTab,
+    setLeftPanelTab,
+    bottomToolbarCollapsed,
+    setBottomToolbarCollapsed,
+    leftPanelCollapsed,
+    setLeftPanelCollapsed,
+  } = useCanvasWorkspaceUi()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
@@ -833,6 +857,131 @@ export function CanvasWorkspaceView({
     [patchNodes, updateNodeData],
   )
 
+  // ─── 节点创建动作（useCallback，必须在 early return 之前）────────────────
+  // 这些被 handleAddNodeItem / Stage / BottomDock 等多处引用，统一在 hooks 区定义。
+  const addText = useCallback(
+    async (preferredPosition?: CanvasPoint) => {
+      const position = preferredPosition
+        ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+        : positionNodeInViewport(
+            canvasViewportRef.current,
+            { width: 280, height: 164 },
+            { x: 140, y: 120 },
+          )
+      await createTextNode({
+        text: '双击后续版本可直接编辑文本内容。',
+        x: position.x,
+        y: position.y,
+      })
+    },
+    [createTextNode],
+  )
+
+  const uploadFirstImage = useCallback((preferredPosition?: CanvasPoint) => {
+    pendingImagePositionRef.current = preferredPosition
+      ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
+      : null
+    fileInputRef.current?.click()
+  }, [])
+
+  const handleSwitchBoard = useCallback(
+    async (boardId: string) => {
+      if (!snapshot || boardId === snapshot.board.id) return
+      const vp = canvasViewportRef.current
+      const viewport = vp ? { x: vp.x, y: vp.y, zoom: vp.zoom } : undefined
+      await switchBoard(boardId, viewport)
+      setSelectedNodeIds([])
+    },
+    [snapshot, switchBoard],
+  )
+
+  const handleInsertAsset = useCallback(
+    async (assetId: string) => {
+      if (!snapshot) return
+      const position = positionNodeInViewport(
+        canvasViewportRef.current,
+        { width: 280, height: 200 },
+        { x: 220, y: 180 },
+      )
+      await insertAsset({
+        assetId,
+        boardId: snapshot.board.id,
+        x: position.x,
+        y: position.y,
+      })
+      message.success('已插入资产到当前视口')
+    },
+    [insertAsset, snapshot],
+  )
+
+  const referencedAssetIds = useMemo(
+    () =>
+      new Set(
+        (snapshot?.nodes ?? [])
+          .map((node) => node.assetId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    [snapshot?.nodes],
+  )
+
+  const handleLocateAsset = useCallback(
+    (assetId: string) => {
+      if (!snapshot) return
+      const node = snapshot.nodes.find((item) => item.assetId === assetId)
+      if (node) {
+        setSelectedNodeIds([node.id])
+        message.info(`已定位到节点：${node.title ?? node.type}`)
+      }
+    },
+    [snapshot],
+  )
+
+  const handleAddNodeItem = useCallback(
+    (item: AddNodeMenuItem) => {
+      // 内容节点：文本 / prompt 直接创建
+      if (item.nodeType === 'text' || item.nodeType === 'prompt') {
+        void addText()
+        return
+      }
+      // 图片走上传链路
+      if (item.action === 'upload_image' || item.nodeType === 'image') {
+        uploadFirstImage()
+        return
+      }
+      // 资源入口
+      if (item.action === 'insert_asset') {
+        setLeftPanelTab('assets')
+        return
+      }
+      if (item.action === 'from_history' || item.action === 'from_template') {
+        message.info('该入口将在后续阶段开放')
+        return
+      }
+      // AI 工作节点：打开 inline AI composer 并预选 operation
+      if (item.operation) {
+        setInlineAiOpen(true)
+      }
+    },
+    [addText, uploadFirstImage, setLeftPanelTab],
+  )
+
+  const handleFitView = useCallback(() => {
+    message.info('适配屏幕：可双击画布或使用缩放控制')
+  }, [])
+  const handleResetZoom = useCallback(() => {
+    // 复用现有 pane 菜单的 resetZoom 行为近似
+  }, [])
+  const handleToggleGrid = useCallback(() => {
+    if (!snapshot) return
+    const next = snapshot.board.settings.grid !== false ? false : true
+    void canvasApi
+      .updateBoardSettings(projectId, snapshot.board.id, { grid: next })
+      .then(() => {
+        void refresh()
+      })
+      .catch(() => {})
+  }, [snapshot, projectId, refresh])
+
   if (loading) {
     return (
       <div className="canvas-workspace canvas-workspace-loading">
@@ -847,31 +996,6 @@ export function CanvasWorkspaceView({
         <Empty description="画布不存在" />
       </div>
     )
-  }
-
-  const addText = async (preferredPosition?: CanvasPoint) => {
-    const position = preferredPosition
-      ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-      : positionNodeInViewport(
-          canvasViewportRef.current,
-          { width: 280, height: 164 },
-          {
-            x: 140,
-            y: 120,
-          },
-        )
-    await createTextNode({
-      text: '双击后续版本可直接编辑文本内容。',
-      x: position.x,
-      y: position.y,
-    })
-  }
-
-  const uploadFirstImage = (preferredPosition?: CanvasPoint) => {
-    pendingImagePositionRef.current = preferredPosition
-      ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-      : null
-    fileInputRef.current?.click()
   }
 
   const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1124,9 +1248,15 @@ export function CanvasWorkspaceView({
 
   return (
     <div className="canvas-workspace">
-      <MacWindowDragHeader />
-      <header className="canvas-workspace-header">
-        <div className="canvas-workspace-topbar">
+      <header
+        className="canvas-workspace-header"
+        onDoubleClick={() => {
+          if (window.spark?.platform === 'darwin') {
+            window.spark?.invoke('window:maximize', {}).catch(() => {})
+          }
+        }}
+      >
+        <div className="canvas-workspace-header-row">
           <div className="canvas-workspace-title">
             <Button
               size="small"
@@ -1144,23 +1274,30 @@ export function CanvasWorkspaceView({
               </span>
             </div>
           </div>
+          {/* board 切换条（文档 §7.1：项目内多 board 切换） */}
+          <div className="canvas-board-switcher">
+            {(snapshot.boards ?? [snapshot.board]).map((board) => (
+              <button
+                key={board.id}
+                type="button"
+                className={`canvas-board-switcher-chip${board.id === snapshot.board.id ? ' active' : ''}`}
+                onClick={() => void handleSwitchBoard(board.id)}
+                title={board.name}
+              >
+                {board.name}
+              </button>
+            ))}
+            <Tooltip title="新建画布">
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.Plus size={14} />}
+                onClick={() => void createBoard()}
+              />
+            </Tooltip>
+          </div>
         </div>
         <CanvasToolbar
-          activeTool={activeTool}
-          onToolChange={handleToolChange}
-          onAddText={() => void addText()}
-          onUploadImage={uploadFirstImage}
-          onCreateGroup={handleCreateGroup}
-          onAddToGroup={() => handleAddSelectionToGroup()}
-          onRemoveFromGroup={() => handleRemoveFromGroup()}
-          onDissolveGroup={() => handleDissolveGroup()}
-          onOpenAiComposer={() => handleOpenInlineAi()}
-          onDeleteSelected={() => void deleteNodes(selectedNodeIds)}
-          selectedCount={selectedNodeIds.length}
-          canCreateGroup={canCreateGroup}
-          canAddToGroup={canAddToGroup}
-          canRemoveFromGroup={canRemoveFromGroup}
-          canDissolveGroup={canDissolveGroup}
           saveState={{ dirty, saving }}
           onSave={() => void doSave()}
           onOpenAssets={() => setAssetDrawerOpen(true)}
@@ -1168,7 +1305,118 @@ export function CanvasWorkspaceView({
         />
       </header>
 
-      <div className="canvas-workspace-body" style={sidePanelStyle}>
+      <div
+        className={`canvas-workspace-body${leftPanelCollapsed ? ' canvas-left-panel-collapsed' : ''}`}
+        style={sidePanelStyle}
+      >
+        <aside
+          className={`canvas-left-workbench${leftPanelCollapsed ? ' canvas-left-workbench-collapsed' : ''}`}
+        >
+          <div className="canvas-left-workbench-tabs">
+            {!leftPanelCollapsed && (
+              <>
+                <button
+                  type="button"
+                  className={`canvas-left-workbench-tab${leftPanelTab === 'boards' ? ' active' : ''}`}
+                  onClick={() => setLeftPanelTab('boards')}
+                >
+                  画布
+                </button>
+                <button
+                  type="button"
+                  className={`canvas-left-workbench-tab${leftPanelTab === 'assets' ? ' active' : ''}`}
+                  onClick={() => setLeftPanelTab('assets')}
+                >
+                  资产
+                </button>
+                <button
+                  type="button"
+                  className={`canvas-left-workbench-tab${leftPanelTab === 'asset_manager' ? ' active' : ''}`}
+                  onClick={() => setLeftPanelTab('asset_manager')}
+                >
+                  资产管理
+                </button>
+              </>
+            )}
+            <Tooltip title={leftPanelCollapsed ? '展开工作台' : '收起工作台'}>
+              <button
+                type="button"
+                className="canvas-left-workbench-tab canvas-left-workbench-toggle"
+                onClick={() => setLeftPanelCollapsed(!leftPanelCollapsed)}
+                aria-label={leftPanelCollapsed ? '展开工作台' : '收起工作台'}
+              >
+                <Icons.PanelLeft size={14} />
+              </button>
+            </Tooltip>
+          </div>
+          {!leftPanelCollapsed && (
+            <div className="canvas-left-workbench-content">
+              {leftPanelTab === 'boards' && (
+                <CanvasBoardSidebar
+                  snapshot={snapshot}
+                  activeBoardId={snapshot.board.id}
+                  onSelectBoard={(boardId) => void handleSwitchBoard(boardId)}
+                  onCreateBoard={(input) => void createBoard(input)}
+                  onRenameBoard={(boardId, name) => void renameBoard(boardId, name)}
+                  onDeleteBoard={(boardId) => void deleteBoard(boardId)}
+                  onDuplicateBoard={(boardId) => void duplicateBoard(boardId)}
+                  onSetDefaultBoard={(boardId) => void setDefaultBoard(boardId)}
+                />
+              )}
+              {leftPanelTab === 'assets' && (
+                <CanvasAssetsPanel
+                  assets={snapshot.assets}
+                  referencedAssetIds={referencedAssetIds}
+                  onInsertAsset={(assetId) => void handleInsertAsset(assetId)}
+                  onLocateAsset={handleLocateAsset}
+                  onDownloadAsset={(asset) => downloadAsset(asset)}
+                />
+              )}
+              {leftPanelTab === 'asset_manager' && (
+                <CanvasAssetManagerPanel
+                  assets={snapshot.assets}
+                  nodes={snapshot.nodes}
+                  tasks={snapshot.tasks}
+                  onInsertAssets={(assetIds) => {
+                    for (const assetId of assetIds) void handleInsertAsset(assetId)
+                  }}
+                  onRemoveReferences={async (assetIds) => {
+                    // 移除引用 = 删除引用这些资产的节点（不删资产文件，文档 §11.3 两段式）
+                    const targetAssetSet = new Set(assetIds)
+                    const nodeIds = snapshot.nodes
+                      .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
+                      .map((node) => node.id)
+                    if (nodeIds.length > 0) {
+                      await deleteNodes(nodeIds)
+                    }
+                  }}
+                />
+              )}
+            </div>
+          )}
+          {!leftPanelCollapsed && (
+            <div className="canvas-left-workbench-footer">
+              <button type="button" className="canvas-left-utility-btn" onClick={() => message.info('模板中心将在后续阶段开放')}>
+                <Icons.FilePlus size={16} />
+                <span>模板</span>
+              </button>
+              <button type="button" className="canvas-left-utility-btn" onClick={() => void handleOpenProjectFolder()}>
+                <Icons.Folder size={16} />
+                <span>目录</span>
+              </button>
+              <button type="button" className="canvas-left-utility-btn" onClick={() => setLeftPanelTab('assets')}>
+                <Icons.Upload size={16} />
+                <span>上传</span>
+              </button>
+              <button type="button" className="canvas-left-utility-btn" onClick={() => message.info('帮助与快捷键')}>
+                <Icons.HelpCircle size={16} />
+                <span>帮助</span>
+              </button>
+            </div>
+          )}
+        </aside>
+
+        <div className="canvas-stage-area">
         {toolSwitchHint && (
           <div
             key={toolSwitchHint.nonce}
@@ -1199,7 +1447,23 @@ export function CanvasWorkspaceView({
           onEditNode={handleEditNode}
           onAddTextAtPosition={(position) => void addText(position)}
           onAddImageAtPosition={uploadFirstImage}
+          onAddPromptAtPosition={(position) => void addText(position)}
+          onInsertAssetFromPane={() => setLeftPanelTab('assets')}
+          onCreateBoardFromPane={() => void createBoard()}
+          onResetZoomFromPane={handleResetZoom}
           onViewportChange={handleCanvasViewportChange}
+        />
+        <CanvasBottomDock
+          activeTool={activeTool}
+          onToolChange={handleToolChange}
+          onAddNodeItem={handleAddNodeItem}
+          onOpenAiComposer={() => handleOpenInlineAi()}
+          onFitView={handleFitView}
+          onResetZoom={handleResetZoom}
+          onToggleGrid={handleToggleGrid}
+          gridVisible={snapshot.board.settings.grid !== false}
+          collapsed={bottomToolbarCollapsed}
+          onToggleCollapsed={() => setBottomToolbarCollapsed(!bottomToolbarCollapsed)}
         />
         <CanvasInlineAiComposer
           open={inlineAiOpen}
@@ -1213,6 +1477,7 @@ export function CanvasWorkspaceView({
             setInlineAiOpen(false)
           }}
         />
+        </div>
         <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
           <div
             aria-label="调整右侧面板宽度"

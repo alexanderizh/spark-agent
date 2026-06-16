@@ -51,9 +51,19 @@ async function persistAllProjects(db: CanvasDb): Promise<number> {
   let failed = 0
   for (const project of db.projects) {
     if (project.status === 'deleted') continue
-    const snapshot = {
+    const boards = readProjectBoards(db, project.id)
+    const resolved = resolveActiveBoard(boards)
+    // 项目无 board（数据异常）时跳过，避免写空快照覆盖既有数据
+    if (!resolved) {
+      console.warn('[canvas] persist skipped: no board for project', project.id)
+      continue
+    }
+    // 序列化时写 boards[] + 激活 board（向下兼容旧字段 board）
+    const snapshot: CanvasSnapshot = {
       project,
-      board: db.boards.find((b) => b.projectId === project.id) ?? null,
+      board: resolved.active,
+      boards: resolved.boards,
+      activeBoardId: resolved.active.id,
       nodes: db.nodes.filter((n) => n.projectId === project.id),
       edges: db.edges.filter((e) => e.projectId === project.id),
       assets: db.assets.filter((a) => a.projectId === project.id),
@@ -111,7 +121,12 @@ export async function revertProject(projectId: string): Promise<void> {
     if (snapshotJson) {
       const snap = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
       if (snap.project) db.projects.push(snap.project)
-      if (snap.board) db.boards.push(snap.board)
+      // 兼容多 board：优先用 boards[]；旧快照只有单 board
+      if (Array.isArray(snap.boards) && snap.boards.length > 0) {
+        db.boards.push(...snap.boards)
+      } else if (snap.board) {
+        db.boards.push(snap.board)
+      }
       if (snap.nodes) db.nodes.push(...snap.nodes)
       if (snap.edges) db.edges.push(...snap.edges)
       if (snap.assets) db.assets.push(...snap.assets)
@@ -263,20 +278,54 @@ function replaceProjectSnapshot(db: CanvasDb, snapshot: CanvasSnapshot): void {
   db.assets = db.assets.filter((item) => item.projectId !== projectId)
   db.tasks = db.tasks.filter((item) => item.projectId !== projectId)
   db.projects.push(snapshot.project)
-  if (snapshot.board) db.boards.push(snapshot.board)
+  // 多 board：优先写入 boards[]；向下兼容只写单 board 的旧快照
+  if (Array.isArray(snapshot.boards) && snapshot.boards.length > 0) {
+    db.boards.push(...snapshot.boards)
+  } else if (snapshot.board) {
+    db.boards.push(snapshot.board)
+  }
   db.nodes.push(...snapshot.nodes)
   db.edges.push(...snapshot.edges)
   db.assets.push(...snapshot.assets)
   db.tasks.push(...snapshot.tasks)
 }
 
-function fullSnapshotFromDb(db: CanvasDb, projectId: string): CanvasSnapshot {
+/** 读取项目内全部 board；旧快照（仅 db.boards 或单 board）归一化为数组 */
+function readProjectBoards(db: CanvasDb, projectId: string): CanvasBoard[] {
+  return db.boards.filter((board) => board.projectId === projectId)
+}
+
+/**
+ * 选择激活 board：优先用传入 boardId，其次 snapshot.activeBoardId，
+ * 否则取标记 isDefault 的 board，最后取第一个。返回归一化的 boards 数组与激活 board。
+ */
+function resolveActiveBoard(
+  boards: CanvasBoard[],
+  preferredBoardId?: string | null,
+): { boards: CanvasBoard[]; active: CanvasBoard } | null {
+  if (boards.length === 0) return null
+  const pick =
+    (preferredBoardId && boards.find((board) => board.id === preferredBoardId)) ||
+    boards.find((board) => board.settings?.isDefault) ||
+    boards[0]!
+  return { boards, active: pick }
+}
+
+function fullSnapshotFromDb(
+  db: CanvasDb,
+  projectId: string,
+  activeBoardId?: string | null,
+): CanvasSnapshot {
   const project = db.projects.find((item) => item.id === projectId)
-  const board = db.boards.find((item) => item.projectId === projectId)
-  if (!project || !board) throw new Error('Canvas project not found')
+  if (!project) throw new Error('Canvas project not found')
+  const boards = readProjectBoards(db, projectId)
+  const resolved = resolveActiveBoard(boards, activeBoardId)
+  if (!resolved) throw new Error('Canvas board not found')
   return {
     project,
-    board,
+    board: resolved.active,
+    boards: resolved.boards,
+    activeBoardId: resolved.active.id,
     nodes: sortCanvasNodes(db.nodes.filter((node) => node.projectId === projectId)),
     edges: db.edges.filter((edge) => edge.projectId === projectId),
     assets: db.assets.filter((asset) => asset.projectId === projectId),
@@ -284,15 +333,48 @@ function fullSnapshotFromDb(db: CanvasDb, projectId: string): CanvasSnapshot {
   }
 }
 
-function snapshotFromDb(db: CanvasDb, projectId: string): CanvasSnapshot {
+/**
+ * 工作区展示用快照：按激活 board 过滤 nodes/edges/tasks（文档 §7.1：切换 board
+ * 时不要把其他 board 的节点全部渲染进 Stage）。assets 保持项目级（无 boardId）。
+ * assets/tasks 不过滤——assets 项目级共享；tasks 仍展示全项目任务以便任务队列复用。
+ */
+function snapshotFromDb(
+  db: CanvasDb,
+  projectId: string,
+  activeBoardId?: string | null,
+): CanvasSnapshot {
   const project = db.projects.find((item) => item.id === projectId)
-  const board = db.boards.find((item) => item.projectId === projectId)
-  if (!project || !board) throw new Error('Canvas project not found')
+  if (!project) throw new Error('Canvas project not found')
+  const boards = readProjectBoards(db, projectId)
+  const resolved = resolveActiveBoard(boards, activeBoardId)
+  if (!resolved) throw new Error('Canvas board not found')
+  const boardId = resolved.active.id
+  // 按激活 board 过滤节点/边（文档 §7.1：切换 board 不渲染其他 board 的节点）
+  let nodes = db.nodes.filter(
+    (node) => node.projectId === projectId && node.boardId === boardId && !node.hidden,
+  )
+  let edges = db.edges.filter(
+    (edge) => edge.projectId === projectId && edge.boardId === boardId,
+  )
+  // 防御性兜底：若按 boardId 过滤后无节点，但项目实际存在非隐藏节点，
+  // 说明节点 boardId 与当前 board 不匹配（旧数据 / 迁移残留），回退显示全部，
+  // 避免画布「节点全部消失」。这种情况通常出现在旧项目首次进入多 board 视图时。
+  if (nodes.length === 0) {
+    const allProjectNodes = db.nodes.filter(
+      (node) => node.projectId === projectId && !node.hidden,
+    )
+    if (allProjectNodes.length > 0) {
+      nodes = allProjectNodes
+      edges = db.edges.filter((edge) => edge.projectId === projectId)
+    }
+  }
   return {
     project,
-    board,
-    nodes: sortCanvasNodes(db.nodes.filter((node) => node.projectId === projectId && !node.hidden)),
-    edges: db.edges.filter((edge) => edge.projectId === projectId),
+    board: resolved.active,
+    boards: resolved.boards,
+    activeBoardId: boardId,
+    nodes: sortCanvasNodes(nodes),
+    edges,
     assets: db.assets.filter((asset) => asset.projectId === projectId),
     tasks: db.tasks.filter((task) => task.projectId === projectId),
   }
@@ -390,7 +472,11 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
   }
 
   const projectId = mapId(next.project.id, 'canvas_project')
-  const boardId = mapId(next.board.id, 'canvas_board')
+  // 多 board：把 boards[] 的每个 id 都登记到 idMap，旧快照只有单 board 时用 next.board
+  const sourceBoards = Array.isArray(next.boards) && next.boards.length > 0 ? next.boards : [next.board]
+  const oldActiveBoardId = next.activeBoardId ?? next.board.id
+  for (const board of sourceBoards) mapId(board.id, 'canvas_board')
+  const newActiveBoardId = idMap.get(oldActiveBoardId) ?? idMap.get(next.board.id)!
   for (const asset of next.assets) mapId(asset.id, 'canvas_asset')
   for (const node of next.nodes) mapId(node.id, 'canvas_node')
   for (const task of next.tasks) mapId(task.id, 'canvas_task')
@@ -407,14 +493,18 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
     createdAt: at,
     updatedAt: at,
   }
-  next.board = {
-    ...next.board,
-    id: boardId,
+  // 重映射全部 board，并同步 activeBoardId / board（激活板）
+  next.boards = sourceBoards.map((board) => ({
+    ...board,
+    id: mapId(board.id, 'canvas_board'),
     projectId,
     userId: USER_ID,
     createdAt: at,
     updatedAt: at,
-  }
+  }))
+  next.activeBoardId = newActiveBoardId
+  next.board =
+    next.boards.find((board) => board.id === newActiveBoardId) ?? next.boards[0]!
   next.assets = next.assets.map((asset) => ({
     ...asset,
     id: mapId(asset.id, 'canvas_asset'),
@@ -426,7 +516,8 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
     ...node,
     id: mapId(node.id, 'canvas_node'),
     projectId,
-    boardId,
+    // 保留节点原有 board 归属（映射到新 board id）；旧单 board 快照落到激活板
+    boardId: idMap.get(node.boardId) ?? newActiveBoardId,
     userId: USER_ID,
     ...(node.assetId ? { assetId: mapId(node.assetId, 'canvas_asset') } : {}),
     ...(node.taskId ? { taskId: mapId(node.taskId, 'canvas_task') } : {}),
@@ -436,7 +527,8 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
     ...task,
     id: mapId(task.id, 'canvas_task'),
     projectId,
-    boardId,
+    // 保留 task 所属 board 映射；旧单 board 快照落到激活板
+    boardId: idMap.get(task.boardId) ?? newActiveBoardId,
     userId: USER_ID,
     inputNodeIds: task.inputNodeIds.map((id) => idMap.get(id) ?? id),
     inputAssetIds: task.inputAssetIds.map((id) => idMap.get(id) ?? id),
@@ -447,7 +539,7 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
     ...edge,
     id: mapId(edge.id, 'canvas_edge'),
     projectId,
-    boardId,
+    boardId: idMap.get(edge.boardId) ?? newActiveBoardId,
     userId: USER_ID,
     sourceNodeId: idMap.get(edge.sourceNodeId) ?? edge.sourceNodeId,
     targetNodeId: idMap.get(edge.targetNodeId) ?? edge.targetNodeId,
@@ -472,9 +564,11 @@ function parseCanvasProjectExport(raw: string): CanvasSnapshot {
     maybePayload.kind === 'spark.canvas.project' && maybePayload.snapshot
       ? maybePayload.snapshot
       : (parsed as Partial<CanvasSnapshot>)
+  // 兼容校验：多 board 快照可能只有 boards[] 而无单 board 字段
+  const hasBoards = Array.isArray(snapshot.boards) && snapshot.boards.length > 0
   if (
     !snapshot.project ||
-    !snapshot.board ||
+    !(snapshot.board || hasBoards) ||
     !Array.isArray(snapshot.nodes) ||
     !Array.isArray(snapshot.edges) ||
     !Array.isArray(snapshot.assets) ||
@@ -482,7 +576,17 @@ function parseCanvasProjectExport(raw: string): CanvasSnapshot {
   ) {
     throw new Error('无效的 Canvas 项目文件')
   }
-  return snapshot as CanvasSnapshot
+  // 归一化：缺 board 时从 boards[] 推导激活板，保证下游统一能读 snapshot.board
+  const normalized = snapshot as CanvasSnapshot
+  if (!normalized.board && hasBoards) {
+    const activeId = normalized.activeBoardId
+    normalized.board =
+      (activeId && normalized.boards!.find((b) => b.id === activeId)) ||
+      normalized.boards!.find((b) => b.settings?.isDefault) ||
+      normalized.boards![0]!
+    normalized.activeBoardId = normalized.board.id
+  }
+  return normalized
 }
 
 function isImageDataUrl(value: string | null | undefined): value is string {
@@ -593,7 +697,17 @@ async function loadSnapshotFromStorage(
   const { snapshotJson } = await window.spark.invoke('canvas:snapshot:load', { projectId })
   if (!snapshotJson) return null
   const snapshot = JSON.parse(snapshotJson) as Partial<CanvasSnapshot>
-  if (!snapshot.project || !snapshot.board) return null
+  // 兼容多 board：缺 board 时从 boards[] 推导；都没有则视为无效快照
+  const hasBoards = Array.isArray(snapshot.boards) && snapshot.boards.length > 0
+  if (!snapshot.project || !(snapshot.board || hasBoards)) return null
+  if (!snapshot.board && hasBoards) {
+    const activeId = snapshot.activeBoardId
+    snapshot.board =
+      (activeId && snapshot.boards!.find((b) => b.id === activeId)) ||
+      snapshot.boards!.find((b) => b.settings?.isDefault) ||
+      snapshot.boards![0]!
+    snapshot.activeBoardId = snapshot.board.id
+  }
   if (!snapshot.project.rootPath) {
     snapshot.project.rootPath = await ensureCanvasProjectDirectory({
       projectId,
@@ -602,7 +716,10 @@ async function loadSnapshotFromStorage(
   }
   return normalizeSnapshotForHotStorage({
     project: snapshot.project,
-    board: snapshot.board,
+    board: snapshot.board!,
+    ...(hasBoards ? { boards: snapshot.boards } : {}),
+    ...(snapshot.activeBoardId ? { activeBoardId: snapshot.activeBoardId } : {}),
+    ...(snapshot.uiState ? { uiState: snapshot.uiState } : {}),
     nodes: snapshot.nodes ?? [],
     edges: snapshot.edges ?? [],
     assets: snapshot.assets ?? [],
@@ -1145,7 +1262,10 @@ export const canvasApi = {
     }
   },
 
-  async openSnapshot(projectId: string): Promise<CanvasSnapshot> {
+  async openSnapshot(
+    projectId: string,
+    activeBoardId?: string | null,
+  ): Promise<CanvasSnapshot> {
     if (!canvasDirty) {
       try {
         const snapshot = await loadSnapshotFromStorage(projectId)
@@ -1154,7 +1274,7 @@ export const canvasApi = {
           const db = emptyDb()
           replaceProjectSnapshot(db, snapshot.snapshot)
           writeHotDb(db, false)
-          return snapshotFromDb(db, projectId)
+          return snapshotFromDb(db, projectId, activeBoardId)
         }
       } catch {
         // SQLite 不可用时回退到 localStorage 热存储。
@@ -1172,16 +1292,389 @@ export const canvasApi = {
     }
     project.lastOpenedAt = now()
     writeDb(db)
-    return snapshotFromDb(db, projectId)
+    return snapshotFromDb(db, projectId, activeBoardId)
   },
 
-  async updateViewport(projectId: string, viewport: CanvasBoard['viewport']): Promise<void> {
+  async updateViewport(
+    projectId: string,
+    viewport: CanvasBoard['viewport'],
+    boardId?: string | null,
+  ): Promise<void> {
     const db = readDb()
-    const board = db.boards.find((item) => item.projectId === projectId)
+    // 多 board：按 boardId 精准定位；未指定时回退到项目第一个 board（兼容旧调用）
+    const board = boardId
+      ? db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+      : db.boards.find((item) => item.projectId === projectId)
     if (!board) return
     board.viewport = viewport
     board.updatedAt = now()
     writeDb(db)
+  },
+
+  // ─── 多 board 管理（文档 §7.1）──────────────────────────────────────────
+  // board CRUD：新增/重命名/删除/复制/切换/排序/设封面。删除前做守卫（最后一个 board
+  // 不允许删除、有内容时由 UI 层确认）。切换 board 持久化 viewport 与 activeBoardId。
+
+  async createBoard(
+    projectId: string,
+    input?: { name?: string; templateId?: string | null },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) throw new Error('Canvas project not found')
+    const at = now()
+    const existingCount = db.boards.filter((b) => b.projectId === projectId).length
+    const board: CanvasBoard = {
+      id: uid('canvas_board'),
+      projectId,
+      userId: USER_ID,
+      name: input?.name?.trim() || `Board ${existingCount + 1}`,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      settings: { grid: true, snap: false, background: 'paper', sortOrder: existingCount },
+      ...(input?.templateId ? { templateId: input.templateId } : {}),
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.boards.push(board)
+    // 新建 board 默认其 settings.templateId（无则 undefined，保持可选）
+    if (input?.templateId) board.settings.templateId = input.templateId
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, board.id)
+  },
+
+  async renameBoard(projectId: string, boardId: string, name: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!board) return this.openSnapshot(projectId)
+    board.name = name.trim() || board.name
+    board.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 删除 board 及其名下节点/边/任务。资产保持项目级共享，不随 board 删除。 */
+  async deleteBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const boards = db.boards.filter((item) => item.projectId === projectId)
+    // 守卫：最后一个 board 不允许删除（文档 §7.1 注意点）
+    if (boards.length <= 1) {
+      throw new Error('项目至少保留一个画布，无法删除')
+    }
+    const target = boards.find((item) => item.id === boardId)
+    if (!target) return this.openSnapshot(projectId)
+    const at = now()
+    // 软删 board 名下节点（保留可恢复），清理相关 edge
+    db.nodes = db.nodes.map((node) =>
+      node.boardId === boardId && node.projectId === projectId
+        ? { ...node, hidden: true, updatedAt: at }
+        : node,
+    )
+    db.edges = db.edges.filter(
+      (edge) => !(edge.boardId === boardId && edge.projectId === projectId),
+    )
+    db.tasks = db.tasks.filter(
+      (task) => !(task.boardId === boardId && task.projectId === projectId),
+    )
+    db.boards = db.boards.filter((item) => item.id !== boardId)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    // 删除当前激活板时回退到第一个剩余 board
+    const remaining = db.boards.filter((item) => item.projectId === projectId)
+    const fallbackId = remaining.find((b) => b.settings?.isDefault)?.id ?? remaining[0]?.id ?? null
+    return this.openSnapshot(projectId, fallbackId)
+  },
+
+  /**
+   * 深拷贝 board：复制其名下节点/边/任务（重映射 id），资产项目级共享不复制文件。
+   * group 结构、parentNodeId 关系一并保留。
+   */
+  async duplicateBoard(
+    projectId: string,
+    boardId: string,
+    name?: string,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const sourceBoard = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!sourceBoard) return this.openSnapshot(projectId)
+    const at = now()
+    const newBoardId = uid('canvas_board')
+    const existingCount = db.boards.filter((b) => b.projectId === projectId).length
+    const newBoard: CanvasBoard = {
+      ...sourceBoard,
+      id: newBoardId,
+      name: name?.trim() || `${sourceBoard.name} 副本`,
+      viewport: { x: 0, y: 0, zoom: 1 },
+      settings: {
+        ...sourceBoard.settings,
+        ...(sourceBoard.settings ?? {}),
+        isDefault: false,
+        sortOrder: existingCount,
+      },
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.boards.push(newBoard)
+
+    // 复制源 board 名下节点（非 hidden），重映射 id 并保留 group 父子关系
+    const sourceNodes = db.nodes.filter(
+      (node) => node.boardId === boardId && node.projectId === projectId && !node.hidden,
+    )
+    const idMap = new Map<string, string>()
+    for (const node of sourceNodes) idMap.set(node.id, uid('canvas_node'))
+    for (const node of sourceNodes) {
+      const clone: CanvasNode = {
+        ...node,
+        id: idMap.get(node.id)!,
+        boardId: newBoardId,
+        x: node.x + 32,
+        y: node.y + 32,
+        locked: false,
+        createdAt: at,
+        updatedAt: at,
+        ...(node.parentNodeId && idMap.has(node.parentNodeId)
+          ? { parentNodeId: idMap.get(node.parentNodeId)! }
+          : { parentNodeId: null }),
+      }
+      db.nodes.push(clone)
+    }
+    // 复制 board 内 edge
+    const sourceEdges = db.edges.filter(
+      (edge) => edge.boardId === boardId && edge.projectId === projectId,
+    )
+    const clonedNodeIds = new Set(idMap.values())
+    for (const edge of sourceEdges) {
+      const sourceId = idMap.get(edge.sourceNodeId)
+      const targetId = idMap.get(edge.targetNodeId)
+      // 仅复制两端都被复制过来的 edge（group_contains 等内部关系）
+      if (!sourceId || !targetId) continue
+      db.edges.push({
+        ...edge,
+        id: uid('canvas_edge'),
+        boardId: newBoardId,
+        sourceNodeId: sourceId,
+        targetNodeId: targetId,
+        createdAt: at,
+      })
+    }
+    // 复制 board 内 task（及其输入/输出节点引用，按 idMap 重映射）
+    const sourceTasks = db.tasks.filter(
+      (task) => task.boardId === boardId && task.projectId === projectId,
+    )
+    for (const task of sourceTasks) {
+      const newTaskId = uid('canvas_task')
+      const clone: CanvasTask = {
+        ...task,
+        id: newTaskId,
+        boardId: newBoardId,
+        status: 'cancelled',
+        progress: 0,
+        completedAt: null,
+        errorMsg: 'duplicate_of_origin',
+        errorDetail: '由复制画布生成，需手动重跑',
+        inputNodeIds: task.inputNodeIds
+          .map((id) => idMap.get(id))
+          .filter((id): id is string => Boolean(id)),
+        outputNodeIds: [],
+        outputAssetIds: [],
+        createdAt: at,
+        updatedAt: at,
+      }
+      // 复制任务节点（type=task）的 taskId 指向新 task
+      const clonedTaskNodes = db.nodes.filter(
+        (n) =>
+          n.boardId === newBoardId &&
+          n.projectId === projectId &&
+          n.taskId === task.id,
+      )
+      for (const tn of clonedTaskNodes) {
+        tn.taskId = newTaskId
+        tn.data = { ...tn.data, status: 'cancelled', progress: 0, message: '复制任务，需手动重跑' }
+      }
+      db.tasks.push(clone)
+    }
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, newBoardId)
+  },
+
+  /** 切换激活 board：持久化 activeBoardId + viewport，返回新 snapshot */
+  async setActiveBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
+    return this.openSnapshot(projectId, boardId)
+  },
+
+  /** 调整 board 顺序：按传入 id 顺序写 sortOrder */
+  async reorderBoards(projectId: string, orderedBoardIds: string[]): Promise<CanvasSnapshot> {
+    const db = readDb()
+    orderedBoardIds.forEach((boardId, index) => {
+      const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+      if (board) {
+        board.settings = { ...board.settings, sortOrder: index }
+        board.updatedAt = now()
+      }
+    })
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 设置 board 封面资产（用于 board 列表缩略图） */
+  async setBoardCover(
+    projectId: string,
+    boardId: string,
+    coverAssetId: string | null,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!board) return this.openSnapshot(projectId)
+    board.settings = { ...board.settings, coverAssetId }
+    board.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 设为默认打开 board */
+  async setDefaultBoard(projectId: string, boardId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    for (const board of db.boards) {
+      if (board.projectId !== projectId) continue
+      board.settings = { ...board.settings, isDefault: board.id === boardId }
+      board.updatedAt = now()
+    }
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 局部更新 board.settings（grid/snap/background 等显示选项） */
+  async updateBoardSettings(
+    projectId: string,
+    boardId: string,
+    patch: Partial<NonNullable<CanvasBoard['settings']>>,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const board = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    if (!board) return this.openSnapshot(projectId)
+    board.settings = { ...board.settings, ...patch }
+    board.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /**
+   * 跨 board 复制节点：把选中节点复制到目标 board（资产共享，不复制文件）。
+   * 保留 group 父子结构与内部 edge。
+   */
+  async copyNodesToBoard(
+    projectId: string,
+    nodeIds: string[],
+    targetBoardId: string,
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const targetBoard = db.boards.find((item) => item.id === targetBoardId && item.projectId === projectId)
+    if (!targetBoard) return this.openSnapshot(projectId)
+    const selected = new Set(nodeIds)
+    const sourceNodes = db.nodes.filter(
+      (node) => selected.has(node.id) && node.projectId === projectId && !node.hidden,
+    )
+    if (sourceNodes.length === 0) return this.openSnapshot(projectId)
+    const at = now()
+    const idMap = new Map<string, string>()
+    for (const node of sourceNodes) idMap.set(node.id, uid('canvas_node'))
+    for (const node of sourceNodes) {
+      db.nodes.push({
+        ...node,
+        id: idMap.get(node.id)!,
+        boardId: targetBoardId,
+        x: node.x + 40,
+        y: node.y + 40,
+        locked: false,
+        createdAt: at,
+        updatedAt: at,
+        ...(node.parentNodeId && idMap.has(node.parentNodeId)
+          ? { parentNodeId: idMap.get(node.parentNodeId)! }
+          : { parentNodeId: null }),
+      })
+    }
+    // 复制选中节点之间的内部 edge
+    const sourceEdges = db.edges.filter(
+      (edge) =>
+        edge.projectId === projectId &&
+        selected.has(edge.sourceNodeId) &&
+        selected.has(edge.targetNodeId),
+    )
+    for (const edge of sourceEdges) {
+      db.edges.push({
+        ...edge,
+        id: uid('canvas_edge'),
+        boardId: targetBoardId,
+        sourceNodeId: idMap.get(edge.sourceNodeId)!,
+        targetNodeId: idMap.get(edge.targetNodeId)!,
+        createdAt: at,
+      })
+    }
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId, targetBoardId)
+  },
+
+  // ─── 资产 → board 操作（文档 §7.2）───────────────────────────────────────
+  // 资产保持项目级共享；插入 = 基于已有 asset 创建引用节点，不复制文件。
+
+  /** 把单个资产作为节点插入指定 board（复用已有 asset，不复制文件） */
+  async insertAssetToBoard(input: {
+    projectId: string
+    boardId: string
+    assetId: string
+    x: number
+    y: number
+  }): Promise<CanvasNode | null> {
+    const db = readDb()
+    const asset = db.assets.find((item) => item.id === input.assetId && item.projectId === input.projectId)
+    const board = db.boards.find((item) => item.id === input.boardId && item.projectId === input.projectId)
+    if (!asset || !board) return null
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
+    )
+    const nodeType: CanvasNode['type'] =
+      asset.type === 'image'
+        ? 'image'
+        : asset.type === 'video'
+          ? 'video'
+          : asset.type === 'audio'
+            ? 'audio'
+            : asset.type === 'prompt'
+              ? 'prompt'
+              : 'text'
+    const size = fitMediaNodeSize(asset.type, asset.width, asset.height)
+    const data: CanvasNode['data'] =
+      nodeType === 'text' || nodeType === 'prompt'
+        ? { text: asset.contentText ?? '', format: nodeType === 'prompt' ? 'prompt' : 'plain', origin: 'asset' }
+        : {
+            ...(asset.url ? { url: asset.url } : {}),
+            ...(asset.thumbnailUrl ? { thumbnailUrl: asset.thumbnailUrl } : {}),
+            ...(asset.mimeType ? { mimeType: asset.mimeType } : {}),
+            origin: 'asset',
+          }
+    const node = createNodeBase({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: nodeType,
+      title: asset.title ?? asset.type,
+      assetId: asset.id,
+      x: input.x,
+      y: input.y,
+      width: size.width,
+      height: size.height,
+      data,
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    // 记录资产最近使用（挂 metadata，第一阶段）
+    asset.metadata = { ...asset.metadata, lastUsedAt: now(), usageCount: ((asset.metadata.usageCount as number) ?? 0) + 1 }
+    asset.updatedAt = now()
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return node
   },
 
   async createTextNode(input: {

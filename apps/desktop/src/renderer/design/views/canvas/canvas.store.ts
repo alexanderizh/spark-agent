@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { canvasApi, isMediaOperation } from './canvas.api'
 import type {
+  CanvasBoard,
   CanvasNode,
   CanvasProject,
   CanvasProjectSettings,
   CanvasSnapshot,
+  CanvasLeftPanelTab,
+  CanvasLeftUtilityTab,
+  CanvasRightPanelTab,
   CreateCanvasTaskRequest,
 } from './canvas.types'
 import type { CanvasMediaTaskInputFile, CanvasMediaTaskStreamPayload } from '@spark/protocol'
@@ -45,11 +49,16 @@ export function useCanvasProjects() {
 export function useCanvasWorkspace(projectId: string) {
   const [snapshot, setSnapshot] = useState<CanvasSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
+  // 记录当前激活 board，refresh 时保留（不跳回默认 board）
+  const activeBoardIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    activeBoardIdRef.current = snapshot?.activeBoardId ?? snapshot?.board.id ?? null
+  }, [snapshot?.activeBoardId, snapshot?.board.id])
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      setSnapshot(await canvasApi.openSnapshot(projectId, activeBoardIdRef.current))
     } finally {
       setLoading(false)
     }
@@ -238,6 +247,86 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  // ─── 多 board 操作（文档 §7.1）──────────────────────────────────────────
+  const createBoard = useCallback(
+    async (input?: { name?: string; templateId?: string | null }) => {
+      setSnapshot(await canvasApi.createBoard(projectId, input))
+    },
+    [projectId],
+  )
+
+  const renameBoard = useCallback(
+    async (boardId: string, name: string) => {
+      setSnapshot(await canvasApi.renameBoard(projectId, boardId, name))
+    },
+    [projectId],
+  )
+
+  const deleteBoard = useCallback(
+    async (boardId: string) => {
+      setSnapshot(await canvasApi.deleteBoard(projectId, boardId))
+    },
+    [projectId],
+  )
+
+  const duplicateBoard = useCallback(
+    async (boardId: string, name?: string) => {
+      setSnapshot(await canvasApi.duplicateBoard(projectId, boardId, name))
+    },
+    [projectId],
+  )
+
+  /** 切换激活 board：保存当前 viewport 后切换（文档 §7.1 注意点） */
+  const switchBoard = useCallback(
+    async (boardId: string, viewport?: CanvasBoard['viewport']) => {
+      const current = snapshot
+      // 先持久化当前 board 的 viewport
+      if (current && viewport) {
+        await canvasApi.updateViewport(projectId, viewport, current.board.id)
+      }
+      setSnapshot(await canvasApi.setActiveBoard(projectId, boardId))
+    },
+    [projectId, snapshot],
+  )
+
+  const reorderBoards = useCallback(
+    async (orderedBoardIds: string[]) => {
+      setSnapshot(await canvasApi.reorderBoards(projectId, orderedBoardIds))
+    },
+    [projectId],
+  )
+
+  const setBoardCover = useCallback(
+    async (boardId: string, coverAssetId: string | null) => {
+      setSnapshot(await canvasApi.setBoardCover(projectId, boardId, coverAssetId))
+    },
+    [projectId],
+  )
+
+  const setDefaultBoard = useCallback(
+    async (boardId: string) => {
+      setSnapshot(await canvasApi.setDefaultBoard(projectId, boardId))
+    },
+    [projectId],
+  )
+
+  const copyNodesToBoard = useCallback(
+    async (nodeIds: string[], targetBoardId: string) => {
+      setSnapshot(await canvasApi.copyNodesToBoard(projectId, nodeIds, targetBoardId))
+    },
+    [projectId],
+  )
+
+  // ─── 资产 → board（文档 §7.2）───────────────────────────────────────────
+  const insertAsset = useCallback(
+    async (input: { assetId: string; boardId: string; x: number; y: number }) => {
+      const node = await canvasApi.insertAssetToBoard({ projectId, ...input })
+      if (node) setSnapshot(await canvasApi.openSnapshot(projectId))
+      return node
+    },
+    [projectId],
+  )
+
   return {
     snapshot,
     loading,
@@ -258,5 +347,58 @@ export function useCanvasWorkspace(projectId: string) {
     createTask,
     completeDemoTask,
     cancelTask,
+    // board 管理
+    createBoard,
+    renameBoard,
+    deleteBoard,
+    duplicateBoard,
+    switchBoard,
+    reorderBoards,
+    setBoardCover,
+    setDefaultBoard,
+    copyNodesToBoard,
+    // 资产
+    insertAsset,
+  }
+}
+
+/**
+ * 画布工作区 UI 状态（文档 §8.5）：左侧主 tab、左下工具 tab、右侧 tab、
+ * 底部栏折叠、资产选择/视图模式。这些是纯 UI 状态，不进持久化热存储
+ * （需要会话恢复时再写 snapshot.uiState）。
+ */
+export function useCanvasWorkspaceUi(initial?: {
+  leftPanelTab?: CanvasLeftPanelTab
+  rightPanelTab?: CanvasRightPanelTab
+}) {
+  const [leftPanelTab, setLeftPanelTab] = useState<CanvasLeftPanelTab>(
+    initial?.leftPanelTab ?? 'boards',
+  )
+  const [leftUtilityTab, setLeftUtilityTab] = useState<CanvasLeftUtilityTab>('templates')
+  const [rightPanelTab, setRightPanelTab] = useState<CanvasRightPanelTab>(
+    initial?.rightPanelTab ?? 'inspector',
+  )
+  const [bottomToolbarCollapsed, setBottomToolbarCollapsed] = useState(false)
+  const [assetViewMode, setAssetViewMode] = useState<'list' | 'grid'>('list')
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
+
+  // 左工作台整体折叠（小屏场景）
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
+
+  return {
+    leftPanelTab,
+    setLeftPanelTab,
+    leftUtilityTab,
+    setLeftUtilityTab,
+    rightPanelTab,
+    setRightPanelTab,
+    bottomToolbarCollapsed,
+    setBottomToolbarCollapsed,
+    assetViewMode,
+    setAssetViewMode,
+    selectedAssetIds,
+    setSelectedAssetIds,
+    leftPanelCollapsed,
+    setLeftPanelCollapsed,
   }
 }
