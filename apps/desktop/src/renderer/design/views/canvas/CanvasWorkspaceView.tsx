@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
-import { Input, InputNumber, Modal, Spin, Tooltip, message } from 'antd'
+import { Drawer, Input, InputNumber, Modal, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
@@ -12,6 +12,7 @@ import { CanvasBoardSidebar } from './CanvasBoardSidebar'
 import { CanvasAssetsPanel, downloadAsset } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
+import { CanvasHistoryPanel } from './CanvasHistoryPanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
@@ -499,6 +500,7 @@ export function CanvasWorkspaceView({
     setLeftPanelCollapsed,
   } = useCanvasWorkspaceUi()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
     null,
@@ -1396,9 +1398,9 @@ export function CanvasWorkspaceView({
           )}
           {!leftPanelCollapsed && (
             <div className="canvas-left-workbench-footer">
-              <button type="button" className="canvas-left-utility-btn" onClick={() => message.info('模板中心将在后续阶段开放')}>
-                <Icons.FilePlus size={16} />
-                <span>模板</span>
+              <button type="button" className="canvas-left-utility-btn" onClick={() => setHistoryOpen(true)}>
+                <Icons.Clock size={16} />
+                <span>历史</span>
               </button>
               <button type="button" className="canvas-left-utility-btn" onClick={() => void handleOpenProjectFolder()}>
                 <Icons.Folder size={16} />
@@ -1554,6 +1556,30 @@ export function CanvasWorkspaceView({
         assets={snapshot.assets}
         onClose={() => setAssetDrawerOpen(false)}
       />
+      <Drawer
+        title="历史记录"
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        width={360}
+        styles={{ body: { padding: 0 } }}
+      >
+        <CanvasHistoryPanel
+          assets={snapshot.assets}
+          tasks={snapshot.tasks}
+          onInsertAsset={(assetId) => void handleInsertAsset(assetId)}
+          onLocateTaskNode={(taskId) => {
+            const node = snapshot.nodes.find((n) => n.taskId === taskId)
+            if (node) {
+              setSelectedNodeIds([node.id])
+              message.info(`已定位到任务节点：${node.title ?? node.type}`)
+            }
+          }}
+          onRetryTask={(taskId) => {
+            const task = snapshot.tasks.find((t) => t.id === taskId)
+            if (task) void handleRetryTask(task)
+          }}
+        />
+      </Drawer>
       <CanvasNodeEditModal
         node={editingNode}
         open={Boolean(editingNode)}
