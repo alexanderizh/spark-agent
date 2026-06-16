@@ -14,8 +14,10 @@ import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
+import { CanvasFilmPanel } from './CanvasFilmPanel'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
+import { readFilmMetadata } from './canvasFilmTypes'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { useApp } from '../../AppContext'
@@ -492,6 +494,7 @@ export function CanvasWorkspaceView({
     insertAsset,
     refresh,
     applyTemplate,
+    updateProjectMetadata,
   } = useCanvasWorkspace(projectId)
   // 工作台 UI 状态
   const {
@@ -1363,6 +1366,13 @@ export function CanvasWorkspaceView({
                 >
                   资产管理
                 </button>
+                <button
+                  type="button"
+                  className={`canvas-left-workbench-tab${leftPanelTab === 'film' ? ' active' : ''}`}
+                  onClick={() => setLeftPanelTab('film')}
+                >
+                  影视
+                </button>
               </>
             )}
             <Tooltip title={leftPanelCollapsed ? '展开工作台' : '收起工作台'}>
@@ -1417,6 +1427,12 @@ export function CanvasWorkspaceView({
                       await deleteNodes(nodeIds)
                     }
                   }}
+                />
+              )}
+              {leftPanelTab === 'film' && (
+                <CanvasFilmPanel
+                  film={readFilmMetadata(snapshot.project.metadata)}
+                  onSaveFilm={(film) => void updateProjectMetadata({ film })}
                 />
               )}
             </div>

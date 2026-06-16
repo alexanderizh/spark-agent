@@ -216,7 +216,7 @@ export type CanvasEdge = {
 }
 
 /** 左侧工作台主 tab */
-export type CanvasLeftPanelTab = 'boards' | 'assets' | 'asset_manager'
+export type CanvasLeftPanelTab = 'boards' | 'assets' | 'asset_manager' | 'film'
 /** 左下角次级工具入口 */
 export type CanvasLeftUtilityTab = 'templates' | 'history' | 'help'
 /** 右侧信息区 tab */

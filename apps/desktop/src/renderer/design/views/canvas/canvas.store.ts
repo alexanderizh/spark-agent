@@ -354,6 +354,14 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  /** 局部更新项目扩展元数据（影视等行业模式，文档 §7.10） */
+  const updateProjectMetadata = useCallback(
+    async (patch: Record<string, unknown>) => {
+      setSnapshot(await canvasApi.updateProjectMetadata(projectId, patch))
+    },
+    [projectId],
+  )
+
   return {
     snapshot,
     loading,
@@ -388,6 +396,8 @@ export function useCanvasWorkspace(projectId: string) {
     insertAsset,
     // 模板
     applyTemplate,
+    // 项目元数据（影视等行业模式）
+    updateProjectMetadata,
   }
 }
 

@@ -2903,3 +2903,140 @@ body.canvas-side-panel-resizing {
   font-size: 11px;
   color: var(--text-muted);
 }
+
+// ── 影视开发面板（§7.10）─────────────────────────────────────────────────
+.canvas-film-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.canvas-film-section {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--divider);
+}
+
+.canvas-film-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.canvas-film-count {
+  font-size: 10px !important;
+  padding: 0 5px !important;
+  line-height: 16px !important;
+}
+
+.canvas-film-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.canvas-film-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.canvas-film-field-row {
+  display: flex;
+  gap: 8px;
+}
+
+.canvas-film-prompt-group {
+  margin-bottom: 8px;
+}
+
+.canvas-film-prompt-group-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.canvas-film-prompt-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.canvas-film-chip {
+  padding: 3px 8px;
+  border: 1px solid var(--divider);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.12s;
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--text-muted);
+  }
+  &.active {
+    color: var(--primary);
+    border-color: var(--primary);
+    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+  }
+  &.active.perf {
+    color: var(--warning, #f59e0b);
+    border-color: var(--warning, #f59e0b);
+    background: rgba(245, 158, 11, 0.08);
+  }
+}
+
+.canvas-film-prompt-preview {
+  background: var(--bg-sunken);
+}
+
+.canvas-film-prompt-text {
+  margin: 0 0 8px;
+  padding: 8px;
+  background: var(--panel);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.canvas-film-empty {
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 8px 0;
+  line-height: 1.4;
+}
+
+.canvas-film-placeholder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.canvas-film-placeholder-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 12px 4px;
+  border: 1px dashed var(--divider);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+  opacity: 0.7;
+}
