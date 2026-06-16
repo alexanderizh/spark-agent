@@ -1030,6 +1030,14 @@ body.sidebar-resizing {
 .chat-sidebar-topbar .sidebar-expand-btn {
   -webkit-app-region: no-drag;
 }
+/* 空会话顶栏右侧的两个侧面板开关按钮：推到最右、互斥切换、可点击（脱离拖拽区） */
+.chat-sidebar-topbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  -webkit-app-region: no-drag;
+}
 .chat-tabbar .chat-title-block {
   flex: 1;
   min-width: 0;

@@ -237,6 +237,149 @@ describe('MemoryWriterService', () => {
     })
   })
 
+  describe('场景 5：瞬时数据闸门（Gate 0）— 兜底拦截', () => {
+    it('should drop candidate whose name embeds an ISO date', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'today-is-2026-06-16',
+        description: '用户今天 2026-06-16 查询了天气',
+        body: '用户今天查询天气。',
+        confidence: 0.9,
+      }])
+
+      const w = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+      await w.maybeWriteFromTurn(basePayload)
+
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should drop candidate whose name starts with transient word (今天/当前/today)', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'today-weather',
+        description: '今天上海天气晴，25 度',
+        body: '今天上海天气晴。',
+        confidence: 0.9,
+      }])
+
+      const w = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+      await w.maybeWriteFromTurn(basePayload)
+
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should drop candidate whose description pairs ISO date with today/当前/实时', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'current-stock-price',
+        description: '当前 2026-06-16 苹果股价 250 美元',
+        body: '当前苹果股价 250 美元。',
+        confidence: 0.9,
+      }])
+
+      const w = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+      await w.maybeWriteFromTurn(basePayload)
+
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should drop candidate whose description has Chinese date format (2026年6月16日)', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'release-day',
+        description: '项目在 2026年6月16日 发布',
+        body: '发布日 2026年6月16日。',
+        confidence: 0.9,
+      }])
+
+      const w = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+      await w.maybeWriteFromTurn(basePayload)
+
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should drop candidate whose description is "今天 14:30 查询了天气"', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'weather-check-today',
+        description: '用户今天 14:30 查询了天气',
+        body: '用户查询了天气。',
+        confidence: 0.9,
+      }])
+
+      const w = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+      await w.maybeWriteFromTurn(basePayload)
+
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should drop candidate whose name indicates real-time data type (weather/stock/汇率)', async () => {
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'today-weather-shanghai',
+        description: '上海天气',
+        body: '上海今天晴。',
+        confidence: 0.9,
+      }])
+
+      const w = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+      await w.maybeWriteFromTurn(basePayload)
+
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should allow stable long-term memory (no date, no transient word)', async () => {
+      // 确认 Gate 0 不会误伤正常长期记忆
+      const llmReturn = JSON.stringify([{
+        scope: 'user',
+        type: 'user',
+        name: 'java-engineer',
+        description: '用户是 Java 工程师',
+        body: '用户身份：Java 工程师。',
+        confidence: 0.9,
+      }])
+
+      const w = new MemoryWriterService(
+        repo, store,
+        (cat, key) => settings[cat]?.[key] ?? null,
+        async () => llmReturn,
+      )
+      await w.maybeWriteFromTurn(basePayload)
+
+      expect(repo.listByScope('user', null)).toHaveLength(1)
+    })
+  })
+
   describe('LLM 调用失败', () => {
     it('should not throw even if LLM call fails', async () => {
       const failWriter = new MemoryWriterService(
