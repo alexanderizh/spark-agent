@@ -21,6 +21,7 @@ export function CanvasBottomDock({
   onAddNodeItem,
   onOpenAiComposer,
   onOpenFilmCenter,
+  onOpenAgent,
   onFitView,
   onResetZoom,
   onToggleGrid,
@@ -33,6 +34,7 @@ export function CanvasBottomDock({
   onAddNodeItem: (item: AddNodeMenuItem) => void
   onOpenAiComposer: () => void
   onOpenFilmCenter: () => void
+  onOpenAgent: () => void
   onFitView: () => void
   onResetZoom: () => void
   onToggleGrid: () => void
@@ -138,6 +140,16 @@ export function CanvasBottomDock({
               icon={<Icons.Layers size={15} />}
               aria-label="项目资产中心"
               onClick={onOpenFilmCenter}
+            />
+          </Tooltip>
+          <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">
+            <Button
+              size="small"
+              type="text"
+              className="canvas-dock-agent-btn"
+              icon={<Icons.Sparkles size={15} />}
+              aria-label="画布 Agent 助手"
+              onClick={onOpenAgent}
             />
           </Tooltip>
         </div>

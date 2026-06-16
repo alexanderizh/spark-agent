@@ -15,6 +15,7 @@ import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
+import { CanvasAgentModal } from './CanvasAgentModal'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -517,6 +518,7 @@ export function CanvasWorkspaceView({
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
   const [filmCenterOpen, setFilmCenterOpen] = useState(false)
+  const [agentOpen, setAgentOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
     null,
@@ -1498,6 +1500,7 @@ export function CanvasWorkspaceView({
           onAddNodeItem={handleAddNodeItem}
           onOpenAiComposer={() => handleOpenInlineAi()}
           onOpenFilmCenter={() => setFilmCenterOpen(true)}
+          onOpenAgent={() => setAgentOpen(true)}
           onFitView={handleFitView}
           onResetZoom={handleResetZoom}
           onToggleGrid={handleToggleGrid}
@@ -1651,6 +1654,11 @@ export function CanvasWorkspaceView({
           updateShotSegment,
           deleteShotSegment,
         }}
+      />
+      <CanvasAgentModal
+        open={agentOpen}
+        onClose={() => setAgentOpen(false)}
+        snapshot={snapshot}
       />
       <CanvasNodeEditModal
         node={editingNode}
