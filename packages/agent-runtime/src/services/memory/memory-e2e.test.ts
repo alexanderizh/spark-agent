@@ -236,6 +236,71 @@ describe('Memory System — E2E', () => {
     })
   })
 
+  // ─── Step 10.5: 瞬时数据拦截（Gate 0）─────────────────────────────────
+
+  describe('Step 10.5: 瞬时数据拦截', () => {
+    it('should reject transient memory (ISO date in name) — 场景:查天气存了今天日期', async () => {
+      // 复现真实事故：用户问"今天天气"，agent 把"今天 2026-06-16"存进记忆
+      const writer = createWriter(mockLLM([candidateResponse([{
+        scope: 'user', type: 'user',
+        name: 'today-2026-06-16',
+        description: '用户今天 2026-06-16 查询了天气',
+        body: '用户今天查询了上海天气。',
+        confidence: 0.9,
+      }])]))
+
+      await writer.maybeWriteFromTurn({
+        sessionId: 'sess-tx', workspaceId: 'ws-1', agentId: 'agent-1',
+        userMessage: '今天上海天气怎么样？',
+        assistantMessage: '今天上海晴，25 度。',
+        recentSummary: '',
+      })
+
+      // 关键断言：记忆库为空
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should reject transient memory (实时数据 + 中文日期)', async () => {
+      const writer = createWriter(mockLLM([candidateResponse([{
+        scope: 'user', type: 'user',
+        name: 'shanghai-weather',
+        description: '当前 2026年6月16日 上海实时温度 25 度',
+        body: '上海当前温度 25 度。',
+        confidence: 0.9,
+      }])]))
+
+      await writer.maybeWriteFromTurn({
+        sessionId: 'sess-tx2', workspaceId: 'ws-1', agentId: 'agent-1',
+        userMessage: '上海现在多少度？',
+        assistantMessage: '上海现在 25 度。',
+        recentSummary: '',
+      })
+
+      expect(repo.listByScope('user', null)).toHaveLength(0)
+    })
+
+    it('should not affect stable long-term memory (java engineer)', async () => {
+      // 正常反馈不应被 Gate 0 误伤
+      const writer = createWriter(mockLLM([candidateResponse([{
+        scope: 'user', type: 'user',
+        name: 'java-engineer',
+        description: '用户是 Java 工程师',
+        body: '用户身份：Java 工程师。',
+        confidence: 0.9,
+      }])]))
+
+      await writer.maybeWriteFromTurn({
+        sessionId: 'sess-stable', workspaceId: 'ws-1', agentId: 'agent-1',
+        userMessage: 'I am a Java engineer',
+        assistantMessage: 'Got it.',
+        recentSummary: '',
+      })
+
+      expect(repo.listByScope('user', null)).toHaveLength(1)
+      expect(repo.listByScope('user', null)[0]!.name).toBe('java-engineer')
+    })
+  })
+
   // ─── Step 11: 配额淘汰 ──────────────────────────────────────────────
 
   describe('Step 11: 配额淘汰', () => {

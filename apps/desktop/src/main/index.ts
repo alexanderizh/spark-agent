@@ -693,11 +693,13 @@ app.whenReady().then(() => {
     app.quit()
   })
 
-  // macOS：dock 图标被点击且无窗口时重新创建窗口
+  // macOS：dock 图标被点击时恢复/显示主窗口。
+  // 注意：close 处理器对窗口做了 hide()（而非 destroy），所以即便窗口已被关闭/最小化，
+  // getAllWindows().length 仍为 1，旧实现只判断「无窗口才新建」会漏掉「窗口已隐藏/最小化」
+  // 的情况，导致点击 Dock 图标无任何反应。这里统一走 showMainWindow()：存在则 restore+show+focus，
+  // 不存在则新建，与托盘点击行为保持一致。
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
+    showMainWindow()
   })
 })
 

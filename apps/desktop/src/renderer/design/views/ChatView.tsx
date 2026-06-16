@@ -514,6 +514,9 @@ export function ChatView({
   )
   const [turnPromptSnapshots, setTurnPromptSnapshots] = useState<TurnPromptSnapshotEvent[]>([])
   const [branchState, setBranchState] = useState<BranchState>({ currentBranch: null, branches: [] })
+  // 分支刷新触发器：窗口重新聚焦（用户可能在终端/IDE 里切了分支）或会话从 running 回到
+  // idle（agent 自己切了分支）时 bump，让下方 listBranches effect 重新拉取最新分支。
+  const [branchRefreshTick, setBranchRefreshTick] = useState(0)
   const [clearTrigger, setClearTrigger] = useState(0)
   // 用户发送消息时立即贴底（不等 user_message 事件从后端回来）：bump 这个计数器，
   // ChatStream 内部 effect 监听到变化即 scrollTop = scrollHeight。
@@ -700,6 +703,11 @@ export function ChatView({
     }
   }, [activeSession?.providerProfileId, setSelectedProviderId])
 
+  // 拉取当前 workspace 的 git 分支信息。
+  // 重新拉取的时机：
+  //   1. activeSessionWorkspace.id 变化（切换会话/项目）
+  //   2. branchRefreshTick 变化 —— 窗口重新聚焦 / 会话结束（见下方监听），覆盖
+  //      用户在终端或 IDE 内手动 git switch、或 agent 自己切了分支后界面不同步的场景。
   useEffect(() => {
     if (activeSessionWorkspace == null) {
       setBranchState({ currentBranch: null, branches: [] })
@@ -716,7 +724,33 @@ export function ChatView({
     return () => {
       cancelled = true
     }
-  }, [activeSessionWorkspace?.id, listBranches])
+  }, [activeSessionWorkspace?.id, branchRefreshTick, listBranches])
+
+  // 窗口重新聚焦时刷新分支：用户切到外部终端/IDE 改了分支后回到应用，会话内分支显示
+  // 需要同步。用 document.visibilityState 兜住最小化后还原的情况。
+  useEffect(() => {
+    const onFocus = (): void => {
+      setBranchRefreshTick((n) => n + 1)
+    }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [])
+
+  // 会话从 running 回到 idle 时刷新分支：agent 可能在执行过程中 git switch 了分支，
+  // 任务结束后界面需要同步最新分支状态。仅捕获 running→非 running 的下降沿。
+  const prevSessionStatusRef = useRef<SessionSummary['status'] | null>(null)
+  useEffect(() => {
+    const prev = prevSessionStatusRef.current
+    const curr = activeSession?.status ?? null
+    prevSessionStatusRef.current = curr
+    if (prev === 'running' && curr != null && curr !== 'running' && activeSessionWorkspace != null) {
+      setBranchRefreshTick((n) => n + 1)
+    }
+  }, [activeSession?.status, activeSessionWorkspace])
 
   // Listen for Ctrl/Cmd+L focus-composer event from global shortcut handler
   useEffect(() => {
@@ -903,6 +937,30 @@ export function ChatView({
             }}
           >
             {t.sidebarHidden && <SidebarExpandButton />}
+            <div className="chat-sidebar-topbar-actions">
+              <button
+                className={`icon-btn ${showInspector ? 'active' : ''}`}
+                title="会话检查器"
+                aria-label="会话检查器"
+                onClick={() => {
+                  setShowInspector(!showInspector)
+                  if (!showInspector) setShowConfigPanel(false)
+                }}
+              >
+                <Icons.PanelRight />
+              </button>
+              <button
+                className={`icon-btn ${showConfigPanel ? 'active' : ''}`}
+                title="配置面板"
+                aria-label="配置面板"
+                onClick={() => {
+                  setShowConfigPanel(!showConfigPanel)
+                  if (!showConfigPanel) setShowInspector(false)
+                }}
+              >
+                <Icons.More />
+              </button>
+            </div>
           </div>
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}

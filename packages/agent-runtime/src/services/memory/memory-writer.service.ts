@@ -5,7 +5,7 @@
  *
  * 职责：
  *   - 调用小模型（通过 ModelService）抽取候选记忆
- *   - 四道闸门：置信度 → 去重/合并 → 配额 → 敏感词
+ *   - 五道闸门：瞬时数据 → 置信度 → 去重/合并 → 配额 → 敏感词
  *   - 通过后写文件 + 写 SQLite + 更新 MEMORY.md 索引
  *   - fire-and-forget：所有异常仅 log，不向上抛
  *
@@ -21,7 +21,7 @@ import { MemoryRepository } from '@spark/storage'
 import type { MemoryEntryRow } from '@spark/storage'
 import { createLogger } from '@spark/shared'
 import { MemoryStoreService } from './memory-store.service.js'
-import { isMemorySensitive } from './sanitizer.js'
+import { isMemorySensitive, detectTransientMemory } from './sanitizer.js'
 import { buildExtractionPrompt, buildDedupPrompt } from './memory-extraction.prompt.js'
 import type { MemoryFileMeta } from './memory-store.service.js'
 
@@ -206,6 +206,21 @@ export class MemoryWriterService {
   // ─── Gates ───────────────────────────────────────────────────────────
 
   /**
+   * 闸门 0：瞬时数据
+   *
+   * 兜底防御：即便抽取 prompt 描述得再具体，依赖小模型守 prompt 仍可能漏判。
+   * 这里对 name/description 做硬性正则检测，命中即丢。log debug 带命中原因。
+   */
+  private passTransientGate(candidate: MemoryCandidate): boolean {
+    const hit = detectTransientMemory(candidate.name, candidate.description)
+    if (hit != null) {
+      log.debug(`Candidate dropped (transient: ${hit}): ${candidate.name} — desc="${candidate.description.slice(0, 60)}"`)
+      return false
+    }
+    return true
+  }
+
+  /**
    * 闸门 1：置信度 >= 0.6
    */
   private passConfidenceGate(candidate: MemoryCandidate): boolean {
@@ -321,6 +336,11 @@ export class MemoryWriterService {
     scopeRef: string | null,
     sessionId: string,
   ): Promise<void> {
+    // 闸门 0：瞬时数据（兜底，置于最前以省后续开销）
+    if (!this.passTransientGate(candidate)) {
+      return
+    }
+
     // 闸门 1：置信度
     if (!this.passConfidenceGate(candidate)) {
       log.debug(`Candidate dropped (confidence ${candidate.confidence} < 0.6): ${candidate.name}`)
