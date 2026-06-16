@@ -362,6 +362,88 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  // ─── 影视公用资产（文档 §7.10）─────────────────────────────────────────
+  const createFilmAsset = useCallback(
+    async (input: import('./canvasFilmAssets').CreateFilmAssetInput) => {
+      await canvasApi.createFilmAsset(projectId, input)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const updateFilmAsset = useCallback(
+    async (
+      assetId: string,
+      patch: Parameters<typeof canvasApi.updateFilmAsset>[2],
+    ) => {
+      setSnapshot(await canvasApi.updateFilmAsset(projectId, assetId, patch))
+    },
+    [projectId],
+  )
+
+  const deleteFilmAsset = useCallback(
+    async (assetId: string) => {
+      setSnapshot(await canvasApi.deleteFilmAsset(projectId, assetId))
+    },
+    [projectId],
+  )
+
+  // ─── 分镜分组（存 project.metadata.film.shotGroups）─────────────────────
+  const createShotGroup = useCallback(
+    async (input: { name: string; description?: string }) => {
+      await canvasApi.createShotGroup(projectId, input)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const updateShotGroup = useCallback(
+    async (groupId: string, patch: { name?: string; description?: string }) => {
+      await canvasApi.updateShotGroup(projectId, groupId, patch)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const deleteShotGroup = useCallback(
+    async (groupId: string) => {
+      await canvasApi.deleteShotGroup(projectId, groupId)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const createShotSegment = useCallback(
+    async (
+      groupId: string,
+      input: Partial<import('./canvasFilmAssets').ShotSegment> & { title: string },
+    ) => {
+      await canvasApi.createShotSegment(projectId, groupId, input)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const updateShotSegment = useCallback(
+    async (
+      groupId: string,
+      segmentId: string,
+      patch: Partial<import('./canvasFilmAssets').ShotSegment>,
+    ) => {
+      await canvasApi.updateShotSegment(projectId, groupId, segmentId, patch)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const deleteShotSegment = useCallback(
+    async (groupId: string, segmentId: string) => {
+      await canvasApi.deleteShotSegment(projectId, groupId, segmentId)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
   return {
     snapshot,
     loading,
@@ -398,6 +480,17 @@ export function useCanvasWorkspace(projectId: string) {
     applyTemplate,
     // 项目元数据（影视等行业模式）
     updateProjectMetadata,
+    // 影视公用资产
+    createFilmAsset,
+    updateFilmAsset,
+    deleteFilmAsset,
+    // 分镜分组
+    createShotGroup,
+    updateShotGroup,
+    deleteShotGroup,
+    createShotSegment,
+    updateShotSegment,
+    deleteShotSegment,
   }
 }
 

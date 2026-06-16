@@ -13,6 +13,15 @@ import type {
 } from './canvas.types'
 import { getCanvasCapability } from './canvas.capabilities'
 import { encodeToSafeFileUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
+import {
+  filmKindToAssetType,
+  filmUid,
+  type CreateFilmAssetInput,
+  type FilmAssetKind,
+  type ShotGroup,
+  type ShotSegment,
+  type FilmProjectData,
+} from './canvasFilmAssets'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -1880,6 +1889,234 @@ export const canvasApi = {
     updateProjectCounts(db, input.projectId)
     writeDb(db)
     return node
+  },
+
+  // ─── 影视公用资产管理（文档 §7.10）──────────────────────────────────────
+  // 剧本/角色/场景/道具/提示词库复用 CanvasAsset + metadata.kind；
+  // 分镜分组存 project.metadata.film.shotGroups。
+
+  /** 创建影视公用资产 */
+  async createFilmAsset(
+    projectId: string,
+    input: CreateFilmAssetInput,
+  ): Promise<CanvasAsset> {
+    const db = readDb()
+    const at = now()
+    const assetType = filmKindToAssetType(input.kind)
+    const asset: CanvasAsset = {
+      id: filmUid('canvas_asset'),
+      projectId,
+      userId: USER_ID,
+      type: assetType,
+      source: 'manual',
+      title: input.name,
+      contentText: input.text ?? null,
+      metadata: {
+        kind: input.kind,
+        ...(input.prompt ? { prompt: input.prompt } : {}),
+        ...(input.imageAssetId ? { imageAssetId: input.imageAssetId } : {}),
+        ...(input.attributes ? { attributes: input.attributes } : {}),
+      },
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.assets.push(asset)
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return asset
+  },
+
+  /** 更新影视资产（名称/内容/属性/附图） */
+  async updateFilmAsset(
+    projectId: string,
+    assetId: string,
+    patch: Partial<Pick<CanvasAsset, 'title' | 'contentText'>> & {
+      prompt?: string
+      imageAssetId?: string
+      attributes?: Record<string, string>
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const asset = db.assets.find((item) => item.id === assetId && item.projectId === projectId)
+    if (!asset) return this.openSnapshot(projectId)
+    if (patch.title !== undefined) asset.title = patch.title
+    if (patch.contentText !== undefined) asset.contentText = patch.contentText
+    asset.metadata = {
+      ...asset.metadata,
+      ...(patch.prompt !== undefined ? { prompt: patch.prompt } : {}),
+      ...(patch.imageAssetId !== undefined ? { imageAssetId: patch.imageAssetId } : {}),
+      ...(patch.attributes !== undefined ? { attributes: patch.attributes } : {}),
+    }
+    asset.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 删除影视资产（从项目移除引用，保留文件由 cleanup 单独处理，文档 §11.3） */
+  async deleteFilmAsset(projectId: string, assetId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    db.assets = db.assets.filter((item) => !(item.id === assetId && item.projectId === projectId))
+    updateProjectCounts(db, projectId)
+    writeDb(db)
+    return this.openSnapshot(projectId)
+  },
+
+  /** 列出项目内指定种类的影视资产 */
+  listFilmAssets(
+    db: CanvasDb,
+    projectId: string,
+    kind?: FilmAssetKind,
+  ): CanvasAsset[] {
+    return db.assets.filter((asset) => {
+      if (asset.projectId !== projectId) return false
+      const assetKind = asset.metadata?.kind
+      if (typeof assetKind !== 'string') return false
+      if (kind && assetKind !== kind) return false
+      return true
+    })
+  },
+
+  // ─── 分镜分组 CRUD（存 project.metadata.film.shotGroups）─────────────────
+
+  /** 读取项目的分镜分组 */
+  readShotGroups(
+    db: CanvasDb,
+    projectId: string,
+  ): ShotGroup[] {
+    const project = db.projects.find((item) => item.id === projectId)
+    const film = project?.metadata?.film as FilmProjectData | undefined
+    return film?.shotGroups ?? []
+  },
+
+  /** 写入分镜分组（不可变更新 project.metadata） */
+  writeShotGroups(
+    db: CanvasDb,
+    projectId: string,
+    groups: ShotGroup[],
+  ): void {
+    const project = db.projects.find((item) => item.id === projectId)
+    if (!project) return
+    const film = (project.metadata?.film ?? {}) as FilmProjectData
+    film.shotGroups = groups
+    project.metadata = { ...(project.metadata ?? {}), film }
+    project.updatedAt = now()
+  },
+
+  /** 新建分镜分组 */
+  async createShotGroup(
+    projectId: string,
+    input: { name: string; description?: string },
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const existing = this.readShotGroups(db, projectId)
+    const group: ShotGroup = {
+      id: filmUid('shot_group'),
+      name: input.name,
+      ...(input.description ? { description: input.description } : {}),
+      sortOrder: existing.length,
+      segments: [],
+    }
+    existing.push(group)
+    this.writeShotGroups(db, projectId, existing)
+    writeDb(db)
+    return { shotGroups: existing }
+  },
+
+  /** 更新分镜分组（名称/描述） */
+  async updateShotGroup(
+    projectId: string,
+    groupId: string,
+    patch: Partial<Pick<ShotGroup, 'name' | 'description'>>,
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    if (group) {
+      if (patch.name !== undefined) group.name = patch.name
+      if (patch.description !== undefined) group.description = patch.description
+      this.writeShotGroups(db, projectId, groups)
+      writeDb(db)
+    }
+    return { shotGroups: groups }
+  },
+
+  /** 删除分镜分组 */
+  async deleteShotGroup(
+    projectId: string,
+    groupId: string,
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    let groups = this.readShotGroups(db, projectId)
+    groups = groups.filter((item) => item.id !== groupId)
+    this.writeShotGroups(db, projectId, groups)
+    writeDb(db)
+    return { shotGroups: groups }
+  },
+
+  /** 新建分镜片段 */
+  async createShotSegment(
+    projectId: string,
+    groupId: string,
+    input: Partial<Omit<ShotSegment, 'id'>> & { title: string },
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    if (!group) return { shotGroups: groups }
+    const segment: ShotSegment = {
+      id: filmUid('shot_seg'),
+      index: group.segments.length + 1,
+      title: input.title,
+      ...(input.description ? { description: input.description } : {}),
+      ...(input.dialogue ? { dialogue: input.dialogue } : {}),
+      ...(input.narration ? { narration: input.narration } : {}),
+      ...(input.characterAssetIds ? { characterAssetIds: input.characterAssetIds } : {}),
+      ...(input.sceneAssetId ? { sceneAssetId: input.sceneAssetId } : {}),
+      ...(input.propAssetIds ? { propAssetIds: input.propAssetIds } : {}),
+      ...(input.shotPrompt ? { shotPrompt: input.shotPrompt } : {}),
+    }
+    group.segments.push(segment)
+    this.writeShotGroups(db, projectId, groups)
+    writeDb(db)
+    return { shotGroups: groups }
+  },
+
+  /** 更新分镜片段 */
+  async updateShotSegment(
+    projectId: string,
+    groupId: string,
+    segmentId: string,
+    patch: Partial<Omit<ShotSegment, 'id'>>,
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    const segment = group?.segments.find((item) => item.id === segmentId)
+    if (segment) {
+      Object.assign(segment, patch)
+      this.writeShotGroups(db, projectId, groups)
+      writeDb(db)
+    }
+    return { shotGroups: groups }
+  },
+
+  /** 删除分镜片段 */
+  async deleteShotSegment(
+    projectId: string,
+    groupId: string,
+    segmentId: string,
+  ): Promise<{ shotGroups: ShotGroup[] }> {
+    const db = readDb()
+    const groups = this.readShotGroups(db, projectId)
+    const group = groups.find((item) => item.id === groupId)
+    if (group) {
+      group.segments = group.segments.filter((item) => item.id !== segmentId)
+      // 重排镜号
+      group.segments.forEach((seg, idx) => (seg.index = idx + 1))
+      this.writeShotGroups(db, projectId, groups)
+      writeDb(db)
+    }
+    return { shotGroups: groups }
   },
 
   async createTextNode(input: {
