@@ -14,10 +14,9 @@ import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
-import { CanvasFilmPanel } from './CanvasFilmPanel'
+import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
-import { readFilmMetadata } from './canvasFilmTypes'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
 import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.api'
 import { useApp } from '../../AppContext'
@@ -495,6 +494,15 @@ export function CanvasWorkspaceView({
     refresh,
     applyTemplate,
     updateProjectMetadata,
+    createFilmAsset,
+    updateFilmAsset,
+    deleteFilmAsset,
+    createShotGroup,
+    updateShotGroup,
+    deleteShotGroup,
+    createShotSegment,
+    updateShotSegment,
+    deleteShotSegment,
   } = useCanvasWorkspace(projectId)
   // 工作台 UI 状态
   const {
@@ -508,6 +516,7 @@ export function CanvasWorkspaceView({
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [historyOpen, setHistoryOpen] = useState(false)
   const [templateOpen, setTemplateOpen] = useState(false)
+  const [filmCenterOpen, setFilmCenterOpen] = useState(false)
   const [activeTool, setActiveTool] = useState<CanvasTool>('select')
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
     null,
@@ -1366,13 +1375,6 @@ export function CanvasWorkspaceView({
                 >
                   资产管理
                 </button>
-                <button
-                  type="button"
-                  className={`canvas-left-workbench-tab${leftPanelTab === 'film' ? ' active' : ''}`}
-                  onClick={() => setLeftPanelTab('film')}
-                >
-                  影视
-                </button>
               </>
             )}
             <Tooltip title={leftPanelCollapsed ? '展开工作台' : '收起工作台'}>
@@ -1427,12 +1429,6 @@ export function CanvasWorkspaceView({
                       await deleteNodes(nodeIds)
                     }
                   }}
-                />
-              )}
-              {leftPanelTab === 'film' && (
-                <CanvasFilmPanel
-                  film={readFilmMetadata(snapshot.project.metadata)}
-                  onSaveFilm={(film) => void updateProjectMetadata({ film })}
                 />
               )}
             </div>
@@ -1501,6 +1497,7 @@ export function CanvasWorkspaceView({
           onToolChange={handleToolChange}
           onAddNodeItem={handleAddNodeItem}
           onOpenAiComposer={() => handleOpenInlineAi()}
+          onOpenFilmCenter={() => setFilmCenterOpen(true)}
           onFitView={handleFitView}
           onResetZoom={handleResetZoom}
           onToggleGrid={handleToggleGrid}
@@ -1630,6 +1627,31 @@ export function CanvasWorkspaceView({
       >
         <CanvasTemplatePanel onApply={(template) => void handleApplyTemplate(template)} />
       </Drawer>
+      <CanvasFilmAssetCenter
+        open={filmCenterOpen}
+        onClose={() => setFilmCenterOpen(false)}
+        snapshot={snapshot}
+        handlers={{
+          createFilmAsset,
+          updateFilmAsset,
+          deleteFilmAsset,
+          onOptimizeAsset: (asset) => {
+            // AI 优化：用 text_rewrite 触发平台 agent 优化资产文本
+            void handleCreateTask({
+              operation: 'text_rewrite',
+              prompt: asset.contentText ?? asset.title ?? '请优化以下内容，使其更专业、更精炼。',
+            })
+            message.info('已发起 AI 优化任务，结果将生成在画布上')
+          },
+          onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
+          createShotGroup,
+          updateShotGroup,
+          deleteShotGroup,
+          createShotSegment,
+          updateShotSegment,
+          deleteShotSegment,
+        }}
+      />
       <CanvasNodeEditModal
         node={editingNode}
         open={Boolean(editingNode)}

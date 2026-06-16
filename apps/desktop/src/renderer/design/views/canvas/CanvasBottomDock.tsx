@@ -20,6 +20,7 @@ export function CanvasBottomDock({
   onToolChange,
   onAddNodeItem,
   onOpenAiComposer,
+  onOpenFilmCenter,
   onFitView,
   onResetZoom,
   onToggleGrid,
@@ -31,6 +32,7 @@ export function CanvasBottomDock({
   onToolChange: (tool: CanvasTool) => void
   onAddNodeItem: (item: AddNodeMenuItem) => void
   onOpenAiComposer: () => void
+  onOpenFilmCenter: () => void
   onFitView: () => void
   onResetZoom: () => void
   onToggleGrid: () => void
@@ -127,6 +129,15 @@ export function CanvasBottomDock({
               icon={<Icons.Sparkles size={15} />}
               aria-label="AI 操作"
               onClick={onOpenAiComposer}
+            />
+          </Tooltip>
+          <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Layers size={15} />}
+              aria-label="项目资产中心"
+              onClick={onOpenFilmCenter}
             />
           </Tooltip>
         </div>
