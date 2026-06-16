@@ -48,6 +48,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     : node.title ?? displayType
   const locked = Boolean(node.locked)
   const isGroup = node.type === 'group'
+  const isTask = node.type === 'task'
   const isGroupedChild = Boolean(node.parentNodeId)
   const hasLineage = Boolean(lineage && (lineage.incoming > 0 || lineage.outgoing > 0))
   const imageSrc = node.data.thumbnailUrl ?? node.data.url
@@ -58,10 +59,20 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
   const menu = {
     className: 'canvas-node-context-menu',
     items: [
+      ...(isTask
+        ? [
+            // 任务节点专用菜单（文档 §7.6）：基于输入重新运行 / AI 操作
+            { type: 'divider' as const },
+            { key: 'rerun', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> 基于输入重新运行</span>), onClick: () => actions.openAiComposer(node.id) },
+            { type: 'divider' as const },
+          ]
+        : []),
       { key: 'duplicate', label: (<span className="canvas-menu-item"><Icons.Copy size={14} /> 复制节点</span>), onClick: () => actions.duplicateNode(node.id) },
       { key: 'edit', label: (<span className="canvas-menu-item"><Icons.Edit size={14} /> 编辑节点</span>), onClick: () => actions.editNode(node.id) },
-      { key: 'ai', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> AI 操作</span>), onClick: () => actions.openAiComposer(node.id) },
-      { key: 'group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 创建组</span>), onClick: () => actions.createGroupFromSelection() },
+      ...(isTask
+        ? []
+        : [{ key: 'ai', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> AI 操作</span>), onClick: () => actions.openAiComposer(node.id) }]),
+      ...(isTask ? [] : [{ key: 'group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 创建组</span>), onClick: () => actions.createGroupFromSelection() }]),
       ...(isGroup
         ? [
             { key: 'add-to-group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Plus size={14} /> 加入选中节点</span>), onClick: () => actions.addSelectionToGroup(node.id) },
