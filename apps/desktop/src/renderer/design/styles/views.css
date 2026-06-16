@@ -11497,6 +11497,7 @@ body.inspector-resizing {
   align-content: start;
 }
 .workflow-card {
+  position: relative;
   min-height: 174px;
   display: flex;
   flex-direction: column;
@@ -11506,6 +11507,7 @@ body.inspector-resizing {
   border-radius: var(--r-md);
   background: var(--bg);
   color: var(--text);
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow-xs);
@@ -11519,6 +11521,37 @@ body.inspector-resizing {
 .workflow-card.active {
   border-color: color-mix(in srgb, var(--primary) 44%, transparent);
   background: color-mix(in srgb, var(--primary-soft) 36%, var(--bg));
+}
+/* 删除按钮：默认隐藏，卡片悬停时显现；悬停按钮自身高亮。 */
+.workflow-card-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+}
+.workflow-card:hover .workflow-card-delete,
+.workflow-card:focus-within .workflow-card-delete {
+  opacity: 1;
+}
+.workflow-card-delete:hover {
+  color: var(--danger, #e5484d);
+  border-color: color-mix(in srgb, var(--danger, #e5484d) 40%, transparent);
+  background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent);
+}
+/* 卡片作为可聚焦 div（role=button）：补键盘聚焦环，原生 button 本自带。 */
+.workflow-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 .workflow-card-head,
 .workflow-card-meta,

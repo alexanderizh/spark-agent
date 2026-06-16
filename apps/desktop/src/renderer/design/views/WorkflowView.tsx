@@ -37,6 +37,7 @@ import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workfl
 import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import { Modal as AntdModal } from 'antd'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
@@ -332,10 +333,18 @@ function WorkflowViewInner() {
             {workflows.map((workflow) => {
               const visibleNodes = workflow.graph.nodes.slice(0, 4)
               return (
-                <button
+                <div
                   key={workflow.id}
                   className={`workflow-card ${workflow.id === activeId ? 'active' : ''}`}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => openWorkflow(draft?.id === workflow.id ? draft : workflow)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      openWorkflow(draft?.id === workflow.id ? draft : workflow)
+                    }
+                  }}
                 >
                   <span className="workflow-card-head">
                     <span className="workflow-card-icon">
@@ -371,7 +380,18 @@ function WorkflowViewInner() {
                       <span className="agents-empty-mini">暂无节点</span>
                     )}
                   </span>
-                </button>
+                  <button
+                    type="button"
+                    className="workflow-card-delete"
+                    title="删除工作流"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      confirmDeleteWorkflow(workflow.name, () => void performDelete(workflow.id))
+                    }}
+                  >
+                    <Icons.Trash size={13} />
+                  </button>
+                </div>
               )
             })}
           </div>
