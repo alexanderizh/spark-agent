@@ -5600,42 +5600,11 @@ body.inspector-resizing {
   text-transform: uppercase;
   color: var(--text-faint);
 }
-/* 仅给原生 input / textarea / select 兜底；lobe-ui (antd-based) 控件通过 :not 白名单
-   排除，让组件自身的 variant 样式接管。 */
-.field .control,
-.field input:not(.ant-input):not(.ant-select-selection-search-input),
-.field select,
-.field textarea:not(.ant-input) {
-  height: 32px;
-  padding: 0 10px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-}
-.field textarea:not(.ant-input) {
-  padding: 8px 10px;
-  min-height: 60px;
-  height: auto;
-  resize: vertical;
-}
-.field input:not(.ant-input):not(.ant-select-selection-search-input):focus,
-.field select:focus,
-.field textarea:not(.ant-input):focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.field .control {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.field .control .grow {
-  flex: 1;
-}
+/* .field 内的输入控件统一走 lobe-ui (antd-based)：antd 的 Input 给 <input> 加 .ant-input，
+   但 TextArea 的 <textarea> 不带该类，曾导致「:not(.ant-input)」白名单漏掉 textarea、
+   把原生兜底样式（height/padding/border）覆盖到 lobe-ui TextArea 上，表现为框样式异常。
+   因此这里不再对控件做视觉兜底 —— 让 lobe-ui 的 variant 样式接管；需要兜底的纯原生
+   控件应各自加 className，避免在通用 .field 上误伤。 */
 .path-picker {
   display: flex;
   gap: 8px;
@@ -11244,11 +11213,7 @@ body.inspector-resizing {
 .agent-field .ant-input,
 .agent-field .ant-input-affix-wrapper,
 .agent-field .ant-input-textarea,
-.agent-field .ant-select,
-.wf-inspector .field .ant-input,
-.wf-inspector .field .ant-input-affix-wrapper,
-.wf-inspector .field .ant-input-textarea,
-.wf-inspector .field .ant-select {
+.agent-field .ant-select {
   width: 100%;
   min-width: 0;
 }

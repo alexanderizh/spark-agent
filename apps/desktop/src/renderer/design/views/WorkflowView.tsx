@@ -728,9 +728,13 @@ function WorkflowInspector(props: InspectorProps) {
 }
 
 function InspectorField({ label, children }: { label: string; children: ReactNode }) {
+  // 不用 <label> 包 children：label 元素会拦截内部 click，
+  // 在 select / popover 等控件里会导致下拉"点不出来"。
+  // 复用 AgentsView 的 .agent-field 写法 —— lobe-ui (antd-based) 控件
+  // 自带 variant 样式，宽度由 .agent-field .ant-* 规则兜底为 100%。
   return (
-    <div className="field">
-      <label>{label}</label>
+    <div className="agent-field">
+      <span className="agent-field-label">{label}</span>
       {children}
     </div>
   )
