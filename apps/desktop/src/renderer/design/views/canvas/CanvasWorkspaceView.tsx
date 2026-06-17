@@ -493,6 +493,7 @@ export function CanvasWorkspaceView({
     deleteShotSegment,
     createOperationNode,
     retryOperationNode,
+    runOperationNode,
   } = useCanvasWorkspace(projectId)
   // 工作台 UI 状态
   const {
@@ -1527,7 +1528,7 @@ export function CanvasWorkspaceView({
           }}
         />
         {(() => {
-          const opNode = selectedNodes.find((n) => isOperationNode(n))
+          const opNode = selectedNodes.length === 1 ? selectedNodes.find((n) => isOperationNode(n)) : null
           if (!opNode) return null
           const opTask = opNode.taskId ? snapshot.tasks.find((t) => t.id === opNode.taskId) : null
           return (
@@ -1537,17 +1538,7 @@ export function CanvasWorkspaceView({
               {...(opTask ? { task: opTask } : {})}
               onClose={() => setSelectedNodeIds([])}
               onRun={(params) => {
-                void handleCreateTask({
-                  operation: (opNode.data.operation ?? opNode.type) as import('./canvas.types').CanvasOperationType,
-                  prompt: params.prompt,
-                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                  inputNodeIds: opNode.taskId
-                    ? snapshot.tasks.find((t) => t.id === opNode.taskId)?.inputNodeIds ?? []
-                    : snapshot.edges
-                        .filter((e) => e.targetNodeId === opNode.id && e.type === 'used_as_input')
-                        .map((e) => e.sourceNodeId),
-                })
+                void runOperationNode(opNode.id, params)
               }}
               onRetry={() => void retryOperationNode(opNode.id)}
             />

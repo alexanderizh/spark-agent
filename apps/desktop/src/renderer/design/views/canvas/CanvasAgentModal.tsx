@@ -205,6 +205,10 @@ export function CanvasAgentModal({
   // 重置（关闭弹窗后重新打开时重新初始化）
   useEffect(() => {
     if (!open) {
+      // 清理后台 session（避免残留）
+      if (sessionId) {
+        void window.spark.invoke("session:delete", { sessionId } as never).catch(() => {})
+      }
       initializedRef.current = false
       setSessionId(null)
       setWorkspaceId(null)

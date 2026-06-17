@@ -3201,8 +3201,51 @@ export const canvasApi = {
       ...(oldTask.manifestId ? { manifestId: oldTask.manifestId } : {}),
       ...(oldTask.modelId ? { modelId: oldTask.modelId } : {}),
     }
-    // 复用 createMediaTask 完整链路（它创建新 task 节点 + IPC + 产出 output）
-    return this.createMediaTask(projectId, request)
+    // 重试：绑定到原操作节点，不新建节点
+    return this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+  },
+
+  /**
+   * 运行操作节点：更新参数 + 调 IPC 运行，不新建节点。
+   * 适用于在编辑面板点「运行」——原操作节点关联的 task 真正执行。
+   */
+  async runOperationNode(
+    projectId: string,
+    nodeId: string,
+    params: {
+      prompt: string
+      negativePrompt?: string
+      modelParams?: Record<string, unknown>
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
+    if (!node) throw new Error('操作节点不存在')
+    // 取输入节点（used_as_input edge 的 source）
+    const inputNodeIds = db.edges
+      .filter((e) => e.targetNodeId === nodeId && e.type === 'used_as_input' && e.projectId === projectId)
+      .map((e) => e.sourceNodeId)
+    const inputNodes = db.nodes.filter(
+      (n) => inputNodeIds.includes(n.id) && n.projectId === projectId && !n.hidden,
+    )
+    const inputAssetIds = inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id))
+    // output 位置：节点右侧
+    const oldOutputs = db.nodes.filter((n) =>
+      db.edges.some((e) => e.sourceNodeId === nodeId && e.type === 'generated' && e.targetNodeId === n.id),
+    )
+    const baseX = oldOutputs.length > 0
+      ? Math.max(...oldOutputs.map((n) => n.x + n.width)) + 60
+      : node.x + node.width + 60
+    const request = {
+      operation: (node.data.operation ?? node.type) as CanvasOperationType,
+      prompt: params.prompt,
+      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+      inputNodeIds,
+      ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
+      outputPlacement: { x: baseX, y: node.y },
+      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+    }
+    return this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
   },
   async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
     const db = readDb()
@@ -3263,6 +3306,9 @@ export const canvasApi = {
     request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
       inputFiles?: CanvasMediaTaskInputFile[]
     },
+    options?: {
+      bindToNodeId?: string
+    },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const board = db.boards.find((item) => item.projectId === projectId)
@@ -3287,20 +3333,31 @@ export const canvasApi = {
       message: '调用平台 adapter 中…',
     }
     if (request.prompt != null) taskNodeData.prompt = request.prompt
-    const taskNode = createNodeBase({
-      projectId,
-      boardId: board.id,
-      // 类型化操作节点：type === operation（如 text_to_image）
-      type: request.operation as CanvasNodeType,
-      taskId,
-      title: operationLabel(request.operation),
-      x,
-      y,
-      width: 300,
-      height: 152,
-      data: taskNodeData,
-      at,
-    })
+    let taskNode: CanvasNode
+    const bindNode = options?.bindToNodeId
+      ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
+      : null
+    if (bindNode) {
+      bindNode.data = { ...bindNode.data, ...taskNodeData }
+      bindNode.taskId = taskId
+      bindNode.updatedAt = at
+      taskNode = bindNode
+    } else {
+      taskNode = createNodeBase({
+        projectId,
+        boardId: board.id,
+        type: request.operation as CanvasNodeType,
+        taskId,
+        title: operationLabel(request.operation),
+        x,
+        y,
+        width: 300,
+        height: 152,
+        data: taskNodeData,
+        at,
+      })
+      db.nodes.push(taskNode)
+    }
     const task: CanvasTask = {
       id: taskId,
       projectId,
@@ -3338,7 +3395,7 @@ export const canvasApi = {
         createdAt: at,
       }),
     )
-    db.nodes.push(taskNode)
+    if (!bindNode) db.nodes.push(taskNode)
     db.tasks.push(task)
     db.edges.push(...inputEdges)
     updateProjectCounts(db, projectId)

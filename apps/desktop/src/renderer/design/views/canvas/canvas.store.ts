@@ -499,6 +499,20 @@ export function useCanvasWorkspace(projectId: string) {
     },
     [projectId],
   )
+  const runOperationNode = useCallback(
+    async (
+      nodeId: string,
+      params: {
+        prompt: string
+        negativePrompt?: string
+        modelParams?: Record<string, unknown>
+      },
+    ) => {
+      setSnapshot(await canvasApi.runOperationNode(projectId, nodeId, params))
+    },
+    [projectId],
+  )
+
 
   return {
     snapshot,
@@ -552,6 +566,7 @@ export function useCanvasWorkspace(projectId: string) {
     // 操作节点
     createOperationNode,
     retryOperationNode,
+    runOperationNode,
   }
 }
 
