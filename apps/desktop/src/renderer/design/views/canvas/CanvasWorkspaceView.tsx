@@ -13,10 +13,13 @@ import { CanvasAssetsPanel, downloadAsset } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
+import { SaveToLibraryDialog } from './SaveToLibraryDialog'
 import { readFileAsDataUrl, readImageDimensions } from './canvas-safe-file'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
+import { CanvasOperationPanel } from './CanvasOperationPanel'
+import { isOperationNode } from './canvas.capabilities'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -481,12 +484,15 @@ export function CanvasWorkspaceView({
     createFilmAsset,
     updateFilmAsset,
     deleteFilmAsset,
+    getFilmAssetUsage,
     createShotGroup,
     updateShotGroup,
     deleteShotGroup,
     createShotSegment,
     updateShotSegment,
     deleteShotSegment,
+    createOperationNode,
+    retryOperationNode,
   } = useCanvasWorkspace(projectId)
   // 工作台 UI 状态
   const {
@@ -508,6 +514,11 @@ export function CanvasWorkspaceView({
   )
   const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
+  const [saveToLibraryNodeId, setSaveToLibraryNodeId] = useState<string | null>(null)
+  const saveToLibraryNode = useMemo(
+    () => (saveToLibraryNodeId ? snapshot?.nodes.find((n) => n.id === saveToLibraryNodeId) ?? null : null),
+    [saveToLibraryNodeId, snapshot],
+  )
   const [sidePanelTab, setSidePanelTab] = useState<'details' | 'project'>('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
@@ -1469,6 +1480,7 @@ export function CanvasWorkspaceView({
           onDissolveGroup={handleDissolveGroup}
           onOpenAiComposer={handleOpenInlineAi}
           onEditNode={handleEditNode}
+          onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
           onAddTextAtPosition={(position) => void addText(position)}
           onAddImageAtPosition={uploadFirstImage}
           onAddPromptAtPosition={(position) => void addText(position)}
@@ -1503,6 +1515,33 @@ export function CanvasWorkspaceView({
             setInlineAiOpen(false)
           }}
         />
+        {(() => {
+          const opNode = selectedNodes.find((n) => isOperationNode(n))
+          if (!opNode) return null
+          const opTask = opNode.taskId ? snapshot.tasks.find((t) => t.id === opNode.taskId) : null
+          return (
+            <CanvasOperationPanel
+              node={opNode}
+              snapshot={snapshot}
+              {...(opTask ? { task: opTask } : {})}
+              onClose={() => setSelectedNodeIds([])}
+              onRun={(params) => {
+                void handleCreateTask({
+                  operation: (opNode.data.operation ?? opNode.type) as import('./canvas.types').CanvasOperationType,
+                  prompt: params.prompt,
+                  ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                  ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                  inputNodeIds: opNode.taskId
+                    ? snapshot.tasks.find((t) => t.id === opNode.taskId)?.inputNodeIds ?? []
+                    : snapshot.edges
+                        .filter((e) => e.targetNodeId === opNode.id && e.type === 'used_as_input')
+                        .map((e) => e.sourceNodeId),
+                })
+              }}
+              onRetry={() => void retryOperationNode(opNode.id)}
+            />
+          )
+        })()}
         </div>
         <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
           <div
@@ -1622,6 +1661,7 @@ export function CanvasWorkspaceView({
           createFilmAsset,
           updateFilmAsset,
           deleteFilmAsset,
+          getFilmAssetUsage,
           onOptimizeAsset: (asset) => {
             // AI 优化：用 text_rewrite 触发平台 agent 优化资产文本
             void handleCreateTask({
@@ -1658,6 +1698,17 @@ export function CanvasWorkspaceView({
         style={{ display: 'none' }}
         onChange={(event) => void handleFileChange(event)}
       />
+      {snapshot && (
+        <SaveToLibraryDialog
+          open={Boolean(saveToLibraryNode)}
+          node={saveToLibraryNode}
+          snapshot={snapshot}
+          onClose={() => setSaveToLibraryNodeId(null)}
+          onSubmit={async (input) => {
+            await createFilmAsset(input)
+          }}
+        />
+      )}
       <Modal
         open={leaveOpen}
         title="画布有未保存的改动"
