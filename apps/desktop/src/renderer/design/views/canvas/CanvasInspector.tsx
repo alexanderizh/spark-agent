@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Button, Tag } from '@lobehub/ui'
-import { Descriptions, Empty, Input, InputNumber, Space } from 'antd'
+import { Descriptions, Empty, Input, Space } from 'antd'
 import { TextArea as LobeTextArea } from '@lobehub/ui'
 import type { CanvasAsset, CanvasEdge, CanvasNode, CanvasTask } from './canvas.types'
 
@@ -132,8 +132,6 @@ export function CanvasInspector({
         column={1}
         items={[
           { label: '标题', children: node.title ?? '-' },
-          { label: '位置', children: `${Math.round(node.x)}, ${Math.round(node.y)}` },
-          { label: '尺寸', children: `${Math.round(node.width)} x ${Math.round(node.height)}` },
           { label: '层级', children: String(node.zIndex) },
           { label: '锁定', children: node.locked ? '是' : '否' },
           { label: '资产', children: node.assetId ?? '-' },
@@ -185,18 +183,10 @@ function NodeLayoutEditor({
   onPatchNode: (node: CanvasNode, patch: Partial<CanvasNode>) => void
 }) {
   const [title, setTitle] = useState(node.title ?? '')
-  const [x, setX] = useState(Math.round(node.x))
-  const [y, setY] = useState(Math.round(node.y))
-  const [width, setWidth] = useState(Math.round(node.width))
-  const [height, setHeight] = useState(Math.round(node.height))
 
   const saveLayout = () => {
     onPatchNode(node, {
       title: title.trim().length > 0 ? title.trim() : null,
-      x: Number.isFinite(x) ? x : node.x,
-      y: Number.isFinite(y) ? y : node.y,
-      width: Math.max(80, Number.isFinite(width) ? width : node.width),
-      height: Math.max(60, Number.isFinite(height) ? height : node.height),
     })
   }
 
@@ -208,43 +198,11 @@ function NodeLayoutEditor({
           <span>标题</span>
           <Input size="small" value={title} onChange={(event) => setTitle(event.target.value)} />
         </label>
-        <NumberField label="X" value={x} onChange={setX} />
-        <NumberField label="Y" value={y} onChange={setY} />
-        <NumberField label="宽" value={width} min={80} onChange={setWidth} />
-        <NumberField label="高" value={height} min={60} onChange={setHeight} />
       </div>
       <Button size="small" type="primary" onClick={saveLayout}>
         保存属性
       </Button>
     </div>
-  )
-}
-
-function NumberField({
-  label,
-  value,
-  min,
-  onChange,
-}: {
-  label: string
-  value: number
-  min?: number
-  onChange: (value: number) => void
-}) {
-  return (
-    <label className="canvas-node-edit-field">
-      <span>{label}</span>
-      <InputNumber
-        size="small"
-        value={value}
-        step={1}
-        controls={false}
-        {...(min !== undefined ? { min } : {})}
-        onChange={(next) => {
-          if (typeof next === 'number') onChange(next)
-        }}
-      />
-    </label>
   )
 }
 

@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { canvasApi, isMediaOperation } from './canvas.api'
 import type {
+  CanvasBoard,
   CanvasNode,
   CanvasProject,
   CanvasProjectSettings,
   CanvasSnapshot,
+  CanvasLeftPanelTab,
+  CanvasLeftUtilityTab,
+  CanvasRightPanelTab,
   CreateCanvasTaskRequest,
 } from './canvas.types'
 import type { CanvasMediaTaskInputFile, CanvasMediaTaskStreamPayload } from '@spark/protocol'
@@ -45,11 +49,16 @@ export function useCanvasProjects() {
 export function useCanvasWorkspace(projectId: string) {
   const [snapshot, setSnapshot] = useState<CanvasSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
+  // 记录当前激活 board，refresh 时保留（不跳回默认 board）
+  const activeBoardIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    activeBoardIdRef.current = snapshot?.activeBoardId ?? snapshot?.board.id ?? null
+  }, [snapshot?.activeBoardId, snapshot?.board.id])
 
   const refresh = useCallback(async () => {
     setLoading(true)
     try {
-      setSnapshot(await canvasApi.openSnapshot(projectId))
+      setSnapshot(await canvasApi.openSnapshot(projectId, activeBoardIdRef.current))
     } finally {
       setLoading(false)
     }
@@ -110,6 +119,34 @@ export function useCanvasWorkspace(projectId: string) {
       })
       setSnapshot(await canvasApi.openSnapshot(projectId))
       return node
+    },
+    [projectId, snapshot],
+  )
+
+  /** 上传图片到项目资产库（不创建节点），返回新 assetId */
+  const uploadImageAsset = useCallback(
+    async (file: File): Promise<string | null> => {
+      const current = snapshot
+      if (!current) return null
+      const { readFileAsDataUrl, readImageDimensions } = await import('./canvas-safe-file')
+      const dataUrl = await readFileAsDataUrl(file)
+      const dimensions = await readImageDimensions(dataUrl)
+      const saved = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
+        storageScope: 'canvas',
+        ...(current.project.rootPath ? { projectRootPath: current.project.rootPath } : {}),
+      })
+      const asset = await canvasApi.createImageAsset({
+        projectId,
+        file,
+        filePath: saved.filePath,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      })
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+      return asset.id
     },
     [projectId, snapshot],
   )
@@ -238,6 +275,255 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  // ─── 多 board 操作（文档 §7.1）──────────────────────────────────────────
+  const createBoard = useCallback(
+    async (input?: { name?: string; templateId?: string | null }) => {
+      setSnapshot(await canvasApi.createBoard(projectId, input))
+    },
+    [projectId],
+  )
+
+  const renameBoard = useCallback(
+    async (boardId: string, name: string) => {
+      setSnapshot(await canvasApi.renameBoard(projectId, boardId, name))
+    },
+    [projectId],
+  )
+
+  const deleteBoard = useCallback(
+    async (boardId: string) => {
+      setSnapshot(await canvasApi.deleteBoard(projectId, boardId))
+    },
+    [projectId],
+  )
+
+  const duplicateBoard = useCallback(
+    async (boardId: string, name?: string) => {
+      setSnapshot(await canvasApi.duplicateBoard(projectId, boardId, name))
+    },
+    [projectId],
+  )
+
+  /** 切换激活 board：保存当前 viewport 后切换（文档 §7.1 注意点） */
+  const switchBoard = useCallback(
+    async (boardId: string, viewport?: CanvasBoard['viewport']) => {
+      const current = snapshot
+      // 先持久化当前 board 的 viewport
+      if (current && viewport) {
+        await canvasApi.updateViewport(projectId, viewport, current.board.id)
+      }
+      setSnapshot(await canvasApi.setActiveBoard(projectId, boardId))
+    },
+    [projectId, snapshot],
+  )
+
+  const reorderBoards = useCallback(
+    async (orderedBoardIds: string[]) => {
+      setSnapshot(await canvasApi.reorderBoards(projectId, orderedBoardIds))
+    },
+    [projectId],
+  )
+
+  const setBoardCover = useCallback(
+    async (boardId: string, coverAssetId: string | null) => {
+      setSnapshot(await canvasApi.setBoardCover(projectId, boardId, coverAssetId))
+    },
+    [projectId],
+  )
+
+  const setDefaultBoard = useCallback(
+    async (boardId: string) => {
+      setSnapshot(await canvasApi.setDefaultBoard(projectId, boardId))
+    },
+    [projectId],
+  )
+
+  const copyNodesToBoard = useCallback(
+    async (nodeIds: string[], targetBoardId: string) => {
+      setSnapshot(await canvasApi.copyNodesToBoard(projectId, nodeIds, targetBoardId))
+    },
+    [projectId],
+  )
+
+  // ─── 资产 → board（文档 §7.2）───────────────────────────────────────────
+  const insertAsset = useCallback(
+    async (input: { assetId: string; boardId: string; x: number; y: number }) => {
+      const node = await canvasApi.insertAssetToBoard({ projectId, ...input })
+      if (node) setSnapshot(await canvasApi.openSnapshot(projectId))
+      return node
+    },
+    [projectId],
+  )
+
+  /** 应用模板：在指定 board 的指定位置生成节点组合（文档 §7.8） */
+  const applyTemplate = useCallback(
+    async (input: {
+      boardId: string
+      originX: number
+      originY: number
+      nodes: Array<{
+        ref: string
+        type: import('./canvas.types').CanvasNodeType
+        title?: string
+        x: number
+        y: number
+        width?: number
+        height?: number
+        data?: Partial<import('./canvas.types').CanvasNodeData>
+      }>
+      edges?: Array<{
+        from: string
+        to: string
+        type?: 'used_as_input' | 'generated' | 'references'
+      }>
+    }) => {
+      setSnapshot(await canvasApi.applyTemplate({ projectId, ...input }))
+    },
+    [projectId],
+  )
+
+  /** 局部更新项目扩展元数据（影视等行业模式，文档 §7.10） */
+  const updateProjectMetadata = useCallback(
+    async (patch: Record<string, unknown>) => {
+      setSnapshot(await canvasApi.updateProjectMetadata(projectId, patch))
+    },
+    [projectId],
+  )
+
+  // ─── 影视公用资产（文档 §7.10）─────────────────────────────────────────
+  const createFilmAsset = useCallback(
+    async (input: import('./canvasFilmAssets').CreateFilmAssetInput) => {
+      const asset = await canvasApi.createFilmAsset(projectId, input)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+      return asset
+    },
+    [projectId],
+  )
+
+  const updateFilmAsset = useCallback(
+    async (
+      assetId: string,
+      patch: Parameters<typeof canvasApi.updateFilmAsset>[2],
+    ) => {
+      setSnapshot(await canvasApi.updateFilmAsset(projectId, assetId, patch))
+    },
+    [projectId],
+  )
+
+  const deleteFilmAsset = useCallback(
+    async (assetId: string) => {
+      setSnapshot(await canvasApi.deleteFilmAsset(projectId, assetId))
+    },
+    [projectId],
+  )
+
+  /** 查询资源被谁引用（分镜片段 + 画布节点） */
+  const getFilmAssetUsage = useCallback(
+    (assetId: string) => canvasApi.getFilmAssetUsage(projectId, assetId),
+    [projectId],
+  )
+
+  // ─── 分镜分组（存 project.metadata.film.shotGroups）─────────────────────
+  const createShotGroup = useCallback(
+    async (input: { name: string; description?: string }) => {
+      const result = await canvasApi.createShotGroup(projectId, input)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+      const created = result.shotGroups[result.shotGroups.length - 1]
+      if (!created) throw new Error('分镜分组创建失败')
+      return created
+    },
+    [projectId],
+  )
+
+  const updateShotGroup = useCallback(
+    async (groupId: string, patch: { name?: string; description?: string }) => {
+      await canvasApi.updateShotGroup(projectId, groupId, patch)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const deleteShotGroup = useCallback(
+    async (groupId: string) => {
+      await canvasApi.deleteShotGroup(projectId, groupId)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const createShotSegment = useCallback(
+    async (
+      groupId: string,
+      input: Partial<import('./canvasFilmAssets').ShotSegment> & { title: string },
+    ) => {
+      await canvasApi.createShotSegment(projectId, groupId, input)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const updateShotSegment = useCallback(
+    async (
+      groupId: string,
+      segmentId: string,
+      patch: Partial<import('./canvasFilmAssets').ShotSegment>,
+    ) => {
+      await canvasApi.updateShotSegment(projectId, groupId, segmentId, patch)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  const deleteShotSegment = useCallback(
+    async (groupId: string, segmentId: string) => {
+      await canvasApi.deleteShotSegment(projectId, groupId, segmentId)
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+    },
+    [projectId],
+  )
+
+  // ─── 操作节点（文档：AI 操作按类型分拆）─────────────────────────────────
+  const createOperationNode = useCallback(
+    async (input: {
+      boardId: string
+      operation: import('./canvas.types').CanvasOperationType
+      inputNodeIds: string[]
+      x: number
+      y: number
+      title?: string
+    }) => {
+      setSnapshot(await canvasApi.createOperationNode({ projectId, ...input }))
+    },
+    [projectId],
+  )
+
+  const retryOperationNode = useCallback(
+    async (nodeId: string) => {
+      setSnapshot(await canvasApi.retryOperationNode(projectId, nodeId))
+    },
+    [projectId],
+  )
+  const runOperationNode = useCallback(
+    async (
+      nodeId: string,
+      params: {
+        prompt: string
+        negativePrompt?: string
+        inputNodeIds?: string[]
+        inputAssetIds?: string[]
+        inputFiles?: CanvasMediaTaskInputFile[]
+        providerProfileId?: string
+        manifestId?: string
+        modelId?: string
+        modelParams?: Record<string, unknown>
+      },
+    ) => {
+      setSnapshot(await canvasApi.runOperationNode(projectId, nodeId, params))
+    },
+    [projectId],
+  )
+
+
   return {
     snapshot,
     loading,
@@ -246,6 +532,7 @@ export function useCanvasWorkspace(projectId: string) {
     connectNodes,
     createTextNode,
     createImageNode,
+    uploadImageAsset,
     createGroupNode,
     dissolveGroupNode,
     addNodesToGroup,
@@ -258,5 +545,78 @@ export function useCanvasWorkspace(projectId: string) {
     createTask,
     completeDemoTask,
     cancelTask,
+    // board 管理
+    createBoard,
+    renameBoard,
+    deleteBoard,
+    duplicateBoard,
+    switchBoard,
+    reorderBoards,
+    setBoardCover,
+    setDefaultBoard,
+    copyNodesToBoard,
+    // 资产
+    insertAsset,
+    // 模板
+    applyTemplate,
+    // 项目元数据（影视等行业模式）
+    updateProjectMetadata,
+    // 影视公用资产
+    createFilmAsset,
+    updateFilmAsset,
+    deleteFilmAsset,
+    getFilmAssetUsage,
+    // 分镜分组
+    createShotGroup,
+    updateShotGroup,
+    deleteShotGroup,
+    createShotSegment,
+    updateShotSegment,
+    deleteShotSegment,
+    // 操作节点
+    createOperationNode,
+    retryOperationNode,
+    runOperationNode,
+  }
+}
+
+/**
+ * 画布工作区 UI 状态（文档 §8.5）：左侧主 tab、左下工具 tab、右侧 tab、
+ * 底部栏折叠、资产选择/视图模式。这些是纯 UI 状态，不进持久化热存储
+ * （需要会话恢复时再写 snapshot.uiState）。
+ */
+export function useCanvasWorkspaceUi(initial?: {
+  leftPanelTab?: CanvasLeftPanelTab
+  rightPanelTab?: CanvasRightPanelTab
+}) {
+  const [leftPanelTab, setLeftPanelTab] = useState<CanvasLeftPanelTab>(
+    initial?.leftPanelTab ?? 'boards',
+  )
+  const [leftUtilityTab, setLeftUtilityTab] = useState<CanvasLeftUtilityTab>('templates')
+  const [rightPanelTab, setRightPanelTab] = useState<CanvasRightPanelTab>(
+    initial?.rightPanelTab ?? 'inspector',
+  )
+  const [bottomToolbarCollapsed, setBottomToolbarCollapsed] = useState(false)
+  const [assetViewMode, setAssetViewMode] = useState<'list' | 'grid'>('list')
+  const [selectedAssetIds, setSelectedAssetIds] = useState<string[]>([])
+
+  // 左工作台整体折叠（小屏场景）
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false)
+
+  return {
+    leftPanelTab,
+    setLeftPanelTab,
+    leftUtilityTab,
+    setLeftUtilityTab,
+    rightPanelTab,
+    setRightPanelTab,
+    bottomToolbarCollapsed,
+    setBottomToolbarCollapsed,
+    assetViewMode,
+    setAssetViewMode,
+    selectedAssetIds,
+    setSelectedAssetIds,
+    leftPanelCollapsed,
+    setLeftPanelCollapsed,
   }
 }

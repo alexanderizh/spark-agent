@@ -81,8 +81,8 @@ html[data-theme="light"],
   --diff-del-bg: rgba(239, 68, 68, 0.07);
   --diff-del-fg: #b91c1c;
 
-  --term-bg: #0b0c0e;
-  --term-fg: #d4d4d8;
+  --term-bg: #ebe9e3;
+  --term-fg: #24211d;
 }
 
 /* ---------- THEME: DARK — also on html for Arco popups outside .app ---------- */
@@ -907,7 +907,7 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
 .app.sidebar-hidden .transparent-header {
   margin-left: 0;
   padding-left: 20px;
-  padding-top: 16px;
+  padding-top: 6px;
   height: 52px;
 }
 
@@ -1059,6 +1059,13 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   outline: none;
   box-shadow: 0 0 0 3px var(--primary-soft);
 }
+.icon-btn:disabled,
+.icon-btn[disabled] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.icon-btn:disabled:hover,
+.icon-btn[disabled]:hover { background: transparent; color: var(--text-muted); }
 .icon-btn svg { width: 16px; height: 16px; }
 
 /* Search input */

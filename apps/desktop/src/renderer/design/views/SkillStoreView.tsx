@@ -10,7 +10,7 @@ import type { ReactNode } from 'react'
 import { Spin, Switch } from 'antd'
 import type { LocalSkillCandidate, SkillDetailInfo, SkillItem } from '@spark/protocol'
 import { Icons } from '../Icons'
-import { Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
+import { ActionIcon, Button, Drawer, Empty, Input, SearchBar, Select, Tag, TextArea } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { useApp } from '../AppContext'
 import {
@@ -45,15 +45,6 @@ export function SkillStoreView() {
         <MacWindowDragHeader />
         {/* ── Tab bar ── */}
         <div className="store-tabbar">
-          <div className="flex items-center">
-            <button
-              className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
-              onClick={triggerRefresh}
-              title="刷新 (Ctrl+R)"
-            >
-              <Icons.Refresh size={14} />
-            </button>
-          </div>
           <button
             className={`store-tab ${activeTab === 'installed' ? 'active' : ''}`}
             onClick={() => setActiveTab('installed')}
@@ -68,6 +59,15 @@ export function SkillStoreView() {
             <Icons.Plus size={13} />
             创建
           </button>
+          <div className="flex items-center store-tabbar-refresh">
+            <ActionIcon
+              icon={Icons.Refresh}
+              size="small"
+              variant="borderless"
+              onClick={triggerRefresh}
+              title="刷新 (Ctrl+R)"
+            />
+          </div>
         </div>
 
         {/* ── Tab content ── */}

@@ -1,0 +1,190 @@
+import { useState } from 'react'
+import { Button, Tooltip } from '@lobehub/ui'
+import { Icons } from '../../Icons'
+import { CanvasAddNodeMenu, useAddNodeMenuItems, type AddNodeMenuItem } from './CanvasAddNodeMenu'
+import type { CanvasTool } from './CanvasToolbar'
+
+/**
+ * 底部悬浮工具栏（文档 §7.5）。
+ *
+ * 把高频创作动作从顶部按钮条迁到底部悬浮区，按组组织：
+ *   - 工具：选择 / 平移
+ *   - 添加：文本 / 图片 / 组 + 节点工厂（更多类型）
+ *   - AI：快速发起常用 AI 操作
+ *   - 视图：适配屏幕 / 回到中心 / 网格开关
+ *
+ * 必须可折叠（文档 §7.5 注意点），避免遮挡内容。
+ */
+export function CanvasBottomDock({
+  activeTool,
+  onToolChange,
+  onAddNodeItem,
+  onOpenAddMenu,
+  onOpenAiComposer,
+  onOpenFilmCenter,
+  onOpenAgent,
+  onToggleGrid,
+  gridVisible,
+  collapsed,
+  onToggleCollapsed,
+}: {
+  activeTool: CanvasTool
+  onToolChange: (tool: CanvasTool) => void
+  onAddNodeItem: (item: AddNodeMenuItem) => void
+  onOpenAddMenu: () => void
+  onOpenAiComposer: () => void
+  onOpenFilmCenter: () => void
+  onOpenAgent: () => void
+  onToggleGrid: () => void
+  gridVisible: boolean
+  collapsed: boolean
+  onToggleCollapsed: () => void
+}) {
+  const items = useAddNodeMenuItems()
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const contentItems = items.filter((item) => item.category === 'content')
+  const openAddMenu = () => {
+    onOpenAddMenu()
+    setAddMenuOpen(true)
+  }
+  const closeAddMenuAndRun = (action: () => void) => {
+    setAddMenuOpen(false)
+    action()
+  }
+
+  if (collapsed) {
+    return (
+      <div className="canvas-bottom-dock canvas-bottom-dock-collapsed">
+        <Tooltip title="展开工具栏">
+          <Button
+            size="small"
+            type="text"
+            icon={<Icons.ChevronDown size={15} />}
+            onClick={onToggleCollapsed}
+          />
+        </Tooltip>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {addMenuOpen && (
+        <CanvasAddNodeMenu
+          items={items}
+          onSelect={onAddNodeItem}
+          onClose={() => setAddMenuOpen(false)}
+        />
+      )}
+      <div className="canvas-bottom-dock">
+        <div className="canvas-bottom-dock-group">
+          <Tooltip title="选择 · Tab 切换" placement="top">
+            <Button
+              size="small"
+              type="text"
+              className={activeTool === 'select' ? 'canvas-dock-tool-active' : ''}
+              icon={<Icons.MousePointer size={15} />}
+              aria-label="选择"
+              onClick={() => onToolChange('select')}
+            />
+          </Tooltip>
+          <Tooltip title="平移 · Tab 切换" placement="top">
+            <Button
+              size="small"
+              type="text"
+              className={activeTool === 'pan' ? 'canvas-dock-tool-active' : ''}
+              icon={<Icons.Hand size={15} />}
+              aria-label="平移"
+              onClick={() => onToolChange('pan')}
+            />
+          </Tooltip>
+        </div>
+
+        <div className="canvas-bottom-dock-divider" />
+
+        <div className="canvas-bottom-dock-group">
+          {contentItems
+            .filter((item) => item.id === 'content:text' || item.id === 'content:image' || item.id === 'content:group')
+            .map((item) => (
+              <Tooltip key={item.id} title={item.label} placement="top">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={item.icon}
+                  aria-label={item.label}
+                  onClick={() => closeAddMenuAndRun(() => onAddNodeItem(item))}
+                />
+              </Tooltip>
+            ))}
+          <Tooltip title="更多节点类型" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Plus size={15} />}
+              aria-label="节点工厂"
+              onClick={openAddMenu}
+            />
+          </Tooltip>
+        </div>
+
+        <div className="canvas-bottom-dock-divider" />
+
+        <div className="canvas-bottom-dock-group">
+          <Tooltip title="AI 操作" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Sparkles size={15} />}
+              aria-label="AI 操作"
+              onClick={() => closeAddMenuAndRun(onOpenAiComposer)}
+            />
+          </Tooltip>
+          <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Box size={15} />}
+              aria-label="项目资产中心"
+              onClick={() => closeAddMenuAndRun(onOpenFilmCenter)}
+            />
+          </Tooltip>
+          <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Bot size={15} />}
+              aria-label="画布 Agent 助手"
+              onClick={() => closeAddMenuAndRun(onOpenAgent)}
+            />
+          </Tooltip>
+        </div>
+
+        <div className="canvas-bottom-dock-divider" />
+
+        <div className="canvas-bottom-dock-group">
+          <Tooltip title={gridVisible ? '隐藏网格' : '显示网格'} placement="top">
+            <Button
+              size="small"
+              type={gridVisible ? 'primary' : 'text'}
+              icon={<Icons.Grid size={15} />}
+              onClick={onToggleGrid}
+            />
+          </Tooltip>
+          <Tooltip title="撤销" placement="top">
+            <Button size="small" type="text" icon={<Icons.RotateCcw size={15} />} disabled />
+          </Tooltip>
+        </div>
+
+        <div className="canvas-bottom-dock-spacer" />
+        <Tooltip title="收起工具栏" placement="top">
+          <Button
+            size="small"
+            type="text"
+            icon={<Icons.ChevronDown size={15} />}
+            onClick={onToggleCollapsed}
+          />
+        </Tooltip>
+      </div>
+    </>
+  )
+}

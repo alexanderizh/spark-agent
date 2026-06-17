@@ -37,6 +37,7 @@ import { graphToReactFlow, reactFlowToGraph, type SparkFlowNode } from './workfl
 import { SparkNode } from './workflow/SparkNode'
 import { NODE_KIND_META, NODE_KIND_ORDER, getNodeKindMeta } from './workflow/node-kinds'
 import { Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import { Modal as AntdModal } from 'antd'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 
 const NODE_TYPES: NodeTypes = { spark: SparkNode }
@@ -53,6 +54,18 @@ function deferEffect(task: () => void | Promise<void>): () => void {
 function createWorkflowNodeId(kind: WorkflowNodeKind): string {
   workflowNodeSequence = (workflowNodeSequence + 1) % Number.MAX_SAFE_INTEGER
   return `${kind}-${workflowNodeSequence.toString(36)}`
+}
+
+/** 工作流删除二次确认弹窗 —— 列表页与详情页共用。 */
+function confirmDeleteWorkflow(name: string, onOk: () => void) {
+  AntdModal.confirm({
+    title: '删除工作流？',
+    content: `确认删除工作流「${name}」？该操作无法撤销，其下的节点编排将一并移除。`,
+    okText: '删除',
+    cancelText: '取消',
+    okButtonProps: { danger: true },
+    onOk,
+  })
 }
 
 export function WorkflowView() {
@@ -233,19 +246,28 @@ function WorkflowViewInner() {
     await refresh()
   }
 
+  const performDelete = useCallback(
+    async (id: string) => {
+      const res = await deleteWorkflow({ id })
+      if (res.deleted) {
+        toast.success('工作流已删除')
+        if (activeIdRef.current === id) {
+          activeIdRef.current = null
+          screenRef.current = 'list'
+          setScreen('list')
+          setActiveId(null)
+          loadWorkflowIntoCanvas(null)
+        }
+        setWorkflows((prev) => prev.filter((item) => item.id !== id))
+        await refresh()
+      }
+    },
+    [deleteWorkflow, loadWorkflowIntoCanvas, refresh],
+  )
+
   const removeWorkflow = async () => {
     if (draft == null) return
-    const res = await deleteWorkflow({ id: draft.id })
-    if (res.deleted) {
-      toast.success('工作流已删除')
-      activeIdRef.current = null
-      screenRef.current = 'list'
-      setWorkflows((prev) => prev.filter((item) => item.id !== draft.id))
-      setActiveId(null)
-      setScreen('list')
-      loadWorkflowIntoCanvas(null)
-      await refresh()
-    }
+    confirmDeleteWorkflow(draft.name, () => void performDelete(draft.id))
   }
 
   const addNode = (kind: WorkflowNodeKind) => {
@@ -311,10 +333,18 @@ function WorkflowViewInner() {
             {workflows.map((workflow) => {
               const visibleNodes = workflow.graph.nodes.slice(0, 4)
               return (
-                <button
+                <div
                   key={workflow.id}
                   className={`workflow-card ${workflow.id === activeId ? 'active' : ''}`}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => openWorkflow(draft?.id === workflow.id ? draft : workflow)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      openWorkflow(draft?.id === workflow.id ? draft : workflow)
+                    }
+                  }}
                 >
                   <span className="workflow-card-head">
                     <span className="workflow-card-icon">
@@ -350,7 +380,18 @@ function WorkflowViewInner() {
                       <span className="agents-empty-mini">暂无节点</span>
                     )}
                   </span>
-                </button>
+                  <button
+                    type="button"
+                    className="workflow-card-delete"
+                    title="删除工作流"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      confirmDeleteWorkflow(workflow.name, () => void performDelete(workflow.id))
+                    }}
+                  >
+                    <Icons.Trash size={13} />
+                  </button>
+                </div>
               )
             })}
           </div>
@@ -728,9 +769,13 @@ function WorkflowInspector(props: InspectorProps) {
 }
 
 function InspectorField({ label, children }: { label: string; children: ReactNode }) {
+  // 不用 <label> 包 children：label 元素会拦截内部 click，
+  // 在 select / popover 等控件里会导致下拉"点不出来"。
+  // 复用 AgentsView 的 .agent-field 写法 —— lobe-ui (antd-based) 控件
+  // 自带 variant 样式，宽度由 .agent-field .ant-* 规则兜底为 100%。
   return (
-    <div className="field">
-      <label>{label}</label>
+    <div className="agent-field">
+      <span className="agent-field-label">{label}</span>
       {children}
     </div>
   )

@@ -987,7 +987,7 @@ body.sidebar-resizing {
 .chat-main-active {
   align-items: stretch;
   justify-content: flex-start;
-  padding-bottom: 24px;
+  padding-bottom: 8px;
 }
 
 .chat-tabbar {
@@ -2405,8 +2405,8 @@ body.sidebar-resizing {
 .composer-inner > .composer-param-bar {
   position: relative;
   z-index: auto;
-  margin-top: -16px;
-  padding: 22px 12px 4px;
+  margin-top: -10px;
+  padding: 16px 12px 0px;
   min-height: 40px;
   border: none;
   box-shadow: none;
@@ -3194,7 +3194,8 @@ body.sidebar-resizing {
 .composer-submit-row {
   position: absolute;
   right: 12px;
-  bottom: 10px;
+  bottom: 0px;
+  padding-bottom: 6px;
   z-index: 2;
   display: inline-flex;
   align-items: center;
@@ -3202,6 +3203,8 @@ body.sidebar-resizing {
   gap: 6px;
   max-width: calc(100% - 24px);
   min-width: 0;
+  background: var(--panel);
+  width: 100%;
 }
 .composer-submit-picks {
   display: inline-flex;
@@ -3221,7 +3224,7 @@ body.sidebar-resizing {
 }
 .composer-v2.has-workspace-picks textarea {
   padding-right: 70px;
-  padding-bottom: 84px;
+  padding-bottom: 54px;
 }
 .composer-send-round {
   display: inline-flex;
@@ -4325,6 +4328,11 @@ body.inspector-resizing {
 }
 .config-panel-header .chev-open {
   transform: rotate(90deg);
+}
+/* 折叠态（chev 未展开）：去掉 header 底部间距，与其他模块 header 平齐；
+   展开态保持原 10px 间距。 */
+.config-panel-header:has(.chev:not(.chev-open)) {
+  margin-bottom: 0;
 }
 .inspector-section h4 .link {
   margin-left: auto;
@@ -5600,42 +5608,11 @@ body.inspector-resizing {
   text-transform: uppercase;
   color: var(--text-faint);
 }
-/* 仅给原生 input / textarea / select 兜底；lobe-ui (antd-based) 控件通过 :not 白名单
-   排除，让组件自身的 variant 样式接管。 */
-.field .control,
-.field input:not(.ant-input):not(.ant-select-selection-search-input),
-.field select,
-.field textarea:not(.ant-input) {
-  height: 32px;
-  padding: 0 10px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  color: var(--text);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  outline: none;
-}
-.field textarea:not(.ant-input) {
-  padding: 8px 10px;
-  min-height: 60px;
-  height: auto;
-  resize: vertical;
-}
-.field input:not(.ant-input):not(.ant-select-selection-search-input):focus,
-.field select:focus,
-.field textarea:not(.ant-input):focus {
-  border-color: var(--primary);
-  box-shadow: 0 0 0 3px var(--primary-soft);
-}
-.field .control {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.field .control .grow {
-  flex: 1;
-}
+/* .field 内的输入控件统一走 lobe-ui (antd-based)：antd 的 Input 给 <input> 加 .ant-input，
+   但 TextArea 的 <textarea> 不带该类，曾导致「:not(.ant-input)」白名单漏掉 textarea、
+   把原生兜底样式（height/padding/border）覆盖到 lobe-ui TextArea 上，表现为框样式异常。
+   因此这里不再对控件做视觉兜底 —— 让 lobe-ui 的 variant 样式接管；需要兜底的纯原生
+   控件应各自加 className，避免在通用 .field 上误伤。 */
 .path-picker {
   display: flex;
   gap: 8px;
@@ -11025,7 +11002,7 @@ body.inspector-resizing {
   align-content: start;
 }
 .agents-card {
-  min-height: 180px;
+  min-height: 200px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -11093,11 +11070,12 @@ body.inspector-resizing {
   text-overflow: ellipsis;
 }
 .agents-card-desc {
-  min-height: 32px;
+  min-height: 20px;
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.5;
   overflow: hidden;
+  
 }
 .agents-card-meta {
   display: flex;
@@ -11244,11 +11222,7 @@ body.inspector-resizing {
 .agent-field .ant-input,
 .agent-field .ant-input-affix-wrapper,
 .agent-field .ant-input-textarea,
-.agent-field .ant-select,
-.wf-inspector .field .ant-input,
-.wf-inspector .field .ant-input-affix-wrapper,
-.wf-inspector .field .ant-input-textarea,
-.wf-inspector .field .ant-select {
+.agent-field .ant-select {
   width: 100%;
   min-width: 0;
 }
@@ -11532,6 +11506,7 @@ body.inspector-resizing {
   align-content: start;
 }
 .workflow-card {
+  position: relative;
   min-height: 174px;
   display: flex;
   flex-direction: column;
@@ -11541,6 +11516,7 @@ body.inspector-resizing {
   border-radius: var(--r-md);
   background: var(--bg);
   color: var(--text);
+  font-family: inherit;
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow-xs);
@@ -11554,6 +11530,37 @@ body.inspector-resizing {
 .workflow-card.active {
   border-color: color-mix(in srgb, var(--primary) 44%, transparent);
   background: color-mix(in srgb, var(--primary-soft) 36%, var(--bg));
+}
+/* 删除按钮：默认隐藏，卡片悬停时显现；悬停按钮自身高亮。 */
+.workflow-card-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--bg) 86%, transparent);
+  color: var(--text-muted);
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+}
+.workflow-card:hover .workflow-card-delete,
+.workflow-card:focus-within .workflow-card-delete {
+  opacity: 1;
+}
+.workflow-card-delete:hover {
+  color: var(--danger, #e5484d);
+  border-color: color-mix(in srgb, var(--danger, #e5484d) 40%, transparent);
+  background: color-mix(in srgb, var(--danger, #e5484d) 12%, transparent);
+}
+/* 卡片作为可聚焦 div（role=button）：补键盘聚焦环，原生 button 本自带。 */
+.workflow-card:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 .workflow-card-head,
 .workflow-card-meta,
@@ -13686,4 +13693,420 @@ body.inspector-resizing {
 }
 .mention-highlight-clickable:hover {
   background: var(--primary-soft);
+}
+
+/* ─── Built-in Terminal Panel — flex 布局，让 dock 出现时聊天区收缩、composer 不被覆盖 ───
+   chat-main-active 已经是 flex column；这里把 ChatStream / chat-stream-viewport 显式设为
+   flex:1 / min-height:0，让内置终端 dock（flex:0 0 auto，自身 less 中设置）正确挤占空间。
+   .chat-stream 本身仍是 height:100%，因为父级给了具体高度。
+*/
+.chat-main-active > .chat-stream-viewport,
+.chat-main-active > .chat-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.chat-main-active > .builtin-terminal-panel {
+  /* 由组件 .less 设置 flex:0 0 auto；这里保留占位以便后续微调 */
+}
+.xterm-scrollable-element{
+  background-color: transparent!important;
+}
+
+/* ============================================================
+   Agent editor — refactored layout
+   - Section header (基本信息 / 执行配置)
+   - Field label row with required asterisk + character counter + optional badge
+   - Helper text under the control
+   - Status toggle (Switch + inline label)
+   - Prompt editor with line numbers and 模板/优化/全屏 toolbar
+   - Side panel: 5 distinct cards (Skills / MCP / 规则 / Hook / 高级设置)
+   - All colors come from theme variables — auto-adapts to light/dark/density.
+   ============================================================ */
+
+/* Section header */
+.agent-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+.agent-section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text-strong);
+  line-height: 1.3;
+}
+.agent-section-desc {
+  margin: 0;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+.agent-section-divider {
+  height: 1px;
+  background: var(--divider);
+  margin: 24px 0 18px;
+}
+
+/* Field — refactored label row */
+.agent-field-label-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+.agent-field-label {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-weight: 500;
+}
+.agent-field-required {
+  color: var(--danger, #ef4444);
+  margin-left: 2px;
+  font-weight: 600;
+  line-height: 1;
+}
+.agent-field-counter {
+  margin-left: auto;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.agent-field-counter.over {
+  color: var(--danger, #ef4444);
+}
+.agent-field-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  line-height: 1.4;
+}
+.agent-field-hint {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  line-height: 1.5;
+  margin-top: 2px;
+}
+
+/* Soft badge used inside the field label (e.g. 推荐 next to 执行器) */
+.agent-badge-soft {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: var(--r-xs);
+  font-size: 10px;
+  font-weight: 600;
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  line-height: 1.4;
+}
+
+/* Basic info grid: avatar (left) | name | status / description wide */
+.agent-info-grid {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px 18px;
+  align-items: start;
+}
+.agent-info-avatar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  grid-row: span 2;
+}
+.agent-info-avatar .avatar-picker {
+  width: 100%;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 0;
+  border: none;
+  background: transparent;
+  gap: 0;
+}
+.agent-info-avatar .avatar-picker-preview {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-soft);
+  overflow: hidden;
+  margin: 0 auto;
+  box-shadow: var(--shadow-xs);
+  transition: box-shadow 0.12s ease, border-color 0.12s ease;
+}
+.agent-info-avatar .avatar-picker:hover .avatar-picker-preview {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.agent-info-avatar .avatar-picker-preview .spark-avatar-img,
+.agent-info-avatar .avatar-picker-preview .spark-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.agent-info-avatar .avatar-picker-main {
+  display: none;
+}
+.agent-info-avatar-hint {
+  text-align: center;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  line-height: 1.55;
+}
+
+/* Status switch row (status field + default agent field) */
+.agent-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.agent-status-text {
+  font-size: var(--font-sm);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* Execution config grid: 2 cols, prompt editor spans full width */
+.agent-form-grid-wide {
+  grid-column: 1 / -1;
+}
+
+/* Prompt editor — line numbers + monospace textarea + toolbar */
+.agent-prompt-editor {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--code-bg);
+  overflow: hidden;
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.agent-prompt-editor:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 50%, transparent);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.agent-prompt-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-soft) 70%, var(--panel));
+}
+.agent-prompt-toolbar-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+.agent-prompt-toolbar-title > span:first-child {
+  color: var(--text-strong);
+  font-size: var(--font-sm);
+  font-weight: 600;
+}
+.agent-prompt-toolbar-sub {
+  color: var(--text-faint);
+  font-size: var(--font-xs);
+  font-weight: 500;
+}
+.agent-prompt-toolbar-actions {
+  display: flex;
+  gap: 4px;
+}
+.agent-prompt-toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.agent-prompt-toolbar-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+  border-color: var(--border);
+}
+.agent-prompt-body {
+  display: flex;
+  min-height: 240px;
+  max-height: 520px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--code-fg);
+}
+.agent-prompt-gutter {
+  user-select: none;
+  flex-shrink: 0;
+  padding: 12px 8px 12px 12px;
+  text-align: right;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--bg-sunken) 70%, var(--code-bg));
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+  min-width: 38px;
+}
+.agent-prompt-line-no {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--text-faint);
+  opacity: 0.7;
+}
+.agent-prompt-textarea {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border: none;
+  outline: none;
+  resize: vertical;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+.agent-prompt-textarea::placeholder {
+  color: var(--text-faint);
+  opacity: 0.7;
+  white-space: pre-wrap;
+}
+
+/* Prompt editor — fullscreen overlay */
+.agent-prompt-editor.is-fullscreen {
+  position: fixed;
+  inset: 24px;
+  z-index: 200;
+  max-height: none;
+  height: calc(100vh - 48px);
+  box-shadow: var(--shadow-lg);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+}
+.agent-prompt-editor.is-fullscreen .agent-prompt-body {
+  max-height: none;
+  flex: 1;
+}
+
+/* Side panel cards (Skills / MCP / 规则 / Hook / 高级设置) */
+.agent-config-panel {
+  gap: 16px;
+  padding: 16px;
+}
+.agent-config-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--panel);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+.agent-config-section.is-interactive {
+  cursor: pointer;
+  user-select: none;
+}
+.agent-config-section.is-interactive:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.agent-config-section.is-interactive:focus-visible {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+.agent-config-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 20px;
+}
+.agent-config-title {
+  color: var(--text-strong);
+  font-size: var(--font-base);
+  font-weight: 650;
+}
+.agent-config-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+.agent-config-desc {
+  margin: 0;
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  line-height: 1.5;
+}
+.agent-config-footer {
+  display: flex;
+  justify-content: center;
+  padding-top: 4px;
+  border-top: 1px dashed var(--divider);
+  margin-top: 4px;
+}
+.agent-config-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--font-xs);
+  color: var(--primary);
+  background: transparent;
+  border: none;
+  padding: 4px 6px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  transition: background 0.12s ease;
+  width: 100%;
+  justify-content: center;
+}
+.agent-config-link:hover {
+  background: var(--primary-soft);
+}
+.agent-config-empty {
+  font-size: var(--font-xs);
+  color: var(--text-faint);
+  padding: 6px 0;
+}
+.agent-config-advanced {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--text-faint);
+  padding-top: 2px;
+}
+.agent-config-section.is-interactive:hover .agent-config-advanced {
+  color: var(--primary);
 }

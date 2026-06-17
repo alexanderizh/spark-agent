@@ -172,8 +172,8 @@
   /* ---- 代码 & 终端 ---- */
   --code-bg: #f4f3f0;
   --code-fg: #24211d;
-  --term-bg: #1f2937;
-  --term-fg: #e5e7eb;
+  --term-bg: #f4f3f0;
+  --term-fg: #24211d;
 
   /* ---- Diff 差异 ---- */
   --diff-add-bg: rgba(34, 197, 94, 0.08);

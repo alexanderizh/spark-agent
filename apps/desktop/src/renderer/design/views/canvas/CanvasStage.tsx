@@ -102,6 +102,7 @@ function buildLineageSummaries(edges: CanvasEdge[]): Map<string, CanvasLineageSu
     return summary
   }
   for (const edge of edges) {
+    if (edge.type === 'group_contains') continue
     const source = ensure(edge.sourceNodeId)
     const target = ensure(edge.targetNodeId)
     source.outgoing += 1
@@ -129,8 +130,15 @@ export function CanvasStage({
   onDissolveGroup,
   onOpenAiComposer,
   onEditNode,
+  onSaveNodeToLibrary,
+  onCreateOperationChild,
   onAddTextAtPosition,
   onAddImageAtPosition,
+  onAddPromptAtPosition,
+  onInsertAssetFromPane,
+  onCreateBoardFromPane,
+  onResetZoomFromPane,
+  onNodeSelectIntent,
   onViewportChange,
 }: {
   snapshot: CanvasSnapshot
@@ -149,8 +157,20 @@ export function CanvasStage({
   onDissolveGroup: (groupId: string) => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
+  onSaveNodeToLibrary: (nodeId: string) => void
+  onCreateOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
   onAddTextAtPosition: (position: CanvasStagePoint) => void
   onAddImageAtPosition: (position: CanvasStagePoint) => void
+  /** 空白右键：新建 Prompt 节点 */
+  onAddPromptAtPosition?: (position: CanvasStagePoint) => void
+  /** 空白右键：从资产插入（打开资产面板） */
+  onInsertAssetFromPane?: () => void
+  /** 空白右键：新建 board */
+  onCreateBoardFromPane?: () => void
+  /** 空白右键：视图重置（适配/居中） */
+  onResetZoomFromPane?: () => void
+  /** 用户明确点击某个节点，用于恢复被手动关闭的节点面板 */
+  onNodeSelectIntent?: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
@@ -165,6 +185,8 @@ export function CanvasStage({
       dissolveGroup: onDissolveGroup,
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
+      saveToLibrary: onSaveNodeToLibrary,
+      createOperationChild: onCreateOperationChild,
     }),
     [
       onAddSelectionToGroup,
@@ -176,6 +198,8 @@ export function CanvasStage({
       onEditNode,
       onOpenAiComposer,
       onRemoveNodeFromGroup,
+      onCreateOperationChild,
+      onSaveNodeToLibrary,
       onToggleLockNode,
     ],
   )
@@ -202,10 +226,18 @@ export function CanvasStage({
   const syncFrameRef = useRef<number | null>(null)
   const guideFrameRef = useRef<number | null>(null)
   const viewportInteractingRef = useRef(false)
+  const nodeDragStateRef = useRef<{ nodeId: string | null; dragging: boolean; endedAt: number }>({
+    nodeId: null,
+    dragging: false,
+    endedAt: 0,
+  })
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
-  const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
+  const edges = useMemo(
+    () => snapshot.edges.filter((edge) => edge.type !== 'group_contains').map(toFlowEdge),
+    [snapshot.edges],
+  )
 
   const notifyViewportChange = useCallback(
     (viewport = latestViewportRef.current) => {
@@ -310,7 +342,7 @@ export function CanvasStage({
       event.stopPropagation()
 
       const menuWidth = 188
-      const menuHeight = 132
+      const menuHeight = 280
       const minInset = 8
       const left = Math.min(
         Math.max(event.clientX - rect.left, minInset),
@@ -373,6 +405,31 @@ export function CanvasStage({
     onAddImageAtPosition(position)
   }, [closePaneContextMenu, onAddImageAtPosition, paneContextMenu])
 
+  const handleAddPromptFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    const position = paneContextMenu.flowPosition
+    closePaneContextMenu()
+    onAddPromptAtPosition?.(position)
+  }, [closePaneContextMenu, onAddPromptAtPosition, paneContextMenu])
+
+  const handleInsertAssetFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    closePaneContextMenu()
+    onInsertAssetFromPane?.()
+  }, [closePaneContextMenu, onInsertAssetFromPane, paneContextMenu])
+
+  const handleCreateBoardFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    closePaneContextMenu()
+    onCreateBoardFromPane?.()
+  }, [closePaneContextMenu, onCreateBoardFromPane, paneContextMenu])
+
+  const handleResetZoomFromPane = useCallback(() => {
+    if (!paneContextMenu) return
+    closePaneContextMenu()
+    onResetZoomFromPane?.()
+  }, [closePaneContextMenu, onResetZoomFromPane, paneContextMenu])
+
   const handleNodesChange = useCallback(
     (changes: NodeChange<Node<CanvasFlowNodeData>>[]) => {
       const nextFlowNodes = applyNodeChanges(changes, flowNodesRef.current)
@@ -427,9 +484,30 @@ export function CanvasStage({
     [],
   )
 
-  const handleNodeDragStop = useCallback(() => {
+  const handleNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+    nodeDragStateRef.current = { nodeId: node.id, dragging: true, endedAt: 0 }
+    setPaneContextMenu(null)
+  }, [])
+
+  const handleNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+    nodeDragStateRef.current = { nodeId: node.id, dragging: false, endedAt: Date.now() }
     clearAlignmentGuides()
   }, [clearAlignmentGuides])
+
+  const handleNodeClick = useCallback(
+    (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
+      const dragState = nodeDragStateRef.current
+      if (
+        dragState.dragging ||
+        (dragState.nodeId === node.id && Date.now() - dragState.endedAt < 220)
+      ) {
+        return
+      }
+      if (event.metaKey || event.ctrlKey || event.shiftKey) return
+      onNodeSelectIntent?.(node.id)
+    },
+    [onNodeSelectIntent],
+  )
 
   return (
     <ReactFlowProvider>
@@ -455,6 +533,7 @@ export function CanvasStage({
           selectionOnDrag={activeTool === 'select'}
           onNodesChange={handleNodesChange}
           onConnect={handleConnect}
+          onNodeDragStart={handleNodeDragStart}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onInit={handleInit}
@@ -463,6 +542,7 @@ export function CanvasStage({
           onMoveStart={handleViewportMoveStart}
           onMove={handleViewportMove}
           onMoveEnd={handleViewportMoveEnd}
+          onNodeClick={handleNodeClick}
           onSelectionChange={({ nodes: selected }) =>
             onSelectionChange(selected.map((node) => node.id))
           }
@@ -530,17 +610,36 @@ export function CanvasStage({
             onContextMenu={(event) => event.preventDefault()}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <button type="button" role="menuitem" onClick={handleResetZoom}>
-              <Icons.RotateCcw size={14} />
-              <span>复原缩放比例</span>
-            </button>
             <button type="button" role="menuitem" onClick={handleAddTextFromPane}>
               <Icons.File size={14} />
-              <span>添加文本节点</span>
+              <span>添加文本</span>
             </button>
             <button type="button" role="menuitem" onClick={handleAddImageFromPane}>
               <Icons.Image size={14} />
-              <span>添加图片节点</span>
+              <span>上传图片</span>
+            </button>
+            {onAddPromptAtPosition && (
+              <button type="button" role="menuitem" onClick={handleAddPromptFromPane}>
+                <Icons.Edit size={14} />
+                <span>新建 Prompt</span>
+              </button>
+            )}
+            <div className="canvas-pane-context-divider" />
+            {onInsertAssetFromPane && (
+              <button type="button" role="menuitem" onClick={handleInsertAssetFromPane}>
+                <Icons.Folder size={14} />
+                <span>从资产插入</span>
+              </button>
+            )}
+            {onCreateBoardFromPane && (
+              <button type="button" role="menuitem" onClick={handleCreateBoardFromPane}>
+                <Icons.Plus size={14} />
+                <span>新建画布</span>
+              </button>
+            )}
+            <button type="button" role="menuitem" onClick={handleResetZoom}>
+              <Icons.RotateCcw size={14} />
+              <span>复原缩放比例</span>
             </button>
           </div>
         )}

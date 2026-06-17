@@ -851,6 +851,39 @@ export const IpcSchemaRegistry = {
   }),
   'remote:runtime-status': z.object({}),
 
+  // Built-in Terminal Panel (session-scoped PTY dock)
+  // `data` 限制为 1MB 以内，避免粘贴巨量内容打爆 IPC。
+  // `cols/rows` 有界，避免错误参数让 node-pty 拒绝 resize。
+  'terminal:list': z.object({ sessionId: z.string().min(1) }),
+  'terminal:create': z.object({
+    sessionId: z.string().min(1),
+    workspaceId: z.string().min(1).optional(),
+    cwd: z.string().min(1).max(2000).optional(),
+    title: z.string().min(1).max(80).optional(),
+    cols: z.number().int().min(10).max(500).optional(),
+    rows: z.number().int().min(3).max(200).optional(),
+  }),
+  'terminal:input': z.object({
+    terminalId: z.string().min(1).max(200),
+    // 上限 ~1MB；超长粘贴由 renderer 端分块，避免单条 IPC 把渲染进程 / 主进程卡住。
+    data: z.string().max(1_000_000),
+  }),
+  'terminal:resize': z.object({
+    terminalId: z.string().min(1).max(200),
+    cols: z.number().int().min(10).max(500),
+    rows: z.number().int().min(3).max(200),
+  }),
+  'terminal:kill': z.object({
+    terminalId: z.string().min(1).max(200),
+  }),
+  'terminal:rename': z.object({
+    terminalId: z.string().min(1).max(200),
+    title: z.string().min(1).max(80),
+  }),
+  'terminal:get-buffer': z.object({
+    terminalId: z.string().min(1).max(200),
+  }),
+
   // Usage Ledger
   'usage:record': z.object({
     sessionId: z.string().min(1),
@@ -972,5 +1005,29 @@ export const IpcSchemaRegistry = {
     filePath: z.string().max(4000).optional(),
     fileName: z.string().max(300).optional(),
     mimeType: z.string().max(160).optional(),
+  }),
+
+  // Canvas Agent Bridge
+  'canvas:host-attach': z.object({
+    sessionId: z.string().min(1).max(200),
+    projectId: z.string().min(1).max(200),
+    toolSchemas: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(200),
+          description: z.string().max(8000),
+          inputSchema: z.record(z.string(), z.unknown()),
+        }),
+      )
+      .max(200),
+  }),
+  'canvas:host-detach': z.object({
+    sessionId: z.string().min(1).max(200),
+  }),
+  'canvas:tool-result': z.object({
+    requestId: z.string().min(1).max(200),
+    ok: z.boolean(),
+    result: z.unknown().optional(),
+    error: z.string().max(8000).optional(),
   }),
 } as const

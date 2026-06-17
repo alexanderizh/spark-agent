@@ -311,6 +311,8 @@ export interface SDKExecutorConfig {
   platformManagementMcpServer?: SDKMcpServerConfig | undefined
   /** Built-in web search MCP server (spark_search) — auto-injected for all sessions */
   webSearchMcpServer?: SDKMcpServerConfig | undefined
+  /** 画布 Agent in-process MCP server（spark_canvas）：仅在 session 已 attach 到画布弹窗时注入 */
+  canvasMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined

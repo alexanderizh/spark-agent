@@ -359,6 +359,15 @@ const TOOL_DEFS: ToolDef[] = [
     winOpen: ['warp', '{path}'],
   },
   {
+    id: 'ghostty',
+    name: 'Ghostty',
+    kind: 'terminal',
+    macAppPaths: ['Ghostty.app'],
+    macCli: 'ghostty',
+    macOpen: ['open', '-a', 'Ghostty', '{path}'],
+    winOpen: [],
+  },
+  {
     id: 'alacritty',
     name: 'Alacritty',
     kind: 'terminal',
@@ -557,9 +566,12 @@ async function cliExists(command: string): Promise<boolean> {
 }
 
 async function macAppExists(appName: string): Promise<boolean> {
+  const normalizedName = appName.endsWith('.app') ? appName : `${appName}.app`
   const paths = [
-    `/Applications/${appName}`,
-    join(homedir(), 'Applications', appName),
+    `/Applications/${normalizedName}`,
+    join(homedir(), 'Applications', normalizedName),
+    `/System/Applications/${normalizedName}`,
+    `/System/Applications/Utilities/${normalizedName}`,
   ]
   for (const p of paths) {
     try {
@@ -568,6 +580,16 @@ async function macAppExists(appName: string): Promise<boolean> {
     } catch {
       // continue
     }
+  }
+  try {
+    const { stdout } = await execFileAsync(
+      'mdfind',
+      [`kMDItemContentType == "com.apple.application-bundle" && kMDItemFSName == "${normalizedName}"`],
+      { timeout: 3000 },
+    )
+    return stdout.trim().length > 0
+  } catch {
+    // Spotlight may be unavailable or still indexing; path probes above remain the primary signal.
   }
   return false
 }

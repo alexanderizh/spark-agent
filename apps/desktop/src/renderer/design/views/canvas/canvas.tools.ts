@@ -1,0 +1,1211 @@
+/**
+ * 画布 Agent 工具注册表（Phase 1）
+ *
+ * 设计：每个工具是纯描述符（name + description + JSON Schema + handler）。
+ * Handler 在渲染进程执行，通过 `CanvasToolContext` 拿到当前画布的 store actions
+ * 和 canvas.api。Phase 2 的 IPC 桥会把主进程 SDK 工具调用转发到这里。
+ *
+ * 工具命名：`canvas_<verb>_<noun>`（snake_case，便于 LLM 调用）。
+ * 工具返回：紧凑结果（不返回完整 snapshot；快照在每次操作后会被自动 refresh）。
+ */
+import { canvasApi, operationLabel } from './canvas.api'
+import type {
+  CanvasAsset,
+  CanvasBoard,
+  CanvasCapability,
+  CanvasNode,
+  CanvasNodeData,
+  CanvasNodeType,
+  CanvasOperationType,
+  CanvasSnapshot,
+  CanvasTask,
+} from './canvas.types'
+import type { CreateFilmAssetInput, ShotGroup, ShotSegment } from './canvasFilmAssets'
+
+type JSONSchema = Record<string, unknown>
+
+/** 画布工作区 actions 的形状（与 useCanvasWorkspace 返回值匹配） */
+export type CanvasWorkspaceActions = {
+  createTextNode: (input: { text: string; x: number; y: number }) => Promise<CanvasNode | undefined>
+  createImageNode: (input: {
+    file: File
+    filePath: string
+    x: number
+    y: number
+    width?: number
+    height?: number
+    imageWidth?: number
+    imageHeight?: number
+  }) => Promise<CanvasNode | undefined>
+  uploadImageAsset: (file: File) => Promise<string | null>
+  createGroupNode: (nodeIds: string[]) => Promise<CanvasSnapshot>
+  dissolveGroupNode: (groupId: string) => Promise<void>
+  addNodesToGroup: (groupId: string, nodeIds: string[]) => Promise<void>
+  removeNodesFromGroup: (nodeIds: string[]) => Promise<void>
+  deleteNodes: (nodeIds: string[]) => Promise<void>
+  duplicateNodes: (nodeIds: string[]) => Promise<void>
+  patchNodes: (
+    nodeIds: string[],
+    patch: Partial<Pick<CanvasNode, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'zIndex' | 'locked' | 'hidden' | 'title'>>,
+  ) => Promise<void>
+  updateNodeData: (nodeId: string, data: Partial<CanvasNodeData>) => Promise<void>
+  connectNodes: (input: { sourceNodeId: string; targetNodeId: string }) => Promise<void>
+  createBoard: (input?: { name?: string; templateId?: string | null }) => Promise<void>
+  renameBoard: (boardId: string, name: string) => Promise<void>
+  deleteBoard: (boardId: string) => Promise<void>
+  duplicateBoard: (boardId: string, name?: string) => Promise<void>
+  switchBoard: (boardId: string, viewport?: CanvasBoard['viewport']) => Promise<void>
+  copyNodesToBoard: (nodeIds: string[], targetBoardId: string) => Promise<void>
+  insertAsset: (input: {
+    assetId: string
+    boardId: string
+    x: number
+    y: number
+  }) => Promise<CanvasNode | null>
+  createFilmAsset: (input: CreateFilmAssetInput) => Promise<CanvasAsset>
+  updateFilmAsset: (assetId: string, patch: Record<string, unknown>) => Promise<void>
+  deleteFilmAsset: (assetId: string) => Promise<void>
+  createShotGroup: (input: { name: string; description?: string }) => Promise<ShotGroup>
+  updateShotGroup: (groupId: string, patch: { name?: string; description?: string }) => Promise<void>
+  deleteShotGroup: (groupId: string) => Promise<void>
+  createShotSegment: (groupId: string, input: Partial<ShotSegment> & { title: string }) => Promise<void>
+  updateShotSegment: (groupId: string, segmentId: string, patch: Partial<ShotSegment>) => Promise<void>
+  deleteShotSegment: (groupId: string, segmentId: string) => Promise<void>
+  createOperationNode: (input: {
+    boardId: string
+    operation: CanvasOperationType
+    inputNodeIds: string[]
+    x: number
+    y: number
+    title?: string
+  }) => Promise<void>
+  retryOperationNode: (nodeId: string) => Promise<void>
+  runOperationNode: (
+    nodeId: string,
+    params: {
+      prompt: string
+      negativePrompt?: string
+      inputNodeIds?: string[]
+      inputAssetIds?: string[]
+      providerProfileId?: string
+      manifestId?: string
+      modelId?: string
+      modelParams?: Record<string, unknown>
+    },
+  ) => Promise<void>
+  cancelTask: (taskId: string) => Promise<void>
+  updateProjectSettings: (settings: { prompt?: string; negativePrompt?: string }) => Promise<void>
+  refresh: () => Promise<void>
+}
+
+/** 工具执行上下文 */
+export type CanvasToolContext = {
+  projectId: string
+  /** 返回当前最新的 snapshot；可能为 null（加载中） */
+  getSnapshot: () => CanvasSnapshot | null
+  /** 渲染进程的画布 actions */
+  workspace: CanvasWorkspaceActions
+}
+
+export type CanvasToolDescriptor = {
+  name: string
+  description: string
+  paramsSchema: JSONSchema
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  handler: (ctx: CanvasToolContext, input: any) => Promise<unknown>
+}
+
+const requireSnapshot = (ctx: CanvasToolContext): CanvasSnapshot => {
+  const snap = ctx.getSnapshot()
+  if (!snap) throw new Error('画布尚未加载完成，请稍后重试。')
+  return snap
+}
+
+const activeBoardId = (ctx: CanvasToolContext): string => {
+  const snap = requireSnapshot(ctx)
+  return snap.activeBoardId ?? snap.board.id
+}
+
+/** 找一块空白位置放新节点（避免叠在已有节点上） */
+const findEmptySpot = (snap: CanvasSnapshot, boardId: string): { x: number; y: number } => {
+  const nodes = snap.nodes.filter((n) => n.boardId === boardId && !n.hidden)
+  if (nodes.length === 0) return { x: 80, y: 80 }
+  let maxRight = 0
+  let avgY = 0
+  for (const n of nodes) {
+    maxRight = Math.max(maxRight, n.x + n.width)
+    avgY += n.y
+  }
+  return { x: maxRight + 40, y: Math.round(avgY / nodes.length) }
+}
+
+const findNode = (snap: CanvasSnapshot, nodeId: string): CanvasNode => {
+  const n = snap.nodes.find((x) => x.id === nodeId)
+  if (!n) throw new Error(`未找到节点 ${nodeId}`)
+  return n
+}
+
+const summarizeNode = (n: CanvasNode) => ({
+  id: n.id,
+  type: n.type,
+  title: n.title ?? null,
+  x: n.x,
+  y: n.y,
+  width: n.width,
+  height: n.height,
+  hidden: n.hidden,
+  boardId: n.boardId,
+  parentNodeId: n.parentNodeId ?? null,
+  assetId: n.assetId ?? null,
+  taskId: n.taskId ?? null,
+  data: {
+    text: n.data.text,
+    prompt: n.data.prompt,
+    url: n.data.url,
+    operation: n.data.operation,
+    status: n.data.status,
+    progress: n.data.progress,
+    message: n.data.message,
+  },
+})
+
+const summarizeAsset = (a: CanvasAsset) => ({
+  id: a.id,
+  type: a.type,
+  source: a.source,
+  title: a.title,
+  url: a.url,
+  thumbnailUrl: a.thumbnailUrl,
+  contentText: a.contentText ? a.contentText.slice(0, 400) : null,
+  width: a.width,
+  height: a.height,
+  durationMs: a.durationMs,
+  kind: (a.metadata?.kind as string | undefined) ?? null,
+  tags: (a.metadata?.tags as string[] | undefined) ?? [],
+})
+
+const summarizeBoard = (b: CanvasBoard, isActive: boolean) => ({
+  id: b.id,
+  name: b.name,
+  isActive,
+  isDefault: b.settings.isDefault ?? false,
+})
+
+const summarizeTask = (t: CanvasTask) => ({
+  id: t.id,
+  operation: t.operation,
+  status: t.status,
+  progress: t.progress,
+  prompt: t.prompt,
+  inputNodeIds: t.inputNodeIds,
+  inputAssetIds: t.inputAssetIds,
+  outputNodeIds: t.outputNodeIds,
+  outputAssetIds: t.outputAssetIds,
+  errorMsg: t.errorMsg,
+})
+
+// ─── Schema helpers ────────────────────────────────────────────────────────
+const string = (description: string, required = true): JSONSchema => ({ type: 'string', description, ...(required ? {} : {}) })
+const number = (description: string): JSONSchema => ({ type: 'number', description })
+const boolean = (description: string): JSONSchema => ({ type: 'boolean', description })
+const array = (items: JSONSchema, description: string): JSONSchema => ({ type: 'array', items, description })
+const enumOf = (values: string[], description: string): JSONSchema => ({ type: 'string', enum: values, description })
+
+const NODE_TYPES: CanvasNodeType[] = [
+  'image', 'audio', 'video', 'text', 'prompt', 'group',
+  'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
+  'text_generate', 'text_rewrite', 'prompt_optimize',
+  'text_to_video', 'image_to_video', 'video_edit',
+  'text_to_audio', 'audio_transcribe',
+]
+
+const OPERATION_TYPES: CanvasOperationType[] = [
+  'text_to_image', 'image_to_image', 'image_edit', 'image_compose',
+  'text_generate', 'text_rewrite', 'prompt_optimize',
+  'text_to_audio', 'audio_transcribe',
+  'text_to_video', 'image_to_video', 'video_edit',
+]
+
+const FILM_ASSET_KINDS = ['script', 'character', 'scene', 'prop', 'effect', 'prompt_library'] as const
+
+// ─── 工具定义 ──────────────────────────────────────────────────────────────
+
+const tools: CanvasToolDescriptor[] = [
+  // ───────── 项目 / 概览 ─────────
+  {
+    name: 'canvas_get_project_summary',
+    description: '获取当前画布项目的整体概览（项目信息、画板列表、节点/资产/任务计数、活跃画板）。任何编辑前先调一次。',
+    paramsSchema: { type: 'object', properties: {} },
+    handler: async (ctx) => {
+      const snap = requireSnapshot(ctx)
+      const activeId = snap.activeBoardId ?? snap.board.id
+      const boards = (snap.boards ?? [snap.board]).map((b) => summarizeBoard(b, b.id === activeId))
+      return {
+        projectId: snap.project.id,
+        title: snap.project.title,
+        description: snap.project.description,
+        rootPath: snap.project.rootPath,
+        settings: snap.project.settings ?? {},
+        activeBoardId: activeId,
+        boards,
+        counts: {
+          nodes: snap.nodes.length,
+          assets: snap.assets.length,
+          tasks: snap.tasks.length,
+        },
+      }
+    },
+  },
+  {
+    name: 'canvas_update_project_settings',
+    description: '更新项目级 prompt / negativePrompt（影响新建操作节点的默认值）。',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        prompt: string('项目级默认提示词', false),
+        negativePrompt: string('项目级负面提示词', false),
+      },
+    },
+    handler: async (ctx, input: { prompt?: string; negativePrompt?: string }) => {
+      await ctx.workspace.updateProjectSettings(input)
+      return { ok: true }
+    },
+  },
+
+  // ───────── 画板 (Boards) ─────────
+  {
+    name: 'canvas_list_boards',
+    description: '列出当前项目下所有画板。',
+    paramsSchema: { type: 'object', properties: {} },
+    handler: async (ctx) => {
+      const snap = requireSnapshot(ctx)
+      const activeId = snap.activeBoardId ?? snap.board.id
+      return { boards: (snap.boards ?? [snap.board]).map((b) => summarizeBoard(b, b.id === activeId)) }
+    },
+  },
+  {
+    name: 'canvas_create_board',
+    description: '新建画板。',
+    paramsSchema: {
+      type: 'object',
+      properties: { name: string('画板名称', false) },
+    },
+    handler: async (ctx, input: { name?: string }) => {
+      await ctx.workspace.createBoard(input)
+      const snap = requireSnapshot(ctx)
+      const newest = (snap.boards ?? [snap.board])[snap.boards ? snap.boards.length - 1 : 0]
+      return { boardId: newest?.id, name: newest?.name }
+    },
+  },
+  {
+    name: 'canvas_rename_board',
+    description: '重命名指定画板。',
+    paramsSchema: {
+      type: 'object',
+      required: ['boardId', 'name'],
+      properties: { boardId: string('画板 id'), name: string('新名称') },
+    },
+    handler: async (ctx, input: { boardId: string; name: string }) => {
+      await ctx.workspace.renameBoard(input.boardId, input.name)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_delete_board',
+    description: '删除画板（不能删除最后一个）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['boardId'],
+      properties: { boardId: string('画板 id') },
+    },
+    handler: async (ctx, input: { boardId: string }) => {
+      await ctx.workspace.deleteBoard(input.boardId)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_duplicate_board',
+    description: '复制画板（包含所有节点、连线、资产引用）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['boardId'],
+      properties: { boardId: string('画板 id'), name: string('新画板名', false) },
+    },
+    handler: async (ctx, input: { boardId: string; name?: string }) => {
+      await ctx.workspace.duplicateBoard(input.boardId, input.name)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_switch_board',
+    description: '切换激活画板（后续节点/资产/任务操作都作用于该画板）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['boardId'],
+      properties: { boardId: string('画板 id') },
+    },
+    handler: async (ctx, input: { boardId: string }) => {
+      await ctx.workspace.switchBoard(input.boardId)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_copy_nodes_to_board',
+    description: '把当前画板的节点拷贝到另一个画板。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds', 'targetBoardId'],
+      properties: {
+        nodeIds: array(string('节点 id'), '要拷贝的节点 id 列表'),
+        targetBoardId: string('目标画板 id'),
+      },
+    },
+    handler: async (ctx, input: { nodeIds: string[]; targetBoardId: string }) => {
+      await ctx.workspace.copyNodesToBoard(input.nodeIds, input.targetBoardId)
+      return { ok: true }
+    },
+  },
+
+  // ───────── 节点查询 ─────────
+  {
+    name: 'canvas_list_nodes',
+    description: '列出当前激活画板内的节点，可按类型筛选。返回节点摘要（含 id/type/坐标/标题/数据）。',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        type: enumOf(NODE_TYPES, '只返回该类型的节点（可选）'),
+        includeHidden: boolean('是否包含 hidden 节点（默认 false）'),
+        boardId: string('画板 id（默认当前激活画板）', false),
+      },
+    },
+    handler: async (ctx, input: { type?: CanvasNodeType; includeHidden?: boolean; boardId?: string }) => {
+      const snap = requireSnapshot(ctx)
+      const bid = input.boardId ?? activeBoardId(ctx)
+      const nodes = snap.nodes
+        .filter((n) => n.boardId === bid)
+        .filter((n) => input.includeHidden || !n.hidden)
+        .filter((n) => !input.type || n.type === input.type)
+        .map(summarizeNode)
+      return { nodes, count: nodes.length }
+    },
+  },
+  {
+    name: 'canvas_get_node',
+    description: '获取单个节点完整信息（含 data 全部字段）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId'],
+      properties: { nodeId: string('节点 id') },
+    },
+    handler: async (ctx, input: { nodeId: string }) => {
+      const snap = requireSnapshot(ctx)
+      const n = findNode(snap, input.nodeId)
+      return { node: { ...summarizeNode(n), data: n.data, rotation: n.rotation, zIndex: n.zIndex, locked: n.locked } }
+    },
+  },
+  {
+    name: 'canvas_find_nodes',
+    description: '在画板内按文本搜索节点（匹配 title / data.text / data.prompt）。返回匹配的节点摘要。',
+    paramsSchema: {
+      type: 'object',
+      required: ['query'],
+      properties: {
+        query: string('搜索关键词（不区分大小写）'),
+        boardId: string('画板 id（默认当前激活画板）', false),
+      },
+    },
+    handler: async (ctx, input: { query: string; boardId?: string }) => {
+      const snap = requireSnapshot(ctx)
+      const q = input.query.toLowerCase()
+      const bid = input.boardId ?? activeBoardId(ctx)
+      const nodes = snap.nodes
+        .filter((n) => n.boardId === bid && !n.hidden)
+        .filter((n) =>
+          (n.title ?? '').toLowerCase().includes(q) ||
+          (n.data.text ?? '').toLowerCase().includes(q) ||
+          (n.data.prompt ?? '').toLowerCase().includes(q),
+        )
+        .map(summarizeNode)
+      return { nodes, count: nodes.length }
+    },
+  },
+  {
+    name: 'canvas_list_group_members',
+    description: '列出组节点内的成员节点。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId'],
+      properties: { groupId: string('组节点 id') },
+    },
+    handler: async (ctx, input: { groupId: string }) => {
+      const snap = requireSnapshot(ctx)
+      const members = snap.nodes.filter((n) => n.parentNodeId === input.groupId).map(summarizeNode)
+      return { groupId: input.groupId, members, count: members.length }
+    },
+  },
+
+  // ───────── 节点编辑 ─────────
+  {
+    name: 'canvas_create_text_node',
+    description: '创建纯文本节点（同时生成同步的文本 asset）。坐标省略时自动放在画板空白处。',
+    paramsSchema: {
+      type: 'object',
+      required: ['text'],
+      properties: {
+        text: string('文本内容'),
+        x: number('画板坐标 x（可选）'),
+        y: number('画板坐标 y（可选）'),
+      },
+    },
+    handler: async (ctx, input: { text: string; x?: number; y?: number }) => {
+      const snap = requireSnapshot(ctx)
+      const bid = activeBoardId(ctx)
+      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const node = await ctx.workspace.createTextNode({ text: input.text, ...pos })
+      return { nodeId: node?.id ?? null }
+    },
+  },
+  {
+    name: 'canvas_create_prompt_node',
+    description: '创建 Prompt 节点（与 text 节点结构相同，data.format=prompt，用于专门承载提示词）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['prompt'],
+      properties: {
+        prompt: string('提示词内容'),
+        title: string('节点标题（可选）', false),
+        x: number('画板坐标 x（可选）'),
+        y: number('画板坐标 y（可选）'),
+      },
+    },
+    handler: async (ctx, input: { prompt: string; title?: string; x?: number; y?: number }) => {
+      const snap = requireSnapshot(ctx)
+      const bid = activeBoardId(ctx)
+      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const node = await ctx.workspace.createTextNode({ text: input.prompt, ...pos })
+      if (node) {
+        await ctx.workspace.updateNodeData(node.id, { prompt: input.prompt, format: 'prompt' })
+        if (input.title) await ctx.workspace.patchNodes([node.id], { title: input.title })
+      }
+      return { nodeId: node?.id ?? null }
+    },
+  },
+  {
+    name: 'canvas_update_node_data',
+    description: '编辑节点 data 字段（如修改 text/prompt/title/format/message 等）。注意：要改 prompt 节点的提示词，直接传 prompt 字段即可。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId', 'data'],
+      properties: {
+        nodeId: string('节点 id'),
+        data: {
+          type: 'object',
+          description: '要合并写入的 data 字段（partial）。可包含 text/prompt/format/message/title/url/thumbnailUrl/mimeType 等。',
+          properties: {
+            text: string('文本/Prompt 内容', false),
+            prompt: string('提示词', false),
+            format: enumOf(['plain', 'markdown', 'prompt'], '文本格式'),
+            message: string('节点状态消息', false),
+            url: string('媒体 URL（图片/音频/视频节点）', false),
+            thumbnailUrl: string('缩略图 URL', false),
+            mimeType: string('MIME 类型', false),
+          },
+        },
+      },
+    },
+    handler: async (ctx, input: { nodeId: string; data: Partial<CanvasNodeData> }) => {
+      await ctx.workspace.updateNodeData(input.nodeId, input.data)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_patch_nodes',
+    description: '批量更新节点几何属性 / 标题 / 锁定 / 隐藏。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds', 'patch'],
+      properties: {
+        nodeIds: array(string('节点 id'), '要更新的节点 id 列表'),
+        patch: {
+          type: 'object',
+          properties: {
+            x: number('x 坐标'),
+            y: number('y 坐标'),
+            width: number('宽度（像素）'),
+            height: number('高度（像素）'),
+            rotation: number('旋转角度'),
+            zIndex: number('层级'),
+            locked: boolean('是否锁定'),
+            hidden: boolean('是否隐藏'),
+            title: string('标题', false),
+          },
+        },
+      },
+    },
+    handler: async (
+      ctx,
+      input: {
+        nodeIds: string[]
+        patch: Partial<Pick<CanvasNode, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'zIndex' | 'locked' | 'hidden' | 'title'>>
+      },
+    ) => {
+      await ctx.workspace.patchNodes(input.nodeIds, input.patch)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_delete_nodes',
+    description: '删除节点（软删，可恢复）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds'],
+      properties: { nodeIds: array(string('节点 id'), '要删除的节点 id 列表') },
+    },
+    handler: async (ctx, input: { nodeIds: string[] }) => {
+      await ctx.workspace.deleteNodes(input.nodeIds)
+      return { ok: true, deleted: input.nodeIds.length }
+    },
+  },
+  {
+    name: 'canvas_duplicate_nodes',
+    description: '复制节点（保留连线、组归属，自动重新映射 id）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds'],
+      properties: { nodeIds: array(string('节点 id'), '要复制的节点 id') },
+    },
+    handler: async (ctx, input: { nodeIds: string[] }) => {
+      await ctx.workspace.duplicateNodes(input.nodeIds)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_connect_nodes',
+    description: '在两个节点之间建立连线（type 自动推断：操作节点入边为 used_as_input）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['sourceNodeId', 'targetNodeId'],
+      properties: {
+        sourceNodeId: string('源节点 id'),
+        targetNodeId: string('目标节点 id'),
+      },
+    },
+    handler: async (ctx, input: { sourceNodeId: string; targetNodeId: string }) => {
+      await ctx.workspace.connectNodes(input)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_create_group',
+    description: '把多个节点组合成一个组节点（至少 2 个非组节点）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds'],
+      properties: { nodeIds: array(string('节点 id'), '要分组的节点 id 列表（≥2）') },
+    },
+    handler: async (ctx, input: { nodeIds: string[] }) => {
+      await ctx.workspace.createGroupNode(input.nodeIds)
+      const snap = requireSnapshot(ctx)
+      // 最新一个 group 节点
+      const group = [...snap.nodes].reverse().find((n) => n.type === 'group')
+      return { groupId: group?.id ?? null }
+    },
+  },
+  {
+    name: 'canvas_dissolve_group',
+    description: '解散组节点（成员节点恢复独立）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId'],
+      properties: { groupId: string('组节点 id') },
+    },
+    handler: async (ctx, input: { groupId: string }) => {
+      await ctx.workspace.dissolveGroupNode(input.groupId)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_add_to_group',
+    description: '把节点加入已存在的组。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId', 'nodeIds'],
+      properties: {
+        groupId: string('组节点 id'),
+        nodeIds: array(string('节点 id'), '要加入的节点 id'),
+      },
+    },
+    handler: async (ctx, input: { groupId: string; nodeIds: string[] }) => {
+      await ctx.workspace.addNodesToGroup(input.groupId, input.nodeIds)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_remove_from_group',
+    description: '把节点从组里移出。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeIds'],
+      properties: { nodeIds: array(string('节点 id'), '要移出的节点 id') },
+    },
+    handler: async (ctx, input: { nodeIds: string[] }) => {
+      await ctx.workspace.removeNodesFromGroup(input.nodeIds)
+      return { ok: true }
+    },
+  },
+
+  // ───────── 资产 ─────────
+  {
+    name: 'canvas_list_assets',
+    description: '列出项目内全部资产（图片/音频/视频/文本/Prompt/文件）。可按 type 筛选。',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        type: enumOf(['image', 'audio', 'video', 'text', 'prompt', 'file'], '资产类型'),
+        kind: string('影视资产细分（script/character/scene/prop/effect/prompt_library）', false),
+      },
+    },
+    handler: async (ctx, input: { type?: string; kind?: string }) => {
+      const snap = requireSnapshot(ctx)
+      let list = snap.assets
+      if (input.type) list = list.filter((a) => a.type === input.type)
+      if (input.kind) list = list.filter((a) => (a.metadata?.kind as string | undefined) === input.kind)
+      return { assets: list.map(summarizeAsset), count: list.length }
+    },
+  },
+  {
+    name: 'canvas_get_asset',
+    description: '获取单个资产完整信息（含 contentText 全文 / metadata）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['assetId'],
+      properties: { assetId: string('资产 id') },
+    },
+    handler: async (ctx, input: { assetId: string }) => {
+      const snap = requireSnapshot(ctx)
+      const a = snap.assets.find((x) => x.id === input.assetId)
+      if (!a) throw new Error(`未找到资产 ${input.assetId}`)
+      return { asset: { ...summarizeAsset(a), contentText: a.contentText, metadata: a.metadata } }
+    },
+  },
+  {
+    name: 'canvas_insert_asset_to_board',
+    description: '把已有资产作为引用节点插入当前画板。坐标省略时自动放在画板空白处。',
+    paramsSchema: {
+      type: 'object',
+      required: ['assetId'],
+      properties: {
+        assetId: string('资产 id'),
+        boardId: string('目标画板 id（默认当前激活画板）', false),
+        x: number('画板坐标 x（可选）'),
+        y: number('画板坐标 y（可选）'),
+      },
+    },
+    handler: async (ctx, input: { assetId: string; boardId?: string; x?: number; y?: number }) => {
+      const snap = requireSnapshot(ctx)
+      const bid = input.boardId ?? activeBoardId(ctx)
+      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const node = await ctx.workspace.insertAsset({ assetId: input.assetId, boardId: bid, ...pos })
+      return { nodeId: node?.id ?? null }
+    },
+  },
+  {
+    name: 'canvas_create_film_asset',
+    description: '创建影视类资产（剧本/角色/场景/道具/特效/提示词库）。用于项目级共享资源管理。',
+    paramsSchema: {
+      type: 'object',
+      required: ['kind', 'name'],
+      properties: {
+        kind: enumOf(FILM_ASSET_KINDS as unknown as string[], '资产类型'),
+        name: string('资产名称'),
+        text: string('正文/描述（可选）', false),
+        prompt: string('关联提示词（可选）', false),
+        tags: array(string('标签'), '标签列表'),
+        attributes: { type: 'object', description: '类型特定属性（自由 JSON）', additionalProperties: true },
+      },
+    },
+    handler: async (ctx, input: CreateFilmAssetInput) => {
+      const asset = await ctx.workspace.createFilmAsset(input)
+      return { assetId: asset.id, title: asset.title }
+    },
+  },
+  {
+    name: 'canvas_update_film_asset',
+    description: '编辑影视资产字段。',
+    paramsSchema: {
+      type: 'object',
+      required: ['assetId'],
+      properties: {
+        assetId: string('资产 id'),
+        title: string('标题', false),
+        contentText: string('正文', false),
+        prompt: string('提示词', false),
+        tags: array(string('标签'), '标签列表'),
+        attributes: { type: 'object', additionalProperties: true, description: '类型特定属性' },
+      },
+    },
+    handler: async (
+      ctx,
+      input: { assetId: string; title?: string; contentText?: string; prompt?: string; tags?: string[]; attributes?: Record<string, unknown> },
+    ) => {
+      const { assetId, ...patch } = input
+      await ctx.workspace.updateFilmAsset(assetId, patch as Record<string, unknown>)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_delete_film_asset',
+    description: '删除影视资产。',
+    paramsSchema: {
+      type: 'object',
+      required: ['assetId'],
+      properties: { assetId: string('资产 id') },
+    },
+    handler: async (ctx, input: { assetId: string }) => {
+      await ctx.workspace.deleteFilmAsset(input.assetId)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_search_assets',
+    description: '搜索影视资产（关键词 + kind + tags + 排序）。',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        query: string('搜索关键词', false),
+        kinds: array(enumOf(FILM_ASSET_KINDS as unknown as string[], 'kind'), '限定 kinds'),
+        tags: array(string('tag'), '限定 tags'),
+        sortBy: enumOf(['updated', 'created', 'name', 'usage'], '排序方式'),
+      },
+    },
+    handler: async (
+      ctx,
+      input: { query?: string; kinds?: string[]; tags?: string[]; sortBy?: 'updated' | 'created' | 'name' | 'usage' },
+    ) => {
+      const list = await canvasApi.searchFilmAssets(ctx.projectId, input as never)
+      return { assets: list.map(summarizeAsset), count: list.length }
+    },
+  },
+
+  // ───────── 操作节点 / 任务 ─────────
+  {
+    name: 'canvas_list_capabilities',
+    description: '列出支持的 AI 操作能力（每个操作的输入/输出类型、参数 schema）。',
+    paramsSchema: { type: 'object', properties: {} },
+    handler: async () => {
+      const { CANVAS_CAPABILITIES } = await import('./canvas.capabilities')
+      const caps = (CANVAS_CAPABILITIES as CanvasCapability[])
+        .filter((c) => c.enabled)
+        .map((c) => ({
+          id: c.id,
+          operation: c.operation,
+          label: c.label,
+          inputTypes: c.inputTypes,
+          outputTypes: c.outputTypes,
+          paramsSchema: c.paramsSchema,
+        }))
+      return { capabilities: caps }
+    },
+  },
+  {
+    name: 'canvas_create_operation_node',
+    description: '创建一个 AI 操作节点（不立即执行），可后续调 canvas_run_operation 触发。',
+    paramsSchema: {
+      type: 'object',
+      required: ['operation'],
+      properties: {
+        operation: enumOf(OPERATION_TYPES as unknown as string[], 'AI 操作类型'),
+        inputNodeIds: array(string('节点 id'), '输入节点 id 列表（图片/文本节点）'),
+        title: string('节点标题', false),
+        x: number('画板坐标 x（可选）'),
+        y: number('画板坐标 y（可选）'),
+      },
+    },
+    handler: async (
+      ctx,
+      input: { operation: CanvasOperationType; inputNodeIds?: string[]; title?: string; x?: number; y?: number },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const bid = activeBoardId(ctx)
+      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      await ctx.workspace.createOperationNode({
+        boardId: bid,
+        operation: input.operation,
+        inputNodeIds: input.inputNodeIds ?? [],
+        ...(input.title ? { title: input.title } : {}),
+        ...pos,
+      })
+      const next = requireSnapshot(ctx)
+      const created = [...next.nodes].reverse().find((n) => n.type === input.operation)
+      return { nodeId: created?.id ?? null, operationLabel: operationLabel(input.operation) }
+    },
+  },
+  {
+    name: 'canvas_run_operation',
+    description: '运行已存在的 AI 操作节点（提交 prompt + 输入，调用对应模型生成结果）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId', 'prompt'],
+      properties: {
+        nodeId: string('操作节点 id'),
+        prompt: string('提示词'),
+        negativePrompt: string('负面提示词', false),
+        inputNodeIds: array(string('节点 id'), '覆盖默认输入节点（可选）'),
+        inputAssetIds: array(string('资产 id'), '直接用项目资产作为输入（可选）'),
+        providerProfileId: string('指定 provider profile（可选）', false),
+        manifestId: string('指定 manifest（可选）', false),
+        modelId: string('指定模型 id（可选）', false),
+        modelParams: {
+          type: 'object',
+          additionalProperties: true,
+          description: '模型特定参数（如尺寸 / 步数 / seed），schema 由 capability 决定',
+        },
+      },
+    },
+    handler: async (
+      ctx,
+      input: {
+        nodeId: string
+        prompt: string
+        negativePrompt?: string
+        inputNodeIds?: string[]
+        inputAssetIds?: string[]
+        providerProfileId?: string
+        manifestId?: string
+        modelId?: string
+        modelParams?: Record<string, unknown>
+      },
+    ) => {
+      const { nodeId, ...params } = input
+      await ctx.workspace.runOperationNode(nodeId, params)
+      return { ok: true, nodeId }
+    },
+  },
+  {
+    name: 'canvas_retry_operation',
+    description: '基于操作节点的旧参数重试一次。',
+    paramsSchema: {
+      type: 'object',
+      required: ['nodeId'],
+      properties: { nodeId: string('操作节点 id') },
+    },
+    handler: async (ctx, input: { nodeId: string }) => {
+      await ctx.workspace.retryOperationNode(input.nodeId)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_cancel_task',
+    description: '取消运行中的任务。',
+    paramsSchema: {
+      type: 'object',
+      required: ['taskId'],
+      properties: { taskId: string('任务 id') },
+    },
+    handler: async (ctx, input: { taskId: string }) => {
+      await ctx.workspace.cancelTask(input.taskId)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_list_tasks',
+    description: '列出当前画板的任务（可按 status 筛选）。',
+    paramsSchema: {
+      type: 'object',
+      properties: {
+        status: enumOf(['pending', 'running', 'completed', 'failed', 'cancelled'], '任务状态'),
+      },
+    },
+    handler: async (ctx, input: { status?: string }) => {
+      const snap = requireSnapshot(ctx)
+      let tasks = snap.tasks
+      if (input.status) tasks = tasks.filter((t) => t.status === input.status)
+      return { tasks: tasks.map(summarizeTask), count: tasks.length }
+    },
+  },
+  {
+    name: 'canvas_list_media_models',
+    description: '列出可用的多模态模型（用于挑选 provider/manifest/modelId 传给 canvas_run_operation）。',
+    paramsSchema: {
+      type: 'object',
+      properties: { enabledOnly: boolean('仅返回已启用模型（默认 true）') },
+    },
+    handler: async (_ctx, input: { enabledOnly?: boolean }) => {
+      const { models } = await canvasApi.listMediaModels({ enabledOnly: input.enabledOnly ?? true })
+      return { models }
+    },
+  },
+
+  // ───────── 分镜（影视开发专用）─────────
+  {
+    name: 'canvas_list_shot_groups',
+    description: '列出当前项目所有分镜分组（含每组的 segments 概要）。',
+    paramsSchema: { type: 'object', properties: {} },
+    handler: async (ctx) => {
+      const snap = requireSnapshot(ctx)
+      const film = (snap.project.metadata?.film as { shotGroups?: ShotGroup[] } | undefined) ?? {}
+      const groups = (film.shotGroups ?? []).map((g) => ({
+        id: g.id,
+        name: g.name,
+        description: g.description,
+        segmentCount: g.segments?.length ?? 0,
+        segments: (g.segments ?? []).map((s) => ({
+          id: s.id,
+          index: s.index,
+          title: s.title,
+          description: s.description,
+        })),
+      }))
+      return { groups, count: groups.length }
+    },
+  },
+  {
+    name: 'canvas_create_shot_group',
+    description: '新建分镜分组（如「第一幕」「第二幕」）。',
+    paramsSchema: {
+      type: 'object',
+      required: ['name'],
+      properties: {
+        name: string('分组名称'),
+        description: string('描述', false),
+      },
+    },
+    handler: async (ctx, input: { name: string; description?: string }) => {
+      const created = await ctx.workspace.createShotGroup(input)
+      return { groupId: created.id, name: created.name }
+    },
+  },
+  {
+    name: 'canvas_update_shot_group',
+    description: '修改分镜分组。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId'],
+      properties: {
+        groupId: string('分组 id'),
+        name: string('新名称', false),
+        description: string('新描述', false),
+      },
+    },
+    handler: async (ctx, input: { groupId: string; name?: string; description?: string }) => {
+      const { groupId, ...patch } = input
+      await ctx.workspace.updateShotGroup(groupId, patch)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_delete_shot_group',
+    description: '删除分镜分组。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId'],
+      properties: { groupId: string('分组 id') },
+    },
+    handler: async (ctx, input: { groupId: string }) => {
+      await ctx.workspace.deleteShotGroup(input.groupId)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_create_shot_segment',
+    description: '在分镜分组内新建一个镜头片段。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId', 'title'],
+      properties: {
+        groupId: string('分组 id'),
+        title: string('镜头标题（如「开场—远景」）'),
+        description: string('镜头描述', false),
+        dialogue: string('台词', false),
+        narration: string('旁白', false),
+        characterAssetIds: array(string('角色资产 id'), '出场角色'),
+        sceneAssetId: string('场景资产 id', false),
+        propAssetIds: array(string('道具资产 id'), '道具'),
+        shotPrompt: string('镜头提示词', false),
+      },
+    },
+    handler: async (ctx, input: { groupId: string; title: string } & Partial<ShotSegment>) => {
+      const { groupId, ...segment } = input
+      await ctx.workspace.createShotSegment(groupId, segment)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_update_shot_segment',
+    description: '修改镜头片段。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId', 'segmentId'],
+      properties: {
+        groupId: string('分组 id'),
+        segmentId: string('片段 id'),
+        title: string('标题', false),
+        description: string('描述', false),
+        dialogue: string('台词', false),
+        narration: string('旁白', false),
+        characterAssetIds: array(string('角色资产 id'), '出场角色'),
+        sceneAssetId: string('场景资产 id', false),
+        propAssetIds: array(string('道具资产 id'), '道具'),
+        shotPrompt: string('镜头提示词', false),
+      },
+    },
+    handler: async (ctx, input: { groupId: string; segmentId: string } & Partial<ShotSegment>) => {
+      const { groupId, segmentId, ...patch } = input
+      await ctx.workspace.updateShotSegment(groupId, segmentId, patch)
+      return { ok: true }
+    },
+  },
+  {
+    name: 'canvas_delete_shot_segment',
+    description: '删除镜头片段。',
+    paramsSchema: {
+      type: 'object',
+      required: ['groupId', 'segmentId'],
+      properties: {
+        groupId: string('分组 id'),
+        segmentId: string('片段 id'),
+      },
+    },
+    handler: async (ctx, input: { groupId: string; segmentId: string }) => {
+      await ctx.workspace.deleteShotSegment(input.groupId, input.segmentId)
+      return { ok: true }
+    },
+  },
+
+  // ───────── Agent 生成结果 → 画布（关键能力）─────────
+  {
+    name: 'canvas_insert_generated_image',
+    description:
+      'Agent 生成了一张图片后，把它插入到画布作为图片节点。支持本地文件路径或 data URL。会自动创建 asset + 节点。',
+    paramsSchema: {
+      type: 'object',
+      required: ['source'],
+      properties: {
+        source: {
+          oneOf: [
+            { type: 'string', description: '本地文件绝对路径（如 /tmp/xxx.png）或 data URL 或 http(s) URL' },
+          ],
+          description: '图片来源（路径 / dataURL / URL）',
+        },
+        title: string('节点标题（可选）', false),
+        x: number('画板坐标 x（可选）'),
+        y: number('画板坐标 y（可选）'),
+        width: number('节点宽度（可选，默认 320）'),
+        height: number('节点高度（可选，根据图片比例自适应）'),
+      },
+    },
+    handler: async (
+      ctx,
+      input: { source: string; title?: string; x?: number; y?: number; width?: number; height?: number },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const bid = activeBoardId(ctx)
+      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+
+      // 把 source 落地为本地文件路径
+      let filePath = input.source
+      let mimeType = 'image/png'
+      if (input.source.startsWith('data:')) {
+        mimeType = input.source.match(/^data:([^;]+);/)?.[1] ?? 'image/png'
+        const saved = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl: input.source,
+          mimeType,
+          suggestedBaseName: input.title ?? 'agent-image',
+          storageScope: 'canvas',
+          ...(snap.project.rootPath ? { projectRootPath: snap.project.rootPath } : {}),
+        })
+        filePath = saved.filePath
+      } else if (/^https?:\/\//.test(input.source)) {
+        // 远程 URL：让前端下载为 dataURL 再落盘
+        const res = await fetch(input.source)
+        const blob = await res.blob()
+        mimeType = blob.type || mimeType
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(String(reader.result))
+          reader.onerror = () => reject(reader.error ?? new Error('读取图片失败'))
+          reader.readAsDataURL(blob)
+        })
+        const saved = await window.spark.invoke('file:save-pasted-image', {
+          dataUrl,
+          mimeType,
+          suggestedBaseName: input.title ?? 'agent-image',
+          storageScope: 'canvas',
+          ...(snap.project.rootPath ? { projectRootPath: snap.project.rootPath } : {}),
+        })
+        filePath = saved.filePath
+      }
+
+      // 用 File 接口包一下（createImageNode 需要）
+      const stub = new File([], filePath.split(/[\\/]/).pop() ?? 'image.png', { type: mimeType })
+      const node = await ctx.workspace.createImageNode({
+        file: stub,
+        filePath,
+        x: pos.x,
+        y: pos.y,
+        ...(input.width != null ? { width: input.width } : {}),
+        ...(input.height != null ? { height: input.height } : {}),
+      })
+      if (node && input.title) await ctx.workspace.patchNodes([node.id], { title: input.title })
+      return { nodeId: node?.id ?? null, filePath }
+    },
+  },
+  {
+    name: 'canvas_insert_generated_text',
+    description: 'Agent 生成了一段文本后，作为文本节点插入画布。',
+    paramsSchema: {
+      type: 'object',
+      required: ['text'],
+      properties: {
+        text: string('文本内容'),
+        title: string('节点标题', false),
+        format: enumOf(['plain', 'markdown', 'prompt'], '文本格式（默认 markdown）'),
+        x: number('画板坐标 x（可选）'),
+        y: number('画板坐标 y（可选）'),
+      },
+    },
+    handler: async (
+      ctx,
+      input: { text: string; title?: string; format?: 'plain' | 'markdown' | 'prompt'; x?: number; y?: number },
+    ) => {
+      const snap = requireSnapshot(ctx)
+      const bid = activeBoardId(ctx)
+      const pos = input.x != null && input.y != null ? { x: input.x, y: input.y } : findEmptySpot(snap, bid)
+      const node = await ctx.workspace.createTextNode({ text: input.text, ...pos })
+      if (node) {
+        await ctx.workspace.updateNodeData(node.id, {
+          text: input.text,
+          format: input.format ?? 'markdown',
+        })
+        if (input.title) await ctx.workspace.patchNodes([node.id], { title: input.title })
+      }
+      return { nodeId: node?.id ?? null }
+    },
+  },
+]
+
+export const CANVAS_TOOLS: ReadonlyArray<CanvasToolDescriptor> = tools
+export const CANVAS_TOOL_INDEX: Record<string, CanvasToolDescriptor> = Object.fromEntries(
+  tools.map((t) => [t.name, t]),
+)
+
+/** 给主进程 SDK 注册用的紧凑 schema 列表 */
+export type CanvasToolSchema = {
+  name: string
+  description: string
+  inputSchema: JSONSchema
+}
+export function getCanvasToolSchemas(): CanvasToolSchema[] {
+  return tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.paramsSchema }))
+}
+
+/** 渲染进程统一入口：执行某个工具 */
+export async function executeCanvasTool(
+  ctx: CanvasToolContext,
+  name: string,
+  input: unknown,
+): Promise<unknown> {
+  const tool = CANVAS_TOOL_INDEX[name]
+  if (!tool) throw new Error(`未知画布工具: ${name}`)
+  return await tool.handler(ctx, input as never)
+}
