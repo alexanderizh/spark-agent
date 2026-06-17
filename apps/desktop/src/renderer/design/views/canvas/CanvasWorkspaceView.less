@@ -326,8 +326,6 @@
   min-width: 0;
   min-height: 0;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-accent-cyan) 6%, transparent), transparent 34%),
-    linear-gradient(315deg, color-mix(in srgb, var(--canvas-accent-amber) 5%, transparent), transparent 38%),
     repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px),
     repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px),
     var(--bg-sunken);
@@ -344,7 +342,7 @@
   --xy-controls-button-color-default: var(--text);
   --xy-controls-button-border-color-default: var(--border);
   --canvas-grid-minor-color: color-mix(in srgb, var(--text-muted) 16%, transparent);
-  --canvas-grid-major-color: color-mix(in srgb, var(--canvas-accent-cyan) 18%, transparent);
+  --canvas-grid-major-color: color-mix(in srgb, var(--text-muted) 28%, transparent);
 }
 
 .canvas-stage .react-flow__attribution {
@@ -490,15 +488,13 @@
 }
 
 .canvas-node-group {
-  border-color: color-mix(in srgb, var(--canvas-accent-amber) 42%, var(--border));
+  border-color: var(--border);
   border-style: solid;
-  background:
-    repeating-linear-gradient(135deg, color-mix(in srgb, var(--canvas-accent-amber) 10%, transparent) 0 8px, transparent 8px 16px),
-    color-mix(in srgb, var(--canvas-node-bg) 86%, var(--canvas-accent-amber));
+  background: var(--canvas-node-bg);
 }
 
 .canvas-node-group .canvas-node-head {
-  background: color-mix(in srgb, var(--canvas-accent-amber) 12%, var(--canvas-node-head-bg));
+  background: var(--canvas-node-head-bg);
 }
 
 .canvas-node-resize-line {
@@ -675,7 +671,7 @@
   color: var(--text-muted);
   font-size: 12px;
   line-height: 1.4;
-  background: color-mix(in srgb, var(--canvas-node-body-bg) 82%, var(--canvas-accent-amber));
+  background: var(--canvas-node-body-bg);
 }
 
 .canvas-node-audio {
@@ -851,21 +847,25 @@ body.canvas-side-panel-resizing {
 
 .canvas-inline-ai-composer {
   position: absolute;
-  top: 18px;
-  left: calc((100% - var(--canvas-side-panel-width)) / 2);
-  z-index: 12;
-  width: min(780px, calc(100% - var(--canvas-side-panel-width) - 16px));
-  max-height: 60vh;
+  left: 50%;
+  bottom: 72px;
+  z-index: 1000;
+  width: min(760px, calc(100% - 32px));
+  max-height: 64vh;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   overflow: auto;
-  padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--panel);
-  box-shadow: var(--shadow-lg);
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
+    var(--canvas-float-bg);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), 0 4px 14px rgba(0, 0, 0, 0.22);
   transform: translateX(-50%);
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
 }
 
 .canvas-inline-ai-head,
@@ -878,6 +878,8 @@ body.canvas-side-panel-resizing {
 
 .canvas-inline-ai-head {
   justify-content: space-between;
+  padding: 1px 2px 7px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 70%, transparent);
 }
 
 .canvas-inline-ai-drag-handle {
@@ -895,7 +897,7 @@ body.canvas-side-panel-resizing {
 .canvas-inline-ai-subtitle {
   margin-top: 2px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .canvas-inline-ai-footer {
@@ -908,7 +910,7 @@ body.canvas-side-panel-resizing {
   gap: 12px;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 3%, transparent), transparent),
     var(--canvas-field-bg);
@@ -931,32 +933,32 @@ body.canvas-side-panel-resizing {
 .canvas-form-row {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
 }
 
 .canvas-form-row label {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
 }
 
 .canvas-prompt-injection-list {
   display: flex;
   flex-direction: column;
-  gap: 7px;
-  padding: 8px 10px;
+  gap: 5px;
+  padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--canvas-field-bg) 74%, transparent);
 }
 
 .canvas-prompt-editor {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid color-mix(in srgb, var(--border) 84%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 4%, transparent), transparent),
     color-mix(in srgb, var(--canvas-field-bg) 86%, var(--panel));
@@ -1018,7 +1020,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-prompt-editor-textarea textarea {
-  min-height: 168px;
+  min-height: 118px;
   font-size: 13px;
 }
 
@@ -1375,10 +1377,79 @@ body.canvas-side-panel-resizing {
   padding-top: 8px;
 }
 
+.canvas-bottom-floating-panel {
+  position: absolute;
+  bottom: 72px;
+  left: 50%;
+  z-index: 1000;
+  display: flex;
+  width: 860px;
+  max-width: calc(100% - 32px);
+  max-height: 64vh;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
+    var(--canvas-float-bg);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), 0 4px 14px rgba(0, 0, 0, 0.22);
+  transform: translateX(-50%);
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
+}
+
+.canvas-node-edit-bottom-panel {
+  width: 900px;
+}
+
+.canvas-bottom-floating-head {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
+  background: color-mix(in srgb, var(--panel-elev) 42%, transparent);
+}
+
+.canvas-bottom-floating-head > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.canvas-bottom-floating-head strong {
+  color: var(--text-strong);
+  font-size: 13px;
+}
+
+.canvas-bottom-floating-head span {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-node-edit-bottom-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.canvas-bottom-floating-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px;
+}
+
 .canvas-node-edit-dialog {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .canvas-node-edit-dialog-head {
@@ -1405,7 +1476,7 @@ body.canvas-side-panel-resizing {
 .canvas-node-edit-prompt-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
-  gap: 14px;
+  gap: 10px;
   align-items: start;
 }
 
@@ -1421,8 +1492,8 @@ body.canvas-side-panel-resizing {
 .canvas-node-edit-agent-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .canvas-node-edit-prompt-library {
@@ -1430,10 +1501,10 @@ body.canvas-side-panel-resizing {
   min-width: 0;
   max-height: 560px;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+  gap: 8px;
+  padding: 9px;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: var(--surface-muted);
 }
 
@@ -1458,7 +1529,7 @@ body.canvas-side-panel-resizing {
   min-height: 0;
   flex: 1;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
   overflow: auto;
   padding-right: 2px;
 }
@@ -1467,10 +1538,10 @@ body.canvas-side-panel-resizing {
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 6px;
-  padding: 9px;
+  gap: 4px;
+  padding: 7px;
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--surface);
   color: inherit;
   cursor: pointer;
@@ -1927,88 +1998,6 @@ body.canvas-side-panel-resizing {
   white-space: nowrap;
 }
 
-.canvas-asset-list .ant-list-item {
-  padding: 10px 0;
-}
-
-.canvas-asset-drawer-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-
-.canvas-asset-search {
-  flex: 1;
-  min-width: 0;
-}
-
-.canvas-asset-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-}
-
-.canvas-asset-actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-}
-
-.canvas-asset-thumb {
-  width: 52px;
-  height: 52px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
-  background: var(--bg-sunken);
-  color: var(--text-muted);
-  font-weight: 700;
-}
-
-.canvas-asset-thumb img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.canvas-asset-main {
-  min-width: 0;
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.canvas-asset-title {
-  overflow: hidden;
-  color: var(--text-strong);
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.canvas-asset-content {
-  display: -webkit-box;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.35;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-}
-
-.canvas-asset-meta {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
 @media (max-width: 980px) {
   .canvas-workspace-body {
     grid-template-columns: minmax(0, 1fr);
@@ -2163,7 +2152,7 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 10px;
   padding: 8px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   cursor: pointer;
   transition: background 0.12s;
 
@@ -2174,8 +2163,8 @@ body.canvas-side-panel-resizing {
     }
   }
   &.canvas-board-item-active {
-    background: var(--primary-bg, rgba(59, 130, 246, 0.1));
-    box-shadow: inset 2px 0 0 var(--primary);
+    background: var(--primary-soft);
+    box-shadow: inset 0 0 0 1px var(--primary);
   }
 }
 
@@ -2183,7 +2172,7 @@ body.canvas-side-panel-resizing {
   width: 48px;
   height: 36px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-sunken);
   overflow: hidden;
   display: flex;
@@ -2274,7 +2263,7 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 10px;
   padding: 6px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   transition: background 0.12s;
 
   &:hover {
@@ -2289,7 +2278,7 @@ body.canvas-side-panel-resizing {
   width: 40px;
   height: 40px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-sunken);
   overflow: hidden;
   display: flex;
@@ -2375,7 +2364,7 @@ body.canvas-side-panel-resizing {
   justify-content: space-between;
   gap: 6px;
   padding: 6px 10px;
-  background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+  background: var(--primary-soft);
   border-bottom: 1px solid var(--divider);
 }
 
@@ -2402,7 +2391,7 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 10px;
   padding: 6px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   cursor: pointer;
   transition: background 0.12s;
 
@@ -2410,7 +2399,7 @@ body.canvas-side-panel-resizing {
     background: var(--hover);
   }
   &.selected {
-    background: var(--primary-bg, rgba(59, 130, 246, 0.1));
+    background: var(--primary-soft);
   }
 }
 
@@ -2455,7 +2444,7 @@ body.canvas-side-panel-resizing {
   gap: 4px;
   padding: 6px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
 
@@ -2464,14 +2453,14 @@ body.canvas-side-panel-resizing {
   }
   &.selected {
     border-color: var(--primary);
-    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+    background: var(--primary-soft);
   }
 }
 
 .canvas-asset-grid-thumb {
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-sunken);
   overflow: hidden;
   display: flex;
@@ -2507,29 +2496,36 @@ body.canvas-side-panel-resizing {
 // ── 资产详情浮层 ─────────────────────────────────────────────────────────
 .canvas-asset-detail-overlay {
   position: fixed;
-  inset: 0;
   z-index: 1000;
-  background: rgba(0, 0, 0, 0.35);
+  right: 0;
+  bottom: 72px;
+  left: 0;
   display: flex;
-  align-items: center;
   justify-content: center;
+  pointer-events: none;
 }
 
 .canvas-asset-detail-modal {
-  width: 420px;
-  max-width: 90vw;
-  max-height: 80vh;
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: 58vh;
   overflow-y: auto;
-  background: var(--panel);
-  border-radius: 12px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.2);
+  border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
+  border-radius: var(--r-xl);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
+    var(--canvas-float-bg);
+  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), 0 4px 14px rgba(0, 0, 0, 0.22);
+  pointer-events: auto;
+  backdrop-filter: blur(22px) saturate(1.18);
+  -webkit-backdrop-filter: blur(22px) saturate(1.18);
 }
 
 .canvas-asset-detail-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
+  padding: 9px 12px;
   border-bottom: 1px solid var(--divider);
 
   h4 {
@@ -2540,10 +2536,10 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-asset-detail-body {
-  padding: 12px 16px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 
 .canvas-asset-detail-item {
@@ -2572,8 +2568,8 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-asset-detail-section {
-  margin-top: 8px;
-  padding-top: 8px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px solid var(--divider);
 }
 
@@ -2582,7 +2578,7 @@ body.canvas-side-panel-resizing {
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
 }
 
 .canvas-asset-detail-empty {
@@ -2627,7 +2623,7 @@ body.canvas-side-panel-resizing {
   gap: 4px;
   padding: 7px 10px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
     var(--canvas-float-bg);
@@ -2639,7 +2635,7 @@ body.canvas-side-panel-resizing {
 .canvas-bottom-dock .ant-btn {
   min-width: 30px;
   height: 30px;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   transition:
     background 0.15s ease,
     color 0.15s ease,
@@ -2657,7 +2653,7 @@ body.canvas-side-panel-resizing {
   z-index: 20;
   padding: 4px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 74%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--canvas-float-bg);
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(18px) saturate(1.2);
@@ -2708,7 +2704,7 @@ body.canvas-side-panel-resizing {
   overflow-y: auto;
   padding: 12px;
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
     var(--canvas-float-bg);
@@ -2738,7 +2734,7 @@ body.canvas-side-panel-resizing {
   gap: 4px;
   padding: 10px 4px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
   color: var(--text);
   cursor: pointer;
@@ -2760,6 +2756,42 @@ body.canvas-side-panel-resizing {
   text-align: center;
 }
 
+// ─── AI 操作 / 节点类型 配色（Phase 4 视觉统一）─────────────────────────
+// 4 类语义色 + 资源色：image=蓝、text=绿、audio=紫、video=橙、resource=灰
+// 应用范围：add-node 菜单按钮 + 底部 dock 按钮
+.canvas-op-color-image { --canvas-op-tint: #1677ff; }
+.canvas-op-color-text { --canvas-op-tint: #16a34a; }
+.canvas-op-color-audio { --canvas-op-tint: #9333ea; }
+.canvas-op-color-video { --canvas-op-tint: #ea580c; }
+.canvas-op-color-resource { --canvas-op-tint: #64748b; }
+
+.canvas-add-node-item {
+  &.canvas-op-color-image,
+  &.canvas-op-color-text,
+  &.canvas-op-color-audio,
+  &.canvas-op-color-video,
+  &.canvas-op-color-resource {
+    .canvas-add-node-icon { color: var(--canvas-op-tint); }
+    &:hover {
+      border-color: var(--canvas-op-tint);
+      background: color-mix(in srgb, var(--canvas-op-tint) 8%, var(--bg-sunken));
+    }
+  }
+}
+
+.canvas-bottom-dock .ant-btn {
+  &.canvas-op-color-image svg { color: #1677ff; }
+  &.canvas-op-color-text svg { color: #16a34a; }
+  &.canvas-op-color-audio svg { color: #9333ea; }
+  &.canvas-op-color-video svg { color: #ea580c; }
+  &.canvas-op-color-resource svg { color: #64748b; }
+}
+
+.canvas-bottom-dock {
+  .canvas-dock-btn-ai svg { color: #6366f1; }
+  .canvas-dock-btn-asset svg { color: #0891b2; }
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // 右键菜单（文档 §7.6）
 // ════════════════════════════════════════════════════════════════════════
@@ -2776,7 +2808,7 @@ body.canvas-side-panel-resizing {
   padding: 4px;
   background: var(--panel);
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
 }
 
@@ -2792,14 +2824,14 @@ body.canvas-side-panel-resizing {
   font-size: 13px;
   text-align: left;
   cursor: pointer;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   transition: background 0.1s;
 
   &:hover:not(:disabled) {
     background: var(--hover);
   }
   &.danger {
-    color: var(--error, #ef4444);
+    color: var(--danger);
   }
   &:disabled {
     opacity: 0.4;
@@ -2813,7 +2845,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-context-menu-item.danger .canvas-context-menu-icon {
-  color: var(--error, #ef4444);
+  color: var(--danger);
 }
 
 .canvas-context-menu-divider {
@@ -2846,7 +2878,7 @@ body.canvas-side-panel-resizing {
   height: 28px;
   padding: 0 10px;
   border: 1px solid var(--divider);
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   background: transparent;
   color: var(--text-muted);
   font-size: 12px;
@@ -2862,7 +2894,7 @@ body.canvas-side-panel-resizing {
   &.active {
     color: var(--primary);
     border-color: var(--primary);
-    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+    background: var(--primary-soft);
   }
 }
 
@@ -2919,7 +2951,7 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 8px;
   padding: 4px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   transition: background 0.12s;
 
   &:hover {
@@ -2931,7 +2963,7 @@ body.canvas-side-panel-resizing {
   width: 32px;
   height: 32px;
   flex-shrink: 0;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   overflow: hidden;
   background: var(--bg-sunken);
 }
@@ -2968,7 +3000,7 @@ body.canvas-side-panel-resizing {
   align-items: center;
   gap: 8px;
   padding: 5px 4px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   transition: background 0.12s;
 
   &:hover {
@@ -3034,7 +3066,7 @@ body.canvas-side-panel-resizing {
 .canvas-template-filter {
   padding: 4px 10px;
   border: 1px solid var(--divider);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: transparent;
   color: var(--text-muted);
   font-size: 11px;
@@ -3048,7 +3080,7 @@ body.canvas-side-panel-resizing {
   &.active {
     color: var(--primary);
     border-color: var(--primary);
-    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+    background: var(--primary-soft);
   }
 }
 
@@ -3064,7 +3096,7 @@ body.canvas-side-panel-resizing {
 .canvas-template-card {
   padding: 12px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-sunken);
   transition: border-color 0.12s;
 
@@ -3203,7 +3235,7 @@ body.canvas-side-panel-resizing {
 .canvas-film-chip {
   padding: 3px 8px;
   border: 1px solid var(--divider);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: transparent;
   color: var(--text-muted);
   font-size: 11px;
@@ -3217,12 +3249,12 @@ body.canvas-side-panel-resizing {
   &.active {
     color: var(--primary);
     border-color: var(--primary);
-    background: var(--primary-bg, rgba(59, 130, 246, 0.08));
+    background: var(--primary-soft);
   }
   &.active.perf {
-    color: var(--warning, #f59e0b);
-    border-color: var(--warning, #f59e0b);
-    background: rgba(245, 158, 11, 0.08);
+    color: var(--warning);
+    border-color: var(--warning);
+    background: var(--warning-bg);
   }
 }
 
@@ -3234,7 +3266,7 @@ body.canvas-side-panel-resizing {
   margin: 0 0 8px;
   padding: 8px;
   background: var(--panel);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   font-size: 11px;
   line-height: 1.5;
   color: var(--text);
@@ -3264,7 +3296,7 @@ body.canvas-side-panel-resizing {
   gap: 4px;
   padding: 12px 4px;
   border: 1px dashed var(--divider);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   color: var(--text-muted);
   font-size: 11px;
   text-align: center;
@@ -3272,6 +3304,11 @@ body.canvas-side-panel-resizing {
 }
 
 // ═══ 影视资产中心弹窗（§7.10）══════════════════════════════════════════
+.canvas-film-center-panel {
+  width: min(980px, calc(100% - 32px));
+  height: min(620px, 64vh);
+}
+
 .canvas-film-center {
   --canvas-film-accent: #fbbf24;
   --canvas-film-cyan: #22d3ee;
@@ -3280,15 +3317,13 @@ body.canvas-side-panel-resizing {
   --canvas-film-card: color-mix(in srgb, var(--panel-elev) 92%, var(--panel));
   --canvas-film-card-strong: color-mix(in srgb, var(--panel-elev) 96%, var(--bg-soft));
   display: flex;
-  height: 100%;
+  flex: 1;
+  height: auto;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border-strong) 68%, transparent);
-  border-radius: 12px;
-  background:
-    radial-gradient(circle at 18% 0, color-mix(in srgb, var(--canvas-film-accent) 12%, transparent), transparent 32%),
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-film-cyan) 7%, transparent), transparent 38%),
-    var(--canvas-film-surface);
+  border: 0;
+  border-radius: 0;
+  background: var(--canvas-film-surface);
 }
 
 [data-theme='light'] .canvas-film-center {
@@ -3305,11 +3340,11 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-film-center-tabs {
-  width: 136px;
+  width: 118px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  padding: 10px 8px;
+  padding: 8px 7px;
   border-right: 1px solid color-mix(in srgb, var(--divider) 78%, transparent);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--panel-elev) 46%, transparent), transparent),
@@ -3318,32 +3353,26 @@ body.canvas-side-panel-resizing {
 
 .canvas-film-center-tab {
   position: relative;
-  padding: 11px 12px;
+  padding: 8px 10px;
   border: none;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   text-align: left;
   cursor: pointer;
   transition:
     background 0.14s ease,
-    color 0.14s ease,
-    transform 0.14s ease;
+    color 0.14s ease;
 
   &:hover {
     color: var(--text);
-    background: color-mix(in srgb, var(--hover) 74%, transparent);
+    background: var(--hover);
   }
   &.active {
-    color: var(--text-strong);
-    background:
-      linear-gradient(90deg, color-mix(in srgb, var(--canvas-film-accent) 20%, transparent), transparent),
-      var(--canvas-film-card);
-    box-shadow:
-      inset 3px 0 0 color-mix(in srgb, var(--canvas-film-accent) 88%, var(--primary)),
-      0 8px 22px rgba(0, 0, 0, 0.12);
+    color: var(--primary);
+    background: var(--primary-soft);
   }
 }
 
@@ -3366,7 +3395,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 18px 10px;
+  padding: 9px 12px 7px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--panel-elev) 52%, transparent), transparent),
@@ -3383,10 +3412,10 @@ body.canvas-side-panel-resizing {
 .canvas-film-asset-cards {
   flex: 1;
   overflow-y: auto;
-  padding: 14px 18px 18px;
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .canvas-film-asset-card {
@@ -3395,7 +3424,7 @@ body.canvas-side-panel-resizing {
   gap: 12px;
   padding: 10px;
   border: 1px solid var(--divider);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--panel);
   transition: border-color 0.12s;
 
@@ -3406,7 +3435,7 @@ body.canvas-side-panel-resizing {
   width: 56px;
   height: 56px;
   flex-shrink: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--bg-sunken);
 }
@@ -3455,7 +3484,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 16px;
+  padding: 9px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--panel-elev) 42%, transparent), transparent),
@@ -3471,10 +3500,10 @@ body.canvas-side-panel-resizing {
 .canvas-film-editor-form {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 18px 18px;
+  padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .canvas-film-editor-field {
@@ -3496,7 +3525,7 @@ body.canvas-side-panel-resizing {
   height: 30px;
   padding: 0 8px;
   border: 1px solid var(--border, var(--divider));
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--panel);
   color: var(--text);
   font-size: 13px;
@@ -3520,7 +3549,7 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-film-shots-sidebar {
-  width: 214px;
+  width: 190px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
@@ -3534,7 +3563,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 8px 10px;
   font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
@@ -3557,19 +3586,17 @@ body.canvas-side-panel-resizing {
   gap: 6px;
   padding: 9px 10px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   cursor: pointer;
   margin-bottom: 4px;
 
   &:hover {
-    border-color: color-mix(in srgb, var(--border) 70%, transparent);
-    background: color-mix(in srgb, var(--hover) 76%, transparent);
+    border-color: var(--border);
+    background: var(--hover);
   }
   &.active {
-    border-color: color-mix(in srgb, var(--canvas-film-accent) 36%, var(--border));
-    background:
-      linear-gradient(90deg, color-mix(in srgb, var(--canvas-film-accent) 16%, transparent), transparent),
-      var(--canvas-film-card);
+    border-color: var(--primary);
+    background: var(--primary-soft);
   }
 }
 
@@ -3626,29 +3653,17 @@ body.canvas-side-panel-resizing {
   gap: 10px;
   padding: 12px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 12px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-film-cyan) 8%, transparent), transparent 44%),
-    var(--canvas-film-card);
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--canvas-film-card);
+  box-shadow: var(--shadow-sm);
   transition:
     border-color 0.14s ease,
     box-shadow 0.14s ease;
 
-  &::before {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 3px;
-    background: linear-gradient(180deg, var(--canvas-film-cyan), var(--canvas-film-accent));
-    content: '';
-  }
-
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 58%, var(--border));
-    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.14);
+    border-color: var(--primary);
+    box-shadow: var(--shadow-md);
   }
 }
 
@@ -3716,10 +3731,16 @@ body.canvas-side-panel-resizing {
   font-weight: 700;
 }
 
+.canvas-agent-panel {
+  width: 680px;
+  height: min(560px, 64vh);
+}
+
 .canvas-agent-modal {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  height: auto;
   min-height: 0;
 }
 
@@ -3734,9 +3755,9 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 16px;
-  background: rgba(239, 68, 68, 0.08);
-  color: var(--error, #ef4444);
+  padding: 7px 12px;
+  background: var(--danger-bg);
+  color: var(--danger);
   font-size: 12px;
   border-bottom: 1px solid var(--divider);
 }
@@ -3745,7 +3766,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 16px;
+  padding: 6px 12px;
   background: var(--bg-sunken);
   border-bottom: 1px solid var(--divider);
   font-size: 11px;
@@ -3756,10 +3777,10 @@ body.canvas-side-panel-resizing {
 .canvas-agent-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 16px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .canvas-agent-empty {
@@ -3778,13 +3799,13 @@ body.canvas-side-panel-resizing {
 
 .canvas-agent-message {
   display: flex;
-  gap: 10px;
+  gap: 8px;
   max-width: 100%;
 }
 
 .canvas-agent-message-avatar {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   border-radius: 50%;
   display: flex;
@@ -3795,20 +3816,20 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-agent-message-user .canvas-agent-message-avatar {
-  background: var(--primary-bg, rgba(59,130,246,0.1));
+  background: var(--primary-soft);
   color: var(--primary);
 }
 
 .canvas-agent-message-assistant .canvas-agent-message-avatar {
-  background: rgba(245,158,11,0.1);
-  color: var(--warning, #f59e0b);
+  background: var(--warning-bg);
+  color: var(--warning);
 }
 
 .canvas-agent-message-body {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
   color: var(--text);
   padding-top: 3px;
   white-space: pre-wrap;
@@ -3828,8 +3849,8 @@ body.canvas-side-panel-resizing {
 
 .canvas-agent-input-area {
   display: flex;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 7px;
+  padding: 9px 12px;
   border-top: 1px solid var(--divider);
   background: var(--panel);
   flex-shrink: 0;
@@ -3839,10 +3860,10 @@ body.canvas-side-panel-resizing {
   flex: 1;
   resize: none;
   border: 1px solid var(--divider);
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 13px;
-  line-height: 1.5;
+  border-radius: var(--r-md);
+  padding: 7px 9px;
+  font-size: 12px;
+  line-height: 1.4;
   background: var(--bg-sunken);
   color: var(--text);
   font-family: inherit;
@@ -3854,9 +3875,15 @@ body.canvas-side-panel-resizing {
   &::placeholder { color: var(--text-muted); }
 }
 
-// dock 里 agent 按钮的强调样式
+// dock 里 agent 按钮的强调样式（Bot 图标 + 暖琥珀色）
 .canvas-dock-agent-btn {
-  color: var(--warning, #f59e0b) !important;
+  color: #f59e0b !important;
+
+  svg { color: #f59e0b; }
+
+  &:hover {
+    background: color-mix(in srgb, #f59e0b 12%, transparent);
+  }
 }
 
 // ─── 项目资源中心 v2：多图多描述 / 标签 / 搜索 / 排序 / 引用可视化 ──────
@@ -3881,7 +3908,7 @@ body.canvas-side-panel-resizing {
   flex-wrap: wrap;
   gap: 6px;
   align-items: center;
-  padding: 8px 18px 10px;
+  padding: 7px 12px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 46%, transparent);
   background: color-mix(in srgb, var(--canvas-film-card) 52%, transparent);
 }
@@ -3907,7 +3934,7 @@ body.canvas-side-panel-resizing {
 .canvas-film-tag-chip {
   display: inline-flex;
   align-items: center;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   padding: 0 8px;
   font-size: 12px;
   line-height: 20px;
@@ -3923,39 +3950,29 @@ body.canvas-side-panel-resizing {
 .canvas-film-asset-card {
   position: relative;
   display: grid;
-  grid-template-columns: 96px 1fr auto;
-  gap: 12px;
-  padding: 12px 14px;
+  grid-template-columns: 82px 1fr auto;
+  gap: 8px;
+  padding: 8px 10px;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 13px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-film-accent) 7%, transparent), transparent 36%),
-    var(--canvas-film-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  background: var(--canvas-film-card);
   align-items: center;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-sm);
   transition:
     border-color 140ms ease,
     box-shadow 140ms ease;
 
-  &::before {
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    background: linear-gradient(180deg, var(--canvas-film-accent), var(--canvas-film-rose));
-    content: '';
-  }
-
   &:hover {
-    border-color: color-mix(in srgb, var(--primary) 56%, var(--border));
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.14);
+    border-color: var(--primary);
+    box-shadow: var(--shadow-md);
   }
 }
 .canvas-film-asset-card-thumb {
   position: relative;
   width: 96px;
   height: 64px;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   background:
@@ -4004,7 +4021,7 @@ body.canvas-side-panel-resizing {
   gap: 6px;
   padding: 10px;
   border: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--canvas-film-card) 74%, transparent);
 }
 .canvas-film-editor-section-title-row {
@@ -4030,7 +4047,7 @@ body.canvas-side-panel-resizing {
 .canvas-film-references-empty {
   padding: 14px 12px;
   border: 1px dashed color-mix(in srgb, var(--border-strong) 62%, transparent);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--bg-sunken) 72%, transparent);
   color: var(--text-muted);
   font-size: 12px;
@@ -4047,14 +4064,14 @@ body.canvas-side-panel-resizing {
   gap: 8px;
   padding: 9px;
   border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--canvas-film-card);
 }
 .canvas-film-reference-thumb {
   position: relative;
   width: 88px;
   height: 88px;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 64%, transparent);
   background: var(--bg-sunken);
@@ -4094,7 +4111,7 @@ body.canvas-side-panel-resizing {
   margin-top: 8px;
   padding: 10px;
   border: 1px dashed color-mix(in srgb, var(--border-strong) 56%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--bg-sunken) 62%, transparent);
 }
 .canvas-film-usage-list {
@@ -4122,7 +4139,7 @@ body.canvas-side-panel-resizing {
   color: var(--text);
   padding: 4px 8px;
   border: 1px solid color-mix(in srgb, var(--border) 62%, transparent);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--canvas-film-card-strong);
 }
 .canvas-film-usage-groupname { color: var(--text-muted); }
@@ -4158,7 +4175,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   padding: 11px;
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background:
     linear-gradient(135deg, color-mix(in srgb, var(--canvas-film-cyan) 10%, transparent), transparent),
     var(--canvas-film-card);
@@ -4172,7 +4189,7 @@ body.canvas-side-panel-resizing {
 .canvas-film-save-node-thumb {
   width: 64px;
   height: 64px;
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   background: var(--bg-sunken);
@@ -4205,14 +4222,14 @@ body.canvas-side-panel-resizing {
   gap: 6px;
   padding: 4px 8px 4px 4px;
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
-  border-radius: 10px;
+  border-radius: var(--r-lg);
   background: var(--canvas-film-card-strong);
   font-size: 12px;
 }
 .canvas-film-save-refchip > div:first-child {
   width: 28px;
   height: 28px;
-  border-radius: 4px;
+  border-radius: var(--r-xs);
   overflow: hidden;
   background: var(--bg-sunken);
 }
@@ -4224,14 +4241,14 @@ body.canvas-side-panel-resizing {
   bottom: 72px;
   transform: translateX(-50%);
   z-index: 1000;
-  width: 760px;
+  width: 740px;
   max-width: calc(100% - 32px);
-  max-height: 68vh;
+  max-height: 64vh;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
   border: 1px solid color-mix(in srgb, var(--border-strong) 78%, transparent);
-  border-radius: 16px;
+  border-radius: var(--r-xl);
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
     var(--canvas-float-bg);
@@ -4244,7 +4261,7 @@ body.canvas-side-panel-resizing {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 11px 14px;
+  padding: 9px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background: color-mix(in srgb, var(--panel-elev) 42%, transparent);
   flex-shrink: 0;
@@ -4262,19 +4279,19 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
 }
 
 .canvas-operation-panel-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px;
+  gap: 6px;
+  padding: 8px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: color-mix(in srgb, var(--canvas-field-bg) 74%, transparent);
 }
 
@@ -4287,15 +4304,39 @@ body.canvas-side-panel-resizing {
 }
 
 .canvas-operation-panel-inputs {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(92px, 1fr));
   gap: 6px;
 }
 
+.canvas-operation-panel-input-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--bg-sunken) 74%, transparent);
+}
+
+.canvas-operation-panel-input-card .ant-btn {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel-elev) 82%, transparent);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.16);
+}
+
 .canvas-operation-panel-input-thumb {
-  width: 56px;
-  height: 56px;
-  border-radius: 8px;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: var(--r-md);
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
   background: var(--bg-sunken);
@@ -4303,6 +4344,25 @@ body.canvas-side-panel-resizing {
   align-items: center;
   justify-content: center;
   color: var(--text-muted);
+}
+
+.canvas-operation-panel-input-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--canvas-accent-cyan) 8%, transparent), transparent),
+    var(--bg-sunken);
+}
+
+.canvas-operation-panel-input-name {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .canvas-operation-panel-text-inputs {
@@ -4316,7 +4376,7 @@ body.canvas-side-panel-resizing {
   flex-direction: column;
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: color-mix(in srgb, var(--bg-sunken) 82%, transparent);
 }
 
@@ -4337,7 +4397,7 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-params {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 8px;
+  gap: 6px;
 }
 
 .canvas-operation-panel-param {
@@ -4389,8 +4449,8 @@ body.canvas-side-panel-resizing {
 .canvas-operation-panel-footer {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
+  gap: 6px;
+  padding: 9px 12px;
   border-top: 1px solid color-mix(in srgb, var(--divider) 76%, transparent);
   background: color-mix(in srgb, var(--panel-elev) 38%, transparent);
   flex-shrink: 0;
@@ -4401,6 +4461,17 @@ body.canvas-side-panel-resizing {
 }
 
 @media (max-width: 900px) {
+  .canvas-bottom-floating-panel,
+  .canvas-inline-ai-composer {
+    bottom: 64px;
+    width: calc(100% - 24px);
+  }
+
+  .canvas-bottom-floating-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .canvas-operation-panel {
     width: calc(100% - 24px);
     bottom: 64px;

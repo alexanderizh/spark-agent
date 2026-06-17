@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { CANVAS_CAPABILITIES } from './canvas.capabilities'
+import { getOperationVisual } from './canvasOperationIcons'
 import type {
   CanvasNodeData,
   CanvasOperationType,
@@ -19,6 +20,8 @@ export type AddNodeMenuItem = {
   label: string
   category: 'content' | 'task' | 'resource'
   icon: React.ReactNode
+  /** 类型语义色 class，用于按钮配色（image/text/audio/video） */
+  colorClass?: string
   /** 内容节点：给出 type + data；资源入口：onAction；AI：onOperation */
   nodeType?: 'text' | 'prompt' | 'image' | 'video' | 'audio' | 'group'
   data?: CanvasNodeData
@@ -32,29 +35,33 @@ export type AddNodeMenuItem = {
 export function useAddNodeMenuItems(): AddNodeMenuItem[] {
   const taskItems = useMemo<AddNodeMenuItem[]>(
     () =>
-      CANVAS_CAPABILITIES.map((capability) => ({
-        id: `task:${capability.operation}`,
-        label: capability.label,
-        category: 'task' as const,
-        icon: <Icons.Sparkles size={15} />,
-        operation: capability.operation,
-      })),
+      CANVAS_CAPABILITIES.map((capability) => {
+        const visual = getOperationVisual(capability.operation)
+        return {
+          id: `task:${capability.operation}`,
+          label: capability.label,
+          category: 'task' as const,
+          icon: visual.icon,
+          colorClass: visual.colorClass,
+          operation: capability.operation,
+        }
+      }),
     [],
   )
 
   return useMemo<AddNodeMenuItem[]>(
     () => [
       // 内容节点
-      { id: 'content:text', label: '文本', category: 'content', icon: <Icons.File size={15} />, nodeType: 'text', data: { text: '', format: 'plain', origin: 'manual' } },
-      { id: 'content:prompt', label: 'Prompt', category: 'content', icon: <Icons.Edit size={15} />, nodeType: 'prompt', data: { text: '', format: 'prompt', origin: 'manual' } },
-      { id: 'content:image', label: '图片', category: 'content', icon: <Icons.Image size={15} />, action: 'upload_image' },
-      { id: 'content:group', label: '组', category: 'content', icon: <Icons.Layers size={15} />, nodeType: 'group' },
+      { id: 'content:text', label: '文本', category: 'content', icon: <Icons.FileText size={15} />, colorClass: 'canvas-op-color-text', nodeType: 'text', data: { text: '', format: 'plain', origin: 'manual' } },
+      { id: 'content:prompt', label: 'Prompt', category: 'content', icon: <Icons.Wand size={15} />, colorClass: 'canvas-op-color-text', nodeType: 'prompt', data: { text: '', format: 'prompt', origin: 'manual' } },
+      { id: 'content:image', label: '图片', category: 'content', icon: <Icons.Image size={15} />, colorClass: 'canvas-op-color-image', action: 'upload_image' },
+      { id: 'content:group', label: '组', category: 'content', icon: <Icons.Layers size={15} />, colorClass: 'canvas-op-color-resource', nodeType: 'group' },
       // AI 工作节点（由 capabilities 驱动，仍是 task+operation）
       ...taskItems,
       // 资源入口节点（菜单动作，不是持久 node type）
-      { id: 'resource:asset', label: '从资产选择', category: 'resource', icon: <Icons.Folder size={15} />, action: 'insert_asset' },
-      { id: 'resource:history', label: '从历史选择', category: 'resource', icon: <Icons.Clock size={15} />, action: 'from_history' },
-      { id: 'resource:template', label: '从模板创建', category: 'resource', icon: <Icons.FilePlus size={15} />, action: 'from_template' },
+      { id: 'resource:asset', label: '从资产选择', category: 'resource', icon: <Icons.Folder size={15} />, colorClass: 'canvas-op-color-resource', action: 'insert_asset' },
+      { id: 'resource:history', label: '从历史选择', category: 'resource', icon: <Icons.Clock size={15} />, colorClass: 'canvas-op-color-resource', action: 'from_history' },
+      { id: 'resource:template', label: '从模板创建', category: 'resource', icon: <Icons.FilePlus size={15} />, colorClass: 'canvas-op-color-resource', action: 'from_template' },
     ],
     [taskItems],
   )
@@ -113,7 +120,7 @@ export function CanvasAddNodeMenu({
                   <button
                     key={item.id}
                     type="button"
-                    className="canvas-add-node-item"
+                    className={`canvas-add-node-item ${item.colorClass ?? ''}`}
                     role="menuitem"
                     onClick={() => {
                       onSelect(item)

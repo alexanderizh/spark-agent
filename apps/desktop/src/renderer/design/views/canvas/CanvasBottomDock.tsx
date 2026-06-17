@@ -19,6 +19,7 @@ export function CanvasBottomDock({
   activeTool,
   onToolChange,
   onAddNodeItem,
+  onOpenAddMenu,
   onOpenAiComposer,
   onOpenFilmCenter,
   onOpenAgent,
@@ -32,6 +33,7 @@ export function CanvasBottomDock({
   activeTool: CanvasTool
   onToolChange: (tool: CanvasTool) => void
   onAddNodeItem: (item: AddNodeMenuItem) => void
+  onOpenAddMenu: () => void
   onOpenAiComposer: () => void
   onOpenFilmCenter: () => void
   onOpenAgent: () => void
@@ -45,6 +47,14 @@ export function CanvasBottomDock({
   const items = useAddNodeMenuItems()
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const contentItems = items.filter((item) => item.category === 'content')
+  const openAddMenu = () => {
+    onOpenAddMenu()
+    setAddMenuOpen(true)
+  }
+  const closeAddMenuAndRun = (action: () => void) => {
+    setAddMenuOpen(false)
+    action()
+  }
 
   if (collapsed) {
     return (
@@ -104,9 +114,10 @@ export function CanvasBottomDock({
                 <Button
                   size="small"
                   type="text"
+                  className={item.colorClass ?? ''}
                   icon={item.icon}
                   aria-label={item.label}
-                  onClick={() => onAddNodeItem(item)}
+                  onClick={() => closeAddMenuAndRun(() => onAddNodeItem(item))}
                 />
               </Tooltip>
             ))}
@@ -116,7 +127,7 @@ export function CanvasBottomDock({
               type="text"
               icon={<Icons.Plus size={15} />}
               aria-label="节点工厂"
-              onClick={() => setAddMenuOpen(true)}
+              onClick={openAddMenu}
             />
           </Tooltip>
         </div>
@@ -128,18 +139,20 @@ export function CanvasBottomDock({
             <Button
               size="small"
               type="text"
+              className="canvas-dock-btn-ai"
               icon={<Icons.Sparkles size={15} />}
               aria-label="AI 操作"
-              onClick={onOpenAiComposer}
+              onClick={() => closeAddMenuAndRun(onOpenAiComposer)}
             />
           </Tooltip>
           <Tooltip title="项目资产中心（剧本/角色/场景/道具/分镜/提示词库）" placement="top">
             <Button
               size="small"
               type="text"
-              icon={<Icons.Layers size={15} />}
+              className="canvas-dock-btn-asset"
+              icon={<Icons.Box size={15} />}
               aria-label="项目资产中心"
-              onClick={onOpenFilmCenter}
+              onClick={() => closeAddMenuAndRun(onOpenFilmCenter)}
             />
           </Tooltip>
           <Tooltip title="画布 Agent 助手（对话操作画布）" placement="top">
@@ -147,9 +160,9 @@ export function CanvasBottomDock({
               size="small"
               type="text"
               className="canvas-dock-agent-btn"
-              icon={<Icons.Sparkles size={15} />}
+              icon={<Icons.Bot size={15} />}
               aria-label="画布 Agent 助手"
-              onClick={onOpenAgent}
+              onClick={() => closeAddMenuAndRun(onOpenAgent)}
             />
           </Tooltip>
         </div>
@@ -167,7 +180,7 @@ export function CanvasBottomDock({
             <Button
               size="small"
               type={gridVisible ? 'primary' : 'text'}
-              icon={<Icons.Layers size={15} />}
+              icon={<Icons.Grid size={15} />}
               onClick={onToggleGrid}
             />
           </Tooltip>
