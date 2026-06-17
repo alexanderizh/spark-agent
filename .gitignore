@@ -47,6 +47,11 @@ playwright-report/
 api-keys.json
 secrets.json
 
+# ---- CI 证书导出目录（本地暂存 .p12 / base64，严禁提交） ----
+.secrets/
+*.certSigningRequest
+developerID_application.cer
+
 # ---- SQLite 数据库文件 --------------------
 # 开发数据库不提交（含用户数据）
 *.db
