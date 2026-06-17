@@ -147,4 +147,4 @@ jobs:
       - name: Cleanup keychain (macOS only)
         if: runner.os == 'macOS' && always()
         run: |
-          security delete-keychain spark-build.keychain 2>/dev/null || true
+          security delete-keychain "$HOME/Library/Keychains/spark-build.keychain-db" 2>/dev/null || true
