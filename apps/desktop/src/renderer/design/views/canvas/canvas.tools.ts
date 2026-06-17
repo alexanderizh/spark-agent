@@ -63,16 +63,7 @@ export type CanvasWorkspaceActions = {
     y: number
   }) => Promise<CanvasNode | null>
   createFilmAsset: (input: CreateFilmAssetInput) => Promise<CanvasAsset>
-  updateFilmAsset: (
-    assetId: string,
-    patch: {
-      title?: string
-      contentText?: string
-      prompt?: string
-      tags?: string[]
-      attributes?: Record<string, unknown>
-    },
-  ) => Promise<void>
+  updateFilmAsset: (assetId: string, patch: Record<string, unknown>) => Promise<void>
   deleteFilmAsset: (assetId: string) => Promise<void>
   createShotGroup: (input: { name: string; description?: string }) => Promise<ShotGroup>
   updateShotGroup: (groupId: string, patch: { name?: string; description?: string }) => Promise<void>
@@ -758,7 +749,7 @@ const tools: CanvasToolDescriptor[] = [
       input: { assetId: string; title?: string; contentText?: string; prompt?: string; tags?: string[]; attributes?: Record<string, unknown> },
     ) => {
       const { assetId, ...patch } = input
-      await ctx.workspace.updateFilmAsset(assetId, patch)
+      await ctx.workspace.updateFilmAsset(assetId, patch as Record<string, unknown>)
       return { ok: true }
     },
   },

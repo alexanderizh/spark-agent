@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Empty, Segmented, Tag } from '@lobehub/ui'
 import { Drawer, Input, Modal, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
-import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
 import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasInspector } from './CanvasInspector'
@@ -706,7 +705,6 @@ export function CanvasWorkspaceView({
   const [toolSwitchHint, setToolSwitchHint] = useState<{ tool: CanvasTool; nonce: number } | null>(
     null,
   )
-  const [assetDrawerOpen, setAssetDrawerOpen] = useState(false)
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
   const [saveToLibraryNodeId, setSaveToLibraryNodeId] = useState<string | null>(null)
   const saveToLibraryNode = useMemo(
@@ -715,7 +713,8 @@ export function CanvasWorkspaceView({
   )
   const [sidePanelTab, setSidePanelTab] = useState<'details' | 'project'>('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
-  const [dismissedOperationNodeId, setDismissedOperationNodeId] = useState<string | null>(null)
+  const [activeOperationPanelNodeId, setActiveOperationPanelNodeId] = useState<string | null>(null)
+  const [assetDetailResetKey, setAssetDetailResetKey] = useState(0)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -942,6 +941,20 @@ export function CanvasWorkspaceView({
     setActiveTool(tool)
   }, [])
 
+  const closeCanvasFloatPanels = useCallback(
+    (
+      except?: 'inline-ai' | 'operation' | 'film-center' | 'agent' | 'node-edit' | 'asset-detail',
+    ) => {
+      if (except !== 'inline-ai') setInlineAiOpen(false)
+      if (except !== 'operation') setActiveOperationPanelNodeId(null)
+      if (except !== 'film-center') setFilmCenterOpen(false)
+      if (except !== 'agent') setAgentOpen(false)
+      if (except !== 'node-edit') setEditingNodeId(null)
+      if (except !== 'asset-detail') setAssetDetailResetKey((key) => key + 1)
+    },
+    [],
+  )
+
   const togglePointerTool = useCallback(() => {
     const nextTool: CanvasTool = activeToolRef.current === 'pan' ? 'select' : 'pan'
     activeToolRef.current = nextTool
@@ -968,11 +981,31 @@ export function CanvasWorkspaceView({
     setSelectedNodeIds((previousIds) =>
       areNodeIdsEqual(previousIds, nodeIds) ? previousIds : nodeIds,
     )
+    setActiveOperationPanelNodeId((currentId) =>
+      currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
+    )
+    setEditingNodeId((currentId) =>
+      currentId && nodeIds.length === 1 && nodeIds[0] === currentId ? currentId : null,
+    )
   }, [])
 
   const handleNodeSelectIntent = useCallback((nodeId: string) => {
-    setDismissedOperationNodeId((current) => (current === nodeId ? null : current))
-  }, [])
+    const node = snapshot?.nodes.find((item) => item.id === nodeId)
+    if (!node) return
+
+    if (isOperationNode(node)) {
+      closeCanvasFloatPanels('operation')
+      setActiveOperationPanelNodeId(nodeId)
+      return
+    }
+
+    if (node.type === 'text' || node.type === 'prompt') {
+      closeCanvasFloatPanels('node-edit')
+      setEditingNodeId(nodeId)
+      return
+    }
+    closeCanvasFloatPanels()
+  }, [closeCanvasFloatPanels, snapshot?.nodes])
 
   const handleCanvasViewportChange = useCallback((viewport: CanvasStageViewport) => {
     canvasViewportRef.current = viewport
@@ -981,6 +1014,8 @@ export function CanvasWorkspaceView({
   const handleDeleteNode = useCallback(
     (nodeId: string) => {
       setSelectedNodeIds((previousIds) => previousIds.filter((id) => id !== nodeId))
+      setActiveOperationPanelNodeId((currentId) => (currentId === nodeId ? null : currentId))
+      setEditingNodeId((currentId) => (currentId === nodeId ? null : currentId))
       void deleteNodes([nodeId])
     },
     [deleteNodes],
@@ -1048,19 +1083,20 @@ export function CanvasWorkspaceView({
 
   const handleOpenInlineAi = useCallback(
     (nodeId?: string) => {
+      closeCanvasFloatPanels('inline-ai')
       if (nodeId && !selectedNodeIds.includes(nodeId)) {
         setSelectedNodeIds([nodeId])
       }
       setInlineAiOpen(true)
     },
-    [selectedNodeIds],
+    [closeCanvasFloatPanels, selectedNodeIds],
   )
 
   const handleEditNode = useCallback((nodeId: string) => {
-    setDismissedOperationNodeId(null)
+    closeCanvasFloatPanels('node-edit')
     setSelectedNodeIds([nodeId])
     setEditingNodeId(nodeId)
-  }, [])
+  }, [closeCanvasFloatPanels])
 
   const handleSaveNodeEdit = useCallback(
     async (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => {
@@ -1173,6 +1209,7 @@ export function CanvasWorkspaceView({
 
   const handleAddNodeItem = useCallback(
     (item: AddNodeMenuItem) => {
+      closeCanvasFloatPanels()
       // 内容节点：文本 / prompt 直接创建
       if (item.nodeType === 'text' || item.nodeType === 'prompt') {
         void addText()
@@ -1194,10 +1231,11 @@ export function CanvasWorkspaceView({
       }
       // AI 工作节点：打开 inline AI composer 并预选 operation
       if (item.operation) {
+        closeCanvasFloatPanels('inline-ai')
         setInlineAiOpen(true)
       }
     },
-    [addText, uploadFirstImage, setLeftPanelTab],
+    [addText, closeCanvasFloatPanels, uploadFirstImage, setLeftPanelTab],
   )
 
   const handleFitView = useCallback(() => {
@@ -1659,7 +1697,6 @@ export function CanvasWorkspaceView({
         <CanvasToolbar
           saveState={{ dirty, saving }}
           onSave={() => void doSave()}
-          onOpenAssets={() => setLeftPanelTab("assets")}
           onExport={() => void handleExportProject()}
         />
       </header>
@@ -1725,6 +1762,8 @@ export function CanvasWorkspaceView({
                   }}
                   onInsertOne={(assetId) => void handleInsertAsset(assetId)}
                   onDownloadOne={(asset) => downloadAsset(asset)}
+                  detailResetKey={assetDetailResetKey}
+                  onOpenDetail={() => closeCanvasFloatPanels('asset-detail')}
                   onRemoveReferences={async (assetIds) => {
                     const targetAssetSet = new Set(assetIds)
                     const nodeIds = snapshot.nodes
@@ -1740,7 +1779,10 @@ export function CanvasWorkspaceView({
           )}
           {!leftPanelCollapsed && (
             <div className="canvas-left-workbench-footer">
-              <button type="button" className="canvas-left-utility-btn" onClick={() => setHistoryOpen(true)}>
+              <button type="button" className="canvas-left-utility-btn" onClick={() => {
+                closeCanvasFloatPanels()
+                setHistoryOpen(true)
+              }}>
                 <Icons.Clock size={16} />
                 <span>历史</span>
               </button>
@@ -1748,7 +1790,10 @@ export function CanvasWorkspaceView({
                 <Icons.Folder size={16} />
                 <span>目录</span>
               </button>
-              <button type="button" className="canvas-left-utility-btn" onClick={() => setTemplateOpen(true)}>
+              <button type="button" className="canvas-left-utility-btn" onClick={() => {
+                closeCanvasFloatPanels()
+                setTemplateOpen(true)
+              }}>
                 <Icons.Layers size={16} />
                 <span>模板</span>
               </button>
@@ -1814,9 +1859,16 @@ export function CanvasWorkspaceView({
           activeTool={activeTool}
           onToolChange={handleToolChange}
           onAddNodeItem={handleAddNodeItem}
+          onOpenAddMenu={() => closeCanvasFloatPanels()}
           onOpenAiComposer={() => handleOpenInlineAi()}
-          onOpenFilmCenter={() => setFilmCenterOpen(true)}
-          onOpenAgent={() => setAgentOpen(true)}
+          onOpenFilmCenter={() => {
+            closeCanvasFloatPanels('film-center')
+            setFilmCenterOpen(true)
+          }}
+          onOpenAgent={() => {
+            closeCanvasFloatPanels('agent')
+            setAgentOpen(true)
+          }}
           onFitView={handleFitView}
           onResetZoom={handleResetZoom}
           onToggleGrid={handleToggleGrid}
@@ -1837,8 +1889,9 @@ export function CanvasWorkspaceView({
           }}
         />
         {(() => {
-          const opNode = selectedNodes.length === 1 ? selectedNodes.find((n) => isOperationNode(n)) : null
-          if (opNode && dismissedOperationNodeId === opNode.id) return null
+          const opNode = activeOperationPanelNodeId
+            ? snapshot.nodes.find((n) => n.id === activeOperationPanelNodeId && isOperationNode(n))
+            : null
           if (!opNode) return null
           const opTask = opNode.taskId ? snapshot.tasks.find((t) => t.id === opNode.taskId) : null
           return (
@@ -1847,16 +1900,125 @@ export function CanvasWorkspaceView({
               snapshot={snapshot}
               {...(opTask ? { task: opTask } : {})}
               onClose={() => {
-                setDismissedOperationNodeId(opNode.id)
+                setActiveOperationPanelNodeId(null)
                 setSelectedNodeIds([])
               }}
               onRun={(params) => {
-                void runOperationNode(opNode.id, params)
+                void (async () => {
+                  if (!(await ensureCanvasWorkflowLogin())) return
+                  const taskInputNodes = resolveCanvasInputNodes(
+                    params.inputNodeIds,
+                    snapshot.nodes,
+                  )
+                  const inputFiles = await buildCloudTaskInputFiles(
+                    taskInputNodes,
+                    params.inputTransport,
+                  )
+                  const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
+                  const effectivePrompt =
+                    mergedPrompt ||
+                    (inputFiles.length > 0
+                      ? fallbackPromptForOperation((opNode.data.operation ?? opNode.type) as CanvasOperationType)
+                      : '')
+                  await runOperationNode(opNode.id, {
+                    prompt: effectivePrompt,
+                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                    inputNodeIds: taskInputNodes.map((item) => item.id),
+                    inputAssetIds: taskInputNodes
+                      .map((item) => item.assetId)
+                      .filter((id): id is string => Boolean(id)),
+                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                    ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                    ...(params.modelId ? { modelId: params.modelId } : {}),
+                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                  })
+                })()
               }}
               onRetry={() => void retryOperationNode(opNode.id)}
             />
           )
         })()}
+        <CanvasAgentModal
+          open={agentOpen}
+          onClose={() => setAgentOpen(false)}
+          snapshot={snapshot}
+          workspace={{
+            createTextNode,
+            createImageNode,
+            uploadImageAsset,
+            createGroupNode,
+            dissolveGroupNode,
+            addNodesToGroup,
+            removeNodesFromGroup,
+            deleteNodes,
+            duplicateNodes,
+            patchNodes,
+            updateNodeData,
+            connectNodes,
+            createBoard,
+            renameBoard,
+            deleteBoard,
+            duplicateBoard,
+            switchBoard,
+            copyNodesToBoard,
+            insertAsset,
+            createFilmAsset,
+            updateFilmAsset,
+            deleteFilmAsset,
+            createShotGroup,
+            updateShotGroup,
+            deleteShotGroup,
+            createShotSegment,
+            updateShotSegment,
+            deleteShotSegment,
+            createOperationNode,
+            retryOperationNode,
+            runOperationNode,
+            cancelTask,
+            updateProjectSettings,
+            refresh,
+          }}
+        />
+        <CanvasNodeEditModal
+          node={editingNode}
+          open={Boolean(editingNodeId)}
+          assets={snapshot.assets}
+          onClose={() => setEditingNodeId(null)}
+          onSave={handleSaveNodeEdit}
+          onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
+        />
+        <CanvasFilmAssetCenter
+          open={filmCenterOpen}
+          onClose={() => setFilmCenterOpen(false)}
+          snapshot={snapshot}
+          onUploadImage={uploadImageAsset}
+          handlers={{
+            createFilmAsset,
+            updateFilmAsset,
+            deleteFilmAsset,
+            getFilmAssetUsage,
+            onOptimizeAsset: (asset) => {
+              // AI 优化：用 text_rewrite 触发平台 agent 优化资产文本
+              void handleCreateTask({
+                operation: 'text_rewrite',
+                prompt: asset.contentText ?? asset.title ?? '请优化以下内容，使其更专业、更精炼。',
+                inputNodeIds: [],
+              })
+              message.info('已发起 AI 优化任务，结果将生成在画布上')
+            },
+            onBreakdownScriptAsset: handleBreakdownScriptAsset,
+            onGenerateAssetReference: handleGenerateAssetReference,
+            onGenerateSegmentVideo: handleGenerateSegmentVideo,
+            onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
+            createShotGroup,
+            updateShotGroup,
+            deleteShotGroup,
+            createShotSegment,
+            updateShotSegment,
+            deleteShotSegment,
+          }}
+        />
         </div>
         <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
           <div
@@ -1929,11 +2091,6 @@ export function CanvasWorkspaceView({
           )}
         </aside>
       </div>
-      <CanvasAssetDrawer
-        open={assetDrawerOpen}
-        assets={snapshot.assets}
-        onClose={() => setAssetDrawerOpen(false)}
-      />
       <Drawer
         title="历史记录"
         open={historyOpen}
@@ -1967,50 +2124,6 @@ export function CanvasWorkspaceView({
       >
         <CanvasTemplatePanel onApply={(template) => void handleApplyTemplate(template)} />
       </Drawer>
-      <CanvasFilmAssetCenter
-        open={filmCenterOpen}
-        onClose={() => setFilmCenterOpen(false)}
-        snapshot={snapshot}
-        onUploadImage={uploadImageAsset}
-        handlers={{
-          createFilmAsset,
-          updateFilmAsset,
-          deleteFilmAsset,
-          getFilmAssetUsage,
-          onOptimizeAsset: (asset) => {
-            // AI 优化：用 text_rewrite 触发平台 agent 优化资产文本
-            void handleCreateTask({
-              operation: 'text_rewrite',
-              prompt: asset.contentText ?? asset.title ?? '请优化以下内容，使其更专业、更精炼。',
-              inputNodeIds: [],
-            })
-            message.info('已发起 AI 优化任务，结果将生成在画布上')
-          },
-          onBreakdownScriptAsset: handleBreakdownScriptAsset,
-          onGenerateAssetReference: handleGenerateAssetReference,
-          onGenerateSegmentVideo: handleGenerateSegmentVideo,
-          onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
-          createShotGroup,
-          updateShotGroup,
-          deleteShotGroup,
-          createShotSegment,
-          updateShotSegment,
-          deleteShotSegment,
-        }}
-      />
-      <CanvasAgentModal
-        open={agentOpen}
-        onClose={() => setAgentOpen(false)}
-        snapshot={snapshot}
-      />
-      <CanvasNodeEditModal
-        node={editingNode}
-        open={Boolean(editingNodeId)}
-        assets={snapshot.assets}
-        onClose={() => setEditingNodeId(null)}
-        onSave={handleSaveNodeEdit}
-        onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
-      />
       <input
         ref={fileInputRef}
         type="file"
@@ -2309,12 +2422,161 @@ function CanvasNodeEditModal({
     }
   }
 
+  if (!open || !node) return null
+
+  const content = (
+    <div className="canvas-node-edit-dialog">
+      <div className="canvas-node-edit-dialog-head">
+        <Tag color="default" bordered>
+          {node.type}
+        </Tag>
+        <span>{node.id}</span>
+      </div>
+      <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+        <span>标题</span>
+        <Input
+          value={title}
+          placeholder="节点标题"
+          onChange={(event) => setTitle(event.target.value)}
+        />
+      </label>
+      {isTextLike && (
+        <div className="canvas-node-edit-prompt-layout">
+          <div className="canvas-node-edit-prompt-main">
+            <CanvasPromptEditor
+              prompt={text}
+              negativePrompt={negativePrompt}
+              promptPlaceholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
+              negativePlaceholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
+              optimizeDisabled={text.trim().length === 0}
+              onPromptChange={setText}
+              onNegativePromptChange={setNegativePrompt}
+              onOptimizePrompt={runPromptOptimize}
+            />
+            <div className="canvas-node-edit-agent-actions">
+              <Button size="small" icon={<Icons.Sparkles size={14} />} onClick={runRelatedPromptGenerate}>
+                Agent 生成相关提示词
+              </Button>
+              <Button size="small" onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}>
+                插入基础质量词
+              </Button>
+            </div>
+          </div>
+          <div className="canvas-node-edit-prompt-library">
+            <div className="canvas-node-edit-prompt-library-head">
+              <strong>提示词库</strong>
+              <span>项目库 + 内置镜头/表演词</span>
+            </div>
+            <Input
+              size="small"
+              allowClear
+              value={promptQuery}
+              placeholder="搜索提示词、镜头、动作、表情"
+              onChange={(event) => setPromptQuery(event.target.value)}
+            />
+            <div className="canvas-node-edit-prompt-library-list">
+              {filteredPromptEntries.length === 0 ? (
+                <div className="canvas-node-edit-prompt-empty">没有匹配的提示词</div>
+              ) : (
+                filteredPromptEntries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className="canvas-node-edit-prompt-entry"
+                    onClick={() => insertPromptText(entry.text)}
+                  >
+                    <span className="canvas-node-edit-prompt-entry-top">
+                      <Tag color={entry.source === 'project' ? 'blue' : entry.source === 'camera' ? 'purple' : 'orange'} bordered>
+                        {entry.group}
+                      </Tag>
+                      <strong>{entry.label}</strong>
+                    </span>
+                    <span className="canvas-node-edit-prompt-entry-text">{entry.text}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {node.type === 'group' && (
+        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+          <span>组说明</span>
+          <Input.TextArea
+            value={text}
+            rows={3}
+            placeholder="输入节点内容"
+            onChange={(event) => setText(event.target.value)}
+          />
+        </label>
+      )}
+      {node.type === 'task' && (
+        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+          <span>任务指令</span>
+          <Input.TextArea
+            value={prompt}
+            rows={4}
+            placeholder="任务使用的 prompt"
+            onChange={(event) => setPrompt(event.target.value)}
+          />
+        </label>
+      )}
+      {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
+        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+          <span>媒体 URL</span>
+          <Input
+            value={url}
+            placeholder="https:// 或 data: URL"
+            onChange={(event) => setUrl(event.target.value)}
+          />
+        </label>
+      )}
+      {node.type !== 'text' && node.type !== 'prompt' && (
+        <label className="canvas-node-edit-field canvas-node-edit-field-wide">
+          <span>备注 / 展示文本</span>
+          <Input.TextArea
+            value={messageText}
+            rows={3}
+            placeholder="节点内展示的辅助文本"
+            onChange={(event) => setMessageText(event.target.value)}
+          />
+        </label>
+      )}
+    </div>
+  )
+
+  if (isTextLike) {
+    return (
+      <div
+        className="canvas-bottom-floating-panel canvas-node-edit-bottom-panel"
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <div className="canvas-bottom-floating-head canvas-node-edit-bottom-head">
+          <div>
+            <strong>编辑文本 / Prompt 节点</strong>
+            <span>统一在底部工具栏上方编辑，避免遮挡画布上下文</span>
+          </div>
+          <div className="canvas-node-edit-bottom-actions">
+            <Button size="small" onClick={onClose}>
+              取消
+            </Button>
+            <Button size="small" type="primary" loading={saving} onClick={() => void save()}>
+              保存
+            </Button>
+          </div>
+        </div>
+        <div className="canvas-bottom-floating-body canvas-node-edit-bottom-body">{content}</div>
+      </div>
+    )
+  }
+
   return (
     <Modal
       className="canvas-node-edit-modal"
-      title={isTextLike ? '编辑文本 / Prompt 节点' : '编辑节点'}
+      title="编辑节点"
       open={open}
-      width={isTextLike ? 920 : 560}
+      width={560}
       destroyOnHidden
       confirmLoading={saving}
       okText="保存"
@@ -2322,126 +2584,7 @@ function CanvasNodeEditModal({
       onOk={() => void save()}
       onCancel={onClose}
     >
-      {node && (
-        <div className="canvas-node-edit-dialog">
-          <div className="canvas-node-edit-dialog-head">
-            <Tag color="default" bordered>
-              {node.type}
-            </Tag>
-            <span>{node.id}</span>
-          </div>
-          <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-            <span>标题</span>
-            <Input
-              value={title}
-              placeholder="节点标题"
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </label>
-          {isTextLike && (
-            <div className="canvas-node-edit-prompt-layout">
-              <div className="canvas-node-edit-prompt-main">
-                <CanvasPromptEditor
-                  prompt={text}
-                  negativePrompt={negativePrompt}
-                  promptPlaceholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
-                  negativePlaceholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
-                  optimizeDisabled={text.trim().length === 0}
-                  onPromptChange={setText}
-                  onNegativePromptChange={setNegativePrompt}
-                  onOptimizePrompt={runPromptOptimize}
-                />
-                <div className="canvas-node-edit-agent-actions">
-                  <Button size="small" icon={<Icons.Sparkles size={14} />} onClick={runRelatedPromptGenerate}>
-                    Agent 生成相关提示词
-                  </Button>
-                  <Button size="small" onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}>
-                    插入基础质量词
-                  </Button>
-                </div>
-              </div>
-              <div className="canvas-node-edit-prompt-library">
-                <div className="canvas-node-edit-prompt-library-head">
-                  <strong>提示词库</strong>
-                  <span>项目库 + 内置镜头/表演词</span>
-                </div>
-                <Input
-                  size="small"
-                  allowClear
-                  value={promptQuery}
-                  placeholder="搜索提示词、镜头、动作、表情"
-                  onChange={(event) => setPromptQuery(event.target.value)}
-                />
-                <div className="canvas-node-edit-prompt-library-list">
-                  {filteredPromptEntries.length === 0 ? (
-                    <div className="canvas-node-edit-prompt-empty">没有匹配的提示词</div>
-                  ) : (
-                    filteredPromptEntries.map((entry) => (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        className="canvas-node-edit-prompt-entry"
-                        onClick={() => insertPromptText(entry.text)}
-                      >
-                        <span className="canvas-node-edit-prompt-entry-top">
-                          <Tag color={entry.source === 'project' ? 'blue' : entry.source === 'camera' ? 'purple' : 'orange'} bordered>
-                            {entry.group}
-                          </Tag>
-                          <strong>{entry.label}</strong>
-                        </span>
-                        <span className="canvas-node-edit-prompt-entry-text">{entry.text}</span>
-                      </button>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-          {node.type === 'group' && (
-            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-              <span>组说明</span>
-              <Input.TextArea
-                value={text}
-                rows={3}
-                placeholder="输入节点内容"
-                onChange={(event) => setText(event.target.value)}
-              />
-            </label>
-          )}
-          {node.type === 'task' && (
-            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-              <span>任务指令</span>
-              <Input.TextArea
-                value={prompt}
-                rows={4}
-                placeholder="任务使用的 prompt"
-                onChange={(event) => setPrompt(event.target.value)}
-              />
-            </label>
-          )}
-          {(node.type === 'image' || node.type === 'video' || node.type === 'audio') && (
-            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-              <span>媒体 URL</span>
-              <Input
-                value={url}
-                placeholder="https:// 或 data: URL"
-                onChange={(event) => setUrl(event.target.value)}
-              />
-            </label>
-          )}
-          {node.type !== 'text' && node.type !== 'prompt' && (
-            <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-              <span>备注 / 展示文本</span>
-              <Input.TextArea
-                value={messageText}
-                rows={3}
-                placeholder="节点内展示的辅助文本"
-                onChange={(event) => setMessageText(event.target.value)}
-              />
-            </label>
-          )}
-        </div>
-      )}
+      {content}
     </Modal>
   )
 }
