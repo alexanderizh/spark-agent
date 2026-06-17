@@ -1,4 +1,4 @@
-import type { CanvasCapability, CanvasNode, CanvasOperationType } from './canvas.types'
+import type { CanvasCapability, CanvasNode, CanvasNodeType, CanvasOperationType } from './canvas.types'
 
 export const CANVAS_CAPABILITIES: CanvasCapability[] = [
   {
@@ -108,4 +108,68 @@ export function isCapabilityRecommended(
     return capability.operation === 'text_to_image' || capability.operation === 'text_generate'
   const selectedTypes = new Set(selectedNodes.map((node) => node.type))
   return capability.inputTypes.some((type) => selectedTypes.has(type))
+}
+
+/** 类型化操作节点的 type 集合（与 CanvasOperationType 一一对应） */
+export const OPERATION_NODE_TYPES: ReadonlySet<string> = new Set<CanvasNodeType>([
+  'text_to_image',
+  'image_to_image',
+  'image_edit',
+  'image_compose',
+  'text_generate',
+  'text_rewrite',
+  'prompt_optimize',
+  'text_to_video',
+  'image_to_video',
+  'video_edit',
+  'text_to_audio',
+  'audio_transcribe',
+])
+
+/** 判断节点是否为 AI 操作节点（含旧 type:'task'） */
+export function isOperationNode(node: { type: CanvasNodeType }): boolean {
+  return OPERATION_NODE_TYPES.has(node.type) || node.type === 'task'
+}
+
+/** 取操作节点的 operation 名（优先 data.operation，回退 node.type，旧 task 回退 'text_generate'） */
+export function nodeOperation(node: {
+  type: CanvasNodeType
+  data?: { operation?: CanvasOperationType }
+}): CanvasOperationType | null {
+  if (node.data?.operation) return node.data.operation
+  if (OPERATION_NODE_TYPES.has(node.type)) return node.type as CanvasOperationType
+  // 旧 task 节点无 operation 时返回 null（渲染时显示「通用任务」）
+  return null
+}
+
+/** 取操作节点类型的简单 emoji 图标（用于类型化 AI 操作节点的视觉） */
+export function operationNodeIcon(op: CanvasOperationType | null): string {
+  if (!op) return '⚙️'
+  switch (op) {
+    case 'text_to_image':
+      return '🖼️'
+    case 'image_to_image':
+    case 'image_edit':
+      return '🎨'
+    case 'image_compose':
+      return '🧩'
+    case 'text_generate':
+      return '📝'
+    case 'text_rewrite':
+      return '✍️'
+    case 'prompt_optimize':
+      return '✨'
+    case 'text_to_video':
+      return '🎬'
+    case 'image_to_video':
+      return '📹'
+    case 'video_edit':
+      return '🎞️'
+    case 'text_to_audio':
+      return '🎵'
+    case 'audio_transcribe':
+      return '📃'
+    default:
+      return '⚙️'
+  }
 }

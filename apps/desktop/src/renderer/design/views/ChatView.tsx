@@ -56,6 +56,7 @@ import { TeamMemberBubble } from '../components/TeamMemberBubble'
 import { TeamInspectorSection } from '../components/TeamInspectorSection'
 import { TeamMemberDrawer } from '../components/TeamMemberDrawer'
 import { WorktreePanel } from '../components/WorktreePanel'
+import { BuiltInTerminalPanel } from '../components/BuiltInTerminalPanel'
 import { MentionPopover, type MentionCandidate } from '../components/MentionPopover'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
@@ -328,6 +329,9 @@ export function ChatView({
   const [showInspector, setShowInspector] = useState(false)
   const [showConfigPanel, setShowConfigPanel] = useState(false)
   const [inspectorWidth, setInspectorWidth] = useState(360)
+  // 内置终端面板：会话级 dock，按钮在 ChatTabbar 右上。
+  // 仅在有活跃会话且绑定 workspace 时启用；切会话会保留各自的 terminals（后端负责）。
+  const [showTerminalPanel, setShowTerminalPanel] = useState(false)
   // Team Mode 配置。
   // 双层持久化（设计文档 §5.1）：
   //   - composer-prefs(localStorage)：全局「上次使用」默认，新会话/无会话时回落。
@@ -987,6 +991,8 @@ export function ChatView({
                   setShowConfigPanel(v)
                   if (v) setShowInspector(false)
                 }}
+                showTerminalPanel={showTerminalPanel}
+                setShowTerminalPanel={setShowTerminalPanel}
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
               />
             )}
@@ -1019,6 +1025,14 @@ export function ChatView({
               />
             )}
           </Fragment>
+        )}
+
+        {showTerminalPanel && active != null && (
+          <BuiltInTerminalPanel
+            sessionId={active}
+            workspace={activeSessionWorkspace ?? activeWorkspace}
+            onClose={() => setShowTerminalPanel(false)}
+          />
         )}
 
         {composerNode}
@@ -1208,6 +1222,8 @@ function ChatTabbar({
   setShowInspector,
   showConfigPanel,
   setShowConfigPanel,
+  showTerminalPanel,
+  setShowTerminalPanel,
   onClearMessages,
 }: {
   session: SessionSummary | null
@@ -1217,6 +1233,8 @@ function ChatTabbar({
   setShowInspector: (v: boolean) => void
   showConfigPanel: boolean
   setShowConfigPanel: (v: boolean) => void
+  showTerminalPanel: boolean
+  setShowTerminalPanel: (v: boolean) => void
   onClearMessages?: () => void
 }) {
   const { t } = useApp()
@@ -1282,6 +1300,14 @@ function ChatTabbar({
               }}
             >
               <Icons.FolderOpen size={14} />
+            </button>
+            <button
+              className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
+              title="内置终端"
+              aria-label="内置终端"
+              onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+            >
+              <Icons.Terminal size={14} />
             </button>
           </>
         )}

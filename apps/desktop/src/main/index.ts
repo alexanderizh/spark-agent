@@ -61,6 +61,7 @@ import { getDatabasePath, setDatabaseInstance, closeDatabase } from './db.js'
 import { registerAllIpcHandlers, ensureNoProjectDirectoryExists } from './ipc/index.js'
 import { setMainWindow, sendToMainWindow } from './windows/index.js'
 import { getFileWatcherService } from './services/FileWatcherService.js'
+import { getTerminalService } from './services/TerminalService.js'
 import { getUpdateService } from './services/UpdateService.js'
 import { checkSdkIntegrity } from './services/SdkIntegrityService.js'
 import { initializeShellEnvironment, getShellEnvironmentStatus } from './services/ShellEnvironmentService.js'
@@ -475,6 +476,12 @@ async function initializeApp(): Promise<void> {
 
     // 关闭数据库连接在应用退出时
     app.on('before-quit', () => {
+      // 杀掉所有 node-pty 进程，避免应用退出后残留 shell 进程。
+      try {
+        getTerminalService().disposeAll()
+      } catch (err) {
+        log.warn(`Failed to dispose terminals on quit: ${String(err)}`)
+      }
       getFileWatcherService().stopAll()
       getUpdateService().destroy()
       closeDatabase()

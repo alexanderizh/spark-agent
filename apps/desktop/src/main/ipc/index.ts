@@ -123,6 +123,8 @@ import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtoc
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
+import { getTerminalService } from '../services/TerminalService.js'
+import { registerTerminalIpc } from './registerTerminalIpc.js'
 import {
   getShellEnvironmentStatus,
   recheckRuntimeTools,
@@ -2116,6 +2118,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:delete', async (req) => {
     log.info(`session:delete requested, sessionId=${req.sessionId}`)
+    // 关闭该 session 名下所有内置终端 PTY（killed count 已记入 service 日志）
+    getTerminalService().disposeBySession(req.sessionId)
     return getSessionService().deleteSession(req.sessionId)
   })
 
@@ -2946,6 +2950,8 @@ export function registerAllIpcHandlers(): void {
     for (const sessionId of deletedSessionIds) {
       eventRepo.deleteBySession(sessionId)
     }
+    // 关闭该 workspace 名下所有内置终端 PTY
+    getTerminalService().disposeByWorkspaceId(req.workspaceId)
     const deleted = getWorkspaceService().deleteWorkspace(req.workspaceId)
     return { deleted, deletedSessionIds }
   })
@@ -2959,6 +2965,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:close', async (req) => {
     log.info(`workspace:close requested, workspaceId=${req.workspaceId}`)
+    // 关闭 workspace 时同时杀掉该 workspace 名下所有内置终端 PTY
+    getTerminalService().disposeByWorkspaceId(req.workspaceId)
     getWorkspaceService().closeWorkspace()
     return { closed: true }
   })
@@ -5407,6 +5415,9 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Cloud Auth (对接 spark-edugen/edu-server) ───────────────────────────────
   registerAuthIpc()
+
+  // ─── Built-in Terminal Panel (session-scoped PTY dock) ───────────────────────
+  registerTerminalIpc()
 
   log.info('All IPC handlers registered')
 }

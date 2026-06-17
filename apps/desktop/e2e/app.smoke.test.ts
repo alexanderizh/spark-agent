@@ -5,10 +5,25 @@
  * 不依赖 Electron 运行时，纯 Node.js 文件读取。
  */
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'fs'
+import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 
 const ROOT = join(__dirname, '..')
+
+/** 递归收集目录下的所有 .ts 文件内容，便于扫描所有 register*.ts 拆分出去的 IPC 注册文件。 */
+function readAllTsUnder(dir: string): string {
+  let out = ''
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === '__tests__' || entry.name === 'node_modules' || entry.name === 'e2e') continue
+    const full = join(dir, entry.name)
+    if (entry.isDirectory()) {
+      out += readAllTsUnder(full)
+    } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+      out += readFileSync(full, 'utf-8') + '\n'
+    }
+  }
+  return out
+}
 
 describe('App Smoke Tests', () => {
   it('should have correct app metadata', () => {
@@ -23,10 +38,9 @@ describe('App Smoke Tests', () => {
       join(ROOT, '../../packages/protocol/src/ipc/index.ts'),
       'utf-8',
     )
-    const handlerSrc = readFileSync(
-      join(ROOT, 'src/main/ipc/index.ts'),
-      'utf-8',
-    )
+    // 扫描 main/ipc + main/services（registerAuthIpc / registerTerminalIpc 等都贡献 channel 注册）
+    const handlerSrc =
+      readAllTsUnder(join(ROOT, 'src/main/ipc')) + '\n' + readAllTsUnder(join(ROOT, 'src/main/services'))
     const mapBlock = protocolSrc.slice(
       protocolSrc.indexOf('export interface IpcChannelMap {'),
       protocolSrc.indexOf('\n}', protocolSrc.indexOf('export interface IpcChannelMap {')),

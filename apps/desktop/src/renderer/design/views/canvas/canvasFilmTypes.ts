@@ -7,6 +7,33 @@
 
 import type { CameraPresetScene } from './canvasFilmPrompts'
 
+/** 项目资源库的引用图类型（图片+描述词，文档 §7.10 升级） */
+export type FilmReferenceKind =
+  | 'concept' // 概念图/定妆
+  | 'reference' // 通用参考
+  | 'expression' // 表情
+  | 'costume' // 服饰
+  | 'action' // 动作
+  | 'storyboard' // 分镜/镜头
+  | 'angle' // 角度/视角
+  | 'other' // 其他
+
+/** 一张引用图 = 一段描述词（文档 §7.10：图片+描述词模型） */
+export type FilmReference = {
+  /** 内部 uid（项目内唯一） */
+  id: string
+  /** 引用图类型 */
+  kind: FilmReferenceKind
+  /** 引用 CanvasAsset.id */
+  assetId: string
+  /** 该图的描述词（核心字段，AI 生成时使用） */
+  description: string
+  /** 可选短标签（例："正面"、"侧面"） */
+  label?: string
+  /** 排序权重（小→大） */
+  order: number
+}
+
 /** 单个分镜规格（文档 §7.10 分镜结构建议） */
 export type ShotSpec = {
   id: string

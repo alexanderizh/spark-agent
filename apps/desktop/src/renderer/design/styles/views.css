@@ -13685,3 +13685,17 @@ body.inspector-resizing {
 .mention-highlight-clickable:hover {
   background: var(--primary-soft);
 }
+
+/* ─── Built-in Terminal Panel — flex 布局，让 dock 出现时聊天区收缩、composer 不被覆盖 ───
+   chat-main-active 已经是 flex column；这里把 ChatStream / chat-stream-viewport 显式设为
+   flex:1 / min-height:0，让内置终端 dock（flex:0 0 auto，自身 less 中设置）正确挤占空间。
+   .chat-stream 本身仍是 height:100%，因为父级给了具体高度。
+*/
+.chat-main-active > .chat-stream-viewport,
+.chat-main-active > .chat-stream {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.chat-main-active > .builtin-terminal-panel {
+  /* 由组件 .less 设置 flex:0 0 auto；这里保留占位以便后续微调 */
+}

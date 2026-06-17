@@ -1,14 +1,20 @@
-import { useCallback, useMemo, useState } from 'react'
-import { Button, Empty, Input, Modal, Tag, Tooltip, message } from 'antd'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import { Button, Empty, Input, Modal, Select, Tag, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import {
   FILM_ASSET_KIND_LABELS,
   FILM_ASSET_KIND_ORDER,
+  FILM_REFERENCE_KIND_LABELS,
+  FILM_REFERENCE_KIND_ORDER,
+  filmUid,
   readAssetKind,
+  readReferences,
+  readTags,
   type CreateFilmAssetInput,
   type FilmAssetKind,
 } from './canvasFilmAssets'
+import type { FilmReference, FilmReferenceKind } from './canvasFilmTypes'
 import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
 
 /**
@@ -23,13 +29,14 @@ import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
 
 type TabKind = FilmAssetKind | 'shots'
 
-const TAB_ORDER: TabKind[] = ['script', 'character', 'scene', 'prop', 'shots', 'prompt_library']
+const TAB_ORDER: TabKind[] = ['script', 'character', 'scene', 'prop', 'effect', 'shots', 'prompt_library']
 
 const TAB_LABELS: Record<TabKind, string> = {
   script: '剧本',
   character: '角色',
   scene: '场景',
   prop: '道具',
+  effect: '特效',
   shot_group: '分镜',
   shots: '分镜分组',
   prompt_library: '提示词库',
@@ -43,7 +50,8 @@ export type FilmCenterHandlers = {
       title?: string
       contentText?: string
       prompt?: string
-      imageAssetId?: string
+      references?: FilmReference[]
+      tags?: string[]
       attributes?: Record<string, string>
     },
   ) => Promise<void>
@@ -71,11 +79,14 @@ export function CanvasFilmAssetCenter({
   onClose,
   snapshot,
   handlers,
+  onUploadImage,
 }: {
   open: boolean
   onClose: () => void
   snapshot: CanvasSnapshot
   handlers: FilmCenterHandlers
+  /** 上传图片到项目资产库，返回新 assetId */
+  onUploadImage?: (file: File) => Promise<string | null>
 }) {
   const [activeTab, setActiveTab] = useState<TabKind>('script')
 
@@ -110,6 +121,7 @@ export function CanvasFilmAssetCenter({
               kind={activeTab as FilmAssetKind}
               snapshot={snapshot}
               handlers={handlers}
+              {...(onUploadImage ? { onUploadImage } : {})}
             />
           )}
         </div>
@@ -127,15 +139,17 @@ function FilmCenterHeaderTitle() {
   )
 }
 
-// ─── 资产列表 Tab（剧本/角色/场景/道具/提示词库共用）─────────────────────
+// ─── 资产列表 Tab（剧本/角色/场景/道具/特效/提示词库共用）───────────────
 function AssetListTab({
   kind,
   snapshot,
   handlers,
+  onUploadImage,
 }: {
   kind: FilmAssetKind
   snapshot: CanvasSnapshot
   handlers: FilmCenterHandlers
+  onUploadImage?: (file: File) => Promise<string | null>
 }) {
   const assets = useMemo(
     () => snapshot.assets.filter((asset) => readAssetKind(asset) === kind),
@@ -153,9 +167,19 @@ function AssetListTab({
         mode="create"
         onClose={() => setCreating(false)}
         onSave={async (input) => {
-          await handlers.createFilmAsset({ kind, name: input.name, text: input.text, ...(input.prompt ? { prompt: input.prompt } : {}), ...(input.attributes ? { attributes: input.attributes } : {}) })
+          await handlers.createFilmAsset({
+            kind,
+            name: input.name,
+            ...(input.text ? { text: input.text } : {}),
+            references: input.references,
+            tags: input.tags,
+            ...(input.prompt ? { prompt: input.prompt } : {}),
+            ...(input.attributes ? { attributes: input.attributes } : {}),
+          })
           setCreating(false)
         }}
+        {...(onUploadImage ? { onUploadImage } : {})}
+        assetById={(id) => snapshot.assets.find((a) => a.id === id)}
       />
     )
   }
@@ -171,12 +195,16 @@ function AssetListTab({
           await handlers.updateFilmAsset(editingAsset.id, {
             title: patch.name,
             contentText: patch.text,
+            references: patch.references,
+            tags: patch.tags,
             ...(patch.prompt !== undefined ? { prompt: patch.prompt } : {}),
             ...(patch.attributes ? { attributes: patch.attributes } : {}),
           })
           setEditingId(null)
         }}
         onOptimize={() => handlers.onOptimizeAsset(editingAsset)}
+        {...(onUploadImage ? { onUploadImage } : {})}
+        assetById={(id) => snapshot.assets.find((a) => a.id === id)}
       />
     )
   }
@@ -230,7 +258,16 @@ function AssetListTab({
   )
 }
 
-// ─── 资产编辑器（新建/编辑共用）──────────────────────────────────────────
+// ─── 资产编辑器（新建/编辑共用，v2：多图多描述）─────────────────────────
+type AssetEditorSave = {
+  name: string
+  text: string
+  references: FilmReference[]
+  tags: string[]
+  prompt?: string
+  attributes?: Record<string, string>
+}
+
 function AssetEditor({
   kind,
   mode,
@@ -238,19 +275,30 @@ function AssetEditor({
   onClose,
   onSave,
   onOptimize,
+  onUploadImage,
+  assetById,
 }: {
   kind: FilmAssetKind
   mode: 'create' | 'edit'
   asset?: CanvasAsset
   onClose: () => void
-  onSave: (input: { name: string; text: string; prompt?: string; attributes?: Record<string, string> }) => Promise<void>
+  onSave: (input: AssetEditorSave) => Promise<void>
   onOptimize?: () => void
+  /** 上传图片到项目资产库，返回新 assetId */
+  onUploadImage?: (file: File) => Promise<string | null>
+  /** 通过 assetId 查 asset（用于 reference 缩略图） */
+  assetById?: (id: string) => CanvasAsset | undefined
 }) {
   const [name, setName] = useState(asset?.title ?? '')
   const [text, setText] = useState(asset?.contentText ?? '')
   const [prompt, setPrompt] = useState(
     (asset?.metadata?.prompt as string | undefined) ?? '',
   )
+  const [references, setReferences] = useState<FilmReference[]>(() =>
+    readReferences(asset?.metadata),
+  )
+  const [tags, setTags] = useState<string[]>(() => readTags(asset?.metadata))
+  const [tagDraft, setTagDraft] = useState('')
 
   const attributeFields = useMemo(() => getAttributeFields(kind), [kind])
   const [attributes, setAttributes] = useState<Record<string, string>>(() => {
@@ -259,6 +307,42 @@ function AssetEditor({
     for (const field of attributeFields) init[field.key] = stored?.[field.key] ?? ''
     return init
   })
+
+  // 上传本地图片：交给父级 onUploadImage 落库，返回新 assetId 后入 references
+  const handleAddLocalImage = useCallback(
+    async (file: File) => {
+      if (!onUploadImage) {
+        message.warning('当前不支持上传图片')
+        return
+      }
+      const assetId = await onUploadImage(file)
+      if (!assetId) return
+      const ref: FilmReference = {
+        id: filmUid('ref'),
+        kind: guessReferenceKind(file.name),
+        assetId,
+        description: '',
+        order: references.length,
+      }
+      setReferences((prev) => [...prev, ref])
+    },
+    [onUploadImage, references.length],
+  )
+
+  const handleAddTag = () => {
+    const t = tagDraft.trim()
+    if (!t) return
+    if (tags.includes(t)) {
+      setTagDraft('')
+      return
+    }
+    setTags((prev) => [...prev, t])
+    setTagDraft('')
+  }
+
+  const handleRemoveTag = (tag: string) => {
+    setTags((prev) => prev.filter((t) => t !== tag))
+  }
 
   const handleSave = async () => {
     if (!name.trim()) {
@@ -270,9 +354,14 @@ function AssetEditor({
       const val = attributes[field.key]?.trim()
       if (val) cleanAttrs[field.key] = val
     }
+    const cleanRefs = references
+      .filter((ref) => ref.assetId)
+      .map((ref, idx) => ({ ...ref, order: idx }))
     await onSave({
       name: name.trim(),
       text,
+      references: cleanRefs,
+      tags,
       ...(prompt.trim() ? { prompt: prompt.trim() } : {}),
       ...(Object.keys(cleanAttrs).length > 0 ? { attributes: cleanAttrs } : {}),
     })
@@ -298,39 +387,244 @@ function AssetEditor({
       <div className="canvas-film-editor-form">
         <label className="canvas-film-editor-field">
           <span>名称</span>
-          <Input value={name} placeholder={`${FILM_ASSET_KIND_LABELS[kind]}名称`} onChange={(e) => setName(e.target.value)} />
+          <Input
+            value={name}
+            placeholder={`${FILM_ASSET_KIND_LABELS[kind]}名称`}
+            onChange={(e) => setName(e.target.value)}
+          />
         </label>
-        {attributeFields.map((field) => (
-          <label key={field.key} className="canvas-film-editor-field">
-            <span>{field.label}</span>
+
+        {/* 类型专属快速字段（character/scene/prop/effect） */}
+        {attributeFields.length > 0 && (
+          <div className="canvas-film-editor-attributes">
+            <div className="canvas-film-editor-section-title">快速字段</div>
+            <div className="canvas-film-editor-attr-grid">
+              {attributeFields.map((field) => (
+                <label key={field.key} className="canvas-film-editor-field">
+                  <span>{field.label}</span>
+                  <Input
+                    value={attributes[field.key] ?? ''}
+                    placeholder={field.placeholder}
+                    onChange={(e) => setAttributes({ ...attributes, [field.key]: e.target.value })}
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* 标签 */}
+        <div className="canvas-film-editor-section">
+          <div className="canvas-film-editor-section-title">标签</div>
+          <div className="canvas-film-tag-list">
+            {tags.map((tag) => (
+              <Tag
+                key={tag}
+                closable
+                onClose={() => handleRemoveTag(tag)}
+                className="canvas-film-tag-chip"
+              >
+                {tag}
+              </Tag>
+            ))}
             <Input
-              value={attributes[field.key] ?? ''}
-              placeholder={field.placeholder}
-              onChange={(e) => setAttributes({ ...attributes, [field.key]: e.target.value })}
+              size="small"
+              value={tagDraft}
+              placeholder="输入标签后回车"
+              className="canvas-film-tag-input"
+              onChange={(e) => setTagDraft(e.target.value)}
+              onPressEnter={handleAddTag}
+              onBlur={handleAddTag}
             />
-          </label>
-        ))}
-        {kind === 'prompt_library' || kind === 'character' || kind === 'scene' ? (
-          <label className="canvas-film-editor-field">
-            <span>生成提示词（可选，用于 AI 生图/生视频）</span>
-            <Input.TextArea
-              rows={2}
-              value={prompt}
-              placeholder="如：电影感、高质量、精细细节..."
-              onChange={(e) => setPrompt(e.target.value)}
-            />
-          </label>
-        ) : null}
+          </div>
+        </div>
+
+        {/* 多图多描述（references grid） */}
+        {(kind === 'character' ||
+          kind === 'scene' ||
+          kind === 'prop' ||
+          kind === 'effect') && (
+          <div className="canvas-film-editor-section">
+            <div className="canvas-film-editor-section-title-row">
+              <span className="canvas-film-editor-section-title">
+                参考图（每张配一段描述词）
+              </span>
+              <ReferenceToolbar
+                onAddLocal={handleAddLocalImage}
+                onAddFromCanvas={() => {
+                  message.info('请在画布上右键选择「加入资源库」,或拖拽图片节点到此。')
+                }}
+              />
+            </div>
+            {references.length === 0 ? (
+              <div className="canvas-film-references-empty">
+                暂无参考图。点击上方「上传」添加，或在画布右键把生成的图片加入此资源。
+              </div>
+            ) : (
+              <div className="canvas-film-references-grid">
+                {references
+                  .slice()
+                  .sort((a, b) => a.order - b.order)
+                  .map((ref, idx) => (
+                    <ReferenceCard
+                      key={ref.id}
+                      reference={ref}
+                      linkedAsset={assetById?.(ref.assetId)}
+                      onChange={(next) => {
+                        setReferences((prev) => {
+                          const copy = prev.slice()
+                          copy[idx] = next
+                          return copy
+                        })
+                      }}
+                      onRemove={() => {
+                        setReferences((prev) => prev.filter((_, i) => i !== idx))
+                      }}
+                    />
+                  ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 整体描述（剧本文本/整体设定） */}
         <label className="canvas-film-editor-field">
-          <span>{kind === 'script' ? '剧本内容' : kind === 'prompt_library' ? '提示词内容' : '描述/设定'}</span>
+          <span>{kind === 'script' ? '剧本内容' : kind === 'prompt_library' ? '提示词内容' : '整体描述'}</span>
           <Input.TextArea
-            rows={kind === 'script' ? 14 : 8}
+            rows={kind === 'script' ? 14 : kind === 'prompt_library' ? 8 : 6}
             value={text}
             placeholder={getEditorPlaceholder(kind)}
             onChange={(e) => setText(e.target.value)}
           />
         </label>
+
+        {/* 默认生成 prompt */}
+        {(kind === 'prompt_library' ||
+          kind === 'character' ||
+          kind === 'scene' ||
+          kind === 'prop' ||
+          kind === 'effect') && (
+          <label className="canvas-film-editor-field">
+            <span>默认生成提示词（AI 生图/生视频时复用）</span>
+            <Input.TextArea
+              rows={3}
+              value={prompt}
+              placeholder="如：电影感、高质量、精细细节..."
+              onChange={(e) => setPrompt(e.target.value)}
+            />
+          </label>
+        )}
       </div>
+    </div>
+  )
+}
+
+// 工具：从文件名猜 reference kind
+function guessReferenceKind(fileName: string): FilmReferenceKind {
+  const name = fileName.toLowerCase()
+  if (name.includes('concept') || name.includes('定妆') || name.includes('概念')) return 'concept'
+  if (name.includes('expression') || name.includes('表情')) return 'expression'
+  if (name.includes('costume') || name.includes('服饰') || name.includes('服装')) return 'costume'
+  if (name.includes('action') || name.includes('动作')) return 'action'
+  if (name.includes('storyboard') || name.includes('分镜')) return 'storyboard'
+  if (name.includes('angle') || name.includes('角度')) return 'angle'
+  return 'reference'
+}
+
+// ─── reference 子组件 ──────────────────────────────────────────────────────
+function ReferenceCard({
+  reference,
+  linkedAsset,
+  onChange,
+  onRemove,
+}: {
+  reference: FilmReference
+  linkedAsset: CanvasAsset | undefined
+  onChange: (next: FilmReference) => void
+  onRemove: () => void
+}) {
+  return (
+    <div className="canvas-film-reference-card">
+      <div className="canvas-film-reference-thumb">
+        {linkedAsset ? (
+          <AssetThumbnail asset={linkedAsset} />
+        ) : (
+          <div className="canvas-film-reference-missing">图片缺失</div>
+        )}
+        <Button
+          size="small"
+          type="text"
+          danger
+          icon={<Icons.Trash size={13} />}
+          className="canvas-film-reference-remove"
+          onClick={onRemove}
+        />
+      </div>
+      <div className="canvas-film-reference-fields">
+        <Select
+          size="small"
+          value={reference.kind}
+          onChange={(value) => onChange({ ...reference, kind: value })}
+          options={FILM_REFERENCE_KIND_ORDER.map((kind) => ({
+            value: kind,
+            label: FILM_REFERENCE_KIND_LABELS[kind],
+          }))}
+        />
+        <Input
+          size="small"
+          value={reference.label ?? ''}
+          placeholder="短标签（可选）"
+          onChange={(e) => {
+            const v = e.target.value.trim()
+            const next = { ...reference }
+            if (v) next.label = v
+            else delete (next as { label?: string }).label
+            onChange(next)
+          }}
+        />
+        <Input.TextArea
+          size="small"
+          rows={3}
+          value={reference.description}
+          placeholder="该图的描述词（AI 生成时使用）"
+          onChange={(e) => onChange({ ...reference, description: e.target.value })}
+        />
+      </div>
+    </div>
+  )
+}
+
+function ReferenceToolbar({
+  onAddLocal,
+  onAddFromCanvas,
+}: {
+  onAddLocal: (file: File) => void | Promise<void>
+  onAddFromCanvas: () => void
+}) {
+  const fileRef = useRef<HTMLInputElement | null>(null)
+  return (
+    <div className="canvas-film-reference-toolbar">
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) void onAddLocal(file)
+          e.target.value = ''
+        }}
+      />
+      <Button
+        size="small"
+        icon={<Icons.Upload size={13} />}
+        onClick={() => fileRef.current?.click()}
+      >
+        上传
+      </Button>
+      <Button size="small" icon={<Icons.Image size={13} />} onClick={onAddFromCanvas}>
+        从画布选
+      </Button>
     </div>
   )
 }

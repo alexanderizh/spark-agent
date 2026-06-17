@@ -13,6 +13,7 @@ import { CanvasAssetsPanel, downloadAsset } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
+import { readFileAsDataUrl, readImageDimensions } from './canvas-safe-file'
 import { CanvasTemplatePanel } from './CanvasTemplatePanel'
 import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAssetCenter'
 import { CanvasAgentModal } from './CanvasAgentModal'
@@ -70,25 +71,6 @@ function readSidePanelWidth(): number {
   } catch {
     return CANVAS_SIDE_PANEL_DEFAULT_WIDTH
   }
-}
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'))
-    reader.onload = () => resolve(String(reader.result ?? ''))
-    reader.readAsDataURL(file)
-  })
-}
-
-function readImageDimensions(src: string): Promise<{ width: number; height: number }> {
-  return new Promise((resolve) => {
-    const image = new Image()
-    image.onload = () =>
-      resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 })
-    image.onerror = () => resolve({ width: 0, height: 0 })
-    image.src = src
-  })
 }
 
 function fitImageNodeSize(width: number, height: number): { width: number; height: number } {
@@ -470,6 +452,7 @@ export function CanvasWorkspaceView({
     connectNodes,
     createTextNode,
     createImageNode,
+    uploadImageAsset,
     createGroupNode,
     dissolveGroupNode,
     addNodesToGroup,
@@ -1634,6 +1617,7 @@ export function CanvasWorkspaceView({
         open={filmCenterOpen}
         onClose={() => setFilmCenterOpen(false)}
         snapshot={snapshot}
+        onUploadImage={uploadImageAsset}
         handlers={{
           createFilmAsset,
           updateFilmAsset,
