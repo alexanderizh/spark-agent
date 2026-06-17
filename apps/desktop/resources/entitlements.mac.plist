@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Electron (V8) 需要 JIT 执行权限 -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <!-- Electron 在部分场景需要未签名可执行内存 -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!--
+        关键：本项目使用了大量未签名的原生模块和第三方二进制：
+        - better-sqlite3 / node-pty / keytar 等原生 .node 模块
+        - @anthropic-ai/claude-agent-sdk 内置的 claude 可执行文件
+        - playwright / 浏览器内核
+        必须禁用库验证，否则启动即崩溃。
+    -->
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+    <!-- 允许 DYLD 环境变量（调试 / 部分插件加载需要） -->
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <!-- 允许加载已签名的动态库（Electron 标准项） -->
+    <key>com.apple.security.cs.disable-executable-page-protection</key>
+    <true/>
+</dict>
+</plist>

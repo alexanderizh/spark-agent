@@ -1,18 +1,33 @@
 appId: com.spark-agent.desktop
 productName: Spark Agent
 artifactName: ${productName}-${version}-${os}-${arch}.${ext}
-npmRebuild: true
+# 关闭 electron-builder 自带的 native rebuild。
+# 原因：node-pty@1.1.0 的 install 脚本会跑 tsc 编译测试文件，类型检查失败导致整个 rebuild 崩。
+# 改由 package.json 里的 postinstall (electron-rebuild) 在装依赖阶段预编译好，
+# 打包时直接用现成的 .node 二进制即可。
+npmRebuild: false
 buildDependenciesFromSource: false
 directories:
   buildResources: resources
   output: dist
+afterSign: scripts/notarize.js
 mac:
   icon: resources/icon.icns
   category: public.app-category.developer-tools
   target:
     - dmg
+  # 公证的前置条件：开启 hardened runtime
   hardenedRuntime: true
   gatekeeperAssess: false
+  # 关闭 electron-builder 内置的 notarize，改由 afterSign 钩子脚本统一处理
+  # 这样上传失败时有更清晰的日志，也便于本地跳过
+  notarize: false
+  # 使用项目自带的 entitlements（适配本项目大量原生模块 + 第三方二进制）
+  entitlements: resources/entitlements.mac.plist
+  entitlementsInherit: resources/entitlements.mac.plist
+  # 优先匹配 Developer ID Application 证书；
+  # 若环境里没有，electron-builder 会回退到 ad-hoc 签名（仅本地开发用）
+  identity: "Developer ID Application"
 win:
   icon: resources/icon.ico
 linux:

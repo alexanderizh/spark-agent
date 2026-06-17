@@ -114,28 +114,23 @@ jobs:
       - name: Publish desktop artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # Mac 签名：让 electron-builder 自动发现本机钥匙串里的 Developer ID 证书，
+          # 或用 CSC_LINK(base64 p12) + CSC_KEY_PASSWORD 注入。
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          # Mac 公证：通过 App Store Connect API Key（推荐，无需 App-Specific Password）
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows 签名
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         shell: bash
         run: |
-          for name in \
-            CSC_LINK \
-            CSC_KEY_PASSWORD \
-            APPLE_ID \
-            APPLE_APP_SPECIFIC_PASSWORD \
-            APPLE_TEAM_ID \
-            WIN_CSC_LINK \
-            WIN_CSC_KEY_PASSWORD
-          do
-            if [ -z "${!name:-}" ]; then
-              unset "$name"
-            fi
-          done
+          # 仅清理 Windows 相关凭据在非 Windows 任务上，避免污染；
+          # Mac 签名/公证凭据必须保留，否则产物未签名会被 Gatekeeper 拦截。
+          if [ "$RUNNER_OS" != "Windows" ]; then
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          fi
 
           pnpm --filter @spark/desktop exec electron-builder ${{ matrix.build_args }} --publish always
