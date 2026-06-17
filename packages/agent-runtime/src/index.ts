@@ -72,7 +72,17 @@ export type {
   QuestionHandler,
   HookTriggerHandler,
   SessionRenamedHandler,
+  CanvasMcpProvider,
 } from './services/session.service.js'
+export {
+  createCanvasMcpServer,
+  canvasAllowedToolNames,
+} from './services/canvas-mcp-server.js'
+export type {
+  CanvasToolSchema,
+  CanvasToolCallBridge,
+  CreateCanvasMcpServerOptions,
+} from './services/canvas-mcp-server.js'
 export { TeamDispatchService } from './services/team-dispatch.service.js'
 export type { TeamDispatchRunContext, TeamMemberExecutionResult } from './services/team-dispatch.service.js'
 export { WorkspaceService, detectProjectKind } from './services/workspace.service.js'

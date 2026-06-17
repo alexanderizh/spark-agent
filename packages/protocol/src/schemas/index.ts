@@ -1006,4 +1006,28 @@ export const IpcSchemaRegistry = {
     fileName: z.string().max(300).optional(),
     mimeType: z.string().max(160).optional(),
   }),
+
+  // Canvas Agent Bridge
+  'canvas:host-attach': z.object({
+    sessionId: z.string().min(1).max(200),
+    projectId: z.string().min(1).max(200),
+    toolSchemas: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(200),
+          description: z.string().max(8000),
+          inputSchema: z.record(z.string(), z.unknown()),
+        }),
+      )
+      .max(200),
+  }),
+  'canvas:host-detach': z.object({
+    sessionId: z.string().min(1).max(200),
+  }),
+  'canvas:tool-result': z.object({
+    requestId: z.string().min(1).max(200),
+    ok: z.boolean(),
+    result: z.unknown().optional(),
+    error: z.string().max(8000).optional(),
+  }),
 } as const

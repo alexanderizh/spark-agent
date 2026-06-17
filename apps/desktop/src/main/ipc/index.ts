@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { app, dialog, shell, Notification } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
@@ -1542,6 +1543,8 @@ function getSessionService(): SessionService {
       onHookTrigger,
       onSessionRenamed,
     )
+    // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
+    _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
   }
   return _sessionService
 }
@@ -2038,6 +2041,30 @@ export function registerAllIpcHandlers(): void {
       `Failed to seed local CLI provider: ${err instanceof Error ? err.message : String(err)}`,
     ),
   )
+
+  // ─── Canvas Agent Bridge ───────────────────────────────────────────────
+
+  typedIpcHandle('canvas:host-attach', async (req, event) => {
+    const bridge = getCanvasHostBridge()
+    bridge.setToolSchemas(req.toolSchemas)
+    bridge.attach(req.sessionId, event.sender, req.projectId)
+    return { ok: true } as const
+  })
+
+  typedIpcHandle('canvas:host-detach', async (req) => {
+    getCanvasHostBridge().detach(req.sessionId)
+    return { ok: true } as const
+  })
+
+  typedIpcHandle('canvas:tool-result', async (req) => {
+    getCanvasHostBridge().handleToolResult({
+      requestId: req.requestId,
+      ok: req.ok,
+      ...(req.result !== undefined ? { result: req.result } : {}),
+      ...(req.error !== undefined ? { error: req.error } : {}),
+    })
+    return { ok: true } as const
+  })
 
   // ─── Session Handlers ──────────────────────────────────────────────────
 

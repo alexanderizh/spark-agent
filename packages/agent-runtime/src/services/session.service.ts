@@ -177,9 +177,21 @@ const HISTORY_CONTEXT_ENTRY_MAX_CHARS = 4_000
 const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
 // Keep SDK resume opt-in until the Claude Code child process can recover cleanly from resume failures.
 const ENABLE_CLAUDE_SDK_RESUME = false
+/**
+ * Canvas Agent 桥：由主进程注入。SessionService 在 sendTurn 时调用
+ * `canvasMcpProvider(sessionId)` 拿到 in-process MCP server 配置；若 session
+ * 没有 attach 到画布弹窗则返回 null，工具集不挂载。
+ */
+export type CanvasMcpProvider = (sessionId: string) => Promise<{
+  server: import('../sdk/types.js').SDKMcpServerConfig
+  allowedTools: string[]
+} | null>
+
 export class SessionService {
   private activeLoops = new Map<string, ActiveExecution>() // sessionId → active execution
   private pendingTurns = new Map<string, PendingTurn[]>()
+  /** 画布 Agent MCP server 提供器（由主进程注入） */
+  private canvasMcpProvider: CanvasMcpProvider | null = null
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
@@ -221,6 +233,11 @@ export class SessionService {
       this.mcpVersion += 1
     })
     this.recoverInterruptedSessions()
+  }
+
+  /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
+  setCanvasMcpProvider(provider: CanvasMcpProvider | null): void {
+    this.canvasMcpProvider = provider
   }
 
   recoverInterruptedSessions(): { recovered: number } {
@@ -1494,6 +1511,20 @@ export class SessionService {
       mcpServers.spark_search = config.webSearchMcpServer
     }
 
+    // Canvas Agent in-process MCP server — only when session is attached to a canvas modal
+    let canvasAllowedTools: string[] | undefined
+    if (this.canvasMcpProvider != null) {
+      try {
+        const canvas = await this.canvasMcpProvider(sessionId)
+        if (canvas != null) {
+          mcpServers.spark_canvas = canvas.server
+          canvasAllowedTools = canvas.allowedTools
+        }
+      } catch (err) {
+        log.warn(`canvas mcp provider failed: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    }
+
     // MCP hot-reload: if the MCP set changed since the last SDK query was built,
     // force a fresh SDK session so the new tool inventory takes effect. The SDK
     // freezes the tool list at query start (ClaudeSDKExecutor passes mcpServers
@@ -1639,6 +1670,9 @@ export class SessionService {
     }
     if (config.webSearchMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SEARCH_TOOL_NAMES)
+    }
+    if (canvasAllowedTools != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, canvasAllowedTools)
     }
 
     const sdkConfig: SDKExecutorConfig = {

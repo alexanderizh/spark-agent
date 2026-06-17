@@ -4296,6 +4296,56 @@ export interface IpcChannelMap {
   'auth:bootstrap': [AuthBootstrapRequest, AuthBootstrapResponse]
   /** 登录后上传文件到云端存储，返回可供模型访问的公网链接 */
   'auth:upload-file': [AuthUploadFileRequest, AuthUploadFileResponse]
+
+  // ─── Canvas Agent Bridge ─────────────────────────────────────────────────
+  /** 渲染端声明：本 session 绑定到当前画布项目，主进程可以把工具调用打回来 */
+  'canvas:host-attach': [CanvasHostAttachRequest, CanvasHostAttachResponse]
+  /** 渲染端声明：本 session 不再绑定画布（弹窗关闭或会话切换） */
+  'canvas:host-detach': [CanvasHostDetachRequest, CanvasHostDetachResponse]
+  /** 渲染端把工具调用结果回报给主进程 */
+  'canvas:tool-result': [CanvasToolResultRequest, CanvasToolResultResponse]
+}
+
+// ─── Canvas Agent Bridge Types ─────────────────────────────────────────────
+
+export interface CanvasToolSchemaPayload {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+export interface CanvasHostAttachRequest {
+  sessionId: string
+  projectId: string
+  /** 渲染端同步过来的工具 schema 列表（每次 attach 都会同步，主进程覆盖更新） */
+  toolSchemas: CanvasToolSchemaPayload[]
+}
+export interface CanvasHostAttachResponse {
+  ok: true
+}
+
+export interface CanvasHostDetachRequest {
+  sessionId: string
+}
+export interface CanvasHostDetachResponse {
+  ok: true
+}
+
+export interface CanvasToolResultRequest {
+  requestId: string
+  ok: boolean
+  result?: unknown
+  error?: string
+}
+export interface CanvasToolResultResponse {
+  ok: true
+}
+
+/** 主进程 → 渲染端：请求执行画布工具，渲染端用 canvas:tool-result 回报 */
+export interface CanvasToolCallEvent {
+  requestId: string
+  sessionId: string
+  toolName: string
+  args: unknown
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -4345,6 +4395,8 @@ export interface IpcStreamChannelMap {
   }
   /** Canvas media task status update. Pushed at task start/completion, not on every UI frame. */
   'stream:canvas:media-task': CanvasMediaTaskStreamPayload
+  /** 画布 Agent 工具调用请求（主进程 → 渲染进程）。渲染端执行后用 canvas:tool-result 回报。 */
+  'stream:canvas:tool-call': CanvasToolCallEvent
   /** Remote connection config/runtime changed */
   'stream:remote:changed': {
     reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'
