@@ -32,6 +32,14 @@ export interface ChatPanelProps {
   onAfterSend?: (text: string) => void
   /** 可选：限制工具卡片的标签前缀（如只显示 mcp__spark_canvas__） */
   toolNamePrefixFilter?: string
+  /**
+   * 可选：接管发送逻辑。传入后 ChatPanel 不再自行调 session:send-turn，
+   * 而是把待发送文本交给父组件（父组件负责建会/发消息）；发送失败请抛异常，
+   * ChatPanel 会捕获并显示 sendError。未传则走默认的 session:send-turn。
+   */
+  onSend?: (text: string) => Promise<void>
+  /** 可选：输入区上方的配置条（agent/provider/model/权限选择器等） */
+  composer?: React.ReactNode
 }
 
 type AssistantStatus = 'idle' | 'sending' | 'streaming'
@@ -45,6 +53,8 @@ export function ChatPanel({
   placeholder,
   onAfterSend,
   toolNamePrefixFilter,
+  onSend,
+  composer,
 }: ChatPanelProps): React.ReactElement {
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [input, setInput] = useState('')
@@ -57,6 +67,7 @@ export function ChatPanel({
   // 切换 session 时重置 builder
   useEffect(() => {
     builderRef.current = new MessageBuilder()
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setMessages([])
     setStatus('idle')
     setSendError(null)
@@ -92,23 +103,32 @@ export function ChatPanel({
 
   const handleSend = useCallback(async () => {
     const text = input.trim()
-    if (!text || sessionId == null || status !== 'idle') return
+    // onSend 模式下允许 sessionId 为空（父组件负责建会）；默认模式必须有 sessionId
+    if (!text || status !== 'idle') return
+    if (onSend == null && sessionId == null) return
     setInput('')
     setStatus('sending')
     setSendError(null)
     try {
-      await window.spark.invoke('session:send-turn', {
-        sessionId: sessionId as never,
-        message: text,
-      })
+      if (onSend != null) {
+        // 父组件接管发送（如画布弹窗需要先建会、注入上下文等）
+        await onSend(text)
+      } else {
+        await window.spark.invoke('session:send-turn', {
+          sessionId: sessionId as never,
+          message: text,
+        })
+      }
       onAfterSend?.(text)
     } catch (err) {
       setStatus('idle')
       setSendError(err instanceof Error ? err.message : '发送失败')
     }
-  }, [input, sessionId, status, onAfterSend])
+  }, [input, sessionId, status, onAfterSend, onSend])
 
-  const disabled = sessionId == null || status !== 'idle' || !!error
+  // onSend 模式下允许 sessionId 为空（父组件建会）；默认模式必须已有 sessionId
+  const disabled =
+    (onSend == null && sessionId == null) || status !== 'idle' || !!error
 
   const inputPlaceholder = useMemo(() => {
     if (error) return error
@@ -150,6 +170,7 @@ export function ChatPanel({
       </div>
 
       <div className="chat-panel-input-area">
+        {composer && <div className="chat-panel-composer-bar">{composer}</div>}
         {sendError && (
           <div className="chat-panel-send-error">
             <Icons.X size={12} />
