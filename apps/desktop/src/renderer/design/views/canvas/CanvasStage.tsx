@@ -102,6 +102,7 @@ function buildLineageSummaries(edges: CanvasEdge[]): Map<string, CanvasLineageSu
     return summary
   }
   for (const edge of edges) {
+    if (edge.type === 'group_contains') continue
     const source = ensure(edge.sourceNodeId)
     const target = ensure(edge.targetNodeId)
     source.outgoing += 1
@@ -137,6 +138,7 @@ export function CanvasStage({
   onInsertAssetFromPane,
   onCreateBoardFromPane,
   onResetZoomFromPane,
+  onNodeSelectIntent,
   onViewportChange,
 }: {
   snapshot: CanvasSnapshot
@@ -167,6 +169,8 @@ export function CanvasStage({
   onCreateBoardFromPane?: () => void
   /** 空白右键：视图重置（适配/居中） */
   onResetZoomFromPane?: () => void
+  /** 用户明确点击某个节点，用于恢复被手动关闭的节点面板 */
+  onNodeSelectIntent?: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
@@ -225,7 +229,10 @@ export function CanvasStage({
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
-  const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
+  const edges = useMemo(
+    () => snapshot.edges.filter((edge) => edge.type !== 'group_contains').map(toFlowEdge),
+    [snapshot.edges],
+  )
 
   const notifyViewportChange = useCallback(
     (viewport = latestViewportRef.current) => {
@@ -508,6 +515,9 @@ export function CanvasStage({
           onMoveStart={handleViewportMoveStart}
           onMove={handleViewportMove}
           onMoveEnd={handleViewportMoveEnd}
+          onNodeClick={(_event, node) => {
+            onNodeSelectIntent?.(node.id)
+          }}
           onSelectionChange={({ nodes: selected }) =>
             onSelectionChange(selected.map((node) => node.id))
           }

@@ -81,8 +81,8 @@ html[data-theme="light"],
   --diff-del-bg: rgba(239, 68, 68, 0.07);
   --diff-del-fg: #b91c1c;
 
-  --term-bg: #0b0c0e;
-  --term-fg: #d4d4d8;
+  --term-bg: #ebe9e3;
+  --term-fg: #24211d;
 }
 
 /* ---------- THEME: DARK — also on html for Arco popups outside .app ---------- */

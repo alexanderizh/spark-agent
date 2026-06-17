@@ -1,9 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button, Input, Tag, Tooltip, message } from 'antd'
+import { Button, Input, Select, Tag, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
+import { capabilityForOperation, type CanvasMediaModelSummary } from '@spark/protocol'
 import { operationLabel } from './canvas.api'
 import { getCanvasCapability, nodeOperation } from './canvas.capabilities'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
+import { canvasApi } from './canvas.api'
+import {
+  buildCustomModelParams,
+  buildModelParams,
+  createCustomParamDraft,
+  mediaModelKey,
+  mergeSchemaFields,
+  modelSuggestedFields,
+  normalizeModelParamsForSubmit,
+  operationSuggestedFields,
+  schemaFields,
+  updateCustomParam,
+  type CustomParamDraft,
+  type CustomParamType,
+} from './CanvasInlineAiComposer'
 import type { CanvasNode, CanvasOperationType, CanvasSnapshot, CanvasTask } from './canvas.types'
 
 /**
@@ -16,6 +32,9 @@ import type { CanvasNode, CanvasOperationType, CanvasSnapshot, CanvasTask } from
 export type OperationRunParams = {
   prompt: string
   negativePrompt?: string
+  providerProfileId?: string
+  manifestId?: string
+  modelId?: string
   modelParams?: Record<string, unknown>
 }
 
@@ -60,8 +79,31 @@ export function CanvasOperationPanel({
   // 参数状态：从 task 或 node.data 带入
   const [prompt, setPrompt] = useState(task?.prompt ?? node.data.prompt ?? '')
   const [negativePrompt, setNegativePrompt] = useState(task?.negativePrompt ?? '')
-  const [modelParams, setModelParams] = useState<Record<string, unknown>>(task?.modelParams ?? {})
+  const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
+  const [modelsLoading, setModelsLoading] = useState(false)
+  const [selectedModelKey, setSelectedModelKey] = useState('')
+  const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
+  const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
   const [running, setRunning] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setModelsLoading(true)
+    void canvasApi
+      .listMediaModels({ enabledOnly: true })
+      .then((response) => {
+        if (!cancelled) setMediaModels(response.models)
+      })
+      .catch(() => {
+        if (!cancelled) setMediaModels([])
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // 输入节点内容带入 prompt（首次打开时如果 prompt 为空）
   useEffect(() => {
@@ -76,23 +118,120 @@ export function CanvasOperationPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleRun = useCallback(() => {
-    if (!prompt.trim() && !capability?.inputTypes.includes('image') && !capability?.inputTypes.includes('video')) {
-      message.warning('请输入提示词')
-      return
-    }
-    setRunning(true)
-    onRun({ prompt: prompt.trim(), ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}), modelParams })
-  }, [prompt, negativePrompt, modelParams, onRun, capability])
-
   const statusTag = useMemo(() => {
     const s = node.data.status ?? 'pending'
     const color = s === 'completed' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'blue' : 'default'
     return <Tag color={color} bordered>{s}</Tag>
   }, [node.data.status])
 
-  // 参数字段（schema-driven，从 capability paramsSchema 取常用字段）
-  const paramFields = useMemo(() => getOperationParamFields(operation), [operation])
+  const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
+  const supportedMediaModels = useMemo(() => {
+    if (mediaCapabilityIds.length === 0) return []
+    return mediaModels.filter((model) =>
+      model.capabilities.some((item) =>
+        (mediaCapabilityIds as readonly string[]).includes(item.id),
+      ),
+    )
+  }, [mediaCapabilityIds, mediaModels])
+  const modelOptions = useMemo(
+    () =>
+      supportedMediaModels.map((model) => ({
+        value: mediaModelKey(model),
+        label: `${model.providerName ?? model.providerKind} / ${model.displayName}`,
+      })),
+    [supportedMediaModels],
+  )
+  const selectedModel = useMemo(
+    () => supportedMediaModels.find((model) => mediaModelKey(model) === selectedModelKey),
+    [selectedModelKey, supportedMediaModels],
+  )
+  const selectedCapability = useMemo(() => {
+    if (!selectedModel) return null
+    return (
+      selectedModel.capabilities.find((item) =>
+        (mediaCapabilityIds as readonly string[]).includes(item.id),
+      ) ?? null
+    )
+  }, [mediaCapabilityIds, selectedModel])
+  const parameterFields = useMemo(
+    () =>
+      mergeSchemaFields(
+        schemaFields(selectedCapability?.paramSchema ?? {}),
+        operationSuggestedFields(operation),
+        modelSuggestedFields(selectedModel),
+      ),
+    [operation, selectedCapability, selectedModel],
+  )
+
+  useEffect(() => {
+    if (supportedMediaModels.length === 0) {
+      setSelectedModelKey('')
+      return
+    }
+    if (supportedMediaModels.some((model) => mediaModelKey(model) === selectedModelKey)) return
+    const fromTask = supportedMediaModels.find(
+      (model) =>
+        (!task?.providerProfileId || model.providerProfileId === task.providerProfileId) &&
+        (!task?.manifestId || model.manifestId === task.manifestId) &&
+        (!task?.modelId || model.effectiveModelId === task.modelId),
+    )
+    setSelectedModelKey(mediaModelKey(fromTask ?? supportedMediaModels[0]!))
+  }, [selectedModelKey, supportedMediaModels, task?.manifestId, task?.modelId, task?.providerProfileId])
+
+  useEffect(() => {
+    const defaults = selectedCapability?.defaults ?? {}
+    const existing = task?.modelParams ?? {}
+    const next: Record<string, string> = {}
+    const fieldNames = new Set(parameterFields.map((field) => field.name))
+    for (const field of parameterFields) {
+      const value = existing[field.name] ?? defaults[field.name]
+      next[field.name] = value == null ? '' : String(value)
+    }
+    setModelParamDraft(next)
+    setCustomParams(
+      Object.entries(existing)
+        .filter(([key, value]) => !fieldNames.has(key) && value != null)
+        .map(([key, value]) => ({
+          id: `custom-${key}`,
+          name: key,
+          type: inferCustomParamType(value),
+          value: typeof value === 'object' ? JSON.stringify(value) : String(value),
+        })),
+    )
+  }, [parameterFields, selectedCapability, task?.modelParams])
+
+  const handleRun = useCallback(() => {
+    if (!prompt.trim() && !capability?.inputTypes.includes('image') && !capability?.inputTypes.includes('video')) {
+      message.warning('请输入提示词')
+      return
+    }
+    const nextModelParams = normalizeModelParamsForSubmit(
+      {
+        ...buildModelParams(parameterFields, modelParamDraft),
+        ...buildCustomModelParams(customParams),
+      },
+      selectedCapability?.defaults ?? {},
+    )
+    setRunning(true)
+    onRun({
+      prompt: prompt.trim(),
+      ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+      ...(selectedModel?.providerProfileId ? { providerProfileId: selectedModel.providerProfileId } : {}),
+      ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
+      ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
+      ...(Object.keys(nextModelParams).length > 0 ? { modelParams: nextModelParams } : {}),
+    })
+  }, [
+    capability,
+    customParams,
+    modelParamDraft,
+    negativePrompt,
+    onRun,
+    parameterFields,
+    prompt,
+    selectedCapability,
+    selectedModel,
+  ])
 
   const imageInputs = inputNodes.filter((n) => n.type === 'image' || n.type === 'video')
   const textInputs = inputNodes.filter((n) => n.type === 'text' || n.type === 'prompt')
@@ -142,6 +281,29 @@ export function CanvasOperationPanel({
           </div>
         )}
 
+        {mediaCapabilityIds.length > 0 && (
+          <div className="canvas-operation-panel-section">
+            <div className="canvas-operation-panel-section-label">模型</div>
+            <Select
+              size="small"
+              allowClear
+              loading={modelsLoading}
+              value={selectedModelKey || undefined}
+              placeholder={modelsLoading ? '加载模型目录...' : '自动路由'}
+              options={modelOptions}
+              onChange={(value) => setSelectedModelKey(value == null ? '' : String(value))}
+              disabled={running}
+            />
+            <div className="canvas-operation-panel-hint">
+              {modelsLoading
+                ? '正在读取已启用模型...'
+                : supportedMediaModels.length > 0
+                  ? `当前能力可用 ${supportedMediaModels.length} 个模型${selectedModel ? ` · ${selectedModel.effectiveModelId} · ${selectedModel.invocationMode}` : ''}`
+                  : '当前能力暂无已启用模型，可继续使用自动路由或先到 Provider 绑定模型。'}
+            </div>
+          </div>
+        )}
+
         {/* Prompt 编辑 */}
         <div className="canvas-operation-panel-section">
           <div className="canvas-operation-panel-section-label">提示词</div>
@@ -169,25 +331,153 @@ export function CanvasOperationPanel({
         )}
 
         {/* 操作专属参数 */}
-        {paramFields.length > 0 && (
+        {parameterFields.length > 0 && (
           <div className="canvas-operation-panel-section">
-            <div className="canvas-operation-panel-section-label">参数</div>
+            <div className="canvas-operation-panel-section-label">模型参数</div>
             <div className="canvas-operation-panel-params">
-              {paramFields.map((field) => (
-                <label key={field.key} className="canvas-operation-panel-param">
-                  <span>{field.label}</span>
-                  <Input
-                    size="small"
-                    placeholder={field.placeholder}
-                    value={String(modelParams[field.key] ?? '')}
-                    onChange={(e) => setModelParams({ ...modelParams, [field.key]: e.target.value })}
-                    disabled={running}
-                  />
+              {parameterFields.map((field) => (
+                <label key={field.name} className="canvas-operation-panel-param">
+                  <span title={field.description}>{field.title}</span>
+                  {field.enumValues.length > 0 ? (
+                    <Select
+                      size="small"
+                      allowClear
+                      value={modelParamDraft[field.name] || undefined}
+                      options={field.enumValues.map((value) => ({ value, label: value }))}
+                      onChange={(value) =>
+                        setModelParamDraft((prev) => ({
+                          ...prev,
+                          [field.name]: value == null ? '' : String(value),
+                        }))
+                      }
+                      disabled={running}
+                    />
+                  ) : field.type === 'boolean' ? (
+                    <Select
+                      size="small"
+                      allowClear
+                      value={modelParamDraft[field.name] || undefined}
+                      options={[
+                        { value: 'true', label: 'true' },
+                        { value: 'false', label: 'false' },
+                      ]}
+                      onChange={(value) =>
+                        setModelParamDraft((prev) => ({
+                          ...prev,
+                          [field.name]: value == null ? '' : String(value),
+                        }))
+                      }
+                      disabled={running}
+                    />
+                  ) : (
+                    <Input
+                      size="small"
+                      type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
+                      placeholder={field.placeholder}
+                      value={modelParamDraft[field.name] ?? ''}
+                      onChange={(e) =>
+                        setModelParamDraft((prev) => ({ ...prev, [field.name]: e.target.value }))
+                      }
+                      disabled={running}
+                    />
+                  )}
                 </label>
               ))}
             </div>
           </div>
         )}
+
+        <div className="canvas-operation-panel-section">
+          <div className="canvas-operation-panel-section-title-row">
+            <div className="canvas-operation-panel-section-label">自定义参数</div>
+            <Button
+              size="small"
+              type="text"
+              icon={<Icons.Plus size={13} />}
+              disabled={running}
+              onClick={() => setCustomParams((prev) => [...prev, createCustomParamDraft()])}
+            >
+              添加
+            </Button>
+          </div>
+          {customParams.length === 0 ? (
+            <div className="canvas-operation-panel-hint">
+              可添加模型私有参数，例如 seed、negative_prompt、camera_control。
+            </div>
+          ) : (
+            <div className="canvas-operation-panel-custom-params">
+              {customParams.map((param) => (
+                <div key={param.id} className="canvas-operation-panel-custom-param">
+                  <Input
+                    size="small"
+                    value={param.name}
+                    placeholder="字段名"
+                    disabled={running}
+                    onChange={(event) =>
+                      updateCustomParam(setCustomParams, param.id, { name: event.target.value })
+                    }
+                  />
+                  <Select
+                    size="small"
+                    value={param.type}
+                    disabled={running}
+                    options={[
+                      { value: 'string', label: '文本' },
+                      { value: 'number', label: '数字' },
+                      { value: 'integer', label: '整数' },
+                      { value: 'boolean', label: '布尔' },
+                      { value: 'json', label: 'JSON' },
+                    ]}
+                    onChange={(value) =>
+                      updateCustomParam(setCustomParams, param.id, {
+                        type: String(value) as CustomParamType,
+                      })
+                    }
+                  />
+                  {param.type === 'boolean' ? (
+                    <Select
+                      size="small"
+                      allowClear
+                      value={param.value || undefined}
+                      placeholder="值"
+                      disabled={running}
+                      options={[
+                        { value: 'true', label: 'true' },
+                        { value: 'false', label: 'false' },
+                      ]}
+                      onChange={(value) =>
+                        updateCustomParam(setCustomParams, param.id, {
+                          value: value == null ? '' : String(value),
+                        })
+                      }
+                    />
+                  ) : (
+                    <Input
+                      size="small"
+                      value={param.value}
+                      placeholder={param.type === 'json' ? '{"key":"value"}' : '值'}
+                      type={param.type === 'integer' || param.type === 'number' ? 'number' : 'text'}
+                      disabled={running}
+                      onChange={(event) =>
+                        updateCustomParam(setCustomParams, param.id, { value: event.target.value })
+                      }
+                    />
+                  )}
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<Icons.Trash size={13} />}
+                    aria-label="删除自定义参数"
+                    disabled={running}
+                    onClick={() =>
+                      setCustomParams((prev) => prev.filter((item) => item.id !== param.id))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="canvas-operation-panel-footer">
@@ -219,29 +509,9 @@ export function CanvasOperationPanel({
   )
 }
 
-/** 各 operation 的常用参数字段 */
-function getOperationParamFields(operation: CanvasOperationType): Array<{ key: string; label: string; placeholder: string }> {
-  switch (operation) {
-    case 'text_to_image':
-    case 'image_to_image':
-    case 'image_edit':
-      return [
-        { key: 'seed', label: '种子', placeholder: '留空随机' },
-        { key: 'steps', label: '步数', placeholder: '如 30' },
-        { key: 'guidance', label: '引导强度', placeholder: '如 7.5' },
-      ]
-    case 'text_to_video':
-    case 'image_to_video':
-      return [
-        { key: 'duration', label: '时长(秒)', placeholder: '如 5' },
-        { key: 'fps', label: '帧率', placeholder: '如 24' },
-      ]
-    case 'text_to_audio':
-      return [
-        { key: 'voice', label: '音色', placeholder: '如 female' },
-        { key: 'speed', label: '语速', placeholder: '如 1.0' },
-      ]
-    default:
-      return []
-  }
+function inferCustomParamType(value: unknown): CustomParamType {
+  if (typeof value === 'boolean') return 'boolean'
+  if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'number'
+  if (value && typeof value === 'object') return 'json'
+  return 'string'
 }

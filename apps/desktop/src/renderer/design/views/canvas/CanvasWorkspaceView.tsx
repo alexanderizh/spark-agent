@@ -4,6 +4,7 @@ import { Drawer, Input, Modal, Spin, Tooltip, message } from 'antd'
 import { Icons } from '../../Icons'
 import { CanvasAssetDrawer } from './CanvasAssetDrawer'
 import { CanvasInlineAiComposer } from './CanvasInlineAiComposer'
+import { CanvasPromptEditor } from './CanvasPromptEditor'
 import { CanvasInspector } from './CanvasInspector'
 import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
@@ -20,6 +21,9 @@ import { CanvasFilmAssetCenter, type FilmCenterHandlers } from './CanvasFilmAsse
 import { CanvasAgentModal } from './CanvasAgentModal'
 import { CanvasOperationPanel } from './CanvasOperationPanel'
 import { isOperationNode } from './canvas.capabilities'
+import { readAssetKind, readReferences, type ShotGroup, type ShotSegment } from './canvasFilmAssets'
+import { CAMERA_PROMPT_LIBRARY } from './canvasFilmPrompts'
+import { PERFORMANCE_PROMPT_LIBRARY } from './canvasFilmPerformancePrompts'
 import { type AddNodeMenuItem } from './CanvasAddNodeMenu'
 import type { CanvasTemplate } from './canvasTemplates'
 import { useCanvasWorkspace, useCanvasWorkspaceUi } from './canvas.store'
@@ -27,6 +31,7 @@ import { canvasApi, isCanvasDirty, revertProject, saveCanvas } from './canvas.ap
 import { useApp } from '../../AppContext'
 import type {
   CanvasInputTransport,
+  CanvasAsset,
   CanvasNode,
   CanvasOperationType,
   CanvasProject,
@@ -417,6 +422,194 @@ function fallbackPromptForOperation(operation: CanvasOperationType): string {
   return ''
 }
 
+type ScriptBreakdownDraft = {
+  characters: Array<{ name: string; description: string }>
+  scenes: Array<{ name: string; description: string }>
+  segments: Array<{
+    groupName?: string
+    title: string
+    description: string
+    dialogue?: string
+    characterNames: string[]
+    sceneName?: string
+    shotPrompt?: string
+  }>
+}
+
+function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
+  const title = asset.title?.trim() || '未命名剧本'
+  const text = asset.contentText?.trim() ?? ''
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+  const characterMap = new Map<string, { name: string; description: string }>()
+  const sceneMap = new Map<string, { name: string; description: string }>()
+  const segments: ScriptBreakdownDraft['segments'] = []
+  let currentSceneName = ''
+  let currentGroupName = `${title} - 自动分镜`
+
+  const pushScene = (name: string, description: string) => {
+    const normalized = name.replace(/^#+\s*/, '').trim().slice(0, 40)
+    if (!normalized || sceneMap.has(normalized)) return
+    sceneMap.set(normalized, { name: normalized, description })
+  }
+
+  const pushCharacter = (name: string, line: string) => {
+    const normalized = name.trim().replace(/[（）()【】\[\]\s]/g, '').slice(0, 16)
+    if (!normalized || normalized.length < 2 || characterMap.has(normalized)) return
+    characterMap.set(normalized, {
+      name: normalized,
+      description: `从剧本「${title}」自动抽取。代表台词/动作：${line.slice(0, 80)}`,
+    })
+  }
+
+  for (const line of lines.slice(0, 160)) {
+    const episodeLike = /^(第.{1,8}集|EP\s*\d+|Episode\s*\d+)/i.test(line)
+    if (episodeLike && line.length <= 48) {
+      currentGroupName = line.replace(/^#+\s*/, '').trim()
+      continue
+    }
+
+    const sceneLike =
+      /^(第.{1,8}[场幕集]|场景|内景|外景|INT\.|EXT\.)/i.test(line) ||
+      /(?:室内|室外|街|房间|宫殿|教室|办公室|森林|海边|夜|日|黄昏|清晨)/.test(line)
+    if (sceneLike && line.length <= 48) {
+      currentSceneName = line.replace(/^场景[:：]?\s*/, '')
+      pushScene(currentSceneName, line)
+      continue
+    }
+
+    const dialogue = line.match(/^([^：:]{2,16})[：:]\s*(.+)$/)
+    const characterNames: string[] = []
+    let dialogueText = ''
+    if (dialogue) {
+      const name = dialogue[1]?.trim() ?? ''
+      dialogueText = dialogue[2]?.trim() ?? ''
+      pushCharacter(name, dialogueText)
+      characterNames.push(name.replace(/[（）()【】\[\]\s]/g, '').slice(0, 16))
+    }
+
+    if (segments.length < 24 && (dialogueText || line.length >= 8)) {
+      const summary = dialogueText || line
+      segments.push({
+        groupName: currentGroupName,
+        title: `镜${segments.length + 1} - ${summary.slice(0, 18)}`,
+        description: dialogueText ? `${characterNames[0] ?? '角色'}说：${dialogueText}` : line,
+        ...(dialogueText ? { dialogue: dialogueText } : {}),
+        characterNames,
+        ...(currentSceneName ? { sceneName: currentSceneName } : {}),
+        shotPrompt: '电影感构图，主体清晰，动作自然，镜头连贯。',
+      })
+    }
+  }
+
+  if (sceneMap.size === 0) {
+    pushScene(`${title} - 默认场景`, '根据剧本文本自动生成的默认场景，请后续补充地点、光线和美术风格。')
+  }
+
+  return {
+    characters: [...characterMap.values()].slice(0, 16),
+    scenes: [...sceneMap.values()].slice(0, 12),
+    segments: segments.length > 0
+      ? segments
+      : [
+          {
+            groupName: currentGroupName,
+            title: '镜1 - 剧情开场',
+            description: text.slice(0, 160) || '请补充分镜画面描述。',
+            characterNames: [],
+            shotPrompt: '电影感开场镜头，建立场景氛围。',
+          },
+        ],
+  }
+}
+
+function buildFilmAssetReferencePrompt(asset: CanvasAsset): string {
+  const kind = readAssetKind(asset)
+  const attrs = asset.metadata?.attributes as Record<string, string> | undefined
+  const attrText = attrs
+    ? Object.entries(attrs)
+        .filter(([, value]) => value)
+        .map(([key, value]) => `${key}: ${value}`)
+        .join('；')
+    : ''
+  const base = [
+    `请为影视项目生成一张${kind === 'character' ? '角色定妆/设定' : kind === 'scene' ? '场景概念' : kind === 'prop' ? '道具设定' : '视觉参考'}图。`,
+    `名称：${asset.title ?? '未命名'}`,
+    asset.contentText ? `设定：${asset.contentText}` : '',
+    attrText ? `关键属性：${attrText}` : '',
+    typeof asset.metadata?.prompt === 'string' ? `风格要求：${asset.metadata.prompt}` : '',
+    '要求：电影级质感，细节清晰，适合作为后续分镜和视频生成的参考图。',
+  ].filter(Boolean)
+  return base.join('\n')
+}
+
+function buildShotSegmentVideoPrompt(input: {
+  group: ShotGroup
+  segment: ShotSegment
+  characters: CanvasAsset[]
+  scene?: CanvasAsset
+}): string {
+  const { group, segment, characters, scene } = input
+  const characterText = characters
+    .map((asset) => {
+      const refs = readReferences(asset.metadata)
+      const refText = refs.map((ref) => ref.description).filter(Boolean).join('；')
+      return `${asset.title ?? '角色'}：${asset.contentText ?? ''}${refText ? `；参考：${refText}` : ''}`
+    })
+    .join('\n')
+  const sceneRefs = scene ? readReferences(scene.metadata).map((ref) => ref.description).filter(Boolean).join('；') : ''
+  return [
+    `请生成一段影视分镜视频。`,
+    `分组：${group.name}`,
+    `镜号：#${segment.index} ${segment.title}`,
+    segment.description ? `画面/动作：${segment.description}` : '',
+    segment.dialogue ? `对白：${segment.dialogue}` : '',
+    segment.narration ? `旁白：${segment.narration}` : '',
+    scene ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}` : '',
+    characterText ? `角色设定：\n${characterText}` : '',
+    segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
+    '生成要求：动作自然，角色一致，场景连贯，电影感光影，避免字幕、水印和畸变。',
+  ].filter(Boolean).join('\n\n')
+}
+
+type PromptLibraryEntry = {
+  id: string
+  source: 'project' | 'camera' | 'performance'
+  group: string
+  label: string
+  text: string
+}
+
+function buildPromptOptimizationInstruction(prompt: string, negativePrompt: string): string {
+  const sections = [
+    '请把下面的提示词优化为适合影视/多媒体生成模型使用的专业提示词。',
+    '要求：保留原意，补充主体、场景、镜头语言、光影、风格、质量要求；输出可直接复制使用的提示词，不要解释过程。',
+    `原提示词：\n${prompt.trim()}`,
+  ]
+  if (negativePrompt.trim()) {
+    sections.push(`反向提示词：\n${negativePrompt.trim()}`)
+  }
+  return sections.join('\n\n')
+}
+
+function buildRelatedPromptInstruction(prompt: string): string {
+  return [
+    '请基于以下文本生成 5 条可用于影视画布节点的相关提示词。',
+    '每条提示词应覆盖不同用途，例如角色设定、场景氛围、镜头语言、动作表演、视频生成。',
+    '输出格式：使用编号列表，每条包含简短标题和可直接使用的 prompt。',
+    `源文本：\n${prompt.trim() || '请围绕当前影视项目生成可复用提示词。'}`,
+  ].join('\n\n')
+}
+
+function appendPromptFragment(current: string, fragment: string): string {
+  const clean = fragment.trim()
+  if (!clean) return current
+  const base = current.trimEnd()
+  return base ? `${base}\n${clean}` : clean
+}
+
 function areNodeIdsEqual(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((id, index) => id === right[index])
 }
@@ -522,6 +715,7 @@ export function CanvasWorkspaceView({
   )
   const [sidePanelTab, setSidePanelTab] = useState<'details' | 'project'>('details')
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null)
+  const [dismissedOperationNodeId, setDismissedOperationNodeId] = useState<string | null>(null)
   const canvasViewportRef = useRef<CanvasStageViewport | null>(null)
   const [sidePanelWidth, setSidePanelWidth] = useState(readSidePanelWidth)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -776,6 +970,10 @@ export function CanvasWorkspaceView({
     )
   }, [])
 
+  const handleNodeSelectIntent = useCallback((nodeId: string) => {
+    setDismissedOperationNodeId((current) => (current === nodeId ? null : current))
+  }, [])
+
   const handleCanvasViewportChange = useCallback((viewport: CanvasStageViewport) => {
     canvasViewportRef.current = viewport
   }, [])
@@ -859,6 +1057,7 @@ export function CanvasWorkspaceView({
   )
 
   const handleEditNode = useCallback((nodeId: string) => {
+    setDismissedOperationNodeId(null)
     setSelectedNodeIds([nodeId])
     setEditingNodeId(nodeId)
   }, [])
@@ -1183,7 +1382,7 @@ export function CanvasWorkspaceView({
     if (!(await ensureCanvasWorkflowLogin())) return
     // 从选中节点派生输入文件（图生图 / 图生视频 / 语音转写 等需要参考输入）
     const taskInputNodes =
-      inputNodeIds && inputNodeIds.length > 0
+      inputNodeIds !== undefined
         ? resolveCanvasInputNodes(inputNodeIds, snapshot.nodes)
         : aiInputNodes
     const inputFiles = await buildCloudTaskInputFiles(taskInputNodes, inputTransport, inputRoles)
@@ -1218,6 +1417,130 @@ export function CanvasWorkspaceView({
         y: placement.y,
       },
     })
+  }
+
+  const handleBreakdownScriptAsset: NonNullable<FilmCenterHandlers['onBreakdownScriptAsset']> = async (asset) => {
+    const scriptText = asset.contentText?.trim() ?? ''
+    if (!scriptText) {
+      message.warning('请先补充剧本内容，再执行拆解')
+      return
+    }
+
+    const key = `film-breakdown:${asset.id}`
+    message.loading({ key, content: '正在拆解剧本，生成角色/场景/分镜草稿...', duration: 0 })
+
+    try {
+      const draft = buildScriptBreakdownDraft(asset)
+      const sourceTag = `来源:${asset.title ?? '剧本'}`
+      const existingByKindAndName = new Map<string, CanvasAsset>()
+      for (const item of snapshot.assets) {
+        const kind = readAssetKind(item)
+        if (!kind || !item.title) continue
+        existingByKindAndName.set(`${kind}:${item.title.trim().toLowerCase()}`, item)
+      }
+
+      const ensureAsset = async (
+        kind: 'character' | 'scene',
+        input: { name: string; text: string },
+      ): Promise<CanvasAsset> => {
+        const normalizedName = input.name.trim()
+        const existing = existingByKindAndName.get(`${kind}:${normalizedName.toLowerCase()}`)
+        if (existing) return existing
+        const created = await createFilmAsset({
+          kind,
+          name: normalizedName,
+          text: input.text,
+          tags: ['剧本拆解', sourceTag],
+          attributes: {
+            sourceScriptId: asset.id,
+            sourceScriptTitle: asset.title ?? '',
+          },
+        })
+        existingByKindAndName.set(`${kind}:${normalizedName.toLowerCase()}`, created)
+        return created
+      }
+
+      const createdCharacters = await Promise.all(
+        draft.characters.map((character) => ensureAsset('character', {
+          name: character.name,
+          text: character.description,
+        })),
+      )
+      const createdScenes = await Promise.all(
+        draft.scenes.map((scene) => ensureAsset('scene', {
+          name: scene.name,
+          text: scene.description,
+        })),
+      )
+      const characterIdByName = new Map(
+        createdCharacters.map((item) => [(item.title ?? '').trim().toLowerCase(), item.id]),
+      )
+      const sceneIdByName = new Map(
+        createdScenes.map((item) => [(item.title ?? '').trim().toLowerCase(), item.id]),
+      )
+
+      const segmentsByGroup = new Map<string, ScriptBreakdownDraft['segments']>()
+      for (const segment of draft.segments) {
+        const groupName = segment.groupName?.trim() || `${asset.title ?? '剧本'} - 自动分镜`
+        const list = segmentsByGroup.get(groupName) ?? []
+        list.push(segment)
+        segmentsByGroup.set(groupName, list)
+      }
+
+      let createdGroupCount = 0
+      let createdSegmentCount = 0
+      for (const [groupName, segments] of segmentsByGroup) {
+        const group = await createShotGroup({
+          name: groupName,
+          description: `由剧本「${asset.title ?? '未命名剧本'}」自动拆解生成，可继续人工调整。`,
+        })
+        createdGroupCount += 1
+        for (const segment of segments) {
+          const sceneAssetId = segment.sceneName
+            ? sceneIdByName.get(segment.sceneName.trim().toLowerCase())
+            : undefined
+          await createShotSegment(group.id, {
+            title: segment.title,
+            description: segment.description,
+            ...(segment.dialogue ? { dialogue: segment.dialogue } : {}),
+            characterAssetIds: segment.characterNames
+              .map((name) => characterIdByName.get(name.trim().toLowerCase()))
+              .filter((id): id is string => Boolean(id)),
+            ...(sceneAssetId ? { sceneAssetId } : {}),
+            ...(segment.shotPrompt ? { shotPrompt: segment.shotPrompt } : {}),
+          })
+          createdSegmentCount += 1
+        }
+      }
+
+      message.success({
+        key,
+        content: `已生成 ${createdCharacters.length} 个角色、${createdScenes.length} 个场景、${createdGroupCount} 个分组、${createdSegmentCount} 个分镜片段`,
+      })
+    } catch (error) {
+      message.error({
+        key,
+        content: error instanceof Error ? error.message : '剧本拆解失败',
+      })
+    }
+  }
+
+  const handleGenerateAssetReference: NonNullable<FilmCenterHandlers['onGenerateAssetReference']> = (asset) => {
+    void handleCreateTask({
+      operation: 'text_to_image',
+      prompt: buildFilmAssetReferencePrompt(asset),
+      inputNodeIds: [],
+    })
+    message.info('已发起参考图生成任务，结果会出现在画布上')
+  }
+
+  const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (input) => {
+    void handleCreateTask({
+      operation: 'text_to_video',
+      prompt: buildShotSegmentVideoPrompt(input),
+      inputNodeIds: [],
+    })
+    message.info('已发起分镜视频生成任务，结果会出现在画布上')
   }
 
   const handleRetryTask = async (task: CanvasTask) => {
@@ -1484,6 +1807,7 @@ export function CanvasWorkspaceView({
           onInsertAssetFromPane={() => setLeftPanelTab('assets')}
           onCreateBoardFromPane={() => void createBoard()}
           onResetZoomFromPane={handleResetZoom}
+          onNodeSelectIntent={handleNodeSelectIntent}
           onViewportChange={handleCanvasViewportChange}
         />
         <CanvasBottomDock
@@ -1514,6 +1838,7 @@ export function CanvasWorkspaceView({
         />
         {(() => {
           const opNode = selectedNodes.length === 1 ? selectedNodes.find((n) => isOperationNode(n)) : null
+          if (opNode && dismissedOperationNodeId === opNode.id) return null
           if (!opNode) return null
           const opTask = opNode.taskId ? snapshot.tasks.find((t) => t.id === opNode.taskId) : null
           return (
@@ -1521,7 +1846,10 @@ export function CanvasWorkspaceView({
               node={opNode}
               snapshot={snapshot}
               {...(opTask ? { task: opTask } : {})}
-              onClose={() => setSelectedNodeIds([])}
+              onClose={() => {
+                setDismissedOperationNodeId(opNode.id)
+                setSelectedNodeIds([])
+              }}
               onRun={(params) => {
                 void runOperationNode(opNode.id, params)
               }}
@@ -1654,9 +1982,13 @@ export function CanvasWorkspaceView({
             void handleCreateTask({
               operation: 'text_rewrite',
               prompt: asset.contentText ?? asset.title ?? '请优化以下内容，使其更专业、更精炼。',
+              inputNodeIds: [],
             })
             message.info('已发起 AI 优化任务，结果将生成在画布上')
           },
+          onBreakdownScriptAsset: handleBreakdownScriptAsset,
+          onGenerateAssetReference: handleGenerateAssetReference,
+          onGenerateSegmentVideo: handleGenerateSegmentVideo,
           onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
           createShotGroup,
           updateShotGroup,
@@ -1673,9 +2005,11 @@ export function CanvasWorkspaceView({
       />
       <CanvasNodeEditModal
         node={editingNode}
-        open={Boolean(editingNode)}
+        open={Boolean(editingNodeId)}
+        assets={snapshot.assets}
         onClose={() => setEditingNodeId(null)}
         onSave={handleSaveNodeEdit}
+        onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
       />
       <input
         ref={fileInputRef}
@@ -1831,20 +2165,31 @@ function CanvasProjectInfoItem({ label, value }: { label: string; value: string 
 function CanvasNodeEditModal({
   node,
   open,
+  assets,
   onClose,
   onSave,
+  onCreatePromptTask,
 }: {
   node: CanvasNode | null
   open: boolean
+  assets: CanvasAsset[]
   onClose: () => void
   onSave: (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => Promise<void>
+  onCreatePromptTask: (input: {
+    operation: 'prompt_optimize' | 'text_generate'
+    prompt: string
+    negativePrompt?: string
+  }) => void
 }) {
   const [saving, setSaving] = useState(false)
   const [title, setTitle] = useState('')
   const [text, setText] = useState('')
   const [prompt, setPrompt] = useState('')
+  const [negativePrompt, setNegativePrompt] = useState('')
+  const [promptQuery, setPromptQuery] = useState('')
   const [messageText, setMessageText] = useState('')
   const [url, setUrl] = useState('')
+  const isTextLike = node?.type === 'text' || node?.type === 'prompt'
 
   useEffect(() => {
     if (!node) return
@@ -1852,9 +2197,83 @@ function CanvasNodeEditModal({
     setTitle(node.title ?? '')
     setText(node.data.text ?? '')
     setPrompt(node.data.prompt ?? '')
+    setNegativePrompt('')
+    setPromptQuery('')
     setMessageText(node.data.message ?? '')
     setUrl(node.data.url ?? '')
   }, [node])
+
+  const promptLibraryEntries = useMemo<PromptLibraryEntry[]>(() => {
+    const projectEntries = assets
+      .filter((asset) => readAssetKind(asset) === 'prompt_library')
+      .map((asset): PromptLibraryEntry => {
+        const assetPrompt = typeof asset.metadata?.prompt === 'string' ? asset.metadata.prompt : ''
+        return {
+          id: `project:${asset.id}`,
+          source: 'project',
+          group: '项目提示词库',
+          label: asset.title ?? '未命名提示词',
+          text: asset.contentText ?? assetPrompt,
+        }
+      })
+      .filter((entry) => entry.text.trim())
+    const cameraEntries = CAMERA_PROMPT_LIBRARY.flatMap((group) =>
+      group.items.map((item): PromptLibraryEntry => ({
+        id: `camera:${item.id}`,
+        source: 'camera',
+        group: group.label,
+        label: item.label,
+        text: item.promptFragment,
+      })),
+    )
+    const performanceEntries = PERFORMANCE_PROMPT_LIBRARY.flatMap((group) =>
+      group.items.map((item): PromptLibraryEntry => ({
+        id: `performance:${item.id}`,
+        source: 'performance',
+        group: group.label,
+        label: item.label,
+        text: item.promptFragment,
+      })),
+    )
+    return [...projectEntries, ...cameraEntries, ...performanceEntries]
+  }, [assets])
+
+  const filteredPromptEntries = useMemo(() => {
+    const query = promptQuery.trim().toLowerCase()
+    if (!query) return promptLibraryEntries.slice(0, 36)
+    return promptLibraryEntries
+      .filter((entry) => {
+        const haystack = `${entry.group} ${entry.label} ${entry.text}`.toLowerCase()
+        return haystack.includes(query)
+      })
+      .slice(0, 36)
+  }, [promptLibraryEntries, promptQuery])
+
+  const insertPromptText = (fragment: string) => {
+    setText((current) => appendPromptFragment(current, fragment))
+  }
+
+  const runPromptOptimize = () => {
+    const source = text.trim()
+    if (!source) {
+      message.warning('请先输入需要优化的文本或 Prompt')
+      return
+    }
+    onCreatePromptTask({
+      operation: 'prompt_optimize',
+      prompt: buildPromptOptimizationInstruction(source, negativePrompt),
+      ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+    })
+    message.info('已发起 Prompt 优化任务，结果会生成到画布上')
+  }
+
+  const runRelatedPromptGenerate = () => {
+    onCreatePromptTask({
+      operation: 'text_generate',
+      prompt: buildRelatedPromptInstruction(text),
+    })
+    message.info('已发起相关提示词生成任务，结果会生成到画布上')
+  }
 
   const save = async () => {
     if (!node) return
@@ -1863,6 +2282,9 @@ function CanvasNodeEditModal({
       const nextData: CanvasNode['data'] = { ...node.data }
       if (node.type === 'text' || node.type === 'prompt' || node.type === 'group') {
         nextData.text = text
+      }
+      if (node.type === 'text' || node.type === 'prompt') {
+        nextData.format = node.type === 'prompt' ? 'prompt' : 'markdown'
       }
       if (node.type === 'task') {
         nextData.prompt = prompt
@@ -1890,9 +2312,9 @@ function CanvasNodeEditModal({
   return (
     <Modal
       className="canvas-node-edit-modal"
-      title="编辑节点"
+      title={isTextLike ? '编辑文本 / Prompt 节点' : '编辑节点'}
       open={open}
-      width={560}
+      width={isTextLike ? 920 : 560}
       destroyOnHidden
       confirmLoading={saving}
       okText="保存"
@@ -1916,12 +2338,71 @@ function CanvasNodeEditModal({
               onChange={(event) => setTitle(event.target.value)}
             />
           </label>
-          {(node.type === 'text' || node.type === 'prompt' || node.type === 'group') && (
+          {isTextLike && (
+            <div className="canvas-node-edit-prompt-layout">
+              <div className="canvas-node-edit-prompt-main">
+                <CanvasPromptEditor
+                  prompt={text}
+                  negativePrompt={negativePrompt}
+                  promptPlaceholder="输入文本、剧情段落、生成提示词或需要 agent 改写的要求"
+                  negativePlaceholder="可选：输入不希望出现的内容，AI 优化时会一并参考"
+                  optimizeDisabled={text.trim().length === 0}
+                  onPromptChange={setText}
+                  onNegativePromptChange={setNegativePrompt}
+                  onOptimizePrompt={runPromptOptimize}
+                />
+                <div className="canvas-node-edit-agent-actions">
+                  <Button size="small" icon={<Icons.Sparkles size={14} />} onClick={runRelatedPromptGenerate}>
+                    Agent 生成相关提示词
+                  </Button>
+                  <Button size="small" onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}>
+                    插入基础质量词
+                  </Button>
+                </div>
+              </div>
+              <div className="canvas-node-edit-prompt-library">
+                <div className="canvas-node-edit-prompt-library-head">
+                  <strong>提示词库</strong>
+                  <span>项目库 + 内置镜头/表演词</span>
+                </div>
+                <Input
+                  size="small"
+                  allowClear
+                  value={promptQuery}
+                  placeholder="搜索提示词、镜头、动作、表情"
+                  onChange={(event) => setPromptQuery(event.target.value)}
+                />
+                <div className="canvas-node-edit-prompt-library-list">
+                  {filteredPromptEntries.length === 0 ? (
+                    <div className="canvas-node-edit-prompt-empty">没有匹配的提示词</div>
+                  ) : (
+                    filteredPromptEntries.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        className="canvas-node-edit-prompt-entry"
+                        onClick={() => insertPromptText(entry.text)}
+                      >
+                        <span className="canvas-node-edit-prompt-entry-top">
+                          <Tag color={entry.source === 'project' ? 'blue' : entry.source === 'camera' ? 'purple' : 'orange'} bordered>
+                            {entry.group}
+                          </Tag>
+                          <strong>{entry.label}</strong>
+                        </span>
+                        <span className="canvas-node-edit-prompt-entry-text">{entry.text}</span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          {node.type === 'group' && (
             <label className="canvas-node-edit-field canvas-node-edit-field-wide">
-              <span>{node.type === 'group' ? '组说明' : '内容'}</span>
+              <span>组说明</span>
               <Input.TextArea
                 value={text}
-                rows={node.type === 'group' ? 3 : 7}
+                rows={3}
                 placeholder="输入节点内容"
                 onChange={(event) => setText(event.target.value)}
               />

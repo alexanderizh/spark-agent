@@ -139,6 +139,10 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
     <Dropdown trigger={['contextMenu']} menu={menu} placement="bottomLeft">
       <div
         className={`canvas-node canvas-node-${node.type}${selected ? ' canvas-node-selected' : ''}`}
+        onDoubleClick={(event) => {
+          event.stopPropagation()
+          actions.editNode(node.id)
+        }}
       >
         <NodeResizer
           color="var(--primary)"
@@ -177,6 +181,21 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                 <Icons.Sparkles size={13} />
               </button>
             </Tooltip>
+            {(node.type === 'text' || node.type === 'prompt') && (
+              <Tooltip title="编辑文本 / Prompt">
+                <button
+                  type="button"
+                  className="canvas-node-ai-action nodrag nopan"
+                  aria-label="编辑文本 / Prompt"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    actions.editNode(node.id)
+                  }}
+                >
+                  <Icons.Edit size={13} />
+                </button>
+              </Tooltip>
+            )}
             <Tag color={typeColor[node.type]} bordered>
               {displayType}
             </Tag>

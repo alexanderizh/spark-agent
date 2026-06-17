@@ -13699,3 +13699,6 @@ body.inspector-resizing {
 .chat-main-active > .builtin-terminal-panel {
   /* 由组件 .less 设置 flex:0 0 auto；这里保留占位以便后续微调 */
 }
+.xterm-scrollable-element{
+  background-color: transparent!important;
+}

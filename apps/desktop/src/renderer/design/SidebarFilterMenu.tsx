@@ -126,6 +126,7 @@ function FilterRow({
       mouseLeaveDelay={0.15}
       open={open}
       onOpenChange={setOpen}
+      className="sidebar-filter-submenu-popup"
       classNames={{ root: 'sidebar-filter-sub-popover' }}
     >
       <button
@@ -263,6 +264,7 @@ export function SidebarFilterMenu({
       placement="bottomRight"
       open={open}
       onOpenChange={setOpen}
+      className="sidebar-filter-popup"
       classNames={{ root: 'sidebar-filter-popover' }}
     >
       <button

@@ -66,7 +66,9 @@ export const FILM_REFERENCE_KIND_ORDER: FilmReferenceKind[] = [
 /** 从 asset.metadata 读取种类 */
 export function readAssetKind(asset: CanvasAsset): FilmAssetKind | null {
   const kind = asset.metadata?.kind
-  return typeof kind === 'string' ? (kind as FilmAssetKind) : null
+  return typeof kind === 'string' && FILM_ASSET_KIND_ORDER.includes(kind as FilmAssetKind)
+    ? (kind as FilmAssetKind)
+    : null
 }
 
 /** 判断是否为影视公用资产 */
@@ -178,7 +180,7 @@ function isFilmReference(value: unknown): value is FilmReference {
   const v = value as Record<string, unknown>
   return (
     typeof v['id'] === 'string' &&
-    isFilmReferenceKind(v['kind']) &&
+    typeof v['kind'] === 'string' &&
     typeof v['assetId'] === 'string'
   )
 }

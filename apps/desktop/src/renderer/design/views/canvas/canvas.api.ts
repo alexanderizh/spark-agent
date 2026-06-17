@@ -3215,6 +3215,9 @@ export const canvasApi = {
     params: {
       prompt: string
       negativePrompt?: string
+      providerProfileId?: string
+      manifestId?: string
+      modelId?: string
       modelParams?: Record<string, unknown>
     },
   ): Promise<CanvasSnapshot> {
@@ -3243,6 +3246,9 @@ export const canvasApi = {
       inputNodeIds,
       ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
       outputPlacement: { x: baseX, y: node.y },
+      ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+      ...(params.modelId ? { modelId: params.modelId } : {}),
       ...(params.modelParams ? { modelParams: params.modelParams } : {}),
     }
     return this.createMediaTask(projectId, request, { bindToNodeId: nodeId })

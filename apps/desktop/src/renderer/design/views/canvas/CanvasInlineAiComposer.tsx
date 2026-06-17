@@ -796,7 +796,7 @@ export function CanvasInlineAiComposer({
   )
 }
 
-function mediaModelKey(model: CanvasMediaModelSummary): string {
+export function mediaModelKey(model: CanvasMediaModelSummary): string {
   return `${model.providerProfileId ?? 'catalog'}::${model.manifestId}::${model.effectiveModelId}`
 }
 
@@ -945,7 +945,7 @@ function frameNodeLabel(node: CanvasNode, index: number, selected: boolean): str
   return selected ? `${title} / 已选中` : title
 }
 
-type SchemaField = {
+export type SchemaField = {
   name: string
   title: string
   type: string
@@ -954,9 +954,9 @@ type SchemaField = {
   placeholder?: string
 }
 
-type CustomParamType = 'string' | 'number' | 'integer' | 'boolean' | 'json'
+export type CustomParamType = 'string' | 'number' | 'integer' | 'boolean' | 'json'
 
-type CustomParamDraft = {
+export type CustomParamDraft = {
   id: string
   name: string
   type: CustomParamType
@@ -976,7 +976,7 @@ type ComposerCache = {
   lastModelByOperation?: Partial<Record<CanvasOperationType, string>>
 }
 
-function schemaFields(schema: Record<string, unknown>): SchemaField[] {
+export function schemaFields(schema: Record<string, unknown>): SchemaField[] {
   const properties = schema.properties
   if (!properties || typeof properties !== 'object' || Array.isArray(properties)) return []
   return Object.entries(properties as Record<string, unknown>)
@@ -1011,7 +1011,7 @@ function schemaFields(schema: Record<string, unknown>): SchemaField[] {
     })
 }
 
-function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {
+export function operationSuggestedFields(operation: CanvasOperationType): SchemaField[] {
   if (['text_to_image', 'image_to_image', 'image_edit', 'image_compose'].includes(operation)) {
     return [
       {
@@ -1144,7 +1144,7 @@ function operationSuggestedFields(operation: CanvasOperationType): SchemaField[]
   return []
 }
 
-function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): SchemaField[] {
+export function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): SchemaField[] {
   if (!model) return []
   const fingerprint = [model.manifestId, model.modelId, model.effectiveModelId, model.displayName]
     .join(' ')
@@ -1231,7 +1231,7 @@ function modelSuggestedFields(model: CanvasMediaModelSummary | undefined): Schem
   return fields
 }
 
-function mergeSchemaFields(
+export function mergeSchemaFields(
   baseFields: SchemaField[],
   ...suggestedFieldGroups: SchemaField[][]
 ): SchemaField[] {
@@ -1327,7 +1327,7 @@ function pickDraftForFields(
   return result
 }
 
-function createCustomParamDraft(): CustomParamDraft {
+export function createCustomParamDraft(): CustomParamDraft {
   return {
     id: `custom-param-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     name: '',
@@ -1336,7 +1336,7 @@ function createCustomParamDraft(): CustomParamDraft {
   }
 }
 
-function updateCustomParam(
+export function updateCustomParam(
   setCustomParams: Dispatch<SetStateAction<CustomParamDraft[]>>,
   id: string,
   patch: Partial<CustomParamDraft>,
@@ -1344,7 +1344,7 @@ function updateCustomParam(
   setCustomParams((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)))
 }
 
-function buildModelParams(
+export function buildModelParams(
   fields: SchemaField[],
   draft: Record<string, string>,
 ): Record<string, unknown> {
@@ -1367,7 +1367,7 @@ function buildModelParams(
   return params
 }
 
-function buildCustomModelParams(drafts: CustomParamDraft[]): Record<string, unknown> {
+export function buildCustomModelParams(drafts: CustomParamDraft[]): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const draft of drafts) {
     const name = draft.name.trim()
@@ -1394,7 +1394,7 @@ function buildCustomModelParams(drafts: CustomParamDraft[]): Record<string, unkn
   return params
 }
 
-function normalizeModelParamsForSubmit(
+export function normalizeModelParamsForSubmit(
   params: Record<string, unknown>,
   defaults: Record<string, unknown>,
 ): Record<string, unknown> {

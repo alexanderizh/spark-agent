@@ -1027,14 +1027,6 @@ export function ChatView({
           </Fragment>
         )}
 
-        {showTerminalPanel && active != null && (
-          <BuiltInTerminalPanel
-            sessionId={active}
-            workspace={activeSessionWorkspace ?? activeWorkspace}
-            onClose={() => setShowTerminalPanel(false)}
-          />
-        )}
-
         {composerNode}
       </div>
 
@@ -1073,6 +1065,14 @@ export function ChatView({
             const workspaceToOpen = activeSessionWorkspace ?? activeWorkspace
             if (workspaceToOpen) void sessionCtx.handleOpenProjectFolder(workspaceToOpen)
           }}
+        />
+      )}
+
+      {showTerminalPanel && active != null && (
+        <BuiltInTerminalPanel
+          sessionId={active}
+          workspace={activeSessionWorkspace ?? activeWorkspace}
+          onClose={() => setShowTerminalPanel(false)}
         />
       )}
 

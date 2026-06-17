@@ -393,8 +393,9 @@ export function useCanvasWorkspace(projectId: string) {
   // ─── 影视公用资产（文档 §7.10）─────────────────────────────────────────
   const createFilmAsset = useCallback(
     async (input: import('./canvasFilmAssets').CreateFilmAssetInput) => {
-      await canvasApi.createFilmAsset(projectId, input)
+      const asset = await canvasApi.createFilmAsset(projectId, input)
       setSnapshot(await canvasApi.openSnapshot(projectId))
+      return asset
     },
     [projectId],
   )
@@ -425,8 +426,11 @@ export function useCanvasWorkspace(projectId: string) {
   // ─── 分镜分组（存 project.metadata.film.shotGroups）─────────────────────
   const createShotGroup = useCallback(
     async (input: { name: string; description?: string }) => {
-      await canvasApi.createShotGroup(projectId, input)
+      const result = await canvasApi.createShotGroup(projectId, input)
       setSnapshot(await canvasApi.openSnapshot(projectId))
+      const created = result.shotGroups[result.shotGroups.length - 1]
+      if (!created) throw new Error('分镜分组创建失败')
+      return created
     },
     [projectId],
   )
@@ -505,6 +509,9 @@ export function useCanvasWorkspace(projectId: string) {
       params: {
         prompt: string
         negativePrompt?: string
+        providerProfileId?: string
+        manifestId?: string
+        modelId?: string
         modelParams?: Record<string, unknown>
       },
     ) => {

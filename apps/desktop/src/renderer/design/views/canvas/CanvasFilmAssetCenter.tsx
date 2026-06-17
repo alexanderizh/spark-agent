@@ -13,6 +13,8 @@ import {
   readTags,
   type CreateFilmAssetInput,
   type FilmAssetKind,
+  type ShotGroup,
+  type ShotSegment,
 } from './canvasFilmAssets'
 import type { FilmReference, FilmReferenceKind } from './canvasFilmTypes'
 import type { CanvasAsset, CanvasSnapshot } from './canvas.types'
@@ -43,7 +45,7 @@ const TAB_LABELS: Record<TabKind, string> = {
 }
 
 export type FilmCenterHandlers = {
-  createFilmAsset: (input: CreateFilmAssetInput) => Promise<void>
+  createFilmAsset: (input: CreateFilmAssetInput) => Promise<CanvasAsset>
   updateFilmAsset: (
     assetId: string,
     patch: {
@@ -57,19 +59,32 @@ export type FilmCenterHandlers = {
   ) => Promise<void>
   deleteFilmAsset: (assetId: string) => Promise<void>
   onOptimizeAsset: (asset: CanvasAsset) => void
+  onBreakdownScriptAsset?: (asset: CanvasAsset) => Promise<void>
+  onGenerateAssetReference?: (asset: CanvasAsset) => void
+  onGenerateSegmentVideo?: (input: {
+    group: ShotGroup
+    segment: ShotSegment
+    characters: CanvasAsset[]
+    scene?: CanvasAsset
+  }) => void
   onInsertAssetToCanvas: (assetId: string) => void
+  /** 查询资源被谁引用（分镜片段 + 画布节点） */
+  getFilmAssetUsage?: (assetId: string) => {
+    shotSegments: Array<{ groupId: string; groupName: string; segmentId: string; segmentTitle: string; segmentIndex: number }>
+    nodes: Array<{ id: string; type: string; title: string | null }>
+  }
   // 分镜分组
-  createShotGroup: (input: { name: string; description?: string }) => Promise<void>
+  createShotGroup: (input: { name: string; description?: string }) => Promise<ShotGroup>
   updateShotGroup: (groupId: string, patch: { name?: string; description?: string }) => Promise<void>
   deleteShotGroup: (groupId: string) => Promise<void>
   createShotSegment: (
     groupId: string,
-    input: Partial<import('./canvasFilmAssets').ShotSegment> & { title: string },
+    input: Partial<ShotSegment> & { title: string },
   ) => Promise<void>
   updateShotSegment: (
     groupId: string,
     segmentId: string,
-    patch: Partial<import('./canvasFilmAssets').ShotSegment>,
+    patch: Partial<ShotSegment>,
   ) => Promise<void>
   deleteShotSegment: (groupId: string, segmentId: string) => Promise<void>
 }
@@ -157,8 +172,100 @@ function AssetListTab({
   )
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
+  const [query, setQuery] = useState('')
+  const [tagFilter, setTagFilter] = useState<string[]>([])
+  const [sortBy, setSortBy] = useState<'updated' | 'created' | 'name' | 'usage'>('updated')
+
+  const usageMap = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const node of snapshot.nodes) {
+      if (node.assetId) map.set(node.assetId, (map.get(node.assetId) ?? 0) + 1)
+    }
+    // 分镜引用
+    const film = snapshot.project.metadata?.['film']
+    if (film && typeof film === 'object') {
+      const groups = (film as Record<string, unknown>)['shotGroups']
+      if (Array.isArray(groups)) {
+        for (const group of groups) {
+          if (!group || typeof group !== 'object') continue
+          const segments = (group as Record<string, unknown>)['segments']
+          if (!Array.isArray(segments)) continue
+          for (const seg of segments) {
+            if (!seg || typeof seg !== 'object') continue
+            const s = seg as Record<string, unknown>
+            const bump = (id: unknown) => {
+              if (typeof id !== 'string') return
+              map.set(id, (map.get(id) ?? 0) + 1)
+            }
+            if (Array.isArray(s['characterAssetIds'])) for (const id of s['characterAssetIds']) bump(id)
+            if (typeof s['sceneAssetId'] === 'string') bump(s['sceneAssetId'])
+            if (Array.isArray(s['propAssetIds'])) for (const id of s['propAssetIds']) bump(id)
+          }
+        }
+      }
+    }
+    return map
+  }, [snapshot.nodes, snapshot.project.metadata])
+
+  const allTags = useMemo(() => {
+    const set = new Set<string>()
+    for (const asset of assets) {
+      for (const tag of readTags(asset.metadata)) set.add(tag)
+    }
+    return Array.from(set).sort()
+  }, [assets])
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    const list = assets.filter((asset) => {
+      if (tagFilter.length > 0) {
+        const assetTags = readTags(asset.metadata)
+        if (!tagFilter.every((t) => assetTags.includes(t))) return false
+      }
+      if (q) {
+        const title = (asset.title ?? '').toLowerCase()
+        const content = (asset.contentText ?? '').toLowerCase()
+        const prompt = typeof asset.metadata?.['prompt'] === 'string'
+          ? (asset.metadata['prompt'] as string).toLowerCase()
+          : ''
+        if (!title.includes(q) && !content.includes(q) && !prompt.includes(q)) return false
+      }
+      return true
+    })
+    return list.sort((a, b) => {
+      if (sortBy === 'name') return (a.title ?? '').localeCompare(b.title ?? '')
+      if (sortBy === 'created') return b.createdAt.localeCompare(a.createdAt)
+      if (sortBy === 'usage') return (usageMap.get(b.id) ?? 0) - (usageMap.get(a.id) ?? 0)
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })
+  }, [assets, query, tagFilter, sortBy, usageMap])
 
   const editingAsset = editingId ? assets.find((a) => a.id === editingId) ?? null : null
+
+  const handleDeleteAsset = (asset: CanvasAsset, usageCount: number): void => {
+    Modal.confirm({
+      title: `删除${FILM_ASSET_KIND_LABELS[kind]}？`,
+      content:
+        usageCount > 0
+          ? `「${asset.title ?? '未命名'}」正在被引用 ${usageCount} 次。删除后分镜或画布节点会失去这个资源引用。`
+          : `确认删除「${asset.title ?? '未命名'}」？此操作会从项目资源库移除该条目。`,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => handlers.deleteFilmAsset(asset.id),
+    })
+  }
+
+  const handleBreakdownScript = (asset: CanvasAsset): void => {
+    if (!handlers.onBreakdownScriptAsset) return
+    Modal.confirm({
+      title: '从剧本生成角色、场景与分镜草稿？',
+      content: '会基于当前剧本文本自动抽取角色、场景，并创建一个分镜分组。生成结果仍可继续人工编辑。',
+      okText: '生成草稿',
+      cancelText: '取消',
+      onOk: () => handlers.onBreakdownScriptAsset?.(asset),
+    })
+  }
 
   if (creating) {
     return (
@@ -180,6 +287,7 @@ function AssetListTab({
         }}
         {...(onUploadImage ? { onUploadImage } : {})}
         assetById={(id) => snapshot.assets.find((a) => a.id === id)}
+        {...(handlers.getFilmAssetUsage ? { getFilmAssetUsage: handlers.getFilmAssetUsage } : {})}
       />
     )
   }
@@ -205,6 +313,7 @@ function AssetListTab({
         onOptimize={() => handlers.onOptimizeAsset(editingAsset)}
         {...(onUploadImage ? { onUploadImage } : {})}
         assetById={(id) => snapshot.assets.find((a) => a.id === id)}
+        {...(handlers.getFilmAssetUsage ? { getFilmAssetUsage: handlers.getFilmAssetUsage } : {})}
       />
     )
   }
@@ -213,45 +322,163 @@ function AssetListTab({
     <div className="canvas-film-asset-list-tab">
       <div className="canvas-film-asset-list-head">
         <span className="canvas-film-asset-list-count">
-          {FILM_ASSET_KIND_LABELS[kind]} · {assets.length} 项
+          {FILM_ASSET_KIND_LABELS[kind]} · {filtered.length} / {assets.length} 项
         </span>
         <Button type="primary" size="small" icon={<Icons.Plus size={13} />} onClick={() => setCreating(true)}>
           新建{FILM_ASSET_KIND_LABELS[kind]}
         </Button>
       </div>
-      {assets.length === 0 ? (
-        <Empty description={`暂无${FILM_ASSET_KIND_LABELS[kind]}`} className="canvas-film-empty" />
+
+      <div className="canvas-film-asset-toolbar">
+        <Input
+          size="small"
+          allowClear
+          value={query}
+          placeholder="搜索名称/描述/默认 prompt"
+          onChange={(e) => setQuery(e.target.value)}
+          className="canvas-film-asset-search"
+        />
+        <Select
+          size="small"
+          value={sortBy}
+          onChange={(value) => setSortBy(value as typeof sortBy)}
+          options={[
+            { value: 'updated', label: '最近修改' },
+            { value: 'created', label: '最近创建' },
+            { value: 'name', label: '按名称' },
+            { value: 'usage', label: '按使用次数' },
+          ]}
+          className="canvas-film-asset-sort"
+        />
+      </div>
+
+      {allTags.length > 0 && (
+        <div className="canvas-film-asset-tagfilter">
+          {allTags.map((tag) => {
+            const active = tagFilter.includes(tag)
+            return (
+              <Tag
+                key={tag}
+                color={active ? 'blue' : 'default'}
+                className="canvas-film-tag-chip canvas-film-tag-filter"
+                onClick={() => {
+                  setTagFilter((prev) =>
+                    active ? prev.filter((t) => t !== tag) : [...prev, tag],
+                  )
+                }}
+              >
+                {tag}
+              </Tag>
+            )
+          })}
+          {tagFilter.length > 0 && (
+            <Button size="small" type="text" onClick={() => setTagFilter([])}>
+              清空
+            </Button>
+          )}
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <Empty
+          description={
+            assets.length === 0
+              ? `暂无${FILM_ASSET_KIND_LABELS[kind]}`
+              : '当前过滤条件下没有匹配的资源'
+          }
+          className="canvas-film-empty"
+        />
       ) : (
         <div className="canvas-film-asset-cards">
-          {assets.map((asset) => (
-            <div key={asset.id} className="canvas-film-asset-card">
-              <div className="canvas-film-asset-card-thumb">
-                <AssetThumbnail asset={asset} />
-              </div>
-              <div className="canvas-film-asset-card-main">
-                <div className="canvas-film-asset-card-name" title={asset.title ?? ''}>
-                  {asset.title ?? '未命名'}
+          {filtered.map((asset) => {
+            const refs = readReferences(asset.metadata)
+            const cover = refs.length > 0
+              ? snapshot.assets.find((a) => a.id === refs[0]?.assetId)
+              : null
+            const usage = usageMap.get(asset.id) ?? 0
+            const tags = readTags(asset.metadata)
+            return (
+              <div key={asset.id} className="canvas-film-asset-card">
+                <div className="canvas-film-asset-card-thumb">
+                  {cover ? (
+                    <AssetThumbnail asset={cover} />
+                  ) : (
+                    <AssetThumbnail asset={asset} />
+                  )}
+                  {refs.length > 1 && (
+                    <span className="canvas-film-asset-card-refcount" title={`${refs.length} 张参考图`}>
+                      <Icons.Image size={11} /> {refs.length}
+                    </span>
+                  )}
+                  {usage > 0 && (
+                    <span className="canvas-film-asset-card-usage" title={`被引用 ${usage} 次`}>
+                      <Icons.Link size={11} /> {usage}
+                    </span>
+                  )}
                 </div>
-                <div className="canvas-film-asset-card-preview">
-                  {(asset.contentText ?? '').slice(0, 60) || '(无内容)'}
+                <div className="canvas-film-asset-card-main">
+                  <div className="canvas-film-asset-card-name" title={asset.title ?? ''}>
+                    {asset.title ?? '未命名'}
+                  </div>
+                  <div className="canvas-film-asset-card-preview">
+                    {(asset.contentText ?? refs[0]?.description ?? '').slice(0, 60) || '(无内容)'}
+                  </div>
+                  {tags.length > 0 && (
+                    <div className="canvas-film-asset-card-tags">
+                      {tags.slice(0, 3).map((tag) => (
+                        <Tag key={tag} className="canvas-film-tag-chip canvas-film-tag-small">
+                          {tag}
+                        </Tag>
+                      ))}
+                      {tags.length > 3 && (
+                        <span className="canvas-film-asset-card-tagmore">+{tags.length - 3}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                <div className="canvas-film-asset-card-actions">
+                  {kind === 'script' && handlers.onBreakdownScriptAsset && (
+                    <Tooltip title="拆解剧本">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Workflow size={14} />}
+                        onClick={() => handleBreakdownScript(asset)}
+                      />
+                    </Tooltip>
+                  )}
+                  {kind !== 'script' && handlers.onGenerateAssetReference && (
+                    <Tooltip title="生成参考图">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Image size={14} />}
+                        onClick={() => handlers.onGenerateAssetReference?.(asset)}
+                      />
+                    </Tooltip>
+                  )}
+                  <Tooltip title="编辑">
+                    <Button size="small" type="text" icon={<Icons.Edit size={14} />} onClick={() => setEditingId(asset.id)} />
+                  </Tooltip>
+                  <Tooltip title="AI 优化">
+                    <Button size="small" type="text" icon={<Icons.Sparkles size={14} />} onClick={() => handlers.onOptimizeAsset(asset)} />
+                  </Tooltip>
+                  <Tooltip title="插入画布">
+                    <Button size="small" type="text" icon={<Icons.Plus size={14} />} onClick={() => handlers.onInsertAssetToCanvas(asset.id)} />
+                  </Tooltip>
+                  <Tooltip title="删除">
+                    <Button
+                      size="small"
+                      type="text"
+                      danger
+                      icon={<Icons.Trash size={14} />}
+                      onClick={() => handleDeleteAsset(asset, usage)}
+                    />
+                  </Tooltip>
                 </div>
               </div>
-              <div className="canvas-film-asset-card-actions">
-                <Tooltip title="编辑">
-                  <Button size="small" type="text" icon={<Icons.Edit size={14} />} onClick={() => setEditingId(asset.id)} />
-                </Tooltip>
-                <Tooltip title="AI 优化">
-                  <Button size="small" type="text" icon={<Icons.Sparkles size={14} />} onClick={() => handlers.onOptimizeAsset(asset)} />
-                </Tooltip>
-                <Tooltip title="插入画布">
-                  <Button size="small" type="text" icon={<Icons.Plus size={14} />} onClick={() => handlers.onInsertAssetToCanvas(asset.id)} />
-                </Tooltip>
-                <Tooltip title="删除">
-                  <Button size="small" type="text" danger icon={<Icons.Trash size={14} />} onClick={() => void handlers.deleteFilmAsset(asset.id)} />
-                </Tooltip>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -277,6 +504,7 @@ function AssetEditor({
   onOptimize,
   onUploadImage,
   assetById,
+  getFilmAssetUsage,
 }: {
   kind: FilmAssetKind
   mode: 'create' | 'edit'
@@ -288,6 +516,8 @@ function AssetEditor({
   onUploadImage?: (file: File) => Promise<string | null>
   /** 通过 assetId 查 asset（用于 reference 缩略图） */
   assetById?: (id: string) => CanvasAsset | undefined
+  /** 资源被谁引用（仅编辑模式渲染） */
+  getFilmAssetUsage?: FilmCenterHandlers['getFilmAssetUsage']
 }) {
   const [name, setName] = useState(asset?.title ?? '')
   const [text, setText] = useState(asset?.contentText ?? '')
@@ -514,7 +744,67 @@ function AssetEditor({
             />
           </label>
         )}
+
+        {/* 引用关系（仅编辑模式） */}
+        {mode === 'edit' && asset && getFilmAssetUsage && (
+          <UsagePanel assetId={asset.id} getUsage={getFilmAssetUsage} />
+        )}
       </div>
+    </div>
+  )
+}
+
+/** 「被谁引用」面板（编辑模式） */
+function UsagePanel({
+  assetId,
+  getUsage,
+}: {
+  assetId: string
+  getUsage: (assetId: string) => {
+    shotSegments: Array<{ groupId: string; groupName: string; segmentId: string; segmentTitle: string; segmentIndex: number }>
+    nodes: Array<{ id: string; type: string; title: string | null }>
+  }
+}) {
+  const usage = useMemo(() => getUsage(assetId), [getUsage, assetId])
+  const total = usage.shotSegments.length + usage.nodes.length
+  return (
+    <div className="canvas-film-usage-panel">
+      <div className="canvas-film-editor-section-title">被谁引用（{total}）</div>
+      {total === 0 ? (
+        <div className="canvas-film-references-empty">暂无引用。可在分镜片段或画布节点中使用此资源。</div>
+      ) : (
+        <div className="canvas-film-usage-list">
+          {usage.shotSegments.length > 0 && (
+            <div className="canvas-film-usage-group">
+              <div className="canvas-film-usage-group-title">分镜片段</div>
+              {usage.shotSegments.map((s) => (
+                <div key={`${s.groupId}:${s.segmentId}`} className="canvas-film-usage-item">
+                  <Icons.Layers size={12} />
+                  <span className="canvas-film-usage-groupname">{s.groupName}</span>
+                  <span className="canvas-film-usage-separator">›</span>
+                  <span className="canvas-film-usage-segmenttitle">
+                    #{s.segmentIndex} {s.segmentTitle}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {usage.nodes.length > 0 && (
+            <div className="canvas-film-usage-group">
+              <div className="canvas-film-usage-group-title">画布节点</div>
+              {usage.nodes.map((n) => (
+                <div key={n.id} className="canvas-film-usage-item">
+                  <Icons.File size={12} />
+                  <span>{n.title ?? n.type}</span>
+                  <Tag bordered className="canvas-film-usage-nodetype">
+                    {n.type}
+                  </Tag>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -671,16 +961,12 @@ function getEditorPlaceholder(kind: FilmAssetKind): string {
   }
 }
 
-// 占位：分镜分组 Tab（下个文件实现完整逻辑，这里先导出接口）
-import type { FilmCenterHandlers as FCH } from './CanvasFilmAssetCenter'
-import type { ShotGroup } from './canvasFilmAssets'
-
 function ShotGroupTab({
   snapshot,
   handlers,
 }: {
   snapshot: CanvasSnapshot
-  handlers: FCH
+  handlers: FilmCenterHandlers
 }) {
   // 从 snapshot.project.metadata 读 shotGroups
   const shotGroups = useMemo<ShotGroup[]>(() => {
@@ -706,7 +992,8 @@ function ShotGroupTab({
 
   const handleCreateGroup = async () => {
     if (!newGroupName.trim()) return
-    await handlers.createShotGroup({ name: newGroupName.trim() })
+    const group = await handlers.createShotGroup({ name: newGroupName.trim() })
+    setSelectedGroupId(group.id)
     setNewGroupName('')
     setCreatingGroup(false)
   }
@@ -781,7 +1068,7 @@ function ShotSegmentEditor({
   group: ShotGroup
   characterAssets: CanvasAsset[]
   sceneAssets: CanvasAsset[]
-  handlers: FCH
+  handlers: FilmCenterHandlers
 }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [creating, setCreating] = useState(false)
@@ -832,29 +1119,53 @@ function ShotSegmentEditor({
         <Empty description="暂无分镜片段" className="canvas-film-empty" />
       ) : (
         <div className="canvas-film-segment-list">
-          {group.segments.map((segment) => (
-            <div key={segment.id} className="canvas-film-segment-card">
-              <div className="canvas-film-segment-index">#{segment.index}</div>
-              <div className="canvas-film-segment-body">
-                <div className="canvas-film-segment-title">{segment.title}</div>
-                {segment.description && <div className="canvas-film-segment-desc">{segment.description}</div>}
-                {segment.dialogue && <div className="canvas-film-segment-line"><span>对白</span>{segment.dialogue}</div>}
-                {segment.narration && <div className="canvas-film-segment-line"><span>旁白</span>{segment.narration}</div>}
-                {segment.shotPrompt && <div className="canvas-film-segment-line"><span>镜头</span>{segment.shotPrompt}</div>}
-                <div className="canvas-film-segment-refs">
-                  {segment.sceneAssetId && <Tag color="blue">场景</Tag>}
-                  {segment.characterAssetIds?.map((id) => {
-                    const c = characterAssets.find((a) => a.id === id)
-                    return c ? <Tag key={id} color="orange">{c.title}</Tag> : null
-                  })}
-                </div>
+          {group.segments.map((segment) => {
+            const characters = (segment.characterAssetIds ?? [])
+              .map((id) => characterAssets.find((asset) => asset.id === id))
+              .filter((asset): asset is CanvasAsset => Boolean(asset))
+            const scene = segment.sceneAssetId
+              ? sceneAssets.find((asset) => asset.id === segment.sceneAssetId)
+              : undefined
+            return (
+              <div key={segment.id} className="canvas-film-segment-card">
+                  <div className="canvas-film-segment-index">#{segment.index}</div>
+                  <div className="canvas-film-segment-body">
+                    <div className="canvas-film-segment-title">{segment.title}</div>
+                    {segment.description && <div className="canvas-film-segment-desc">{segment.description}</div>}
+                    {segment.dialogue && <div className="canvas-film-segment-line"><span>对白</span>{segment.dialogue}</div>}
+                    {segment.narration && <div className="canvas-film-segment-line"><span>旁白</span>{segment.narration}</div>}
+                    {segment.shotPrompt && <div className="canvas-film-segment-line"><span>镜头</span>{segment.shotPrompt}</div>}
+                    <div className="canvas-film-segment-refs">
+                      {scene && <Tag color="blue">{scene.title ?? '场景'}</Tag>}
+                      {characters.map((character) => (
+                        <Tag key={character.id} color="orange">{character.title}</Tag>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="canvas-film-segment-actions">
+                    {handlers.onGenerateSegmentVideo && (
+                      <Tooltip title="生成视频">
+                        <Button
+                          size="small"
+                          type="text"
+                          icon={<Icons.Play size={13} />}
+                          onClick={() =>
+                            handlers.onGenerateSegmentVideo?.({
+                              group,
+                              segment,
+                              characters,
+                              ...(scene ? { scene } : {}),
+                            })
+                          }
+                        />
+                      </Tooltip>
+                    )}
+                    <Button size="small" type="text" icon={<Icons.Edit size={13} />} onClick={() => setEditingId(segment.id)} />
+                    <Button size="small" type="text" danger icon={<Icons.Trash size={13} />} onClick={() => void handlers.deleteShotSegment(group.id, segment.id)} />
+                  </div>
               </div>
-              <div className="canvas-film-segment-actions">
-                <Button size="small" type="text" icon={<Icons.Edit size={13} />} onClick={() => setEditingId(segment.id)} />
-                <Button size="small" type="text" danger icon={<Icons.Trash size={13} />} onClick={() => void handlers.deleteShotSegment(group.id, segment.id)} />
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
@@ -870,11 +1181,11 @@ function SegmentEditorForm({
   onSave,
 }: {
   mode: 'create' | 'edit'
-  segment?: import('./canvasFilmAssets').ShotSegment
+  segment?: ShotSegment
   characterAssets: CanvasAsset[]
   sceneAssets: CanvasAsset[]
   onClose: () => void
-  onSave: (input: Partial<import('./canvasFilmAssets').ShotSegment> & { title: string }) => Promise<void>
+  onSave: (input: Partial<ShotSegment> & { title: string }) => Promise<void>
 }) {
   const [title, setTitle] = useState(segment?.title ?? '')
   const [description, setDescription] = useState(segment?.description ?? '')
