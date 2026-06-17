@@ -23,8 +23,6 @@ export function CanvasBottomDock({
   onOpenAiComposer,
   onOpenFilmCenter,
   onOpenAgent,
-  onFitView,
-  onResetZoom,
   onToggleGrid,
   gridVisible,
   collapsed,
@@ -37,8 +35,6 @@ export function CanvasBottomDock({
   onOpenAiComposer: () => void
   onOpenFilmCenter: () => void
   onOpenAgent: () => void
-  onFitView: () => void
-  onResetZoom: () => void
   onToggleGrid: () => void
   gridVisible: boolean
   collapsed: boolean
@@ -114,7 +110,6 @@ export function CanvasBottomDock({
                 <Button
                   size="small"
                   type="text"
-                  className={item.colorClass ?? ''}
                   icon={item.icon}
                   aria-label={item.label}
                   onClick={() => closeAddMenuAndRun(() => onAddNodeItem(item))}
@@ -139,7 +134,6 @@ export function CanvasBottomDock({
             <Button
               size="small"
               type="text"
-              className="canvas-dock-btn-ai"
               icon={<Icons.Sparkles size={15} />}
               aria-label="AI 操作"
               onClick={() => closeAddMenuAndRun(onOpenAiComposer)}
@@ -149,7 +143,6 @@ export function CanvasBottomDock({
             <Button
               size="small"
               type="text"
-              className="canvas-dock-btn-asset"
               icon={<Icons.Box size={15} />}
               aria-label="项目资产中心"
               onClick={() => closeAddMenuAndRun(onOpenFilmCenter)}
@@ -159,7 +152,6 @@ export function CanvasBottomDock({
             <Button
               size="small"
               type="text"
-              className="canvas-dock-agent-btn"
               icon={<Icons.Bot size={15} />}
               aria-label="画布 Agent 助手"
               onClick={() => closeAddMenuAndRun(onOpenAgent)}
@@ -170,12 +162,6 @@ export function CanvasBottomDock({
         <div className="canvas-bottom-dock-divider" />
 
         <div className="canvas-bottom-dock-group">
-          <Tooltip title="适配屏幕" placement="top">
-            <Button size="small" type="text" icon={<Icons.Maximize size={15} />} onClick={onFitView} />
-          </Tooltip>
-          <Tooltip title="复原缩放" placement="top">
-            <Button size="small" type="text" icon={<Icons.RotateCcw size={15} />} onClick={onResetZoom} />
-          </Tooltip>
           <Tooltip title={gridVisible ? '隐藏网格' : '显示网格'} placement="top">
             <Button
               size="small"
@@ -184,11 +170,6 @@ export function CanvasBottomDock({
               onClick={onToggleGrid}
             />
           </Tooltip>
-        </div>
-
-        <div className="canvas-bottom-dock-divider" />
-
-        <div className="canvas-bottom-dock-group">
           <Tooltip title="撤销" placement="top">
             <Button size="small" type="text" icon={<Icons.RotateCcw size={15} />} disabled />
           </Tooltip>

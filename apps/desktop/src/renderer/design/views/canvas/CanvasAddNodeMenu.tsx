@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { Tag } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { CANVAS_CAPABILITIES } from './canvas.capabilities'
@@ -92,6 +92,19 @@ export function CanvasAddNodeMenu({
   onSelect: (item: AddNodeMenuItem) => void
   onClose: () => void
 }) {
+  // ESC 关闭节点工厂菜单
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        e.stopPropagation()
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [onClose])
+
   const grouped = groupAddNodeItems(items)
   const categoryLabel: Record<AddNodeMenuItem['category'], string> = {
     content: '内容节点',

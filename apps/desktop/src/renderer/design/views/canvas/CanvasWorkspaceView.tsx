@@ -1238,12 +1238,6 @@ export function CanvasWorkspaceView({
     [addText, closeCanvasFloatPanels, uploadFirstImage, setLeftPanelTab],
   )
 
-  const handleFitView = useCallback(() => {
-    message.info('适配屏幕：可双击画布或使用缩放控制')
-  }, [])
-  const handleResetZoom = useCallback(() => {
-    // 复用现有 pane 菜单的 resetZoom 行为近似
-  }, [])
   const handleToggleGrid = useCallback(() => {
     if (!snapshot) return
     const next = snapshot.board.settings.grid !== false ? false : true
@@ -1254,6 +1248,50 @@ export function CanvasWorkspaceView({
       })
       .catch(() => {})
   }, [snapshot, projectId, refresh])
+
+  // 全局 ESC：按优先级关闭最上层弹窗（避免多个弹窗同时收到事件）。
+  // 顺序对应"视觉层级"：确认对话框 > 二级模态 > 主弹窗 > 侧栏抽屉。
+  // 在输入控件聚焦时不拦截（让 textarea/input 自己处理 ESC，比如清空选区）。
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const target = e.target as HTMLElement | null
+      const tag = target?.tagName
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return
+      if (leaveOpen) {
+        setLeaveOpen(false)
+      } else if (saveToLibraryNodeId != null) {
+        setSaveToLibraryNodeId(null)
+      } else if (editingNodeId != null) {
+        setEditingNodeId(null)
+      } else if (agentOpen) {
+        setAgentOpen(false)
+      } else if (filmCenterOpen) {
+        setFilmCenterOpen(false)
+      } else if (inlineAiOpen) {
+        setInlineAiOpen(false)
+      } else if (historyOpen) {
+        setHistoryOpen(false)
+      } else if (templateOpen) {
+        setTemplateOpen(false)
+      } else {
+        return // 没有开着的弹窗，让其他 handler 处理
+      }
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    window.addEventListener('keydown', handleKeyDown, true)
+    return () => window.removeEventListener('keydown', handleKeyDown, true)
+  }, [
+    leaveOpen,
+    saveToLibraryNodeId,
+    editingNodeId,
+    agentOpen,
+    filmCenterOpen,
+    inlineAiOpen,
+    historyOpen,
+    templateOpen,
+  ])
 
   if (loading) {
     return (
@@ -1851,7 +1889,6 @@ export function CanvasWorkspaceView({
           onAddPromptAtPosition={(position) => void addText(position)}
           onInsertAssetFromPane={() => setLeftPanelTab('assets')}
           onCreateBoardFromPane={() => void createBoard()}
-          onResetZoomFromPane={handleResetZoom}
           onNodeSelectIntent={handleNodeSelectIntent}
           onViewportChange={handleCanvasViewportChange}
         />
@@ -1869,8 +1906,6 @@ export function CanvasWorkspaceView({
             closeCanvasFloatPanels('agent')
             setAgentOpen(true)
           }}
-          onFitView={handleFitView}
-          onResetZoom={handleResetZoom}
           onToggleGrid={handleToggleGrid}
           gridVisible={snapshot.board.settings.grid !== false}
           collapsed={bottomToolbarCollapsed}
