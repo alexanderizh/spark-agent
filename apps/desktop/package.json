@@ -1,6 +1,6 @@
 {
   "name": "@spark/desktop",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "description": "Spark Agent desktop application — Electron + React + TypeScript",
   "author": "Spark Agent Team",
   "private": true,
@@ -18,8 +18,8 @@
     "build:all": "electron-vite build && electron-builder --mac --arm64 --x64 && electron-builder --win --x64",
     "pack": "electron-builder --dir",
     "preview": "electron-vite preview",
-    "postinstall": "electron-rebuild",
     "download-browser": "node scripts/download-browser.js",
+    "rebuild:native": "electron-rebuild -f -w node-pty,better-sqlite3,keytar",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",

@@ -15,6 +15,9 @@ export interface SkillsPickerModalProps {
   skills: SkillItemForPicker[]
   selectedIds: string[]
   onChange: (ids: string[]) => void
+  /** 确认提交（点击「完成」）。提交当前已选内容。 */
+  onConfirm: () => void
+  /** 取消/关闭（点击 X、遮罩、Esc）。不提交。 */
   onClose: () => void
 }
 
@@ -25,6 +28,7 @@ export function SkillsPickerModal({
   skills,
   selectedIds,
   onChange,
+  onConfirm,
   onClose,
 }: SkillsPickerModalProps) {
   const [searchText, setSearchText] = useState('')
@@ -217,7 +221,7 @@ export function SkillsPickerModal({
           >
             清空
           </Button>
-          <Button type="primary" size="small" onClick={onClose}>
+          <Button type="primary" size="small" onClick={onConfirm}>
             完成
           </Button>
         </div>

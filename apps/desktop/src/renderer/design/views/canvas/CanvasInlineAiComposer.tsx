@@ -70,10 +70,20 @@ export function CanvasInlineAiComposer({
   const [panelPosition, setPanelPosition] = useState<{ x: number; y: number } | null>(null)
   const panelRef = useRef<HTMLElement | null>(null)
   const lastOpenRef = useRef(false)
+  /** 参数草稿兜底 key（operation::model，保留旧行为） */
   const cacheKey = useMemo(
     () => composerCacheKey(operation, selectedModelKey || 'auto'),
     [operation, selectedModelKey],
   )
+  /** 按选中节点集合生成的草稿缓存 key；空串表示无选中节点（不缓存） */
+  const nodeCacheKey = useMemo(
+    () => composeNodeCacheKey(selectedNodes.map((node) => node.id)),
+    [selectedNodes],
+  )
+  /** 防抖自动保存 timer；关窗时 flush */
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  /** 创建任务后置位，阻止本次关窗 flush 把已清除的草稿写回 */
+  const suppressFlushRef = useRef(false)
   const projectPrompt = projectSettings?.prompt?.trim() ?? ''
   const projectNegativePrompt = projectSettings?.negativePrompt?.trim() ?? ''
 
@@ -145,10 +155,27 @@ export function CanvasInlineAiComposer({
     }
     if (lastOpenRef.current) return
     lastOpenRef.current = true
+    // 有缓存优先恢复全部字段；否则按现状自动填充 operation + 节点 prompt 上下文
+    const draft = readComposerDraft(nodeCacheKey)
+    if (draft) {
+      setOperation(draft.operation)
+      setPrompt(draft.prompt)
+      setNegativePrompt(draft.negativePrompt)
+      setIncludeProjectPrompt(draft.includeProjectPrompt)
+      setIncludeNegativePrompt(draft.includeNegativePrompt)
+      if (draft.modelKey && draft.modelKey !== 'auto') setSelectedModelKey(draft.modelKey)
+      setCustomParams(draft.customParams)
+      setInputTransport(draft.inputTransport)
+      setFirstFrameNodeId(draft.firstFrameNodeId)
+      setLastFrameNodeId(draft.lastFrameNodeId)
+      setReferenceFrameNodeIds(draft.referenceFrameNodeIds)
+      // modelParamDraft 由下方 cacheKey effect 合并 capability defaults 恢复
+      return
+    }
     const recommended = capabilities.find((capability) => capability.recommended)
     if (recommended) setOperation(recommended.operation)
     setPrompt(nodePromptContext)
-  }, [capabilities, nodePromptContext, open])
+  }, [capabilities, nodePromptContext, open, nodeCacheKey])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
   const supportedMediaModels = useMemo(() => {
@@ -230,19 +257,25 @@ export function CanvasInlineAiComposer({
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
-    const cached = readComposerCacheEntry(cacheKey)
+    // 参数草稿优先级：node draft（按选中节点）> 旧 entry（operation::model）> capability defaults
+    const nodeDraft = readComposerDraft(nodeCacheKey)
+    const legacy = readComposerCacheEntry(cacheKey)
+    const paramSource = nodeDraft?.modelParamDraft ?? legacy?.modelParamDraft ?? {}
     setModelParamDraft(() => {
       const next: Record<string, string> = {}
       for (const field of parameterFields) {
         const defaultValue = defaults[field.name]
-        const cachedValue = cached?.modelParamDraft[field.name]
+        const cachedValue = paramSource[field.name]
         next[field.name] = cachedValue ?? (defaultValue == null ? '' : String(defaultValue))
       }
       return next
     })
-    setCustomParams(cached?.customParams ?? [])
-    if (cached?.inputTransport) setInputTransport(cached.inputTransport)
-  }, [cacheKey, parameterFields, selectedCapability])
+    // 仅当无 node draft（未走上升沿全量恢复）时，才用旧 entry 兜底 customParams/inputTransport
+    if (!nodeDraft) {
+      setCustomParams(legacy?.customParams ?? [])
+      if (legacy?.inputTransport) setInputTransport(legacy.inputTransport)
+    }
+  }, [cacheKey, nodeCacheKey, parameterFields, selectedCapability])
 
   useEffect(() => {
     if (supportedMediaModels.length === 0) {
@@ -296,6 +329,108 @@ export function CanvasInlineAiComposer({
     selectedImageNodes,
     supportsVideoFrameRoles,
     videoFrameMaxImages,
+  ])
+
+  // 防抖自动保存：弹窗打开期间，任意字段变化 → 400ms 后写入本节点集合的草稿。
+  // 任务创建前持续缓存；关闭弹窗时立即 flush（见下一个 effect）。
+  useEffect(() => {
+    if (!open || !nodeCacheKey) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
+    saveTimerRef.current = setTimeout(() => {
+      writeComposerDraft(nodeCacheKey, {
+        operation,
+        modelKey: selectedModelKey || 'auto',
+        prompt,
+        negativePrompt,
+        includeProjectPrompt,
+        includeNegativePrompt,
+        modelParamDraft: pickDraftForFields(parameterFields, modelParamDraft),
+        customParams: customParams.filter((param) => param.name.trim() || param.value.trim()),
+        inputTransport,
+        firstFrameNodeId,
+        lastFrameNodeId,
+        referenceFrameNodeIds,
+      })
+      saveTimerRef.current = null
+    }, 400)
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current)
+        saveTimerRef.current = null
+      }
+    }
+  }, [
+    open,
+    nodeCacheKey,
+    operation,
+    selectedModelKey,
+    prompt,
+    negativePrompt,
+    includeProjectPrompt,
+    includeNegativePrompt,
+    modelParamDraft,
+    customParams,
+    inputTransport,
+    firstFrameNodeId,
+    lastFrameNodeId,
+    referenceFrameNodeIds,
+    parameterFields,
+  ])
+
+  // 关闭弹窗时 flush 最后一次草稿，保证关窗前最后输入不丢。
+  useEffect(() => {
+    if (open) return
+    if (!nodeCacheKey) return
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current)
+      saveTimerRef.current = null
+    }
+    // 创建任务后已主动清除草稿，跳过本次 flush 并复位标志
+    if (suppressFlushRef.current) {
+      suppressFlushRef.current = false
+      return
+    }
+    // 仅当确实有待缓存内容时写入（避免空状态覆盖已存在草稿）
+    const hasContent =
+      prompt.trim() ||
+      negativePrompt.trim() ||
+      operation ||
+      selectedModelKey ||
+      customParams.length > 0 ||
+      firstFrameNodeId ||
+      lastFrameNodeId ||
+      referenceFrameNodeIds.length > 0
+    if (!hasContent) return
+    writeComposerDraft(nodeCacheKey, {
+      operation,
+      modelKey: selectedModelKey || 'auto',
+      prompt,
+      negativePrompt,
+      includeProjectPrompt,
+      includeNegativePrompt,
+      modelParamDraft: pickDraftForFields(parameterFields, modelParamDraft),
+      customParams: customParams.filter((param) => param.name.trim() || param.value.trim()),
+      inputTransport,
+      firstFrameNodeId,
+      lastFrameNodeId,
+      referenceFrameNodeIds,
+    })
+  }, [
+    open,
+    nodeCacheKey,
+    operation,
+    selectedModelKey,
+    prompt,
+    negativePrompt,
+    includeProjectPrompt,
+    includeNegativePrompt,
+    modelParamDraft,
+    customParams,
+    inputTransport,
+    firstFrameNodeId,
+    lastFrameNodeId,
+    referenceFrameNodeIds,
+    parameterFields,
   ])
 
   const handleDragStart = useCallback((event: React.PointerEvent<HTMLElement>) => {
@@ -776,14 +911,15 @@ export function CanvasInlineAiComposer({
             if (needsImageInput) payload.inputTransport = effectiveInputTransport
             if (inputNodeIds && inputNodeIds.length > 0) payload.inputNodeIds = inputNodeIds
             if (inputRoles && Object.keys(inputRoles).length > 0) payload.inputRoles = inputRoles
-            writeComposerCacheEntry(cacheKey, {
-              operation,
-              modelKey: selectedModelKey || 'auto',
-              modelParamDraft: pickDraftForFields(parameterFields, modelParamDraft),
-              customParams: customParams.filter((param) => param.name.trim() && param.value.trim()),
-              inputTransport,
-            })
+            // 任务创建：保留跨节点模型偏好，清除本节点集合的草稿缓存
             if (selectedModelKey) writeLastModelKey(operation, selectedModelKey)
+            if (saveTimerRef.current) {
+              clearTimeout(saveTimerRef.current)
+              saveTimerRef.current = null
+            }
+            clearComposerDraft(nodeCacheKey)
+            // 阻止本次关窗 flush 把已清除的草稿写回
+            suppressFlushRef.current = true
             onCreateTask(payload)
             setPrompt('')
             setNegativePrompt('')
@@ -971,7 +1107,29 @@ type ComposerCacheEntry = {
   inputTransport: CanvasInputTransport
 }
 
+/**
+ * 按选中节点集合缓存的弹窗草稿。
+ * 任务创建前持续防抖写入；创建任务后清除本 key。
+ */
+type ComposerDraft = {
+  operation: CanvasOperationType
+  modelKey: string
+  prompt: string
+  negativePrompt: string
+  includeProjectPrompt: boolean
+  includeNegativePrompt: boolean
+  modelParamDraft: Record<string, string>
+  customParams: CustomParamDraft[]
+  inputTransport: CanvasInputTransport
+  firstFrameNodeId: string
+  lastFrameNodeId: string
+  referenceFrameNodeIds: string[]
+}
+
 type ComposerCache = {
+  /** 按选中节点集合 key 缓存的草稿（新结构） */
+  drafts?: Record<string, ComposerDraft>
+  /** 旧结构（operation::modelKey），保留兜底读取 */
   entries?: Record<string, ComposerCacheEntry>
   lastModelByOperation?: Partial<Record<CanvasOperationType, string>>
 }
@@ -1289,16 +1447,6 @@ function readComposerCacheEntry(key: string): ComposerCacheEntry | null {
   return readComposerCache().entries?.[key] ?? null
 }
 
-function writeComposerCacheEntry(key: string, entry: ComposerCacheEntry): void {
-  const cache = readComposerCache()
-  writeComposerCache({
-    ...cache,
-    entries: {
-      ...(cache.entries ?? {}),
-      [key]: entry,
-    },
-  })
-}
 
 function readLastModelKey(operation: CanvasOperationType): string | undefined {
   return readComposerCache().lastModelByOperation?.[operation]
@@ -1313,6 +1461,41 @@ function writeLastModelKey(operation: CanvasOperationType, modelKey: string): vo
       [operation]: modelKey,
     },
   })
+}
+
+/**
+ * 按选中节点集合生成缓存 key：排序去重后以 `__` 连接。
+ * 空集合返回空串（调用方据此跳过读写，维持现状）。
+ */
+function composeNodeCacheKey(nodeIds: string[]): string {
+  const unique = Array.from(new Set(nodeIds.filter(Boolean))).sort()
+  return unique.join('__')
+}
+
+function readComposerDraft(key: string): ComposerDraft | null {
+  if (!key) return null
+  return readComposerCache().drafts?.[key] ?? null
+}
+
+function writeComposerDraft(key: string, draft: ComposerDraft): void {
+  if (!key) return
+  const cache = readComposerCache()
+  writeComposerCache({
+    ...cache,
+    drafts: {
+      ...(cache.drafts ?? {}),
+      [key]: draft,
+    },
+  })
+}
+
+function clearComposerDraft(key: string): void {
+  if (!key) return
+  const cache = readComposerCache()
+  if (!cache.drafts || !(key in cache.drafts)) return
+  const next = { ...cache.drafts }
+  delete next[key]
+  writeComposerCache({ ...cache, drafts: next })
 }
 
 function pickDraftForFields(

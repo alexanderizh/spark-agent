@@ -242,6 +242,36 @@
   }
 }
 
+.chat-panel-composer-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.06));
+  // 复用全局 composer-select / composer-menu 样式（见 styles/views.css）。
+  // 弹窗内的下拉菜单向上展开，避免被输入区裁切。
+  position: relative;
+
+  .composer-select {
+    flex: 0 0 auto;
+    max-width: 100%;
+  }
+
+  .composer-select-trigger {
+    max-width: 160px;
+  }
+
+  .composer-menu,
+  .composer-dropdown-menu {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    margin-bottom: 4px;
+    z-index: 10;
+  }
+}
+
 .chat-panel-input {
   width: 100%;
   resize: none;

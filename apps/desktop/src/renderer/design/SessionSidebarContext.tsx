@@ -650,8 +650,8 @@ export function SessionSidebarProvider({ children }: { children: ReactNode }) {
 
   const handleDeleteProject = useCallback(async (workspace: WorkspaceInfo) => {
     const confirmed = await requestConfirm({
-      title: `删除项目「${workspace.name}」？`,
-      description: '项目及其会话记录会被删除，本地文件夹不会被删除。',
+      title: '确认',
+      description: `是否确定删除项目「${workspace.name}」？项目及其会话记录会被删除，本地文件夹不会被删除。`,
       confirmText: '删除',
       danger: true,
     })

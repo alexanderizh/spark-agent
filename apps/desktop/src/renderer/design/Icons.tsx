@@ -43,6 +43,13 @@ export const Icons = {
       <path d="M5 10v10h14V10" />
     </IconBase>
   ),
+  Bug: (p: IconProps) => (
+    <IconBase {...p}>
+      <path d="M8 6a4 4 0 0 1 8 0" />
+      <rect x="8" y="6" width="8" height="12" rx="4" />
+      <path d="M12 10v6M3 9h3m12 0h3M3 14h3m12 0h3M4.5 5.5 7 8m12.5-2.5L17 8M4.5 18.5 7 16m12.5 2.5L17 16" />
+    </IconBase>
+  ),
   Chat: (p: IconProps) => (
     <IconBase {...p}>
       <path d="M21 11.5a8.4 8.4 0 0 1-9 8.4 8.5 8.5 0 0 1-3.7-.8L3 21l1.9-5.3A8.4 8.4 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5z" />

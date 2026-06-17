@@ -279,6 +279,7 @@ export const SessionUpdateRequestSchema = z.object({
   permissionMode: SessionPermissionModeSchema.optional(),
   chatMode: SessionChatModeSchema.optional(),
   reasoningEffort: SessionReasoningEffortSchema.optional(),
+  debugMode: z.boolean().optional(),
 })
 
 export const SessionDeleteRequestSchema = z.object({

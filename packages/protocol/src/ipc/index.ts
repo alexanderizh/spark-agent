@@ -212,6 +212,8 @@ export interface SessionUpdateRequest {
   permissionMode?: SessionPermissionMode
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
+  /** 调试模式开关（per-session，持久化到 metadata） */
+  debugMode?: boolean
 }
 
 export interface SessionUpdateResponse {
@@ -338,6 +340,8 @@ export interface SessionListResponse {
     messageCount: number
     /** 若该会话由宿主机历史导入而来，标记来源（用于侧边栏来源徽标）*/
     importedFrom?: HistoryImportSource
+    /** 调试模式（per-session 能力开关）：与权限模式正交，开启后挂载 spark_debug + 显示快捷回复 */
+    debugMode?: boolean
   }>
   total: number
 }

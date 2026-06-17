@@ -691,3 +691,70 @@
     border: 0;
   }
 }
+
+/* 调试模式开关：参数栏中与权限/推理选择器并列的能力开关 */
+.composer-debug-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: var(--text-secondary, #888);
+  user-select: none;
+
+  &:hover {
+    color: var(--text-primary, #222);
+  }
+
+  &.is-active {
+    color: var(--accent-color, #4a8cff);
+    background: var(--accent-bg, rgba(74, 140, 255, 0.08));
+  }
+}
+
+/* 调试快捷回复：仅在调试模式 + 已有会话时显示在输入框上方。
+   与 .composer-running-agents 对齐（同样的 8px 12px 左对齐 + 顶部留白）。 */
+.composer-debug-quickreplies {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 4px;
+
+  .composer-debug-quickreplies-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-right: 2px;
+  }
+
+  .composer-debug-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    line-height: 22px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: var(--r-sm);
+    background: var(--fill-2);
+    color: var(--text-1);
+    cursor: pointer;
+    transition: background-color 0.16s ease;
+
+    &:hover:not(:disabled) {
+      background: var(--hover);
+    }
+
+    &:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+  }
+}
