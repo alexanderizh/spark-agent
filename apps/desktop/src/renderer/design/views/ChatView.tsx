@@ -9594,6 +9594,9 @@ function ChatConfigPanel({
   // 全量 skills 列表（供 picker 弹窗选择）& picker 可见状态
   const [allSkills, setAllSkills] = useState<SkillConfigGetResponse['skills']>([])
   const [showSkillPicker, setShowSkillPicker] = useState(false)
+  // Picker 本地草稿：打开时初始化为空（会话级 picker 用于"新增"），关闭/完成时再提交。
+  // 这样列表项的勾选只更新 draft，不会立刻触发 onChange 关闭弹窗。
+  const [pickerDraft, setPickerDraft] = useState<string[]>([])
   const { invoke: getSkillConfig } = useIpcInvoke('skill-config:get')
   const { invoke: updateSkillConfig } = useIpcInvoke('skill-config:update')
   const { invoke: getPromptConfig } = useIpcInvoke('prompt-config:get')
@@ -9784,6 +9787,7 @@ function ChatConfigPanel({
                       style={{ fontSize: 10, padding: '2px 8px', marginRight: 4 }}
                       onClick={(e) => {
                         e.stopPropagation()
+                        setPickerDraft([])
                         setShowSkillPicker(true)
                       }}
                       title="为本次会话添加额外 Skill"
@@ -9866,12 +9870,19 @@ function ChatConfigPanel({
                 <SkillsPickerModal
                   visible={showSkillPicker}
                   skills={pickerSkills.map((s) => ({ id: s.id, name: s.name, enabled: s.enabled }))}
-                  selectedIds={[]}
-                  onChange={(ids) => {
+                  selectedIds={pickerDraft}
+                  onChange={(ids) => setPickerDraft(ids)}
+                  onConfirm={() => {
+                    const ids = pickerDraft
                     setShowSkillPicker(false)
+                    setPickerDraft([])
                     if (ids.length > 0) void handleAddSessionSkills(ids)
                   }}
-                  onClose={() => setShowSkillPicker(false)}
+                  onClose={() => {
+                    // 取消：仅关闭，不提交
+                    setShowSkillPicker(false)
+                    setPickerDraft([])
+                  }}
                 />
               </div>
             )

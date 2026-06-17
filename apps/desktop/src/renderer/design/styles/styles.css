@@ -204,6 +204,17 @@ summary:focus {
   outline: none;
 }
 
+/* ── Text selection: use the faint primary-color tint (--primary-soft) instead
+   of the browser default yellow, so it follows the active theme color. ── */
+::selection {
+  background: var(--primary-soft);
+  color: var(--text);
+}
+::-moz-selection {
+  background: var(--primary-soft);
+  color: var(--text);
+}
+
 
 /* ============================================================
    WINDOW CHROME (Electron-style)
@@ -1311,3 +1322,4 @@ input.spark-checkbox:checked::after {
 }
 
 /* Streaming cursor — removed (no blinking cursor during streaming) */
+

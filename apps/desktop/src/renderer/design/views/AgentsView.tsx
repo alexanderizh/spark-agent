@@ -1131,6 +1131,7 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
         }))}
         selectedIds={draft.skillIds}
         onChange={(ids) => updateDraft('skillIds', ids)}
+        onConfirm={() => setShowSkillPicker(false)}
         onClose={() => setShowSkillPicker(false)}
       />
     </div>
@@ -1223,14 +1224,16 @@ function AgentCard({
         }}
       >
         <span className="agents-card-head">
-          <span className="agents-card-avatar">
-            <AvatarImage src={resolveAvatarSrc(avatar)} seed={agent.id} name={agent.name} alt={agent.name} />
+          <span className="agents-card-head-main">
+            <span className="agents-card-avatar">
+              <AvatarImage src={resolveAvatarSrc(avatar)} seed={agent.id} name={agent.name} alt={agent.name} />
+            </span>
+            <span className="agents-card-name">{agent.name}</span>
           </span>
           <span className={`agents-card-status ${agent.enabled ? 'enabled' : 'disabled'}`}>
             {agent.enabled ? '启用' : '停用'}
           </span>
         </span>
-      <span className="agents-card-name">{agent.name}</span>
       <span className="agents-card-desc">
         {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
       </span>
