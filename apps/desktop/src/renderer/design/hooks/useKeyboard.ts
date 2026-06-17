@@ -142,6 +142,8 @@ type ShortcutActions = {
   onNewSession?: () => void
   /** Optional: trigger a custom new-project action */
   onNewProject?: () => void
+  /** Optional: toggle the left sidebar visibility (Ctrl/Cmd+B) */
+  onToggleSidebar?: () => void
   /** Optional: check if any overlay panel is currently open */
   hasOverlayOpen?: () => boolean
 }
@@ -196,7 +198,7 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
     }
 
     const shortcuts = shortcutsRef.current
-    const { setTweak, onSearchFocus, onNewSession, onNewProject, hasOverlayOpen } = actionsRef.current
+    const { setTweak, onSearchFocus, onNewSession, onNewProject, onToggleSidebar, hasOverlayOpen } = actionsRef.current
 
     for (const sc of shortcuts) {
       const modPressed = isMac ? e.metaKey : e.ctrlKey
@@ -254,9 +256,9 @@ export function useGlobalShortcuts(actions: ShortcutActions): ShortcutBinding[] 
             break
           }
           case 'toggleSidebar': {
-            // We need to read current sidebar state — use a heuristic
-            // The setTweak will be handled by the component reading current state
-            setTweak('__toggleSidebar', true)
+            // 切换左侧栏显隐。交给 onToggleSidebar 回调读取当前 sidebarHidden 并翻转，
+            // 避免 setTweak 一个无效伪键（旧实现 setTweak('__toggleSidebar', ...) 无人消费）。
+            onToggleSidebar?.()
             break
           }
           case 'search':

@@ -236,7 +236,13 @@ body.terminal-resizing {
     margin-top: 0;
     background: transparent;
     border: 0;
-    padding: 0 10px 0px 10px;
+    padding: 0 0px 10px 10px;
+    .xterm-scrollable-element > .scrollbar {
+      width: 8px!important;
+    }
+    .xterm-scrollable-element > .scrollbar {
+      width: 8px!important;
+    }
   }
 }
 .builtin-terminal-panel .terminal-xterm.active {
@@ -246,6 +252,7 @@ body.terminal-resizing {
 /* 覆盖 xterm.js 自带 css 的硬编码 #000，让背景跟随主题（透明 → 透传 drawer） */
 .builtin-terminal-panel .xterm-viewport {
   background-color: transparent !important;
+  padding-right: 0 !important;
 }
 .builtin-terminal-panel .xterm-viewport::-webkit-scrollbar {
   width: 8px;

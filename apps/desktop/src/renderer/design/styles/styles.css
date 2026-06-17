@@ -471,20 +471,21 @@ body.floating-sidebar-resizing * { pointer-events: none !important; }
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--r-md);
-  color: var(--text-muted);
-  background: transparent;
-  border: none;
+  color: var(--text);
+  background: var(--hover);
+  border: 1px solid var(--border);
   cursor: pointer;
   flex-shrink: 0;
   -webkit-app-region: no-drag;
-  transition: background 0.12s, color 0.12s;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 .sidebar-expand-btn:hover {
-  background: var(--hover);
+  background: var(--border-strong);
   color: var(--text);
+  border-color: var(--border-strong);
 }
 
 /* When sidebar is hidden on macOS, no more view-header padding needed */
