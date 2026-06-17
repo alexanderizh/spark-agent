@@ -41,3 +41,24 @@ export function resolveMediaDisplayUrl(opts: {
   if (opts.url && /^(data:|https?:)/i.test(opts.url)) return normalizeEduAssetUrl(opts.url)
   return ''
 }
+
+/** 读 File 为 dataURL（base64） */
+export function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read file'))
+    reader.onload = () => resolve(String(reader.result ?? ''))
+    reader.readAsDataURL(file)
+  })
+}
+
+/** 读 dataURL 图像尺寸 */
+export function readImageDimensions(src: string): Promise<{ width: number; height: number }> {
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () =>
+      resolve({ width: image.naturalWidth || 0, height: image.naturalHeight || 0 })
+    image.onerror = () => resolve({ width: 0, height: 0 })
+    image.src = src
+  })
+}

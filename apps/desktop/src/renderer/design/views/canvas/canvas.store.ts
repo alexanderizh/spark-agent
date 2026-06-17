@@ -123,6 +123,34 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId, snapshot],
   )
 
+  /** 上传图片到项目资产库（不创建节点），返回新 assetId */
+  const uploadImageAsset = useCallback(
+    async (file: File): Promise<string | null> => {
+      const current = snapshot
+      if (!current) return null
+      const { readFileAsDataUrl, readImageDimensions } = await import('./canvas-safe-file')
+      const dataUrl = await readFileAsDataUrl(file)
+      const dimensions = await readImageDimensions(dataUrl)
+      const saved = await window.spark.invoke('file:save-pasted-image', {
+        dataUrl,
+        mimeType: file.type,
+        suggestedBaseName: file.name.replace(/\.[^.]+$/, ''),
+        storageScope: 'canvas',
+        ...(current.project.rootPath ? { projectRootPath: current.project.rootPath } : {}),
+      })
+      const asset = await canvasApi.createImageAsset({
+        projectId,
+        file,
+        filePath: saved.filePath,
+        imageWidth: dimensions.width,
+        imageHeight: dimensions.height,
+      })
+      setSnapshot(await canvasApi.openSnapshot(projectId))
+      return asset.id
+    },
+    [projectId, snapshot],
+  )
+
   const createImageNode = useCallback(
     async (input: {
       file: File
@@ -365,8 +393,9 @@ export function useCanvasWorkspace(projectId: string) {
   // ─── 影视公用资产（文档 §7.10）─────────────────────────────────────────
   const createFilmAsset = useCallback(
     async (input: import('./canvasFilmAssets').CreateFilmAssetInput) => {
-      await canvasApi.createFilmAsset(projectId, input)
+      const asset = await canvasApi.createFilmAsset(projectId, input)
       setSnapshot(await canvasApi.openSnapshot(projectId))
+      return asset
     },
     [projectId],
   )
@@ -388,11 +417,20 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  /** 查询资源被谁引用（分镜片段 + 画布节点） */
+  const getFilmAssetUsage = useCallback(
+    (assetId: string) => canvasApi.getFilmAssetUsage(projectId, assetId),
+    [projectId],
+  )
+
   // ─── 分镜分组（存 project.metadata.film.shotGroups）─────────────────────
   const createShotGroup = useCallback(
     async (input: { name: string; description?: string }) => {
-      await canvasApi.createShotGroup(projectId, input)
+      const result = await canvasApi.createShotGroup(projectId, input)
       setSnapshot(await canvasApi.openSnapshot(projectId))
+      const created = result.shotGroups[result.shotGroups.length - 1]
+      if (!created) throw new Error('分镜分组创建失败')
+      return created
     },
     [projectId],
   )
@@ -444,6 +482,48 @@ export function useCanvasWorkspace(projectId: string) {
     [projectId],
   )
 
+  // ─── 操作节点（文档：AI 操作按类型分拆）─────────────────────────────────
+  const createOperationNode = useCallback(
+    async (input: {
+      boardId: string
+      operation: import('./canvas.types').CanvasOperationType
+      inputNodeIds: string[]
+      x: number
+      y: number
+      title?: string
+    }) => {
+      setSnapshot(await canvasApi.createOperationNode({ projectId, ...input }))
+    },
+    [projectId],
+  )
+
+  const retryOperationNode = useCallback(
+    async (nodeId: string) => {
+      setSnapshot(await canvasApi.retryOperationNode(projectId, nodeId))
+    },
+    [projectId],
+  )
+  const runOperationNode = useCallback(
+    async (
+      nodeId: string,
+      params: {
+        prompt: string
+        negativePrompt?: string
+        inputNodeIds?: string[]
+        inputAssetIds?: string[]
+        inputFiles?: CanvasMediaTaskInputFile[]
+        providerProfileId?: string
+        manifestId?: string
+        modelId?: string
+        modelParams?: Record<string, unknown>
+      },
+    ) => {
+      setSnapshot(await canvasApi.runOperationNode(projectId, nodeId, params))
+    },
+    [projectId],
+  )
+
+
   return {
     snapshot,
     loading,
@@ -452,6 +532,7 @@ export function useCanvasWorkspace(projectId: string) {
     connectNodes,
     createTextNode,
     createImageNode,
+    uploadImageAsset,
     createGroupNode,
     dissolveGroupNode,
     addNodesToGroup,
@@ -484,6 +565,7 @@ export function useCanvasWorkspace(projectId: string) {
     createFilmAsset,
     updateFilmAsset,
     deleteFilmAsset,
+    getFilmAssetUsage,
     // 分镜分组
     createShotGroup,
     updateShotGroup,
@@ -491,6 +573,10 @@ export function useCanvasWorkspace(projectId: string) {
     createShotSegment,
     updateShotSegment,
     deleteShotSegment,
+    // 操作节点
+    createOperationNode,
+    retryOperationNode,
+    runOperationNode,
   }
 }
 

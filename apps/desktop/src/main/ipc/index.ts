@@ -11,6 +11,7 @@
  */
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
+import { getCanvasHostBridge } from '../canvas-host-bridge.js'
 import { app, dialog, shell, Notification } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
@@ -123,6 +124,8 @@ import { isSafeFilePathAllowed, toSafeFileUrl } from '../services/SafeFileProtoc
 import { getUpdateService } from '../services/UpdateService.js'
 import { detectExternalTools, openProjectInTool } from '../services/ExternalToolService.js'
 import { checkSdkIntegrity, installSdk } from '../services/SdkIntegrityService.js'
+import { getTerminalService } from '../services/TerminalService.js'
+import { registerTerminalIpc } from './registerTerminalIpc.js'
 import {
   getShellEnvironmentStatus,
   recheckRuntimeTools,
@@ -1540,6 +1543,8 @@ function getSessionService(): SessionService {
       onHookTrigger,
       onSessionRenamed,
     )
+    // 接入画布 Agent 桥：仅当 session 已 attach 到画布弹窗时返回 MCP server
+    _sessionService.setCanvasMcpProvider(getCanvasHostBridge().asMcpProvider())
   }
   return _sessionService
 }
@@ -2037,6 +2042,30 @@ export function registerAllIpcHandlers(): void {
     ),
   )
 
+  // ─── Canvas Agent Bridge ───────────────────────────────────────────────
+
+  typedIpcHandle('canvas:host-attach', async (req, event) => {
+    const bridge = getCanvasHostBridge()
+    bridge.setToolSchemas(req.toolSchemas)
+    bridge.attach(req.sessionId, event.sender, req.projectId)
+    return { ok: true } as const
+  })
+
+  typedIpcHandle('canvas:host-detach', async (req) => {
+    getCanvasHostBridge().detach(req.sessionId)
+    return { ok: true } as const
+  })
+
+  typedIpcHandle('canvas:tool-result', async (req) => {
+    getCanvasHostBridge().handleToolResult({
+      requestId: req.requestId,
+      ok: req.ok,
+      ...(req.result !== undefined ? { result: req.result } : {}),
+      ...(req.error !== undefined ? { error: req.error } : {}),
+    })
+    return { ok: true } as const
+  })
+
   // ─── Session Handlers ──────────────────────────────────────────────────
 
   typedIpcHandle('session:create', async (req) => {
@@ -2116,6 +2145,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('session:delete', async (req) => {
     log.info(`session:delete requested, sessionId=${req.sessionId}`)
+    // 关闭该 session 名下所有内置终端 PTY（killed count 已记入 service 日志）
+    getTerminalService().disposeBySession(req.sessionId)
     return getSessionService().deleteSession(req.sessionId)
   })
 
@@ -2946,6 +2977,8 @@ export function registerAllIpcHandlers(): void {
     for (const sessionId of deletedSessionIds) {
       eventRepo.deleteBySession(sessionId)
     }
+    // 关闭该 workspace 名下所有内置终端 PTY
+    getTerminalService().disposeByWorkspaceId(req.workspaceId)
     const deleted = getWorkspaceService().deleteWorkspace(req.workspaceId)
     return { deleted, deletedSessionIds }
   })
@@ -2959,6 +2992,8 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('workspace:close', async (req) => {
     log.info(`workspace:close requested, workspaceId=${req.workspaceId}`)
+    // 关闭 workspace 时同时杀掉该 workspace 名下所有内置终端 PTY
+    getTerminalService().disposeByWorkspaceId(req.workspaceId)
     getWorkspaceService().closeWorkspace()
     return { closed: true }
   })
@@ -5407,6 +5442,9 @@ export function registerAllIpcHandlers(): void {
 
   // ─── Cloud Auth (对接 spark-edugen/edu-server) ───────────────────────────────
   registerAuthIpc()
+
+  // ─── Built-in Terminal Panel (session-scoped PTY dock) ───────────────────────
+  registerTerminalIpc()
 
   log.info('All IPC handlers registered')
 }

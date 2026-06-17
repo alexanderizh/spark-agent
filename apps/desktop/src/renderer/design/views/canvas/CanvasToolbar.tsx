@@ -6,7 +6,7 @@ export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
 /**
  * 顶部基础工具栏（文档 §7.5）。
  *
- * 已收缩为「项目级操作栏」：保存状态/资产/导出。
+ * 已收缩为「项目级操作栏」：保存状态/导出。
  * 选择/平移工具切换、创作类动作已迁到底部悬浮栏（CanvasBottomDock）、
  * 左侧工作台和节点右键菜单。activeTool 保留在 props 以备将来，
  * 但工具切换按钮已不在顶部渲染。
@@ -14,7 +14,6 @@ export type CanvasTool = 'select' | 'pan' | 'text' | 'image'
 export function CanvasToolbar({
   saveState,
   onSave,
-  onOpenAssets,
   onExport,
 }: {
   activeTool?: CanvasTool
@@ -34,7 +33,6 @@ export function CanvasToolbar({
   canDissolveGroup?: boolean
   saveState: { dirty: boolean; saving: boolean }
   onSave: () => void
-  onOpenAssets: () => void
   onExport: () => void
 }) {
   return (
@@ -50,13 +48,6 @@ export function CanvasToolbar({
           onClick={onSave}
         >
           保存
-        </Button>
-        <Button
-          size="small"
-          icon={<Icons.Package size={15} />}
-          onClick={onOpenAssets}
-        >
-          资产
         </Button>
         <Button size="small" icon={<Icons.Download size={15} />} onClick={onExport}>
           导出

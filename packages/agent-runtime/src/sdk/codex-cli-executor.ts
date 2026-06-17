@@ -21,6 +21,17 @@ type CodexProgressState = {
   lastProgressText: string
 }
 
+// 流式解析的累积状态：Codex CLI 的 `exec --json` 在 item.started/updated/completed
+// 事件里携带的是「累积全文」（item.text），而不是 delta。需要自己用前缀切片算出
+// 每一帧的新增后缀，才能像 SDK 那样逐段流式。参考 teamagentx 的 appendContent/appendThinking。
+type CodexStreamState = {
+  content: string
+  thinking: string
+  // 一旦本次 turn 中发生过工具调用，agent_message 累积的中间过程文本就应清空，
+  // 下一帧 agent_message 被视作新的最终回答段落（与参考实现一致）。
+  toolCalledSinceContent: boolean
+}
+
 export class CodexCliExecutor {
   private listeners = new Set<Listener>()
   private child: ChildProcessWithoutNullStreams | null = null
@@ -85,7 +96,7 @@ export class CodexCliExecutor {
     })
 
     try {
-      const result = await this.runCodex(args, prompt, makeBase, config.workspaceRootPath)
+      const result = await this.runCodex(args, prompt, makeBase, config.workspaceRootPath, config)
       if (result.exitCode !== 0) {
         const failureMessage =
           extractCodexFailureText(result.stdout, result.stderr) || result.failureMessage
@@ -109,11 +120,15 @@ export class CodexCliExecutor {
         return
       }
 
+      // 流式解析已通过 delta 把分片发给了前端；这里补发一条 isFinal=true 的 complete
+      // 让前端 builder 收尾该 segment。优先用累积出来的文本（与已流式内容一致），
+      // 仅在没有任何 agent_message 增量产出时回退到 --output-last-message 文件。
+      const streamedText = result.assistantText
       const finalMessage =
-        (await readLastMessage(outputFile)) ||
-        result.assistantText ||
-        extractFallbackText(result.stdout)
-      if (!result.assistantCompleteEmitted && finalMessage.length > 0) {
+        streamedText.length > 0
+          ? streamedText
+          : (await readLastMessage(outputFile)) || extractFallbackText(result.stdout)
+      if (finalMessage.length > 0) {
         this.emit({
           ...makeBase(),
           type: 'assistant_message',
@@ -156,6 +171,7 @@ export class CodexCliExecutor {
     prompt: string,
     makeBase: () => EventBase,
     cwd: string,
+    config: SDKExecutorConfig,
   ): Promise<CodexRunResult> {
     return new Promise((resolve, reject) => {
       let stdout = ''
@@ -169,6 +185,11 @@ export class CodexCliExecutor {
       let settled = false
       let candidateIndex = 0
       const candidates = getCodexCliCandidates()
+      const streamState: CodexStreamState = {
+        content: '',
+        thinking: '',
+        toolCalledSinceContent: false,
+      }
 
       const startCandidate = (): void => {
         const command = candidates[candidateIndex]
@@ -209,37 +230,22 @@ export class CodexCliExecutor {
               continue
             }
 
-            const delta = extractCodexDeltaText(parsed)
-            if (delta.length > 0) {
-              assistantText += delta
-              this.emit({
-                ...makeBase(),
-                type: 'assistant_message',
-                mode: 'delta',
-                content: delta,
-                provider: 'codex',
-                isFinal: false,
-                segmentId: `codex-${makeBase().turnId}`,
-              })
-              continue
-            }
-
-            const completedText = extractCodexCompletedAgentText(parsed)
-            if (completedText.length > 0) {
-              assistantText = completedText
+            // Codex CLI 的 exec --json 通过 item.* 事件携带累积全文，
+            // 这里做前缀切片得到增量 delta，与 SDK 路径行为对齐。
+            const outcome = dispatchCodexEvent(
+              parsed,
+              makeBase,
+              streamState,
+              config.model,
+              (event) => this.emit(event),
+            )
+            if (outcome.emittedDelta) assistantText += outcome.emittedDelta
+            if (outcome.markedComplete) {
+              assistantText = streamState.content
               assistantCompleteEmitted = true
-              this.emit({
-                ...makeBase(),
-                type: 'assistant_message',
-                mode: 'complete',
-                content: completedText,
-                provider: 'codex',
-                // The CLI can emit item.completed before the process has fully exited.
-                // Keep the message streaming until agent_status=completed to avoid a
-                // second "running" placeholder bubble in the chat UI.
-                isFinal: false,
-                segmentId: `codex-${makeBase().turnId}`,
-              })
+            }
+            if (outcome.handled) {
+              terminalOutputEmitted = outcome.emittedTerminal || terminalOutputEmitted
               continue
             }
 
@@ -375,7 +381,39 @@ function buildCodexArgs(config: SDKExecutorConfig, outputFile: string): string[]
   for (const item of buildCodexMcpConfigArgs(config.mcpServers)) {
     args.push('-c', item)
   }
+  // 推理配置：Codex CLI 没有 --reasoning flag，通过 -c 覆盖 model_reasoning_effort /
+  // model_reasoning_summary / show_raw_agent_reasoning / hide_agent_reasoning。
+  // 参考 teamagentx codex-sdk.executor.ts:1910-1932 的配置注入方式。
+  const effort = mapCodexReasoningEffort(config.reasoningEffort)
+  if (effort != null) {
+    args.push('-c', `model_reasoning_effort=${effort}`)
+    args.push('-c', `model_reasoning_summary='concise'`)
+    args.push('-c', `show_raw_agent_reasoning=true`)
+    args.push('-c', `hide_agent_reasoning=false`)
+  }
   return args
+}
+
+/**
+ * 把 Spark 的 reasoningEffort 档位映射成 Codex CLI 接受的值。
+ * Codex CLI 没有 `max`（封顶 xhigh），也没有 `off`（最低 minimal）。
+ * 与 teamagentx getCodexReasoningEffort (codex-sdk.executor.ts:281-294) 一致。
+ */
+function mapCodexReasoningEffort(
+  effort: SDKExecutorConfig['reasoningEffort'],
+): 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null {
+  switch (effort) {
+    case 'medium':
+      return 'medium'
+    case 'high':
+      return 'high'
+    case 'xhigh':
+      return 'xhigh'
+    case 'max':
+      return 'xhigh'
+    default:
+      return null
+  }
 }
 
 function getCodexCliCandidates(): string[] {
@@ -535,7 +573,8 @@ function summarizeCodexItem(obj: Record<string, unknown>, status: string): strin
   }
   const record = item as Record<string, unknown>
   const itemType = typeof record.type === 'string' ? record.type : 'item'
-  if (itemType === 'agent_reasoning') return `Codex reasoning ${status}`
+  // agent_message / reasoning / agent_reasoning 已由 dispatchCodexEvent
+  // 转成真实增量流式输出，不会再走到这里；这里只对工具类 item 做摘要。
   if (itemType === 'tool_call') {
     const name = typeof record.name === 'string' ? record.name : 'tool'
     return `Codex tool ${name} ${status}`
@@ -628,27 +667,144 @@ function findText(value: unknown): string | null {
   return null
 }
 
-function extractCodexDeltaText(obj: Record<string, unknown>): string {
-  const type = typeof obj.type === 'string' ? obj.type : ''
-  if (!/delta|updated|stream/i.test(type)) return ''
-  return findTextFromKeys(obj, ['delta', 'text_delta', 'content_delta']) ?? ''
+type DispatchOutcome = {
+  handled: boolean
+  /** 本次事件新增的 assistant 文本增量（已通过 emit 发出） */
+  emittedDelta: string
+  /** 是否已把当前累积文本标记为「段落完成」 */
+  markedComplete: boolean
+  /** 是否额外产生了 terminal_output（保留兼容） */
+  emittedTerminal: boolean
 }
 
-function extractCodexCompletedAgentText(obj: Record<string, unknown>): string {
+/**
+ * 解析 Codex CLI `exec --json` 的一行 JSON 事件，按 item.* 事件里的 item.type
+ * 分流为 agent_message / reasoning / 工具调用，并对累积文本做前缀切片得到增量 delta。
+ *
+ * Codex CLI 的协议与 OpenAI Responses SDK 流式不同：它不在 delta 事件里发增量，
+ * 而是在 item.started/updated/completed 里反复带「累积全文」。所以这里需要维护
+ * streamState.content / thinking，按前缀比较算出新增后缀。参考 teamagentx 的
+ * appendContent / appendThinking (codex-sdk.executor.ts:2028-2051)。
+ */
+function dispatchCodexEvent(
+  obj: Record<string, unknown>,
+  makeBase: () => EventBase,
+  state: CodexStreamState,
+  model: string,
+  emit: (event: AgentEvent) => void,
+): DispatchOutcome {
   const type = typeof obj.type === 'string' ? obj.type : ''
-  if (type !== 'item.completed' && type !== 'response.output_text.done') return ''
-  const item = obj.item
-  if (item != null && typeof item === 'object' && !Array.isArray(item)) {
-    const record = item as Record<string, unknown>
-    if (
-      record.type === 'agent_message' ||
-      record.type === 'assistant_message' ||
-      record.type === 'message'
-    ) {
-      return findText(record.text) ?? findText(record.content) ?? ''
-    }
+  const outcome: DispatchOutcome = {
+    handled: false,
+    emittedDelta: '',
+    markedComplete: false,
+    emittedTerminal: false,
   }
-  return findTextFromKeys(obj, ['text', 'content']) ?? ''
+
+  // turn.completed 携带 usage，转成 usage_update（与 SDK 路径对齐）。
+  if (type === 'turn.completed') {
+    const usage = obj.usage
+    if (usage != null && typeof usage === 'object' && !Array.isArray(usage)) {
+      const u = usage as Record<string, unknown>
+      const inputTokens = readNumber(u.input_tokens) ?? readNumber(u.prompt_tokens) ?? 0
+      const outputTokens = readNumber(u.output_tokens) ?? readNumber(u.completion_tokens) ?? 0
+      emit({
+        ...makeBase(),
+        type: 'usage_update',
+        provider: 'codex',
+        model,
+        inputTokens,
+        outputTokens,
+      })
+    }
+    outcome.handled = true
+    return outcome
+  }
+
+  // 只有 item.* 事件携带 item 对象。
+  if (type !== 'item.started' && type !== 'item.updated' && type !== 'completed' && type !== 'item.completed') {
+    return outcome
+  }
+  const item = obj.item
+  if (item == null || typeof item !== 'object' || Array.isArray(item)) return outcome
+  const record = item as Record<string, unknown>
+  const itemType = typeof record.type === 'string' ? record.type : ''
+  const isComplete = type === 'item.completed' || type === 'completed'
+
+  if (itemType === 'agent_message' || itemType === 'assistant_message' || itemType === 'message') {
+    // 上一段之后若发生过工具调用，此条消息视为新的最终段落，先清空旧累积。
+    if (state.toolCalledSinceContent) {
+      state.content = ''
+      state.toolCalledSinceContent = false
+    }
+    const text = (findText(record.text) ?? findText(record.content) ?? '').replace(/\r?\n$/, '')
+    const delta = computeDelta(text, state.content)
+    if (delta.length > 0) {
+      emit({
+        ...makeBase(),
+        type: 'assistant_message',
+        mode: 'delta',
+        content: delta,
+        provider: 'codex',
+        isFinal: false,
+        segmentId: `codex-${makeBase().turnId}`,
+      })
+      outcome.emittedDelta = delta
+    }
+    state.content = text.length > 0 ? text : state.content
+    if (isComplete) outcome.markedComplete = true
+    outcome.handled = true
+    return outcome
+  }
+
+  if (itemType === 'reasoning' || itemType === 'agent_reasoning') {
+    const text = (findText(record.text) ?? '').replace(/\r?\n$/, '')
+    const delta = computeDelta(text, state.thinking)
+    if (delta.length > 0) {
+      emit({
+        ...makeBase(),
+        type: 'agent_thinking',
+        mode: 'delta',
+        content: delta,
+        segmentId: `codex-thinking-${makeBase().turnId}`,
+      })
+    }
+    state.thinking = text.length > 0 ? text : state.thinking
+    outcome.handled = true
+    return outcome
+  }
+
+  // 工具调用类 item：标记「发生过工具调用」，让后续 agent_message 开新段；
+  // 这里不直接发 tool_call 事件（前端已有 terminal_output 渠道），仅记账。
+  if (
+    itemType === 'command_execution' ||
+    itemType === 'file_change' ||
+    itemType === 'mcp_tool_call' ||
+    itemType === 'tool_call' ||
+    itemType === 'web_search'
+  ) {
+    state.toolCalledSinceContent = true
+    // 不置 handled=true，交给 emitCodexProgress 继续走摘要展示
+    return outcome
+  }
+
+  return outcome
+}
+
+/**
+ * Codex 带的是累积全文，用前缀比较算出新增后缀。若新文本不是旧文本的前缀
+ * （例如模型重写了上一段），则整段重发。
+ */
+function computeDelta(next: string, prev: string): string {
+  if (next.length === 0) return ''
+  if (next.startsWith(prev)) return next.slice(prev.length)
+  return next
+}
+
+function readNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  if (typeof value === 'string' && /^\d+$/.test(value.trim())) return Number.parseInt(value, 10)
+  return null
 }
 
 function findTextFromKeys(value: unknown, keys: string[]): string | null {

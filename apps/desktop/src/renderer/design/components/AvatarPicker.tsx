@@ -11,6 +11,8 @@ export interface AvatarPickerProps {
   title: string
   description?: string
   onChange: (value: SparkAvatarConfig) => void
+  /** 点击预览就触发文件选择（用于紧凑型头像编辑器：把"上传"按钮也藏起来时） */
+  uploadOnPreviewClick?: boolean
 }
 
 type CropState = {
@@ -25,7 +27,7 @@ type CropState = {
 const OUTPUT_SIZE = 256
 const STAGE_SIZE = 280
 
-export function AvatarPicker({ value, defaultSeed, title, description, onChange }: AvatarPickerProps) {
+export function AvatarPicker({ value, defaultSeed, title, description, onChange, uploadOnPreviewClick }: AvatarPickerProps) {
   const { toast } = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const [crop, setCrop] = useState<CropState | null>(null)
@@ -115,7 +117,11 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange 
       onDrop={onDrop}
       title="可点击上传，也可直接拖入图片"
     >
-      <div className="avatar-picker-preview">
+      <div
+        className="avatar-picker-preview"
+        onClick={uploadOnPreviewClick ? openPicker : undefined}
+        style={uploadOnPreviewClick ? { cursor: 'pointer' } : undefined}
+      >
         <AvatarImage src={src} seed={defaultSeed} name={title} alt={title} />
       </div>
       <div className="avatar-picker-main">

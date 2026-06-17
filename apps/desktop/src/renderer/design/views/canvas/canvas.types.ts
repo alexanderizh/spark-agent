@@ -5,7 +5,28 @@ export type CanvasProjectSettings = {
   negativePrompt?: string
 }
 
-export type CanvasNodeType = 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'task' | 'group'
+export type CanvasNodeType =
+  | 'image'
+  | 'audio'
+  | 'video'
+  | 'text'
+  | 'prompt'
+  | 'group'
+  // 类型化 AI 操作节点（node.type === node.data.operation，一一对应）
+  | 'text_to_image'
+  | 'image_to_image'
+  | 'image_edit'
+  | 'image_compose'
+  | 'text_generate'
+  | 'text_rewrite'
+  | 'prompt_optimize'
+  | 'text_to_video'
+  | 'image_to_video'
+  | 'video_edit'
+  | 'text_to_audio'
+  | 'audio_transcribe'
+  /** @deprecated 旧通用任务节点，保留读取兼容，新代码不再创建 */
+  | 'task'
 export type CanvasAssetType = 'image' | 'audio' | 'video' | 'text' | 'prompt' | 'file'
 export type CanvasAssetSource = 'upload' | 'ai_generated' | 'ai_edited' | 'imported' | 'manual'
 

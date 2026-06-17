@@ -102,6 +102,7 @@ function buildLineageSummaries(edges: CanvasEdge[]): Map<string, CanvasLineageSu
     return summary
   }
   for (const edge of edges) {
+    if (edge.type === 'group_contains') continue
     const source = ensure(edge.sourceNodeId)
     const target = ensure(edge.targetNodeId)
     source.outgoing += 1
@@ -129,12 +130,15 @@ export function CanvasStage({
   onDissolveGroup,
   onOpenAiComposer,
   onEditNode,
+  onSaveNodeToLibrary,
+  onCreateOperationChild,
   onAddTextAtPosition,
   onAddImageAtPosition,
   onAddPromptAtPosition,
   onInsertAssetFromPane,
   onCreateBoardFromPane,
   onResetZoomFromPane,
+  onNodeSelectIntent,
   onViewportChange,
 }: {
   snapshot: CanvasSnapshot
@@ -153,6 +157,8 @@ export function CanvasStage({
   onDissolveGroup: (groupId: string) => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
+  onSaveNodeToLibrary: (nodeId: string) => void
+  onCreateOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
   onAddTextAtPosition: (position: CanvasStagePoint) => void
   onAddImageAtPosition: (position: CanvasStagePoint) => void
   /** 空白右键：新建 Prompt 节点 */
@@ -163,6 +169,8 @@ export function CanvasStage({
   onCreateBoardFromPane?: () => void
   /** 空白右键：视图重置（适配/居中） */
   onResetZoomFromPane?: () => void
+  /** 用户明确点击某个节点，用于恢复被手动关闭的节点面板 */
+  onNodeSelectIntent?: (nodeId: string) => void
   onViewportChange?: (viewport: CanvasStageViewport) => void
 }) {
   const nodeActions = useMemo<CanvasNodeActions>(
@@ -177,6 +185,8 @@ export function CanvasStage({
       dissolveGroup: onDissolveGroup,
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
+      saveToLibrary: onSaveNodeToLibrary,
+      createOperationChild: onCreateOperationChild,
     }),
     [
       onAddSelectionToGroup,
@@ -188,6 +198,8 @@ export function CanvasStage({
       onEditNode,
       onOpenAiComposer,
       onRemoveNodeFromGroup,
+      onCreateOperationChild,
+      onSaveNodeToLibrary,
       onToggleLockNode,
     ],
   )
@@ -214,10 +226,18 @@ export function CanvasStage({
   const syncFrameRef = useRef<number | null>(null)
   const guideFrameRef = useRef<number | null>(null)
   const viewportInteractingRef = useRef(false)
+  const nodeDragStateRef = useRef<{ nodeId: string | null; dragging: boolean; endedAt: number }>({
+    nodeId: null,
+    dragging: false,
+    endedAt: 0,
+  })
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
-  const edges = useMemo(() => snapshot.edges.map(toFlowEdge), [snapshot.edges])
+  const edges = useMemo(
+    () => snapshot.edges.filter((edge) => edge.type !== 'group_contains').map(toFlowEdge),
+    [snapshot.edges],
+  )
 
   const notifyViewportChange = useCallback(
     (viewport = latestViewportRef.current) => {
@@ -464,9 +484,30 @@ export function CanvasStage({
     [],
   )
 
-  const handleNodeDragStop = useCallback(() => {
+  const handleNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+    nodeDragStateRef.current = { nodeId: node.id, dragging: true, endedAt: 0 }
+    setPaneContextMenu(null)
+  }, [])
+
+  const handleNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+    nodeDragStateRef.current = { nodeId: node.id, dragging: false, endedAt: Date.now() }
     clearAlignmentGuides()
   }, [clearAlignmentGuides])
+
+  const handleNodeClick = useCallback(
+    (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
+      const dragState = nodeDragStateRef.current
+      if (
+        dragState.dragging ||
+        (dragState.nodeId === node.id && Date.now() - dragState.endedAt < 220)
+      ) {
+        return
+      }
+      if (event.metaKey || event.ctrlKey || event.shiftKey) return
+      onNodeSelectIntent?.(node.id)
+    },
+    [onNodeSelectIntent],
+  )
 
   return (
     <ReactFlowProvider>
@@ -492,6 +533,7 @@ export function CanvasStage({
           selectionOnDrag={activeTool === 'select'}
           onNodesChange={handleNodesChange}
           onConnect={handleConnect}
+          onNodeDragStart={handleNodeDragStart}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onInit={handleInit}
@@ -500,6 +542,7 @@ export function CanvasStage({
           onMoveStart={handleViewportMoveStart}
           onMove={handleViewportMove}
           onMoveEnd={handleViewportMoveEnd}
+          onNodeClick={handleNodeClick}
           onSelectionChange={({ nodes: selected }) =>
             onSelectionChange(selected.map((node) => node.id))
           }

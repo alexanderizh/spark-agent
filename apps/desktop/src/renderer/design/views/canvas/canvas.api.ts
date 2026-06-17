@@ -4,6 +4,7 @@ import type {
   CanvasBoard,
   CanvasEdge,
   CanvasNode,
+  CanvasNodeType,
   CanvasOperationType,
   CanvasProject,
   CanvasProjectSettings,
@@ -16,12 +17,18 @@ import { encodeToSafeFileUrl, resolveMediaDisplayUrl } from './canvas-safe-file'
 import {
   filmKindToAssetType,
   filmUid,
+  migrateFilmAssetMetadata,
+  readReferences,
+  readTags,
+  writeReferences,
+  writeTags,
   type CreateFilmAssetInput,
   type FilmAssetKind,
   type ShotGroup,
   type ShotSegment,
   type FilmProjectData,
 } from './canvasFilmAssets'
+import type { FilmReference } from './canvasFilmTypes'
 import type {
   CanvasMediaTaskCreateRequest,
   CanvasMediaTaskCreateResponse,
@@ -258,9 +265,36 @@ function readDb(): CanvasDb {
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY)
     if (!raw) return emptyDb()
-    return { ...emptyDb(), ...JSON.parse(raw) }
+    const parsed = { ...emptyDb(), ...JSON.parse(raw) } as CanvasDb
+    migrateFilmAssetDbInPlace(parsed)
+    return parsed
   } catch {
     return emptyDb()
+  }
+}
+
+/** 一次性迁移：老 imageAssetId/attributes 资产 -> references 数组（v2 资源库模型）。
+ *  用模块级 flag 保证只跑一次，迁移完成后写回 localStorage。 */
+let filmAssetV2MigrationApplied = false
+function migrateFilmAssetDbInPlace(db: CanvasDb): void {
+  if (filmAssetV2MigrationApplied) return
+  // 检查是否存在未迁移的资产
+  let touched = false
+  for (const asset of db.assets) {
+    const meta = asset.metadata
+    if (!meta) continue
+    if (Array.isArray(meta['references']) && Array.isArray(meta['tags'])) continue
+    asset.metadata = migrateFilmAssetMetadata(meta)
+    touched = true
+  }
+  // 兼容空库（无项目也无资产）也直接标记完成
+  filmAssetV2MigrationApplied = true
+  if (touched) {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(db))
+    } catch {
+      // localStorage 写入失败也不影响后续读路径
+    }
   }
 }
 
@@ -1892,8 +1926,9 @@ export const canvasApi = {
   },
 
   // ─── 影视公用资产管理（文档 §7.10）──────────────────────────────────────
-  // 剧本/角色/场景/道具/提示词库复用 CanvasAsset + metadata.kind；
+  // 剧本/角色/场景/道具/特效/提示词库复用 CanvasAsset + metadata.kind；
   // 分镜分组存 project.metadata.film.shotGroups。
+  // v2 模型：references 多图多描述 + tags 数组；老 imageAssetId/attributes 自动迁移。
 
   /** 创建影视公用资产 */
   async createFilmAsset(
@@ -1903,6 +1938,19 @@ export const canvasApi = {
     const db = readDb()
     const at = now()
     const assetType = filmKindToAssetType(input.kind)
+    const references = (input.references ?? []).map((ref) => ({
+      id: ref.id,
+      kind: ref.kind,
+      assetId: ref.assetId,
+      description: ref.description ?? '',
+      ...(ref.label ? { label: ref.label } : {}),
+      order: typeof ref.order === 'number' ? ref.order : 0,
+    }))
+    const tags = Array.isArray(input.tags)
+      ? input.tags
+          .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+          .filter((tag, idx, arr) => Boolean(tag) && arr.indexOf(tag) === idx)
+      : []
     const asset: CanvasAsset = {
       id: filmUid('canvas_asset'),
       projectId,
@@ -1914,8 +1962,9 @@ export const canvasApi = {
       metadata: {
         kind: input.kind,
         ...(input.prompt ? { prompt: input.prompt } : {}),
-        ...(input.imageAssetId ? { imageAssetId: input.imageAssetId } : {}),
         ...(input.attributes ? { attributes: input.attributes } : {}),
+        references,
+        tags,
       },
       createdAt: at,
       updatedAt: at,
@@ -1926,13 +1975,14 @@ export const canvasApi = {
     return asset
   },
 
-  /** 更新影视资产（名称/内容/属性/附图） */
+  /** 更新影视资产（名称/内容/references/tags/属性/默认 prompt） */
   async updateFilmAsset(
     projectId: string,
     assetId: string,
     patch: Partial<Pick<CanvasAsset, 'title' | 'contentText'>> & {
       prompt?: string
-      imageAssetId?: string
+      references?: FilmReference[]
+      tags?: string[]
       attributes?: Record<string, string>
     },
   ): Promise<CanvasSnapshot> {
@@ -1941,12 +1991,18 @@ export const canvasApi = {
     if (!asset) return this.openSnapshot(projectId)
     if (patch.title !== undefined) asset.title = patch.title
     if (patch.contentText !== undefined) asset.contentText = patch.contentText
-    asset.metadata = {
+    let nextMeta: Record<string, unknown> = {
       ...asset.metadata,
       ...(patch.prompt !== undefined ? { prompt: patch.prompt } : {}),
-      ...(patch.imageAssetId !== undefined ? { imageAssetId: patch.imageAssetId } : {}),
       ...(patch.attributes !== undefined ? { attributes: patch.attributes } : {}),
     }
+    if (patch.references !== undefined) {
+      nextMeta = writeReferences(nextMeta, patch.references)
+    }
+    if (patch.tags !== undefined) {
+      nextMeta = writeTags(nextMeta, patch.tags)
+    }
+    asset.metadata = nextMeta
     asset.updatedAt = now()
     writeDb(db)
     return this.openSnapshot(projectId)
@@ -1974,6 +2030,192 @@ export const canvasApi = {
       if (kind && assetKind !== kind) return false
       return true
     })
+  },
+
+  /** 搜索/筛选项目内影视资产（v2：query/kind/tags/usageCount） */
+  searchFilmAssets(
+    projectId: string,
+    options: {
+      query?: string
+      kinds?: FilmAssetKind[]
+      tags?: string[]
+      sortBy?: 'updated' | 'created' | 'name' | 'usage'
+    } = {},
+  ): CanvasAsset[] {
+    const db = readDb()
+    const query = (options.query ?? '').trim().toLowerCase()
+    const kinds = options.kinds && options.kinds.length > 0 ? new Set(options.kinds) : null
+    const tagsFilter = options.tags && options.tags.length > 0 ? options.tags.map((t) => t.toLowerCase()) : null
+    const list = this.listFilmAssets(db, projectId).filter((asset) => {
+      if (kinds) {
+        const k = asset.metadata?.['kind']
+        if (typeof k !== 'string' || !kinds.has(k as FilmAssetKind)) return false
+      }
+      if (tagsFilter) {
+        const assetTags = readTags(asset.metadata).map((t) => t.toLowerCase())
+        if (!tagsFilter.every((t) => assetTags.includes(t))) return false
+      }
+      if (query) {
+        const title = (asset.title ?? '').toLowerCase()
+        const content = (asset.contentText ?? '').toLowerCase()
+        const prompt = typeof asset.metadata?.['prompt'] === 'string' ? (asset.metadata['prompt'] as string).toLowerCase() : ''
+        const attrs = asset.metadata?.['attributes']
+        const attrText =
+          attrs && typeof attrs === 'object' && !Array.isArray(attrs)
+            ? Object.values(attrs as Record<string, unknown>)
+                .filter((v): v is string => typeof v === 'string')
+                .join(' ')
+                .toLowerCase()
+            : ''
+        const tagText = readTags(asset.metadata).join(' ').toLowerCase()
+        if (
+          !title.includes(query) &&
+          !content.includes(query) &&
+          !prompt.includes(query) &&
+          !attrText.includes(query) &&
+          !tagText.includes(query)
+        ) {
+          return false
+        }
+      }
+      return true
+    })
+    const sortBy = options.sortBy ?? 'updated'
+    const usageMap = this.countFilmAssetUsage(projectId)
+    return list.sort((a, b) => {
+      if (sortBy === 'name') {
+        return (a.title ?? '').localeCompare(b.title ?? '')
+      }
+      if (sortBy === 'created') {
+        return b.createdAt.localeCompare(a.createdAt)
+      }
+      if (sortBy === 'usage') {
+        return (usageMap.get(b.id) ?? 0) - (usageMap.get(a.id) ?? 0)
+      }
+      return b.updatedAt.localeCompare(a.updatedAt)
+    })
+  },
+
+  /** 统计一个影视资产的引用次数（分镜引用 + 画布节点 assetId 引用） */
+  countFilmAssetUsage(projectId: string): Map<string, number> {
+    const db = readDb()
+    const usage = new Map<string, number>()
+    const bump = (assetId: string | null | undefined) => {
+      if (!assetId) return
+      usage.set(assetId, (usage.get(assetId) ?? 0) + 1)
+    }
+    // 画布节点 assetId 引用
+    for (const node of db.nodes) {
+      if (node.projectId !== projectId) continue
+      bump(node.assetId)
+    }
+    // 分镜引用（characterAssetIds / sceneAssetId / propAssetIds）
+    for (const project of db.projects) {
+      if (project.id !== projectId) continue
+      const film = project.metadata?.['film']
+      if (!film || typeof film !== 'object') continue
+      const groups = (film as Record<string, unknown>)['shotGroups']
+      if (!Array.isArray(groups)) continue
+      for (const group of groups) {
+        if (!group || typeof group !== 'object') continue
+        const segments = (group as Record<string, unknown>)['segments']
+        if (!Array.isArray(segments)) continue
+        for (const seg of segments) {
+          if (!seg || typeof seg !== 'object') continue
+          const s = seg as Record<string, unknown>
+          if (Array.isArray(s['characterAssetIds'])) {
+            for (const id of s['characterAssetIds'] as unknown[]) {
+              if (typeof id === 'string') bump(id)
+            }
+          }
+          if (typeof s['sceneAssetId'] === 'string') bump(s['sceneAssetId'])
+          if (Array.isArray(s['propAssetIds'])) {
+            for (const id of s['propAssetIds'] as unknown[]) {
+              if (typeof id === 'string') bump(id)
+            }
+          }
+        }
+      }
+    }
+    return usage
+  },
+
+  /** 资源库的引用详情（被哪些分镜片段 / 画布节点引用） */
+  getFilmAssetUsage(
+    projectId: string,
+    assetId: string,
+  ): {
+    shotSegments: Array<{ groupId: string; groupName: string; segmentId: string; segmentTitle: string; segmentIndex: number }>
+    nodes: Array<{ id: string; type: string; title: string | null }>
+  } {
+    const db = readDb()
+    const shotSegments: Array<{
+      groupId: string
+      groupName: string
+      segmentId: string
+      segmentTitle: string
+      segmentIndex: number
+    }> = []
+    const nodes: Array<{ id: string; type: string; title: string | null }> = []
+    for (const node of db.nodes) {
+      if (node.projectId !== projectId) continue
+      if (node.assetId === assetId) {
+        nodes.push({ id: node.id, type: node.type, title: node.title ?? null })
+      }
+    }
+    for (const project of db.projects) {
+      if (project.id !== projectId) continue
+      const film = project.metadata?.['film']
+      if (!film || typeof film !== 'object') continue
+      const groups = (film as Record<string, unknown>)['shotGroups']
+      if (!Array.isArray(groups)) continue
+      for (const group of groups) {
+        if (!group || typeof group !== 'object') continue
+        const g = group as Record<string, unknown>
+        const segments = g['segments']
+        if (!Array.isArray(segments)) continue
+        for (const seg of segments) {
+          if (!seg || typeof seg !== 'object') continue
+          const s = seg as Record<string, unknown>
+          const charIds = Array.isArray(s['characterAssetIds'])
+            ? (s['characterAssetIds'] as unknown[]).filter((x): x is string => typeof x === 'string')
+            : []
+          const sceneId = typeof s['sceneAssetId'] === 'string' ? (s['sceneAssetId'] as string) : null
+          const propIds = Array.isArray(s['propAssetIds'])
+            ? (s['propAssetIds'] as unknown[]).filter((x): x is string => typeof x === 'string')
+            : []
+          if (
+            charIds.includes(assetId) ||
+            sceneId === assetId ||
+            propIds.includes(assetId)
+          ) {
+            shotSegments.push({
+              groupId: typeof g['id'] === 'string' ? (g['id'] as string) : '',
+              groupName: typeof g['name'] === 'string' ? (g['name'] as string) : '未命名分组',
+              segmentId: typeof s['id'] === 'string' ? (s['id'] as string) : '',
+              segmentTitle: typeof s['title'] === 'string' ? (s['title'] as string) : '未命名片段',
+              segmentIndex: typeof s['index'] === 'number' ? (s['index'] as number) : 0,
+            })
+          }
+        }
+      }
+    }
+    return { shotSegments, nodes }
+  },
+
+  /** 给资源加/移除标签（idempotent） */
+  async setFilmAssetTags(
+    projectId: string,
+    assetId: string,
+    tags: string[],
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const asset = db.assets.find((item) => item.id === assetId && item.projectId === projectId)
+    if (!asset) return this.openSnapshot(projectId)
+    asset.metadata = writeTags(asset.metadata, tags)
+    asset.updatedAt = now()
+    writeDb(db)
+    return this.openSnapshot(projectId)
   },
 
   // ─── 分镜分组 CRUD（存 project.metadata.film.shotGroups）─────────────────
@@ -2161,6 +2403,40 @@ export const canvasApi = {
     updateProjectCounts(db, input.projectId)
     writeDb(db)
     return node
+  },
+
+  /** 仅创建 image asset（不创建节点），用于资源库 references 上传图 */
+  async createImageAsset(input: {
+    projectId: string
+    file: File
+    filePath: string
+    imageWidth?: number
+    imageHeight?: number
+  }): Promise<CanvasAsset> {
+    const db = readDb()
+    const fileUrl = encodeToSafeFileUrl(input.filePath)
+    const asset: CanvasAsset = {
+      id: uid('canvas_asset'),
+      projectId: input.projectId,
+      userId: USER_ID,
+      type: 'image',
+      source: 'upload',
+      title: input.file.name,
+      mimeType: input.file.type,
+      storageKey: input.filePath,
+      url: fileUrl,
+      thumbnailUrl: fileUrl,
+      width: input.imageWidth ?? null,
+      height: input.imageHeight ?? null,
+      sizeBytes: input.file.size,
+      metadata: { storageAdapter: 'local-file', filePath: input.filePath },
+      createdAt: now(),
+      updatedAt: now(),
+    }
+    db.assets.push(asset)
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return asset
   },
 
   async createImageNode(input: {
@@ -2672,7 +2948,8 @@ export const canvasApi = {
     const taskNode = createNodeBase({
       projectId,
       boardId: board.id,
-      type: 'task',
+      // 类型化操作节点：type === operation（如 text_to_image）
+      type: request.operation as CanvasNodeType,
       taskId,
       title: operationLabel(request.operation),
       x,
@@ -2803,6 +3080,206 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
+
+  /**
+   * 创建类型化操作节点（文档：AI 操作按类型分拆节点）。
+   * type=operation 的节点 + CanvasTask（pending）+ 输入 used_as_input 连线。
+   */
+  async createOperationNode(input: {
+    projectId: string
+    boardId: string
+    operation: CanvasOperationType
+    inputNodeIds: string[]
+    x: number
+    y: number
+    title?: string
+  }): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const at = now()
+    const taskId = uid('canvas_task')
+    const board = db.boards.find((item) => item.id === input.boardId && item.projectId === input.projectId)
+    if (!board) throw new Error('Canvas board not found')
+    const inputNodes = db.nodes.filter(
+      (n) => input.inputNodeIds.includes(n.id) && n.projectId === input.projectId && !n.hidden,
+    )
+    const promptContext = inputNodes
+      .filter((n) => n.type === 'text' || n.type === 'prompt')
+      .map((n) => n.data.text ?? '')
+      .filter(Boolean)
+      .join('\n\n')
+    const maxZ = Math.max(0, ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex))
+    const node = createNodeBase({
+      projectId: input.projectId,
+      boardId: input.boardId,
+      type: input.operation as CanvasNodeType,
+      taskId,
+      title: input.title ?? operationLabel(input.operation),
+      x: input.x,
+      y: input.y,
+      width: 300,
+      height: 152,
+      data: {
+        operation: input.operation,
+        status: 'pending',
+        progress: 0,
+        message: '点击下方编辑面板调整参数后运行',
+        ...(promptContext ? { prompt: promptContext } : {}),
+        origin: 'manual',
+      },
+      at,
+    })
+    node.zIndex = maxZ + 1
+    db.nodes.push(node)
+    const task: CanvasTask = {
+      id: taskId,
+      projectId: input.projectId,
+      boardId: input.boardId,
+      userId: USER_ID,
+      operation: input.operation,
+      status: 'pending',
+      progress: 0,
+      title: input.title ?? operationLabel(input.operation),
+      prompt: promptContext || null,
+      negativePrompt: null,
+      inputNodeIds: input.inputNodeIds,
+      inputAssetIds: inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
+      outputNodeIds: [],
+      outputAssetIds: [],
+      modelParams: {},
+      createdAt: at,
+      updatedAt: at,
+    }
+    db.tasks.push(task)
+    for (const sourceId of input.inputNodeIds) {
+      const sourceNode = db.nodes.find((n) => n.id === sourceId && n.projectId === input.projectId)
+      if (!sourceNode) continue
+      db.edges.push({
+        id: uid('canvas_edge'),
+        projectId: input.projectId,
+        boardId: input.boardId,
+        userId: USER_ID,
+        sourceNodeId: sourceId,
+        targetNodeId: node.id,
+        type: 'used_as_input',
+        taskId,
+        metadata: { manual: true },
+        createdAt: at,
+      })
+    }
+    updateProjectCounts(db, input.projectId)
+    writeDb(db)
+    return this.openSnapshot(input.projectId, input.boardId)
+  },
+
+  /**
+   * 重试操作节点：基于原 task 参数创建全新 task + output 流程。
+   * 旧 output 节点和旧 task 不动。新 output 放在旧 output 右侧。
+   */
+  async retryOperationNode(projectId: string, nodeId: string): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
+    if (!node || !node.taskId) throw new Error('操作节点未关联任务')
+    const oldTask = db.tasks.find((t) => t.id === node.taskId && t.projectId === projectId)
+    if (!oldTask) throw new Error('未找到原任务')
+    const oldOutputNodes = db.nodes.filter((n) => oldTask.outputNodeIds.includes(n.id))
+    const baseX = oldOutputNodes.length > 0
+      ? Math.max(...oldOutputNodes.map((n) => n.x + n.width)) + 60
+      : node.x + node.width + 60
+    const baseY = node.y
+    const request: CreateCanvasTaskRequest = {
+      boardId: node.boardId,
+      operation: oldTask.operation,
+      prompt: oldTask.prompt ?? '',
+      ...(oldTask.negativePrompt ? { negativePrompt: oldTask.negativePrompt } : {}),
+      inputNodeIds: oldTask.inputNodeIds,
+      ...(oldTask.inputAssetIds.length > 0 ? { inputAssetIds: oldTask.inputAssetIds } : {}),
+      outputPlacement: { x: baseX, y: baseY },
+      ...(oldTask.modelParams && Object.keys(oldTask.modelParams).length > 0
+        ? { modelParams: oldTask.modelParams }
+        : {}),
+      ...(oldTask.providerProfileId ? { providerProfileId: oldTask.providerProfileId } : {}),
+      ...(oldTask.manifestId ? { manifestId: oldTask.manifestId } : {}),
+      ...(oldTask.modelId ? { modelId: oldTask.modelId } : {}),
+    }
+    // 重试：绑定到原操作节点，不新建节点
+    return this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+  },
+
+  /**
+   * 运行操作节点：更新参数 + 调 IPC 运行，不新建节点。
+   * 适用于在编辑面板点「运行」——原操作节点关联的 task 真正执行。
+   */
+  async runOperationNode(
+    projectId: string,
+    nodeId: string,
+    params: {
+      prompt: string
+      negativePrompt?: string
+      inputNodeIds?: string[]
+      inputAssetIds?: string[]
+      inputFiles?: CanvasMediaTaskInputFile[]
+      providerProfileId?: string
+      manifestId?: string
+      modelId?: string
+      modelParams?: Record<string, unknown>
+    },
+  ): Promise<CanvasSnapshot> {
+    const db = readDb()
+    const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
+    if (!node) throw new Error('操作节点不存在')
+    // 取输入节点（used_as_input edge 的 source）
+    const existingInputNodeIds = db.edges
+      .filter((e) => e.targetNodeId === nodeId && e.type === 'used_as_input' && e.projectId === projectId)
+      .map((e) => e.sourceNodeId)
+    const inputNodeIds = Array.from(new Set(params.inputNodeIds ?? existingInputNodeIds))
+    const inputNodes = db.nodes.filter(
+      (n) => inputNodeIds.includes(n.id) && n.projectId === projectId && !n.hidden,
+    )
+    const inputAssetIds = Array.from(
+      new Set(
+        params.inputAssetIds ??
+          inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
+      ),
+    )
+    if (params.inputNodeIds) {
+      db.edges = db.edges.filter(
+        (edge) =>
+          !(
+            edge.projectId === projectId &&
+            edge.targetNodeId === nodeId &&
+            edge.type === 'used_as_input'
+          ),
+      )
+      const previousTask = node.taskId
+        ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+        : null
+      if (previousTask && previousTask.status === 'pending') {
+        db.tasks = db.tasks.filter((item) => item.id !== previousTask.id)
+      }
+      writeDb(db)
+    }
+    // output 位置：节点右侧
+    const oldOutputs = db.nodes.filter((n) =>
+      db.edges.some((e) => e.sourceNodeId === nodeId && e.type === 'generated' && e.targetNodeId === n.id),
+    )
+    const baseX = oldOutputs.length > 0
+      ? Math.max(...oldOutputs.map((n) => n.x + n.width)) + 60
+      : node.x + node.width + 60
+    const request = {
+      operation: (node.data.operation ?? node.type) as CanvasOperationType,
+      prompt: params.prompt,
+      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+      inputNodeIds,
+      ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
+      ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
+      outputPlacement: { x: baseX, y: node.y },
+      ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
+      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+      ...(params.modelId ? { modelId: params.modelId } : {}),
+      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+    }
+    return this.createMediaTask(projectId, request, { bindToNodeId: nodeId })
+  },
   async cancelTask(projectId: string, taskId: string): Promise<CanvasSnapshot> {
     const db = readDb()
     const task = db.tasks.find((item) => item.id === taskId && item.projectId === projectId)
@@ -2862,6 +3339,9 @@ export const canvasApi = {
     request: Omit<CreateCanvasTaskRequest, 'boardId'> & {
       inputFiles?: CanvasMediaTaskInputFile[]
     },
+    options?: {
+      bindToNodeId?: string
+    },
   ): Promise<CanvasSnapshot> {
     const db = readDb()
     const board = db.boards.find((item) => item.projectId === projectId)
@@ -2886,19 +3366,31 @@ export const canvasApi = {
       message: '调用平台 adapter 中…',
     }
     if (request.prompt != null) taskNodeData.prompt = request.prompt
-    const taskNode = createNodeBase({
-      projectId,
-      boardId: board.id,
-      type: 'task',
-      taskId,
-      title: operationLabel(request.operation),
-      x,
-      y,
-      width: 300,
-      height: 152,
-      data: taskNodeData,
-      at,
-    })
+    let taskNode: CanvasNode
+    const bindNode = options?.bindToNodeId
+      ? db.nodes.find((n) => n.id === options.bindToNodeId && n.projectId === projectId)
+      : null
+    if (bindNode) {
+      bindNode.data = { ...bindNode.data, ...taskNodeData }
+      bindNode.taskId = taskId
+      bindNode.updatedAt = at
+      taskNode = bindNode
+    } else {
+      taskNode = createNodeBase({
+        projectId,
+        boardId: board.id,
+        type: request.operation as CanvasNodeType,
+        taskId,
+        title: operationLabel(request.operation),
+        x,
+        y,
+        width: 300,
+        height: 152,
+        data: taskNodeData,
+        at,
+      })
+      db.nodes.push(taskNode)
+    }
     const task: CanvasTask = {
       id: taskId,
       projectId,
@@ -2936,7 +3428,7 @@ export const canvasApi = {
         createdAt: at,
       }),
     )
-    db.nodes.push(taskNode)
+    if (!bindNode) db.nodes.push(taskNode)
     db.tasks.push(task)
     db.edges.push(...inputEdges)
     updateProjectCounts(db, projectId)

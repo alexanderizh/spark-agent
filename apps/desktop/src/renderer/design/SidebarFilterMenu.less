@@ -174,15 +174,15 @@
   flex-shrink: 0;
 }
 
-/* antd Popover 默认在 .ant-popover-inner / .ant-popover-inner-content 自带一套
-   padding+背景+阴影,而内部 .sidebar-filter-menu / .sidebar-filter-submenu 已经
-   自带 chrome(背景+边框+阴影+padding)。不去掉 antd 那层就会叠出"双层框"。
-   这里把 antd 的 padding 清零即可,背景/阴影由 antd token 提供,主题随 ConfigProvider。 */
-.sidebar-filter-popover .ant-popover-inner,
-.sidebar-filter-popover .ant-popover-inner-content,
-.sidebar-filter-sub-popover .ant-popover-inner,
-.sidebar-filter-sub-popover .ant-popover-inner-content {
-  padding: 0;
-  background: transparent;
-  box-shadow: none;
+/* @lobehub/ui 的 Popover 内部用 antd-style 注入 popup 样式(带 border + background
+   + box-shadow),跟下面的 .sidebar-filter-menu / .sidebar-filter-submenu 自带的
+   chrome 叠出"双层框"。这里把外层 popup 的视觉全部清零,由内层 menu 独自负责。
+   用 !important 是因为 antd-style 的 hash class(acss-*)是动态注入的,且 hashPriority
+   为 'high',普通 class 选择器在加载顺序上不一定能稳赢。 */
+.sidebar-filter-popup,
+.sidebar-filter-submenu-popup {
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
 }

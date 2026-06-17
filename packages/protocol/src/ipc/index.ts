@@ -2440,6 +2440,128 @@ export interface ToolOpenFolderResponse {
   error?: string
 }
 
+// ─── Built-in Terminal Panel (session-scoped PTY dock) ─────────────────────
+
+/**
+ * PTY terminal id, opaque to renderer.
+ *
+ * Identifies a node-pty process owned by the main process. Lifecycle is
+ * independent of the renderer panel — closing the panel only hides UI; only
+ * explicit `terminal:kill` (e.g. closing the last tab) terminates the PTY.
+ */
+export type TerminalId = string
+
+export type TerminalStatus = 'running' | 'exited' | 'error'
+
+export interface TerminalSessionInfo {
+  id: TerminalId
+  sessionId: SessionId
+  workspaceId?: string
+  title: string
+  cwd: string
+  shell: string
+  pid?: number
+  cols: number
+  rows: number
+  status: TerminalStatus
+  createdAt: string
+  updatedAt: string
+  exitCode?: number
+  signal?: number
+}
+
+export interface TerminalListRequest {
+  sessionId: SessionId
+}
+
+export interface TerminalListResponse {
+  terminals: TerminalSessionInfo[]
+}
+
+export interface TerminalCreateRequest {
+  sessionId: SessionId
+  workspaceId?: string
+  /** Override cwd; main process validates against the workspace root. */
+  cwd?: string
+  /** Tab title; defaults to workspace name. */
+  title?: string
+  /** Initial pty cols; ignored if omitted, fit on first renderer resize. */
+  cols?: number
+  /** Initial pty rows. */
+  rows?: number
+}
+
+export interface TerminalCreateResponse {
+  terminal: TerminalSessionInfo
+  /** Optional welcome output captured before stream subscription (usually empty). */
+  initialOutput?: string
+}
+
+export interface TerminalInputRequest {
+  terminalId: TerminalId
+  data: string
+}
+
+export interface TerminalInputResponse {
+  accepted: boolean
+}
+
+export interface TerminalResizeRequest {
+  terminalId: TerminalId
+  cols: number
+  rows: number
+}
+
+export interface TerminalResizeResponse {
+  resized: boolean
+}
+
+export interface TerminalKillRequest {
+  terminalId: TerminalId
+}
+
+export interface TerminalKillResponse {
+  killed: boolean
+}
+
+export interface TerminalRenameRequest {
+  terminalId: TerminalId
+  title: string
+}
+
+export interface TerminalRenameResponse {
+  terminal: TerminalSessionInfo
+}
+
+export interface TerminalGetBufferRequest {
+  terminalId: TerminalId
+}
+
+export interface TerminalGetBufferResponse {
+  /** Cached output since the last renderer attach; may be empty if the PTY just started. */
+  output: string
+}
+
+/**
+ * Streamed events for the built-in terminal panel. Main → renderer fan-out.
+ *
+ * Renderer filters by `sessionId` to keep tabs isolated when the user
+ * switches sessions.
+ */
+export type TerminalStreamEvent =
+  | { type: 'created'; terminal: TerminalSessionInfo }
+  | { type: 'data'; terminalId: TerminalId; sessionId: SessionId; data: string }
+  | {
+      type: 'exit'
+      terminalId: TerminalId
+      sessionId: SessionId
+      exitCode?: number
+      signal?: number
+    }
+  | { type: 'updated'; terminal: TerminalSessionInfo }
+  | { type: 'removed'; terminalId: TerminalId; sessionId: SessionId }
+  | { type: 'error'; terminalId?: TerminalId; sessionId?: SessionId; message: string }
+
 // ─── Command Channels ────────────────────────────────────────────────────────
 
 export type CommandLayer = 'sdk' | 'builtin' | 'skill'
@@ -3952,6 +4074,15 @@ export interface IpcChannelMap {
   'tool:open-project': [ToolOpenProjectRequest, ToolOpenProjectResponse]
   'tool:open-folder': [ToolOpenFolderRequest, ToolOpenFolderResponse]
 
+  // Built-in Terminal Panel (session-scoped PTY dock)
+  'terminal:list': [TerminalListRequest, TerminalListResponse]
+  'terminal:create': [TerminalCreateRequest, TerminalCreateResponse]
+  'terminal:input': [TerminalInputRequest, TerminalInputResponse]
+  'terminal:resize': [TerminalResizeRequest, TerminalResizeResponse]
+  'terminal:kill': [TerminalKillRequest, TerminalKillResponse]
+  'terminal:rename': [TerminalRenameRequest, TerminalRenameResponse]
+  'terminal:get-buffer': [TerminalGetBufferRequest, TerminalGetBufferResponse]
+
   // Command
   'command:execute': [CommandExecuteRequest, CommandExecuteResponse]
   'command:list': [CommandListRequest, CommandListResponse]
@@ -4165,6 +4296,56 @@ export interface IpcChannelMap {
   'auth:bootstrap': [AuthBootstrapRequest, AuthBootstrapResponse]
   /** 登录后上传文件到云端存储，返回可供模型访问的公网链接 */
   'auth:upload-file': [AuthUploadFileRequest, AuthUploadFileResponse]
+
+  // ─── Canvas Agent Bridge ─────────────────────────────────────────────────
+  /** 渲染端声明：本 session 绑定到当前画布项目，主进程可以把工具调用打回来 */
+  'canvas:host-attach': [CanvasHostAttachRequest, CanvasHostAttachResponse]
+  /** 渲染端声明：本 session 不再绑定画布（弹窗关闭或会话切换） */
+  'canvas:host-detach': [CanvasHostDetachRequest, CanvasHostDetachResponse]
+  /** 渲染端把工具调用结果回报给主进程 */
+  'canvas:tool-result': [CanvasToolResultRequest, CanvasToolResultResponse]
+}
+
+// ─── Canvas Agent Bridge Types ─────────────────────────────────────────────
+
+export interface CanvasToolSchemaPayload {
+  name: string
+  description: string
+  inputSchema: Record<string, unknown>
+}
+export interface CanvasHostAttachRequest {
+  sessionId: string
+  projectId: string
+  /** 渲染端同步过来的工具 schema 列表（每次 attach 都会同步，主进程覆盖更新） */
+  toolSchemas: CanvasToolSchemaPayload[]
+}
+export interface CanvasHostAttachResponse {
+  ok: true
+}
+
+export interface CanvasHostDetachRequest {
+  sessionId: string
+}
+export interface CanvasHostDetachResponse {
+  ok: true
+}
+
+export interface CanvasToolResultRequest {
+  requestId: string
+  ok: boolean
+  result?: unknown
+  error?: string
+}
+export interface CanvasToolResultResponse {
+  ok: true
+}
+
+/** 主进程 → 渲染端：请求执行画布工具，渲染端用 canvas:tool-result 回报 */
+export interface CanvasToolCallEvent {
+  requestId: string
+  sessionId: string
+  toolName: string
+  args: unknown
 }
 
 /** 所有 IPC Channel 名称的联合类型 */
@@ -4214,6 +4395,8 @@ export interface IpcStreamChannelMap {
   }
   /** Canvas media task status update. Pushed at task start/completion, not on every UI frame. */
   'stream:canvas:media-task': CanvasMediaTaskStreamPayload
+  /** 画布 Agent 工具调用请求（主进程 → 渲染进程）。渲染端执行后用 canvas:tool-result 回报。 */
+  'stream:canvas:tool-call': CanvasToolCallEvent
   /** Remote connection config/runtime changed */
   'stream:remote:changed': {
     reason: 'connection-saved' | 'connection-deleted' | 'pairing-updated' | 'runtime-updated'
@@ -4274,6 +4457,8 @@ export interface IpcStreamChannelMap {
   'stream:tray:new-session': Record<string, never>
   /** 用户从系统托盘菜单点击某个最近会话（主进程展示主窗口后推送，渲染端切换到该会话）*/
   'stream:tray:open-session': { sessionId: string }
+  /** Built-in terminal panel events: data / exit / removed / etc. */
+  'stream:terminal:event': TerminalStreamEvent
 }
 
 export type IpcStreamChannel = keyof IpcStreamChannelMap
