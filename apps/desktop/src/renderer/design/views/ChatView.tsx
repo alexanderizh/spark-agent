@@ -7997,7 +7997,8 @@ function ComposerV2({
                 disabled={isBusy}
                 onClick={() => void dispatchMessage('我已经复现了，请读取本轮调试日志并分析。', [], null)}
               >
-                ✅ 已复现
+                <Icons.Check size={13} />
+                已复现
               </button>
               <button
                 type="button"
@@ -8005,7 +8006,8 @@ function ComposerV2({
                 disabled={isBusy}
                 onClick={() => void dispatchMessage('还没解决，请继续排查。', [], null)}
               >
-                🔁 没解决
+                <Icons.RotateCw size={13} />
+                没解决
               </button>
               <button
                 type="button"
@@ -8015,7 +8017,8 @@ function ComposerV2({
                   void dispatchMessage('问题已经解决了，请清除所有调试日志并交付成果。', [], null)
                 }
               >
-                🎉 已解决
+                <Icons.CheckCircle size={13} />
+                已解决
               </button>
             </div>
           )}
