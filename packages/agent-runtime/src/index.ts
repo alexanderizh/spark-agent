@@ -65,6 +65,8 @@ export type {
 export { SessionService } from './services/session.service.js'
 export { PlatformBridgeService } from './services/platform-bridge.service.js'
 export type { PlatformBridgeDeps } from './services/platform-bridge.service.js'
+export { DebugLogServer, getDebugLogServer } from './services/debug-log-server.service.js'
+export type { DebugEntry, DebugLogLevel, DebugHypothesis } from './services/debug-log-server.service.js'
 export type {
   ApprovalHandler,
   SessionEventHandler,

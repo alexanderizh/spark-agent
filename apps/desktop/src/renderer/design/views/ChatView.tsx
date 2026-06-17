@@ -185,6 +185,7 @@ type SessionRuntimePatch = {
   permissionMode?: PermissionModeChoice
   chatMode?: SessionChatMode
   reasoningEffort?: SessionReasoningEffort
+  debugMode?: boolean
 }
 type QueuedMessage = { id: string; turnId: string; content: string; enqueuedAt: string }
 type ComposerAttachment = SessionAttachment & {
@@ -6202,6 +6203,7 @@ function ComposerV2({
     permissionMode?: PermissionModeChoice
     chatMode?: SessionChatMode
     reasoningEffort?: SessionReasoningEffort
+    debugMode?: boolean
   }) => Promise<void>
   onCommandComplete: (session: SessionSummary) => void
   onSwitchBranch: (branch: string) => Promise<void>
@@ -6273,6 +6275,9 @@ function ComposerV2({
   const [draftReasoning, setDraftReasoning] = useState<SessionReasoningEffort>(
     initialPrefs.reasoningEffort ?? 'medium',
   )
+  // 调试模式开关（per-session）。刻意不从全局 composer-prefs 继承——它是逐会话 opt-in 的
+  // 能力开关，不该被「上次用过」粘到每个新会话上。
+  const [draftDebugMode, setDraftDebugMode] = useState<boolean>(false)
   const [previewAttachment, setPreviewAttachment] = useState<ComposerAttachment | null>(null)
   const [textEditMenu, setTextEditMenu] = useState<TextEditMenuState | null>(null)
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -6338,6 +6343,7 @@ function ComposerV2({
         : draftModelForProvider || providerDefaultModel
   const effectiveMode = session?.chatMode ?? draftMode
   const effectiveReasoning = session?.reasoningEffort ?? draftReasoning
+  const effectiveDebugMode = session?.debugMode ?? draftDebugMode
   const permissionOptions = getPermissionModeOptions(adapter)
   const sessionPermissionMode = session?.permissionMode
   const draftEffectivePermissionMode = sessionPermissionMode ?? draftPermissionMode
@@ -7785,6 +7791,14 @@ function ComposerV2({
     if (session != null) await persistRuntimePatch({ reasoningEffort })
   }
 
+  // 调试模式开关：与权限模式正交的能力开关。draft 兜底新会话；有会话则即时持久化
+  // （persistRuntimePatch 会 remember，未建会时也会在首发后 flush 落库）。
+  const handleToggleDebugMode = async () => {
+    const next = !effectiveDebugMode
+    setDraftDebugMode(next)
+    await persistRuntimePatch({ debugMode: next })
+  }
+
   const branchOptions = (
     branchState.branches.length > 0 ? branchState.branches : [branchState.currentBranch ?? '']
   )
@@ -7972,6 +7986,39 @@ function ComposerV2({
               )}
             </div>
           )}
+          {effectiveDebugMode && session != null && (
+            <div className="composer-debug-quickreplies" aria-label="调试快捷回复">
+              <span className="composer-debug-quickreplies-label">
+                <Icons.Bug size={12} /> 调试
+              </span>
+              <button
+                type="button"
+                className="composer-debug-chip"
+                disabled={isBusy}
+                onClick={() => void dispatchMessage('我已经复现了，请读取本轮调试日志并分析。', [], null)}
+              >
+                ✅ 已复现
+              </button>
+              <button
+                type="button"
+                className="composer-debug-chip"
+                disabled={isBusy}
+                onClick={() => void dispatchMessage('还没解决，请继续排查。', [], null)}
+              >
+                🔁 没解决
+              </button>
+              <button
+                type="button"
+                className="composer-debug-chip"
+                disabled={isBusy}
+                onClick={() =>
+                  void dispatchMessage('问题已经解决了，请清除所有调试日志并交付成果。', [], null)
+                }
+              >
+                🎉 已解决
+              </button>
+            </div>
+          )}
           <textarea
             className="composer-input"
             ref={textareaRef}
@@ -8133,6 +8180,19 @@ function ComposerV2({
             onChange={(reasoning) => handleReasoningChange(reasoning as SessionReasoningEffort)}
             options={getReasoningOptions(adapter)}
           />
+          <button
+            type="button"
+            className={`composer-debug-toggle ${effectiveDebugMode ? 'is-active' : ''}`}
+            title={
+              effectiveDebugMode
+                ? '调试模式已开启：agent 可插桩、收集复现日志并迭代修复。点击关闭'
+                : '开启调试模式：假设驱动 + 人在回路的 bug 排查'
+            }
+            onClick={() => void handleToggleDebugMode()}
+          >
+            <Icons.Bug size={13} />
+            <span>调试{effectiveDebugMode ? '中' : ''}</span>
+          </button>
           {contextWindow > 0 && (
             <ContextMeterWithPopup
               contextRatio={contextRatio}

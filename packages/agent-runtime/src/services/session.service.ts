@@ -65,6 +65,7 @@ import * as keystore from '@spark/shared/keystore'
 import { McpService } from './mcp-server.service.js'
 import type { McpChangeEvent } from './mcp-server.service.js'
 import { PlatformBridgeService } from './platform-bridge.service.js'
+import { getDebugLogServer } from './debug-log-server.service.js'
 import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
@@ -910,6 +911,11 @@ export class SessionService {
     const mediaGenerationContext = await this.resolveMediaGenerationContext(workspaceRootPath)
     const platformMcpServer = await this.resolvePlatformManagementMcpServer(sessionId)
     const webSearchMcpServer = await this.resolveWebSearchMcpServer(workspaceRootPath)
+    // 调试模式（per-session 能力开关）：开启时挂载 spark_debug + 注入状态机 prompt。
+    const debugModeEnabled = getDebugModeFromMetadata(session.metadata_json)
+    const debugMcpServer = debugModeEnabled
+      ? await this.resolveDebugMcpServer(sessionId, workspaceRootPath)
+      : null
     const managedAgentPrompt = buildManagedAgentSystemPrompt(agent, workflow)
 
     // ── Team Mode：解析会话团队配置，构建 spark_team in-process MCP server + 花名册 ──
@@ -999,6 +1005,7 @@ export class SessionService {
       mediaGenerationContext?.systemPrompt,
       platformMcpServer != null ? PLATFORM_MANAGEMENT_SYSTEM_PROMPT : undefined,
       webSearchMcpServer != null ? WEB_SEARCH_SYSTEM_PROMPT : undefined,
+      debugMcpServer != null ? DEBUG_MODE_SYSTEM_PROMPT : undefined,
     )
 
     // Initialize seq counter from existing event count
@@ -1229,6 +1236,7 @@ export class SessionService {
           ? { platformManagementMcpServer: platformMcpServer }
           : {}),
         ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
+        ...(debugMcpServer != null ? { debugMcpServer } : {}),
         ...(iterationOverride != null ? { maxTurnCount: iterationOverride } : {}),
         ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
         contextWindowTokens,
@@ -1291,6 +1299,7 @@ export class SessionService {
         ? { platformManagementMcpServer: platformMcpServer }
         : {}),
       ...(webSearchMcpServer != null ? { webSearchMcpServer } : {}),
+      ...(debugMcpServer != null ? { debugMcpServer } : {}),
       ...(config.maxTokens != null ? { maxTokens: config.maxTokens } : {}),
       contextWindowTokens,
       ...(session.reasoning_effort != null
@@ -1511,6 +1520,11 @@ export class SessionService {
       mcpServers.spark_search = config.webSearchMcpServer
     }
 
+    // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
+    if (config.debugMcpServer != null) {
+      mcpServers.spark_debug = config.debugMcpServer
+    }
+
     // Canvas Agent in-process MCP server — only when session is attached to a canvas modal
     let canvasAllowedTools: string[] | undefined
     if (this.canvasMcpProvider != null) {
@@ -1671,6 +1685,9 @@ export class SessionService {
     if (config.webSearchMcpServer != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, SEARCH_TOOL_NAMES)
     }
+    if (config.debugMcpServer != null) {
+      sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, DEBUG_TOOL_NAMES)
+    }
     if (canvasAllowedTools != null) {
       sdkAllowedTools = mergeUniqueStrings(sdkAllowedTools, canvasAllowedTools)
     }
@@ -1789,6 +1806,11 @@ export class SessionService {
     }
     if (config.webSearchMcpServer != null) {
       mcpServers.spark_search = config.webSearchMcpServer
+    }
+
+    // Debug mode MCP server (spark_debug) — only when the session enabled debug mode
+    if (config.debugMcpServer != null) {
+      mcpServers.spark_debug = config.debugMcpServer
     }
 
     // MCP hot-reload: same as Claude SDK path — force a fresh session if the MCP
@@ -2097,6 +2119,43 @@ export class SessionService {
         ...(provider ? { SPARK_SEARCH_PROVIDER: provider } : {}),
         ...(apiKey ? { SPARK_SEARCH_API_KEY: apiKey } : {}),
         ...(baseUrl ? { SPARK_SEARCH_BASE_URL: baseUrl } : {}),
+      },
+    }
+  }
+
+  /**
+   * 解析调试模式 MCP server（spark_debug）。仅当 session 开启 debugMode 时调用。
+   *
+   * 长驻的 DebugLogServer 在主进程内懒启动（跨 turn 存活，承接浏览器侧 bug 日志，
+   * CORS 已处理）。本 MCP 子进程只是瘦桥接：把 begin/read/next_round/status/finish
+   * 代理到 `http://127.0.0.1:<port>`。注入 SPARK_DEBUG_SID = sessionId，保证同一
+   * 对话跨 turn / 跨子进程重启都映射到同一 debug session 的 buffer。
+   */
+  private async resolveDebugMcpServer(
+    sessionId: string,
+    workspaceRootPath: string,
+  ): Promise<SDKMcpServerConfig | null> {
+    const serverPath = resolveDebugMcpServerPath()
+    if (serverPath == null) {
+      log.warn('Debug mode MCP server script not found')
+      return null
+    }
+    let port = 0
+    try {
+      port = await getDebugLogServer().start()
+    } catch (err) {
+      log.warn(`Failed to start debug log server: ${err instanceof Error ? err.message : String(err)}`)
+      return null
+    }
+    return {
+      type: 'stdio',
+      command: process.execPath,
+      args: [serverPath],
+      cwd: workspaceRootPath,
+      env: {
+        ELECTRON_RUN_AS_NODE: '1',
+        SPARK_DEBUG_LOG_PORT: String(port),
+        SPARK_DEBUG_SID: sessionId,
       },
     }
   }
@@ -3027,6 +3086,7 @@ export class SessionService {
       ...(getImportedFromMetadata(row.metadata_json) != null
         ? { importedFrom: getImportedFromMetadata(row.metadata_json)! }
         : {}),
+      debugMode: getDebugModeFromMetadata(row.metadata_json),
     }))
     return { sessions, total }
   }
@@ -3106,9 +3166,18 @@ export class SessionService {
     permissionMode?: SessionPermissionMode
     chatMode?: 'agent' | 'ask' | 'edit' | 'review'
     reasoningEffort?: 'medium' | 'high' | 'xhigh' | 'max'
+    debugMode?: boolean
   }): Promise<{ session: SessionListResponse['sessions'][number] }> {
     const sessionRepo = new SessionRepository(this.db)
     const eventRepo = new EventRepository(this.db)
+
+    // 调试模式开关存 metadata（per-session 能力开关，不新增列），与 team 配置同策略。
+    // 切换会改变 MCP 工具集（挂/卸 spark_debug），bump mcpVersion 让下一 turn 起新
+    // SDK 会话以重新协商工具列表，避免沿用 SDK 冻结的旧快照。
+    if (params.debugMode !== undefined) {
+      sessionRepo.patchMetadata(params.sessionId, { debugMode: params.debugMode })
+      this.mcpVersion += 1
+    }
 
     if (params.title !== undefined) {
       sessionRepo.updateTitle(params.sessionId, params.title)
@@ -3188,6 +3257,7 @@ export class SessionService {
         createdAt: row.created_at,
         updatedAt: row.updated_at,
         messageCount: eventRepo.countBySession(row.id),
+        debugMode: getDebugModeFromMetadata(row.metadata_json),
       },
     }
   }
@@ -3223,6 +3293,7 @@ export class SessionService {
       ),
       chatMode: getChatModeFromSession(row.chat_mode),
         reasoningEffort: normalizeReasoningEffort(row.reasoning_effort),
+      debugMode: getDebugModeFromMetadata(row.metadata_json),
       status: row.status as 'idle' | 'running' | 'error',
       availableModels,
     }
@@ -4045,6 +4116,16 @@ function resolveWebSearchMcpServerPath(): string | null {
   return candidates.find((candidate) => existsSync(candidate)) ?? null
 }
 
+function resolveDebugMcpServerPath(): string | null {
+  const here = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.resolve(here, 'tools/debug-mode-mcp-server.mjs'),
+    path.resolve(here, '../tools/debug-mode-mcp-server.mjs'),
+    path.resolve(process.cwd(), 'packages/agent-runtime/src/tools/debug-mode-mcp-server.mjs'),
+  ]
+  return candidates.find((candidate) => existsSync(candidate)) ?? null
+}
+
 /** SDK-namespaced tool names exposed by the spark_search MCP server. */
 const SEARCH_TOOL_NAMES: string[] = [
   'mcp__spark_search__web_search',
@@ -4065,6 +4146,37 @@ const WEB_SEARCH_SYSTEM_PROMPT = [
   'Use these whenever you need current information, to verify facts, or to read a page.',
   'Prefer them over the SDK built-in `WebSearch`/`WebFetch`, which are unavailable when',
   'running on third-party (non-Anthropic) API providers. Cite the source URLs you used.',
+].join('\n')
+
+/** SDK-namespaced tool names exposed by the spark_debug MCP server. */
+const DEBUG_TOOL_NAMES: string[] = [
+  'mcp__spark_debug__begin',
+  'mcp__spark_debug__read',
+  'mcp__spark_debug__next_round',
+  'mcp__spark_debug__status',
+  'mcp__spark_debug__finish',
+]
+
+/**
+ * System prompt section injected only when the session has debug mode enabled.
+ * Brief — the full state machine lives in the `builtin:spark-debug` skill. The
+ * point here is to make the agent aware the闭环 tools exist and the human is in
+ * the loop for reproduction.
+ */
+const DEBUG_MODE_SYSTEM_PROMPT = [
+  '## Debug Mode (enabled for this session)',
+  'You are in interactive debug mode. A local log server is running; instrumentation you',
+  'add reports back to it (browser/webview logs included — CORS is handled). Use the',
+  '`mcp__spark_debug__*` tools to run a hypothesis-driven loop WITH the user in the loop:',
+  '1. `begin` to get the session id + ready-to-paste instrumentation snippets.',
+  '2. Form a hypothesis, instrument the code (wrap logs in the `__SPARK_DEBUG_*` markers',
+  '   from the snippet), then ask the user to reproduce and END your turn.',
+  '3. When the user says they reproduced, call `read` to pull this round\'s logs and analyze.',
+  '   If `status.thisRound` is 0, they likely did not hit the path — adjust, do not guess.',
+  '4. Fix or re-hypothesize; use `next_round` (record the hypothesis) before each new batch.',
+  '5. When the user confirms it is fixed, call `finish`, then strip ALL instrumentation',
+  '   (grep `__SPARK_DEBUG`), verify zero residue, and deliver root cause + fix + evidence.',
+  'Never claim you reproduced the bug yourself — reproduction is always the user\'s step.',
 ].join('\n')
 
 /**
@@ -4271,6 +4383,17 @@ function getImportedFromMetadata(metadataJson: string | null | undefined): Histo
     // 忽略损坏的 metadata
   }
   return null
+}
+
+/** 从 session.metadata_json 解析调试模式开关（per-session 能力开关，缺省 false）。 */
+function getDebugModeFromMetadata(metadataJson: string | null | undefined): boolean {
+  if (metadataJson == null || metadataJson === '') return false
+  try {
+    const meta = JSON.parse(metadataJson) as { debugMode?: unknown }
+    return meta.debugMode === true
+  } catch {
+    return false
+  }
 }
 
 function getRuntimePatch(params: SessionRuntimePatch): SessionRuntimePatch | undefined {
