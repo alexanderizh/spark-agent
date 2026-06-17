@@ -1555,6 +1555,9 @@ export class SessionService {
     const maybeEmitValidationSuggestion = () => {
       if (validationSuggestionEmitted || changedFiles.size === 0) return
       validationSuggestionEmitted = true
+      // 调试模式下不弹通用「建议验证」卡：此时正确的下一步是让用户去复现（由调试快捷回复
+      // 与 spark_debug 状态机驱动），提示跑 typecheck/test 反而打断闭环、属于噪声。
+      if (config.debugMcpServer != null) return
       const suggestion = new ValidationSuggestionService().suggest({
         workspaceRootPath: config.workspaceRootPath,
         changedFiles: Array.from(changedFiles),
