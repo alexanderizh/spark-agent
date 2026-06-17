@@ -105,16 +105,27 @@ export function CanvasFilmAssetCenter({
 }) {
   const [activeTab, setActiveTab] = useState<TabKind>('script')
 
+  if (!open) return null
+
   return (
-    <Modal
-      open={open}
-      onCancel={onClose}
-      footer={null}
-      width={960}
-      title={<FilmCenterHeaderTitle />}
-      styles={{ body: { padding: 0, height: '70vh' } }}
-      destroyOnHidden
+    <section
+      className="canvas-bottom-floating-panel canvas-film-center-panel"
+      onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
+      <div className="canvas-bottom-floating-head">
+        <div>
+          <FilmCenterHeaderTitle />
+          <span>剧本、角色、场景、道具、分镜和提示词库</span>
+        </div>
+        <Button
+          size="small"
+          type="text"
+          icon={<Icons.X size={14} />}
+          aria-label="关闭项目资产中心"
+          onClick={onClose}
+        />
+      </div>
       <div className="canvas-film-center">
         <nav className="canvas-film-center-tabs">
           {TAB_ORDER.map((kind) => (
@@ -141,7 +152,7 @@ export function CanvasFilmAssetCenter({
           )}
         </div>
       </div>
-    </Modal>
+    </section>
   )
 }
 

@@ -24,6 +24,14 @@ function operationNodeIcon(operation: CanvasOperationType | null): React.ReactNo
   return <Icons.Sparkles size={13} />
 }
 
+function operationStatusLabel(status: SparkCanvasNode['data']['status']): string {
+  if (status === 'completed') return '已完成'
+  if (status === 'failed') return '失败'
+  if (status === 'cancelled') return '已取消'
+  if (status === 'running') return '运行中'
+  return '待提交'
+}
+
 export type CanvasFlowNodeData = {
   canvasNode: SparkCanvasNode
   lineage?: {
@@ -278,7 +286,7 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
                   }
                   bordered
                 >
-                  {node.data.status ?? 'pending'}
+                  {operationStatusLabel(node.data.status)}
                 </Tag>
               </div>
               <Progress

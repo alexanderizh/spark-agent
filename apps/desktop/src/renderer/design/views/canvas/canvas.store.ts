@@ -509,6 +509,9 @@ export function useCanvasWorkspace(projectId: string) {
       params: {
         prompt: string
         negativePrompt?: string
+        inputNodeIds?: string[]
+        inputAssetIds?: string[]
+        inputFiles?: CanvasMediaTaskInputFile[]
         providerProfileId?: string
         manifestId?: string
         modelId?: string

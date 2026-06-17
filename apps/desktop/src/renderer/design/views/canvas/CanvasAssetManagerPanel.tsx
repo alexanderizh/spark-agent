@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Button, Tag, Tooltip, message } from 'antd'
 import { SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
 import { Icons } from '../../Icons'
@@ -23,6 +23,8 @@ export function CanvasAssetManagerPanel({
   onRemoveReferences,
   onInsertOne,
   onDownloadOne,
+  detailResetKey,
+  onOpenDetail,
 }: {
   assets: CanvasAsset[]
   nodes: CanvasNode[]
@@ -31,6 +33,8 @@ export function CanvasAssetManagerPanel({
   onRemoveReferences: (assetIds: string[]) => Promise<void> | void
   onInsertOne: (assetId: string) => void
   onDownloadOne: (asset: CanvasAsset) => Promise<void>
+  detailResetKey?: number
+  onOpenDetail?: () => void
 }) {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<AssetTypeFilter>('all')
@@ -83,6 +87,14 @@ export function CanvasAssetManagerPanel({
   const toggleSelectAll = () => {
     setSelectedIds(allFilteredSelected ? [] : filteredAssets.map((asset) => asset.id))
   }
+  const showDetail = (asset: CanvasAsset) => {
+    onOpenDetail?.()
+    setDetailAsset(asset)
+  }
+
+  useEffect(() => {
+    setDetailAsset(null)
+  }, [detailResetKey])
 
   const handleBatchDownload = async () => {
     if (selectedIds.length === 0) return
@@ -175,7 +187,7 @@ export function CanvasAssetManagerPanel({
               selected={selectedSet.has(asset.id)}
               referenceCount={referencesByAsset.get(asset.id)?.length ?? 0}
               onToggle={() => toggleSelect(asset.id)}
-              onShowDetail={() => setDetailAsset(asset)}
+              onShowDetail={() => showDetail(asset)}
             />
           ))}
         </div>
@@ -196,7 +208,7 @@ export function CanvasAssetManagerPanel({
               referenceCount={referencesByAsset.get(asset.id)?.length ?? 0}
               {...(originTask ? { originTask } : {})}
               onToggle={() => toggleSelect(asset.id)}
-              onShowDetail={() => setDetailAsset(asset)}
+              onShowDetail={() => showDetail(asset)}
               onInsertOne={onInsertOne}
               onDownloadOne={onDownloadOne}
             />
@@ -338,7 +350,7 @@ function AssetDetailModal({
   return (
     <>
       {asset && (
-        <div className="canvas-asset-detail-overlay" onClick={onClose}>
+        <div className="canvas-asset-detail-overlay">
           <div className="canvas-asset-detail-modal" onClick={(event) => event.stopPropagation()}>
             <div className="canvas-asset-detail-head">
               <h4>{asset.title ?? asset.type}</h4>

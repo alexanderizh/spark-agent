@@ -356,10 +356,12 @@ function TerminalBody({ tab, sessionId, isActive, workspace: _workspace }: Termi
     if (container == null) return
     const term = new Terminal({
       cursorBlink: true,
+      cursorStyle: 'bar',
+      cursorWidth: 1,
       convertEol: true,
       fontFamily: 'var(--font-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       fontSize: 12,
-      lineHeight: 1.35,
+      lineHeight: 1.1,
       scrollback: 5_000,
       theme: resolvedTheme === 'dark' ? TERMINAL_THEME_DARK : TERMINAL_THEME_LIGHT,
       allowProposedApi: true,

@@ -3215,6 +3215,9 @@ export const canvasApi = {
     params: {
       prompt: string
       negativePrompt?: string
+      inputNodeIds?: string[]
+      inputAssetIds?: string[]
+      inputFiles?: CanvasMediaTaskInputFile[]
       providerProfileId?: string
       manifestId?: string
       modelId?: string
@@ -3225,13 +3228,36 @@ export const canvasApi = {
     const node = db.nodes.find((n) => n.id === nodeId && n.projectId === projectId && !n.hidden)
     if (!node) throw new Error('操作节点不存在')
     // 取输入节点（used_as_input edge 的 source）
-    const inputNodeIds = db.edges
+    const existingInputNodeIds = db.edges
       .filter((e) => e.targetNodeId === nodeId && e.type === 'used_as_input' && e.projectId === projectId)
       .map((e) => e.sourceNodeId)
+    const inputNodeIds = Array.from(new Set(params.inputNodeIds ?? existingInputNodeIds))
     const inputNodes = db.nodes.filter(
       (n) => inputNodeIds.includes(n.id) && n.projectId === projectId && !n.hidden,
     )
-    const inputAssetIds = inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id))
+    const inputAssetIds = Array.from(
+      new Set(
+        params.inputAssetIds ??
+          inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
+      ),
+    )
+    if (params.inputNodeIds) {
+      db.edges = db.edges.filter(
+        (edge) =>
+          !(
+            edge.projectId === projectId &&
+            edge.targetNodeId === nodeId &&
+            edge.type === 'used_as_input'
+          ),
+      )
+      const previousTask = node.taskId
+        ? db.tasks.find((item) => item.id === node.taskId && item.projectId === projectId)
+        : null
+      if (previousTask && previousTask.status === 'pending') {
+        db.tasks = db.tasks.filter((item) => item.id !== previousTask.id)
+      }
+      writeDb(db)
+    }
     // output 位置：节点右侧
     const oldOutputs = db.nodes.filter((n) =>
       db.edges.some((e) => e.sourceNodeId === nodeId && e.type === 'generated' && e.targetNodeId === n.id),
@@ -3245,6 +3271,7 @@ export const canvasApi = {
       ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
       inputNodeIds,
       ...(inputAssetIds.length > 0 ? { inputAssetIds } : {}),
+      ...(params.inputFiles ? { inputFiles: params.inputFiles } : {}),
       outputPlacement: { x: baseX, y: node.y },
       ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
       ...(params.manifestId ? { manifestId: params.manifestId } : {}),

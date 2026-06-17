@@ -20,7 +20,13 @@ import {
   type CustomParamDraft,
   type CustomParamType,
 } from './CanvasInlineAiComposer'
-import type { CanvasNode, CanvasOperationType, CanvasSnapshot, CanvasTask } from './canvas.types'
+import type {
+  CanvasInputTransport,
+  CanvasNode,
+  CanvasOperationType,
+  CanvasSnapshot,
+  CanvasTask,
+} from './canvas.types'
 
 /**
  * 操作节点悬浮编辑面板（文档：点击操作节点后下方展开）。
@@ -32,6 +38,8 @@ import type { CanvasNode, CanvasOperationType, CanvasSnapshot, CanvasTask } from
 export type OperationRunParams = {
   prompt: string
   negativePrompt?: string
+  inputNodeIds?: string[]
+  inputTransport?: CanvasInputTransport
   providerProfileId?: string
   manifestId?: string
   modelId?: string
@@ -57,15 +65,44 @@ export function CanvasOperationPanel({
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
+  const canEditMediaInputs = capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
 
   // 上游输入节点（used_as_input edge 的 source）
-  const inputNodes = useMemo(() => {
+  const sourceInputNodes = useMemo(() => {
     const inputEdges = snapshot.edges.filter(
       (edge) => edge.targetNodeId === node.id && edge.type === 'used_as_input',
     )
     const inputIds = new Set(inputEdges.map((edge) => edge.sourceNodeId))
     return snapshot.nodes.filter((n) => inputIds.has(n.id) && !n.hidden)
   }, [snapshot.edges, snapshot.nodes, node.id])
+  const expandedSourceInputNodes = useMemo(
+    () => expandOperationInputNodes(sourceInputNodes, snapshot.nodes),
+    [sourceInputNodes, snapshot.nodes],
+  )
+  const editableSourceMediaNodes = useMemo(
+    () =>
+      expandedSourceInputNodes.filter((item) =>
+        isSupportedMediaInputNode(item, capability?.inputTypes ?? []),
+      ),
+    [capability, expandedSourceInputNodes],
+  )
+  const mediaInputOptions = useMemo(
+    () =>
+      snapshot.nodes
+        .filter((item) => {
+          if (item.hidden || item.id === node.id) return false
+          if (item.type !== 'image' && item.type !== 'video') return false
+          if (item.type === 'video' && !capability?.inputTypes.includes('video')) return false
+          if (item.type === 'image' && !capability?.inputTypes.includes('image')) return false
+          return true
+        })
+        .sort((left, right) => left.x - right.x || left.y - right.y || left.zIndex - right.zIndex)
+        .map((item) => ({
+          value: item.id,
+          label: item.title ?? (item.type === 'video' ? '视频节点' : '图片节点'),
+        })),
+    [capability, node.id, snapshot.nodes],
+  )
 
   // 已有 output 节点（generated edge 的 target）
   const outputNodes = useMemo(() => {
@@ -84,7 +121,16 @@ export function CanvasOperationPanel({
   const [selectedModelKey, setSelectedModelKey] = useState('')
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
+  const [selectedInputNodeIds, setSelectedInputNodeIds] = useState<string[]>(() =>
+    (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map((item) => item.id),
+  )
   const [running, setRunning] = useState(false)
+
+  useEffect(() => {
+    setSelectedInputNodeIds(
+      (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map((item) => item.id),
+    )
+  }, [canEditMediaInputs, editableSourceMediaNodes, expandedSourceInputNodes])
 
   useEffect(() => {
     let cancelled = false
@@ -108,7 +154,7 @@ export function CanvasOperationPanel({
   // 输入节点内容带入 prompt（首次打开时如果 prompt 为空）
   useEffect(() => {
     if (prompt) return
-    const textInputs = inputNodes
+    const textInputs = expandedSourceInputNodes
       .filter((n) => n.type === 'text' || n.type === 'prompt')
       .map((n) => n.data.text ?? '')
       .filter(Boolean)
@@ -121,7 +167,7 @@ export function CanvasOperationPanel({
   const statusTag = useMemo(() => {
     const s = node.data.status ?? 'pending'
     const color = s === 'completed' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'blue' : 'default'
-    return <Tag color={color} bordered>{s}</Tag>
+    return <Tag color={color} bordered>{operationStatusLabel(s)}</Tag>
   }, [node.data.status])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
@@ -205,6 +251,14 @@ export function CanvasOperationPanel({
       message.warning('请输入提示词')
       return
     }
+    if (
+      canEditMediaInputs &&
+      capability?.inputTypes.some((type) => type === 'image' || type === 'video') &&
+      selectedInputNodeIds.length === 0
+    ) {
+      message.warning('请至少选择一个输入图片或视频节点')
+      return
+    }
     const nextModelParams = normalizeModelParamsForSubmit(
       {
         ...buildModelParams(parameterFields, modelParamDraft),
@@ -212,10 +266,22 @@ export function CanvasOperationPanel({
       },
       selectedCapability?.defaults ?? {},
     )
+    const runInputNodeIds = Array.from(
+      new Set([
+        ...selectedInputNodeIds,
+        ...expandedSourceInputNodes
+          .filter((item) => item.type === 'text' || item.type === 'prompt')
+          .map((item) => item.id),
+      ]),
+    )
     setRunning(true)
     onRun({
       prompt: prompt.trim(),
       ...(negativePrompt.trim() ? { negativePrompt: negativePrompt.trim() } : {}),
+      inputNodeIds: runInputNodeIds,
+      ...(selectedModel?.providerKind === 'xai'
+        ? { inputTransport: 'base64' as const }
+        : { inputTransport: 'cloud_url' as const }),
       ...(selectedModel?.providerProfileId ? { providerProfileId: selectedModel.providerProfileId } : {}),
       ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
       ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
@@ -231,10 +297,23 @@ export function CanvasOperationPanel({
     prompt,
     selectedCapability,
     selectedModel,
+    expandedSourceInputNodes,
+    selectedInputNodeIds,
   ])
 
-  const imageInputs = inputNodes.filter((n) => n.type === 'image' || n.type === 'video')
-  const textInputs = inputNodes.filter((n) => n.type === 'text' || n.type === 'prompt')
+  const selectedInputIdSet = useMemo(() => new Set(selectedInputNodeIds), [selectedInputNodeIds])
+  const inputNodes = useMemo(
+    () => {
+      const byId = new Map(snapshot.nodes.map((item) => [item.id, item]))
+      return selectedInputNodeIds
+        .map((id) => byId.get(id))
+        .filter((item): item is CanvasNode => item != null)
+        .filter((item) => !item.hidden && selectedInputIdSet.has(item.id))
+    },
+    [selectedInputIdSet, selectedInputNodeIds, snapshot.nodes],
+  )
+  const mediaInputs = inputNodes.filter((n) => n.type === 'image' || n.type === 'video')
+  const textInputs = expandedSourceInputNodes.filter((n) => n.type === 'text' || n.type === 'prompt')
 
   return (
     <div className="canvas-operation-panel" onMouseDown={(e) => e.stopPropagation()}>
@@ -249,21 +328,68 @@ export function CanvasOperationPanel({
 
       <div className="canvas-operation-panel-body">
         {/* 输入预览 */}
-        {inputNodes.length > 0 && (
+        {(expandedSourceInputNodes.length > 0 || canEditMediaInputs) && (
           <div className="canvas-operation-panel-section">
-            <div className="canvas-operation-panel-section-label">输入 ({inputNodes.length})</div>
-            {imageInputs.length > 0 && (
+            <div className="canvas-operation-panel-section-title-row">
+              <div className="canvas-operation-panel-section-label">
+                输入 ({inputNodes.length + textInputs.length})
+              </div>
+              {sourceInputNodes.some((item) => item.type === 'group') && (
+                <Tag bordered color="gold">已展开组内元素</Tag>
+              )}
+            </div>
+            {canEditMediaInputs && (
+              <Select
+                mode="multiple"
+                size="small"
+                allowClear
+                showSearch
+                value={selectedInputNodeIds}
+                placeholder="选择或调整输入图片/视频节点"
+                options={mediaInputOptions}
+                optionFilterProp="label"
+                onChange={(value) => setSelectedInputNodeIds(value.map(String))}
+                disabled={running}
+              />
+            )}
+            {mediaInputs.length > 0 ? (
               <div className="canvas-operation-panel-inputs">
-                {imageInputs.map((n) => {
+                {mediaInputs.map((n) => {
                   const asset = n.assetId ? snapshot.assets.find((a) => a.id === n.assetId) : null
                   return (
                     <Tooltip key={n.id} title={n.title ?? n.type}>
-                      <div className="canvas-operation-panel-input-thumb">
-                        {asset ? <AssetThumbnail asset={asset} /> : <Icons.Image size={20} />}
+                      <div className="canvas-operation-panel-input-card">
+                        <div className="canvas-operation-panel-input-thumb">
+                          {asset ? <AssetThumbnail asset={asset} /> : <Icons.Image size={20} />}
+                        </div>
+                        <div className="canvas-operation-panel-input-name">
+                          {n.title ?? (n.type === 'video' ? '视频' : '图片')}
+                        </div>
+                        {canEditMediaInputs && (
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={<Icons.X size={12} />}
+                            aria-label="移除输入"
+                            disabled={running}
+                            onClick={() =>
+                              setSelectedInputNodeIds((prev) => prev.filter((id) => id !== n.id))
+                            }
+                          />
+                        )}
                       </div>
                     </Tooltip>
                   )
                 })}
+              </div>
+            ) : canEditMediaInputs ? (
+              <div className="canvas-operation-panel-hint">
+                暂无输入媒体。可从上方选择已有图片/视频节点，组节点会自动展开为内部元素。
+              </div>
+            ) : null}
+            {sourceInputNodes.some((item) => item.type === 'group') && (
+              <div className="canvas-operation-panel-hint">
+                组节点仅作为选择容器，提交任务时会使用组内的图片/视频/文本元素作为真实输入。
               </div>
             )}
             {textInputs.length > 0 && (
@@ -502,11 +628,55 @@ export function CanvasOperationPanel({
           disabled={node.data.status === 'running'}
           onClick={() => void handleRun()}
         >
-          {node.data.status === 'running' ? '运行中' : outputNodes.length > 0 ? '重新生成' : '运行'}
+          {node.data.status === 'running' ? '运行中' : '提交任务'}
         </Button>
       </div>
     </div>
   )
+}
+
+function expandOperationInputNodes(sourceNodes: CanvasNode[], allNodes: CanvasNode[]): CanvasNode[] {
+  const byId = new Map(allNodes.map((item) => [item.id, item]))
+  const seen = new Set<string>()
+  const result: CanvasNode[] = []
+  const push = (item: CanvasNode) => {
+    const latest = byId.get(item.id) ?? item
+    if (latest.hidden || seen.has(latest.id)) return
+    seen.add(latest.id)
+    result.push(latest)
+  }
+
+  for (const source of sourceNodes) {
+    if (source.type !== 'group') {
+      push(source)
+      continue
+    }
+    const members = allNodes
+      .filter((item) => item.parentNodeId === source.id && !item.hidden)
+      .sort((left, right) => {
+        const leftX = source.x + left.x
+        const rightX = source.x + right.x
+        const leftY = source.y + left.y
+        const rightY = source.y + right.y
+        return leftX - rightX || leftY - rightY || left.zIndex - right.zIndex
+      })
+    if (members.length === 0) {
+      push(source)
+      continue
+    }
+    for (const member of members) push(member)
+  }
+
+  return result
+}
+
+function isSupportedMediaInputNode(
+  node: CanvasNode,
+  inputTypes: readonly string[],
+): boolean {
+  if (node.type === 'image') return inputTypes.includes('image')
+  if (node.type === 'video') return inputTypes.includes('video')
+  return false
 }
 
 function inferCustomParamType(value: unknown): CustomParamType {
@@ -514,4 +684,12 @@ function inferCustomParamType(value: unknown): CustomParamType {
   if (typeof value === 'number') return Number.isInteger(value) ? 'integer' : 'number'
   if (value && typeof value === 'object') return 'json'
   return 'string'
+}
+
+function operationStatusLabel(status: CanvasTask['status']): string {
+  if (status === 'completed') return '已完成'
+  if (status === 'failed') return '失败'
+  if (status === 'cancelled') return '已取消'
+  if (status === 'running') return '运行中'
+  return '待提交'
 }

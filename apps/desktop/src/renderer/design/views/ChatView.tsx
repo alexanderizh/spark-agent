@@ -289,6 +289,16 @@ const CHAT_MESSAGE_OVERSCAN = 8
 const EMPTY_PROMPT_LAYER: PromptConfigGetResponse['system'] = { enabled: false, content: '' }
 
 /**
+ * 空会话（无活跃 session）下挂载内置终端面板时使用的伪 sessionId。
+ *
+ * 内置终端面板需要一个 string 形态的 sessionId 作为 PTY 生命周期键 + localStorage
+ * 命名空间。空会话没有真实 session，但用户可能希望在选好项目文件夹后直接开终端，
+ * 因此用这个稳定的 app 级占位 id。它的 PTY 仅在 activeWorkspace 存在时创建，
+ * 且会在面板关闭 / 真实会话创建 / 应用关闭时被清理。
+ */
+const EMPTY_HERO_TERMINAL_SESSION_ID = '__empty_hero__'
+
+/**
  * Cache for AskUserQuestion answers submitted by the user.
  * Keyed by all question texts joined with NUL.
  * Populated when the user clicks Submit in the dock, consumed by
@@ -943,6 +953,30 @@ export function ChatView({
             {t.sidebarHidden && <SidebarExpandButton />}
             <div className="chat-sidebar-topbar-actions">
               <button
+                className="icon-btn"
+                title={activeWorkspace ? '在文件夹中打开' : '请先选择项目文件夹'}
+                aria-label="在文件夹中打开"
+                disabled={!activeWorkspace}
+                onClick={() => {
+                  const ws = activeWorkspace
+                  if (!ws) return
+                  void window.spark
+                    .invoke('tool:open-folder', { rootPath: ws.rootPath })
+                    .catch((err) => console.error('Failed to open folder:', err))
+                }}
+              >
+                <Icons.FolderOpen size={14} />
+              </button>
+              <button
+                className={`icon-btn ${showTerminalPanel ? 'active' : ''}`}
+                title={activeWorkspace ? '内置终端' : '请先选择项目文件夹'}
+                aria-label="内置终端"
+                disabled={!activeWorkspace}
+                onClick={() => setShowTerminalPanel(!showTerminalPanel)}
+              >
+                <Icons.Terminal size={14} />
+              </button>
+              <button
                 className={`icon-btn ${showInspector ? 'active' : ''}`}
                 title="会话检查器"
                 aria-label="会话检查器"
@@ -1068,13 +1102,21 @@ export function ChatView({
         />
       )}
 
-      {showTerminalPanel && active != null && (
-        <BuiltInTerminalPanel
-          sessionId={active}
-          workspace={activeSessionWorkspace ?? activeWorkspace}
-          onClose={() => setShowTerminalPanel(false)}
-        />
-      )}
+      {showTerminalPanel &&
+        (active != null || activeWorkspace != null) &&
+        (() => {
+          // 空会话（active == null）下用稳定的伪 sessionId 挂载终端面板，
+          // 让 PTY 能正确创建/复用；真实会话存在时仍用真实 sessionId。
+          const terminalSessionId =
+            active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
+          return (
+            <BuiltInTerminalPanel
+              sessionId={terminalSessionId}
+              workspace={activeSessionWorkspace ?? activeWorkspace}
+              onClose={() => setShowTerminalPanel(false)}
+            />
+          )
+        })()}
 
       {proposedPlan != null && active != null && proposedPlan.sessionId === active && (
         <PlanApprovalModal
@@ -1261,11 +1303,11 @@ function ChatTabbar({
         {session ? (
           <>
             <span className="chat-title truncate">{session.title || '新会话'}</span>
-            {workspace && (
+            {/* {workspace && (
               <span className="badge">
                 <Icons.Folder size={10} /> {workspace.name}
               </span>
-            )}
+            )} */}
             {agentStatus && (
               <span className="msg-running">
                 <Icons.Spinner size={11} /> {agentStatus}
@@ -1278,13 +1320,14 @@ function ChatTabbar({
       </div>
       <div className="row tabbar-actions">
         <button
-          className="btn ghost sm"
+          className="icon-btn"
           onClick={() => {
             void window.spark.invoke('browser:open-external', {})
           }}
           title="打开默认浏览器"
+          aria-label="打开默认浏览器"
         >
-          <Icons.Globe size={12} />
+          <Icons.Globe size={14} />
         </button>
         {workspace && (
           <>
@@ -6071,15 +6114,6 @@ function ContextMeterWithPopup({
             </div>
           </div>
 
-          <button
-            type="button"
-            className={`context-popup-compact-btn${isBusy ? ' disabled' : ''}`}
-            onClick={handleCompact}
-            disabled={compressing || isBusy}
-          >
-            {compressing ? <Icons.Spinner size={13} /> : <Icons.Minimize size={13} />}
-            <span>{compressing ? '压缩中...' : '手动压缩上下文'}</span>
-          </button>
         </div>
       )}
     </div>
@@ -9758,14 +9792,6 @@ function ChatConfigPanel({
                           </div>
                         )
                       })}
-                      {visibleSkills.length === 0 && (
-                        <div
-                          className="runtime-skill-empty"
-                          style={{ color: 'var(--text-muted)', fontSize: 11, padding: '8px 0' }}
-                        >
-                          当前 Agent 尚未配置 Skill，点击「添加」为会话补充
-                        </div>
-                      )}
                     </div>
                     <div className="inspector-muted runtime-hint">
                       {visibleSkills.length > 0

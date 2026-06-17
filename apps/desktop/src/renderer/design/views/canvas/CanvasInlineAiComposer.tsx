@@ -341,7 +341,7 @@ export function CanvasInlineAiComposer({
       className="canvas-inline-ai-composer"
       style={
         panelPosition
-          ? { left: panelPosition.x, top: panelPosition.y, transform: 'none' }
+          ? { left: panelPosition.x, top: panelPosition.y, bottom: 'auto', transform: 'none' }
           : undefined
       }
     >

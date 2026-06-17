@@ -226,6 +226,11 @@ export function CanvasStage({
   const syncFrameRef = useRef<number | null>(null)
   const guideFrameRef = useRef<number | null>(null)
   const viewportInteractingRef = useRef(false)
+  const nodeDragStateRef = useRef<{ nodeId: string | null; dragging: boolean; endedAt: number }>({
+    nodeId: null,
+    dragging: false,
+    endedAt: 0,
+  })
   const pendingNodesSyncRef = useRef<Node<CanvasFlowNodeData>[] | null>(null)
   const [alignmentGuides, setAlignmentGuides] = useState<CanvasAlignmentGuide[]>([])
   const [paneContextMenu, setPaneContextMenu] = useState<PaneContextMenuState | null>(null)
@@ -479,9 +484,30 @@ export function CanvasStage({
     [],
   )
 
-  const handleNodeDragStop = useCallback(() => {
+  const handleNodeDragStart = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+    nodeDragStateRef.current = { nodeId: node.id, dragging: true, endedAt: 0 }
+    setPaneContextMenu(null)
+  }, [])
+
+  const handleNodeDragStop = useCallback((_event: MouseEvent | TouchEvent, node: Node<CanvasFlowNodeData>) => {
+    nodeDragStateRef.current = { nodeId: node.id, dragging: false, endedAt: Date.now() }
     clearAlignmentGuides()
   }, [clearAlignmentGuides])
+
+  const handleNodeClick = useCallback(
+    (event: ReactMouseEvent, node: Node<CanvasFlowNodeData>) => {
+      const dragState = nodeDragStateRef.current
+      if (
+        dragState.dragging ||
+        (dragState.nodeId === node.id && Date.now() - dragState.endedAt < 220)
+      ) {
+        return
+      }
+      if (event.metaKey || event.ctrlKey || event.shiftKey) return
+      onNodeSelectIntent?.(node.id)
+    },
+    [onNodeSelectIntent],
+  )
 
   return (
     <ReactFlowProvider>
@@ -507,6 +533,7 @@ export function CanvasStage({
           selectionOnDrag={activeTool === 'select'}
           onNodesChange={handleNodesChange}
           onConnect={handleConnect}
+          onNodeDragStart={handleNodeDragStart}
           onNodeDrag={handleNodeDrag}
           onNodeDragStop={handleNodeDragStop}
           onInit={handleInit}
@@ -515,9 +542,7 @@ export function CanvasStage({
           onMoveStart={handleViewportMoveStart}
           onMove={handleViewportMove}
           onMoveEnd={handleViewportMoveEnd}
-          onNodeClick={(_event, node) => {
-            onNodeSelectIntent?.(node.id)
-          }}
+          onNodeClick={handleNodeClick}
           onSelectionChange={({ nodes: selected }) =>
             onSelectionChange(selected.map((node) => node.id))
           }
