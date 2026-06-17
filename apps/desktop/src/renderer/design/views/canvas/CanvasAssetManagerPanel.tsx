@@ -21,12 +21,16 @@ export function CanvasAssetManagerPanel({
   tasks,
   onInsertAssets,
   onRemoveReferences,
+  onInsertOne,
+  onDownloadOne,
 }: {
   assets: CanvasAsset[]
   nodes: CanvasNode[]
   tasks: CanvasTask[]
   onInsertAssets: (assetIds: string[]) => void
   onRemoveReferences: (assetIds: string[]) => Promise<void> | void
+  onInsertOne: (assetId: string) => void
+  onDownloadOne: (asset: CanvasAsset) => Promise<void>
 }) {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<AssetTypeFilter>('all')
@@ -193,6 +197,8 @@ export function CanvasAssetManagerPanel({
               {...(originTask ? { originTask } : {})}
               onToggle={() => toggleSelect(asset.id)}
               onShowDetail={() => setDetailAsset(asset)}
+              onInsertOne={onInsertOne}
+              onDownloadOne={onDownloadOne}
             />
             )
           })}
@@ -257,6 +263,8 @@ function AssetManagerRow({
   originTask,
   onToggle,
   onShowDetail,
+  onInsertOne,
+  onDownloadOne,
 }: {
   asset: CanvasAsset
   selected: boolean
@@ -264,6 +272,8 @@ function AssetManagerRow({
   originTask?: CanvasTask
   onToggle: () => void
   onShowDetail: () => void
+  onInsertOne: (assetId: string) => void
+  onDownloadOne: (asset: CanvasAsset) => Promise<void>
 }) {
   return (
     <div
@@ -292,10 +302,24 @@ function AssetManagerRow({
           )}
         </div>
       </div>
-      <Button size="small" type="text" icon={<Icons.Search size={13} />} onClick={(event) => {
-        event.stopPropagation()
-        onShowDetail()
-      }} />
+      <div className="canvas-asset-manager-row-actions">
+        <Tooltip title="插入到当前视口">
+          <Button size="small" type="text" icon={<Icons.Plus size={13} />} onClick={(event) => {
+            event.stopPropagation()
+            onInsertOne(asset.id)
+          }} />
+        </Tooltip>
+        <Tooltip title="下载">
+          <Button size="small" type="text" icon={<Icons.Download size={13} />} onClick={(event) => {
+            event.stopPropagation()
+            void onDownloadOne(asset)
+          }} />
+        </Tooltip>
+        <Button size="small" type="text" icon={<Icons.Search size={13} />} onClick={(event) => {
+          event.stopPropagation()
+          onShowDetail()
+        }} />
+      </div>
     </div>
   )
 }

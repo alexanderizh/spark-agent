@@ -9,7 +9,7 @@ import { CanvasStage, type CanvasStageViewport } from './CanvasStage'
 import { CanvasTaskQueue } from './CanvasTaskQueue'
 import { CanvasToolbar, type CanvasTool } from './CanvasToolbar'
 import { CanvasBoardSidebar } from './CanvasBoardSidebar'
-import { CanvasAssetsPanel, downloadAsset } from './CanvasAssetsPanel'
+import { downloadAsset } from './CanvasAssetsPanel'
 import { CanvasAssetManagerPanel } from './CanvasAssetManagerPanel'
 import { CanvasBottomDock } from './CanvasBottomDock'
 import { CanvasHistoryPanel } from './CanvasHistoryPanel'
@@ -1336,7 +1336,7 @@ export function CanvasWorkspaceView({
         <CanvasToolbar
           saveState={{ dirty, saving }}
           onSave={() => void doSave()}
-          onOpenAssets={() => setAssetDrawerOpen(true)}
+          onOpenAssets={() => setLeftPanelTab("assets")}
           onExport={() => void handleExportProject()}
         />
       </header>
@@ -1364,13 +1364,6 @@ export function CanvasWorkspaceView({
                   onClick={() => setLeftPanelTab('assets')}
                 >
                   资产
-                </button>
-                <button
-                  type="button"
-                  className={`canvas-left-workbench-tab${leftPanelTab === 'asset_manager' ? ' active' : ''}`}
-                  onClick={() => setLeftPanelTab('asset_manager')}
-                >
-                  资产管理
                 </button>
               </>
             )}
@@ -1400,15 +1393,6 @@ export function CanvasWorkspaceView({
                 />
               )}
               {leftPanelTab === 'assets' && (
-                <CanvasAssetsPanel
-                  assets={snapshot.assets}
-                  referencedAssetIds={referencedAssetIds}
-                  onInsertAsset={(assetId) => void handleInsertAsset(assetId)}
-                  onLocateAsset={handleLocateAsset}
-                  onDownloadAsset={(asset) => downloadAsset(asset)}
-                />
-              )}
-              {leftPanelTab === 'asset_manager' && (
                 <CanvasAssetManagerPanel
                   assets={snapshot.assets}
                   nodes={snapshot.nodes}
@@ -1416,8 +1400,9 @@ export function CanvasWorkspaceView({
                   onInsertAssets={(assetIds) => {
                     for (const assetId of assetIds) void handleInsertAsset(assetId)
                   }}
+                  onInsertOne={(assetId) => void handleInsertAsset(assetId)}
+                  onDownloadOne={(asset) => downloadAsset(asset)}
                   onRemoveReferences={async (assetIds) => {
-                    // 移除引用 = 删除引用这些资产的节点（不删资产文件，文档 §11.3 两段式）
                     const targetAssetSet = new Set(assetIds)
                     const nodeIds = snapshot.nodes
                       .filter((node) => node.assetId && targetAssetSet.has(node.assetId))
