@@ -6,6 +6,19 @@ on:
       - master
     paths:
       - apps/desktop/package.json
+  # 手动触发：用于调试签名/公证流水线，不用每次 bump version
+  workflow_dispatch:
+    inputs:
+      publish_to_release:
+        description: '是否发布到 GitHub Release（关闭则只构建+签名+公证验证，不发布）'
+        required: true
+        type: boolean
+        default: false
+      ref:
+        description: '构建的分支/tag/commit（默认当前分支）'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
@@ -21,11 +34,14 @@ jobs:
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
       should_publish: ${{ steps.release.outputs.should_publish }}
+      ref: ${{ steps.release.outputs.ref }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 2
+          # 手动触发时支持指定 ref，否则用默认（push 时是 master）
+          ref: ${{ github.event.inputs.ref || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -38,18 +54,28 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BEFORE_SHA: ${{ github.event.before }}
+          # workflow_dispatch 时为 'workflow_dispatch'，push 时为 'push'
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           git fetch --force --tags
           VERSION=$(node -p "require('./apps/desktop/package.json').version")
           TAG="v${VERSION}"
-          PREV_VERSION=""
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "ref=${{ github.event.inputs.ref || github.ref }}" >> "$GITHUB_OUTPUT"
 
+          # 手动触发：直接允许发布，跳过版本变化检测
+          if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "[manual trigger] should_publish=true, version=${VERSION}"
+            exit 0
+          fi
+
+          # push 触发：检查 version 是否真的变化
+          PREV_VERSION=""
           if [ -n "${BEFORE_SHA}" ] && git cat-file -e "${BEFORE_SHA}^{commit}" 2>/dev/null; then
             PREV_VERSION=$(git show "${BEFORE_SHA}:apps/desktop/package.json" 2>/dev/null | node -p "const fs=require('fs'); const raw=fs.readFileSync(0,'utf8'); raw ? JSON.parse(raw).version ?? '' : ''" || true)
           fi
-
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
           if [ -n "${PREV_VERSION}" ] && [ "${PREV_VERSION}" = "${VERSION}" ]; then
             echo "should_publish=false" >> "$GITHUB_OUTPUT"
@@ -92,7 +118,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: ${{ needs.prepare.outputs.tag }}
+          # push 时用 tag；workflow_dispatch 时用输入的 ref（或当前分支）
+          ref: ${{ needs.prepare.outputs.ref }}
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -133,6 +160,8 @@ jobs:
           # Windows 签名
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          # 手动触发时由 workflow_dispatch 输入决定是否发布；push 时默认发布
+          PUBLISH_FLAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true') || github.event_name == 'push' }}
         shell: bash
         run: |
           # 仅清理 Windows 相关凭据在非 Windows 任务上，避免污染；
@@ -141,7 +170,16 @@ jobs:
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
           fi
 
-          pnpm --filter @spark/desktop exec electron-builder ${{ matrix.build_args }} --publish always
+          # 根据 PUBLISH_FLAG 决定是否发布到 GitHub Release
+          if [ "${PUBLISH_FLAG}" = "true" ]; then
+            echo "[publish] 发布到 GitHub Release"
+            PUBLISH_OPT="--publish always"
+          else
+            echo "[publish] 仅构建+签名+公证，不发布到 Release（调试模式）"
+            PUBLISH_OPT="--publish never"
+          fi
+
+          pnpm --filter @spark/desktop exec electron-builder ${{ matrix.build_args }} ${PUBLISH_OPT}
 
       # 构建结束后清理钥匙串，避免证书残留在 runner 上（安全最佳实践）
       - name: Cleanup keychain (macOS only)
