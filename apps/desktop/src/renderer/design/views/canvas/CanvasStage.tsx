@@ -129,6 +129,8 @@ export function CanvasStage({
   onDissolveGroup,
   onOpenAiComposer,
   onEditNode,
+  onSaveNodeToLibrary,
+  onCreateOperationChild,
   onAddTextAtPosition,
   onAddImageAtPosition,
   onAddPromptAtPosition,
@@ -153,6 +155,8 @@ export function CanvasStage({
   onDissolveGroup: (groupId: string) => void
   onOpenAiComposer: (nodeId: string) => void
   onEditNode: (nodeId: string) => void
+  onSaveNodeToLibrary: (nodeId: string) => void
+  onCreateOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
   onAddTextAtPosition: (position: CanvasStagePoint) => void
   onAddImageAtPosition: (position: CanvasStagePoint) => void
   /** 空白右键：新建 Prompt 节点 */
@@ -177,6 +181,8 @@ export function CanvasStage({
       dissolveGroup: onDissolveGroup,
       openAiComposer: onOpenAiComposer,
       editNode: onEditNode,
+      saveToLibrary: onSaveNodeToLibrary,
+      createOperationChild: onCreateOperationChild,
     }),
     [
       onAddSelectionToGroup,
@@ -188,6 +194,8 @@ export function CanvasStage({
       onEditNode,
       onOpenAiComposer,
       onRemoveNodeFromGroup,
+      onCreateOperationChild,
+      onSaveNodeToLibrary,
       onToggleLockNode,
     ],
   )

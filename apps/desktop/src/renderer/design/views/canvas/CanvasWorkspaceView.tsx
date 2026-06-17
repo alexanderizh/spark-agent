@@ -1481,6 +1481,17 @@ export function CanvasWorkspaceView({
           onOpenAiComposer={handleOpenInlineAi}
           onEditNode={handleEditNode}
           onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
+          onCreateOperationChild={(parentId, operation) => {
+            const parent = snapshot.nodes.find((n) => n.id === parentId)
+            if (!parent) return
+            void createOperationNode({
+              boardId: snapshot.board.id,
+              operation,
+              inputNodeIds: [parentId],
+              x: parent.x + parent.width + 60,
+              y: parent.y,
+            })
+          }}
           onAddTextAtPosition={(position) => void addText(position)}
           onAddImageAtPosition={uploadFirstImage}
           onAddPromptAtPosition={(position) => void addText(position)}

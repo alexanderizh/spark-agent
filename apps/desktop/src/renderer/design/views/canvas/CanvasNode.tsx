@@ -45,6 +45,7 @@ export type CanvasFlowNodeData = {
     dissolveGroup: (groupId: string) => void
     openAiComposer: (nodeId: string) => void
     saveToLibrary: (nodeId: string) => void
+    createOperationChild: (parentId: string, operation: import("./canvas.types").CanvasOperationType) => void
   }
 }
 
@@ -103,6 +104,18 @@ export const CanvasNode = memo(function CanvasNode({ data, selected }: NodeProps
       ...(isTask
         ? []
         : [{ key: 'ai', label: (<span className="canvas-menu-item"><Icons.Sparkles size={14} /> AI 操作</span>), onClick: () => actions.openAiComposer(node.id) }]),
+      ...(isTask ? [] : [{ key: 'add-operation', label: (<span className="canvas-menu-item"><Icons.Plus size={14} /> 新增 AI 操作 ▸</span>), children: [
+        { key: 'op-text_to_image', label: '文生图', onClick: () => actions.createOperationChild(node.id, 'text_to_image') },
+        { key: 'op-image_edit', label: '图生图', onClick: () => actions.createOperationChild(node.id, 'image_edit') },
+        { key: 'op-image_compose', label: '多图合成', onClick: () => actions.createOperationChild(node.id, 'image_compose') },
+        { key: 'op-text_generate', label: '文本生成', onClick: () => actions.createOperationChild(node.id, 'text_generate') },
+        { key: 'op-text_rewrite', label: '文本改写', onClick: () => actions.createOperationChild(node.id, 'text_rewrite') },
+        { key: 'op-prompt_optimize', label: 'Prompt 优化', onClick: () => actions.createOperationChild(node.id, 'prompt_optimize') },
+        { key: 'op-text_to_video', label: '文生视频', onClick: () => actions.createOperationChild(node.id, 'text_to_video') },
+        { key: 'op-image_to_video', label: '图生视频', onClick: () => actions.createOperationChild(node.id, 'image_to_video') },
+        { key: 'op-text_to_audio', label: '文生音频', onClick: () => actions.createOperationChild(node.id, 'text_to_audio') },
+        { key: 'op-audio_transcribe', label: '语音转写', onClick: () => actions.createOperationChild(node.id, 'audio_transcribe') },
+      ] }]),
       ...(isTask ? [] : [{ key: 'group', disabled: selectedCount < 2, label: (<span className="canvas-menu-item"><Icons.Layers size={14} /> 创建组</span>), onClick: () => actions.createGroupFromSelection() }]),
       { key: 'save-to-library', label: (<span className="canvas-menu-item"><Icons.Folder size={14} /> 保存到资源库…</span>), onClick: () => actions.saveToLibrary(node.id) },
       ...(isGroup

@@ -51,6 +51,8 @@ function createFlowNode(
         removeNodeFromGroup: () => undefined,
         dissolveGroup: () => undefined,
         openAiComposer: () => undefined,
+        saveToLibrary: () => undefined,
+        createOperationChild: () => undefined,
       },
     },
     ...overrides,
