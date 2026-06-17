@@ -283,12 +283,15 @@ export function CommandPalette({
   onClose,
   onNavigate,
   onNewSession,
+  onToggleSidebar,
 }: {
   onClose: () => void
   /** Navigate to a view */
   onNavigate?: (view: string) => void
   /** Create a new session */
   onNewSession?: () => void
+  /** Toggle the left sidebar visibility */
+  onToggleSidebar?: () => void
 }) {
   const [query, setQuery] = useState('')
   const [ipcCommands, setIpcCommands] = useState<CommandListItem[]>([])
@@ -393,9 +396,9 @@ export function CommandPalette({
       description: '折叠/展开侧边栏',
       category: 'action',
       shortcutId: 'toggleSidebar',
-      execute: () => onNavigate?.('__toggleSidebar'),
+      execute: () => onToggleSidebar?.(),
     },
-  ], [onNavigate, onNewSession])
+  ], [onNavigate, onNewSession, onToggleSidebar])
 
   // Merge all commands: IPC three-layer + UI commands
   const allCommands = useMemo(() => {

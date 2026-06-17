@@ -679,9 +679,14 @@ function Shell() {
 
   // Navigation handler for command palette
   const handleNavigate = useCallback((view: string) => {
-    if (view === '__toggleSidebar') return
     setTweak('view', view as typeof t.view)
   }, [setTweak])
+
+  // Toggle left sidebar visibility (Ctrl/Cmd+B). Reads the current value from
+  // the tweak snapshot and flips it; setTweak persists to localStorage.
+  const handleToggleSidebar = useCallback(() => {
+    setTweak('sidebarHidden', !t.sidebarHidden)
+  }, [setTweak, t.sidebarHidden])
 
   // Global keyboard shortcuts.
   // The "newSession" shortcut (Cmd/Ctrl+N) now behaves the same as the sidebar
@@ -689,6 +694,7 @@ function Shell() {
   useGlobalShortcuts({
     setTweak: setTweak as (key: string, val: unknown) => void,
     onNewSession: handleNewBlankSession,
+    onToggleSidebar: handleToggleSidebar,
     hasOverlayOpen: () => t.showPalette || t.showPerm || t.showProviderEdit || t.showProfileEdit,
   })
 
@@ -863,6 +869,7 @@ function Shell() {
           onClose={() => setTweak('showPalette', false)}
           onNavigate={handleNavigate}
           onNewSession={handleNewBlankSession}
+          onToggleSidebar={handleToggleSidebar}
         />
       )}
       {t.showPerm && <PermissionModal request={{ requestId: 'preview', sessionId: 'preview-session', toolName: 'write_file', action: 'file_write', toolInput: {}, riskLevel: 'medium', persistentScopes: ['global'] }} onClose={() => setTweak('showPerm', false)} />}
