@@ -285,6 +285,76 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('M src/app.ts')
   })
 
+  it('/diff shows only unstaged working tree diff', async () => {
+    const execShell = vi.fn(async (command: string) => {
+      if (command === 'git diff') {
+        return { stdout: 'diff --git a/src/app.ts b/src/app.ts\n+unstaged', stderr: '', exitCode: 0 }
+      }
+      return { stdout: '', stderr: '', exitCode: 0 }
+    })
+    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell,
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('## Working tree diff')
+    expect(result.message).toContain('```diff\n')
+    expect(result.message).toContain('+unstaged')
+    expect(result.message).toContain('## Staged diff')
+    expect(result.message).toContain('## Untracked files')
+    expect(execShell).toHaveBeenCalledWith('git diff', '/fake/workspace')
+    expect(execShell).toHaveBeenCalledWith('git diff --cached', '/fake/workspace')
+    expect(execShell).toHaveBeenCalledWith('git ls-files --others --exclude-standard', '/fake/workspace')
+  })
+
+  it('/diff shows only staged diff', async () => {
+    const execShell = vi.fn(async (command: string) => {
+      if (command === 'git diff --cached') {
+        return { stdout: 'diff --git a/src/app.ts b/src/app.ts\n+staged', stderr: '', exitCode: 0 }
+      }
+      return { stdout: '', stderr: '', exitCode: 0 }
+    })
+    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell,
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('## Working tree diff')
+    expect(result.message).toContain('## Staged diff')
+    expect(result.message).toContain('+staged')
+    expect(result.message).toContain('## Untracked files')
+  })
+
+  it('/diff shows only untracked files outside diff fences', async () => {
+    const execShell = vi.fn(async (command: string) => {
+      if (command === 'git ls-files --others --exclude-standard') {
+        return { stdout: 'notes.txt\nsrc/new-file.ts\n', stderr: '', exitCode: 0 }
+      }
+      return { stdout: '', stderr: '', exitCode: 0 }
+    })
+    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell,
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('## Untracked files')
+    expect(result.message).toContain('```\nnotes.txt\nsrc/new-file.ts\n```')
+    expect(result.message).not.toContain('```diff\nnotes.txt')
+  })
+
+  it('/diff returns no changes when working tree, staged, and untracked are empty', async () => {
+    const result = await registry.execute(parse('/diff'), ctx, makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.message).toBe('没有文件变更。')
+  })
+
   it('/skill run selects a skill for the follow-up turn', async () => {
     const result = await registry.execute(parse('/skill run skill:review inspect changes'), ctx, makeDeps({
       listSkills: () => [{
