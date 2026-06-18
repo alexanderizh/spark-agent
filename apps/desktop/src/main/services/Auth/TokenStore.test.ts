@@ -3,6 +3,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AuthSession } from '@spark/protocol'
+import * as keytar from 'keytar'
 
 const mocks = vi.hoisted(() => {
   const credentials = new Map<string, string>()
@@ -79,6 +80,19 @@ describe('TokenStore persistent fallback', () => {
     expect(loaded).toEqual(session)
     expect(secondStore.isAuthenticated()).toBe(true)
     expect(secondStore.isPersistent()).toBe(true)
+  })
+
+  it('prefers encrypted backup without reading keychain on startup', async () => {
+    const { TokenStore } = await import('./TokenStore')
+    const firstStore = new TokenStore('SparkAgent.CloudAuth')
+    await firstStore.save(session)
+    vi.clearAllMocks()
+
+    const secondStore = new TokenStore('SparkAgent.CloudAuth')
+    const loaded = await secondStore.load()
+
+    expect(loaded).toEqual(session)
+    expect(keytar.getPassword).not.toHaveBeenCalled()
   })
 
   it('persists across restarts when keytar is unavailable', async () => {

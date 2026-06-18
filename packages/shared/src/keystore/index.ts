@@ -20,6 +20,12 @@ import keytar from 'keytar'
 
 /** Keychain 服务名前缀，所有 Spark Agent 凭证使用统一前缀 */
 const SERVICE_PREFIX = 'spark-agent'
+const secretCache = new Map<string, string | null>()
+const pendingReads = new Map<string, Promise<string | null>>()
+
+function cacheKey(ref: KeystoreRef): string {
+  return `${SERVICE_PREFIX}:${ref}`
+}
 
 /**
  * Keychain 引用 ID 的类型别名
@@ -45,6 +51,7 @@ export function makeKeystoreRef(provider: string, profileId: string): KeystoreRe
  */
 export async function setSecret(ref: KeystoreRef, secret: string): Promise<void> {
   await keytar.setPassword(SERVICE_PREFIX, ref, secret)
+  secretCache.set(cacheKey(ref), secret)
 }
 
 /**
@@ -53,7 +60,20 @@ export async function setSecret(ref: KeystoreRef, secret: string): Promise<void>
  * @returns API Key 明文，若不存在返回 null
  */
 export async function getSecret(ref: KeystoreRef): Promise<string | null> {
-  return keytar.getPassword(SERVICE_PREFIX, ref)
+  const key = cacheKey(ref)
+  if (secretCache.has(key)) return secretCache.get(key) ?? null
+  const pending = pendingReads.get(key)
+  if (pending) return pending
+
+  const read = keytar.getPassword(SERVICE_PREFIX, ref)
+  pendingReads.set(key, read)
+  try {
+    const secret = await read
+    secretCache.set(key, secret)
+    return secret
+  } finally {
+    pendingReads.delete(key)
+  }
 }
 
 /**
@@ -62,7 +82,9 @@ export async function getSecret(ref: KeystoreRef): Promise<string | null> {
  * @returns 是否成功删除
  */
 export async function deleteSecret(ref: KeystoreRef): Promise<boolean> {
-  return keytar.deletePassword(SERVICE_PREFIX, ref)
+  const deleted = await keytar.deletePassword(SERVICE_PREFIX, ref)
+  secretCache.delete(cacheKey(ref))
+  return deleted
 }
 
 /**
@@ -70,8 +92,14 @@ export async function deleteSecret(ref: KeystoreRef): Promise<boolean> {
  * @param ref - Keychain 引用 ID
  */
 export async function hasSecret(ref: KeystoreRef): Promise<boolean> {
-  const val = await keytar.getPassword(SERVICE_PREFIX, ref)
+  const val = await getSecret(ref)
   return val !== null
+}
+
+/** Test/dev helper: clear only the in-process cache, not OS Keychain. */
+export function clearSecretCache(): void {
+  secretCache.clear()
+  pendingReads.clear()
 }
 
 /**

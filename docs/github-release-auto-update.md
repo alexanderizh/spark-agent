@@ -33,6 +33,7 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 - 更新状态通过 `stream:update:status` 同步到设置页，包含当前版本、可用版本、下载进度和上次检查时间
 - 侧边栏顶部折叠按钮旁提供全局更新入口：检查、下载、下载中状态、安装
 - 发布 workflow 会在调用 `electron-builder` 前清理空的签名 secret，避免空 `CSC_LINK` / `WIN_CSC_LINK` 被解析成工作目录路径导致构建失败
+- Windows Release 构建统一走 [build-win-release.sh](/Users/zhangyang/spark_ai_project/Spark-Agent/apps/desktop/scripts/build-win-release.sh)，本地和 CI 都使用同一套 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 处理逻辑；有证书时签名并在 Windows runner 上用 `Get-AuthenticodeSignature` 校验，没有证书时继续产出未签名安装包
 
 ## 开发调试
 
@@ -40,6 +41,39 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 - 这能用于调试“检查更新 / 下载状态 / 顶部按钮 / 设置页同步”等流程
 - 若远端 release 本身缺少对应平台安装包，例如 macOS 没有 `dmg` 或 Windows 没有 `exe`，开发环境同样会收到对应错误
 - GitHub Release 检查当前走 GitHub REST API。未认证请求会受 GitHub 官方 rate limit 约束；如果开发调试时频繁点“检查更新”，建议等待 reset 时间后重试，或仅在本地 `dev-app-update.yml` 中配置一个只用于开发的 GitHub token
+
+## Windows 签名构建
+
+- CI 可配置 `WIN_CSC_LINK` 和 `WIN_CSC_KEY_PASSWORD`。`WIN_CSC_LINK` 可以是 `.pfx` 文件的 base64 内容，也可以是 `https://` / `data:...;base64,...` 形式；workflow 会在 Windows runner 中解码并交给 `electron-builder` 签名。若这两个变量缺失，会继续构建未签名安装包
+- 本地 Windows 构建使用同一入口；没有证书时直接产出未签名安装包：
+
+```bash
+cd apps/desktop
+pnpm run build:win:release -- --publish never
+```
+
+- 根目录也提供了便捷入口：
+
+```bash
+bash build-sign-win.sh
+```
+
+或在 Windows cmd/PowerShell 中运行：
+
+```bat
+build-sign-win.bat
+```
+
+- 如果本地有 `.pfx`，可在运行前设置：
+
+```bash
+WIN_CSC_LINK=/path/to/cert.pfx \
+WIN_CSC_KEY_PASSWORD=your-pfx-password \
+pnpm run build:win:release -- --publish never
+```
+
+- 若本地不想把证书落盘，也可以把 `.pfx` base64 后传入 `WIN_CSC_LINK`。脚本会写入临时目录，构建结束自动删除
+- 只有提供了 `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` 时，脚本才会要求最终 `.exe` 的 Authenticode 状态为 `Valid`
 
 ## 使用要求
 
@@ -51,9 +85,10 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
   - `APPLE_ID`
   - `APPLE_APP_SPECIFIC_PASSWORD`
   - `APPLE_TEAM_ID`
-  - `WIN_CSC_LINK`
-  - `WIN_CSC_KEY_PASSWORD`
+  - `WIN_CSC_LINK`：Windows 代码签名 `.pfx` 的路径、URL、data URL，或 base64 内容；未配置时 Windows 产物不签名但仍会构建
+  - `WIN_CSC_KEY_PASSWORD`：上述 `.pfx` 的导出密码
 - macOS CI 会在导入证书后校验 `Developer ID Application` identity；如果 secret 误填成开发证书，会立即失败，避免后续公证阶段才报未签名或 adhoc 签名错误
+- Windows CI 有证书时会校验 `.exe` 的 Authenticode 状态为 `Valid`；没有证书时跳过签名校验并保留安装包
 
 ## 更新通道
 

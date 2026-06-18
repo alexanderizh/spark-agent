@@ -1,6 +1,6 @@
 {
   "name": "@spark/desktop",
-  "version": "0.1.30",
+  "version": "0.1.31",
   "description": "Spark Agent desktop application — Electron + React + TypeScript",
   "author": "Spark Agent Team",
   "private": true,
@@ -14,6 +14,7 @@
     "build:mac": "electron-vite build && electron-builder --mac --arm64 --x64",
     "build:mac:arm64": "electron-vite build && electron-builder --mac --arm64",
     "build:mac:x64": "electron-vite build && electron-builder --mac --x64",
+    "build:win:release": "bash scripts/build-win-release.sh x64",
     "build:linux": "electron-vite build && electron-builder --linux",
     "build:all": "electron-vite build && electron-builder --mac --arm64 --x64 && electron-builder --win --x64",
     "pack": "electron-builder --dir",

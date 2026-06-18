@@ -42,6 +42,16 @@ SQLite provider_profiles.keychain_ref = "anthropic-default"
 keytar.getPassword(service, account)  →  返回明文 Key（仅在内存中使用）
 ```
 
+### macOS Keychain 授权弹窗控制
+
+macOS 会在应用读取 Keychain 项时校验访问方身份。开发包、签名、运行路径频繁变化时，系统可能反复弹出“允许访问钥匙串”的密码框。
+
+为降低用户干扰：
+
+- Provider API Key 读取后会缓存在 Electron 主进程内存中；同一次应用运行期间，新会话、媒体能力解析、健康检查等重复读取不会再次访问 Keychain。
+- Provider API Key 的持久化来源仍然是 OS Keychain，SQLite 只保存 `keystore_ref`。
+- Cloud Auth 登录态保留 `safeStorage` 加密备份；启动时优先读取加密备份，备份缺失时再访问 Keychain，用于减少应用启动阶段的钥匙串授权请求。
+
 ### keytar 的原生模块处理
 
 `keytar` 是 N-API 原生模块，每次升级 Electron 版本后需要重新编译。
