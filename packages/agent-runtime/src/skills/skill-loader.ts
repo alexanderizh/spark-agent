@@ -33,22 +33,24 @@ export class SkillLoader {
    * 列出所有可用 Skill（内置 + 已安装）
    */
   listAll(): SkillInfo[] {
-    const builtinInfos: SkillInfo[] = BUILTIN_SKILLS.map((def) => ({
-      builtin: true,
-      definition: def,
-      dbRecord: null,
+    const rows = this.repo.list()
+    const dbIds = new Set(rows.map((row) => row.id))
+
+    // 硬编码 TS 内置（当前已全部迁移到文件系统，BUILTIN_SKILLS 为空）；
+    // 仅纳入数据库中没有同 id 影子记录的，避免重复。
+    const tsBuiltinInfos: SkillInfo[] = BUILTIN_SKILLS
+      .filter((def) => !dbIds.has(def.id))
+      .map((def) => ({ builtin: true, definition: def, dbRecord: null }))
+
+    // 所有数据库技能（含 builtin:* 内置行）。内置技能现以 builtin:* 行存于库中，
+    // 必须纳入，否则对 agent 运行时（skills_list / 斜杠命令 / 可用集）完全不可见。
+    const installedInfos: SkillInfo[] = rows.map((row) => ({
+      builtin: row.id.startsWith('builtin:'),
+      definition: this.parseManifestAsDefinition(row),
+      dbRecord: toSkillItem(row),
     }))
 
-    const installedRows = this.repo.list()
-    const installedInfos: SkillInfo[] = installedRows
-      .filter((row) => !row.id.startsWith('builtin:'))
-      .map((row) => ({
-        builtin: false,
-        definition: this.parseManifestAsDefinition(row),
-        dbRecord: toSkillItem(row),
-      }))
-
-    return [...builtinInfos, ...installedInfos]
+    return [...tsBuiltinInfos, ...installedInfos]
   }
 
   /**
@@ -76,30 +78,24 @@ export class SkillLoader {
    * 获取已启用的 Skill 列表
    */
   listEnabled(): SkillInfo[] {
-    const builtinInfos: SkillInfo[] = BUILTIN_SKILLS.map((def) => ({
-      builtin: true,
-      definition: def,
-      dbRecord: null,
-    }))
+    const rows = this.repo.list()
+    const dbIds = new Set(rows.map((row) => row.id))
 
-    const installedRows = this.repo.list()
-    const enabledInstalled: SkillInfo[] = installedRows
-      .filter((row) => !row.id.startsWith('builtin:') && row.enabled === 1)
+    // 硬编码 TS 内置：只有未被用户在库中禁用的才算启用（默认无影子记录 → 启用）。
+    const tsBuiltinInfos: SkillInfo[] = BUILTIN_SKILLS
+      .filter((def) => !dbIds.has(def.id))
+      .map((def) => ({ builtin: true, definition: def, dbRecord: null }))
+
+    // 所有已启用的数据库技能（含 builtin:* 内置行）。
+    const enabledInstalled: SkillInfo[] = rows
+      .filter((row) => row.enabled === 1)
       .map((row) => ({
-        builtin: false,
+        builtin: row.id.startsWith('builtin:'),
         definition: this.parseManifestAsDefinition(row),
         dbRecord: toSkillItem(row),
       }))
 
-    // 内置 Skill 中，在数据库有记录的检查 enabled 状态
-    const result: SkillInfo[] = []
-    for (const info of builtinInfos) {
-      const dbRow = this.repo.get(info.definition!.id)
-      if (dbRow && dbRow.enabled === 0) continue // 被用户禁用的内置 Skill
-      result.push(info)
-    }
-
-    return [...result, ...enabledInstalled]
+    return [...tsBuiltinInfos, ...enabledInstalled]
   }
 
   /**

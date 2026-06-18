@@ -50,6 +50,38 @@ export class SkillService {
     return this.repo.deleteById(id)
   }
 
+  /**
+   * 清理重复的「宿主软链」技能行（local:linked:*）：
+   *   - 与任意非软链技能（内置 / 市场 / 本地导入 / 用户创建）同名 → 删除软链行
+   *   - 多个软链技能同名 → 仅保留一个
+   *
+   * 只删除 local:linked:* 行，绝不动内置/市场/手动导入，避免破坏既有绑定。
+   * 用于消除「宿主自动软链导入」与既有技能/彼此之间的重复（数量虚高问题）。
+   *
+   * @returns 删除的行数
+   */
+  pruneDuplicateLinkedSkills(): number {
+    const rows = this.repo.list()
+    const nonLinkedNames = new Set(
+      rows
+        .filter((r) => !r.id.startsWith('local:linked:'))
+        .map((r) => r.name.trim().toLowerCase()),
+    )
+    const seenLinked = new Set<string>()
+    let removed = 0
+    for (const row of rows) {
+      if (!row.id.startsWith('local:linked:')) continue
+      const key = row.name.trim().toLowerCase()
+      if (nonLinkedNames.has(key) || seenLinked.has(key)) {
+        this.repo.deleteById(row.id)
+        removed += 1
+      } else {
+        seenLinked.add(key)
+      }
+    }
+    return removed
+  }
+
   detectLocalSkills(searchRoots?: string[]): LocalSkillCandidate[] {
     const installedByRoot = new Map(this.repo.list().map((row) => [row.root_path, row.id]))
     return detectLocalSkillCandidates(searchRoots).map((candidate) => {

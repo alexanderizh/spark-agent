@@ -85,12 +85,18 @@ export class RuntimeCompositionService {
     const sessionDisabledSkillIds = refs.sessionId != null ? this.getDisabledSkillIds('session', refs.sessionId) : []
     const disabledIds = new Set([...agentDisabledSkillIds, ...projectDisabledSkillIds, ...sessionDisabledSkillIds])
 
+    // 内置技能（builtin:*）对所有 agent 默认可用，无需显式绑定：把已启用的内置 id
+    // 始终并入 base。仍会经下方 enabledIds/disabledIds 过滤，故用户显式禁用仍生效。
+    const builtinIds = Array.from(enabledIds).filter((id) => id.startsWith('builtin:'))
+
     // The agent's configured skills define the base set.
     // If the agent has no skillIds configured, fall back to all
     // system-enabled skills for backward compatibility. Project and session layers are
-    // always additive on top.
+    // always additive on top. Built-in skills are always included on top.
     const hasAgentSkillConfig = agentSkillIds.length > 0
-    const base = hasAgentSkillConfig ? agentSkillIds : Array.from(enabledIds)
+    const base = hasAgentSkillConfig
+      ? uniqueStrings([...builtinIds, ...agentSkillIds])
+      : Array.from(enabledIds)
     const ordered = uniqueStrings([
       ...base,
       ...projectSkillIds,

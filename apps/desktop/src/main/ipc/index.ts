@@ -1112,7 +1112,10 @@ export function initializeAppSkills(): void {
     const manager = getAppSkillsManager()
     const skillService = getSkillService()
 
-    // 1. 宿主机技能自动软链 + 登记
+    // 1. 内置技能登记/刷新（先做，保证 builtin:* 行存在，参与后续去重的"规范名"集合）
+    skillService.ensureBuiltInSkills()
+
+    // 2. 宿主机 Claude/Codex 技能自动软链 + 登记（默认启用）
     const hostLinks = manager.autoImportHostSkills()
     for (const link of hostLinks) {
       try {
@@ -1122,15 +1125,15 @@ export function initializeAppSkills(): void {
       }
     }
 
-    // 2. 内置技能登记/刷新
-    skillService.ensureBuiltInSkills()
+    // 3. 清理重复的宿主软链行（与内置/已装/本地导入同名，或软链彼此同名）
+    const pruned = skillService.pruneDuplicateLinkedSkills()
 
-    // 3. 重建托管插件目录
+    // 4. 重建托管插件目录（仅含去重后的已启用技能）
     rebuildManagedSkillsPlugin()
 
-    // 4. 注入插件目录（Claude 原生渐进式披露）
+    // 5. 注入插件目录（Claude 原生渐进式披露）
     getSessionService().setSkillsPluginDir(manager.managedPluginDir)
-    log.info(`App skills initialized: ${hostLinks.length} host skill(s) linked`)
+    log.info(`App skills initialized: ${hostLinks.length} host skill(s) linked, ${pruned} duplicate(s) pruned`)
   } catch (err) {
     log.warn(`initializeAppSkills failed: ${String(err)}`)
   }

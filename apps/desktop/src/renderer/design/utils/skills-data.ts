@@ -215,6 +215,8 @@ export function useSkills(): UseSkillsResult {
     [removeSkill, refresh]
   )
 
+  // 计数按去重（同名）口径，与下方分区展示一致，避免"宿主软链重复"导致数字虚高。
+  const dedupedSkills = deduplicateSkills(skills)
   return {
     skills,
     loading,
@@ -222,7 +224,7 @@ export function useSkills(): UseSkillsResult {
     refresh,
     toggleSkill,
     deleteSkill,
-    total: skills.length,
-    enabledCount: skills.filter((s) => s.enabled).length,
+    total: dedupedSkills.length,
+    enabledCount: dedupedSkills.filter((s) => s.enabled).length,
   }
 }

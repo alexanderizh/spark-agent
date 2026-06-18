@@ -265,22 +265,30 @@ export class PlatformBridgeService {
   // ── Skill handlers ──
 
   private skillList(d: PlatformBridgeDeps, _params: Record<string, unknown>) {
-    const rows = d.skillLoader.listAll()
-    return {
-      skills: rows.map((s) => {
-        const def = s.definition
-        const db = s.dbRecord
-        return {
-          id: db?.id ?? def?.id ?? '',
-          name: db?.name ?? def?.name ?? '',
-          description: def?.description ?? '',
-          category: def?.category ?? '',
-          version: db?.version ?? def?.version ?? '',
-          author: def?.author ?? '',
-          enabled: db?.enabled ?? true,
-        }
-      }),
+    // 内置优先排序 → 按名去重 → 截断描述 → 限量，避免大量宿主技能导致结果超出 token 上限。
+    const rows = [...d.skillLoader.listAll()].sort((a, b) => Number(b.builtin) - Number(a.builtin))
+    const seen = new Set<string>()
+    const skills: Array<Record<string, unknown>> = []
+    for (const s of rows) {
+      const def = s.definition
+      const db = s.dbRecord
+      const id = db?.id ?? def?.id ?? ''
+      const name = db?.name ?? def?.name ?? ''
+      if (!id || !name) continue
+      const key = name.toLowerCase()
+      if (seen.has(key)) continue
+      seen.add(key)
+      skills.push({
+        id,
+        name,
+        description: truncateText(def?.description ?? '', 140),
+        category: def?.category ?? '',
+        source: skillSourceLabel(id),
+        enabled: db?.enabled ?? true,
+      })
+      if (skills.length >= 200) break
     }
+    return { skills, total: skills.length }
   }
 
   /**
@@ -1010,6 +1018,23 @@ export class PlatformBridgeService {
     this.writeBoardTasks(filtered)
     return { success: true }
   }
+}
+
+/** 截断文本到指定长度，超出加省略号 */
+function truncateText(text: string, max: number): string {
+  const t = text.replace(/\s+/g, ' ').trim()
+  return t.length <= max ? t : `${t.slice(0, max)}…`
+}
+
+/** 由技能 id 前缀推断来源标签（用于 agent 判断技能层级） */
+function skillSourceLabel(id: string): string {
+  if (id.startsWith('builtin:')) return '内置'
+  if (id.startsWith('local:linked:')) return '宿主软链'
+  if (id.startsWith('local:')) return '本地导入'
+  if (id.startsWith('skill:github:')) return 'GitHub'
+  if (id.startsWith('skill:')) return '市场安装'
+  if (id.startsWith('user:')) return '用户创建'
+  return '其他'
 }
 
 /** 去掉 Markdown 文件开头的 YAML frontmatter，返回正文 */
