@@ -25,6 +25,6 @@
     "typescript": "^5.5.0"
   },
   "pnpm": {
-    "onlyBuiltDependencies": ["better-sqlite3", "esbuild", "electron", "keytar"]
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild", "electron", "keytar", "node-pty"]
   }
 }

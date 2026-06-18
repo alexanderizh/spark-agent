@@ -4,7 +4,7 @@
 #
 # 用法：
 #   ./scripts/build-mac-release.sh [arch]
-#     arch 可选：arm64（默认）/ x64 / universal
+#     arch 可选：arm64（默认）/ x64
 #
 # 前置条件：
 #   1. 钥匙串里已有 "Developer ID Application: ..." 证书 + 私钥
@@ -40,9 +40,24 @@ APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 cd "$APP_DIR"
 
 ARCH="${1:-arm64}"
+if [ "$#" -gt 0 ]; then
+  shift
+fi
+BUILDER_ARGS=("$@")
+
+case "$ARCH" in
+  arm64|x64)
+    ;;
+  universal)
+    fail "不再支持 universal 单包构建；请分别构建 arm64 和 x64，避免原生模块 ABI/架构混包。"
+    ;;
+  *)
+    fail "不支持的 macOS 架构：$ARCH"
+    ;;
+esac
 
 # ============ 1. 前置检查 ============
-step "1/5 环境检查"
+step "1/6 环境检查"
 
 [ -z "${APPLE_ID:-}" ] && fail "缺少环境变量 APPLE_ID"
 [ -z "${APPLE_APP_SPECIFIC_PASSWORD:-}" ] && fail "缺少环境变量 APPLE_APP_SPECIFIC_PASSWORD"
@@ -65,21 +80,24 @@ xcrun notarytool --version >/dev/null 2>&1 || fail "notarytool 不可用，请�
 ok "notarytool 可用"
 
 # ============ 2. 清理旧产物 ============
-step "2/5 清理旧产物"
+step "2/6 清理旧产物"
 rm -rf dist/mac* dist/*.dmg dist/*.blockmap 2>/dev/null || true
 ok "已清理 dist/"
 
 # ============ 3. 编译 + 打包 ============
-step "3/5 编译 Vite 产物"
+step "3/6 编译 Vite 产物"
 pnpm run build
 
-step "4/5 electron-builder 签名 + 公证（这一步会上传 Apple，约 5~15 分钟）"
+step "4/6 重编译并校验 Electron 原生模块"
+pnpm run rebuild:native -- "$ARCH"
+
+step "5/6 electron-builder 签名 + 公证（这一步会上传 Apple，约 5~15 分钟）"
 # electron-builder 会自动读取钥匙串证书；afterSign 钩子(notarize.js)会做公证
-pnpm exec electron-builder --mac "--$ARCH"
+pnpm exec electron-builder --mac "--$ARCH" "${BUILDER_ARGS[@]}"
 ok "打包完成"
 
 # ============ 4. 定位产物 ============
-step "5/5 验证签名 + 公证状态"
+step "6/6 验证签名 + 公证状态"
 
 # 找 .app 和 .dmg
 APP_PATH="$(find dist/mac* -maxdepth 1 -name "*.app" 2>/dev/null | head -1)"

@@ -132,7 +132,7 @@ NODE
 }
 
 verify_windows_signature() {
-  step "4/4 Verify Windows signature"
+  step "5/5 Verify Windows signature"
 
   local exe_path
   exe_path="$(find dist -maxdepth 1 -type f -iname "*.exe" 2>/dev/null | head -1)"
@@ -182,23 +182,30 @@ if ($sig.Status -ne "Valid") {
   ok "Authenticode signature is valid"
 }
 
-step "0/4 Build parameters"
+step "0/5 Build parameters"
 echo "  Arch      : $ARCH"
 echo "  Publish   : ${BUILDER_ARGS[*]:-(electron-builder default)}"
 echo "  App dir   : $APP_DIR"
 
+if ! is_windows_runner; then
+  fail "Windows release builds must run on Windows so Electron native modules are rebuilt for the correct OS/arch."
+fi
+
 prepare_windows_signing
 
 if [ "${SKIP_DESKTOP_BUILD:-}" = "1" ]; then
-  step "2/4 Build desktop source"
+  step "2/5 Build desktop source"
   ok "Skipping desktop source build because SKIP_DESKTOP_BUILD=1"
 else
-  step "2/4 Build desktop source"
+  step "2/5 Build desktop source"
   pnpm run build
   ok "Desktop source built"
 fi
 
-step "3/4 electron-builder Windows package + sign"
+step "3/5 Rebuild and verify Electron native modules"
+pnpm run rebuild:native -- "$ARCH"
+
+step "4/5 electron-builder Windows package + sign"
 pnpm exec electron-builder --win "--$ARCH" "${BUILDER_ARGS[@]}"
 ok "Windows package complete"
 
