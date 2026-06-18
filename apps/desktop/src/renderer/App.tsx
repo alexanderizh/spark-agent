@@ -31,6 +31,7 @@ import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
 import ProvidersView from './design/views/ProvidersView'
 import { LobePreviewView } from './design/theme/LobePreviewView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
+import { OnboardingView, shouldShowOnboarding } from './design/views/OnboardingView'
 import { CommandPalette, PermissionModal } from './design/views/overlays'
 import { SidebarExpandButton } from './design/SidebarExpandButton'
 import { SidebarSessionList } from './design/SidebarSessionList'
@@ -580,6 +581,12 @@ function Shell() {
   }, [sessionCtx.activeSessionId])
 
   useEffect(() => {
+    if (shouldShowOnboarding() && viewRef.current !== 'onboarding') {
+      setTweak('view', 'onboarding')
+    }
+  }, [setTweak])
+
+  useEffect(() => {
     viewRef.current = t.view
     chatModeRef.current = t.chatMode
     if (t.view !== 'canvas') setCanvasWorkspaceActive(false)
@@ -795,6 +802,8 @@ function Shell() {
         return <SettingsView />
       case 'lobe-preview':
         return <LobePreviewView />
+      case 'onboarding':
+        return <OnboardingView />
       default:
         return (
           <ChatView

@@ -405,6 +405,7 @@ export function SettingsView() {
 
 /* ───────── GENERAL ───────── */
 function GeneralSection() {
+  const { setTweak } = useApp()
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
   const [autoStartSupported, setAutoStartSupported] = useState(true)
@@ -463,6 +464,25 @@ function GeneralSection() {
     <div className="settings-section">
       <h2>通用</h2>
       <div className="lede">应用启动、语言、默认行为。</div>
+
+      <div className="settings-card">
+        <SettingsRow
+          title="新手引导"
+          desc="重新打开安装后的图文引导，配置模型、助手并发起第一次会话。"
+          right={
+            <button
+              className="btn"
+              onClick={() => {
+                window.localStorage.removeItem('spark-agent:onboarding-completed')
+                window.localStorage.removeItem('spark-agent:onboarding-dismissed')
+                setTweak('view', 'onboarding')
+              }}
+            >
+              重新打开
+            </button>
+          }
+        />
+      </div>
 
       <div className="form-grid">
         <label>
