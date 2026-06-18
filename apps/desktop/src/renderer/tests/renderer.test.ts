@@ -12,6 +12,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { act } from 'react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { ToastProvider } from '../design/components/Toast'
+import type { UIMessage } from '../design/services/event-mapper'
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -22,6 +23,60 @@ vi.mock('react-router-dom', async () => {
     ...actual,
     BrowserRouter: ({ children }: { children: React.ReactNode }) => children,
   }
+})
+
+describe('ChatView /copy helpers', () => {
+  it('serializes the last assistant message to Markdown', async () => {
+    const { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } = await import(
+      '../design/views/chat-copy'
+    )
+    const messages: UIMessage[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: 'copy what?', isStreaming: false }],
+        usage: null,
+        eventIds: [],
+      },
+      {
+        id: 'assistant-1',
+        role: 'assistant',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: 'First answer', isStreaming: false }],
+        usage: null,
+        eventIds: [],
+      },
+      {
+        id: 'assistant-2',
+        role: 'assistant',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: '## Latest\n\nUse this.', isStreaming: false }],
+        usage: null,
+        eventIds: [],
+      },
+    ]
+
+    expect(isLocalCopySlashCommand('/copy')).toBe(true)
+    expect(isLocalCopySlashCommand('/copy please')).toBe(true)
+    expect(getLastAssistantMessageMarkdown(messages)).toBe('## Latest\n\nUse this.')
+  })
+
+  it('returns null when there is no assistant message to copy', async () => {
+    const { getLastAssistantMessageMarkdown } = await import('../design/views/chat-copy')
+    const messages: UIMessage[] = [
+      {
+        id: 'user-1',
+        role: 'user',
+        status: 'completed',
+        blocks: [{ kind: 'text', content: 'hello', isStreaming: false }],
+        usage: null,
+        eventIds: [],
+      },
+    ]
+
+    expect(getLastAssistantMessageMarkdown(messages)).toBeNull()
+  })
 })
 
 describe('Renderer Smoke Tests', () => {

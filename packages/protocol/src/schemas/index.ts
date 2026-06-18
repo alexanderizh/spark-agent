@@ -233,6 +233,10 @@ export const FilePrepareImagePreviewRequestSchema = z.object({
   sourcePath: z.string().min(1),
 })
 
+export const ClipboardWriteTextRequestSchema = z.object({
+  text: z.string().max(10_000_000),
+})
+
 export const SessionCancelRequestSchema = z.object({
   sessionId: SessionIdSchema,
 })
@@ -524,6 +528,7 @@ export const IpcSchemaRegistry = {
   'dialog:open-file': DialogOpenFileRequestSchema,
   'file:save-pasted-image': FileSavePastedImageRequestSchema,
   'file:prepare-image-preview': FilePrepareImagePreviewRequestSchema,
+  'clipboard:write-text': ClipboardWriteTextRequestSchema,
   'app:get-startup-settings': z.object({}),
   'app:set-startup-settings': z.object({
     openAtLogin: z.boolean(),
