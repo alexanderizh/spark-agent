@@ -178,6 +178,14 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('/help')
   })
 
+  it('/help command returns implemented command details', async () => {
+    const result = await registry.execute(parse('/help compact'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('/compact')
+    expect(result.message).toContain('交给 Agent 处理')
+    expect(result.message).not.toContain('待实现')
+  })
+
   it('/status returns session info', async () => {
     const result = await registry.execute(parse('/status'), ctx, makeDeps())
     expect(result.success).toBe(true)
@@ -214,6 +222,14 @@ describe('Built-in commands', () => {
     const result = await registry.execute(parse('/clear'), ctx, deps)
     expect(result.success).toBe(true)
     expect(deps.clearSessionEvents).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('/compact forwards to agent instead of clearing session events', async () => {
+    const deps = makeDeps()
+    const result = await registry.execute(parse('/compact summarize decisions'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBe(true)
+    expect(deps.clearSessionEvents).not.toHaveBeenCalled()
   })
 
   it('/approval on enables approval', async () => {
