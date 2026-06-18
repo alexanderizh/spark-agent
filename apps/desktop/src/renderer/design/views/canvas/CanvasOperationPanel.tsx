@@ -123,9 +123,34 @@ export function CanvasOperationPanel({
     return snapshot.nodes.filter((n) => outputIds.has(n.id) && !n.hidden)
   }, [snapshot.edges, snapshot.nodes, node.id])
 
-  // 参数状态：从 task 或 node.data 带入
-  const [prompt, setPrompt] = useState(task?.prompt ?? node.data.prompt ?? '')
-  const [negativePrompt, setNegativePrompt] = useState(task?.negativePrompt ?? '')
+  const inheritedNegativePrompt = useMemo(() => {
+    const taskNegativePrompt = task?.negativePrompt?.trim()
+    if (taskNegativePrompt) return taskNegativePrompt
+    const nodeNegativePrompt = node.data.negativePrompt?.trim()
+    if (nodeNegativePrompt) return nodeNegativePrompt
+    for (const sourceNode of expandedSourceInputNodes) {
+      const sourceTask = sourceNode.taskId
+        ? snapshot.tasks.find((item) => item.id === sourceNode.taskId)
+        : null
+      const sourceTaskNegativePrompt = sourceTask?.negativePrompt?.trim()
+      if (sourceTaskNegativePrompt) return sourceTaskNegativePrompt
+      const sourceNodeNegativePrompt = sourceNode.data.negativePrompt?.trim()
+      if (sourceNodeNegativePrompt) return sourceNodeNegativePrompt
+    }
+    return snapshot.project.settings?.negativePrompt?.trim() ?? ''
+  }, [
+    expandedSourceInputNodes,
+    node.data.negativePrompt,
+    snapshot.project.settings?.negativePrompt,
+    snapshot.tasks,
+    task?.negativePrompt,
+  ])
+
+  // 参数状态：从 task、node.data、项目/上游继承值带入
+  const [prompt, setPrompt] = useState(
+    task?.prompt ?? node.data.prompt ?? snapshot.project.settings?.prompt ?? '',
+  )
+  const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState('')
@@ -148,6 +173,17 @@ export function CanvasOperationPanel({
       ),
     )
   }, [canEditMediaInputs, editableSourceMediaNodes, expandedSourceInputNodes])
+
+  useEffect(() => {
+    setPrompt(task?.prompt ?? node.data.prompt ?? snapshot.project.settings?.prompt ?? '')
+    setNegativePrompt(inheritedNegativePrompt)
+  }, [
+    inheritedNegativePrompt,
+    node.data.prompt,
+    node.id,
+    snapshot.project.settings?.prompt,
+    task?.prompt,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -296,7 +332,7 @@ export function CanvasOperationPanel({
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
-    const existing = task?.modelParams ?? {}
+    const existing = task?.modelParams ?? node.data.modelParams ?? {}
     const next: Record<string, string> = {}
     const fieldNames = new Set(parameterFields.map((field) => field.name))
     for (const field of parameterFields) {
@@ -695,7 +731,11 @@ export function CanvasOperationPanel({
                       options={field.enumValues.map((value) => ({ value, label: value }))}
                       onChange={(value) =>
                         setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
+                          updateModelParamDraftValue(
+                            prev,
+                            field.name,
+                            value == null ? '' : String(value),
+                          ),
                         )
                       }
                       disabled={running}
@@ -711,7 +751,11 @@ export function CanvasOperationPanel({
                       ]}
                       onChange={(value) =>
                         setModelParamDraft((prev) =>
-                          updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
+                          updateModelParamDraftValue(
+                            prev,
+                            field.name,
+                            value == null ? '' : String(value),
+                          ),
                         )
                       }
                       disabled={running}

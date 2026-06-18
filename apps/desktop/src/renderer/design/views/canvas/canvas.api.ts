@@ -401,16 +401,12 @@ export function snapshotFromDb(
   let nodes = db.nodes.filter(
     (node) => node.projectId === projectId && node.boardId === boardId && !node.hidden,
   )
-  let edges = db.edges.filter(
-    (edge) => edge.projectId === projectId && edge.boardId === boardId,
-  )
+  let edges = db.edges.filter((edge) => edge.projectId === projectId && edge.boardId === boardId)
   // 防御性兜底：若按 boardId 过滤后无节点，但项目实际存在非隐藏节点，
   // 说明节点 boardId 与当前 board 不匹配（旧数据 / 迁移残留），回退显示全部，
   // 避免画布「节点全部消失」。这种情况通常出现在旧项目首次进入多 board 视图时。
   if (nodes.length === 0) {
-    const allProjectNodes = db.nodes.filter(
-      (node) => node.projectId === projectId && !node.hidden,
-    )
+    const allProjectNodes = db.nodes.filter((node) => node.projectId === projectId && !node.hidden)
     if (allProjectNodes.length > 0) {
       nodes = allProjectNodes
       edges = db.edges.filter((edge) => edge.projectId === projectId)
@@ -521,7 +517,8 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
 
   const projectId = mapId(next.project.id, 'canvas_project')
   // 多 board：把 boards[] 的每个 id 都登记到 idMap，旧快照只有单 board 时用 next.board
-  const sourceBoards = Array.isArray(next.boards) && next.boards.length > 0 ? next.boards : [next.board]
+  const sourceBoards =
+    Array.isArray(next.boards) && next.boards.length > 0 ? next.boards : [next.board]
   const oldActiveBoardId = next.activeBoardId ?? next.board.id
   for (const board of sourceBoards) mapId(board.id, 'canvas_board')
   const newActiveBoardId = idMap.get(oldActiveBoardId) ?? idMap.get(next.board.id)!
@@ -551,8 +548,7 @@ function cloneImportedSnapshot(snapshot: CanvasSnapshot): CanvasSnapshot {
     updatedAt: at,
   }))
   next.activeBoardId = newActiveBoardId
-  next.board =
-    next.boards.find((board) => board.id === newActiveBoardId) ?? next.boards[0]!
+  next.board = next.boards.find((board) => board.id === newActiveBoardId) ?? next.boards[0]!
   next.assets = next.assets.map((asset) => ({
     ...asset,
     id: mapId(asset.id, 'canvas_asset'),
@@ -813,6 +809,42 @@ function createNodeBase(input: {
     createdAt: at,
     updatedAt: at,
   }
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null
+}
+
+function pickInheritedModelParams(
+  params: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  if (!params) return {}
+  const keys = [
+    'aspectRatio',
+    'duration',
+    'durationSeconds',
+    'fps',
+    'height',
+    'imageCount',
+    'quality',
+    'resolution',
+    'seed',
+    'size',
+    'style',
+    'width',
+  ]
+  const next: Record<string, unknown> = {}
+  for (const key of keys) {
+    if (params[key] != null) next[key] = params[key]
+  }
+  return next
+}
+
+function mergeInheritedModelParams(
+  target: Record<string, unknown>,
+  source: Record<string, unknown> | undefined,
+): void {
+  Object.assign(target, pickInheritedModelParams(source))
 }
 
 function sortCanvasNodes(nodes: CanvasNode[]): CanvasNode[] {
@@ -1327,10 +1359,7 @@ export const canvasApi = {
     }
   },
 
-  async openSnapshot(
-    projectId: string,
-    activeBoardId?: string | null,
-  ): Promise<CanvasSnapshot> {
+  async openSnapshot(projectId: string, activeBoardId?: string | null): Promise<CanvasSnapshot> {
     // 解析激活 board 优先级：显式参数 > project.metadata.activeBoardId（用户上次选择）> 默认
     const resolvePreferredBoard = (db: CanvasDb): string | null | undefined => {
       if (activeBoardId) return activeBoardId
@@ -1468,13 +1497,11 @@ export const canvasApi = {
    * 深拷贝 board：复制其名下节点/边/任务（重映射 id），资产项目级共享不复制文件。
    * group 结构、parentNodeId 关系一并保留。
    */
-  async duplicateBoard(
-    projectId: string,
-    boardId: string,
-    name?: string,
-  ): Promise<CanvasSnapshot> {
+  async duplicateBoard(projectId: string, boardId: string, name?: string): Promise<CanvasSnapshot> {
     const db = readDb()
-    const sourceBoard = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    const sourceBoard = db.boards.find(
+      (item) => item.id === boardId && item.projectId === projectId,
+    )
     if (!sourceBoard) return this.openSnapshot(projectId)
     const at = now()
     const newBoardId = uid('canvas_board')
@@ -1561,10 +1588,7 @@ export const canvasApi = {
       }
       // 复制任务节点（type=task）的 taskId 指向新 task
       const clonedTaskNodes = db.nodes.filter(
-        (n) =>
-          n.boardId === newBoardId &&
-          n.projectId === projectId &&
-          n.taskId === task.id,
+        (n) => n.boardId === newBoardId && n.projectId === projectId && n.taskId === task.id,
       )
       for (const tn of clonedTaskNodes) {
         tn.taskId = newTaskId
@@ -1589,7 +1613,9 @@ export const canvasApi = {
     const db = readDb()
     const project = db.projects.find((item) => item.id === projectId)
     if (!project) throw new Error('Canvas project not found')
-    const targetBoard = db.boards.find((item) => item.id === boardId && item.projectId === projectId)
+    const targetBoard = db.boards.find(
+      (item) => item.id === boardId && item.projectId === projectId,
+    )
     if (!targetBoard) throw new Error('Canvas board not found')
     // 持久化用户选择的激活 board（跨会话保留）
     project.metadata = { ...(project.metadata ?? {}), activeBoardId: boardId }
@@ -1665,7 +1691,9 @@ export const canvasApi = {
     targetBoardId: string,
   ): Promise<CanvasSnapshot> {
     const db = readDb()
-    const targetBoard = db.boards.find((item) => item.id === targetBoardId && item.projectId === projectId)
+    const targetBoard = db.boards.find(
+      (item) => item.id === targetBoardId && item.projectId === projectId,
+    )
     if (!targetBoard) return this.openSnapshot(projectId)
     const selected = new Set(nodeIds)
     const sourceNodes = db.nodes.filter(
@@ -1744,7 +1772,9 @@ export const canvasApi = {
     }>
   }): Promise<CanvasSnapshot> {
     const db = readDb()
-    const board = db.boards.find((item) => item.id === input.boardId && item.projectId === input.projectId)
+    const board = db.boards.find(
+      (item) => item.id === input.boardId && item.projectId === input.projectId,
+    )
     if (!board) throw new Error('Canvas board not found')
     const at = now()
     let maxZ = Math.max(
@@ -1876,8 +1906,12 @@ export const canvasApi = {
     y: number
   }): Promise<CanvasNode | null> {
     const db = readDb()
-    const asset = db.assets.find((item) => item.id === input.assetId && item.projectId === input.projectId)
-    const board = db.boards.find((item) => item.id === input.boardId && item.projectId === input.projectId)
+    const asset = db.assets.find(
+      (item) => item.id === input.assetId && item.projectId === input.projectId,
+    )
+    const board = db.boards.find(
+      (item) => item.id === input.boardId && item.projectId === input.projectId,
+    )
     if (!asset || !board) return null
     const maxZ = Math.max(
       0,
@@ -1896,7 +1930,11 @@ export const canvasApi = {
     const size = fitMediaNodeSize(asset.type, asset.width, asset.height)
     const data: CanvasNode['data'] =
       nodeType === 'text' || nodeType === 'prompt'
-        ? { text: asset.contentText ?? '', format: nodeType === 'prompt' ? 'prompt' : 'plain', origin: 'asset' }
+        ? {
+            text: asset.contentText ?? '',
+            format: nodeType === 'prompt' ? 'prompt' : 'plain',
+            origin: 'asset',
+          }
         : {
             ...(asset.url ? { url: asset.url } : {}),
             ...(asset.thumbnailUrl ? { thumbnailUrl: asset.thumbnailUrl } : {}),
@@ -1918,7 +1956,11 @@ export const canvasApi = {
     node.zIndex = maxZ + 1
     db.nodes.push(node)
     // 记录资产最近使用（挂 metadata，第一阶段）
-    asset.metadata = { ...asset.metadata, lastUsedAt: now(), usageCount: ((asset.metadata.usageCount as number) ?? 0) + 1 }
+    asset.metadata = {
+      ...asset.metadata,
+      lastUsedAt: now(),
+      usageCount: ((asset.metadata.usageCount as number) ?? 0) + 1,
+    }
     asset.updatedAt = now()
     updateProjectCounts(db, input.projectId)
     writeDb(db)
@@ -1931,10 +1973,7 @@ export const canvasApi = {
   // v2 模型：references 多图多描述 + tags 数组；老 imageAssetId/attributes 自动迁移。
 
   /** 创建影视公用资产 */
-  async createFilmAsset(
-    projectId: string,
-    input: CreateFilmAssetInput,
-  ): Promise<CanvasAsset> {
+  async createFilmAsset(projectId: string, input: CreateFilmAssetInput): Promise<CanvasAsset> {
     const db = readDb()
     const at = now()
     const assetType = filmKindToAssetType(input.kind)
@@ -2018,11 +2057,7 @@ export const canvasApi = {
   },
 
   /** 列出项目内指定种类的影视资产 */
-  listFilmAssets(
-    db: CanvasDb,
-    projectId: string,
-    kind?: FilmAssetKind,
-  ): CanvasAsset[] {
+  listFilmAssets(db: CanvasDb, projectId: string, kind?: FilmAssetKind): CanvasAsset[] {
     return db.assets.filter((asset) => {
       if (asset.projectId !== projectId) return false
       const assetKind = asset.metadata?.kind
@@ -2045,7 +2080,8 @@ export const canvasApi = {
     const db = readDb()
     const query = (options.query ?? '').trim().toLowerCase()
     const kinds = options.kinds && options.kinds.length > 0 ? new Set(options.kinds) : null
-    const tagsFilter = options.tags && options.tags.length > 0 ? options.tags.map((t) => t.toLowerCase()) : null
+    const tagsFilter =
+      options.tags && options.tags.length > 0 ? options.tags.map((t) => t.toLowerCase()) : null
     const list = this.listFilmAssets(db, projectId).filter((asset) => {
       if (kinds) {
         const k = asset.metadata?.['kind']
@@ -2058,7 +2094,10 @@ export const canvasApi = {
       if (query) {
         const title = (asset.title ?? '').toLowerCase()
         const content = (asset.contentText ?? '').toLowerCase()
-        const prompt = typeof asset.metadata?.['prompt'] === 'string' ? (asset.metadata['prompt'] as string).toLowerCase() : ''
+        const prompt =
+          typeof asset.metadata?.['prompt'] === 'string'
+            ? (asset.metadata['prompt'] as string).toLowerCase()
+            : ''
         const attrs = asset.metadata?.['attributes']
         const attrText =
           attrs && typeof attrs === 'object' && !Array.isArray(attrs)
@@ -2145,7 +2184,13 @@ export const canvasApi = {
     projectId: string,
     assetId: string,
   ): {
-    shotSegments: Array<{ groupId: string; groupName: string; segmentId: string; segmentTitle: string; segmentIndex: number }>
+    shotSegments: Array<{
+      groupId: string
+      groupName: string
+      segmentId: string
+      segmentTitle: string
+      segmentIndex: number
+    }>
     nodes: Array<{ id: string; type: string; title: string | null }>
   } {
     const db = readDb()
@@ -2178,17 +2223,16 @@ export const canvasApi = {
           if (!seg || typeof seg !== 'object') continue
           const s = seg as Record<string, unknown>
           const charIds = Array.isArray(s['characterAssetIds'])
-            ? (s['characterAssetIds'] as unknown[]).filter((x): x is string => typeof x === 'string')
+            ? (s['characterAssetIds'] as unknown[]).filter(
+                (x): x is string => typeof x === 'string',
+              )
             : []
-          const sceneId = typeof s['sceneAssetId'] === 'string' ? (s['sceneAssetId'] as string) : null
+          const sceneId =
+            typeof s['sceneAssetId'] === 'string' ? (s['sceneAssetId'] as string) : null
           const propIds = Array.isArray(s['propAssetIds'])
             ? (s['propAssetIds'] as unknown[]).filter((x): x is string => typeof x === 'string')
             : []
-          if (
-            charIds.includes(assetId) ||
-            sceneId === assetId ||
-            propIds.includes(assetId)
-          ) {
+          if (charIds.includes(assetId) || sceneId === assetId || propIds.includes(assetId)) {
             shotSegments.push({
               groupId: typeof g['id'] === 'string' ? (g['id'] as string) : '',
               groupName: typeof g['name'] === 'string' ? (g['name'] as string) : '未命名分组',
@@ -2221,21 +2265,14 @@ export const canvasApi = {
   // ─── 分镜分组 CRUD（存 project.metadata.film.shotGroups）─────────────────
 
   /** 读取项目的分镜分组 */
-  readShotGroups(
-    db: CanvasDb,
-    projectId: string,
-  ): ShotGroup[] {
+  readShotGroups(db: CanvasDb, projectId: string): ShotGroup[] {
     const project = db.projects.find((item) => item.id === projectId)
     const film = project?.metadata?.film as FilmProjectData | undefined
     return film?.shotGroups ?? []
   },
 
   /** 写入分镜分组（不可变更新 project.metadata） */
-  writeShotGroups(
-    db: CanvasDb,
-    projectId: string,
-    groups: ShotGroup[],
-  ): void {
+  writeShotGroups(db: CanvasDb, projectId: string, groups: ShotGroup[]): void {
     const project = db.projects.find((item) => item.id === projectId)
     if (!project) return
     const film = (project.metadata?.film ?? {}) as FilmProjectData
@@ -2283,10 +2320,7 @@ export const canvasApi = {
   },
 
   /** 删除分镜分组 */
-  async deleteShotGroup(
-    projectId: string,
-    groupId: string,
-  ): Promise<{ shotGroups: ShotGroup[] }> {
+  async deleteShotGroup(projectId: string, groupId: string): Promise<{ shotGroups: ShotGroup[] }> {
     const db = readDb()
     let groups = this.readShotGroups(db, projectId)
     groups = groups.filter((item) => item.id !== groupId)
@@ -3080,7 +3114,6 @@ export const canvasApi = {
     return this.openSnapshot(projectId)
   },
 
-
   /**
    * 创建类型化操作节点（文档：AI 操作按类型分拆节点）。
    * type=operation 的节点 + CanvasTask（pending）+ 输入 used_as_input 连线。
@@ -3097,17 +3130,52 @@ export const canvasApi = {
     const db = readDb()
     const at = now()
     const taskId = uid('canvas_task')
-    const board = db.boards.find((item) => item.id === input.boardId && item.projectId === input.projectId)
+    const board = db.boards.find(
+      (item) => item.id === input.boardId && item.projectId === input.projectId,
+    )
     if (!board) throw new Error('Canvas board not found')
     const inputNodes = db.nodes.filter(
       (n) => input.inputNodeIds.includes(n.id) && n.projectId === input.projectId && !n.hidden,
     )
+    const project = db.projects.find((item) => item.id === input.projectId)
+    const inputTasks = inputNodes
+      .map((node) =>
+        node.taskId
+          ? db.tasks.find((task) => task.id === node.taskId && task.projectId === input.projectId)
+          : null,
+      )
+      .filter((task): task is CanvasTask => task != null)
     const promptContext = inputNodes
       .filter((n) => n.type === 'text' || n.type === 'prompt')
       .map((n) => n.data.text ?? '')
       .filter(Boolean)
       .join('\n\n')
-    const maxZ = Math.max(0, ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex))
+    const inheritedPrompt =
+      promptContext ||
+      inputNodes
+        .map((node) => nonEmptyString(node.data.prompt))
+        .find((value): value is string => value != null) ||
+      inputTasks
+        .map((task) => nonEmptyString(task.prompt))
+        .find((value): value is string => value != null) ||
+      nonEmptyString(project?.settings?.prompt) ||
+      ''
+    const inheritedNegativePrompt =
+      inputTasks
+        .map((task) => nonEmptyString(task.negativePrompt))
+        .find((value): value is string => value != null) ||
+      inputNodes
+        .map((node) => nonEmptyString(node.data.negativePrompt))
+        .find((value): value is string => value != null) ||
+      nonEmptyString(project?.settings?.negativePrompt)
+    const inheritedModelParams: Record<string, unknown> = {}
+    for (const task of inputTasks) mergeInheritedModelParams(inheritedModelParams, task.modelParams)
+    for (const node of inputNodes)
+      mergeInheritedModelParams(inheritedModelParams, node.data.modelParams)
+    const maxZ = Math.max(
+      0,
+      ...db.nodes.filter((n) => n.projectId === input.projectId).map((n) => n.zIndex),
+    )
     const node = createNodeBase({
       projectId: input.projectId,
       boardId: input.boardId,
@@ -3123,7 +3191,11 @@ export const canvasApi = {
         status: 'pending',
         progress: 0,
         message: '点击下方编辑面板调整参数后运行',
-        ...(promptContext ? { prompt: promptContext } : {}),
+        ...(inheritedPrompt ? { prompt: inheritedPrompt } : {}),
+        ...(inheritedNegativePrompt ? { negativePrompt: inheritedNegativePrompt } : {}),
+        ...(Object.keys(inheritedModelParams).length > 0
+          ? { modelParams: inheritedModelParams }
+          : {}),
         origin: 'manual',
       },
       at,
@@ -3139,13 +3211,13 @@ export const canvasApi = {
       status: 'pending',
       progress: 0,
       title: input.title ?? operationLabel(input.operation),
-      prompt: promptContext || null,
-      negativePrompt: null,
+      prompt: inheritedPrompt || null,
+      negativePrompt: inheritedNegativePrompt ?? null,
       inputNodeIds: input.inputNodeIds,
       inputAssetIds: inputNodes.map((n) => n.assetId).filter((id): id is string => Boolean(id)),
       outputNodeIds: [],
       outputAssetIds: [],
-      modelParams: {},
+      modelParams: inheritedModelParams,
       createdAt: at,
       updatedAt: at,
     }
@@ -3182,9 +3254,10 @@ export const canvasApi = {
     const oldTask = db.tasks.find((t) => t.id === node.taskId && t.projectId === projectId)
     if (!oldTask) throw new Error('未找到原任务')
     const oldOutputNodes = db.nodes.filter((n) => oldTask.outputNodeIds.includes(n.id))
-    const baseX = oldOutputNodes.length > 0
-      ? Math.max(...oldOutputNodes.map((n) => n.x + n.width)) + 60
-      : node.x + node.width + 60
+    const baseX =
+      oldOutputNodes.length > 0
+        ? Math.max(...oldOutputNodes.map((n) => n.x + n.width)) + 60
+        : node.x + node.width + 60
     const baseY = node.y
     const request: CreateCanvasTaskRequest = {
       boardId: node.boardId,
@@ -3229,7 +3302,9 @@ export const canvasApi = {
     if (!node) throw new Error('操作节点不存在')
     // 取输入节点（used_as_input edge 的 source）
     const existingInputNodeIds = db.edges
-      .filter((e) => e.targetNodeId === nodeId && e.type === 'used_as_input' && e.projectId === projectId)
+      .filter(
+        (e) => e.targetNodeId === nodeId && e.type === 'used_as_input' && e.projectId === projectId,
+      )
       .map((e) => e.sourceNodeId)
     const inputNodeIds = Array.from(new Set(params.inputNodeIds ?? existingInputNodeIds))
     const inputNodes = db.nodes.filter(
@@ -3260,11 +3335,14 @@ export const canvasApi = {
     }
     // output 位置：节点右侧
     const oldOutputs = db.nodes.filter((n) =>
-      db.edges.some((e) => e.sourceNodeId === nodeId && e.type === 'generated' && e.targetNodeId === n.id),
+      db.edges.some(
+        (e) => e.sourceNodeId === nodeId && e.type === 'generated' && e.targetNodeId === n.id,
+      ),
     )
-    const baseX = oldOutputs.length > 0
-      ? Math.max(...oldOutputs.map((n) => n.x + n.width)) + 60
-      : node.x + node.width + 60
+    const baseX =
+      oldOutputs.length > 0
+        ? Math.max(...oldOutputs.map((n) => n.x + n.width)) + 60
+        : node.x + node.width + 60
     const request = {
       operation: (node.data.operation ?? node.type) as CanvasOperationType,
       prompt: params.prompt,
