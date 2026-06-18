@@ -316,6 +316,11 @@ export interface SDKExecutorConfig {
   /** 画布 Agent in-process MCP server（spark_canvas）：仅在 session 已 attach 到画布弹窗时注入 */
   canvasMcpServer?: SDKMcpServerConfig | undefined
   nativeSkills?: string[] | 'all' | undefined
+  /**
+   * 本地技能插件目录列表（Claude Code 插件结构，含 .claude-plugin/plugin.json + skills/）。
+   * 传给 SDK 的 `plugins` 选项，启用原生技能发现与渐进式披露。
+   */
+  skillPlugins?: string[] | undefined
   allowedTools?: string[] | undefined
   disallowedTools?: string[] | undefined
   attachments?: SDKTurnAttachment[] | undefined

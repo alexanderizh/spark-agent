@@ -207,8 +207,8 @@ export class RuntimeCompositionService {
     if (sections.length === 0) return ''
     return [
       '[Available Skills Catalog]',
-      'Metadata only. Each entry contains only skill id, name, and description; full instructions are not loaded here.',
-      'Decide from this catalog whether a skill is useful. You can choose to load the skills that are helpful for your task execution in the future, and write down in the conversation what skills you have used.',
+      'Metadata only. Each entry contains only skill id, name, and description; full instructions are NOT loaded here (progressive disclosure).',
+      'When a skill looks useful for the current task, load its full instructions on demand by calling the `mcp__spark_platform__skills_load` tool with the skill `id`, then follow the returned instructions. (When the native Skill tool is available it achieves the same.) Note in the conversation which skills you used.',
       sections.join('\n'),
     ].join('\n\n')
   }

@@ -20,6 +20,9 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 - Playwright 相关 JS 包不再走整包 `asarUnpack`，避免 pnpm 硬链接目录在 `electron-builder` 打包阶段触发重复 link 的 `EEXIST`
 - macOS Release 直接发布 `arm64` / `x64` 两个 `dmg`，Windows Release 直接发布 `x64` `exe`
 - 应用更新检查不再依赖 `latest-mac.yml` / `latest.yml` 去解析 zip，而是直接按平台筛选 GitHub Release 资产
+- Release 构建在调用 `electron-builder` 前会强制执行 `pnpm run rebuild:native -- <arch>`，把 `better-sqlite3` / `keytar` / `node-pty` 重编译到 Electron ABI；同架构 runner 会继续用 Electron 运行 `native:verify`，防止 Node ABI 二进制被打进安装包后启动即退出
+- macOS `x64` Release 固定走 Intel runner，`arm64` Release 走 Apple Silicon runner；不再发布 universal 单包，避免单个 `node_modules` 目录混入错误架构的原生模块
+- Windows Release 必须在 Windows runner 上构建；本地/CI 不再支持从 macOS 或 Linux 交叉打包 Windows 安装包，避免打入错误平台的原生 `.node` 文件
 
 ## 应用内更新策略
 

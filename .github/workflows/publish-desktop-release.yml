@@ -105,13 +105,16 @@ jobs:
         include:
           - os: macos-latest
             name: mac-arm64
-            build_args: --mac --arm64
-          - os: macos-latest
+            arch: arm64
+            platform: mac
+          - os: macos-15-intel
             name: mac-x64
-            build_args: --mac --x64
+            arch: x64
+            platform: mac
           - os: windows-latest
             name: win-x64
-            build_args: --win --x64
+            arch: x64
+            platform: win
     runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout tagged source
@@ -134,9 +137,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Build desktop source
-        run: pnpm --filter @spark/desktop run build
 
       # Mac 任务专用：把 Developer ID Application 证书导入临时钥匙串，
       # electron-builder 会自动从钥匙串里发现并签名。
@@ -184,10 +184,10 @@ jobs:
             PUBLISH_OPT="--publish never"
           fi
 
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            SKIP_DESKTOP_BUILD=1 bash apps/desktop/scripts/build-win-release.sh x64 ${PUBLISH_OPT}
+          if [ "${{ matrix.platform }}" = "win" ]; then
+            bash apps/desktop/scripts/build-win-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
           else
-            pnpm --filter @spark/desktop exec electron-builder ${{ matrix.build_args }} ${PUBLISH_OPT}
+            bash apps/desktop/scripts/build-mac-release.sh "${{ matrix.arch }}" ${PUBLISH_OPT}
           fi
 
       # 构建结束后清理钥匙串，避免证书残留在 runner 上（安全最佳实践）

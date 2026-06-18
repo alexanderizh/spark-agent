@@ -411,7 +411,13 @@ export class ClaudeSDKExecutor {
           ? { disallowedTools: mergedPerms.disallowedTools }
           : {}),
         ...(config.mcpServers != null ? { mcpServers: config.mcpServers } : {}),
-        skills: config.nativeSkills ?? [],
+        // 本地技能插件（托管技能目录）→ 启用 SDK 原生技能发现 + 渐进式披露。
+        ...(config.skillPlugins != null && config.skillPlugins.length > 0
+          ? { plugins: config.skillPlugins.map((p) => ({ type: 'local' as const, path: p })) }
+          : {}),
+        // 技能上下文过滤：有托管插件时放行全部（已在插件目录内按"启用"过滤）；
+        // 否则省略该选项（走 skills_load 工具路径），不要传 [] —— 空数组会关闭全部技能。
+        ...(config.nativeSkills != null ? { skills: config.nativeSkills } : {}),
         toolConfig: {
           askUserQuestion: { previewFormat: 'html' },
         },

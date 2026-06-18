@@ -5,6 +5,8 @@
  */
 
 import crypto from 'node:crypto'
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import type {
   RemoteSkillItem,
   SkillItem,
@@ -25,7 +27,16 @@ export class SkillRegistryService {
   private skillRepo: SkillRepository
   private adapters = new Map<string, SkillRegistryAdapter>()
 
-  constructor(private readonly db: SparkDatabase) {
+  /**
+   * @param db          数据库
+   * @param userSkillsDir 用户技能落盘目录（来自 AppSkillsManager.userDir）。
+   *   提供时，从市场安装的技能会把 SKILL.md 写到真实磁盘目录，使其能被 agent 运行时
+   *   实际加载/原生发现；不提供时回落到虚拟 registry:// 路径（仅元数据，无法加载）。
+   */
+  constructor(
+    private readonly db: SparkDatabase,
+    private readonly userSkillsDir?: string,
+  ) {
     this.registryRepo = new SkillRegistryRepository(db)
     this.skillRepo = new SkillRepository(db)
   }
@@ -197,6 +208,14 @@ export class SkillRegistryService {
 
     // 获取 manifest
     const manifestJson = await adapter.fetchManifest(remoteSkill.manifestUrl)
+    const manifest = safeParseJson(manifestJson)
+
+    // 落盘：把技能写成真实目录（SKILL.md + manifest.json），
+    // 否则 rootPath 是虚拟 registry:// 路径，agent 运行时无法加载/原生发现。
+    const skillBody = extractSkillBody(manifest, remoteSkill)
+    const rootPath =
+      this.materializeSkill(remoteSkill.name, skillBody, remoteSkill, manifest) ??
+      `registry://${params.registryId}/${remoteSkill.id}`
 
     // 创建本地 Skill 记录
     const id = `skill:${crypto.randomUUID()}`
@@ -205,14 +224,17 @@ export class SkillRegistryService {
       scope: 'user',
       name: remoteSkill.name,
       version: remoteSkill.version,
-      rootPath: `registry://${params.registryId}/${remoteSkill.id}`,
+      rootPath,
       manifestJson: JSON.stringify({
-        ...JSON.parse(manifestJson),
+        ...(manifest ?? {}),
         desc: remoteSkill.description,
+        description: remoteSkill.description,
         source: remoteSkill.registryName,
         author: remoteSkill.author,
         category: remoteSkill.category,
         tags: remoteSkill.tags,
+        // systemPrompt 兜底：即使未落盘，skills_load 也能从 manifest 取到正文
+        systemPrompt: skillBody,
         homepage: remoteSkill.homepageUrl,
       }),
       enabled: true,
@@ -255,7 +277,197 @@ export class SkillRegistryService {
     return this.skillRepo.deleteById(localSkillId)
   }
 
+  // ─── GitHub 安装 ────────────────────────────────────────────────────
+
+  /**
+   * 在 GitHub 上搜索技能仓库（含 SKILL.md 的项目）。
+   * 无 token 时走匿名接口（限速 60/h），有 token 走 settings.github.token。
+   */
+  async searchGithub(query: string, limit = 8): Promise<GithubSkillCandidate[]> {
+    const q = `${query} skill SKILL.md`.trim()
+    const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&sort=stars&order=desc&per_page=${Math.min(Math.max(limit, 1), 20)}`
+    const res = await fetch(url, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    if (!res.ok) throw new Error(`GitHub search failed: ${res.status} ${res.statusText}`)
+    const data = (await res.json()) as { items?: GithubRepoApi[] }
+    return (data.items ?? []).map((r) => ({
+      repo: r.full_name,
+      name: r.name,
+      description: r.description ?? '',
+      author: r.owner?.login ?? '',
+      stars: r.stargazers_count ?? 0,
+      homepageUrl: r.html_url,
+      defaultBranch: r.default_branch ?? 'main',
+      source: 'GitHub',
+    }))
+  }
+
+  /**
+   * 从 GitHub 安装技能：定位含 SKILL.md 的目录并把该目录子树落盘到 userSkillsDir。
+   *
+   * @param params.repo 形如 "owner/name"
+   * @param params.ref  分支/标签/commit（缺省取默认分支）
+   * @param params.path 仓库内技能目录（缺省为根；多技能仓库可指定如 "skills/pdf"）
+   */
+  async installFromGithub(params: { repo: string; ref?: string; path?: string }): Promise<SkillItem> {
+    if (!this.userSkillsDir) throw new Error('User skills directory not configured; cannot install')
+    const repo = params.repo.replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').trim()
+    if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error(`Invalid repo "${params.repo}"; expected "owner/name"`)
+
+    const ref = params.ref?.trim() || (await this.fetchDefaultBranch(repo))
+    const basePath = (params.path ?? '').replace(/^\/+|\/+$/g, '')
+
+    // 收集技能目录下的所有文件（含子目录），带文件数/大小上限
+    const files = await this.collectGithubFiles(repo, ref, basePath)
+    const skillFile = files.find((f) => /(^|\/)SKILL\.md$/i.test(f.relPath))
+    if (!skillFile) {
+      throw new Error(`No SKILL.md found under ${repo}${basePath ? '/' + basePath : ''}@${ref}`)
+    }
+    // 技能根 = SKILL.md 所在目录（去掉文件名）
+    const skillRootRel = skillFile.relPath.includes('/')
+      ? skillFile.relPath.slice(0, skillFile.relPath.lastIndexOf('/'))
+      : ''
+    const skillFiles = files.filter((f) => f.relPath === skillRootRel || f.relPath.startsWith(skillRootRel ? skillRootRel + '/' : ''))
+
+    // 解析 SKILL.md 元数据
+    const skillMdRes = await fetch(skillFile.downloadUrl, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    if (!skillMdRes.ok) throw new Error(`Failed to fetch SKILL.md: ${skillMdRes.status}`)
+    const skillMd = await skillMdRes.text()
+    const meta = parseSkillFrontmatter(skillMd)
+    const skillName = meta.name || repo.split('/')[1] || 'github-skill'
+
+    // 落盘
+    const dirName = slugifySkillName(skillName)
+    const dest = join(this.userSkillsDir, dirName)
+    if (existsSync(dest)) rmSync(dest, { recursive: true, force: true })
+    mkdirSync(dest, { recursive: true })
+    for (const f of skillFiles) {
+      const rel = skillRootRel ? f.relPath.slice(skillRootRel.length + 1) : f.relPath
+      const target = join(dest, rel)
+      mkdirSync(join(target, '..'), { recursive: true })
+      const buf = await this.downloadGithubFile(f.downloadUrl)
+      writeFileSync(target, buf)
+    }
+
+    // 创建 DB 记录（dedupe by rootPath）
+    const existing = this.skillRepo.list().find((s) => s.root_path === dest)
+    const id = existing?.id ?? `skill:github:${crypto.createHash('sha1').update(repo + '/' + basePath).digest('hex').slice(0, 12)}`
+    const manifestJson = JSON.stringify({
+      desc: meta.description || `从 GitHub ${repo} 安装`,
+      description: meta.description || `从 GitHub ${repo} 安装`,
+      source: `GitHub:${repo}`,
+      author: meta.author || repo.split('/')[0],
+      category: meta.category || 'utility',
+      tags: meta.tags,
+      systemPrompt: stripSkillFrontmatter(skillMd).trim(),
+      homepage: `https://github.com/${repo}`,
+    })
+    if (existing) {
+      const row = this.skillRepo.update(existing.id, {
+        name: skillName,
+        version: meta.version || '0.0.0',
+        rootPath: dest,
+        manifestJson,
+      })
+      return toSkillItem(row!)
+    }
+    const row = this.skillRepo.create({
+      id,
+      scope: 'user',
+      name: skillName,
+      version: meta.version || '0.0.0',
+      rootPath: dest,
+      manifestJson,
+      enabled: true,
+    })
+    return toSkillItem(row)
+  }
+
+  // ─── GitHub helpers ─────────────────────────────────────────────────
+
+  private githubHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'Spark-Agent',
+    }
+    const envToken = process.env.GITHUB_TOKEN || process.env.GH_TOKEN
+    if (envToken) headers.Authorization = `Bearer ${envToken}`
+    return headers
+  }
+
+  private async fetchDefaultBranch(repo: string): Promise<string> {
+    const res = await fetch(`https://api.github.com/repos/${repo}`, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    if (!res.ok) throw new Error(`Failed to resolve repo ${repo}: ${res.status}`)
+    const data = (await res.json()) as { default_branch?: string }
+    return data.default_branch || 'main'
+  }
+
+  /** 递归收集目录文件（限 60 个文件，单文件 ≤1MB） */
+  private async collectGithubFiles(
+    repo: string,
+    ref: string,
+    path: string,
+    acc: GithubFile[] = [],
+    depth = 0,
+  ): Promise<GithubFile[]> {
+    if (depth > 6 || acc.length >= 60) return acc
+    const url = `https://api.github.com/repos/${repo}/contents/${path}?ref=${encodeURIComponent(ref)}`
+    const res = await fetch(url, { headers: this.githubHeaders(), signal: AbortSignal.timeout(15000) })
+    if (!res.ok) throw new Error(`Failed to list ${repo}/${path}: ${res.status}`)
+    const data = await res.json()
+    const entries: GithubContentApi[] = Array.isArray(data) ? data : [data]
+    for (const entry of entries) {
+      if (acc.length >= 60) break
+      if (entry.type === 'file' && entry.download_url && (entry.size ?? 0) <= 1_000_000) {
+        acc.push({ relPath: entry.path, downloadUrl: entry.download_url })
+      } else if (entry.type === 'dir') {
+        await this.collectGithubFiles(repo, ref, entry.path, acc, depth + 1)
+      }
+    }
+    return acc
+  }
+
+  private async downloadGithubFile(downloadUrl: string): Promise<Buffer> {
+    const res = await fetch(downloadUrl, { headers: this.githubHeaders(), signal: AbortSignal.timeout(20000) })
+    if (!res.ok) throw new Error(`Failed to download ${downloadUrl}: ${res.status}`)
+    return Buffer.from(await res.arrayBuffer())
+  }
+
   // ─── Private Helpers ────────────────────────────────────────────────
+
+  /**
+   * 把远程技能写到真实磁盘目录：`<userSkillsDir>/<safeName>/{SKILL.md,manifest.json}`。
+   * 成功返回真实目录路径；未配置目录或写入失败时返回 null（调用方回落到虚拟路径）。
+   */
+  private materializeSkill(
+    name: string,
+    body: string,
+    remoteSkill: RemoteSkillItem,
+    manifest: Record<string, unknown> | null,
+  ): string | null {
+    if (!this.userSkillsDir) return null
+    const dirName = slugifySkillName(name)
+    if (!dirName) return null
+    const dest = join(this.userSkillsDir, dirName)
+    try {
+      if (existsSync(dest)) rmSync(dest, { recursive: true, force: true })
+      mkdirSync(dest, { recursive: true })
+      writeFileSync(join(dest, 'SKILL.md'), buildSkillMarkdown(name, body, remoteSkill), 'utf-8')
+      // 保留来源 manifest，便于后续追溯/重装
+      const manifestOut = {
+        ...(manifest ?? {}),
+        name,
+        version: remoteSkill.version,
+        category: remoteSkill.category,
+        tags: remoteSkill.tags,
+        author: remoteSkill.author,
+        source: remoteSkill.registryName,
+      }
+      writeFileSync(join(dest, 'manifest.json'), JSON.stringify(manifestOut, null, 2), 'utf-8')
+      return dest
+    } catch {
+      return null
+    }
+  }
 
   private getAdapterOrThrow(registryId: string): SkillRegistryAdapter {
     const adapter = this.adapters.get(registryId)
@@ -353,4 +565,133 @@ function toSkillItem(row: {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   }
+}
+
+function safeParseJson(raw: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(raw)
+    return parsed != null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null
+  } catch {
+    return null
+  }
+}
+
+/** 从市场 manifest 中提取 SKILL.md 正文（不同市场字段不一，做多重兜底） */
+function extractSkillBody(manifest: Record<string, unknown> | null, remoteSkill: RemoteSkillItem): string {
+  const m = manifest ?? {}
+  const candidate =
+    (typeof m.content === 'string' && m.content) ||
+    (typeof m.systemPrompt === 'string' && m.systemPrompt) ||
+    (typeof m.body === 'string' && m.body) ||
+    (typeof m.instructions === 'string' && m.instructions) ||
+    ''
+  const body = candidate.trim()
+  if (body.length > 0) return body
+  // 实在没有正文时，用描述兜底生成一个最小可用指令
+  return remoteSkill.description?.trim() || remoteSkill.name
+}
+
+/** 构建带 frontmatter 的 SKILL.md 文本 */
+function buildSkillMarkdown(name: string, body: string, remoteSkill: RemoteSkillItem): string {
+  // 若 body 本身已是带 frontmatter 的完整 SKILL.md，直接返回
+  if (body.startsWith('---')) return body
+  const description = (remoteSkill.description ?? '').replace(/\n/g, ' ').trim()
+  const frontmatter = [
+    '---',
+    `name: ${name}`,
+    `description: "${description.replace(/"/g, "'")}"`,
+    `version: ${remoteSkill.version || '0.0.0'}`,
+    `author: ${remoteSkill.author || 'Unknown'}`,
+    `category: ${remoteSkill.category || 'utility'}`,
+    `tags: [${(remoteSkill.tags ?? []).join(', ')}]`,
+    '---',
+    '',
+  ].join('\n')
+  return frontmatter + body + '\n'
+}
+
+/** 技能名 → 安全目录名 */
+function slugifySkillName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9一-龥]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+}
+
+// ─── GitHub 安装相关类型与解析 ─────────────────────────────────────────
+
+export interface GithubSkillCandidate {
+  repo: string
+  name: string
+  description: string
+  author: string
+  stars: number
+  homepageUrl: string
+  defaultBranch: string
+  source: 'GitHub'
+}
+
+interface GithubRepoApi {
+  full_name: string
+  name: string
+  description: string | null
+  owner?: { login?: string }
+  stargazers_count?: number
+  html_url: string
+  default_branch?: string
+}
+
+interface GithubContentApi {
+  type: 'file' | 'dir' | string
+  path: string
+  size?: number
+  download_url?: string | null
+}
+
+interface GithubFile {
+  relPath: string
+  downloadUrl: string
+}
+
+function stripSkillFrontmatter(raw: string): string {
+  if (!raw.startsWith('---')) return raw
+  const end = raw.indexOf('\n---', 3)
+  if (end === -1) return raw
+  return raw.slice(end + 4)
+}
+
+function parseSkillFrontmatter(raw: string): {
+  name: string
+  description: string
+  version: string
+  author: string
+  category: string
+  tags: string[]
+} {
+  const result = { name: '', description: '', version: '', author: '', category: '', tags: [] as string[] }
+  if (!raw.startsWith('---')) return result
+  const end = raw.indexOf('\n---', 3)
+  if (end === -1) return result
+  const fm = raw.slice(3, end)
+  for (const line of fm.split(/\r?\n/)) {
+    const match = line.match(/^([A-Za-z0-9_-]+):\s*(.*)$/)
+    if (!match) continue
+    const key = match[1]!.toLowerCase()
+    const value = match[2]!.trim().replace(/^['"]|['"]$/g, '')
+    if (key === 'name') result.name = value
+    else if (key === 'description') result.description = value
+    else if (key === 'version') result.version = value
+    else if (key === 'author') result.author = value
+    else if (key === 'category') result.category = value
+    else if (key === 'tags') {
+      result.tags = value
+        .replace(/^\[|\]$/g, '')
+        .split(',')
+        .map((t) => t.trim().replace(/^['"]|['"]$/g, ''))
+        .filter(Boolean)
+    }
+  }
+  return result
 }

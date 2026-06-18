@@ -193,6 +193,11 @@ export class SessionService {
   private pendingTurns = new Map<string, PendingTurn[]>()
   /** 画布 Agent MCP server 提供器（由主进程注入） */
   private canvasMcpProvider: CanvasMcpProvider | null = null
+  /**
+   * SDK 原生托管技能插件目录（由主进程 AppSkillsManager 注入）。
+   * 设置后，Claude SDK 会以本地插件方式加载其中所有已启用技能，启用原生渐进式披露。
+   */
+  private skillsPluginDir: string | null = null
   /** 等待用户对计划进行审批的 session 集合：处于此状态时 startNextQueuedTurn 不自动起跑队列。 */
   private pendingPlanApprovals = new Set<string>()
   private seqCounters = new Map<string, number>()
@@ -239,6 +244,22 @@ export class SessionService {
   /** 注入画布 Agent MCP provider（主进程持有画布桥后调用一次） */
   setCanvasMcpProvider(provider: CanvasMcpProvider | null): void {
     this.canvasMcpProvider = provider
+  }
+
+  /** 注入 SDK 原生托管技能插件目录（主进程启动技能系统后调用） */
+  setSkillsPluginDir(dir: string | null): void {
+    this.skillsPluginDir = dir
+  }
+
+  /**
+   * 解析当前可用的原生技能插件目录列表。
+   * 仅当目录存在且含合法 plugin.json 时返回，否则返回 null（回落到 skills_load 工具路径）。
+   */
+  private resolveNativeSkillPlugins(): string[] | null {
+    const dir = this.skillsPluginDir
+    if (dir == null) return null
+    if (!existsSync(path.join(dir, '.claude-plugin', 'plugin.json'))) return null
+    return [dir]
   }
 
   recoverInterruptedSessions(): { recovered: number } {
@@ -1225,6 +1246,12 @@ export class SessionService {
         ...(composedSkillSystemPrompt != null
           ? { skillSystemPrompt: composedSkillSystemPrompt }
           : {}),
+        ...((): { skillPlugins?: string[]; nativeSkills?: 'all' } => {
+          // Claude 原生渐进式披露：以本地插件加载托管技能目录，SDK 注入 name+desc
+          // 并提供原生 Skill 工具自主加载完整指令。失败/无插件时回落 skills_load 工具。
+          const plugins = this.resolveNativeSkillPlugins()
+          return plugins != null ? { skillPlugins: plugins, nativeSkills: 'all' } : {}
+        })(),
         ...(imageGenerationContext != null
           ? { imageGenerationMcpServer: imageGenerationContext.mcpServer }
           : {}),

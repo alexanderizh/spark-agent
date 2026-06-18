@@ -1083,6 +1083,59 @@ function getSkillService(): SkillService {
   return new SkillService(new SkillRepository(getDatabase()), bundledDir)
 }
 
+/**
+ * 用当前已启用的技能重建 SDK 原生托管插件目录。
+ * 仅纳入磁盘上真实存在 SKILL.md 的技能（内置/用户/软链/已落盘市场技能）。
+ */
+export function rebuildManagedSkillsPlugin(): void {
+  try {
+    const manager = getAppSkillsManager()
+    const enabled = getSkillService()
+      .listSkills()
+      .filter((s) => s.enabled && s.rootPath != null && !s.rootPath.includes('://'))
+      .map((s) => ({ name: s.name, rootPath: s.rootPath }))
+    manager.buildManagedPluginDir(enabled)
+  } catch (err) {
+    log.warn(`rebuildManagedSkillsPlugin failed: ${String(err)}`)
+  }
+}
+
+/**
+ * 应用启动时初始化技能系统：
+ *   1. 自动软链宿主机 ~/.claude|~/.codex 技能到 _links 并登记入库（默认可用）
+ *   2. 登记/刷新内置技能
+ *   3. 重建 SDK 原生托管插件目录
+ *   4. 把托管插件目录注入 SessionService，启用 Claude 原生渐进式披露
+ */
+export function initializeAppSkills(): void {
+  try {
+    const manager = getAppSkillsManager()
+    const skillService = getSkillService()
+
+    // 1. 宿主机技能自动软链 + 登记
+    const hostLinks = manager.autoImportHostSkills()
+    for (const link of hostLinks) {
+      try {
+        skillService.importLocalDirectory(link.linkPath, 'linked')
+      } catch (err) {
+        log.warn(`Failed to register host skill ${link.linkPath}: ${String(err)}`)
+      }
+    }
+
+    // 2. 内置技能登记/刷新
+    skillService.ensureBuiltInSkills()
+
+    // 3. 重建托管插件目录
+    rebuildManagedSkillsPlugin()
+
+    // 4. 注入插件目录（Claude 原生渐进式披露）
+    getSessionService().setSkillsPluginDir(manager.managedPluginDir)
+    log.info(`App skills initialized: ${hostLinks.length} host skill(s) linked`)
+  } catch (err) {
+    log.warn(`initializeAppSkills failed: ${String(err)}`)
+  }
+}
+
 function getAgentRepository(): AgentRepository {
   return new AgentRepository(getDatabase())
 }
@@ -1132,7 +1185,7 @@ function getUsageLedgerService(): UsageLedgerService {
 let _skillRegistryService: SkillRegistryService | null = null
 function getSkillRegistryService(): SkillRegistryService {
   if (_skillRegistryService == null) {
-    _skillRegistryService = new SkillRegistryService(getDatabase())
+    _skillRegistryService = new SkillRegistryService(getDatabase(), getAppSkillsManager().userDir)
     _skillRegistryService.initialize()
   }
   return _skillRegistryService
@@ -3531,6 +3584,7 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('skill:list', async (req) => {
     const svc = getSkillService()
     svc.ensureBuiltInSkills()
+    rebuildManagedSkillsPlugin()
     const skills = svc.listSkills(req.scope !== undefined ? { scope: req.scope } : undefined)
     return { skills }
   })
@@ -3558,6 +3612,7 @@ export function registerAllIpcHandlers(): void {
 
   typedIpcHandle('skill:toggle', async (req) => {
     const skill = getSkillService().toggleSkill(req.id)
+    rebuildManagedSkillsPlugin()
     return { skill }
   })
 
