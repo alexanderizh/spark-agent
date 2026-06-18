@@ -147,6 +147,7 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
         run: |
           bash apps/desktop/scripts/import-cert-ci.sh
+          security find-identity -v -p codesigning | grep "Developer ID Application"
 
       - name: Publish desktop artifacts
         env:
@@ -164,10 +165,25 @@ jobs:
           PUBLISH_FLAG: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.publish_to_release == 'true') || github.event_name == 'push' }}
         shell: bash
         run: |
-          # 仅清理 Windows 相关凭据在非 Windows 任务上，避免污染；
-          # Mac 签名/公证凭据必须保留，否则产物未签名会被 Gatekeeper 拦截。
-          if [ "$RUNNER_OS" != "Windows" ]; then
+          # Windows 签名凭据处理：
+          #   - 非 Windows 任务：清理掉，避免污染（Mac 走 CSC_LINK/钥匙串，用不到）。
+          #   - Windows 任务但 secret 缺失：必须 unset！否则 GitHub Actions 会把
+          #     未配置的 secrets.WIN_CSC_LINK 注入成空字符串，electron-builder 的
+          #     chooseNotNull 不把空串当 null，会把空串当证书路径解析，最终
+          #     path.resolve(cwd, "") 得到 cwd 本身，报 "Env WIN_CSC_LINK is not
+          #     correct, cannot resolve: <cwd> not a file" 直接挂掉构建。
+          #     unset 后 process.env.WIN_CSC_LINK 为 undefined，getCscLink 返回 null，
+          #     electron-builder 会跳过 Windows 代码签名（产物不签名，但构建能过）。
+          if [ "$RUNNER_OS" != "Windows" ] || [ -z "${WIN_CSC_LINK:-}" ] || [ -z "${WIN_CSC_KEY_PASSWORD:-}" ]; then
+            if [ "$RUNNER_OS" = "Windows" ]; then
+              echo "[publish] ⚠️ 未配置 WIN_CSC_LINK / WIN_CSC_KEY_PASSWORD，Windows 产物将不签名（用户安装时会触发 SmartScreen 警告）"
+            fi
             unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+            export -n WIN_CSC_LINK WIN_CSC_KEY_PASSWORD 2>/dev/null || true
+          fi
+
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            security find-identity -v -p codesigning | grep "Developer ID Application"
           fi
 
           # 根据 PUBLISH_FLAG 决定是否发布到 GitHub Release

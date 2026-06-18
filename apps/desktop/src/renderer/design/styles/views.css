@@ -1966,7 +1966,7 @@ body.sidebar-resizing {
 .thinking-content.is-collapsed {
   overflow: hidden;
 }
-.thinking-content.is-collapsed::after {
+/* .thinking-content.is-collapsed::after {
   content: '';
   position: absolute;
   bottom: 0;
@@ -1975,7 +1975,7 @@ body.sidebar-resizing {
   height: 48px;
   background: linear-gradient(transparent, var(--bg));
   pointer-events: none;
-}
+} */
 .thinking-content pre {
   white-space: pre-wrap;
   word-break: break-word;

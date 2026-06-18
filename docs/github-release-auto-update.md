@@ -46,13 +46,14 @@ Spark Agent 桌面端现在使用 `electron-builder + GitHub Releases + 自定�
 - 每次希望发布新版本时，需要先更新 `apps/desktop/package.json` 里的 `version`
 - GitHub Actions 需要仓库 `contents: write` 权限来创建 tag 和 release
 - 若要用于正式分发，建议配置签名相关 secrets：
-  - `CSC_LINK`
-  - `CSC_KEY_PASSWORD`
+  - `CSC_LINK`：base64 编码的 macOS `.p12`，必须包含 `Developer ID Application` 证书和私钥；`Apple Development` 证书不能用于正式发布和公证
+  - `CSC_KEY_PASSWORD`：上述 `.p12` 的导出密码
   - `APPLE_ID`
   - `APPLE_APP_SPECIFIC_PASSWORD`
   - `APPLE_TEAM_ID`
   - `WIN_CSC_LINK`
   - `WIN_CSC_KEY_PASSWORD`
+- macOS CI 会在导入证书后校验 `Developer ID Application` identity；如果 secret 误填成开发证书，会立即失败，避免后续公证阶段才报未签名或 adhoc 签名错误
 
 ## 更新通道
 
