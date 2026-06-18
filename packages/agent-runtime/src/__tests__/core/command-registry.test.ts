@@ -285,6 +285,38 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('M src/app.ts')
   })
 
+  it('/git log with numeric limit executes locally', async () => {
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: 'abc123 test commit', stderr: '', exitCode: 0 })),
+    })
+    const result = await registry.execute(parse('/git log 5'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(deps.execShell).toHaveBeenCalledWith('git log --oneline -5', '/fake/workspace')
+  })
+
+  it('/git log rejects non-numeric limit', async () => {
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+    })
+    const result = await registry.execute(parse('/git log foo'), ctx, deps)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('用法：/git log [n]')
+    expect(deps.execShell).not.toHaveBeenCalled()
+  })
+
+  it('/git log rejects shell injection attempts without executing', async () => {
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+    })
+    const result = await registry.execute(parse('/git log "1; rm -rf /"'), ctx, deps)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('用法：/git log [n]')
+    expect(deps.execShell).not.toHaveBeenCalled()
+  })
+
   it('/skill run selects a skill for the follow-up turn', async () => {
     const result = await registry.execute(parse('/skill run skill:review inspect changes'), ctx, makeDeps({
       listSkills: () => [{

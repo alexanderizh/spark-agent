@@ -146,6 +146,18 @@ export interface CommandListItem {
    ============================================================ */
 
 /** Convert a skill name to a slug suitable for a slash command. */
+const GIT_LOG_LIMIT_USAGE = '用法：/git log [n]（n 必须是 1-100 的正整数）'
+
+function parseGitLogLimit(value: string | undefined): number | null {
+  const raw = value ?? '10'
+  if (!/^[1-9]\d*$/.test(raw)) return null
+
+  const limit = Number(raw)
+  if (!Number.isSafeInteger(limit) || limit > 100) return null
+
+  return limit
+}
+
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -1042,8 +1054,11 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
           return { success: true, message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '工作区干净，无变更。' }
         }
         if (subcommand === 'log') {
-          const n = cmd.args[1] || '10'
-          const { stdout } = await deps.execShell(`git log --oneline -${n}`, cwd)
+          const limit = parseGitLogLimit(cmd.args[1])
+          if (limit == null) {
+            return { success: false, message: GIT_LOG_LIMIT_USAGE }
+          }
+          const { stdout } = await deps.execShell(`git log --oneline -${limit}`, cwd)
           return { success: true, message: `\`\`\`\n${stdout}\n\`\`\`` }
         }
         if (subcommand === 'stash') {
