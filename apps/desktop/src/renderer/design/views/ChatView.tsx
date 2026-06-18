@@ -76,6 +76,7 @@ import {
   resolveComposerRunningAgentIds,
 } from '../services/composer-working-state'
 import { shouldShowScrollToBottom } from './chat-scroll'
+import { getLastAssistantMessageMarkdown, isLocalCopySlashCommand } from './chat-copy'
 import { useToast } from '../components/Toast'
 import { parseSkillManifest } from '../utils/skills-data'
 import {
@@ -871,6 +872,7 @@ export function ChatView({
         contextInputTokens={contextInputTokens}
         contextUsage={contextUsage}
         isWorking={composerIsWorking}
+        messages={activeMessages}
         approvalRequest={approvalRequest}
         {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
         onCreateSession={(options) =>
@@ -916,6 +918,7 @@ export function ChatView({
         contextInputTokens={contextInputTokens}
         contextUsage={contextUsage}
         isWorking={composerIsWorking}
+        messages={activeMessages}
         approvalRequest={approvalRequest}
         {...(onApprovalClose !== undefined ? { onApprovalClose } : {})}
         onCreateSession={(options) =>
@@ -6152,6 +6155,7 @@ function ComposerV2({
   contextInputTokens,
   contextUsage,
   isWorking,
+  messages,
   approvalRequest,
   onApprovalClose,
   onCreateSession,
@@ -6195,6 +6199,7 @@ function ComposerV2({
   contextInputTokens: number
   contextUsage: ContextUsageState | null
   isWorking: boolean
+  messages: UIMessage[]
   approvalRequest?: PermissionApprovalRequest | null
   onApprovalClose?: (sessionId: string, requestId?: string) => void
   onCreateSession: (options: {
@@ -6328,6 +6333,7 @@ function ComposerV2({
   const { invoke: cancelQueuedTurn } = useIpcInvoke('session:cancel-queued-turn')
   const { invoke: sendQueuedTurnNow } = useIpcInvoke('session:send-queued-turn-now')
   const { invoke: getSetting } = useIpcInvoke('settings:get')
+  const { invoke: writeClipboardText } = useIpcInvoke('clipboard:write-text')
   const pendingRuntimePatchRef = useRef<SessionRuntimePatch>({})
 
   const effectiveAgentId = session?.agentId ?? draftAgentId
@@ -6736,6 +6742,27 @@ function ComposerV2({
       const requestAttachments = toSessionAttachments(turnAttachments)
       // 斜杠命令拦截：以 / 开头的消息走 command:execute
       if (text.startsWith('/')) {
+        if (isLocalCopySlashCommand(text)) {
+          const markdown = getLastAssistantMessageMarkdown(messages)
+          if (markdown == null) {
+            toast.error('没有可复制的上一条 Assistant 消息。')
+            setValue(text)
+            return
+          }
+          setSending(true)
+          try {
+            await writeClipboardText({ text: markdown })
+            toast.success('已复制上一条 Assistant 消息。')
+            clearDraftBuckets([draftBucketKey, session?.id, 'draft:new'])
+          } catch (err) {
+            console.error('复制上一条 Assistant 消息失败', err)
+            toast.error(err instanceof Error ? err.message : '复制失败')
+            setValue(text)
+          } finally {
+            setSending(false)
+          }
+          return
+        }
         setSending(true)
         try {
           // 如果没有活跃 session，先创建一个（命令需要 session 上下文）。
@@ -6898,6 +6925,8 @@ function ComposerV2({
       onSent,
       refreshQueueState,
       selectedProvider,
+      messages,
+      writeClipboardText,
       sendTurn,
       session?.id,
       createWorktree,

@@ -12,7 +12,7 @@
 
 import { typedIpcHandle, pushStreamEvent } from './typed-ipc.js'
 import { getCanvasHostBridge } from '../canvas-host-bridge.js'
-import { app, dialog, shell, Notification } from 'electron'
+import { app, clipboard, dialog, shell, Notification } from 'electron'
 import { execFile } from 'node:child_process'
 import crypto from 'node:crypto'
 import * as fs from 'node:fs/promises'
@@ -3209,6 +3209,11 @@ export function registerAllIpcHandlers(): void {
   typedIpcHandle('file:read-text', async (req) => {
     const content = await fs.readFile(req.path, 'utf-8')
     return { content }
+  })
+
+  typedIpcHandle('clipboard:write-text', async (req) => {
+    clipboard.writeText(req.text)
+    return { success: true }
   })
 
   // ─── App Info Handlers ─────────────────────────────────────────────────────
