@@ -251,6 +251,19 @@ describe('Built-in commands', () => {
     expect(result.success).toBe(false)
   })
 
+  it('/side is removed instead of forwarding as a normal agent turn', async () => {
+    const result = await registry.execute(parse('/side should be separate'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('/help')
+    expect(result.forwardToAgent).not.toBe(true)
+  })
+
+  it('/btw alias is removed with /side', async () => {
+    const result = await registry.execute(parse('/btw should be separate'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    expect(result.forwardToAgent).not.toBe(true)
+  })
+
   it('/git add forwards to agent', async () => {
     const result = await registry.execute(parse('/git add .'), ctx, makeDeps())
     expect(result.success).toBe(true)

@@ -747,19 +747,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
     usage: '/plan [task]',
     handler: async () => ({ success: true, message: '', forwardToAgent: true }),
   })
-
-  registry.register({
-    id: 'sdk:codex:side',
-    name: 'side',
-    aliases: ['btw'],
-    layer: 'sdk',
-    group: 'utility',
-    description: '开启旁路对话',
-    scope: 'session',
-    risk: 'none',
-    usage: '/side [message]',
-    handler: async () => ({ success: true, message: '', forwardToAgent: true }),
-  })
 }
 
 function readWorkspaceScripts(cwd: string): Record<string, string> {
