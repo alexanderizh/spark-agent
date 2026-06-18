@@ -2,7 +2,7 @@
  * CommandRegistry — 三层命令注册表
  *
  * 三层架构:
- *   Layer 1: SDK 原生命令（Claude Agent SDK / Codex SDK）
+ *   Layer 1: SDK 兼容命令（Claude Agent SDK / Codex SDK；未在 Spark 本地实现的命令透传给 Agent）
  *   Layer 2: 程序内置命令（Session/Model/Context/Permission/...）
  *   Layer 3: Agent 技能命令（Skill manifest 注册）
  *
@@ -168,6 +168,10 @@ const SUBCOMMAND_COMMANDS = new Set([
   'goal',
 ])
 
+function forwardToAgent(message = ''): CommandResult {
+  return { success: true, message, forwardToAgent: true }
+}
+
 export class CommandRegistry {
   private commands = new Map<string, CommandDefinition>()
   private aliasIndex = new Map<string, string>()  // alias → command name
@@ -314,10 +318,29 @@ function registerSdkCommands(registry: CommandRegistry): void {
     scope: 'global',
     risk: 'none',
     usage: '/help [command]',
-    handler: async (cmd, _ctx, deps) => {
-      const targetCmd = cmd.args[0]
+    handler: async (cmd) => {
+      const targetCmd = cmd.args[0]?.replace(/^\//, '').toLowerCase()
       if (targetCmd) {
-        return { success: true, message: `查看 /${targetCmd} 的详细帮助（待实现）` }
+        const def = registry.get(targetCmd)
+        if (def == null) {
+          return { success: false, message: `未知命令 /${targetCmd}。输入 /help 查看所有可用命令。` }
+        }
+        const lines = [
+          `**/${def.name}**`,
+          '',
+          `- 描述：${def.description}`,
+          `- 来源：${def.layer}`,
+          `- 分组：${def.group}`,
+          `- 作用域：${def.scope}`,
+          `- 风险：${def.risk}`,
+          ...(def.usage != null ? [`- 用法：\`${def.usage}\``] : []),
+          ...(def.aliases.length > 0 ? [`- 别名：${def.aliases.map((alias) => `\`/${alias}\``).join('、')}`] : []),
+          `- 执行方式：${isAgentForwardedCommand(def) ? '交给 Agent 处理' : 'Spark 内部处理'}`,
+        ]
+        return {
+          success: true,
+          message: lines.join('\n'),
+        }
       }
       const lines = [
         '**可用命令**',
@@ -328,7 +351,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
         '`/model [model-id]` — 切换模型',
         '`/rename <title>` — 重命名会话',
         '`/clear` — 清空会话消息',
-        '`/compact` — 压缩上下文',
+        '`/compact [instructions]` — 交给 Agent 总结/压缩上下文（不会清空会话）',
         '`/checkpoint list|restore` — 管理快照',
         '',
         '▸ **工具与诊断**',
@@ -448,14 +471,11 @@ function registerSdkCommands(registry: CommandRegistry): void {
     aliases: [],
     layer: 'sdk',
     group: 'context',
-    description: '压缩上下文（清除早期消息以释放 token）',
+    description: '压缩上下文（交给 Agent 总结，不清空会话）',
     scope: 'session',
     risk: 'low',
-    usage: '/compact',
-    handler: async (_cmd, ctx, deps) => {
-      await deps.clearSessionEvents(ctx.sessionId)
-      return { success: true, message: '上下文已压缩，早期消息已清除。' }
-    },
+    usage: '/compact [instructions]',
+    handler: async () => forwardToAgent('已交给 Agent 以对话形式总结/压缩上下文。'),
   })
 
   registry.register({
@@ -671,7 +691,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
         return { success: false, message: 'Shell 执行不可用。' }
       }
       try {
-        const { stdout } = await deps.execShell('test -f .claude/commands && echo "exists" || echo "not_found"', cwd)
+        const { stdout } = await deps.execShell('test -d .claude/commands && echo "exists" || echo "not_found"', cwd)
         if (stdout.trim() === 'exists') {
           return { success: true, message: '项目配置已存在。如需重新初始化，请先删除 `.claude/` 目录。' }
         }
@@ -693,7 +713,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     scope: 'workspace',
     risk: 'low',
     usage: '/add-dir <path>',
-    handler: async () => ({ success: true, message: '', forwardToAgent: true }),
+    handler: async () => forwardToAgent(),
   })
 
   registry.register({
@@ -706,7 +726,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     scope: 'workspace',
     risk: 'none',
     usage: '/memory',
-    handler: async () => ({ success: true, message: '', forwardToAgent: true }),
+    handler: async () => forwardToAgent(),
   })
 
   registry.register({
@@ -719,7 +739,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     scope: 'workspace',
     risk: 'none',
     usage: '/review [instructions]',
-    handler: async () => ({ success: true, message: '', forwardToAgent: true }),
+    handler: async () => forwardToAgent(),
   })
 
   registry.register({
@@ -732,7 +752,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
     scope: 'session',
     risk: 'none',
     usage: '/copy',
-    handler: async () => ({ success: true, message: '', forwardToAgent: true }),
+    handler: async () => forwardToAgent(),
   })
 
   registry.register({
@@ -745,8 +765,14 @@ function registerSdkCommands(registry: CommandRegistry): void {
     scope: 'session',
     risk: 'none',
     usage: '/plan [task]',
-    handler: async () => ({ success: true, message: '', forwardToAgent: true }),
+    handler: async () => forwardToAgent(),
   })
+}
+
+function isAgentForwardedCommand(def: CommandDefinition): boolean {
+  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'copy', 'plan', 'goal'])
+  if (forwardedCommands.has(def.name)) return true
+  return def.name === 'git'
 }
 
 function readWorkspaceScripts(cwd: string): Record<string, string> {
@@ -1013,7 +1039,7 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
 
       // add/commit/push/pull 等写操作直接交给 AI Agent 执行
       if (subcommand && GIT_AGENT_SUBCOMMANDS.has(subcommand)) {
-        return { success: true, message: '', forwardToAgent: true }
+        return forwardToAgent()
       }
 
       const cwd = deps.getWorkspacePath?.()
@@ -1085,7 +1111,7 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     risk: 'none',
     hasSubcommands: true,
     usage: '/goal <objective> | /goal clear | /goal pause | /goal resume',
-    handler: async () => ({ success: true, message: '', forwardToAgent: true }),
+    handler: async () => forwardToAgent(),
   })
 }
 
