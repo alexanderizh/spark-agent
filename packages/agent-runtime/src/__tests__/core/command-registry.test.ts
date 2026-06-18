@@ -184,6 +184,16 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('sess-1')
   })
 
+  it('/usage shows session token and cost totals from deps', async () => {
+    const result = await registry.execute(parse('/usage'), ctx, makeDeps({
+      getSessionUsage: vi.fn(() => ({ totalInputTokens: 1234, totalOutputTokens: 567, totalCost: 0.0425 })),
+    }))
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('1,234')
+    expect(result.message).toContain('567')
+    expect(result.message).toContain('$0.0425')
+  })
+
   it('/model with arg updates model', async () => {
     const deps = makeDeps()
     const result = await registry.execute(parse('/model gpt-4o'), ctx, deps)

@@ -18,6 +18,7 @@ import {
   TeamDispatchRepository,
   TeamDefinitionRepository,
   MediaModelManifestRepository,
+  UsageLedgerRepository,
 } from '@spark/storage'
 import type { AgentItem, WorkflowItem } from '@spark/storage'
 import type { SparkDatabase } from '@spark/storage'
@@ -178,6 +179,51 @@ const HISTORY_CONTEXT_ENTRY_MAX_CHARS = 4_000
 const TERMINAL_AGENT_STATUSES = new Set<string>(['idle', 'completed', 'cancelled', 'error'])
 // Keep SDK resume opt-in until the Claude Code child process can recover cleanly from resume failures.
 const ENABLE_CLAUDE_SDK_RESUME = false
+
+type SessionUsageTotals = { totalInputTokens: number; totalOutputTokens: number; totalCost: number }
+
+function getSessionUsageFromPersistence(db: SparkDatabase, eventRepo: EventRepository, sessionId: string): SessionUsageTotals | null {
+  try {
+    const ledgerUsage = new UsageLedgerRepository(db).getSessionUsage(sessionId)
+    if (ledgerUsage.recordCount > 0) {
+      return {
+        totalInputTokens: ledgerUsage.totalInputTokens,
+        totalOutputTokens: ledgerUsage.totalOutputTokens,
+        totalCost: ledgerUsage.totalCostUsd,
+      }
+    }
+  } catch {
+    // Usage ledger may be unavailable in older test doubles or partially migrated databases.
+  }
+
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
+  let totalCost = 0
+  let usageEventCount = 0
+
+  for (const row of eventRepo.queryBySession({ sessionId, eventType: 'usage_update', limit: 10_000 }).events) {
+    try {
+      const event = JSON.parse(row.event_json) as Partial<AgentEvent> & {
+        inputTokens?: unknown
+        outputTokens?: unknown
+        estimatedCostUsd?: unknown
+      }
+      const inputTokens = typeof event.inputTokens === 'number' ? event.inputTokens : 0
+      const outputTokens = typeof event.outputTokens === 'number' ? event.outputTokens : 0
+      const estimatedCostUsd = typeof event.estimatedCostUsd === 'number' ? event.estimatedCostUsd : 0
+      totalInputTokens += inputTokens
+      totalOutputTokens += outputTokens
+      totalCost += estimatedCostUsd
+      usageEventCount += 1
+    } catch {
+      // Ignore malformed historical events.
+    }
+  }
+
+  if (usageEventCount === 0) return null
+  return { totalInputTokens, totalOutputTokens, totalCost }
+}
+
 /**
  * Canvas Agent 桥：由主进程注入。SessionService 在 sendTurn 时调用
  * `canvasMcpProvider(sessionId)` 拿到 in-process MCP server 配置；若 session
@@ -425,10 +471,7 @@ export class SessionService {
       getSessionEventCount: (id) => {
         return eventRepo.countBySession(id)
       },
-      getSessionUsage: (_id) => {
-        // TODO: integrate with UsageLedger
-        return null
-      },
+      getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
         restoreSessionCheckpoint({
@@ -522,7 +565,7 @@ export class SessionService {
         }
       },
       getSessionEventCount: (id) => eventRepo.countBySession(id),
-      getSessionUsage: (_id) => null,
+      getSessionUsage: (id) => getSessionUsageFromPersistence(this.db, eventRepo, id),
       listSessionCheckpoints: (id) => listSessionCheckpointsFromEvents(eventRepo, id),
       restoreCheckpoint: async (id, checkpointRef) =>
         restoreSessionCheckpoint({

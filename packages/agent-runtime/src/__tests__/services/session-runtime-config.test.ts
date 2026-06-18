@@ -164,6 +164,26 @@ vi.mock('@spark/storage', () => {
     }
   }
 
+  class UsageLedgerRepository {
+    getSessionUsage(_sessionId: string): {
+      totalInputTokens: number
+      totalOutputTokens: number
+      totalCacheReadTokens: number
+      totalCacheWriteTokens: number
+      totalCostUsd: number
+      recordCount: number
+    } {
+      return {
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCacheReadTokens: 0,
+        totalCacheWriteTokens: 0,
+        totalCostUsd: 0,
+        recordCount: 0,
+      }
+    }
+  }
+
   class EventRepository {
     countBySession(sessionId: string): number {
       return mockState.events.filter((row) => row.session_id === sessionId).length
@@ -217,6 +237,7 @@ vi.mock('@spark/storage', () => {
     SessionRepository,
     ProviderProfileRepository,
     EventRepository,
+    UsageLedgerRepository,
     RulesRepository,
     WorkspaceRepository,
     McpServerRepository,
@@ -391,6 +412,72 @@ describe('SessionService runtime provider/model resolution', () => {
       provider: 'spark',
       isFinal: true,
     }))
+  })
+
+  it('renders /usage from persisted usage_update events when ledger is empty', async () => {
+    const service = new SessionService({} as never, (event) => events.push(event))
+    const { sessionId } = await service.createSession({
+      providerProfileId: 'tencent-provider',
+      agentAdapter: 'claude-sdk',
+      permissionMode: 'claude-plan',
+      title: 'Usage session',
+    })
+
+    mockState.events.push({
+      id: 'usage-1',
+      session_id: sessionId,
+      run_id: null,
+      turn_id: 'turn-1',
+      event_type: 'usage_update',
+      event_json: JSON.stringify({
+        id: 'usage-1',
+        sessionId,
+        turnId: 'turn-1',
+        timestamp: '2026-05-28T00:00:00.000Z',
+        seq: 0,
+        type: 'usage_update',
+        provider: 'claude',
+        model: 'glm-5',
+        inputTokens: 100,
+        outputTokens: 40,
+        estimatedCostUsd: 0.0123,
+      }),
+      seq: 0,
+      created_at: '2026-05-28T00:00:00.000Z',
+    }, {
+      id: 'usage-2',
+      session_id: sessionId,
+      run_id: null,
+      turn_id: 'turn-2',
+      event_type: 'usage_update',
+      event_json: JSON.stringify({
+        id: 'usage-2',
+        sessionId,
+        turnId: 'turn-2',
+        timestamp: '2026-05-28T00:00:00.000Z',
+        seq: 1,
+        type: 'usage_update',
+        provider: 'claude',
+        model: 'glm-5',
+        inputTokens: 25,
+        outputTokens: 10,
+        estimatedCostUsd: 0.0032,
+      }),
+      seq: 1,
+      created_at: '2026-05-28T00:00:00.000Z',
+    })
+
+    const result = await service.executeCommandAsEvents({ sessionId, message: '/usage' })
+
+    expect(result).toMatchObject({ isCommand: true, forwardToAgent: false, started: false })
+    const assistant = events.slice().reverse().find((event: AgentEvent) => event.type === 'assistant_message')
+    expect(assistant).toEqual(expect.objectContaining({
+      type: 'assistant_message',
+      provider: 'spark',
+      content: expect.stringContaining('125'),
+    }))
+    expect((assistant as Extract<AgentEvent, { type: 'assistant_message' }> | undefined)?.content).toContain('50')
+    expect((assistant as Extract<AgentEvent, { type: 'assistant_message' }> | undefined)?.content).toContain('$0.0155')
   })
 
   it('passes selected attachments into the Claude SDK turn config', async () => {
