@@ -64,7 +64,7 @@ describe('CommandRegistry', () => {
   it('lists items with layer and group info', () => {
     const registry = createBuiltinRegistry()
     const items = registry.listItems()
-    expect(items.length).toBeGreaterThan(20)
+    expect(items.length).toBeGreaterThanOrEqual(20)
     expect(items[0]).toHaveProperty('layer')
     expect(items[0]).toHaveProperty('group')
     expect(items[0]).toHaveProperty('risk')
@@ -277,6 +277,19 @@ describe('Built-in commands', () => {
     expect(result.success).toBe(false)
   })
 
+  it('/side is removed instead of forwarding as a normal agent turn', async () => {
+    const result = await registry.execute(parse('/side should be separate'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('/help')
+    expect(result.forwardToAgent).not.toBe(true)
+  })
+
+  it('/btw alias is removed with /side', async () => {
+    const result = await registry.execute(parse('/btw should be separate'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    expect(result.forwardToAgent).not.toBe(true)
+  })
+
   it('/git add forwards to agent', async () => {
     const result = await registry.execute(parse('/git add .'), ctx, makeDeps())
     expect(result.success).toBe(true)
@@ -379,6 +392,125 @@ describe('Built-in commands', () => {
 
     expect(result.success).toBe(true)
     expect(result.message).toBe('没有文件变更。')
+  })
+
+  it('/doctor reports missing workspace', async () => {
+    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
+      getWorkspacePath: () => null,
+      execShell: vi.fn(async (command: string) => ({
+        stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+        stderr: '',
+        exitCode: 0,
+      })),
+      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
+      checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
+      getCurrentAgentSummary: vi.fn(() => ({
+        id: 'agent-1',
+        name: 'Agent',
+        exists: true,
+        enabled: true,
+        hasModelConfig: true,
+      })),
+      getMcpStatusSummary: vi.fn(() => []),
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('## Session')
+    expect(result.message).toContain('Workspace: ⚠️ 未打开')
+    expect(result.message).toContain('未打开 workspace')
+  })
+
+  it('/doctor reports missing shell', async () => {
+    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
+      getWorkspacePath: () => '/workspace/app',
+      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
+      checkWorkspaceShell: vi.fn(async () => ({ available: false, error: 'ENOENT' })),
+      getCurrentAgentSummary: vi.fn(() => ({
+        id: 'agent-1',
+        name: 'Agent',
+        exists: true,
+        enabled: true,
+        hasModelConfig: true,
+      })),
+      getMcpStatusSummary: vi.fn(() => []),
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('Shell: ❌ 不可用：ENOENT')
+    expect(result.message).toContain('workspace shell 不可执行')
+  })
+
+  it('/doctor reports missing provider and model', async () => {
+    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
+      getSession: vi.fn(() => ({ title: 'Test', status: 'idle', modelId: null, providerProfileId: '' })),
+      getProviderName: vi.fn(() => null),
+      getWorkspacePath: () => '/workspace/app',
+      execShell: vi.fn(async (command: string) => ({
+        stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+        stderr: '',
+        exitCode: 0,
+      })),
+      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
+      checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
+      getCurrentAgentSummary: vi.fn(() => ({
+        id: 'agent-1',
+        name: 'Agent',
+        exists: true,
+        enabled: true,
+        hasModelConfig: false,
+      })),
+      getMcpStatusSummary: vi.fn(() => []),
+    }))
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('Provider: ❌ 未配置')
+    expect(result.message).toContain('Model: ⚠️ 未配置')
+    expect(result.message).toContain('当前 session 缺少 provider 配置')
+  })
+
+  it('/doctor reports all healthy sections', async () => {
+    const result = await registry.execute(parse('/doctor'), ctx, makeDeps({
+      getSession: vi.fn(() => ({
+        title: 'Test',
+        status: 'idle',
+        modelId: 'gpt-4.1',
+        providerProfileId: 'p1',
+        agentAdapter: 'codex',
+        permissionMode: 'codex-default',
+        agentId: 'agent-1',
+      })),
+      getWorkspacePath: () => '/workspace/app',
+      execShell: vi.fn(async (command: string) => ({
+        stdout: command.includes('git --version') ? 'git version 2.40.0' : 'spark-shell-ok',
+        stderr: '',
+        exitCode: 0,
+      })),
+      checkSdkAvailability: vi.fn(async () => ({ claudeSdk: true, codexCli: true, openaiSdk: true })),
+      checkWorkspaceShell: vi.fn(async () => ({ available: true, shell: '/bin/bash' })),
+      getCurrentAgentSummary: vi.fn(() => ({
+        id: 'agent-1',
+        name: 'Agent',
+        exists: true,
+        enabled: true,
+        hasModelConfig: true,
+        providerProfileId: 'p1',
+        modelId: 'gpt-4.1',
+      })),
+      getMcpStatusSummary: vi.fn(() => [{
+        id: 'mcp-1',
+        name: 'Local MCP',
+        enabled: true,
+        connected: true,
+        toolCount: 3,
+      }]),
+    }))
+
+    expect(result.success).toBe(true)
+    for (const section of ['## Session', '## Provider/Model', '## Agent Adapter', '## Shell/Git', '## MCP', '## Known Issues / Suggestions']) {
+      expect(result.message).toContain(section)
+    }
+    expect(result.message).toContain('✅ 未发现明显问题')
+    expect(result.message).toContain('1/1 enabled servers connected')
   })
 
   it('/git log with numeric limit executes locally', async () => {
