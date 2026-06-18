@@ -14,8 +14,12 @@ set -euo pipefail
 # 仅在 macOS runner 上执行
 [ "$(uname -s)" != "Darwin" ] && { echo "[import-cert] 非 macOS，跳过"; exit 0; }
 
-# 凭据缺失则跳过（兼容未配置签名的分支）
 if [ -z "${CSC_LINK:-}" ] || [ -z "${CSC_KEY_PASSWORD:-}" ]; then
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    echo "[import-cert] ❌ CI 缺少 CSC_LINK / CSC_KEY_PASSWORD，无法生成可公证的 macOS 安装包"
+    exit 1
+  fi
+
   echo "[import-cert] ⚠️  缺少 CSC_LINK / CSC_KEY_PASSWORD，跳过证书导入（产物将不签名）"
   exit 0
 fi
@@ -81,6 +85,10 @@ security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN
 rm -f /tmp/cert.p12
 
 echo "[import-cert] ✅ 证书导入完成，当前可用签名身份："
-security find-identity -v -p codesigning | grep "Developer ID" || {
-  echo "[import-cert] ⚠️  未在钥匙串中找到 Developer ID 证书（签名阶段会失败）"
-}
+security find-identity -v -p codesigning
+
+if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q "Developer ID Application"; then
+  echo "[import-cert] ❌ 导入的 p12 中没有 Developer ID Application 证书"
+  echo "[import-cert]    当前 CSC_LINK 可能是 Apple Development 证书，不能用于发布/公证 macOS app"
+  exit 1
+fi

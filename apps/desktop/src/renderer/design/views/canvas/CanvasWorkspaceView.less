@@ -593,6 +593,24 @@
   background: var(--canvas-node-body-bg);
 }
 
+/* 节点卡片内的滚动区域（文本 / 任务消息等）：允许滚动，但永远不显示滚动条——
+   否则 Windows 上每个节点底部都拖一条 8px 滚动条（来自 styles.css 顶部的全局
+   *::-webkit-scrollbar 宽度规则），非常难看。
+   —— scrollbar-width:none（标准）隐藏现代滚动条；
+   —— ::-webkit-scrollbar{display:none} 兜底经典渲染路径。
+   两者都不改变滚动能力（滚轮 / 触控板 / 键盘照常工作），仅作用于 .canvas-node 作用域，
+   不影响画布外其它区域的滚动条。 */
+.canvas-node,
+.canvas-node * {
+  scrollbar-width: none;
+}
+.canvas-node::-webkit-scrollbar,
+.canvas-node *::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
 .canvas-node-image {
   width: 100%;
   height: 100%;

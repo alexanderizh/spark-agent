@@ -106,3 +106,4 @@ pnpm-debug.log*
 .mavis/
 .spark/worktrees/
 .spark-artifacts/
+build-sign-mac.sh
