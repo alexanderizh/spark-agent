@@ -770,6 +770,14 @@ export interface FileReadTextResponse {
   content: string
 }
 
+export interface ClipboardWriteTextRequest {
+  text: string
+}
+
+export interface ClipboardWriteTextResponse {
+  success: boolean
+}
+
 // ─── App Paths Channels ──────────────────────────────────────────────────────
 
 export interface AppGetTempProjectDirRequest {}
@@ -3962,6 +3970,7 @@ export interface IpcChannelMap {
   // File operations
   'file:write-text': [FileWriteTextRequest, FileWriteTextResponse]
   'file:read-text': [FileReadTextRequest, FileReadTextResponse]
+  'clipboard:write-text': [ClipboardWriteTextRequest, ClipboardWriteTextResponse]
 
   // App Info
   'app:get-info': [AppGetInfoRequest, AppGetInfoResponse]
