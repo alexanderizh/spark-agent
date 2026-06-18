@@ -285,6 +285,40 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('M src/app.ts')
   })
 
+  it('/init returns existing project config when .claude/commands directory exists', async () => {
+    const execShell = vi.fn(async () => ({ stdout: 'exists\n', stderr: '', exitCode: 0 }))
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell,
+    })
+
+    const result = await registry.execute(parse('/init'), ctx, deps)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('项目配置已存在')
+    expect(execShell).toHaveBeenCalledTimes(1)
+    expect(execShell).toHaveBeenCalledWith('test -d .claude/commands && echo "exists" || echo "not_found"', '/fake/workspace')
+  })
+
+  it('/init creates .claude/commands directory for an empty workspace', async () => {
+    const execShell = vi.fn(async (command: string) => ({
+      stdout: command.startsWith('test -d ') ? 'not_found\n' : '',
+      stderr: '',
+      exitCode: 0,
+    }))
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell,
+    })
+
+    const result = await registry.execute(parse('/init'), ctx, deps)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('已创建 `.claude/commands/` 目录')
+    expect(execShell).toHaveBeenNthCalledWith(1, 'test -d .claude/commands && echo "exists" || echo "not_found"', '/fake/workspace')
+    expect(execShell).toHaveBeenNthCalledWith(2, 'mkdir -p .claude/commands', '/fake/workspace')
+  })
+
   it('/skill run selects a skill for the follow-up turn', async () => {
     const result = await registry.execute(parse('/skill run skill:review inspect changes'), ctx, makeDeps({
       listSkills: () => [{

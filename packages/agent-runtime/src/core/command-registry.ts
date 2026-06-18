@@ -671,7 +671,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
         return { success: false, message: 'Shell 执行不可用。' }
       }
       try {
-        const { stdout } = await deps.execShell('test -f .claude/commands && echo "exists" || echo "not_found"', cwd)
+        const { stdout } = await deps.execShell('test -d .claude/commands && echo "exists" || echo "not_found"', cwd)
         if (stdout.trim() === 'exists') {
           return { success: true, message: '项目配置已存在。如需重新初始化，请先删除 `.claude/` 目录。' }
         }
