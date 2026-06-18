@@ -1,0 +1,43 @@
+/* ============================================================
+   Spark Agent — Global Overrides
+   ============================================================
+
+   Loaded after legacy global CSS, component Less, and library CSS entrypoints.
+   Keep this file small: only put rules here when they intentionally need to win
+   across the entire renderer.
+   ============================================================ */
+
+:root {
+  --selection-bg: rgba(99, 102, 241, 0.18);
+  --selection-bg: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+
+::selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}
+
+::-moz-selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}
+
+input::selection,
+textarea::selection,
+[contenteditable="true"]::selection,
+.ant-input::selection,
+.ant-input-affix-wrapper input::selection,
+.ant-select-selection-search-input::selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}
+
+input::-moz-selection,
+textarea::-moz-selection,
+[contenteditable="true"]::-moz-selection,
+.ant-input::-moz-selection,
+.ant-input-affix-wrapper input::-moz-selection,
+.ant-select-selection-search-input::-moz-selection {
+  background-color: var(--selection-bg) !important;
+  color: var(--text, #20201d) !important;
+}

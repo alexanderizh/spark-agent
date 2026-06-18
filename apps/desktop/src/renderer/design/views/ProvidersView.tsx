@@ -1234,27 +1234,32 @@ export function ProviderEditPanel({
   const [mediaCatalog, setMediaCatalog] = useState<CanvasMediaModelSummary[]>([])
   const [mediaCatalogLoading, setMediaCatalogLoading] = useState(false)
   const [customModelInput, setCustomModelInput] = useState('')
+  const lastAutoDefaultModelRef = useRef<string | null>(null)
 
   const { invoke: createProvider } = useIpcInvoke('provider:create')
   const { invoke: updateProvider } = useIpcInvoke('provider:update')
   const { invoke: listProviders } = useIpcInvoke('provider:list')
   const { invoke: listMediaModels } = useIpcInvoke('canvas:media-models:list')
 
-  // 防抖更新 modelIds：避免每个字符输入都往列表里加模型
+  // 防抖更新 modelIds：只保留输入稳定后的默认模型，避免每次停顿留下半截 chip。
   const debouncedUpdateModelIds = useDebouncedCallback((next: string) => {
+    const trimmed = next.trim()
+    if (!trimmed) return
+    const previousAutoDefault = lastAutoDefaultModelRef.current
+    lastAutoDefaultModelRef.current = trimmed
     setForm((prev) => {
-      const trimmed = next.trim()
-      // 仅在非空且 modelIds 未包含该值时添加（与原逻辑一致）
-      if (!trimmed || prev.modelIds.includes(trimmed)) return prev
-      const ids = uniqPreserveOrder([next, ...prev.modelIds.filter((m) => m !== next)])
+      if (prev.modelIds.includes(trimmed) && previousAutoDefault === trimmed) return prev
+      const rest = prev.modelIds.filter((m) => m !== trimmed && m !== previousAutoDefault)
+      const ids = uniqPreserveOrder([trimmed, ...rest])
       return { ...prev, modelIds: ids }
     })
-  }, 300)
+  }, 600)
 
   // 编辑模式：加载现有 profile；新建模式：支持 initialPresetId 预填
   // 仅在 Drawer 打开时执行，避免关闭后 form 被错误重置
   useEffect(() => {
     if (!visible) return
+    lastAutoDefaultModelRef.current = null
     if (!profileId) {
       // 从预设模板打开：自动填充 preset 数据
       if (initialPresetId) {
@@ -1562,6 +1567,7 @@ export function ProviderEditPanel({
   const set = <K extends keyof ProviderForm>(k: K, v: ProviderForm[K]) =>
     setForm((prev) => ({ ...prev, [k]: v }))
   const applyPreset = (preset: ProviderPreset) => {
+    lastAutoDefaultModelRef.current = null
     setForm((prev) => ({
       ...prev,
       presetId: preset.id,
