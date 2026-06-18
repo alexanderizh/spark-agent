@@ -24,7 +24,7 @@ describe('avatar config', () => {
     const avatar = normalizeAvatarConfig({ kind: 'builtin', id: 'guest' })
 
     expect(avatar).toEqual({ kind: 'builtin', id: DEFAULT_USER_AVATAR_ID })
-    expect(resolveAvatarSrc(avatar!)).toContain('user-default.svg')
+    expect(resolveAvatarSrc(avatar!)).toContain('user-default.png')
   })
 
   it('falls back to fixed bundled avatars for agents and unauthenticated users', () => {
@@ -33,29 +33,29 @@ describe('avatar config', () => {
 
     expect(agent).toEqual({ kind: 'builtin', id: DEFAULT_AGENT_AVATAR_ID })
     expect(user).toEqual({ kind: 'builtin', id: DEFAULT_USER_AVATAR_ID })
-    expect(resolveAvatarSrc(agent)).toContain('agent-default.svg')
-    expect(resolveAvatarSrc(user)).toContain('user-default.svg')
+    expect(resolveAvatarSrc(agent)).toContain('agent-default.png')
+    expect(resolveAvatarSrc(user)).toContain('user-default.png')
   })
 
   it('resolves the guest avatar to the bundled user fallback asset', () => {
     const guest = getGuestAvatarConfig()
 
     expect(guest).toEqual({ kind: 'builtin', id: DEFAULT_USER_AVATAR_ID })
-    expect(resolveAvatarSrc(guest)).toContain('user-default.svg')
+    expect(resolveAvatarSrc(guest)).toContain('user-default.png')
   })
 
   it('selects deterministic generated builtin avatars for named defaults', () => {
     const avatar = createDefaultAvatar('Agent One')
 
     expect(avatar.kind).toBe('builtin')
-    expect(resolveAvatarSrc(avatar)).toContain('.svg')
+    expect(resolveAvatarSrc(avatar)).toContain('.png')
   })
 
   it('falls back to the agent default when a builtin id is unknown', () => {
     const avatar = createBuiltinAvatar('missing-avatar')
 
     expect(avatar).toEqual({ kind: 'builtin', id: DEFAULT_AGENT_AVATAR_ID })
-    expect(resolveAvatarSrc(avatar)).toContain('agent-default.svg')
+    expect(resolveAvatarSrc(avatar)).toContain('agent-default.png')
   })
 
   it('generates a fully composed local SVG data URL from the agent name', () => {

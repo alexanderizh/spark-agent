@@ -498,9 +498,9 @@ function GeneralSection() {
             onChange={(e) => set({ defaultWorkspace: e.target.value })}
             placeholder="点击浏览选择…"
           />
-          <button className="btn" onClick={() => void handleBrowseWorkspace()}>
-            <Icons.Folder size={12} /> 浏览…
-          </button>
+          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={() => void handleBrowseWorkspace()}>
+            浏览…
+          </Button>
         </div>
 
         <label>
@@ -1630,9 +1630,9 @@ function ShortcutsSection() {
           <Icons.Search />
           <Input placeholder="搜索动作或按键..." />
         </div>
-        <button className="btn">
-          <Icons.Refresh size={12} /> 重置全部
-        </button>
+        <Button size="small" type="default" icon={<Icons.Refresh size={12} />}>
+          重置全部
+        </Button>
       </div>
 
       {groups.map((g) => (
@@ -1761,9 +1761,9 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
                   <Icons.X size={11} />
                 </button>
               </div>
-              <button className="btn ghost sm add-fallback-btn">
-                <Icons.Plus size={11} /> 添加 fallback
-              </button>
+              <Button className="add-fallback-btn" size="small" type="text" icon={<Icons.Plus size={11} />}>
+                添加 fallback
+              </Button>
             </div>
 
             <label>启用</label>
@@ -1771,14 +1771,14 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="modal-foot">
-          <button className="btn danger sm">删除 Profile</button>
+          <Button size="small" type="default" danger>删除 Profile</Button>
           <div className="flex1" />
-          <button className="btn" onClick={onClose}>
+          <Button size="small" type="default" onClick={onClose}>
             取消
-          </button>
-          <button className="btn primary" onClick={onClose}>
-            <Icons.Check size={12} /> 保存
-          </button>
+          </Button>
+          <Button size="small" type="primary" icon={<Icons.Check size={12} />} onClick={onClose}>
+            保存
+          </Button>
         </div>
       </div>
     </div>
@@ -1875,15 +1875,17 @@ function ModelsSection() {
               <span className="strong">{provider.name}</span>
               <span className="badge model-provider-badge">{provider.provider}</span>
               <span className="flex1" />
-              <button
-                className="btn ghost sm"
+              <Button
+                size="small"
+                type="text"
+                icon={<Icons.Plus size={11} />}
                 onClick={() => {
                   setAddingForProvider(provider.id)
                   setNewModelName('')
                 }}
               >
-                <Icons.Plus size={11} /> 添加
-              </button>
+                添加
+              </Button>
             </div>
 
             {addingForProvider === provider.id && (
@@ -1899,12 +1901,12 @@ function ModelsSection() {
                   }}
                   autoFocus
                 />
-                <button className="btn primary sm" onClick={() => void handleAdd(provider.id)}>
+                <Button size="small" type="primary" onClick={() => void handleAdd(provider.id)}>
                   确认
-                </button>
-                <button className="btn ghost sm" onClick={() => setAddingForProvider(null)}>
+                </Button>
+                <Button size="small" type="text" onClick={() => setAddingForProvider(null)}>
                   取消
-                </button>
+                </Button>
               </div>
             )}
 
@@ -2070,9 +2072,9 @@ function RulesSection() {
             <strong>当前生效</strong> · {activeCount} 条启用规则来自 {RULE_LAYER_META.length}{' '}
             个作用域
           </div>
-          <button className="btn sm primary" onClick={refresh}>
-            <Icons.Refresh size={11} /> 刷新
-          </button>
+          <Button size="small" type="primary" icon={<Icons.Refresh size={11} />} onClick={refresh}>
+            刷新
+          </Button>
         </div>
 
         {error && <div className="alert-banner">{error}</div>}
@@ -2284,12 +2286,12 @@ function RuleEditPanel({
 
         <div className="slide-panel-foot">
           <span className="flex1" />
-          <button className="btn" onClick={onClose}>
+          <Button size="small" type="default" onClick={onClose}>
             取消
-          </button>
-          <button className="btn primary" onClick={handleSave} disabled={saving}>
-            <Icons.Check size={12} /> {saving ? '保存中…' : '保存'}
-          </button>
+          </Button>
+          <Button size="small" type="primary" loading={saving} icon={<Icons.Check size={12} />} onClick={handleSave} disabled={saving}>
+            保存
+          </Button>
         </div>
       </div>
     </div>
@@ -2606,13 +2608,14 @@ function McpSection() {
         <span className="badge primary dot">
           {runningCount} / {servers.length} 运行中
         </span>
-        <button
-          className="btn primary"
+        <Button
+          type="primary"
+          icon={<Icons.Plus size={12} />}
           onClick={openAddForm}
           style={{ marginLeft: 10 }} /* dynamic */
         >
-          <Icons.Plus size={12} /> 添加
-        </button>
+          添加
+        </Button>
       </div>
 
       {error && <div className="alert-banner">{error}</div>}
@@ -2666,21 +2669,25 @@ function McpSection() {
                         <Icons.Spinner size={13} />
                       </span>
                     ) : isConnected ? (
-                      <button
-                        className="btn ghost sm"
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Stop size={11} />}
                         onClick={() => void handleStop(server.id)}
                         title="停止"
                       >
-                        <Icons.Stop size={11} /> 停止
-                      </button>
+                        停止
+                      </Button>
                     ) : (
-                      <button
-                        className="btn ghost sm"
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<Icons.Play size={11} />}
                         onClick={() => void handleStart(server.id)}
                         title="启动"
                       >
-                        <Icons.Play size={11} /> 启动
-                      </button>
+                        启动
+                      </Button>
                     )}
                     <button className="icon-btn" title="编辑" onClick={() => openEditForm(server)}>
                       <Icons.Edit size={12} />
@@ -2886,9 +2893,9 @@ function McpSection() {
 
               <div className="subsec-h mt-lg">
                 环境变量
-                <button className="btn ghost sm mcp-env-add-btn" onClick={addEnvPair}>
-                  <Icons.Plus size={11} /> 添加
-                </button>
+                <Button className="mcp-env-add-btn" size="small" type="text" icon={<Icons.Plus size={11} />} onClick={addEnvPair}>
+                  添加
+                </Button>
               </div>
               {draft.envPairs.length === 0 ? (
                 <div className="mcp-env-empty">未配置环境变量</div>
@@ -2924,16 +2931,19 @@ function McpSection() {
 
             <div className="modal-foot">
               <span className="flex1" />
-              <button className="btn" onClick={closeForm}>
+              <Button size="small" type="default" onClick={closeForm}>
                 取消
-              </button>
-              <button
-                className="btn primary"
+              </Button>
+              <Button
+                size="small"
+                type="primary"
+                loading={formSaving}
+                icon={<Icons.Check size={12} />}
                 onClick={() => void handleFormSave()}
                 disabled={formSaving}
               >
-                <Icons.Check size={12} /> {formSaving ? '保存中...' : '保存'}
-              </button>
+                保存
+              </Button>
             </div>
           </div>
         </div>
@@ -2969,16 +2979,19 @@ function McpSection() {
             </div>
             <div className="modal-foot">
               <span className="flex1" />
-              <button className="btn" onClick={() => setDeleteConfirmId(null)}>
+              <Button size="small" type="default" onClick={() => setDeleteConfirmId(null)}>
                 取消
-              </button>
-              <button
-                className="btn danger"
+              </Button>
+              <Button
+                size="small"
+                type="default"
+                danger
+                loading={actionLoading[deleteConfirmId] ?? false}
                 onClick={() => void handleDelete(deleteConfirmId)}
                 disabled={actionLoading[deleteConfirmId] ?? false}
               >
-                {actionLoading[deleteConfirmId] ? '删除中...' : '确认删除'}
-              </button>
+                确认删除
+              </Button>
             </div>
           </div>
         </div>
@@ -3067,17 +3080,20 @@ function SystemPromptSection() {
         </div>
         <div className="row row-gap-xs">
           {isDirty && (
-            <button className="btn ghost sm" onClick={handleReset}>
+            <Button size="small" type="text" onClick={handleReset}>
               撤销修改
-            </button>
+            </Button>
           )}
-          <button
-            className="btn primary sm"
+          <Button
+            size="small"
+            type="primary"
+            loading={savingPrompt}
+            icon={<Icons.Check size={12} />}
             onClick={() => void saveSystemPrompt()}
             disabled={savingPrompt || !isDirty}
           >
-            <Icons.Check size={12} /> {savingPrompt ? '保存中...' : '保存'}
-          </button>
+            保存
+          </Button>
         </div>
       </div>
     </div>
@@ -3107,9 +3123,9 @@ function WorkflowTemplatesSection() {
             管理共享 DAG 模板与版本。模板会作为 Workflow 页创建新流程时的起点。
           </div>
         </div>
-        <button className="btn ghost sm" onClick={restoreDefaults}>
-          <Icons.Refresh size={11} /> 恢复内置
-        </button>
+        <Button size="small" type="text" icon={<Icons.Refresh size={11} />} onClick={restoreDefaults}>
+          恢复内置
+        </Button>
       </div>
 
       <div className="card">
@@ -3626,27 +3642,27 @@ function TelemetrySection() {
           title="代码功能开发：搜索优化"
           desc="Run #4f3a · 5 agent · 4m 38s · $0.92"
           right={
-            <button className="btn ghost sm">
-              <Icons.Eye size={11} /> 查看 trace
-            </button>
+            <Button size="small" type="text" icon={<Icons.Eye size={11} />}>
+              查看 trace
+            </Button>
           }
         />
         <SettingsRow
           title="重构 auth 模块为 OAuth 2.1"
           desc="Run #41b8 · 1 agent · 6m 12s · $1.34"
           right={
-            <button className="btn ghost sm">
-              <Icons.Eye size={11} /> 查看 trace
-            </button>
+            <Button size="small" type="text" icon={<Icons.Eye size={11} />}>
+              查看 trace
+            </Button>
           }
         />
         <SettingsRow
           title="MCP gateway 性能调优"
           desc="Run #38c0 · 1 agent · 失败"
           right={
-            <button className="btn ghost sm danger-btn">
-              <Icons.Eye size={11} /> 查看错误
-            </button>
+            <Button size="small" type="text" danger icon={<Icons.Eye size={11} />}>
+              查看错误
+            </Button>
           }
         />
       </div>
@@ -3657,18 +3673,18 @@ function TelemetrySection() {
           title="生成诊断包"
           desc="包含 app/OS 版本、provider 健康、近期错误日志，自动脱敏"
           right={
-            <button className="btn">
-              <Icons.Download size={11} /> 生成
-            </button>
+            <Button size="small" type="default" icon={<Icons.Download size={11} />}>
+              生成
+            </Button>
           }
         />
         <SettingsRow
           title="复制最近一次错误"
           desc="便于发到 GitHub Issue"
           right={
-            <button className="btn ghost sm">
-              <Icons.Copy size={11} /> 复制
-            </button>
+            <Button size="small" type="text" icon={<Icons.Copy size={11} />}>
+              复制
+            </Button>
           }
         />
       </div>
@@ -3884,9 +3900,9 @@ function UsageSection() {
           title="刷新数据"
           desc="重新从数据库加载用量统计"
           right={
-            <button className="btn ghost sm" onClick={loadDashboard} disabled={loading}>
-              <Icons.Refresh size={11} /> 刷新
-            </button>
+            <Button size="small" type="text" loading={loading} icon={<Icons.Refresh size={11} />} onClick={loadDashboard} disabled={loading}>
+              刷新
+            </Button>
           }
         />
       </div>
@@ -4091,9 +4107,9 @@ function StorageSection() {
             value={stats?.userDataPath ?? '加载中...'}
             readOnly
           />
-          <button className="btn" onClick={handleOpenDataDir}>
-            <Icons.Folder size={12} /> 打开
-          </button>
+          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={handleOpenDataDir}>
+            打开
+          </Button>
         </div>
 
         <label>
@@ -4101,16 +4117,17 @@ function StorageSection() {
         </label>
         <div className="control">
           <Input className="flex1" value={workspace?.rootPath ?? '未打开工作区'} readOnly />
-          <button className="btn" onClick={handleOpenWorkspace}>
-            <Icons.Folder size={12} /> 选择
-          </button>
-          <button
-            className="btn ghost"
+          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={handleOpenWorkspace}>
+            选择
+          </Button>
+          <Button
+            size="small"
+            type="text"
             onClick={handleCloseWorkspace}
             disabled={workspace === null}
           >
             关闭
-          </button>
+          </Button>
         </div>
 
         <label>
@@ -4118,9 +4135,9 @@ function StorageSection() {
         </label>
         <div className="control">
           <Input className="flex1" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
-          <button className="btn" onClick={() => void handleChooseCanvasRoot()}>
-            <Icons.Folder size={12} /> 选择
-          </button>
+          <Button size="small" type="default" icon={<Icons.Folder size={12} />} onClick={() => void handleChooseCanvasRoot()}>
+            选择
+          </Button>
         </div>
       </div>
 
@@ -4128,14 +4145,16 @@ function StorageSection() {
 
       <div className="subsec-h">
         存储用量
-        <button
-          className="btn ghost sm"
+        <Button
+          size="small"
+          type="text"
+          loading={statsLoading}
           onClick={() => void refreshStats()}
           disabled={statsLoading}
           style={{ marginLeft: 8 }}
         >
-          {statsLoading ? '刷新中...' : '刷新'}
-        </button>
+          刷新
+        </Button>
       </div>
       <div className="card">
         {stats === null ? (
@@ -4182,23 +4201,23 @@ function StorageSection() {
           title="备份目录"
           desc="~/Backups/SparkAgent"
           right={
-            <button className="btn sm">
-              <Icons.Folder size={11} /> 修改
-            </button>
+            <Button size="small" type="default" icon={<Icons.Folder size={11} />}>
+              修改
+            </Button>
           }
         />
         <SettingsRow
           title="最近一次备份"
           desc="今天 03:00 · 成功 · 41 MB"
-          right={<button className="btn ghost sm">查看历史</button>}
+          right={<Button size="small" type="text">查看历史</Button>}
         />
         <SettingsRow
           title="导出全部数据"
           desc="JSONL + 文件 · 可在另一台机器导入"
           right={
-            <button className="btn">
-              <Icons.Download size={11} /> 导出
-            </button>
+            <Button size="small" type="default" icon={<Icons.Download size={11} />}>
+              导出
+            </Button>
           }
         />
       </div>
@@ -4209,52 +4228,63 @@ function StorageSection() {
           title="清空浏览器与渲染缓存"
           desc={`清理 Electron / Chromium 的 Cache、Code Cache、GPUCache 等${stats ? `（当前占用 ${formatBytes(stats.cacheBytes)}）` : ''}。下次启动会自动重建，不影响会话与设置。`}
           right={
-            <button
-              className="btn ghost sm danger-btn"
+            <Button
+              size="small"
+              type="text"
+              danger
+              loading={clearing}
               onClick={() => void handleClearCache(false)}
               disabled={clearing}
             >
-              {clearing ? '清理中...' : '清空'}
-            </button>
+              清空
+            </Button>
           }
         />
         <SettingsRow
           title="清理孤儿项目目录"
           desc="删除 projects/ 下不再被任何项目引用的临时目录。同时清空浏览器缓存。"
           right={
-            <button
-              className="btn ghost sm danger-btn"
+            <Button
+              size="small"
+              type="text"
+              danger
+              loading={clearing}
               onClick={() => void handleClearCache(true)}
               disabled={clearing}
             >
-              {clearing ? '清理中...' : '清空'}
-            </button>
+              清空
+            </Button>
           }
         />
         <SettingsRow
           title="迁移旧画布资源到项目目录"
           desc="将旧全局 media 目录中的画布资源复制进对应 Canvas 项目文件夹，并重写快照引用。"
           right={
-            <button
-              className="btn ghost sm"
+            <Button
+              size="small"
+              type="text"
+              loading={canvasMaintaining}
               onClick={() => void handleMigrateCanvasAssets()}
               disabled={canvasMaintaining}
             >
-              {canvasMaintaining ? '处理中...' : '迁移'}
-            </button>
+              迁移
+            </Button>
           }
         />
         <SettingsRow
           title="清理旧画布孤儿资源"
           desc="清理旧全局画布资源目录中不再被任何快照引用的图片、音频或视频文件。"
           right={
-            <button
-              className="btn ghost sm danger-btn"
+            <Button
+              size="small"
+              type="text"
+              danger
+              loading={canvasMaintaining}
               onClick={() => void handleCleanupCanvasAssets()}
               disabled={canvasMaintaining}
             >
-              {canvasMaintaining ? '处理中...' : '清理'}
-            </button>
+              清理
+            </Button>
           }
         />
       </div>
@@ -4383,15 +4413,18 @@ function ArchivedSection() {
                 <div className="row-desc">归档于 {formatDate(w.archivedAt)}</div>
               </div>
               <div className="archived-item-actions">
-                <button className="btn sm" onClick={() => handleRestoreWorkspace(w)}>
-                  <Icons.Refresh size={11} /> 恢复
-                </button>
-                <button
-                  className="btn ghost sm danger-btn"
+                <Button size="small" type="default" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreWorkspace(w)}>
+                  恢复
+                </Button>
+                <Button
+                  size="small"
+                  type="text"
+                  danger
+                  icon={<Icons.Trash size={11} />}
                   onClick={() => handleDeleteWorkspace(w)}
                 >
-                  <Icons.Trash size={11} /> 删除
-                </button>
+                  删除
+                </Button>
               </div>
             </div>
           ))}
@@ -4416,12 +4449,12 @@ function ArchivedSection() {
                 </div>
               </div>
               <div className="archived-item-actions">
-                <button className="btn sm" onClick={() => handleRestoreSession(s)}>
-                  <Icons.Refresh size={11} /> 恢复
-                </button>
-                <button className="btn ghost sm danger-btn" onClick={() => handleDeleteSession(s)}>
-                  <Icons.Trash size={11} /> 删除
-                </button>
+                <Button size="small" type="default" icon={<Icons.Refresh size={11} />} onClick={() => handleRestoreSession(s)}>
+                  恢复
+                </Button>
+                <Button size="small" type="text" danger icon={<Icons.Trash size={11} />} onClick={() => handleDeleteSession(s)}>
+                  删除
+                </Button>
               </div>
             </div>
           ))}
@@ -4628,22 +4661,26 @@ function IntegritySection() {
           )}
         </div>
         <div className="integrity-actions">
-          <button
-            className="btn sm"
+          <Button
+            size="small"
+            type="default"
+            loading={isChecking}
+            disabled={isChecking || isCheckingLatest}
+            icon={<Icons.Refresh size={12} className={isChecking ? 'spin' : ''} />}
             onClick={() => void handleCheck(false)}
-            disabled={isChecking || isCheckingLatest}
           >
-            <Icons.Refresh size={12} className={isChecking ? 'spin' : ''} />
-            {isChecking ? '检测中…' : '立即检测'}
-          </button>
-          <button
-            className="btn sm"
+            立即检测
+          </Button>
+          <Button
+            size="small"
+            type="default"
+            loading={isCheckingLatest}
+            disabled={isChecking || isCheckingLatest}
+            icon={<Icons.Globe size={12} className={isCheckingLatest ? 'spin' : ''} />}
             onClick={() => void handleCheck(true)}
-            disabled={isChecking || isCheckingLatest}
           >
-            <Icons.Globe size={12} className={isCheckingLatest ? 'spin' : ''} />
-            {isCheckingLatest ? '检查中…' : '检查最新版本'}
-          </button>
+            检查最新版本
+          </Button>
         </div>
       </div>
 
@@ -4656,13 +4693,13 @@ function IntegritySection() {
             <Icons.AlertTriangle size={14} />
           )}
           <span>{installResult.message}</span>
-          <button
-            className="btn ghost sm"
+          <Button
+            size="small"
+            type="text"
+            icon={<Icons.X size={12} />}
             onClick={() => setInstallResult(null)}
             style={{ marginLeft: 'auto', padding: '0 4px', height: 20 }}
-          >
-            <Icons.X size={12} />
-          </button>
+          />
         </div>
       )}
 
@@ -4687,14 +4724,16 @@ function IntegritySection() {
             <div className="integrity-sdk-right">
               {getToolBadge(tool)}
               {!tool.available && (
-                <a
-                  className="btn sm"
+                <Button
+                  size="small"
+                  type="default"
+                  icon={<Icons.ExternalLink size={12} />}
                   href={tool.downloadUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  <Icons.ExternalLink size={12} /> 下载
-                </a>
+                  下载
+                </Button>
               )}
             </div>
           </div>
@@ -4726,25 +4765,16 @@ function IntegritySection() {
               <div className="integrity-sdk-right">
                 {getStatusBadge(sdk)}
                 {(!sdk.installed || sdk.updateAvailable) && (
-                  <button
-                    className="btn sm primary"
-                    onClick={() => void handleInstall(sdk.packageName)}
+                  <Button
+                    size="small"
+                    type="primary"
+                    loading={installingPkg === sdk.packageName}
                     disabled={installingPkg === sdk.packageName}
+                    icon={<Icons.Download size={12} />}
+                    onClick={() => void handleInstall(sdk.packageName)}
                   >
-                    {installingPkg === sdk.packageName ? (
-                      <>
-                        <Icons.Spinner size={12} /> 安装中…
-                      </>
-                    ) : sdk.installed ? (
-                      <>
-                        <Icons.Download size={12} /> 更新
-                      </>
-                    ) : (
-                      <>
-                        <Icons.Download size={12} /> 安装
-                      </>
-                    )}
-                  </button>
+                    {sdk.installed ? '更新' : '安装'}
+                  </Button>
                 )}
               </div>
             </div>
@@ -5455,21 +5485,16 @@ function HooksSection() {
                     </div>
                   </div>
                   <div className="hook-node-footer">
-                    <button
-                      className="btn ghost sm"
+                    <Button
+                      size="small"
+                      type="text"
+                      loading={testing === node}
+                      icon={<Icons.Play size={11} />}
                       onClick={() => void testHook(node)}
                       disabled={testing === node}
                     >
-                      {testing === node ? (
-                        <>
-                          <Icons.Spinner size={11} /> 测试中…
-                        </>
-                      ) : (
-                        <>
-                          <Icons.Play size={11} /> 测试
-                        </>
-                      )}
-                    </button>
+                      测试
+                    </Button>
                   </div>
                 </div>
               )

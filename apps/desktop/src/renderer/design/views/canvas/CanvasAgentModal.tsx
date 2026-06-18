@@ -15,7 +15,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AgentEvent, ProviderProfile, ManagedAgent } from '@spark/protocol'
-import { Button } from 'antd'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { ProviderLogo } from '../../components/ProviderLogo'
 import { ChatPanel } from '../../components/ChatPanel'

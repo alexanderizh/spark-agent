@@ -1,4 +1,4 @@
-const modules = import.meta.glob('../assets/builtin-avatars/*.svg', {
+const modules = import.meta.glob('../assets/builtin-avatars/*.png', {
   eager: true,
   query: '?url',
   import: 'default',
@@ -34,7 +34,7 @@ export const BUILTIN_AVATARS: BuiltinAvatar[] = Object.entries(modules)
       file
         .split('/')
         .pop()
-        ?.replace(/\.svg$/, '') ?? ''
+        ?.replace(/\.png$/, '') ?? ''
     return {
       id,
       src,

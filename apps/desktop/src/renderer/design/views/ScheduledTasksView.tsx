@@ -205,6 +205,13 @@ export function ScheduledTasksView() {
     return () => clearInterval(timer)
   }, [])
 
+  // 进入页面时默认选中第一个任务（任务列表加载完成且当前未选中时）
+  useEffect(() => {
+    if (!selectedId && tasks.length > 0) {
+      setSelectedId(tasks[0].id)
+    }
+  }, [selectedId, tasks])
+
   // Load executions for selected task
   useEffect(() => {
     if (!selectedId) { setExecutions([]); return }
@@ -494,17 +501,20 @@ export function ScheduledTasksView() {
           <h2>Scheduled Tasks</h2>
         </div>
         <div className="st-header-right">
-          <button
-            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-muted)] hover:bg-[var(--hover)] hover:text-[var(--text-secondary)] transition-colors"
+          <Button
+            size="small"
+            type="text"
+            shape="circle"
+            icon={<Icons.Refresh />}
             onClick={triggerRefresh}
             title="刷新 (Ctrl+R)"
-          >
-            <Icons.Refresh />
-          </button>
+            aria-label="刷新"
+          />
           {!multiSelect && (
             <>
               <Button
                 size="small"
+                type="default"
                 icon={<Icons.Upload />}
                 onClick={() => void handleImportFromFile()}
                 disabled={importing}
@@ -514,6 +524,7 @@ export function ScheduledTasksView() {
               </Button>
               <Button
                 size="small"
+                type="default"
                 icon={<Icons.Copy />}
                 onClick={() => void handleImportFromClipboard()}
                 disabled={importing}
@@ -523,6 +534,7 @@ export function ScheduledTasksView() {
               </Button>
               <Button
                 size="small"
+                type="default"
                 icon={<Icons.Download />}
                 onClick={() => void handleExportAll()}
                 disabled={tasks.length === 0}
@@ -532,6 +544,7 @@ export function ScheduledTasksView() {
               </Button>
               <Button
                 size="small"
+                type="default"
                 icon={<Icons.Copy />}
                 onClick={() => void handleCopyToClipboard()}
                 disabled={tasks.length === 0}
@@ -562,6 +575,8 @@ export function ScheduledTasksView() {
         <div className="st-multi-toolbar">
           <Button
             size="small"
+            type="text"
+            shape="circle"
             icon={<Icons.XCircle />}
             onClick={exitMultiSelect}
             title="退出多选模式"
@@ -569,18 +584,19 @@ export function ScheduledTasksView() {
           <span className="st-multi-count">
             已选 <strong>{selectedIds.size}</strong> / {tasks.length}
           </span>
-          <Button size="small" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
+          <Button size="small" type="default" onClick={selectAll} disabled={selectedIds.size === tasks.length}>
             全选
           </Button>
-          <Button size="small" onClick={invertSelection} disabled={tasks.length === 0}>
+          <Button size="small" type="default" onClick={invertSelection} disabled={tasks.length === 0}>
             反选
           </Button>
-          <Button size="small" onClick={clearSelection} disabled={selectedIds.size === 0}>
+          <Button size="small" type="default" onClick={clearSelection} disabled={selectedIds.size === 0}>
             取消选择
           </Button>
           <span style={{ flex: 1 }} />
           <Button
             size="small"
+            type="default"
             icon={<Icons.Download />}
             onClick={handleExportSelected}
             disabled={selectedIds.size === 0}
@@ -757,14 +773,14 @@ function TaskDetailPanel({ task, executions, onEdit, onRunNow, onToggle, onDelet
           <h3 className="st-detail-title">{task.name}</h3>
           <div className="st-detail-actions">
             <Tooltip title="立即执行">
-              <Button size="small" type="primary" icon={<Icons.Play />} onClick={onRunNow} />
+              <Button size="small" type="primary" shape="circle" icon={<Icons.Play />} onClick={onRunNow} />
             </Tooltip>
             <Tooltip title="编辑">
-              <Button size="small" icon={<Icons.Edit />} onClick={onEdit} />
+              <Button size="small" type="default" shape="circle" icon={<Icons.Edit />} onClick={onEdit} />
             </Tooltip>
             <Popconfirm title="确定删除此任务？" onConfirm={onDelete}>
               <Tooltip title="删除">
-                <Button size="small" danger icon={<Icons.Trash />} />
+                <Button size="small" type="default" danger shape="circle" icon={<Icons.Trash />} />
               </Tooltip>
             </Popconfirm>
           </div>
@@ -1016,8 +1032,9 @@ function TaskFormPage({ task, onClose }: {
           </div>
         </div>
         <div className="st-form-page-actions">
-          <Button onClick={() => onClose(false)}>取消</Button>
+          <Button type="default" onClick={() => onClose(false)}>取消</Button>
           <Button
+            type="default"
             loading={saving}
             disabled={!canSave}
             onClick={() => handleSave(true)}
@@ -1474,7 +1491,7 @@ function TaskImportPreviewModal({
       style={{ width: 680 }}
       footer={
         <div className="st-import-modal-footer">
-          <Button onClick={onClose} disabled={submitting}>取消</Button>
+          <Button type="default" onClick={onClose} disabled={submitting}>取消</Button>
           <Button
             type="primary"
             onClick={() => void handleConfirm()}

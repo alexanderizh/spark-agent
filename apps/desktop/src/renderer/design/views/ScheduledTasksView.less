@@ -52,31 +52,34 @@
 }
 
 .st-filter-tabs {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   gap: 2px;
-  background: var(--color-fill-2);
-  border-radius: var(--r-sm);
-  padding: 2px;
 }
 
 .st-filter-tab {
-  padding: 4px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
   border: none;
   background: transparent;
-  border-radius: var(--r-xs);
+  border-radius: var(--r-md);
   cursor: pointer;
-  font-size: 12px;
-  color: var(--color-text-2);
-  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  font-family: inherit;
+  transition: color 0.12s ease, background 0.12s ease;
 
   &:hover {
-    color: var(--color-text-1);
+    color: var(--text);
+    background: var(--hover);
   }
 
   &.active {
-    background: var(--color-bg-3);
-    color: var(--color-text-1);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+    color: var(--primary);
+    background: var(--primary-soft);
   }
 }
 
@@ -87,6 +90,7 @@
   flex: 1;
   gap: 16px;
   overflow: hidden;
+  padding: 8px;
 }
 
 .st-loading,
@@ -108,6 +112,8 @@
   flex-direction: column;
   gap: 6px;
   padding-right: 8px;
+  padding-left: 8px;
+  padding-top: 8px;
 
   // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }
@@ -115,19 +121,22 @@
 .st-task-card {
   padding: 10px 12px;
   border-radius: var(--r-md);
-  border: 1px solid var(--color-border-2);
+  border: 1px solid transparent;
   cursor: pointer;
-  transition: all 0.15s;
-  background: var(--color-bg-1);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
 
   &:hover {
-    border-color: var(--color-border-3);
-    background: var(--color-fill-1);
+    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
   }
 
   &.selected {
     border-color: var(--primary);
-    background: var(--primary-soft);
+    background: color-mix(in srgb, var(--primary) 4%, var(--panel));
+    box-shadow: 0 0 0 1px var(--primary) inset, var(--shadow-sm);
   }
 }
 
@@ -187,8 +196,9 @@
   flex: 1;
   overflow-y: auto;
   border-radius: var(--r-md);
-  border: 1px solid var(--color-border-2);
-  background: var(--color-bg-1);
+  border: 1px solid transparent;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
 }
 
 .st-detail-empty {
@@ -452,13 +462,15 @@
 /* ─── Section Card ────────────────────────────────────────────────────────── */
 
 .st-form-section {
-  border: 1px solid var(--color-border-2);
+  border: 1px solid transparent;
   border-radius: var(--r-lg);
-  background: var(--color-bg-1);
-  transition: border-color 0.2s;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 
   &:hover {
-    border-color: var(--color-border-3);
+    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+    box-shadow: var(--shadow-md);
   }
 }
 
@@ -737,8 +749,9 @@
   }
 
   &.multi-selected {
-    background: var(--color-primary-light-1, var(--primary-soft, #e6f4ff));
+    background: color-mix(in srgb, var(--primary) 6%, var(--panel));
     border-color: var(--primary);
+    box-shadow: 0 0 0 1px var(--primary) inset, var(--shadow-sm);
 
     .st-task-name {
       color: var(--primary);

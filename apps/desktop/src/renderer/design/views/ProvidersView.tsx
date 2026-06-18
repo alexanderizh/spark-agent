@@ -758,6 +758,7 @@ function ProvidersView() {
             <Button
               ref={importButtonRef as any}
               size="small"
+              type="default"
               icon={<Icons.Upload />}
               onClick={() => void handleImportFromFile()}
               disabled={importing}
@@ -767,6 +768,7 @@ function ProvidersView() {
             </Button>
             <Button
               size="small"
+              type="default"
               icon={<Icons.Copy />}
               onClick={() => void handleImportFromClipboard()}
               disabled={importing}
@@ -786,6 +788,7 @@ function ProvidersView() {
             </Button>
             <Button
               size="small"
+              type="default"
               icon={<Icons.Copy />}
               onClick={() => void handleCopyToClipboard([])}
               disabled={profiles.length === 0}
@@ -1622,7 +1625,7 @@ export function ProviderEditPanel({
       title={profileId ? '编辑 Provider' : '添加 Provider'}
       footer={
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-          <Button onClick={onClose} disabled={saving}>
+          <Button type="default" onClick={onClose} disabled={saving}>
             取消
           </Button>
           <Button

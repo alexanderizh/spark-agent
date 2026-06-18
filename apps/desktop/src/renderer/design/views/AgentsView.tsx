@@ -14,7 +14,7 @@ import {
   Select as LobeSelect,
   TextArea as LobeTextArea,
 } from '@lobehub/ui'
-import { ActionIcon } from '@lobehub/ui'
+import { ActionIcon, Button } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
@@ -705,9 +705,15 @@ function AgentsTabContent({
                 placeholder="搜索 Agent..."
               />
             </span>
-            <button className="btn primary sm agents-home-create" onClick={() => void handleNew()}>
-              <Icons.Plus size={12} /> 创建 Agent
-            </button>
+            <Button
+              size="small"
+              type="primary"
+              className="agents-home-create"
+              onClick={() => void handleNew()}
+              icon={<Icons.Plus size={12} />}
+            >
+              创建 Agent
+            </Button>
           </div>
         </div>
 
@@ -748,30 +754,40 @@ function AgentsTabContent({
                 <Icons.ChevronDown size={12} />
               </button>
             </Dropdown>
-            <button
-              type="button"
-              className="btn ghost sm"
+            <Button
+              size="small"
+              type="text"
               onClick={() => void refresh()}
               disabled={loading}
               title="刷新"
-            >
-              {loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
-            </button>
+              icon={loading ? <Icons.Spinner size={12} /> : <Icons.Activity size={12} />}
+            />
             {visibleAgents.length > 0 && (
-              <button
-                className={`btn ghost sm${selectionMode ? ' active' : ''}`}
+              <Button
+                size="small"
+                type={selectionMode ? 'primary' : 'text'}
                 onClick={selectionMode ? exitSelectionMode : enterSelectionMode}
+                icon={<Icons.CheckSquare size={12} />}
               >
-                <Icons.CheckSquare size={12} />
                 {selectionMode ? '退出选择' : '选择'}
-              </button>
+              </Button>
             )}
-            <button className="btn ghost sm" onClick={() => void handleImport()}>
-              <Icons.Upload size={12} /> 导入
-            </button>
-            <button className="btn ghost sm" onClick={() => void handleExportAll()}>
-              <Icons.Download size={12} /> 导出全部
-            </button>
+            <Button
+              size="small"
+              type="text"
+              onClick={() => void handleImport()}
+              icon={<Icons.Upload size={12} />}
+            >
+              导入
+            </Button>
+            <Button
+              size="small"
+              type="text"
+              onClick={() => void handleExportAll()}
+              icon={<Icons.Download size={12} />}
+            >
+              导出全部
+            </Button>
           </div>
         </div>
 
@@ -781,21 +797,26 @@ function AgentsTabContent({
               <div className="agents-selectbar" role="region" aria-label="批量操作">
                 <span className="agents-selectbar-count">已选 {selectedIds.size} 个</span>
                 <span className="agents-selectbar-spacer" />
-                <button
-                  type="button"
-                  className="btn ghost sm"
+                <Button
+                  size="small"
+                  type="text"
                   onClick={
                     selectedIds.size === visibleAgents.length ? clearSelection : selectAllVisible
                   }
                 >
                   {selectedIds.size === visibleAgents.length ? '取消全选' : '全选当前'}
-                </button>
-                <button className="btn ghost sm" onClick={clearSelection}>
+                </Button>
+                <Button size="small" type="text" onClick={clearSelection}>
                   清空选择
-                </button>
-                <button className="btn primary sm" onClick={() => void handleExportSelected()}>
-                  <Icons.Download size={12} /> 导出选中
-                </button>
+                </Button>
+                <Button
+                  size="small"
+                  type="primary"
+                  onClick={() => void handleExportSelected()}
+                  icon={<Icons.Download size={12} />}
+                >
+                  导出选中
+                </Button>
               </div>
             )}
             <div className="agents-card-grid">
@@ -840,9 +861,9 @@ function AgentsTabContent({
               </div>
               {!searchQuery && (
                 <div style={{ marginTop: 8 }}>
-                  <button className="btn primary" onClick={() => void handleNew()}>
-                    <Icons.Plus size={12} /> 创建 Agent
-                  </button>
+                  <Button type="primary" onClick={() => void handleNew()} icon={<Icons.Plus size={12} />}>
+                    创建 Agent
+                  </Button>
                 </div>
               )}
             </div>
@@ -856,22 +877,22 @@ function AgentsTabContent({
   return (
     <div className="agents-detail">
       <div className="agents-detail-toolbar">
-        <button className="btn ghost sm" onClick={() => void showList()} title="返回列表">
-          <Icons.ArrowLeft size={12} /> 列表
-        </button>
+        <Button size="small" type="text" onClick={() => void showList()} title="返回列表" icon={<Icons.ArrowLeft size={12} />}>
+          列表
+        </Button>
         <div className="agents-detail-title">
           {draft.id ? draft.name : '新建 Agent'}
           {dirty && <span className="agent-dirty-badge">已编辑未保存</span>}
         </div>
         <div className="agents-detail-spacer" />
         {draft.id != null && !draft.builtIn && (
-          <button className="btn ghost sm danger" onClick={() => void handleDelete()}>
-            <Icons.Trash size={12} /> 删除
-          </button>
+          <Button size="small" type="text" danger onClick={() => void handleDelete()} icon={<Icons.Trash size={12} />}>
+            删除
+          </Button>
         )}
-        <button className="btn primary sm" onClick={() => void handleSave()}>
-          <Icons.Check size={12} /> 保存
-        </button>
+        <Button size="small" type="primary" onClick={() => void handleSave()} icon={<Icons.Check size={12} />}>
+          保存
+        </Button>
       </div>
 
       <div className="agents-detail-grid">
@@ -892,16 +913,11 @@ function AgentsTabContent({
                 value={draft.avatar}
                 defaultSeed={draft.name || 'agent'}
                 defaultAvatarId={DEFAULT_AGENT_AVATAR_ID}
-                title="Agent 头像"
-                description="用于团队模式消息流和成员列表。"
+                title=""
+                showDefaultAction={false}
                 uploadOnPreviewClick
                 onChange={(avatar) => updateDraft('avatar', avatar)}
               />
-              <div className="agent-info-avatar-hint">
-                点击头像或拖入图片上传
-                <br />
-                支持 JPG / PNG / WebP，建议 512×512
-              </div>
             </div>
 
             <Field

@@ -88,27 +88,27 @@
 .mv_status_chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 10px;
-  font-size: 12px;
+  gap: 6px;
+  padding: 7px 16px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: 999px;
+  background: transparent;
+  border: none;
+  border-radius: var(--r-md);
   cursor: pointer;
-  transition: all 0.15s ease;
+  font-family: inherit;
+  transition: color 0.12s ease, background 0.12s ease;
   user-select: none;
 
   &:hover {
     color: var(--text);
-    border-color: var(--border-strong, var(--primary));
+    background: var(--hover);
   }
 
   &.mv_chip_active {
     color: var(--primary);
     background: var(--primary-soft);
-    border-color: transparent;
   }
 }
 
@@ -136,34 +136,33 @@
 
 .mv_segmented {
   display: inline-flex;
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: var(--r-md, 8px);
-  padding: 2px;
+  align-items: center;
   gap: 2px;
 }
 
 .mv_segmented_item {
+  display: inline-flex;
+  align-items: center;
   border: none;
   background: transparent;
   color: var(--text-muted);
-  padding: 0 10px;
-  height: 24px;
-  border-radius: var(--r-xs, 4px);
+  padding: 7px 16px;
+  height: auto;
+  border-radius: var(--r-md, 8px);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   font-family: inherit;
-  transition: color 0.12s, background 0.12s, box-shadow 0.12s;
+  transition: color 0.12s ease, background 0.12s ease;
 
   &:hover {
     color: var(--text);
+    background: var(--hover);
   }
 
   &.mv_segmented_active {
-    background: var(--panel);
-    color: var(--text-strong);
-    box-shadow: var(--shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.05));
+    color: var(--primary);
+    background: var(--primary-soft);
   }
 }
 
@@ -184,7 +183,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 12px;
-  padding-bottom: 12px;
+  padding: 8px;
 }
 
 // ── MCP 卡片 ──────────────────────────────────────────────────────────────
@@ -195,13 +194,15 @@
   gap: 10px;
   padding: 14px 16px;
   border-radius: var(--r-lg, 12px);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   background: var(--panel);
+  box-shadow: var(--shadow-sm);
   transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
-
+  cursor: pointer;
   &:hover {
-    border-color: var(--border-strong, var(--primary));
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.05);
+    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
   }
 }
 

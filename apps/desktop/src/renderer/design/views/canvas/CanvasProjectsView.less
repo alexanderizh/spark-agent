@@ -80,10 +80,10 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--r-md);
   background: var(--panel);
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
   transition:
     transform 0.16s ease,
@@ -93,7 +93,7 @@
 
 .canvas-project-card:hover {
   transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
+  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
   box-shadow: var(--shadow-md);
 }
 

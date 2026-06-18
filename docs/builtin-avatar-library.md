@@ -1,6 +1,6 @@
 # 内置头像库
 
-Spark Agent 在桌面端内置一组 SVG 头像，用于离线默认头像和 Agent / 团队的可选风格化头像。
+Spark Agent 在桌面端内置一组 PNG 头像，用于离线默认头像和 Agent / 团队的可选风格化头像。
 
 ## 范围
 
@@ -22,7 +22,7 @@ Spark Agent 在桌面端内置一组 SVG 头像，用于离线默认头像和 Ag
 - `person`：人物和工作角色头像。
 - `guofeng`：国风主题头像。
 
-渲染端通过 `apps/desktop/src/renderer/design/builtinAvatars.ts` 使用 `import.meta.glob` 建立索引，并导出默认头像 ID、头像列表、ID 校验和资源解析函数。
+渲染端通过 `apps/desktop/src/renderer/design/builtinAvatars.ts` 使用 `import.meta.glob` 建立 PNG 索引，并导出默认头像 ID、头像列表、ID 校验和资源解析函数。
 
 ## 配置格式
 
@@ -42,4 +42,4 @@ Spark Agent 在桌面端内置一组 SVG 头像，用于离线默认头像和 Ag
 - Agent 兜底：`agent-default`
 - 团队兜底：`team-default`
 
-头像选择器中的“默认头像”按钮会按业务上下文恢复到对应固定默认头像；“内置头像”按钮展示完整头像库供用户切换。
+头像选择器中的“内置头像”按钮展示完整头像库供用户切换；需要恢复兜底头像的场景可继续展示“默认头像”按钮，Agent 管理页仅保留“内置头像”和“上传”。

@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
-import { Button, Empty, Input, Modal, Select, Tag, Tooltip, message } from 'antd'
+import { Empty, Input, Modal, Select, Tag, Tooltip, message } from 'antd'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
 import {

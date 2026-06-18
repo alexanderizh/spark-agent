@@ -71,10 +71,10 @@ html[data-theme="light"],
   --info: #3b82f6;
   --info-bg: rgba(59, 130, 246, 0.1);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12), 0 4px 8px rgba(0, 0, 0, 0.06);
+  --shadow-xs: 0 0 2px rgba(0, 0, 0, 0.05);
+  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.04), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 4px 16px rgba(0, 0, 0, 0.09);
+  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 8px 32px rgba(0, 0, 0, 0.12);
 
   --diff-add-bg: rgba(16, 185, 129, 0.08);
   --diff-add-fg: #047857;
@@ -119,10 +119,10 @@ html[data-theme="dark"],
   --info: #60a5fa;
   --info-bg: rgba(96, 165, 250, 0.14);
 
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 2px 4px rgba(0, 0, 0, 0.3);
-  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.5), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-xs: 0 0 2px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 0 0 1px rgba(0, 0, 0, 0.32), 0 2px 8px rgba(0, 0, 0, 0.42);
+  --shadow-md: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 0 0 1px rgba(0, 0, 0, 0.36), 0 8px 32px rgba(0, 0, 0, 0.6);
 
   --diff-add-bg: rgba(34, 197, 94, 0.1);
   --diff-add-fg: #4ade80;

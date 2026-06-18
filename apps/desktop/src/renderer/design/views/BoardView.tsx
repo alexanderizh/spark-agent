@@ -530,7 +530,7 @@ function TaskFormPage({
         </button>
         <h2 className="tfp-title">{isEdit ? '编辑任务' : '创建任务'}</h2>
         <div className="tfp-header-actions">
-          <Button size="small" onClick={onBack}>取消</Button>
+          <Button size="small" type="default" onClick={onBack}>取消</Button>
           <Button
             type="primary"
             size="small"
@@ -797,7 +797,7 @@ function TaskCommentsPanel({
                 <LobeTextArea value={editContent} onChange={(e) => setEditContent(e.target.value)} rows={2} className="tfp-comment-edit-input" />
                 <div className="tfp-comment-edit-actions">
                   <Button size="small" type="primary" onClick={() => handleSaveEdit(c.id)} disabled={!editContent.trim()}>保存</Button>
-                  <Button size="small" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
+                  <Button size="small" type="default" onClick={() => { setEditingId(null); setEditContent('') }}>取消</Button>
                 </div>
               </div>
             ) : (
@@ -1737,6 +1737,7 @@ export function BoardView() {
         <div className="tfp-delete-bar">
           <Button
             danger
+            type="default"
             size="small"
             icon={<Icons.Trash size={13} />}
             onClick={() => handleSoftDelete(freshCard.id)}
@@ -1918,7 +1919,7 @@ export function BoardView() {
             <Button size="small" type="primary" onClick={() => handleExport(true)} disabled={selectedTaskIds.size === 0}>
               导出选中
             </Button>
-            <Button size="small" onClick={handleExitSelectionMode}>
+            <Button size="small" type="default" onClick={handleExitSelectionMode}>
               退出选择
             </Button>
           </div>

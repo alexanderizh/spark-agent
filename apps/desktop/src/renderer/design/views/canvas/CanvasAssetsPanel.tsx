@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import { Button, Tag, Tooltip, message } from 'antd'
-import { SearchBar as LobeSearchBar, Select as LobeSelect } from '@lobehub/ui'
+import { Tag, Tooltip, message } from 'antd'
+import { Button, SearchBar as LobeSearchBar, Select as LobeSelect } from '@lobehub/ui'
 import { normalizeEduAssetUrl } from '@spark/shared'
 import { Icons } from '../../Icons'
 import { AssetThumbnail } from './CanvasAssetThumbnail'

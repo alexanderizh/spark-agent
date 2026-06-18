@@ -73,7 +73,7 @@ function ImportPreviewModal({
       style={{ width: 680 }}
       footer={
         <div className="flex justify-end gap-2">
-          <Button onClick={onClose} disabled={submitting}>
+          <Button type="default" onClick={onClose} disabled={submitting}>
             取消
           </Button>
           <Button
@@ -83,7 +83,7 @@ function ImportPreviewModal({
             loading={submitting}
             icon={<Icons.Upload />}
           >
-            {submitting ? '导入中…' : `确认导入 ${payload.profiles.length} 个`}
+            {`确认导入 ${payload.profiles.length} 个`}
           </Button>
         </div>
       }

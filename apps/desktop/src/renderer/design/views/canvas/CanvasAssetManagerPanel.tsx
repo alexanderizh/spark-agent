@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Button, Tag, Tooltip, message } from 'antd'
-import { SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
+import { Tag, Tooltip, message } from 'antd'
+import { Button, SearchBar as LobeSearchBar, Select as LobeSelect, Segmented } from '@lobehub/ui'
 import { Icons } from '../../Icons'
 import { downloadAsset } from './CanvasAssetsPanel'
 import { AssetThumbnail } from './CanvasAssetThumbnail'
@@ -164,13 +164,13 @@ export function CanvasAssetManagerPanel({
           <span className="canvas-asset-manager-batchbar-count">已选 {selectedIds.length}</span>
           <div className="canvas-asset-manager-batchbar-actions">
             <Tooltip title="批量插入到当前视口">
-              <Button size="small" type="primary" icon={<Icons.Plus size={13} />} onClick={handleBatchInsert} />
+              <Button size="small" type="primary" shape="circle" icon={<Icons.Plus size={13} />} onClick={handleBatchInsert} />
             </Tooltip>
             <Tooltip title="批量下载">
-              <Button size="small" icon={<Icons.Download size={13} />} onClick={() => void handleBatchDownload()} />
+              <Button size="small" type="default" shape="circle" icon={<Icons.Download size={13} />} onClick={() => void handleBatchDownload()} />
             </Tooltip>
             <Tooltip title="移除节点引用（不删文件）">
-              <Button size="small" danger icon={<Icons.Trash size={13} />} onClick={() => void handleBatchRemove()} />
+              <Button size="small" type="default" danger shape="circle" icon={<Icons.Trash size={13} />} onClick={() => void handleBatchRemove()} />
             </Tooltip>
           </div>
         </div>

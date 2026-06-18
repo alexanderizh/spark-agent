@@ -12,6 +12,7 @@
 import { useEffect, useState } from 'react'
 import type { ReactElement } from 'react'
 import type { PlaywrightInstallProgress, PlaywrightStatusResponse } from '@spark/protocol'
+import { Button } from '@lobehub/ui'
 import { Icons } from '../Icons'
 import { useToast } from '../components/Toast'
 
@@ -195,18 +196,18 @@ export function PlaywrightStatusCard(): ReactElement {
           </div>
         </div>
         <div className="playwright-header-actions">
-          <button className="pw-button subtle" onClick={handleRefresh}>
-            <Icons.Refresh size={14} />
+          <Button size="small" type="default" onClick={handleRefresh} icon={<Icons.Refresh size={14} />}>
             重新检查
-          </button>
-          <button
-            className={`pw-button ${status.mcpEnabled ? 'enabled' : 'subtle'}`}
+          </Button>
+          <Button
+            size="small"
+            type={status.mcpEnabled ? 'primary' : 'default'}
             onClick={handleToggleEnabled}
             title={status.mcpEnabled ? '点击禁用 Playwright MCP' : '点击启用 Playwright MCP'}
+            icon={<Icons.CheckCircle size={14} />}
           >
-            <Icons.CheckCircle size={14} />
             {status.mcpEnabled ? 'MCP 已启用' : '启用 MCP'}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -242,10 +243,16 @@ export function PlaywrightStatusCard(): ReactElement {
           </div>
           <div className="playwright-row-actions">
             {mcpBadge}
-            <button className="pw-button subtle" onClick={handleInstallMcp} disabled={installingMcp}>
-              <Icons.Download size={14} />
-              {installingMcp ? '安装中' : status.mcpInstalled ? '重新安装' : '安装 MCP'}
-            </button>
+            <Button
+              size="small"
+              type="default"
+              onClick={handleInstallMcp}
+              disabled={installingMcp}
+              loading={installingMcp}
+              icon={<Icons.Download size={14} />}
+            >
+              {status.mcpInstalled ? '重新安装' : '安装 MCP'}
+            </Button>
           </div>
         </div>
 
@@ -265,18 +272,20 @@ export function PlaywrightStatusCard(): ReactElement {
           </div>
           <div className="playwright-row-actions">
             {browserBadge}
-            <button
-              className="pw-button primary"
+            <Button
+              size="small"
+              type="primary"
               onClick={handleInstallBrowser}
               disabled={installingBrowser || !status.playwrightInstalled}
+              loading={installingBrowser}
+              icon={<Icons.Download size={14} />}
             >
-              <Icons.Download size={14} />
               {installingBrowser
                 ? browserProgressLabel
                 : status.browserSource === 'bundled'
                   ? '重新下载'
                   : '下载浏览器'}
-            </button>
+            </Button>
           </div>
           {(browserInstallProgress != null || installingBrowser) && (
             <div className="playwright-progress">
@@ -339,20 +348,29 @@ export function PlaywrightStatusCard(): ReactElement {
           </div>
           <div className="playwright-row-actions">
             {!status.viewOpen ? (
-              <button className="pw-button primary" onClick={handleOpenView} disabled={opening || !canOpenView}>
-                <Icons.Eye size={14} />
+              <Button
+                size="small"
+                type="primary"
+                onClick={handleOpenView}
+                disabled={opening || !canOpenView}
+                icon={<Icons.Eye size={14} />}
+              >
                 打开视图
-              </button>
+              </Button>
             ) : (
-              <button className="pw-button subtle" onClick={handleCloseView} disabled={opening}>
-                <Icons.X size={14} />
+              <Button
+                size="small"
+                type="default"
+                onClick={handleCloseView}
+                disabled={opening}
+                icon={<Icons.X size={14} />}
+              >
                 关闭视图
-              </button>
+              </Button>
             )}
-            <button className="pw-button ghost" onClick={handleResetConfig}>
-              <Icons.Refresh size={14} />
+            <Button size="small" type="text" onClick={handleResetConfig} icon={<Icons.Refresh size={14} />}>
               重置配置
-            </button>
+            </Button>
           </div>
         </div>
 

@@ -21,6 +21,7 @@ export interface AvatarPickerProps {
   title: string
   description?: string
   defaultAvatarId?: string
+  showDefaultAction?: boolean
   onChange: (value: SparkAvatarConfig) => void
   /** 点击预览就触发文件选择（用于紧凑型头像编辑器：把"上传"按钮也藏起来时） */
   uploadOnPreviewClick?: boolean
@@ -45,6 +46,7 @@ export function AvatarPicker({
   title,
   description,
   defaultAvatarId,
+  showDefaultAction = true,
   onChange,
   uploadOnPreviewClick,
 }: AvatarPickerProps) {
@@ -165,15 +167,17 @@ export function AvatarPicker({
         <div className="avatar-picker-title">{title}</div>
         {description != null && <div className="avatar-picker-desc">{description}</div>}
         <div className="avatar-picker-actions">
-          <button type="button" className="btn ghost sm" onClick={openPicker}>
-            <Icons.Upload size={12} /> 上传
-          </button>
           <button type="button" className="btn ghost sm" onClick={() => setLibraryOpen(true)}>
             <Icons.Sparkles size={12} /> 内置头像
           </button>
-          <button type="button" className="btn ghost sm" onClick={resetToDefault}>
-            <Icons.Refresh size={12} /> 默认头像
+          <button type="button" className="btn ghost sm" onClick={openPicker}>
+            <Icons.Upload size={12} /> 上传
           </button>
+          {showDefaultAction && (
+            <button type="button" className="btn ghost sm" onClick={resetToDefault}>
+              <Icons.Refresh size={12} /> 默认头像
+            </button>
+          )}
         </div>
       </div>
       <input

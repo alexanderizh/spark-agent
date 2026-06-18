@@ -134,18 +134,20 @@
   gap: 12px;
   padding: 12px 14px;
   border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
+  border: 1px solid transparent;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.12s ease;
 
   &:hover {
-    border-color: var(--border-strong, var(--primary));
-    background: var(--hover);
+    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
   }
 
   &:active {
-    transform: scale(0.99);
+    transform: translateY(0);
   }
 }
 
@@ -181,13 +183,15 @@
   padding: 16px;
   margin-top: 12px;
   border-radius: var(--r-lg);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   background: var(--panel);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+  box-shadow: var(--shadow-sm);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease, transform 0.12s ease;
 
   &:hover {
-    border-color: var(--border-strong, var(--primary));
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+    box-shadow: var(--shadow-md);
+    transform: translateY(-1px);
   }
 
   &.pv_multi_mode {
@@ -196,7 +200,8 @@
 
   &.pv_selected {
     border-color: var(--primary);
-    background: var(--primary-soft);
+    background: color-mix(in srgb, var(--primary) 4%, var(--panel));
+    box-shadow: 0 0 0 1px var(--primary) inset, var(--shadow-sm);
 
     .pv_card_name {
       color: var(--primary);
@@ -284,6 +289,7 @@
   min-height: 0;
   overflow-y: auto;
   padding-right: 4px;
+  padding-left: 4px;
 
   // 滚动条样式交由全局规则统一处理（styles.css），不再写局部 `::-webkit-scrollbar*`。
 }

@@ -10212,7 +10212,7 @@ body.inspector-resizing {
   width: 56px;
   height: 56px;
   border-radius: var(--r-lg);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -11109,21 +11109,21 @@ body.inspector-resizing {
   flex-direction: column;
   gap: 8px;
   padding: 14px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--r-lg);
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   text-align: left;
   cursor: pointer;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
   transition:
     border-color 0.12s,
     box-shadow 0.12s,
     transform 0.12s;
 }
 .agents-card:hover {
-  border-color: color-mix(in srgb, var(--primary) 36%, transparent);
-  box-shadow: var(--shadow-sm);
+  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+  box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
 .agents-card-head {
@@ -11163,7 +11163,7 @@ body.inspector-resizing {
 }
 .agents-card-status.disabled {
   color: var(--text-muted);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
 }
 .agents-card-name {
   min-width: 0;
@@ -11209,19 +11209,19 @@ body.inspector-resizing {
   font-size: 11px;
   padding: 2px 8px;
   border-radius: var(--r-sm);
-  background: var(--bg-soft);
+  background: var(--bg-sunken);
   color: var(--text-muted);
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
 }
 .agents-card-tag.workflow-tag {
   color: var(--primary);
   background: var(--primary-soft);
-  border-color: color-mix(in srgb, var(--primary) 20%, transparent);
+  border-color: transparent;
 }
 .agents-card-tag.default-tag {
   color: var(--warning, #f59e0b);
   background: color-mix(in srgb, var(--warning, #f59e0b) 12%, transparent);
-  border-color: color-mix(in srgb, var(--warning, #f59e0b) 20%, transparent);
+  border-color: transparent;
 }
 .agent-toggle-label {
   font-size: 12px;
@@ -11241,7 +11241,7 @@ body.inspector-resizing {
   align-items: center;
   gap: 8px;
   padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--divider);
   background: var(--panel);
   min-height: 48px;
   flex-shrink: 0;
@@ -11265,10 +11265,10 @@ body.inspector-resizing {
   overflow: hidden;
 }
 .agents-detail-grid .agent-config-panel {
-  border-width: 0 0 0 1px;
+  border-width: 0;
   border-radius: 0;
   box-shadow: none;
-  background: color-mix(in srgb, var(--bg-soft) 55%, var(--panel));
+  background: var(--bg-sunken);
   margin: 0;
 }
 
@@ -11368,10 +11368,10 @@ body.inspector-resizing {
   gap: 5px;
 }
 .agent-pick-item {
-  border: 1px solid var(--border);
-  background: var(--panel);
+  border: 1px solid transparent;
+  background: var(--bg-sunken);
   color: var(--text);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   padding: 6px 8px;
   cursor: pointer;
 }
@@ -11451,10 +11451,10 @@ body.inspector-resizing {
 .agent-hook-row {
   justify-content: space-between;
   color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
   padding: 7px 8px;
-  background: color-mix(in srgb, var(--bg-soft) 70%, var(--panel));
+  background: var(--bg-sunken);
 }
 .agent-hook-row > span {
   min-width: 72px;
@@ -11616,27 +11616,29 @@ body.inspector-resizing {
   flex-direction: column;
   gap: 10px;
   padding: 14px;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--r-md);
-  background: var(--bg);
+  background: var(--panel);
   color: var(--text);
   font-family: inherit;
   text-align: left;
   cursor: pointer;
-  box-shadow: var(--shadow-xs);
+  box-shadow: var(--shadow-sm);
   transition:
     border-color 0.12s,
     box-shadow 0.12s,
-    transform 0.12s;
+    transform 0.12s,
+    background 0.12s;
 }
 .workflow-card:hover {
-  border-color: color-mix(in srgb, var(--primary) 36%, transparent);
-  box-shadow: var(--shadow-sm);
+  border-color: color-mix(in srgb, var(--primary) 24%, transparent);
+  box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
 .workflow-card.active {
   border-color: color-mix(in srgb, var(--primary) 44%, transparent);
-  background: color-mix(in srgb, var(--primary-soft) 36%, var(--bg));
+  background: color-mix(in srgb, var(--primary-soft) 36%, var(--panel));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--primary) 44%, transparent) inset, var(--shadow-sm);
 }
 /* 删除按钮：默认隐藏，卡片悬停时显现；悬停按钮自身高亮。 */
 .workflow-card-delete {
@@ -14070,7 +14072,7 @@ body.inspector-resizing {
   font-weight: 600;
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   color: var(--primary);
-  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  border: none;
   line-height: 1.4;
 }
 .agent-field-hint {
@@ -14090,7 +14092,7 @@ body.inspector-resizing {
   font-weight: 600;
   background: color-mix(in srgb, var(--primary) 14%, transparent);
   color: var(--primary);
-  border: 1px solid color-mix(in srgb, var(--primary) 28%, transparent);
+  border: none;
   line-height: 1.4;
 }
 
@@ -14120,7 +14122,7 @@ body.inspector-resizing {
   width: 96px;
   height: 96px;
   border-radius: 50%;
-  border: 1px solid var(--border);
+  border: 1px solid var(--divider);
   background: var(--bg-soft);
   overflow: hidden;
   margin: 0 auto;
@@ -14143,7 +14145,12 @@ body.inspector-resizing {
 .agent-info-avatar .avatar-picker-main {
   display: grid;
   justify-items: center;
+  gap: 8px;
   margin-top: 10px;
+}
+.agent-info-avatar .avatar-picker-actions {
+  justify-content: center;
+  flex-wrap: nowrap;
 }
 .agent-info-avatar-hint {
   text-align: center;
@@ -14174,8 +14181,8 @@ body.inspector-resizing {
 .agent-prompt-editor {
   display: flex;
   flex-direction: column;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
   background: var(--code-bg);
   overflow: hidden;
   transition:
@@ -14192,7 +14199,7 @@ body.inspector-resizing {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: none;
   background: color-mix(in srgb, var(--bg-soft) 70%, var(--panel));
 }
 .agent-prompt-toolbar-title {
@@ -14252,7 +14259,7 @@ body.inspector-resizing {
   text-align: right;
   color: var(--text-faint);
   background: color-mix(in srgb, var(--bg-sunken) 70%, var(--code-bg));
-  border-right: 1px solid var(--border);
+  border-right: none;
   overflow: hidden;
   min-width: 38px;
 }
@@ -14310,10 +14317,11 @@ body.inspector-resizing {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--r-md);
+  padding: 14px;
+  border: 1px solid transparent;
+  border-radius: var(--r-lg);
   background: var(--panel);
+  box-shadow: var(--shadow-xs);
   transition:
     border-color 0.12s ease,
     box-shadow 0.12s ease;
@@ -14353,8 +14361,8 @@ body.inspector-resizing {
   font-size: var(--font-xs);
   font-weight: 600;
   color: var(--text-muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
+  background: var(--hover);
+  border: none;
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum';
@@ -14369,7 +14377,6 @@ body.inspector-resizing {
   display: flex;
   justify-content: center;
   padding-top: 4px;
-  border-top: 1px dashed var(--divider);
   margin-top: 4px;
 }
 .agent-config-link {
