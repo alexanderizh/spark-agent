@@ -43,7 +43,6 @@ ARCH="${1:-arm64}"
 if [ "$#" -gt 0 ]; then
   shift
 fi
-BUILDER_ARGS=("$@")
 
 case "$ARCH" in
   arm64|x64)
@@ -93,7 +92,7 @@ pnpm run rebuild:native -- "$ARCH"
 
 step "5/6 electron-builder 签名 + 公证（这一步会上传 Apple，约 5~15 分钟）"
 # electron-builder 会自动读取钥匙串证书；afterSign 钩子(notarize.js)会做公证
-pnpm exec electron-builder --mac "--$ARCH" "${BUILDER_ARGS[@]}"
+pnpm exec electron-builder --mac "--$ARCH" "$@"
 ok "打包完成"
 
 # ============ 4. 定位产物 ============
