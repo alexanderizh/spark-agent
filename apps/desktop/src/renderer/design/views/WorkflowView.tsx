@@ -671,10 +671,10 @@ function WorkflowInspector(props: InspectorProps) {
             }
             options={[
               { label: '继承 Agent', value: '' },
-              { label: '询问', value: 'claude-ask' },
-              { label: '自动编辑', value: 'claude-auto-edits' },
+              { label: '请求批准', value: 'claude-ask' },
               { label: '计划模式', value: 'claude-plan' },
-              { label: '绕过权限', value: 'claude-bypass' },
+              { label: '自动审批', value: 'claude-auto' },
+              { label: '完全访问权限', value: 'claude-bypass' },
               { label: 'Codex 默认', value: 'codex-default' },
               { label: 'Codex 自动审查', value: 'codex-auto-review' },
               { label: 'Codex 完全访问', value: 'codex-full-access' },

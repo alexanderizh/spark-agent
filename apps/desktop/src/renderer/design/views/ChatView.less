@@ -852,6 +852,8 @@
   border-radius: 6px;
   border: 0;
   background: transparent;
+  height: 29px;
+  width: 69px;
   cursor: pointer;
   color: var(--text-secondary, #888);
   user-select: none;
@@ -872,40 +874,76 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  padding: 8px 12px 4px;
+  gap: 5px;
+  padding: 4px 12px 0;
 
   .composer-debug-quickreplies-label {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 12px;
+    flex-shrink: 0;
+    height: 20px;
+    padding: 0;
     color: var(--text-muted);
-    margin-right: 2px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+
+    svg {
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
   }
 
   .composer-debug-chip {
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-size: 12px;
-    line-height: 22px;
-    padding: 0 10px;
+    height: 22px;
+    padding: 0 9px;
     border: 0;
-    border-radius: var(--r-sm);
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1;
     background: var(--fill-2);
     color: var(--text-1);
     cursor: pointer;
-    transition: background-color 0.16s ease;
+    transition:
+      background-color 0.16s ease,
+      transform 0.16s ease,
+      color 0.16s ease;
+
+    svg {
+      flex-shrink: 0;
+    }
 
     &:hover:not(:disabled) {
+      transform: translateY(-0.5px);
       background: var(--hover);
+    }
+
+    &:focus-visible {
+      outline: none;
+      box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 22%, transparent);
     }
 
     &:disabled {
       opacity: 0.45;
       cursor: not-allowed;
     }
+  }
+
+  .composer-debug-chip:nth-of-type(1) {
+    color: var(--primary);
+  }
+
+  .composer-debug-chip:nth-of-type(2) {
+    color: var(--warning);
+  }
+
+  .composer-debug-chip:nth-of-type(3) {
+    color: var(--success);
   }
 }
 

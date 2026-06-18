@@ -1764,11 +1764,10 @@ const HOOK_NODES: Array<{ node: AgentHookNode; label: string }> = [
 ]
 
 const PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> = [
-  { value: 'claude-ask', label: '每次询问' },
-  { value: 'claude-auto-edits', label: '自动接受编辑' },
+  { value: 'claude-ask', label: '请求批准' },
   { value: 'claude-plan', label: '计划模式' },
-  { value: 'claude-auto', label: '自动权限' },
-  { value: 'claude-bypass', label: '绕过权限' },
+  { value: 'claude-auto', label: '自动审批' },
+  { value: 'claude-bypass', label: '完全访问权限' },
 ]
 
 const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: string }> = [

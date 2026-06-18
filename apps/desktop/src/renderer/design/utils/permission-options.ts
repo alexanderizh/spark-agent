@@ -15,23 +15,17 @@ export type ComposerMenuOption = {
 }
 
 export const CLAUDE_PERMISSION_MODE_OPTIONS: Array<ComposerMenuOption> = [
-  { value: 'claude-ask', label: 'Ask permissions', description: '每次工具执行前确认' },
-  {
-    value: 'claude-auto-edits',
-    label: 'Auto accept edits',
-    description: '自动接受编辑，命令仍确认',
-    tone: 'auto',
-  },
-  { value: 'claude-plan', label: 'Plan mode', description: '先产出计划，再批准执行' },
+  { value: 'claude-ask', label: '请求批准', description: '每次工具执行前确认' },
+  { value: 'claude-plan', label: '计划模式', description: '先产出计划，再批准执行' },
   {
     value: 'claude-auto',
-    label: 'Auto',
+    label: '自动审批',
     description: '使用 Claude SDK 自动权限策略',
     tone: 'auto',
   },
   {
     value: 'claude-bypass',
-    label: 'Bypass permissions',
+    label: '完全访问权限',
     description: '危险：完全听从 agent 执行',
     tone: 'danger',
   },
