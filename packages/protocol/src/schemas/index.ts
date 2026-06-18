@@ -75,6 +75,11 @@ const RemoteCapabilitiesSchema = z.object({
   manageWorkspace: z.boolean(),
   runCommands: z.boolean(),
   approvePermissions: z.boolean(),
+  observeDesktop: z.boolean().optional(),
+  controlDesktop: z.boolean().optional(),
+  transferFiles: z.boolean().optional(),
+  manageRuntime: z.boolean().optional(),
+  dangerousActions: z.boolean().optional(),
 })
 
 const RemoteConnectionPatchSchema = z.object({

@@ -95,7 +95,9 @@
   min-height: 110px;
 }
 /* 带 onClick 的快捷入口卡片，鼠标进入后应表现为可点击 */
-.qs-card.qs-card-default { cursor: pointer; }
+.qs-card.qs-card-default {
+  cursor: pointer;
+}
 .qs-card:hover {
   border-color: var(--primary);
   background: var(--bg-soft);
@@ -175,7 +177,9 @@
 }
 /* 带 onClick 的列表项（会话、健康行等），鼠标进入后应表现为可点击 */
 .list-item.session-item-default,
-.list-item.health-row { cursor: pointer; }
+.list-item.health-row {
+  cursor: pointer;
+}
 .list-item + .list-item {
   border-top: 1px solid var(--divider);
   border-radius: 0;
@@ -565,7 +569,9 @@ body.sidebar-resizing {
   cursor: pointer;
   color: var(--text-faint);
   border-radius: var(--r-xs);
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
 .proj-toggle:hover {
   background: color-mix(in srgb, var(--text) 8%, transparent);
@@ -698,8 +704,17 @@ body.sidebar-resizing {
   display: none;
 }
 @keyframes session-waiting-pulse {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-primary-6, rgb(var(--primary-6))) 40%, transparent); }
-  50% { opacity: 0.8; box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary-6, rgb(var(--primary-6))) 0%, transparent); }
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0
+      color-mix(in srgb, var(--color-primary-6, rgb(var(--primary-6))) 40%, transparent);
+  }
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 0 3px
+      color-mix(in srgb, var(--color-primary-6, rgb(var(--primary-6))) 0%, transparent);
+  }
 }
 .proj-session-empty {
   display: flex;
@@ -731,7 +746,9 @@ body.sidebar-resizing {
   color: var(--text-faint);
   font-size: 11.5px;
   cursor: pointer;
-  transition: color 0.12s, background 0.12s;
+  transition:
+    color 0.12s,
+    background 0.12s;
 }
 .proj-show-more-btn:hover {
   color: var(--primary);
@@ -914,7 +931,7 @@ body.sidebar-resizing {
 .proj-head:hover .item-menu-btn,
 .chat-item:hover .item-menu-btn,
 .item-menu-btn:focus-visible,
-.item-menu-btn[data-state="open"],
+.item-menu-btn[data-state='open'],
 .item-menu-wrap.menu-open .item-menu-btn,
 .proj-head:hover .proj-add-session-btn {
   opacity: 1;
@@ -1526,7 +1543,9 @@ body.sidebar-resizing {
   background: var(--bg-soft);
   /* 重要：覆盖 .md-surface img 的 margin，避免双重间距 */
   margin: 0;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .md-image-img:hover {
@@ -1547,7 +1566,9 @@ body.sidebar-resizing {
   border-radius: var(--r-sm);
   opacity: 0;
   transform: translateY(-2px);
-  transition: opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
   pointer-events: none;
 }
 
@@ -1800,7 +1821,9 @@ body.sidebar-resizing {
   background: transparent;
   border-color: var(--divider);
 }
-.md-code-block.no-syntax .md-code { font-family: var(--font-sans); }
+.md-code-block.no-syntax .md-code {
+  font-family: var(--font-sans);
+}
 .md-code-header {
   display: flex;
   align-items: center;
@@ -2639,8 +2662,12 @@ body.sidebar-resizing {
   background-image:
     linear-gradient(to right, var(--hero-grid-color, rgba(36, 32, 27, 0.07)) 1px, transparent 1px),
     linear-gradient(to bottom, var(--hero-grid-color, rgba(36, 32, 27, 0.07)) 1px, transparent 1px);
-  background-size: 56px 56px, 56px 56px;
-  background-position: -1px -1px, -1px -1px;
+  background-size:
+    56px 56px,
+    56px 56px;
+  background-position:
+    -1px -1px,
+    -1px -1px;
   -webkit-mask-image: radial-gradient(
     ellipse 70% 60% at 50% 50%,
     #000 0%,
@@ -2675,7 +2702,7 @@ body.sidebar-resizing {
   position: relative;
   z-index: 1;
 }
-.chat-main-empty .chat-hero-span{
+.chat-main-empty .chat-hero-span {
   font-size: 12px;
   color: #999;
   line-height: 1;
@@ -3589,7 +3616,9 @@ body.sidebar-resizing {
   white-space: nowrap;
   cursor: pointer;
   border-radius: var(--r-sm);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 .context-meter:hover {
   background: var(--hover);
@@ -4287,7 +4316,7 @@ body.inspector-resizing {
   cursor: col-resize;
   user-select: none;
 }
- .inspector-section {
+.inspector-section {
   padding: var(--pad-md) var(--pad-lg);
   border-bottom: 1px solid var(--divider);
 }
@@ -4455,7 +4484,9 @@ body.inspector-resizing {
   border-radius: var(--r-xs);
   background: var(--bg-soft);
   border: 1px solid transparent;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  transition:
+    background-color 0.12s ease,
+    border-color 0.12s ease;
 }
 .inspector-plan-item:hover {
   background: var(--bg);
@@ -6065,7 +6096,10 @@ body.inspector-resizing {
   overflow: hidden;
   box-sizing: border-box;
   box-shadow: var(--shadow-xs);
-  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    transform 0.12s;
 }
 .skill-card.selected {
   border-color: var(--primary);
@@ -6224,7 +6258,9 @@ body.inspector-resizing {
   border-radius: var(--r-lg);
   overflow: hidden;
   background: var(--bg-soft);
-  box-shadow: inset 0 0 0 1px var(--border), var(--shadow-xs);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    var(--shadow-xs);
   flex-shrink: 0;
 }
 .avatar-picker-preview img,
@@ -6306,7 +6342,9 @@ body.inspector-resizing {
   position: absolute;
   inset: 0;
   border-radius: var(--r-lg);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42), inset 0 0 0 999px rgba(0, 0, 0, 0.02);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.42),
+    inset 0 0 0 999px rgba(0, 0, 0, 0.02);
   pointer-events: none;
 }
 .avatar-crop-controls {
@@ -6352,11 +6390,7 @@ body.inspector-resizing {
 .avatar-crop-circle-mask {
   position: absolute;
   inset: 0;
-  background: radial-gradient(
-    circle 120px at center,
-    transparent 118px,
-    rgba(0, 0, 0, 0.5) 120px
-  );
+  background: radial-gradient(circle 120px at center, transparent 118px, rgba(0, 0, 0, 0.5) 120px);
   pointer-events: none;
   border-radius: var(--r-lg);
 }
@@ -6483,7 +6517,10 @@ body.inspector-resizing {
   gap: 10px;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s,
+    box-shadow 0.15s;
 }
 .remote-connection-card:hover {
   border-color: var(--border-strong);
@@ -6512,6 +6549,8 @@ body.inspector-resizing {
 }
 .remote-editor {
   min-width: 0;
+  display: grid;
+  gap: 14px;
 }
 .remote-editor-modal .ant-modal {
   width: min(860px, calc(100vw - 32px));
@@ -6536,7 +6575,19 @@ body.inspector-resizing {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 18px 0 4px;
+  margin: 0;
+}
+.remote-actions-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px 0 12px;
+  background: linear-gradient(
+    180deg,
+    var(--panel) 72%,
+    color-mix(in srgb, var(--panel) 0%, transparent)
+  );
+  border-bottom: 1px solid var(--divider);
 }
 .remote-pairing-panel {
   border: 1px solid var(--border);
@@ -7074,7 +7125,8 @@ body.inspector-resizing {
   border-bottom: 0;
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   background: var(--panel);
-  box-shadow: 0 -8px 28px color-mix(in srgb, var(--shadow-color, rgba(0,0,0,.12)) 48%, transparent);
+  box-shadow: 0 -8px 28px
+    color-mix(in srgb, var(--shadow-color, rgba(0, 0, 0, 0.12)) 48%, transparent);
   overflow: hidden;
   flex-shrink: 0;
   animation: user-question-slide-up 0.28s cubic-bezier(0.22, 1, 0.36, 1);
@@ -7211,7 +7263,10 @@ body.inspector-resizing {
   border: 0;
   background: color-mix(in srgb, var(--primary) 7%, var(--bg-soft));
   color: var(--text);
-  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  transition:
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
   cursor: pointer;
   overflow: hidden;
 }
@@ -7339,7 +7394,11 @@ body.inspector-resizing {
   white-space: nowrap;
   flex-shrink: 0;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease, opacity 0.15s ease, transform 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.15s ease;
 }
 
 .user-question-btn.secondary {
@@ -7518,7 +7577,9 @@ body.inspector-resizing {
   font-family: inherit;
   outline: none;
   width: 100%;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
 }
 .form-grid > textarea:not(.ant-input) {
   height: auto;
@@ -7529,7 +7590,9 @@ body.inspector-resizing {
 }
 .form-grid > input:not(.ant-input):hover,
 .form-grid > select:hover,
-.form-grid > textarea:not(.ant-input):hover { border-color: var(--text-faint); }
+.form-grid > textarea:not(.ant-input):hover {
+  border-color: var(--text-faint);
+}
 .form-grid > input:not(.ant-input):focus,
 .form-grid > select:focus,
 .form-grid > textarea:not(.ant-input):focus {
@@ -7566,7 +7629,9 @@ body.inspector-resizing {
   animation: slideRight 0.2s;
 }
 @media (min-width: 1600px) {
-  .slide-panel { width: min(1120px, 80vw); }
+  .slide-panel {
+    width: min(1120px, 80vw);
+  }
 }
 @keyframes slideRight {
   from {
@@ -10845,7 +10910,9 @@ body.inspector-resizing {
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   outline: none;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   box-sizing: border-box;
   width: 100%;
 }
@@ -10876,7 +10943,9 @@ body.inspector-resizing {
   resize: vertical;
   outline: none;
   box-sizing: border-box;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   font-family: var(--font-sans, inherit);
 }
 
@@ -11014,7 +11083,10 @@ body.inspector-resizing {
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow-xs);
-  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    transform 0.12s;
 }
 .agents-card:hover {
   border-color: color-mix(in srgb, var(--primary) 36%, transparent);
@@ -11075,7 +11147,6 @@ body.inspector-resizing {
   font-size: 12px;
   line-height: 1.5;
   overflow: hidden;
-  
 }
 .agents-card-meta {
   display: flex;
@@ -11520,7 +11591,10 @@ body.inspector-resizing {
   text-align: left;
   cursor: pointer;
   box-shadow: var(--shadow-xs);
-  transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s;
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    transform 0.12s;
 }
 .workflow-card:hover {
   border-color: color-mix(in srgb, var(--primary) 36%, transparent);
@@ -11546,7 +11620,11 @@ body.inspector-resizing {
   background: color-mix(in srgb, var(--bg) 86%, transparent);
   color: var(--text-muted);
   opacity: 0;
-  transition: opacity 0.12s, color 0.12s, border-color 0.12s, background 0.12s;
+  transition:
+    opacity 0.12s,
+    color 0.12s,
+    border-color 0.12s,
+    background 0.12s;
 }
 .workflow-card:hover .workflow-card-delete,
 .workflow-card:focus-within .workflow-card-delete {
@@ -11650,13 +11728,17 @@ body.inspector-resizing {
   background: var(--panel);
   min-height: 48px;
 }
-.workflow-builder-v2 .wf-toolbar-spacer { flex: 1; }
+.workflow-builder-v2 .wf-toolbar-spacer {
+  flex: 1;
+}
 .workflow-builder-v2 .wf-title-input {
   position: static;
   width: 240px;
   font-weight: 650;
 }
-.workflow-builder-v2 .wf-status-select { width: 110px; }
+.workflow-builder-v2 .wf-status-select {
+  width: 110px;
+}
 .workflow-builder-v2 .wf-canvas-wrap {
   flex: 1;
   display: flex;
@@ -11693,7 +11775,10 @@ body.inspector-resizing {
   background: var(--panel);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.12s, transform 0.12s, box-shadow 0.12s;
+  transition:
+    border-color 0.12s,
+    transform 0.12s,
+    box-shadow 0.12s;
 }
 .workflow-builder-v2 .wf-palette-item:hover {
   border-color: var(--node-accent, var(--primary));
@@ -11726,8 +11811,15 @@ body.inspector-resizing {
   font-size: 11px;
   color: var(--text-muted);
 }
-.workflow-builder-v2 .wf-flow { flex: 1; min-width: 0; min-height: 0; position: relative; }
-.workflow-builder-v2 .wf-flow .react-flow__attribution { display: none; }
+.workflow-builder-v2 .wf-flow {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+.workflow-builder-v2 .wf-flow .react-flow__attribution {
+  display: none;
+}
 .workflow-builder-v2 .wf-flow .react-flow__minimap {
   background: var(--panel);
   border: 1px solid var(--border);
@@ -11759,7 +11851,9 @@ body.inspector-resizing {
 }
 .spark-wf-node.selected {
   border-color: var(--node-accent, var(--primary));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--node-accent, var(--primary)) 22%, transparent), var(--shadow-md);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--node-accent, var(--primary)) 22%, transparent),
+    var(--shadow-md);
 }
 .spark-wf-node-head {
   display: flex;
@@ -11852,8 +11946,7 @@ body.inspector-resizing {
   overflow: auto;
   background:
     linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px),
-    var(--bg);
+    linear-gradient(90deg, var(--border) 1px, transparent 1px), var(--bg);
   background-size: 24px 24px;
 }
 .wf-title-input {
@@ -11943,9 +12036,15 @@ body.inspector-resizing {
   user-select: none;
 }
 
-.provider-logo-rounded .lobe-flex { border-radius: var(--r-sm) !important; }
-.provider-logo-rounded { border-radius: var(--r-sm) !important; }
-.provider-logo-circle { border-radius: 50% !important; }
+.provider-logo-rounded .lobe-flex {
+  border-radius: var(--r-sm) !important;
+}
+.provider-logo-rounded {
+  border-radius: var(--r-sm) !important;
+}
+.provider-logo-circle {
+  border-radius: 50% !important;
+}
 .provider-logo-img {
   width: 100%;
   height: 100%;
@@ -11973,10 +12072,14 @@ body.inspector-resizing {
   background: var(--panel);
   padding: 8px;
   gap: 8px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   cursor: text;
 }
-.chip-list:hover { border-color: var(--text-faint); }
+.chip-list:hover {
+  border-color: var(--text-faint);
+}
 .chip-list:focus-within {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
@@ -11998,11 +12101,20 @@ body.inspector-resizing {
   font-size: var(--font-sm);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   outline: none;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
-.chip-list-input::placeholder { color: var(--text-faint); }
-.chip-list-input:hover { background: var(--hover); }
-.chip-list-input:focus { background: var(--bg-soft); border-color: var(--border); }
+.chip-list-input::placeholder {
+  color: var(--text-faint);
+}
+.chip-list-input:hover {
+  background: var(--hover);
+}
+.chip-list-input:focus {
+  background: var(--bg-soft);
+  border-color: var(--border);
+}
 .chip-list-add {
   display: inline-flex;
   align-items: center;
@@ -12016,10 +12128,14 @@ body.inspector-resizing {
   font-size: var(--font-xs);
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s, opacity 0.12s;
+  transition:
+    background 0.12s,
+    opacity 0.12s;
   flex-shrink: 0;
 }
-.chip-list-add:hover:not(:disabled) { background: var(--primary-hover); }
+.chip-list-add:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
 .chip-list-add:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -12057,11 +12173,20 @@ body.inspector-resizing {
   color: var(--text);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   max-width: 100%;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
-.chip:hover { background: var(--hover); }
-.chip-clickable { cursor: pointer; user-select: none; }
-.chip-clickable.chip-locked { cursor: default; }
+.chip:hover {
+  background: var(--hover);
+}
+.chip-clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.chip-clickable.chip-locked {
+  cursor: default;
+}
 .chip-clickable:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
@@ -12094,12 +12219,26 @@ body.inspector-resizing {
   color: var(--text-faint);
   cursor: pointer;
   padding: 0;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
-.chip-remove:hover { background: var(--danger-bg); color: var(--danger); }
-.chip-list-compact { padding: 6px; gap: 6px; }
-.chip-list-compact .chip { height: 22px; font-size: 10.5px; padding: 0 4px 0 6px; }
-.chip-list-compact .chip-list-input { height: 26px; }
+.chip-remove:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.chip-list-compact {
+  padding: 6px;
+  gap: 6px;
+}
+.chip-list-compact .chip {
+  height: 22px;
+  font-size: 10.5px;
+  padding: 0 4px 0 6px;
+}
+.chip-list-compact .chip-list-input {
+  height: 26px;
+}
 
 /* ============================================================
    PROVIDER EDIT FORM — slide panel 的 C 端版式
@@ -12114,7 +12253,10 @@ body.inspector-resizing {
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
 }
-.provider-form-hero .provider-form-hero-info { flex: 1; min-width: 0; }
+.provider-form-hero .provider-form-hero-info {
+  flex: 1;
+  min-width: 0;
+}
 .provider-form-hero .provider-form-hero-title {
   font-size: 15px;
   font-weight: 600;
@@ -12147,7 +12289,9 @@ body.inspector-resizing {
   background: var(--panel);
   transition: border-color 0.15s;
 }
-.provider-form-section:hover { border-color: var(--border-strong); }
+.provider-form-section:hover {
+  border-color: var(--border-strong);
+}
 .provider-form-section-title {
   display: flex;
   align-items: center;
@@ -12175,7 +12319,10 @@ body.inspector-resizing {
 .provider-form-row + .provider-form-row {
   border-top: 1px solid var(--divider);
 }
-.provider-form-row-info { flex: 1; min-width: 0; }
+.provider-form-row-info {
+  flex: 1;
+  min-width: 0;
+}
 .provider-form-row-label {
   font-size: var(--font-sm);
   font-weight: 500;
@@ -12229,14 +12376,24 @@ body.inspector-resizing {
   margin-bottom: 16px;
   border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
 }
-.alert-banner-icon { flex-shrink: 0; display: inline-flex; align-items: center; padding-top: 1px; }
-.alert-banner-content { flex: 1; line-height: 1.5; }
+.alert-banner-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding-top: 1px;
+}
+.alert-banner-content {
+  flex: 1;
+  line-height: 1.5;
+}
 
 /* Provider card logo：使用真实 logo 后 fallback 改为纯色字母 */
 .provider-card .provider-logo {
   border: 1px solid var(--border);
 }
-.provider-card .provider-info .name { font-size: 14px; }
+.provider-card .provider-info .name {
+  font-size: 14px;
+}
 .provider-card .provider-default-badge {
   display: inline-flex;
   align-items: center;
@@ -12284,7 +12441,9 @@ body.inspector-resizing {
   color: var(--text-muted);
   overflow: hidden;
 }
-.preset-card.preset-added .preset-card-logo { opacity: 0.5; }
+.preset-card.preset-added .preset-card-logo {
+  opacity: 0.5;
+}
 
 /* ============================================================
    PROVIDER 多选 / 导入导出 样式（import-export task）
@@ -12293,7 +12452,9 @@ body.inspector-resizing {
 /* Provider card 多选态 */
 .provider-card.multi-select {
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 .provider-card.multi-select:hover {
   background: var(--bg-soft);
@@ -12310,7 +12471,7 @@ body.inspector-resizing {
   cursor: pointer;
   flex-shrink: 0;
 }
-.provider-card-checkbox input[type="checkbox"] {
+.provider-card-checkbox input[type='checkbox'] {
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -12363,8 +12524,14 @@ body.inspector-resizing {
   animation: modalIn 0.18s;
 }
 @keyframes modalIn {
-  from { transform: scale(0.96); opacity: 0; }
-  to   { transform: scale(1);    opacity: 1; }
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 .modal-header {
   display: flex;
@@ -12426,7 +12593,9 @@ body.inspector-resizing {
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
 }
-.import-meta .muted { color: var(--text-muted); }
+.import-meta .muted {
+  color: var(--text-muted);
+}
 
 .import-mode-row {
   display: flex;
@@ -12446,7 +12615,7 @@ body.inspector-resizing {
 .import-mode-row .radio-row:hover {
   background: var(--bg-soft);
 }
-.import-mode-row .radio-row input[type="radio"] {
+.import-mode-row .radio-row input[type='radio'] {
   accent-color: var(--primary);
   margin: 0;
 }
@@ -12479,7 +12648,9 @@ body.inspector-resizing {
   border-bottom: 1px solid var(--divider);
   font-size: var(--font-sm);
 }
-.import-list-row:last-child { border-bottom: none; }
+.import-list-row:last-child {
+  border-bottom: none;
+}
 .import-list-row.conflict {
   background: rgba(245, 158, 11, 0.05);
 }
@@ -12518,8 +12689,12 @@ body.inspector-resizing {
   overflow: hidden;
   user-select: none;
 }
-.provider-logo-rounded { border-radius: var(--r-sm) !important; }
-.provider-logo-circle { border-radius: 50% !important; }
+.provider-logo-rounded {
+  border-radius: var(--r-sm) !important;
+}
+.provider-logo-circle {
+  border-radius: 50% !important;
+}
 .provider-logo-img {
   width: 100%;
   height: 100%;
@@ -12547,10 +12722,14 @@ body.inspector-resizing {
   background: var(--panel);
   padding: 8px;
   gap: 8px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   cursor: text;
 }
-.chip-list:hover { border-color: var(--text-faint); }
+.chip-list:hover {
+  border-color: var(--text-faint);
+}
 .chip-list:focus-within {
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
@@ -12572,11 +12751,20 @@ body.inspector-resizing {
   font-size: var(--font-sm);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   outline: none;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
-.chip-list-input::placeholder { color: var(--text-faint); }
-.chip-list-input:hover { background: var(--hover); }
-.chip-list-input:focus { background: var(--bg-soft); border-color: var(--border); }
+.chip-list-input::placeholder {
+  color: var(--text-faint);
+}
+.chip-list-input:hover {
+  background: var(--hover);
+}
+.chip-list-input:focus {
+  background: var(--bg-soft);
+  border-color: var(--border);
+}
 .chip-list-add {
   display: inline-flex;
   align-items: center;
@@ -12590,10 +12778,14 @@ body.inspector-resizing {
   font-size: var(--font-xs);
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.12s, opacity 0.12s;
+  transition:
+    background 0.12s,
+    opacity 0.12s;
   flex-shrink: 0;
 }
-.chip-list-add:hover:not(:disabled) { background: var(--primary-hover); }
+.chip-list-add:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
 .chip-list-add:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -12631,11 +12823,20 @@ body.inspector-resizing {
   color: var(--text);
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   max-width: 100%;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
-.chip:hover { background: var(--hover); }
-.chip-clickable { cursor: pointer; user-select: none; }
-.chip-clickable.chip-locked { cursor: default; }
+.chip:hover {
+  background: var(--hover);
+}
+.chip-clickable {
+  cursor: pointer;
+  user-select: none;
+}
+.chip-clickable.chip-locked {
+  cursor: default;
+}
 .chip-clickable:focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
@@ -12668,12 +12869,26 @@ body.inspector-resizing {
   color: var(--text-faint);
   cursor: pointer;
   padding: 0;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
 }
-.chip-remove:hover { background: var(--danger-bg); color: var(--danger); }
-.chip-list-compact { padding: 6px; gap: 6px; }
-.chip-list-compact .chip { height: 22px; font-size: 10.5px; padding: 0 4px 0 6px; }
-.chip-list-compact .chip-list-input { height: 26px; }
+.chip-remove:hover {
+  background: var(--danger-bg);
+  color: var(--danger);
+}
+.chip-list-compact {
+  padding: 6px;
+  gap: 6px;
+}
+.chip-list-compact .chip {
+  height: 22px;
+  font-size: 10.5px;
+  padding: 0 4px 0 6px;
+}
+.chip-list-compact .chip-list-input {
+  height: 26px;
+}
 
 /* ============================================================
    PROVIDER EDIT FORM — slide panel 的 C 端版式
@@ -12688,7 +12903,10 @@ body.inspector-resizing {
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
 }
-.provider-form-hero .provider-form-hero-info { flex: 1; min-width: 0; }
+.provider-form-hero .provider-form-hero-info {
+  flex: 1;
+  min-width: 0;
+}
 .provider-form-hero .provider-form-hero-title {
   font-size: 15px;
   font-weight: 600;
@@ -12721,7 +12939,9 @@ body.inspector-resizing {
   background: var(--panel);
   transition: border-color 0.15s;
 }
-.provider-form-section:hover { border-color: var(--border-strong); }
+.provider-form-section:hover {
+  border-color: var(--border-strong);
+}
 .provider-form-section-title {
   display: flex;
   align-items: center;
@@ -12749,7 +12969,10 @@ body.inspector-resizing {
 .provider-form-row + .provider-form-row {
   border-top: 1px solid var(--divider);
 }
-.provider-form-row-info { flex: 1; min-width: 0; }
+.provider-form-row-info {
+  flex: 1;
+  min-width: 0;
+}
 .provider-form-row-label {
   font-size: var(--font-sm);
   font-weight: 500;
@@ -12803,14 +13026,24 @@ body.inspector-resizing {
   margin-bottom: 16px;
   border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
 }
-.alert-banner-icon { flex-shrink: 0; display: inline-flex; align-items: center; padding-top: 1px; }
-.alert-banner-content { flex: 1; line-height: 1.5; }
+.alert-banner-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  padding-top: 1px;
+}
+.alert-banner-content {
+  flex: 1;
+  line-height: 1.5;
+}
 
 /* Provider card logo：使用真实 logo 后 fallback 改为纯色字母 */
 .provider-card .provider-logo {
   border: 1px solid var(--border);
 }
-.provider-card .provider-info .name { font-size: 14px; }
+.provider-card .provider-info .name {
+  font-size: 14px;
+}
 .provider-card .provider-default-badge {
   display: inline-flex;
   align-items: center;
@@ -12858,7 +13091,9 @@ body.inspector-resizing {
   color: var(--text-muted);
   overflow: hidden;
 }
-.preset-card.preset-added .preset-card-logo { opacity: 0.5; }
+.preset-card.preset-added .preset-card-logo {
+  opacity: 0.5;
+}
 
 /* ============================================================
    PROVIDER 多选 / 导入导出 样式（import-export task）
@@ -12867,7 +13102,9 @@ body.inspector-resizing {
 /* Provider card 多选态 */
 .provider-card.multi-select {
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
 }
 .provider-card.multi-select:hover {
   background: var(--bg-soft);
@@ -12884,7 +13121,7 @@ body.inspector-resizing {
   cursor: pointer;
   flex-shrink: 0;
 }
-.provider-card-checkbox input[type="checkbox"] {
+.provider-card-checkbox input[type='checkbox'] {
   width: 16px;
   height: 16px;
   cursor: pointer;
@@ -12937,8 +13174,14 @@ body.inspector-resizing {
   animation: modalIn 0.18s;
 }
 @keyframes modalIn {
-  from { transform: scale(0.96); opacity: 0; }
-  to   { transform: scale(1);    opacity: 1; }
+  from {
+    transform: scale(0.96);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 .modal-header {
   display: flex;
@@ -13000,7 +13243,9 @@ body.inspector-resizing {
   font-family: var(--font-mono, 'Geist Mono', ui-monospace, monospace);
   font-size: 11px;
 }
-.import-meta .muted { color: var(--text-muted); }
+.import-meta .muted {
+  color: var(--text-muted);
+}
 
 .import-mode-row {
   display: flex;
@@ -13020,7 +13265,7 @@ body.inspector-resizing {
 .import-mode-row .radio-row:hover {
   background: var(--bg-soft);
 }
-.import-mode-row .radio-row input[type="radio"] {
+.import-mode-row .radio-row input[type='radio'] {
   accent-color: var(--primary);
   margin: 0;
 }
@@ -13053,7 +13298,9 @@ body.inspector-resizing {
   border-bottom: 1px solid var(--divider);
   font-size: var(--font-sm);
 }
-.import-list-row:last-child { border-bottom: none; }
+.import-list-row:last-child {
+  border-bottom: none;
+}
 .import-list-row.conflict {
   background: rgba(245, 158, 11, 0.05);
 }
@@ -13221,7 +13468,7 @@ body.inspector-resizing {
   max-width: 52ch;
 }
 .team-dispatch-card-task-preview::before {
-  content: "";
+  content: '';
   display: inline-block;
   width: 1px;
   height: 12px;
@@ -13265,7 +13512,11 @@ body.inspector-resizing {
   border: 1px solid color-mix(in srgb, var(--member-accent, var(--primary)) 22%, var(--border));
   border-radius: 8px;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--member-accent, var(--primary)) 6%, transparent), transparent 72%),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--member-accent, var(--primary)) 6%, transparent),
+      transparent 72%
+    ),
     var(--panel);
   box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
 }
@@ -13708,8 +13959,8 @@ body.inspector-resizing {
 .chat-main-active > .builtin-terminal-panel {
   /* 由组件 .less 设置 flex:0 0 auto；这里保留占位以便后续微调 */
 }
-.xterm-scrollable-element{
-  background-color: transparent!important;
+.xterm-scrollable-element {
+  background-color: transparent !important;
 }
 
 /* ============================================================
@@ -13772,7 +14023,7 @@ body.inspector-resizing {
   font-size: var(--font-xs);
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
+  font-feature-settings: 'tnum';
 }
 .agent-field-counter.over {
   color: var(--danger, #ef4444);
@@ -13841,7 +14092,9 @@ body.inspector-resizing {
   overflow: hidden;
   margin: 0 auto;
   box-shadow: var(--shadow-xs);
-  transition: box-shadow 0.12s ease, border-color 0.12s ease;
+  transition:
+    box-shadow 0.12s ease,
+    border-color 0.12s ease;
 }
 .agent-info-avatar .avatar-picker:hover .avatar-picker-preview {
   border-color: color-mix(in srgb, var(--primary) 40%, transparent);
@@ -13890,7 +14143,9 @@ body.inspector-resizing {
   border-radius: var(--r-md);
   background: var(--code-bg);
   overflow: hidden;
-  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+  transition:
+    box-shadow 0.15s ease,
+    border-color 0.15s ease;
 }
 .agent-prompt-editor:focus-within {
   border-color: color-mix(in srgb, var(--primary) 50%, transparent);
@@ -13936,7 +14191,10 @@ body.inspector-resizing {
   border: 1px solid transparent;
   border-radius: var(--r-sm);
   cursor: pointer;
-  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    border-color 0.12s ease;
 }
 .agent-prompt-toolbar-btn:hover {
   background: var(--hover);
@@ -13965,7 +14223,7 @@ body.inspector-resizing {
 }
 .agent-prompt-line-no {
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
+  font-feature-settings: 'tnum';
   font-size: 11px;
   line-height: 1.6;
   color: var(--text-faint);
@@ -14021,7 +14279,9 @@ body.inspector-resizing {
   border: 1px solid var(--border);
   border-radius: var(--r-md);
   background: var(--panel);
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
 }
 .agent-config-section.is-interactive {
   cursor: pointer;
@@ -14062,7 +14322,7 @@ body.inspector-resizing {
   border: 1px solid var(--border);
   border-radius: 999px;
   font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum";
+  font-feature-settings: 'tnum';
 }
 .agent-config-desc {
   margin: 0;
