@@ -568,6 +568,15 @@ async function initializeApp(): Promise<void> {
     log.warn(`Failed to start enabled MCP servers: ${String(err)}`)
   }
 
+  // 3.7 初始化技能系统：自动软链宿主机 Claude/Codex 技能、登记内置、
+  //     重建原生托管插件目录，并注入给 SessionService。
+  try {
+    const { initializeAppSkills } = await import('./ipc/index.js')
+    initializeAppSkills()
+  } catch (err) {
+    log.warn(`Failed to initialize app skills: ${String(err)}`)
+  }
+
   // 4. 初始化自动更新服务
   const updateService = getUpdateService()
   updateService.initialize({

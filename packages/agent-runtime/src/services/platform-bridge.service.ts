@@ -192,8 +192,11 @@ export class PlatformBridgeService {
     switch (method) {
       // ── Skills ──
       case 'skills.list': return this.skillList(d, params)
+      case 'skills.load': return this.skillLoad(d, params)
       case 'skills.search': return this.skillSearch(d, params)
+      case 'skills.search_github': return this.skillSearchGithub(d, params)
       case 'skills.install': return this.skillInstall(d, params)
+      case 'skills.install_github': return this.skillInstallGithub(d, params)
       case 'skills.uninstall': return this.skillUninstall(d, params)
       case 'skills.toggle': return this.skillToggle(d, params)
 
@@ -280,6 +283,52 @@ export class PlatformBridgeService {
     }
   }
 
+  /**
+   * 渐进式披露的「加载完整指令」工具。
+   * Agent 在系统提示里只看到技能目录（id+name+description），
+   * 决定使用某技能时调用本方法拉取完整 SKILL.md 正文。
+   * 优先读取磁盘真实 SKILL.md（内容最完整），回落到 manifest 里存的 systemPrompt 正文。
+   */
+  private skillLoad(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = String(params.id ?? params.skillId ?? '').trim()
+    if (!id) throw new Error('skills.load requires a skill id')
+    const detail = d.skillService.getSkillDetail(id)
+    if (!detail) throw new Error(`Skill not found: ${id}`)
+    if (!detail.item.enabled) {
+      throw new Error(`Skill "${detail.item.name}" is disabled; enable it before loading.`)
+    }
+
+    const def = detail.definition
+    let instructions = (def?.systemPrompt ?? '').trim()
+    const rootPath = detail.item.rootPath
+
+    // 真实磁盘目录优先：读取 SKILL.md 正文（去掉 frontmatter）
+    if (rootPath && !rootPath.includes('://')) {
+      const skillFile = join(rootPath, 'SKILL.md')
+      try {
+        if (existsSync(skillFile)) {
+          const raw = readFileSync(skillFile, 'utf-8')
+          const body = stripFrontmatter(raw).trim()
+          if (body.length > 0) instructions = body
+        }
+      } catch {
+        // 读取失败时保留 manifest 正文
+      }
+    }
+
+    if (!instructions) {
+      throw new Error(`Skill "${detail.item.name}" has no instructions to load`)
+    }
+
+    return {
+      id: detail.item.id,
+      name: detail.item.name,
+      enabled: detail.item.enabled,
+      requiredTools: def?.requiredTools ?? [],
+      instructions,
+    }
+  }
+
   private async skillSearch(d: PlatformBridgeDeps, params: Record<string, unknown>) {
     const query = String(params.query ?? '')
     const limit = Number(params.limit ?? 8)
@@ -292,6 +341,24 @@ export class PlatformBridgeService {
     const registryId = String(params.registryId ?? '')
     const result = await d.skillRegistryService.install({ remoteSkillId, registryId })
     return { skill: result }
+  }
+
+  private async skillSearchGithub(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const query = String(params.query ?? '').trim()
+    if (!query) throw new Error('skills.search_github requires a query')
+    const limit = Number(params.limit ?? 8)
+    const results = await d.skillRegistryService.searchGithub(query, limit)
+    return { skills: results, total: results.length }
+  }
+
+  private async skillInstallGithub(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const repo = String(params.repo ?? '').trim()
+    if (!repo) throw new Error('skills.install_github requires repo "owner/name"')
+    const installParams: { repo: string; ref?: string; path?: string } = { repo }
+    if (params.ref != null && String(params.ref).trim()) installParams.ref = String(params.ref).trim()
+    if (params.path != null && String(params.path).trim()) installParams.path = String(params.path).trim()
+    const skill = await d.skillRegistryService.installFromGithub(installParams)
+    return { skill }
   }
 
   private skillUninstall(d: PlatformBridgeDeps, params: Record<string, unknown>) {
@@ -943,4 +1010,12 @@ export class PlatformBridgeService {
     this.writeBoardTasks(filtered)
     return { success: true }
   }
+}
+
+/** 去掉 Markdown 文件开头的 YAML frontmatter，返回正文 */
+function stripFrontmatter(raw: string): string {
+  if (!raw.startsWith('---')) return raw
+  const end = raw.indexOf('\n---', 3)
+  if (end === -1) return raw
+  return raw.slice(end + 4)
 }

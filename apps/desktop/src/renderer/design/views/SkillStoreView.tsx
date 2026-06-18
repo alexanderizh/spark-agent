@@ -71,38 +71,19 @@ export function SkillStoreView() {
     <div className="view-body" style={{ position: 'relative' }}>
       <div className="page">
         <MacWindowDragHeader />
-        {/* ── Tab bar ── */}
-        <div className="store-tabbar">
-          <button
-            className={`store-tab ${activeTab === 'installed' ? 'active' : ''}`}
-            onClick={() => setActiveTab('installed')}
-          >
-            <Icons.Package size={13} />
-            已安装
-          </button>
-          <button
-            className={`store-tab ${activeTab === 'create' ? 'active' : ''}`}
-            onClick={() => setActiveTab('create')}
-          >
-            <Icons.Plus size={13} />
-            创建
-          </button>
-          <div className="flex items-center store-tabbar-refresh">
-            <ActionIcon
-              icon={Icons.Refresh}
-              size="small"
-              variant="borderless"
-              onClick={triggerRefresh}
-              title="刷新 (Ctrl+R)"
-            />
-          </div>
-        </div>
-
-        {/* ── Tab content ── */}
+        {/* 创建不再作为独立 Tab：入口为「已安装」页搜索框右侧的主题色按钮 */}
         {activeTab === 'installed' ? (
-          <InstalledTab key={`installed-${refreshKey}`} />
+          <InstalledTab
+            key={`installed-${refreshKey}`}
+            onCreate={() => setActiveTab('create')}
+            onRefresh={triggerRefresh}
+          />
         ) : (
-          <CreateTab key={`create-${refreshKey}`} onCreated={handleRefresh} />
+          <CreateTab
+            key={`create-${refreshKey}`}
+            onCreated={handleRefresh}
+            onBack={() => setActiveTab('installed')}
+          />
         )}
       </div>
     </div>
@@ -111,7 +92,7 @@ export function SkillStoreView() {
 
 // ─── Installed Tab ────────────────────────────────────────────────────
 
-function InstalledTab() {
+function InstalledTab({ onCreate, onRefresh }: { onCreate: () => void; onRefresh: () => void }) {
   const { skills, loading, error, toggleSkill, deleteSkill, total, enabledCount } = useSkills()
   const { requestConfirm } = useApp()
   const { invoke: getSkillDetail } = useIpcInvoke('skill:detail')
@@ -297,6 +278,10 @@ function InstalledTab() {
               onInputChange={(value) => setSearch(value)}
               allowClear
             />
+            {/* 创建入口：搜索框右侧的主题色按钮 */}
+            <Button type="primary" onClick={onCreate}>
+              <Icons.Plus size={14} /> 创建
+            </Button>
             {!managementMode ? (
               <Button onClick={enterManagement} disabled={total === 0}>
                  管理
@@ -306,6 +291,13 @@ function InstalledTab() {
                 退出管理
               </Button>
             )}
+            <ActionIcon
+              icon={Icons.Refresh}
+              size="small"
+              variant="borderless"
+              onClick={onRefresh}
+              title="刷新 (Ctrl+R)"
+            />
           </div>
         </div>
 
@@ -668,9 +660,10 @@ function getSkillSourcePath(rootPath: string): string {
 
 // ─── Create Tab (New Skill Creation / Import) ──────────────────────────
 
-type ImportMode = 'none' | 'file' | 'directory' | 'detect' | 'link'
+// 'import' 合并了原「文件导入」与「目录导入」
+type ImportMode = 'none' | 'detect' | 'import' | 'link'
 
-function CreateTab({ onCreated }: { onCreated: () => void }) {
+function CreateTab({ onCreated, onBack }: { onCreated: () => void; onBack: () => void }) {
   // ── Manual creation form state ──
   const [name, setName] = useState('')
   const [version, setVersion] = useState('1.0.0')
@@ -681,7 +674,8 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
   const [content, setContent] = useState('')
   const [requiredTools, setRequiredTools] = useState('')
   const [creating, setCreating] = useState(false)
-  const [importMode, setImportMode] = useState<ImportMode>('none')
+  // 检测导入放在第一位，作为创建页默认入口
+  const [importMode, setImportMode] = useState<ImportMode>('detect')
   const { toast } = useToast()
 
   // ── IPC hooks ──
@@ -929,29 +923,15 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
 
   return (
     <div className="create-skill-layout">
-      {/* Mode selector */}
+      {/* 顶部：返回「已安装」 */}
+      <div className="create-back-bar">
+        <button className="store-tab" onClick={onBack}>
+          <Icons.ChevronLeft size={14} />
+          返回已安装
+        </button>
+      </div>
+      {/* Mode selector — 检测导入置顶 */}
       <div className="create-mode-bar">
-        <button
-          className={`store-tab ${importMode === 'none' ? 'active' : ''}`}
-          onClick={() => setImportMode('none')}
-        >
-          <Icons.Edit size={13} />
-          手动创建
-        </button>
-        <button
-          className={`store-tab ${importMode === 'file' ? 'active' : ''}`}
-          onClick={() => setImportMode('file')}
-        >
-          <Icons.File size={13} />
-          文件导入
-        </button>
-        <button
-          className={`store-tab ${importMode === 'directory' ? 'active' : ''}`}
-          onClick={() => setImportMode('directory')}
-        >
-          <Icons.FolderOpen size={13} />
-          目录导入
-        </button>
         <button
           className={`store-tab ${importMode === 'detect' ? 'active' : ''}`}
           onClick={() => setImportMode('detect')}
@@ -960,11 +940,25 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
           检测导入
         </button>
         <button
+          className={`store-tab ${importMode === 'import' ? 'active' : ''}`}
+          onClick={() => setImportMode('import')}
+        >
+          <Icons.Upload size={13} />
+          文件/目录导入
+        </button>
+        <button
           className={`store-tab ${importMode === 'link' ? 'active' : ''}`}
           onClick={() => setImportMode('link')}
         >
           <Icons.ExternalLink size={13} />
           软链接
+        </button>
+        <button
+          className={`store-tab ${importMode === 'none' ? 'active' : ''}`}
+          onClick={() => setImportMode('none')}
+        >
+          <Icons.Edit size={13} />
+          手动创建
         </button>
       </div>
 
@@ -1090,75 +1084,55 @@ function CreateTab({ onCreated }: { onCreated: () => void }) {
             </button>
           </div>
         </div>
-      ) : importMode === 'file' ? (
-        /* ── File Import ── */
+      ) : importMode === 'import' ? (
+        /* ── File / Directory Import（合并）── */
         <div className="create-import-panel">
           <div className="import-panel-icon">
-            <Icons.File size={48} />
+            <Icons.Upload size={48} />
           </div>
-          <div className="import-panel-title">导入 Skill 文件</div>
+          <div className="import-panel-title">导入 Skill（文件或目录）</div>
           <div className="import-panel-desc">
-            选择一个 SKILL.md 或 Markdown 文件，系统会自动解析文件中的 frontmatter（名称、描述、版本等）和内容，创建为本地 Skill。
+            选择一个 <b>SKILL.md / Markdown 文件</b>，或一个 <b>包含 SKILL.md 的目录</b>。系统会自动解析 frontmatter（名称、描述、版本等）与内容，创建为本地 Skill；目录导入会一并纳入子目录中的脚本、模板等附属文件。
           </div>
           <div className="import-panel-supported">
             <span className="badge">SKILL.md</span>
             <span className="badge">.md</span>
-          </div>
-          <div className="import-panel-format">
-            <div className="import-format-title">支持的文件格式：</div>
-            <pre className="import-format-code">{`---
-name: 我的 Skill
-description: 描述文字
-version: 1.0.0
-author: 作者名
-category: utility
-tags: [tag1, tag2]
----
-
-# Skill 指令内容
-
-这里是 Skill 的详细指令...`}</pre>
-          </div>
-          <button
-            className="btn primary lg"
-            disabled={creating}
-            onClick={() => void handleImportFile()}
-          >
-            <Icons.Upload size={14} />
-            {creating ? '导入中...' : '选择文件并导入'}
-          </button>
-        </div>
-      ) : importMode === 'directory' ? (
-        /* ── Directory Import ── */
-        <div className="create-import-panel">
-          <div className="import-panel-icon">
-            <Icons.FolderOpen size={48} />
-          </div>
-          <div className="import-panel-title">导入 Skill 目录</div>
-          <div className="import-panel-desc">
-            选择一个包含 SKILL.md 文件的目录。目录中的所有文件将被作为 Skill 内容导入。
-          </div>
-          <div className="import-panel-supported">
-            <span className="badge">SKILL.md</span>
             <span className="badge">目录</span>
           </div>
           <div className="import-panel-format">
-            <div className="import-format-title">目录结构示例：</div>
-            <pre className="import-format-code">{`my-skill/
+            <div className="import-format-title">文件格式 / 目录结构示例：</div>
+            <pre className="import-format-code">{`# 单文件
+---
+name: 我的 Skill
+description: 描述文字
+version: 1.0.0
+---
+# Skill 指令内容...
+
+# 目录
+my-skill/
 ├── SKILL.md          ← 必须包含
-├── scripts/
-│   └── helper.ts     ← 辅助脚本
-└── templates/
-    └── output.md     ← 模板文件`}</pre>
+├── scripts/helper.ts ← 辅助脚本
+└── templates/out.md  ← 模板文件`}</pre>
           </div>
-          <button
-            className="btn primary lg"
-            disabled={creating}
-            onClick={() => void handleImportDirectory()}
-          >
-            <Icons.Upload size={14} />
-            {creating ? '导入中...' : '选择目录并导入'}
-          </button>
+          <div className="row" style={{ gap: '8px', justifyContent: 'center' }}>
+            <button
+              className="btn primary lg"
+              disabled={creating}
+              onClick={() => void handleImportFile()}
+            >
+              <Icons.File size={14} />
+              {creating ? '导入中...' : '选择文件'}
+            </button>
+            <button
+              className="btn lg"
+              disabled={creating}
+              onClick={() => void handleImportDirectory()}
+            >
+              <Icons.FolderOpen size={14} />
+              {creating ? '导入中...' : '选择目录'}
+            </button>
+          </div>
         </div>
       ) : importMode === 'detect' ? (
         /* ── Detect & Import Local Skills ── */

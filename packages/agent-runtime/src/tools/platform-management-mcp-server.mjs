@@ -3,7 +3,7 @@
  * Platform Management MCP Server
  *
  * Exposes 34 tools for managing the Spark Agent platform:
- *   Skills (5), MCP Servers (5), Providers (5),
+ *   Skills (8), MCP Servers (5), Providers (5),
  *   Workflows (5), Agents (5), Settings (4), Board Tasks (11)
  *
  * Communicates with the main process via the PlatformBridge HTTP server
@@ -86,6 +86,17 @@ function toolDefinitions() {
       },
     },
     {
+      name: 'skills_load',
+      description: '加载某个技能的完整指令（SKILL.md 正文）。系统提示里只给出技能目录（id+名称+描述）；当你判断某个技能对当前任务有用时，调用本工具拿到它的完整操作指令后再执行。这是技能"渐进式披露"的加载入口。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '要加载的技能 ID（取自技能目录条目的 id）' },
+        },
+      },
+    },
+    {
       name: 'skills_search',
       description: '在远程技能商店中搜索技能。返回匹配的远程技能列表，包含名称、作者、描述。',
       inputSchema: {
@@ -99,13 +110,38 @@ function toolDefinitions() {
     },
     {
       name: 'skills_install',
-      description: '从远程技能商店安装一个技能。需要提供远程技能 ID 和注册表 ID。安装后技能会出现在已安装列表中。',
+      description: '从远程技能商店安装一个技能。需要提供远程技能 ID 和注册表 ID。安装后技能会落盘并出现在已安装列表，应用内即刻可用。',
       inputSchema: {
         type: 'object',
         required: ['remoteSkillId', 'registryId'],
         properties: {
           remoteSkillId: { type: 'string', description: '远程技能 ID' },
           registryId: { type: 'string', description: '注册表 ID' },
+        },
+      },
+    },
+    {
+      name: 'skills_search_github',
+      description: '在 GitHub 上搜索包含 SKILL.md 的技能仓库。返回 repo（owner/name）、名称、描述、作者、star 数、默认分支。用于在内置市场之外帮用户从 GitHub 找技能。',
+      inputSchema: {
+        type: 'object',
+        required: ['query'],
+        properties: {
+          query: { type: 'string', description: '搜索关键词' },
+          limit: { type: 'number', description: '返回结果数量上限，默认 8' },
+        },
+      },
+    },
+    {
+      name: 'skills_install_github',
+      description: '从 GitHub 仓库安装技能：定位含 SKILL.md 的目录并把该目录子树落盘到应用，安装后应用内即刻可用。可选 ref（分支/标签/commit）与 path（多技能仓库内的技能目录，如 "skills/pdf"）。',
+      inputSchema: {
+        type: 'object',
+        required: ['repo'],
+        properties: {
+          repo: { type: 'string', description: '仓库，形如 "owner/name"（也接受完整 GitHub URL）' },
+          ref: { type: 'string', description: '分支/标签/commit，缺省取默认分支' },
+          path: { type: 'string', description: '仓库内技能目录，缺省为根目录' },
         },
       },
     },
@@ -803,8 +839,11 @@ async function handleToolCall(name, args) {
   // Map tool name to bridge method
   const methodMap = {
     skills_list: 'skills.list',
+    skills_load: 'skills.load',
     skills_search: 'skills.search',
+    skills_search_github: 'skills.search_github',
     skills_install: 'skills.install',
+    skills_install_github: 'skills.install_github',
     skills_uninstall: 'skills.uninstall',
     skills_toggle: 'skills.toggle',
     mcp_list: 'mcp.list',
