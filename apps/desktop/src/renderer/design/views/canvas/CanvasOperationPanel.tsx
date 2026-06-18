@@ -65,7 +65,8 @@ export function CanvasOperationPanel({
   const operation = nodeOperation(node) ?? 'text_generate'
   const capability = getCanvasCapability(operation)
   const operationText = operationLabel(operation)
-  const canEditMediaInputs = capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
+  const canEditMediaInputs =
+    capability?.inputTypes.some((type) => type === 'image' || type === 'video') ?? false
 
   // 上游输入节点（used_as_input edge 的 source）
   const sourceInputNodes = useMemo(() => {
@@ -113,24 +114,64 @@ export function CanvasOperationPanel({
     return snapshot.nodes.filter((n) => outputIds.has(n.id) && !n.hidden)
   }, [snapshot.edges, snapshot.nodes, node.id])
 
-  // 参数状态：从 task 或 node.data 带入
-  const [prompt, setPrompt] = useState(task?.prompt ?? node.data.prompt ?? '')
-  const [negativePrompt, setNegativePrompt] = useState(task?.negativePrompt ?? '')
+  const inheritedNegativePrompt = useMemo(() => {
+    const taskNegativePrompt = task?.negativePrompt?.trim()
+    if (taskNegativePrompt) return taskNegativePrompt
+    const nodeNegativePrompt = node.data.negativePrompt?.trim()
+    if (nodeNegativePrompt) return nodeNegativePrompt
+    for (const sourceNode of expandedSourceInputNodes) {
+      const sourceTask = sourceNode.taskId
+        ? snapshot.tasks.find((item) => item.id === sourceNode.taskId)
+        : null
+      const sourceTaskNegativePrompt = sourceTask?.negativePrompt?.trim()
+      if (sourceTaskNegativePrompt) return sourceTaskNegativePrompt
+      const sourceNodeNegativePrompt = sourceNode.data.negativePrompt?.trim()
+      if (sourceNodeNegativePrompt) return sourceNodeNegativePrompt
+    }
+    return snapshot.project.settings?.negativePrompt?.trim() ?? ''
+  }, [
+    expandedSourceInputNodes,
+    node.data.negativePrompt,
+    snapshot.project.settings?.negativePrompt,
+    snapshot.tasks,
+    task?.negativePrompt,
+  ])
+
+  // 参数状态：从 task、node.data、项目/上游继承值带入
+  const [prompt, setPrompt] = useState(
+    task?.prompt ?? node.data.prompt ?? snapshot.project.settings?.prompt ?? '',
+  )
+  const [negativePrompt, setNegativePrompt] = useState(inheritedNegativePrompt)
   const [mediaModels, setMediaModels] = useState<CanvasMediaModelSummary[]>([])
   const [modelsLoading, setModelsLoading] = useState(false)
   const [selectedModelKey, setSelectedModelKey] = useState('')
   const [modelParamDraft, setModelParamDraft] = useState<Record<string, string>>({})
   const [customParams, setCustomParams] = useState<CustomParamDraft[]>([])
   const [selectedInputNodeIds, setSelectedInputNodeIds] = useState<string[]>(() =>
-    (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map((item) => item.id),
+    (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map(
+      (item) => item.id,
+    ),
   )
   const [running, setRunning] = useState(false)
 
   useEffect(() => {
     setSelectedInputNodeIds(
-      (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map((item) => item.id),
+      (canEditMediaInputs ? editableSourceMediaNodes : expandedSourceInputNodes).map(
+        (item) => item.id,
+      ),
     )
   }, [canEditMediaInputs, editableSourceMediaNodes, expandedSourceInputNodes])
+
+  useEffect(() => {
+    setPrompt(task?.prompt ?? node.data.prompt ?? snapshot.project.settings?.prompt ?? '')
+    setNegativePrompt(inheritedNegativePrompt)
+  }, [
+    inheritedNegativePrompt,
+    node.data.prompt,
+    node.id,
+    snapshot.project.settings?.prompt,
+    task?.prompt,
+  ])
 
   useEffect(() => {
     let cancelled = false
@@ -166,8 +207,13 @@ export function CanvasOperationPanel({
 
   const statusTag = useMemo(() => {
     const s = node.data.status ?? 'pending'
-    const color = s === 'completed' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'blue' : 'default'
-    return <Tag color={color} bordered>{operationStatusLabel(s)}</Tag>
+    const color =
+      s === 'completed' ? 'green' : s === 'failed' ? 'red' : s === 'running' ? 'blue' : 'default'
+    return (
+      <Tag color={color} bordered>
+        {operationStatusLabel(s)}
+      </Tag>
+    )
   }, [node.data.status])
 
   const mediaCapabilityIds = useMemo(() => capabilityForOperation(operation), [operation])
@@ -222,11 +268,17 @@ export function CanvasOperationPanel({
         (!task?.modelId || model.effectiveModelId === task.modelId),
     )
     setSelectedModelKey(mediaModelKey(fromTask ?? supportedMediaModels[0]!))
-  }, [selectedModelKey, supportedMediaModels, task?.manifestId, task?.modelId, task?.providerProfileId])
+  }, [
+    selectedModelKey,
+    supportedMediaModels,
+    task?.manifestId,
+    task?.modelId,
+    task?.providerProfileId,
+  ])
 
   useEffect(() => {
     const defaults = selectedCapability?.defaults ?? {}
-    const existing = task?.modelParams ?? {}
+    const existing = task?.modelParams ?? node.data.modelParams ?? {}
     const next: Record<string, string> = {}
     const fieldNames = new Set(parameterFields.map((field) => field.name))
     for (const field of parameterFields) {
@@ -247,7 +299,11 @@ export function CanvasOperationPanel({
   }, [parameterFields, selectedCapability, task?.modelParams])
 
   const handleRun = useCallback(() => {
-    if (!prompt.trim() && !capability?.inputTypes.includes('image') && !capability?.inputTypes.includes('video')) {
+    if (
+      !prompt.trim() &&
+      !capability?.inputTypes.includes('image') &&
+      !capability?.inputTypes.includes('video')
+    ) {
       message.warning('请输入提示词')
       return
     }
@@ -282,7 +338,9 @@ export function CanvasOperationPanel({
       ...(selectedModel?.providerKind === 'xai'
         ? { inputTransport: 'base64' as const }
         : { inputTransport: 'cloud_url' as const }),
-      ...(selectedModel?.providerProfileId ? { providerProfileId: selectedModel.providerProfileId } : {}),
+      ...(selectedModel?.providerProfileId
+        ? { providerProfileId: selectedModel.providerProfileId }
+        : {}),
       ...(selectedModel?.manifestId ? { manifestId: selectedModel.manifestId } : {}),
       ...(selectedModel?.effectiveModelId ? { modelId: selectedModel.effectiveModelId } : {}),
       ...(Object.keys(nextModelParams).length > 0 ? { modelParams: nextModelParams } : {}),
@@ -302,18 +360,17 @@ export function CanvasOperationPanel({
   ])
 
   const selectedInputIdSet = useMemo(() => new Set(selectedInputNodeIds), [selectedInputNodeIds])
-  const inputNodes = useMemo(
-    () => {
-      const byId = new Map(snapshot.nodes.map((item) => [item.id, item]))
-      return selectedInputNodeIds
-        .map((id) => byId.get(id))
-        .filter((item): item is CanvasNode => item != null)
-        .filter((item) => !item.hidden && selectedInputIdSet.has(item.id))
-    },
-    [selectedInputIdSet, selectedInputNodeIds, snapshot.nodes],
-  )
+  const inputNodes = useMemo(() => {
+    const byId = new Map(snapshot.nodes.map((item) => [item.id, item]))
+    return selectedInputNodeIds
+      .map((id) => byId.get(id))
+      .filter((item): item is CanvasNode => item != null)
+      .filter((item) => !item.hidden && selectedInputIdSet.has(item.id))
+  }, [selectedInputIdSet, selectedInputNodeIds, snapshot.nodes])
   const mediaInputs = inputNodes.filter((n) => n.type === 'image' || n.type === 'video')
-  const textInputs = expandedSourceInputNodes.filter((n) => n.type === 'text' || n.type === 'prompt')
+  const textInputs = expandedSourceInputNodes.filter(
+    (n) => n.type === 'text' || n.type === 'prompt',
+  )
 
   return (
     <div className="canvas-operation-panel" onMouseDown={(e) => e.stopPropagation()}>
@@ -321,7 +378,11 @@ export function CanvasOperationPanel({
         <div className="canvas-operation-panel-title">
           {operationLabel(operation)}
           {statusTag}
-          {outputNodes.length > 0 && <Tag color="purple" bordered>{outputNodes.length} 产出</Tag>}
+          {outputNodes.length > 0 && (
+            <Tag color="purple" bordered>
+              {outputNodes.length} 产出
+            </Tag>
+          )}
         </div>
         <Button size="small" type="text" icon={<Icons.X size={15} />} onClick={onClose} />
       </div>
@@ -335,7 +396,9 @@ export function CanvasOperationPanel({
                 输入 ({inputNodes.length + textInputs.length})
               </div>
               {sourceInputNodes.some((item) => item.type === 'group') && (
-                <Tag bordered color="gold">已展开组内元素</Tag>
+                <Tag bordered color="gold">
+                  已展开组内元素
+                </Tag>
               )}
             </div>
             {canEditMediaInputs && (
@@ -395,8 +458,14 @@ export function CanvasOperationPanel({
             {textInputs.length > 0 && (
               <div className="canvas-operation-panel-text-inputs">
                 {textInputs.map((n) => (
-                  <div key={n.id} className="canvas-operation-panel-text-input" title={n.title ?? ''}>
-                    <span className="canvas-operation-panel-text-input-title">{n.title ?? '文本'}</span>
+                  <div
+                    key={n.id}
+                    className="canvas-operation-panel-text-input"
+                    title={n.title ?? ''}
+                  >
+                    <span className="canvas-operation-panel-text-input-title">
+                      {n.title ?? '文本'}
+                    </span>
                     <span className="canvas-operation-panel-text-input-content">
                       {(n.data.text ?? '').slice(0, 80) || '(空)'}
                     </span>
@@ -619,7 +688,9 @@ export function CanvasOperationPanel({
           重试
         </Button>
         <div className="canvas-operation-panel-footer-spacer" />
-        <Button size="small" onClick={onClose}>取消</Button>
+        <Button size="small" onClick={onClose}>
+          取消
+        </Button>
         <Button
           size="small"
           type="primary"
@@ -635,7 +706,10 @@ export function CanvasOperationPanel({
   )
 }
 
-function expandOperationInputNodes(sourceNodes: CanvasNode[], allNodes: CanvasNode[]): CanvasNode[] {
+function expandOperationInputNodes(
+  sourceNodes: CanvasNode[],
+  allNodes: CanvasNode[],
+): CanvasNode[] {
   const byId = new Map(allNodes.map((item) => [item.id, item]))
   const seen = new Set<string>()
   const result: CanvasNode[] = []
@@ -670,10 +744,7 @@ function expandOperationInputNodes(sourceNodes: CanvasNode[], allNodes: CanvasNo
   return result
 }
 
-function isSupportedMediaInputNode(
-  node: CanvasNode,
-  inputTypes: readonly string[],
-): boolean {
+function isSupportedMediaInputNode(node: CanvasNode, inputTypes: readonly string[]): boolean {
   if (node.type === 'image') return inputTypes.includes('image')
   if (node.type === 'video') return inputTypes.includes('video')
   return false
