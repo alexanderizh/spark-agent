@@ -64,7 +64,7 @@ describe('CommandRegistry', () => {
   it('lists items with layer and group info', () => {
     const registry = createBuiltinRegistry()
     const items = registry.listItems()
-    expect(items.length).toBeGreaterThan(20)
+    expect(items.length).toBeGreaterThanOrEqual(20)
     expect(items[0]).toHaveProperty('layer')
     expect(items[0]).toHaveProperty('group')
     expect(items[0]).toHaveProperty('risk')
@@ -275,6 +275,19 @@ describe('Built-in commands', () => {
   it('/agent is removed (unknown command)', async () => {
     const result = await registry.execute(parse('/agent list'), ctx, makeDeps())
     expect(result.success).toBe(false)
+  })
+
+  it('/side is removed instead of forwarding as a normal agent turn', async () => {
+    const result = await registry.execute(parse('/side should be separate'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('/help')
+    expect(result.forwardToAgent).not.toBe(true)
+  })
+
+  it('/btw alias is removed with /side', async () => {
+    const result = await registry.execute(parse('/btw should be separate'), ctx, makeDeps())
+    expect(result.success).toBe(false)
+    expect(result.forwardToAgent).not.toBe(true)
   })
 
   it('/git add forwards to agent', async () => {

@@ -765,23 +765,10 @@ function registerSdkCommands(registry: CommandRegistry): void {
     usage: '/plan [task]',
     handler: async () => forwardToAgent(),
   })
-
-  registry.register({
-    id: 'sdk:codex:side',
-    name: 'side',
-    aliases: ['btw'],
-    layer: 'sdk',
-    group: 'utility',
-    description: '开启旁路对话',
-    scope: 'session',
-    risk: 'none',
-    usage: '/side [message]',
-    handler: async () => forwardToAgent(),
-  })
 }
 
 function isAgentForwardedCommand(def: CommandDefinition): boolean {
-  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan', 'side', 'goal'])
+  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan', 'goal'])
   if (forwardedCommands.has(def.name)) return true
   return def.name === 'git'
 }
