@@ -17,6 +17,7 @@ import {
   operationSuggestedFields,
   schemaFields,
   updateCustomParam,
+  updateModelParamDraftValue,
   type CustomParamDraft,
   type CustomParamType,
 } from './CanvasInlineAiComposer'
@@ -265,6 +266,7 @@ export function CanvasOperationPanel({
         ...buildCustomModelParams(customParams),
       },
       selectedCapability?.defaults ?? {},
+      parameterFields,
     )
     const runInputNodeIds = Array.from(
       new Set([
@@ -471,10 +473,9 @@ export function CanvasOperationPanel({
                       value={modelParamDraft[field.name] || undefined}
                       options={field.enumValues.map((value) => ({ value, label: value }))}
                       onChange={(value) =>
-                        setModelParamDraft((prev) => ({
-                          ...prev,
-                          [field.name]: value == null ? '' : String(value),
-                        }))
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
+                        )
                       }
                       disabled={running}
                     />
@@ -488,10 +489,9 @@ export function CanvasOperationPanel({
                         { value: 'false', label: 'false' },
                       ]}
                       onChange={(value) =>
-                        setModelParamDraft((prev) => ({
-                          ...prev,
-                          [field.name]: value == null ? '' : String(value),
-                        }))
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
+                        )
                       }
                       disabled={running}
                     />
@@ -502,7 +502,9 @@ export function CanvasOperationPanel({
                       placeholder={field.placeholder}
                       value={modelParamDraft[field.name] ?? ''}
                       onChange={(e) =>
-                        setModelParamDraft((prev) => ({ ...prev, [field.name]: e.target.value }))
+                        setModelParamDraft((prev) =>
+                          updateModelParamDraftValue(prev, field.name, e.target.value),
+                        )
                       }
                       disabled={running}
                     />
