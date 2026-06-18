@@ -9,8 +9,9 @@
  *
  * 说明：
  *   - 这套实现不依赖 electron-updater 的 zip / yml 元数据解析。
- *   - macOS 采用 dmg 安装镜像，下载完成后会打开安装镜像，由用户完成替换安装。
+ *   - macOS 采用 dmg 安装镜像：下载完成后打开镜像并退出当前实例，由用户把新 .app 拖入替换。
  *   - Windows 采用 exe 安装器，下载完成后会启动安装器并退出当前应用。
+ *   - 两端在启动安装包后都会退出当前实例（否则旧实例残留会导致安装无法进行）。
  */
 
 import { spawn } from 'node:child_process'
@@ -31,6 +32,8 @@ const log = createLogger('update-service')
 
 const STARTUP_CHECK_DELAY_MS = 5_000
 const FOCUS_RECHECK_THRESHOLD_MS = 2 * 60 * 60 * 1000
+/** macOS：启动 dmg 后延迟退出，给安装镜像挂载/弹窗留时间 */
+const MAC_INSTALL_QUIT_DELAY_MS = 1_200
 const RELEASE_REQUEST_USER_AGENT = 'Spark-Agent-Updater'
 const DEFAULT_RELEASE_OWNER = 'alexanderizh'
 const DEFAULT_RELEASE_REPO = 'spark-agent'
@@ -51,6 +54,12 @@ export interface UpdateServiceInitOptions {
   onUpdateAvailable?: (info: UpdateInfo, preferences: UpdatePreferences) => void
   onUpdateDownloaded?: (info: UpdateInfo, preferences: UpdatePreferences) => void
   onUpdateError?: (message: string) => void
+  /**
+   * 请求退出应用以让安装包完成替换安装。
+   * 由 main 进程注入：内部需先置位退出守卫（isQuitting）再 app.quit()，
+   * 否则窗口 close 处理器会 preventDefault 阻止退出，导致旧实例残留、安装无法进行。
+   */
+  onRequestQuit?: () => void
 }
 
 interface GithubReleaseFeedConfig {
@@ -381,6 +390,7 @@ export class UpdateService {
   private onUpdateAvailable: ((info: UpdateInfo, preferences: UpdatePreferences) => void) | null = null
   private onUpdateDownloaded: ((info: UpdateInfo, preferences: UpdatePreferences) => void) | null = null
   private onUpdateError: ((message: string) => void) | null = null
+  private onRequestQuit: (() => void) | null = null
   private initialized = false
   private preferences: UpdatePreferences = { ...DEFAULT_PREFERENCES }
   private releaseFeedConfig: GithubReleaseFeedConfig = {
@@ -435,6 +445,7 @@ export class UpdateService {
     this.onUpdateAvailable = options.onUpdateAvailable ?? null
     this.onUpdateDownloaded = options.onUpdateDownloaded ?? null
     this.onUpdateError = options.onUpdateError ?? null
+    this.onRequestQuit = options.onRequestQuit ?? null
     this.preferences = this.sanitizePreferences({
       ...DEFAULT_PREFERENCES,
       ...options.preferences,
@@ -656,12 +667,32 @@ export class UpdateService {
     const launched = this.launchInstaller(this.downloadedFilePath)
     if (!launched) return false
 
-    if (process.platform === 'win32') {
-      this.installLaunchInProgress = true
-      app.quit()
+    // 安装包已启动后必须退出当前实例，否则安装无法进行：
+    //   - Windows: 安装器无法覆盖正在运行的可执行文件
+    //   - macOS: dmg 内的新 .app 无法替换正在运行的旧实例
+    this.installLaunchInProgress = true
+    if (process.platform === 'darwin') {
+      // 给 `open` 一点时间挂载 dmg / 弹出 Finder 再退出，避免界面瞬间消失。
+      // 子进程已 detached + unref，父进程退出不影响安装镜像。
+      setTimeout(() => this.requestQuit(), MAC_INSTALL_QUIT_DELAY_MS)
+    } else {
+      this.requestQuit()
     }
 
     return true
+  }
+
+  /**
+   * 退出应用：优先走 main 进程注入的 onRequestQuit（会置位退出守卫），
+   * 否则回落到 app.quit()。直接 app.quit() 在 macOS 上可能被窗口 close
+   * 守卫拦截，因此安装场景务必提供 onRequestQuit。
+   */
+  private requestQuit(): void {
+    if (this.onRequestQuit != null) {
+      this.onRequestQuit()
+      return
+    }
+    app.quit()
   }
 
   getStatus(): UpdateStatus {

@@ -61,6 +61,10 @@ import { MentionPopover, type MentionCandidate } from '../components/MentionPopo
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { ComposerActionsMenu } from '../components/ComposerActionsMenu'
+import {
+  SKILL_STORE_TARGET_TAB_EVENT,
+  SKILL_STORE_TARGET_TAB_STORAGE_KEY,
+} from './SkillStoreView'
 import { ToolIcon } from '../components/ToolIcon'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
@@ -321,7 +325,7 @@ export function ChatView({
   userQuestion = null,
   onUserQuestionClose,
 }: ChatViewProps = {}) {
-  const { t } = useApp()
+  const { t, setTweak } = useApp()
   const appearance = useAppearanceSettings()
   // ── Shared state from SessionSidebarContext ──
   const sessionCtx = useSessionSidebar()
@@ -843,6 +847,16 @@ export function ChatView({
     ],
   )
   const composerIsWorking = isComposerSessionWorking(activeSession?.status)
+  const openSkillStore = useCallback(
+    (tab: 'installed' | 'create') => {
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SKILL_STORE_TARGET_TAB_STORAGE_KEY, tab)
+        window.dispatchEvent(new CustomEvent(SKILL_STORE_TARGET_TAB_EVENT, { detail: { tab } }))
+      }
+      setTweak('view', 'skill-store')
+    },
+    [setTweak],
+  )
 
   const composerNode =
     active == null ? (
@@ -886,6 +900,7 @@ export function ChatView({
         onChangeTeamConfig={updateTeamConfig}
         onOpenTeamInspector={() => setShowInspector(true)}
         runningTeamAgentIds={runningTeamAgentIds}
+        onOpenSkillStore={openSkillStore}
         replyTo={null}
         onDispatchStateChange={setComposerDispatching}
       />
@@ -930,6 +945,7 @@ export function ChatView({
         onChangeTeamConfig={updateTeamConfig}
         onOpenTeamInspector={() => setShowInspector(true)}
         runningTeamAgentIds={runningTeamAgentIds}
+        onOpenSkillStore={openSkillStore}
         replyTo={showEmptyHero ? null : replyTo}
         onClearReply={() => setReplyTo(null)}
         onDispatchStateChange={setComposerDispatching}
@@ -6155,6 +6171,7 @@ function ComposerV2({
   onChangeTeamConfig,
   onOpenTeamInspector,
   runningTeamAgentIds = [],
+  onOpenSkillStore,
   replyTo,
   onClearReply,
   focusTrigger = 0,
@@ -6172,6 +6189,7 @@ function ComposerV2({
   effectiveHostAgentId: string | null
   onChangeTeamConfig: (patch: Partial<TeamModeConfig>) => void
   onOpenTeamInspector: () => void
+  onOpenSkillStore: (tab: 'installed' | 'create') => void
   runningTeamAgentIds?: string[]
   branchState: BranchState
   contextInputTokens: number
@@ -8115,6 +8133,7 @@ function ComposerV2({
           <ComposerActionsMenu
             onAddAttachments={() => void handleAddAttachments()}
             onInsertSkillMention={handleInsertSkillMention}
+            onOpenSkillStore={onOpenSkillStore}
             disabled={isBusy}
           />
           <AgentPicker

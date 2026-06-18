@@ -526,11 +526,12 @@
 .composer-actions-sub {
   position: absolute;
   left: calc(100% + 6px);
+  right: auto;
   top: 0;
   bottom: auto;
   min-width: 188px;
   max-width: 260px;
-  max-height: 320px;
+  max-height: min(320px, calc(100vh - 24px));
   overflow-y: auto;
   padding: 5px;
   background: var(--panel);
@@ -541,6 +542,18 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.composer-actions-sub.placement-bottom-right,
+.composer-actions-sub.placement-bottom-left {
+  top: auto;
+  bottom: 0;
+}
+
+.composer-actions-sub.placement-top-left,
+.composer-actions-sub.placement-bottom-left {
+  left: auto;
+  right: calc(100% + 6px);
 }
 
 .composer-actions-sub-list {

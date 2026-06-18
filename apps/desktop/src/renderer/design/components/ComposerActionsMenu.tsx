@@ -7,7 +7,7 @@
  *
  * 弹窗向上展开（图示），与现有 `composer-menu` 风格一致。
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Icons } from '../Icons'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from './Toast'
@@ -18,18 +18,26 @@ interface ComposerActionsMenuProps {
   onAddAttachments: () => void
   /** 把技能名作为 `@技能名 ` 插入到输入框（由父组件实现光标位置） */
   onInsertSkillMention: (skill: SkillItem) => void
+  /** 打开技能管理页面，可指定目标 tab */
+  onOpenSkillStore?: (tab: 'installed' | 'create') => void
   /** 是否在运行中（运行中禁用整个菜单） */
   disabled?: boolean
 }
 
+type SkillSubPlacement = 'top-right' | 'bottom-right' | 'top-left' | 'bottom-left'
+
 export function ComposerActionsMenu({
   onAddAttachments,
   onInsertSkillMention,
+  onOpenSkillStore,
   disabled = false,
 }: ComposerActionsMenuProps) {
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const skillItemRef = useRef<HTMLDivElement | null>(null)
   const [open, setOpen] = useState(false)
   const [skillSubOpen, setSkillSubOpen] = useState(false)
+  const [skillSubPlacement, setSkillSubPlacement] =
+    useState<SkillSubPlacement>('bottom-right')
   const [skills, setSkills] = useState<SkillItem[]>([])
   const [skillsLoading, setSkillsLoading] = useState(false)
   const { invoke: listSkills } = useIpcInvoke('skill:list')
@@ -52,6 +60,21 @@ export function ComposerActionsMenu({
       closeTimer.current = null
     }
   }
+
+  const updateSkillSubPlacement = useCallback(() => {
+    const item = skillItemRef.current
+    if (item == null || typeof window === 'undefined') return
+
+    const gutter = 12
+    const rect = item.getBoundingClientRect()
+    const estimatedSubWidth = 260
+    const estimatedSubHeight = Math.min(320, window.innerHeight - gutter * 2)
+    const nextVertical = rect.top + estimatedSubHeight > window.innerHeight - gutter ? 'bottom' : 'top'
+    const nextHorizontal =
+      rect.right + 6 + estimatedSubWidth > window.innerWidth - gutter ? 'left' : 'right'
+
+    setSkillSubPlacement(`${nextVertical}-${nextHorizontal}` as SkillSubPlacement)
+  }, [])
 
   // 用户 hover 到「技能」项时再加载全量 skills（按需加载，避免每次打开弹窗都请求）
   const loadSkills = useCallback(() => {
@@ -86,6 +109,15 @@ export function ComposerActionsMenu({
     return () => window.removeEventListener('pointerdown', handlePointerDown)
   }, [open])
 
+  useLayoutEffect(() => {
+    if (!open || !skillSubOpen) return
+    updateSkillSubPlacement()
+    window.addEventListener('resize', updateSkillSubPlacement)
+    return () => {
+      window.removeEventListener('resize', updateSkillSubPlacement)
+    }
+  }, [open, skillSubOpen, updateSkillSubPlacement])
+
   const handleOpenToggle = () => {
     if (disabled) return
     setOpen((prev) => {
@@ -105,6 +137,12 @@ export function ComposerActionsMenu({
     setOpen(false)
     setSkillSubOpen(false)
     onInsertSkillMention(skill)
+  }
+
+  const handleOpenSkillStore = (tab: 'installed' | 'create') => {
+    setOpen(false)
+    setSkillSubOpen(false)
+    onOpenSkillStore?.(tab)
   }
 
   return (
@@ -137,12 +175,17 @@ export function ComposerActionsMenu({
             <span className="composer-actions-item-label">添加文件或图片</span>
           </button>
           <div
+            ref={skillItemRef}
             className={`composer-actions-item has-sub${skillSubOpen ? ' sub-open' : ''}`}
             onMouseEnter={() => {
+              updateSkillSubPlacement()
               setSkillSubOpen(true)
               loadSkills()
             }}
-            onClick={() => setSkillSubOpen((v) => !v)}
+            onClick={() => {
+              updateSkillSubPlacement()
+              setSkillSubOpen((v) => !v)
+            }}
             role="button"
             tabIndex={0}
           >
@@ -154,7 +197,7 @@ export function ComposerActionsMenu({
               <Icons.ChevronRight size={12} />
             </span>
             {skillSubOpen && (
-              <div className="composer-actions-sub">
+              <div className={`composer-actions-sub placement-${skillSubPlacement}`}>
                 {skillsLoading && (
                   <div className="composer-actions-sub-empty">
                     <Icons.Spinner size={12} /> 加载中…
@@ -191,9 +234,7 @@ export function ComposerActionsMenu({
                       className="composer-actions-sub-item is-utility"
                       onClick={(e) => {
                         e.stopPropagation()
-                        toast.info('请到「技能库」管理技能')
-                        setOpen(false)
-                        setSkillSubOpen(false)
+                        handleOpenSkillStore('installed')
                       }}
                     >
                       <span className="composer-actions-sub-item-icon">
@@ -206,9 +247,7 @@ export function ComposerActionsMenu({
                       className="composer-actions-sub-item is-utility"
                       onClick={(e) => {
                         e.stopPropagation()
-                        toast.info('请到「技能库」添加新技能')
-                        setOpen(false)
-                        setSkillSubOpen(false)
+                        handleOpenSkillStore('create')
                       }}
                     >
                       <span className="composer-actions-sub-item-icon">
