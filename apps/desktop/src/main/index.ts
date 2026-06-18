@@ -577,6 +577,12 @@ async function initializeApp(): Promise<void> {
     onUpdateDownloaded: (info, preferences) => {
       void promptForDownloadedUpdate(info, preferences.autoInstall)
     },
+    onRequestQuit: () => {
+      // 安装更新前必须置位退出守卫，否则窗口 close 处理器会 preventDefault，
+      // 导致 app.quit() 无法真正退出，旧实例残留使安装无法进行。
+      isQuitting = true
+      app.quit()
+    },
     handler: (status: UpdateStatus) => {
       // 推送状态变化到渲染进程
       sendToMainWindow('stream:update:status', status)
