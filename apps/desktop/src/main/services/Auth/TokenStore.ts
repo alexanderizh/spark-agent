@@ -34,6 +34,14 @@ export class TokenStore {
   constructor(private readonly service: string) {}
 
   async load(): Promise<Partial<AuthSession>> {
+    const backup = await this.loadEncryptedBackup()
+    if (backup) {
+      this.cache = backup
+      this.lastError = null
+      log.info(`token store loaded from encrypted backup (service=${this.service})`)
+      return { ...this.cache }
+    }
+
     try {
       const keytar = await importKeytar()
       const [token, refreshToken, userId] = await Promise.all([
@@ -56,32 +64,16 @@ export class TokenStore {
 
       if (isCompleteSession(this.cache)) {
         await this.saveEncryptedBackup(this.cache)
-      } else {
-        const backup = await this.loadEncryptedBackup()
-        if (backup) {
-          this.cache = backup
-          await this.saveKeytar(backup)
-          log.info(`token store restored from encrypted backup (service=${this.service})`)
-        }
       }
     } catch (e) {
       this.keytarUnavailable = true
       this.lastError = (e as Error).message ?? String(e)
-      const backup = await this.loadEncryptedBackup()
-      if (backup) {
-        this.cache = backup
-        log.warn(
-          `keytar unavailable, restored token store from encrypted backup (service=${this.service}). ` +
-            `Cause: ${this.lastError}`,
-        )
-      } else {
-        this.cache = {}
-        log.error(
-          `keytar unavailable and no encrypted backup was found; falling back to memory-only ` +
-            `(tokens will NOT persist across restarts). Cause: ${this.lastError}. ` +
-            `Run \`pnpm --filter @spark/desktop rebuild keytar\` or \`npx electron-rebuild -f -w keytar\` to fix keytar.`,
-        )
-      }
+      this.cache = {}
+      log.error(
+        `keytar unavailable and no encrypted backup was found; falling back to memory-only ` +
+          `(tokens will NOT persist across restarts). Cause: ${this.lastError}. ` +
+          `Run \`pnpm --filter @spark/desktop rebuild keytar\` or \`npx electron-rebuild -f -w keytar\` to fix keytar.`,
+      )
     }
     return { ...this.cache }
   }

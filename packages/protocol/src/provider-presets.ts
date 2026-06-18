@@ -538,9 +538,9 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     vendorId: 'volcengine',
     name: '火山方舟 Coding Plan',
     provider: 'anthropic',
-    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding/anthropic',
+    apiEndpoint: 'https://ark.cn-beijing.volces.com/api/coding',
     defaultModel: 'doubao-seed-code',
-    modelIds: ['doubao-seed-code', 'deepseek-v3-1-250821', 'kimi-k2-250711', 'doubao-pro-32k'],
+    modelIds: ['glm-5.2', 'deepseek-v4-pro'],
     sourceUrls: [
       'https://www.volcengine.com/docs/82379/1356615',
     ],
