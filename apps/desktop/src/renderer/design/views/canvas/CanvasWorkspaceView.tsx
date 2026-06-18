@@ -195,18 +195,10 @@ function positionNodeInViewport(
 
   return {
     x: Math.round(
-      clampPosition(
-        centerX - size.width / 2,
-        visibleLeft + 24,
-        visibleRight - size.width - 24,
-      ),
+      clampPosition(centerX - size.width / 2, visibleLeft + 24, visibleRight - size.width - 24),
     ),
     y: Math.round(
-      clampPosition(
-        centerY - size.height / 2,
-        visibleTop + 24,
-        visibleBottom - size.height - 24,
-      ),
+      clampPosition(centerY - size.height / 2, visibleTop + 24, visibleBottom - size.height - 24),
     ),
   }
 }
@@ -404,10 +396,15 @@ function expandCanvasInputNodes(selectedNodes: CanvasNode[], allNodes: CanvasNod
   return result
 }
 
-function resolveCanvasInputNodes(nodeIds: string[] | undefined, allNodes: CanvasNode[]): CanvasNode[] {
+function resolveCanvasInputNodes(
+  nodeIds: string[] | undefined,
+  allNodes: CanvasNode[],
+): CanvasNode[] {
   if (!nodeIds || nodeIds.length === 0) return []
   const byId = new Map(allNodes.map((node) => [node.id, node]))
-  const orderedNodes = nodeIds.map((id) => byId.get(id)).filter((node): node is CanvasNode => Boolean(node))
+  const orderedNodes = nodeIds
+    .map((id) => byId.get(id))
+    .filter((node): node is CanvasNode => Boolean(node))
   return expandCanvasInputNodes(orderedNodes, allNodes)
 }
 
@@ -449,13 +446,19 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   let currentGroupName = `${title} - 自动分镜`
 
   const pushScene = (name: string, description: string) => {
-    const normalized = name.replace(/^#+\s*/, '').trim().slice(0, 40)
+    const normalized = name
+      .replace(/^#+\s*/, '')
+      .trim()
+      .slice(0, 40)
     if (!normalized || sceneMap.has(normalized)) return
     sceneMap.set(normalized, { name: normalized, description })
   }
 
   const pushCharacter = (name: string, line: string) => {
-    const normalized = name.trim().replace(/[（）()【】\[\]\s]/g, '').slice(0, 16)
+    const normalized = name
+      .trim()
+      .replace(/[（）()【】\[\]\s]/g, '')
+      .slice(0, 16)
     if (!normalized || normalized.length < 2 || characterMap.has(normalized)) return
     characterMap.set(normalized, {
       name: normalized,
@@ -504,23 +507,27 @@ function buildScriptBreakdownDraft(asset: CanvasAsset): ScriptBreakdownDraft {
   }
 
   if (sceneMap.size === 0) {
-    pushScene(`${title} - 默认场景`, '根据剧本文本自动生成的默认场景，请后续补充地点、光线和美术风格。')
+    pushScene(
+      `${title} - 默认场景`,
+      '根据剧本文本自动生成的默认场景，请后续补充地点、光线和美术风格。',
+    )
   }
 
   return {
     characters: [...characterMap.values()].slice(0, 16),
     scenes: [...sceneMap.values()].slice(0, 12),
-    segments: segments.length > 0
-      ? segments
-      : [
-          {
-            groupName: currentGroupName,
-            title: '镜1 - 剧情开场',
-            description: text.slice(0, 160) || '请补充分镜画面描述。',
-            characterNames: [],
-            shotPrompt: '电影感开场镜头，建立场景氛围。',
-          },
-        ],
+    segments:
+      segments.length > 0
+        ? segments
+        : [
+            {
+              groupName: currentGroupName,
+              title: '镜1 - 剧情开场',
+              description: text.slice(0, 160) || '请补充分镜画面描述。',
+              characterNames: [],
+              shotPrompt: '电影感开场镜头，建立场景氛围。',
+            },
+          ],
   }
 }
 
@@ -554,11 +561,19 @@ function buildShotSegmentVideoPrompt(input: {
   const characterText = characters
     .map((asset) => {
       const refs = readReferences(asset.metadata)
-      const refText = refs.map((ref) => ref.description).filter(Boolean).join('；')
+      const refText = refs
+        .map((ref) => ref.description)
+        .filter(Boolean)
+        .join('；')
       return `${asset.title ?? '角色'}：${asset.contentText ?? ''}${refText ? `；参考：${refText}` : ''}`
     })
     .join('\n')
-  const sceneRefs = scene ? readReferences(scene.metadata).map((ref) => ref.description).filter(Boolean).join('；') : ''
+  const sceneRefs = scene
+    ? readReferences(scene.metadata)
+        .map((ref) => ref.description)
+        .filter(Boolean)
+        .join('；')
+    : ''
   return [
     `请生成一段影视分镜视频。`,
     `分组：${group.name}`,
@@ -566,11 +581,15 @@ function buildShotSegmentVideoPrompt(input: {
     segment.description ? `画面/动作：${segment.description}` : '',
     segment.dialogue ? `对白：${segment.dialogue}` : '',
     segment.narration ? `旁白：${segment.narration}` : '',
-    scene ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}` : '',
+    scene
+      ? `场景：${scene.title ?? ''} ${scene.contentText ?? ''}${sceneRefs ? `；参考：${sceneRefs}` : ''}`
+      : '',
     characterText ? `角色设定：\n${characterText}` : '',
     segment.shotPrompt ? `镜头语言：${segment.shotPrompt}` : '',
     '生成要求：动作自然，角色一致，场景连贯，电影感光影，避免字幕、水印和畸变。',
-  ].filter(Boolean).join('\n\n')
+  ]
+    .filter(Boolean)
+    .join('\n\n')
 }
 
 type PromptLibraryEntry = {
@@ -708,7 +727,10 @@ export function CanvasWorkspaceView({
   const [inlineAiOpen, setInlineAiOpen] = useState(false)
   const [saveToLibraryNodeId, setSaveToLibraryNodeId] = useState<string | null>(null)
   const saveToLibraryNode = useMemo(
-    () => (saveToLibraryNodeId ? snapshot?.nodes.find((n) => n.id === saveToLibraryNodeId) ?? null : null),
+    () =>
+      saveToLibraryNodeId
+        ? (snapshot?.nodes.find((n) => n.id === saveToLibraryNodeId) ?? null)
+        : null,
     [saveToLibraryNodeId, snapshot],
   )
   const [sidePanelTab, setSidePanelTab] = useState<'details' | 'project'>('details')
@@ -989,23 +1011,26 @@ export function CanvasWorkspaceView({
     )
   }, [])
 
-  const handleNodeSelectIntent = useCallback((nodeId: string) => {
-    const node = snapshot?.nodes.find((item) => item.id === nodeId)
-    if (!node) return
+  const handleNodeSelectIntent = useCallback(
+    (nodeId: string) => {
+      const node = snapshot?.nodes.find((item) => item.id === nodeId)
+      if (!node) return
 
-    if (isOperationNode(node)) {
-      closeCanvasFloatPanels('operation')
-      setActiveOperationPanelNodeId(nodeId)
-      return
-    }
+      if (isOperationNode(node)) {
+        closeCanvasFloatPanels('operation')
+        setActiveOperationPanelNodeId(nodeId)
+        return
+      }
 
-    if (node.type === 'text' || node.type === 'prompt') {
-      closeCanvasFloatPanels('node-edit')
-      setEditingNodeId(nodeId)
-      return
-    }
-    closeCanvasFloatPanels()
-  }, [closeCanvasFloatPanels, snapshot?.nodes])
+      if (node.type === 'text' || node.type === 'prompt') {
+        closeCanvasFloatPanels('node-edit')
+        setEditingNodeId(nodeId)
+        return
+      }
+      closeCanvasFloatPanels()
+    },
+    [closeCanvasFloatPanels, snapshot?.nodes],
+  )
 
   const handleCanvasViewportChange = useCallback((viewport: CanvasStageViewport) => {
     canvasViewportRef.current = viewport
@@ -1092,11 +1117,14 @@ export function CanvasWorkspaceView({
     [closeCanvasFloatPanels, selectedNodeIds],
   )
 
-  const handleEditNode = useCallback((nodeId: string) => {
-    closeCanvasFloatPanels('node-edit')
-    setSelectedNodeIds([nodeId])
-    setEditingNodeId(nodeId)
-  }, [closeCanvasFloatPanels])
+  const handleEditNode = useCallback(
+    (nodeId: string) => {
+      closeCanvasFloatPanels('node-edit')
+      setSelectedNodeIds([nodeId])
+      setEditingNodeId(nodeId)
+    },
+    [closeCanvasFloatPanels],
+  )
 
   const handleSaveNodeEdit = useCallback(
     async (node: CanvasNode, patch: Partial<CanvasNode>, data: CanvasNode['data']) => {
@@ -1388,14 +1416,10 @@ export function CanvasWorkspaceView({
       }
       const groupPosition = preferredPosition
         ? { x: Math.round(preferredPosition.x), y: Math.round(preferredPosition.y) }
-        : positionNodeInViewport(
-            canvasViewportRef.current,
-            groupSize,
-            {
-              x: 220,
-              y: 180,
-            },
-          )
+        : positionNodeInViewport(canvasViewportRef.current, groupSize, {
+            x: 220,
+            y: 180,
+          })
       const placedImages = layoutGroupedImages(preparedImages, groupPosition)
       const createdNodeIds: string[] = []
       for (const image of placedImages) {
@@ -1495,7 +1519,9 @@ export function CanvasWorkspaceView({
     })
   }
 
-  const handleBreakdownScriptAsset: NonNullable<FilmCenterHandlers['onBreakdownScriptAsset']> = async (asset) => {
+  const handleBreakdownScriptAsset: NonNullable<
+    FilmCenterHandlers['onBreakdownScriptAsset']
+  > = async (asset) => {
     const scriptText = asset.contentText?.trim() ?? ''
     if (!scriptText) {
       message.warning('请先补充剧本内容，再执行拆解')
@@ -1537,16 +1563,20 @@ export function CanvasWorkspaceView({
       }
 
       const createdCharacters = await Promise.all(
-        draft.characters.map((character) => ensureAsset('character', {
-          name: character.name,
-          text: character.description,
-        })),
+        draft.characters.map((character) =>
+          ensureAsset('character', {
+            name: character.name,
+            text: character.description,
+          }),
+        ),
       )
       const createdScenes = await Promise.all(
-        draft.scenes.map((scene) => ensureAsset('scene', {
-          name: scene.name,
-          text: scene.description,
-        })),
+        draft.scenes.map((scene) =>
+          ensureAsset('scene', {
+            name: scene.name,
+            text: scene.description,
+          }),
+        ),
       )
       const characterIdByName = new Map(
         createdCharacters.map((item) => [(item.title ?? '').trim().toLowerCase(), item.id]),
@@ -1601,7 +1631,9 @@ export function CanvasWorkspaceView({
     }
   }
 
-  const handleGenerateAssetReference: NonNullable<FilmCenterHandlers['onGenerateAssetReference']> = (asset) => {
+  const handleGenerateAssetReference: NonNullable<
+    FilmCenterHandlers['onGenerateAssetReference']
+  > = (asset) => {
     void handleCreateTask({
       operation: 'text_to_image',
       prompt: buildFilmAssetReferencePrompt(asset),
@@ -1610,7 +1642,9 @@ export function CanvasWorkspaceView({
     message.info('已发起参考图生成任务，结果会出现在画布上')
   }
 
-  const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (input) => {
+  const handleGenerateSegmentVideo: NonNullable<FilmCenterHandlers['onGenerateSegmentVideo']> = (
+    input,
+  ) => {
     void handleCreateTask({
       operation: 'text_to_video',
       prompt: buildShotSegmentVideoPrompt(input),
@@ -1817,25 +1851,41 @@ export function CanvasWorkspaceView({
           )}
           {!leftPanelCollapsed && (
             <div className="canvas-left-workbench-footer">
-              <button type="button" className="canvas-left-utility-btn" onClick={() => {
-                closeCanvasFloatPanels()
-                setHistoryOpen(true)
-              }}>
+              <button
+                type="button"
+                className="canvas-left-utility-btn"
+                onClick={() => {
+                  closeCanvasFloatPanels()
+                  setHistoryOpen(true)
+                }}
+              >
                 <Icons.Clock size={16} />
                 <span>历史</span>
               </button>
-              <button type="button" className="canvas-left-utility-btn" onClick={() => void handleOpenProjectFolder()}>
+              <button
+                type="button"
+                className="canvas-left-utility-btn"
+                onClick={() => void handleOpenProjectFolder()}
+              >
                 <Icons.Folder size={16} />
                 <span>目录</span>
               </button>
-              <button type="button" className="canvas-left-utility-btn" onClick={() => {
-                closeCanvasFloatPanels()
-                setTemplateOpen(true)
-              }}>
+              <button
+                type="button"
+                className="canvas-left-utility-btn"
+                onClick={() => {
+                  closeCanvasFloatPanels()
+                  setTemplateOpen(true)
+                }}
+              >
                 <Icons.Layers size={16} />
                 <span>模板</span>
               </button>
-              <button type="button" className="canvas-left-utility-btn" onClick={() => message.info('帮助与快捷键')}>
+              <button
+                type="button"
+                className="canvas-left-utility-btn"
+                onClick={() => message.info('帮助与快捷键')}
+              >
                 <Icons.HelpCircle size={16} />
                 <span>帮助</span>
               </button>
@@ -1844,216 +1894,224 @@ export function CanvasWorkspaceView({
         </aside>
 
         <div className="canvas-stage-area">
-        {toolSwitchHint && (
-          <div
-            key={toolSwitchHint.nonce}
-            className={`canvas-tool-switch-hint canvas-tool-switch-hint-${toolSwitchHint.tool}`}
-            role="status"
-            aria-live="polite"
-          >
-            <span className="canvas-tool-switch-key">Tab</span>
-            <span>已切换为 {toolLabel(toolSwitchHint.tool)}</span>
-          </div>
-        )}
-        <CanvasStage
-          snapshot={snapshot}
-          activeTool={activeTool === 'pan' ? 'pan' : 'select'}
-          selectedNodeIds={selectedNodeIds}
-          onSelectionChange={handleSelectionChange}
-          onNodesPersist={(nodes) => void updateNodes(nodes)}
-          onConnectNodes={(input) => void connectNodes(input)}
-          onDuplicateNode={handleDuplicateNode}
-          onDeleteNode={handleDeleteNode}
-          onToggleLockNode={handleToggleLockNode}
-          onBringNodeToFront={handleBringNodeToFront}
-          onCreateGroupFromSelection={handleCreateGroup}
-          onAddSelectionToGroup={handleAddSelectionToGroup}
-          onRemoveNodeFromGroup={(nodeId) => handleRemoveFromGroup([nodeId])}
-          onDissolveGroup={handleDissolveGroup}
-          onOpenAiComposer={handleOpenInlineAi}
-          onEditNode={handleEditNode}
-          onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
-          onCreateOperationChild={(parentId, operation) => {
-            const parent = snapshot.nodes.find((n) => n.id === parentId)
-            if (!parent) return
-            void createOperationNode({
-              boardId: snapshot.board.id,
-              operation,
-              inputNodeIds: [parentId],
-              x: parent.x + parent.width + 60,
-              y: parent.y,
-            })
-          }}
-          onAddTextAtPosition={(position) => void addText(position)}
-          onAddImageAtPosition={uploadFirstImage}
-          onAddPromptAtPosition={(position) => void addText(position)}
-          onInsertAssetFromPane={() => setLeftPanelTab('assets')}
-          onCreateBoardFromPane={() => void createBoard()}
-          onNodeSelectIntent={handleNodeSelectIntent}
-          onViewportChange={handleCanvasViewportChange}
-        />
-        <CanvasBottomDock
-          activeTool={activeTool}
-          onToolChange={handleToolChange}
-          onAddNodeItem={handleAddNodeItem}
-          onOpenAddMenu={() => closeCanvasFloatPanels()}
-          onOpenAiComposer={() => handleOpenInlineAi()}
-          onOpenFilmCenter={() => {
-            closeCanvasFloatPanels('film-center')
-            setFilmCenterOpen(true)
-          }}
-          onOpenAgent={() => {
-            closeCanvasFloatPanels('agent')
-            setAgentOpen(true)
-          }}
-          onToggleGrid={handleToggleGrid}
-          gridVisible={snapshot.board.settings.grid !== false}
-          collapsed={bottomToolbarCollapsed}
-          onToggleCollapsed={() => setBottomToolbarCollapsed(!bottomToolbarCollapsed)}
-        />
-        <CanvasInlineAiComposer
-          open={inlineAiOpen}
-          selectedNodes={aiInputNodes}
-          allNodes={snapshot.nodes}
-          {...(snapshot.project.settings ? { projectSettings: snapshot.project.settings } : {})}
-          onUploadImage={() => uploadFirstImage()}
-          onClose={() => setInlineAiOpen(false)}
-          onCreateTask={(input) => {
-            void handleCreateTask(input)
-            setInlineAiOpen(false)
-          }}
-        />
-        {(() => {
-          const opNode = activeOperationPanelNodeId
-            ? snapshot.nodes.find((n) => n.id === activeOperationPanelNodeId && isOperationNode(n))
-            : null
-          if (!opNode) return null
-          const opTask = opNode.taskId ? snapshot.tasks.find((t) => t.id === opNode.taskId) : null
-          return (
-            <CanvasOperationPanel
-              node={opNode}
-              snapshot={snapshot}
-              {...(opTask ? { task: opTask } : {})}
-              onClose={() => {
-                setActiveOperationPanelNodeId(null)
-                setSelectedNodeIds([])
-              }}
-              onRun={(params) => {
-                void (async () => {
-                  if (!(await ensureCanvasWorkflowLogin())) return
-                  const taskInputNodes = resolveCanvasInputNodes(
-                    params.inputNodeIds,
-                    snapshot.nodes,
-                  )
-                  const inputFiles = await buildCloudTaskInputFiles(
-                    taskInputNodes,
-                    params.inputTransport,
-                  )
-                  const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
-                  const effectivePrompt =
-                    mergedPrompt ||
-                    (inputFiles.length > 0
-                      ? fallbackPromptForOperation((opNode.data.operation ?? opNode.type) as CanvasOperationType)
-                      : '')
-                  await runOperationNode(opNode.id, {
-                    prompt: effectivePrompt,
-                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                    inputNodeIds: taskInputNodes.map((item) => item.id),
-                    inputAssetIds: taskInputNodes
-                      .map((item) => item.assetId)
-                      .filter((id): id is string => Boolean(id)),
-                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
-                    ...(params.providerProfileId ? { providerProfileId: params.providerProfileId } : {}),
-                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                    ...(params.modelId ? { modelId: params.modelId } : {}),
-                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                  })
-                })()
-              }}
-              onRetry={() => void retryOperationNode(opNode.id)}
-            />
-          )
-        })()}
-        <CanvasAgentModal
-          open={agentOpen}
-          onClose={() => setAgentOpen(false)}
-          snapshot={snapshot}
-          workspace={{
-            createTextNode,
-            createImageNode,
-            uploadImageAsset,
-            createGroupNode,
-            dissolveGroupNode,
-            addNodesToGroup,
-            removeNodesFromGroup,
-            deleteNodes,
-            duplicateNodes,
-            patchNodes,
-            updateNodeData,
-            connectNodes,
-            createBoard,
-            renameBoard,
-            deleteBoard,
-            duplicateBoard,
-            switchBoard,
-            copyNodesToBoard,
-            insertAsset,
-            createFilmAsset,
-            updateFilmAsset,
-            deleteFilmAsset,
-            createShotGroup,
-            updateShotGroup,
-            deleteShotGroup,
-            createShotSegment,
-            updateShotSegment,
-            deleteShotSegment,
-            createOperationNode,
-            retryOperationNode,
-            runOperationNode,
-            cancelTask,
-            updateProjectSettings,
-            refresh,
-          }}
-        />
-        <CanvasNodeEditModal
-          node={editingNode}
-          open={Boolean(editingNodeId)}
-          assets={snapshot.assets}
-          onClose={() => setEditingNodeId(null)}
-          onSave={handleSaveNodeEdit}
-          onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
-        />
-        <CanvasFilmAssetCenter
-          open={filmCenterOpen}
-          onClose={() => setFilmCenterOpen(false)}
-          snapshot={snapshot}
-          onUploadImage={uploadImageAsset}
-          handlers={{
-            createFilmAsset,
-            updateFilmAsset,
-            deleteFilmAsset,
-            getFilmAssetUsage,
-            onOptimizeAsset: (asset) => {
-              // AI 优化：用 text_rewrite 触发平台 agent 优化资产文本
-              void handleCreateTask({
-                operation: 'text_rewrite',
-                prompt: asset.contentText ?? asset.title ?? '请优化以下内容，使其更专业、更精炼。',
-                inputNodeIds: [],
+          {toolSwitchHint && (
+            <div
+              key={toolSwitchHint.nonce}
+              className={`canvas-tool-switch-hint canvas-tool-switch-hint-${toolSwitchHint.tool}`}
+              role="status"
+              aria-live="polite"
+            >
+              <span className="canvas-tool-switch-key">Tab</span>
+              <span>已切换为 {toolLabel(toolSwitchHint.tool)}</span>
+            </div>
+          )}
+          <CanvasStage
+            snapshot={snapshot}
+            activeTool={activeTool === 'pan' ? 'pan' : 'select'}
+            selectedNodeIds={selectedNodeIds}
+            onSelectionChange={handleSelectionChange}
+            onNodesPersist={(nodes) => void updateNodes(nodes)}
+            onConnectNodes={(input) => void connectNodes(input)}
+            onDuplicateNode={handleDuplicateNode}
+            onDeleteNode={handleDeleteNode}
+            onToggleLockNode={handleToggleLockNode}
+            onBringNodeToFront={handleBringNodeToFront}
+            onCreateGroupFromSelection={handleCreateGroup}
+            onAddSelectionToGroup={handleAddSelectionToGroup}
+            onRemoveNodeFromGroup={(nodeId) => handleRemoveFromGroup([nodeId])}
+            onDissolveGroup={handleDissolveGroup}
+            onOpenAiComposer={handleOpenInlineAi}
+            onEditNode={handleEditNode}
+            onSaveNodeToLibrary={(nodeId) => setSaveToLibraryNodeId(nodeId)}
+            onCreateOperationChild={(parentId, operation) => {
+              const parent = snapshot.nodes.find((n) => n.id === parentId)
+              if (!parent) return
+              void createOperationNode({
+                boardId: snapshot.board.id,
+                operation,
+                inputNodeIds: [parentId],
+                x: parent.x + parent.width + 60,
+                y: parent.y,
               })
-              message.info('已发起 AI 优化任务，结果将生成在画布上')
-            },
-            onBreakdownScriptAsset: handleBreakdownScriptAsset,
-            onGenerateAssetReference: handleGenerateAssetReference,
-            onGenerateSegmentVideo: handleGenerateSegmentVideo,
-            onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
-            createShotGroup,
-            updateShotGroup,
-            deleteShotGroup,
-            createShotSegment,
-            updateShotSegment,
-            deleteShotSegment,
-          }}
-        />
+            }}
+            onAddTextAtPosition={(position) => void addText(position)}
+            onAddImageAtPosition={uploadFirstImage}
+            onAddPromptAtPosition={(position) => void addText(position)}
+            onInsertAssetFromPane={() => setLeftPanelTab('assets')}
+            onCreateBoardFromPane={() => void createBoard()}
+            onNodeSelectIntent={handleNodeSelectIntent}
+            onViewportChange={handleCanvasViewportChange}
+          />
+          <CanvasBottomDock
+            activeTool={activeTool}
+            onToolChange={handleToolChange}
+            onAddNodeItem={handleAddNodeItem}
+            onOpenAddMenu={() => closeCanvasFloatPanels()}
+            onOpenAiComposer={() => handleOpenInlineAi()}
+            onOpenFilmCenter={() => {
+              closeCanvasFloatPanels('film-center')
+              setFilmCenterOpen(true)
+            }}
+            onOpenAgent={() => {
+              closeCanvasFloatPanels('agent')
+              setAgentOpen(true)
+            }}
+            onToggleGrid={handleToggleGrid}
+            gridVisible={snapshot.board.settings.grid !== false}
+            collapsed={bottomToolbarCollapsed}
+            onToggleCollapsed={() => setBottomToolbarCollapsed(!bottomToolbarCollapsed)}
+          />
+          <CanvasInlineAiComposer
+            open={inlineAiOpen}
+            selectedNodes={aiInputNodes}
+            allNodes={snapshot.nodes}
+            {...(snapshot.project.settings ? { projectSettings: snapshot.project.settings } : {})}
+            onUploadImage={() => uploadFirstImage()}
+            onClose={() => setInlineAiOpen(false)}
+            onCreateTask={(input) => {
+              void handleCreateTask(input)
+              setInlineAiOpen(false)
+            }}
+          />
+          {(() => {
+            const opNode = activeOperationPanelNodeId
+              ? snapshot.nodes.find(
+                  (n) => n.id === activeOperationPanelNodeId && isOperationNode(n),
+                )
+              : null
+            if (!opNode) return null
+            const opTask = opNode.taskId ? snapshot.tasks.find((t) => t.id === opNode.taskId) : null
+            return (
+              <CanvasOperationPanel
+                node={opNode}
+                snapshot={snapshot}
+                {...(opTask ? { task: opTask } : {})}
+                onClose={() => {
+                  setActiveOperationPanelNodeId(null)
+                  setSelectedNodeIds([])
+                }}
+                onRun={(params) => {
+                  void (async () => {
+                    if (!(await ensureCanvasWorkflowLogin())) return
+                    const taskInputNodes = resolveCanvasInputNodes(
+                      params.inputNodeIds,
+                      snapshot.nodes,
+                    )
+                    const inputFiles = await buildCloudTaskInputFiles(
+                      taskInputNodes,
+                      params.inputTransport,
+                      params.inputRoles,
+                    )
+                    const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
+                    const effectivePrompt =
+                      mergedPrompt ||
+                      (inputFiles.length > 0
+                        ? fallbackPromptForOperation(
+                            (opNode.data.operation ?? opNode.type) as CanvasOperationType,
+                          )
+                        : '')
+                    await runOperationNode(opNode.id, {
+                      prompt: effectivePrompt,
+                      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                      inputNodeIds: taskInputNodes.map((item) => item.id),
+                      inputAssetIds: taskInputNodes
+                        .map((item) => item.assetId)
+                        .filter((id): id is string => Boolean(id)),
+                      ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                      ...(params.providerProfileId
+                        ? { providerProfileId: params.providerProfileId }
+                        : {}),
+                      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                      ...(params.modelId ? { modelId: params.modelId } : {}),
+                      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                    })
+                  })()
+                }}
+                onRetry={() => void retryOperationNode(opNode.id)}
+              />
+            )
+          })()}
+          <CanvasAgentModal
+            open={agentOpen}
+            onClose={() => setAgentOpen(false)}
+            snapshot={snapshot}
+            workspace={{
+              createTextNode,
+              createImageNode,
+              uploadImageAsset,
+              createGroupNode,
+              dissolveGroupNode,
+              addNodesToGroup,
+              removeNodesFromGroup,
+              deleteNodes,
+              duplicateNodes,
+              patchNodes,
+              updateNodeData,
+              connectNodes,
+              createBoard,
+              renameBoard,
+              deleteBoard,
+              duplicateBoard,
+              switchBoard,
+              copyNodesToBoard,
+              insertAsset,
+              createFilmAsset,
+              updateFilmAsset,
+              deleteFilmAsset,
+              createShotGroup,
+              updateShotGroup,
+              deleteShotGroup,
+              createShotSegment,
+              updateShotSegment,
+              deleteShotSegment,
+              createOperationNode,
+              retryOperationNode,
+              runOperationNode,
+              cancelTask,
+              updateProjectSettings,
+              refresh,
+            }}
+          />
+          <CanvasNodeEditModal
+            node={editingNode}
+            open={Boolean(editingNodeId)}
+            assets={snapshot.assets}
+            onClose={() => setEditingNodeId(null)}
+            onSave={handleSaveNodeEdit}
+            onCreatePromptTask={(input) => void handleCreateTask({ ...input, inputNodeIds: [] })}
+          />
+          <CanvasFilmAssetCenter
+            open={filmCenterOpen}
+            onClose={() => setFilmCenterOpen(false)}
+            snapshot={snapshot}
+            onUploadImage={uploadImageAsset}
+            handlers={{
+              createFilmAsset,
+              updateFilmAsset,
+              deleteFilmAsset,
+              getFilmAssetUsage,
+              onOptimizeAsset: (asset) => {
+                // AI 优化：用 text_rewrite 触发平台 agent 优化资产文本
+                void handleCreateTask({
+                  operation: 'text_rewrite',
+                  prompt:
+                    asset.contentText ?? asset.title ?? '请优化以下内容，使其更专业、更精炼。',
+                  inputNodeIds: [],
+                })
+                message.info('已发起 AI 优化任务，结果将生成在画布上')
+              },
+              onBreakdownScriptAsset: handleBreakdownScriptAsset,
+              onGenerateAssetReference: handleGenerateAssetReference,
+              onGenerateSegmentVideo: handleGenerateSegmentVideo,
+              onInsertAssetToCanvas: (assetId) => void handleInsertAsset(assetId),
+              createShotGroup,
+              updateShotGroup,
+              deleteShotGroup,
+              createShotSegment,
+              updateShotSegment,
+              deleteShotSegment,
+            }}
+          />
         </div>
         <aside className="canvas-side-panel" style={{ width: sidePanelWidth }}>
           <div
@@ -2366,22 +2424,26 @@ function CanvasNodeEditModal({
       })
       .filter((entry) => entry.text.trim())
     const cameraEntries = CAMERA_PROMPT_LIBRARY.flatMap((group) =>
-      group.items.map((item): PromptLibraryEntry => ({
-        id: `camera:${item.id}`,
-        source: 'camera',
-        group: group.label,
-        label: item.label,
-        text: item.promptFragment,
-      })),
+      group.items.map(
+        (item): PromptLibraryEntry => ({
+          id: `camera:${item.id}`,
+          source: 'camera',
+          group: group.label,
+          label: item.label,
+          text: item.promptFragment,
+        }),
+      ),
     )
     const performanceEntries = PERFORMANCE_PROMPT_LIBRARY.flatMap((group) =>
-      group.items.map((item): PromptLibraryEntry => ({
-        id: `performance:${item.id}`,
-        source: 'performance',
-        group: group.label,
-        label: item.label,
-        text: item.promptFragment,
-      })),
+      group.items.map(
+        (item): PromptLibraryEntry => ({
+          id: `performance:${item.id}`,
+          source: 'performance',
+          group: group.label,
+          label: item.label,
+          text: item.promptFragment,
+        }),
+      ),
     )
     return [...projectEntries, ...cameraEntries, ...performanceEntries]
   }, [assets])
@@ -2489,10 +2551,17 @@ function CanvasNodeEditModal({
               onOptimizePrompt={runPromptOptimize}
             />
             <div className="canvas-node-edit-agent-actions">
-              <Button size="small" icon={<Icons.Sparkles size={14} />} onClick={runRelatedPromptGenerate}>
+              <Button
+                size="small"
+                icon={<Icons.Sparkles size={14} />}
+                onClick={runRelatedPromptGenerate}
+              >
                 Agent 生成相关提示词
               </Button>
-              <Button size="small" onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}>
+              <Button
+                size="small"
+                onClick={() => insertPromptText('电影感构图，主体清晰，光影自然，细节丰富。')}
+              >
                 插入基础质量词
               </Button>
             </div>
@@ -2521,7 +2590,16 @@ function CanvasNodeEditModal({
                     onClick={() => insertPromptText(entry.text)}
                   >
                     <span className="canvas-node-edit-prompt-entry-top">
-                      <Tag color={entry.source === 'project' ? 'blue' : entry.source === 'camera' ? 'purple' : 'orange'} bordered>
+                      <Tag
+                        color={
+                          entry.source === 'project'
+                            ? 'blue'
+                            : entry.source === 'camera'
+                              ? 'purple'
+                              : 'orange'
+                        }
+                        bordered
+                      >
                         {entry.group}
                       </Tag>
                       <strong>{entry.label}</strong>

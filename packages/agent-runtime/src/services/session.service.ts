@@ -33,6 +33,7 @@ import type {
   SessionSearchResponse,
   UserMessageEvent,
   AssistantMessageEvent,
+  AgentStatusEvent,
   HookNode,
   SessionAttachment,
   UserQuestionPrompt,
@@ -640,7 +641,7 @@ export class SessionService {
     // Inject result as events into the chat stream
     const turnId = crypto.randomUUID()
     const seq0 = this.seqCounters.get(params.sessionId) ?? 0
-    this.seqCounters.set(params.sessionId, seq0 + 2)
+    this.seqCounters.set(params.sessionId, seq0 + 3)
 
     const userEvent: UserMessageEvent = {
       id: crypto.randomUUID(),
@@ -669,7 +670,17 @@ export class SessionService {
       isFinal: true,
     }
 
-    for (const event of [userEvent, assistantEvent]) {
+    const completedEvent: AgentStatusEvent = {
+      id: crypto.randomUUID(),
+      type: 'agent_status',
+      sessionId: params.sessionId,
+      turnId,
+      timestamp: new Date().toISOString(),
+      seq: seq0 + 2,
+      status: 'completed',
+    }
+
+    for (const event of [userEvent, assistantEvent, completedEvent]) {
       this.onEvent(event)
       try {
         eventRepo.insert({

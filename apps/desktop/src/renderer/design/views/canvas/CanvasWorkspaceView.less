@@ -9,7 +9,9 @@
   --canvas-node-head-bg: color-mix(in srgb, var(--panel-elev) 90%, var(--bg-soft));
   --canvas-node-body-bg: color-mix(in srgb, var(--panel-elev) 88%, var(--bg));
   --canvas-node-shadow: 0 14px 34px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.24);
-  --canvas-node-shadow-selected: 0 0 0 1px color-mix(in srgb, var(--primary) 55%, transparent), 0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent), 0 18px 46px rgba(0, 0, 0, 0.34);
+  --canvas-node-shadow-selected:
+    0 0 0 1px color-mix(in srgb, var(--primary) 55%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--primary) 16%, transparent), 0 18px 46px rgba(0, 0, 0, 0.34);
   display: flex;
   flex: 1;
   min-height: 0;
@@ -26,7 +28,10 @@
   --canvas-node-head-bg: color-mix(in srgb, #ffffff 92%, var(--bg-sunken));
   --canvas-node-body-bg: color-mix(in srgb, #ffffff 94%, var(--bg-sunken));
   --canvas-node-shadow: 0 16px 32px rgba(31, 28, 24, 0.08), 0 2px 8px rgba(31, 28, 24, 0.06);
-  --canvas-node-shadow-selected: 0 0 0 1px color-mix(in srgb, var(--primary) 48%, transparent), 0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent), 0 18px 44px rgba(31, 28, 24, 0.12);
+  --canvas-node-shadow-selected:
+    0 0 0 1px color-mix(in srgb, var(--primary) 48%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--primary) 12%, transparent),
+    0 18px 44px rgba(31, 28, 24, 0.12);
 }
 
 .canvas-workspace-loading {
@@ -42,8 +47,11 @@
   gap: 12px;
   padding: 10px 12px 10px 14px;
   border-bottom: 1px solid var(--divider);
-  background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-elev) 88%, transparent), var(--panel));
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--panel-elev) 88%, transparent),
+    var(--panel)
+  );
   flex-shrink: 0;
   // macOS：header 自身作为窗口拖拽区（替代独立 MacWindowDragHeader，省 20px）。
   // 交互元素（按钮/chip）需单独设 no-drag 才能点击。
@@ -144,12 +152,25 @@
   --canvas-side-panel-width: 360px;
   --canvas-left-panel-width: 264px;
   // 三列布局：左工作台 | 主画布 | 右信息面板（文档 §6）
-  grid-template-columns: var(--canvas-left-panel-width) minmax(0, 1fr) var(--canvas-side-panel-width);
+  grid-template-columns: var(--canvas-left-panel-width) minmax(0, 1fr) var(
+      --canvas-side-panel-width
+    );
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--border) 58%, transparent) 0 1px, transparent 1px),
-    linear-gradient(180deg, color-mix(in srgb, var(--border) 42%, transparent) 0 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--border) 58%, transparent) 0 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--border) 42%, transparent) 0 1px,
+      transparent 1px
+    ),
     var(--bg-sunken);
-  background-size: 48px 48px, 48px 48px, auto;
+  background-size:
+    48px 48px,
+    48px 48px,
+    auto;
 }
 
 // 左工作台折叠时保留窄列（44px）只显示展开按钮，避免展开入口丢失
@@ -326,8 +347,16 @@
   min-width: 0;
   min-height: 0;
   background:
-    repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px),
-    repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0 23px,
+      color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 23px,
+      color-mix(in srgb, var(--text-muted) 6%, transparent) 23px 24px
+    ),
     var(--bg-sunken);
 }
 
@@ -447,11 +476,19 @@
 }
 
 .canvas-node.canvas-node-text::before {
-  background: linear-gradient(90deg, var(--canvas-accent-cyan), color-mix(in srgb, var(--canvas-accent-cyan) 22%, transparent));
+  background: linear-gradient(
+    90deg,
+    var(--canvas-accent-cyan),
+    color-mix(in srgb, var(--canvas-accent-cyan) 22%, transparent)
+  );
 }
 
 .canvas-node.canvas-node-prompt::before {
-  background: linear-gradient(90deg, var(--canvas-accent-amber), color-mix(in srgb, var(--canvas-accent-amber) 22%, transparent));
+  background: linear-gradient(
+    90deg,
+    var(--canvas-accent-amber),
+    color-mix(in srgb, var(--canvas-accent-amber) 22%, transparent)
+  );
 }
 
 .canvas-node.canvas-node-image::before,
@@ -466,13 +503,21 @@
 .canvas-node.canvas-node-text_to_video::before,
 .canvas-node.canvas-node-image_to_video::before,
 .canvas-node.canvas-node-video_edit::before {
-  background: linear-gradient(90deg, var(--canvas-accent-rose), color-mix(in srgb, var(--canvas-accent-rose) 18%, transparent));
+  background: linear-gradient(
+    90deg,
+    var(--canvas-accent-rose),
+    color-mix(in srgb, var(--canvas-accent-rose) 18%, transparent)
+  );
 }
 
 .canvas-node.canvas-node-audio::before,
 .canvas-node.canvas-node-text_to_audio::before,
 .canvas-node.canvas-node-audio_transcribe::before {
-  background: linear-gradient(90deg, var(--canvas-accent-lime), color-mix(in srgb, var(--canvas-accent-lime) 18%, transparent));
+  background: linear-gradient(
+    90deg,
+    var(--canvas-accent-lime),
+    color-mix(in srgb, var(--canvas-accent-lime) 18%, transparent)
+  );
 }
 
 .canvas-node:hover {
@@ -648,7 +693,11 @@
   line-height: 1.55;
   white-space: pre-wrap;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--canvas-field-bg) 46%, transparent), transparent 42px),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--canvas-field-bg) 46%, transparent),
+      transparent 42px
+    ),
     var(--canvas-node-body-bg);
 }
 
@@ -799,7 +848,11 @@
   overflow: hidden;
   border-left: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-elev) 60%, transparent), transparent 220px),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-elev) 60%, transparent),
+      transparent 220px
+    ),
     var(--panel);
 }
 
@@ -880,7 +933,9 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
     var(--canvas-float-bg);
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), 0 4px 14px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    0 26px 70px rgba(0, 0, 0, 0.34),
+    0 4px 14px rgba(0, 0, 0, 0.22);
   transform: translateX(-50%);
   backdrop-filter: blur(22px) saturate(1.18);
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
@@ -1411,7 +1466,9 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
     var(--canvas-float-bg);
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), 0 4px 14px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    0 26px 70px rgba(0, 0, 0, 0.34),
+    0 4px 14px rgba(0, 0, 0, 0.22);
   transform: translateX(-50%);
   backdrop-filter: blur(22px) saturate(1.18);
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
@@ -1564,7 +1621,10 @@ body.canvas-side-panel-resizing {
   color: inherit;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+  transition:
+    border-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
 
 .canvas-node-edit-prompt-entry:hover {
@@ -2065,7 +2125,11 @@ body.canvas-side-panel-resizing {
   min-width: 0;
   min-height: 0;
   background:
-    linear-gradient(180deg, color-mix(in srgb, var(--panel-elev) 56%, transparent), transparent 220px),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-elev) 56%, transparent),
+      transparent 220px
+    ),
     var(--panel);
   border-right: 1px solid color-mix(in srgb, var(--divider) 84%, transparent);
   overflow: hidden;
@@ -2086,7 +2150,9 @@ body.canvas-side-panel-resizing {
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    transition: color 0.15s, background 0.15s;
+    transition:
+      color 0.15s,
+      background 0.15s;
 
     &:hover {
       color: var(--text);
@@ -2464,7 +2530,9 @@ body.canvas-side-panel-resizing {
   border: 1px solid var(--divider);
   border-radius: var(--r-md);
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
 
   &:hover {
     border-color: var(--primary);
@@ -2533,7 +2601,9 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
     var(--canvas-float-bg);
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), 0 4px 14px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    0 26px 70px rgba(0, 0, 0, 0.34),
+    0 4px 14px rgba(0, 0, 0, 0.22);
   pointer-events: auto;
   backdrop-filter: blur(22px) saturate(1.18);
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
@@ -2645,7 +2715,9 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
     var(--canvas-float-bg);
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18);
+  box-shadow:
+    0 18px 44px rgba(0, 0, 0, 0.28),
+    0 2px 8px rgba(0, 0, 0, 0.18);
   backdrop-filter: blur(18px) saturate(1.25);
   -webkit-backdrop-filter: blur(18px) saturate(1.25);
 }
@@ -2687,8 +2759,11 @@ body.canvas-side-panel-resizing {
 // dock 内工具激活态：主色高亮
 .canvas-dock-tool-active {
   color: var(--text-strong) !important;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-accent-cyan) 24%, transparent), color-mix(in srgb, var(--primary) 22%, transparent)) !important;
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--canvas-accent-cyan) 24%, transparent),
+    color-mix(in srgb, var(--primary) 22%, transparent)
+  ) !important;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--canvas-accent-cyan) 28%, transparent);
 }
 
@@ -2726,7 +2801,9 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent),
     var(--canvas-float-bg);
-  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.32), 0 4px 12px rgba(0, 0, 0, 0.2);
+  box-shadow:
+    0 22px 56px rgba(0, 0, 0, 0.32),
+    0 4px 12px rgba(0, 0, 0, 0.2);
   backdrop-filter: blur(20px) saturate(1.25);
   -webkit-backdrop-filter: blur(20px) saturate(1.25);
 }
@@ -2756,7 +2833,9 @@ body.canvas-side-panel-resizing {
   background: var(--bg-sunken);
   color: var(--text);
   cursor: pointer;
-  transition: border-color 0.12s, background 0.12s;
+  transition:
+    border-color 0.12s,
+    background 0.12s;
 
   &:hover {
     border-color: var(--primary);
@@ -2777,11 +2856,21 @@ body.canvas-side-panel-resizing {
 // ─── AI 操作 / 节点类型 配色（Phase 4 视觉统一）─────────────────────────
 // 4 类语义色 + 资源色：image=蓝、text=绿、audio=紫、video=橙、resource=灰
 // 应用范围：add-node 菜单按钮 + 底部 dock 按钮
-.canvas-op-color-image { --canvas-op-tint: #1677ff; }
-.canvas-op-color-text { --canvas-op-tint: #16a34a; }
-.canvas-op-color-audio { --canvas-op-tint: #9333ea; }
-.canvas-op-color-video { --canvas-op-tint: #ea580c; }
-.canvas-op-color-resource { --canvas-op-tint: #64748b; }
+.canvas-op-color-image {
+  --canvas-op-tint: #1677ff;
+}
+.canvas-op-color-text {
+  --canvas-op-tint: #16a34a;
+}
+.canvas-op-color-audio {
+  --canvas-op-tint: #9333ea;
+}
+.canvas-op-color-video {
+  --canvas-op-tint: #ea580c;
+}
+.canvas-op-color-resource {
+  --canvas-op-tint: #64748b;
+}
 
 .canvas-add-node-item {
   &.canvas-op-color-image,
@@ -2789,7 +2878,9 @@ body.canvas-side-panel-resizing {
   &.canvas-op-color-audio,
   &.canvas-op-color-video,
   &.canvas-op-color-resource {
-    .canvas-add-node-icon { color: var(--canvas-op-tint); }
+    .canvas-add-node-icon {
+      color: var(--canvas-op-tint);
+    }
     &:hover {
       border-color: var(--canvas-op-tint);
       background: color-mix(in srgb, var(--canvas-op-tint) 8%, var(--bg-sunken));
@@ -3436,7 +3527,9 @@ body.canvas-side-panel-resizing {
   background: var(--panel);
   transition: border-color 0.12s;
 
-  &:hover { border-color: var(--primary); }
+  &:hover {
+    border-color: var(--primary);
+  }
 }
 
 .canvas-film-asset-card-thumb {
@@ -3521,7 +3614,9 @@ body.canvas-side-panel-resizing {
   font-size: 12px;
   color: var(--text-muted);
 
-  > span { font-weight: 600; }
+  > span {
+    font-weight: 600;
+  }
 }
 
 .canvas-film-editor-field-row {
@@ -3640,7 +3735,10 @@ body.canvas-side-panel-resizing {
   justify-content: space-between;
   margin-bottom: 12px;
 
-  strong { font-size: 14px; color: var(--text); }
+  strong {
+    font-size: 14px;
+    color: var(--text);
+  }
 }
 
 .canvas-film-segments-desc {
@@ -3722,7 +3820,10 @@ body.canvas-side-panel-resizing {
   gap: 4px;
   margin-top: 6px;
 
-  .ant-tag { margin: 0; font-size: 10px !important; }
+  .ant-tag {
+    margin: 0;
+    font-size: 10px !important;
+  }
 }
 
 .canvas-film-segment-actions {
@@ -3801,8 +3902,15 @@ body.canvas-side-panel-resizing {
   text-align: center;
   gap: 8px;
 
-  p { margin: 0; font-size: 13px; }
-  .canvas-agent-empty-hint { font-size: 11px; max-width: 360px; line-height: 1.5; }
+  p {
+    margin: 0;
+    font-size: 13px;
+  }
+  .canvas-agent-empty-hint {
+    font-size: 11px;
+    max-width: 360px;
+    line-height: 1.5;
+  }
 }
 
 .canvas-agent-message {
@@ -3851,8 +3959,14 @@ body.canvas-side-panel-resizing {
 }
 
 @keyframes canvas-agent-blink {
-  0%, 50% { opacity: 1; }
-  51%, 100% { opacity: 0; }
+  0%,
+  50% {
+    opacity: 1;
+  }
+  51%,
+  100% {
+    opacity: 0;
+  }
 }
 
 .canvas-agent-input-area {
@@ -3880,11 +3994,14 @@ body.canvas-side-panel-resizing {
     outline: none;
     border-color: var(--primary);
   }
-  &::placeholder { color: var(--text-muted); }
+  &::placeholder {
+    color: var(--text-muted);
+  }
 }
 
 // dock 里 agent 按钮（仅作为兼容选择器保留；样式继承 dock 默认黑白）
-.canvas-dock-agent-btn {}
+.canvas-dock-agent-btn {
+}
 
 // ─── 项目资源中心 v2：多图多描述 / 标签 / 搜索 / 排序 / 引用可视化 ──────
 
@@ -3976,7 +4093,11 @@ body.canvas-side-panel-resizing {
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-film-cyan) 12%, transparent), transparent),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--canvas-film-cyan) 12%, transparent),
+      transparent
+    ),
     var(--bg-sunken);
   display: flex;
   align-items: center;
@@ -3998,7 +4119,9 @@ body.canvas-side-panel-resizing {
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
-.canvas-film-asset-card-refcount { left: 4px; }
+.canvas-film-asset-card-refcount {
+  left: 4px;
+}
 .canvas-film-asset-card-usage {
   right: 4px;
   background: color-mix(in srgb, var(--primary) 82%, rgba(0, 0, 0, 0.48));
@@ -4037,7 +4160,9 @@ body.canvas-side-panel-resizing {
   opacity: 0.85;
   margin-bottom: 4px;
 }
-.canvas-film-editor-attributes { margin-top: 4px; }
+.canvas-film-editor-attributes {
+  margin-top: 4px;
+}
 .canvas-film-editor-attr-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4142,9 +4267,15 @@ body.canvas-side-panel-resizing {
   border-radius: var(--r-md);
   background: var(--canvas-film-card-strong);
 }
-.canvas-film-usage-groupname { color: var(--text-muted); }
-.canvas-film-usage-separator { color: var(--text-muted); }
-.canvas-film-usage-segmenttitle { color: var(--text); }
+.canvas-film-usage-groupname {
+  color: var(--text-muted);
+}
+.canvas-film-usage-separator {
+  color: var(--text-muted);
+}
+.canvas-film-usage-segmenttitle {
+  color: var(--text);
+}
 .canvas-film-usage-nodetype {
   margin-left: auto;
   font-size: 10px !important;
@@ -4177,7 +4308,11 @@ body.canvas-side-panel-resizing {
   border: 1px solid color-mix(in srgb, var(--border) 74%, transparent);
   border-radius: var(--r-lg);
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-film-cyan) 10%, transparent), transparent),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--canvas-film-cyan) 10%, transparent),
+      transparent
+    ),
     var(--canvas-film-card);
 }
 .canvas-film-save-node-preview {
@@ -4197,10 +4332,23 @@ body.canvas-side-panel-resizing {
   align-items: center;
   justify-content: center;
 }
-.canvas-film-save-node-thumb-fallback { color: var(--text-muted); }
-.canvas-film-save-node-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.canvas-film-save-node-title { font-size: 14px; font-weight: 600; }
-.canvas-film-save-node-type { font-size: 11px; color: var(--text-muted); }
+.canvas-film-save-node-thumb-fallback {
+  color: var(--text-muted);
+}
+.canvas-film-save-node-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.canvas-film-save-node-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+.canvas-film-save-node-type {
+  font-size: 11px;
+  color: var(--text-muted);
+}
 .canvas-film-save-field {
   display: flex;
   flex-direction: column;
@@ -4252,7 +4400,9 @@ body.canvas-side-panel-resizing {
   background:
     linear-gradient(180deg, color-mix(in srgb, #ffffff 5%, transparent), transparent 120px),
     var(--canvas-float-bg);
-  box-shadow: 0 26px 70px rgba(0, 0, 0, 0.34), 0 4px 14px rgba(0, 0, 0, 0.22);
+  box-shadow:
+    0 26px 70px rgba(0, 0, 0, 0.34),
+    0 4px 14px rgba(0, 0, 0, 0.22);
   backdrop-filter: blur(22px) saturate(1.18);
   -webkit-backdrop-filter: blur(22px) saturate(1.18);
 }
@@ -4351,7 +4501,11 @@ body.canvas-side-panel-resizing {
   height: 100%;
   object-fit: contain;
   background:
-    linear-gradient(135deg, color-mix(in srgb, var(--canvas-accent-cyan) 8%, transparent), transparent),
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--canvas-accent-cyan) 8%, transparent),
+      transparent
+    ),
     var(--bg-sunken);
 }
 
@@ -4407,7 +4561,9 @@ body.canvas-side-panel-resizing {
   font-size: 10px;
   color: var(--text-muted);
 
-  > span { font-weight: 600; }
+  > span {
+    font-weight: 600;
+  }
 
   .ant-input,
   .ant-select {
@@ -4426,6 +4582,12 @@ body.canvas-side-panel-resizing {
   font-size: 11px;
   line-height: 1.45;
   color: var(--text-muted);
+}
+
+.canvas-operation-panel-frame-roles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .canvas-operation-panel-custom-params {
