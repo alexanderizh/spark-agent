@@ -412,6 +412,10 @@ describe('SessionService runtime provider/model resolution', () => {
       provider: 'spark',
       isFinal: true,
     }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent_status',
+      status: 'completed',
+    }))
   })
 
   it('renders /usage from persisted usage_update events when ledger is empty', async () => {
