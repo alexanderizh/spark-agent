@@ -72,7 +72,7 @@ import { RuntimeCompositionService } from './runtime-composition.service.js'
 import { ProjectContextService } from './project-context.service.js'
 import { ValidationSuggestionService } from './validation-suggestion.service.js'
 import { SkillLoader } from '../skills/skill-loader.js'
-import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor } from '../sdk/index.js'
+import { ClaudeSDKExecutor, CodexCliExecutor, CodexOpenAIExecutor, isSDKAvailable } from '../sdk/index.js'
 import type { SDKExecutorConfig, SDKMcpServerConfig, SDKTurnAttachment } from '../sdk/index.js'
 import { getResumeCircuitBreaker } from '../sdk/index.js'
 import { buildConversationHistoryWithSummary } from './conversation-summarizer.js'
@@ -431,6 +431,12 @@ export class SessionService {
           status: s.status,
           modelId: s.model_id ?? null,
           providerProfileId: s.provider_profile_id ?? '',
+          agentAdapter: getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+          permissionMode: getPermissionModeFromSession(
+            s.permission_mode,
+            getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+          ),
+          agentId: s.agent_id ?? null,
         }
       },
       updateSession: async (id, fields) => {
@@ -482,6 +488,46 @@ export class SessionService {
           checkpointRef,
         }),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
+      getSessionRuntimeInfo: (id) => {
+        const s = sessionRepo.get(id)
+        if (s == null) return null
+        const provider = providerRepo.get(s.provider_profile_id ?? '')
+        const adapter = getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, provider?.provider_type ?? null)
+        return {
+          providerProfileId: s.provider_profile_id ?? null,
+          providerName: provider?.name ?? null,
+          modelId: s.model_id ?? null,
+          agentAdapter: adapter,
+          permissionMode: getPermissionModeFromSession(s.permission_mode, adapter),
+        }
+      },
+      checkSdkAvailability: async () => ({
+        claudeSdk: await isSDKAvailable(),
+        codexCli: await checkCommandAvailable('codex --version', workspacePath),
+        openaiSdk: await checkOpenAISdkAvailable(),
+      }),
+      checkWorkspaceShell: async (cwd) => checkWorkspaceShellAvailable(cwd ?? workspacePath),
+      getMcpStatusSummary: () => this.mcpService.listServers().map((server) => ({
+        id: server.id,
+        name: server.name,
+        enabled: server.enabled,
+        ...this.mcpService.getServerStatus(server.id),
+      })),
+      getCurrentAgentSummary: (id) => {
+        const s = sessionRepo.get(id)
+        const agentId = s?.agent_id ?? 'platform-manager-agent'
+        const agent = new AgentRepository(this.db).get(agentId)
+        if (agent == null) return { id: agentId, name: agentId, exists: false, enabled: false, hasModelConfig: false }
+        return {
+          id: agent.id,
+          name: agent.name,
+          exists: true,
+          enabled: agent.enabled,
+          hasModelConfig: Boolean(agent.providerProfileId || agent.modelId),
+          providerProfileId: agent.providerProfileId ?? null,
+          modelId: agent.modelId ?? null,
+        }
+      },
     }
 
     const ctx = {
@@ -533,6 +579,12 @@ export class SessionService {
           status: s.status,
           modelId: s.model_id ?? null,
           providerProfileId: s.provider_profile_id ?? '',
+          agentAdapter: getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+          permissionMode: getPermissionModeFromSession(
+            s.permission_mode,
+            getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, providerRepo.get(s.provider_profile_id ?? '')?.provider_type ?? null),
+          ),
+          agentId: s.agent_id ?? null,
         }
       },
       updateSession: async (id, fields) => {
@@ -576,6 +628,46 @@ export class SessionService {
           checkpointRef,
         }),
       listSkills: (query) => listSkillSummaries(new SkillRepository(this.db), workspacePath, query),
+      getSessionRuntimeInfo: (id) => {
+        const s = sessionRepo.get(id)
+        if (s == null) return null
+        const provider = providerRepo.get(s.provider_profile_id ?? '')
+        const adapter = getAgentAdapterFromSession(s.agent_adapter, s.chat_mode, provider?.provider_type ?? null)
+        return {
+          providerProfileId: s.provider_profile_id ?? null,
+          providerName: provider?.name ?? null,
+          modelId: s.model_id ?? null,
+          agentAdapter: adapter,
+          permissionMode: getPermissionModeFromSession(s.permission_mode, adapter),
+        }
+      },
+      checkSdkAvailability: async () => ({
+        claudeSdk: await isSDKAvailable(),
+        codexCli: await checkCommandAvailable('codex --version', workspacePath),
+        openaiSdk: await checkOpenAISdkAvailable(),
+      }),
+      checkWorkspaceShell: async (cwd) => checkWorkspaceShellAvailable(cwd ?? workspacePath),
+      getMcpStatusSummary: () => this.mcpService.listServers().map((server) => ({
+        id: server.id,
+        name: server.name,
+        enabled: server.enabled,
+        ...this.mcpService.getServerStatus(server.id),
+      })),
+      getCurrentAgentSummary: (id) => {
+        const s = sessionRepo.get(id)
+        const agentId = s?.agent_id ?? 'platform-manager-agent'
+        const agent = new AgentRepository(this.db).get(agentId)
+        if (agent == null) return { id: agentId, name: agentId, exists: false, enabled: false, hasModelConfig: false }
+        return {
+          id: agent.id,
+          name: agent.name,
+          exists: true,
+          enabled: agent.enabled,
+          hasModelConfig: Boolean(agent.providerProfileId || agent.modelId),
+          providerProfileId: agent.providerProfileId ?? null,
+          modelId: agent.modelId ?? null,
+        }
+      },
     }
 
     const ctx = {
@@ -4366,6 +4458,46 @@ function getAllowedMcpServerIds(agent: AgentItem, workflow: WorkflowItem | null)
     }
   }
   return ids.size > 0 ? ids : undefined
+}
+
+async function checkCommandAvailable(command: string, cwd: string | null): Promise<boolean> {
+  const { exec } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execAsync = promisify(exec)
+  try {
+    await execAsync(command, { cwd: cwd ?? undefined, timeout: 5000, maxBuffer: 64 * 1024 })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function checkWorkspaceShellAvailable(cwd: string | null): Promise<{ available: boolean; shell?: string; error?: string }> {
+  const { exec } = await import('node:child_process')
+  const { promisify } = await import('node:util')
+  const execAsync = promisify(exec)
+  const shell = process.env.SHELL
+  const withShell = (result: { available: boolean; error?: string }): { available: boolean; shell?: string; error?: string } => ({
+    ...result,
+    ...(shell != null ? { shell } : {}),
+  })
+  try {
+    const { stdout } = await execAsync('echo spark-shell-ok', { cwd: cwd ?? undefined, timeout: 5000, maxBuffer: 64 * 1024 })
+    return stdout.includes('spark-shell-ok')
+      ? withShell({ available: true })
+      : withShell({ available: false, error: 'unexpected shell output' })
+  } catch (err) {
+    return withShell({ available: false, error: err instanceof Error ? err.message : String(err) })
+  }
+}
+
+async function checkOpenAISdkAvailable(): Promise<boolean> {
+  try {
+    await import('openai')
+    return true
+  } catch {
+    return false
+  }
 }
 
 type NormalizedWorkflowNode = {
