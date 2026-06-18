@@ -146,6 +146,18 @@ export interface CommandListItem {
    ============================================================ */
 
 /** Convert a skill name to a slug suitable for a slash command. */
+const GIT_LOG_LIMIT_USAGE = '用法：/git log [n]（n 必须是 1-100 的正整数）'
+
+function parseGitLogLimit(value: string | undefined): number | null {
+  const raw = value ?? '10'
+  if (!/^[1-9]\d*$/.test(raw)) return null
+
+  const limit = Number(raw)
+  if (!Number.isSafeInteger(limit) || limit > 100) return null
+
+  return limit
+}
+
 function slugify(name: string): string {
   return name
     .toLowerCase()
@@ -378,7 +390,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
         '`/memory` — 管理记忆文件',
         '`/skill list|run` — Skill 管理',
         '`/add-dir <path>` — 添加工作目录',
-        '`/copy` — 复制上次输出',
         '`/goal <objective>` — 设置任务目标',
         '',
         '▸ **Agent 技能命令** (Layer 3)',
@@ -743,19 +754,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
   })
 
   registry.register({
-    id: 'sdk:codex:copy',
-    name: 'copy',
-    aliases: [],
-    layer: 'sdk',
-    group: 'utility',
-    description: '复制上次 agent 输出为 Markdown',
-    scope: 'session',
-    risk: 'none',
-    usage: '/copy',
-    handler: async () => forwardToAgent(),
-  })
-
-  registry.register({
     id: 'sdk:codex:plan',
     name: 'plan',
     aliases: [],
@@ -783,7 +781,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
 }
 
 function isAgentForwardedCommand(def: CommandDefinition): boolean {
-  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'copy', 'plan', 'side', 'goal'])
+  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan', 'side', 'goal'])
   if (forwardedCommands.has(def.name)) return true
   return def.name === 'git'
 }
@@ -1068,8 +1066,11 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
           return { success: true, message: stdout.trim() ? `\`\`\`\n${stdout}\n\`\`\`` : '工作区干净，无变更。' }
         }
         if (subcommand === 'log') {
-          const n = cmd.args[1] || '10'
-          const { stdout } = await deps.execShell(`git log --oneline -${n}`, cwd)
+          const limit = parseGitLogLimit(cmd.args[1])
+          if (limit == null) {
+            return { success: false, message: GIT_LOG_LIMIT_USAGE }
+          }
+          const { stdout } = await deps.execShell(`git log --oneline -${limit}`, cwd)
           return { success: true, message: `\`\`\`\n${stdout}\n\`\`\`` }
         }
         if (subcommand === 'stash') {

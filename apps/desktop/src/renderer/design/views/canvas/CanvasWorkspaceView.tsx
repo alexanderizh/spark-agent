@@ -1990,42 +1990,42 @@ export function CanvasWorkspaceView({
                   setActiveOperationPanelNodeId(null)
                   setSelectedNodeIds([])
                 }}
-                onRun={(params) => {
-                  void (async () => {
-                    if (!(await ensureCanvasWorkflowLogin())) return
-                    const taskInputNodes = resolveCanvasInputNodes(
-                      params.inputNodeIds,
-                      snapshot.nodes,
-                    )
-                    const inputFiles = await buildCloudTaskInputFiles(
-                      taskInputNodes,
-                      params.inputTransport,
-                      params.inputRoles,
-                    )
-                    const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
-                    const effectivePrompt =
-                      mergedPrompt ||
-                      (inputFiles.length > 0
-                        ? fallbackPromptForOperation(
-                            (opNode.data.operation ?? opNode.type) as CanvasOperationType,
-                          )
-                        : '')
-                    await runOperationNode(opNode.id, {
-                      prompt: effectivePrompt,
-                      ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
-                      inputNodeIds: taskInputNodes.map((item) => item.id),
-                      inputAssetIds: taskInputNodes
-                        .map((item) => item.assetId)
-                        .filter((id): id is string => Boolean(id)),
-                      ...(inputFiles.length > 0 ? { inputFiles } : {}),
-                      ...(params.providerProfileId
-                        ? { providerProfileId: params.providerProfileId }
-                        : {}),
-                      ...(params.manifestId ? { manifestId: params.manifestId } : {}),
-                      ...(params.modelId ? { modelId: params.modelId } : {}),
-                      ...(params.modelParams ? { modelParams: params.modelParams } : {}),
-                    })
-                  })()
+                onRun={async (params) => {
+                  if (!(await ensureCanvasWorkflowLogin())) return
+                  const taskInputNodes = resolveCanvasInputNodes(
+                    params.inputNodeIds,
+                    snapshot.nodes,
+                  )
+                  const inputFiles = await buildCloudTaskInputFiles(
+                    taskInputNodes,
+                    params.inputTransport,
+                    params.inputRoles,
+                  )
+                  const mergedPrompt = mergePromptWithNodeContext(params.prompt, taskInputNodes)
+                  const effectivePrompt =
+                    mergedPrompt ||
+                    (inputFiles.length > 0
+                      ? fallbackPromptForOperation(
+                          (opNode.data.operation ?? opNode.type) as CanvasOperationType,
+                        )
+                      : '')
+                  await runOperationNode(opNode.id, {
+                    prompt: effectivePrompt,
+                    ...(params.negativePrompt ? { negativePrompt: params.negativePrompt } : {}),
+                    inputNodeIds: taskInputNodes.map((item) => item.id),
+                    inputAssetIds: taskInputNodes
+                      .map((item) => item.assetId)
+                      .filter((id): id is string => Boolean(id)),
+                    ...(inputFiles.length > 0 ? { inputFiles } : {}),
+                    ...(params.providerProfileId
+                      ? { providerProfileId: params.providerProfileId }
+                      : {}),
+                    ...(params.manifestId ? { manifestId: params.manifestId } : {}),
+                    ...(params.modelId ? { modelId: params.modelId } : {}),
+                    ...(params.modelParams ? { modelParams: params.modelParams } : {}),
+                  })
+                  setActiveOperationPanelNodeId(null)
+                  setSelectedNodeIds([])
                 }}
                 onRetry={() => void retryOperationNode(opNode.id)}
               />

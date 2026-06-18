@@ -192,6 +192,16 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('sess-1')
   })
 
+  it('/usage shows session token and cost totals from deps', async () => {
+    const result = await registry.execute(parse('/usage'), ctx, makeDeps({
+      getSessionUsage: vi.fn(() => ({ totalInputTokens: 1234, totalOutputTokens: 567, totalCost: 0.0425 })),
+    }))
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('1,234')
+    expect(result.message).toContain('567')
+    expect(result.message).toContain('$0.0425')
+  })
+
   it('/model with arg updates model', async () => {
     const deps = makeDeps()
     const result = await registry.execute(parse('/model gpt-4o'), ctx, deps)
@@ -299,6 +309,38 @@ describe('Built-in commands', () => {
     const result = await registry.execute(parse('/git status'), ctx, deps)
     expect(result.success).toBe(true)
     expect(result.message).toContain('M src/app.ts')
+  })
+
+  it('/git log with numeric limit executes locally', async () => {
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: 'abc123 test commit', stderr: '', exitCode: 0 })),
+    })
+    const result = await registry.execute(parse('/git log 5'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(deps.execShell).toHaveBeenCalledWith('git log --oneline -5', '/fake/workspace')
+  })
+
+  it('/git log rejects non-numeric limit', async () => {
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+    })
+    const result = await registry.execute(parse('/git log foo'), ctx, deps)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('用法：/git log [n]')
+    expect(deps.execShell).not.toHaveBeenCalled()
+  })
+
+  it('/git log rejects shell injection attempts without executing', async () => {
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell: vi.fn(async () => ({ stdout: '', stderr: '', exitCode: 0 })),
+    })
+    const result = await registry.execute(parse('/git log "1; rm -rf /"'), ctx, deps)
+    expect(result.success).toBe(false)
+    expect(result.message).toContain('用法：/git log [n]')
+    expect(deps.execShell).not.toHaveBeenCalled()
   })
 
   it('/init returns existing project config when .claude/commands directory exists', async () => {
