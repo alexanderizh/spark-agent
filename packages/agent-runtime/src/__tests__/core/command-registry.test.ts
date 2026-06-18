@@ -178,6 +178,14 @@ describe('Built-in commands', () => {
     expect(result.message).toContain('/help')
   })
 
+  it('/help command returns implemented command details', async () => {
+    const result = await registry.execute(parse('/help compact'), ctx, makeDeps())
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('/compact')
+    expect(result.message).toContain('交给 Agent 处理')
+    expect(result.message).not.toContain('待实现')
+  })
+
   it('/status returns session info', async () => {
     const result = await registry.execute(parse('/status'), ctx, makeDeps())
     expect(result.success).toBe(true)
@@ -214,6 +222,14 @@ describe('Built-in commands', () => {
     const result = await registry.execute(parse('/clear'), ctx, deps)
     expect(result.success).toBe(true)
     expect(deps.clearSessionEvents).toHaveBeenCalledWith('sess-1')
+  })
+
+  it('/compact forwards to agent instead of clearing session events', async () => {
+    const deps = makeDeps()
+    const result = await registry.execute(parse('/compact summarize decisions'), ctx, deps)
+    expect(result.success).toBe(true)
+    expect(result.forwardToAgent).toBe(true)
+    expect(deps.clearSessionEvents).not.toHaveBeenCalled()
   })
 
   it('/approval on enables approval', async () => {
@@ -283,6 +299,40 @@ describe('Built-in commands', () => {
     const result = await registry.execute(parse('/git status'), ctx, deps)
     expect(result.success).toBe(true)
     expect(result.message).toContain('M src/app.ts')
+  })
+
+  it('/init returns existing project config when .claude/commands directory exists', async () => {
+    const execShell = vi.fn(async () => ({ stdout: 'exists\n', stderr: '', exitCode: 0 }))
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell,
+    })
+
+    const result = await registry.execute(parse('/init'), ctx, deps)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('项目配置已存在')
+    expect(execShell).toHaveBeenCalledTimes(1)
+    expect(execShell).toHaveBeenCalledWith('test -d .claude/commands && echo "exists" || echo "not_found"', '/fake/workspace')
+  })
+
+  it('/init creates .claude/commands directory for an empty workspace', async () => {
+    const execShell = vi.fn(async (command: string) => ({
+      stdout: command.startsWith('test -d ') ? 'not_found\n' : '',
+      stderr: '',
+      exitCode: 0,
+    }))
+    const deps = makeDeps({
+      getWorkspacePath: () => '/fake/workspace',
+      execShell,
+    })
+
+    const result = await registry.execute(parse('/init'), ctx, deps)
+
+    expect(result.success).toBe(true)
+    expect(result.message).toContain('已创建 `.claude/commands/` 目录')
+    expect(execShell).toHaveBeenNthCalledWith(1, 'test -d .claude/commands && echo "exists" || echo "not_found"', '/fake/workspace')
+    expect(execShell).toHaveBeenNthCalledWith(2, 'mkdir -p .claude/commands', '/fake/workspace')
   })
 
   it('/skill run selects a skill for the follow-up turn', async () => {
