@@ -391,6 +391,10 @@ describe('SessionService runtime provider/model resolution', () => {
       provider: 'spark',
       isFinal: true,
     }))
+    expect(events).toContainEqual(expect.objectContaining({
+      type: 'agent_status',
+      status: 'completed',
+    }))
   })
 
   it('passes selected attachments into the Claude SDK turn config', async () => {
