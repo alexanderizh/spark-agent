@@ -1,0 +1,8 @@
+<svg width="720" height="460" viewBox="0 0 720 460" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs><linearGradient id="g" x1="80" y1="32" x2="650" y2="420" gradientUnits="userSpaceOnUse"><stop stop-color="#EEF2FF"/><stop offset="1" stop-color="#ECFEFF"/></linearGradient><filter id="s" x="0" y="0" width="720" height="460"><feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#64748B" flood-opacity=".18"/></filter></defs>
+  <rect width="720" height="460" rx="36" fill="url(#g)"/>
+  <circle cx="598" cy="96" r="54" fill="#A5B4FC" opacity=".35"/>
+  <circle cx="120" cy="365" r="78" fill="#67E8F9" opacity=".25"/>
+  <g filter="url(#s)"><rect x="145" y="92" width="430" height="276" rx="30" fill="white"/><rect x="177" y="129" width="210" height="24" rx="12" fill="#CBD5E1"/><rect x="177" y="177" width="315" height="18" rx="9" fill="#E2E8F0"/><rect x="177" y="207" width="254" height="18" rx="9" fill="#E2E8F0"/><rect x="177" y="263" width="138" height="50" rx="25" fill="#6366F1"/><rect x="335" y="263" width="160" height="50" rx="25" fill="#F1F5F9"/></g>
+  <g><circle cx="520" cy="146" r="48" fill="#111827"/><path d="M500 146c9-18 31-18 40 0-9 18-31 18-40 0Z" fill="#fff"/><circle cx="520" cy="146" r="8" fill="#6366F1"/></g>
+</svg>

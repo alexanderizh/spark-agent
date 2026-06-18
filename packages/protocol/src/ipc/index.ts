@@ -3333,6 +3333,11 @@ export interface RemoteConnectionCapabilities {
   manageWorkspace: boolean
   runCommands: boolean
   approvePermissions: boolean
+  observeDesktop: boolean
+  controlDesktop: boolean
+  transferFiles: boolean
+  manageRuntime: boolean
+  dangerousActions: boolean
 }
 
 export interface RemotePairedDevice {

@@ -6596,6 +6596,8 @@ body.inspector-resizing {
 }
 .remote-editor {
   min-width: 0;
+  display: grid;
+  gap: 14px;
 }
 .remote-editor-modal .ant-modal {
   width: min(860px, calc(100vw - 32px));
@@ -6620,7 +6622,19 @@ body.inspector-resizing {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 18px 0 4px;
+  margin: 0;
+}
+.remote-actions-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 10px 0 12px;
+  background: linear-gradient(
+    180deg,
+    var(--panel) 72%,
+    color-mix(in srgb, var(--panel) 0%, transparent)
+  );
+  border-bottom: 1px solid var(--divider);
 }
 .remote-pairing-panel {
   border: 1px solid var(--border);
