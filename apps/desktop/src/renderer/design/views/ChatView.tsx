@@ -61,10 +61,7 @@ import { MentionPopover, type MentionCandidate } from '../components/MentionPopo
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
 import { ComposerActionsMenu } from '../components/ComposerActionsMenu'
-import {
-  SKILL_STORE_TARGET_TAB_EVENT,
-  SKILL_STORE_TARGET_TAB_STORAGE_KEY,
-} from './SkillStoreView'
+import { SKILL_STORE_TARGET_TAB_EVENT, SKILL_STORE_TARGET_TAB_STORAGE_KEY } from './SkillStoreView'
 import { ToolIcon } from '../components/ToolIcon'
 import { SidebarExpandButton } from '../SidebarExpandButton'
 import { CODING_AGENT_TOOLS } from '../data/available-tools'
@@ -766,7 +763,12 @@ export function ChatView({
     const prev = prevSessionStatusRef.current
     const curr = activeSession?.status ?? null
     prevSessionStatusRef.current = curr
-    if (prev === 'running' && curr != null && curr !== 'running' && activeSessionWorkspace != null) {
+    if (
+      prev === 'running' &&
+      curr != null &&
+      curr !== 'running' &&
+      activeSessionWorkspace != null
+    ) {
       setBranchRefreshTick((n) => n + 1)
     }
   }, [activeSession?.status, activeSessionWorkspace])
@@ -1019,9 +1021,24 @@ export function ChatView({
           </div>
         )}
         {showEmptyHero && <div className="chat-hero-grid" aria-hidden="true" />}
-        {showEmptyHero && <h1 className="chat-hero-title">Spark Agent，go go go！</h1>}
-        {showEmptyHero && (
-          <span className="chat-hero-span">您可以让我创建Agent、安装Skill、安装工作环境！</span>
+        {showEmptyHero && teamConfig.enabled ? (
+          <TeamModeEmptyHero
+            agents={agents}
+            hostAgentId={effectiveHostAgentId ?? teamConfig.hostAgentId}
+            memberAgentIds={teamConfig.memberAgentIds}
+            runningAgentIds={runningTeamAgentIds}
+            onOpenTeamInspector={() => {
+              setShowInspector(true)
+              setShowConfigPanel(false)
+            }}
+          />
+        ) : (
+          showEmptyHero && (
+            <>
+              <h1 className="chat-hero-title">Spark Agent，go go go！</h1>
+              <span className="chat-hero-span">您可以让我创建Agent、安装Skill、安装工作环境！</span>
+            </>
+          )
         )}
 
         {active != null && (
@@ -1044,6 +1061,9 @@ export function ChatView({
                 }}
                 showTerminalPanel={showTerminalPanel}
                 setShowTerminalPanel={setShowTerminalPanel}
+                teamConfig={teamConfig}
+                effectiveHostAgentId={effectiveHostAgentId}
+                agents={agents}
                 {...(active ? { onClearMessages: handleClearMessages } : {})}
               />
             )}
@@ -1124,8 +1144,7 @@ export function ChatView({
         (() => {
           // 空会话（active == null）下用稳定的伪 sessionId 挂载终端面板，
           // 让 PTY 能正确创建/复用；真实会话存在时仍用真实 sessionId。
-          const terminalSessionId =
-            active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
+          const terminalSessionId = active != null ? active : EMPTY_HERO_TERMINAL_SESSION_ID
           return (
             <BuiltInTerminalPanel
               sessionId={terminalSessionId}
@@ -1273,6 +1292,116 @@ function ToolDropdown({ kind, rootPath }: { kind: 'ide' | 'terminal'; rootPath: 
   )
 }
 
+function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | null | undefined) {
+  if (agentId == null || agentId.length === 0) return null
+  return agents.find((agent) => agent.id === agentId) ?? null
+}
+
+function AgentAvatarBadge({
+  agent,
+  fallbackId,
+  className = '',
+  running = false,
+}: {
+  agent: ManagedAgent | null
+  fallbackId: string
+  className?: string
+  running?: boolean
+}) {
+  const name = agent?.name ?? fallbackId
+  const config = getAgentAvatarConfig(agent?.metadata, agent?.id ?? fallbackId, name)
+  return (
+    <span className={`team-avatar-badge ${running ? 'is-running' : ''} ${className}`}>
+      <AvatarImage
+        src={resolveAvatarSrc(config)}
+        seed={agent?.id ?? fallbackId}
+        name={name}
+        alt={`${name} 头像`}
+      />
+      {running && <span className="team-avatar-badge-pulse" aria-hidden="true" />}
+    </span>
+  )
+}
+
+function TeamModeEmptyHero({
+  agents,
+  hostAgentId,
+  memberAgentIds,
+  runningAgentIds,
+  onOpenTeamInspector,
+}: {
+  agents: ManagedAgent[]
+  hostAgentId: string
+  memberAgentIds: string[]
+  runningAgentIds: string[]
+  onOpenTeamInspector: () => void
+}) {
+  const hostAgent = resolveAgentDisplay(agents, hostAgentId)
+  const uniqueMemberIds = memberAgentIds.filter(
+    (id, index, list) => id !== hostAgentId && list.indexOf(id) === index,
+  )
+  const visibleMemberIds = uniqueMemberIds.slice(0, 6)
+  const runningSet = new Set(runningAgentIds)
+  const memberCount = uniqueMemberIds.length
+
+  return (
+    <section className="team-empty-hero" aria-label="团队模式空会话">
+      <div className="team-empty-orbit" aria-hidden="true">
+        <div className="team-empty-orbit-ring" />
+        <div className="team-empty-host">
+          <AgentAvatarBadge
+            agent={hostAgent}
+            fallbackId={hostAgentId || 'platform-manager-agent'}
+            className="host"
+            running={runningSet.has(hostAgentId)}
+          />
+          <span className="team-empty-host-label">Host</span>
+        </div>
+        {visibleMemberIds.map((memberId, index) => {
+          const member = resolveAgentDisplay(agents, memberId)
+          return (
+            <span
+              key={memberId}
+              className={`team-empty-member member-${index + 1}`}
+              style={{ ['--member-index' as string]: index }}
+            >
+              <AgentAvatarBadge
+                agent={member}
+                fallbackId={memberId}
+                running={runningSet.has(memberId)}
+              />
+            </span>
+          )
+        })}
+        {memberCount === 0 && (
+          <div className="team-empty-member-placeholder">
+            <Icons.Plus size={18} />
+          </div>
+        )}
+      </div>
+      <div className="team-empty-copy">
+        <div className="team-empty-kicker">
+          <Icons.Team size={14} /> Team Mode
+        </div>
+        <h1 className="chat-hero-title team-empty-title">团队已就绪</h1>
+        <span className="chat-hero-span team-empty-desc">
+          Host 将协调成员 Agent 分工、执行和汇总结果
+        </span>
+        <div className="team-empty-meta">
+          <span>Host：{hostAgent?.name ?? '平台管理'}</span>
+          <span>成员：{memberCount}</span>
+          {runningAgentIds.length > 0 && <span>{runningAgentIds.length} 位成员执行中</span>}
+        </div>
+        {memberCount === 0 && (
+          <button type="button" className="team-empty-action" onClick={onOpenTeamInspector}>
+            <Icons.Team size={14} /> 添加团队成员
+          </button>
+        )}
+      </div>
+    </section>
+  )
+}
+
 function ChatTabbar({
   session,
   workspace,
@@ -1283,6 +1412,9 @@ function ChatTabbar({
   setShowConfigPanel,
   showTerminalPanel,
   setShowTerminalPanel,
+  teamConfig,
+  effectiveHostAgentId,
+  agents,
   onClearMessages,
 }: {
   session: SessionSummary | null
@@ -1294,6 +1426,9 @@ function ChatTabbar({
   setShowConfigPanel: (v: boolean) => void
   showTerminalPanel: boolean
   setShowTerminalPanel: (v: boolean) => void
+  teamConfig: TeamModeConfig
+  effectiveHostAgentId: string | null
+  agents: ManagedAgent[]
   onClearMessages?: () => void
 }) {
   const { t } = useApp()
@@ -1307,6 +1442,8 @@ function ChatTabbar({
     setShowClearConfirm(false)
     onClearMessages?.()
   }
+  const hostAgent = resolveAgentDisplay(agents, effectiveHostAgentId ?? teamConfig.hostAgentId)
+  const memberCount = teamConfig.memberAgentIds.length
 
   return (
     <div
@@ -1329,6 +1466,20 @@ function ChatTabbar({
               <span className="msg-running">
                 <Icons.Spinner size={11} /> {agentStatus}
               </span>
+            )}
+            {teamConfig.enabled && (
+              <button
+                type="button"
+                className="chat-team-status-chip"
+                onClick={() => setShowInspector(true)}
+                title="打开团队成员面板"
+              >
+                <Icons.Team size={12} />
+                <span>团队模式</span>
+                <span className="chat-team-status-divider" />
+                <span>Host：{hostAgent?.name ?? '平台管理'}</span>
+                <span>成员 {memberCount}</span>
+              </button>
             )}
           </>
         ) : (
@@ -6130,7 +6281,6 @@ function ContextMeterWithPopup({
               </span>
             </div>
           </div>
-
         </div>
       )}
     </div>
@@ -6388,6 +6538,9 @@ function ComposerV2({
       ? Math.min(100, Math.round((contextUsedTokens / contextWindow) * 1000) / 10)
       : 0
   const isBusy = sending || isWorking
+  const composerPlaceholder = teamConfig.enabled
+    ? '描述任务，Host 会协调团队成员分工完成…  ↵ 发送'
+    : '询问、修改、运行任务…  ↵ 发送'
   // 发送前置条件：用户输入了内容、供应商 + 模型已选好。
   // session / workspace 不在这里卡—— handleNewSession 内部对 null 做了 no-project fallback，
   // 真正发送时再做详细校验（toast 提示）
@@ -7922,8 +8075,21 @@ function ComposerV2({
           />
         )}
         <div
-          className={`composer composer-v2 has-workspace-picks ${manualExpanded ? 'expanded' : ''}`}
+          className={`composer composer-v2 has-workspace-picks ${teamConfig.enabled ? 'composer-team-mode' : ''} ${manualExpanded ? 'expanded' : ''}`}
         >
+          {teamConfig.enabled && (
+            <div className="composer-team-banner">
+              <span className="composer-team-banner-badge">
+                <Icons.Team size={12} /> 团队模式
+              </span>
+              <span className="composer-team-banner-text">
+                Host：{activeAgent?.name ?? '平台管理'} · 成员 {teamConfig.memberAgentIds.length}
+              </span>
+              <button type="button" onClick={onOpenTeamInspector} disabled={isBusy}>
+                管理成员
+              </button>
+            </div>
+          )}
           {replyTo != null && (
             <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 text-xs text-[var(--color-text-3)]">
               <div className="flex-1 min-w-0 flex items-center gap-1.5">
@@ -8013,7 +8179,9 @@ function ComposerV2({
                 type="button"
                 className="composer-debug-chip"
                 disabled={isBusy}
-                onClick={() => void dispatchMessage('我已经复现了，请读取本轮调试日志并分析。', [], null)}
+                onClick={() =>
+                  void dispatchMessage('我已经复现了，请读取本轮调试日志并分析。', [], null)
+                }
               >
                 <Icons.Check size={13} />
                 已复现
@@ -8044,7 +8212,7 @@ function ComposerV2({
             className="composer-input"
             ref={textareaRef}
             rows={1}
-            placeholder="询问、修改、运行任务…  ↵ 发送"
+            placeholder={composerPlaceholder}
             value={value}
             onChange={(event) => handleValueChange(event.target.value)}
             onCompositionStart={() => {
@@ -8410,10 +8578,13 @@ function ProjectPicker({
   const noProjectWorkspace = workspaces.find((w) => w.name === NO_PROJECT_WORKSPACE_NAME) ?? null
   const isNoProject = activeWorkspaceId != null && noProjectWorkspace?.id === activeWorkspaceId
   // 若当前活动 workspace 恰是 worktree（理论上不应发生），显示其 base 项目，避免误导
-  const rawSelected = isNoProject ? null : (workspaces.find((w) => w.id === activeWorkspaceId) ?? null)
-  const selectedProject = rawSelected?.worktreeMeta?.baseWorkspaceId != null
-    ? (workspaces.find((w) => w.id === rawSelected.worktreeMeta?.baseWorkspaceId) ?? rawSelected)
-    : rawSelected
+  const rawSelected = isNoProject
+    ? null
+    : (workspaces.find((w) => w.id === activeWorkspaceId) ?? null)
+  const selectedProject =
+    rawSelected?.worktreeMeta?.baseWorkspaceId != null
+      ? (workspaces.find((w) => w.id === rawSelected.worktreeMeta?.baseWorkspaceId) ?? rawSelected)
+      : rawSelected
 
   const triggerLabel =
     selectedProject?.name ?? (isNoProject ? NO_PROJECT_WORKSPACE_NAME : '选择项目')
@@ -8900,7 +9071,11 @@ function ProviderModelPicker({
         title={disabled ? '会话运行中不可切换' : '供应商模型'}
       >
         <span className="composer-select-icon">
-          {selectedVendor ? <ProviderLogo vendor={selectedVendor} size={18} shape="rounded" /> : icon}
+          {selectedVendor ? (
+            <ProviderLogo vendor={selectedVendor} size={18} shape="rounded" />
+          ) : (
+            icon
+          )}
         </span>
         <button
           type="button"
