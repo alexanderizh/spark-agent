@@ -44,7 +44,6 @@ import type {
   RemoteRuntimeStatusResponse,
 } from '@spark/protocol'
 
-
 // 工作流模板暂未实现，保留类型定义以便后续启用
 type WorkflowTemplate = {
   id: string
@@ -393,7 +392,9 @@ export function SettingsView() {
         {isPlatformDarwin && (
           <div
             className="settings-drag-header"
-            onDoubleClick={() => { window.spark?.invoke('window:maximize', {}).catch(() => {}) }}
+            onDoubleClick={() => {
+              window.spark?.invoke('window:maximize', {}).catch(() => {})
+            }}
           />
         )}
         {SectionBody != null ? <SectionBody /> : <PlaceholderSection name={section} />}
@@ -656,6 +657,11 @@ const DEFAULT_REMOTE_CAPABILITIES: RemoteConnectionCapabilities = {
   manageWorkspace: true,
   runCommands: true,
   approvePermissions: false,
+  observeDesktop: true,
+  controlDesktop: false,
+  transferFiles: false,
+  manageRuntime: false,
+  dangerousActions: false,
 }
 
 function splitCsv(value: string): string[] {
@@ -784,7 +790,13 @@ function RemoteConnectionsSection() {
       const status = await window.spark.invoke('remote:runtime-status', {})
       setRuntimeStatus(status)
     } catch {
-      setRuntimeStatus({ running: false, port: null, localBaseUrl: null, polling: [], longConnections: [] })
+      setRuntimeStatus({
+        running: false,
+        port: null,
+        localBaseUrl: null,
+        polling: [],
+        longConnections: [],
+      })
     }
   }, [])
 
@@ -806,7 +818,8 @@ function RemoteConnectionsSection() {
   const saveDraft = async () => {
     setBusy('save')
     try {
-      const payload: Partial<RemoteConnectionConfig> & Pick<RemoteConnectionConfig, 'channel' | 'name'> = {
+      const payload: Partial<RemoteConnectionConfig> &
+        Pick<RemoteConnectionConfig, 'channel' | 'name'> = {
         ...draft,
         status: draft.enabled ? draft.status : 'disabled',
       }
@@ -879,7 +892,9 @@ function RemoteConnectionsSection() {
     setBusy(`pair:${mode}`)
     try {
       const res = await window.spark.invoke('remote:generate-pairing', { id: draft.id, mode })
-      setConnections((prev) => prev.map((item) => (item.id === res.connection.id ? res.connection : item)))
+      setConnections((prev) =>
+        prev.map((item) => (item.id === res.connection.id ? res.connection : item)),
+      )
       setDraft(res.connection)
       await refreshRuntime()
       toast.success(mode === 'qr' ? '二维码配对负载已生成' : '配对码已生成')
@@ -904,7 +919,9 @@ function RemoteConnectionsSection() {
         remoteUserId: manualPairUser.trim(),
         ...(manualPairName.trim().length > 0 ? { displayName: manualPairName.trim() } : {}),
       })
-      setConnections((prev) => prev.map((item) => (item.id === res.connection.id ? res.connection : item)))
+      setConnections((prev) =>
+        prev.map((item) => (item.id === res.connection.id ? res.connection : item)),
+      )
       setDraft(res.connection)
       await refreshRuntime()
       toast.success('配对已确认')
@@ -942,17 +959,22 @@ function RemoteConnectionsSection() {
     }
   }
 
-  const webhookUrl = runtimeStatus.localBaseUrl != null && draft.id
-    ? `${runtimeStatus.localBaseUrl}/remote/webhook/${draft.channel}/${draft.id}`
-    : ''
+  const webhookUrl =
+    runtimeStatus.localBaseUrl != null && draft.id
+      ? `${runtimeStatus.localBaseUrl}/remote/webhook/${draft.channel}/${draft.id}`
+      : ''
   const polling = runtimeStatus.polling.find((item) => item.connectionId === draft.id)
-  const longConnection = runtimeStatus.longConnections.find((item) => item.connectionId === draft.id)
+  const longConnection = runtimeStatus.longConnections.find(
+    (item) => item.connectionId === draft.id,
+  )
   const selectedSession = sessions.find((item) => item.id === draft.defaultSessionId)
 
   return (
     <div className="settings-section remote-settings">
       <h2>远程连接</h2>
-      <div className="lede">通过 Telegram、飞书、QQ、微信 Claw 从远程桌面或移动端与 Spark Agent 通信。</div>
+      <div className="lede">
+        通过 Telegram、飞书、QQ、微信 Claw 从远程桌面或移动端与 Spark Agent 通信。
+      </div>
 
       <div className="remote-create-strip">
         {(Object.keys(REMOTE_CHANNEL_LABELS) as RemoteChannelType[]).map((channel) => (
@@ -983,45 +1005,47 @@ function RemoteConnectionsSection() {
       </div>
 
       <div className="remote-card-grid">
+        <button
+          className={`remote-connection-card ${draft.id === '' ? 'active' : ''}`}
+          onClick={() => {
+            setSelectedId('')
+            setDraft(createRemoteDraft(lastChannel))
+            setEditorOpen(true)
+          }}
+        >
+          <span className="remote-card-main">
+            <span className="remote-card-title">新建连接</span>
+            <span className="remote-card-desc">上次：{REMOTE_CHANNEL_LABELS[lastChannel]}</span>
+          </span>
+          <Icons.Plus size={14} />
+        </button>
+        {loading && <div className="remote-muted-box">加载中...</div>}
+        {connections.map((item) => (
           <button
-            className={`remote-connection-card ${draft.id === '' ? 'active' : ''}`}
+            key={item.id}
+            className={`remote-connection-card ${selectedId === item.id ? 'active' : ''}`}
             onClick={() => {
-              setSelectedId('')
-              setDraft(createRemoteDraft(lastChannel))
+              setSelectedId(item.id)
+              setDraft(item)
+              setManualPairUser('')
+              setManualPairName('')
               setEditorOpen(true)
             }}
           >
             <span className="remote-card-main">
-              <span className="remote-card-title">新建连接</span>
-              <span className="remote-card-desc">上次：{REMOTE_CHANNEL_LABELS[lastChannel]}</span>
+              <span className="remote-card-title">{item.name}</span>
+              <span className="remote-card-desc">{REMOTE_CHANNEL_LABELS[item.channel]}</span>
             </span>
-            <Icons.Plus size={14} />
-          </button>
-          {loading && <div className="remote-muted-box">加载中...</div>}
-          {connections.map((item) => (
-            <button
-              key={item.id}
-              className={`remote-connection-card ${selectedId === item.id ? 'active' : ''}`}
-              onClick={() => {
-                setSelectedId(item.id)
-                setDraft(item)
-                setManualPairUser('')
-                setManualPairName('')
-                setEditorOpen(true)
-              }}
+            <Tag
+              size="small"
+              color={
+                item.status === 'connected' ? 'green' : item.status === 'error' ? 'red' : 'blue'
+              }
             >
-              <span className="remote-card-main">
-                <span className="remote-card-title">{item.name}</span>
-                <span className="remote-card-desc">{REMOTE_CHANNEL_LABELS[item.channel]}</span>
-              </span>
-              <Tag
-                size="small"
-                color={item.status === 'connected' ? 'green' : item.status === 'error' ? 'red' : 'blue'}
-              >
-                {REMOTE_STATUS_LABELS[item.status]}
-              </Tag>
-            </button>
-          ))}
+              {REMOTE_STATUS_LABELS[item.status]}
+            </Tag>
+          </button>
+        ))}
       </div>
 
       <Modal
@@ -1033,6 +1057,33 @@ function RemoteConnectionsSection() {
         maskClosable={false}
       >
         <div className="remote-editor">
+          <div className="remote-actions remote-actions-sticky">
+            <Button
+              type="primary"
+              size="small"
+              loading={busy === 'save'}
+              onClick={() => void saveDraft()}
+            >
+              保存连接
+            </Button>
+            <Button
+              size="small"
+              loading={busy === 'test'}
+              disabled={!draft.id}
+              onClick={() => void testConnection()}
+            >
+              测试配置
+            </Button>
+            <Button
+              size="small"
+              danger
+              loading={busy === 'delete'}
+              onClick={() => void deleteConnection()}
+            >
+              删除
+            </Button>
+          </div>
+
           <div className="subsec-h">连接配置</div>
           <div className="form-grid remote-form-grid">
             <label>
@@ -1059,12 +1110,18 @@ function RemoteConnectionsSection() {
             <label>
               启用连接<span className="sub">停用后不会接收远程消息</span>
             </label>
-            <div className={`switch ${draft.enabled ? 'on' : ''}`} onClick={() => updateDraft({ enabled: !draft.enabled })} />
+            <div
+              className={`switch ${draft.enabled ? 'on' : ''}`}
+              onClick={() => updateDraft({ enabled: !draft.enabled })}
+            />
 
             <label>
               命令前缀<span className="sub">Telegram 可同步为 bot command</span>
             </label>
-            <Input value={draft.commandPrefix} onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })} />
+            <Input
+              value={draft.commandPrefix}
+              onChange={(e) => updateDraft({ commandPrefix: e.target.value || '/' })}
+            />
 
             <label>
               默认会话<span className="sub">普通远程消息会投递到这里</span>
@@ -1144,26 +1201,23 @@ function RemoteConnectionsSection() {
 
           <div className="subsec-h">远程功能</div>
           <div className="remote-cap-grid">
-            {(Object.entries(draft.capabilities) as Array<[keyof RemoteConnectionCapabilities, boolean]>).map(([key, value]) => (
+            {(
+              Object.entries(draft.capabilities) as Array<
+                [keyof RemoteConnectionCapabilities, boolean]
+              >
+            ).map(([key, value]) => (
               <SettingsRow
                 key={key}
                 title={REMOTE_CAPABILITY_LABELS[key]}
                 desc={REMOTE_CAPABILITY_DESCS[key]}
-                right={<div className={`switch ${value ? 'on' : ''}`} onClick={() => updateCapability(key, !value)} />}
+                right={
+                  <div
+                    className={`switch ${value ? 'on' : ''}`}
+                    onClick={() => updateCapability(key, !value)}
+                  />
+                }
               />
             ))}
-          </div>
-
-          <div className="remote-actions">
-            <Button type="primary" size="small" loading={busy === 'save'} onClick={() => void saveDraft()}>
-              保存连接
-            </Button>
-            <Button size="small" loading={busy === 'test'} disabled={!draft.id} onClick={() => void testConnection()}>
-              测试配置
-            </Button>
-            <Button size="small" danger loading={busy === 'delete'} onClick={() => void deleteConnection()}>
-              删除
-            </Button>
           </div>
 
           <div className="subsec-h">配对</div>
@@ -1171,19 +1225,34 @@ function RemoteConnectionsSection() {
             {webhookUrl && draft.channel !== 'telegram' && draft.channel !== 'feishu' && (
               <div className="remote-webhook-box">
                 <span>{webhookUrl}</span>
-                <Button size="small" onClick={() => void navigator.clipboard?.writeText(webhookUrl)}>
+                <Button
+                  size="small"
+                  onClick={() => void navigator.clipboard?.writeText(webhookUrl)}
+                >
                   复制 webhook
                 </Button>
               </div>
             )}
             {selectedSession == null && draft.defaultSessionId != null && (
-              <div className="remote-muted-box">当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}</div>
+              <div className="remote-muted-box">
+                当前默认会话未在最近会话列表中找到：{draft.defaultSessionId}
+              </div>
             )}
             <div className="remote-pairing-actions">
-              <Button size="small" disabled={!draft.id} loading={busy === 'pair:code'} onClick={() => void generatePairing('code')}>
+              <Button
+                size="small"
+                disabled={!draft.id}
+                loading={busy === 'pair:code'}
+                onClick={() => void generatePairing('code')}
+              >
                 生成配对码
               </Button>
-              <Button size="small" disabled={!draft.id} loading={busy === 'pair:qr'} onClick={() => void generatePairing('qr')}>
+              <Button
+                size="small"
+                disabled={!draft.id}
+                loading={busy === 'pair:qr'}
+                onClick={() => void generatePairing('qr')}
+              >
                 生成二维码配对
               </Button>
             </div>
@@ -1192,13 +1261,28 @@ function RemoteConnectionsSection() {
                 <div>
                   <div className="remote-pair-code">{draft.pairing.code}</div>
                   <div className="remote-pair-tip">
-                    在 {REMOTE_CHANNEL_LABELS[draft.channel]} 中发送 <code>/bind {draft.pairing.code}</code> 完成配对。
+                    在 {REMOTE_CHANNEL_LABELS[draft.channel]} 中发送{' '}
+                    <code>/bind {draft.pairing.code}</code> 完成配对。
                   </div>
-                  <div className="muted text-xs-12">过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}</div>
+                  <div className="muted text-xs-12">
+                    过期时间：{new Date(draft.pairing.expiresAt).toLocaleString()}
+                  </div>
                   <div className="remote-manual-pair">
-                    <Input value={manualPairUser} onChange={(e) => setManualPairUser(e.target.value)} placeholder="远程用户 ID" />
-                    <Input value={manualPairName} onChange={(e) => setManualPairName(e.target.value)} placeholder="显示名称（可选）" />
-                    <Button size="small" loading={busy === 'confirm-pair'} onClick={() => void confirmPairing()}>
+                    <Input
+                      value={manualPairUser}
+                      onChange={(e) => setManualPairUser(e.target.value)}
+                      placeholder="远程用户 ID"
+                    />
+                    <Input
+                      value={manualPairName}
+                      onChange={(e) => setManualPairName(e.target.value)}
+                      placeholder="显示名称（可选）"
+                    />
+                    <Button
+                      size="small"
+                      loading={busy === 'confirm-pair'}
+                      onClick={() => void confirmPairing()}
+                    >
                       手动确认
                     </Button>
                   </div>
@@ -1206,7 +1290,9 @@ function RemoteConnectionsSection() {
                 <QrPayloadPreview payload={draft.pairing.qrPayload} />
               </div>
             ) : (
-              <div className="remote-muted-box">连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。</div>
+              <div className="remote-muted-box">
+                连接保存后生成一次性配对码，然后在远程聊天里发送 /bind 配对码 完成绑定。
+              </div>
             )}
             {draft.pairedDevices.length > 0 && (
               <div className="remote-paired-list">
@@ -1242,6 +1328,11 @@ const REMOTE_CAPABILITY_LABELS: Record<keyof RemoteConnectionCapabilities, strin
   manageWorkspace: '查看工作区',
   runCommands: '运行内置命令',
   approvePermissions: '远程审批权限',
+  observeDesktop: '观察桌面',
+  controlDesktop: '控制桌面',
+  transferFiles: '传输文件',
+  manageRuntime: '管理运行时',
+  dangerousActions: '高危动作确认',
 }
 
 const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string> = {
@@ -1252,6 +1343,11 @@ const REMOTE_CAPABILITY_DESCS: Record<keyof RemoteConnectionCapabilities, string
   manageWorkspace: '允许 /workspaces 查看项目入口',
   runCommands: '允许解析命令前缀并执行命令目录',
   approvePermissions: '预留给远程 allow/deny 审批，默认关闭',
+  observeDesktop: '允许 /screen、/windows 查看桌面与窗口概览',
+  controlDesktop: '允许 /focus、/click、/type、/hotkey 等桌面控制命令，默认关闭',
+  transferFiles: '预留给远程文件上传、下载与摘要读取，默认关闭',
+  manageRuntime: '允许 /progress、/queue、/history、/cancel 管理远程任务',
+  dangerousActions: '允许 /confirm 确认高危动作，仍需二次确认',
 }
 
 function RemoteCredentialFields({
@@ -1265,7 +1361,11 @@ function RemoteCredentialFields({
     return (
       <>
         <label>Bot Token</label>
-        <Input value={draft.credentials.botToken ?? ''} onChange={(e) => updateCredential('botToken', e.target.value)} placeholder="123456:ABC..." />
+        <Input
+          value={draft.credentials.botToken ?? ''}
+          onChange={(e) => updateCredential('botToken', e.target.value)}
+          placeholder="123456:ABC..."
+        />
       </>
     )
   }
@@ -1273,9 +1373,15 @@ function RemoteCredentialFields({
     return (
       <>
         <label>App ID</label>
-        <Input value={draft.credentials.appId ?? ''} onChange={(e) => updateCredential('appId', e.target.value)} />
+        <Input
+          value={draft.credentials.appId ?? ''}
+          onChange={(e) => updateCredential('appId', e.target.value)}
+        />
         <label>App Secret</label>
-        <Input value={draft.credentials.appSecret ?? ''} onChange={(e) => updateCredential('appSecret', e.target.value)} />
+        <Input
+          value={draft.credentials.appSecret ?? ''}
+          onChange={(e) => updateCredential('appSecret', e.target.value)}
+        />
       </>
     )
   }
@@ -1283,20 +1389,36 @@ function RemoteCredentialFields({
     return (
       <>
         <label>机器人 AppID</label>
-        <Input value={draft.credentials.qqBotAppId ?? ''} onChange={(e) => updateCredential('qqBotAppId', e.target.value)} />
+        <Input
+          value={draft.credentials.qqBotAppId ?? ''}
+          onChange={(e) => updateCredential('qqBotAppId', e.target.value)}
+        />
         <label>机器人 Token</label>
-        <Input value={draft.credentials.qqBotToken ?? ''} onChange={(e) => updateCredential('qqBotToken', e.target.value)} />
+        <Input
+          value={draft.credentials.qqBotToken ?? ''}
+          onChange={(e) => updateCredential('qqBotToken', e.target.value)}
+        />
         <label>机器人 Secret</label>
-        <Input value={draft.credentials.qqBotSecret ?? ''} onChange={(e) => updateCredential('qqBotSecret', e.target.value)} />
+        <Input
+          value={draft.credentials.qqBotSecret ?? ''}
+          onChange={(e) => updateCredential('qqBotSecret', e.target.value)}
+        />
       </>
     )
   }
   return (
     <>
       <label>Claw Endpoint</label>
-      <Input value={draft.credentials.clawEndpoint ?? ''} onChange={(e) => updateCredential('clawEndpoint', e.target.value)} placeholder="http://127.0.0.1:..." />
+      <Input
+        value={draft.credentials.clawEndpoint ?? ''}
+        onChange={(e) => updateCredential('clawEndpoint', e.target.value)}
+        placeholder="http://127.0.0.1:..."
+      />
       <label>Access Token</label>
-      <Input value={draft.credentials.clawAccessToken ?? ''} onChange={(e) => updateCredential('clawAccessToken', e.target.value)} />
+      <Input
+        value={draft.credentials.clawAccessToken ?? ''}
+        onChange={(e) => updateCredential('clawAccessToken', e.target.value)}
+      />
     </>
   )
 }
@@ -1308,7 +1430,14 @@ function QrPayloadPreview({ payload }: { payload: string }) {
       title={payload}
       onClick={() => void navigator.clipboard?.writeText(payload)}
     >
-      <QRCodeSVG value={payload} size={128} level="M" includeMargin bgColor="transparent" fgColor="currentColor" />
+      <QRCodeSVG
+        value={payload}
+        size={128}
+        level="M"
+        includeMargin
+        bgColor="transparent"
+        fgColor="currentColor"
+      />
       <small>点击复制二维码负载</small>
     </button>
   )
@@ -1701,14 +1830,7 @@ export function ProfileEditModal({ onClose }: { onClose: () => void }) {
 
             <label>Temperature</label>
             <div className="control">
-              <Input
-                type="range"
-                min="0"
-                max="2"
-                step="0.1"
-                defaultValue="0.7"
-                className="flex1"
-              />
+              <Input type="range" min="0" max="2" step="0.1" defaultValue="0.7" className="flex1" />
               <span className="mono-sm muted range-value">0.7</span>
             </div>
 
@@ -3041,9 +3163,7 @@ function SystemPromptSection() {
       <div className="row section-header-row">
         <div className="flex1">
           <h2 className="section-h2">系统提示词</h2>
-          <div className="lede section-lede">
-            配置全局系统级提示词，作为所有 Agent 的基础指令。
-          </div>
+          <div className="lede section-lede">配置全局系统级提示词，作为所有 Agent 的基础指令。</div>
         </div>
         {isDirty && <span className="badge warning dot">未保存</span>}
       </div>
@@ -3086,7 +3206,6 @@ function SystemPromptSection() {
     </div>
   )
 }
-
 
 /* ───────── WORKFLOW TEMPLATES ───────── */
 // 工作流模板暂未实现，从导航和 Section 映射中移除
@@ -4012,9 +4131,10 @@ function StorageSection() {
       })
       if (selected.canceled || selected.filePath === undefined) return
       const current = await getSetting({ category: 'canvas', key: 'data' })
-      const currentValue = current.value && typeof current.value === 'object'
-        ? current.value as Record<string, unknown>
-        : {}
+      const currentValue =
+        current.value && typeof current.value === 'object'
+          ? (current.value as Record<string, unknown>)
+          : {}
       await setSetting({
         category: 'canvas',
         key: 'data',
@@ -4046,7 +4166,9 @@ function StorageSection() {
         moved += result.movedAssets
         skipped += result.skippedAssets
       }
-      toast.success(`迁移完成：${moved} 个资源已归档到项目目录${skipped > 0 ? `，${skipped} 个跳过` : ''}`)
+      toast.success(
+        `迁移完成：${moved} 个资源已归档到项目目录${skipped > 0 ? `，${skipped} 个跳过` : ''}`,
+      )
       await refreshStats()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : '迁移画布资源失败')
@@ -4089,11 +4211,7 @@ function StorageSection() {
       <div className="form-grid">
         <label>数据目录</label>
         <div className="control">
-          <Input
-            className="flex1"
-            value={stats?.userDataPath ?? '加载中...'}
-            readOnly
-          />
+          <Input className="flex1" value={stats?.userDataPath ?? '加载中...'} readOnly />
           <button className="btn" onClick={handleOpenDataDir}>
             <Icons.Folder size={12} /> 打开
           </button>
@@ -4120,7 +4238,11 @@ function StorageSection() {
           Canvas 项目根目录<span className="sub">新建画布项目默认保存位置</span>
         </label>
         <div className="control">
-          <Input className="flex1" value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'} readOnly />
+          <Input
+            className="flex1"
+            value={canvasProjectsRoot || stats?.canvasProjectsRoot || '加载中...'}
+            readOnly
+          />
           <button className="btn" onClick={() => void handleChooseCanvasRoot()}>
             <Icons.Folder size={12} /> 选择
           </button>
@@ -4880,7 +5002,10 @@ function UpdatesSection() {
   const handleSettingsChange = (key: keyof UpdatesSettings, value: boolean | string) => {
     set({ [key]: value })
     const patch: Record<string, boolean | string> = {}
-    if ((key === 'autoCheck' || key === 'autoDownload' || key === 'autoInstall') && typeof value === 'boolean') {
+    if (
+      (key === 'autoCheck' || key === 'autoDownload' || key === 'autoInstall') &&
+      typeof value === 'boolean'
+    ) {
       patch[key] = value
     }
     if (key === 'channel' && typeof value === 'string') {
@@ -4899,9 +5024,8 @@ function UpdatesSection() {
   const isDownloaded = state === 'downloaded'
   const isError = state === 'error'
   const currentVersion = status?.currentVersion ?? '0.1.0'
-  const lastChecked = status?.lastCheckedAt != null
-    ? new Date(status.lastCheckedAt).toLocaleString('zh-CN')
-    : null
+  const lastChecked =
+    status?.lastCheckedAt != null ? new Date(status.lastCheckedAt).toLocaleString('zh-CN') : null
 
   // Update card status icon and label
   const getStatusIcon = () => {
@@ -4974,11 +5098,7 @@ function UpdatesSection() {
               下载更新
             </Button>
           ) : isDownloading ? (
-            <Button
-              icon={<Icons.Download size={14} />}
-              className="update-action-btn"
-              disabled
-            >
+            <Button icon={<Icons.Download size={14} />} className="update-action-btn" disabled>
               下载中 {status?.progress != null ? `${Math.round(status.progress.percent)}%` : ''}
             </Button>
           ) : (
@@ -5025,15 +5145,15 @@ function UpdatesSection() {
         <SettingsRow
           title="自动下载"
           desc="为避免误下载，检测到新版本后仅显示更新按钮，需要手动点击下载"
-          right={
-            <div
-              className="switch disabled"
-            />
-          }
+          right={<div className="switch disabled" />}
         />
         <SettingsRow
           title="自动安装"
-          desc={autoInstallSupported ? '退出应用时自动启动安装器' : '当前平台不支持自动安装，下载后需手动打开安装包'}
+          desc={
+            autoInstallSupported
+              ? '退出应用时自动启动安装器'
+              : '当前平台不支持自动安装，下载后需手动打开安装包'
+          }
           right={
             <div
               className={`switch ${s.autoInstall ? 'on' : ''} ${autoInstallSupported ? '' : 'disabled'}`.trim()}
@@ -5353,7 +5473,10 @@ const HOOK_NODE_LABELS: Record<HookNodeType, { label: string; desc: string }> = 
   session_fail: { label: '任务失败', desc: '任务执行出错' },
 }
 
-const HOOK_NODE_ICONS: Record<HookNodeType, (p: { size?: number; className?: string }) => React.JSX.Element> = {
+const HOOK_NODE_ICONS: Record<
+  HookNodeType,
+  (p: { size?: number; className?: string }) => React.JSX.Element
+> = {
   permission_request: Icons.Shield,
   ask_user_question: Icons.Chat,
   session_end: Icons.CheckCircle,
@@ -5442,7 +5565,9 @@ function HooksSection() {
                       </div>
                       <div
                         className={`switch ${nodeConfig.notification ? 'on' : ''}`}
-                        onClick={() => updateNodeConfig(node, 'notification', !nodeConfig.notification)}
+                        onClick={() =>
+                          updateNodeConfig(node, 'notification', !nodeConfig.notification)
+                        }
                       />
                     </div>
                     <div className="hook-toggle-row">
