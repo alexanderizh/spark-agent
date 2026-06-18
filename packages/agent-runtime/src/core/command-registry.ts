@@ -108,7 +108,7 @@ export interface CommandDefinition {
 
 /** 命令执行所需的外部依赖（由 SessionService 注入） */
 export interface CommandDeps {
-  getSession: (id: string) => { title: string; status: string; modelId: string | null; providerProfileId: string } | null
+  getSession: (id: string) => { title: string; status: string; modelId: string | null; providerProfileId: string; agentAdapter?: string; permissionMode?: string; agentId?: string | null } | null
   updateSession: (id: string, fields: { modelId?: string | null; title?: string }) => Promise<void>
   clearSessionEvents: (id: string) => Promise<void>
   getProviderName: (id: string) => string | null
@@ -125,7 +125,13 @@ export interface CommandDeps {
   listSessionCheckpoints?: (id: string) => CheckpointSnapshot[]
   restoreCheckpoint?: (sessionId: string, checkpointRef: string) => Promise<CheckpointRestoreResult>
   listSkills?: (query?: string) => Array<{ id: string; name: string; description: string; tags: string[]; enabled: boolean }>
+  getSessionRuntimeInfo?: (sessionId: string) => { providerProfileId?: string | null; providerName?: string | null; modelId?: string | null; agentAdapter?: string | null; permissionMode?: string | null } | null
+  checkSdkAvailability?: () => Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }>
+  checkWorkspaceShell?: (cwd?: string | null) => Promise<{ available: boolean; shell?: string; error?: string }>
+  getMcpStatusSummary?: () => Array<{ id: string; name: string; enabled: boolean; connected: boolean; toolCount: number; error?: string }>
+  getCurrentAgentSummary?: (sessionId: string) => { id: string; name: string; exists: boolean; enabled: boolean; hasModelConfig: boolean; providerProfileId?: string | null; modelId?: string | null } | null
 }
+
 
 /** 命令面板展示用的轻量类型 */
 export interface CommandListItem {
@@ -514,25 +520,77 @@ function registerSdkCommands(registry: CommandRegistry): void {
     scope: 'global',
     risk: 'none',
     usage: '/doctor',
-    handler: async (_cmd, _ctx, deps) => {
-      const lines: string[] = ['**环境诊断**', '']
-      // Check git
-      if (deps.execShell) {
-        try {
-          const { stdout } = await deps.execShell('git --version')
-          lines.push(`✅ Git: ${stdout.trim()}`)
-        } catch {
-          lines.push('❌ Git: 未安装')
-        }
+    handler: async (_cmd, ctx, deps) => {
+      const session = deps.getSession(ctx.sessionId)
+      const runtime = deps.getSessionRuntimeInfo?.(ctx.sessionId) ?? null
+      const providerId = runtime?.providerProfileId ?? session?.providerProfileId ?? ctx.providerId ?? null
+      const providerName = runtime?.providerName ?? (providerId ? deps.getProviderName(providerId) : null)
+      const modelId = runtime?.modelId ?? session?.modelId ?? ctx.model ?? null
+      const agentAdapter = runtime?.agentAdapter ?? session?.agentAdapter ?? null
+      const permissionMode = runtime?.permissionMode ?? session?.permissionMode ?? null
+      const workspacePath = deps.getWorkspacePath?.() ?? null
+      const sdk = await resolveSdkAvailability(deps)
+      const shell = await resolveWorkspaceShell(deps, workspacePath)
+      const git = await resolveGitVersion(deps, workspacePath)
+      const mcpServers = deps.getMcpStatusSummary?.() ?? []
+      const agent = deps.getCurrentAgentSummary?.(ctx.sessionId) ?? null
+      const issues: string[] = []
+
+      if (session == null) issues.push('当前 session 不存在，请重新打开或创建会话。')
+      if (!workspacePath) issues.push('未打开 workspace，Git、验证脚本和本地 shell 能力受限。')
+      if (!shell.available) issues.push(`workspace shell 不可执行${shell.error ? `：${shell.error}` : '。'}`)
+      if (!providerId) issues.push('当前 session 缺少 provider 配置。')
+      if (!modelId) issues.push('当前 session 未显式设置 model，将依赖 provider 或 agent 默认模型。')
+      if (!agentAdapter) issues.push('当前 session 缺少 agent adapter 配置。')
+      if (agent != null) {
+        if (!agent.exists) issues.push(`当前 Agent 不存在：${agent.id}`)
+        else if (!agent.enabled) issues.push(`当前 Agent 已禁用：${agent.name}`)
+        if (!agent.hasModelConfig) issues.push(`当前 Agent 缺少模型配置：${agent.name}`)
       } else {
-        lines.push('⚠️ Shell 不可用，跳过检查')
+        issues.push('无法读取当前 Agent 配置摘要。')
       }
-      // Check workspace
-      const wsPath = deps.getWorkspacePath?.()
-      lines.push(wsPath ? `✅ 工作区: ${wsPath}` : '⚠️ 工作区: 未打开')
-      // Check session
-      lines.push('✅ Spark Agent 运行正常')
-      return { success: true, message: lines.join('\n') }
+      if (!sdk.claudeSdk && agentAdapter === 'claude-sdk') issues.push('Claude SDK 不可用，但当前 adapter 为 claude-sdk。')
+      if (!sdk.codexCli && agentAdapter === 'codex') issues.push('Codex CLI 不可用，本地 Codex adapter 可能无法运行。')
+      if (!sdk.openaiSdk) issues.push('OpenAI SDK 不可用，OpenAI Responses adapter 可能无法运行。')
+
+      const lines = [
+        '**环境诊断**',
+        '',
+        '## Session',
+        session == null ? '- ❌ Session: 不存在' : `- ✅ Session: ${ctx.sessionId} (${session.status})`,
+        `- Workspace: ${workspacePath ? `✅ ${workspacePath}` : '⚠️ 未打开'}`,
+        `- Permission Mode: ${permissionMode ? `✅ ${permissionMode}` : '⚠️ 未配置'}`,
+        '',
+        '## Provider/Model',
+        `- Provider: ${providerId ? `✅ ${providerName ?? providerId} (${providerId})` : '❌ 未配置'}`,
+        `- Model: ${modelId ? `✅ ${modelId}` : '⚠️ 未配置（使用默认）'}`,
+        `- Claude SDK: ${sdk.claudeSdk ? '✅ 可用' : '❌ 不可用'}`,
+        `- Codex CLI: ${sdk.codexCli ? '✅ 可用' : '❌ 不可用'}`,
+        `- OpenAI SDK: ${sdk.openaiSdk ? '✅ 可用' : '❌ 不可用'}`,
+        '',
+        '## Agent Adapter',
+        `- Adapter: ${agentAdapter ? `✅ ${agentAdapter}` : '❌ 未配置'}`,
+        agent == null
+          ? '- Agent: ⚠️ 未提供摘要'
+          : `- Agent: ${agent.exists ? (agent.enabled ? '✅' : '⚠️') : '❌'} ${agent.name} (${agent.id})`,
+        agent == null ? '- Agent Model Config: ⚠️ 未知' : `- Agent Model Config: ${agent.hasModelConfig ? '✅ 已配置' : '⚠️ 缺失'}`,
+        '',
+        '## Shell/Git',
+        `- Shell: ${shell.available ? `✅ 可执行${shell.shell ? ` (${shell.shell})` : ''}` : `❌ 不可用${shell.error ? `：${shell.error}` : ''}`}`,
+        `- Git: ${git.available ? `✅ ${git.version}` : `❌ 不可用${git.error ? `：${git.error}` : ''}`}`,
+        '',
+        '## MCP',
+        ...formatMcpStatus(mcpServers),
+        '',
+        '## Known Issues / Suggestions',
+        ...(issues.length > 0 ? issues.map((issue) => `- ${issue}`) : ['- ✅ 未发现明显问题。']),
+      ]
+
+      return {
+        success: true,
+        message: lines.join('\n'),
+        data: { session: session != null, workspacePath, providerId, modelId, agentAdapter, permissionMode, sdk, shell, git, mcpServers, agent, issues },
+      }
     },
   })
 
@@ -1100,6 +1158,63 @@ function registerBuiltinCommands(registry: CommandRegistry): void {
     usage: '/goal <objective> | /goal clear | /goal pause | /goal resume',
     handler: async () => ({ success: true, message: '', forwardToAgent: true }),
   })
+}
+
+async function resolveSdkAvailability(deps: CommandDeps): Promise<{ claudeSdk: boolean; codexCli: boolean; openaiSdk: boolean }> {
+  if (deps.checkSdkAvailability) return deps.checkSdkAvailability()
+  return {
+    claudeSdk: false,
+    codexCli: false,
+    openaiSdk: false,
+  }
+}
+
+async function resolveWorkspaceShell(
+  deps: CommandDeps,
+  cwd: string | null,
+): Promise<{ available: boolean; shell?: string; error?: string }> {
+  if (deps.checkWorkspaceShell) return deps.checkWorkspaceShell(cwd)
+  if (!deps.execShell) return { available: false, error: 'Shell dependency is not registered' }
+  try {
+    const result = await deps.execShell('echo spark-shell-ok', cwd ?? undefined)
+    const output = `${result.stdout}\n${result.stderr}`
+    return result.exitCode === 0 && output.includes('spark-shell-ok')
+      ? { available: true }
+      : { available: false, error: `exit ${result.exitCode}` }
+  } catch (err) {
+    return { available: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+async function resolveGitVersion(
+  deps: CommandDeps,
+  cwd: string | null,
+): Promise<{ available: boolean; version?: string; error?: string }> {
+  if (!deps.execShell) return { available: false, error: 'Shell dependency is not registered' }
+  try {
+    const result = await deps.execShell('git --version', cwd ?? undefined)
+    const output = [result.stdout, result.stderr].filter((part) => part.trim().length > 0).join('\n').trim()
+    return result.exitCode === 0
+      ? { available: true, version: output || 'git available' }
+      : { available: false, error: output || `exit ${result.exitCode}` }
+  } catch (err) {
+    return { available: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
+
+function formatMcpStatus(
+  servers: Array<{ id: string; name: string; enabled: boolean; connected: boolean; toolCount: number; error?: string }>,
+): string[] {
+  if (servers.length === 0) return ['- ⚠️ 未配置 MCP server，或当前运行时未提供 MCP 摘要。']
+  const enabled = servers.filter((server) => server.enabled)
+  const connected = enabled.filter((server) => server.connected)
+  const lines = [`- Summary: ${connected.length}/${enabled.length} enabled servers connected (${servers.length} total)`]
+  for (const server of servers) {
+    const state = server.enabled ? (server.connected ? '✅ connected' : '❌ disconnected') : '⚠️ disabled'
+    const error = server.error ? ` — ${server.error}` : ''
+    lines.push(`- ${state}: ${server.name} (${server.toolCount} tools)${error}`)
+  }
+  return lines
 }
 
 /* ============================================================
