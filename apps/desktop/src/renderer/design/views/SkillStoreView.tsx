@@ -28,9 +28,23 @@ import './SkillStoreView.less'
 
 // ─── Main View ────────────────────────────────────────────────────────
 type TabType = 'installed' | 'create'
+export const SKILL_STORE_TARGET_TAB_EVENT = 'spark-agent:skill-store-target-tab'
+export const SKILL_STORE_TARGET_TAB_STORAGE_KEY = 'spark-agent:skill-store-target-tab'
+
+function isSkillStoreTab(value: unknown): value is TabType {
+  return value === 'installed' || value === 'create'
+}
+
+function readInitialSkillStoreTab(): TabType {
+  if (typeof window === 'undefined') return 'installed'
+  const stored = window.localStorage.getItem(SKILL_STORE_TARGET_TAB_STORAGE_KEY)
+  if (!isSkillStoreTab(stored)) return 'installed'
+  window.localStorage.removeItem(SKILL_STORE_TARGET_TAB_STORAGE_KEY)
+  return stored
+}
 
 export function SkillStoreView() {
-  const [activeTab, setActiveTab] = useState<TabType>('installed')
+  const [activeTab, setActiveTab] = useState<TabType>(readInitialSkillStoreTab)
   const [refreshKey, setRefreshKey] = useState(0)
 
   const handleRefresh = useCallback(() => {
@@ -38,6 +52,20 @@ export function SkillStoreView() {
   }, [])
 
   const triggerRefresh = useRefreshable(handleRefresh)
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const handleTargetTab = (event: Event) => {
+      const tab = (event as CustomEvent<{ tab?: unknown }>).detail?.tab
+      if (!isSkillStoreTab(tab)) return
+      window.localStorage.removeItem(SKILL_STORE_TARGET_TAB_STORAGE_KEY)
+      setActiveTab(tab)
+    }
+    window.addEventListener(SKILL_STORE_TARGET_TAB_EVENT, handleTargetTab)
+    return () => {
+      window.removeEventListener(SKILL_STORE_TARGET_TAB_EVENT, handleTargetTab)
+    }
+  }, [])
 
   return (
     <div className="view-body" style={{ position: 'relative' }}>
