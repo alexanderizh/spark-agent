@@ -174,6 +174,26 @@ function slugify(name: string): string {
     .replace(/^-|-$/g, '')
 }
 
+function clipCommandSectionOutput(output: string, maxLength = 4000): string {
+  return output.length > maxLength ? `${output.slice(0, maxLength)}\n... output truncated ...` : output
+}
+
+function formatDiffSection(title: string, diff: string): string {
+  const body = diff.trim()
+  if (!body) {
+    return `## ${title}\n\n_No changes._`
+  }
+  return `## ${title}\n\n\`\`\`diff\n${clipCommandSectionOutput(body)}\n\`\`\``
+}
+
+function formatUntrackedFilesSection(files: string): string {
+  const body = files.trim()
+  if (!body) {
+    return '## Untracked files\n\n_No untracked files._'
+  }
+  return `## Untracked files\n\n\`\`\`\n${clipCommandSectionOutput(body)}\n\`\`\``
+}
+
 /* ============================================================
    Command Registry
    ============================================================ */
@@ -530,11 +550,22 @@ function registerSdkCommands(registry: CommandRegistry): void {
         return { success: false, message: 'Shell 执行不可用。' }
       }
       try {
-        const { stdout } = await deps.execShell('git diff && git diff --cached && git ls-files --others --exclude-standard | head -20', cwd)
-        if (!stdout.trim()) {
+        const [workingTreeDiff, stagedDiff, untrackedFiles] = await Promise.all([
+          deps.execShell('git diff', cwd),
+          deps.execShell('git diff --cached', cwd),
+          deps.execShell('git ls-files --others --exclude-standard', cwd),
+        ])
+        if (!workingTreeDiff.stdout.trim() && !stagedDiff.stdout.trim() && !untrackedFiles.stdout.trim()) {
           return { success: true, message: '没有文件变更。' }
         }
-        return { success: true, message: `\`\`\`diff\n${stdout.slice(0, 4000)}\n\`\`\`` }
+        return {
+          success: true,
+          message: [
+            formatDiffSection('Working tree diff', workingTreeDiff.stdout),
+            formatDiffSection('Staged diff', stagedDiff.stdout),
+            formatUntrackedFilesSection(untrackedFiles.stdout),
+          ].join('\n\n'),
+        }
       } catch (err) {
         return { success: false, message: `执行 git diff 失败：${err instanceof Error ? err.message : String(err)}` }
       }
