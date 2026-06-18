@@ -85,9 +85,27 @@
   background: var(--panel);
 }
 
+.pv_catalog_modal {
+  margin-top: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.pv_catalog_title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-strong);
+}
+
 .pv_catalog_hint {
   font-size: 12px;
   color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.pv_catalog_search {
   margin-bottom: 12px;
 }
 
@@ -95,6 +113,18 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 10px;
+}
+
+.pv_catalog_empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 160px;
+  border: 1px dashed var(--border);
+  border-radius: var(--r-lg);
+  color: var(--text-muted);
+  font-size: 13px;
+  background: var(--bg-soft);
 }
 
 /* Vendor preset card */
@@ -116,16 +146,6 @@
 
   &:active {
     transform: scale(0.99);
-  }
-
-  &.pv_vendor_added {
-    opacity: 0.55;
-    cursor: default;
-
-    &:hover {
-      border-color: var(--border);
-      background: var(--bg-soft);
-    }
   }
 }
 

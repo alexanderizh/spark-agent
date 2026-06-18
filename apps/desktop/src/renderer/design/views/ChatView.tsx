@@ -401,6 +401,26 @@ export function ChatView({
   const effectiveHostAgentId = teamConfig.enabled
     ? resolveTeamHostAgentId(teamConfig, agents)
     : null
+
+  // 当前会话关联的已保存团队名（临时团队为 null），用于空会话标题「<团队名> 已就绪」。
+  const [activeTeamName, setActiveTeamName] = useState<string | null>(null)
+  useEffect(() => {
+    if (!teamConfig.enabled || teamConfig.teamId == null) {
+      setActiveTeamName(null)
+      return
+    }
+    let cancelled = false
+    void getTeamDef({ id: teamConfig.teamId })
+      .then((res) => {
+        if (!cancelled) setActiveTeamName(res.team?.name ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setActiveTeamName(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [teamConfig.enabled, teamConfig.teamId, getTeamDef])
   // 切换 active session 时从 metadata 拉取会话级 team config 回显；
   // 历史团队会话能正常恢复底部参数与右侧 Inspector 的团队信息。
   const reloadActiveTeamConfig = useCallback(async () => {
@@ -793,6 +813,58 @@ export function ChatView({
     sessionCtx.updateSessionInList(active, res.session)
   }
 
+  // 把活跃会话的适配器/供应商/模型/权限/推理强度同步到指定 agent 的配置。
+  // 用于「右侧 Inspector 切换主持人」——与底部输入框切换 agent / 切换主持人保持一致：
+  // 会话用哪个适配器和模型，始终跟随当前活跃 agent（团队模式即主持人）。
+  const syncSessionRuntimeToAgent = useCallback(
+    async (agentId: string) => {
+      const agent = agents.find((a) => a.id === agentId)
+      if (agent == null || active == null) return
+      const provider =
+        providers.find((p) => p.id === agent.providerProfileId) ??
+        getPreferredProvider(
+          providers,
+          { ...readComposerPrefs(), agentId: agent.id },
+          agent.agentAdapter,
+        )
+      const model =
+        provider != null && isLocalCliProvider(provider)
+          ? getProviderDefaultModel(provider)
+          : (agent.modelId ?? provider?.defaultModel ?? provider?.modelIds[0] ?? '')
+      const reasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'medium'
+      if (provider != null) setSelectedProviderId(provider.id)
+      writeComposerPrefs({
+        agentId: agent.id,
+        adapter: agent.agentAdapter,
+        ...(provider?.id !== undefined ? { providerProfileId: provider.id } : {}),
+        modelId: model,
+        permissionMode: agent.permissionMode,
+        reasoningEffort: reasoning,
+      })
+      await handleUpdateActiveSession({
+        agentId: agent.id,
+        ...(provider != null ? { providerProfileId: provider.id } : {}),
+        modelId: model || null,
+        agentAdapter: agent.agentAdapter,
+        permissionMode: agent.permissionMode,
+        reasoningEffort: reasoning,
+      })
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [agents, providers, active, setSelectedProviderId],
+  )
+
+  // Inspector 改团队配置：主持人变化时一并同步会话运行时（其余 patch 仅更新团队配置）。
+  const handleInspectorChangeConfig = useCallback(
+    (patch: Partial<TeamModeConfig>) => {
+      updateTeamConfig(patch)
+      if (patch.hostAgentId != null && patch.hostAgentId !== teamConfig.hostAgentId) {
+        void syncSessionRuntimeToAgent(patch.hostAgentId)
+      }
+    },
+    [updateTeamConfig, teamConfig.hostAgentId, syncSessionRuntimeToAgent],
+  )
+
   const handleSwitchBranch = async (branch: string) => {
     if (activeSessionWorkspace == null || !branch || branch === branchState.currentBranch) return
     try {
@@ -1030,6 +1102,7 @@ export function ChatView({
             hostAgentId={effectiveHostAgentId ?? teamConfig.hostAgentId}
             memberAgentIds={teamConfig.memberAgentIds}
             runningAgentIds={runningTeamAgentIds}
+            teamName={activeTeamName}
             onOpenTeamInspector={() => {
               setShowInspector(true)
               setShowConfigPanel(false)
@@ -1038,8 +1111,8 @@ export function ChatView({
         ) : (
           showEmptyHero && (
             <>
-              <h1 className="chat-hero-title">Spark Agent，go go go！</h1>
-              <span className="chat-hero-span">您可以让我创建Agent、安装Skill、安装工作环境！</span>
+              <h1 className="chat-hero-title chat-hero-greeting">{getHeroGreeting()}</h1>
+              <span className="chat-hero-span">您还可以让我创建Agent、安装Skill、检查工作环境！</span>
             </>
           )
         )}
@@ -1134,7 +1207,7 @@ export function ChatView({
           onWidthChange={setInspectorWidth}
           teamConfig={teamConfig}
           agents={agents}
-          onChangeTeamConfig={updateTeamConfig}
+          onChangeTeamConfig={handleInspectorChangeConfig}
           onOpenProjectFolder={() => {
             const workspaceToOpen = activeSessionWorkspace ?? activeWorkspace
             if (workspaceToOpen) void sessionCtx.handleOpenProjectFolder(workspaceToOpen)
@@ -1300,6 +1373,15 @@ function resolveAgentDisplay(agents: ManagedAgent[], agentId: string | null | un
   return agents.find((agent) => agent.id === agentId) ?? null
 }
 
+/** 单 agent 空会话的趣味大字问候：按时段给一句简短、有点劲儿的开场白。 */
+function getHeroGreeting(): string {
+  const h = new Date().getHours()
+  if (h < 5) return '夜深了，慢慢来 🌙'
+  if (h < 11) return '早安，开工啦 ☀️'
+  if (h < 18) return '下午好，继续冲 ⚡'
+  return '晚上好，搞起来 🌟'
+}
+
 function AgentAvatarBadge({
   agent,
   fallbackId,
@@ -1331,15 +1413,20 @@ function TeamModeEmptyHero({
   hostAgentId,
   memberAgentIds,
   runningAgentIds,
+  teamName,
   onOpenTeamInspector,
 }: {
   agents: ManagedAgent[]
   hostAgentId: string
   memberAgentIds: string[]
   runningAgentIds: string[]
+  /** 已保存团队名（临时团队为 null）；用于标题「<团队名> 已就绪」 */
+  teamName?: string | null
   onOpenTeamInspector: () => void
 }) {
   const hostAgent = resolveAgentDisplay(agents, hostAgentId)
+  const readyTitle =
+    teamName != null && teamName.trim().length > 0 ? `${teamName} 已就绪` : '团队已就绪'
   const uniqueMemberIds = memberAgentIds.filter(
     (id, index, list) => id !== hostAgentId && list.indexOf(id) === index,
   )
@@ -1383,12 +1470,9 @@ function TeamModeEmptyHero({
         )}
       </div>
       <div className="team-empty-copy">
-        <div className="team-empty-kicker">
-          <Icons.Team size={14} /> Team Mode
-        </div>
-        <h1 className="chat-hero-title team-empty-title">团队已就绪</h1>
+        <h1 className="chat-hero-title team-empty-title">{readyTitle}</h1>
         <span className="chat-hero-span team-empty-desc">
-          Host 将协调成员 Agent 分工、执行和汇总结果
+          {hostAgent?.name ?? '平台管理'} 将协调成员 Agent 分工、执行和汇总结果
         </span>
         <div className="team-empty-meta">
           <span>Host：{hostAgent?.name ?? '平台管理'}</span>
@@ -2920,23 +3004,12 @@ function renderTeamMemberActivityBlocks(
     onFilePreview?: (filePath: string, fileType: 'markdown' | 'html' | 'image' | 'text') => void
   },
 ): ReactNode {
-  const logBlocks = blocks.filter(isTeamMemberLogBlock)
+  // 团队模式下不展示成员的执行日志（tool_call/terminal/file_change），避免每个成员都挂一个
+  // “执行日志”折叠块导致会话分块、视觉割裂；只保留成员的最终回复正文。
   const resultBlocks = blocks.filter((block) => !isTeamMemberLogBlock(block))
 
   return (
     <>
-      {logBlocks.length > 0 && (
-        <details className="team-member-log-panel">
-          <summary>
-            <Icons.Wrench size={12} />
-            <span>执行日志</span>
-            <span className="team-member-log-count">{logBlocks.length}</span>
-          </summary>
-          <div className="team-member-log-body">
-            {renderBlocksGrouped(logBlocks, { ...options, surface: 'inspector' })}
-          </div>
-        </details>
-      )}
       {resultBlocks.map((block, index) => {
         if (block.kind === 'team_member_message') {
           if (block.content.trim().length === 0) return null
@@ -7934,7 +8007,10 @@ function ComposerV2({
       await persistRuntimePatch({ agentAdapter: nextAdapter, permissionMode: nextPermissionMode })
   }
 
-  const handleAgentChange = async (agentId: string) => {
+  // 把会话运行时（适配器/供应商/模型/权限/推理强度）同步到指定 agent 的配置。
+  // 单 agent 切换、以及团队模式下主持人变化（开启团队/切换主持人/应用已保存团队）都复用它，
+  // 确保「会话用哪个适配器和模型」始终跟随当前活跃 agent（团队模式即主持人）。
+  const applyAgentRuntime = async (agentId: string) => {
     const agent = agents.find((item) => item.id === agentId)
     if (agent == null) return
     const agentReasoning = normalizeComposerReasoningEffort(agent.reasoningEffort) ?? 'medium'
@@ -7975,6 +8051,8 @@ function ComposerV2({
       })
     }
   }
+
+  const handleAgentChange = (agentId: string) => applyAgentRuntime(agentId)
 
   const handleModelChange = async (modelId: string) => {
     setDraftModelId(modelId)
@@ -8114,7 +8192,12 @@ function ComposerV2({
               <span className="composer-team-banner-text">
                 Host：{activeAgent?.name ?? '平台管理'} · 成员 {teamConfig.memberAgentIds.length}
               </span>
-              <button type="button" style={{paddingRight: 20}} onClick={onOpenTeamInspector} disabled={isBusy}>
+              <button
+                type="button"
+                style={{ paddingRight: 20 }}
+                onClick={onOpenTeamInspector}
+                disabled={isBusy}
+              >
                 管理成员
               </button>
             </div>
@@ -8281,14 +8364,17 @@ function ComposerV2({
           </button>
           <div className="composer-submit-row">
             <div className="composer-submit-picks">
-              <ProviderModelPicker
-                icon={<ModelIcon />}
-                providers={providers}
-                selectedProviderId={selectedProvider?.id ?? ''}
-                selectedModelId={effectiveModelId}
-                disabled={isBusy || providers.length === 0}
-                onChange={handleProviderModelChange}
-              />
+              {/* 团队模式下隐藏模型切换：host/各成员一律使用各自 agent 配置的模型，不在会话框切换 */}
+              {!teamConfig.enabled && (
+                <ProviderModelPicker
+                  icon={<ModelIcon />}
+                  providers={providers}
+                  selectedProviderId={selectedProvider?.id ?? ''}
+                  selectedModelId={effectiveModelId}
+                  disabled={isBusy || providers.length === 0}
+                  onChange={handleProviderModelChange}
+                />
+              )}
               {showProjectPicker && (
                 <ProjectPicker
                   workspaces={workspaces}
@@ -8346,13 +8432,26 @@ function ComposerV2({
                 agents[0]?.id ??
                 effectiveAgentId
               onChangeTeamConfig({ enabled: true, hostAgentId: fallbackHost, teamId: undefined })
+              // 开启团队模式：把会话适配器/模型同步为主持人的配置（与单 agent 切换一致）
+              void applyAgentRuntime(fallbackHost)
             }}
             onDisableTeamMode={() => onChangeTeamConfig({ enabled: false, teamId: undefined })}
-            onChangeHost={(agentId) =>
-              onChangeTeamConfig({ hostAgentId: agentId, teamId: undefined })
-            }
-            onOpenMembers={onOpenTeamInspector}
-            onApplyTeam={(team) =>
+            onChangeHost={(agentId) => {
+              // 切换主持人：旧主持人转为成员，新主持人从成员中移除，保持花名册成员不丢失。
+              if (agentId === teamConfig.hostAgentId) return
+              const nextMembers = new Set(teamConfig.memberAgentIds)
+              nextMembers.delete(agentId)
+              if (teamConfig.hostAgentId) nextMembers.add(teamConfig.hostAgentId)
+              onChangeTeamConfig({
+                hostAgentId: agentId,
+                memberAgentIds: Array.from(nextMembers),
+                teamId: undefined,
+              })
+              // 主持人变更：会话适配器/模型跟随新主持人配置
+              void applyAgentRuntime(agentId)
+            }}
+            locked={!isNewSessionComposer}
+            onApplyTeam={(team) => {
               onChangeTeamConfig({
                 enabled: true,
                 hostAgentId: team.hostAgentId,
@@ -8361,7 +8460,9 @@ function ComposerV2({
                 allowNesting: team.allowNesting,
                 teamId: team.id,
               })
-            }
+              // 应用已保存团队：会话适配器/模型跟随该团队主持人配置
+              void applyAgentRuntime(team.hostAgentId)
+            }}
             disabled={isBusy}
           />
           <ComposerMenuSelect
@@ -8453,7 +8554,7 @@ function ComposerV2({
                   onChange={(e) => setCreateWorktree(e.target.checked)}
                 />
                 <Icons.GitBranch size={13} />
-                <span>隔离 worktree</span>
+                <span>worktree</span>
               </label>
               {createWorktree && (
                 <input
@@ -8713,9 +8814,9 @@ function AgentPicker({
   onEnableTeamMode,
   onDisableTeamMode,
   onChangeHost,
-  onOpenMembers,
   onApplyTeam,
   disabled,
+  locked,
 }: {
   agents: ManagedAgent[]
   selectedAgentId: string
@@ -8724,9 +8825,10 @@ function AgentPicker({
   onEnableTeamMode: () => void
   onDisableTeamMode: () => void
   onChangeHost: (agentId: string) => void
-  onOpenMembers: () => void
   onApplyTeam: (team: ManagedTeam) => void
   disabled?: boolean
+  /** 会话已有内容（messageCount>0）：锁定团队切换/退出，弹窗只读展示当前团队与成员 */
+  locked?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const rootRef = useRef<HTMLDivElement | null>(null)
@@ -8768,24 +8870,36 @@ function AgentPicker({
     agents.find((agent) => agent.id === activeId) ??
     agents.find((agent) => agent.id === 'platform-manager-agent') ??
     agents[0]
-  const memberCount = teamConfig.memberAgentIds.length
   const activeTeam =
     teamMode && teamConfig.teamId != null
       ? teams.find((t) => t.id === teamConfig.teamId)
       : undefined
 
+  // 会话已有内容时锁定团队：弹窗只读展示「当前团队 + 成员（主持人置顶）」，
+  // 不再提供切换团队、切换主持人、退出团队模式等操作。
+  const lockedTeam = locked === true && teamMode
+  const hostAgent = teamMode ? (agents.find((a) => a.id === teamConfig.hostAgentId) ?? selected) : selected
+  const rosterMembers = (() => {
+    if (!teamMode) return []
+    const memberSet = new Set(teamConfig.memberAgentIds)
+    return agents.filter((a) => a.id !== hostAgent?.id && memberSet.has(a.id))
+  })()
+
   // 选择器头部图标：优先显示当前选中项的自定义头像。
   // - 非团队模式：显示当前 agent 头像
   // - 团队模式 + 已应用某个已保存团队：显示该团队头像
-  // - 团队模式 + 临时团队：显示 Host agent 头像
+  // - 团队模式 + 临时团队：不显示主持人头像，改用团队模式标识（见 showTeamBadge）
   // 没有自定义头像时保持原来的默认图标（Team / Code / Bot）。
   const triggerAvatarTarget: {
     id: string
     metadata: Record<string, unknown> | undefined
     name: string
   } | null = (() => {
-    if (teamMode && activeTeam != null) {
-      return { id: activeTeam.id, metadata: activeTeam.metadata, name: activeTeam.name }
+    if (teamMode) {
+      // 团队模式只认「已保存团队」的头像；临时团队不回落到主持人头像。
+      return activeTeam != null
+        ? { id: activeTeam.id, metadata: activeTeam.metadata, name: activeTeam.name }
+        : null
     }
     if (selected) {
       return { id: selected.id, metadata: selected.metadata, name: selected.name }
@@ -8794,14 +8908,16 @@ function AgentPicker({
   })()
   const showTriggerAvatar =
     triggerAvatarTarget != null && hasCustomAvatar(triggerAvatarTarget.metadata)
+  // 团队模式且没有团队自定义头像时，头部展示一个团队模式标识徽标（而非主持人头像）。
+  const showTeamBadge = teamMode && !showTriggerAvatar
 
   return (
     <div
       ref={rootRef}
-      className={`composer-select composer-agent-picker${disabled ? ' is-disabled' : ''}`}
+      className={`composer-select composer-agent-picker${teamMode ? ' is-team' : ''}${disabled ? ' is-disabled' : ''}`}
       title={disabled ? '会话运行中不可切换' : teamMode ? '团队模式' : 'Agent'}
     >
-      <span className="composer-select-icon">
+      <span className={`composer-select-icon${showTeamBadge ? ' is-team-badge' : ''}`}>
         {showTriggerAvatar && triggerAvatarTarget ? (
           <AvatarImage
             className="composer-agent-picker-avatar"
@@ -8842,24 +8958,90 @@ function AgentPicker({
         <span>{activeTeam != null ? activeTeam.name : (selected?.name ?? '平台管理')}</span>
         <Icons.ChevronDown size={12} />
       </button>
-      {teamMode && (
-        <button
-          type="button"
-          className="composer-team-chip"
-          disabled={disabled}
-          onClick={onOpenMembers}
-          title={disabled ? '会话运行中不可操作' : '管理团队成员'}
-        >
-          <Icons.Team size={11} />
-          <span className="composer-team-chip-count">{memberCount}</span>
-        </button>
-      )}
       {open && (
         <div className="composer-menu composer-agent-menu">
+          {lockedTeam ? (
+            <div className="composer-roster-readonly">
+              <div className="composer-menu-group-title">
+                {activeTeam != null ? '当前团队' : '当前团队（临时）'}
+              </div>
+              <div className="composer-roster-team-row">
+                {activeTeam != null && hasCustomAvatar(activeTeam.metadata) ? (
+                  <AvatarImage
+                    className="composer-menu-avatar"
+                    src={resolveAvatarSrc(
+                      getAgentAvatarConfig(activeTeam.metadata, activeTeam.id, activeTeam.name),
+                    )}
+                    seed={activeTeam.id}
+                    name={activeTeam.name}
+                    alt={`${activeTeam.name} 头像`}
+                  />
+                ) : (
+                  <span className="composer-roster-team-icon">
+                    <Icons.Team size={13} />
+                  </span>
+                )}
+                <span className="composer-roster-team-name">
+                  {activeTeam != null ? activeTeam.name : '临时团队'}
+                </span>
+                {activeTeam?.builtIn && <span className="composer-menu-item-tag">内置</span>}
+              </div>
+              <div className="composer-menu-divider" />
+              <div className="composer-menu-group-title">
+                成员 · {rosterMembers.length + (hostAgent ? 1 : 0)}
+              </div>
+              {[hostAgent, ...rosterMembers]
+                .filter((a): a is ManagedAgent => a != null)
+                .map((agent, idx) => {
+                  const isHost = idx === 0
+                  const agentHasAvatar = hasCustomAvatar(agent.metadata)
+                  return (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      className={`composer-menu-item${isHost ? ' active' : ''}`}
+                      title={isHost ? '当前主持人' : '设为主持人'}
+                      onClick={() => {
+                        setOpen(false)
+                        if (!isHost) onChangeHost(agent.id)
+                      }}
+                    >
+                      <span className="composer-menu-item-copy">
+                        <span className="composer-menu-item-label">
+                          {agentHasAvatar ? (
+                            <AvatarImage
+                              className="composer-menu-avatar"
+                              src={resolveAvatarSrc(
+                                getAgentAvatarConfig(agent.metadata, agent.id, agent.name),
+                              )}
+                              seed={agent.id}
+                              name={agent.name}
+                              alt={`${agent.name} 头像`}
+                            />
+                          ) : agent.builtIn ? (
+                            <Icons.Code size={13} />
+                          ) : (
+                            <Icons.Bot size={13} />
+                          )}
+                          <span>{agent.name}</span>
+                          {isHost && <span className="composer-roster-host-badge">主持人</span>}
+                        </span>
+                        <span className="composer-menu-item-desc">{agent.description || '-'}</span>
+                      </span>
+                      {isHost && <Icons.Check size={14} className="composer-menu-check" />}
+                    </button>
+                  )
+                })}
+              <div className="composer-roster-locked-hint">
+                <Icons.Lock size={11} /> 会话进行中，团队成员已锁定，仅可切换主持人
+              </div>
+            </div>
+          ) : (
+            <>
           {teamMode ? (
             <button
               type="button"
-              className="composer-menu-item team-mode-entry"
+              className="composer-menu-item team-mode-entry team-mode-exit"
               onClick={() => {
                 setOpen(false)
                 onDisableTeamMode()
@@ -8867,7 +9049,7 @@ function AgentPicker({
             >
               <span className="composer-menu-item-copy">
                 <span className="composer-menu-item-label">
-                  <Icons.X size={13} />
+                  <Icons.X size={14} />
                   <span>退出团队模式</span>
                 </span>
               </span>
@@ -8892,7 +9074,6 @@ function AgentPicker({
           )}
           {teams.length > 0 && (
             <>
-              <div className="composer-menu-divider" />
               <div className="composer-menu-group-title">已保存团队</div>
               {teams.map((team) => {
                 const host = agents.find((a) => a.id === team.hostAgentId)
@@ -8932,7 +9113,7 @@ function AgentPicker({
                         {team.memberAgentIds.length > 0 ? `${team.memberAgentIds.length} 成员` : ''}
                       </span>
                     </span>
-                    {active && <Icons.Check size={14} />}
+                    {active && <Icons.Check size={14} className="composer-menu-check" />}
                   </button>
                 )
               })}
@@ -8940,7 +9121,7 @@ function AgentPicker({
           )}
           <div className="composer-menu-divider" />
           <div className="composer-menu-group-title">
-            {teamMode ? '当前对话 Agent' : '选择 Agent'}
+            {teamMode ? '主持人 Agent' : '选择 Agent'}
           </div>
           {agents.map((agent) => {
             const agentHasAvatar = hasCustomAvatar(agent.metadata)
@@ -8974,15 +9155,17 @@ function AgentPicker({
                     )}
                     <span>{agent.name}</span>
                   </span>
-                  {agent.description && (
-                    <span className="composer-menu-item-desc">{agent.description}</span>
-                  )}
+                  <span className="composer-menu-item-desc">{agent.description || '-'}</span>
                 </span>
                 {agent.workflowId && <Icons.Workflow size={13} />}
-                {agent.id === selected?.id && <Icons.Check size={14} />}
+                {agent.id === selected?.id && (
+                  <Icons.Check size={14} className="composer-menu-check" />
+                )}
               </button>
             )
           })}
+            </>
+          )}
         </div>
       )}
     </div>

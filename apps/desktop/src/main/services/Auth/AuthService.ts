@@ -29,6 +29,9 @@ import type {
   AuthWechatBindEmailResponse,
   AuthBootstrapResponse,
   AuthUploadFileResponse,
+  AuthUpdateMeResponse,
+  AuthLoginSmsResponse,
+  AuthClientConfigResponse,
 } from '@spark/protocol'
 import { EduServerClient } from './EduServerClient'
 import { TokenStore } from './TokenStore'
@@ -172,6 +175,71 @@ export class AuthService {
     newPassword: string
   }): Promise<AuthChangePasswordResponse> => {
     return this.client.post<AuthChangePasswordResponse>('/auth/change-password', params)
+  }
+
+  // ─── 手机号短信登录（首次自动注册）──────────────────────────────────────────
+
+  /** 发送短信验证码（需先通过图片验证码）。POST /auth/send-sms */
+  sendSmsCode = async (params: {
+    phone: string
+    type?: 'login' | 'register'
+    captchaId: string
+    captchaText: string
+  }): Promise<{ expire_in: number }> => {
+    return this.client.post(
+      '/auth/send-sms',
+      {
+        phone: params.phone,
+        type: params.type ?? 'login',
+        captchaId: params.captchaId,
+        captchaText: params.captchaText,
+      },
+      { skipAuth: true },
+    )
+  }
+
+  /** 手机号 + 短信验证码登录（首次自动注册）。POST /auth/login-sms */
+  loginBySms = async (params: {
+    phone: string
+    smsCode: string
+  }): Promise<AuthLoginSmsResponse> => {
+    const result = await this.client.post<AuthLoginSmsResponse>(
+      '/auth/login-sms',
+      { phone: params.phone, smsCode: params.smsCode },
+      { skipAuth: true },
+    )
+    // login-sms 成功即登录（与普通 login 一致：保存会话 + 推送 state-changed）
+    if (result.token && result.refreshToken && result.userId) {
+      await this.afterLoginSuccess({
+        token: result.token,
+        refreshToken: result.refreshToken,
+        userId: result.userId,
+      })
+    }
+    return result
+  }
+
+  /** 拉取客户端公开配置（无需登录，用于决定是否展示短信/微信登录入口）。GET /client-config */
+  getClientConfig = async (): Promise<AuthClientConfigResponse> => {
+    return this.client.get<AuthClientConfigResponse>('/client-config', { skipAuth: true })
+  }
+
+  /** 更新当前用户资料（目前仅 nickname）。返回更新后的完整用户信息。*/
+  updateMe = async (params: { nickname: string }): Promise<AuthUpdateMeResponse> => {
+    const me = await this.client.put<AuthUpdateMeResponse>('/me', { nickname: params.nickname })
+    // 触发 state-changed（带 userId），便于多窗口/后续订阅刷新
+    this.emitStateChanged(true, me.id.toString())
+    return me
+  }
+
+  /** 上传/更新当前用户头像（multipart → POST /me/avatar）。返回服务端落库后的完整 avatarUrl。*/
+  uploadAvatar = async (params: {
+    dataUrl: string
+    fileName?: string
+    mimeType?: string
+  }): Promise<{ avatarUrl: string }> => {
+    const prepared = await prepareUploadPayload(params)
+    return this.client.uploadAvatar(prepared)
   }
 
   wechatQr = async (): Promise<AuthWechatQrResponse> => {

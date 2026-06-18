@@ -65,6 +65,33 @@ export function registerAuthIpc(): void {
     }),
   )
 
+  typedIpcHandle('auth:send-sms', async (req) =>
+    auth().sendSmsCode({
+      phone: req.phone,
+      ...(req.type !== undefined ? { type: req.type } : {}),
+      captchaId: req.captchaId,
+      captchaText: req.captchaText,
+    }),
+  )
+
+  typedIpcHandle('auth:login-sms', async (req) =>
+    auth().loginBySms({ phone: req.phone, smsCode: req.smsCode }),
+  )
+
+  typedIpcHandle('auth:client-config', async () => auth().getClientConfig())
+
+  typedIpcHandle('auth:update-me', async (req) =>
+    auth().updateMe({ nickname: req.nickname }),
+  )
+
+  typedIpcHandle('auth:upload-avatar', async (req) =>
+    auth().uploadAvatar({
+      dataUrl: req.dataUrl,
+      ...(req.fileName !== undefined ? { fileName: req.fileName } : {}),
+      ...(req.mimeType !== undefined ? { mimeType: req.mimeType } : {}),
+    }),
+  )
+
   typedIpcHandle('auth:wechat-qr', async () => auth().wechatQr())
 
   typedIpcHandle('auth:wechat-poll', async (req) => auth().wechatPoll(req.state))

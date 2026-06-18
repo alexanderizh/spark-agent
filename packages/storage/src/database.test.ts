@@ -206,6 +206,20 @@ describe('SparkDatabase', () => {
 
     expect(() => db.runMigrations(invalidDir)).toThrow('Invalid migration filename')
   })
+
+  it('should throw when two migrations share the same version number', () => {
+    const dbPath = join(testDir, 'test.db')
+    const dupDir = join(testDir, 'migrations')
+
+    mkdirSync(dupDir, { recursive: true })
+    // 两个文件撞号（都是 028）——历史上这会导致后者被静默跳过
+    writeFileSync(join(dupDir, '028_first.sql'), 'CREATE TABLE a (id TEXT);')
+    writeFileSync(join(dupDir, '028_second.sql'), 'CREATE TABLE b (id TEXT);')
+
+    db = new SparkDatabase(dbPath)
+
+    expect(() => db.runMigrations(dupDir)).toThrow(/Duplicate migration version 28/)
+  })
 })
 
 describe('BaseRepository', () => {

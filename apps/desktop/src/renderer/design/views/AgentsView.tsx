@@ -7,13 +7,20 @@ import { useIpcInvoke } from '../hooks/useIpc'
 import { useRefreshable } from '../hooks/useRefreshable'
 import { useToast } from '../components/Toast'
 import { Switch } from 'antd'
-import { Checkbox as LobeCheckbox, Dropdown, Input as LobeInput, Select as LobeSelect, TextArea as LobeTextArea } from '@lobehub/ui'
+import {
+  Checkbox as LobeCheckbox,
+  Dropdown,
+  Input as LobeInput,
+  Select as LobeSelect,
+  TextArea as LobeTextArea,
+} from '@lobehub/ui'
 import { ActionIcon } from '@lobehub/ui'
 import { MacWindowDragHeader } from '../components/MacWindowDragHeader'
 import { AvatarPicker } from '../components/AvatarPicker'
 import { AvatarImage } from '../components/AvatarImage'
 import { SkillsPickerModal } from '../components/SkillsPickerModal'
-import { generateDefaultAvatarUrl, getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
+import { getAgentAvatarConfig, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
+import { DEFAULT_AGENT_AVATAR_ID } from '../builtinAvatars'
 import { TeamsPanel } from './TeamsPanel'
 import { useSessionSidebar } from '../SessionSidebarContext'
 import type {
@@ -134,7 +141,7 @@ const EMPTY_DRAFT: AgentDraft = {
   },
   workflowId: '',
   metadata: {},
-  avatar: { kind: 'url', url: generateDefaultAvatarUrl('新 Agent') },
+  avatar: { kind: 'builtin', id: DEFAULT_AGENT_AVATAR_ID },
 }
 
 /**
@@ -174,7 +181,11 @@ export function AgentsView() {
   )
 }
 
-function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: ManagedAgent[]) => void }) {
+function AgentsTabContent({
+  onAgentsChange,
+}: {
+  onAgentsChange?: (agents: ManagedAgent[]) => void
+}) {
   const { toast } = useToast()
   const { registerNavGuard, requestConfirm } = useApp()
   const { handleNewSession, setActiveSession } = useSessionSidebar()
@@ -196,16 +207,27 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
   const [sortKey, setSortKey] = useState<AgentSortKey>('updated-desc')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
   const [selectionMode, setSelectionMode] = useState(false)
-  const dirty = useMemo(() => pendingNew || JSON.stringify(draft) !== JSON.stringify(baseline), [draft, baseline, pendingNew])
+  const dirty = useMemo(
+    () => pendingNew || JSON.stringify(draft) !== JSON.stringify(baseline),
+    [draft, baseline, pendingNew],
+  )
   const dirtyRef = useRef(dirty)
   const selectedIdRef = useRef<string | null>(selectedId)
   const pendingNewRef = useRef(pendingNew)
   const screenRef = useRef<AgentScreen>('list')
 
-  useEffect(() => { dirtyRef.current = dirty }, [dirty])
-  useEffect(() => { selectedIdRef.current = selectedId }, [selectedId])
-  useEffect(() => { pendingNewRef.current = pendingNew }, [pendingNew])
-  useEffect(() => { screenRef.current = screen }, [screen])
+  useEffect(() => {
+    dirtyRef.current = dirty
+  }, [dirty])
+  useEffect(() => {
+    selectedIdRef.current = selectedId
+  }, [selectedId])
+  useEffect(() => {
+    pendingNewRef.current = pendingNew
+  }, [pendingNew])
+  useEffect(() => {
+    screenRef.current = screen
+  }, [screen])
 
   const { invoke: listAgents } = useIpcInvoke('agent:list')
   const { invoke: createAgent } = useIpcInvoke('agent:create')
@@ -261,14 +283,18 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
   useRefreshable(refresh)
 
   useEffect(() => {
-    const id = window.setTimeout(() => { void refresh() }, 0)
+    const id = window.setTimeout(() => {
+      void refresh()
+    }, 0)
     return () => window.clearTimeout(id)
   }, [refresh])
 
   useEffect(() => {
-    return window.spark?.on?.('stream:config:changed', (event) => {
-      if (event.scope === 'agent' || event.scope === 'provider') void refresh()
-    }) ?? (() => {})
+    return (
+      window.spark?.on?.('stream:config:changed', (event) => {
+        if (event.scope === 'agent' || event.scope === 'provider') void refresh()
+      }) ?? (() => {})
+    )
   }, [refresh])
 
   useEffect(() => {
@@ -286,7 +312,9 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
   const selectedProvider = providers.find((p) => p.id === draft.providerProfileId)
   const modelOptions = selectedProvider?.modelIds.length
     ? selectedProvider.modelIds
-    : selectedProvider?.defaultModel ? [selectedProvider.defaultModel] : []
+    : selectedProvider?.defaultModel
+      ? [selectedProvider.defaultModel]
+      : []
   const activeWorkflow = workflows.find((w) => w.id === draft.workflowId)
 
   const updateDraft = <K extends keyof AgentDraft>(key: K, value: AgentDraft[K]) => {
@@ -357,9 +385,10 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
       toast.warning('Agent 名称不能为空')
       return
     }
-    const saved = draft.id != null
-      ? (await updateAgent({ id: draft.id, ...payload })).agent
-      : (await createAgent(payload)).agent
+    const saved =
+      draft.id != null
+        ? (await updateAgent({ id: draft.id, ...payload })).agent
+        : (await createAgent(payload)).agent
     toast.success('Agent 配置已保存')
     selectedIdRef.current = saved.id
     pendingNewRef.current = false
@@ -569,7 +598,9 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
       }
 
       if (imported > 0) {
-        toast.success(`已导入 ${imported} 个 Agent${skipped > 0 ? `，跳过 ${skipped} 个同名 Agent` : ''}`)
+        toast.success(
+          `已导入 ${imported} 个 Agent${skipped > 0 ? `，跳过 ${skipped} 个同名 Agent` : ''}`,
+        )
         await refresh()
       } else if (skipped > 0) {
         toast.warning(`所有 ${skipped} 个 Agent 名称已存在，已跳过`)
@@ -674,10 +705,7 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
                 placeholder="搜索 Agent..."
               />
             </span>
-            <button
-              className="btn primary sm agents-home-create"
-              onClick={() => void handleNew()}
-            >
+            <button className="btn primary sm agents-home-create" onClick={() => void handleNew()}>
               <Icons.Plus size={12} /> 创建 Agent
             </button>
           </div>
@@ -756,15 +784,16 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
                 <button
                   type="button"
                   className="btn ghost sm"
-                  onClick={selectedIds.size === visibleAgents.length ? clearSelection : selectAllVisible}
+                  onClick={
+                    selectedIds.size === visibleAgents.length ? clearSelection : selectAllVisible
+                  }
                 >
                   {selectedIds.size === visibleAgents.length ? '取消全选' : '全选当前'}
                 </button>
-                <button className="btn ghost sm" onClick={clearSelection}>清空选择</button>
-                <button
-                  className="btn primary sm"
-                  onClick={() => void handleExportSelected()}
-                >
+                <button className="btn ghost sm" onClick={clearSelection}>
+                  清空选择
+                </button>
+                <button className="btn primary sm" onClick={() => void handleExportSelected()}>
                   <Icons.Download size={12} /> 导出选中
                 </button>
               </div>
@@ -794,7 +823,9 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
         ) : (
           !loading && (
             <div className="agents-empty-state">
-              <div className="agents-empty-icon"><Icons.Bot size={24} /></div>
+              <div className="agents-empty-icon">
+                <Icons.Bot size={24} />
+              </div>
               <div className="agents-empty-title">
                 {searchQuery
                   ? `没有匹配「${searchQuery}」的 Agent`
@@ -848,9 +879,11 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
           {/* ── Section: 基本信息 ── */}
           <SectionHeader
             title="基本信息"
-            desc={draft.builtIn
-              ? '内置 Agent 可调整提示词和运行配置，但不可删除。'
-              : '自定义 Agent 会出现在对话输入栏的 Agent 选择器中。'}
+            desc={
+              draft.builtIn
+                ? '内置 Agent 可调整提示词和运行配置，但不可删除。'
+                : '自定义 Agent 会出现在对话输入栏的 Agent 选择器中。'
+            }
           />
 
           <div className="agent-info-grid">
@@ -858,13 +891,15 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
               <AvatarPicker
                 value={draft.avatar}
                 defaultSeed={draft.name || 'agent'}
+                defaultAvatarId={DEFAULT_AGENT_AVATAR_ID}
                 title="Agent 头像"
                 description="用于团队模式消息流和成员列表。"
                 uploadOnPreviewClick
                 onChange={(avatar) => updateDraft('avatar', avatar)}
               />
               <div className="agent-info-avatar-hint">
-                点击头像或拖入图片上传<br />
+                点击头像或拖入图片上传
+                <br />
                 支持 JPG / PNG / WebP，建议 512×512
               </div>
             </div>
@@ -888,13 +923,9 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
                   checked={draft.enabled}
                   onChange={(checked: boolean) => updateDraft('enabled', checked)}
                 />
-                <span className="agent-status-text">
-                  {draft.enabled ? '启用' : '停用'}
-                </span>
+                <span className="agent-status-text">{draft.enabled ? '启用' : '停用'}</span>
               </div>
-              <div className="agent-field-hint">
-                禁用后，Agent 将无法被选择和使用
-              </div>
+              <div className="agent-field-hint">禁用后，Agent 将无法被选择和使用</div>
             </Field>
 
             <Field
@@ -954,7 +985,11 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
             </Field>
             <Field
               label="执行器 (SDK)"
-              badge={draft.agentAdapter === 'claude-sdk' ? <span className="agent-badge-soft">推荐</span> : null}
+              badge={
+                draft.agentAdapter === 'claude-sdk' ? (
+                  <span className="agent-badge-soft">推荐</span>
+                ) : null
+              }
             >
               <LobeSelect
                 value={draft.agentAdapter}
@@ -982,26 +1017,30 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
               <LobeSelect
                 value={draft.permissionMode}
                 onChange={(value) => updateDraft('permissionMode', value as SessionPermissionMode)}
-                options={getPermissionOptions(draft.agentAdapter).map((o) => ({ label: o.label, value: o.value }))}
+                options={getPermissionOptions(draft.agentAdapter).map((o) => ({
+                  label: o.label,
+                  value: o.value,
+                }))}
                 style={agentSelectStyle}
               />
             </Field>
-            <Field
-              label="推理强度"
-              hint={REASONING_HINT[draft.reasoningEffort]}
-            >
+            <Field label="推理强度" hint={REASONING_HINT[draft.reasoningEffort]}>
               <LobeSelect
                 value={draft.reasoningEffort}
-                onChange={(value) => updateDraft('reasoningEffort', value as SessionReasoningEffort)}
+                onChange={(value) =>
+                  updateDraft('reasoningEffort', value as SessionReasoningEffort)
+                }
                 options={reasoningOptions}
                 style={agentSelectStyle}
               />
             </Field>
             <Field
               label="工作流"
-              hint={activeWorkflow
-                ? `已绑定：${activeWorkflow.name} · ${activeWorkflow.graph.nodes.length} 节点 · ${activeWorkflow.status}`
-                : '未绑定工作流，Agent 会按普通编码流程执行'}
+              hint={
+                activeWorkflow
+                  ? `已绑定：${activeWorkflow.name} · ${activeWorkflow.graph.nodes.length} 节点 · ${activeWorkflow.status}`
+                  : '未绑定工作流，Agent 会按普通编码流程执行'
+              }
             >
               <LobeSelect
                 value={draft.workflowId}
@@ -1028,7 +1067,7 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
             title="Skills"
             count={draft.skillIds.length}
             description="配置该 Agent 可使用的 Skills"
-            footer={(
+            footer={
               <button
                 type="button"
                 className="agent-config-link"
@@ -1036,14 +1075,16 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
               >
                 <Icons.Skills size={12} /> 管理 Skills
               </button>
-            )}
+            }
           >
             {draft.skillIds.length > 0 ? (
               <div className="skill-selected-preview">
                 {draft.skillIds.slice(0, 6).map((id) => {
                   const skill = skills.find((s) => s.id === id)
                   return skill ? (
-                    <span key={id} className="skill-chip">{skill.name}</span>
+                    <span key={id} className="skill-chip">
+                      {skill.name}
+                    </span>
                   ) : null
                 })}
                 {draft.skillIds.length > 6 && (
@@ -1059,11 +1100,11 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
             title="MCP 服务"
             count={draft.mcpServerIds.length}
             description="扩展 Agent 的外部能力"
-            footer={(
+            footer={
               <button type="button" className="agent-config-link">
                 <Icons.Wrench size={12} /> 配置 MCP
               </button>
-            )}
+            }
           >
             {mcpServers.length > 0 ? (
               <PickList
@@ -1080,11 +1121,11 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
             title="规则"
             count={draft.ruleIds.length}
             description="约束 Agent 的行为与输出"
-            footer={(
+            footer={
               <button type="button" className="agent-config-link">
                 <Icons.Shield size={12} /> 管理规则
               </button>
-            )}
+            }
           >
             {rules.length > 0 ? (
               <PickList
@@ -1101,11 +1142,11 @@ function AgentsTabContent({ onAgentsChange }: { onAgentsChange?: (agents: Manage
             title="Hook"
             count={draft.hookConfig.enabled ? 1 : 0}
             description="在特定事件触发 Agent 专属逻辑"
-            footer={(
+            footer={
               <button type="button" className="agent-config-link">
                 <Icons.Bell size={12} /> 配置 Hook
               </button>
-            )}
+            }
           >
             <HookEditor value={draft.hookConfig} onChange={(c) => updateDraft('hookConfig', c)} />
           </ConfigSection>
@@ -1176,19 +1217,62 @@ function AgentCard({
   const provider = providers.find((p) => p.id === agent.providerProfileId)
   const workflow = workflows.find((w) => w.id === agent.workflowId)
   const avatar = getAgentAvatarConfig(agent.metadata, agent.id, agent.name)
-  const modelLabel = agent.modelId?.trim()
-    || provider?.defaultModel
-    || provider?.modelIds[0]
-    || (agent.agentAdapter === 'codex' ? 'Codex' : 'Claude')
+  const modelLabel =
+    agent.modelId?.trim() ||
+    provider?.defaultModel ||
+    provider?.modelIds[0] ||
+    (agent.agentAdapter === 'codex' ? 'Codex' : 'Claude')
 
   const menuItems = {
     items: [
-      { key: 'chat', label: (<span className="agent-context-menu-item"><Icons.Chat size={14} /> 快速对话</span>), onClick: () => onQuickChat() },
-      { key: 'export', label: (<span className="agent-context-menu-item"><Icons.Download size={14} /> 导出</span>), onClick: () => onExport() },
-      { key: 'copy', label: (<span className="agent-context-menu-item"><Icons.Copy size={14} /> 复制</span>), onClick: () => onCopy() },
-      { key: 'edit', label: (<span className="agent-context-menu-item"><Icons.Edit size={14} /> 编辑</span>), onClick: () => onEdit() },
+      {
+        key: 'chat',
+        label: (
+          <span className="agent-context-menu-item">
+            <Icons.Chat size={14} /> 快速对话
+          </span>
+        ),
+        onClick: () => onQuickChat(),
+      },
+      {
+        key: 'export',
+        label: (
+          <span className="agent-context-menu-item">
+            <Icons.Download size={14} /> 导出
+          </span>
+        ),
+        onClick: () => onExport(),
+      },
+      {
+        key: 'copy',
+        label: (
+          <span className="agent-context-menu-item">
+            <Icons.Copy size={14} /> 复制
+          </span>
+        ),
+        onClick: () => onCopy(),
+      },
+      {
+        key: 'edit',
+        label: (
+          <span className="agent-context-menu-item">
+            <Icons.Edit size={14} /> 编辑
+          </span>
+        ),
+        onClick: () => onEdit(),
+      },
       ...(!agent.builtIn
-        ? [{ key: 'delete', label: (<span className="agent-context-menu-item danger"><Icons.Trash size={14} /> 删除</span>), onClick: () => onDelete() }]
+        ? [
+            {
+              key: 'delete',
+              label: (
+                <span className="agent-context-menu-item danger">
+                  <Icons.Trash size={14} /> 删除
+                </span>
+              ),
+              onClick: () => onDelete(),
+            },
+          ]
         : []),
     ],
   }
@@ -1203,11 +1287,7 @@ function AgentCard({
           onClick={(e) => e.stopPropagation()}
           title={selected ? '取消选择' : '选择'}
         >
-          <input
-            type="checkbox"
-            checked={selected}
-            onChange={onToggleSelect}
-          />
+          <input type="checkbox" checked={selected} onChange={onToggleSelect} />
         </label>
       )}
       <span
@@ -1226,7 +1306,12 @@ function AgentCard({
         <span className="agents-card-head">
           <span className="agents-card-head-main">
             <span className="agents-card-avatar">
-              <AvatarImage src={resolveAvatarSrc(avatar)} seed={agent.id} name={agent.name} alt={agent.name} />
+              <AvatarImage
+                src={resolveAvatarSrc(avatar)}
+                seed={agent.id}
+                name={agent.name}
+                alt={agent.name}
+              />
             </span>
             <span className="agents-card-name">{agent.name}</span>
           </span>
@@ -1234,96 +1319,89 @@ function AgentCard({
             {agent.enabled ? '启用' : '停用'}
           </span>
         </span>
-      <span className="agents-card-desc">
-        {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
-      </span>
-      <span className="agents-card-divider" aria-hidden="true" />
-      <span className="agents-card-model">
-        <Icons.Cpu size={12} />
-        <span className="agents-card-model-name">{modelLabel}</span>
-      </span>
-      <span className="agents-card-tags">
-        {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
-        {agent.skillIds.length > 0 && (
-          <span className="agents-card-tag" title="Skills">
-            <Icons.Skills size={10} />
-            {agent.skillIds.length} Skills
-          </span>
-        )}
-        {agent.mcpServerIds.length > 0 && (
-          <span className="agents-card-tag" title="MCP">
-            <Icons.MCP size={10} />
-            {agent.mcpServerIds.length} MCP
-          </span>
-        )}
-        {workflow && (
-          <span className="agents-card-tag" title={workflow.name}>
-            <Icons.Workflow size={10} />
-            工作流
-          </span>
-        )}
-        {agent.ruleIds.length > 0 && (
-          <span className="agents-card-tag" title="规则">
-            <Icons.Filter size={10} />
-            {agent.ruleIds.length} 规则
-          </span>
-        )}
-      </span>
-      <span
-        className="agents-card-actions"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <ActionIcon
-          icon={agent.enabled ? Icons.XCircle : Icons.CheckCircle}
-          size="small"
-          variant="borderless"
-          title={agent.enabled ? '停用' : '启用'}
-          onClick={onToggle}
-        />
-        {!agent.isDefault && (
+        <span className="agents-card-desc">
+          {agent.description || (agent.builtIn ? '内置 Agent' : '自定义 Agent')}
+        </span>
+        <span className="agents-card-divider" aria-hidden="true" />
+        <span className="agents-card-model">
+          <Icons.Cpu size={12} />
+          <span className="agents-card-model-name">{modelLabel}</span>
+        </span>
+        <span className="agents-card-tags">
+          {agent.isDefault && <span className="agents-card-tag default-tag">默认</span>}
+          {agent.skillIds.length > 0 && (
+            <span className="agents-card-tag" title="Skills">
+              <Icons.Skills size={10} />
+              {agent.skillIds.length} Skills
+            </span>
+          )}
+          {agent.mcpServerIds.length > 0 && (
+            <span className="agents-card-tag" title="MCP">
+              <Icons.MCP size={10} />
+              {agent.mcpServerIds.length} MCP
+            </span>
+          )}
+          {workflow && (
+            <span className="agents-card-tag" title={workflow.name}>
+              <Icons.Workflow size={10} />
+              工作流
+            </span>
+          )}
+          {agent.ruleIds.length > 0 && (
+            <span className="agents-card-tag" title="规则">
+              <Icons.Filter size={10} />
+              {agent.ruleIds.length} 规则
+            </span>
+          )}
+        </span>
+        <span className="agents-card-actions" onClick={(e) => e.stopPropagation()}>
           <ActionIcon
-            icon={Icons.Star}
+            icon={agent.enabled ? Icons.XCircle : Icons.CheckCircle}
             size="small"
             variant="borderless"
-            title="设为默认"
-            onClick={onSetDefault}
+            title={agent.enabled ? '停用' : '启用'}
+            onClick={onToggle}
           />
-        )}
-        <ActionIcon
-          icon={Icons.Download}
-          size="small"
-          variant="borderless"
-          title="导出"
-          onClick={onExport}
-        />
-        <ActionIcon
-          icon={Icons.Copy}
-          size="small"
-          variant="borderless"
-          title="复制"
-          onClick={onCopy}
-        />
-        {!agent.builtIn && (
+          {!agent.isDefault && (
+            <ActionIcon
+              icon={Icons.Star}
+              size="small"
+              variant="borderless"
+              title="设为默认"
+              onClick={onSetDefault}
+            />
+          )}
           <ActionIcon
-            icon={Icons.Trash}
+            icon={Icons.Download}
             size="small"
             variant="borderless"
-            danger
-            title="删除"
-            onClick={onDelete}
+            title="导出"
+            onClick={onExport}
           />
-        )}
-      </span>
+          <ActionIcon
+            icon={Icons.Copy}
+            size="small"
+            variant="borderless"
+            title="复制"
+            onClick={onCopy}
+          />
+          {!agent.builtIn && (
+            <ActionIcon
+              icon={Icons.Trash}
+              size="small"
+              variant="borderless"
+              danger
+              title="删除"
+              onClick={onDelete}
+            />
+          )}
+        </span>
       </span>
     </div>
   )
 
   return (
-    <Dropdown
-      trigger={['contextMenu']}
-      menu={menuItems}
-      placement="bottomLeft"
-    >
+    <Dropdown trigger={['contextMenu']} menu={menuItems} placement="bottomLeft">
       {cardBody}
     </Dropdown>
   )
@@ -1357,13 +1435,15 @@ function Field({
       <div className="agent-field-label-row">
         <span className="agent-field-label">
           {label}
-          {required && <span className="agent-field-required" aria-label="必填">*</span>}
+          {required && (
+            <span className="agent-field-required" aria-label="必填">
+              *
+            </span>
+          )}
         </span>
         {badge && <span className="agent-field-badge">{badge}</span>}
         {counter && (
-          <span
-            className={`agent-field-counter${counter.current > counter.max ? ' over' : ''}`}
-          >
+          <span className={`agent-field-counter${counter.current > counter.max ? ' over' : ''}`}>
             {counter.current} / {counter.max}
           </span>
         )}
@@ -1400,10 +1480,7 @@ function PromptEditor({
 }) {
   const [fullscreen, setFullscreen] = useState(false)
   const lineCount = Math.max(1, value.split('\n').length)
-  const lines = useMemo(
-    () => Array.from({ length: lineCount }, (_, i) => i + 1),
-    [lineCount],
-  )
+  const lines = useMemo(() => Array.from({ length: lineCount }, (_, i) => i + 1), [lineCount])
   const handleScroll = useCallback((e: React.UIEvent<HTMLTextAreaElement>) => {
     const target = e.currentTarget
     const gutter = target.parentElement?.querySelector<HTMLDivElement>('.agent-prompt-gutter')
@@ -1446,7 +1523,9 @@ function PromptEditor({
       <div className="agent-prompt-body">
         <div className="agent-prompt-gutter" aria-hidden="true">
           {lines.map((n) => (
-            <div key={n} className="agent-prompt-line-no">{n}</div>
+            <div key={n} className="agent-prompt-line-no">
+              {n}
+            </div>
           ))}
         </div>
         <textarea
@@ -1532,7 +1611,9 @@ function PickList({
             className={cls.join(' ')}
             disabled={blocked}
             title={blocked ? '已在互斥列表中配置' : undefined}
-            onClick={() => onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])}
+            onClick={() =>
+              onChange(active ? selected.filter((id) => id !== item.id) : [...selected, item.id])
+            }
           >
             <span>{item.label}</span>
             {active && <Icons.Check size={12} />}
@@ -1595,21 +1676,45 @@ function draftToPayload(draft: AgentDraft) {
 function normalizeDraftAvatar(draft: AgentDraft): SparkAvatarConfig {
   const config = draft.avatar
   if (config.kind === 'url' || config.kind === 'upload' || config.kind === 'builtin') return config
-  return { kind: 'url', url: generateDefaultAvatarUrl(config.seed || draft.name, config.style) }
+  return { kind: 'builtin', id: DEFAULT_AGENT_AVATAR_ID }
 }
 
-function HookEditor({ value, onChange }: { value: AgentHookConfig; onChange: (v: AgentHookConfig) => void }) {
-  const patchNode = (node: AgentHookNode, patch: Partial<AgentHookConfig['nodes'][AgentHookNode]>) => {
+function HookEditor({
+  value,
+  onChange,
+}: {
+  value: AgentHookConfig
+  onChange: (v: AgentHookConfig) => void
+}) {
+  const patchNode = (
+    node: AgentHookNode,
+    patch: Partial<AgentHookConfig['nodes'][AgentHookNode]>,
+  ) => {
     onChange({ ...value, nodes: { ...value.nodes, [node]: { ...value.nodes[node], ...patch } } })
   }
   return (
     <div className="agent-hook-editor">
-      <LobeCheckbox checked={value.enabled} onChange={(checked) => onChange({ ...value, enabled: checked })}>启用 Agent 专属 Hook</LobeCheckbox>
+      <LobeCheckbox
+        checked={value.enabled}
+        onChange={(checked) => onChange({ ...value, enabled: checked })}
+      >
+        启用 Agent 专属 Hook
+      </LobeCheckbox>
       {HOOK_NODES.map((item) => (
         <div key={item.node} className="agent-hook-row">
           <span>{item.label}</span>
-          <LobeCheckbox checked={value.nodes[item.node].sound} onChange={(checked) => patchNode(item.node, { sound: checked })}>声音</LobeCheckbox>
-          <LobeCheckbox checked={value.nodes[item.node].notification} onChange={(checked) => patchNode(item.node, { notification: checked })}>通知</LobeCheckbox>
+          <LobeCheckbox
+            checked={value.nodes[item.node].sound}
+            onChange={(checked) => patchNode(item.node, { sound: checked })}
+          >
+            声音
+          </LobeCheckbox>
+          <LobeCheckbox
+            checked={value.nodes[item.node].notification}
+            onChange={(checked) => patchNode(item.node, { notification: checked })}
+          >
+            通知
+          </LobeCheckbox>
         </div>
       ))}
     </div>
@@ -1618,12 +1723,18 @@ function HookEditor({ value, onChange }: { value: AgentHookConfig; onChange: (v:
 
 function normalizeAgentHookConfig(value: Record<string, unknown>): AgentHookConfig {
   const enabled = value.enabled === true
-  const rawNodes = value.nodes != null && typeof value.nodes === 'object' ? value.nodes as Record<string, unknown> : {}
+  const rawNodes =
+    value.nodes != null && typeof value.nodes === 'object'
+      ? (value.nodes as Record<string, unknown>)
+      : {}
   const nodes = Object.fromEntries(
     HOOK_NODES.map((item) => {
       const raw = rawNodes[item.node]
-      const record = raw != null && typeof raw === 'object' ? raw as Record<string, unknown> : {}
-      return [item.node, { sound: record.sound !== false, notification: record.notification !== false }]
+      const record = raw != null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {}
+      return [
+        item.node,
+        { sound: record.sound !== false, notification: record.notification !== false },
+      ]
     }),
   ) as AgentHookConfig['nodes']
   return { enabled, nodes }
@@ -1650,7 +1761,9 @@ const CODEX_PERMISSION_OPTIONS: Array<{ value: SessionPermissionMode; label: str
   { value: 'codex-full-access', label: 'Codex 完全访问' },
 ]
 
-function getPermissionOptions(adapter: SessionAgentAdapter): Array<{ value: SessionPermissionMode; label: string }> {
+function getPermissionOptions(
+  adapter: SessionAgentAdapter,
+): Array<{ value: SessionPermissionMode; label: string }> {
   return adapter === 'codex' ? CODEX_PERMISSION_OPTIONS : PERMISSION_OPTIONS
 }
 

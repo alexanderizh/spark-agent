@@ -57,12 +57,14 @@ export function CaptchaField({ form }: CaptchaFieldProps): React.ReactElement {
         <Input
           placeholder="请输入验证码"
           maxLength={8}
+          className='captcha-btn-box'
           addonAfter={
-            <Button
+            <div
               className="captcha-svg-btn"
-              type="default"
-              onClick={() => void refresh()}
-              disabled={loading}
+              style={{
+                cursor: loading ? 'not-allowed': 'pointer',
+              }}
+              onClick={() => loading ? null : void refresh()}
               aria-label="刷新图片验证码"
             >
               {loading ? (
@@ -81,7 +83,7 @@ export function CaptchaField({ form }: CaptchaFieldProps): React.ReactElement {
               ) : (
                 <Icons.Refresh size={14} />
               )}
-            </Button>
+            </div>
           }
         />
       </Form.Item>

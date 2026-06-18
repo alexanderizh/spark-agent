@@ -1,7 +1,17 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Modal, Slider } from 'antd'
 import { Icons } from '../Icons'
-import { createDefaultAvatar, resolveAvatarSrc, type SparkAvatarConfig } from '../avatar'
+import {
+  createBuiltinAvatar,
+  createDefaultAvatar,
+  resolveAvatarSrc,
+  type SparkAvatarConfig,
+} from '../avatar'
+import {
+  BUILTIN_AVATARS,
+  BUILTIN_AVATAR_LABELS,
+  type BuiltinAvatarCategory,
+} from '../builtinAvatars'
 import { AvatarImage } from './AvatarImage'
 import { useToast } from './Toast'
 
@@ -10,6 +20,7 @@ export interface AvatarPickerProps {
   defaultSeed: string
   title: string
   description?: string
+  defaultAvatarId?: string
   onChange: (value: SparkAvatarConfig) => void
   /** 点击预览就触发文件选择（用于紧凑型头像编辑器：把"上传"按钮也藏起来时） */
   uploadOnPreviewClick?: boolean
@@ -26,12 +37,38 @@ type CropState = {
 
 const OUTPUT_SIZE = 256
 const STAGE_SIZE = 280
+const AVATAR_CATEGORIES: BuiltinAvatarCategory[] = ['default', 'animal', 'person', 'guofeng']
 
-export function AvatarPicker({ value, defaultSeed, title, description, onChange, uploadOnPreviewClick }: AvatarPickerProps) {
+export function AvatarPicker({
+  value,
+  defaultSeed,
+  title,
+  description,
+  defaultAvatarId,
+  onChange,
+  uploadOnPreviewClick,
+}: AvatarPickerProps) {
   const { toast } = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const [crop, setCrop] = useState<CropState | null>(null)
+  const [libraryOpen, setLibraryOpen] = useState(false)
   const src = useMemo(() => resolveAvatarSrc(value), [value])
+  const groupedAvatars = useMemo(
+    () =>
+      AVATAR_CATEGORIES.map((category) => ({
+        category,
+        avatars: BUILTIN_AVATARS.filter((avatar) => avatar.category === category),
+      })).filter((group) => group.avatars.length > 0),
+    [],
+  )
+
+  const resetToDefault = useCallback(() => {
+    onChange(
+      defaultAvatarId != null
+        ? createBuiltinAvatar(defaultAvatarId)
+        : createDefaultAvatar(defaultSeed),
+    )
+  }, [defaultAvatarId, defaultSeed, onChange])
 
   const handleFile = useCallback(
     (file: File | undefined) => {
@@ -131,11 +168,10 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange,
           <button type="button" className="btn ghost sm" onClick={openPicker}>
             <Icons.Upload size={12} /> 上传
           </button>
-          <button
-            type="button"
-            className="btn ghost sm"
-            onClick={() => onChange(createDefaultAvatar(defaultSeed))}
-          >
+          <button type="button" className="btn ghost sm" onClick={() => setLibraryOpen(true)}>
+            <Icons.Sparkles size={12} /> 内置头像
+          </button>
+          <button type="button" className="btn ghost sm" onClick={resetToDefault}>
             <Icons.Refresh size={12} /> 默认头像
           </button>
         </div>
@@ -179,6 +215,40 @@ export function AvatarPicker({ value, defaultSeed, title, description, onChange,
       >
         {crop != null && <DragCropper crop={crop} onChange={setCrop} />}
       </Modal>
+
+      <Modal
+        open={libraryOpen}
+        title="选择内置头像"
+        footer={null}
+        onCancel={() => setLibraryOpen(false)}
+        className="avatar-library-modal"
+        width={720}
+        destroyOnHidden
+      >
+        <div className="avatar-library">
+          {groupedAvatars.map((group) => (
+            <section key={group.category} className="avatar-library-section">
+              <div className="avatar-library-title">{BUILTIN_AVATAR_LABELS[group.category]}</div>
+              <div className="avatar-library-grid">
+                {group.avatars.map((avatar) => (
+                  <button
+                    key={avatar.id}
+                    type="button"
+                    className="avatar-library-item"
+                    title={avatar.label}
+                    onClick={() => {
+                      onChange(createBuiltinAvatar(avatar.id))
+                      setLibraryOpen(false)
+                    }}
+                  >
+                    <img src={avatar.src} alt={avatar.label} draggable={false} />
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -190,46 +260,55 @@ function DragCropper({ crop, onChange }: { crop: CropState; onChange: (c: CropSt
   const dragging = useRef(false)
   const start = useRef({ x: 0, y: 0, ox: 0, oy: 0 })
 
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault()
-    dragging.current = true
-    start.current = { x: e.clientX, y: e.clientY, ox: crop.offsetX, oy: crop.offsetY }
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-  }, [crop.offsetX, crop.offsetY])
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      e.preventDefault()
+      dragging.current = true
+      start.current = { x: e.clientX, y: e.clientY, ox: crop.offsetX, oy: crop.offsetY }
+      ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    },
+    [crop.offsetX, crop.offsetY],
+  )
 
-  const onPointerMove = useCallback((e: React.PointerEvent) => {
-    if (!dragging.current) return
-    const dx = e.clientX - start.current.x
-    const dy = e.clientY - start.current.y
-    const zoomedW = crop.imgW * crop.zoom
-    const zoomedH = crop.imgH * crop.zoom
-    const maxOX = Math.max(0, (zoomedW - STAGE_SIZE) / 2)
-    const maxOY = Math.max(0, (zoomedH - STAGE_SIZE) / 2)
-    onChange({
-      ...crop,
-      offsetX: Math.max(-maxOX, Math.min(maxOX, start.current.ox + dx)),
-      offsetY: Math.max(-maxOY, Math.min(maxOY, start.current.oy + dy)),
-    })
-  }, [crop, onChange])
+  const onPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!dragging.current) return
+      const dx = e.clientX - start.current.x
+      const dy = e.clientY - start.current.y
+      const zoomedW = crop.imgW * crop.zoom
+      const zoomedH = crop.imgH * crop.zoom
+      const maxOX = Math.max(0, (zoomedW - STAGE_SIZE) / 2)
+      const maxOY = Math.max(0, (zoomedH - STAGE_SIZE) / 2)
+      onChange({
+        ...crop,
+        offsetX: Math.max(-maxOX, Math.min(maxOX, start.current.ox + dx)),
+        offsetY: Math.max(-maxOY, Math.min(maxOY, start.current.oy + dy)),
+      })
+    },
+    [crop, onChange],
+  )
 
   const onPointerUp = useCallback(() => {
     dragging.current = false
   }, [])
 
   // Clamp offset when zoom changes
-  const handleZoom = useCallback((val: number | number[]) => {
-    const zoom = Number(Array.isArray(val) ? val[0] : val)
-    const zoomedW = crop.imgW * zoom
-    const zoomedH = crop.imgH * zoom
-    const maxOX = Math.max(0, (zoomedW - STAGE_SIZE) / 2)
-    const maxOY = Math.max(0, (zoomedH - STAGE_SIZE) / 2)
-    onChange({
-      ...crop,
-      zoom,
-      offsetX: Math.max(-maxOX, Math.min(maxOX, crop.offsetX)),
-      offsetY: Math.max(-maxOY, Math.min(maxOY, crop.offsetY)),
-    })
-  }, [crop, onChange])
+  const handleZoom = useCallback(
+    (val: number | number[]) => {
+      const zoom = Number(Array.isArray(val) ? val[0] : val)
+      const zoomedW = crop.imgW * zoom
+      const zoomedH = crop.imgH * zoom
+      const maxOX = Math.max(0, (zoomedW - STAGE_SIZE) / 2)
+      const maxOY = Math.max(0, (zoomedH - STAGE_SIZE) / 2)
+      onChange({
+        ...crop,
+        zoom,
+        offsetX: Math.max(-maxOX, Math.min(maxOX, crop.offsetX)),
+        offsetY: Math.max(-maxOY, Math.min(maxOY, crop.offsetY)),
+      })
+    },
+    [crop, onChange],
+  )
 
   const zoomedW = crop.imgW * crop.zoom
   const zoomedH = crop.imgH * crop.zoom

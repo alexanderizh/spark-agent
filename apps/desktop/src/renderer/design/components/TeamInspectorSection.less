@@ -256,34 +256,35 @@
     }
   }
 
-  // ── 成员 toggle 开关 ──
-  &-toggle {
-    width: 34px;
-    height: 18px;
-    border-radius: 999px;
+  // ── 成员「移出团队」按钮（取代 toggle 开关）──
+  // 默认低调（仅图标、faint 色），hover 行时浮现，hover 自身转 danger 态。
+  &-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
     border: none;
-    background: var(--border-strong, var(--border));
-    position: relative;
+    border-radius: var(--r-sm);
+    background: transparent;
+    color: var(--text-faint);
     cursor: pointer;
     flex-shrink: 0;
-    transition: background 0.15s ease;
+    opacity: 0;
+    transition: opacity 0.12s ease, background 0.12s ease, color 0.12s ease;
 
-    &.on {
-      background: var(--primary);
-
-      .team-roster-toggle-knob {
-        transform: translateX(16px);
-      }
+    &:hover {
+      background: color-mix(in srgb, var(--danger) 12%, transparent);
+      color: var(--danger);
     }
-    &-knob {
-      position: absolute;
-      top: 2px;
-      left: 2px;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: #fff;
-      transition: transform 0.15s ease;
+  }
+  &-row:hover .team-roster-remove {
+    opacity: 1;
+  }
+  // 触屏/无 hover 环境兜底：始终可见
+  @media (hover: none) {
+    &-remove {
+      opacity: 1;
     }
   }
 
@@ -293,7 +294,6 @@
     padding: 6px 8px;
   }
 
-  &-invite,
   &-advanced-toggle {
     display: inline-flex;
     align-items: center;
@@ -310,31 +310,93 @@
       color: var(--primary);
     }
   }
-  &-candidates {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 2px 0 2px 8px;
-    border-left: 2px solid var(--divider);
-    margin-left: 8px;
+
+  // ── 邀请成员：主行动按钮（虚线 → hover 实色）+ 弹出浮层 ──
+  &-invite-wrap {
+    position: relative;
+    margin: 6px 4px 2px;
   }
-  &-candidate {
+  &-invite-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    width: 100%;
+    padding: 8px;
+    border: 1px dashed var(--border-soft);
+    border-radius: var(--r-md);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--font-sm);
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+
+    &:hover:not(:disabled) {
+      border-color: @accent;
+      border-style: solid;
+      color: @accent;
+      background: var(--primary-soft, color-mix(in srgb, @accent 8%, transparent));
+    }
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+  &-invite-pop {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: calc(100% + 6px);
+    z-index: 40;
+    max-height: 256px;
+    overflow: auto;
+    padding: 6px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--panel);
+    box-shadow: var(--shadow-lg);
+
+    &-title {
+      font-size: var(--font-xs);
+      color: var(--text-faint);
+      padding: 4px 6px 6px;
+    }
+    &-list {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+  }
+  &-invite-option {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 5px 8px;
+    width: 100%;
+    padding: 6px 8px;
     border: none;
     background: none;
     border-radius: var(--r-sm);
     cursor: pointer;
     text-align: left;
+    color: var(--text);
 
     &:hover {
       background: var(--hover);
     }
+    &-info {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      flex: 1;
+    }
     &-add {
       margin-left: auto;
+      flex-shrink: 0;
       color: var(--text-faint);
+    }
+    &:hover &-add {
+      color: @accent;
     }
   }
   &-advanced {

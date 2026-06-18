@@ -10,7 +10,7 @@
  * 本组件纯受控（props + 回调）。Phase 1 由 ChatView 本地 state 驱动；
  * Phase 2 起回调改为走 team:update IPC。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import './TeamInspectorSection.less'
 import { Icons } from '../Icons'
 import { deriveTeamAvatar } from '../teamAvatar'
@@ -80,6 +80,19 @@ export function TeamInspectorSection({
   const [inviteOpen, setInviteOpen] = useState(false)
   const [hostPickerOpen, setHostPickerOpen] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const inviteRef = useRef<HTMLDivElement | null>(null)
+
+  // 邀请浮层：点击外部关闭
+  useEffect(() => {
+    if (!inviteOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (inviteRef.current && !inviteRef.current.contains(e.target as Node)) {
+        setInviteOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [inviteOpen])
 
   // 当 config.teamId 命中长期团队时，缓存该团队定义用于：
   // 1) 显示「来自团队：<名称>」徽章
@@ -187,6 +200,8 @@ export function TeamInspectorSection({
   const runningSet = new Set(runningAgentIds)
   const members = agents.filter((a) => a.id !== config.hostAgentId && memberSet.has(a.id))
   const candidates = agents.filter((a) => a.id !== config.hostAgentId && !memberSet.has(a.id))
+  // 切换主持人列表：当前主持人置顶
+  const hostPickerAgents = host != null ? [host, ...agents.filter((a) => a.id !== host.id)] : agents
 
   // 切换 Host：旧 Host 自动成为可被调用成员（保留可见性），新 Host 从成员中移除。
   // 一步原子更新，避免父组件先后 setState 触发重复 IPC 持久化。
@@ -317,7 +332,7 @@ export function TeamInspectorSection({
               {hostPickerOpen && (
                 <div className="team-roster-host-picker">
                   {agents.length === 0 && <div className="team-roster-empty">没有可选 Agent</div>}
-                  {agents.map((agent) => {
+                  {hostPickerAgents.map((agent) => {
                     const isHost = agent.id === config.hostAgentId
                     return (
                       <button
@@ -364,16 +379,15 @@ export function TeamInspectorSection({
                 </span>
                 <button
                   type="button"
-                  role="switch"
-                  aria-checked={true}
-                  className="team-roster-toggle on"
-                  title="允许在本会话被调用"
+                  className="team-roster-remove"
+                  title="移出团队"
+                  aria-label={`将 ${agent.name} 移出团队`}
                   onClick={(e) => {
                     e.stopPropagation()
                     onToggleMember(agent.id, false)
                   }}
                 >
-                  <span className="team-roster-toggle-knob" />
+                  <Icons.Trash size={14} />
                 </button>
               </div>
               {expandedId === agent.id && (
@@ -401,31 +415,51 @@ export function TeamInspectorSection({
 
           {members.length === 0 && <div className="team-roster-empty">尚未邀请成员</div>}
 
-          {/* 邀请成员 */}
-          {candidates.length > 0 && (
-            <button type="button" className="team-roster-invite" onClick={() => setInviteOpen(!inviteOpen)}>
-              <Icons.Plus size={13} /> 邀请成员…
+          {/* 邀请成员：弹出浮层选择候选 Agent */}
+          <div className="team-roster-invite-wrap" ref={inviteRef}>
+            <button
+              type="button"
+              className="team-roster-invite-btn"
+              disabled={candidates.length === 0}
+              title={candidates.length === 0 ? '已没有可邀请的 Agent' : '邀请成员加入团队'}
+              onClick={() => setInviteOpen((prev) => !prev)}
+            >
+              <Icons.Plus size={14} />
+              <span>邀请成员</span>
             </button>
-          )}
-          {inviteOpen && (
-            <div className="team-roster-candidates">
-              {candidates.map((agent) => (
-                <button
-                  key={agent.id}
-                  type="button"
-                  className="team-roster-candidate"
-                  onClick={() => {
-                    onToggleMember(agent.id, true)
-                    if (candidates.length === 1) setInviteOpen(false)
-                  }}
-                >
-                  <AgentAvatar id={agent.id} name={agent.name} builtIn={agent.builtIn} metadata={agent.metadata} />
-                  <span className="team-roster-name">{agent.name}</span>
-                  <Icons.Plus size={13} className="team-roster-candidate-add" />
-                </button>
-              ))}
-            </div>
-          )}
+            {inviteOpen && candidates.length > 0 && (
+              <div className="team-roster-invite-pop">
+                <div className="team-roster-invite-pop-title">选择要加入的 Agent</div>
+                <div className="team-roster-invite-pop-list">
+                  {candidates.map((agent) => (
+                    <button
+                      key={agent.id}
+                      type="button"
+                      className="team-roster-invite-option"
+                      onClick={() => {
+                        onToggleMember(agent.id, true)
+                        if (candidates.length === 1) setInviteOpen(false)
+                      }}
+                    >
+                      <AgentAvatar
+                        id={agent.id}
+                        name={agent.name}
+                        builtIn={agent.builtIn}
+                        metadata={agent.metadata}
+                      />
+                      <span className="team-roster-invite-option-info">
+                        <span className="team-roster-name">{agent.name}</span>
+                        {agent.description && (
+                          <span className="team-roster-desc">{agent.description.slice(0, 40)}</span>
+                        )}
+                      </span>
+                      <Icons.Plus size={14} className="team-roster-invite-option-add" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 高级设置 */}
           <button type="button" className="team-roster-advanced-toggle" onClick={() => setAdvancedOpen(!advancedOpen)}>

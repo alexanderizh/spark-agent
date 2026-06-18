@@ -28,6 +28,7 @@ import { ScheduledTasksView } from './design/views/ScheduledTasksView'
 import { McpView } from './design/views/McpView'
 import { SkillStoreView } from './design/views/SkillStoreView'
 import { SettingsView, ProfileEditModal } from './design/views/SettingsView'
+import { AccountCenterView } from './design/views/AccountCenterView'
 import ProvidersView from './design/views/ProvidersView'
 import { LobePreviewView } from './design/theme/LobePreviewView'
 import { BrowserPanelView } from './design/views/BrowserPanelView'
@@ -453,7 +454,10 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             className: 'user-menu',
             items: [
               ...(auth.isAuthenticated
-                ? []
+                ? [
+                    { key: 'account', label: menuLabel(<Icons.User size={14} />, '账号') },
+                    { type: 'divider' as const },
+                  ]
                 : [
                     { key: 'login', label: menuLabel(<Icons.User size={14} />, '登录 / 注册') },
                     { type: 'divider' as const },
@@ -487,10 +491,12 @@ function FloatingSidebar({ onNewTask }: { onNewTask: () => void }) {
             ],
             onClick: ({ key }: { key: string }) => {
               switch (key) {
+                case 'account':
+                  setTweak('view', 'account-center')
+                  break
                 case 'login':
                   auth.setFlow('login')
-                  setTweak('view', 'settings')
-                  setTweak('settingsSection', 'account')
+                  setTweak('view', 'account-center')
                   break
                 case 'theme-light':
                   setTweak('theme', 'light' as typeof t.theme)
@@ -793,6 +799,8 @@ function Shell() {
         return <McpView />
       case 'settings':
         return <SettingsView />
+      case 'account-center':
+        return <AccountCenterView />
       case 'lobe-preview':
         return <LobePreviewView />
       default:

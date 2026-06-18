@@ -36,7 +36,7 @@ Spark now has a first-pass model manifest registry:
 
 - Protocol types and zod schemas live in `packages/protocol/src/media-model-manifest.ts`.
 - Built-in seeds cover APIMart, xAI, Alibaba Bailian, OpenAI Images, Google/Veo, Volcengine Seedance 2.0 / Fast, and the Kling / PixVerse / Wan / HappyHorse / Omni / MiniMax-Hailuo families.
-- SQLite persistence uses `media_model_manifests` and `media_provider_models` (`028_media_model_manifests.sql`).
+- SQLite persistence uses `media_model_manifests` and `media_provider_models` (`033_media_model_manifests.sql`).
 - `MediaModelCatalogService` seeds built-ins and exposes list/describe/link operations.
 - Provider edit UI can load the global manifest catalog (`catalogOnly`) and save
   selected models into `mediaModelRefs`; selected manifest capabilities are also

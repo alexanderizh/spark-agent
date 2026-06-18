@@ -88,6 +88,11 @@ export class SparkDatabase {
     const dir = migrationsDir ?? this.getDefaultMigrationsDir()
     const files = this.getMigrationFiles(dir)
 
+    // 防止再次出现"撞号"：两个文件共享同一 version 时，按 version 去重会
+    // 静默跳过其中一个 migration（历史上 028 撞号曾导致 media 表未被创建）。
+    // 这里在启动时直接抛错，把问题暴露在开发期而不是用户机器上。
+    this.assertUniqueVersions(files)
+
     for (const file of files) {
       const version = this.extractVersion(file.name)
       const applied = this.isMigrationApplied(version)
@@ -146,6 +151,26 @@ export class SparkDatabase {
       name,
       path: join(dir, name),
     }))
+  }
+
+  /**
+   * 校验所有 migration 文件的 version 唯一。
+   *
+   * schema_migrations 以 version 为主键去重，撞号会导致后出现的同号文件被静默跳过。
+   */
+  private assertUniqueVersions(files: Array<{ name: string }>): void {
+    const seen = new Map<number, string>()
+    for (const file of files) {
+      const version = this.extractVersion(file.name)
+      const existing = seen.get(version)
+      if (existing != null) {
+        throw new Error(
+          `Duplicate migration version ${version}: "${existing}" 与 "${file.name}" 撞号。` +
+            `请把其中一个重命名为未使用的序号。`,
+        )
+      }
+      seen.set(version, file.name)
+    }
   }
 
   /**

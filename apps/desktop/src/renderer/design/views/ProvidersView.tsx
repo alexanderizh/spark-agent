@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  Button, Tag, Checkbox, Drawer, Alert, Input, InputPassword, Select,
+  ActionIcon, Button, Tag, Checkbox, Drawer, Alert, Input, InputPassword, Select, Modal, SearchBar,
 } from '@lobehub/ui'
 // TODO(lobe-migration): @lobehub/ui 没有 Badge/Switch 命名导出;临时从 antd 引用,与 SparkOverlays 行为一致
 import { Badge, Switch } from 'antd'
@@ -419,6 +419,7 @@ function ProvidersView() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [healthMap, setHealthMap] = useState<Record<string, ProviderHealthCheckResponse>>({})
   const [showPresetCatalog, setShowPresetCatalog] = useState(false)
+  const [presetCatalogSearch, setPresetCatalogSearch] = useState('')
   /** 从预设创建时，传递给 ProviderEditPanel 的初始 presetId */
   const [initialPresetId, setInitialPresetId] = useState<string | null>(null)
 
@@ -576,13 +577,13 @@ function ProvidersView() {
     [exportProvidersToFile, toast],
   )
 
-  const handleExportAll = useCallback(() => {
-    handleExportToFile([])
-  }, [handleExportToFile])
-
   const handleExportSelected = useCallback(() => {
     handleExportToFile(Array.from(selectedIds))
   }, [handleExportToFile, selectedIds])
+
+  const handleExportVisibleScope = useCallback(() => {
+    handleExportToFile(multiSelect ? Array.from(selectedIds) : [])
+  }, [handleExportToFile, multiSelect, selectedIds])
 
   /**
    * 拿到 ExportPayload 并复制到剪贴板（次要入口，不写文件）。
@@ -697,8 +698,18 @@ function ProvidersView() {
     }
   }
 
-  /** 已配置的 vendor 名称集合（用于标记已添加） */
-  const configuredNames = useMemo(() => new Set(profiles.map((p) => p.name)), [profiles])
+  const filteredPresetVendors = useMemo(() => {
+    const keyword = presetCatalogSearch.trim().toLowerCase()
+    return getUniqueVendorIds()
+      .map((vendorId) => getVendorMeta(vendorId))
+      .filter((meta): meta is VendorMeta => meta != null)
+      .filter((meta) => {
+        if (!keyword) return true
+        return [meta.id, meta.name, meta.desc].some((value) =>
+          value.toLowerCase().includes(keyword),
+        )
+      })
+  }, [presetCatalogSearch])
 
   return (
     <>
@@ -715,7 +726,10 @@ function ProvidersView() {
               size="small"
               type={showPresetCatalog ? 'primary' : 'default'}
               icon={<Icons.Plus />}
-              onClick={() => setShowPresetCatalog((prev) => !prev)}
+              onClick={() => {
+                setPresetCatalogSearch('')
+                setShowPresetCatalog(true)
+              }}
             >
               从模板添加
             </Button>
@@ -764,11 +778,11 @@ function ProvidersView() {
               size="small"
               type="default"
               icon={<Icons.Download />}
-              onClick={handleExportAll}
-              disabled={profiles.length === 0}
-              title="导出全部 Provider 到 .json"
+              onClick={handleExportVisibleScope}
+              disabled={profiles.length === 0 || (multiSelect && selectedIds.size === 0)}
+              title={multiSelect ? '导出选中的 Provider 到 .json' : '导出全部 Provider 到 .json'}
             >
-              导出
+              {multiSelect ? '导出选中' : '导出'}
             </Button>
             <Button
               size="small"
@@ -812,30 +826,7 @@ function ProvidersView() {
 
         {/* ─── 可滚动内容区（catalog + cards / empty） ─── */}
         <div className="pv_scroll">
-          {showPresetCatalog && (
-            <div className="pv_catalog">
-              <div className="pv_catalog_hint">
-                选择供应商模板快速配置，选择后仍可自定义所有字段。
-              </div>
-              <div className="pv_catalog_grid">
-                {getUniqueVendorIds().map((vendorId) => {
-                  const meta = getVendorMeta(vendorId)
-                  if (!meta) return null
-                  const isAdded = configuredNames.has(meta.name)
-                  return (
-                    <VendorPresetCard
-                      key={vendorId}
-                      vendor={meta}
-                      isAdded={isAdded}
-                      onSelectVendor={handleSelectVendor}
-                    />
-                  )
-                })}
-              </div>
-            </div>
-          )}
-
-          {profiles.length === 0 && !showPresetCatalog ? (
+          {profiles.length === 0 ? (
             <div className="pv_empty">
               尚未配置 Provider — 点击「从模板添加」快速开始，或「自定义添加」手动配置
             </div>
@@ -884,6 +875,48 @@ function ProvidersView() {
           )}
         </div>
       </div>
+
+      <Modal
+        open={showPresetCatalog}
+        title={
+          <div className="pv_catalog_title">
+            <Icons.Database size={16} />
+            <span>从模板添加 Provider</span>
+          </div>
+        }
+        onCancel={() => setShowPresetCatalog(false)}
+        footer={null}
+        style={{ width: 900 }}
+        destroyOnHidden
+      >
+        <div className="pv_catalog pv_catalog_modal">
+          <div className="pv_catalog_hint">
+            选择供应商模板快速配置，选择后会打开新建面板，所有字段都可以继续自定义。
+          </div>
+          <SearchBar
+            className="pv_catalog_search"
+            placeholder="搜索模板厂商..."
+            value={presetCatalogSearch}
+            onInputChange={(value) => setPresetCatalogSearch(value)}
+            allowClear
+          />
+          {filteredPresetVendors.length > 0 ? (
+            <div className="pv_catalog_grid">
+              {filteredPresetVendors.map((vendor) => (
+                <VendorPresetCard
+                  key={vendor.id}
+                  vendor={vendor}
+                  onSelectVendor={handleSelectVendor}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="pv_catalog_empty">
+              没有找到匹配的模板厂商
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* Provider 编辑面板 */}
       {showProviderEdit && (
@@ -999,21 +1032,19 @@ function resolveBuiltinLocalCliVendor(provider: ProviderProfile): VendorMeta | n
 /* ─── VENDOR PRESET CARD（模板目录卡片） ─── */
 function VendorPresetCard({
   vendor,
-  isAdded,
   onSelectVendor,
 }: {
   vendor: VendorMeta
-  isAdded: boolean
   onSelectVendor: (vendorId: string) => void
 }) {
   return (
     <div
-      className={`pv_vendor_card${isAdded ? ' pv_vendor_added' : ''}`}
-      onClick={() => !isAdded && onSelectVendor(vendor.id)}
+      className="pv_vendor_card"
+      onClick={() => onSelectVendor(vendor.id)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        if ((e.key === 'Enter' || e.key === ' ') && !isAdded) {
+        if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onSelectVendor(vendor.id)
         }
@@ -1023,7 +1054,6 @@ function VendorPresetCard({
       <div className="pv_vendor_info">
         <div className="pv_vendor_name">
           {vendor.name}
-          {isAdded && <Tag size="small" color="gray">已添加</Tag>}
         </div>
         <div className="pv_vendor_desc">{vendor.desc}</div>
       </div>
@@ -1163,31 +1193,28 @@ function ProviderCardX({
       {!multiSelect && (
         <div className="pv_card_actions" onClick={(e) => e.stopPropagation()}>
           {!isBuiltin && (
-            <Button
+            <ActionIcon
+              icon={Icons.Edit}
               size="small"
-              type="text"
-              icon={<Icons.Edit />}
+              variant="borderless"
+              title="编辑"
               onClick={onEdit}
-            >
-              编辑
-            </Button>
+            />
           )}
-          <Button
+          <ActionIcon
+            icon={Icons.Refresh}
             size="small"
-            shape="circle"
-            type="text"
-            icon={<Icons.Refresh />}
+            variant="borderless"
             onClick={onHealthCheck}
             title="健康检查"
             aria-label="健康检查"
           />
           {!isBuiltin && (
-            <Button
+            <ActionIcon
+              icon={Icons.Trash}
               size="small"
-              shape="circle"
-              type="text"
+              variant="borderless"
               danger
-              icon={<Icons.X />}
               onClick={onDelete}
               title="删除"
               aria-label="删除"

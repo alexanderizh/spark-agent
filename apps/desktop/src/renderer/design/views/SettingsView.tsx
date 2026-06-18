@@ -10,7 +10,6 @@ import { Button, Input, Modal, Select, Tag, TextArea } from '@lobehub/ui'
 import { QRCodeSVG } from '@rc-component/qrcode'
 import { Icons } from '../Icons'
 import { useApp, PRIMARIES } from '../AppContext'
-import { AccountSection } from '../auth/AccountSection'
 import { useIpcInvoke } from '../hooks/useIpc'
 import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
@@ -304,7 +303,6 @@ export function SettingsView() {
     {
       group: '通用',
       items: [
-        { id: 'account', icon: <Icons.User />, label: '账号' },
         { id: 'general', icon: <Icons.Settings />, label: '通用' },
         { id: 'appearance', icon: <Icons.Sparkles />, label: '外观' },
         { id: 'shortcuts', icon: <Icons.Command />, label: '快捷键' },
@@ -345,7 +343,6 @@ export function SettingsView() {
   ]
 
   const Section: Record<string, () => React.ReactElement> = {
-    account: AccountSection,
     general: GeneralSection,
     appearance: AppearanceSection,
     shortcuts: ShortcutsSection,
