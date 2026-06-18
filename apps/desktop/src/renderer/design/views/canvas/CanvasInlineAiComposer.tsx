@@ -720,10 +720,9 @@ export function CanvasInlineAiComposer({
                     value={modelParamDraft[field.name] || undefined}
                     allowClear
                     onChange={(value) => {
-                      setModelParamDraft((prev) => ({
-                        ...prev,
-                        [field.name]: value == null ? '' : String(value),
-                      }))
+                      setModelParamDraft((prev) =>
+                        updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
+                      )
                     }}
                     options={field.enumValues.map((value) => ({ value, label: value }))}
                   />
@@ -732,10 +731,9 @@ export function CanvasInlineAiComposer({
                     value={modelParamDraft[field.name] || undefined}
                     allowClear
                     onChange={(value) => {
-                      setModelParamDraft((prev) => ({
-                        ...prev,
-                        [field.name]: value == null ? '' : String(value),
-                      }))
+                      setModelParamDraft((prev) =>
+                        updateModelParamDraftValue(prev, field.name, value == null ? '' : String(value)),
+                      )
                     }}
                     options={[
                       { value: 'true', label: 'true' },
@@ -748,7 +746,9 @@ export function CanvasInlineAiComposer({
                     type={field.type === 'integer' || field.type === 'number' ? 'number' : 'text'}
                     placeholder={field.placeholder}
                     onChange={(e) => {
-                      setModelParamDraft((prev) => ({ ...prev, [field.name]: e.target.value }))
+                      setModelParamDraft((prev) =>
+                        updateModelParamDraftValue(prev, field.name, e.target.value),
+                      )
                     }}
                   />
                 )}
@@ -853,6 +853,7 @@ export function CanvasInlineAiComposer({
                 ...buildCustomModelParams(customParams),
               },
               selectedCapability?.defaults ?? {},
+              parameterFields,
             )
             const effectivePrompt = mergeProjectPrompt(
               prompt.trim() || fallbackPromptForOperation(operation),
@@ -1393,6 +1394,7 @@ export function mergeSchemaFields(
   baseFields: SchemaField[],
   ...suggestedFieldGroups: SchemaField[][]
 ): SchemaField[] {
+  const dimensionFieldPolicy = imageDimensionFieldPolicy(baseFields)
   const seen = new Set<string>()
   const result: SchemaField[] = []
   for (const field of baseFields) {
@@ -1401,6 +1403,7 @@ export function mergeSchemaFields(
     result.push(field)
   }
   for (const field of suggestedFieldGroups.flat()) {
+    if (!dimensionFieldPolicy.allows(field.name)) continue
     const existingIndex = result.findIndex((item) => item.name === field.name)
     if (existingIndex >= 0) {
       const existing = result[existingIndex]
@@ -1416,6 +1419,24 @@ export function mergeSchemaFields(
     result.push(field)
   }
   return result.slice(0, 18)
+}
+
+function imageDimensionFieldPolicy(fields: SchemaField[]): {
+  allows: (name: string) => boolean
+  accepted: Set<string>
+} {
+  const accepted = new Set(
+    fields
+      .map((field) => field.name)
+      .filter((name) => name === 'size' || name === 'aspect_ratio' || name === 'aspectRatio'),
+  )
+  return {
+    accepted,
+    allows: (name) =>
+      accepted.size === 0 ||
+      (name !== 'size' && name !== 'aspect_ratio' && name !== 'aspectRatio') ||
+      accepted.has(name),
+  }
 }
 
 function readComposerCache(): ComposerCache {
@@ -1550,6 +1571,22 @@ export function buildModelParams(
   return params
 }
 
+export function updateModelParamDraftValue(
+  draft: Record<string, string>,
+  fieldName: string,
+  value: string,
+): Record<string, string> {
+  const next = { ...draft, [fieldName]: value }
+  if (value.trim().length === 0) return next
+  if (fieldName === 'size') {
+    next.aspect_ratio = ''
+    next.aspectRatio = ''
+  } else if (fieldName === 'aspect_ratio' || fieldName === 'aspectRatio') {
+    next.size = ''
+  }
+  return next
+}
+
 export function buildCustomModelParams(drafts: CustomParamDraft[]): Record<string, unknown> {
   const params: Record<string, unknown> = {}
   for (const draft of drafts) {
@@ -1580,13 +1617,27 @@ export function buildCustomModelParams(drafts: CustomParamDraft[]): Record<strin
 export function normalizeModelParamsForSubmit(
   params: Record<string, unknown>,
   defaults: Record<string, unknown>,
+  fields?: SchemaField[],
 ): Record<string, unknown> {
   const next = { ...params }
+  if (fields) {
+    const policy = imageDimensionFieldPolicy(fields)
+    if (policy.accepted.size > 0) {
+      for (const name of ['size', 'aspect_ratio', 'aspectRatio']) {
+        if (!policy.accepted.has(name)) delete next[name]
+      }
+    }
+  }
   const aspect = stringParam(next.aspectRatio) ?? stringParam(next.aspect_ratio)
   const size = stringParam(next.size)
   const defaultSize = stringParam(defaults.size)
+  const defaultAspect =
+    stringParam(defaults.aspectRatio) ?? stringParam(defaults.aspect_ratio)
   if (aspect && size && defaultSize && size === defaultSize) {
     delete next.size
+  } else if (aspect && size && defaultAspect && aspect === defaultAspect) {
+    delete next.aspectRatio
+    delete next.aspect_ratio
   }
   return next
 }
