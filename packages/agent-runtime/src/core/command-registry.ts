@@ -378,7 +378,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
         '`/memory` — 管理记忆文件',
         '`/skill list|run` — Skill 管理',
         '`/add-dir <path>` — 添加工作目录',
-        '`/copy` — 复制上次输出',
         '`/goal <objective>` — 设置任务目标',
         '',
         '▸ **Agent 技能命令** (Layer 3)',
@@ -743,19 +742,6 @@ function registerSdkCommands(registry: CommandRegistry): void {
   })
 
   registry.register({
-    id: 'sdk:codex:copy',
-    name: 'copy',
-    aliases: [],
-    layer: 'sdk',
-    group: 'utility',
-    description: '复制上次 agent 输出为 Markdown',
-    scope: 'session',
-    risk: 'none',
-    usage: '/copy',
-    handler: async () => forwardToAgent(),
-  })
-
-  registry.register({
     id: 'sdk:codex:plan',
     name: 'plan',
     aliases: [],
@@ -783,7 +769,7 @@ function registerSdkCommands(registry: CommandRegistry): void {
 }
 
 function isAgentForwardedCommand(def: CommandDefinition): boolean {
-  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'copy', 'plan', 'side', 'goal'])
+  const forwardedCommands = new Set(['compact', 'add-dir', 'memory', 'review', 'plan', 'side', 'goal'])
   if (forwardedCommands.has(def.name)) return true
   return def.name === 'git'
 }
