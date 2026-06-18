@@ -1,6 +1,7 @@
 import React, { useEffect, useCallback, useRef, useState } from 'react'
 import {
   AppProvider,
+  AppDialogHost,
   useApp,
   PRIMARIES,
   FLOATING_SIDEBAR_WIDTH_MIN,
@@ -890,6 +891,7 @@ export function App() {
           <ToastProvider>
             <SessionSidebarProvider>
               <GateAwareShell />
+              <AppDialogHost />
             </SessionSidebarProvider>
           </ToastProvider>
         </AuthProvider>

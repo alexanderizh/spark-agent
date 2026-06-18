@@ -8,7 +8,6 @@ import type { ReactNode } from 'react'
 import { ConfirmDialog } from './components/ConfirmDialog'
 import { PromptDialog } from './components/PromptDialog'
 import { applyArcoTheme } from './arcoTheme'
-import { LobeThemeProvider } from './theme/LobeThemeProvider'
 
 export type NavGuard = () => boolean | Promise<boolean>
 
@@ -160,6 +159,7 @@ type AppCtx = {
   registerNavGuard: (guard: NavGuard | null) => void
   requestConfirm: (options: ConfirmOptions) => Promise<boolean>
   requestPrompt: (options: PromptOptions) => Promise<string | null>
+  dialogHost: DialogHostProps
 }
 
 const Ctx = createContext<AppCtx | null>(null)
@@ -253,50 +253,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
     root.classList.add(`density-${t.density}`)
   }, [t.density])
   const value = useMemo<AppCtx>(
-    () => ({ t, setTweak, registerNavGuard, requestConfirm, requestPrompt }),
-    [t, setTweak, registerNavGuard, requestConfirm, requestPrompt],
-  )
-  return (
-    <Ctx.Provider value={value}>
-      {children}
-      {/*
-        ConfirmDialog/PromptDialog 用 @lobehub/ui(antd v6) 的 Modal，antd 的暗色主题
-        只通过 React ConfigProvider context 传递（不读 CSS 变量）。而 AppProvider 位于
-        LobeThemeBridge(ThemeProvider) 的外层，弹窗默认拿不到 darkAlgorithm → 暗色下仍是
-        亮色背景。这里用一个局部 LobeThemeProvider 包裹，使弹窗获得正确的 antd 主题。
-      */}
-      <DialogHost
-        confirmRequest={confirmRequest}
-        promptRequest={promptRequest}
-        themeMode={t.theme}
-        primary={t.primary}
-        onConfirmResolve={(v) => {
+    () => ({
+      t,
+      setTweak,
+      registerNavGuard,
+      requestConfirm,
+      requestPrompt,
+      dialogHost: {
+        confirmRequest,
+        promptRequest,
+        onConfirmResolve: (v) => {
           confirmHandledRef.current = true
           confirmRequest?.resolve(v)
           setConfirmRequest(null)
-        }}
-        onConfirmCancel={() => {
+        },
+        onConfirmCancel: () => {
           if (confirmHandledRef.current) {
             confirmHandledRef.current = false
             return
           }
           confirmRequest?.resolve(false)
           setConfirmRequest(null)
-        }}
-        onPromptResolve={(v) => {
+        },
+        onPromptResolve: (v) => {
           promptHandledRef.current = true
           promptRequest?.resolve(v)
           setPromptRequest(null)
-        }}
-        onPromptCancel={() => {
+        },
+        onPromptCancel: () => {
           if (promptHandledRef.current) {
             promptHandledRef.current = false
             return
           }
           promptRequest?.resolve(null)
           setPromptRequest(null)
-        }}
-      />
+        },
+      },
+    }),
+    [
+      t,
+      setTweak,
+      registerNavGuard,
+      requestConfirm,
+      requestPrompt,
+      confirmRequest,
+      promptRequest,
+    ],
+  )
+  return (
+    <Ctx.Provider value={value}>
+      {children}
     </Ctx.Provider>
   )
 }
@@ -304,35 +310,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
 type ConfirmRequest = ConfirmOptions & { resolve: (value: boolean) => void }
 type PromptRequest = PromptOptions & { resolve: (value: string | null) => void }
 
-/**
- * DialogHost — 渲染 ConfirmDialog/PromptDialog，并用局部 LobeThemeProvider 包裹，
- * 使 antd 组件获得与当前主题匹配的 ConfigProvider（dark/light 算法）。
- */
-function DialogHost({
-  confirmRequest,
-  promptRequest,
-  themeMode,
-  primary,
-  onConfirmResolve,
-  onConfirmCancel,
-  onPromptResolve,
-  onPromptCancel,
-}: {
+type DialogHostProps = {
   confirmRequest: ConfirmRequest | null
   promptRequest: PromptRequest | null
-  themeMode: ThemeMode
-  primary: string
   onConfirmResolve: (v: boolean) => void
   onConfirmCancel: () => void
   onPromptResolve: (v: string | null) => void
   onPromptCancel: () => void
-}) {
-  const resolvedTheme: ResolvedTheme =
-    themeMode === 'system'
-      ? (typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-      : themeMode
+}
+
+function DialogHost({
+  confirmRequest,
+  promptRequest,
+  onConfirmResolve,
+  onConfirmCancel,
+  onPromptResolve,
+  onPromptCancel,
+}: DialogHostProps) {
   return (
-    <LobeThemeProvider themeMode={themeMode} resolvedTheme={resolvedTheme} primary={primary}>
+    <>
       <ConfirmDialog
         open={confirmRequest != null}
         title={confirmRequest?.title ?? ''}
@@ -360,8 +356,14 @@ function DialogHost({
         }}
         onConfirm={(value) => onPromptResolve(value)}
       />
-    </LobeThemeProvider>
+    </>
   )
+}
+
+export function AppDialogHost() {
+  const v = useContext(Ctx)
+  if (!v) return null
+  return <DialogHost {...v.dialogHost} />
 }
 
 export function useApp(): AppCtx {

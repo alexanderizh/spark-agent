@@ -8114,7 +8114,7 @@ function ComposerV2({
               <span className="composer-team-banner-text">
                 Host：{activeAgent?.name ?? '平台管理'} · 成员 {teamConfig.memberAgentIds.length}
               </span>
-              <button type="button" onClick={onOpenTeamInspector} disabled={isBusy}>
+              <button type="button" style={{paddingRight: 20}} onClick={onOpenTeamInspector} disabled={isBusy}>
                 管理成员
               </button>
             </div>
