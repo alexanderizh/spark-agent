@@ -681,10 +681,14 @@ export class SessionService {
 
     if (result.forwardToAgent) return { isCommand: true, forwardToAgent: true }
 
-    // Inject result as events into the chat stream
+    // Inject result as events into the chat stream. Internal commands that end here
+    // emit a terminal agent_status so the UI can clear loading, but commands that
+    // enqueue a follow-up Agent turn must not mark the overall user request complete.
+    const followUpPrompt = result.followUpPrompt?.trim()
+    const hasFollowUpPrompt = followUpPrompt != null && followUpPrompt.length > 0
     const turnId = crypto.randomUUID()
     const seq0 = this.seqCounters.get(params.sessionId) ?? 0
-    this.seqCounters.set(params.sessionId, seq0 + 3)
+    this.seqCounters.set(params.sessionId, seq0 + (hasFollowUpPrompt ? 2 : 3))
 
     const userEvent: UserMessageEvent = {
       id: crypto.randomUUID(),
@@ -713,17 +717,22 @@ export class SessionService {
       isFinal: true,
     }
 
-    const completedEvent: AgentStatusEvent = {
-      id: crypto.randomUUID(),
-      type: 'agent_status',
-      sessionId: params.sessionId,
-      turnId,
-      timestamp: new Date().toISOString(),
-      seq: seq0 + 2,
-      status: 'completed',
+    const commandEvents: AgentEvent[] = [userEvent, assistantEvent]
+    if (!hasFollowUpPrompt) {
+      const completedEvent: AgentStatusEvent = {
+        id: crypto.randomUUID(),
+        type: 'agent_status',
+        sessionId: params.sessionId,
+        turnId,
+        timestamp: new Date().toISOString(),
+        seq: seq0 + 2,
+        status: 'completed',
+        message: `/${cmdName} completed`,
+      }
+      commandEvents.push(completedEvent)
     }
 
-    for (const event of [userEvent, assistantEvent, completedEvent]) {
+    for (const event of commandEvents) {
       this.onEvent(event)
       try {
         eventRepo.insert({
@@ -738,10 +747,10 @@ export class SessionService {
       }
     }
 
-    if (result.followUpPrompt != null && result.followUpPrompt.trim().length > 0) {
+    if (hasFollowUpPrompt) {
       const sendResult = await this.sendTurn({
         sessionId: params.sessionId,
-        message: result.followUpPrompt,
+        message: followUpPrompt,
         ...(result.followUpSkillId != null ? { skillId: result.followUpSkillId } : {}),
         ...(result.followUpSkillParams != null ? { skillParams: result.followUpSkillParams } : {}),
       })

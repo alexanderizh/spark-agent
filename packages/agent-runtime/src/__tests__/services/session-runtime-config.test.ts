@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fileURLToPath } from 'node:url'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import type { AgentEvent } from '@spark/protocol'
 import { SessionService } from '../../services/session.service.js'
 
@@ -53,6 +56,7 @@ const mockState = vi.hoisted(() => ({
   events: [] as EventRow[],
   sdkConfigs: [] as Array<Record<string, unknown>>,
   sdkTurns: [] as Array<{ sessionId: string; turnId: string; message: string }>,
+  workspaces: new Map<string, { id: string; root_path: string }>(),
 }))
 
 vi.mock('@spark/shared/keystore', () => ({
@@ -218,7 +222,11 @@ vi.mock('@spark/storage', () => {
   }
 
   class RulesRepository { list(): unknown[] { return [] } }
-  class WorkspaceRepository { get(): null { return null } }
+  class WorkspaceRepository {
+    get(id: string): { id: string; root_path: string } | null {
+      return mockState.workspaces.get(id) ?? null
+    }
+  }
   class McpServerRepository { listAll(): unknown[] { return [] } }
   class SettingsRepository { get(): null { return null } }
   class SkillRepository {
@@ -227,6 +235,11 @@ vi.mock('@spark/storage', () => {
   }
   class AgentRepository {
     get(): null { return null }
+  }
+  class ContextPreferenceRepository {
+    getPreference(): null { return null }
+    getOverrides(): { pinnedPaths: string[]; excludedPaths: string[] } { return { pinnedPaths: [], excludedPaths: [] } }
+    upsertPreference(): void {}
   }
   class SessionSummaryRepository {
     getLatest(): null { return null }
@@ -244,6 +257,7 @@ vi.mock('@spark/storage', () => {
     SettingsRepository,
     SkillRepository,
     AgentRepository,
+    ContextPreferenceRepository,
     SessionSummaryRepository,
   }
 })
@@ -293,6 +307,7 @@ describe('SessionService runtime provider/model resolution', () => {
     mockState.events.length = 0
     mockState.sdkConfigs.length = 0
     mockState.sdkTurns.length = 0
+    mockState.workspaces.clear()
     events = []
 
     seedProvider({
@@ -415,7 +430,54 @@ describe('SessionService runtime provider/model resolution', () => {
     expect(events).toContainEqual(expect.objectContaining({
       type: 'agent_status',
       status: 'completed',
+      message: '/rename completed',
     }))
+  })
+
+  it('does not inject command completed before /validate --repair follow-up Agent turn', async () => {
+    const workspaceRoot = mkdtempSync(path.join(tmpdir(), 'spark-validate-repair-'))
+    writeFileSync(
+      path.join(workspaceRoot, 'package.json'),
+      JSON.stringify({ scripts: { typecheck: 'node -e "process.exit(1)"' } }),
+    )
+    mockState.workspaces.set('repair-workspace', { id: 'repair-workspace', root_path: workspaceRoot })
+
+    try {
+      const service = new SessionService({} as never, (event) => events.push(event))
+      const { sessionId } = await service.createSession({
+        providerProfileId: 'tencent-provider',
+        agentAdapter: 'claude-sdk',
+        permissionMode: 'claude-plan',
+        title: 'Repair validation session',
+        workspaceId: 'repair-workspace',
+      })
+
+      const result = await service.executeCommandAsEvents({
+        sessionId,
+        message: '/validate npm run typecheck --repair',
+      })
+
+      expect(result).toMatchObject({ isCommand: true, forwardToAgent: false, started: true })
+      expect(mockState.sdkTurns).toHaveLength(1)
+      expect(mockState.sdkTurns[0]?.message).toContain('验证命令: npm run typecheck')
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'assistant_message',
+        provider: 'spark',
+        isFinal: true,
+      }))
+      const sparkCommandCompleted = events.find((event) =>
+        event.type === 'agent_status' &&
+        event.status === 'completed' &&
+        event.message === '/validate completed'
+      )
+      expect(sparkCommandCompleted).toBeUndefined()
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'agent_status',
+        status: 'completed',
+      }))
+    } finally {
+      rmSync(workspaceRoot, { recursive: true, force: true })
+    }
   })
 
   it('renders /usage from persisted usage_update events when ledger is empty', async () => {
