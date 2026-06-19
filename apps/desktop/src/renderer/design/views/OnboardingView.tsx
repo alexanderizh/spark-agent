@@ -729,7 +729,7 @@ function ProviderStep(props: {
         </label>
       </details>
       <Button type="primary" size="large" onClick={props.onSubmit} loading={props.busy}>
-        {props.busy ? '正在保存并测试…' : '保存并测试'}
+        {props.busy ? '正在测试并保存…' : '测试并保存'}
       </Button>
     </>
   )

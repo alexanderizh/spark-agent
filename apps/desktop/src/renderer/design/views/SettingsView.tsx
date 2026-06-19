@@ -462,7 +462,7 @@ function GeneralSection() {
       <h2>通用</h2>
       <div className="lede">应用启动、语言、默认行为。</div>
 
-      <div className="settings-card">
+      <div className="settings-card" style={{marginBottom: 10}}>
         <SettingsRow
           title="新手引导"
           desc="重新打开安装后的图文引导，配置模型、助手并发起第一次会话。"
