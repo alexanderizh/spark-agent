@@ -13,13 +13,10 @@ import {
   type SessionSummary,
   type ProjectGroup,
 } from './SessionSidebarContext'
-import type {
-  SessionId,
-  WorkspaceInfo,
-  AgentStatusValue,
-} from '@spark/protocol'
+import type { SessionId, WorkspaceInfo, AgentStatusValue } from '@spark/protocol'
 import { useApp } from './AppContext'
 import { HistoryImportModal } from './components/HistoryImportModal'
+import { useI18n } from './i18n'
 import {
   SidebarFilterMenu,
   DEFAULT_SIDEBAR_FILTER,
@@ -44,7 +41,11 @@ function setProjectCollapsed(workspaceId: string, collapsed: boolean): void {
   const set = getCollapsedProjects()
   if (collapsed) set.add(workspaceId)
   else set.delete(workspaceId)
-  try { window.localStorage.setItem(PROJECT_COLLAPSED_KEY, JSON.stringify([...set])) } catch { /* */ }
+  try {
+    window.localStorage.setItem(PROJECT_COLLAPSED_KEY, JSON.stringify([...set]))
+  } catch {
+    /* */
+  }
 }
 
 /* ─── Sidebar filter persistence ─── */
@@ -67,18 +68,24 @@ function readSidebarFilter(): SidebarFilterState {
 }
 
 function writeSidebarFilter(state: SidebarFilterState): void {
-  try { window.localStorage.setItem(SIDEBAR_FILTER_KEY, JSON.stringify(state)) }
-  catch { /* */ }
+  try {
+    window.localStorage.setItem(SIDEBAR_FILTER_KEY, JSON.stringify(state))
+  } catch {
+    /* */
+  }
 }
 
 /* ─── Filter helpers ─── */
 function filterByStatus(sessions: SessionSummary[], status: SidebarStatusFilter): SessionSummary[] {
   if (status === 'all') return sessions
-  if (status === 'archived') return sessions.filter(s => s.archivedAt != null)
-  return sessions.filter(s => s.archivedAt == null)
+  if (status === 'archived') return sessions.filter((s) => s.archivedAt != null)
+  return sessions.filter((s) => s.archivedAt == null)
 }
 
-function filterByLastActivity(sessions: SessionSummary[], range: SidebarLastActivityFilter): SessionSummary[] {
+function filterByLastActivity(
+  sessions: SessionSummary[],
+  range: SidebarLastActivityFilter,
+): SessionSummary[] {
   if (range === 'all') return sessions
   const days = Number.parseInt(range, 10)
   if (!Number.isFinite(days)) return sessions
@@ -91,7 +98,7 @@ function filterByLastActivity(sessions: SessionSummary[], range: SidebarLastActi
 
 function filterByProject(sessions: SessionSummary[], projectId: string): SessionSummary[] {
   if (projectId === 'all') return sessions
-  return sessions.filter(s => s.workspaceIds.includes(projectId))
+  return sessions.filter((s) => s.workspaceIds.includes(projectId))
 }
 
 function applySessionFilters(
@@ -112,35 +119,56 @@ type DisplayGroup = {
   workspace?: WorkspaceInfo
 }
 
-const DATE_GROUP_ORDER = ['今天', '昨天', '本周', '本月', '更早'] as const
+const DATE_GROUP_ORDER = [
+  'sidebar.group.today',
+  'sidebar.group.yesterday',
+  'sidebar.group.thisWeek',
+  'sidebar.group.thisMonth',
+  'sidebar.group.older',
+] as const
 
 function getDateGroupLabel(updatedAt: string): string {
   const then = new Date(updatedAt).getTime()
-  if (!Number.isFinite(then)) return '更早'
+  if (!Number.isFinite(then)) return 'sidebar.group.older'
   const now = Date.now()
   const startOfToday = new Date()
   startOfToday.setHours(0, 0, 0, 0)
   const todayMs = startOfToday.getTime()
   const dayMs = 24 * 60 * 60 * 1000
-  if (then >= todayMs) return '今天'
-  if (then >= todayMs - dayMs) return '昨天'
-  if (then >= now - 7 * dayMs) return '本周'
-  if (then >= now - 30 * dayMs) return '本月'
-  return '更早'
+  if (then >= todayMs) return 'sidebar.group.today'
+  if (then >= todayMs - dayMs) return 'sidebar.group.yesterday'
+  if (then >= now - 7 * dayMs) return 'sidebar.group.thisWeek'
+  if (then >= now - 30 * dayMs) return 'sidebar.group.thisMonth'
+  return 'sidebar.group.older'
 }
 
-const STATE_GROUP_ORDER = ['运行中', '等待权限', '等待输入', '出错', '已完成', '已取消', '空闲'] as const
+const STATE_GROUP_ORDER = [
+  'sidebar.status.running',
+  'sidebar.status.waitingPermission',
+  'sidebar.status.waitingUser',
+  'sidebar.status.error',
+  'sidebar.status.completed',
+  'sidebar.status.cancelled',
+  'sidebar.status.idle',
+] as const
 
 function getStateGroupLabel(sessionStatus: string, agentStatus?: AgentStatusValue): string {
   const display = getSessionDisplayStatus(sessionStatus, agentStatus)
   switch (display) {
-    case 'running': return '运行中'
-    case 'waiting_permission': return '等待权限'
-    case 'waiting_user': return '等待输入'
-    case 'completed': return '已完成'
-    case 'error': return '出错'
-    case 'cancelled': return '已取消'
-    default: return '空闲'
+    case 'running':
+      return 'sidebar.status.running'
+    case 'waiting_permission':
+      return 'sidebar.status.waitingPermission'
+    case 'waiting_user':
+      return 'sidebar.status.waitingUser'
+    case 'completed':
+      return 'sidebar.status.completed'
+    case 'error':
+      return 'sidebar.status.error'
+    case 'cancelled':
+      return 'sidebar.status.cancelled'
+    default:
+      return 'sidebar.status.idle'
   }
 }
 
@@ -152,9 +180,11 @@ function buildGroupsByDate(sessions: SessionSummary[]): DisplayGroup[] {
     if (!buckets.has(label)) buckets.set(label, [])
     buckets.get(label)!.push(s)
   }
-  return DATE_GROUP_ORDER
-    .filter(label => buckets.get(label)!.length > 0)
-    .map(label => ({ id: `date:${label}`, label, sessions: buckets.get(label)! }))
+  return DATE_GROUP_ORDER.filter((label) => buckets.get(label)!.length > 0).map((label) => ({
+    id: `date:${label}`,
+    label,
+    sessions: buckets.get(label)!,
+  }))
 }
 
 function buildGroupsByState(
@@ -168,9 +198,11 @@ function buildGroupsByState(
     if (!buckets.has(label)) buckets.set(label, [])
     buckets.get(label)!.push(s)
   }
-  return STATE_GROUP_ORDER
-    .filter(label => buckets.get(label)!.length > 0)
-    .map(label => ({ id: `state:${label}`, label, sessions: buckets.get(label)! }))
+  return STATE_GROUP_ORDER.filter((label) => buckets.get(label)!.length > 0).map((label) => ({
+    id: `state:${label}`,
+    label,
+    sessions: buckets.get(label)!,
+  }))
 }
 
 /* ─── Helper ─── */
@@ -183,17 +215,24 @@ function formatRelativeTime(value: string): string {
   const hour = 60 * minute
   const day = 24 * hour
   const week = 7 * day
-  if (diffMs < minute) return '刚刚'
-  if (diffMs < hour) return `${Math.floor(diffMs / minute)} 分`
-  if (diffMs < day) return `${Math.floor(diffMs / hour)} 小时`
-  if (diffMs < week) return `${Math.floor(diffMs / day)} 天`
-  return `${Math.floor(diffMs / week)} 周`
+  if (diffMs < minute) return 'time.justNow'
+  if (diffMs < hour) return `time.minutes:${Math.floor(diffMs / minute)}`
+  if (diffMs < day) return `time.hours:${Math.floor(diffMs / hour)}`
+  if (diffMs < week) return `time.days:${Math.floor(diffMs / day)}`
+  return `time.weeks:${Math.floor(diffMs / week)}`
 }
 
 function getSessionDisplayStatus(
   sessionStatus: string,
-  agentStatus?: AgentStatusValue
-): 'running' | 'waiting_permission' | 'waiting_user' | 'completed' | 'error' | 'cancelled' | 'idle' {
+  agentStatus?: AgentStatusValue,
+):
+  | 'running'
+  | 'waiting_permission'
+  | 'waiting_user'
+  | 'completed'
+  | 'error'
+  | 'cancelled'
+  | 'idle' {
   if (agentStatus) {
     switch (agentStatus) {
       case 'thinking':
@@ -217,7 +256,16 @@ function getSessionDisplayStatus(
   return 'idle'
 }
 
-function getStatusBadgeInfo(status: 'running' | 'waiting_permission' | 'waiting_user' | 'completed' | 'error' | 'cancelled' | 'idle'): {
+function getStatusBadgeInfo(
+  status:
+    | 'running'
+    | 'waiting_permission'
+    | 'waiting_user'
+    | 'completed'
+    | 'error'
+    | 'cancelled'
+    | 'idle',
+): {
   className: string
   icon: React.ReactNode
   title: string
@@ -228,40 +276,40 @@ function getStatusBadgeInfo(status: 'running' | 'waiting_permission' | 'waiting_
       return {
         className: 'session-badge-running',
         icon: <Icons.Spinner size={11} className="animate-spin" />,
-        title: '运行中',
+        title: 'sidebar.status.running',
         animate: true,
       }
     case 'waiting_permission':
       return {
         className: 'session-badge-waiting-permission',
         icon: <Icons.Shield size={10} />,
-        title: '等待权限审批',
+        title: 'sidebar.status.waitingPermissionReview',
         animate: true,
       }
     case 'waiting_user':
       return {
         className: 'session-badge-waiting-user',
         icon: <Icons.Cursor size={10} />,
-        title: '等待输入',
+        title: 'sidebar.status.waitingUser',
         animate: true,
       }
     case 'completed':
       return {
         className: 'session-badge-completed',
         icon: <Icons.Check size={10} />,
-        title: '已完成',
+        title: 'sidebar.status.completed',
       }
     case 'error':
       return {
         className: 'session-badge-error',
         icon: <Icons.X size={10} />,
-        title: '运行失败',
+        title: 'sidebar.status.failed',
       }
     case 'cancelled':
       return {
         className: 'session-badge-cancelled',
         icon: <Icons.Stop size={10} />,
-        title: '已取消',
+        title: 'sidebar.status.cancelled',
       }
     default:
       return {
@@ -297,7 +345,7 @@ function ActionMenu({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      {items.map(item => (
+      {items.map((item) => (
         <button
           type="button"
           key={item.label}
@@ -343,6 +391,7 @@ function ChatListItem({
   onArchive?: (session: SessionSummary) => void
   onDelete?: (session: SessionSummary) => void
 }) {
+  const { t } = useI18n()
   const [menuOpen, setMenuOpen] = useState(false)
   const [contextOpen, setContextOpen] = useState(false)
   const { workspaces } = useSessionSidebar()
@@ -350,13 +399,18 @@ function ChatListItem({
   const worktreeBranch = useMemo(() => {
     const wsId = s.workspaceIds[0]
     if (wsId == null) return undefined
-    return workspaces.find(w => w.id === wsId)?.worktreeMeta?.branch
+    return workspaces.find((w) => w.id === wsId)?.worktreeMeta?.branch
   }, [s.workspaceIds, workspaces])
   const displayStatus = useMemo(
     () => getSessionDisplayStatus(s.status, agentStatus),
-    [s.status, agentStatus]
+    [s.status, agentStatus],
   )
   const badgeInfo = useMemo(() => getStatusBadgeInfo(displayStatus), [displayStatus])
+  const formatSidebarTime = (value: string) => {
+    const formatted = formatRelativeTime(value)
+    const [key, count] = formatted.split(':')
+    return t(key ?? '', count != null ? { count } : undefined)
+  }
 
   const statusClass = displayStatus !== 'idle' ? `is-${displayStatus}` : ''
 
@@ -379,13 +433,15 @@ function ChatListItem({
                 ? displayStatus
                 : displayStatus === 'error'
                   ? 'error'
-                : displayStatus === 'completed' && unreviewed
-                  ? 'completed'
-                  : null
+                  : displayStatus === 'completed' && unreviewed
+                    ? 'completed'
+                    : null
             return dotStatus ? (
               <span
                 className={`session-status-dot session-status-dot-${dotStatus}`}
-                title={dotStatus === 'completed' ? '新完成，未查看' : badgeInfo.title}
+                title={
+                  dotStatus === 'completed' ? t('sidebar.status.newCompleted') : t(badgeInfo.title)
+                }
                 aria-hidden
               >
                 {dotStatus === 'error' && <Icons.AlertTriangle size={12} />}
@@ -396,24 +452,24 @@ function ChatListItem({
           {worktreeBranch != null && (
             <span
               className="worktree-branch-icon"
-              title={`worktree 分支：${worktreeBranch}`}
-              aria-label="worktree 分支"
+              title={t('sidebar.worktreeBranchWithName', { branch: worktreeBranch })}
+              aria-label={t('sidebar.worktreeBranch')}
             >
               <Icons.GitBranch size={11} />
             </span>
           )}
-          <span className="truncate">{s.title || '新会话'}</span>
+          <span className="truncate">{s.title || t('sidebar.newSession')}</span>
         </div>
         {displayStatus !== 'idle' && badgeInfo.icon ? (
           <span
             className={`session-status-badge ${badgeInfo.className}`}
-            title={badgeInfo.title}
+            title={t(badgeInfo.title)}
           >
             {badgeInfo.icon}
-            <span>{badgeInfo.title}</span>
+            <span>{t(badgeInfo.title)}</span>
           </span>
         ) : (
-          <span className="chat-item-time-compact">{formatRelativeTime(s.updatedAt)}</span>
+          <span className="chat-item-time-compact">{formatSidebarTime(s.updatedAt)}</span>
         )}
         <div className={`item-menu-wrap${menuOpen ? ' menu-open' : ''}`}>
           <Dropdown
@@ -429,19 +485,37 @@ function ChatListItem({
               <ActionMenu
                 onAction={() => setMenuOpen(false)}
                 items={[
-                  { icon: <Icons.Pin size={14} />, label: s.pinnedAt == null ? '置顶会话' : '取消置顶', onClick: () => onTogglePinned?.(s) },
-                  { icon: <Icons.Edit size={14} />, label: '重命名会话', onClick: () => onRename?.(s) },
-                  { icon: <Icons.Box size={14} />, label: '归档会话', onClick: () => onArchive?.(s) },
-                  { icon: <Icons.Trash size={14} />, label: '删除会话', danger: true, onClick: () => onDelete?.(s) },
+                  {
+                    icon: <Icons.Pin size={14} />,
+                    label:
+                      s.pinnedAt == null ? t('sidebar.session.pin') : t('sidebar.session.unpin'),
+                    onClick: () => onTogglePinned?.(s),
+                  },
+                  {
+                    icon: <Icons.Edit size={14} />,
+                    label: t('sidebar.session.rename'),
+                    onClick: () => onRename?.(s),
+                  },
+                  {
+                    icon: <Icons.Box size={14} />,
+                    label: t('sidebar.session.archive'),
+                    onClick: () => onArchive?.(s),
+                  },
+                  {
+                    icon: <Icons.Trash size={14} />,
+                    label: t('sidebar.session.delete'),
+                    danger: true,
+                    onClick: () => onDelete?.(s),
+                  },
                 ]}
               />
             )}
           >
             <button
               className="icon-btn item-menu-btn"
-              title="会话操作"
-              onPointerDown={e => e.stopPropagation()}
-              onClick={e => e.stopPropagation()}
+              title={t('sidebar.session.actions')}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             >
               <Icons.More size={13} />
             </button>
@@ -492,6 +566,7 @@ function ProjectSessionGroup({
   onArchiveSession: (session: SessionSummary) => void
   onDeleteSession: (session: SessionSummary) => void
 }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(() => !getCollapsedProjects().has(group.workspace.id))
   const [menuOpen, setMenuOpen] = useState(false)
   const [showAllSessions, setShowAllSessions] = useState(false)
@@ -507,7 +582,7 @@ function ProjectSessionGroup({
       <div
         className="proj-head"
         onClick={() => {
-          setOpen(prev => {
+          setOpen((prev) => {
             const next = !prev
             setProjectCollapsed(group.workspace.id, !next)
             return next
@@ -519,25 +594,32 @@ function ProjectSessionGroup({
           className="proj-toggle"
           onClick={(e) => {
             e.stopPropagation()
-            setOpen(prev => {
+            setOpen((prev) => {
               const next = !prev
               setProjectCollapsed(group.workspace.id, !next)
               return next
             })
           }}
           role="button"
-          aria-label={open ? '折叠项目' : '展开项目'}
-          title={open ? '折叠项目' : '展开项目'}
+          aria-label={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
+          title={open ? t('sidebar.project.collapse') : t('sidebar.project.expand')}
         >
-          {open ? <Icons.ChevronDown className="chev" size={12} /> : <Icons.ChevronRight className="chev" size={12} />}
+          {open ? (
+            <Icons.ChevronDown className="chev" size={12} />
+          ) : (
+            <Icons.ChevronRight className="chev" size={12} />
+          )}
         </span>
         {group.workspace.pinnedAt != null && <Icons.Pin size={12} className="pinned-icon" />}
         <span className="proj-name">{group.workspace.name}</span>
         <span className="proj-count">{group.sessions.length}</span>
         <button
           className="icon-btn proj-add-session-btn"
-          title="新建此项目的会话"
-          onClick={e => { e.stopPropagation(); onNewSession(group.workspace.id) }}
+          title={t('sidebar.project.newSession')}
+          onClick={(e) => {
+            e.stopPropagation()
+            onNewSession(group.workspace.id)
+          }}
         >
           <Icons.Plus size={12} />
         </button>
@@ -552,38 +634,61 @@ function ProjectSessionGroup({
               <ActionMenu
                 onAction={() => setMenuOpen(false)}
                 items={[
-                  { icon: <Icons.Pin size={14} />, label: group.workspace.pinnedAt == null ? '置顶项目' : '取消置顶', onClick: () => onToggleProjectPinned(group.workspace) },
-                  { icon: <Icons.Folder size={14} />, label: '在文件夹中打开', onClick: () => onOpenProjectFolder(group.workspace) },
-                  { icon: <Icons.Edit size={14} />, label: '重命名项目', onClick: () => onRenameProject(group.workspace) },
-                  { icon: <Icons.Box size={14} />, label: '归档项目', onClick: () => onArchiveProject(group.workspace) },
-                  { icon: <Icons.Trash size={14} />, label: '删除项目', danger: true, onClick: () => onDeleteProject(group.workspace) },
+                  {
+                    icon: <Icons.Pin size={14} />,
+                    label:
+                      group.workspace.pinnedAt == null
+                        ? t('sidebar.project.pin')
+                        : t('sidebar.project.unpin'),
+                    onClick: () => onToggleProjectPinned(group.workspace),
+                  },
+                  {
+                    icon: <Icons.Folder size={14} />,
+                    label: t('sidebar.project.openFolder'),
+                    onClick: () => onOpenProjectFolder(group.workspace),
+                  },
+                  {
+                    icon: <Icons.Edit size={14} />,
+                    label: t('sidebar.project.rename'),
+                    onClick: () => onRenameProject(group.workspace),
+                  },
+                  {
+                    icon: <Icons.Box size={14} />,
+                    label: t('sidebar.project.archive'),
+                    onClick: () => onArchiveProject(group.workspace),
+                  },
+                  {
+                    icon: <Icons.Trash size={14} />,
+                    label: t('sidebar.project.delete'),
+                    danger: true,
+                    onClick: () => onDeleteProject(group.workspace),
+                  },
                 ]}
               />
             )}
           >
             <button
               className="icon-btn item-menu-btn"
-              title="项目操作"
-              onPointerDown={e => e.stopPropagation()}
-              onClick={e => e.stopPropagation()}
+              title={t('sidebar.project.actions')}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
             >
               <Icons.More size={13} />
             </button>
           </Dropdown>
         </div>
         {filterSlot}
-
       </div>
       {open && (
         <div className="proj-sessions">
           {sessions.length === 0 ? (
             <button className="proj-session-empty" onClick={() => onNewSession(group.workspace.id)}>
               <Icons.Plus size={12} />
-              新建此项目的会话
+              {t('sidebar.project.newSession')}
             </button>
           ) : (
             <>
-              {visibleSessions.map(session => (
+              {visibleSessions.map((session) => (
                 <ChatListItem
                   key={session.id}
                   session={session}
@@ -600,13 +705,13 @@ function ProjectSessionGroup({
               {hasMore && (
                 <button
                   className="proj-show-more-btn"
-                  onClick={() => setShowAllSessions(prev => !prev)}
+                  onClick={() => setShowAllSessions((prev) => !prev)}
                 >
                   {showAllSessions ? (
-                    <span className="proj-show-more-label">收起</span>
+                    <span className="proj-show-more-label">{t('sidebar.showLess')}</span>
                   ) : (
                     <>
-                      <span className="proj-show-more-label">显示更多</span>
+                      <span className="proj-show-more-label">{t('sidebar.showMore')}</span>
                       <span className="proj-show-more-count">{sessions.length - MAX_VISIBLE}</span>
                     </>
                   )}
@@ -644,15 +749,16 @@ function FlatGroup({
   unreviewedCompletedSessions: Set<string>
   actions: FlatGroupActions
 }) {
+  const { t } = useI18n()
   if (sessions.length === 0) return null
   return (
     <div className="proj-group flat-group">
       <div className="proj-head flat-group-head">
-        <span className="proj-name">{label}</span>
+        <span className="proj-name">{t(label)}</span>
         <span className="proj-count">{sessions.length}</span>
       </div>
       <div className="proj-sessions">
-        {sessions.map(session => (
+        {sessions.map((session) => (
           <ChatListItem
             key={session.id}
             session={session}
@@ -691,38 +797,60 @@ function CreateProjectModal({
   onCancel: () => void
   onCreate: (useTempDir?: boolean) => void
 }) {
+  const { t } = useI18n()
   return (
     <div className="modal-backdrop">
       <div className="modal project-modal">
         <div className="modal-h">
-          <div className="modal-h-icon"><Icons.Folder size={17} /></div>
+          <div className="modal-h-icon">
+            <Icons.Folder size={17} />
+          </div>
           <div>
-            <div className="modal-title">新建项目</div>
-            <div className="modal-subtitle">选择一个本地文件夹作为项目地址，或直接创建一个空项目。</div>
+            <div className="modal-title">{t('sidebar.project.createTitle')}</div>
+            <div className="modal-subtitle">{t('sidebar.project.createSubtitle')}</div>
           </div>
         </div>
         <div className="modal-body">
           {notice && (
-            <div className="session-notice in-modal"><Icons.AlertTriangle size={12} /><span>{notice}</span></div>
+            <div className="session-notice in-modal">
+              <Icons.AlertTriangle size={12} />
+              <span>{notice}</span>
+            </div>
           )}
           <label className="field">
-            <span>项目名称</span>
-            <Input value={name} placeholder="例如 Spark-Agent" onChange={e => setName(e.target.value)} />
+            <span>{t('sidebar.project.name')}</span>
+            <Input
+              value={name}
+              placeholder={t('sidebar.project.placeholder')}
+              onChange={(e) => setName(e.target.value)}
+            />
           </label>
           <label className="field">
-            <span>项目文件夹地址（可选）</span>
+            <span>{t('sidebar.project.folderOptional')}</span>
             <div className="path-picker">
-              <Input value={path} placeholder="/Users/you/projects/my-agent" onChange={e => setPath(e.target.value)} />
-              <button className="btn ghost sm" onClick={onPickPath}>选择</button>
+              <Input
+                value={path}
+                placeholder="/Users/you/projects/my-agent"
+                onChange={(e) => setPath(e.target.value)}
+              />
+              <button className="btn ghost sm" onClick={onPickPath}>
+                {t('common.choose')}
+              </button>
             </div>
-            <div className="field-hint">留空则自动在临时目录创建项目文件夹</div>
+            <div className="field-hint">{t('sidebar.project.tempHint')}</div>
           </label>
         </div>
         <div className="modal-foot">
-          <button className="btn ghost sm" onClick={() => onCreate(true)}>新建空项目</button>
+          <button className="btn ghost sm" onClick={() => onCreate(true)}>
+            {t('sidebar.project.createEmpty')}
+          </button>
           <div className="spacer" />
-          <button className="btn ghost sm" onClick={onCancel}>取消</button>
-          <button className="btn primary sm" onClick={() => onCreate(false)}>创建项目</button>
+          <button className="btn ghost sm" onClick={onCancel}>
+            {t('common.cancel')}
+          </button>
+          <button className="btn primary sm" onClick={() => onCreate(false)}>
+            {t('sidebar.project.create')}
+          </button>
         </div>
       </div>
     </div>
@@ -733,8 +861,9 @@ function CreateProjectModal({
    Main exported component
    ============================================================ */
 export function SidebarSessionList() {
+  const { t } = useI18n()
   const ctx = useSessionSidebar()
-  const { t, setTweak } = useApp()
+  const { t: appState, setTweak } = useApp()
 
   // Sidebar global filter (status / project / lastActivity / groupBy)
   const [filter, setFilter] = useState<SidebarFilterState>(() => readSidebarFilter())
@@ -754,7 +883,7 @@ export function SidebarSessionList() {
   // Active session/workspace highlighting only applies while the chat view is
   // mounted. When the user navigates to Board/Agents/Settings/etc., the sidebar
   // should not show any session as "selected" because none is being edited.
-  const isChatView = t.view === 'chat'
+  const isChatView = appState.view === 'chat'
   const effectiveActiveSessionId = isChatView ? ctx.activeSessionId : null
   const effectiveActiveWorkspaceId = isChatView ? ctx.activeWorkspaceId : null
 
@@ -771,29 +900,35 @@ export function SidebarSessionList() {
       return buildGroupsByState(filteredSessions, ctx.sessionAgentStatuses)
     }
     if (filter.groupBy === 'none') {
-      return [{ id: 'none:all', label: '所有会话', sessions: filteredSessions }]
+      return [{ id: 'none:all', label: 'sidebar.allSessions', sessions: filteredSessions }]
     }
     // 'project' mode: each workspace is its own group
     const projectGroups = buildProjectGroups(ctx.workspaces, filteredSessions)
     const noProjectWorkspace = ctx.noProjectWorkspace
     const noProject = noProjectWorkspace
-      ? filteredSessions.filter(s => s.workspaceIds.includes(noProjectWorkspace.id))
+      ? filteredSessions.filter((s) => s.workspaceIds.includes(noProjectWorkspace.id))
       : []
-    const ungrouped = filteredSessions.filter(s => s.workspaceIds.length === 0)
-    const list: DisplayGroup[] = projectGroups.map(g => ({
+    const ungrouped = filteredSessions.filter((s) => s.workspaceIds.length === 0)
+    const list: DisplayGroup[] = projectGroups.map((g) => ({
       id: `project:${g.workspace.id}`,
       label: g.workspace.name,
       sessions: g.sessions,
       workspace: g.workspace,
     }))
     if (noProject.length > 0) {
-      list.push({ id: 'project:no-project', label: '无项目对话', sessions: noProject })
+      list.push({ id: 'project:no-project', label: 'sidebar.noProjectChats', sessions: noProject })
     }
     if (ungrouped.length > 0) {
-      list.push({ id: 'project:ungrouped', label: '未归属会话', sessions: ungrouped })
+      list.push({ id: 'project:ungrouped', label: 'sidebar.ungroupedChats', sessions: ungrouped })
     }
     return list
-  }, [filter.groupBy, filteredSessions, ctx.workspaces, ctx.noProjectWorkspace, ctx.sessionAgentStatuses])
+  }, [
+    filter.groupBy,
+    filteredSessions,
+    ctx.workspaces,
+    ctx.noProjectWorkspace,
+    ctx.sessionAgentStatuses,
+  ])
 
   const showGlobalFilterBar = filter.groupBy !== 'project'
   const filterSlot = (
@@ -815,35 +950,36 @@ export function SidebarSessionList() {
           <div className="session-notice">
             <Icons.AlertTriangle size={12} />
             <span>{notice}</span>
-            <button className="icon-btn" onClick={() => setNotice('')}><Icons.X size={10} /></button>
+            <button className="icon-btn" onClick={() => setNotice('')}>
+              <Icons.X size={10} />
+            </button>
           </div>
         )}
 
         {/* Global filter bar — when not in project-grouping mode */}
         {showGlobalFilterBar && ctx.sessions.length > 0 && (
-          <div className="sidebar-global-filter-bar">
-            {filterSlot}
-          </div>
+          <div className="sidebar-global-filter-bar">{filterSlot}</div>
         )}
 
         {ctx.workspaces.length === 0 && ctx.sessions.length === 0 ? (
           <div className="empty-compact">
-            <div className="empty-icon"><Icons.Folder size={18} /></div>
-            <div className="empty-title">还没有项目</div>
-            <div className="empty-desc">先打开已有文件夹，或新建一个项目文件夹</div>
-            <button
-              className="empty-import-btn"
-              onClick={() => ctx.setHistoryImportOpen(true)}
-            >
+            <div className="empty-icon">
+              <Icons.Folder size={18} />
+            </div>
+            <div className="empty-title">{t('sidebar.empty.noProjects')}</div>
+            <div className="empty-desc">{t('sidebar.empty.noProjectsDesc')}</div>
+            <button className="empty-import-btn" onClick={() => ctx.setHistoryImportOpen(true)}>
               <Icons.Download size={12} />
-              导入已有对话历史
+              {t('sidebar.importHistory')}
             </button>
           </div>
         ) : displayGroups.length === 0 ? (
           <div className="empty-compact">
-            <div className="empty-icon"><Icons.Sliders size={18} /></div>
-            <div className="empty-title">没有匹配的会话</div>
-            <div className="empty-desc">试试调整筛选条件或清空过滤器</div>
+            <div className="empty-icon">
+              <Icons.Sliders size={18} />
+            </div>
+            <div className="empty-title">{t('sidebar.empty.noMatches')}</div>
+            <div className="empty-desc">{t('sidebar.empty.noMatchesDesc')}</div>
           </div>
         ) : (
           <>
@@ -917,9 +1053,15 @@ export function SidebarSessionList() {
           notice={ctx.projectNotice}
           setName={ctx.setProjectName}
           setPath={ctx.setProjectPath}
-          onPickPath={() => { void ctx.handlePickProjectPath() }}
-          onCancel={() => { ctx.setProjectDialog(null) }}
-          onCreate={(useTempDir?: boolean) => { void ctx.handleCreateProject(useTempDir) }}
+          onPickPath={() => {
+            void ctx.handlePickProjectPath()
+          }}
+          onCancel={() => {
+            ctx.setProjectDialog(null)
+          }}
+          onCreate={(useTempDir?: boolean) => {
+            void ctx.handleCreateProject(useTempDir)
+          }}
         />
       )}
 

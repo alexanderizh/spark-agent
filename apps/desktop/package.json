@@ -26,7 +26,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "test:unit": "vitest run",
     "test:e2e": "playwright test",
-    "lint": "eslint src --ext .ts,.tsx"
+    "lint": "eslint src --ext .ts,.tsx",
+    "i18n:scan": "node scripts/scan-client-i18n.mjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.66.1",

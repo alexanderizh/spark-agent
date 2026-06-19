@@ -1,15 +1,17 @@
 import { Icons } from './Icons'
 import { useApp } from './AppContext'
+import { useI18n } from './i18n'
 
 /** Shown when the floating sidebar is hidden — restores navigation panel. */
 export function SidebarExpandButton() {
   const { setTweak } = useApp()
+  const { t } = useI18n()
   return (
     <button
       type="button"
       className="sidebar-expand-btn"
       onClick={() => setTweak('sidebarHidden', false)}
-      title="展开菜单栏"
+      title={t('sidebar.expandButton')}
     >
       <Icons.SidebarShow size={16} />
     </button>

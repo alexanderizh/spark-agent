@@ -15,6 +15,7 @@ import { useToast } from '../components/Toast'
 import { ModelCapabilityRegistry } from '@spark/shared'
 import { PlaywrightStatusCard } from './PlaywrightStatusCard'
 import { canvasApi } from './canvas/canvas.api'
+import { resolveSupportedLanguage, SUPPORTED_LANGUAGES, useI18n } from '../i18n'
 // Provider 相关 UI 已抽到 ProvidersView；保留 ProviderEditPanel 的 re-export
 // 以便现有测试（apps/desktop/src/renderer/tests/renderer.test.ts）等其他消费者
 // 仍能通过原路径 import。
@@ -166,7 +167,7 @@ type RuntimePermissionModeOption = {
 
 const DEFAULT_GENERAL: GeneralSettings = {
   userName: 'User',
-  language: 'zh-CN',
+  language: resolveSupportedLanguage(undefined),
   startupBehavior: 'last',
   defaultWorkspace: '',
   systemTray: true,
@@ -403,6 +404,7 @@ export function SettingsView() {
 /* ───────── GENERAL ───────── */
 function GeneralSection() {
   const { setTweak } = useApp()
+  const { t: tr } = useI18n()
   const [s, set] = usePersistedSettings(SETTINGS_GENERAL_KEY, DEFAULT_GENERAL)
   const { invoke: openDirectory } = useIpcInvoke('dialog:open-directory')
   const [autoStartSupported, setAutoStartSupported] = useState(true)
@@ -486,13 +488,12 @@ function GeneralSection() {
           语言<span className="sub">界面文案语言</span>
         </label>
         <Select
-          value={s.language}
-          onChange={(v) => set({ language: v })}
-          options={[
-            { label: '简体中文', value: 'zh-CN' },
-            { label: 'English (US)', value: 'en-US' },
-            { label: '日本語', value: 'ja-JP' },
-          ]}
+          value={resolveSupportedLanguage(s.language)}
+          onChange={(v) => set({ language: resolveSupportedLanguage(v) })}
+          options={SUPPORTED_LANGUAGES.map((language) => ({
+            label: tr(language === 'zh-CN' ? 'settings.general.language.zh' : 'settings.general.language.en'),
+            value: language,
+          }))}
         />
 
         <label>
