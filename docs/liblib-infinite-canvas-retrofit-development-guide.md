@@ -1,5 +1,7 @@
 # Liblib 风格无限画布改造开发文档
 
+> 状态: 已落地（CanvasBoardSidebar / CanvasAssetManagerPanel / CanvasBottomDock / CanvasFilmAssetCenter 已上线，后续优化持续推进） | 最后核对: 2026-06-19
+>
 > 日期：2026-06-16  
 > 适用对象：后续负责实现 Spark 无限画布改造的 agent / 开发同学  
 > 目标：在不推翻现有 Spark Canvas 架构的前提下，把当前“生产型 AI 画布”升级为更接近 Liblib 的“内容创作工作台”

@@ -1,7 +1,8 @@
 # APIMart / xAI 多媒体模型适配开发设计
 
+> 状态: 已落地（manifest 驱动的 TemplateMediaAdapter 已在 MediaRouterService 中接入，APIMart / xAI / Volcengine 等 seed manifest 已纳入） | 最后核对: 2026-06-19
+>
 > 日期: 2026-06-14
-> 状态: 待开发
 > 目标: 让 APIMart 与 xAI 的图片、语音、视频模型可以在 Spark Agent 中完成模型录入、作为 agent 技能调用，并让无限画布能直接通过平台适配器调用这些模型生成多媒体资产。
 
 ## 1. 文档依据

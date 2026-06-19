@@ -1,5 +1,7 @@
 # Spark 调试模式（Debug Mode）—— 开发计划（交付文档）
 
+> 状态: 已落地（长驻日志服务 + spark_debug MCP + skill + 前端 toggle/快捷回复已上线） | 最后核对: 2026-06-19
+>
 > **本文档面向执行 agent**。请按阶段顺序实施，每阶段完成后对照「验收条件」自检；未通过不要进入下一阶段。
 > 修改任何现有 symbol（尤其 `session.service.ts`）前**必须**先运行 `impact({target: "符号名", direction: "upstream"})`，HIGH/CRITICAL 风险需在 commit message 中说明。
 > 本项目核心运行时是 **Claude CLI（claude-sdk-executor）**，调试模式必须与该 turn 制对话模型契合，不引入常驻 agent。

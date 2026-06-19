@@ -1,7 +1,8 @@
 # 应用内会话的 Git Worktree 支持 — 设计文档
 
+> 状态: 已落地（方案 A，GitWorktreeService + WorktreePanel 已上线） | 最后核对: 2026-06-19
+
 - 日期：2026-06-14
-- 状态：已评审通过核心架构（方案 A），待 spec 评审
 - 关联：参考 Claude Desktop 的 worktree 隔离机制
 
 ## 1. 目标

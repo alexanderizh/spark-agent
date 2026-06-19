@@ -236,6 +236,30 @@ export interface SessionClearEventsResponse {
   cleared: boolean
 }
 
+/**
+ * 会话还原点（代码检查点）。由 Claude SDK 文件检查点机制在改动文件的 turn 后产生。
+ * 用于「按会话撤回代码」的时间线视图与一键还原。
+ */
+export interface SessionCheckpoint {
+  checkpointId: string
+  label?: string
+  /** 快照目录（相对工作区），还原时把其中文件拷回工作区 */
+  path?: string
+  /** 该检查点记录的受影响文件路径 */
+  filePaths?: string[]
+  /** ISO 时间戳 */
+  timestamp?: string
+}
+
+export interface SessionListCheckpointsRequest {
+  sessionId: SessionId
+}
+
+export interface SessionListCheckpointsResponse {
+  /** 倒序（最近在前）的还原点列表 */
+  checkpoints: SessionCheckpoint[]
+}
+
 export interface SessionDeleteMessageRequest {
   sessionId: SessionId
   eventIds: string[]
@@ -3961,6 +3985,7 @@ export interface IpcChannelMap {
   'session:delete': [SessionDeleteRequest, SessionDeleteResponse]
   'session:set-max-iterations': [SessionSetMaxIterationsRequest, SessionSetMaxIterationsResponse]
   'session:clear-events': [SessionClearEventsRequest, SessionClearEventsResponse]
+  'session:list-checkpoints': [SessionListCheckpointsRequest, SessionListCheckpointsResponse]
   'session:delete-message': [SessionDeleteMessageRequest, SessionDeleteMessageResponse]
   'session:answer-question': [SessionAnswerQuestionRequest, SessionAnswerQuestionResponse]
 

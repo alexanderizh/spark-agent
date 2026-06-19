@@ -1,5 +1,7 @@
 # Spark Agent 内置终端面板实施方案
 
+> 状态: 已落地（BuiltInTerminalPanel 已上线） | 最后核对: 2026-06-19
+
 本文档用于指导后续 agent 在 Spark Agent 桌面端实现类似 Codex Desktop 的内置终端能力：会话内右上角可打开/关闭终端面板，底部弹出可 resize 的终端 dock，支持同一会话内多个终端 tab。
 
 ## 1. 当前代码基础

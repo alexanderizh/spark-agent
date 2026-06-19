@@ -1,5 +1,7 @@
 # Session Git Worktree Support 实现计划
 
+> 状态: 已落地（GitWorktreeService + WorktreePanel 已上线） | 最后核对: 2026-06-19
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让应用内会话可在隔离的 git worktree 中运行 Agent，并在右侧面板可视化展示所有 worktree、当前 worktree、合并状态，提供创建/合并/清理的 UI 操作入口。

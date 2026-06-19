@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 import { Icons } from './Icons'
 import { useIpcInvoke } from './hooks/useIpc'
 import { useToast } from './components/Toast'
+import { useI18n } from './i18n'
 
 export function FilePermCard({
   path,
@@ -23,50 +24,53 @@ export function FilePermCard({
   onAllow?: () => void
   onDeny?: () => void
 }) {
+  const { t } = useI18n()
   return (
     <div className="chat-card">
       <div className="chat-card-h warn">
         <span className="ico">
           <Icons.Edit />
         </span>
-        <span>请求写入文件</span>
+        <span>{t('chat.filePerm.title')}</span>
         <span className="badge" style={{ marginLeft: 'auto', fontSize: 10 }}>
           {scope}
         </span>
       </div>
       <div className="chat-card-body">
         <div className="spec-grid">
-          <span className="k">路径</span>
+          <span className="k">{t('chat.common.path')}</span>
           <span className="v">
             <code>{path}</code>
           </span>
-          <span className="k">变更</span>
+          <span className="k">{t('chat.filePerm.change')}</span>
           <span className="v">
-            新增 {lines.add} 行 · 删除 {lines.del} 行
+            {t('chat.filePerm.changeStats', { add: lines.add, del: lines.del })}
           </span>
-          <span className="k">在工作区内</span>
+          <span className="k">{t('chat.filePerm.inWorkspace')}</span>
           <span className="v" style={{ color: 'var(--success)' }}>
-            ✓ spark-agent 项目内
+            {t('chat.filePerm.inSparkProject')}
           </span>
-          <span className="k">备份策略</span>
-          <span className="v">写入前快照到 .spark/checkpoints/</span>
+          <span className="k">{t('chat.filePerm.backupPolicy')}</span>
+          <span className="v">{t('chat.filePerm.backupSnapshot')}</span>
         </div>
       </div>
       <div className="chat-card-foot">
-        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>下次此类请求</span>
+        <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
+          {t('chat.filePerm.nextTime')}
+        </span>
         <span className="seg-control" style={{ height: 22 }}>
           <button className="active" style={{ height: 18, fontSize: 10.5 }}>
-            询问
+            {t('chat.permission.ask')}
           </button>
-          <button style={{ height: 18, fontSize: 10.5 }}>会话内</button>
-          <button style={{ height: 18, fontSize: 10.5 }}>项目内</button>
+          <button style={{ height: 18, fontSize: 10.5 }}>{t('chat.permission.session')}</button>
+          <button style={{ height: 18, fontSize: 10.5 }}>{t('chat.permission.project')}</button>
         </span>
         <span className="spacer" />
         <button className="btn sm" onClick={onDeny}>
-          拒绝
+          {t('chat.common.deny')}
         </button>
         <button className="btn sm primary" onClick={onAllow}>
-          <Icons.Check size={11} /> 允许写入
+          <Icons.Check size={11} /> {t('chat.filePerm.allowWrite')}
         </button>
       </div>
     </div>
@@ -86,13 +90,14 @@ export function NetPermCard({
   onAllow?: () => void
   onDeny?: () => void
 }) {
+  const { t } = useI18n()
   return (
     <div className="chat-card">
       <div className="chat-card-h info">
         <span className="ico">
           <Icons.Globe />
         </span>
-        <span>请求网络访问</span>
+        <span>{t('chat.netPerm.title')}</span>
       </div>
       <div className="chat-card-body">
         <div className="spec-grid">
@@ -102,27 +107,27 @@ export function NetPermCard({
               {method} {url}
             </code>
           </span>
-          <span className="k">目的</span>
+          <span className="k">{t('chat.common.purpose')}</span>
           <span className="v">{reason}</span>
-          <span className="k">域名</span>
+          <span className="k">{t('chat.common.domain')}</span>
           <span className="v">
             <span className="badge success dot" style={{ fontSize: 10 }}>
-              已知 · npmjs.com
+              {t('chat.netPerm.knownNpm')}
             </span>
           </span>
-          <span className="k">凭据</span>
+          <span className="k">{t('chat.common.credentials')}</span>
           <span className="v" style={{ color: 'var(--text-muted)' }}>
-            无 · 公开端点
+            {t('chat.netPerm.publicEndpoint')}
           </span>
         </div>
       </div>
       <div className="chat-card-foot">
         <span className="spacer" />
         <button className="btn sm" onClick={onDeny}>
-          拒绝
+          {t('chat.common.deny')}
         </button>
         <button className="btn sm primary" onClick={onAllow}>
-          <Icons.Check size={11} /> 本会话内允许 npmjs.com
+          <Icons.Check size={11} /> {t('chat.netPerm.allowNpmSession')}
         </button>
       </div>
     </div>
@@ -142,13 +147,14 @@ export function MCPPermCard({
   onAllow?: () => void
   onDeny?: () => void
 }) {
+  const { t } = useI18n()
   return (
     <div className="chat-card">
       <div className="chat-card-h">
         <span className="ico">
           <Icons.MCP />
         </span>
-        <span>调用 MCP 工具</span>
+        <span>{t('chat.mcpPerm.title')}</span>
         <span
           className="mono-sm"
           style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--text-muted)' }}
@@ -158,7 +164,7 @@ export function MCPPermCard({
       </div>
       <div className="chat-card-body">
         <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
-          参数
+          {t('chat.common.params')}
         </div>
         <pre
           className="mono-sm"
@@ -178,17 +184,17 @@ export function MCPPermCard({
       </div>
       <div className="chat-card-foot">
         <span className="row" style={{ fontSize: 11, color: 'var(--text-muted)', gap: 6 }}>
-          <Icons.Shield size={11} /> 来源: User 范围 · 已签名
+          <Icons.Shield size={11} /> {t('chat.mcpPerm.sourceSigned')}
         </span>
         <span className="spacer" />
         <button className="btn sm" onClick={onDeny}>
-          拒绝
+          {t('chat.common.deny')}
         </button>
         <button className="btn sm" onClick={onAllow}>
-          仅本次
+          {t('chat.permission.once')}
         </button>
         <button className="btn sm primary" onClick={onAllow}>
-          允许并记住
+          {t('chat.permission.allowRemember')}
         </button>
       </div>
     </div>
@@ -250,7 +256,11 @@ function renderPlanInline(text: string): ReactNode[] {
   const codeParts = text.split(/(`[^`]+`)/g)
   codeParts.forEach((part, ci) => {
     if (/^`[^`]+`$/.test(part)) {
-      out.push(<code key={`c${ci}`} className="plan-inline-code">{part.slice(1, -1)}</code>)
+      out.push(
+        <code key={`c${ci}`} className="plan-inline-code">
+          {part.slice(1, -1)}
+        </code>,
+      )
       return
     }
     // 2) 再按链接切
@@ -282,15 +292,14 @@ function renderPlanInline(text: string): ReactNode[] {
 }
 
 export function PlanCard({ title, items }: { title: string; items: PlanItem[] }) {
+  const { t } = useI18n()
   const done = items.filter((it) => it.status === 'done').length
   return (
     <div className="plan-card">
       <div className="plan-h">
         <Icons.Beaker size={13} />
         <span>{title}</span>
-        <span className="progress">
-          {done}/{items.length} 已完成
-        </span>
+        <span className="progress">{t('chat.plan.completed', { done, total: items.length })}</span>
       </div>
       <div className="plan-list">
         {items.map((it, i) => (
@@ -320,6 +329,7 @@ export function Checkpoint({
   files?: string[]
   onRestore?: () => void
 }) {
+  const { t } = useI18n()
   const visibleFiles = files?.slice(0, 4) ?? []
   const remaining = Math.max(0, (files?.length ?? 0) - visibleFiles.length)
   return (
@@ -327,7 +337,7 @@ export function Checkpoint({
       <span className="line" />
       <span className="pill">
         <Icons.Branch size={11} />
-        <span>{label || '检查点'}</span>
+        <span>{label || t('chat.checkpoint.default')}</span>
         <span className="num">
           #{num} · {time}
         </span>
@@ -351,7 +361,7 @@ export function Checkpoint({
           >
             <Icons.Refresh />
           </button>
-          <span className="icon-btn" title="从此处分叉">
+          <span className="icon-btn" title={t('chat.checkpoint.branchFromHere')}>
             <Icons.Branch />
           </span>
         </span>
@@ -381,6 +391,7 @@ export function TurnFileSummaryCard({
   onUndo?: () => Promise<void> | void
   onReapply?: () => Promise<void> | void
 }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(true)
   const [undoState, setUndoState] = useState<'idle' | 'undoing' | 'undone' | 'reapplying'>('idle')
   const { invoke: openFile } = useIpcInvoke('file:open')
@@ -395,10 +406,10 @@ export function TurnFileSummaryCard({
       try {
         await onUndo()
         setUndoState('undone')
-        toast.success('已撤销本次修改')
+        toast.success(t('chat.summary.undoSuccess'))
       } catch (err) {
         setUndoState('idle')
-        toast.error(err instanceof Error ? err.message : '撤销失败')
+        toast.error(err instanceof Error ? err.message : t('chat.summary.undoFailed'))
       }
     },
     [onUndo, toast, undoState],
@@ -412,10 +423,10 @@ export function TurnFileSummaryCard({
       try {
         await onReapply()
         setUndoState('idle')
-        toast.success('已重新应用')
+        toast.success(t('chat.summary.reapplySuccess'))
       } catch (err) {
         setUndoState('undone')
-        toast.error(err instanceof Error ? err.message : '重新应用失败')
+        toast.error(err instanceof Error ? err.message : t('chat.summary.reapplyFailed'))
       }
     },
     [onReapply, toast, undoState],
@@ -428,10 +439,10 @@ export function TurnFileSummaryCard({
       try {
         const res = await openFile({ filePath })
         if (!res.opened) {
-          toast.error(res.error ?? '无法打开文件')
+          toast.error(res.error ?? t('chat.summary.openFailed'))
         }
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : '打开文件失败')
+        toast.error(err instanceof Error ? err.message : t('chat.summary.openFileFailed'))
       }
     },
     [openFile, toast],
@@ -447,13 +458,13 @@ export function TurnFileSummaryCard({
         <span className="ico">
           <Icons.CheckCircle />
         </span>
-        <span>本次修改完成</span>
+        <span>{t('chat.summary.done')}</span>
         <span className="diff-stats">
           <span className="add">+{totalAdds}</span>
           <span className="del">−{totalDels}</span>
         </span>
         <span className="badge" style={{ fontSize: 10, marginLeft: 8 }}>
-          {fileCount} 个文件
+          {t('chat.summary.fileCount', { count: fileCount })}
         </span>
         <span className="spacer" />
         {onUndo != null && undoState !== 'undone' && undoState !== 'reapplying' && (
@@ -463,9 +474,10 @@ export function TurnFileSummaryCard({
             style={{ height: 22, padding: '0 8px', fontSize: 11, gap: 4 }}
             onClick={handleUndo}
             disabled={undoState === 'undoing'}
-            title="将这次修改还原到执行前的状态"
+            title={t('chat.summary.undoTitle')}
           >
-            <Icons.RotateCcw size={11} /> {undoState === 'undoing' ? '撤销中…' : '撤销'}
+            <Icons.RotateCcw size={11} />{' '}
+            {undoState === 'undoing' ? t('chat.summary.undoing') : t('chat.summary.undo')}
           </button>
         )}
         {onReapply != null && (undoState === 'undone' || undoState === 'reapplying') && (
@@ -475,10 +487,10 @@ export function TurnFileSummaryCard({
             style={{ height: 22, padding: '0 8px', fontSize: 11, gap: 4 }}
             onClick={handleReapply}
             disabled={undoState === 'reapplying'}
-            title="重新应用本次修改"
+            title={t('chat.summary.reapplyTitle')}
           >
             <Icons.RotateCw size={11} />{' '}
-            {undoState === 'reapplying' ? '应用中…' : '重新应用'}
+            {undoState === 'reapplying' ? t('chat.summary.reapplying') : t('chat.summary.reapply')}
           </button>
         )}
         <button className="btn ghost sm" style={{ height: 20, padding: '0 6px' }}>
@@ -513,7 +525,7 @@ export function TurnFileSummaryCard({
                       <button
                         type="button"
                         className="icon-btn file-action-btn"
-                        title="用系统默认应用打开"
+                        title={t('chat.summary.openDefault')}
                         onClick={(e) => handleOpen(e, file.path)}
                       >
                         <Icons.ExternalLink size={11} />
@@ -552,6 +564,7 @@ export function ErrorCard({
   detail?: string
   suggestions?: string[]
 }) {
+  const { t } = useI18n()
   return (
     <div className="error-card">
       <div className="e-h">
@@ -561,7 +574,7 @@ export function ErrorCard({
       {suggestions && (
         <div style={{ marginTop: 8 }}>
           <div className="muted" style={{ fontSize: 11, marginBottom: 6 }}>
-            建议操作
+            {t('chat.error.suggestions')}
           </div>
           <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--text)' }}>
             {suggestions.map((s, i) => (
@@ -574,15 +587,15 @@ export function ErrorCard({
       )}
       <div className="e-actions">
         <button className="btn sm">
-          <Icons.Refresh size={11} /> 重试
+          <Icons.Refresh size={11} /> {t('chat.error.retry')}
         </button>
         <button className="btn sm">
-          <Icons.Edit size={11} /> 修改提示
+          <Icons.Edit size={11} /> {t('chat.error.editPrompt')}
         </button>
-        <button className="btn sm">跳过此步</button>
+        <button className="btn sm">{t('chat.error.skipStep')}</button>
         <span className="spacer" style={{ flex: 1 }} />
         <button className="btn ghost sm">
-          <Icons.Copy size={11} /> 复制日志
+          <Icons.Copy size={11} /> {t('chat.error.copyLog')}
         </button>
       </div>
     </div>
@@ -606,6 +619,7 @@ export function SubagentCard({
   output?: string | undefined
   onClick?: (() => void) | undefined
 }) {
+  const { t } = useI18n()
   const [expanded, setExpanded] = useState(false)
   const hasOutput = output != null && output.length > 0
   const isClickable = status === 'done' && hasOutput
@@ -630,7 +644,7 @@ export function SubagentCard({
         </span>
         <div className="body">
           <div className="title">
-            派生 · {name}
+            {t('chat.subagent.derived', { name })}
             {isClickable && (
               <span className="expand-hint">
                 {expanded ? <Icons.ChevronDown size={11} /> : <Icons.ChevronRight size={11} />}
@@ -644,13 +658,15 @@ export function SubagentCard({
         {status === 'running' && (
           <span className="live">
             <Icons.Spinner size={11} />
-            运行中{tokens ? ` ` : ''}
+            {t('chat.subagent.running')}
+            {tokens ? ` ` : ''}
           </span>
         )}
         {status === 'done' && (
           <span className="live" style={{ color: 'var(--success)' }}>
             <Icons.Check size={11} />
-            完成{tokens ? ` ` : ''}
+            {t('chat.subagent.done')}
+            {tokens ? ` ` : ''}
           </span>
         )}
       </div>
@@ -665,6 +681,7 @@ export function SubagentCard({
 
 type ChoiceOption = { id: string; icon: ReactNode; name: string; hint: string }
 export function ToolChooser({ title, options }: { title: string; options: ChoiceOption[] }) {
+  const { t } = useI18n()
   const [sel, setSel] = useState(options[0]?.id)
   return (
     <div className="chat-card">
@@ -694,20 +711,21 @@ export function ToolChooser({ title, options }: { title: string; options: Choice
       </div>
       <div className="chat-card-foot">
         <span className="muted" style={{ fontSize: 11 }}>
-          Agent 选择:{' '}
+          {t('chat.toolChooser.agentChoice')}{' '}
           <strong style={{ color: 'var(--text)', fontWeight: 600 }}>
             {options.find((o) => o.id === sel)?.name}
           </strong>
         </span>
         <span className="spacer" />
-        <button className="btn sm">取消</button>
-        <button className="btn sm primary">使用此工具</button>
+        <button className="btn sm">{t('chat.toolChooser.cancel')}</button>
+        <button className="btn sm primary">{t('chat.toolChooser.useTool')}</button>
       </div>
     </div>
   )
 }
 
 export function ContextWarn({ used, total }: { used: number; total: number }) {
+  const { t } = useI18n()
   const pct = Math.round((used / total) * 100)
   return (
     <div className="context-warn">
@@ -715,14 +733,14 @@ export function ContextWarn({ used, total }: { used: number; total: number }) {
         <Icons.AlertTriangle size={16} />
       </span>
       <div className="body">
-        <div className="title">上下文窗口接近上限 · {pct}%</div>
+        <div className="title">{t('chat.context.title', { percent: pct })}</div>
         <div className="meta">
-          已使用 {used.toLocaleString()} / {total.toLocaleString()} tokens · 建议压缩或开启自动总结
+          {t('chat.context.meta', { used: used.toLocaleString(), total: total.toLocaleString() })}
         </div>
       </div>
       <div className="row" style={{ gap: 6 }}>
-        <button className="btn sm">压缩</button>
-        <button className="btn sm primary">自动总结</button>
+        <button className="btn sm">{t('chat.context.compress')}</button>
+        <button className="btn sm primary">{t('chat.context.autoSummary')}</button>
       </div>
     </div>
   )

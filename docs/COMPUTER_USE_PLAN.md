@@ -1,5 +1,7 @@
 # Computer Use 技术方案
 
+> 状态: 待开发 | 最后核对: 2026-06-19
+>
 > 目标：为 Spark Agent 桌面端添加类似 Claude Desktop / OpenAI Operator 的 Computer Use 能力，让 Agent 能够"看到屏幕、理解界面、操作键鼠"，完成跨应用的自动化任务。
 
 ---
