@@ -3505,6 +3505,16 @@ export class SessionService {
     const count = eventRepo.deleteEventsByIds(eventIds)
     return { deleted: count }
   }
+
+  /**
+   * 列出会话的所有还原点（代码检查点），最近在前。
+   * 供 Checkpoint 时间线面板的「按会话撤回代码」视图使用。
+   */
+  listCheckpoints(sessionId: string): CheckpointSnapshot[] {
+    const eventRepo = new EventRepository(this.db)
+    // queryBySession 以 seq DESC 返回，即最近的还原点在前，符合时间线面板展示需要
+    return listSessionCheckpointsFromEvents(eventRepo, sessionId)
+  }
 }
 
 function shouldDeriveSessionTitle(title: string | null | undefined): boolean {

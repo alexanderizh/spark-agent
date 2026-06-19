@@ -269,6 +269,10 @@ export const SessionSearchRequestSchema = z.object({
   limit: z.number().int().min(1).max(100).optional().default(20),
 })
 
+export const SessionListCheckpointsRequestSchema = z.object({
+  sessionId: SessionIdSchema,
+})
+
 export const SessionListRequestSchema = z.object({
   workspaceId: z.string().uuid().optional(),
   includeArchived: z.boolean().optional().default(false),
@@ -487,6 +491,7 @@ export const IpcSchemaRegistry = {
   'session:cancel-queued-turn': SessionCancelQueuedTurnRequestSchema,
   'session:cancel': SessionCancelRequestSchema,
   'session:get-history': SessionGetHistoryRequestSchema,
+  'session:list-checkpoints': SessionListCheckpointsRequestSchema,
   'session:list': SessionListRequestSchema,
   'session:search': SessionSearchRequestSchema,
   'session:update': SessionUpdateRequestSchema,
