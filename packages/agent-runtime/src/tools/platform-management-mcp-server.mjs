@@ -2,9 +2,9 @@
 /**
  * Platform Management MCP Server
  *
- * Exposes 34 tools for managing the Spark Agent platform:
- *   Skills (8), MCP Servers (5), Providers (5),
- *   Workflows (5), Agents (5), Settings (4), Board Tasks (11)
+ * Exposes tools for managing the Spark Agent platform:
+ *   Skills, MCP Servers, Providers, Workflows, Agents, Teams,
+ *   Settings, Sessions, and Board Tasks.
  *
  * Communicates with the main process via the PlatformBridge HTTP server
  * running on localhost. The bridge port is passed via SPARK_PLATFORM_BRIDGE_PORT.
@@ -478,6 +478,87 @@ function toolDefinitions() {
       },
     },
 
+    // ── Teams ──
+    {
+      name: 'teams_list',
+      description: '列出长期团队定义（Teams）。返回团队 ID、名称、主持人 Agent、成员 Agent、嵌套设置、启用状态等。',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          includeDisabled: { type: 'boolean', description: '是否包含已停用团队，默认 false' },
+        },
+      },
+    },
+    {
+      name: 'teams_get',
+      description: '获取单个团队定义详情，包含主持人、成员、团队专属 prompt、嵌套设置和元数据。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '团队 ID' },
+        },
+      },
+    },
+    {
+      name: 'teams_create',
+      description: '创建长期团队定义。团队由一个主持人 Agent 和若干成员 Agent 组成，可在会话中作为已保存团队启用。',
+      inputSchema: {
+        type: 'object',
+        required: ['name', 'hostAgentId'],
+        properties: {
+          name: { type: 'string', description: '团队名称' },
+          description: { type: 'string', description: '团队描述' },
+          hostAgentId: { type: 'string', description: '主持人 Agent ID。创建前建议先调用 agents_list 获取可用 Agent。' },
+          memberAgentIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '成员 Agent ID 列表。若包含 hostAgentId，系统会自动剔除。',
+          },
+          maxDepth: { type: 'number', minimum: 1, maximum: 3, description: '团队嵌套调用最大深度，1-3，默认 1' },
+          allowNesting: { type: 'boolean', description: '是否允许成员继续调用其他成员，默认 false' },
+          prompt: { type: 'string', description: '团队专属 system prompt 片段，会追加到 Team Roster 后' },
+          enabled: { type: 'boolean', description: '是否启用，默认 true' },
+          metadata: { type: 'object', description: '团队元数据（如 avatar 等）', additionalProperties: true },
+        },
+      },
+    },
+    {
+      name: 'teams_update',
+      description: '更新长期团队定义。可修改名称、描述、主持人、成员、嵌套设置、团队 prompt、启用状态和元数据。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '团队 ID' },
+          name: { type: 'string', description: '新团队名称' },
+          description: { type: 'string', description: '新描述' },
+          hostAgentId: { type: 'string', description: '新的主持人 Agent ID' },
+          memberAgentIds: {
+            type: 'array',
+            items: { type: 'string' },
+            description: '新的成员 Agent ID 列表（整体替换）。若包含主持人，系统会自动剔除。',
+          },
+          maxDepth: { type: 'number', minimum: 1, maximum: 3, description: '新的最大嵌套深度，1-3' },
+          allowNesting: { type: 'boolean', description: '是否允许嵌套调用' },
+          prompt: { type: 'string', description: '新的团队专属 prompt' },
+          enabled: { type: 'boolean', description: '是否启用' },
+          metadata: { type: 'object', description: '新的团队元数据', additionalProperties: true },
+        },
+      },
+    },
+    {
+      name: 'teams_delete',
+      description: '删除长期团队定义。内置团队不可删除。这是破坏性操作，建议先向用户确认。',
+      inputSchema: {
+        type: 'object',
+        required: ['id'],
+        properties: {
+          id: { type: 'string', description: '要删除的团队 ID' },
+        },
+      },
+    },
+
     // ── Board Tasks ──
     {
       name: 'board_list',
@@ -869,6 +950,11 @@ async function handleToolCall(name, args) {
     agents_create: 'agents.create',
     agents_update: 'agents.update',
     agents_delete: 'agents.delete',
+    teams_list: 'teams.list',
+    teams_get: 'teams.get',
+    teams_create: 'teams.create',
+    teams_update: 'teams.update',
+    teams_delete: 'teams.delete',
     settings_get: 'settings.get',
     settings_set: 'settings.set',
     settings_get_category: 'settings.get_category',
@@ -935,7 +1021,7 @@ function main() {
       result(msg.id, {
         protocolVersion: '2024-11-05',
         capabilities: { tools: {} },
-        serverInfo: { name: 'spark-platform-management', version: '2.2.0' },
+        serverInfo: { name: 'spark-platform-management', version: '2.5.0' },
       })
       return
     }

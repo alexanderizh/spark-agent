@@ -3468,6 +3468,7 @@ body.sidebar-resizing {
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
+  font-weight: 400;
 }
 .composer-menu.right {
   right: 0;
@@ -3483,6 +3484,7 @@ body.sidebar-resizing {
   border-radius: var(--r-md);
   background: var(--panel);
   box-shadow: var(--shadow-lg);
+  font-weight: 400;
 }
 .composer-model-menu {
   width: min(220px, calc(100vw - 24px));
@@ -3500,6 +3502,7 @@ body.sidebar-resizing {
   color: var(--text);
   font: inherit;
   font-size: var(--font-sm);
+  font-weight: 400;
   text-align: left;
   cursor: pointer;
 }
@@ -3522,12 +3525,26 @@ body.sidebar-resizing {
   gap: 2px;
   min-width: 0;
 }
+.composer-menu-item-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.composer-menu-item-leading-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  color: currentColor;
+  flex-shrink: 0;
+}
 .composer-menu-item-label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-weight: 500;
+  font-weight: 400;
 }
 .composer-menu-item-label svg {
   flex-shrink: 0;
@@ -3536,6 +3553,7 @@ body.sidebar-resizing {
   display: block;
   color: var(--text-faint);
   font-size: var(--font-xs);
+  font-weight: 400;
   line-height: 1.25;
 }
 .composer-menu-item-tag {
@@ -3548,7 +3566,7 @@ body.sidebar-resizing {
   background: var(--bg-hover);
   color: var(--text-faint);
   font-size: 10px;
-  font-weight: 500;
+  font-weight: 400;
 }
 .composer-menu-item span {
   min-width: 0;
@@ -3560,6 +3578,9 @@ body.sidebar-resizing {
   color: var(--text-muted);
   flex-shrink: 0;
 }
+.composer-menu-item-leading-icon svg {
+  color: currentColor;
+}
 .composer-model-group + .composer-model-group {
   border-top: 1px solid var(--divider);
   margin-top: 6px;
@@ -3570,7 +3591,7 @@ body.sidebar-resizing {
   padding: 8px 12px 6px;
   color: var(--text-faint);
   font-size: var(--font-xs);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 /* ---------- Project Picker ---------- */
@@ -3590,7 +3611,7 @@ body.sidebar-resizing {
 .composer-project-group-header {
   padding: 8px 12px 4px;
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 400;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-faint);
@@ -13389,7 +13410,7 @@ body.inspector-resizing {
   text-transform: none;
 }
 .composer-menu-item.team-mode-entry .composer-menu-item-label {
-  font-weight: 600;
+  font-weight: 400;
 }
 .composer-agent-menu .composer-menu-divider {
   height: 1px;

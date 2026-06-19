@@ -26,6 +26,7 @@ import type { UpdateWorkflowParams } from '@spark/storage'
 import type { AgentRepository } from '@spark/storage'
 import type { UpdateAgentParams, CreateProviderParams } from '@spark/storage'
 import type { SettingsRepository } from '@spark/storage'
+import type { TeamDefinitionRepository } from '@spark/storage'
 
 const log = createLogger('platform-bridge')
 
@@ -35,6 +36,14 @@ function normalizePlatformReasoningEffort(
   if (value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max') return value
   if (value === 'low') return 'medium'
   return undefined
+}
+
+function normalizeTeamMaxDepth(value: unknown): number | undefined {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 1 || value > 3) {
+    throw new Error('maxDepth must be an integer between 1 and 3')
+  }
+  return value
 }
 
 // ─── Types ────────────────────────────────────────────────────────────
@@ -48,6 +57,7 @@ export interface PlatformBridgeDeps {
   providerRepo: ProviderProfileRepository
   workflowRepo: WorkflowRepository
   agentRepo: AgentRepository
+  teamRepo: TeamDefinitionRepository
   settingsRepo: SettingsRepository
   sessionService: {
     updateSession(params: {
@@ -230,6 +240,13 @@ export class PlatformBridgeService {
       case 'agents.create': return this.agentCreate(d, params)
       case 'agents.update': return this.agentUpdate(d, params)
       case 'agents.delete': return this.agentDelete(d, params)
+
+      // ── Teams ──
+      case 'teams.list': return this.teamList(d, params)
+      case 'teams.get': return this.teamGet(d, params)
+      case 'teams.create': return this.teamCreate(d, params)
+      case 'teams.update': return this.teamUpdate(d, params)
+      case 'teams.delete': return this.teamDelete(d, params)
 
       // ── Settings ──
       case 'settings.get': return this.settingsGet(d, params)
@@ -723,6 +740,89 @@ export class PlatformBridgeService {
     const id = String(params.id ?? '')
     const ok = d.agentRepo.delete(id)
     return { success: ok }
+  }
+
+  // ── Team handlers ──
+
+  private teamList(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const teams = d.teamRepo.list({ includeDisabled: params.includeDisabled === true })
+    return { teams }
+  }
+
+  private teamGet(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = String(params.id ?? '')
+    if (!id) throw new Error('Missing parameter: id')
+    return { team: d.teamRepo.get(id) }
+  }
+
+  private teamCreate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const name = String(params.name ?? '').trim()
+    const hostAgentId = String(params.hostAgentId ?? '').trim()
+    if (!name) throw new Error('Missing parameter: name')
+    if (!hostAgentId) throw new Error('Missing parameter: hostAgentId')
+
+    const memberAgentIds = Array.isArray(params.memberAgentIds)
+      ? params.memberAgentIds.filter((id): id is string => typeof id === 'string' && id !== hostAgentId)
+      : []
+
+    const maxDepth = normalizeTeamMaxDepth(params.maxDepth)
+    const team = d.teamRepo.create({
+      name,
+      ...(params.description !== undefined ? { description: String(params.description) } : {}),
+      hostAgentId,
+      memberAgentIds,
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(params.allowNesting !== undefined ? { allowNesting: Boolean(params.allowNesting) } : {}),
+      ...(params.prompt !== undefined ? { prompt: String(params.prompt) } : {}),
+      ...(params.enabled !== undefined ? { enabled: Boolean(params.enabled) } : {}),
+      ...(params.metadata != null && typeof params.metadata === 'object'
+        ? { metadata: params.metadata as Record<string, unknown> }
+        : {}),
+    })
+    return { team }
+  }
+
+  private teamUpdate(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = String(params.id ?? '')
+    if (!id) throw new Error('Missing parameter: id')
+    const existing = d.teamRepo.get(id)
+    if (!existing) throw new Error(`Team not found: ${id}`)
+
+    const nextHost = params.hostAgentId != null ? String(params.hostAgentId) : existing.hostAgentId
+    let nextMembers: string[] | undefined
+    if (Array.isArray(params.memberAgentIds)) {
+      nextMembers = params.memberAgentIds.filter(
+        (memberId): memberId is string => typeof memberId === 'string' && memberId !== nextHost,
+      )
+    } else if (params.hostAgentId != null && nextHost !== existing.hostAgentId) {
+      nextMembers = existing.memberAgentIds.filter((memberId) => memberId !== nextHost)
+    }
+
+    const maxDepth = normalizeTeamMaxDepth(params.maxDepth)
+    const team = d.teamRepo.update(id, {
+      ...(params.name !== undefined ? { name: String(params.name) } : {}),
+      ...(params.description !== undefined ? { description: String(params.description) } : {}),
+      ...(params.enabled !== undefined ? { enabled: Boolean(params.enabled) } : {}),
+      ...(params.hostAgentId !== undefined ? { hostAgentId: nextHost } : {}),
+      ...(nextMembers !== undefined ? { memberAgentIds: nextMembers } : {}),
+      ...(maxDepth !== undefined ? { maxDepth } : {}),
+      ...(params.allowNesting !== undefined ? { allowNesting: Boolean(params.allowNesting) } : {}),
+      ...(params.prompt !== undefined ? { prompt: String(params.prompt) } : {}),
+      ...(params.metadata != null && typeof params.metadata === 'object'
+        ? { metadata: params.metadata as Record<string, unknown> }
+        : {}),
+    })
+    if (!team) throw new Error(`Team not found after update: ${id}`)
+    return { team }
+  }
+
+  private teamDelete(d: PlatformBridgeDeps, params: Record<string, unknown>) {
+    const id = String(params.id ?? '')
+    if (!id) throw new Error('Missing parameter: id')
+    const existing = d.teamRepo.get(id)
+    if (!existing) return { deleted: false }
+    if (existing.builtIn) throw new Error('内置团队不可删除，可停用或修改配置')
+    return { deleted: d.teamRepo.delete(id) }
   }
 
   // ── Settings handlers ──
